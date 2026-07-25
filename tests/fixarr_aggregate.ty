@@ -1,0 +1,44 @@
+# [N]T (fixed-size, inline storage) with an AGGREGATE element type.
+#
+# Same emitter staging as bounded[N]T: `struct { T v[N]; }` needs T COMPLETE, so
+# the array body must follow the struct / tuple / map body, not precede it. This
+# fixture exists because tests/ only ever used `[N]<scalar>`, so `[2]Pt` — a plain
+# fixed array of a struct — transpiled on both compilers and then failed to build
+# with "array type has incomplete element type 'S_Pt'".
+
+struct Pt:
+    x: int
+    y: int
+
+struct Board:
+    cells: [2]Pt
+    pairs: [2](int, int)
+    dicts: [2][string: int]
+
+fn sum_cells(cs: [2]Pt) -> int:
+    return cs[0].x + cs[0].y + cs[1].x + cs[1].y
+
+fn make_cells() -> [2]Pt:
+    return [Pt(1, 2), Pt(3, 4)]
+
+fn main():
+    cs := make_cells()
+    println("cells " + str(cs[1].x) + " " + str(sum_cells(cs)))
+
+    ps: [2](int, int) = [(1, 2), (3, 4)]
+    println("pairs " + str(ps[1].0))
+
+    d: [string: int] = []
+    d["k"] = 9
+    e: [string: int] = []
+    e["k"] = 4
+    ds: [2][string: int] = [d, e]
+    println("dicts " + str(ds[0]["k"] + ds[1]["k"]))
+
+    b := Board(cs, ps, ds)
+    println("board " + str(b.cells[0].y) + " " + str(b.pairs[0].1) + " " + str(b.dicts[1]["k"]))
+
+    c := b                                    # value copy: independent inline storage
+    c.cells[0] = Pt(50, 60)
+    println("copy " + str(b.cells[0].x) + " " + str(c.cells[0].x))
+    println("eq " + str(make_cells() == cs))

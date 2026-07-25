@@ -261,7 +261,19 @@ minus applied to a literal, not a literal), a name that is not a `const`, and a
 The element type `T` MUST NOT be `bool` or `void`, mirroring the bracket-array
 element-type restriction of §5.3.1. An affine handle type — including
 `Task(T)` and `Channel(T)` — MUST NOT appear as a `bounded` element, because a
-handle cannot be stored in any aggregate (§5.3.9).
+handle cannot be stored in any aggregate (§5.3.9). **Every other type is a
+valid element**, including an aggregate one: a `struct`, a tuple, a map, a
+`soa`, an `Option`, a `Result`, `bytes`, a fixed-size array `[N]E`, a dynamic
+array `[E]`, a function type, an enum, and a nested `bounded[M]E`. A `bounded`
+holding an aggregate is valid in every stored position — a local, a parameter,
+a struct field and a return type.
+
+Because a `bounded[N]T` stores its elements **inline**, `T` MUST be a type of
+known size at that point: a type whose own definition reaches back to the
+`bounded` that contains it (`struct Node: kids: [2]Node`) is an infinite type
+and MUST be rejected, exactly as a directly self-containing struct is (§5.3.2
+applies the same rule to `[N]T`). Use a dynamic array or an `Option` for the
+indirection.
 
 `len` yields the **runtime count**, not `N`. `push` appends and, when the
 collection is already full, **aborts** the program rather than growing; that
@@ -283,14 +295,18 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
 > `tests/reject/bounded_nonconst_cap.ty`,
-> `tests/reject/bounded_const_cap_zero.ty`.
-
-> Note: the type grammar admits an aggregate element (a `struct`, tuple, `soa`,
-> `Option`, `Result`, map, fixed-size array, `bytes`, or a nested `bounded`) and
-> both implementations accept it at the front end, but neither generates working
-> code for the whole of that set today. Until that is closed, a portable program
-> SHOULD keep `T` to `int`, `float`, a fixed-width numeric, `ptr`, `string`, a
-> fieldless enum, a dynamic array `[E]`, or a function type.
+> `tests/reject/bounded_const_cap_zero.ty`,
+> `tests/reject/bounded_elem_bool.ty`. The aggregate-element surface is covered
+> by `tests/bounded_elems.ty` (struct, tuple, map, nested `bounded`, `bytes`,
+> `[N]E`, `Option`, `Result` — each as a local, a parameter, a struct field and
+> a return type) and `tests/fixarr_aggregate.ty` for the `[N]T` twin. The
+> inline element is emitted inside the by-value containment DFS — `[N]T` and
+> `bounded[N]T` are ordered with the struct/tuple/Option bodies rather than with
+> the pointer-shaped arrays (`src/tychoc.c:10044-10070`, with `inline_arrc`/
+> `needs_body_first` at `:10039-10042`; `compiler/tychoc0.ty` `comp_dep_types`
+> `:9748-9783` and `emit_comp_body` `:9785-9808`) — which is what makes an aggregate element compile; the
+> infinite-type rejection falls out of the same DFS
+> (`tests/reject/inline_arr_self_elem.ty`).
 
 ## 5.4 Newtypes
 

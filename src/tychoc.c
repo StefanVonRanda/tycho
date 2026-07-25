@@ -1739,7 +1739,7 @@ static Type parse_type_inner(Parser *ps) {
         eat(ps, TK_RBRACKET, "']' after the bounded capacity");
         Type belem = parse_type(ps);
         if (belem == T_VOID || belem == T_BOOL)   /* mirror [N]bool: no bounded-bool codegen */
-            die_at(t->line, "bounded elements must be int, float, string, a struct, or an array");
+            die_at(t->line, "a bounded element cannot be bool or void");
         return bounded_of(belem, cap);
     }
     if (t->kind == TK_FN) {              /* function type: fn(P1, ..., Pn) [-> R] */
@@ -10011,19 +10011,60 @@ static void gen_proc(FILE *o, Proc *pr) {
 }
 
 /* Struct bodies and Option typedefs embed their members BY VALUE, so they must
- * be emitted in containment order (composite-array typedefs are emitted before
- * this — they hold only pointers, so they break cycles). A DFS with colouring
- * (0 unvisited, 1 on-stack, 2 done) emits each in dependency order; a back-edge
- * is an infinite type (a struct that contains itself by value), which is a real
- * error — use an array or `Option([T])` for indirection. */
+ * be emitted in containment order (DYNAMIC composite-array typedefs are emitted
+ * before this — they hold only a pointer, so they break cycles). A DFS with
+ * colouring (0 unvisited, 1 on-stack, 2 done) emits each in dependency order; a
+ * back-edge is an infinite type (a struct that contains itself by value), which
+ * is a real error — use an array or `Option([T])` for indirection.
+ *
+ * INLINE-STORAGE arrays — `[N]T` (fixed) and `bounded[N]T` — are in this DFS too,
+ * because `struct TychoArrC<n>_ { T v[N]; ... }` needs T *complete*, not merely
+ * forward-declared. Emitting them with the pointer-shaped arrays (before struct /
+ * Option / Result / tuple / soa bodies) is what made `[2]Pt`, `bounded[4]Pt`,
+ * `bounded[4](int,int)`, `bounded[4]Option(int)` and `bounded[4]soa[Pt]` emit C
+ * that cc rejects with "array type has incomplete element type". The dependency
+ * really is mutual — a struct may hold a `[2]Pt` field by value and that array
+ * holds `Pt` by value — so one dependency-ordered pass, not two fixed phases. */
 static int *g_struct_color; static int g_struct_color_cap;
 static int *g_opt_color;    static int g_opt_color_cap;
 static int *g_res_color;    static int g_res_color_cap;
 static int *g_tup_color;    static int g_tup_color_cap;
+static int *g_arrc_color;   static int g_arrc_color_cap;
 static int g_emit_line;
 
+/* Does a by-value member of type `t` need its own C body emitted FIRST? True for
+ * the four aggregate families and for an inline-storage array (`size > 0` covers
+ * both `[N]T` and `bounded[N]T`; a `[$N]T` size-param encodes NEGATIVE and is
+ * template-only, and a dynamic `[T]` is size == 0 and holds a pointer). */
+static int inline_arrc(Type t) { return IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size > 0; }
+static int needs_body_first(Type t) {
+    return IS_STRUCT(t) || IS_OPT(t) || IS_RES(t) || IS_TUP(t) || inline_arrc(t);
+}
+
 static void emit_aggregate(FILE *o, Type t) {
+    if (IS_ARRC(t) && !inline_arrc(t)) return;   /* a dynamic `[T]` / a `[$N]T` template holds a POINTER: its body is emitted with step (2b) */
     if (has_typaram(t)) return;   /* generics: a type mentioning `$T` (from a template) is transient -- never emitted */
+    if (IS_ARRC(t)) {   /* [N]T / bounded[N]T: the element is stored INLINE, so its body must precede this one */
+        int id = ARRC_ID(t);
+        if (g_arrc_color[id] == 2) return;
+        if (g_arrc_color[id] == 1)
+            die_at(g_emit_line, "infinite type: %s contains itself by value — "
+                   "use a dynamic array ([%s]) for indirection",
+                   type_name(t), type_name(arr_elem(t)));
+        g_arrc_color[id] = 1;
+        Type el = g_arrtypes[id].elem;
+        if (needs_body_first(el)) emit_aggregate(o, el);
+        g_arrc_color[id] = 2;
+        if (o) {
+            if (g_arrtypes[id].bnd)   /* bounded[N]T: inline storage + a runtime count */
+                fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; tycho_int len; };\n",
+                        id, c_type(el), (long long)g_arrtypes[id].size);
+            else                      /* fixed-size [N]T (1.6): inline storage, no heap descriptor */
+                fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; };\n",
+                        id, c_type(el), (long long)g_arrtypes[id].size);
+        }
+        return;
+    }
     if (IS_STRUCT(t)) {
         int id = STRUCT_ID(t);
         if (g_structs[id].generic) return;   /* generics: a `$T` template emits no C; its instances do */
@@ -10037,7 +10078,7 @@ static void emit_aggregate(FILE *o, Type t) {
         StructDef *sd = &g_structs[id];
         for (int j = 0; j < sd->nfields; j++) {
             Type ft = sd->fields[j].type;
-            if (IS_STRUCT(ft) || IS_OPT(ft) || IS_RES(ft) || IS_TUP(ft)) emit_aggregate(o, ft);
+            if (needs_body_first(ft)) emit_aggregate(o, ft);
         }
         g_emit_line = save;
         g_struct_color[id] = 2;
@@ -10055,7 +10096,7 @@ static void emit_aggregate(FILE *o, Type t) {
                    "use Option([T]) for indirection");
         g_opt_color[id] = 1;
         Type inner = g_opttypes[id].inner;
-        if (IS_STRUCT(inner) || IS_OPT(inner) || IS_RES(inner) || IS_TUP(inner)) emit_aggregate(o, inner);
+        if (needs_body_first(inner)) emit_aggregate(o, inner);
         g_opt_color[id] = 2;
         if (o) fprintf(o, "struct TychoOpt%d_ { char has; %sval; };\n", id, c_type(inner));
     } else if (IS_RES(t)) {   /* embeds both inner types by value (the inactive one zeroed) */
@@ -10066,8 +10107,8 @@ static void emit_aggregate(FILE *o, Type t) {
                    "use indirection (e.g. Result([T], E))");
         g_res_color[id] = 1;
         Type okt = g_restypes[id].ok, errt = g_restypes[id].err;
-        if (IS_STRUCT(okt)  || IS_OPT(okt)  || IS_RES(okt)  || IS_TUP(okt))  emit_aggregate(o, okt);
-        if (IS_STRUCT(errt) || IS_OPT(errt) || IS_RES(errt) || IS_TUP(errt)) emit_aggregate(o, errt);
+        if (needs_body_first(okt))  emit_aggregate(o, okt);
+        if (needs_body_first(errt)) emit_aggregate(o, errt);
         g_res_color[id] = 2;
         if (o) fprintf(o, "struct TychoRes%d_ { char ok; %sokv; %serrv; };\n",
                        id, c_type(okt), c_type(errt));
@@ -10080,7 +10121,7 @@ static void emit_aggregate(FILE *o, Type t) {
         TupType *tt = &g_tuptypes[id];
         for (int j = 0; j < tt->n; j++) {
             Type et = tt->elems[j];
-            if (IS_STRUCT(et) || IS_OPT(et) || IS_RES(et) || IS_TUP(et)) emit_aggregate(o, et);
+            if (needs_body_first(et)) emit_aggregate(o, et);
         }
         g_tup_color[id] = 2;
         if (o) {
@@ -10099,15 +10140,18 @@ static void check_finite_types(void) {
     TBL_RESERVE(g_opt_color,    g_nopttypes, g_opt_color_cap);
     TBL_RESERVE(g_res_color,    g_nrestypes, g_res_color_cap);
     TBL_RESERVE(g_tup_color,    g_ntuptypes, g_tup_color_cap);
+    TBL_RESERVE(g_arrc_color,   g_narrtypes, g_arrc_color_cap);
     for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
     for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
     for (int i = 0; i < g_nrestypes; i++) g_res_color[i] = 0;
     for (int i = 0; i < g_ntuptypes; i++) g_tup_color[i] = 0;
+    for (int i = 0; i < g_narrtypes; i++) g_arrc_color[i] = 0;
     g_emit_line = 0;
     for (int i = 0; i < g_nstructs; i++)  emit_aggregate(NULL, STRUCT_TYPE(i));
     for (int i = 0; i < g_nopttypes; i++) emit_aggregate(NULL, T_OPT_BASE + i);
     for (int i = 0; i < g_nrestypes; i++) emit_aggregate(NULL, T_RES_BASE + i);
     for (int i = 0; i < g_ntuptypes; i++) emit_aggregate(NULL, T_TUP_BASE + i);
+    for (int i = 0; i < g_narrtypes; i++) emit_aggregate(NULL, T_ARRC_BASE + i);   /* [N]T / bounded[N]T hold the element by value too */
 }
 
 /* Materialize a generic instance as an ordinary Proc: the template's body
@@ -10340,14 +10384,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "); void *(*copyenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes the captured env on return (0 for a plain ref) */
     }
     if (g_nfunctypes) fputs("\n", o);
-    for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array bodies (tags forward-declared above) */
-        if (g_arrtypes[i].bnd)                       /* bounded[N]T: inline storage + a runtime count */
-            fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; tycho_int len; };\n", i, c_type(g_arrtypes[i].elem), (long long)g_arrtypes[i].size);
-        else if (g_arrtypes[i].size > 0)            /* fixed-size [N]T (1.6): inline storage, no heap descriptor */
-            fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; };\n", i, c_type(g_arrtypes[i].elem), (long long)g_arrtypes[i].size);
-        else
-            fprintf(o, "struct TychoArrC%d_ { %s*data; tycho_int len; tycho_int cap; };\n",
+    for (int i = 0; i < g_narrtypes; i++)           /* (2b) DYNAMIC composite-array bodies (tags forward-declared above). */
+        if (!inline_arrc(T_ARRC_BASE + i))          /*      The element is behind a `*data` pointer, so its forward */
+            fprintf(o, "struct TychoArrC%d_ { %s*data; tycho_int len; tycho_int cap; };\n",   /* decl suffices. */
                     i, c_type(g_arrtypes[i].elem));
+    /* (2b-inline) `[N]T` and `bounded[N]T` store the element INLINE, so their
+     * bodies need it COMPLETE — they are emitted in step (3) below, inside the
+     * containment DFS, alongside the struct/Option/Result/tuple bodies. */
     for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] -- COMPACT indexed-dict: int32 index table -> dense insertion-ordered entries */
         fprintf(o, "struct TychoMapC%d_ { %s*ekeys; %s*evals; unsigned char *elive; int *idx; tycho_int len; tycho_int ecount; tycho_int ecap; tycho_int icap; };\n",
                 i, mapc_kslot(g_maptypes[i].key), c_type(g_maptypes[i].val));
@@ -10365,22 +10408,28 @@ static void gen_program(FILE *o, ProcVec *prog) {
                    "fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, s->len); exit(1); } return i; }\n", i, i);
     }
     fputs("\n", o);
-    /* (3) struct bodies + Option typedefs in containment order (infinite types
-     * are rejected here). Enum descriptors above are complete, so a struct/Option
-     * may embed an enum by value (it's only 2 words). */
+    /* (3) struct bodies, Option typedefs AND the inline-storage array bodies
+     * (`[N]T`, `bounded[N]T`) in containment order (infinite types are rejected
+     * here). Enum descriptors above are complete, so a struct/Option may embed an
+     * enum by value (it's only 2 words); the soa typedefs and map bodies just
+     * above are complete too, so `bounded[4]soa[Pt]` and `bounded[4][string:int]`
+     * resolve here. */
     TBL_RESERVE(g_struct_color, g_nstructs,  g_struct_color_cap);
     TBL_RESERVE(g_opt_color,    g_nopttypes, g_opt_color_cap);
     TBL_RESERVE(g_res_color,    g_nrestypes, g_res_color_cap);
     TBL_RESERVE(g_tup_color,    g_ntuptypes, g_tup_color_cap);
+    TBL_RESERVE(g_arrc_color,   g_narrtypes, g_arrc_color_cap);
     for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
     for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
     for (int i = 0; i < g_nrestypes; i++) g_res_color[i] = 0;
     for (int i = 0; i < g_ntuptypes; i++) g_tup_color[i] = 0;
+    for (int i = 0; i < g_narrtypes; i++) g_arrc_color[i] = 0;
     g_emit_line = 0;
     for (int i = 0; i < g_nstructs; i++)  emit_aggregate(o, STRUCT_TYPE(i));
     for (int i = 0; i < g_nopttypes; i++) emit_aggregate(o, T_OPT_BASE + i);
     for (int i = 0; i < g_nrestypes; i++) emit_aggregate(o, T_RES_BASE + i);
     for (int i = 0; i < g_ntuptypes; i++) emit_aggregate(o, T_TUP_BASE + i);
+    for (int i = 0; i < g_narrtypes; i++) emit_aggregate(o, T_ARRC_BASE + i);   /* inline arrays not reached from an aggregate above */
     /* (3b) enum payload structs: one per variant-with-payload, holding its
      * fields by value (structs/options/arrays/enum-descriptors all emitted
      * above). The payload is heap-allocated, so recursive enums stay finite. */

@@ -1,0 +1,15 @@
+pts 2 4
+take_pts 10
+pairs 2 3
+take_pairs 26
+dicts 1 1
+rows 2 3
+take_rows 63
+tags 2 2
+grid 1 8
+opts 2
+opt0 7
+res 2
+bag 1 6 8 3 2 2 1
+copy 1 2
+eq true false

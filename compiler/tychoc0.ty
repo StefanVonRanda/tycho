@@ -1792,7 +1792,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         expect(toks, &pos, TRBracket)
         belem := parse_type_d(toks, &pos, depth + 1)
         if belem == "void" or belem == "bool":
-            die("parse: line " + str(toks[pos].line) + ": bounded elements must be int, float, string, a struct, or an array")
+            die("parse: line " + str(toks[pos].line) + ": a bounded element cannot be bool or void")
         # An affine concurrency handle may not be stored in a container or aggregate
         # (spec 03-types.md 5.3.9/5.3.10). tychoc fails closed at its type-intern choke
         # point (src/tychoc.c:669-671 arrc_sized_b, messages :567 and :607); tychoc0 has
@@ -7073,8 +7073,9 @@ fn box_payload(dc: Decls, ctx: Ctx, ty: string, ar: string, valptr: string) -> s
 # copy fns are forward-declared (gen_arr_type for arrays; the struct/tuple copy
 # protos emitted before the array fns) so order never matters.
 fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> string:
-    if resolve_nt(dc, ctx, et) == "str":
-        return "scopy(" + ar + ", " + src + ")"
+    ret := resolve_nt(dc, ctx, et)
+    if ret == "str" or ret == "bytes":               # bytes shares str's length-headered buffer (mirrors cp_field); without
+        return "scopy(" + ar + ", " + src + ")"      # the `bytes` arm this fell through to `S_bytes_copy`, an undeclared fn
     if is_func(et):                                  # a fn value: re-home its env into `ar` (plain ref env==0 -> no-op)
         return "({ Fn_" + func_suffix(et) + " _t = (" + src + "); if (_t.env) _t.env = _t.copyenv(" + ar + ", _t.env); _t; })"
     if is_array(et):
@@ -9723,12 +9724,35 @@ fn gen_arr_hash(dc: Decls, ctx: Ctx, et: string) -> string:
     nm := "Arr_" + mangle(et)
     return "static uint64_t " + nm + "_hash(" + nm + " x) { uint64_t h = hash_k0; for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ " + hash_field(dc, ctx, et, "x.data[i]") + "; return h; }\n"
 
-# Struct/tuple types directly embedded BY VALUE in struct/tuple `ty` (its fields/elements).
-# Those bodies must precede ty's. Enum/array/map/scalar fields are by pointer or emitted in
-# earlier phases, so they are not dependencies.
+# Does `ty` hold its members BY VALUE, so that its own C body must follow theirs?
+# The four aggregate families plus the INLINE-storage arrays: `struct Arr_bN_T_
+# { T v[N]; ... }` needs T complete, not merely forward-declared, exactly as a
+# struct field does. A dynamic `[T]` is a `T* data` pointer, so it is not here.
+fn is_byval_comp(dc: Decls, ctx: Ctx, ty: string) -> bool:
+    return is_struct(dc, ctx, ty) or is_tuple(ty) or is_bounded(ty) or is_fixarr(ty)
+
+# An inline array whose ELEMENT is a map (`[2][string:int]`, `bounded[4][string:int]`).
+# Its _set/_copy/_eq bodies call map_*_copy / map_*_eq, whose forward decls are emitted
+# with the map families, so these FUNCTIONS are deferred to the array-of-map pass in the
+# driver — exactly as a dynamic `[[K:V]]` already is. The struct body and the copy/eq
+# protos come earlier, in the topological pass, and are unaffected.
+fn inline_arr_of_map(ty: string) -> bool:
+    if is_bounded(ty) or is_fixarr(ty):
+        return is_map(elem_ty(ty))
+    return false
+
+# Struct/tuple/inline-array types directly embedded BY VALUE in `ty` (its fields /
+# elements / array element). Those bodies must precede ty's. Enum/dynamic-array/
+# map/soa/scalar members are by pointer or emitted in earlier phases, so they are
+# not dependencies.
 fn comp_dep_types(dc: Decls, ctx: Ctx, ty: string) -> [string]:
     deps := []string
     b := resolve_nt(dc, ctx, ty)
+    if is_bounded(b) or is_fixarr(b):            # bounded[N]T / [N]T: the ELEMENT is stored inline
+        et := resolve_nt(dc, ctx, elem_ty(b))
+        if is_byval_comp(dc, ctx, et):
+            push(deps, et)
+        return deps
     if is_struct(dc, ctx, b):
         i := 0
         for i < len(dc.structs):
@@ -9736,7 +9760,7 @@ fn comp_dep_types(dc: Decls, ctx: Ctx, ty: string) -> [string]:
                 j := 0
                 for j < len(dc.structs[i].fields):
                     ft := resolve_nt(dc, ctx, dc.structs[i].fields[j].ty)
-                    if is_struct(dc, ctx, ft) or is_tuple(ft):
+                    if is_byval_comp(dc, ctx, ft):
                         push(deps, ft)
                     j = j + 1
             i = i + 1
@@ -9745,26 +9769,36 @@ fn comp_dep_types(dc: Decls, ctx: Ctx, ty: string) -> [string]:
         j := 0
         for j < len(parts):
             pt := resolve_nt(dc, ctx, parts[j])
-            if is_struct(dc, ctx, pt) or is_tuple(pt):
+            if is_byval_comp(dc, ctx, pt):
                 push(deps, pt)
             j = j + 1
     return deps
 
-# Emit a struct/tuple body in topological order: its by-value struct/tuple dependencies
-# first (so a struct embedding a tuple -- or a tuple embedding a struct -- sees a complete
-# type). `emitted` carries the dedup set across the whole pass. By-value recursion is
-# forbidden upstream, so the graph is a DAG.
-fn emit_comp_body(dc: Decls, ctx: Ctx, ty: string, emitted: inout [string]) -> string:
+# Emit a struct / tuple / inline-array body in topological order: its by-value
+# dependencies first (so a struct embedding a tuple -- or a tuple embedding a
+# struct, or either embedding a `[2]Pt` -- sees a complete type). `emitted`
+# carries the dedup set across the whole pass; `stack` is the current DFS path,
+# passed BY VALUE so each branch gets its own copy. A member that is its own
+# ancestor is an infinite type (`struct Node: kids: [2]Node`) and is rejected
+# here -- without this the emitter would silently produce C that cc rejects with
+# "array type has incomplete element type".
+fn emit_comp_body(dc: Decls, ctx: Ctx, ty: string, emitted: inout [string], stack: [string]) -> string:
     b := resolve_nt(dc, ctx, ty)
+    if has_str(stack, b):
+        die_at(dc, 0, "infinite type: " + b + " contains itself by value -- use a dynamic array ([T]) or Option([T]) for indirection")
     if has_str(emitted, b):
         return ""
     push(emitted, b)
+    path := stack                                # own copy: a parameter is borrowed read-only
+    push(path, b)
     out := ""
     deps := comp_dep_types(dc, ctx, b)
     i := 0
     for i < len(deps):
-        out = out + emit_comp_body(dc, ctx, deps[i], &emitted)
+        out = out + emit_comp_body(dc, ctx, deps[i], &emitted, path)
         i = i + 1
+    if is_bounded(b) or is_fixarr(b):
+        return out + gen_arr_type(dc, ctx, b)
     if is_tuple(b):
         return out + gen_tuple_struct(dc, ctx, b)
     i = 0
@@ -16380,9 +16414,12 @@ fn main():
             out = out + gen_func_typedef(dc, ctx, ets[i])
             has_fnval = true
         i = i + 1
-    i = 0                                        # 2. array STRUCT bodies (element types
+    i = 0                                        # 2. DYNAMIC array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        if not is_soa(ets[i]):   # array-of-X struct body for every element kind incl. MAPS; the element appears only as a pointer here, so its forward typedef suffices
+        # array-of-X struct body for every element kind incl. MAPS; the element appears only as a pointer here, so its forward typedef suffices.
+        # The INLINE-storage families are excluded: `[N]T` and `bounded[N]T` embed `T v[N]`, which needs T COMPLETE (and their eq/copy
+        # protos take the array BY VALUE), so they are emitted in the topological pass at 4+5a below, after struct/tuple/map/soa bodies.
+        if not is_soa(ets[i]) and not is_bounded(ets[i]) and not is_fixarr(ets[i]):
             out = out + gen_arr_type(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 2c. soa typedefs + helper fwd decls (before struct
@@ -16415,18 +16452,24 @@ fn main():
         if not is_map(ets[i]) and not is_soa(ets[i]) and struct_keyused(dc, ctx, ets, "[" + ets[i] + "]"):
             out = out + "static uint64_t Arr_" + mangle(ets[i]) + "_hash(Arr_" + mangle(ets[i]) + " x);\n"
         i = i + 1
-    # 4 + 5a. struct AND tuple bodies in topological order — a struct may embed a tuple by
-    # value and a tuple may embed a struct, so a single dependency-ordered pass (not two
-    # fixed phases) is needed. emit_comp_body recurses into by-value struct/tuple deps first.
+    # 4 + 5a. struct, tuple AND inline-array (`[N]T` / `bounded[N]T`) bodies in topological
+    # order — a struct may embed a tuple by value, a tuple may embed a struct, and either may
+    # embed a `[2]Pt` whose own element is that struct, so a single dependency-ordered pass
+    # (not fixed phases) is needed. emit_comp_body recurses into by-value deps first.
     emitted_comp := []string
     i = 0
     for i < len(prog.structs):
-        out = out + emit_comp_body(dc, ctx, prog.structs[i].name, &emitted_comp)
+        out = out + emit_comp_body(dc, ctx, prog.structs[i].name, &emitted_comp, []string)
         i = i + 1
     i = 0
     for i < len(ets):
         if is_tuple(ets[i]):
-            out = out + emit_comp_body(dc, ctx, ets[i], &emitted_comp)
+            out = out + emit_comp_body(dc, ctx, ets[i], &emitted_comp, []string)
+        i = i + 1
+    i = 0
+    for i < len(ets):                            # inline arrays not reached from a struct/tuple above
+        if is_bounded(ets[i]) or is_fixarr(ets[i]):
+            out = out + emit_comp_body(dc, ctx, ets[i], &emitted_comp, []string)
         i = i + 1
     i = 0                                        # 5. enum bodies AFTER structs/tuples (a payload may embed a value struct/tuple, now complete; nothing embeds an enum by value -- it's always a pointer)
     for i < len(prog.enums):
@@ -16462,7 +16505,7 @@ fn main():
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        if not is_map(ets[i]) and not is_soa(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
+        if not is_map(ets[i]) and not is_soa(ets[i]) and not inline_arr_of_map(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
             out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 6b. soa families (after struct bodies: push takes S_X by value)
@@ -16517,7 +16560,7 @@ fn main():
         i = i + 1
     i = 0                                        # array-of-map FUNCTIONS: after gen_map_fns so Arr_<map>_from/_copy/_eq can call map_*_copy/_eq (their struct + fwd decls were emitted with the other array families above)
     for i < len(ets):
-        if is_map(ets[i]):
+        if is_map(ets[i]) or inline_arr_of_map(ets[i]):   # `[2][K:V]` / `bounded[N][K:V]` defer here for the same reason
             out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     out = out + gen_strlib()

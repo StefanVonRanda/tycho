@@ -1,0 +1,123 @@
+# bounded[N]T with an AGGREGATE element type, in every stored position.
+#
+# `bounded[N]T` emits `struct { T v[N]; tycho_int len; }` — the element is stored
+# INLINE, so its C body has to be complete before the array's. Both emitters used
+# to write the array body with the pointer-shaped arrays, i.e. before the struct /
+# tuple / Option / Result / map / soa bodies, so every one of these programs
+# transpiled and then failed to compile with "array type has incomplete element
+# type". tests/bounded.ty only ever used `bounded[N]int`, which is why the whole
+# aggregate-element surface was unfixtured.
+#
+# Covered here: struct, tuple, map, nested bounded, bytes, fixed-array and
+# Option/Result elements, each in a local, a parameter, a struct field and a
+# return type.
+
+struct Pt:
+    x: int
+    y: int
+
+struct Bag:                                   # FIELD position, aggregate element
+    pts: bounded[4]Pt
+    pairs: bounded[3](int, int)
+    tags: bounded[2]bytes
+    rows: bounded[2]bounded[3]int
+    grid: bounded[2][2]int
+    dicts: bounded[2][string: int]
+
+fn take_pts(ps: bounded[4]Pt) -> int:         # PARAM position
+    t := 0
+    for i in range(0, len(ps)):
+        t = t + ps[i].x + ps[i].y
+    return t
+
+fn take_pairs(qs: bounded[3](int, int)) -> int:
+    t := 0
+    for i in range(0, len(qs)):
+        t = t + qs[i].0 * qs[i].1
+    return t
+
+fn take_rows(rs: bounded[2]bounded[3]int) -> int:
+    t := 0
+    for i in range(0, len(rs)):
+        r := rs[i]
+        for j in range(0, len(r)):
+            t = t + r[j]
+    return t
+
+fn make_pts() -> bounded[4]Pt:                # RETURN position
+    ps: bounded[4]Pt = []
+    push(ps, Pt(1, 2))
+    push(ps, Pt(3, 4))
+    return ps
+
+fn make_opts() -> bounded[3]Option(int):
+    os: bounded[3]Option(int) = []
+    push(os, Some(7))
+    push(os, None)
+    return os
+
+fn make_res() -> bounded[2]Result(int, string):
+    rs: bounded[2]Result(int, string) = []
+    push(rs, Ok(5))
+    push(rs, Err("bad"))
+    return rs
+
+fn main():
+    ps := make_pts()                          # LOCAL position, struct element
+    println("pts " + str(len(ps)) + " " + str(ps[1].y))
+    println("take_pts " + str(take_pts(ps)))
+
+    qs: bounded[3](int, int) = []             # tuple element
+    push(qs, (2, 3))
+    push(qs, (4, 5))
+    println("pairs " + str(len(qs)) + " " + str(qs[0].1))
+    println("take_pairs " + str(take_pairs(qs)))
+
+    ds: bounded[2][string: int] = []          # map element
+    d: [string: int] = []
+    d["a"] = 1
+    push(ds, d)
+    println("dicts " + str(len(ds)) + " " + str(ds[0]["a"]))
+
+    rs: bounded[2]bounded[3]int = []          # nested bounded element
+    r: bounded[3]int = [1, 2]
+    push(rs, r)
+    push(rs, [10, 20, 30])
+    println("rows " + str(len(rs)) + " " + str(len(rs[1])))
+    println("take_rows " + str(take_rows(rs)))
+
+    bs: bounded[2]bytes = []                  # bytes element (shares string's buffer)
+    push(bs, to_bytes("hi"))
+    push(bs, to_bytes("yo"))
+    println("tags " + str(len(bs)) + " " + str(len(bs[0])))
+
+    gs: bounded[2][2]int = []                 # fixed-array element
+    push(gs, [7, 8])
+    println("grid " + str(len(gs)) + " " + str(gs[0][1]))
+
+    os := make_opts()                         # Option / Result elements
+    println("opts " + str(len(os)))
+    match os[0]:
+        Some(v):
+            println("opt0 " + str(v))
+        None:
+            println("opt0 none")
+    es := make_res()
+    println("res " + str(len(es)))
+
+    b := Bag([], [], [], [], [], [])          # every aggregate element as a FIELD
+    push(b.pts, Pt(6, 7))
+    push(b.pairs, (8, 9))
+    push(b.tags, to_bytes("abc"))
+    push(b.rows, [4, 5])
+    push(b.grid, [1, 2])
+    push(b.dicts, d)
+    println("bag " + str(len(b.pts)) + " " + str(b.pts[0].x)
+            + " " + str(b.pairs[0].0) + " " + str(len(b.tags[0]))
+            + " " + str(len(b.rows[0])) + " " + str(b.grid[0][1])
+            + " " + str(b.dicts[0]["a"]))
+
+    c := b                                    # value copy: independent inline storage
+    push(c.pts, Pt(100, 200))
+    println("copy " + str(len(b.pts)) + " " + str(len(c.pts)))
+    println("eq " + str(make_pts() == make_pts()) + " " + str(b.pts == make_pts()))

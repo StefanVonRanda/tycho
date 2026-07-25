@@ -1,0 +1,10 @@
+# An inline-storage array whose element is the enclosing struct is an infinite
+# type: `[2]Node` stores Node BY VALUE, so sizeof(Node) depends on itself. Both
+# compilers reject it; before the inline-array bodies joined the containment DFS
+# both emitted C that cc rejected with "array type has incomplete element type".
+struct Node:
+    n: int
+    kids: [2]Node
+
+fn main():
+    println("unreachable")

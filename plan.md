@@ -2300,7 +2300,7 @@ codegen.
   is a diagnostic-quality change to a form this phase did not introduce. Filed as
   Phase 21.
 
-- [ ] **Phase 19 — `bounded[N]T` of an aggregate element parses but emits uncompilable C (found by Phase 11, out of its docs-only scope)**
+- [x] **Phase 19 — `bounded[N]T` of an aggregate element parses but emits uncompilable C (found by Phase 11, out of its docs-only scope)**
   - Not an accept/reject divergence — **both frontends accept these** — so it did
     not block Phase 11's grammar work, but it makes the compilers' own diagnostic
     false. Both compilers reject a bad element with the text `bounded elements
@@ -2329,6 +2329,141 @@ codegen.
     runs identically on both compilers, with fixtures covering struct, tuple, map,
     nested-`bounded` and `bytes` elements in local, param, field and return
     positions; §5.3.10's caveat note removed; full gate set green.
+
+  - **DONE 2026-07-25.** Direction taken: **(A) MAKE IT WORK for every element
+    type.** No element type was narrowed. The one frontend narrowing that landed
+    is a *new* rejection of a genuinely infinite type (below), not a retreat.
+  - **Plan citations verified before patching.** `src/tychoc.c:1741-1742` and
+    `compiler/tychoc0.ty:1729-1730` (now `:1794-1795` after Phase 18/20 grew the
+    file) were both the `belem == void || belem == bool` guard carrying the text
+    `bounded elements must be int, float, string, a struct, or an array`.
+  - **ROOT CAUSE (single, shared by both emitters, and NOT bounded-specific).**
+    `bounded[N]T` lowers to `struct { T v[N]; tycho_int len; }` — the element is
+    stored **inline**, so `T` must be a *complete* C type at that point, not just
+    forward-declared. Both emitters wrote every composite-array body with the
+    pointer-shaped arrays, i.e. **before** the struct / tuple / Option / Result /
+    map / soa bodies, which is only sound for a dynamic `[T]` (`T *data`).
+    tychoc: `src/tychoc.c` step (2b) of the emission staging; tychoc0: driver
+    step 2 (`gen_arr_type` over every `ets[i]`). The probe proved the bug is
+    **not about `bounded` at all** — plain `[2]Pt`, a fixed array of a struct,
+    failed identically on both compilers. Fixing one necessarily fixes the other;
+    they are the same `size > 0` inline family.
+  - **FIX (tychoc, `src/tychoc.c`).** Inline-storage arrays joined the by-value
+    containment DFS: `inline_arrc`/`needs_body_first` `:10039-10042`, the new
+    `IS_ARRC` branch of `emit_aggregate` `:10044-10070`, the four member-recursion
+    sites now testing `needs_body_first`, step (2b) narrowed to dynamic arrays
+    only, and the inline bodies driven from step (3) next to the struct/Option/
+    Result/tuple bodies (plus a sweep loop for inline arrays no aggregate reaches).
+    `check_finite_types` reserves and zeroes `g_arrc_color` and seeds the DFS from
+    every array type too.
+    *Crash found and fixed during this work*: the first version let a **dynamic**
+    arrc fall through `emit_aggregate`'s trailing `else`, which assumes `IS_TUP`,
+    so `TUP_ID(1026)` went negative and tychoc SIGSEGV'd on `compiler/tychoc0.ty`
+    (gdb: `has_typaram(t=6924)` under `emit_aggregate(t=1026)`,
+    `g_arrtypes[2] = {elem = 8194, size = 0}`). Guarded by the early
+    `IS_ARRC(t) && !inline_arrc(t)` return at `:10045`.
+  - **FIX (tychoc0, `compiler/tychoc0.ty`).** Three defects, all real:
+    1. *Same declaration-order bug.* `is_byval_comp` `:9731`, `comp_dep_types`
+       `:9748-9783` (a struct field / tuple element / array element that is an
+       inline array is now a dependency), `emit_comp_body` `:9785-9808` (emits
+       `gen_arr_type` for the inline families), driver step 2 narrowed to
+       non-inline arrays, and a third topological pass for inline arrays not
+       reached from a struct/tuple. Because the inline bodies now land after the
+       map and soa bodies, `bounded[4][string:int]` and `bounded[4]soa[Pt]` also
+       resolve.
+    2. *`[2][K:V]` / `bounded[N][K:V]` function bodies.* `Arr_f2_map_str_int_set`
+       calls `map_str_int_copy`, whose forward decl is emitted with the map
+       families — the dynamic `[[K:V]]` case was already deferred to the
+       array-of-map pass; the inline families now defer with it
+       (`inline_arr_of_map` `:9739-9746`, used at the two driver call sites).
+    3. *`bytes` element.* `elem_deepcopy` `:7041` treats `bytes` as heap, but
+       `elem_copy_expr` `:7075-7078` matched only `"str"` and fell through to the
+       struct arm, emitting an undeclared `S_bytes_copy`. Added the `bytes` arm
+       (`scopy`, the same length-headered buffer — `cp_field:7100` already did
+       this). This made `bounded[N]bytes` work in **all** positions.
+  - **NEW REJECTION, landed in BOTH compilers together (no divergence).** With
+    inline arrays in the DFS, `struct Node: kids: [2]Node` is a back-edge — a
+    genuinely infinite type (`sizeof(Node)` depends on itself). tychoc reaches
+    its existing struct back-edge `die_at`; tychoc0 had no cycle guard at all, so
+    `emit_comp_body` gained an on-stack path list (passed **by value**, since a
+    tycho parameter is borrowed read-only — the first attempt used
+    `push(stack, …)` on the parameter and was rejected by the compiler) and dies
+    the same way. Before: both ACCEPTed and emitted C that cc rejected. Locked by
+    `tests/reject/inline_arr_self_elem.ty`.
+  - **DIAGNOSTIC — the old text was false, the new text is exactly true.** The
+    guard fires iff the element is `void` or `bool`; every other type now works.
+    Replaced in both compilers (`src/tychoc.c:1742`, `compiler/tychoc0.ty:1795`):
+
+    ```
+    -  bounded elements must be int, float, string, a struct, or an array
+    +  a bounded element cannot be bool or void
+    ```
+
+    Locked by `tests/reject/bounded_elem_bool.ty` (both compilers must reject).
+  - **BEFORE -> AFTER, FRONT/CC/RUN, 121 probes x 2 compilers** (`/tmp/ph19/probe.py`,
+    `cc -O1 -fwrapv -pthread -std=c11`; cells are `tychoc/tychoc0`, `ok` = CC and
+    RUN both clean and the two RUN outputs identical). Divergences **53 -> 16**:
+
+    | element | local | param | field | return | mapval | fixarrof | boundedof | arrelem `[bounded[4]T]` |
+    |---|---|---|---|---|---|---|---|---|
+    | int / float / string / enum / dynarr / fnty | ok/ok | ok/ok | ok/ok | ok/ok | ok/ok | ok/ok | ok/ok | ok/CCFAIL -> **unchanged** |
+    | **struct** | CCFAIL/CCFAIL -> ok/ok | same | same | same | same | same | same | CCFAIL/CCFAIL -> ok/CCFAIL |
+    | **tuple** | CCFAIL/CCFAIL -> ok/ok | same | same | same | same | same | same | CCFAIL/CCFAIL -> ok/CCFAIL |
+    | **soa** | CCFAIL/CCFAIL -> ok/ok | same | same | same | same | same | same | CCFAIL/CCFAIL -> ok/CCFAIL |
+    | **Option / Result** | CCFAIL/ok -> ok/ok | same | same | same | same | same | same | CCFAIL/CCFAIL -> ok/CCFAIL |
+    | **bytes** | ok/CCFAIL -> ok/ok | same | same | same | same | same | same | ok/CCFAIL -> **unchanged** |
+    | **`[N]T` fixarr** | ok/CCFAIL -> ok/ok | same | same | same | same | same | same | ok/CCFAIL -> **unchanged** |
+    | **`[K:V]` map** | ok/CCFAIL -> ok/ok | same | same | same | same | same | same | ok/CCFAIL -> **unchanged** |
+    | **nested `bounded`** | ok/CCFAIL -> ok/ok | same | same | same | same | same | same | ok/CCFAIL -> **unchanged** |
+
+    Non-`bounded` twins fixed by the same change: `[2]Pt`, `[2](int,int)`,
+    `[2][string:int]`, `[2][2]int`, `[2]Option(int)`, `struct Board: cells: [2]Pt`
+    — all `CCFAIL -> ok` on both compilers.
+  - **PER-TYPE DECISION — (A) for every element type; (B) for none.**
+    | element type | decision | why |
+    |---|---|---|
+    | struct, tuple, soa | **(A)** fixed | one declaration-order bug, shared by both emitters; the diagnostic already promised "a struct" |
+    | Option, Result | **(A)** fixed | tychoc-only, same DFS ordering; tychoc0 boxes them as `HOption`/`HResult` so it never had the bug |
+    | bytes | **(A)** fixed | tychoc0-only, a missing `bytes` arm in `elem_copy_expr` — one line |
+    | `[N]T`, `[K:V]`, nested `bounded` | **(A)** fixed | tychoc0-only, same declaration-order bug plus the map-fn deferral |
+    | int, float, string, fixed-width, ptr, enum, `[T]`, fn type | already worked | no change |
+    | bool, void | **(B)** stay rejected | no inline codegen for either (mirrors `[N]bool`); the message now says exactly this and nothing more |
+    | `Channel(T)`, `Task(T)`, handles | stay rejected | affine, §5.3.9 — Phases 18/20, untouched here |
+  - **§5.3.10 rewrite (`docs/spec/03-types.md`).** The temporary `> Note:` naming
+    a portable subset is **deleted**. The element rule is now stated positively:
+    `T` MUST NOT be `bool`, `void`, or an affine handle, and **every other type is
+    a valid element**, aggregates included, "in every stored position — a local, a
+    parameter, a struct field and a return type"; plus a new paragraph making the
+    inline-storage consequence normative (a type reaching back into the `bounded`
+    that contains it is an infinite type and MUST be rejected, as for `[N]T`). The
+    Provenance block gained the new fixtures and the DFS citations.
+  - **Fixtures added (474 -> 478).**
+    - `tests/bounded_elems.ty` + `.out` — struct, tuple, map, nested `bounded`,
+      `bytes`, `[N]E`, `Option`, `Result` elements across local / param / field /
+      return, plus a value-copy independence check and `==`.
+    - `tests/fixarr_aggregate.ty` + `.out` — the `[N]T` twin (struct, tuple and
+      map elements; local, param, field, return), because `tests/` only ever used
+      `[N]<scalar>` and that gap is what hid the bug.
+    - `tests/reject/bounded_elem_bool.ty` — the corrected diagnostic.
+    - `tests/reject/inline_arr_self_elem.ty` — the new infinite-type rejection.
+  - **STILL DIVERGENT, deliberately NOT fixed here — filed as Phase 23.** The 16
+    remaining divergences are all one tychoc0 **name collision**, and they are a
+    *container-of-bounded* position, not an element type: `afam` (`:3801-3804`)
+    names the family for a dynamic `[X]` `Arr_<mangle(X)>`, while `gen_arr_type`
+    names the inline family for `X` itself `Arr_<mangle(X)>` — so `[bounded[4]int]`
+    and `bounded[4]int` both want `Arr_b4_int`. It predates this phase (it already
+    hit `[bounded[4]int]` with an `int` element), also hits `[[2]int]`, and fixing
+    it means re-deriving ~22 `"Arr_" + mangle(...)` sites. `[bounded[4]int:string]`
+    (`Arr_int_hash` undeclared) is the same root cause.
+  - **Gates, each its own foreground command, `env -u LD_PRELOAD`:**
+    - `make test` -> `passed: 478   failed: 0` / `all green`
+    - `make corelib` -> `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+    - `make conc` -> `conc: passed 37   failed 0`
+    - `make fixpoint` -> `ok B == C : tychoc0 reproduces itself byte-identically (35131 lines C)` / `fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)`
+    - `make ilp32` -> `passed: 478   failed: 0` / `all green`
+    - `make spec-check` -> `spec-examples: 7 runnable example(s), all pass`
+    - `make check-links` -> `link check: ok (121 markdown files, no dead relative links)`
+    - `git status --short` -> only the 3 edited sources + the 6 new fixture files; no build spill.
 
 - [x] **Phase 20 — tychoc0 FAIL-OPENS on an affine handle in *every* container and aggregate, not only `bounded` (measured by Phase 18, out of its scope)**
   - Phase 18 fixed `bounded[N]Channel(T)` because that is the divergence Phase 11
@@ -2628,6 +2763,34 @@ codegen.
     text does not. Phase 2's divergence set, not a fail-open.
   - Done when: the underlying-type decision agrees on both compilers across the
     swept space, each distinct rejection is fixture-locked, full gate set green.
+
+- [ ] **Phase 23 — tychoc0's array-family name collision: `[bounded[N]T]` and `bounded[N]T` mangle to the same `Arr_*` (measured by Phase 19, out of its element-type scope)**
+  - `compiler/tychoc0.ty:3801-3804` — `afam(ty)` returns `"Arr_" + mangle(ty)` for
+    an inline array (`bounded[N]T` / `[N]T`) but `"Arr_" + mangle(elem_ty(ty))`
+    for a dynamic `[X]`. `mangle(bounded[4]int)` is `b4_int`, so the family for
+    the type `bounded[4]int` and the family for the *dynamic array of it*,
+    `[bounded[4]int]`, are both `Arr_b4_int`. tychoc0 then emits
+    `Arr_b4_int_push(&_scope, &h_xs, Arr_b4_int_copy(&_scope, h_a))` where the
+    third argument is a whole `Arr_b4_int` but the parameter is `tycho_int`:
+    `error: incompatible type for argument 3 of 'Arr_b4_int_push'`.
+  - Measured 2026-07-25 (`/tmp/ph19/probe.py`, FRONT/CC/RUN): 15 of the 16
+    remaining divergences are this — `[bounded[4]T]` with **every** element type
+    T (int, float, string, enum, struct, tuple, bytes, `[2]int`, `[int]`,
+    `[K:V]`, nested bounded, Option, Result, soa, fn). tychoc is `ok` for all 15.
+    The 16th, `[bounded[4]int: string]` (a `bounded` map key), is the same root
+    cause surfacing as an undeclared `Arr_int_hash`.
+  - **Not a `bounded` element-type bug** — it is a *container-of-inline-array*
+    bug and predates Phase 19 (it already hit `[bounded[4]int]` with a plain `int`
+    element). It also hits `[[2]int]`, a dynamic array of a fixed array.
+  - Scope when taken: give the dynamic family a name derived from the ARRAY type
+    when its element is an inline array (`Arr_arr_b4_int`), consistently across
+    the ~22 `"Arr_" + mangle(...)` sites (`gen_arr_type`, `gen_arr_fns`, the
+    driver's forward typedefs / copy protos / str protos / hash protos, `afam`,
+    `cty`). Programs that use `[bounded[N]T]` or `[[N]T]` do not compile today, so
+    the rename cannot regress a working program — but it is emitted-text churn and
+    `make fixpoint` is load-bearing.
+  - Done when: `[bounded[N]T]`, `[[N]T]` and a `bounded` map key compile and run
+    identically on both compilers, with fixtures; full gate set green.
 
 ## Out of scope
 
