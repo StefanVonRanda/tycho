@@ -748,6 +748,20 @@ codegen.
     proving how expensive a silent width/semantic change is to chase down.
   - Done when: the ruling is recorded here verbatim, then the chosen option is
     implemented in its own phase(s) appended below with their own gates.
+  - **USER RULING, 2026-07-25, verbatim: "keep int, add char_int, do the frontend
+    audit".** Option **(c)** is taken: `s[i]` keeps yielding `int` — no semantic
+    change to any existing program — and a helper is added alongside it. The
+    "frontend audit" half of the ruling is Phase 25 below.
+  - **OPEN QUESTION on the helper's name/shape — asked, not assumed.** The ruling
+    says `char_int`; the recommendation it accepted said `char_at(s, i) -> char`.
+    These are not the same function, and the difference matters:
+    - a *string-index* helper returning `char` (recommendation (c)'s `char_at`) is
+      what makes `s[i] == 'e'` expressible, which is the papercut #1 is about;
+    - a *char→int* conversion already exists — `to_int(char)` / `to_u32(char)`,
+      `docs/spec/03-types.md:78-79` — so a helper by that meaning would be a
+      no-op, and RULE 11 says do not add what is already there.
+    Implementation is Phase 26, held until the name/shape is confirmed. Nothing
+    is guessed: a wrong helper is a permanent public API.
 
 - [x] **Phase 7 — a `void` value grounds a pending `[]` and escapes into codegen (found by Phase 1, NOT fixed there)**
   - Found while probing `T_PENDING` reachability. This program produces no tycho
@@ -3135,6 +3149,64 @@ codegen.
     surface, so it is a judgement call, not automatic.
   - Done when: the 4 `-Wmisleading-indentation` sites are diagnosed as cosmetic or
     real (with the reasoning written down) and fixed; full gate set green.
+
+- [ ] **Phase 25 — SYSTEMATIC AUDIT: every frontend restriction tychoc enforces, checked against tychoc0 (user-ordered, 2026-07-25)**
+  - **Why this exists.** Six consecutive phases each found another instance of the
+    same shape: tychoc enforces a restriction, tychoc0 does not, and tychoc0
+    fail-opens — Phase 9 (`str`/`void` as type names), Phase 15 (non-bool
+    conditions), Phase 18 (`bounded` capacity/element), Phase 20 (affine handles
+    in containers — 50 divergences from an 11-shape sample), Phase 22 (newtype
+    underlying types). Discovering these one at a time is not converging. The
+    ruling is to stop chasing instances and enumerate the population.
+  - **Root asymmetry, established by Phase 20 (`187b9d3`):** tychoc *interns*
+    types — every composite is built through a handful of find-or-create
+    functions, so one check per constructor covers every spelling of that
+    restriction. tychoc0 has no intern step: a type IS its string spelling, built
+    ad hoc at many sites. So tychoc's restrictions are structurally centralized
+    and tychoc0's are structurally scattered — which is exactly why tychoc0 keeps
+    missing whole categories rather than individual cases.
+  - Scope: **enumerate, then measure, then trip.** Not a fixing phase.
+    1. Enumerate every frontend restriction tychoc enforces. Work from tychoc's
+       structure, not from memory: its type interners (Phase 20 found seven —
+       `chan_of`, `arrc_sized_b`, `opt_of`, `res_of`, `tup_of`, `mapc_of`,
+       `func_of`), its `resolve_program` declaration scan, its `die_at` call sites,
+       and its reject-fixture corpus. Each becomes a row: what is forbidden, where
+       tychoc enforces it, the spec clause requiring it (or "unspec'd").
+    2. For each row, construct a probe and run it through BOTH compilers using the
+       FRONT/CC/RUN method (`--emit-c` both sides + separate `cc`; **never** raw
+       `rc` — see Phase 11's method note). Record the frontend verdict per side.
+    3. Classify: AGREE / tychoc0-FAIL-OPEN / tychoc-FAIL-OPEN / needs-a-ruling.
+       Flag separately any fail-open whose emitted C **compiles and runs** — those
+       are the dangerous ones (Phase 20 found four).
+  - **Deliverable is the measurement**, written to
+    `docs/internals/frontend-restriction-audit-<date>.md`: the full table, the
+    method as code, and totals. A table showing zero new divergences is a
+    legitimate and valuable outcome.
+  - Non-scope: **fixing**. Fixes are separate phases appended from the findings,
+    prioritised fail-open-that-runs first. Resist fixing as you go — Phase 20
+    showed that fixing per-instance produces scattered ad-hoc checks, and the
+    right fix may be one shared choke point covering many rows at once.
+  - Subsumes Phase 22 (newtype underlying types); close 22 by reference if the
+    audit covers it.
+  - Done when: the audit doc lists every enumerated restriction with a probe and a
+    both-compiler verdict; the enumeration method is stated so a reader can judge
+    its completeness; every divergence is filed as a new phase, ranked by whether
+    it runs; full gate set green (this phase changes no compiler source).
+
+- [ ] **Phase 26 — HELD pending a name/shape confirmation: the `char` ergonomics helper (Phase 6's ruling (c))**
+  - Blocked on the open question recorded under Phase 6: the ruling says
+    `char_int`, the accepted recommendation said `char_at(s, i) -> char`, and a
+    char→int conversion already exists as `to_int(char)`
+    (`docs/spec/03-types.md:78-79`). Do not start until the intended function is
+    confirmed — a public API name is not reversible once shipped.
+  - Scope when unblocked: add the helper to both compilers' builtin tables plus
+    the runtime if it needs one, spec it in `docs/spec/16-builtins.md` and
+    `appendix-d-builtins.md`, note the `s[i] -> int` rationale in
+    `docs/spec/03-types.md` §5.2.4 so the wart is explained rather than silent,
+    and fixture it on both compilers.
+  - Done when: the helper compiles and runs identically on both compilers, the
+    spec documents it and the `s[i]` rationale, `s[i]` semantics are UNCHANGED
+    (that is the whole point of ruling (c)), full gate set green.
 
 ## Out of scope
 
