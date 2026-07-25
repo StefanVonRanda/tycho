@@ -4411,6 +4411,44 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     `git status --short` before the commit: `M src/tychoc.c` plus the two new fixture
     files only — no build spill.
 
+- [ ] **Phase 38 — NO GATE EVER BUILDS `tychoc` ITSELF UNDER A SANITIZER; that is how Phase 37's overrun survived (filed by the main agent, 2026-07-25)**
+  - **Verified, not inferred.** `tests/run.sh:73-76` builds the **emitted C** of each
+    fixture with `-fsanitize=address,undefined -fno-sanitize-recover=all`. Every
+    sanitizer mention in `Makefile` + `scripts/ci.sh` is about that lane or about
+    disabling it for `-m32` (`Makefile:85`, `:202`, `:214` — 32-bit ASan is absent under
+    multilib). **Nothing builds `src/tychoc.c` with `-fsanitize`.** So the compiler's own
+    memory safety is unmeasured by every gate, in either direction.
+  - **This is the coverage gap that let Phase 37 happen.** A stack-buffer-overflow WRITE
+    (`src/tychoc.c:1920`, 4 bytes past a 1024-byte frame) sat in the reference compiler
+    reachable from a valid program, through 16 phases of this plan and a full 1.0 freeze,
+    because the harness sanitizes what tychoc *produces* and never tychoc *itself*.
+    Phase 37 found it only because Phase 29's ruling forced a coupling trace, and the
+    agent happened to build an ASan tychoc by hand to check its own widening.
+  - Scope when taken: add a lane (suggest `make asan-self`) that builds `src/tychoc.c`
+    with `-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1` and runs THAT
+    binary over the fixture corpus — compiling each fixture, not running it, since the
+    target is the compiler's own execution. Wire into `scripts/ci.sh`.
+    - Expect it to be SLOW (a sanitized compiler over ~500 fixtures). Measure the cost
+      before wiring it in; if it is prohibitive for every-run CI, gate it on a subset
+      chosen for type-system coverage (generics, deep nesting, large aggregates — the
+      shapes that index fixed arrays) and say explicitly what is not covered.
+    - Prove it works the way Phase 3 was required to: show it GREEN, then show it RED by
+      reverting Phase 37's fix (or stubbing an overrun), then restore. A gate never seen
+      to fail is not a gate.
+  - **Expect it to find more than Phase 37 did.** Phase 37 swept `[256]` literals and
+    every growing `TBL_ENSURE` table, but that was a targeted grep for one shape. A
+    sanitized compiler over the whole corpus tests every path the fixtures reach. Budget
+    for the lane's first run producing a list of findings, each of which becomes its own
+    phase — do NOT fix them inside this phase.
+  - Same-family note: Phase 24 records that `runtime/tycho_rt.c` is never compiled by
+    `make` either (it is `awk`ed into a string literal), so its warning-cleanliness is
+    also ungated. Two different surfaces, same blind spot — the gates cover emitted
+    programs thoroughly and the toolchain's own sources barely at all. Worth deciding
+    both together.
+  - Done when: a sanitized-tychoc lane exists, is demonstrated green AND demonstrated
+    red, its cost is measured and its coverage stated honestly, findings are filed as
+    separate phases, and the full gate set stays green.
+
 ## Out of scope
 
 Not addressed by this plan; listed so they are not silently absorbed:
