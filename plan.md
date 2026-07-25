@@ -1371,7 +1371,10 @@ codegen.
   - Done when: `make` compiles `src/tychoc.c` with zero warnings; full gate set
     green.
 
-- [ ] **Phase 14 — tychoc0 does not check that an `if` condition is a bool (found by Phase 7, NOT fixed there)**
+- [x] **Phase 15 — tychoc0 does not check that an `if` condition is a bool (found by Phase 7, NOT fixed there)**
+  - *(Renumbered from 14 → 15 by the main agent: Phase 4 had already filed a
+    different Phase 14 for `tychoc`'s own `-Wmissing-field-initializers`. Two
+    phases independently claimed the same number; this is the later one.)*
   - Found by Phase 7's `void`-as-a-value sweep. `if nop():` escapes tychoc0's
     front end with no diagnostic; tychoc rejects it cleanly with
     `if condition must be bool`.
@@ -1401,6 +1404,147 @@ codegen.
     located diagnostic; a `tests/reject/` fixture locks it (one file per distinct
     rejection); legal bool conditions still compile and run on both; full gate
     set green.
+  - **DONE 2026-07-25.**
+
+    **Spec citation — tychoc is the correct side, quoted verbatim:**
+    - `docs/spec/10-statements.md:26` (§14.2 `if`/`elif`/`else`): "Each
+      condition MUST be `bool`." The MUST covers `elif` explicitly ("Each"),
+      and `elif` is stated on `:28` to be "exactly sugar for an `else` block
+      containing a single nested `if`".
+    - `docs/spec/10-statements.md:52` (§14.4 Loops): "**Condition (`while`)
+      form** — `for C:` runs its body while the `bool` condition `C` holds."
+    - `docs/spec/09-expressions.md:48`: "**Logical** (`and`, `or`, `not`)
+      operate on `bool` and yield `bool`."
+    - Nothing in either file defines truthiness for any non-`bool` type.
+      tychoc's stricter behaviour is what the spec mandates; tychoc0's
+      acceptance was the divergence. **Verified the correct side BEFORE fixing.**
+
+    **Corrected line citations (all re-verified after the edit):**
+    | what | where |
+    |---|---|
+    | tychoc `if` check | `src/tychoc.c:6464` `die_at(s->line, "if condition must be bool")` |
+    | tychoc `for` check | `src/tychoc.c:6562-6563` `die_at(s->line, "for condition must be bool")` |
+    | tychoc `not` check | `src/tychoc.c:5571-5572` |
+    | tychoc `and`/`or` check | `src/tychoc.c:5589-5591` |
+    | tychoc0 NEW `if` check | `compiler/tychoc0.ty:8781` (in `gen_stmt`'s `SIf`) |
+    | tychoc0 NEW `for` check | `compiler/tychoc0.ty:8795` (in `gen_stmt`'s `SWhile`) |
+    | tychoc0 pre-existing `not` check | `compiler/tychoc0.ty:6316` |
+    | tychoc0 pre-existing `and`/`or` check | `compiler/tychoc0.ty:6404` |
+    | `elif` → nested `SIf` at parse | `compiler/tychoc0.ty:1185` |
+    | value-`if` re-enters `gen_stmt` | `compiler/tychoc0.ty:8519` |
+
+    **Every conditional position — enumerated from the `enum Stmt` declaration
+    (`compiler/tychoc0.ty:478-502`), which has exactly two condition-bearing
+    variants (`SIf` :485, `SWhile` :486), cross-checked against the only two
+    call sites of `cond_unwrap` (`:8331` def; `:8786`, `:8804` uses).**
+    Probes run as `tychoc <f>` vs `tychoc0 <f> --emit-c`:
+
+    | # | position | probe | tychoc0 BEFORE | tychoc0 AFTER | tychoc (oracle) |
+    |---|---|---|---|---|---|
+    | 1 | `if` int | `if 1:` | exit 0, ran on C truthiness | `line 2: if condition must be bool` | `p1.ty:2: error: if condition must be bool` |
+    | 2 | `if` str | `if "s":` | exit 0 | `line 2: if condition must be bool` | `p2.ty:2: error: if condition must be bool` |
+    | 3 | `if` void call | `if nop():` | exit 0 | `line 5: if condition must be bool` | `p3.ty:5: error: if condition must be bool` |
+    | 4 | `for` while-form | `for 1:` | exit 0 | `line 2: for condition must be bool` | `p4.ty:2: error: for condition must be bool` |
+    | 5 | `elif` | `elif "s":` | exit 0 | `line 5: if condition must be bool` | `p5.ty:5: error: if condition must be bool` |
+    | 6 | value-`if` (SValDecl) | `v := if 1:` | exit 0 | `line 2: if condition must be bool` | `p6.ty:2: error: if condition must be bool` |
+    | 7 | `not` operand | `if not 1:` | **already rejected** | unchanged | already rejected |
+    | 8 | `and` operand | `if b and 1:` | **already rejected** | unchanged | already rejected |
+    | 9 | `or` operand | `if 1 or b:` | **already rejected** | unchanged | already rejected |
+
+    **6 of 9 conditional positions were unchecked; all 6 fixed. 3 (`and`/`or`/
+    `not`) already had checks (`:6316`, `:6404`) — the plan's "no condition
+    typecheck at all" was true of statement conditions only, not of the logical
+    operators. Those three were left alone (their wording differs from tychoc's
+    and belongs to the Phase 2/3 divergence set, not to a new entry).**
+    Positions 5 and 6 need no separate code: `elif` is parsed into a nested
+    `SIf` (`:1185`) and `SValDecl` calls `gen_stmt` on its rewritten control
+    statement (`:8519`), so both land on the single `SIf` guard. Verified by
+    probe, not by assumption. Line numbers and wording match tychoc exactly, so
+    this adds **zero** new entries to the Phase 2 divergence set.
+
+    **Legal-forms control — every legal condition still compiles AND runs, with
+    byte-identical output from both compilers** (`/tmp/ph15/legal.ty`, built
+    `tychoc legal.ty -o legal.tychoc` and `tychoc0 legal.ty --emit-c | cc`;
+    `diff <(./legal.tychoc) <(./legal.tychoc0)` → empty, "IDENTICAL"):
+    ```
+    bool var            <- if b:
+    comparison          <- if x < 5:
+    and/or/not          <- if x == 3 and not b or positive(x):
+    bool call           <- if positive(x):
+    in test             <- if "a" in m:
+    array elem via local<- ae := arr[0]; if ae:
+    struct field        <- if p.flag:
+    bool literal        <- if true:
+    string compare      <- if s == "hi":
+    not paren           <- if not (x > 9):
+    while ran 3         <- for i < 3:
+    while call 3        <- for positive(3 - j):
+    value-if yes        <- v := if b: "yes" else: "no"
+    elif taken          <- elif x > 1:
+    ```
+    No over-tightening: 14 legal forms, 14 identical lines on both sides.
+
+    **Did tychoc0.ty's own source trip the new check? NO.** This was the single
+    biggest risk (16423 lines, the largest real-world condition corpus in the
+    repo). Verified directly, not inferred:
+    `./tychoc compiler/tychoc0.ty -o /tmp/ph15/tychoc0` → `built`, then
+    `/tmp/ph15/tychoc0 compiler/tychoc0.ty --emit-c` → `rc=0`, 34902 lines of C,
+    empty stderr. So the new compiler compiles ITSELF clean: every condition in
+    tychoc0.ty was already a genuine `bool`. `make fixpoint` then confirms the
+    self-reproduction is byte-identical. Neither a latent bug nor an
+    over-tightening — the check found nothing to complain about in the compiler's
+    own source, which is the strongest available evidence it is not over-tight.
+
+    **Gate set — each run as its own foreground `env -u LD_PRELOAD make <t>`:**
+    ```
+    make test        passed: 446   failed: 0 / all green      (440 + 6 new fixtures)
+    make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc        conc: passed 36   failed 0
+    make fixpoint    ok   B == C : tychoc0 reproduces itself byte-identically (34902 lines C)
+                     fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32       passed: 446   failed: 0 / all green
+    make spec-check  spec-examples: 7 runnable example(s), all pass
+    make check-links link check: ok (121 markdown files, no dead relative links)
+    ```
+    `git status --short`: only the intended files, no build spill.
+
+    **Fixtures (one per distinct rejection — the compiler halts at the first
+    error, so one file cannot lock two):** `tests/reject/cond_if_int.ty`,
+    `cond_if_str.ty`, `cond_if_void.ty`, `cond_elif_str.ty`, `cond_for_int.ty`,
+    `cond_value_if_int.ty`. The reject lane is differential
+    (`tests/run.sh:142-163`), so each asserts BOTH compilers reject.
+
+- [ ] **Phase 16 — `if <bool array element>:` makes tychoc0 emit invalid C (found by Phase 15, out of its scope)**
+  - **PRE-EXISTING, NOT introduced by Phase 15** — reproduced on the *baseline*
+    tychoc0 built from `HEAD` before the Phase 15 edit, byte-for-byte the same
+    broken line. Phase 15 only found it, while building its legal-forms control.
+  - Repro (`/tmp/ph15/bug16.ty`):
+    ```
+    fn main():
+        arr := [true, false]
+        if arr[0]:
+            println("hit")
+    ```
+    tychoc: `built` → runs → prints `hit`. tychoc0: exits 0 and emits
+    ```
+    if ({ Arr_bool  _a = h_arr; _a.data[hi_bchk(0LL, _a.len)]; }) {
+    ```
+    which `cc` rejects: `error: expected expression before '{' token`.
+  - Root cause, read not guessed: `gen_expr` lowers a checked array read to a
+    GCC statement-expression `({ … })`, and `cond_unwrap`
+    (`compiler/tychoc0.ty:8331`, applied at `:8786` and `:8804`) strips "only a
+    single fully-parenthesised group (first byte `(`)" — which here removes the
+    `(` that makes `({ … })` a statement-expression, leaving a bare `{ … }`.
+  - Class: **fail-open into broken output**, not a decision divergence — tychoc0
+    accepts the program (exit 0) and hands the user C that will not compile.
+    Different failure mode from Phase 15, hence a separate phase.
+  - Scope when taken: `cond_unwrap` must not strip when the group is a
+    statement-expression (i.e. when the byte after `(` is `{`). Check the same
+    hazard for any other `cond_unwrap`-style paren stripping, and add a
+    `tests/` fixture that COMPILES AND RUNS `if arr[0]:` on both compilers
+    (a `tests/reject/` fixture is wrong here — the program is legal).
+  - Not attempted in Phase 15: out of scope (Phase 15 is condition
+    *typechecking*), and it is an emitter defect, not a front-end one.
 
 ## Out of scope
 

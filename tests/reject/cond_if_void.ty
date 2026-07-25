@@ -1,0 +1,8 @@
+# §14.2 (docs/spec/10-statements.md:26): a void call produces no value, so it
+# cannot be a condition. Found by plan.md Phase 7's void sweep, fixed in 15.
+fn nop():
+    return
+
+fn main():
+    if nop():
+        println("y")

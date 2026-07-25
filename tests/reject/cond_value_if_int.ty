@@ -1,0 +1,8 @@
+# §14.2 / §13.5: a value-producing `if` is still an `if` -- its condition MUST
+# be bool. Locks the SValDecl path, which re-enters the same codegen site.
+fn main():
+    v := if 1:
+        1
+    else:
+        2
+    println(str(v))

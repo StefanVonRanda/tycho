@@ -1,0 +1,5 @@
+# §14.2 (docs/spec/10-statements.md:26): a `str` is not a condition either --
+# the fail-open was general, not int-specific (plan.md Phase 15).
+fn main():
+    if "s":
+        println("y")

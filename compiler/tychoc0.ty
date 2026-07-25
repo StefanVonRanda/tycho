@@ -8770,6 +8770,15 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             push(types, result_ok(rty))
             return code
         SIf(cond, then_body, else_body, _sl):
+            # §14.2 (docs/spec/10-statements.md:26): "Each condition MUST be
+            # `bool`." Tycho has no truthiness. Without this tychoc0 fail-opened:
+            # `if 1:` / `if "s":` / `if nop():` all emitted legal C that RAN on
+            # C's truthiness -- a DECISION divergence from tychoc, which rejects
+            # all three at src/tychoc.c:6464. `elif` is parsed into a nested SIf
+            # (:1185) and a value-`if` re-enters here via SValDecl (:8519), so
+            # this one site covers every `if`-shaped condition.
+            if type_of(cond, names, types, dc, ctx) != "bool":
+                die_at(dc, _sl, "if condition must be bool")
             d1 := str(ctx.depth + 1)              # each branch is its own block arena
             bc := enter_block(dc, ctx, len(names))
             op := "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n"
@@ -8779,6 +8788,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 out = out + " else {\n" + op + gen_block(else_body, names, types, dc, bc) + fr + "    }"
             return out + "\n"
         SWhile(cond, body, _sl):
+            # §14.4 (docs/spec/10-statements.md:52): "`for C:` runs its body
+            # while the `bool` condition `C` holds." Same fail-open as SIf above;
+            # tychoc rejects at src/tychoc.c:6562 with this exact wording.
+            if type_of(cond, names, types, dc, ctx) != "bool":
+                die_at(dc, _sl, "for condition must be bool")
             wl_check(cond, body, _sl, dc)         # warn on a `for COND:` whose cond never advances
             fnm, fsf, fty := fuse_detect(body, names, types, dc, ctx, cond, true)
             d1 := str(ctx.depth + 1)              # per-iteration block arena
