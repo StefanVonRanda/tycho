@@ -3193,12 +3193,19 @@ codegen.
     its completeness; every divergence is filed as a new phase, ranked by whether
     it runs; full gate set green (this phase changes no compiler source).
 
-- [ ] **Phase 26 — HELD pending a name/shape confirmation: the `char` ergonomics helper (Phase 6's ruling (c))**
-  - Blocked on the open question recorded under Phase 6: the ruling says
-    `char_int`, the accepted recommendation said `char_at(s, i) -> char`, and a
-    char→int conversion already exists as `to_int(char)`
-    (`docs/spec/03-types.md:78-79`). Do not start until the intended function is
-    confirmed — a public API name is not reversible once shipped.
+- [ ] **Phase 26 — `char_at(s, i) -> char`, the ergonomics helper (Phase 6's ruling (c))**
+  - **UNBLOCKED 2026-07-25.** The open question recorded under Phase 6 was put to
+    the user, who confirmed: **`char_at(s, i) -> char`** — the string-index helper
+    returning a `char`, so `char_at(s, 1) == 'e'` is expressible. NOT a char→int
+    conversion (that already exists as `to_int(char)` / `to_u32(char)`,
+    `docs/spec/03-types.md:78-79`, and adding a duplicate was explicitly rejected).
+  - **`s[i]` semantics are UNCHANGED and that is the point of ruling (c)**:
+    `s[1]` still yields `int` (`101` for `"hello"`), so no existing program
+    changes meaning. The helper sits alongside it.
+  - Bounds behaviour MUST match `s[i]`: `docs/spec/03-types.md:86` says indexing
+    "aborts if `i` is out of bounds". `char_at` aborts identically — do not invent
+    a different failure mode (no `Option`, no clamp, no sentinel) without a
+    separate ruling.
   - Scope when unblocked: add the helper to both compilers' builtin tables plus
     the runtime if it needs one, spec it in `docs/spec/16-builtins.md` and
     `appendix-d-builtins.md`, note the `s[i] -> int` rationale in
