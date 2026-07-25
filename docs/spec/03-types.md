@@ -251,12 +251,12 @@ capacity `N`. The capacity is part of the type: `bounded[4]int` and
 `bounded[8]int` are distinct types, and both are distinct from `[4]int` and
 from `[int]`.
 
-`N` MUST be a positive integer **literal**. A capacity of `0`, a non-integer
-literal, an absent capacity, and a negated literal (`-1` is a unary minus
-applied to a literal, not a literal) MUST all be rejected. A capacity named by
-an `int` `const` — which a fixed-size `[C]T` does accept (§5.3.2) — is **not**
-portable here: conforming implementations disagree on it today, so a program
-MUST NOT depend on it.
+The capacity MUST be written either as a positive integer **literal** or as the
+name of a positive `int` `const` — the same two spellings a fixed-size
+[`[C]T`](#532-fixed-size-arrays-nt) accepts (§5.3.2). A capacity of `0`, a
+non-integer literal, an absent capacity, a negated literal (`-1` is a unary
+minus applied to a literal, not a literal), a name that is not a `const`, and a
+`const` whose value is not a positive integer MUST all be rejected.
 
 The element type `T` MUST NOT be `bool` or `void`, mirroring the bracket-array
 element-type restriction of §5.3.1. An affine handle type — including
@@ -272,10 +272,18 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 
 > Provenance: the `bounded` branch of `parse_type_inner`,
 > `src/tychoc.c:1727-1743` (capacity `:1731-1738`, element restriction
-> `:1741-1742`); its twin `compiler/tychoc0.ty:1718-1731`. Rejections: slice
-> `src/tychoc.c:4754-4755`, `pop` `:5396-5397`, `reserve` `:5418`, over-long
-> literal `:5759-5761`. The full-push trap is emitted at `:10593-10595`.
-> Fixtures: `tests/bounded.ty`, `tests/reject/fixarr_into_bounded_arg.ty`.
+> `:1741-1742`); its twin `compiler/tychoc0.ty:1718-1750`, whose `const`
+> capacity is deferred as `[b#W]T` and resolved in `mangle_type` (`:2859`),
+> with the unresolved-name guard at `:11211`. The affine-element rejection is a
+> type-intern choke point in `src/tychoc.c` (`arrc_sized_b:669-671`, messages
+> `:567` and `:607`) and an explicit check at `compiler/tychoc0.ty:1746-1749`.
+> Rejections: slice `src/tychoc.c:4754-4755`, `pop` `:5396-5397`, `reserve`
+> `:5418`, over-long literal `:5759-5761`. The full-push trap is emitted at
+> `:10593-10595`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
+> `tests/reject/fixarr_into_bounded_arg.ty`,
+> `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
+> `tests/reject/bounded_nonconst_cap.ty`,
+> `tests/reject/bounded_const_cap_zero.ty`.
 
 > Note: the type grammar admits an aggregate element (a `struct`, tuple, `soa`,
 > `Option`, `Result`, map, fixed-size array, `bytes`, or a nested `bounded`) and

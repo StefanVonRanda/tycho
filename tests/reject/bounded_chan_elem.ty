@@ -1,0 +1,9 @@
+# A Channel(T) handle is affine and MUST NOT be stored in a container or aggregate
+# (spec docs/spec/03-types.md 5.3.9, restated for `bounded` in 5.3.10). tychoc fails
+# closed at its type-intern choke point (src/tychoc.c:669-671); tychoc0 used to
+# FAIL-OPEN here and emit C that did not compile. Phase 18.
+fn take(a: bounded[4]Channel(int)) -> int:
+    return len(a)
+
+fn main():
+    println(str(take([])))

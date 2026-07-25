@@ -1,0 +1,41 @@
+# bounded[C]T -- the capacity named by an int `const`, the same spelling a
+# fixed-size [C]T accepts (docs/spec/03-types.md 5.3.2, 5.3.10). Exercised in all
+# four type positions: struct field, function parameter, return type, and local.
+# tychoc has always accepted this (src/tychoc.c:1730-1737); tychoc0 rejected it at
+# parse until Phase 18 taught it the deferred "[b#W]T" encoding.
+
+const CAP = 4
+const SMALL = 2
+
+struct Pool:
+    slots: bounded[CAP]int
+
+fn fill(p: bounded[CAP]int) -> int:
+    total := 0
+    for i in range(0, len(p)):
+        total = total + p[i]
+    return total
+
+fn make() -> bounded[CAP]int:
+    return [1, 2, 3]
+
+fn main():
+    p := Pool([])
+    push(p.slots, 10)
+    push(p.slots, 20)
+    println("field len " + str(len(p.slots)))
+    println("param sum " + str(fill(p.slots)))
+
+    r := make()                           # return position
+    println("ret " + str(r) + " len " + str(len(r)))
+
+    local: bounded[CAP]int = [5, 6, 7, 8]  # local, filled to capacity
+    println("local " + str(local))
+    println("local sum " + str(fill(local)))
+
+    tiny: bounded[SMALL]int = [1]         # a second const, a distinct capacity
+    push(tiny, 2)
+    println("tiny " + str(tiny) + " len " + str(len(tiny)))
+
+    same: bounded[4]int = [1, 2, 3, 4]    # the literal spelling is the same type
+    println("same " + str(fill(same)))

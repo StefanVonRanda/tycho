@@ -1,0 +1,6 @@
+# A `bounded` capacity named by an IDENT must resolve to a positive int `const`
+# (docs/spec/03-types.md 5.3.10, 5.3.2). `NOPE` is not a const, so this must be
+# rejected -- the guard that keeps Phase 18's widening from being a fail-open.
+fn main():
+    v: bounded[NOPE]int = []
+    println(str(len(v)))

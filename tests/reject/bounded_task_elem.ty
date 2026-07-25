@@ -1,0 +1,8 @@
+# Same rule as bounded_chan_elem, for the other affine concurrency handle: a
+# Task(T) MUST NOT be a `bounded` element (docs/spec/03-types.md 5.3.9, 5.3.10).
+# tychoc0 used to accept this and emit uncompilable C. Phase 18.
+fn take(a: bounded[4]Task(int)) -> int:
+    return len(a)
+
+fn main():
+    println(str(take([])))

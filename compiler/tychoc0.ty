@@ -1718,17 +1718,36 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
     if toks[pos].kind == TIdent and toks[pos].text == "bounded":   # bounded[N]T: inline fixed-cap, variable-count
         pos = pos + 1
         expect(toks, &pos, TLBracket)
-        if toks[pos].kind != TInt:
+        # Capacity N: an int literal OR an int `const` NAME -- the same two spellings a
+        # fixed [N]T accepts (:1669 literal, :1686 const name; spec 03-types.md 5.3.2,
+        # and src/tychoc.c:1730-1737 "same as a fixed [N]T"). The const form is encoded
+        # "[b#W]T" here and resolved to "[bN]T" by mangle_type (:2859), exactly as the
+        # fixed array's "[#W]T" is -- the parser has no const table, the mangle pass does,
+        # and that pass always runs when a const is present (dofold, :3451).
+        bpfx := ""
+        if toks[pos].kind == TInt:
+            bcap := lit_to_int(toks[pos].text)
+            if bcap <= 0:
+                die("parse: line " + str(toks[pos].line) + ": a bounded capacity must be positive")
+            bpfx = "[b" + str(bcap) + "]"
+        elif toks[pos].kind == TIdent:
+            bpfx = "[b#" + toks[pos].text + "]"
+        else:
             die("parse: line " + str(toks[pos].line) + ": bounded needs an integer capacity: bounded[N]T")
-        bcap := lit_to_int(toks[pos].text)
-        if bcap <= 0:
-            die("parse: line " + str(toks[pos].line) + ": a bounded capacity must be positive")
         pos = pos + 1
         expect(toks, &pos, TRBracket)
         belem := parse_type_d(toks, &pos, depth + 1)
         if belem == "void" or belem == "bool":
             die("parse: line " + str(toks[pos].line) + ": bounded elements must be int, float, string, a struct, or an array")
-        return "[b" + str(bcap) + "]" + belem
+        # An affine concurrency handle may not be stored in a container or aggregate
+        # (spec 03-types.md 5.3.9/5.3.10). tychoc fails closed at its type-intern choke
+        # point (src/tychoc.c:669-671 arrc_sized_b, messages :567 and :607); tychoc0 has
+        # no intern step, so the bounded element is checked here.
+        if has_prefix(belem, "Channel("):
+            die("parse: line " + str(toks[pos].line) + ": a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead")
+        if has_prefix(belem, "Task("):
+            die("parse: line " + str(toks[pos].line) + ": a task handle cannot be stored in a container or aggregate -- wait(t) first")
+        return bpfx + belem
     if toks[pos].kind == TIdent and toks[pos].text == "fn":    # function type fn(P...) [-> R]
         pos = pos + 1
         expect(toks, &pos, TLParen)
@@ -2837,7 +2856,18 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         if cv <= 0:
             die("resolve: a fixed-size array length must be positive")
         return "[" + str(cv) + "]" + mangle_type(m, celem)
-    if is_fixarr(ty):                             # [N]T fixed: keep the size, mangle the element (1.6)
+    if has_prefix(ty, "[b#"):                     # [b#W]T: a bounded whose capacity is an int `const` W -- resolve W to its literal now, exactly as [#W]T above (parser encoding at :1734)
+        bi := find(ty, "]")
+        bnm := substr(ty, 3, bi)
+        belem := substr(ty, bi + 1, len(ty))
+        bidx := const_idx(m, bnm)
+        if bidx < 0:
+            die("resolve: a bounded capacity must be an integer literal or an int `const` -- '" + bnm + "' is not a const")
+        bv := const_int(m.constv[bidx])
+        if bv <= 0:
+            die("resolve: a bounded capacity must be positive")
+        return "[b" + str(bv) + "]" + mangle_type(m, belem)
+    if is_fixarr(ty):                           # [N]T fixed: keep the size, mangle the element (1.6)
         return "[" + str(fixarr_size(ty)) + "]" + mangle_type(m, elem_ty(ty))
     if is_bounded(ty):                            # bounded[N]T: keep the "[bN]" form, mangle the element
         return "[b" + str(bounded_cap(ty)) + "]" + mangle_type(m, elem_ty(ty))
@@ -11174,6 +11204,12 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             # at parse (src/tychoc.c:1818-1820); say the same thing.
             if has_prefix(t, "[#"):
                 die_at(dc, _sl, "a fixed-size array length must be an integer literal or an int `const` -- '" + substr(t, 2, find(t, "]")) + "' is not")
+            # Same shape for a bounded capacity named by a const ("[b#W]T", parser :1734):
+            # a surviving "[b#" means W is not a const in this program, so the mangle pass
+            # never resolved it. tychoc dies on the capacity itself, at parse
+            # (src/tychoc.c:1734-1735); say the same thing.
+            if has_prefix(t, "[b#"):
+                die_at(dc, _sl, "a bounded capacity must be an integer literal or an int `const` -- '" + substr(t, 3, find(t, "]")) + "' is not")
             collect_expr(&acc, e, names, types, dc, ctx)
             nt_check(dc, ctx, t, e, names, types, "'" + n + "'", _sl)   # newtype identity: RHS must match the annotation
             if base_type_mismatch(dc, ctx, t, e, names, types):         # base-type mismatch on an annotated decl (x:int="h"): clean diagnostic

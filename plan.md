@@ -1441,6 +1441,29 @@ codegen.
   spellings, which are *identical* to their user spellings (`:1717`;
   `appendix-a-grammar.md:82,:84`) and so cannot diverge by construction.
 
+  **RE-VERIFIED 2026-07-25 by Phase 18 — the method was ALREADY sound, and the
+  zero-divergence conclusion SURVIVES.** Phase 11 later found that comparing
+  `rc` of `tychoc f -o out` against `tychoc0 f` conflates frontend and `cc`
+  status, and Phase 18 was told to assume Phase 10 might have used it. It did
+  not. Phase 10's harness is still on disk and was read: `/tmp/ph10/sweep.py:61-67`
+  runs **`--emit-c` on both sides** —
+  `[TYCHOC, path, "--emit-c", "-o", out_c]` and `[TYCHOC0, path, "--emit-c"]` —
+  and never invokes `cc`, so both columns are the FRONTEND verdict, the same
+  surface `tests/run.sh:148-212` compares. The nesting harness
+  `/tmp/ph10/sweep2.py:28-29` does the same. Both were re-run by Phase 18:
+  ```
+  pre-Phase-18 tychoc0   sweep.py  TOTAL 35 probes, DIVERGENT 0
+                         sweep2.py nesting probes: 10, DIVERGENT 0
+  post-Phase-18 tychoc0  sweep.py  TOTAL 35 probes, DIVERGENT 0
+                         sweep2.py nesting probes: 10, DIVERGENT 0
+  ```
+  So the 45/0 table stands, and Phase 18's compiler change did not perturb it.
+  One caveat now recorded honestly: because both columns are frontend-only, a
+  row reading `accept` means "the frontend accepted", **not** "the emitted C
+  compiles" — the `...int` param row is accept/accept on the frontend and that
+  is exactly what the phase was measuring. Nothing in the table was ever an
+  `rc`-conflation artefact.
+
 - [x] **Phase 11 — `bounded[N]T` is implemented by both compilers but absent from the spec grammar (found by Phase 10, out of its scope)**
   - Both compilers accept `bounded[N]T` as a type form — `compiler/tychoc0.ty:1718-1731`
     parses it and `tests/bounded.ty:6,:8,:34` exercises it in a struct field, a
@@ -2050,7 +2073,7 @@ codegen.
     `tests/reject/match_wildcard_not_last.ty` line 12 from **both** compilers;
     full gate set green including `make fixpoint`.
 
-- [ ] **Phase 18 — two `bounded[N]T` accept/reject divergences between the compilers (found by Phase 11, out of its docs-only scope)**
+- [x] **Phase 18 — two `bounded[N]T` accept/reject divergences between the compilers (found by Phase 11, out of its docs-only scope)**
   - Same normative class as Phases 9 and 15: `00-conventions.md` §1.3 makes the
     accept/reject **decision** normative, and here the two compilers decide
     differently. Phase 11 was docs-only and could not touch either compiler, so
@@ -2089,6 +2112,194 @@ codegen.
     direction is chosen; §5.3.10 and the `Type` production are updated to match if
     (a) resolves toward accept; full gate set green.
 
+  **DONE 2026-07-25. Both divergences closed toward the direction the sources and
+  the spec already indicated. Method: FRONT/CC/RUN per compiler, `--emit-c` on
+  BOTH sides (`/tmp/ph18/probe.py`), never an `rc` comparison.**
+
+  **1. Every citation in this phase's own text was opened and VERIFIED.**
+
+  | Claim | Verdict |
+  |---|---|
+  | `src/tychoc.c:1730-1737` is tychoc's const-capacity path, comment "same as a fixed `[N]T`" | **correct** — `:1730` is the comment, `:1733` `consts_find(pkg_mangle(...))`, `:1734-1735` the non-`E_INT` reject |
+  | `compiler/tychoc0.ty:1721-1725` tests `!= TInt` and stops | **correct** (pre-edit) |
+  | `compiler/tychoc0.ty:1679-1690` already implements const capacity for `[C]T` | **correct**, range is `:1679-1692`; the `"[#" + cnm + "]"` encoding is at `:1692`, resolved in `mangle_type` `:2829-2839` |
+  | `03-types.md` §5.3.9 already requires the affine-handle reject | **correct** — `:238-241`: a handle "cannot be copied, stored in any aggregate…", and "`Task(T)` and `Channel(T)` are similarly affine and non-storable" |
+  | `tests/run.sh:148-212` compares the FRONTEND status | **correct** — `:155` `"$TYCHOC" "$hi" --emit-c` and `:159` `"$TMP/h0" "$hi" --emit-c`; no `cc` on either side of the reject loop |
+
+  **2. (a) `bounded[CONST]T` — judgement INDEPENDENTLY CONFIRMED: an oversight,
+  not a design split. Resolved toward ACCEPT (teach tychoc0).** Four pieces of
+  evidence, not one:
+  - tychoc's intent is written in the source (`src/tychoc.c:1730`).
+  - The spec already blesses the const spelling for the sibling form:
+    `03-types.md:168` (§5.3.2) — "`N` is a positive integer literal or an `int`
+    `const`" — and the grammar carries `IDENT "]" Type /* [C]T */`
+    (`appendix-a-grammar.md:94`, `02-grammar.md:146`).
+  - tychoc0 owns the whole machinery already, and it is *measured* to agree with
+    tychoc: an 11-probe `[C]T` baseline sweep (local / param / return / field ×
+    const, no-const, wrong-name, string const, negative const) came back
+    **11 probes, FRONTEND-DIVERGENT 0**, including all six failure modes.
+  - No spec text forbade the const capacity for `bounded`. The only text that
+    did — §5.3.10's "not portable" paragraph — was written by Phase 11
+    *because* of this divergence, and Phase 11 said so in its own note.
+
+    Narrowing tychoc instead would have deleted a working feature and left
+    `bounded` gratuitously inconsistent with `[C]T`. Rejected.
+
+  **3. (b) `bounded[N]Channel(T)` — citation verified, tychoc0 was
+  non-conforming, fixed. No ruling needed.**
+
+  **4. FRONT/CC/RUN, BEFORE (`/tmp/ph18/p18.py`, 15 probes).** `println` takes
+  one argument, so the first probe round was thrown away and rewritten with
+  `str(...)` concatenation — the recorded run is the corrected one.
+
+  | probe | tychoc FRONT/CC/RUN | tychoc0 FRONT/CC/RUN | verdict |
+  |---|---|---|---|
+  | cap_const `const CAP = 4` → `bounded[CAP]int` local | ACCEPT/ok/`n 3` | REJECT `parse: line 4: bounded needs an integer capacity` | **DIVERGE** |
+  | use_const_cap (param + push) | ACCEPT/ok/`n 4` | REJECT (same text) | **DIVERGE** |
+  | cap_const_ret (return position) | ACCEPT/ok/`n 1` | REJECT (same text) | **DIVERGE** |
+  | cap_const_field (struct field) | ACCEPT/ok/`n 2` | REJECT (same text) | **DIVERGE** |
+  | cap_const_zero `const CAP = 0` | REJECT `a bounded capacity must be positive` | REJECT (parse, wrong reason) | agree |
+  | cap_const_neg `const CAP = -1` | REJECT (same) | REJECT (parse, wrong reason) | agree |
+  | cap_const_str `const CAP = "x"` | REJECT `must be an integer literal or an int const` | REJECT (parse, wrong reason) | agree |
+  | cap_unknown_ident `bounded[NOPE]int` | REJECT (same) | REJECT (parse, wrong reason) | agree |
+  | cap_const_overfill `const CAP = 2` = `[1,2,3]` | REJECT `a bounded[2] holds at most 2 elements, got 3` | REJECT (parse, wrong reason) | agree |
+  | el_chan local `bounded[4]Channel(int)` | REJECT `a channel handle cannot be stored in a container or aggregate` | **ACCEPT/CCFAIL** | **DIVERGE** |
+  | el_chan_param | REJECT (same) | **ACCEPT/CCFAIL** | **DIVERGE** |
+  | el_chan_field | REJECT (same) | **ACCEPT/CCFAIL** | **DIVERGE** |
+  | el_chan_ret | REJECT (same) | REJECT (return-type mismatch, unrelated reason) | agree |
+  | el_task `bounded[4]Task(int)` local | REJECT `unknown type 'Task'` | **ACCEPT/CCFAIL** | **DIVERGE** |
+  | el_task_param | REJECT (same) | **ACCEPT/CCFAIL** | **DIVERGE** |
+
+  ```
+  BEFORE  TOTAL 15 probes   FRONTEND-DIVERGENT 8
+  ```
+  Two more than Phase 11 recorded, because Phase 11 probed `el_chan` and
+  `cap_const` in one position each; the field/param/return positions and the
+  `Task(T)` twin are the same two defects seen from more angles.
+
+  **5. FRONT/CC/RUN, AFTER — same 15 probes, same harness.**
+
+  | probe | tychoc FRONT/CC/RUN | tychoc0 FRONT/CC/RUN | verdict |
+  |---|---|---|---|
+  | cap_const | ACCEPT/ok/`n 3` | ACCEPT/ok/`n 3` | agree |
+  | use_const_cap | ACCEPT/ok/`n 4` | ACCEPT/ok/`n 4` | agree |
+  | cap_const_ret | ACCEPT/ok/`n 1` | ACCEPT/ok/`n 1` | agree |
+  | cap_const_field | ACCEPT/ok/`n 2` | ACCEPT/ok/`n 2` | agree |
+  | cap_const_zero | REJECT `a bounded capacity must be positive` | REJECT `resolve: a bounded capacity must be positive` | agree |
+  | cap_const_neg | REJECT (same) | REJECT (same) | agree |
+  | cap_const_str | REJECT | REJECT `resolve: a fixed-size array length must be an integer literal or an int const` (shared `const_int` helper, `:2810-2814`) | agree |
+  | cap_unknown_ident | REJECT | REJECT `line 2: a bounded capacity must be an integer literal or an int const -- 'NOPE' is not` | agree |
+  | cap_const_overfill | REJECT `a bounded[2] holds at most 2 elements, got 3` | REJECT **same text** | agree |
+  | el_chan / el_chan_param / el_chan_field / el_chan_ret | REJECT | REJECT `a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead` (tychoc's exact wording) | agree |
+  | el_task / el_task_param | REJECT `unknown type 'Task'` | REJECT `a task handle cannot be stored in a container or aggregate -- wait(t) first` | agree |
+
+  ```
+  AFTER   TOTAL 15 probes   FRONTEND-DIVERGENT 0
+  ```
+
+  **6. What changed — all compiler work is in `compiler/tychoc0.ty`; `src/tychoc.c`
+  was NOT touched** (tychoc was already right on both counts).
+  - **`:1718-1750`, the `bounded` branch of `parse_type_d`.** The capacity now
+    accepts `TInt` (unchanged) *or* `TIdent`. The parser has no const table — it
+    is a pure function of the token stream — so the const form is **deferred**,
+    encoded `"[b#W]T"`, exactly mirroring the fixed array's `"[#W]T"` (`:1692`).
+  - **`:2859-2869`, a new `has_prefix(ty, "[b#")` branch in `mangle_type`,**
+    immediately after the existing `"[#"` branch it mirrors. Resolves `W`
+    through `const_idx`/`const_int` and rejects a non-const name or a
+    non-positive value. This pass always runs when a const is present
+    (`dofold`, `:3451`), which is exactly when the form can be legal.
+  - **`:11211-11212`, a `"[b#"` guard in the `STypedDecl` arm,** beside the
+    `"[#"` guard Phase 3 added for the same reason: a *surviving* `[b#` means
+    the name is not a const in this program, so say what tychoc says instead of
+    leaking the internal spelling into a type-mismatch message.
+  - **`:1746-1749`, the affine-element check.** tychoc fails closed at a
+    type-intern choke point (`arrc_sized_b`, `src/tychoc.c:669-671`, one of six
+    such points); tychoc0 has no intern step, so a `Channel(...)` or `Task(...)`
+    element is rejected in the parser, with tychoc's own two messages
+    (`src/tychoc.c:607` and `:567`).
+  - Three in-source line cross-references were corrected after the edits shifted
+    the file (`:1724`, `:2859`, `:11207`).
+
+  **7. Spec updated to match, in all four places** (`(a)` resolved toward accept,
+  so the plan's "widen the grammar" branch applies):
+  - `docs/spec/appendix-a-grammar.md:83` **and** `docs/spec/02-grammar.md:135`,
+    kept byte-identical (`spec-check`'s "Appendix A grammar matches §3/§4"
+    asserts it):
+    ```ebnf
+                | "bounded" "[" ( INT | IDENT ) "]" Type            /* bounded[N]T / bounded[C]T, C an int const */
+    ```
+  - `docs/spec/02-grammar.md:164-169` — the §4.2 note no longer says the `const`
+    form is unportable; it now states both spellings are admitted, as for `[C]T`.
+  - `docs/spec/03-types.md` §5.3.10 — the "**not** portable / implementations
+    disagree" paragraph is **replaced** by a positive rule: literal or positive
+    `int const`, with the six rejection cases enumerated. Provenance extended to
+    the new `tychoc0` sites and the six fixtures.
+  - `docs/spec/appendix-e-conformance.md:56` — the §5.3.10 row now cites all six
+    fixtures. `spec-check`'s "all Appendix E fixture citations resolve" confirms
+    they exist.
+  - The §5.3.10 `> Note:` about aggregate elements was left alone — that is
+    Phase 19's, and `Channel`/`Task` were never in the set it names.
+
+  **8. Fixtures — 5 new, one file per distinct rejection** (the compiler stops at
+  the first error, so they cannot be merged). Test count **447 → 452**.
+  ```
+  tests/bounded_const_cap.ty (+ .out)      ACCEPT: bounded[CAP]T in field, param,
+                                           return and local, two distinct consts,
+                                           and bounded[4]int proving the literal
+                                           and const spellings are the same type
+  tests/reject/bounded_chan_elem.ty        (b) Channel(T) element
+  tests/reject/bounded_task_elem.ty        (b) Task(T) element
+  tests/reject/bounded_nonconst_cap.ty     the guard that keeps (a)'s widening
+                                           from being a fail-open: bounded[NOPE]int
+  tests/reject/bounded_const_cap_zero.ty   const CAP = 0 — positivity on the
+                                           deferred const path
+  ```
+  Each reject fixture was checked by hand against **both** compilers before the
+  gate run; all four give rc=1 on both.
+
+  **9. NOT over-tightened — Phase 11's own harness re-run, unchanged binaries
+  aside.** `/tmp/ph11/probe3.py` and `probe4.py` were re-run against the pre- and
+  post-change tychoc0 and diffed. The **only** differences in the whole output
+  are the rows this phase set out to fix, plus three improved diagnostics:
+  ```
+  probe3  BEFORE  FRONTEND DIVERGENCES (2): ['cap_const', 'use_const_cap']
+          AFTER   FRONTEND DIVERGENCES (0): []
+  probe4  BEFORE  FRONTEND DIVERGENCES: 1 ['el_chan_paren']
+          AFTER   FRONTEND DIVERGENCES: 0 []
+  ```
+  Every other one of the 45 rows Phase 11 recorded is byte-identical. Phase 10's
+  45 probes were also re-run post-change: 35 + 10, DIVERGENT 0 (see the
+  re-verification appended to Phase 10 above).
+
+  **10. Gates — all seven green, each its own foreground `env -u LD_PRELOAD make …`;
+  tychoc0 built to `/tmp/ph18/`, outside the tree:**
+  ```
+  test        passed: 452   failed: 0  /  all green          (was 447; +5 fixtures)
+  corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+  conc        conc: passed 37   failed 0
+  fixpoint    ok  B == C : tychoc0 reproduces itself byte-identically (34980 lines C)
+              ok  split tychoc0 (2 packages) self-hosts E==F and matches the single-file compiler
+              fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+  ilp32       passed: 452   failed: 0  /  all green
+  spec-check  spec-check: Appendix A grammar matches §3/§4 (ok)
+              spec-check: all Appendix E fixture citations resolve (ok)
+              spec-examples: 7 runnable example(s), all pass
+  check-links link check: ok (121 markdown files, no dead relative links)
+  ```
+  `git status --short`: the 5 modified files + the 6 new fixture files only. No
+  build spill.
+
+  **Residual uncertainty:** `bounded[NOPE]int` in a *param*, *field* or *return*
+  position, in a program containing **no** `const` at all, is rejected by tychoc0
+  with `type: unknown type 'b#NOPE]in'` rather than the capacity message — the
+  `STypedDecl` guard only covers locals. This is not a new defect and not a
+  decision divergence (both compilers reject): it is the **exact** pre-existing
+  behaviour of the `[C]T` form it mirrors, measured in the baseline sweep
+  (`fix_nocst_param` → `type: unknown type '#NOPE]in'`, agree). Fixing it means
+  widening the guard to the param/field/return arms for *both* encodings, which
+  is a diagnostic-quality change to a form this phase did not introduce. Filed as
+  Phase 21.
+
 - [ ] **Phase 19 — `bounded[N]T` of an aggregate element parses but emits uncompilable C (found by Phase 11, out of its docs-only scope)**
   - Not an accept/reject divergence — **both frontends accept these** — so it did
     not block Phase 11's grammar work, but it makes the compilers' own diagnostic
@@ -2118,6 +2329,77 @@ codegen.
     runs identically on both compilers, with fixtures covering struct, tuple, map,
     nested-`bounded` and `bytes` elements in local, param, field and return
     positions; §5.3.10's caveat note removed; full gate set green.
+
+- [ ] **Phase 20 — tychoc0 FAIL-OPENS on an affine handle in *every* container and aggregate, not only `bounded` (measured by Phase 18, out of its scope)**
+  - Phase 18 fixed `bounded[N]Channel(T)` because that is the divergence Phase 11
+    filed. While verifying it, an 11-probe sweep found the same fail-open across
+    **the whole container family** — tychoc rejects at six type-intern choke
+    points (`src/tychoc.c:611-613`, `:669-671`, `:752-754`, `:775-777`,
+    `:839-841`, `:1009-1011`), tychoc0 has no intern step and no equivalent
+    check. Spec `03-types.md` §5.3.9 (`:238-241`) already requires the reject, so
+    no ruling is needed; the direction is fixed.
+  - **Measured 2026-07-25** (`/tmp/ph18/p18b.py`, FRONT/CC/RUN, `--emit-c` on
+    both sides; `bounded` rows excluded — those are Phase 18's and are now fixed):
+
+    | probe | form | tychoc FRONT | tychoc0 FRONT |
+    |---|---|---|---|
+    | dynarr_chan | `[Channel(int)]` local | REJECT | **ACCEPT** (CCFAIL) |
+    | fixarr_chan | `[2]Channel(int)` local | REJECT | **ACCEPT** (CCFAIL) |
+    | dynarr_chan_param | `[Channel(int)]` param | REJECT | **ACCEPT** (CCFAIL) |
+    | fixarr_chan_param | `[2]Channel(int)` param | REJECT | **ACCEPT** (CCFAIL) |
+    | struct_chan | a `Channel(int)` struct field | REJECT `a struct field cannot be a channel` | **ACCEPT, C COMPILES AND RUNS** |
+    | map_chan | `[string: Channel(int)]` | REJECT | **ACCEPT** (CCFAIL) |
+    | opt_chan | `Option(Channel(int))` | REJECT | **ACCEPT, C COMPILES AND RUNS** |
+    | tuple_chan | `(int, Channel(int))` | REJECT | **ACCEPT** (CCFAIL) |
+    | chan_of_chan | `Channel(Channel(int))` | REJECT | **ACCEPT, C COMPILES AND RUNS** |
+    | plain_task_ty | `Task(int)` as a written param type | REJECT `unknown type 'Task'` | **ACCEPT, C COMPILES AND RUNS** |
+    | dynarr_task | `[Task(int)]` param | REJECT | **ACCEPT** (CCFAIL) |
+
+    ```
+    11 probes   FRONTEND-DIVERGENT 11
+    ```
+  - **The three that COMPILE AND RUN are the dangerous ones.** A CCFAIL is loud;
+    `struct_chan`, `opt_chan`, `chan_of_chan` and `plain_task_ty` produce a
+    working binary that stores a handle the compiler promised could not be
+    stored. That is the aliasing hazard §5.3.9 exists to prevent, reaching
+    codegen silently.
+  - `plain_task_ty` is a second, distinct defect wearing the same coat: `Task`
+    is not a *written* type name in tychoc at all (`unknown type 'Task'`), but
+    tychoc0's `parse_type_d` accepts it. That is the Phase 9 bare-NAME shape,
+    which Phase 9's 23-name sweep did not cover because `Task(T)` is a
+    constructor, not a bare identifier.
+  - Scope when taken: decide first whether `Task(T)` is a legal written type
+    spelling at all (the spec names it in §5.3.9 and §20 — check whether it is
+    *writable* or only *inferred*), then add the handle-in-container check to
+    tychoc0 at every container form, mirroring tychoc's six choke points. Fail
+    closed: reject the whole family, do not special-case.
+  - Fixtures: one `tests/reject/` file per container form (dynamic array, fixed
+    array, map value, tuple, `Option`, `Result`, struct field, `Channel` of
+    `Channel`), since the compiler stops at the first error.
+  - Done when: every row above agrees on the frontend decision, each is
+    fixture-locked, `tests/conc/` still passes (the legal uses — a `Channel(T)`
+    *parameter*, `spawn`, `wait` — must NOT be tightened), full gate set green.
+
+- [ ] **Phase 21 — the deferred const-size encodings leak into diagnostics outside a local declaration (observed by Phase 18)**
+  - Both `[#W]T` (fixed array, `compiler/tychoc0.ty:1692`) and `[b#W]T`
+    (`bounded`, `:1734`) are parser-internal encodings resolved by `mangle_type`.
+    When the name is not a `const` anywhere in the program the mangle pass never
+    runs (`dofold`, `:3451`), the encoding survives, and only the `STypedDecl`
+    arm (`:11205-11212`) translates it into the message tychoc gives.
+  - In a **param**, **field** or **return** position the raw spelling leaks:
+    `type: unknown type '#NOPE]in'` / `'b#NOPE]in'`, and in return position
+    `returning [2]int but this function returns [#NOPE]int`. Measured
+    2026-07-25 (`/tmp/ph18/p18c.py`, 11 probes): the DECISION agrees with tychoc
+    in every case — this is a diagnostic-quality defect, not a divergence, which
+    is why Phase 18 did not absorb it.
+  - tychoc says the right thing in all positions because it dies at parse
+    (`src/tychoc.c:1734-1735`, `:1818-1820`).
+  - Scope when taken: hoist the two guards out of the `STypedDecl` arm to
+    wherever a written type is first checked, so param/field/return get the same
+    message. Add `tests/diag/` fixtures (`.err` + `.h0err`) for one position each,
+    the mechanism Phase 3 established for locking message text.
+  - Done when: all four positions give tychoc's wording on both compilers, the
+    diag fixtures lock it, full gate set green.
 
 ## Out of scope
 

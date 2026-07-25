@@ -132,7 +132,7 @@ parameter, each parameter used at most once — are given in §18.
 ```ebnf
 Type      ::= "$" IDENT                                        /* type parameter */
             | "soa" "[" Type "]"                               /* struct-of-arrays */
-            | "bounded" "[" INT "]" Type                       /* bounded[N]T inline fixed-capacity */
+            | "bounded" "[" ( INT | IDENT ) "]" Type            /* bounded[N]T / bounded[C]T, C an int const */
             | "fn" "(" ( Type ( "," Type )* )? ")" ( "->" Type )?
             | "(" Type ( "," Type )+ ")"                       /* tuple, 2..8 elements */
             | "[" ArrayOrMap
@@ -162,11 +162,11 @@ Notes (constrained further in §5–§7):
   followed by an element type) is a **fixed-size array**; a bare `[T]` is a
   **dynamic array**.
 - `bounded [N] T` is the inline fixed-capacity collection of
-  [§5.3.10](03-types.md#5310-boundednt). Its capacity `N` MUST be a positive
-  integer **literal** — unlike a fixed-size `[C]T`, an `int` `const` name in the
-  capacity is not portable across conforming implementations (§5.3.10).
-  `bounded` is *contextual*: it is a type constructor only when an `[` follows,
-  and remains usable as an ordinary identifier elsewhere.
+  [§5.3.10](03-types.md#5310-boundednt). Its capacity MUST denote a positive
+  integer: either an integer **literal**, or — exactly as a fixed-size `[C]T`
+  admits — the name of an `int` `const` (§5.3.10). `bounded` is *contextual*: it
+  is a type constructor only when an `[` follows, and remains usable as an
+  ordinary identifier elsewhere.
 - A tuple type has 2–8 elements. A function type has up to 8 parameters. No
   element or parameter may be `void`.
 - `QualName TypeArgs` applies a generic struct or enum to concrete type
