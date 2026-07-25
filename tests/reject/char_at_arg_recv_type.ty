@@ -1,0 +1,4 @@
+# char_at's receiver argument is a string, not an int.
+fn main():
+    c := char_at(5, 0)
+    print(str(c))

@@ -1,0 +1,5 @@
+# char_at's index argument is an int, not a string -- fail closed, don't coerce.
+fn main():
+    s := "hello"
+    c := char_at(s, "x")
+    print(str(c))

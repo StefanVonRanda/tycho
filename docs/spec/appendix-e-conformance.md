@@ -177,6 +177,7 @@ dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
 |---|---|---|
 | §29.3 | I/O & process builtins | `tests/io_builtins`, `tests/println`, `tests/write_file` |
 | §29.5 | string builtins | `tests/strbuild`, `tests/str_fuse`, `tests/str_index`, `tests/strbytes` |
+| §29.5 | `char_at` yields `char`; `s[i]` still yields `int`; OOB aborts | `tests/char_at`, `tests/abort/char_at_oob`, `reject/char_at_arg_index_type`, `reject/char_at_arg_recv_type` |
 | §29.6 | array builtins; `len` on scalar rejected | `tests/pop`, `tests/reservecomposite`, `reject/len_scalar` |
 | §29.12 | abnormal termination (`die`) | `tests/die` |
 | §30.1 | defined two's-complement wraparound | `tests/int_overflow` |

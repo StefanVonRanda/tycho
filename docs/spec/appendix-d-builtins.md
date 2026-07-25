@@ -8,6 +8,7 @@ alphabetical locator only.
 |---|---|---|
 | `args` | process | §29 |
 | `channel` | concurrency | §29 / [§23](13-concurrency.md#231-channels) |
+| `char_at` | string | §29 / [§5.2.5](03-types.md#525-string) |
 | `chr` | conversion | §29 |
 | `clock` | time | §29 |
 | `close` | concurrency / handle | §29 / [§25](14-ffi.md#25-typed-handles) |

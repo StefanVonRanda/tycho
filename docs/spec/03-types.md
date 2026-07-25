@@ -78,6 +78,13 @@ is comparable and ordered (§5.5). `str(char)` yields the one-byte **glyph**
 string (so a `char` interpolates in an f-string); `to_int(char)` / `to_u32(char)`
 yield the byte **value**.
 
+Indexing a `string` does **not** produce a `char`: `s[i]` yields `int` (§5.2.5).
+The `char`-typed reader is the builtin `char_at(s, i)`
+([§29.5](16-builtins.md#295-strings)), so `char_at(s, 1) == 'e'` is the way to
+compare a string's byte against a character literal — `s[1] == 'e'` is a type
+error, because `int` and `char` are distinct types and Tycho does not compare
+across types (§13.2).
+
 ### 5.2.5 `string`
 
 `string` is an **immutable, length-counted, byte-safe** sequence of bytes. Its
@@ -87,6 +94,16 @@ the stored length, not a `NUL` terminator. Indexing `s[i]` yields the `i`-th
 byte as an `int` in `0..255` and aborts if `i` is out of bounds; a `string` is
 not assignable through an index (`s[i] = v` is a compile error). Operations are
 detailed in §16.
+
+`s[i]` yields `int`, not `char`, and this is **normative and deliberate**: the
+byte is most often used arithmetically or as an array index, and a `char` result
+would wrap `s[i] ± n` to `0..255` where `int` does not — a silent change of
+meaning for existing code. The cost is that `s[i] == 'e'` does not type-check.
+The builtin `char_at(s, i)` ([§29.5](16-builtins.md#295-strings)) closes that
+gap: it is the SAME byte read with the SAME out-of-bounds abort, differing only
+in its static type (`char`), so `char_at(s, i) == 'e'` is the supported spelling
+and `to_int(char_at(s, i)) == s[i]` holds for every in-range `i`. Neither form is
+preferred for performance; they compile to the same call.
 
 ### 5.2.6 `bytes`
 

@@ -2827,7 +2827,7 @@ struct Mctx:
     constv: [Expr]            # the literal Expr each const name folds to (parallel to constn)
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_u8" or name == "to_u16" or name == "to_u32" or name == "to_u64" or name == "to_i8" or name == "to_i16" or name == "to_i32" or name == "to_i64" or name == "to_f32" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "char_at" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_u8" or name == "to_u16" or name == "to_u32" or name == "to_u64" or name == "to_i8" or name == "to_i16" or name == "to_i32" or name == "to_i64" or name == "to_f32" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 # Builtins callable with UFCS method syntax `recv.name(args)` -> `name(recv, args)`.
 # Only receiver-first builtins; constructors (Some/Ok/Err/None) and env/IO niladics
@@ -2835,7 +2835,7 @@ fn is_builtin_call(name: string) -> bool:
 # uses, so a wrong receiver type still fails closed there. Kept byte-identical with
 # tychoc's is_ufcs_builtin (src/tychoc.c).
 fn is_ufcs_builtin(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "split" or name == "keys" or name == "find" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "to_bytes" or name == "to_ptr" or name == "to_u8" or name == "to_u16" or name == "to_u32" or name == "to_u64" or name == "to_i8" or name == "to_i16" or name == "to_i32" or name == "to_i64" or name == "to_f32" or name == "is_null"
+    return name == "str" or name == "substr" or name == "chr" or name == "split" or name == "keys" or name == "find" or name == "char_at" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "to_bytes" or name == "to_ptr" or name == "to_u8" or name == "to_u16" or name == "to_u32" or name == "to_u64" or name == "to_i8" or name == "to_i16" or name == "to_i32" or name == "to_i64" or name == "to_f32" or name == "is_null"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -4824,6 +4824,8 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "bool"
     if name == "find":
         return "int"
+    if name == "char_at":
+        return "char"
     if name == "sqrt" or name == "pow" or name == "floor" or name == "fabs":
         return "float"
     if name == "to_float":
@@ -6073,7 +6075,7 @@ fn wl_check(cond: Expr, body: [Stmt], pos: int, dc: Decls):   # `body` is the lo
 # is a no-op (map_set/map_del return a NEW map — a common footgun). Mirrors
 # is_pure_builtin in src/tychoc.c.
 fn is_pure_bi(n: string) -> bool:
-    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_u8" or n == "to_u16" or n == "to_u32" or n == "to_u64" or n == "to_i8" or n == "to_i16" or n == "to_i32" or n == "to_i64" or n == "to_f32" or n == "to_str" or n == "to_bytes" or n == "to_ptr" or n == "to_bool" or n == "is_null" or n == "len"
+    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "char_at" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_u8" or n == "to_u16" or n == "to_u32" or n == "to_u64" or n == "to_i8" or n == "to_i16" or n == "to_i32" or n == "to_i64" or n == "to_f32" or n == "to_str" or n == "to_bytes" or n == "to_ptr" or n == "to_bool" or n == "is_null" or n == "len"
 
 fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e is such a call, else ""
     match e:
@@ -6787,6 +6789,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "substr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
             if name == "find":
                 return "hi_find(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
+            if name == "char_at":
+                # deliberately the SAME emit s[i] uses (hi_sidx, :6337): identical
+                # O(1) read, identical bounds abort and message. Only the STATIC
+                # type differs -- char_at is `char`, s[i] stays `int` -- and a
+                # char is carried as tycho_int in C, so the text is the same.
+                return "hi_sidx(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "split":
                 return "hi_split(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "map_set":
@@ -11053,6 +11061,18 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
             ress := resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx))
             if ress != "int" and ress != "char" and ress != "float" and ress != "f32" and not is_sized_int(ress):
                 die_at(dc, el, nm + "(x) takes a numeric value")
+    # char_at(s, i) -> char. tychoc arg-checks it through the generic builtin Sig
+    # table (src/tychoc.c:5486-5522, `.params={ T_STRING, T_INT }`); tychoc0 has no
+    # such table, so check the two argument types here or the reject path fail-opens
+    # on char_at(5, 0) / char_at(s, "x"). Exact match, like tychoc: a newtype skin or
+    # a sized int is NOT accepted (tychoc compares the resolved Type identity).
+    if nm == "char_at" and len(args) == 2:
+        a0 := type_of(args[0], names, types, dc, ctx)
+        if a0 != "str":
+            die_at(dc, el, "argument 1 of 'char_at' is " + a0 + ", expected string")
+        a1 := type_of(args[1], names, types, dc, ctx)
+        if a1 != "int":
+            die_at(dc, el, "argument 2 of 'char_at' is " + a1 + ", expected int")
     si := dc.sigmap.get(nm, -1)                  # user fn? (builtins/ctors aren't in sigmap)
     if si < 0:
         return

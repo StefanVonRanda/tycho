@@ -3302,7 +3302,7 @@ codegen.
   (b) `E2` (> 256 handle types) was not probed. (c) The `tychoc-FAIL-OPEN = 0` result is
   measured — the harness flags both directions — but only over these 60 rows.
 
-- [ ] **Phase 26 — `char_at(s, i) -> char`, the ergonomics helper (Phase 6's ruling (c))**
+- [x] **Phase 26 — `char_at(s, i) -> char`, the ergonomics helper (Phase 6's ruling (c))**
   - **UNBLOCKED 2026-07-25.** The open question recorded under Phase 6 was put to
     the user, who confirmed: **`char_at(s, i) -> char`** — the string-index helper
     returning a `char`, so `char_at(s, 1) == 'e'` is expressible. NOT a char→int
@@ -3323,6 +3323,149 @@ codegen.
   - Done when: the helper compiles and runs identically on both compilers, the
     spec documents it and the `s[i]` rationale, `s[i]` semantics are UNCHANGED
     (that is the whole point of ruling (c)), full gate set green.
+  - **DONE 2026-07-25. Evidence below.**
+
+  **Template builtin traced end to end before writing anything.** The task asked
+  for a `(string, int) -> scalar` builtin; none exists, so two were traced and
+  merged: `find` (`(string,string) -> int`, a `Sig` builtin with a `hi_`-prefixed
+  tychoc0 twin) for the *dispatch* shape, and the `s[i]` E_INDEX path for the
+  *bounds* shape. Every line below was opened and quoted, not recalled:
+
+  | layer | tychoc | tychoc0 |
+  |---|---|---|
+  | builtin table | `src/tychoc.c:4103-4133` `register_builtins`; `find` at `:4119` | `compiler/tychoc0.ty:2830` `is_builtin_call` |
+  | UFCS eligibility | `src/tychoc.c:4464-4472` `is_ufcs_builtin` | `compiler/tychoc0.ty:2838` `is_ufcs_builtin` ("kept byte-identical", `:2836`) |
+  | purity | `src/tychoc.c:6289-6296` `is_pure_builtin` | `compiler/tychoc0.ty:6077` `is_pure_bi` |
+  | return type | from the `Sig` row (`.ret`), checked at `src/tychoc.c:5476-5522` | `compiler/tychoc0.ty:4808+` `sig_ret` (a string-returning `if` ladder) |
+  | arg checking | generic, from `.params[]`: `src/tychoc.c:5488-5522` | **none for most builtins** — `check_call_args` (`:11040`) only special-cases the numeric conversions |
+  | codegen | `gen_call`, `src/tychoc.c:8174-8178` (`find` → `tycho_str_find`) | `gen_expr`'s `ECall` ladder, `compiler/tychoc0.ty:6790-6791` (`find` → `hi_find`) |
+  | runtime helper | `runtime/tycho_rt.c` — `s[i]` uses `tycho_str_get` `:1037-1044` (bounds check + `exit(1)`) | none: tychoc0 **emits** its own `hi_sidx` as C text, `compiler/tychoc0.ty:10237` — byte-identical predicate and message to `tycho_str_get` |
+  | `s[i]` emit | `src/tychoc.c:8653` `tycho_str_get(a, ix)` | `compiler/tychoc0.ty:6337` `hi_sidx(base, idx)` |
+  | spec | `docs/spec/16-builtins.md:125-131` (§29.5 table) + its `> Provenance:` line | — |
+
+  **The key finding from that trace, and the design it dictated.** `char` is
+  carried as `tycho_int` in C on both sides (`src/tychoc.c:1210`
+  `case T_CHAR: return "tycho_int ";`; `compiler/tychoc0.ty:4662`). So
+  `char_at(s, i)` needs **no new runtime helper and no new emitted C**: it emits
+  *literally the same call* `s[i]` emits, and only the STATIC type differs. That
+  makes "aborts identically to `s[i]`" true by construction rather than by a
+  parallel bounds check that could drift.
+
+  **Changes.**
+  - `src/tychoc.c:4120` — `Sig` row `.name="char_at", .ret=T_CHAR, .params={ T_STRING, T_INT }, .nparams=2`. Arity + arg types are then checked by the generic `Sig` path for free.
+  - `src/tychoc.c:4466` — added to `is_ufcs_builtin` (receiver-first, like `substr`/`find`), so `s.char_at(i)` works.
+  - `src/tychoc.c:6291` — added to `is_pure_builtin` (discarding it in statement position is a no-op).
+  - `src/tychoc.c:8179-8187` — codegen: `tycho_str_get(s, ix)`, the same call `:8653` emits for `s[i]`.
+  - `compiler/tychoc0.ty:2830`,`:2838`,`:6078` — the three name lists (`is_builtin_call`, `is_ufcs_builtin`, `is_pure_bi`).
+  - `compiler/tychoc0.ty:4827-4828` — `sig_ret` returns `"char"`.
+  - `compiler/tychoc0.ty:6792-6797` — codegen: `hi_sidx(s, ix)`, the same helper `:6337` emits for `s[i]`.
+  - `compiler/tychoc0.ty:11064-11075` — a targeted arg-type check in `check_call_args`. **Needed**: tychoc0 has no `Sig` table, so without it `char_at(5, 0)` fail-opened where tychoc rejects, and a `tests/reject/` fixture (which requires BOTH compilers to reject, `tests/run.sh:159-160`) could not pass.
+  - NOT changed: `s[i]`'s type, its codegen, or the runtime. `runtime/tycho_rt.c` is untouched.
+
+  **Probe — `char_at` works identically on both compilers** (`/tmp/ph26/probe.ty`;
+  tychoc0 built as instructed with `./tychoc compiler/tychoc0.ty -o /tmp/ph26/tychoc0`,
+  its C compiled with `cc -O2 -fwrapv -std=c11 … -lm`). Byte-identical output:
+  ```
+  $ ./tychoc /tmp/ph26/probe.ty -o /tmp/ph26/probe && /tmp/ph26/probe
+  char_at(s,1) == 'e' : yes
+  s[1] = 101
+  char_at first=h last=o
+  ufcs=o
+  $ /tmp/ph26/tychoc0 /tmp/ph26/probe.ty > probe0.c && cc … && ./probe0
+  char_at(s,1) == 'e' : yes
+  s[1] = 101
+  char_at first=h last=o
+  ufcs=o
+  ```
+  Both halves of the ruling are in that output: `char_at("hello", 1) == 'e'` is
+  **true**, and `s[1]` still yields **`101`**.
+
+  **`s[i]` UNCHANGED — proof, not assertion.** Three independent checks:
+  1. the probe above prints `s[1] = 101` on both compilers, unchanged;
+  2. `tests/char_at.ty` locks `str(s[1])` → `101` and `str(to_int(char_at(s,1)))`
+     → `101` **in the same golden**, so the two can never silently converge;
+  3. no edit touches the `s[i]` path — `src/tychoc.c:8653` and
+     `compiler/tychoc0.ty:6337` are byte-for-byte as before (`git diff` over both
+     files shows only the additive hunks listed above), and `make test` /
+     `make ilp32` pass all 478 pre-existing fixtures unchanged.
+
+  **Bounds abort — identical to `s[i]`, demonstrated.** `char_at(s, 9)` vs
+  `s[9]` on `"hello"`, all four binaries:
+  ```
+  --- tychoc  char_at(s,9) ---  tycho: string index 9 out of bounds (len 5)   exit=1
+  --- tychoc0 char_at(s,9) ---  tycho: string index 9 out of bounds (len 5)   exit=1
+  --- tychoc  s[9]         ---  tycho: string index 9 out of bounds (len 5)   exit=1
+  --- tychoc0 s[9]         ---  tycho: string index 9 out of bounds (len 5)   exit=1
+  ```
+  Same message, same exit status, all four. This is now locked by
+  `tests/abort/char_at_oob.ty`, and the abort harness (`tests/run.sh:191-218`)
+  asserts the two compilers' stderr match **byte-for-byte**, not merely that both
+  die. No `Option`, no clamp, no sentinel — the existing abort path, reused.
+
+  **Wrong-typed argument fails closed on both** (the two `tests/reject/` fixtures):
+  ```
+  tychoc : char_at(5, 0)     -> argument 1 of 'char_at' is int, expected string -- wrap it with str(...), e.g. char_at(str(x))
+  tychoc0: char_at(5, 0)     -> argument 1 of 'char_at' is int, expected string
+  tychoc : char_at(s, "x")   -> argument 2 of 'char_at' is string, expected int
+  tychoc0: char_at(s, "x")   -> argument 2 of 'char_at' is str, expected int
+  ```
+  (The `is int, expected string -- wrap it with str(...)` tail is tychoc's
+  pre-existing F6 hint for any `Sig` builtin's string parameter,
+  `src/tychoc.c:5518-5520`; `char_at` inherits it rather than adding a special
+  case. The `string`/`str` spelling difference is the known, pre-existing
+  cross-compiler diagnostic divergence measured by Phase 2, not new here.)
+
+  **Spec sections added.**
+  - `docs/spec/16-builtins.md` §29.5 — the `char_at(s, i)` table row, a paragraph
+    stating it is the same byte read as `s[i]` and that
+    `to_int(char_at(s, i)) == s[i]` for every in-range `i`, and the
+    `> Provenance:` citation extended (house style — the neighbours carry one).
+    Every line number in it was opened and verified after the final edit.
+  - `docs/spec/03-types.md` §5.2.4 (`char`) — indexing does not produce a `char`;
+    `char_at` is the `char`-typed reader; `s[1] == 'e'` is a type error under §13.2.
+  - `docs/spec/03-types.md` §5.2.5 (`string`) — **the wart, explained rather than
+    silent**, as the ruling intended: why `s[i]` yields `int` and MUST keep
+    yielding it (`s[i] ± n` would wrap to `0..255` under a `char` result — a
+    silent change of meaning for existing code), what that costs, and how
+    `char_at` closes the gap at zero performance difference.
+  - `docs/spec/17-runtime.md` §30.2 — the abort set's "String index out of
+    bounds" entry now names `char_at(s, i)` alongside `s[i]`.
+  - `docs/spec/appendix-d-builtins.md` — alphabetical locator row.
+  - `docs/spec/appendix-e-conformance.md` — **builtins DO carry conformance rows**
+    (checked: §29.3/§29.5/§29.6/§29.12 all have one, keyed by clause not by
+    builtin), so a §29.5 row was added naming all four new fixtures.
+
+  **Fixtures (4 new; test count 478 → 482).**
+  - `tests/char_at.ty` + `.out` — normal index, index 0, last index, comparison
+    against a char literal, `str(char)` vs `str(int)` side by side, `to_int`
+    round-trip back to `s[i]`, char arithmetic, ordering, the UFCS form, and an
+    accumulate-into-string loop. Runs on both compilers, goldens matched.
+  - `tests/abort/char_at_oob.ty` — the runtime bounds abort. This is a **runtime
+    abort, not a reject**, and the harness does have a mechanism for it
+    (`tests/abort/`, `tests/run.sh:191-218`), which also asserts byte-identical
+    stderr between the two compilers.
+  - `tests/reject/char_at_arg_index_type.ty`, `tests/reject/char_at_arg_recv_type.ty`.
+
+  **Gate set — each run as its own foreground `env -u LD_PRELOAD make …`:**
+  ```
+  make test        passed: 482   failed: 0        all green          (478 + 4 new)
+  make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+  make conc        conc: passed 37   failed 0
+  make fixpoint    ok  B == C : tychoc0 reproduces itself byte-identically (35167 lines C)
+                   fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+  make ilp32       passed: 482   failed: 0        all green
+  make spec-check  spec-examples: 7 runnable example(s), all pass
+  make check-links link check: ok (122 markdown files, no dead relative links)
+  ```
+  `git status --short` clean of build spill (7 modified sources/specs + the 5 new
+  fixture files, nothing else).
+
+  **Note on `make fixpoint`, per the preamble's CORRECTION.** It is green, and
+  that is meaningful but narrower than "the two compilers agree": it proves
+  tychoc0 reproduces *itself* byte-identically after the change. Cross-compiler
+  agreement on `char_at` is proven separately, by the probe above, by
+  `tests/char_at`'s shared golden, and by the abort fixture's byte-identical
+  stderr assertion.
 
 ### Filed by Phase 25's audit (2026-07-25), ranked fail-open-that-RUNS first
 
@@ -3444,6 +3587,42 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Docs only. Worth pairing with Phase 28, which touches the same rule.
   - Done when: the citation resolves to the code it claims, `make spec-check` and
     `make check-links` green.
+
+### Filed by Phase 26 (2026-07-25)
+
+- [ ] **Phase 35 — tychoc0 arity-checks NO builtin; a wrong-arity builtin call crashes the compiler instead of diagnosing it (found by Phase 26, out of its one-builtin scope)**
+  - **Pre-existing, not introduced by Phase 26** — `substr` shows the identical
+    shape, and it predates this plan. Measured on both, 2026-07-25:
+    ```
+    $ tychoc  bad3.ty          # fn main(): print(str(char_at(s)))
+    bad3.ty:3: error: 'char_at' takes 2 argument(s), got 1
+    $ tychoc0 bad3.ty
+    tycho: index 1 out of bounds (len 1)      # tychoc0's OWN runtime abort
+    $ tychoc0 bad4.ty          # fn main(): print(substr("hi"))
+    tycho: index 2 out of bounds (len 1)      # same shape, pre-existing
+    ```
+  - Mechanism: tychoc gets arity checking free from the `Sig` table
+    (`src/tychoc.c:5486-5488`, `'%s' takes %d argument(s), got %d`). tychoc0 has
+    no such table — its builtin codegen ladder indexes `args[1]`/`args[2]`
+    directly (`compiler/tychoc0.ty:6788-6797`), so a short arg list walks off the
+    end of the array and hits tychoc0's own bounds abort. The exit status is
+    nonzero and a message is printed, so it fails *closed*, but the message names
+    an internal array index rather than the user's mistake, and it carries no
+    source location. Phase 26 deliberately did **not** widen to fix this: the
+    fix is a per-builtin arity table, which is exactly the "refactor the builtin
+    table" the phase was told not to do.
+  - Scope: an arity check for the whole builtin set in tychoc0, message matching
+    tychoc's. Ideally one table consulted by both `check_call_args` and the
+    codegen ladder. Blast radius: every builtin call site in every fixture.
+  - Also here (docs, cheap, same file): `docs/spec/16-builtins.md`'s
+    `> Provenance:` lines cite a `register_builtins` at `src/tychoc.c:3818-3849`
+    / `:3833-3835`; the function actually lives at `:4103-4133` today (`:3833` is
+    inside a path-joining helper). Verified 2026-07-25 while adding `char_at`'s
+    own — correct — citation. At least four provenance lines in that one file
+    carry the stale range; the rest of the spec was not swept.
+  - Done when: a wrong-arity builtin call produces a located diagnostic on
+    tychoc0 naming the builtin and both arities, reject fixtures lock it for a
+    representative sample, and the gate set is green.
 
 ## Out of scope
 

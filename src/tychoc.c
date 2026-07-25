@@ -4117,6 +4117,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="str",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="substr", .ret=T_STRING,       .params={ T_STRING, T_INT, T_INT },  .nparams=3, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="find",   .ret=T_INT,          .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="char_at",.ret=T_CHAR,         .params={ T_STRING, T_INT },         .nparams=2, .builtin=1 };   /* s[i] as a `char` (same bounds abort); s[i] itself still yields int */
     g_sigs[g_nsigs++] = (Sig){ .name="split",  .ret=T_ARRAY_STRING, .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="read_file",.ret=T_STRING,     .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="write_file",.ret=T_BOOL,      .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
@@ -4462,7 +4463,7 @@ static int g_resolve_depth = 0;
  * Kept byte-identical with tychoc0.ty's is_ufcs_builtin. */
 static int is_ufcs_builtin(const char *n) {
     if (!n) return 0;
-    static const char *bs[] = { "str", "substr", "chr", "split", "keys", "find", "len",
+    static const char *bs[] = { "str", "substr", "chr", "split", "keys", "find", "char_at", "len",
         "push", "pop", "reserve", "map_get", "map_has", "map_set", "map_del",
         "sqrt", "pow", "floor", "fabs", "to_float", "to_int", "to_str", "to_bool",
         "to_bytes", "to_ptr", "to_u8", "to_u16", "to_u32", "to_u64",
@@ -6287,7 +6288,7 @@ static void wl_check(Stmt *s) {           /* s is an S_WHILE */
  * footgun: `map_set(m,k,v)` as a bare statement does nothing). */
 static int is_pure_builtin(const char *n) {
     if (!n) return 0;
-    static const char *pure[] = { "str", "substr", "chr", "split", "keys", "find",
+    static const char *pure[] = { "str", "substr", "chr", "split", "keys", "find", "char_at",
         "map_get", "map_has", "map_set", "map_del", "sqrt", "pow", "floor", "fabs",
         "to_float", "to_int", "to_str", "to_bool", "is_null", "len", 0 };
     for (int i = 0; pure[i]; i++) if (!strcmp(n, pure[i])) return 1;
@@ -8174,6 +8175,15 @@ static char *gen_call(Expr *e, const char *arena) {
         char *s   = gen_expr(e->args[0], arena);
         char *sub = gen_expr(e->args[1], arena);
         return sfmt("tycho_str_find(%s, %s)", s, sub);
+    }
+    if (!strcmp(e->sval, "char_at")) {
+        /* Deliberately the SAME runtime call `s[i]` emits (E_INDEX, T_STRING
+         * above): identical O(1) read, identical bounds abort and message. Only
+         * the STATIC type differs -- char_at is T_CHAR, s[i] stays T_INT -- and
+         * `char` is carried as tycho_int in C, so the C text is interchangeable. */
+        char *s  = gen_expr(e->args[0], arena);
+        char *ix = gen_expr(e->args[1], arena);
+        return sfmt("tycho_str_get(%s, %s)", s, ix);
     }
     if (!strcmp(e->sval, "push")) {
         /* grow the array in *its owning arena* (the root variable's), not the

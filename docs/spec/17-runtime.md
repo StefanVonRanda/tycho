@@ -44,8 +44,9 @@ A conforming implementation MUST abort on each of the following:
 - **`to_int(f)` of a `NaN` or out-of-range `float`/`f32`** (§8.5). The sized
   integer conversions are total (no abort).
 - **Array index out of bounds**, on both read (`a[i]`) and write (`a[i] = v`).
-- **String index out of bounds** (`s[i]`). (`s[i] = v` is a *compile* error —
-  strings are immutable.)
+- **String index out of bounds** (`s[i]`, and `char_at(s, i)` — the same read
+  with the same abort, §29.5). (`s[i] = v` is a *compile* error — strings are
+  immutable.)
 - **`pop` from an empty array.**
 - **`reserve` with a negative or excessive capacity.**
 - **`split` with an empty separator.**

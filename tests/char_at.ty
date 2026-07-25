@@ -1,0 +1,35 @@
+# char_at(s, i) -> char: the string byte at i AS A CHAR, so it compares against a
+# char literal. s[i] is UNCHANGED and still yields int -- both are exercised here
+# side by side, because keeping them distinct is the whole point of the helper.
+fn main():
+    s := "hello"
+
+    # the papercut char_at exists to fix
+    if char_at(s, 1) == 'e':
+        print("eq\n")
+
+    # index 0 and the last index
+    print("" + char_at(s, 0) + char_at(s, len(s) - 1) + "\n")
+
+    # s[i] still yields int -- same byte, different static type
+    print(str(s[1]) + "\n")
+    print(str(to_int(char_at(s, 1))) + "\n")
+
+    # str(char) is the one-byte glyph, str(int) is the number
+    print(str(char_at(s, 4)) + " " + str(s[4]) + "\n")
+
+    # char arithmetic and comparison, same as any other char
+    print("" + (char_at(s, 0) - 32) + "\n")
+    if char_at(s, 2) > 'a':
+        print("gt\n")
+
+    # UFCS receiver form, like s.substr(..) / s.find(..)
+    print("" + s.char_at(3) + "\n")
+
+    # accumulate into a string, reversed
+    r := ""
+    i := len(s) - 1
+    for i >= 0:
+        r = r + char_at(s, i)
+        i = i - 1
+    print(r + "\n")

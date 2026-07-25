@@ -1,0 +1,5 @@
+# char_at(s, i) aborts on an out-of-range index exactly as s[i] does -- same
+# runtime read (tycho_str_get / hi_sidx), same message. See tests/abort/index_oob.ty.
+fn main():
+    s := "hello"
+    print(str(char_at(s, 9)))

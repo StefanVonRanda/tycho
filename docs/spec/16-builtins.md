@@ -127,10 +127,21 @@ yields the byte count.
 | `len(s)` | `string -> int` | magic | Byte length. Overloaded (§29.6). |
 | `substr(s, a, b)` | `(string, int, int) -> string` | Sig | A fresh copy of the byte range `[a, b)`; out-of-range bounds are **clamped**, not an error. |
 | `find(s, sub)` | `(string, string) -> int` | Sig | Byte index of the first occurrence of `sub`, or `-1`. |
+| `char_at(s, i)` | `(string, int) -> char` | Sig | The byte at `i` as a [`char`](03-types.md#524-char). Same read and same bounds abort as `s[i]` ([§5.2.5](03-types.md#525-string)); only the STATIC type differs — `s[i]` yields `int`. Aborts at run time if `i` is out of bounds. |
 | `split(s, sep)` | `(string, string) -> [string]` | Sig | Split on a non-empty separator; `n` separators yield `n+1` fields. An **empty** `sep` aborts at run time (§29.12). |
 
+`char_at` is the `char`-typed companion to string indexing. `s[i]` yields `int`
+and MUST keep yielding `int`, so `s[i] == 'e'` is a type error; `char_at(s, i) ==
+'e'` is the supported spelling. The two are the SAME byte read — the emitted C is
+literally the same bounds-checked call — so neither is faster or safer than the
+other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
+[§5.2.5](03-types.md#525-string) for why the wart exists.
+
 > Provenance: `substr`/`find`/`split` `Sig` `src/tychoc.c:3833-3835`; `len` magic
-> `:4789-4794`.
+> `:4789-4794`; `char_at` `Sig` `src/tychoc.c:4120`, codegen `:8179-8187`
+> (`tycho_str_get`, the same call `s[i]` emits at `:8653`), tychoc0
+> `compiler/tychoc0.ty:4827-4828`,`:6792-6797` (`hi_sidx`, the same helper `s[i]`
+> emits at `:6337`).
 
 ## 29.6 Arrays
 
