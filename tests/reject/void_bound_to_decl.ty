@@ -1,0 +1,10 @@
+# A proc call has no value, so it cannot be bound by `:=`. A statement-position
+# `nop()` stays legal -- only a decl that would take `void` as its type is
+# rejected. Same guard covers `ys := [nop()]` and `t := (1, nop())`, whose
+# composed types carry a `void` component.
+fn nop():
+    print("x")
+
+fn main():
+    x := nop()
+    println("unreachable")

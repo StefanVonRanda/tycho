@@ -1,0 +1,13 @@
+# A `void` value must not ground a pending `[]`. push(xs, nop()) composes the
+# element type from the argument, so the B-3 pending grounding was handed
+# "[void]" rather than "void" and the top-level guard let it through: no tycho
+# diagnostic at all, and the C back end failed instead with
+#   'void' must be the only parameter and unnamed
+#     static void tycho_arr_C0_push(Arena*, TychoArrC0*, void );
+# Both compilers now check the grounding type THROUGH the composition.
+fn nop():
+    print("x")
+
+fn main():
+    xs := []
+    push(xs, nop())

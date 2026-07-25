@@ -4277,6 +4277,29 @@ fn tuple_parts(ty: string) -> [string]:          # depth-aware split of the inne
     push(parts, substr(inner, start, len(inner)))
     return parts
 
+# A type that cannot stand as the type of a VALUE: `void` (a proc call used as
+# an expression), checked THROUGH array / map / tuple composition. The twin of
+# tychoc's `uninferrable` (src/tychoc.c). The composition matters: the B-3
+# pending grounding for `push(xs, nop())` composes "[void]" and installs THAT,
+# so a bare `ty == "void"` test let a void element through and it reached the C
+# back end as a `void` function parameter. A void in statement position never
+# reaches here -- only a type that is about to become a value's type does.
+fn ty_has_void(ty: string) -> bool:
+    if ty == "void":
+        return true
+    if is_array(ty):
+        return ty_has_void(elem_ty(ty))
+    if is_map(ty):
+        return ty_has_void(map_key(ty)) or ty_has_void(map_val(ty))
+    if is_tuple(ty):
+        ps := tuple_parts(ty)
+        i := 0
+        for i < len(ps):
+            if ty_has_void(ps[i]):
+                return true
+            i = i + 1
+    return false
+
 fn tup_suffix(ty: string) -> string:             # parts mangled, joined by "_"
     parts := tuple_parts(ty)
     out := ""
@@ -6480,6 +6503,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 at := type_of(args[0], names, types, dc, ctx)
                 if not is_array(at) and not is_soa(at):   # reject push onto a non-array/soa. Was a fail-open: tychoc0 emitted Arr_*_push on a scalar (broken C). Matches tychoc (src/tychoc.c ~4206).
                     die_at(dc, ctx.line, "push's first argument must be an array or soa")
+                if ty_has_void(type_of(args[1], names, types, dc, ctx)):   # push(xs, nop()): a proc call has no value; was a fail-open that emitted a `void` argument ("'void' must be the only parameter and unnamed"). tychoc: "push's value must be <elem>"
+                    die_at(dc, ctx.line, "push's value must not be void")
                 if is_soa(at):                    # soa push: grow each field buffer (in the soa's arena) + scatter
                     return "Soa_" + soa_struct(at) + "_push(" + owner_arena_of(args[0], names, types, dc, ctx) + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
                 if is_bounded(at):                # bounded push: trap-on-full family (afam = Arr_b<N>_<elem>); inline, never fused/grown
@@ -8427,6 +8452,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     die("'" + name + "' is already declared in this scope")
                 di = di + 1
             ty := type_of(e, names, types, dc, ctx)
+            if ty_has_void(ty):                   # `x := nop()` / `ys := [nop()]` / `t := (1, nop())`: a proc call has no value, so this decl would emit a `void` C local (or a `void` array element). Statement-position `nop()` is SExpr and never reaches here
+                die_at(dc, _sl, "cannot bind a void value")
             if ty_has_handle(dc, ctx, ty) and not is_handle(dc, ty):   # FFI R2: a handle nested in a container/aggregate could be aliased into a double-free
                 die_at(dc, _sl, "a handle cannot be stored in a container or aggregate -- it is freed at the end of its scope")
             if is_task(ty) and not is_spawn(e):   # AUDIT: an affine task handle is born from spawn and dies at its wait; copying/re-binding it would double-join (SIGSEGV) or orphan it
@@ -12556,12 +12583,14 @@ fn pend_init_kind(e: Expr) -> int:
             return 0
 
 # B-3 probe: the declared name if `s` is an untyped decl with a bare
-# initializer ("" otherwise), with the initializer handed back via `ex`.
-fn pend_probe(s: Stmt, ex: inout Expr) -> string:
+# initializer ("" otherwise), with the initializer handed back via `ex` and the
+# decl's source location via `sl` (so a bad grounding can point at real code).
+fn pend_probe(s: Stmt, ex: inout Expr, sl: inout int) -> string:
     match s:
         SDecl(n, e, _sl):
             if pend_init_kind(e) != 0:
                 ex = e
+                sl = _sl
                 return n
             return ""
         SAssign(n, e, _sl):
@@ -12910,13 +12939,16 @@ fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [
     for i < len(stmts):
         st := stmts[i]
         pe := EInt("0", _el)
-        pn := pend_probe(st, &pe)
+        psl := 0
+        pn := pend_probe(st, &pe, &psl)
         if pn != "":                                  # B-3: a bare decl grounds from its first use in this block
             sn := names
             stt := types
             pty := pend_seek(dc, ctx, &sn, &stt, pn, stmts, i + 1, fret)
             if pty == "":
                 die("type: could not infer the type of '" + pn + "' -- no grounding use in its block (annotate the declaration)")
+            if ty_has_void(pty):                      # e.g. push(xs, nop()) -> "[void]": no value has type void
+                die_at(dc, psl, "cannot infer the type of '" + pn + "' from this use")
             st = STypedDecl(pn, pty, pe, _sl)              # the annotated form; ground_pre types the initializer
         push(out, lift_stmt(st, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
         i = i + 1

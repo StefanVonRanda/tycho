@@ -1,0 +1,9 @@
+# A `void` value must not be pushed onto an ALREADY-typed array either -- the
+# pending path is not the only way in. tychoc has always rejected this ("push's
+# value must be int"); tychoc0 used to fail open and emit a `void` argument.
+fn nop():
+    print("x")
+
+fn main():
+    xs := []int
+    push(xs, nop())

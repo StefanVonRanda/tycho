@@ -4406,8 +4406,20 @@ static int pend_find(const char *name) {          /* newest-first, not-yet-done 
         if (!g_pend[i].done && !strcmp(g_pend[i].name, name)) return i;
     return -1;
 }
+/* A type that cannot stand as the type of a value: `void` (a proc call used as
+ * an expression), a bare `None`, a bare `Ok`/`Err`, a still-pending decl. */
+static int uninferrable(Type t) {
+    return t == T_VOID || t == T_NONE || t == T_OK_PARTIAL || t == T_ERR_PARTIAL || t == T_PENDING;
+}
 static void pend_ground(const char *name, Type t, int line) {
-    if (t == T_VOID || t == T_NONE || t == T_OK_PARTIAL || t == T_ERR_PARTIAL || t == T_PENDING)
+    /* The composition matters, not only the top tag: `push(xs, nop())` composes
+     * `arr_of(void)` and hands THAT to pend_ground, so a bare `t == T_VOID` test
+     * passed it through and a `void` element reached codegen as a `void`
+     * function parameter ("'void' must be the only parameter and unnamed").
+     * The same holds for `map_set(m, k, nop())` -> [K: void]. */
+    if (uninferrable(t)
+        || (is_array(t) && uninferrable(arr_elem(t)))
+        || (is_map(t) && (uninferrable(map_key(t)) || uninferrable(map_val(t)))))
         die_at(line, "cannot infer the type of '%s' from this use", name);
     int pi = pend_find(name);
     if (pi < 0) return;

@@ -749,7 +749,7 @@ codegen.
   - Done when: the ruling is recorded here verbatim, then the chosen option is
     implemented in its own phase(s) appended below with their own gates.
 
-- [ ] **Phase 7 — a `void` value grounds a pending `[]` and escapes into codegen (found by Phase 1, NOT fixed there)**
+- [x] **Phase 7 — a `void` value grounds a pending `[]` and escapes into codegen (found by Phase 1, NOT fixed there)**
   - Found while probing `T_PENDING` reachability. This program produces no tycho
     diagnostic at all — it reaches the C compiler and fails there:
     ```
@@ -778,6 +778,155 @@ codegen.
     values, tuple elements, channel sends.
   - Done when: the probe above is rejected by tychoc *and* tychoc0 with a tycho
     diagnostic naming the line; a reject fixture locks it; full gate set green.
+  - **DONE 2026-07-25.**
+
+    **Line citations in this phase's own text were wrong — corrected.** All four
+    were ~13 lines short of the real sites (the file moved under Phase 1's edit):
+
+    | This phase said | Actually at | What is there |
+    |---|---|---|
+    | `pend_ground` at `:4396` | **`:4409`** (guard on `:4410`) | correct mechanism, wrong line |
+    | push special case at `:5322` | **`:5343`** | `pend_ground(args[0]->sval, arr_of(resolve_expr(args[1])), line)` |
+    | map_set special case at `:5262` | **`:5286`** | `pend_ground(args[0]->sval, gm, line)` |
+    | resolve_expr head grounding at `:5696` | **`:5716`** | `if (vars_find(...) && vt == T_PENDING) pend_ground(e->sval, want, e->line)` |
+
+    (Line numbers above are pre-fix. There is also a fourth call site the phase
+    text never mentioned: the assignment grounding at `:6423`.)
+
+    **Root cause — the guard tested the wrong thing, not the wrong place.**
+    `pend_ground`'s guard was `t == T_VOID || t == T_NONE || ...`, i.e. a test on
+    the TOP-LEVEL tag. But the push path does not hand it `void`; `:5343` calls
+    `arr_of(resolve_expr(args[1]))` first, and `arr_of` (`:1327`) falls through to
+    `arrc_of(elem)` for any non-int/float/string element — so a `void` element
+    became a perfectly well-formed *array* type whose top tag is `IS_ARRC`, sailed
+    past the guard, and reached codegen as `static void tycho_arr_C0_push(Arena*,
+    TychoArrC0*, void )`. The composition, not the special-casing, was the hole.
+
+    **Fix site — one generalized predicate per compiler, no parallel guard.**
+    - `src/tychoc.c:4409` — new `static int uninferrable(Type t)` holding the old
+      five-way test, and `pend_ground`'s guard now reads it THROUGH one level of
+      composition: `uninferrable(t) || (is_array(t) && uninferrable(arr_elem(t)))
+      || (is_map(t) && (uninferrable(map_key(t)) || uninferrable(map_val(t))))`.
+      This is the only change to tychoc; all four `pend_ground` call sites are
+      covered by it, exactly as the phase brief asked.
+    - `compiler/tychoc0.ty` — the twin `fn ty_has_void(ty: string) -> bool`
+      (recursive over array / map / tuple type strings), applied at three sites.
+
+    **tychoc0 was PROBED before being patched (Phase 4's lesson), and it DID have
+    the defect** — plus three more the phase brief had not predicted. Probing
+    protocol copied from `tests/run.sh:150-164`: `tychoc <f> --emit-c -o <out>`
+    and `tychoc0 <f> --emit-c` (tychoc0 has no `-o`; it writes C to stdout).
+    `--emit-c` stops before the C compiler, so exit 0 means *the front end
+    accepted it* — the escape, isolated from the C toolchain.
+
+    **Sweep table — the whole `void`-as-a-value family, both compilers.**
+    21 probes (18 illegal + 3 legal controls), `/tmp/ph7/probes/`.
+
+    | Shape | tychoc before | tychoc after | tychoc0 before | tychoc0 after |
+    |---|---|---|---|---|
+    | `xs := []` ; `push(xs, nop())` | **ESCAPE** | reject `:6` | **ESCAPE** | reject |
+    | `xs := []int` ; `push(xs, nop())` | reject | reject | **ESCAPE** | reject |
+    | `ys := [nop()]` | reject | reject | **ESCAPE** | reject |
+    | `t := (1, nop())` | reject | reject | **ESCAPE** | reject |
+    | `x := nop()` | reject | reject | **ESCAPE** | reject |
+    | `ys := [1, nop()]` | reject | reject | reject | reject |
+    | `m["k"] = nop()` (map value) | reject | reject | reject | reject |
+    | `m[nop()] = 1` (map key) | reject | reject | reject | reject |
+    | `send(c, nop())` | reject | reject | reject | reject |
+    | `str(nop())` | reject | reject | reject | reject |
+    | `"a" + nop()` | reject | reject | reject | reject |
+    | `return nop()` from `-> int` | reject | reject | reject | reject |
+    | `takes(nop())` (user fn arg) | reject | reject | reject | reject |
+    | `x: int = nop()` | reject | reject | reject | reject |
+    | `x = nop()` (assign) | reject | reject | reject | reject |
+    | `print(nop())` | reject | reject | reject | reject |
+    | `xs[0] = nop()` (element) | reject | reject | reject | reject |
+    | `if nop():` | reject | reject | **ESCAPE** | **still escapes → Phase 14** |
+    | *control* `nop()` as a statement | accept | accept | accept | accept |
+    | *control* `nop()` in a `for` body | accept | accept | accept | accept |
+    | *control* void fn + bare `return` | accept | accept | accept | accept |
+
+    Escapes: tychoc **1**, tychoc0 **6**. Fixed here: tychoc 1/1, tychoc0 5/6.
+    The sixth (`if nop():`) is **not** a void defect — probes `if 1:` and
+    `if "s":` escape tychoc0 identically, so it is a general missing
+    bool-condition check. Filed as Phase 14 rather than absorbed (scope lock).
+
+    **Before / after — the phase's repro, both compilers:**
+    ```
+    BEFORE  tychoc   (no tycho diagnostic; escapes to cc)
+                     /tmp/…/push_pending.c:2426:52: error: 'void' must be the
+                     only parameter and unnamed
+                      2426 | static void tycho_arr_C0_push(Arena*, TychoArrC0*, void );
+    BEFORE  tychoc0  (no diagnostic at all; exit 0, emitted C)
+
+    AFTER   tychoc   /tmp/…/push_pending.ty:6: error: cannot infer the type of 'xs' from this use
+                          6 |     push(xs, nop())
+    AFTER   tychoc0  line 5: cannot infer the type of 'xs' from this use
+                             xs := []
+                             ^
+    ```
+    Known, honest divergence: tychoc points at the grounding **use** (line 6),
+    tychoc0 at the **decl** (line 5). tychoc0's `pend_seek` returns only a type
+    string, not the use's location; threading a location up through it is
+    disproportionate to the benefit, and both messages name real, adjacent code.
+    (This is a seventh instance of the Phase 8(b) line-number family.)
+
+    **Why the three tychoc0 sites, and why not more.** `lift_program`
+    (`compiler/tychoc0.ty:15021`) only lifts a function when
+    `block_has_lambda(f.body)` is true — and `stmt_has_lambda` returns true for a
+    bare pending decl (`pend_init_kind(e) != 0`), which is why the B-3 grounding
+    fix lands reliably. It is ALSO why a first attempt to guard `lift_stmt`'s
+    `SDecl` arm was **reverted**: that arm only runs inside lambda-bearing or
+    pending-bearing functions, so `x := nop()` would have been rejected or
+    accepted depending on whether the enclosing function happened to contain a
+    lambda. Verified empirically before reverting: an instrumented build
+    (`eprint` in each arm) printed for `push_pending` and printed **nothing** for
+    `bind_void`. The guard was moved to `gen_stmt`'s `SDecl` arm, which every
+    function reaches. Final sites:
+    - `lift_block` (`:12938-12948`) — the pending-grounding install, twin of
+      `pend_ground`; `pend_probe` gained an `sl: inout int` so the diagnostic can
+      name real source instead of `die()`ing without a location.
+    - `gen_stmt` `SDecl` (`:8452`) — universal; covers `x := nop()`,
+      `ys := [nop()]`, `t := (1, nop())` via the composed type string.
+    - `gen_call` `push` arm (`:6504`) — next to the existing fail-closed
+      "push's first argument must be an array or soa" guard; covers the
+      already-typed array. Deliberately checks *only* for void, not full
+      element-type equality: tychoc0's checker is thinner than tychoc's by
+      design, and asserting general equality here could reject legal newtype /
+      generic coercions. Fail-closed on the shape actually proven broken.
+
+    **Legal-usage control — void in statement position still compiles AND RUNS**
+    (over-tightening would be worse than the escape). Built with each compiler
+    and executed:
+    ```
+    ctl_stmt         tychoc-run: xok      tychoc0-run: xok
+    ctl_stmt_loop    tychoc-run: xxxok    tychoc0-run: xxxok
+    ctl_void_return  tychoc-run: g xok    tychoc0-run: g xok
+    ```
+    Identical output from both, and all three still classify as "front end
+    accepted" in the sweep above.
+
+    **Fixtures** (one per distinct rejection — Phase 9's note that the compiler
+    halts at the first error):
+    - `tests/reject/void_grounds_pending_push.ty` — the repro.
+    - `tests/reject/void_push_value.ty` — push onto an already-typed array.
+    - `tests/reject/void_bound_to_decl.ty` — `x := nop()`.
+    Each verified rejected by BOTH compilers with a located diagnostic.
+
+    **Gates — each its own foreground command, `env -u LD_PRELOAD make …`:**
+    ```
+    make test         passed: 440   failed: 0 / all green      (437 + 3 fixtures)
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 36   failed 0
+    make fixpoint     ok B == C : tychoc0 reproduces itself byte-identically (34892 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 440   failed: 0 / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (121 markdown files, no dead relative links)
+    ```
+    `git status --short`: only the two sources + the three new fixtures. No spill.
+    `make fixpoint` green is the evidence the change never reached codegen: both
+    guards `die` before any type is installed, so emitted C is byte-identical.
 
 - [ ] **Phase 8 — two concrete diagnostic defects surfaced by Phase 2's G6 (NOT fixed there)**
   - **(a) IS CLOSED BY PHASE 3** (2026-07-25), together with three more G6
@@ -1221,6 +1370,37 @@ codegen.
     than riding along on a codegen change.
   - Done when: `make` compiles `src/tychoc.c` with zero warnings; full gate set
     green.
+
+- [ ] **Phase 14 — tychoc0 does not check that an `if` condition is a bool (found by Phase 7, NOT fixed there)**
+  - Found by Phase 7's `void`-as-a-value sweep. `if nop():` escapes tychoc0's
+    front end with no diagnostic; tychoc rejects it cleanly with
+    `if condition must be bool`.
+  - **It is NOT a void defect, which is why Phase 7 did not absorb it.** Probed
+    on 2026-07-25 with two more conditions:
+    ```
+    fn main():          fn main():
+        if 1:               if "s":
+            println("y")        println("y")
+    ```
+    tychoc0 accepts BOTH (`tychoc0 <f> --emit-c`, exit 0). So the missing check
+    is general — any non-bool condition passes — and Phase 7's `ty_has_void`
+    predicate is the wrong tool for it. Root cause is a different one: tychoc0
+    has no condition typecheck at all, not a hole in one.
+  - Class: front-end fail-open, DECISION divergence between the compilers (the
+    same family as Phase 9). Emitted C for `if 1:` is legal C and *runs*, with C's
+    truthiness rather than Tycho's — so unlike Phase 7 this one is not merely an
+    ugly error message: tychoc0 silently accepts a program tychoc rejects.
+  - Scope when taken: the `SIf` / `SWhile` (and `elif`) condition paths in
+    `compiler/tychoc0.ty` only — tychoc is already right, so this is a one-sided
+    fix and `make fixpoint` is not at risk (tychoc0's own diagnostics are not
+    emitted C). Check `for <cond>:` and the value-`if` condition too.
+  - Watch out: tychoc0.ty itself must keep compiling — confirm no condition in
+    `compiler/`, `corelib/`, `tests/` or `examples/` relies on the fail-open
+    before tightening, or the self-host breaks. FAIL CLOSED only after that sweep.
+  - Done when: `if 1:` / `if "s":` / `if nop():` are rejected by tychoc0 with a
+    located diagnostic; a `tests/reject/` fixture locks it (one file per distinct
+    rejection); legal bool conditions still compile and run on both; full gate
+    set green.
 
 ## Out of scope
 
