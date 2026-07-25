@@ -70,12 +70,17 @@ A `handle Name: free: c_free` declares a nominal, affine, opaque C resource — 
 handle is typically produced by an `extern` "opener" (the only kind of function
 permitted to *return* a handle) and released without explicit calls.
 
-- **A handle name is a type name.** `Name` MUST NOT already name a struct, an
-  enum, a newtype, or another handle declared earlier in the file; a collision is
-  a compile error. A handle shares the one type namespace with those forms — it is
+- **A handle name is a type name, and the collision rule is symmetric.** A
+  handle shares the one type namespace with structs, enums and newtypes — it is
   written in type position and mangled to a C typedef like them — so a duplicate
   would otherwise reach `cc` as two declarations of one name, with no Tycho-level
-  diagnostic. Locked by `tests/reject/handle_dup_name.ty`.
+  diagnostic. The rule therefore runs in **both** directions: a `handle Name`
+  MUST NOT repeat a struct, enum, newtype or handle name declared earlier in the
+  file, and a `struct`, `enum` or `type` declaration MUST NOT repeat a **handle**
+  name declared earlier in the file. Either order is a compile error, reported at
+  the second declaration. Locked by `tests/reject/handle_dup_name.ty` (the
+  handle-second order) and `tests/reject/handle_then_struct.ty`,
+  `handle_then_enum.ty`, `handle_then_newtype.ty` (the handle-first order).
 - **Scope-exit free.** The owning variable's destructor runs at every scope exit
   — block end, early `return`, `break`, `continue`, `or_return`.
 - **Borrow on pass.** Passing a handle passes the `void*`; the callee does **not**

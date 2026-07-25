@@ -1,0 +1,15 @@
+# 14-ffi.md §25, the newtype arm of the symmetric collision rule (see
+# tests/reject/handle_then_struct.ty). Distinct from
+# tests/reject/newtype_under_handle.ty, which is about a newtype's UNDERLYING
+# type; this is the NAME. Phase 39: before the fix BOTH compilers accepted,
+# compiled and ran this. tychoc: parse_typedecl's handle_find.
+# Both compilers reject (differential).
+handle H:
+    free: hclose
+
+type H = int
+
+extern "x" fn hclose(h: int) -> int
+
+fn main():
+    println("unreachable")

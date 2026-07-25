@@ -1,0 +1,14 @@
+# 07-memory-model.md §11.5: an `inout` parameter MUST NOT be a function value.
+# Phase 39, the generic-template arm (see tests/reject/generic_chan_inout_param.ty
+# for the mechanism). Before the fix tychoc accepted this and emitted C that would
+# not compile. Both compilers reject (differential); the concrete form is
+# tests/reject/inout_fnvalue.ty.
+fn add1(x: int) -> int:
+    return x + 1
+
+fn f(g: inout fn(int) -> int, p: $T) -> int:
+    return g(1)
+
+fn main():
+    h := add1
+    println(str(f(&h, 5)))

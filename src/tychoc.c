@@ -3648,8 +3648,14 @@ static void parse_struct(Parser *ps) {
     }
     /* check the MANGLED name (like the enum site): a cross-package collision
      * ("a__b" + "c" vs "a" + "b__c") otherwise slips through to a duplicate C
-     * typedef and fails at cc with no tycho-level diagnostic. */
-    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
+     * typedef and fails at cc with no tycho-level diagnostic.
+     * `handle_find` belongs here too (14-ffi.md §25): a handle shares the ONE
+     * type namespace with struct/enum/newtype, and parse_handle already tests
+     * all four (:3616). Omitting it here made the rule one-directional --
+     * `struct H` after `handle H` was accepted and RAN on tychoc while
+     * `handle H` after `struct H` was rejected. */
+    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
+        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nstructs >= T_ARRC_BASE - T_STRUCT_BASE) die_at(nameT->line, "too many structs");
     TBL_ENSURE(g_structs, g_nstructs, g_structs_cap);
@@ -3702,7 +3708,10 @@ static void parse_enum(Parser *ps) {
         }
         eat(ps, TK_RPAREN, "')' after the enum type parameters");
     }
-    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
+    /* `handle_find` included for the same reason as the struct site above: one
+     * type namespace, checked symmetrically (14-ffi.md §25). */
+    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
+        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nenums >= T_TUP_BASE - T_ENUM_BASE) die_at(nameT->line, "too many enums");
     TBL_ENSURE(g_enums, g_nenums, g_enums_cap);
@@ -3748,7 +3757,10 @@ static void parse_enum(Parser *ps) {
 static void parse_typedecl(Parser *ps) {
     eat(ps, TK_TYPE, "'type'");
     Tok *nameT = eat(ps, TK_IDENT, "a type name");
-    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
+    /* `handle_find` included for the same reason as the struct site above: one
+     * type namespace, checked symmetrically (14-ffi.md §25). */
+    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
+        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nnewtypes >= T_SOA_BASE - T_NT_BASE) die_at(nameT->line, "too many newtypes");
     TBL_ENSURE(g_newtypes, g_nnewtypes, g_newtypes_cap);
@@ -6820,6 +6832,25 @@ static int constraint_ok(const char *pred, Type t) {
     return 1;   /* unknown predicates are rejected at parse */
 }
 
+/* 07-memory-model.md §11.5 -- the two parameter types that MUST NOT be `inout`,
+ * as ONE rule with three callers: the concrete declaration, the generic
+ * TEMPLATE declaration (its written types), and instantiate_generic (the
+ * SUBSTITUTED types). The template check cannot subsume the instance one --
+ * `inout $T` is not a channel or a function value until `$T` is bound -- and the
+ * instance check cannot subsume the template one, since an uninstantiated
+ * template is never monomorphized at all. `$T` itself trips neither predicate,
+ * so no guard is needed; `Channel($T)` trips IS_CHAN and is rejected on purpose
+ * (the rule is about the channel, not about T). */
+static void check_inout_param_type(int line, Type t, int is_inout, const char *pname) {
+    if (!is_inout) return;
+    if (IS_CHAN(t))
+        die_at(line, "a channel parameter cannot be inout (the handle is already shared)");
+    if (IS_FUNC(t))
+        die_at(line, "inout parameter '%s': a function value can't be inout "
+               "(a callee could write a closure back into the caller and it would dangle)",
+               pname);
+}
+
 static void instantiate_generic(Proc *gt, Expr *e) {
     if (e->nargs != gt->nparams)
         die_at(e->line, "'%s' takes %d argument(s), got %d", gt->name, gt->nparams, e->nargs);
@@ -6881,6 +6912,15 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     cret = subst_type(gt->ret, binds);
     if (has_typaram(cret))
         die_at(e->line, "the return type of '%s' has a type parameter not fixed by any argument; pass it explicitly, e.g. %s$(int)", gt->name, gt->name);
+    /* Phase 39: the declaration rules again, now on the SUBSTITUTED signature.
+     * The template site (resolve_program) caught every WRITTEN concrete form;
+     * this catches the bindings -- `fn f(c: inout $T)` called with a channel or
+     * a function value -- which only exist here. Reported at the call, because
+     * the call is what chose the binding that violates §11.5 / CC-4. */
+    if (IS_CHAN(cret))
+        die_at(e->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
+    for (int j = 0; j < gt->nparams; j++)
+        check_inout_param_type(e->line, cparams[j], gt->params[j].is_inout, gt->params[j].name);
     e->sval = nm;                                     /* rewrite the call to the instance */
     if (sig_find(nm)) { g_sizebinds = saved_sb; return; }   /* already instantiated */
     Sig s; memset(&s, 0, sizeof s);
@@ -7088,6 +7128,22 @@ static void resolve_program(ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
         diag_use_proc(pr);   /* package mode: name THIS proc's file in any error below */
+        /* Phase 39 -- these three are rules about the DECLARATION (11-functions.md
+         * §15.1 arity; 07-memory-model.md §11.5 inout; CC-4 channel return), so they
+         * run BEFORE the generic stash below. That `continue` exists only to skip Sig
+         * REGISTRATION ("not a callable Sig"), never to defer validation, and letting
+         * them sit after it meant `fn f(c: inout Channel(int), p: $T)` compiled and ran
+         * on a technicality. Written types only; instantiate_generic re-runs the inout
+         * and channel-return rules on the substituted ones.
+         * The arity check MUST come first for a template: instantiate_generic builds
+         * `Type cparams[16]`, so a 17-parameter generic overran that stack array
+         * (UBSan, before this move: "src/tychoc.c:6868: index 16 out of bounds for
+         * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
+        if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
+        if (IS_CHAN(pr->ret))
+            die_at(pr->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
+        for (int j = 0; j < pr->nparams; j++)
+            check_inout_param_type(pr->line, pr->params[j].type, pr->params[j].is_inout, pr->params[j].name);
         if (pr->generic) {   /* a `$T` template: not a callable Sig -- stash it; instances are made per call */
             if (sig_find(pr->name) || generic_find(pr->name) || consts_find(pr->name))
                 die_at(pr->line, "'%s' is already defined", pr->name);
@@ -7095,18 +7151,15 @@ static void resolve_program(ProcVec *prog) {
             g_generics[g_ngenerics++] = pr;
             continue;
         }
-        if (IS_CHAN(pr->ret))
-            die_at(pr->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
-        for (int j = 0; j < pr->nparams; j++)
-            if (pr->params[j].is_inout && IS_CHAN(pr->params[j].type))
-                die_at(pr->line, "a channel parameter cannot be inout (the handle is already shared)");
         if (sig_find(pr->name) || consts_find(pr->name))
             die_at(pr->line, "'%s' is already defined", pr->name);
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         s.is_extern = pr->is_extern;
         if (pr->is_extern) add_link(pr->lib);   /* FFI: collect -lLib for the cc line */
-        if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
+        /* the arity cap and the two `inout` type rules moved above the generic
+         * stash (Phase 39) -- s.params[16] is safe to fill because pr->nparams
+         * was already capped there. */
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
             s.inout[j]  = pr->params[j].is_inout;
@@ -7120,10 +7173,6 @@ static void resolve_program(ProcVec *prog) {
              * rides the same machinery: the value itself is immutable, but
              * REASSIGNMENT through the borrow (s = s + ".") reaches the
              * caller, and the new bytes build in _ina_<name>. */
-            if (pr->params[j].is_inout && IS_FUNC(pr->params[j].type))
-                die_at(pr->line, "inout parameter '%s': a function value can't be inout "
-                       "(a callee could write a closure back into the caller and it would dangle)",
-                       pr->params[j].name);
         }
         TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap);
         g_sigs[g_nsigs++] = s;

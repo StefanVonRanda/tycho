@@ -1,0 +1,12 @@
+# 07-memory-model.md §11.5 at INSTANTIATION, the function-value arm (see
+# tests/reject/generic_inst_chan_inout.ty for the mechanism). Phase 39: before the
+# fix both compilers accepted, compiled and ran this. Both reject (differential).
+fn add1(x: int) -> int:
+    return x + 1
+
+fn f(g: inout $T) -> int:
+    return 1
+
+fn main():
+    h := add1
+    println(str(f(&h)))

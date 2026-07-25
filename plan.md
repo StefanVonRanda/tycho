@@ -4777,6 +4777,82 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: the spec sentence is unambiguous, both compilers agree on the decision,
     the `Box($T)` self-reference control still runs on both, fixture-locked, gates green.
 
+  - **STILL OPEN — DELIBERATELY. Investigated in full 2026-07-25 alongside Phase 39; the
+    answer is the DIRECTION block's third branch ("cannot, and this is a real
+    expressiveness hole"), which says STOP AND REPORT rather than spec the limitation.
+    No compiler and no spec line was changed for this phase. The box stays unticked
+    because this is a language-design decision for the user.**
+
+    **The capability question, answered from the source (not from the error text).**
+    tychoc genuinely cannot instantiate it today, and the reason is structural:
+    - `parse_type` defers **only** the positional self-reference. `src/tychoc.c:1938-1941`
+      computes `self_ref` as `args[i] == g_structs[sid].typarams[i]` for every `i`, and on
+      a hit returns the bare template type `STRUCT_TYPE(sid)`; anything else with a
+      typaram in it dies at `:1944-1948`.
+    - That deferral works **only** by name coincidence. `subst_type` (`:1537`) re-
+      instantiates the deferred template with the **caller's** `binds`, and
+      `struct_instantiate` (`:1656-1657`) indexes that array by the **template's own**
+      typaram ids: `binds[(int)(g_structs[tmpl].typarams[i] - T_TYPARAM_BASE)]`. Given
+      call-site binds `{$U → int}`, instantiating `Box` (whose parameter is `$T`) reads an
+      **unset** slot: the instance would be named `Box__void` and its field would keep a
+      live `$T`. Deferring `Box($U)` the same way does not under-approximate — it
+      miscompiles.
+    - So there is nowhere to put the renaming `Box.$T := $U`. `Type` is a flat scalar tag
+      and there is no node for an *unapplied generic application*. Supporting the pattern
+      needs a new type form (a `T_GAPP`-style side table alongside `g_arrtypes` /
+      `g_restypes`), a `subst_type` case that composes bindings, and interning care so
+      `Box($U)` at `$U=int` is the SAME type as a direct `Box(int)`. That is a type-system
+      feature, not a conformance fix.
+
+    **tychoc0's acceptance is not luck — it is correct everywhere it was probed.** Every
+    row FRONT/CC/RUN, and the emitted C re-run under ASan+UBSan (`-fno-sanitize-recover=all`,
+    clean, rc=0, same output):
+
+    | probe | tychoc | tychoc0 |
+    |---|---|---|
+    | `fn wrap(x: $U) -> Box($U)`, instantiated at `int` **and** `string` | REJECT | ACCEPT → `5`, `hi` |
+    | `struct Pair($A,$B)` + `fn mk(x: $U, y: $V) -> Pair($U,$V)` | REJECT | ACCEPT → `5`, `hi` |
+    | names in scope but **swapped**: `fn flip(x: $B, y: $A) -> Pair($B,$A)` | REJECT | ACCEPT → `5`, `hi` (positional, not name-matched) |
+    | foreign parameter in a **struct field**: `struct Wrap($A): b: Box($A)` | REJECT | ACCEPT → `5` |
+    | **type identity**: `a := wrap(5); b := Box(7); a = b` | REJECT | ACCEPT → `7` (both intern to one type) |
+    | nested `Box(Box($U))` | REJECT | **REJECT**, same message — Phase 30's partial-mention rule, agreed |
+    | control `fn wrap(x: $T) -> Box($T)` | ACCEPT → `5`, `hi` | ACCEPT → `5`, `hi` |
+
+    The swap and identity rows were chosen specifically to expose a name-matching
+    shortcut; tychoc0 passes both. `mono_instantiate` substitutes positionally via
+    `subst_field_type` and interns by concrete name (`inst_name`), which is why renaming,
+    reordering and duplication all come out right.
+
+    **The workaround is NOT easy and NOT complete — this is the finding that forces the
+    third branch.** The workaround is "name the function's type parameter the same as the
+    struct's". Both corpus occurrences already do exactly that
+    (`tests/generic_enum_param.ty:15` `fn wrap(x: $T) -> Opt($T)` over `enum Opt($T)`;
+    `tests/generic_struct_instance_types.ty:16` `fn wrap(x: $T) -> Box($T)` over
+    `struct Box($T)`), and `$T` accounts for 913 of the corpus's typaram mentions, so the
+    restriction is invisible in practice — but only because the corpus never needed
+    anything else. **Two shapes no renaming can express**, both rejected by tychoc and
+    both correct on tychoc0:
+    ```
+    fn dup(x: $A) -> Pair($A, $A)              tychoc REJECT   tychoc0 -> 5, 5
+    fn swap(p: Pair($A,$B)) -> Pair($B,$A)     tychoc REJECT   tychoc0 -> hi, 5
+    ```
+    `dup` needs one function parameter to occupy two of the struct's slots — a name can
+    only be one thing. `swap` needs a permutation, and `self_ref` is positional-identity,
+    so every permutation fails. A language that cannot write `swap` on its own pair type
+    has an expressiveness hole, not a stylistic restriction.
+
+    **Consequences of each direction, for the user to weigh:**
+    - *Relax tychoc* (make the pattern legal): the right answer semantically, and safe in
+      blast radius — the new path is reachable only where tychoc dies today, so nothing
+      currently green changes route. But it is a type-system addition (the `T_GAPP` node
+      above), not a small patch, and it deserves its own phase and its own ruling.
+    - *Spec the limitation and add the check to tychoc0*: cheap, and it would close the
+      divergence — but it would bless `swap` and `dup` as permanently inexpressible, and
+      it would make tychoc0 **lose** working, correct, ASan-clean behaviour. Shipping that
+      sentence is the call this phase was told not to make on the user's behalf.
+    - `05-generics.md:80-82` is left exactly as it was. It is ambiguous, and resolving the
+      ambiguity IS the decision.
+
 - [x] **Phase 37 — tychoc's `binds[256]` arrays are indexed by the GLOBAL type-parameter id, which is unbounded: a program with >256 distinct `$Name`s overruns a stack array (found by Phase 29's coupling trace, out of its F2/G2 scope)**
   - **This is NOT the 8 → 16 widening Phase 29 did.** Those were *per-generic* arrays and
     are now all sized by `TYCHO_MAX_TYPARAMS` (`src/tychoc.c:538`). These are a different
@@ -5211,7 +5287,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 
 ### Filed by Phase 32 (2026-07-25)
 
-- [ ] **Phase 39 — the type-name collision check is ONE-DIRECTIONAL: `handle H` after `struct H` is rejected, `struct H` after `handle H` is not (found by Phase 32, out of its E1 scope)**
+- [x] **Phase 39 — the type-name collision check is ONE-DIRECTIONAL: `handle H` after `struct H` is rejected, `struct H` after `handle H` is not (found by Phase 32, out of its E1 scope)**
   - **MAIN-AGENT RULING 2026-07-25 (user delegated: "do 36 and 39 too"): FIX BOTH HALVES.**
     This *does* reject something tychoc compiles today, which the Phase 32 ruling said to
     avoid — the reasons it is not a contradiction, both checkable:
@@ -5274,6 +5350,136 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: both orders of every collision pair agree on both compilers, a generic
     declaration is held to §11.5 and §15.1, each is fixture-locked, and the full gate
     set is green.
+
+  - **DONE 2026-07-25. Both halves landed in both compilers.**
+
+    **The ruling's two premises were re-verified before any code was written** (the
+    prompt made this a hard gate, and offsets had shifted in Phases 37/38/40):
+    - (a) HOLDS. `src/tychoc.c:3616` is `if (struct_find(nm) >= 0 || enum_find(nm) >= 0
+      || newtype_find(nm) >= 0 || handle_find(nm) >= 0)` — all four. The siblings at
+      `:3652` / `:3705` / `:3751` were the identical expression **minus** `handle_find`,
+      byte-for-byte (`grep -n "struct_find(pkg_mangle"` returned exactly those three
+      lines, all three the three-way form).
+    - (b) HOLDS. `:3996-3997` is `struct_find(nm) >= 0 || enum_find(nm) >= 0 ||
+      newtype_find(nm) >= 0 || handle_find(nm) >= 0 || variant_find(nm, &vi) >= 0 ||
+      consts_find(nm)`. `parse_const` does include `handle_find`, so the omission in the
+      three sibling *type* declarations is an oversight, not a design decision, and the
+      ruling's reasoning stands. Nothing was stopped.
+
+    **HALF 1 — the collision matrix, all 16 ordered pairs of {handle, struct, enum,
+    newtype}, FRONT/CC/RUN on both compilers.** Exactly three cells were broken, and
+    they were the three `handle`-first cells:
+
+    | before | tychoc | tychoc0 |
+    |---|---|---|
+    | H→S | ACCEPT / CCOK / RUN | ACCEPT / **CCFAIL** `incompatible type for argument 1 of 'S_X_eq'` |
+    | H→E | ACCEPT / CCOK / RUN | ACCEPT / CCOK / RUN |
+    | H→N | ACCEPT / CCOK / RUN | ACCEPT / CCOK / RUN |
+    | the other 13 | REJECT | REJECT |
+
+    So H→E and H→N were a fail-open on **both** compilers, not only tychoc — the plan
+    had only measured H→S. After the fix all 16 cells are REJECT/REJECT, tychoc reporting
+    `'X' is already defined` at the second declaration in every one.
+    - tychoc: `handle_find(pkg_mangle(...))` added to `parse_struct` (`:3658`),
+      `parse_enum` (`:3714`), `parse_typedecl` (`:3763`).
+    - tychoc0: new `ck_type_dup_handle` beside the existing `ck_handle_dup`, called from
+      the top-level parse loop before `parse_struct` / `parse_enum` / `parse_newtype`, so
+      the test runs in DECLARATION order against the handles seen so far — the same shape
+      `ck_handle_dup` already used, with tychoc's wording verbatim.
+
+    **HALF 2 — why the `continue` exists, answered from the source before moving
+    anything.** Its own comment says it: *"a `$T` template: not a callable Sig — stash it;
+    instances are made per call"*. It exists to skip **Sig registration**, not to defer
+    validation — and the three checks stranded behind it are rules about the
+    *declaration*, not about the Sig. Measured bypasses:
+
+    | probe | tychoc before | tychoc0 before |
+    |---|---|---|
+    | `fn f(c: inout Channel(int), p: $T)` (I6) | ACCEPT / CCOK / RUN → `1` | ACCEPT / CCOK / RUN → `1` (Phase 32 mirrored the gap) |
+    | `fn f(g: inout fn(int)->int, p: $T)` (I8) | ACCEPT / **CCFAIL** `'h_g' is a pointer` | rejected, but incidentally (`unknown function 'g'`) |
+    | 17 params + `q: $T` (I7) | **STACK OVERRUN**, then a nonsense diagnostic | correctly rejected at parse |
+    | `fn f(c: Channel(int), p: $T) -> Channel(int)` (CC-4) | ACCEPT / CCOK / RUN | **REJECT** — a live accept/reject divergence |
+
+    **I7's bypass was a memory-safety bug, not only a missing diagnostic.**
+    `instantiate_generic` builds `Type cparams[16]` (`:6866` pre-fix) and loops to
+    `gt->nparams`, so a 17-parameter template wrote past a stack array. Reproduced on an
+    ASan+UBSan build of the pre-fix compiler:
+    ```
+    $ cc -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -Ibuild src/tychoc.c -o /tmp/ph39/tychoc-asan
+    $ /tmp/ph39/tychoc-asan /tmp/ph39/g/g_params17.ty --emit-c -o /tmp/ph39/w/p17
+    src/tychoc.c:6868:16: runtime error: index 16 out of bounds for type 'Type [16]'
+    ```
+    The corrupted `s.nparams` is what produced the pre-fix garbage message
+    `'f__int__…__int' takes 0 argument(s), got 18`. This is the same family as Phase 37
+    and is exactly what Phase 38's new `asan-self` gate exists to catch — it did not,
+    because no fixture had a 17-parameter generic. `tests/reject/generic_params_17.ty`
+    now supplies one, so `make asan-self` covers it from here.
+
+    **What was NOT forced across the `continue`, and why.** A check that genuinely cannot
+    run on an uninstantiated template was moved to instantiation instead of being forced
+    early. `inout $T` is legal to *write* — the rule is about what `T` becomes — so §11.5
+    is applied twice: at the declaration on the WRITTEN types, and in
+    `instantiate_generic` / `mono_instantiate` on the SUBSTITUTED ones, reported at the
+    call that chose the binding. Both were live fail-opens before this:
+    ```
+    fn f(c: inout $T) -> int   called with a channel  : both ACCEPT/CCOK/RUN -> 1   (before)
+    fn f(g: inout $T) -> int   called with add1       : both ACCEPT/CCOK/RUN -> 1   (before)
+    ```
+    Both now reject on both compilers, at the CALL line, with identical wording. No guard
+    on `has_typaram` was needed anywhere: a bare `$T` trips neither `IS_CHAN` nor
+    `IS_FUNC`, so a genuinely deferred parameter passes untouched, while
+    `inout Channel($T)` is rejected on purpose — the rule is about the channel, not
+    about `T`.
+
+    **Shape of the tychoc change.** The three declaration rules were hoisted above the
+    generic stash (`:7142-7146`), and the two `inout` type rules were factored into one
+    `check_inout_param_type` (`:6844-6852`) with three callers — the concrete
+    declaration, the template declaration, and the instantiation — so the rule has one
+    source of truth rather than three copies. The duplicated inline copies in the
+    concrete path were deleted. tychoc0 mirrors it: the two `if not isgen:` guards Phase
+    32 added to `parse_func` are **gone** (that guard is now the divergence, not the
+    fix), and `mono_instantiate` gained the substituted-signature check with the tloc
+    decoded (`ln / 100000`, per `tloc` at `:123`) so the reported line is a line.
+
+    **Legal code still legal (over-tightening check).** All 13 non-`handle`-first
+    collision cells unchanged; `struct Box($T)` + `fn wrap(x: $T) -> Box($T)`
+    ACCEPT/CCOK/RUN on both, unchanged; 540/540 fixtures, whole corelib, and
+    `tests/conc/` all green; tychoc0 still self-hosts.
+
+    **Fixtures — 9 new, one per distinct rejection** (`make test` 531 → 540):
+    `handle_then_struct.ty`, `handle_then_enum.ty`, `handle_then_newtype.ty`,
+    `generic_chan_inout_param.ty`, `generic_inout_fnvalue.ty`, `generic_params_17.ty`,
+    `generic_ret_chan.ty`, `generic_inst_chan_inout.ty`,
+    `generic_inst_inout_fnvalue.ty`. Every one verified REJECT on both compilers
+    individually before the gates were run.
+
+    **Spec.** `14-ffi.md` §25 now states the collision rule symmetrically (it had said
+    "declared earlier in the file", honest about the old behaviour but weaker than the
+    rule deserves) and cites both directions' fixtures. `07-memory-model.md` §11.5 gained
+    the generic paragraph (declaration vs instantiation) and its provenance was
+    re-pointed at `check_inout_param_type`. `11-functions.md` §15.1 now says the
+    16-parameter cap applies to a generic template.
+
+    **Citations kept in sync** (every one my edit moved): `07-memory-model.md:221`,
+    `tests/reject/params_17.ty`, `extern_params_17.ty`, `inout_fnvalue.ty`,
+    `chan_inout_param.ty`, `handle_dup_name.ty`.
+
+    **Gates — one per command, foreground, all green:**
+    ```
+    make test        passed: 540   failed: 0        / all green
+    make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc        conc: passed 37   failed 0
+    make fixpoint    ok  B == C : tychoc0 reproduces itself byte-identically (35691 lines C)
+                     fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32       passed: 540   failed: 0        / all green
+    make asan-self   asan-self: compiled: 540   failed: 0 / all green
+    make spec-check  spec-examples: 7 runnable example(s), all pass
+    make check-links link check: ok (122 markdown files, no dead relative links)
+    ```
+    `git status --short` clean of build spill (only the 10 edited + 9 new files).
+    `make fixpoint` is load-bearing here: `compiler/tychoc0.ty` changed in three places,
+    including inside `parse_func`, and B==C proves tychoc0 still reproduces itself
+    through them.
 
 ### Filed by Phases 33/35 (2026-07-25)
 
@@ -5603,6 +5809,37 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     (e.g. `` `src/tychoc.c:5323 len` ``), which is a docs-wide edit.
   - Done when: every `path:N` citation under `docs/` resolves to the code it claims,
     verified by reading, and a gate fails when one stops resolving.
+
+### Filed by Phase 39 (2026-07-25)
+
+- [ ] **Phase 43 — `15-program.md`'s `main`-signature provenance is stale AGAIN, and it now points at two unrelated rules (found by Phase 39, out of its scope)**
+  - Phase 34 was the phase that fixed these exact citations. They have drifted since, and
+    the drift is the bad kind: the lines still exist and still contain plausible-looking
+    code, so nothing looks wrong until you read them.
+  - `docs/spec/15-program.md:19` and `:31` both cite `src/tychoc.c:7098-7099` for the
+    entry point / `main` signature rule, and `:31` also cites `:7124-7125`. Measured
+    **before** Phase 39 touched anything (so this is pre-existing drift, not drift Phase
+    39 introduced): `grep -n "no 'main' procedure" src/tychoc.c` → **`7132`**, and
+    `:7098-7099` was `if (IS_CHAN(pr->ret)) die_at(... "a function cannot return a
+    channel" ...)` while `:7124-7125` was the `inout` function-value die. Both citations
+    named a *different rule* than the sentence they support.
+  - `docs/internals/frontend-restriction-audit-2026-07-25.md:356` has the same drift one
+    notch further (`:7097-7098` / `:7123-7124`).
+  - Also: `src/tychoc.c` has no `die_at` at all for "`main` must take no parameters" —
+    `grep -n "main.*no parameters"` returns nothing in `src/tychoc.c`, though
+    `tests/reject/main_with_param.ty` passes and `compiler/tychoc0.ty` has the check
+    explicitly. Find where tychoc actually enforces it before re-citing, rather than
+    picking the nearest plausible line — that is how these citations went wrong twice.
+  - **Not folded into Phase 42.** Phase 42 is the *gate* — something that fails when a
+    citation stops resolving. This is the concrete repair of four known-wrong citations,
+    which Phase 42 will need as its first passing case anyway. If Phase 42 runs first it
+    may absorb this; if it does, close this by reference.
+  - Note that Phase 39 DID keep every citation it moved in sync
+    (`07-memory-model.md:221`, `tests/reject/params_17.ty`, `extern_params_17.ty`,
+    `inout_fnvalue.ty`, `chan_inout_param.ty`, `handle_dup_name.ty`); these four were
+    already wrong on arrival and are out of its scope lock.
+  - Done when: each of the four citations resolves to the code its sentence claims,
+    verified by reading, and the gate set is green.
 
 ## Out of scope
 

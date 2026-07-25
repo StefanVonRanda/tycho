@@ -1,0 +1,11 @@
+# 07-memory-model.md §11.5 at INSTANTIATION. `inout $T` is legal to write -- the
+# rule is about what T becomes -- so this one cannot be decided at the template
+# and is checked where the binding is chosen: tychoc's instantiate_generic and
+# tychoc0's mono_instantiate, both reporting the CALL line. Phase 39: before the
+# fix both compilers accepted, compiled and ran this. Both reject (differential).
+fn f(c: inout $T) -> int:
+    return 1
+
+fn main():
+    ch := channel(int, 2)
+    println(str(f(&ch)))

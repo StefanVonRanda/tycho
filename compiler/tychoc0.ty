@@ -2183,33 +2183,29 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
     #   I8  an `inout` parameter cannot be a function value
     # Order matches tychoc: the I6 sweep, then the count, then the I8 sweep, so a
     # declaration tripping two of them reports the same one the C compiler does.
-    # I6 and I8 are guarded on non-genericity because resolve_program `continue`s
-    # past a `$T` template (src/tychoc.c:7091-7096) before reaching either check --
-    # probed: tychoc ACCEPTS and RUNS `fn f(c: inout Channel(int), p: $T)`, so an
-    # unguarded check here would reject a program the C compiler compiles. I7 is
-    # unguarded: tychoc rejects a 17-parameter generic too (at its call site), so no
-    # accepted program is lost, and the limit then holds for every declaration.
-    # Messages are tychoc's, verbatim.
-    isgen := ty_is_generic(ret)
+    # PHASE 39 -- the `if not isgen:` guards that used to wrap I6 and I8 are GONE.
+    # Phase 32 added them because tychoc `continue`d past a `$T` template before
+    # reaching those checks, and mirroring the gap kept the two compilers agreeing.
+    # tychoc now runs all three ahead of that `continue` (src/tychoc.c resolve_program),
+    # so the guard would be the divergence. No per-type guard replaces it and none is
+    # needed: a bare `$T` is neither `is_chan` nor `is_func`, so a genuinely deferred
+    # parameter passes untouched, while `inout Channel($T)` is rejected on purpose --
+    # the rule is about the channel, not about T, and tychoc's IS_CHAN agrees.
+    # A `$T` BOUND to a channel or a function value is invisible here and is caught in
+    # mono_instantiate on the substituted signature, exactly as tychoc does it.
+    # Order matches tychoc: I6, then the count, then I8. Messages tychoc's, verbatim.
     gi := 0
     for gi < len(ptypes):
-        if ty_is_generic(ptypes[gi]):
-            isgen = true
+        if is_inout(ptypes[gi]) and is_chan(substr(ptypes[gi], 1, len(ptypes[gi]))):
+            die("parse: line " + str(fnln) + ": a channel parameter cannot be inout (the handle is already shared)")
         gi = gi + 1
-    if not isgen:
-        gi = 0
-        for gi < len(ptypes):
-            if is_inout(ptypes[gi]) and is_chan(substr(ptypes[gi], 1, len(ptypes[gi]))):
-                die("parse: line " + str(fnln) + ": a channel parameter cannot be inout (the handle is already shared)")
-            gi = gi + 1
     if len(ptypes) > 16:
         die("parse: line " + str(fnln) + ": too many parameters (max 16)")
-    if not isgen:
-        gi = 0
-        for gi < len(ptypes):
-            if is_inout(ptypes[gi]) and is_func(substr(ptypes[gi], 1, len(ptypes[gi]))):
-                die("parse: line " + str(fnln) + ": inout parameter '" + params[gi] + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
-            gi = gi + 1
+    gi = 0
+    for gi < len(ptypes):
+        if is_inout(ptypes[gi]) and is_func(substr(ptypes[gi], 1, len(ptypes[gi]))):
+            die("parse: line " + str(fnln) + ": inout parameter '" + params[gi] + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
+        gi = gi + 1
     # generics: optional `where pred(T), pred2(T2)` -- a fixed compiler-known predicate set
     constraints := ""
     if toks[pos].kind == TIdent and toks[pos].text == "where":
@@ -2588,6 +2584,24 @@ fn ck_handle_dup(nm: string, line: int, pfx: string, sts: [StructDef], spfx: [st
             die("parse: line " + str(line) + ": '" + nm + "' is already defined")
         i = i + 1
     i = 0
+    for i < len(hs):
+        eq := find(hs[i], "=")
+        if eq >= 0 and substr(hs[i], 0, eq) == nm:
+            die("parse: line " + str(line) + ": '" + nm + "' is already defined")
+        i = i + 1
+
+# Phase 39 -- the OTHER direction of the same rule. ck_handle_dup above tests a
+# `handle` name against the struct/enum/newtype tables; this tests a struct /
+# enum / newtype name against the HANDLE table, which nothing did. tychoc had the
+# identical asymmetry (parse_handle checked all four namespaces, parse_struct /
+# parse_enum / parse_typedecl omitted handle_find), so `handle H` followed by
+# `struct H` was ACCEPTED and RAN there while `struct H` then `handle H` was
+# rejected -- and on tychoc0 it reached cc as "incompatible type for argument 1
+# of 'S_H_eq'". Handle names carry no package prefix in tychoc0's table (see
+# ck_handle_dup), so the comparison is bare-to-bare on both sides. tychoc's
+# wording, verbatim.
+fn ck_type_dup_handle(nm: string, line: int, hs: [string]):
+    i := 0
     for i < len(hs):
         eq := find(hs[i], "=")
         if eq >= 0 and substr(hs[i], 0, eq) == nm:
@@ -3780,9 +3794,15 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
             for toks[pos].kind != TNewline and toks[pos].kind != TEof:
                 pos = pos + 1
         elif toks[pos].kind == TIdent and toks[pos].text == "struct":
+            # Phase 39: the reverse of the `handle` check below -- one type namespace,
+            # tested in DECLARATION order against the handles seen so far.
+            if toks[pos + 1].kind == TIdent:
+                ck_type_dup_handle(toks[pos + 1].text, toks[pos + 1].line, handles)
             push(rstructs, parse_struct(toks, &pos))
             push(spfx, curpfx)
         elif toks[pos].kind == TIdent and toks[pos].text == "enum":
+            if toks[pos + 1].kind == TIdent:
+                ck_type_dup_handle(toks[pos + 1].text, toks[pos + 1].line, handles)
             ed := parse_enum(toks, &pos)
             push(renums, ed)
             push(epfx, curpfx)
@@ -3791,6 +3811,8 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
                 push(variants, curpfx + ed.variants[vi].name)
                 vi = vi + 1
         elif toks[pos].kind == TIdent and toks[pos].text == "type":
+            if toks[pos + 1].kind == TIdent:
+                ck_type_dup_handle(toks[pos + 1].text, toks[pos + 1].line, handles)
             nt := parse_newtype(toks, &pos)
             push(rntn, nt.name)
             push(rntu, nt.ty)
@@ -14715,6 +14737,20 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, 
     cret := subst_field_type(gt.ret, bnames, btypes)
     if ty_is_generic(cret):
         die("generics: the return type of '" + gt.name + "' has a type parameter not fixed by any argument")
+    # PHASE 39: 07-memory-model.md §11.5 on the SUBSTITUTED signature. parse_func
+    # checks the WRITTEN types, which cannot see `fn f(c: inout $T)` called with a
+    # channel or a function value -- that binding only exists here. Reported at the
+    # call line, like tychoc's instantiate_generic, because the call is what chose the
+    # offending binding (`ln` is a tloc — line * 100000 + col, see tloc at :123 — so it
+    # is decoded, not printed raw). The `inout` marker is a one-char prefix that
+    # subst_field_type preserves, so the same predicates apply. Wording verbatim.
+    ci := 0
+    for ci < len(cparams):
+        if is_inout(cparams[ci]) and is_chan(substr(cparams[ci], 1, len(cparams[ci]))):
+            die("line " + str(ln / 100000) + ": a channel parameter cannot be inout (the handle is already shared)")
+        if is_inout(cparams[ci]) and is_func(substr(cparams[ci], 1, len(cparams[ci]))):
+            die("line " + str(ln / 100000) + ": inout parameter '" + gt.params[ci] + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
+        ci = ci + 1
     nm := inst_name(gt.name, cparams)
     # generics: a return-only typaram (one no parameter mentions) isn't in cparams;
     # add its binding so `empty$(int)` and `empty$(string)` are distinct instances.

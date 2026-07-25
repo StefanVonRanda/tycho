@@ -1,0 +1,12 @@
+# 07-memory-model.md §11.5: a `Channel(T)` parameter MUST NOT be `inout`. Phase 39:
+# a `$T` in the signature used to buy an exemption -- resolve_program `continue`d
+# past a generic template before this check, so tychoc ACCEPTED, compiled and RAN
+# this, and Phase 32 mirrored the gap in tychoc0 so the two agreed. The three
+# declaration rules now run ahead of that `continue`. Both compilers reject
+# (differential); the concrete form is tests/reject/chan_inout_param.ty.
+fn f(c: inout Channel(int), p: $T) -> int:
+    return 1
+
+fn main():
+    ch := channel(int, 2)
+    println(str(f(&ch, 5)))

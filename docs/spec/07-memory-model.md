@@ -217,7 +217,18 @@ borrow would defeat the affinity or the lifetime rule that governs the value:
   call. A function value may be passed and returned by value; it may not be
   borrowed mutably.
 
-Both implementations reject both forms at the declaration
-(`src/tychoc.c:7100-7102`, `:7123-7126`; `compiler/tychoc0.ty` `parse_func`),
-locked by `tests/reject/chan_inout_param.ty` and
-`tests/reject/inout_fnvalue.ty`.
+A **generic** function is held to the same rule, in two places. Where the
+parameter is written concretely (`inout Channel(int)` in a `$T` signature) the
+declaration is rejected like any other. Where the parameter is written `inout
+$T`, the declaration is legal — the rule is about what `T` becomes — and the
+check moves to the **instantiation**, reported at the call that chose the
+binding. A `$T` alone is neither a channel nor a function value and passes
+untouched; `inout Channel($T)` is rejected, because the rule is about the
+channel and not about `T`.
+
+Both implementations reject every form (`src/tychoc.c` `check_inout_param_type`
+:6844-6852, applied at the declaration :7146 and at the instantiation :6923;
+`compiler/tychoc0.ty` `parse_func` and `mono_instantiate`), locked by
+`tests/reject/chan_inout_param.ty`, `inout_fnvalue.ty`,
+`generic_chan_inout_param.ty`, `generic_inout_fnvalue.ty`,
+`generic_inst_chan_inout.ty` and `generic_inst_inout_fnvalue.ty`.

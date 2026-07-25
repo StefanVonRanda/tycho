@@ -17,6 +17,11 @@ mentions a `$T` or `$N` in its signature is generic (§7). A function MUST NOT
 return a `handle` ([§25](14-ffi.md)), and MUST NOT declare more than **16**
 parameters (the same cap for an `extern fn`; a *function type*, which is a
 distinct construct, allows up to 8 — [§5.3.8](03-types.md#538-function-types)).
+The 16-parameter cap applies to a **generic template** exactly as it does to a
+concrete function: being generic defers what the parameters *are*, never how
+many there may be (`src/tychoc.c:7142`, ahead of the template stash; locked by
+`tests/reject/params_17.ty`, `extern_params_17.ty` and
+`generic_params_17.ty`).
 Exactly one function named `main`, with no parameters and `void` return, is the
 program entry point ([§27](15-program.md)).
 

@@ -1,0 +1,16 @@
+# 14-ffi.md §25: a handle shares the ONE type namespace with struct/enum/newtype,
+# so the collision is symmetric -- `struct H` after `handle H` is as invalid as
+# `handle H` after `struct H` (tests/reject/handle_dup_name.ty). Phase 39: before
+# the fix tychoc ACCEPTED this and RAN it, while tychoc0 reached cc with
+# "incompatible type for argument 1 of 'S_H_eq'". tychoc: parse_struct's
+# handle_find. Both compilers reject (differential).
+handle H:
+    free: hclose
+
+struct H:
+    x: int
+
+extern "x" fn hclose(h: int) -> int
+
+fn main():
+    println("unreachable")
