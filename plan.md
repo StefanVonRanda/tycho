@@ -1868,7 +1868,16 @@ codegen.
   non-silencing route is a real sized-integer constant evaluator, and reason 3
   above is the argument against wanting that.
 
-- [ ] **Phase 13 — emitted C is not clean under opt-in `-Wall -Wextra`: 13346 warnings, ~89% unused-symbol (measured by Phase 4)**
+- [x] **Phase 13 — CLOSED, WILL NOT DO (user decision 2026-07-25): emitted C is not clean under opt-in `-Wall -Wextra`: 13346 warnings, ~89% unused-symbol (measured by Phase 4)**
+  - **Closed without doing it, deliberately.** Phase 4 measured the residue and judged it
+    out of scope; the user confirmed on 2026-07-25 that it stays closed. Reason: ~89% is
+    `-Wunused-function`/`-Wunused-variable` inherent to emitting the whole runtime and
+    the whole per-type family into every program. Silencing it means changing HOW
+    emission works, not tidying warnings — a design change to remove cosmetic noise from
+    a lane that is not even on by default (`src/tychoc.c`'s emitted cc line carries no
+    `-Wall`; see Phase 4's amended done-when). The default-on surface IS clean: Phase 4
+    took it 24 → 4 and Phase 12 took it 4 → 1, with the last one justified in writing.
+  - Reopen only if emission is being redesigned for another reason and this comes free.
   - Phase 4's Done-when asked for zero warnings over the suite under `-Wall
     -Wextra` and **could not deliver it** — see its evidence block for the full
     table. This is that residue, filed whole rather than absorbed or silenced.
@@ -2375,7 +2384,16 @@ codegen.
     as a self-hosting failure. `B == C` holds.
     `git status --short` shows only the four intended paths; no build spill.
 
-- [ ] **Phase 17 — `SMatch` carries no per-arm source locations in tychoc0 (found by Phase 8, deliberately NOT forced there)**
+- [x] **Phase 17 — CLOSED, WILL NOT DO (user decision 2026-07-25): `SMatch` carries no per-arm source locations in tychoc0 (found by Phase 8, deliberately NOT forced there)**
+  - **Closed without doing it, deliberately.** Phase 8 ruled it preferable-but-
+    disproportionate and declined to force it; the user confirmed closure on 2026-07-25.
+    Reason: supplying per-arm locations means widening the `SMatch` variant across **43
+    sites** in the self-hosting compiler, and the entire observable benefit is moving a
+    diagnostic caret two lines (`match_dup_arm` 10 vs 8, `match_wildcard_not_last` 12 vs
+    10). Both compilers already reject both programs with defensible messages. Phase 8
+    also explicitly rejected the cheap `bodies[j][0]` proxy as wrong for block-form arms,
+    so there is no shortcut.
+  - Reopen only if `SMatch` is being widened for a functional reason anyway.
   - Phase 8 ruled that `match_dup_arm` should point at the duplicate arm (line 10
     of the fixture) and `match_wildcard_not_last` at the misplaced `_` arm (line
     12) — the lines the user must edit. tychoc already does
@@ -3055,7 +3073,16 @@ codegen.
   program that declares a type named `Task` at all is the exotic case the guard
   exists to protect. Not fixture-locked.
 
-- [ ] **Phase 21 — the deferred const-size encodings leak into diagnostics outside a local declaration (observed by Phase 18)**
+- [x] **Phase 21 — CLOSED, WILL NOT DO (user decision 2026-07-25): the deferred const-size encodings leak into diagnostics outside a local declaration (observed by Phase 18)**
+  - **Closed without doing it, deliberately.** User confirmed closure on 2026-07-25.
+    Reason: cosmetic. The internal `[#W]`/`[b#W]` spellings appear in *diagnostic text* in
+    some positions; the accept/reject **decision agrees** on both compilers, which is the
+    only property the spec makes normative (`00-conventions.md` §1.3). It is in the same
+    non-normative class as the 75 wording divergences Phase 2 measured and Phase 3
+    deliberately declined to gate — closing it is consistent with that pre-registered
+    decision rather than an exception to it.
+  - Reopen if the encodings start leaking into a position where they mislead rather than
+    merely look internal.
   - Both `[#W]T` (fixed array, `compiler/tychoc0.ty:1692`) and `[b#W]T`
     (`bounded`, `:1734`) are parser-internal encodings resolved by `mangle_type`.
     When the name is not a `const` anywhere in the program the mangle pass never
@@ -3099,7 +3126,15 @@ codegen.
   - Done when: the underlying-type decision agrees on both compilers across the
     swept space, each distinct rejection is fixture-locked, full gate set green.
 
-- [ ] **Phase 23 — tychoc0's array-family name collision: `[bounded[N]T]` and `bounded[N]T` mangle to the same `Arr_*` (measured by Phase 19, out of its element-type scope)**
+- [x] **Phase 23 — CLOSED, WILL NOT DO (user decision 2026-07-25): tychoc0's array-family name collision: `[bounded[N]T]` and `bounded[N]T` mangle to the same `Arr_*` (measured by Phase 19, out of its element-type scope)**
+  - **Closed without doing it, deliberately.** Phase 19 measured it, judged it
+    disproportionate (~22 mangling sites) and filed rather than forced it; the user
+    confirmed closure on 2026-07-25. Reason: it needs a coordinated rename across ~22
+    mangling sites in the self-hosting compiler, and the reachable symptom is a
+    container-of-`bounded` position that Phase 19 already reduced to 16 rows from 53 —
+    pre-existing, and it affects plain `[[2]int]` too, so it is not `bounded`-specific.
+    Reopen if the `Arr_*` mangling is being reworked anyway (Phase 33 touches the same
+    family; check whether its fix collapses this for free before doing it standalone).
   - `compiler/tychoc0.ty:3801-3804` — `afam(ty)` returns `"Arr_" + mangle(ty)` for
     an inline array (`bounded[N]T` / `[N]T`) but `"Arr_" + mangle(elem_ty(ty))`
     for a dynamic `[X]`. `mangle(bounded[4]int)` is `b4_int`, so the family for
@@ -3127,7 +3162,14 @@ codegen.
   - Done when: `[bounded[N]T]`, `[[N]T]` and a `bounded` map key compile and run
     identically on both compilers, with fixtures; full gate set green.
 
-- [ ] **Phase 24 — `runtime/tycho_rt.c` has 4 real `-Wmisleading-indentation` warnings under the project's own flags (found by Phase 14, out of its scope)**
+- [x] **Phase 24 — CLOSED, WILL NOT DO (user decision 2026-07-25): `runtime/tycho_rt.c` has 4 real `-Wmisleading-indentation` warnings under the project's own flags (found by Phase 14, out of its scope)**
+  - **Closed without doing it, deliberately.** User confirmed closure on 2026-07-25.
+    Reason: 4 `-Wmisleading-indentation` warnings are cosmetic, and the surface they sit
+    on is ungated by design — the runtime is never compiled by `make`, only embedded as a
+    string. **The real finding here is the gate gap, not the four warnings**, and that is
+    Phase 38 (no gate builds `tychoc` itself under a sanitizer either). If Phase 38 is
+    taken, decide the runtime's lane alongside it and these four fall out for free;
+    fixing them standalone leaves the blind spot untouched.
   - Phase 14 owned the *compiler's* own build (`src/tychoc.c`, `Makefile:31-32`),
     which is now 0 warnings. The runtime is a different surface: `Makefile:23-26`
     never compiles `runtime/tycho_rt.c` — it `awk`s it into a C string literal
