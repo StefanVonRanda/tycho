@@ -4969,7 +4969,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     `git status --short` before the commit: `M src/tychoc.c` plus the two new fixture
     files only — no build spill.
 
-- [ ] **Phase 38 — NO GATE EVER BUILDS `tychoc` ITSELF UNDER A SANITIZER; that is how Phase 37's overrun survived (filed by the main agent, 2026-07-25)**
+- [x] **Phase 38 — NO GATE EVER BUILDS `tychoc` ITSELF UNDER A SANITIZER; that is how Phase 37's overrun survived (filed by the main agent, 2026-07-25)**
   - **Verified, not inferred.** `tests/run.sh:73-76` builds the **emitted C** of each
     fixture with `-fsanitize=address,undefined -fno-sanitize-recover=all`. Every
     sanitizer mention in `Makefile` + `scripts/ci.sh` is about that lane or about
@@ -5006,6 +5006,176 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: a sanitized-tychoc lane exists, is demonstrated green AND demonstrated
     red, its cost is measured and its coverage stated honestly, findings are filed as
     separate phases, and the full gate set stays green.
+  - **DONE 2026-07-25. `make asan-self` (`scripts/asan_self.sh`), wired into
+    `scripts/ci.sh` as step `[2c/19]`. NO new findings — the corpus is clean under a
+    sanitized compiler beyond what Phase 37 already fixed.**
+
+    **THE GAP, RE-VERIFIED BY READING, NOT INHERITED.** Every `-fsanitize` /
+    `sanitiz` / `ASAN` occurrence in the build system, grepped and classified:
+    ```
+    tests/run.sh:42     NO_ASAN="${TYCHO_NO_ASAN:-0}"          -- emitted-C lane switch
+    tests/run.sh:49-50  ASAN_OPTIONS=detect_leaks=$TYCHO_LSAN  -- for the EMITTED binaries
+    tests/run.sh:74-75  $CC -fsanitize=address,undefined -fno-sanitize-recover=all
+                        ... -o "$san" "$c"                      -- "$c" is the EMITTED C
+    tests/run.sh:80-88  runs/greps those emitted binaries
+    Makefile:85-86      comment describing that same lane
+    Makefile:202,:214   TYCHO_NO_ASAN=1 for -m32 (32-bit ASan absent under multilib)
+    scripts/ci.sh:4     the word "sanitizer" in the file header
+    ```
+    `Makefile:31-32` is the only rule that compiles `src/tychoc.c`, and it uses
+    `CFLAGS ?= -O2 -fwrapv -Wall -Wextra -std=c11` (`:11`). **No `-fsanitize`
+    anywhere near the compiler's own translation unit.** Confirmed: the gap is real,
+    the citations in the phase text are correct.
+
+    **THE LANE.** `scripts/asan_self.sh` builds
+    `cc -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv -std=c11
+    -Ibuild src/tychoc.c -o build/tychoc-asan` (gitignored via `.gitignore:50 /build/`,
+    so no sanitized binary is ever committed), then compiles **527 fixtures** with it
+    using `--emit-c`. The emitted programs are never built or run here — `tests/run.sh`
+    already sanitizes those, and duplicating it would double the cost for no new
+    coverage. The subject is the compiler's own execution.
+
+    **The verdict is deliberately NOT the accept/reject decision.** `tests/reject/`
+    and `tests/diag/` fixtures are *supposed* to exit nonzero; `make test` scores that.
+    A fixture fails this lane only if the sanitizer speaks
+    (`AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:|ERROR: `)
+    or the compiler dies on a signal (`rc >= 128`). Checked for false positives before
+    relying on that grep: tychoc's diagnostics are `file:LINE: error: MSG` (lowercase,
+    cannot match `ERROR: `), and the only `runtime error` string in `src/tychoc.c` is a
+    comment at `:8320`, never printed.
+
+    **`ASAN_OPTIONS=detect_leaks=0` — justified, not silently disabled.** tychoc never
+    frees, by design: it is one-shot and leaks every `xmalloc`'d `Expr`/`Stmt`/`Proc`
+    and every `sfmt` string; `gi.binds` at `src/tychoc.c:6870` xmalloc's a bind vector
+    and never frees it, and Phase 37's `new_binds()` (`:742-747`) deliberately followed
+    that same pattern. With `detect_leaks=1` every fixture would report hundreds of
+    intended "leaks" and a real overrun would be one line in the flood. This is the
+    *opposite* of `tests/run.sh:49-50`, which keeps `detect_leaks=1` — correct there,
+    because emitted programs run under the implicit-arena model where every scope frees
+    its arena, so a leak is a real missing-arena-free bug. The compiler has no arenas.
+    ASan and UBSan themselves are fully on, `-fno-sanitize-recover=all`, first fault
+    fatal. `UBSAN_OPTIONS=print_stacktrace=1` is set so a finding arrives with a trace.
+
+    **LD_PRELOAD.** The lane unsets a non-empty `LD_PRELOAD` for its own children and
+    prints a NOTE saying it did. Reason: a foreign preload in this dev shell
+    (`/home/igzo/phonic/tools/block-nnp.so`) loads before `libasan.so` and aborts any
+    ASan binary at startup — a property of that unrelated preload, not of tycho. It
+    does **not** set `verify_asan_link_order=0`; that check stays live for real
+    link-order bugs, per the plan preamble's standing instruction.
+
+    **COST — measured, not estimated. 13.9 s wall, whole lane, no subsetting.**
+    ```
+    $ time env -u LD_PRELOAD make asan-self
+    asan-self: building build/tychoc-asan  (ASan+UBSan, -fno-sanitize-recover=all)
+    -----------------------------------------
+    asan-self: compiled: 527   failed: 0
+    asan-self: all green (tychoc's own execution is ASan+UBSan clean over the corpus)
+    env -u LD_PRELOAD make asan-self  10.48s user 3.37s system 99% cpu 13.862 total
+    ```
+    Split: ~7.1 s to build the sanitized compiler, ~6.8 s for all 527 compiles. The
+    phase text budgeted for this being prohibitive; it is not, because the lane only
+    *compiles* — the expensive half of `make test` is the two `cc` invocations and the
+    two runs per fixture, which this lane skips. Single worst input, the 14k-line
+    self-host source `compiler/tychoc0.ty`, is 0.31 s sanitized. **So no subset was
+    taken and nothing is excluded for cost reasons.**
+
+    **COVERAGE — what is in and what is NOT.** IN (527): `examples/*.ty` (23),
+    `tests/*.ty` (213), `tests/pkg/*/main.ty` (14), `tests/reject/*.ty` (224),
+    `tests/reject/pkg/*/main.ty` (1), `tests/abort/*.ty` (16), `tests/diag/*.ty` (15),
+    `tests/warn/*.ty` (6), `tests/conc/*.ty` (11), plus the four largest real Tycho
+    programs in the tree — `compiler/tychoc0.ty`, `tools/tycho.ty`, `tools/tychofmt.ty`,
+    `tools/lsp.ty` — which reach deeper generic/aggregate shapes than any single
+    fixture. NOT covered, stated so it is not mistaken for coverage: `corelib/` and
+    `examples/corelib/` (their harnesses carry per-module dependency skips this lane
+    does not replicate); the fuzz corpora (generated, not committed); `-m32` (no 32-bit
+    ASan runtime under multilib, the same reason `Makefile:214` skips it); and the
+    emitted programs' own runtime behaviour, which `tests/run.sh` owns.
+
+    **DEMONSTRATED RED — by restoring the `[256]` bound Phase 37 removed.** Temporary
+    edit at the `parse_type_inner` generic-struct site, reverting `Type *binds =
+    new_binds();` to the pre-Phase-37 `Type binds[256]; for (int i = 0; i <
+    g_ntyparams; i++) binds[i] = T_VOID;`. Rebuilt, re-ran, unmodified lane:
+    ```
+    $ env -u LD_PRELOAD make asan-self
+    asan-self: building build/tychoc-asan  (ASan+UBSan, -fno-sanitize-recover=all)
+    FAIL  tests/generic_many_typaram_names.ty  (sanitizer report)
+          src/tychoc.c:1949:60: runtime error: index 256 out of bounds for type 'Type [256]'
+              #0 0x55e2efe1ba5b in parse_type_inner src/tychoc.c:1949
+              #1 0x55e2efe1d3d8 in parse_type src/tychoc.c:1742
+              #2 0x55e2efe2850f in parse_stmt src/tychoc.c:3154
+              #3 0x55e2efe29521 in parse_block src/tychoc.c:3249
+              #4 0x55e2efe2c564 in parse_fn src/tychoc.c:3387
+              #5 0x55e2efe2db0e in parse_program src/tychoc.c:4027
+              #6 0x55e2efe69efb in main src/tychoc.c:11689
+    -----------------------------------------
+    asan-self: compiled: 526   failed: 1
+    failed: tests/generic_many_typaram_names.ty
+    make: *** [Makefile:100: asan-self] Error 1
+    ```
+    Then reverted the temporary edit; `git diff src/tychoc.c` is **empty** (verified
+    before committing — `src/tychoc.c` is byte-identical to `8616aad`), and the lane
+    returns to `compiled: 527   failed: 0` (green output pasted above, that run was
+    after the restore).
+
+    **The lane is non-vacuous with the corpus it already has.** This was the real risk
+    and it was checked rather than assumed: Phase 37's overrun needs >256 distinct
+    `$Name`s in one program, which no ordinary fixture has — had Phase 37 not landed
+    `tests/generic_many_typaram_names.ty`, reverting the fix would have left this lane
+    green and the "red proof" would have been theatre. It is that fixture, already in
+    `tests/*.ty`, that reddens the lane. Recorded here because it is the lane's load-
+    bearing dependency: **deleting that fixture silently defangs this gate.**
+
+    **FINDINGS: NONE.** 527 fixtures compiled by an ASan+UBSan tychoc produced zero
+    sanitizer reports and zero signal deaths. No phase is filed from 41, and none was
+    manufactured to look productive. The phase text expected more than Phase 37 found;
+    that expectation was reasonable and turned out to be wrong, which is itself the
+    result: Phase 37's `[256]`-literal sweep plus its growing-table audit really did
+    exhaust the reachable family, and the compiler's remaining fixed-size structures
+    (`indent_stack[256]` capped at `:249`, `g_handles[256]` capped at `:3591`,
+    `imp_paths[256]` bounded by `scan_imports`' `max` param) are all fail-closed. The
+    value delivered here is the gate, not a defect list — the next such defect now
+    reddens CI on the commit that introduces it instead of surviving a release.
+
+    **PHASE 24 DECISION: STAYS CLOSED (will-not-do). Different job — reasoned, not
+    dodged.** Re-measured today, unchanged from Phase 14's probe:
+    ```
+    $ cc -O2 -fwrapv -Wall -Wextra -Wno-unused-function -std=c11 -c runtime/tycho_rt.c -o /tmp/ph38/rt.o
+    exit=0   warnings=4
+      runtime/tycho_rt.c:2380:9: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+      runtime/tycho_rt.c:2390:9: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+      runtime/tycho_rt.c:2400:9: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+      runtime/tycho_rt.c:2410:9: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+    ```
+    `-Wno-unused-function` does suppress the 33 artifact warnings exactly as Phase 24
+    predicted, so the compile is cheap and clean apart from those four. It was **not**
+    added to this lane, for one decisive reason: **a gate whose baseline is 4 warnings
+    is red on the day it lands**, and turning it green requires editing
+    `runtime/tycho_rt.c` — which is a source fix, is Phase 24's scope, is closed by
+    user decision, and is explicitly forbidden inside this phase ("do NOT fix them
+    inside this phase"). The alternatives were both worse: shipping the check
+    non-fatal makes it a report, not a gate; shipping it with a suppressed baseline
+    installs exactly the kind of silent allowance this plan exists to remove. The two
+    surfaces also differ in kind — this lane sanitizes a binary it *builds and runs*,
+    whereas the runtime is never built standalone in production (it is `awk`ed into a
+    string literal at `Makefile:23-26` and compiled only inside emitted programs, where
+    `make test`'s ASan lane already exercises its runtime behaviour across 236
+    programs). So Phase 24's four warnings are **not** covered by `asan-self`; the
+    measurement is preserved above so the number is not lost if it is ever reopened.
+
+    **Gate set, one per command, foreground, all green after the change:**
+    ```
+    make test        passed: 527   failed: 0   /  all green
+    make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc        conc: passed 37   failed 0
+    make fixpoint    ok  B == C : tychoc0 reproduces itself byte-identically (35537 lines C)
+                     fixpoint: all green (self-hosting; B==C; single files + packages; ...)
+    make ilp32       passed: 527   failed: 0   /  all green
+    make spec-check  spec-examples: 7 runnable example(s), all pass
+    make check-links link check: ok (122 markdown files, no dead relative links)
+    make asan-self   asan-self: compiled: 527   failed: 0   /  all green
+    ```
+    `git status --short` before the commit: `M Makefile`, `M scripts/ci.sh`,
+    `?? scripts/asan_self.sh` — no build spill, no sanitized binary.
 
 ### Filed by Phase 32 (2026-07-25)
 

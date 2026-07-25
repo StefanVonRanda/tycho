@@ -37,6 +37,19 @@ make -s test
 step "[2b/19] make ilp32  (fixture suite rebuilt under -m32: Tycho int stays 64-bit off LP64)"
 make -s ilp32
 
+# Both lanes above sanitize/rebuild the C tychoc EMITS. Neither -- nor anything
+# else in this file before 2026-07-25 -- ever built src/tychoc.c itself with
+# -fsanitize, so the compiler's OWN memory safety was unmeasured by every gate.
+# That is how plan.md Phase 37's stack-buffer-overflow WRITE in parse_type_inner,
+# reachable from a valid program, survived 16 phases and a full 1.0 freeze. This
+# lane builds the compiler under ASan+UBSan and compiles the whole corpus with it.
+# tests/generic_many_typaram_names.ty is the in-corpus fixture that makes it
+# non-vacuous: restore the [256] bound Phase 37 removed and this lane reddens.
+# ~14s total (7s to build the sanitized compiler, 7s for 527 compiles), so it runs
+# every time with no subsetting. See scripts/asan_self.sh.
+step "[2c/19] make asan-self  (the COMPILER built with ASan+UBSan, compiling the whole corpus)"
+make -s asan-self
+
 step "[3/19] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 

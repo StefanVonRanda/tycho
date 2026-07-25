@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 clean
+.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 asan-self clean
 
 all: tychoc
 
@@ -87,6 +87,17 @@ demo: tychoc
 # tests/run.sh and docs/thesis.md §3.
 test: tychoc
 	@sh tests/run.sh
+
+# The COMPILER's own memory safety. Every other sanitizer lane here (including
+# `test` above) sanitizes the C tychoc EMITS; nothing built src/tychoc.c itself
+# with -fsanitize, so tychoc's own execution was unmeasured by every gate -- which
+# is how the parse_type_inner stack-buffer-overflow of plan.md Phase 37 survived a
+# full 1.0 freeze. This lane builds src/tychoc.c with ASan+UBSan and COMPILES the
+# whole fixture corpus with it (--emit-c; the emitted programs are not run -- that
+# is `test`'s job). Leak detection is deliberately off: tychoc never frees by
+# design. Rationale, coverage, and what is NOT covered: scripts/asan_self.sh.
+asan-self: $(EMBED)
+	@sh scripts/asan_self.sh
 
 # Concurrency suite (spawn/wait, parallel for, channels): tychoc builds each
 # positive fixture native + ASan/LSan + TSan against the goldens, the
