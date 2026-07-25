@@ -53,6 +53,7 @@ dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
 | §5.3.2 | fixed-size arrays `[N]T` | `tests/fixed_array`, `reject/fixed_array_bad_length`, `reject/fixed_array_zero_size`, `reject/fixed_array_nonconst_size` |
 | §5.3.5 | maps; composite keys | `tests/maps`, `tests/map_literal_composite_key`, `tests/mapstructkey` |
 | §5.3.9 | typed handles (affine, RAII free) | `tests/ffi` (`use_res_close`), `reject/close_handle_nonvar` |
+| §5.3.10 | `bounded[N]T` inline fixed capacity; runtime count; push traps when full | `tests/bounded`, `reject/fixarr_into_bounded_arg` |
 | §5.4 | newtypes; unwrap; key/agg mixing rejected | `tests/newtypes`, `tests/newtype_key`, `reject/newtype_key_mix` |
 | §5.5 | structural `==`; functions not comparable | `tests/map_eq`, `tests/option_eq`, `eqparity` lane, `reject/fn_eq` |
 

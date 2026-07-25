@@ -240,6 +240,50 @@ returned from a Tycho function (§25). The concurrency handle types
 `Task(T)` and `Channel(T)` are similarly affine and non-storable
 ([§20](13-concurrency.md)).
 
+### 5.3.10 `bounded[N]T`
+
+`bounded[N]T` is an **inline, fixed-capacity, variable-count** collection: it
+holds between 0 and `N` elements of type `T` stored *inside* its container —
+never in a separate arena buffer — and is copied by value. It differs from
+[`[N]T`](#532-fixed-size-arrays-nt) in carrying a runtime element count, and
+from [`[T]`](#531-arrays-t) in that the count MUST NOT exceed the compile-time
+capacity `N`. The capacity is part of the type: `bounded[4]int` and
+`bounded[8]int` are distinct types, and both are distinct from `[4]int` and
+from `[int]`.
+
+`N` MUST be a positive integer **literal**. A capacity of `0`, a non-integer
+literal, an absent capacity, and a negated literal (`-1` is a unary minus
+applied to a literal, not a literal) MUST all be rejected. A capacity named by
+an `int` `const` — which a fixed-size `[C]T` does accept (§5.3.2) — is **not**
+portable here: conforming implementations disagree on it today, so a program
+MUST NOT depend on it.
+
+The element type `T` MUST NOT be `bool` or `void`, mirroring the bracket-array
+element-type restriction of §5.3.1. An affine handle type — including
+`Task(T)` and `Channel(T)` — MUST NOT appear as a `bounded` element, because a
+handle cannot be stored in any aggregate (§5.3.9).
+
+`len` yields the **runtime count**, not `N`. `push` appends and, when the
+collection is already full, **aborts** the program rather than growing; that
+trap is the point of the type. An array literal longer than `N` is rejected at
+compile time. Indexing, index assignment, `==`, value copy, `str`, and `for … in`
+iteration behave as they do for a fixed-size array. `pop`, slicing, and
+`reserve` MUST be rejected on a `bounded` value.
+
+> Provenance: the `bounded` branch of `parse_type_inner`,
+> `src/tychoc.c:1727-1743` (capacity `:1731-1738`, element restriction
+> `:1741-1742`); its twin `compiler/tychoc0.ty:1718-1731`. Rejections: slice
+> `src/tychoc.c:4754-4755`, `pop` `:5396-5397`, `reserve` `:5418`, over-long
+> literal `:5759-5761`. The full-push trap is emitted at `:10593-10595`.
+> Fixtures: `tests/bounded.ty`, `tests/reject/fixarr_into_bounded_arg.ty`.
+
+> Note: the type grammar admits an aggregate element (a `struct`, tuple, `soa`,
+> `Option`, `Result`, map, fixed-size array, `bytes`, or a nested `bounded`) and
+> both implementations accept it at the front end, but neither generates working
+> code for the whole of that set today. Until that is closed, a portable program
+> SHOULD keep `T` to `int`, `float`, a fixed-width numeric, `ptr`, `string`, a
+> fieldless enum, a dynamic array `[E]`, or a function type.
+
 ## 5.4 Newtypes
 
 ```ebnf

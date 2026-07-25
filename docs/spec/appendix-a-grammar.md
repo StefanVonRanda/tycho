@@ -80,6 +80,7 @@ Subscript  ::= "subscript" IDENT "(" ParamList? ")" "->" "inout" Type ":" NEWLIN
                INDENT "yield" "&" Place NEWLINE DEDENT
 Type      ::= "$" IDENT                                        /* type parameter */
             | "soa" "[" Type "]"                               /* struct-of-arrays */
+            | "bounded" "[" INT "]" Type                       /* bounded[N]T inline fixed-capacity */
             | "fn" "(" ( Type ( "," Type )* )? ")" ( "->" Type )?
             | "(" Type ( "," Type )+ ")"                       /* tuple, 2..8 elements */
             | "[" ArrayOrMap

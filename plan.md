@@ -1441,7 +1441,7 @@ codegen.
   spellings, which are *identical* to their user spellings (`:1717`;
   `appendix-a-grammar.md:82,:84`) and so cannot diverge by construction.
 
-- [ ] **Phase 11 — `bounded[N]T` is implemented by both compilers but absent from the spec grammar (found by Phase 10, out of its scope)**
+- [x] **Phase 11 — `bounded[N]T` is implemented by both compilers but absent from the spec grammar (found by Phase 10, out of its scope)**
   - Both compilers accept `bounded[N]T` as a type form — `compiler/tychoc0.ty:1718-1731`
     parses it and `tests/bounded.ty:6,:8,:34` exercises it in a struct field, a
     return type and a local, all green under `make test`.
@@ -1462,6 +1462,121 @@ codegen.
     element may not be `void`/`bool` — `:1729`). Docs only; no compiler change.
   - Done when: the grammar admits every type form both compilers accept, and
     `make check-links` + `make spec-check` stay green.
+  - **DONE 2026-07-25.** Docs only; neither compiler touched.
+  - **Both plan citations verified correct**: `compiler/tychoc0.ty:1718-1731` is
+    the `bounded` parse branch; `docs/spec/appendix-a-grammar.md:81-90` was the
+    `Type ::=` block with no `bounded` alternative. The tychoc twin is
+    `src/tychoc.c:1727-1743`.
+  - **METHOD CORRECTION — the first probe round was invalid and was discarded.**
+    `tychoc0` emits C to **stdout and never invokes `cc`**, so its exit status is
+    a *frontend* verdict, while `tychoc file -o out` folds in the `cc` run. A
+    naive rc-vs-rc comparison scored 5 "divergences", 4 of which were `cc`
+    failures on one side only. The table below separates three columns per
+    compiler — FRONT (frontend accept/reject; `tychoc --emit-c`, which writes
+    `<out>.c` and prints `wrote <path>`, `src/tychoc.c:11576-11579`), CC (does
+    the emitted C build), RUN (stdout). `tests/run.sh:148-212` compares the
+    **frontend** exit status across the two compilers, so FRONT is the column
+    that decides normative divergence. Harness: `/tmp/ph11/probe3.py`.
+
+    | probe | form | tychoc FRONT/CC/RUN | tychoc0 FRONT/CC/RUN |
+    |---|---|---|---|
+    | cap_lit_4 | `bounded[4]int` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | cap_lit_1 | `bounded[1]int` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | cap_lit_0 | `bounded[0]int` | REJECT `a bounded capacity must be positive` | REJECT (same text) |
+    | cap_neg | `bounded[-1]int` | REJECT `bounded needs a capacity` | REJECT `bounded needs an integer capacity` |
+    | cap_float | `bounded[2.5]int` | REJECT | REJECT |
+    | cap_empty | `bounded[]int` | REJECT | REJECT |
+    | cap_hex | `bounded[0x10]int` | REJECT `must be positive` | REJECT (same) |
+    | cap_space | `bounded[ 4 ]int` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | cap_1e6 | `bounded[1000000]int` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | cap_i64max | `bounded[9223372036854775807]int` | ACCEPT/CCFAIL | ACCEPT/CCFAIL (both: `size of array 'v' exceeds maximum object size`) |
+    | cap_unknown_ident | `bounded[NOPE]int` | REJECT | REJECT |
+    | cap_const_neg | `const CAP = -1` | REJECT | REJECT |
+    | cap_const_str | `const CAP = "x"` | REJECT | REJECT |
+    | cap_sizeparam | `bounded[$N]int` | REJECT `expected a parameter name` | REJECT (same) |
+    | **cap_const** | `const CAP = 4` → `bounded[CAP]int` | **ACCEPT/ok/** | **REJECT** ⇐ **DIVERGENCE** |
+    | **use_const_cap** | same, value really used | **ACCEPT/ok/`n 3`** | **REJECT** ⇐ same cause |
+    | el_int/float/string | `bounded[4]{int,float,string}` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | el_i32/u8/f32/ptr | fixed-width + `ptr` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | el_enum | `bounded[4]Color` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | el_dynarr | `bounded[4][int]` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | el_fn | `bounded[4]fn(int)->int` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | el_bool | `bounded[4]bool` | REJECT `bounded elements must be int, float, string, a struct, or an array` | REJECT (same text) |
+    | el_void / el_char | `bounded[4]void`, `…char` | REJECT (no such type spelling) | REJECT (same) |
+    | el_bytes | `bounded[4]bytes` | ACCEPT/ok/ | ACCEPT/**CCFAIL** |
+    | el_fixarr | `bounded[4][2]int` | ACCEPT/ok/ | ACCEPT/**CCFAIL** |
+    | el_map | `bounded[4][string:int]` | ACCEPT/ok/ | ACCEPT/**CCFAIL** |
+    | el_bounded | `bounded[4]bounded[2]int` | ACCEPT/ok/ | ACCEPT/**CCFAIL** |
+    | el_struct | `bounded[4]Pt` | ACCEPT/**CCFAIL** | ACCEPT/**CCFAIL** |
+    | el_tuple | `bounded[4](int,int)` | ACCEPT/**CCFAIL** | ACCEPT/**CCFAIL** |
+    | el_soa | `bounded[4]soa[Pt]` | ACCEPT/**CCFAIL** | ACCEPT/**CCFAIL** |
+    | el_option / el_result | `bounded[4]Option(int)`, `Result(int,string)` | ACCEPT/**CCFAIL** | ACCEPT/ok/ |
+    | **el_chan** | `bounded[4]Channel(int)` | **REJECT** `a channel handle cannot be stored in a container` | **ACCEPT** (then CCFAIL) ⇐ **DIVERGENCE (tychoc0 fail-open)** |
+    | pos_param / pos_local / pos_field / pos_return | the four core positions | ACCEPT/ok/(`1`,`5`,`2`) | ACCEPT/ok/(same) |
+    | pos_arr_elem / pos_map_value / pos_tuple / pos_fnty | `[bounded[4]int]`, `[string:bounded[4]int]`, … | ACCEPT/ok/ | ACCEPT/ok/ |
+    | pos_map_key | `[bounded[4]int:string]` | ACCEPT/ok/ | ACCEPT/**CCFAIL** |
+    | pos_fixarr_of / pos_bounded_of | `[2]bounded[4]int`, `bounded[2]bounded[4]int` | ACCEPT/ok/ | ACCEPT/**CCFAIL** |
+    | pos_option_paren / pos_chan_paren | `Option(bounded[4]int)`, `Channel(bounded[4]int)` | ACCEPT/ok/ | ACCEPT/ok/ |
+    | pos_global | `g: bounded[4]int` at top level | REJECT `expected 'fn'` | REJECT `expected a keyword` |
+    | use_overflow | 3rd `push` into `bounded[2]` | ACCEPT/ok/**rc=1** `tycho: push to a full bounded[2]` | identical |
+    | use_litover | `bounded[2]int = [1,2,3]` | REJECT `a bounded[2] holds at most 2 elements, got 3` | REJECT (same text) |
+    | pop / slice / reserve | on a `bounded` value | REJECT (3 distinct messages) | REJECT |
+    | `for v in a` | iteration | ACCEPT | ACCEPT |
+    | bounded_as_var | `bounded := 3` | ACCEPT/ok/`3` | ACCEPT/ok/`3` — **`bounded` is not a reserved word** |
+    | bounded_bare | `a: bounded` (no `[`) | REJECT `expected '[' after bounded` | REJECT |
+
+  - Incidental finding that kept the spec honest: **`0x10` is not a valid integer
+    literal anywhere in Tycho** (`x := 0x10` is rejected by both), so the
+    `cap_hex` rejection is not a `bounded`-specific rule and is NOT written up as
+    one.
+  - **New production** (identical text added to `docs/spec/appendix-a-grammar.md`
+    and `docs/spec/02-grammar.md`, immediately after the `soa` alternative; the
+    `spec-check` "Appendix A grammar matches §3/§4" assertion confirms the two
+    copies stayed in sync):
+
+    ```ebnf
+                | "bounded" "[" INT "]" Type                       /* bounded[N]T inline fixed-capacity */
+    ```
+
+    The capacity is spelled `INT` — **not** `INT | IDENT` — because the
+    const-name form is accepted by only one of the two compilers (see Phase 18).
+    The grammar therefore admits exactly what both accept.
+  - **Sections added:**
+    - `docs/spec/02-grammar.md` — the production plus a §4.2 note bullet: capacity
+      MUST be a positive literal, the `const` form is not portable, and `bounded`
+      is *contextual* (a type constructor only before `[`).
+    - `docs/spec/03-types.md` — new **§5.3.10 `bounded[N]T`**, appended after
+      §5.3.9 rather than inserted next to the array sections: §5.3.1/2/4/5/6/7/8/9
+      anchors are cross-referenced from `12-aggregates.md`, `11-functions.md`,
+      `05-generics.md`, `16-builtins.md` and `appendix-e-conformance.md`, so
+      renumbering would break live links. Carries a `> Provenance:` line in the
+      §5.3.5 house style, every citation of which was opened and verified:
+      `src/tychoc.c:1727-1743` (capacity `:1731-1738`, element restriction
+      `:1741-1742`), `compiler/tychoc0.ty:1718-1731`, slice `:4754-4755`, `pop`
+      `:5396-5397`, `reserve` `:5418`, over-long literal `:5759-5761`, push trap
+      `:10593-10595`.
+    - A second `> Note:` states plainly that aggregate element types parse but are
+      not reliably code-generated, and names the portable subset. Written that way
+      because the compilers' own diagnostic promises "a struct" while
+      `bounded[4]Pt` fails to compile on **both** — the spec must not repeat a
+      promise the implementations do not keep.
+    - `docs/spec/appendix-e-conformance.md` — yes, a row was warranted: the
+      appendix already carries §5.3.2, §5.3.5 and §5.3.9 rows in the same §5
+      table, so the form fits the existing structure. Added
+      `| §5.3.10 | bounded[N]T … | tests/bounded, reject/fixarr_into_bounded_arg |`.
+      `spec-check`'s "all Appendix E fixture citations resolve" confirms both
+      fixtures exist.
+  - **Gates, each its own foreground command, `env -u LD_PRELOAD`:**
+    - `make test` → `passed: 447   failed: 0` / `all green`
+    - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+    - `make conc` → `conc: passed 37   failed 0`
+    - `make fixpoint` → `ok B == C : tychoc0 reproduces itself byte-identically (34929 lines C)` / `fixpoint: all green`
+    - `make ilp32` → `passed: 447   failed: 0` / `all green`
+    - `make spec-check` → `spec-check: Appendix A grammar matches §3/§4 (ok)`,
+      `spec-check: all Appendix E fixture citations resolve (ok)`,
+      `spec-examples: 7 runnable example(s), all pass`
+    - `make check-links` → `link check: ok (121 markdown files, no dead relative links)`
+    - `git status --short` → only the 4 edited `docs/spec/` files; no build spill.
 
 - [ ] **Phase 12 — the integer-literal emitter produces two default-on C warnings (found by Phase 4, out of its scope)**
   - These are the only emitted-C warnings left on the **default-on** path after
@@ -1934,6 +2049,75 @@ codegen.
   - Done when: `tests/reject/match_dup_arm.ty` reports line 10 and
     `tests/reject/match_wildcard_not_last.ty` line 12 from **both** compilers;
     full gate set green including `make fixpoint`.
+
+- [ ] **Phase 18 — two `bounded[N]T` accept/reject divergences between the compilers (found by Phase 11, out of its docs-only scope)**
+  - Same normative class as Phases 9 and 15: `00-conventions.md` §1.3 makes the
+    accept/reject **decision** normative, and here the two compilers decide
+    differently. Phase 11 was docs-only and could not touch either compiler, so
+    both are filed whole. Both were measured on the frontend column
+    (`tychoc --emit-c` vs `tychoc0`'s stdout emit), the same surface
+    `tests/run.sh:148-212` compares.
+  - **(a) `bounded[CONST]T` — tychoc ACCEPTS, tychoc0 REJECTS.** With
+    `const CAP = 4`, `bounded[CAP]int` compiles and runs on tychoc (`n 3`) and
+    dies on tychoc0 with `parse: line N: bounded needs an integer capacity:
+    bounded[N]T`. tychoc takes the const path deliberately —
+    `src/tychoc.c:1730-1737` looks the name up via `consts_find` and its comment
+    reads "an int literal or an int `const` name, **same as a fixed [N]T**".
+    tychoc0's branch (`compiler/tychoc0.ty:1721-1725`) tests `!= TInt` and stops.
+    This is an oversight, not a design split: tychoc0 **already implements** the
+    same const-capacity form for fixed arrays at `compiler/tychoc0.ty:1679-1690`
+    (the `"[#" + cnm + "]"` encoding), so the machinery is present and simply was
+    not wired into the `bounded` branch. The spec's fixed-array §5.3.2 and the
+    `ArrayOrMap` production's `IDENT "]" Type /* [C]T */` alternative both already
+    bless the const form for `[C]T`.
+  - **Decide the direction before coding**, since either is defensible: teach
+    tychoc0 the const capacity (making `bounded` consistent with `[C]T`, and then
+    §5.3.10's "not portable" paragraph and the `INT`-only production both get
+    widened to `INT | IDENT`), or drop it from tychoc (narrowing, and gratuitously
+    inconsistent with `[C]T`). The first is strongly indicated.
+  - **(b) `bounded[N]Channel(T)` — tychoc REJECTS, tychoc0 FAIL-OPENS.** tychoc
+    dies with `a channel handle cannot be stored in a container or aggregate --
+    pass it as an argument instead`; tychoc0 accepts it and emits C that does not
+    compile (`expected identifier or '(' before 'int'`). This one needs no ruling:
+    the spec **already requires the reject** — `03-types.md` §5.3.9 says a handle
+    "cannot be copied, stored in any aggregate, …", and `Task(T)`/`Channel(T)` are
+    named there as similarly affine and non-storable. tychoc0 is straightforwardly
+    non-conforming and the fix direction is fixed. Note this is a *fail-open*, the
+    class `tests/run.sh:143-160` exists specifically to catch.
+  - Done when: both programs get the same verdict from both compilers; a reject
+    fixture is added for (b) and an accept-or-reject fixture for (a) per whichever
+    direction is chosen; §5.3.10 and the `Type` production are updated to match if
+    (a) resolves toward accept; full gate set green.
+
+- [ ] **Phase 19 — `bounded[N]T` of an aggregate element parses but emits uncompilable C (found by Phase 11, out of its docs-only scope)**
+  - Not an accept/reject divergence — **both frontends accept these** — so it did
+    not block Phase 11's grammar work, but it makes the compilers' own diagnostic
+    false. Both compilers reject a bad element with the text `bounded elements
+    must be int, float, string, **a struct**, or an array`
+    (`src/tychoc.c:1741-1742`, `compiler/tychoc0.ty:1729-1730`) — yet
+    `bounded[4]Pt` for a struct `Pt` fails to compile on **both**:
+    `error: array type has incomplete element type 'S_Pt'`. The message promises
+    something neither implementation delivers.
+  - Measured 2026-07-25 (`/tmp/ph11/probe3.py`; `cc -O1 -fwrapv -pthread`):
+    - **Both** emit uncompilable C for a `struct`, a tuple, or a `soa` element
+      (all "incomplete element type" / "unknown type name" — a **declaration-order**
+      bug: the inline `T v[N]` array is emitted before the element struct is
+      completed).
+    - **tychoc0 only**: `bytes`, `[N]T`, `[K:V]`, a nested `bounded`, a `bounded`
+      map key, `[2]bounded[4]int`, `bounded[2]bounded[4]int` — all fine on tychoc.
+      tychoc0's failures cluster on the type appearing in a **parameter** position
+      (`bounded[4][2]int` as a local builds and runs, `n 7`).
+    - **tychoc only**: `Option(T)` and `Result(T,E)` elements — fine on tychoc0.
+  - Why it went unnoticed: `tests/bounded.ty` only ever uses `bounded[N]int`, so
+    the whole aggregate-element surface is unfixtured.
+  - `docs/spec/03-types.md` §5.3.10 currently carries a `> Note:` naming the
+    portable subset (`int`, `float`, fixed-width numerics, `ptr`, `string`, a
+    fieldless enum, `[E]`, a function type). **That note must be deleted when this
+    phase lands**, and the element rule stated positively instead.
+  - Done when: every element type the frontend admits produces C that compiles and
+    runs identically on both compilers, with fixtures covering struct, tuple, map,
+    nested-`bounded` and `bytes` elements in local, param, field and return
+    positions; §5.3.10's caveat note removed; full gate set green.
 
 ## Out of scope
 
