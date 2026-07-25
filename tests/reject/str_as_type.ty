@@ -1,0 +1,13 @@
+# `str` is a BUILTIN FUNCTION name, never reserved (appendix-b-keywords.md:38);
+# the string type is spelled `string` (03-types.md:81, appendix-b-keywords.md:18-20).
+# `str` is ALSO tychoc0's internal spelling of the string type, so tychoc0 used to
+# hand a written `str` annotation straight back as the real type and ACCEPT this
+# program while tychoc rejected it -- a fail-open accept/reject divergence on the
+# one property the spec makes normative (00-conventions.md §1.3,
+# appendix-f-impl-defined.md:63-64). Both compilers must reject.
+# Same root cause / same check as reject/void_as_type.ty and reject/char_as_type.ty
+# (the internal-spelling guard in parse_type_d); one file per name because the
+# compiler stops at the first error.
+fn main():
+    x: str = "h"
+    println(x)

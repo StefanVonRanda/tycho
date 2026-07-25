@@ -508,7 +508,7 @@ or fixpoint goes red.
     has a recorded ruling and the compilers agree where a ruling says they
     should; full gate set green.
 
-- [ ] **Phase 9 — DECISION divergence: tychoc0 accepts `str` as a written type annotation, tychoc rejects it (found by Phase 3, NOT fixed there)**
+- [x] **Phase 9 — DECISION divergence: tychoc0 accepts `str` as a written type annotation, tychoc rejects it (found by Phase 3, NOT fixed there)**
   - Found while checking whether tychoc's `unknown type 'str'` on
     `tests/reject/explicit_count.ty` was itself a misdiagnosis. It is not — but
     the probe that proved it exposed something bigger than a message:
@@ -542,6 +542,154 @@ or fixpoint goes red.
     the sized ints), since each is the same class of fail-open.
   - Done when: both compilers agree on the accept/reject decision for a written
     `str` annotation, a reject fixture locks it, full gate set green.
+
+  **DONE 2026-07-25 — tychoc0 was wrong; 2 of 23 swept names diverged (`str`, `void`).**
+
+  **1. The spelling, from the spec (which is the authority).** The answer is
+  `string`, and `str` is NOT a type at all:
+  - `docs/spec/appendix-b-keywords.md:18-20` — "Of these, the **type keywords**
+    are `int`, `float`, `bool`, `string`, `ptr`, `bytes`, the fixed-width
+    integers `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, and `f32`.
+    There is no `while`, `char`, or `void` keyword." That is the closed list.
+  - `docs/spec/appendix-b-keywords.md:38` — "all builtin names (`len`, `push`,
+    `str`, `wait`, …) | resolved as calls; **never reserved**". `str` is the
+    string-conversion BUILTIN FUNCTION, not a type name.
+  - `docs/spec/03-types.md:81` — the string type's own section heading is
+    "### 5.2.5 `string`".
+  - `docs/spec/03-types.md:74` — "there is no `char` type keyword";
+    `docs/spec/01-lexical.md:116-117` — "there is no `char` or `void` type
+    keyword (the `char` type arises only from character literals and inference,
+    and `void` is the implicit …)"; `01-lexical.md:307` names a doc bug as
+    "it lists `char` and `void` as type keywords — **neither is spellable as a
+    type**".
+  So tychoc is RIGHT to reject `str`, and tychoc0 fail-opened. This was checked
+  against the spec first, not presumed from tychoc being stricter.
+
+  **2. Root cause (source trace).** `parse_type_d`,
+  `compiler/tychoc0.ty:1754-1817`. It matches the user-facing spellings
+  explicitly — `:1767-1768` maps written `string` → internal `"str"` — and any
+  unmatched bare name falls through to `:1817 return name` (intended for struct/
+  enum names). Because `str`/`void`/`char` ARE tychoc0's own internal spellings
+  (listed as base type names at `:2116` `ffi_scalar` and `:2844` `mangle_type`),
+  that fall-through handed a *written* `str` straight back as the real internal
+  string type and nothing downstream ever objected. The internal name and the
+  user-facing name were conflated by omission: the guard existed for `char` only
+  (`:1799`, added by earlier audit work) and was never generalized.
+  Confirmed `parse_type_d` only ever sees user source, never internal type text:
+  every caller passes a `[Token]` lexed from the input file, and the shipped
+  `char` guard at `:1799` already rejects an internal spelling with all gates
+  green — if internal type text reached this function, that guard would already
+  be firing.
+
+  **3. Fix.** `compiler/tychoc0.ty:1799-1812` — generalized the one-name `char`
+  guard into the full internal-spelling guard (`char`, `void`, `str`), with the
+  spec citations inline. Front-end reject path only; nothing reaches codegen
+  (corroborated by `make fixpoint` staying green, below).
+
+  **Before/after probe** (`fn main(): x: str = "h"; println(x)`):
+  ```
+  BEFORE  tychoc   probe.ty:2: error: unknown type 'str'      (rc 1)
+          tychoc0  <no diagnostic>                            (rc 0)   FAIL-OPEN
+  AFTER   tychoc   probe.ty:2: error: unknown type 'str'      (rc 1)
+          tychoc0  type: 'str' is not a type keyword (...)    (rc 1)   agree
+  ```
+
+  **4. FULL base-type-name sweep.** Every name on the `:2844` list plus the
+  spec's type keywords plus negative controls, each in user type-annotation
+  position. Probe isolates the NAME lookup — an identity fn needs no literal, so
+  no assignment-type noise: `fn f(x: N) -> N: return x`.
+
+  | name | tychoc | tychoc0 BEFORE | tychoc0 AFTER | verdict |
+  |---|---|---|---|---|
+  | `int` | accept | accept | accept | agree |
+  | `float` | accept | accept | accept | agree |
+  | `bool` | accept | accept | accept | agree |
+  | `string` | accept | accept | accept | agree |
+  | **`str`** | REJECT | **accept** | REJECT | **was DIVERGENT — fixed** |
+  | `char` | REJECT | REJECT | REJECT | agree (guarded since earlier audit) |
+  | **`void`** | REJECT | **accept** | REJECT | **was DIVERGENT — fixed** |
+  | `ptr` | accept | accept | accept | agree |
+  | `bytes` | accept | accept | accept | agree |
+  | `u8` `u16` `u32` `u64` | accept | accept | accept | agree (4 names) |
+  | `i8` `i16` `i32` `i64` | accept | accept | accept | agree (4 names) |
+  | `f32` | accept | accept | accept | agree |
+  | `bounded` `soa` `inout` `fn` `nosuchtype` | REJECT | REJECT | REJECT | agree (negative controls) |
+
+  23 names swept, **2 divergent, both fixed**. Both were the same root cause and
+  the same check (the `return name` fall-through at `:1817` returning an internal
+  spelling), which is why one guard closes both. `ptr` and `bytes` — flagged as
+  suspects when the phase was written — are genuine spec type keywords
+  (`appendix-b-keywords.md:18-19`) and correctly accepted by BOTH; no change.
+
+  **5. Fixtures** (reject lane, `tests/run.sh:148-163`, runs BOTH compilers and
+  fails on "tychoc0 ACCEPTED an invalid program (fail-open)"):
+  - `tests/reject/str_as_type.ty` — the exact probe program.
+  - `tests/reject/void_as_type.ty` — `void` in param + return position.
+  One file per name, though both funnel through the same guard, because the
+  compiler stops at the first error so a single file cannot lock both. Joins the
+  pre-existing `tests/reject/char_as_type.ty`. Test count 435 → **437**.
+
+  **6. NOT over-tightened — legal base types still compile AND RUN.** A program
+  exercising every one of the 15 spec type keywords in annotation position
+  (identity fn per type + live calls in `main`) compiles and runs on both, with
+  byte-identical output:
+  ```
+  tychoc  -> 7 1.5 true / hi 2 / 1234 / 5678 / 2.5   (rc 0)
+  tychoc0 -> 7 1.5 true / hi 2 / 1234 / 5678 / 2.5   (rc 0)
+  ```
+
+  **7. Gates** (each its own foreground `env -u LD_PRELOAD make …`):
+  ```
+  test        passed: 437   failed: 0  /  all green        (435 + 2 new fixtures)
+  corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+  conc        conc: passed 36   failed 0
+  fixpoint    ok B == C : tychoc0 reproduces itself byte-identically (34839 lines C)
+              fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+  ilp32       passed: 437   failed: 0  /  all green
+  spec-check  spec-examples: 7 runnable example(s), all pass
+  check-links link check: ok (121 markdown files, no dead relative links)
+  ```
+  `fixpoint` green is the load-bearing one: it asserts byte-identical emitted C,
+  so a green B==C proves the change stayed in the front-end reject path and never
+  moved codegen.
+  `git status --short` clean of spill (only the intended `compiler/tychoc0.ty` +
+  the two new fixtures). tychoc0 was built at `/tmp/ph9/` throughout, outside the
+  repo tree.
+
+  **Residual uncertainty:** none for base type NAMES — the sweep is exhaustive
+  over the `:2844` list and the spec's closed type-keyword list. Not swept:
+  internal spellings of COMPOUND type forms (tychoc0 writes e.g. `&T` for inout
+  and `~T` for sink as type-string prefixes, `:1832-1838`). Those are not bare
+  identifiers so they cannot reach the `:1817` fall-through, and the negative
+  controls `inout`/`bounded`/`soa`/`fn` all reject on both — but a written
+  compound-prefix form was not probed. Class is the same; exposure is not
+  demonstrated. Logged as Phase 10 rather than absorbed here.
+
+- [ ] **Phase 10 — sweep the COMPOUND-type internal spellings for the same fail-open shape (discovered by Phase 9, out of its scope)**
+  - Phase 9 closed the bare-NAME fall-through in `parse_type_d`
+    (`compiler/tychoc0.ty:1817`) and swept all 23 base type names. It did NOT
+    sweep tychoc0's internal spellings of *compound* type forms: `parse_param`
+    at `:1832-1838` encodes `inout T` as the type string `"&T"`, sink as `"~T"`,
+    and variadic as `"...T"`; other internal forms include the `[bN]T` bounded
+    encoding (`:2825-2826`) and the `fn(P->R)` shape (`:2837-2843`).
+  - Question to answer: can a user *write* any of these internal encodings
+    directly in type position (e.g. `x: &int`, `x: ~int`, a literal `[b4]int`)
+    and have tychoc0 accept where tychoc rejects? Phase 9 argued exposure is
+    unlikely — these are not bare identifiers, so they cannot reach the `:1817`
+    fall-through, and the `inout`/`bounded`/`soa`/`fn` negative controls reject
+    on both compilers — but it PROBED only the bare-identifier position. The
+    argument is a source trace, not a measurement.
+  - Method: mirror Phase 9's harness — probe each written compound form against
+    both compilers in user annotation position, tabulate accept/reject, fix any
+    divergence in whichever compiler the spec says is wrong (`02-grammar.md` /
+    `appendix-a-grammar.md` are the authority for what a type *form* may be),
+    add a `tests/reject/` fixture per divergence.
+  - Fail closed: any form that cannot be confidently shown user-writable per the
+    grammar gets REJECTED, never accepted on a guess.
+  - Done when: the compound-form sweep table is recorded, every divergence fixed
+    and fixture-locked, legal compound annotations still compile on both, full
+    gate set green. A table with zero divergences is a legitimate outcome and
+    closes the phase — the measurement is the deliverable.
 
 ## Out of scope
 

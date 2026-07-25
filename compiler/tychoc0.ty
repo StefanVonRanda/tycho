@@ -1796,8 +1796,20 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         expect(toks, &pos, TRParen)
         return "Result(" + t + "," + e + ")"
     else:
-        if name == "char":                       # AUDIT/spec (03-types.md §5.2.4): there is no `char` type keyword -- a char arises by INFERENCE (c := 'x'), never as a written type. tychoc rejects it ("unknown type 'char'"); match that.
-            die("type: there is no `char` type keyword -- a char arises by inference (e.g. c := 'x'), not as a written type annotation")
+        # AUDIT/spec: the type keywords are EXACTLY int/float/bool/string/ptr/bytes/
+        # u8/u16/u32/u64/i8/i16/i32/i64/f32 (appendix-b-keywords.md:18-20), all matched
+        # above. `char`, `void` and `str` are NOT type keywords: `char` arises only by
+        # inference (03-types.md:74, 01-lexical.md:116-117), `void` is the implicit
+        # no-return (01-lexical.md:116-117, :307), and `str` is a BUILTIN FUNCTION name,
+        # never reserved (appendix-b-keywords.md:38) -- the string type is spelled
+        # `string` (03-types.md:81).
+        # These three are also tychoc0's own INTERNAL spellings of those types, so the
+        # `return name` fall-through below would hand a written `str`/`void`/`char`
+        # straight back as the real internal type and the annotation would sail through
+        # -- a fail-OPEN accept where tychoc rejects ("unknown type 'str'"). Fail closed
+        # here: an internal spelling is not user-writable.
+        if name == "char" or name == "void" or name == "str":
+            die("type: '" + name + "' is not a type keyword (the type keywords are int, float, bool, string, ptr, bytes, u8..u64, i8..i64, f32); a char arises by inference (e.g. c := 'x'), `void` is the implicit no-return, and the string type is spelled `string`")
         if toks[pos].kind == TLParen:            # generics: `Box(int)` generic-struct instance in type position
             pos = pos + 1
             targs := []string
