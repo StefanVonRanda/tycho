@@ -301,7 +301,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 `reserve` MUST be rejected on a `bounded` value.
 
 > Provenance: the `bounded` branch of `parse_type_inner`,
-> `src/tychoc.c:1767-1783@"bounded"` (capacity `:1769-1779`, element
+> `src/tychoc.c:1800-1816@"bounded"` (capacity `:1769-1779`, element
 > restriction `:1781-1782`); its twin
 > `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
 > deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),

@@ -30,19 +30,20 @@ fn rq(r: Result(httpd.Request, httpd.ReqErr)) -> httpd.Request:
 
 # WHICH outcome read_request/parse_request reported, as a stable string. This is
 # the assertion the whole conversion exists for: "Malformed", "Closed" and
-# "Timeout" were ALL `method == ""` before 2026-07-26. `err_or` + `==` rather than
-# a nested pattern, because `Err(httpd.Timeout)` does not parse.
+# "Timeout" were ALL `method == ""` before 2026-07-26.
+#
+# One arm per cause, since plan.md phase 3. This function was `is_ok` + `err_or`
+# plus four `e == httpd.X` comparisons, because `Err(httpd.Timeout)` did not parse.
+# It can be written this way HERE and not in corelib/httpd itself: no runner feeds
+# corelib/test/ to the frozen compiler/tychoc0.ty, whose grammar still has no
+# nested pattern.
 fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
-    if result.is_ok(r):
-        return "Ok"
-    e := result.err_or(r, httpd.Failed)
-    if e == httpd.Malformed:
-        return "Malformed"
-    if e == httpd.Closed:
-        return "Closed"
-    if e == httpd.Timeout:
-        return "Timeout"
-    return "Failed"
+    match r:
+        Ok(req): return "Ok"
+        Err(httpd.Malformed): return "Malformed"
+        Err(httpd.Closed): return "Closed"
+        Err(httpd.Timeout): return "Timeout"
+        _: return "Failed"
 
 fn main():
     # ---- pure parsing (no socket): a request with headers + body ----

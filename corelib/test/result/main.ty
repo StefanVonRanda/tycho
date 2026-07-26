@@ -8,8 +8,17 @@
 #     instantiate from the same four lines
 #   * they work over an error type declared in ANOTHER package (io.IoErr) as well
 #     as one declared locally
-#   * err_or + `==` is how a caller asks WHICH failure, because Tycho has no
-#     nested patterns (`Err(io.IsDir)` is not a legal match arm)
+#   * err_or + `==` is one way a caller asks WHICH failure; since plan.md phase 3
+#     a NESTED PATTERN (`Err(io.NotFound):`) is the other, and the last third of
+#     this file is its regression -- see `why`, `sized` and `outcome` below
+#
+# THIS is the regression home for nested patterns and for a Result inside a tuple
+# literal, and the reason is the frozen compiler, not taste: `tests/*.ty` and
+# `tests/pkg/*/main.ty` are fed to compiler/tychoc0.ty by compiler/fixpoint.sh:24
+# and scripts/frontparity.sh:127, and tychoc0 is frozen at a grammar that has
+# neither. corelib/test/ is golden-validated by corelib/run.sh and reaches no
+# frozen compiler, so a new-syntax fixture can live here and nowhere in tests/.
+# (Same constraint phase 2 recorded for adjacent string literals.)
 package main
 import "core:result"
 import "core:io"
@@ -22,6 +31,7 @@ fn b(x: bool) -> int:
 enum Local:
     Nope
     Worse
+    Sized(int, string)                           # a payload-carrying variant, for Err(Sized(n, s))
 
 struct Pair:
     a: int
@@ -46,6 +56,51 @@ fn mkopt(ok: bool) -> Option(string):
     if ok:
         return Some("here")
     return None
+
+# ---- nested patterns (plan.md phase 3 / FRICTION.md:139) -------------------
+#
+# Before 2026-07-26 none of the three arms below could be written:
+#   Err(Worse)     PARSED -- as a binding named `Worse`, so it matched EVERY Err.
+#                  A second Err arm was the only symptom: "duplicate Err arm".
+#   Err(io.IsDir)  error: expected ')'
+#   Err(Sized(n))  error: expected ')'
+# The first is the one that mattered: a wrong parse, not a rejected one.
+fn why(k: int) -> string:
+    match pick(k):
+        Ok(v): return "ok " + str(v)
+        Err(Worse): return "worse"                # bare nullary variant: a PATTERN, not a binding
+        Err(Nope): return "nope"
+        Err(Sized(n, s)): return "sized " + str(n) + " " + s   # the nested variant's own payload
+
+fn pick(k: int) -> Result(int, Local):
+    if k == 0:
+        return Ok(42)
+    if k == 1:
+        return Err(Worse)
+    if k == 2:
+        return Err(Nope)
+    return Err(Sized(9, "nine"))
+
+# The refined arms cover every variant of Local, so the match is exhaustive with
+# NO unrefined `Err(e)` arm and no `_`. A qualified nested pattern (io.NotFound)
+# and an `_` fallback are exercised too.
+fn io_why(p: string) -> string:
+    match io.read_bytes(p):
+        Ok(bs): return "read " + str(len(bs))
+        Err(io.NotFound): return "absent"
+        Err(io.IsDir): return "a directory"
+        _: return "other"
+
+# ---- a Result as a tuple literal element (FRICTION.md:159) -----------------
+#
+# `return (Err(Worse), "partial")` was rejected with "tuple element 1 needs a
+# concrete value" -- E_TUPLE only ever synthesized, and Ok/Err synthesize to a
+# partial type that context has to ground. It is why httpd.read_request_capped
+# still builds its outcome in a typed local (it is compiled by frozen tychoc0).
+fn outcome(ok: bool) -> (Result(int, Local), string):
+    if ok:
+        return (Ok(3), "full")
+    return (Err(Worse), "partial")
 
 fn main():
     # ---- unwrap_or: the workhorse, over four different payload types ----
@@ -78,3 +133,17 @@ fn main():
     println("some_or   = " + result.some_or(mkopt(true), "dflt"))
     println("none_or   = " + result.some_or(mkopt(false), "dflt"))
     println("is_some   = " + str(b(result.is_some(mkopt(true)))) + " " + str(b(result.is_some(mkopt(false)))))
+
+    # ---- nested patterns: one arm per cause, no second match and no `==` ----
+    println("nest_ok   = " + why(0))
+    println("nest_bare = " + why(1))
+    println("nest_bare2= " + why(2))
+    println("nest_pay  = " + why(3))
+    println("nest_qual = " + io_why("/tmp/tycho_corelib_result_absent.xyz"))
+    println("nest_dir  = " + io_why("/tmp"))
+
+    # ---- a Result inside a tuple literal, destructured by the caller ----
+    r1, s1 := outcome(true)
+    r2, s2 := outcome(false)
+    println("tup_ok    = " + s1 + " " + str(result.unwrap_or(r1, -1)))
+    println("tup_err   = " + s2 + " " + str(result.unwrap_or(r2, -1)))

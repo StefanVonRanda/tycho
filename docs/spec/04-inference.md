@@ -48,6 +48,11 @@ following groundings occur:
    omit its parameter and return type annotations, taking them from `T`.
 6. **Fix a bare sum constructor.** A bare `None`, `Ok(v)`, or `Err(e)` takes its
    missing type parameter from `T` (an `Option`/`Result`).
+7. **Check a tuple literal element-wise.** A tuple literal checked against a tuple
+   type of the same arity checks **each element** against the corresponding element
+   type, so an `Ok`/`Err`/`None`/`[]` element grounds inside a tuple exactly as it
+   does anywhere else: `return (Err(A), "partial")` from a
+   `-> (Result(int, E), string)` function is well typed.
 
 If none of these applies, the expression is synthesized and its synthesized type
 MUST equal `T`; otherwise the program is rejected with a type-mismatch
