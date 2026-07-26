@@ -1,0 +1,35 @@
+package lib
+
+# The three things a generic call's ARGUMENT list has to be able to hold, all
+# written qualified from another package: a call into a package, a bare
+# package-qualified nullary variant, and a call whose result is a struct.
+enum Cause:
+    Eof
+    Timeout
+    Failed
+
+struct Req:
+    method: string
+
+fn port_of(fd: int) -> Result(int, Cause):
+    if fd < 0:
+        return Err(Failed)
+    return Ok(fd + 8000)
+
+fn blew_up() -> Result(int, Cause):
+    return Err(Timeout)
+
+fn bad_request() -> Req:
+    return Req("")
+
+fn ok_request() -> Result(Req, Cause):
+    return Ok(Req("GET"))
+
+fn name(c: Cause) -> string:
+    match c:
+        Eof:
+            return "eof"
+        Timeout:
+            return "timeout"
+        Failed:
+            return "failed"

@@ -1,0 +1,80 @@
+package main
+import "lib"
+
+# Regression, plan.md phase 1 / FRICTION.md:148 -- a package-qualified name
+# written ANYWHERE in a GENERIC call's argument list did not resolve:
+#
+#   unwrap_or(lib.port_of(fd), -1)   -> error: package 'lib' has no symbol 'lib__port_of'
+#   err_or(r, lib.Failed)            -> error: unknown variable 'lib'
+#   unwrap_or(r, lib.bad_request())  -> error: package 'lib' has no symbol 'lib__bad_request'
+#
+# Cause: resolution is not single-pass. instantiate_generic resolves every
+# argument once to infer `$T`, then the concrete-signature loop resolves the
+# SAME node again -- and the `pkg.name` -> `pkg__name` rewrite mutated the node
+# in place without being idempotent (the doubled prefix in the error text is the
+# tell). The generic struct and generic enum literal paths resolve their
+# arguments twice for the same reason, so those shapes are covered here too.
+
+fn unwrap_or(r: Result($T, $E), fallback: $T) -> $T:
+    match r:
+        Ok(v):
+            return v
+        Err(e):
+            return fallback
+
+fn err_or(r: Result($T, $E), fallback: $E) -> $E:
+    match r:
+        Ok(v):
+            return fallback
+        Err(e):
+            return e
+
+fn some_or(o: Option($T), fallback: $T) -> $T:
+    match o:
+        Some(v):
+            return v
+        None:
+            return fallback
+
+struct Box($T):
+    v: $T
+
+enum Cell($T):
+    Full($T)
+    Empty
+
+fn main():
+    # 1. a qualified CALL as a generic argument, both branches
+    println(str(unwrap_or(lib.port_of(3), -1)))          # 8003
+    println(str(unwrap_or(lib.port_of(-1), -1)))         # -1
+
+    # 2. a bare qualified VARIANT as a generic argument
+    r := lib.blew_up()
+    println(lib.name(err_or(r, lib.Failed)))             # timeout
+    println(lib.name(err_or(lib.port_of(1), lib.Failed)))  # failed  (Ok -> fallback)
+
+    # 3. a qualified call returning a struct, as a generic argument
+    q := unwrap_or(lib.ok_request(), lib.bad_request())
+    println("[" + q.method + "]")                        # [GET]
+    bad := unwrap_or(err_request(), lib.bad_request())
+    println("[" + bad.method + "]")                      # []
+
+    # the same three shapes through the generic struct / enum literal paths,
+    # which resolve their arguments twice as well
+    b := Box(lib.Timeout)
+    println(lib.name(b.v))                               # timeout
+    b2 := Box(unwrap_or(lib.port_of(2), -1))
+    println(str(b2.v))                                   # 8002
+    c := Full(lib.Eof)
+    println(cell_name(c))                                # eof
+    println(lib.name(some_or(Some(lib.Failed), lib.Eof)))  # failed
+
+fn err_request() -> Result(lib.Req, lib.Cause):
+    return Err(lib.Timeout)
+
+fn cell_name(c: Cell(lib.Cause)) -> string:
+    match c:
+        Full(v):
+            return lib.name(v)
+        Empty:
+            return "empty"

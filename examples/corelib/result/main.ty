@@ -10,14 +10,10 @@ import "core:io"
 
 fn describe(r: Result(bytes, io.IoErr)) -> string:
     if result.is_ok(r):
-        empty := to_bytes("")
-        return "read " + str(len(result.unwrap_or(r, empty))) + " bytes"
+        return "read " + str(len(result.unwrap_or(r, to_bytes("")))) + " bytes"
     # WHICH failure, without a nested pattern: `Err(io.IsDir)` does not parse, so
-    # the answer is err_or plus `==` on a payload-free variant. The fallback has
-    # to be a local -- a qualified name in a generic argument position does not
-    # resolve (see the CAVEAT in corelib/result/result.ty).
-    d := io.Failed
-    e := result.err_or(r, d)
+    # the answer is err_or plus `==` on a payload-free variant.
+    e := result.err_or(r, io.Failed)
     if e == io.NotFound:
         return "no such file"
     if e == io.IsDir:
@@ -29,14 +25,14 @@ fn main():
     w := io.write(p, "one\ntwo\n")
 
     # --- unwrap_or: one line instead of a four-line match ---
-    # The Result is bound first because a `pkg.call(...)` cannot be written inside
-    # a generic call's arguments (the CAVEAT in corelib/result/result.ty).
-    empty := to_bytes("")
+    # `rb` / `rmiss` are bound because each Result is used twice below, not
+    # because the argument position demands it -- that bug is fixed (plan.md
+    # phase 1), so both fallbacks are written inline.
     rb := io.read_bytes(p)
-    body := result.unwrap_or(rb, empty)
+    body := result.unwrap_or(rb, to_bytes(""))
     println("bytes    = " + str(len(body)))                  # 8
     rmiss := io.read_bytes("/tmp/nope.xyz")
-    println("missing  = " + str(len(result.unwrap_or(rmiss, empty))))   # 0
+    println("missing  = " + str(len(result.unwrap_or(rmiss, to_bytes("")))))   # 0
 
     # --- is_ok / err_or: the three outcomes read_bytes can now report ---
     println("file     = " + describe(rb))                    # read 8 bytes

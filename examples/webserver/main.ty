@@ -80,8 +80,7 @@ fn static_asset(p: string) -> Asset:
     rb := io.read_bytes(ROOT + "/static/" + name)
     if result.is_err(rb):
         return Asset(false, "", to_bytes(""))
-    empty := to_bytes("")
-    return Asset(true, httpd.content_type(name), result.unwrap_or(rb, empty))
+    return Asset(true, httpd.content_type(name), result.unwrap_or(rb, to_bytes("")))
 
 # Assets go through the ordinary Response path now that bodies are `bytes` --
 # the hand-rolled header writer this example used to carry is gone.
@@ -239,9 +238,7 @@ fn main():
         paths := ["/", "/blog", "/blog/hello-tycho", "/wiki/getting-started", "/blog/../secret", "/blog/missing", "/nope"]
         j := 0
         for j in range(len(paths)):
-            pr := httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr)
-            empty := httpd.bad_request()
-            req := result.unwrap_or(pr, empty)
+            req := result.unwrap_or(httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr), httpd.bad_request())
             resp := route(req)
             println("### GET " + paths[j] + " -> " + str(resp.status))
             print(to_str(resp.body))

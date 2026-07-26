@@ -279,8 +279,7 @@ fn resolve(root: string, target: string) -> Route:
     # decided its STATUS. Ok(false) (it is a file) and Err(NotFound) both fall
     # through to the exists check below, which is where a missing path becomes 404.
     if not dir_form:
-        isdir := io.is_dir(fsp)                    # bound to a local: a qualified name
-        if result.unwrap_or(isdir, false):         # cannot be a generic call's argument
+        if result.unwrap_or(io.is_dir(fsp), false):
             return Route(301, "", p + "/")         # /dir -> /dir/, index or not
     if not io.exists(fsp):
         return Route(404, "", "")                  # incl. /dir/ with no index.html
@@ -584,11 +583,8 @@ fn main():
     match net.listen(cfg.host, cfg.port):
         Ok(fd): srv = fd
         Err(e): die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
-    # -1 in the banner if unknowable. The Result is bound first because a
-    # `pkg.call(...)` cannot be written inside a generic call's argument list --
-    # see the CAVEAT in corelib/result/result.ty.
-    pr := net.port_of(srv)
-    bound := result.unwrap_or(pr, -1)
+    # -1 in the banner if unknowable.
+    bound := result.unwrap_or(net.port_of(srv), -1)
 
     banner := "tycho-httpd: serving " + cfg.root
     banner += " on http://" + cfg.host + ":" + str(bound) + "/"

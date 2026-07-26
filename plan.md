@@ -66,7 +66,7 @@ Ordered by leverage: the items that tax every other item come first. A phase tha
 item is not worth fixing **refuses it in `FRICTION.md` with the cost** and still ticks — that
 is a completed phase under this plan's Goal, and it is not a failure.
 
-- [ ] **Phase 1 — the resolution bug that taxes every generic call site**
+- [x] **Phase 1 — the resolution bug that taxes every generic call site**
   - Item: `FRICTION.md:148` — a qualified name anywhere in a *generic* call's argument list
     does not resolve. `result.unwrap_or(net.port_of(fd), -1)` → `error: package 'net' has no
     symbol 'net__port_of'`; `result.err_or(r, net.Failed)` → `error: unknown variable 'net'`.
@@ -80,6 +80,219 @@ is a completed phase under this plan's Goal, and it is not a failure.
     (search for them; the last plan created several).
   - Verify: a scratch program with all three spellings compiles and prints correct values;
     corelib + 13 entry points compile; 9 goldens match; `server/` live matrix unchanged.
+
+  #### Phase 1 — DONE. Evidence
+
+  ##### Root cause: resolution is not single-pass, and the rewrite was not idempotent
+
+  It is **not** generic instantiation losing the qualifier. `instantiate_generic`
+  (`src/tychoc.c:6895`) resolves **every argument once** to infer `$T`:
+
+  ```c
+  for (int j = 0; j < gt->nparams; j++) {
+      Type at_ = resolve_expr(e->args[j]);          /* the concrete argument type */
+  ```
+
+  and then, after `e->sval` is rewritten to the instance name, the ordinary
+  concrete-signature loop resolves **the same nodes again** against the now-bound
+  parameter types (`src/tychoc.c:5565`, `resolve_exp(e->args[i], s->params[i])`, whose
+  job is grounding a bare `None`/`[]` argument). Both rewrites that turn a written
+  `pkg.x` into a mangled name mutated the node in place and were not idempotent:
+
+  1. `src/tychoc.c:5090-5102` (E_CALL, `e->qual` set) rewrote `e->sval` to
+     `pkg_prefix_for(qual) + sval` and **kept `e->qual`**. Second pass:
+     `q = "net__" + "net__port_of"`, which no lookup finds, so it died as
+     `package 'net' has no symbol 'net__port_of'` — the **doubled prefix in the error
+     text was the whole tell**, and it named the mangled name, not the written one.
+  2. `src/tychoc.c:4827-4849` (E_FIELD `pkg.Variant`) reinterpreted the node as an
+     `E_CALL` enum constructor but **left `e->lhs` pointing at the package ident**.
+     Second pass entered the E_CALL arm, hit the call-on-expression branch
+     (`if (e->lhs)`, `src/tychoc.c:5065`) and resolved `net` as a value →
+     `unknown variable 'net'`.
+
+  So the bug was never about generics or about variants. **Any** double-resolve site
+  reproduced it: `Box(net.Failed)` on a generic *struct* literal fails identically
+  (`src/tychoc.c:5173` then `:5190` — infer, then re-resolve), measured before the fix:
+
+  ```
+  r5/main.ty:8: error: unknown variable 'net'
+      8 |     b := Box(net.Failed)
+  ```
+
+  Fix: one `int pkg_done` latch on `Expr` (`src/tychoc.c:1400`), set by every successful
+  package rewrite and checked before doing one, plus `e->lhs = NULL` on the
+  `pkg.Variant` reinterpretation. **`src/tychoc.c`: +22 / −5 lines, of which 4 are code**
+  (the latch field, the `if (e->pkg_done)` guard, the two `e->lhs = NULL; e->pkg_done = 1;`
+  assignments); the rest is the comment explaining why resolution runs twice. The phase's
+  Pre-flight assumption that the compiler items are individually small **held here**.
+
+  ##### The three spellings from `FRICTION.md:148`, before and after
+
+  Each in its own directory (`FRICTION.md:141` — `tychoc` compiles every `.ty` beside the
+  entry file). BEFORE is `tychoc` built from `git show HEAD:src/tychoc.c`:
+
+  ```
+  BEFORE (HEAD)                                   AFTER (this commit)
+  result.unwrap_or(net.port_of(fd), -1)
+    error: package 'net' has no symbol            port_ok = true
+           'net__port_of'                         port_er = -1
+  result.err_or(r, net.Failed)
+    error: unknown variable 'net'                 err_or  = true / err_ok = true
+  result.unwrap_or(r, httpd.bad_request())
+    error: package 'httpd' has no symbol          req_ok  = [GET]
+           'httpd__bad_request'                   req_bad = []
+  ```
+
+  Full AFTER run of the scratch program (all three inline, no bound locals):
+
+  ```
+  listen  = true   port_ok = true   port_er = -1
+  err_or  = true   err_ok  = true   err_tmo = false
+  req_ok  = [GET]  req_bad = []
+  ```
+
+  and the same program on the pre-fix compiler stops at its first line:
+  `error: package 'net' has no symbol 'net__listen'`.
+
+  ##### Regression test
+
+  `tests/pkg/generic_qual_arg/` + `tests/pkg/generic_qual_arg.out`, the convention
+  `tests/pkg/generic/` already established for qualified-generic resolution (a local `lib`
+  package, no corelib dependency, driven by `tests/run.sh` and therefore by `make test`).
+  Ten assertions: all three shapes as generic-**function** arguments, plus the generic
+  **struct** literal and generic **enum** payload paths that resolve arguments twice for the
+  same reason. **Reddened deliberately on the pre-fix compiler:**
+
+  ```
+  $ /tmp/prefix-tychoc tests/pkg/generic_qual_arg/main.ty
+  tests/pkg/generic_qual_arg/main.ty:48: error: package 'lib' has no symbol 'lib__port_of'
+  $ ./tychoc tests/pkg/generic_qual_arg/main.ty -o /tmp/gqa && /tmp/gqa | diff tests/pkg/generic_qual_arg.out -
+  GOLDEN OK
+  ```
+
+  ##### Workaround locals removed (18 code lines, 7 files)
+
+  Every site the last plan created purely for this bug, found by grepping for the
+  `bind first` / `cannot be a generic call's argument` comments it left:
+
+  | file | what went |
+  |---|---|
+  | `server/main.ty:282` | `isdir := io.is_dir(fsp)` → inline; 380 → **378** code lines |
+  | `server/main.ty:588-591` | `pr := net.port_of(srv)` + the 3-line CAVEAT comment |
+  | `corelib/test/io/main.ty` | **three** copies of `d := io.Failed` (124 → 121) |
+  | `corelib/test/httpd/main.ty` | `d := httpd.bad_request()`, `d := httpd.Failed` (143 → 141) |
+  | `corelib/test/result/main.ty` | `di := io.Failed`, `de := to_bytes("")` (51 → 49) |
+  | `examples/corelib/result/main.ty` | `d := io.Failed`, two `empty := to_bytes("")` (36 → 33) |
+  | `examples/corelib/httpd/main.ty` | `empty := httpd.bad_request()`, `d := httpd.Failed` (45 → 42) |
+  | `examples/webserver/main.ty` | `empty := to_bytes("")`, `empty := httpd.bad_request()` (204 → 201) |
+
+  `corelib/result/result.ty`'s header CAVEAT — which told every future caller to bind
+  first — is rewritten as a HISTORICAL CAVEAT stating the real cause and naming the
+  regression test. `err_or`'s doc comment no longer says `fallback` must be a local.
+  **This is the first phase in two plans where `server/main.ty` got shorter.**
+
+  ##### Gate spend: `make ci` WAS run (the day's single run, and it is now spent)
+
+  plan.md's compiler-phase exception, and the budget was free (the five phases of
+  `plan-option-result-DONE.md` each recorded "NOT run"). Honest account of two attempts:
+
+  - **Attempt 1 aborted on an environment fault, not on code.** Every one of the 526
+    fixtures failed `sanitizer exit 1` with `ASan runtime does not come first in initial
+    library list`. Cause: this agent's shell carries
+    `LD_PRELOAD=/home/igzo/phonic/tools/block-nnp.so`, which breaks **any** ASan binary —
+    proven with a 1-line control (`int main(){return 0;}` under
+    `-fsanitize=address,undefined` → `rc=1`, same message). Nothing was validated.
+  - **Attempt 2, `env -u LD_PRELOAD make ci N=0`:** lane 1 build ok, **lane 2 `make test`
+    passed 526 / failed 0, "all green"** — including `ok pkg_generic_qual_arg`. Killed by
+    my own 575 s wall during lane 2b, so the remaining lanes were run individually (not
+    via `make ci`/`make test`, which are now spent for the day):
+
+  ```
+  [2b] make ilp32          passed: 526  failed: 0   all green (-m32, 3m23s)
+  [2c] make asan-self      compiled: 541  failed: 0  all green (the COMPILER under ASan+UBSan)
+  [3]  make corelib        all green (tychoc matches goldens)
+       make corelib-examples / site / raytrace / mandelbrot   all green
+  [4]  make conc           passed 37  failed 0
+  [5]  make ffi            green
+  [6]  fuzz/run.py 200     ok=177 skip=23 timeout=0 FAIL=0
+  [7]  fuzz/run_reject.py 200   accepted=31 rejected=169 FAIL=0
+  [8]  fuzz/run_leak.py 60      ok=53 skip=7 FAIL=0
+  [9]  tools_check.sh      formatter: 810 files, idempotence-fails=0 semantic-fails=0
+                           -- lane FAILS on `bytes-rehome`, RED AT HEAD TOO (see below)
+  [10] bench/guard.sh      ok (binary_trees 35% of C, maptree 23% of C, gate <60%)
+  [11] make recursion      all green (fail closed on deep input)
+  [12] make spec-check     grammar ok, Appendix E ok, 7 runnable examples all pass
+  [13] make check-links    128 markdown files, no dead links; citations ok (see below)
+  ```
+
+  ##### By-hand sweep: 13 entry points, 9 goldens, live server
+
+  ```
+  ok compile corelib/test/{httpd,io,net,result}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                       -- 13 entry points, 0 failures
+  same corelib/test/{httpd,io,net,result}.out
+  same examples/corelib/{httpd,io,net,result}.out -- 8 goldens byte-identical
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"  -- 9th
+  ```
+
+  **Not one golden moved**, and the 9th is the stronger signal: the FROZEN, untouched
+  `tychoc0` still agrees byte-for-byte with the patched `tychoc` on that program.
+
+  Live server, `127.0.0.1:18099`, `--workers 4 --idle-ms 800`, driven by the previous
+  plan's own raw-socket driver (reused, not rewritten). **Identical to the recorded
+  phase-5 matrix, case for case:**
+
+  ```
+  GET /            200 2659 text/html      GET /style.css 200 1726 text/css
+  GET /data.json   200 294  application/json   GET /nope.html 404 621
+  HEAD /           200 Content-Length=2659 body=0     POST /  405 Allow: GET, HEAD
+  GET /../../etc/passwd 403
+  GARBAGE                    -> 400        Content-Length: 0x10 -> 400
+  20 KiB head, no terminator -> 431 Request Header Fields Too Large
+  (a) zero-byte hangup            -> no bytes, log lines added 0
+  (b) partial head then stall     -> 408 Request Timeout, log lines added 1
+  (c) connect, idle past 800 ms   -> no bytes, log lines added 0
+  GET /emptydir -> 301 Location: /emptydir/ 56   GET /about -> 301   GET /img -> 301
+  keep-alive 3 requests on ONE fd -> 200 200 200     50-request flood -> 50/50 200
+  access log 71 lines, all 4 workers seen, format `w<id> <method> <target> <status> <bytes> <ms>`
+  clean exit: server terminate -> -15 (SIGTERM)
+  ```
+
+  ##### One thing this phase caused and fixed, one it found and did not
+
+  - **Caused and fixed:** `src/tychoc.c` grew a net 17 lines, which staled **11 anchored
+    citations** into it (`docs/spec/15-program.md`,
+    `docs/internals/frontend-restriction-audit-2026-07-25.md`,
+    `docs/internals/plan-front-door-DONE.md`). Verified green at HEAD first (`citation check: ok`, 22 anchored / 1344
+    bare, run against a pristine `git archive HEAD` tree) so the redness is provably mine,
+    then shifted all five distinct anchors by the measured +17. Gate green again. **This is
+    the citation gate doing exactly its job** and it is the reason a compiler phase must run
+    it.
+  - **Found, NOT fixed — out of scope, recorded:** `scripts/tools_check.sh`'s
+    `bytes-rehome` lane is **already red at HEAD**. Its inline fixture does
+    `d := io.read_bytes(p)` then `len(d)`, which stopped compiling when the archived plan's
+    phase 2 gave `read_bytes` a `Result` return — and `scripts/tools_check.sh:273` throws
+    the compile's exit status away, so the breakage surfaces only as
+    `grep: .../brh/main.c: No such file or directory`. Proven pre-existing by running
+    `tools_check.sh` inside a clean `git archive HEAD` tree: identical failure. New
+    unchecked phase below.
+
+- [ ] **Phase 1b — `tools_check.sh`'s `bytes-rehome` lane is red at HEAD**
+  - Found by Phase 1's gate sweep, **not caused by it** (proven against a pristine
+    `git archive HEAD` tree). `scripts/tools_check.sh:272`'s fixture writes
+    `d := io.read_bytes(p)` / `len(d)`, which the `Result` conversion of the archived plan's
+    phase 2 made uncompilable: `error: len(...) takes an array, a string, bytes, a map, or
+    a soa`. So the lane that guards a real use-after-free (`copy_into` missing `T_BYTES`)
+    has been **vacuous since `eefc609`** and reports its own breakage as a missing file.
+  - Scope: `scripts/tools_check.sh` only — update the fixture to the `Result` API and make
+    line 273 check the compile's exit status so a stale fixture fails loudly instead of
+    silently. Do not change `copy_into`; the lane's assertion is still the right one.
+  - Done when: the lane passes and, with `tycho_str_copy` deliberately removed from the
+    `T_BYTES` path, reddens for the right reason.
+  - Verify: run `sh scripts/tools_check.sh` — green; then break it on purpose once and
+    capture the failure line.
 
 - [ ] **Phase 2 — `\r`, multi-line strings, and `const` folding**
   - Items: `FRICTION.md:123` — no `\r` escape in string literals, so the most common byte

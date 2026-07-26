@@ -29,8 +29,7 @@ fn data_of(r: Result(bytes, net.NetErr)) -> bytes:
     return result.unwrap_or(r, to_bytes(""))
 
 fn rq(r: Result(httpd.Request, httpd.ReqErr)) -> httpd.Request:
-    d := httpd.bad_request()                     # a qualified call cannot be a $T argument
-    return result.unwrap_or(r, d)
+    return result.unwrap_or(r, httpd.bad_request())
 
 # WHICH outcome read_request/parse_request reported, as a stable string. This is
 # the assertion the whole conversion exists for: "Malformed", "Closed" and
@@ -39,8 +38,7 @@ fn rq(r: Result(httpd.Request, httpd.ReqErr)) -> httpd.Request:
 fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
     if result.is_ok(r):
         return "Ok"
-    d := httpd.Failed                            # a qualified variant cannot be a $E argument
-    e := result.err_or(r, d)
+    e := result.err_or(r, httpd.Failed)
     if e == httpd.Malformed:
         return "Malformed"
     if e == httpd.Closed:

@@ -67,14 +67,12 @@ fn main():
     println("err_of_ok = " + str(b(result.err_or(mk(true), dl) == Nope)))   # the fallback
 
     # ---- an error type from ANOTHER package: io.IoErr over bytes ----
-    # A qualified name cannot be written directly in a generic argument position
-    # (see the CAVEAT in corelib/result/result.ty), so both defaults are locals.
+    # Both defaults are written inline as qualified names -- the resolution bug
+    # that forced them into locals is fixed (plan.md phase 1).
     miss := io.read_bytes("/tmp/tycho_corelib_result_absent.xyz")
-    di := io.Failed
-    de := to_bytes("")
     println("io_is_err = " + str(b(result.is_err(miss))))
-    println("io_why    = " + str(b(result.err_or(miss, di) == io.NotFound)))
-    println("io_bytes  = " + str(len(result.unwrap_or(miss, de))))
+    println("io_why    = " + str(b(result.err_or(miss, io.Failed) == io.NotFound)))
+    println("io_bytes  = " + str(len(result.unwrap_or(miss, to_bytes("")))))
 
     # ---- the Option half ----
     println("some_or   = " + result.some_or(mkopt(true), "dflt"))

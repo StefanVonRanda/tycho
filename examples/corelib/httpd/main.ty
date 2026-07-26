@@ -21,11 +21,8 @@ fn round_trip(nl: string) -> Result(int, net.NetErr):
     asked := net.write(conn_out, to_bytes("GET / HTTP/1.1" + nl + nl)) or_return
     # read_request returns Result(Request, httpd.ReqErr) -- a DIFFERENT error type
     # from this function's Result(_, net.NetErr), so `or_return` cannot carry it.
-    # core:result collapses it in one line (plus the bound fallback the generic
-    # argument rule demands: see corelib/result/result.ty).
-    got := httpd.read_request(conn_in)
-    empty := httpd.bad_request()
-    served := result.unwrap_or(got, empty)
+    # core:result collapses it in one line.
+    served := result.unwrap_or(httpd.read_request(conn_in), httpd.bad_request())
     println("served = " + served.method + " " + served.path)   # GET /
     println("alive  = " + str(not httpd.connection_close(served)))   # true: HTTP/1.1
     answered := httpd.write_response(conn_in, httpd.text_response(200, "pong")) or_return
@@ -58,8 +55,7 @@ fn main():
     # others. `Err(httpd.Malformed)` cannot be a match arm (Tycho has no nested
     # patterns), so the test is err_or plus `==`.
     junk := httpd.parse_request("GARBAGE" + nl + nl)
-    d := httpd.Failed
-    println("garbage= " + str(result.err_or(junk, d) == httpd.Malformed))   # true
+    println("garbage= " + str(result.err_or(junk, httpd.Failed) == httpd.Malformed))   # true
 
     # --- build + render a response (Content-Length + default Content-Type added) ---
     # Bodies are `bytes` (binary-safe); text_response is the string convenience.
