@@ -76,44 +76,135 @@ language forced that — `or_return` was sitting right there.
 > message with four accurate ones and `server/main.ty` ended at **380** code lines,
 > +9. The plan's own final number is a *growth*, not a wash.
 
-## The score against this file, 2026-07-26
+## The score against this file, re-scored against the tree, 2026-07-26
 
-The `Option`/`Result` plan was run *because* of this file, so it owes it a tally.
-Final, after all five phases:
+Two plans have now been run *because* of this file: the `Option`/`Result` plan
+(archived, `docs/internals/plan-option-result-DONE.md`, 5 phases, head `8aac642`) and
+the plan that worked this file as a list (10 phases, head `309c393`). This section is
+the second one's closing act, and it is a re-score rather than an update: **every
+"CLOSED" note in this file was checked against the thing it names before the counts
+below were written** — 89 content checks (does that function / flag / document /
+diagnostic exist at HEAD and say what the note claims?) and 8 live runs of the code.
 
-- **Of the 12 phase-7 items below: 2 closed, 10 untouched.** The `read_head`
-  reimplementation (phase 3) and the missing `stat`/`is_dir` (phase 4).
-- **The work created 6 new items of its own**, in the sections that follow — and
-  **phase 5 closed 1 of them** (nothing in Tycho could create a directory), leaving
-  5 open. Net across the whole plan: **−2 original, +5 new.**
-- **`server/main.ty`: 371 code lines before, 380 after.** It got 9 lines *longer*.
+**No stale CLOSED was found.** Two stale *OPENs* were, and they are named below.
 
-That is not a flattering ratio and it is the real one: this file's verdict that
-adopting `Option`/`Result` "would remove more friction than every other item
-combined" **did not hold** — it removed the item it used as its own illustration,
-and cost five to do it.
+### The count
 
-The second closure deserves its own line, because it is evidence *against* the
-verdict rather than for it: `stat` was closed by 4 lines of C and 10 of Tycho with
-no `Option`, no `Result` and no `or_return` involved in the fix, and it is the only
-one of the two closures that changed what a client receives. The error-model work
-made failure *sayable*; the syscall made an answer *right*. Those are different
-kinds of win and this file was conflating them.
+| region | closed | refused with a number | deliberately kept | open |
+|---|---|---|---|---|
+| Phase 7 — writing the server (12) | 10 | 1 | 0 | 1 |
+| Earlier phases (15) | 4 | 1 | 6 | 4 |
+| Created by the `Option`/`Result` plan (16) | 13 | 1 | 2 | 0 |
+| Created by this plan's nine phases (9) | 2 | 0 | 4 | 3 |
+| C-level, no Tycho spelling (2) | — | — | 2 | — |
+| Found by this re-score (2) | 0 | 0 | 0 | 2 |
+| **total (56)** | **29** | **3** | **14** | **10** |
 
-**Phase 5's own contribution to the tally, stated plainly.** It was acknowledged
-out-of-Goal cleanup, run on a user directive after the Goal was met. It closed the
-directory-creation gap with `io.make_dir` / `io.remove` (35 library lines,
+"Deliberately kept" is not a synonym for open. It is: a decision recorded with its
+reason (`crlf()`, the `out` local, the payload-free enums), a consequence of the
+`tychoc0` freeze that cannot be fixed while the freeze holds, or an incident written
+down because the lesson outlives the fix. Fourteen items are in that state and **none
+of them is work waiting for someone**. Ten are.
+
+- **Of the 12 phase-7 items: 10 closed, 1 refused with a number, 1 open.** The
+  `Option`/`Result` plan closed 2 (`read_head`, `stat`/`is_dir`); this plan closed 8
+  (`\r`, multi-line strings, `argv[0]`, `--root DIR`, `exit(0)`, `reason_phrase`,
+  `getpeername`, the `to_str`/`to_bytes` sandwich) and refused 1 with a measured
+  number (the work queue, ~283 lines across 4 files). The **one open item is the
+  first one in the list** — `send` is a builtin and `fn send(...)` is accepted
+  silently. Reproduced at HEAD by this re-score, and the reproduction found the
+  fix's own mechanism already in the tree: `fn die(s: string) -> int` is rejected at
+  the *definition* (`error: 'die' is already defined`) while `fn send(a: int, b: int)
+  -> int` compiles and dies at the *call* (`error: send(ch, v) takes a channel, got
+  int`). So `die`/`exit` are in the table the duplicate check consults and the channel
+  builtins are not; the fix is small and the decision it needs — which builtin names
+  are shadowable — is the reason it is still open.
+- **Two stale OPENs, the mirror image of the thing this re-score was written to
+  catch.** `:232` ("there is no `unwrap_or`, `is_ok`, `is_some` or `is_err` anywhere")
+  and `:324` ("a socket read timeout is indistinguishable from EOF") were both closed
+  by the `Option`/`Result` plan and neither item line was ever struck through:
+  `corelib/result/result.ty` has all seven combinators, and `net.read` returns
+  `Err(Eof)` / `Err(Timeout)` as distinct values. Both closures are stated in the
+  headline block at the top of this file and neither reached the item. **A file where
+  the summary and the item list can disagree needs the audit run in both directions.**
+- **The `Option`/`Result` plan created 16 items, not 6.** Measured, not recounted from
+  its prose: `FRICTION.md` went from 38 bullets at `241c159` to 57 at `8aac642`, of
+  which 3 are that plan's own score bullets — 5 items in its phase-1 section, 5 in
+  phase 2, 3 in phase 3, 3 in phase 4. Its verdict said "created six new items of its
+  own" and this file repeated the number. It was a 2.7× undercount, and it mattered:
+  the 6 is what made "−2 original, +5 new" look like a near-wash instead of a plan
+  that opened 16 questions to settle 4.
+- **This plan created 9** (57 → 66 bullets), and settled 27 across ten phases —
+  24 closed, 3 refused with a number. **Settled-to-created: 27 : 9, against the
+  previous plan's 4 : 16.** That is the one ratio that moved, and it moved because the
+  items were worked as a list of costed questions rather than as evidence for a thesis.
+- **`server/main.ty`: 380 code lines before this plan, 341 after — 39 lines shorter,
+  the first reduction in two plans.** The trajectory, verified commit by commit:
+  380 (`8aac642`) → 378 (phase 1) → 378 (1b, 2) → 380 (phase 3) → 376 (4) → 372 (5) →
+  **341** (6) → 341 (7, 8, 9). One phase did nearly all of it: `core:cli` learning
+  `--root DIR` deleted a 59-line hand-rolled parser (`-31`).
+- **What it cost.** `src/tychoc.c` **+359 raw lines, +176 non-comment** (11795 → 12154;
+  9161 → 9337 code) — over half of it phase 3's nested patterns. Corelib packages
+  **+57** Tycho code lines and **+17** C shim lines; corelib test programs **+111**;
+  `docs/` +590/−84 with one new document (`docs/bootstrap.md`); `scripts/` +203/−8,
+  which bought three gates that did not exist (`scripts/entrypoints.sh`, the
+  source→doc half of `check_citations.py`, the un-rotted `bytes-rehome` lane). Four
+  goldens moved and **all four are pure appends** (+53 / −0).
+- **The shape of the two plans is opposite and the numbers say so plainly.** The
+  `Option`/`Result` plan spent **+182 library lines** and the application got **9
+  lines longer**. This plan spent **+176 compiler lines and +74 library lines** and the
+  application got **39 lines shorter**. Ten of this plan's 24 closures were compiler
+  changes, and a compiler change is paid once and refunded at every call site; a
+  library conversion is paid once and charged at every call site. That is the
+  generalisation this file can now support with two data points instead of one.
+
+### What the previous plan's score got right
+
+Its two analytical points survive the re-score intact, and both are corrected only for
+which plan's phase 5 is meant.
+
+The `stat` closure is evidence *against* the `Option`/`Result` verdict rather than for
+it: it was closed by 4 lines of C and 10 of Tycho with no `Option`, no `Result` and no
+`or_return` involved, and it is the only one of that plan's two closures that changed
+what a client receives. The error-model work made failure *sayable*; the syscall made
+an answer *right*. Those are different kinds of win and this file was conflating them.
+
+**And its phase 5** (the `Option`/`Result` plan's — `8aac642`, not this plan's) closed
+the directory-creation gap with `io.make_dir` / `io.remove` (35 library lines,
 `Result(bool, IoErr)` both, non-recursive on purpose) and deleted the `os.system`
-shell-out from `corelib/test/io` — a corelib test no longer needs `/bin/sh` to set
-up a syscall test. It found **no new language friction at all**: every construct it
-needed already worked, including a new payload-free variant on a shared error enum
-with no call site to update. And it cost the application **+9 lines**, all of them
-in one startup check, to replace a single wrong message ("`--root` is empty or not
-a directory", said for an empty directory, a plain file, a missing path and an
-unreadable one alike) with four accurate ones. That is the phase-5 finding worth
-carrying: `Result` made the distinctions *available*; **spending them costs one
-branch per cause**, and nothing about the error model makes accuracy free at the
-call site.
+shell-out from `corelib/test/io`. It found **no new language friction at all**, and it
+cost the application **+9 lines**, all in one startup check, to replace a single wrong
+message ("`--root` is empty or not a directory", said for an empty directory, a plain
+file, a missing path and an unreadable one alike) with four accurate ones. `Result`
+made the distinctions *available*; **spending them costs one branch per cause**, and
+nothing about the error model makes accuracy free at the call site.
+
+### The real remaining debt — the 10 open items, with what is known about each
+
+1. `:211` **the `send` collision** — small, but needs the shadowable-builtins decision
+   above, and landing it would newly reject any program defining `send`/`recv`/`close`.
+2. `:315` **`spawn f(x)` as a bare statement** — the message never states the rule. One
+   line of diagnostic text; open only because nobody has spent it.
+3. `:316` **`parallel for` silently runs `min(N, ncpu)` iterations** — a runtime
+   property (`runtime/tycho_rt.c:843-852`) with no static `N` to warn about. Uncosted.
+4. `:317` **no direct spelling for N workers** — affine, unstorable task handles. An
+   array of handles is a type-system change, not an item-sized fix. Uncosted.
+5. `:322` **`ends_with` needs `core:strings`** — a corelib layering decision, not lines.
+6. `:223` **`corelib/test/image` is skipped without libpng** — environmental; its golden
+   asserts nothing on this machine. Not closable in-tree.
+7. `:335` **`net_shim.c` does not compile standalone under `-std=c11`** — a missing
+   `_POSIX_C_SOURCE`/`_DEFAULT_SOURCE`; ~1 line, left on scope twice now.
+8. `:337` **`docs/bootstrap.md` is not linked from `docs/README.md`** — one link, plus
+   the real question behind it: no gate checks that a document is *reachable*.
+9. `:339` **two in-tree comments still say the language has no nested patterns** —
+   found by this re-score; ~4 lines, and one of the two files is outside the freeze.
+10. `:340` **this file's own `path:line` citations drift silently** — found by this
+    re-score; the fix is a mechanical pass to anchored `path:line@token` form, after
+    which the citation gate polices them.
+
+Items 3, 4 and 5 are the honest core of what is left: two concurrency items that want
+a type-system answer and one that wants a layering decision. Everything else on the
+list is a line or a link.
 
 ## Phase 7 — writing the server
 
@@ -245,3 +336,5 @@ absence of `Option` and `Result` from the type system.
 - **`plan.md` phase 2** — the same freeze is why `httpd.crlf()` and `tools/lsp.ty:256`'s `"" + '\r' + '\n'` survive the item that made them unnecessary: `core:httpd` is imported by `examples/webserver/main.ty`, which `examples/webserver/run.sh:20-27` builds with `tychoc0` and requires to match byte for byte. **A frozen compiler in a comparison gate freezes the source it reads, not just itself** — the corelib is now, in effect, written in the intersection of two languages, and nothing in the tree said so before this line.
 - **`plan.md` phase 8** — `docs/bootstrap.md` (written in that phase) is **not linked from `docs/README.md`**; `scripts/check_links.sh` checks that links resolve, not that documents are reachable, so an orphan document is invisible to every gate. Left unfixed on scope; a docs-index pass should list it.
 - **`plan.md` phase 1** — a 17-line growth in `src/tychoc.c` staled **11 anchored `path:line@token` citations** into it, across `docs/spec/15-program.md` and two internals docs. This is the citation gate working exactly as designed (it named every one, with the line the token actually moved to), and it is the argument for a compiler phase running `make check-links` even when it changed no Markdown: the docs cite the compiler by line, so *every* patch to `src/tychoc.c` is a documentation change.
+- **`plan.md` phase 10** — **two in-tree comments still assert that the language has no nested patterns**, three phases after `plan.md` phase 3 added them: `corelib/net/net.ty:20-21` ("Tycho has no nested patterns -- `Err(net.Timeout)` does not parse -- so `==` is the only way") and `examples/corelib/httpd/main.ty:54-55` ("`Err(httpd.Malformed)` cannot be a match arm (Tycho has no nested patterns)"). Phase 3's evidence lists the files it swept — `httpd.ty`, `result.ty`, `io.ty`, `docs/guides/corelib.md` — and `core:net` was not among them. `corelib/test/io/main.ty:43` gets it right ("`compiler/tychoc0.ty`, whose grammar still has no nested pattern"), which is the distinction both stale comments miss: the *language* has them, the *frozen compiler that reads the corelib* does not. `examples/corelib/httpd` is one of the two files phase 8 excluded from `frontparity` **because** it is outside the freeze, so there the comment is not just mis-attributed — the nested arm would compile. Left unfixed on scope.
+- **`plan.md` phase 10** — **this file's own `path:line` citations drift silently, and no gate can see it.** 30 of the 71 spot-checked in the CLOSED notes no longer point at what they name; the worst are into `src/tychoc.c`, where every compiler phase shifts everything below it — the literal-interning emit site cited by the `\r` item as `src/tychoc.c:8671` is now `src/tychoc.c:8955`, `copy_into`'s `T_BYTES` case cited by phase 1b as `src/tychoc.c:7858` is now `src/tychoc.c:8144`, and `instantiate_generic` cited by the qualified-name item as `src/tychoc.c:6895` is now `src/tychoc.c:7126`. Every closure is still *true*; the coordinates are not. `scripts/check_citations.py` cannot catch it by construction: it verifies the 22 **anchored** `path:line@token` citations against the token and only bounds-checks the 1646 **bare** ones, and every citation in this file is bare. The fix is a mechanical pass to anchored form, after which the gate polices them — and the reason it matters is that this file is the place a future reader goes to find out why something is the way it is. Left unfixed on scope.

@@ -2741,7 +2741,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   `200 200 200` on one fd, 50-request flood `50/50 200`, all four workers seen in the
   access log, `SIGTERM` → status 143. **`MATRIX OK: every assertion passed`.**
 
-- [ ] **Phase 10 — re-score `FRICTION.md`, and settle this plan's Goal**
+- [x] **Phase 10 — re-score `FRICTION.md`, and settle this plan's Goal**
   - Walk every item in the file against the tree — phase 7 (`:118-131`), the created ones
     (`:133-161`, `:168-169`), and the earlier-phase list (`:219-235`, which includes the
     frozen-tychoc0 debris items that are *deliberately* kept and should be marked as such,
@@ -2757,6 +2757,256 @@ is a completed phase under this plan's Goal, and it is not a failure.
   - Verify: every "CLOSED" claim in `FRICTION.md` is checked against the code it names —
     spot-check by `path:line`, not by memory. A stale CLOSED is the one thing this phase
     exists to prevent.
+
+  #### Phase 10 — DONE. Evidence
+
+  ##### Gate spend: `make ci` and `make test` — **NOT run.** The day's single run was
+  spent by phase 1 (`5187724`). Nine of the ten phases verified by hand; so did this one.
+
+  ##### The CLOSED-claim audit — 29 closures, every one checked against the tree
+
+  Two mechanical passes, both scripted so the result is reproducible rather than
+  remembered. **Pass 1, content: 89 assertions** — for each closure, does the function /
+  flag / diagnostic / document it names exist at HEAD and say what the note claims?
+  **89 / 89 hold.** Seven first-round FAILs were all my grep matching a *comment* that
+  explains why the code is gone (`server/main.ty:218` still mentions `phrased_response`,
+  `server/main.ty:543` still mentions the deleted `help: bool` field, `corelib/test/io/main.ty:11` says
+  "No `core:os` here any more") — the code is gone in all seven, verified by reading the
+  hits. **Pass 2, coordinates: 71 `path:line` spot-checks** — does the cited line still
+  contain the cited token? **41 hold, 30 have drifted**, which is a finding of its own and
+  is now `FRICTION.md:340`.
+
+  | # | item | closed by | status | how it was checked |
+  |---|---|---|---|---|
+  | `FRICTION.md:212` | `read_request` collapses EOF/timeout/malformed | O/R p3 | CLOSED ✓ | `fn read_request(fd: int) -> Result(Request, ReqErr)` + `fn read_request_capped` present; `fn read_head` / `struct Head` absent from `server/main.ty` |
+  | `FRICTION.md:213` | `reason_phrase` closed chain, no reason parameter | this p5 | CLOSED ✓ | **live wire**: `HTTP/1.1 431 Request Header Fields Too Large`, `HTTP/1.1 408 Request Timeout`; `fn response_reason` present; all three of `phrased_response`/`oversize_response`/`timeout_response` gone as code |
+  | `FRICTION.md:214` | no `\r` escape, `const` fold rejected | this p2 | CLOSED ✓ | **ran**: `crlf len 2`, `TERM len 4` from `const TERM = "\r\n" + "\r\n"` |
+  | `FRICTION.md:215` | no multi-line string literal | this p2 | CLOSED ✓ | **ran**: two adjacent literals on separate lines inside `(`…`)` → `joined len 12` |
+  | `FRICTION.md:216` | no `stat`, no `is_dir` | O/R p4 | CLOSED ✓ | **live**: `GET /emptydir` → `301 Moved Permanently`; `fn is_dir(p: string) -> Result(bool, IoErr)` over `iox_stat_kind` |
+  | `FRICTION.md:217` | `args()` includes `argv[0]` | this p6 | CLOSED ✓ | `fn argv()` in `corelib/cli/cli.ty`; both copy loops gone; `corelib/test/cli` golden green |
+  | `FRICTION.md:218` | `core:cli` cannot express `--root DIR` | this p6 | CLOSED ✓ | **live**: the server was driven all phase with `--root server/www --host … --port … --workers 4`; `fn parse_spec` present |
+  | `FRICTION.md:219` | `die()` always exits 1 | this p4 | CLOSED ✓ | **ran**: `--help` → exit `0`, `--bogus` → exit `1` |
+  | `FRICTION.md:220` | no `getpeername` | this p5 | CLOSED ✓ | **live access log**: `w1 127.0.0.1 GET / 200`, all four workers, no blank column; `netx_peer_addr` + `__thread` buffer |
+  | `FRICTION.md:222` | frozen-`tychoc0` reach bigger than `frontparity` saw | this p8 | CLOSED ✓ | **ran** `scripts/frontparity.sh` → `agreed: 292 diverged: 0`; the four per-example entry points are fed at `scripts/frontparity.sh:159-160` and `scripts/frontparity.sh:168-169` |
+  | `FRICTION.md:224` | `to_str`/`to_bytes` sandwich in `log_safe` | this p7 | CLOSED ✓ | **ran**: `bytes concat ABCDEF idx 66 slice CD`; `reinterp_ret` pin present in `corelib/test/io` |
+  | `FRICTION.md:232` | no `unwrap_or`/`is_ok`/`is_err`/`is_some` | O/R p2 | CLOSED, **never struck** | all seven combinators in `corelib/result/result.ty:59-132`; **ran** `result.unwrap_or(io.read_bytes(…), to_bytes("fallback"))` inline |
+  | `FRICTION.md:233` | no nested patterns, `Err(A)` misparses as a bind | this p3 | CLOSED ✓ | **ran**: `Err(A)`/`Err(e)`/`Ok(v)` arms → `okab`; `gen_match_side` + `'A' is a variant of … not a binding name` present |
+  | `FRICTION.md:234` | `die()` not modelled as diverging | this p4 | CLOSED ✓ | `expr_diverges` present; the all-branches-diverge hard error present |
+  | `FRICTION.md:235` | directory scan collides on `main` | this p8 | CLOSED ✓ | `die_dup_proc` + `a DIFFERENT file in the same package` present; `tests/pkg/multifile` fixture intact |
+  | `FRICTION.md:236` | FFI classification-beside-`bytes` undocumented | this p8 | CLOSED ✓ | `docs/spec/14-ffi.md` §24.1.1 exists and cites both shims |
+  | `FRICTION.md:242` | qualified name in a generic call's arguments | this p1 | CLOSED ✓ | `pkg_done` latch present; `tests/pkg/generic_qual_arg{,.out}` present; **ran** the one-liner inline |
+  | `FRICTION.md:243` | two error types kill `or_return` | this p9 | CLOSED ✓ | `fn map_err` present; call site at `examples/corelib/httpd/main.ty:21`; `two_types` in the golden |
+  | `FRICTION.md:245` | FFI trick duplicated between two shims | this p8 | CLOSED ✓ | same §24.1.1, cites `io_shim.c` |
+  | `FRICTION.md:246` | `examples/webserver` uncompilable, no gate | this p8 | CLOSED ✓ | **ran** `scripts/entrypoints.sh` → `ok (11 entry points compile with tychoc)`, `MUST-COVER` guard present |
+  | `FRICTION.md:253` | tuple literal will not infer a `Result` | this p3 | CLOSED ✓ | **ran**: `return (Err(A), "partial")` → `tuple partial a` |
+  | `FRICTION.md:254` | nothing pointed at tuples | this p8 | CLOSED ✓ | `docs/spec/03-types.md` §5.3.3 with `split_once`/`parse_offset` cited; **ran** `spec_check.sh` → `8 runnable example(s), all pass` |
+  | `FRICTION.md:261` | nothing can create a directory | O/R p5 | CLOSED ✓ | `fn make_dir`/`fn remove` present; `corelib/test/io` no longer imports `core:os` |
+  | `FRICTION.md:262` | `exists` lists the parent where `stat` would do | this p5 | CLOSED ✓ | `corelib/io/io.ty` `exists` on `stat_kind`; `import "core:path"` gone |
+  | `FRICTION.md:318` | `bytes` has only `len`/`to_str`/FFI | this p7 | CLOSED ✓ | **ran**: `a + b`, `b[i]` (→ `int` 66), `b[i:j]` |
+  | `FRICTION.md:319` | the `bytes + bytes` diagnostic named the wrong fix | this p7 | CLOSED ✓ | `bytes has no arithmetic` and `cannot concatenate bytes with` both present |
+  | `FRICTION.md:324` | read timeout indistinguishable from EOF | O/R p1 | CLOSED, **never struck** | `corelib/net/net.ty:165-167` returns `Err(Eof)` / `Err(Timeout)` |
+  | `FRICTION.md:329` | `docs/bootstrap.md` cited but missing | this p8 | CLOSED ✓ | file exists; all three live citations resolve; `Makefile` mentions it zero times; **ran** the gate → `77 source->doc citations resolve` |
+  | `FRICTION.md:333` | `bytes-rehome` lane vacuous since `eefc609` | this p1b | CLOSED ✓ | **ran** `scripts/tools_check.sh` → `bytes field re-homed on struct return` / `tools-check: ok`; `copy_into`'s `T_BYTES` case intact at `src/tychoc.c:8144` |
+
+  **Refused with a number (3):** the work queue (`FRICTION.md:225`, ~283 lines across 4 files, p9),
+  the early-return binding form (`FRICTION.md:244`, ~105 compiler lines, p9), a `bytes` zero value
+  (`FRICTION.md:321`, ~6 lines but an implicit conversion in the type system, p5). All three
+  re-read; all three still carry their measurement.
+
+  **Deliberately kept (14):** `crlf()` and the `out` local and the payload-free enums
+  (freeze consequences, each with the `tychoc0` error that forced it); the four
+  tychoc0-debris items (`FRICTION.md:325-328` — six non-gated runners **verified still 6**, the 15
+  `tests/diag/*.h0err` goldens **verified still 15**, the `+50` self-citation note
+  **verified at `compiler/tychoc0.ty:43-45`**, and `docs/bootstrap.md` which phase 8
+  turned from debris into a written document); the two C-level socket defects; four
+  recorded incidents whose lesson outlives the fix. **None of these is work waiting for
+  someone, and counting them as open is what inflated the old score.**
+
+  **Open (10):** listed with what is known about each at `FRICTION.md:184-201`. The one
+  that was worth measuring rather than restating is the phase-7 item at the head of the
+  file, `send`. Reproduced at HEAD, and the reproduction found the fix's mechanism
+  already in the tree:
+
+  ```
+  fn send(a: int, b: int) -> int   -> compiles; dies at the CALL:
+      main.ty:5: error: send(ch, v) takes a channel, got int
+  fn die(s: string) -> int         -> rejected at the DEFINITION:
+      main.ty:1: error: 'die' is already defined
+  ```
+
+  So `die`/`exit` are in the table the duplicate check consults and the channel builtins
+  are not. Small, and the decision it needs — which builtin names are shadowable — is
+  why it is still open. **Not fixed here: this phase re-scores, it does not close items.**
+
+  ##### No stale CLOSED. Two stale OPENs
+
+  The thing this phase existed to prevent did not happen: all 29 closures are true at
+  HEAD. The mirror-image defect did happen twice — `FRICTION.md:232` and `FRICTION.md:324` were
+  closed by the `Option`/`Result` plan and **never struck through**, while the headline
+  block at the top of the file states both closures. A file whose summary and item list
+  can disagree needs the audit run in both directions, and only one direction had ever
+  been run. Left as they are, per this phase's scope; both are counted as closed in the
+  score and named there.
+
+  ##### The counts, and where they disagree with the old score
+
+  | region | closed | refused w/ number | deliberately kept | open |
+  |---|---|---|---|---|
+  | Phase 7 — writing the server (12) | 10 | 1 | 0 | 1 |
+  | Earlier phases (15) | 4 | 1 | 6 | 4 |
+  | Created by the `Option`/`Result` plan (16) | 13 | 1 | 2 | 0 |
+  | Created by this plan's nine phases (9) | 2 | 0 | 4 | 3 |
+  | C-level, no Tycho spelling (2) | — | — | 2 | — |
+  | Found by this re-score (2) | 0 | 0 | 0 | 2 |
+  | **56** | **29** | **3** | **14** | **10** |
+
+  Two corrections to the numbers this plan inherited:
+
+  1. **The `Option`/`Result` plan created 16 items, not 6.** Measured off the file, not
+     recounted from its prose: `grep -c '^- ' FRICTION.md` is **38** at `241c159` and
+     **57** at `8aac642`, of which 3 of the 19 new bullets are that plan's own score
+     bullets. Its verdict said "created six new items of its own" and `FRICTION.md`
+     repeated it. The 6 is what made "−2 original, +5 new" read as a near-wash instead
+     of a plan that opened 16 questions while settling 4.
+  2. **This plan created 9** (57 → 66), plus the 2 this re-score found = 11.
+
+  ##### Goal verdict — all ten phases
+
+  The Goal: *"every open item in `FRICTION.md` is either fixed or explicitly refused with
+  a reason."* **Met for 27 of the 28 items that were actionable when the plan opened**;
+  the miss is `send`, and it is a miss, not a refusal — no phase claimed it and no number
+  was taken for it until this one took the reproduction above.
+
+  **The count.** This plan closed **24** items and refused **3** with a measured number —
+  27 settled across ten phases. The `Option`/`Result` plan settled **4** and created
+  **16**. Settled-to-created: **27 : 9 against 4 : 16**. That is the one ratio that moved,
+  and the plan's premise — that the 2-of-12 ratio was a reason to work the file as a list
+  rather than as evidence for a thesis — **held**. Working it as a list is also what
+  produced the two refusals with real numbers (~283 and ~105 compiler lines), and a
+  refusal with a number is worth more than a phase that half-builds the thing.
+
+  **What it cost**, all measured at `f963b65` → `309c393`:
+
+  | unit | before | after | Δ |
+  |---|---|---|---|
+  | `src/tychoc.c` (raw) | 11795 | 12154 | **+359** |
+  | `src/tychoc.c` (non-comment) | 9161 | 9337 | **+176** |
+  | corelib packages, `.ty` code | 3298 | 3355 | **+57** |
+  | corelib shims, `.c` code | 1014 | 1031 | **+17** |
+  | corelib test programs, `.ty` code | 1484 | 1595 | **+111** |
+  | **`server/main.ty` code lines** | **380** | **341** | **−39** |
+
+  `docs/` +590 / −84 with one new document; `scripts/` +203 / −8, which bought three
+  gates that did not exist before (`scripts/entrypoints.sh`, the source→doc half of
+  `check_citations.py`, the un-rotted `bytes-rehome` lane); `tests/` +129 / −2; four
+  goldens moved and **all four are pure appends** (+53 / −0).
+
+  **`server/main.ty`'s trajectory, verified commit by commit** rather than copied from
+  the phase notes (`grep -cvE '^[[:space:]]*(#|$)'`):
+
+  ```
+  8aac642 380   (end of the Option/Result plan -- NOT 371; that plan's own phase-5
+                 correction at FRICTION.md is the accurate number)
+  f963b65 380   5187724 378   8bdd562 378   667f0d9 378   8549625 380
+  c8be42b 376   7b76fcd 372   755aeb7 341   b823bc8 341   4adbe24 341   309c393 341
+  ```
+
+  **380 → 341, the first reduction in two plans**, and one phase did nearly all of it:
+  `core:cli` learning `--root DIR` deleted a 59-line hand-rolled parser. Note the shape
+  of the curve — it goes *up* at phase 3 (five real `Err` arms cost 2 lines more than the
+  `answer` bool they replaced) and the drop is not error-model work at all.
+
+  **The two plans are opposite in shape and the numbers say so.** The `Option`/`Result`
+  plan spent **+182 library lines** and the application got **9 lines longer**. This plan
+  spent **+176 compiler lines and +74 library lines** and the application got **39 lines
+  shorter**. Ten of the 24 closures were compiler changes. A compiler change is paid once
+  and refunded at every call site; a library conversion is paid once and charged at every
+  call site. That is the generalisation this file can now support with two data points.
+
+  **The defects found *by* the work rather than fixed by it** — the part an honest account
+  cannot leave out:
+
+  - **A pre-existing use-after-free in `to_str`** (phase 7). `out := to_str(b)` over a
+    scope-owned `bytes` then `return out` returned a dangling pointer, because `is_place`
+    read the zero-cost reinterpret as a fresh value and skipped the re-home. Measured on
+    a program containing no phase-7 syntax: `[8]` before, `[ABCDEFGH]` after. Found only
+    because the item's fix is the shape that triggers it.
+  - **A gate that had been vacuous for three commits** (phase 1b). `tools_check.sh`'s
+    `bytes-rehome` lane threw away its fixture's exit status, so a fixture that stopped
+    compiling at `eefc609` reported as `grep: … No such file or directory` — believable
+    as a broken script, which is why it was skipped. The invariant it guards is still one
+    deleted line away, proven by deleting it.
+  - **Four more missing-document citations** (phase 8), found on the source→doc gate's
+    first run: `docs/memory-model.md`, `docs/ffi.md`, `docs/map-mutation.md` (twice),
+    all cited by source files after the documents moved into `docs/guides/`.
+  - **A cross-phase contradiction inside this plan** (phase 8 vs 6). Phase 6 called
+    `core:cli` outside the freeze; phase 8 measured **81 `cli__` symbols** out of a
+    frozen `tychoc0` fed `examples/weblog/main.ty`. Phase 6's own evidence listed
+    `examples/weblog/` as a consumer and then drew the opposite conclusion, and its
+    `frontparity` 288/0 could not contradict it because that was exactly the blind spot.
+    Annotated in place rather than quietly corrected.
+  - **Two stale in-tree comments and 30 drifted citations** (this phase, both recorded as
+    `FRICTION.md:339-340`, unfixed on scope). The drift one applies to my own edit as
+    well: this re-score added 92 lines to `FRICTION.md`, so every `FRICTION.md:NNN` in
+    this plan's earlier evidence is as-of-its-phase, not as-of-HEAD. The citation gate
+    caught **23** citations I introduced while writing this phase up — 6 in the new
+    `FRICTION.md` items and 17 in the audit table above — because a bare `:8671`-style
+    number binds to the previously-named file, so `:333` resolved against
+    `corelib/net/net.ty`. All of them now carry their full path. That is the third time
+    in this plan that the citation gate caught a documentation change nobody would have
+    noticed, and it is the argument for it.
+
+  **`FRICTION.md` has now been through two plans and it keeps generating items as it
+  closes them.** 29 items are closed and 11 were created along the way (16 by the plan
+  before this one). That is not a criticism of either plan: the items created are, almost
+  without exception, *more specific* than the ones closed — "no nested patterns" became
+  "no nested patterns inside a plain enum arm, ~70 lines, nothing in the tree writes it",
+  and "`bytes` has no operators" became "13 corelib packages may not use the operators
+  while `tychoc0` is frozen". The file is converging on the small number of things that
+  are genuinely hard: **two concurrency items that want a type-system answer (`FRICTION.md:316`,
+  `FRICTION.md:317`), one corelib layering decision (`FRICTION.md:322`), and the freeze**. Everything else on
+  the open list is a line or a link.
+
+  ##### The by-hand sweep, every command actually run, in the foreground
+
+  ```
+  make tychoc                  -> up to date (HEAD compiler)
+  sh scripts/entrypoints.sh    -> entrypoints: ok (11 entry points compile with tychoc)
+  sh scripts/frontparity.sh    -> agreed: 292  diverged: 0  (skipped, tychoc refused: 15)
+  sh corelib/run.sh            -> corelib: all green (tychoc matches goldens)
+  sh examples/corelib/run.sh   -> corelib examples: all green
+  sh examples/webserver/run.sh -> webserver: ok (tychoc == tychoc0 == golden)
+  sh scripts/tools_check.sh    -> tools-check: ok   (incl. bytes-rehome)
+  sh scripts/spec_check.sh     -> 8 runnable example(s), all pass
+  sh scripts/check_links.sh    -> ok (129 markdown files, no dead relative links)
+  python3 scripts/check_citations.py
+                               -> ok (22 anchored, 1663 bare in bounds, 77 source->doc)
+  ```
+
+  Live server, `127.0.0.1:18099` / `127.0.0.1:18098`, `--workers 4 --idle-ms 800`:
+
+  ```
+  GET /            200 2846b   GET /style.css 200   GET /nope.html 404
+  GET /emptydir    301 Moved Permanently            GET /../../etc/passwd 403
+  POST /           405 Method Not Allowed
+  20 KiB head, no terminator -> 431 Request Header Fields Too Large
+  GARBAGE                    -> 400 Bad Request
+  partial head then stall    -> 408 Request Timeout
+  keep-alive 3 requests on ONE fd -> 3x 200
+  access log 7 lines, all 4 workers, `w1 127.0.0.1 GET / 200 ...` (peer address present)
+  --help -> exit 0    --bogus -> exit 1    SIGTERM -> wait status 143
+  ```
+
+  And the ten phase commits, which is the other half of "the tree is green at the end":
+
+  ```
+  309c393 phase 9   4adbe24 phase 8   b823bc8 phase 7   755aeb7 phase 6
+  7b76fcd phase 5   c8be42b phase 4   8549625 phase 3   667f0d9 phase 2
+  8bdd562 phase 1b  5187724 phase 1   (f963b65 the plan itself)
+  ```
+
+**PLAN COMPLETE — all ten phases done, 2026-07-26.** The scoreboard this plan was written
+to settle is `FRICTION.md:79`; the verdict above is the accounting. Nothing here is open.
 
 ## Out of scope
 
