@@ -1,0 +1,94 @@
+# corelib: the collapses every `Result` / `Option` caller was writing by hand.
+# Import with `import "core:result"`.
+#
+# WHY THIS EXISTS. `or_return` unwraps a Result only inside a function that
+# returns a compatible Result (`docs/spec/10-statements.md:75`). A `main()`, a
+# request handler returning a Response, or any function that owns a real return
+# type cannot use it, and before this package the only remaining tool was a
+# three-line `match` -- written once per call site. plan.md phase 1 measured that
+# duplication as the single largest cost of adopting Result at all:
+# server/main.ty had one copy, corelib/test/net and corelib/test/httpd had two
+# more, and each was the same four lines.
+#
+#   n := result.unwrap_or(httpd.write_response(conn, r), -1)   # 1 line
+#
+#   # what that replaced, per call site:
+#   fn nwrote(w: Result(int, net.NetErr)) -> int:
+#       match w:
+#           Ok(n): return n
+#           Err(e): return -1
+#
+# THE `==` CONSTRAINT. Tycho has no nested patterns -- `Err(net.Timeout)` is
+# rejected with `error: expected ')'` -- so asking *which* failure happened means
+# comparing a payload-free variant with `==`. `err_or` is the accessor that makes
+# that a one-liner:
+#
+#   d := net.Failed                                  # see the caveat below
+#   if result.err_or(net.read(fd, 4096), d) == net.Timeout:
+#
+# CAVEAT, measured -- BIND ANY `pkg.x` ARGUMENT TO A LOCAL FIRST. A qualified
+# name written ANYWHERE in a generic call's argument list does not resolve. It is
+# not about which parameter, and not about variants; it is generic instantiation
+# losing the qualifier:
+#
+#   result.unwrap_or(net.port_of(fd), -1)     # error: package 'net' has no symbol
+#                                             #        'net__port_of'
+#   result.err_or(r, net.Failed)              # error: unknown variable 'net'
+#   result.unwrap_or(r, httpd.bad_request())  # error: package 'httpd' has no symbol
+#                                             #        'httpd__bad_request'
+#
+#   r := net.port_of(fd)                      # all three work when bound first
+#   n := result.unwrap_or(r, -1)
+#
+# The same spellings are accepted everywhere else -- in `==`, and as an argument
+# to a concretely-typed parameter. An UNqualified call is fine inline
+# (`result.unwrap_or(emit(conn, r), -1)` compiles), so the tax is one extra line
+# per corelib call site, against the four a hand-written `match` costs. Every
+# consumer in this tree binds first.
+#
+# Everything here is generic over `$T` / `$E` and total: no aborts, no panics,
+# no allocation. There is nothing to import and no shim.
+package result
+
+# The Ok payload, or `fallback` if the Result is an Err. The workhorse: it turns
+# a Result back into the plain value a non-Result caller needs, in one line.
+fn unwrap_or(r: Result($T, $E), fallback: $T) -> $T:
+    match r:
+        Ok(v): return v
+        Err(e): return fallback
+
+# True if the Result is Ok. Use it when only success/failure matters and the
+# payload does not -- `if not result.is_ok(pr)` in place of a sentinel test.
+fn is_ok(r: Result($T, $E)) -> bool:
+    match r:
+        Ok(v): return true
+        Err(e): return false
+
+fn is_err(r: Result($T, $E)) -> bool:
+    match r:
+        Ok(v): return false
+        Err(e): return true
+
+# The Err payload, or `fallback` if the Result is Ok. This is how a caller asks
+# WHICH failure happened without a nested pattern: compare the answer with `==`
+# against a payload-free variant. `fallback` must be a local, not a qualified
+# variant literal -- see the CAVEAT in the header.
+fn err_or(r: Result($T, $E), fallback: $E) -> $E:
+    match r:
+        Ok(v): return fallback
+        Err(e): return e
+
+# ---- Option ----------------------------------------------------------------
+# The same collapse for the Option half. io.read_line is the corelib's one
+# Option-returning function; a caller that treats EOF as an empty line wants
+# some_or, not a match.
+
+fn some_or(o: Option($T), fallback: $T) -> $T:
+    match o:
+        Some(v): return v
+        None: return fallback
+
+fn is_some(o: Option($T)) -> bool:
+    match o:
+        Some(v): return true
+        None: return false

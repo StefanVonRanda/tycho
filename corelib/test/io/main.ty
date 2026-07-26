@@ -7,11 +7,32 @@
 # root) and test membership only, never directory order.
 package main
 import "core:io"
+import "core:result"
 
 fn b2i(b: bool) -> int:
     if b:
         return 1
     return 0
+
+# The two collapses a Result caller needs, now that io.read_bytes returns one.
+# main() is void, so `or_return` cannot short-circuit out of it; core:result's
+# combinators are the one-line alternative to a `match` per call site.
+fn nb(r: Result(bytes, io.IoErr)) -> int:
+    return len(result.unwrap_or(r, to_bytes("")))
+
+# WHICH outcome, as a stable string. `err_or` + `==` is the whole reason IoErr's
+# variants are payload-free: Tycho has no nested patterns, so `Err(io.IsDir)`
+# would not parse as a match arm.
+fn why(r: Result(bytes, io.IoErr)) -> string:
+    if result.is_ok(r):
+        return "Ok"
+    d := io.Failed                       # a qualified variant cannot be a $E argument
+    e := result.err_or(r, d)
+    if e == io.NotFound:
+        return "NotFound"
+    if e == io.IsDir:
+        return "IsDir"
+    return "Failed"
 
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
     out := ""
@@ -64,13 +85,22 @@ fn main():
     missfold := io.fold_lines("/tmp/tycho_corelib_io_absent.xyz", 7, addlen)
     println(f"fold_sumlen={tot} fold_missing={missfold}")
 
-    # read_bytes: binary-safe whole-file read (interior NUL bytes preserved, and
-    # a missing file -> empty). Used immediately, the safe pattern.
+    # read_bytes: binary-safe whole-file read (interior NUL bytes preserved), and
+    # the point of the Result -- the four lines below were ALL "empty bytes"
+    # before 2026-07-26. An empty file is a success; missing and a directory are
+    # not, and they no longer look like each other.
     binf := "/tmp/tycho_corelib_io_bin.dat"
     io.write(binf, "AB" + chr(0) + "CD")
+    emptyf := "/tmp/tycho_corelib_io_empty.dat"
+    io.write(emptyf, "")
     rb := io.read_bytes(binf)
+    rbe := io.read_bytes(emptyf)
     rbmiss := io.read_bytes("/tmp/tycho_corelib_io_absent.xyz")
-    println(f"read_bytes len={len(rb)} missing={len(rbmiss)}")
+    rbdir := io.read_bytes("/tmp")
+    println(f"read_bytes len={nb(rb)} why={why(rb)}")
+    println(f"read_empty len={nb(rbe)} why={why(rbe)}")
+    println(f"read_missing len={nb(rbmiss)} why={why(rbmiss)}")
+    println(f"read_dir len={nb(rbdir)} why={why(rbdir)}")
 
     # a missing file reads as ""
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")

@@ -1,0 +1,56 @@
+# Example: core:result -- collapsing a Result when `or_return` is not available.
+#
+# `or_return` is the best tool for a fallible call, but it only works inside a
+# function that itself returns a compatible Result. main() returns nothing, and a
+# request handler returns a Response -- so somewhere the Result has to become a
+# plain value. That is what these combinators are for.
+package main
+import "core:result"
+import "core:io"
+
+fn describe(r: Result(bytes, io.IoErr)) -> string:
+    if result.is_ok(r):
+        empty := to_bytes("")
+        return "read " + str(len(result.unwrap_or(r, empty))) + " bytes"
+    # WHICH failure, without a nested pattern: `Err(io.IsDir)` does not parse, so
+    # the answer is err_or plus `==` on a payload-free variant. The fallback has
+    # to be a local -- a qualified name in a generic argument position does not
+    # resolve (see the CAVEAT in corelib/result/result.ty).
+    d := io.Failed
+    e := result.err_or(r, d)
+    if e == io.NotFound:
+        return "no such file"
+    if e == io.IsDir:
+        return "that is a directory"
+    return "unreadable"
+
+fn main():
+    p := "/tmp/tycho_example_result.txt"
+    w := io.write(p, "one\ntwo\n")
+
+    # --- unwrap_or: one line instead of a four-line match ---
+    # The Result is bound first because a `pkg.call(...)` cannot be written inside
+    # a generic call's arguments (the CAVEAT in corelib/result/result.ty).
+    empty := to_bytes("")
+    rb := io.read_bytes(p)
+    body := result.unwrap_or(rb, empty)
+    println("bytes    = " + str(len(body)))                  # 8
+    rmiss := io.read_bytes("/tmp/nope.xyz")
+    println("missing  = " + str(len(result.unwrap_or(rmiss, empty))))   # 0
+
+    # --- is_ok / err_or: the three outcomes read_bytes can now report ---
+    println("file     = " + describe(rb))                    # read 8 bytes
+    println("absent   = " + describe(rmiss))
+    rdir := io.read_bytes("/tmp")
+    println("dir      = " + describe(rdir))
+
+    # --- the Option half: io.read_line is the corelib's Option-returning call ---
+    rd := io.open_lines(p)
+    if not is_null(rd):
+        l1 := io.read_line(rd)
+        l2 := io.read_line(rd)
+        l3 := io.read_line(rd)                                # past EOF -> None
+        println("line1    = " + result.some_or(l1, "<eof>"))
+        println("line2    = " + result.some_or(l2, "<eof>"))
+        println("line3    = " + result.some_or(l3, "<eof>"))
+        io.close_lines(rd)

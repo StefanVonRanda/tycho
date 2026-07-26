@@ -4,6 +4,7 @@
 package main
 import "core:net"
 import "core:httpd"
+import "core:result"
 
 fn crlf() -> string:                    # tycho strings have no \r escape
     return chr(13) + chr(10)
@@ -18,7 +19,13 @@ fn round_trip(nl: string) -> Result(int, net.NetErr):
     conn_in := net.accept(srv) or_return
 
     asked := net.write(conn_out, to_bytes("GET / HTTP/1.1" + nl + nl)) or_return
-    served := httpd.read_request(conn_in)
+    # read_request returns Result(Request, httpd.ReqErr) -- a DIFFERENT error type
+    # from this function's Result(_, net.NetErr), so `or_return` cannot carry it.
+    # core:result collapses it in one line (plus the bound fallback the generic
+    # argument rule demands: see corelib/result/result.ty).
+    got := httpd.read_request(conn_in)
+    empty := httpd.bad_request()
+    served := result.unwrap_or(got, empty)
     println("served = " + served.method + " " + served.path)   # GET /
     println("alive  = " + str(not httpd.connection_close(served)))   # true: HTTP/1.1
     answered := httpd.write_response(conn_in, httpd.text_response(200, "pong")) or_return
@@ -37,10 +44,22 @@ fn main():
 
     # --- parse a request (no socket needed) ---
     raw := "GET /hello?name=ada HTTP/1.1" + nl + "Host: localhost" + nl + "Accept: text/plain" + nl + nl
-    req := httpd.parse_request(raw)
-    println("method = " + req.method)                    # GET
-    println("path   = " + req.path)                      # /hello?name=ada
-    println("host   = " + httpd.header(req, "host"))      # localhost  (lookup is case-insensitive)
+    # parse_request returns Result(Request, httpd.ReqErr): garbage in is
+    # Err(httpd.Malformed), not a Request with an empty method.
+    match httpd.parse_request(raw):
+        Err(e): eprint("httpd example: that was not a request\n")
+        Ok(req):
+            println("method = " + req.method)                 # GET
+            println("path   = " + req.path)                   # /hello?name=ada
+            println("host   = " + httpd.header(req, "host"))  # localhost  (case-insensitive)
+
+    # ... and a malformed head is now distinguishable from a hangup or a timeout,
+    # which is what a server needs to answer 400 to one and stay silent on the
+    # others. `Err(httpd.Malformed)` cannot be a match arm (Tycho has no nested
+    # patterns), so the test is err_or plus `==`.
+    junk := httpd.parse_request("GARBAGE" + nl + nl)
+    d := httpd.Failed
+    println("garbage= " + str(result.err_or(junk, d) == httpd.Malformed))   # true
 
     # --- build + render a response (Content-Length + default Content-Type added) ---
     # Bodies are `bytes` (binary-safe); text_response is the string convenience.

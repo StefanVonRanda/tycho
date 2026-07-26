@@ -1,0 +1,16 @@
+int_ok    = 7
+int_err   = -1
+str_ok    = hi
+str_err   = fallback
+struct_ok = one
+struct_err= none
+is_ok     = 1 0
+is_err    = 0 1
+err_of_err= 1
+err_of_ok = 1
+io_is_err = 1
+io_why    = 1
+io_bytes  = 0
+some_or   = here
+none_or   = dflt
+is_some   = 1 0

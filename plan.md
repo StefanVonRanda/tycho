@@ -309,7 +309,7 @@ So Phase 2 should NOT be "convert `io`, `net`, `httpd`, `path` uniformly". It sh
 "add the missing combinator, then convert the three genuinely ambiguous calls and stop".
 Phases 2 and 3 are rewritten below to match.
 
-- [ ] **Phase 2 — NARROWED by Phase 1: add the missing combinators, then convert only the AMBIGUOUS calls**
+- [x] **Phase 2 — NARROWED by Phase 1: add the missing combinators, then convert only the AMBIGUOUS calls**
   - **Rewritten 2026-07-26 from Phase 1's finding.** The original text said "roll out to
     the fallible IO surface" in package order. Phase 1 measured that converting an
     *unambiguous* sentinel is line-neutral at the call site and costs ~4 lines per
@@ -337,20 +337,247 @@ Phases 2 and 3 are rewritten below to match.
     `net.set_read_timeout_ms` (already done: left as `bool`).
   - Every consumer must land with it: `examples/*`, `corelib/test/*`, `server/`, goldens.
 
-- [ ] **Phase 3 — CONTINGENT: fix the two wrong answers in `server/`**
-  - **Halved by Phase 1.** The malformed-vs-hangup half is now *expressible*:
-    `net.read` returns `Err(net.Eof)` / `Err(net.Timeout)` / `Err(net.Failed)` (measured
-    in `corelib/test/net.out`) and `server/main.ty`'s `read_head` carries the reason out
-    in `Head.why`. What is left is to **act** on it — a `408` on `net.Timeout` rather
-    than a silent close, and dropping `server/main.ty`'s reimplemented `read_head` in
-    favour of a `httpd.read_request` that reports the same three causes (which is
-    Phase 2's `read_request` conversion).
-  - The other half is **untouched and cannot be fixed by a return type**: `resolve()`
-    reports an empty directory as a 0-byte `200` because `is_dir` cannot be asked (there
-    is no `stat`; `io.exists` works by listing the parent). This needs a real
-    `io.stat`/`io.is_dir` — a new shim call, independent of the `Option`/`Result` work.
-  - Done when `server/main.ty` drops both workarounds: the hand-rolled `read_head`, and
-    `resolve()`'s documented wrong answer.
+#### Phase 2 evidence — 2026-07-26
+
+**(a) The combinators live in a new corelib package, `core:result`
+(`corelib/result/result.ty`) — not a builtin.**
+
+The absence was verified first, not assumed: `grep -rn 'unwrap_or\|is_ok\|is_some\|is_err'`
+over `--include='*.ty' --include='*.md' --include='*.c'` across the whole tree returns
+hits only in `FRICTION.md`, `plan.md`, and four `tests/*.ty` programs that define a *local*
+`fn unwrap` of their own. Nothing in `corelib/`, nothing in `docs/spec/16-builtins.md`.
+
+A package rather than a builtin because **generics already carry it**: the whole surface is
+`fn unwrap_or(r: Result($T, $E), fallback: $T) -> $T` and five siblings, 25 code lines of
+pure Tycho, no shim and no change to `src/tychoc.c`. A builtin would have meant editing a
+14k-line C compiler to add what the language can already express — the larger change and
+the larger risk, for the same call-site syntax. Proven across a package boundary before
+anything was converted: a scratch package's `unwrap_or` instantiated over `int`, `string`,
+`bytes`, a struct, a locally-declared enum error, and `io.IoErr` from another package.
+
+The surface, and why each one earns its place:
+
+| function | why |
+|---|---|
+| `unwrap_or(r, fallback)` | the workhorse — the four-line `match` that existed in three copies |
+| `is_ok` / `is_err` | when only success matters and the payload does not |
+| `err_or(r, fallback)` | **which** failure, as a value `==` can test — required because Tycho has no nested patterns, and the reason the corelib's error enums are payload-free |
+| `some_or` / `is_some` | the same for `Option`, the half `io.read_line` already used |
+
+**The three hand-rolled duplicates are gone** — `server/main.ty`'s `nwrote` (4 lines →
+deleted, its five call sites now `result.unwrap_or(...)` inline), and
+`corelib/test/net`'s `fd_of`/`data_of` plus `corelib/test/httpd`'s `n_of`/`data_of`
+(4 lines → 2 each, now one-line forwarders onto the combinator).
+
+**A NEW compiler limitation was measured, and it taxes every call site by one line.** A
+qualified name written anywhere in a *generic* call's argument list does not resolve:
+
+```
+result.unwrap_or(net.port_of(fd), -1)      error: package 'net' has no symbol 'net__port_of'
+result.err_or(r, net.Failed)               error: unknown variable 'net'
+result.unwrap_or(r, httpd.bad_request())   error: package 'httpd' has no symbol 'httpd__bad_request'
+```
+
+All three compile when the value is bound to a local first, and all three spellings are
+accepted in `==` and as arguments to concretely-typed parameters — so it is generic
+instantiation losing the qualifier. An **unqualified** call is fine inline
+(`result.unwrap_or(emit(conn, r, false, false), -1)` compiles, which is why `server/`'s
+five sites are one-liners). Net effect: `unwrap_or` costs 1 line for a local call and 2
+for a corelib call, against the 4 a hand-written `match` costs. Recorded in
+`FRICTION.md` and in the header of `corelib/result/result.ty`.
+
+**(b) Converted, exactly the two named ambiguous calls.**
+
+`io.read_bytes -> Result(bytes, io.IoErr)` — `NotFound` / `IsDir` / `Failed`. The
+classification is real, not invented at the Tycho level: `iox_read_file` now takes a
+`status: inout int` ahead of the two `bytes` out-params (the shape Phase 1 established in
+`net_shim.c`) and maps `errno` — `ENOENT`/`ENOTDIR` → missing, `EISDIR` → directory, both
+at `fopen` and at the first `fread`, because glibc lets `fopen("/tmp", "rb")` succeed and
+fails the read. **An empty file is `Ok` with zero bytes** — the success value that used to
+be indistinguishable from both failures.
+
+`httpd.parse_request` / `httpd.read_request -> Result(Request, httpd.ReqErr)` —
+`Malformed` / `Closed` / `Timeout` / `Failed`. `read_request` maps the transport cause
+through `cause_of(net.NetErr)`, and the rule is: a complete header terminator means parse
+it (so a truncated *body* still yields a `Request`, unchanged behaviour), no terminator
+plus a failed read means report the transport cause. Phase 1's deliberate collapse in this
+function is gone.
+
+`io.list` — **SKIPPED, as the phase text permitted.** No `stat` landed, and a `Result`
+alone cannot separate an empty directory from a non-directory: `[]` is a legitimate
+success value for an empty directory. Converting it would move the ambiguity into an `Err`
+that has to lie about one of the two cases.
+
+**(c) Not converted, and I do not disagree with any of it.** `path.safe_join` (`""` is
+fail-closed with one meaning), `io.write`/`append`/`write_lines` (`false`, one cause),
+`net.udp_*` (a zero-length datagram is a real success value), `net.set_read_timeout_ms`
+(already settled as `bool`). Phase 1 measured this class as line-neutral at the call site
+and ~4 lines per function of pure cost in the package; nothing found in Phase 2 argues
+against that. One adjacent temptation was **refused on scope**: `io.read`'s `""` is
+ambiguous the same way `read_bytes`' empty `bytes` was, and the shim classification now
+sitting in `io_shim.c` would convert it almost for free — but `io.read` is used by
+`examples/site`, `examples/weblog`, `examples/webserver` and `examples/fetch`, none of
+which this phase names, and the plan forbids a uniform sweep. Recorded here as a candidate,
+not done.
+
+##### Measurements
+
+Non-comment, non-blank code lines, `git show HEAD:<f>` vs working tree:
+
+| unit | before | after | Δ |
+|---|---|---|---|
+| `server/main.ty` — `nwrote` helper | 4 | 0 | **−4** (deleted; 5 call sites inline) |
+| `corelib/test/net` — `fd_of` + `data_of` | 8 | 4 | **−4** |
+| `corelib/test/httpd` — `n_of` + `data_of` | 8 | 4 | **−4** |
+| `io.read_bytes` | 2 | 10 | +8 (the classification + 3 named status codes) |
+| `httpd.parse_request` | 22 | 22 | **0** (two `bad_request()` → two `Err(Malformed)`) |
+| `httpd.read_request` | 23 | 30 | +7 (the cause plumbing + `cause_of`) |
+| `server/`'s `serve_conn` | 60 | 71 | +11 (a `match` level, and the read_bytes → 404 arm) |
+| `server/main.ty` whole file | 381 | 390 | +9 (+2.4%) |
+| `corelib/io/io.ty` | 51 | 66 | +15 |
+| `corelib/httpd/httpd.ty` | 218 | 237 | +19 |
+| `corelib/test/net/main.ty` | 56 | 53 | **−3** |
+| `corelib/result/result.ty` | — | 25 | new (the whole package) |
+
+**Did the combinator shorten the sites `or_return` could not reach? Yes, measurably: 12
+lines of hand-written `match` became 4 lines of forwarder plus 6 inline one-liners, for a
+25-line library paid once.** The honest caveat is the +11 on `serve_conn`: converting
+`parse_request` cost an indentation level there, because `match` is the only way to bind
+`Ok(req)` and the whole request-handling block lives inside it. That is the same shape
+Phase 1 measured — a `Result` pays when a function boundary can absorb it and costs a level
+when it cannot.
+
+**malformed vs EOF vs timeout, proven in a golden** (`corelib/test/httpd.out`, four new
+lines; each of these was `method == ""` before this phase):
+
+```
+bad_why        = Malformed      # parse_request on "garbage\r\n\r\n"
+garbage_why    = Malformed      # a complete head off a real socket: this one deserves 400
+hangup_why     = Closed         # peer connected and closed without a byte
+partial_why    = Closed         # "GET / HTTP/1.1\r\n" then closed -- NOT Malformed
+timeout_why    = Timeout        # 200 ms SO_RCVTIMEO expired with the peer silent
+```
+
+**The empty-file / missing / directory split, proven in a golden**
+(`corelib/test/io.out`, one line became four):
+
+```
+read_bytes len=5 why=Ok        read_missing len=0 why=NotFound
+read_empty  len=0 why=Ok       read_dir     len=0 why=IsDir
+```
+
+##### One of Phase 3's two wrong answers fell out of this, measured before and after
+
+`server/`'s documented 0-byte `200` for an empty directory **is fixed**, without a `stat`.
+`resolve()` is unchanged and still cannot ask "is this a directory", but the read that
+follows it now answers `Err(io.IsDir)`, and `serve_conn` turns that into a `404`. Both
+binaries, same document root containing an empty `emptydir/`:
+
+```
+$ ./tychoc <git archive HEAD>/server/main.ty ...   # pre-phase-2 binary
+HEAD-of-repo  GET /emptydir -> 200 0 bytes         # log: w1 GET /emptydir 200 0 0.226ms
+$ ./tychoc server/main.ty ...                      # this phase
+              GET /emptydir -> 404 621 bytes       # log: w3 GET /emptydir 404 621 0.195ms
+```
+
+What is still wrong is narrower: a directory *with* content gets the correct `301` to
+`<path>/` while an empty one gets a `404`, because the `len(io.list(p)) > 0` test still
+cannot see it. Phase 3 is rewritten below to match.
+
+##### Verify — commands run, real output
+
+Gate constraint honoured: **`make ci` / `make test` / `make corelib` were NOT run.** Every
+program was compiled and run directly with `./tychoc`, exactly as Phase 1 did.
+
+A compile sweep over every program in the tree that imports `core:io`, `core:net`,
+`core:httpd` or `core:result` — 13 entry points, all green:
+
+```
+ok corelib/test/{httpd,io,net,result}/main.ty
+ok examples/corelib/{httpd,io,net,result}/main.ty
+ok examples/{fetch,site,weblog,webserver}/main.ty
+ok server/main.ty
+```
+
+Goldens (run, then `cmp` against the recorded file):
+
+```
+CHANGED  corelib/test/io.out          1 line -> 4   (the three-way split above)
+CHANGED  corelib/test/httpd.out       +4 lines, 1 changed (the four causes above)
+CHANGED  examples/corelib/httpd.out   +1 line  (garbage= true)
+NEW      corelib/test/result.out      16 lines
+NEW      examples/corelib/result.out   8 lines
+same     corelib/test/net.out
+same     examples/corelib/{io,net}.out
+same     examples/webserver/expected.out
+```
+
+The live server, `127.0.0.1:18099`, `--workers 4`, document root a copy of `server/www`
+with an added empty directory:
+
+```
+GET /            200 2659 text/html; charset=utf-8
+GET /style.css   200 1726 text/css; charset=utf-8
+HEAD /           200 0
+GET /nope.html   404
+GET /../../etc/passwd (--path-as-is)  403
+POST /           405
+GET /emptydir    404 621                      <- was 200 0 before this phase
+printf 'GARBAGE\r\n\r\n'          | nc  -> HTTP/1.1 400 Bad Request
+printf 'GET / HTTP/1.1\r\n'       | nc  -> HTTP/1.1 400 Bad Request  (truncated head; see below)
+Content-Length: 0x10                    -> HTTP/1.1 400 Bad Request  (smuggling primitive)
+keep-alive, 3 requests one connection   -> 200 200 200
+50-request flood                        -> 50/50 200
+stderr: w1 w2 w3 w4 present (all four workers served)
+```
+
+A note on that truncated-head line, because it is the one place the new information is
+*not* acted on yet: `server/` still uses its own `read_head`, whose 400/431 branch fires
+for any buffer with no terminator, so a peer that sends half a request line and hangs up
+gets a `400`. `httpd.read_request` now calls that same case `Closed` (proven in the golden
+above) — acting on it is Phase 3, which is what Phase 3 is now scoped to.
+
+##### Discovered, out of this phase's scope
+
+- **`examples/webserver/main.ty` did not compile at HEAD.** Phase 1 converted `core:net`
+  without updating it (it is not in `556119e`'s file list), so
+  `./tychoc examples/webserver/main.ty` failed with `examples/webserver/main.ty:193:
+  error: ordering compares two ints ...` on `if srv < 0`. It is a direct consumer of
+  `io.read_bytes` and `httpd.read_request`, so it was fixed here rather than left broken —
+  ~10 lines of `net` Result plumbing on top of this phase's own changes. Its golden
+  (`examples/webserver/expected.out`) now matches for the first time since Phase 1.
+
+- [ ] **Phase 3 — REWRITTEN by Phase 2: act on the reasons, and drop `read_head`**
+  - **Both halves have moved.** Phase 1 made the transport reason *expressible*; Phase 2
+    put it in `httpd.read_request` (`Malformed` / `Closed` / `Timeout` / `Failed`, all four
+    measured in `corelib/test/httpd.out`) and, as a side effect of `io.read_bytes`
+    returning a `Result`, already turned `server/`'s empty-directory 0-byte `200` into a
+    `404` (measured before and after against a binary built from `556119e`).
+  - What is left, and it is now one coherent job: **`server/main.ty` should delete
+    `read_head` and its `Head` struct and call `httpd.read_request` instead.** That is the
+    workaround `FRICTION.md` phase 7 exists to complain about — 15 lines reimplementing the
+    corelib because the corelib could not say which failure it was. The corelib can now say
+    it, so:
+    - `Err(httpd.Timeout)` → answer `408 Request Timeout` (or close silently, but the
+      *choice* becomes available) instead of the current unconditional close.
+    - `Err(httpd.Closed)` → close silently, no response, no log line.
+    - `Err(httpd.Malformed)` → `400`, which is what it does today.
+    - The one thing `read_head` still has that `read_request` does not is the **raw
+      buffer**, used for two things: the `431` decision (`len(raw) >= MAX_HEAD`, a 16 KiB
+      cap against a peer that grows a string forever) and `first_line(raw)` in the log line
+      for a request that would not parse. `read_request`'s own cap is 1 MiB and it does not
+      hand the buffer back, so this phase must decide: a configurable cap plus a raw-head
+      accessor on the corelib side, or keep a thin local read for that one case. **Measure
+      both; do not assume the corelib call is automatically better** — the same standard
+      Phase 1 and 2 were held to.
+  - Still genuinely absent, and still not a return-type problem: `resolve()` cannot ask
+    "is this a directory". A directory with content gets a correct `301`; an empty one now
+    gets a `404` instead of a redirect. Closing that needs a real `io.stat` / `io.is_dir`
+    shim call — **independent of the `Option`/`Result` work, and a legitimate thing to
+    leave undone** if the phase's own measurements say the 404 is good enough.
+  - Done when `server/main.ty` no longer reimplements the read loop, the `408`/silent-close
+    distinction is exercised against a live server with captured output, and every golden
+    still matches.
 
 ## Out of scope
 

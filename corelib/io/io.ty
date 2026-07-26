@@ -11,12 +11,29 @@
 # tiny libc getline shim (io_shim.c) -- unlike read_lines, which slurps the whole
 # file into an array.
 #
-# Error model matches the builtins: a read of a missing/unreadable file is ""
-# (indistinguishable from an empty file); a write returns false if the path
-# can't be opened. Nothing here aborts.
+# ERROR MODEL. `read_bytes` returns `Result(bytes, io.IoErr)`: an empty file is
+# Ok(empty), a missing path is Err(NotFound) and a directory is Err(IsDir). Until
+# 2026-07-26 all three were the same empty `bytes`, which is how a static file
+# server ends up answering a 0-byte 200 for a path it cannot serve (FRICTION.md,
+# phase 7; plan.md phase 2).
+#
+# The rest of the module still matches the builtins' sentinels, deliberately:
+# `read` is "" for a missing/unreadable file (indistinguishable from an empty
+# one), `write`/`append`/`write_lines` return false if the path can't be opened,
+# and `list` is [] for anything that is not a directory. Those sentinels have ONE
+# meaning each on the write side, and `list`'s ambiguity (an empty directory vs a
+# non-directory) is a missing stat(2), not a missing return type -- a Result
+# cannot fix it. Nothing here aborts.
 package io
 import "core:strings"
 import "core:path"
+
+# Why a file could not be read. Every variant is payload-free so `==` works on it
+# (Tycho has no nested patterns: `Err(io.IsDir)` does not parse).
+enum IoErr:
+    NotFound           # no such path
+    IsDir              # the path names a directory, not a file
+    Failed             # the path exists but could not be read (permissions, ...)
 
 # Whole file as a string ("" if missing/unreadable -- same as an empty file).
 fn read(p: string) -> string:
@@ -51,13 +68,34 @@ fn write_lines(p: string, lines: [string]) -> bool:
 extern fn iox_open_lines(path: string) -> ptr        # null if the path can't be opened
 extern fn iox_read_line(r: ptr) -> Option(string)    # next line (no trailing newline/CRLF); None at EOF
 extern fn iox_close_lines(r: ptr)
-extern fn iox_read_file(path: string) -> bytes       # whole file as raw bytes (binary-safe)
+# `status` is the read classification: 0 missing, 1 read, 2 directory, 3 other
+# error. It is an `inout int`, which lowers to a tycho_int* out-param ahead of the
+# two out-params the `bytes` return uses -- see the block comment on iox_read_file
+# in io_shim.c.
+extern fn iox_read_file(path: string, status: inout int) -> bytes
+
+# The shim's read_file status codes, named once so read_bytes reads as prose.
+const RF_MISS = 0
+const RF_OK   = 1
+const RF_DIR  = 2
 
 # Read the whole file as raw bytes -- interior NUL bytes are preserved (unlike
-# read(), whose string truncates at the first NUL). A missing/unreadable file
-# yields empty bytes. The right tool for binary assets (images, fonts, ...).
-fn read_bytes(p: string) -> bytes:
-    return iox_read_file(p)
+# read(), whose string truncates at the first NUL). The right tool for binary
+# assets (images, fonts, ...).
+#
+# Ok(b) on success, and an EMPTY FILE is Ok with len(b) == 0 -- a real success
+# value, now distinct from Err(NotFound) and Err(IsDir). Those three were one
+# value (empty `bytes`) before 2026-07-26.
+fn read_bytes(p: string) -> Result(bytes, IoErr):
+    st := 0
+    b := iox_read_file(p, &st)
+    if st == RF_OK:
+        return Ok(b)
+    if st == RF_MISS:
+        return Err(NotFound)
+    if st == RF_DIR:
+        return Err(IsDir)
+    return Err(Failed)
 
 # Open a streaming line reader over `path`. Returns a null ptr (check is_null) if
 # the file can't be opened. Pair every successful open with close_lines(r).

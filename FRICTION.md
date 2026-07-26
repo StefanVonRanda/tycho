@@ -40,6 +40,16 @@ language forced that — `or_return` was sitting right there.
 > *measured* is that the win is confined to the ambiguous sentinels — converting
 > an unambiguous one is line-for-line neutral — and that the conversion surfaced
 > five new ergonomic gaps of its own, recorded below.
+>
+> **Also historical, from `plan.md` phase 2:** the `io.read_bytes` and
+> `httpd.parse_request` rows. `read_bytes` returns `Result(bytes, io.IoErr)` —
+> an empty file is `Ok`, `Err(NotFound)` and `Err(IsDir)` are distinct — and
+> `parse_request` / `read_request` return `Result(Request, httpd.ReqErr)` with
+> `Malformed` / `Closed` / `Timeout` / `Failed`, all four recorded as distinct in
+> `corelib/test/httpd.out`. The missing `unwrap_or` is now `core:result`. The rows
+> that remain true are `path.safe_join`, the `io` write side, `net.udp_*` and
+> `net.set_read_timeout_ms` — each deliberately left on a sentinel that has
+> exactly one meaning.
 
 ## Phase 7 — writing the server
 
@@ -66,6 +76,16 @@ rewriting `server/`, `corelib/httpd`, both corelib tests and both examples again
 - **`Option`/`Result` phase 1** — `die()` is typed `void` and the compiler does not model it as diverging, so it cannot be the tail of a value-`match` arm: `srv := match net.listen(...): Ok(fd): fd / Err(e): die("cannot bind")` is rejected with `a value if/match branch must produce a value, not void`. The statement form needs a dummy `srv := 0` first, making the `Result` version **one line longer** than the `if srv < 0: die(...)` it replaced — the only call site in `server/` where the conversion cost a line.
 - **`Option`/`Result` phase 1** — `tychoc` compiles every `.ty` in the entry file's directory, not just the entry file, so two unrelated scratch programs side by side collide with `'main' is already defined` pointing at the file you asked it to build. Nothing says the sibling file is involved; it cost four compile cycles to work out that the fix was `mkdir`.
 - **`Option`/`Result` phase 1** — the FFI has no way for C to return a classification alongside a `bytes` payload, and `-> Result(T, E)` is not a documented `extern` return shape (`docs/spec/14-ffi.md:20-47` lists only scalars, sized ints, `string`/`Option(string)`, `bytes`, `[int]`/`[float]`, `ptr`, handles, and numeric `inout`). Making `net.read` say *why* it read nothing needed `status: inout int` threaded ahead of the two `bytes` out-params — which works, and is undocumented as the way to do this.
+
+## Phase 2 of the Option/Result plan — the combinators, `io.read_bytes`, `httpd.read_request`
+
+Found while adding `core:result` and converting the two genuinely ambiguous calls.
+
+- **`Option`/`Result` phase 2** — a **qualified name written anywhere in a generic call's argument list does not resolve**. `result.unwrap_or(net.port_of(fd), -1)` fails with `error: package 'net' has no symbol 'net__port_of'`, `result.err_or(r, net.Failed)` with `error: unknown variable 'net'`, and `result.unwrap_or(r, httpd.bad_request())` with `error: package 'httpd' has no symbol 'httpd__bad_request'` — while the identical spellings are accepted in `==` and as arguments to concretely-typed parameters, and an *unqualified* local call inline is fine. So generic instantiation loses the package qualifier, and every corelib call site pays one extra line to bind the value to a local first. It is what stops `n := result.unwrap_or(io.read_bytes(p), empty)` — the whole point of a combinator — from being the one-liner it should be.
+- **`Option`/`Result` phase 2** — **two error types in one function make `or_return` unavailable again**, and nothing says so until you try. `examples/corelib/httpd/main.ty`'s `round_trip` returns `Result(int, net.NetErr)` and seven `net.*` calls short-circuit through it beautifully; the one `httpd.read_request` call in the middle returns `Result(Request, httpd.ReqErr)` and has to be collapsed by hand, because there is no `map_err` and no conversion between error enums. A function that touches two packages' fallible calls gets `or_return` for whichever one it picked as its own error type and a manual collapse for the other.
+- **`Option`/`Result` phase 2** — converting a call that a big block consumes costs an **indentation level**, not just lines: `server/main.ty`'s `serve_conn` went 60 → 71 code lines almost entirely because `match httpd.parse_request(raw)` has to wrap the whole request-handling body to bind `Ok(req)`. There is no `if let`, no early-return binding form, and `or_return` is unavailable (the enclosing function returns a served count) — so the only tool re-indents 30 lines.
+- **`Option`/`Result` phase 2** — the FFI trick for classifying a `bytes` result (`status: inout int` threaded ahead of the two out-params) had to be reproduced verbatim in `corelib/io/io_shim.c` from `net_shim.c`, because it is still undocumented in `docs/spec/14-ffi.md`. Two shims now depend on an ABI detail written down only in each other's comments.
+- **`Option`/`Result` phase 2** — `examples/webserver/main.ty` was left **uncompilable by phase 1** (`error: ordering compares two ints ...` on `if srv < 0`, against the converted `net.listen`): it imports `core:net` but was not in that commit's file list, and no gate builds it (`make ci` skips it — see the phase 0 note below), so nothing went red for a whole phase. Fixed here because it also consumes `io.read_bytes` and `httpd.read_request`.
 
 ### Two defects that were not expressible in Tycho at all
 

@@ -6,6 +6,7 @@
 package main
 import "core:net"
 import "core:httpd"
+import "core:result"
 
 fn b(x: bool) -> int:
     if x:
@@ -15,25 +16,44 @@ fn b(x: bool) -> int:
 fn crlf() -> string:                             # no \r escape in tycho strings
     return chr(13) + chr(10)
 
-# core:net's TCP calls and httpd.write_response return Result(_, net.NetErr).
-# main() is void so `or_return` cannot short-circuit out of it, and every call
-# here is on loopback and must succeed -- so these two collapse the Result to the
-# int/bytes the assertions below already print, keeping the golden unchanged.
+# core:net's TCP calls and httpd.write_response return Result(_, net.NetErr), and
+# httpd.parse_request / read_request return Result(Request, httpd.ReqErr). main()
+# is void so `or_return` cannot short-circuit out of it, and every call here is on
+# loopback and must succeed -- so these three collapse the Result to the value the
+# assertions already print. Each was a hand-written four-line `match` until
+# core:result landed (plan.md phase 2).
 fn n_of(r: Result(int, net.NetErr)) -> int:
-    match r:
-        Ok(n): return n
-        Err(e): return -1
+    return result.unwrap_or(r, -1)
 
 fn data_of(r: Result(bytes, net.NetErr)) -> bytes:
-    match r:
-        Ok(bs): return bs
-        Err(e): return to_bytes("")
+    return result.unwrap_or(r, to_bytes(""))
+
+fn rq(r: Result(httpd.Request, httpd.ReqErr)) -> httpd.Request:
+    d := httpd.bad_request()                     # a qualified call cannot be a $T argument
+    return result.unwrap_or(r, d)
+
+# WHICH outcome read_request/parse_request reported, as a stable string. This is
+# the assertion the whole conversion exists for: "Malformed", "Closed" and
+# "Timeout" were ALL `method == ""` before 2026-07-26. `err_or` + `==` rather than
+# a nested pattern, because `Err(httpd.Timeout)` does not parse.
+fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
+    if result.is_ok(r):
+        return "Ok"
+    d := httpd.Failed                            # a qualified variant cannot be a $E argument
+    e := result.err_or(r, d)
+    if e == httpd.Malformed:
+        return "Malformed"
+    if e == httpd.Closed:
+        return "Closed"
+    if e == httpd.Timeout:
+        return "Timeout"
+    return "Failed"
 
 fn main():
     # ---- pure parsing (no socket): a request with headers + body ----
     nl := crlf()
     raw := "POST /submit?id=7 HTTP/1.1" + nl + "Host: localhost" + nl + "Content-Type: application/json" + nl + "Content-Length: 13" + nl + nl + "{\"a\":\"hello\"}"
-    p := httpd.parse_request(raw)
+    p := rq(httpd.parse_request(raw))
     println("method = " + p.method)
     println("path   = " + p.path)
     println("version= " + p.version)
@@ -44,9 +64,11 @@ fn main():
     println("body   = " + to_str(p.body))
     println("bodylen= " + str(len(p.body)))
 
-    # a malformed request line fails closed
-    bad := httpd.parse_request("garbage" + nl + nl)
-    println("bad_method_empty = " + str(b(bad.method == "")))
+    # a malformed request line fails closed -- as an Err now, not as a Request
+    # whose method happens to be ""
+    badr := httpd.parse_request("garbage" + nl + nl)
+    bad := rq(badr)
+    println("bad_why = " + why(badr))
 
     # render a response: auto Content-Length + default Content-Type
     r0 := httpd.text_response(404, "nope")
@@ -63,11 +85,11 @@ fn main():
     println("ct_odd  = " + httpd.content_type("/archive.tar.gz"))
 
     # ---- keep-alive decisions ----
-    k11 := httpd.parse_request("GET / HTTP/1.1" + nl + nl)
-    k11c := httpd.parse_request("GET / HTTP/1.1" + nl + "Connection: close" + nl + nl)
-    k11m := httpd.parse_request("GET / HTTP/1.1" + nl + "Connection: keep-alive, Upgrade" + nl + nl)
-    k10 := httpd.parse_request("GET / HTTP/1.0" + nl + nl)
-    k10k := httpd.parse_request("GET / HTTP/1.0" + nl + "Connection: Keep-Alive" + nl + nl)
+    k11 := rq(httpd.parse_request("GET / HTTP/1.1" + nl + nl))
+    k11c := rq(httpd.parse_request("GET / HTTP/1.1" + nl + "Connection: close" + nl + nl))
+    k11m := rq(httpd.parse_request("GET / HTTP/1.1" + nl + "Connection: keep-alive, Upgrade" + nl + nl))
+    k10 := rq(httpd.parse_request("GET / HTTP/1.0" + nl + nl))
+    k10k := rq(httpd.parse_request("GET / HTTP/1.0" + nl + "Connection: Keep-Alive" + nl + nl))
     println("close_11      = " + str(b(httpd.connection_close(k11))))
     println("close_11_close= " + str(b(httpd.connection_close(k11c))))
     println("close_11_multi= " + str(b(httpd.connection_close(k11m))))
@@ -94,7 +116,7 @@ fn main():
 
     # client -> server: send the raw request built above
     w := n_of(net.write(cli, to_bytes(raw)))
-    got := httpd.read_request(conn)
+    got := rq(httpd.read_request(conn))
     println("srv_method = " + got.method)
     println("srv_path   = " + got.path)
     println("srv_body   = " + to_str(got.body))
@@ -123,7 +145,7 @@ fn main():
     cli2 := n_of(net.connect("127.0.0.1", port))
     conn2 := n_of(net.accept(srv))
     wb := n_of(net.write(cli2, to_bytes("GET /logo.png HTTP/1.1" + nl + nl)))
-    rq2 := httpd.read_request(conn2)
+    rq2 := rq(httpd.read_request(conn2))
     blob := to_bytes([137, 80, 78, 71, 0, 255, 13, 10, 0, 1])
     br := httpd.with_header(httpd.response(200, blob), "Content-Type", httpd.content_type(rq2.path))
     bn := n_of(httpd.write_response(conn2, httpd.with_connection(br, false)))
@@ -144,8 +166,38 @@ fn main():
     armed := net.set_read_timeout_ms(conn3, 200)
     idle := httpd.read_request(conn3)                       # cli3 sends nothing
     println("timeout_armed  = " + str(b(armed)))
-    println("timeout_closes = " + str(b(idle.method == "" and httpd.connection_close(idle))))
+    println("timeout_why    = " + why(idle))                # Timeout, not ""
+    println("timeout_closes = " + str(b(httpd.connection_close(rq(idle)))))
     net.close_fd(conn3)
     net.close_fd(cli3)
+
+    # ---- THE POINT OF ReqErr: three failures that used to be one value ----
+    # Each peer below produced `method == ""` before 2026-07-26, and a server
+    # could not tell which -- so it could not answer 400 to garbage while hanging
+    # up silently on a disconnect (FRICTION.md, phase 7). Now each says so.
+
+    # (a) garbage with a complete head -> Malformed (this one deserves a 400)
+    cli4 := n_of(net.connect("127.0.0.1", port))
+    conn4 := n_of(net.accept(srv))
+    g := n_of(net.write(cli4, to_bytes("GARBAGE" + nl + nl)))
+    println("garbage_why    = " + why(httpd.read_request(conn4)))
+    net.close_fd(conn4)
+    net.close_fd(cli4)
+
+    # (b) a peer that connects and hangs up without a byte -> Closed (no 400)
+    cli5 := n_of(net.connect("127.0.0.1", port))
+    conn5 := n_of(net.accept(srv))
+    net.close_fd(cli5)
+    println("hangup_why     = " + why(httpd.read_request(conn5)))
+    net.close_fd(conn5)
+
+    # (c) a partial head, then a hangup -> Closed, NOT Malformed: the request was
+    # never finished, so there is nothing to call bad
+    cli6 := n_of(net.connect("127.0.0.1", port))
+    conn6 := n_of(net.accept(srv))
+    h := n_of(net.write(cli6, to_bytes("GET / HTTP/1.1" + nl)))
+    net.close_fd(cli6)
+    println("partial_why    = " + why(httpd.read_request(conn6)))
+    net.close_fd(conn6)
 
     net.close_fd(srv)

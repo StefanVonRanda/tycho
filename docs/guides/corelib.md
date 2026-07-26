@@ -241,6 +241,20 @@ element type instead of a family of per-type siblings.
   digests) crosses as lowercase hex, because a Tycho string can't hold a `0x00`; use
   `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
   RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).
+- **`result`** — the `Result` / `Option` collapses, generic over `$T` and `$E`:
+  `unwrap_or(r, fallback)`, `is_ok(r)`, `is_err(r)`, `err_or(r, fallback)`, and
+  `some_or(o, fallback)` / `is_some(o)` for the `Option` half. `or_return` unwraps a
+  `Result` only inside a function that itself returns a compatible `Result`
+  (`docs/spec/10-statements.md:75`), so a `main()`, or a handler that returns a
+  `Response`, needs another way — and before this package the only one was a four-line
+  `match` per call site (three copies of it existed in this tree). `err_or` plus `==` is
+  how a caller asks *which* failure happened: Tycho has no nested patterns, so
+  `Err(io.IsDir)` is not a legal match arm, which is why the corelib's error enums are
+  payload-free. **One caveat, and it is load-bearing:** a `pkg.name` written directly in a
+  generic call's argument list does not resolve (`result.unwrap_or(net.port_of(fd), -1)` →
+  `error: package 'net' has no symbol 'net__port_of'`), so bind the Result — and any
+  qualified fallback — to a local first. Pure computation: no shim, no allocation, nothing
+  aborts.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
@@ -250,9 +264,16 @@ element type instead of a family of per-type siblings.
   checks membership). For inputs too large to slurp, a **bounded-memory streaming line
   reader** over a libc `getline` shim: `open_lines(p)` → `read_line(r)` (`Some(line)` /
   `None` at EOF) → `close_lines(r)`, plus `fold_lines(p, init, f)` — peak memory is
-  O(longest line), not O(file). `read_bytes(p)` reads a whole file as raw `bytes`
-  (binary-safe — interior NUL bytes are preserved, unlike `read`'s string).
-  Error model mirrors the builtins — nothing aborts.
+  O(longest line), not O(file). `read_bytes(p) -> Result(bytes, io.IoErr)` reads a whole
+  file as raw `bytes` (binary-safe — interior NUL bytes are preserved, unlike `read`'s
+  string), and it is the one call here that reports *why*: an **empty file is `Ok`** with
+  zero bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three
+  outcomes that were the same empty `bytes` until 2026-07-26, which is how a static file
+  server ends up serving a 0-byte `200` for a path it cannot read. The variants are
+  payload-free so `==` works on them (no nested patterns). The rest of the module keeps
+  the builtins' sentinels deliberately — each has one meaning on the write side, and
+  `list`'s empty-directory-vs-non-directory ambiguity is a missing `stat(2)`, not a
+  missing return type. Nothing aborts.
 - **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the
@@ -278,14 +299,18 @@ element type instead of a family of per-type siblings.
   ambiguity.
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; you own the
-  accept loop. `parse_request(raw) -> Request` (method/path/version, case-insensitive
-  `header(r, name)`, honors Content-Length; `method == ""` on a malformed line);
+  accept loop. `parse_request(raw) -> Result(Request, httpd.ReqErr)` (method/path/version,
+  case-insensitive `header(r, name)`, honors Content-Length; `Err(Malformed)` on a
+  malformed request line);
   `response(status, body: bytes)` / `text_response(status, body: string)` /
   `with_header(r, k, v)` / `with_body(r, b)` / `render_head(r) -> string` /
   `render(r) -> bytes` (Content-Length and a default `text/plain` Content-Type are added
-  automatically); and the socket glue `read_request(fd)` (reads until the header
-  terminator, then exactly Content-Length body bytes, bounded so a hostile peer can't
-  spin) / `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
+  automatically); and the socket glue `read_request(fd) -> Result(Request, httpd.ReqErr)`
+  (reads until the header terminator, then exactly Content-Length body bytes, bounded so a
+  hostile peer can't spin) — its `Err` says **which** failure, `Malformed` / `Closed` /
+  `Timeout` / `Failed`, where all four used to be `method == ""`, so a server can finally
+  answer `400` to garbage while hanging up silently on a disconnect (`corelib/test/httpd.out`
+  records all four as distinct) / `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
   it returns the same error type `net.write` does, so `or_return` propagates a failed
   send with no sentinel check). **Binary-safe bodies** — `Request.body` and
   `Response.body` are `bytes`, so a PNG or a font round-trips byte for byte; headers stay
@@ -295,8 +320,8 @@ element type instead of a family of per-type siblings.
   .json .txt .xml .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2 .pdf .wasm` — and an
   **unknown extension yields `application/octet-stream`, never `text/plain`** (a wrong
   `text/*` guess is how a browser is talked into rendering something it should download).
-  Keep-alive: `connection_close(req)` (HTTP/1.1 defaults open, 1.0 defaults closed, a
-  malformed request always closes) and `with_connection(r, alive)`; pair it with
+  Keep-alive: `connection_close(req)` (HTTP/1.1 defaults open, 1.0 defaults closed, an
+  empty `bad_request()` always closes) and `with_connection(r, alive)`; pair it with
   `net.set_read_timeout_ms` so an idle peer cannot pin a worker. CRLF is built with
   `chr(13)` (tycho strings have no `\r` escape).
 - **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` (pass

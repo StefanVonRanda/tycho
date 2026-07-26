@@ -12,13 +12,15 @@
 #               x := net.set_read_timeout_ms(conn, 5000)  # so an idle peer cannot pin us
 #               alive := true
 #               for alive:
-#                   req := httpd.read_request(conn)       # read + parse one request
-#                   if req.method == "":                  # EOF, idle timeout, or malformed
-#                       alive = false
-#                   else:
-#                       alive = not httpd.connection_close(req)
-#                       r := httpd.text_response(200, "hello\n")
-#                       w := httpd.write_response(conn, httpd.with_connection(r, alive))
+#                   match httpd.read_request(conn):       # read + parse one request
+#                       Err(e):                           # WHICH failure -- see ReqErr
+#                           if e == httpd.Malformed:
+#                               w := httpd.write_response(conn, httpd.text_response(400, "bad\n"))
+#                           alive = false                 # Closed/Timeout: just hang up
+#                       Ok(req):
+#                           alive = not httpd.connection_close(req)
+#                           r := httpd.text_response(200, "hello\n")
+#                           w := httpd.write_response(conn, httpd.with_connection(r, alive))
 #               net.close_fd(conn)
 #
 # BINARY-SAFE bodies: `Request.body` and `Response.body` are `bytes`, so a PNG or a
@@ -36,9 +38,23 @@
 # `with_connection(r, alive)` implement HTTP/1.1 keep-alive.
 package httpd
 import "core:net"
+import "core:result"
+
+# Why a request could not be produced. Every variant is payload-free so `==` works
+# on it (Tycho has no nested patterns: `Err(httpd.Timeout)` does not parse).
+#
+# These four were ONE value -- a Request whose `method` is "" -- until 2026-07-26.
+# A server that must answer 400 to garbage while hanging up silently on a
+# disconnect needs Malformed apart from Closed, and one that wants to answer 408
+# needs Timeout apart from both (FRICTION.md, phase 7; plan.md phase 2).
+enum ReqErr:
+    Malformed          # bytes arrived, but they are not a valid request head
+    Closed             # the peer hung up before a complete request arrived
+    Timeout            # the socket read deadline expired (net.set_read_timeout_ms)
+    Failed             # the socket read failed (reset, bad fd, ...)
 
 struct Request:
-    method: string        # "GET", "POST", ... ("" means a malformed request)
+    method: string        # "GET", "POST", ...
     path: string          # the raw request target, e.g. "/x?a=1"
     version: string       # "HTTP/1.1"
     header_keys: [string]  # header names, parallel to header_vals
@@ -104,14 +120,19 @@ fn has_token(hay: string, needle: string) -> bool:
             return true
     return false
 
+# An empty Request. Not a failure value any more -- parse_request says Err
+# instead -- but still the natural fallback for `result.unwrap_or`, and what
+# connection_close treats as "close, fail closed".
 fn bad_request() -> Request:
     return Request("", "", "", []string, []string, to_bytes(""))
 
 # ---- request parsing -------------------------------------------------------
 
-# Parse a full raw request (headers, then the body after the blank line). On a
-# malformed request line, returns a Request whose `method` is "" (fail closed).
-fn parse_request(raw: string) -> Request:
+# Parse a full raw request (headers, then the body after the blank line).
+# Err(Malformed) if the request line is not "METHOD TARGET VERSION" -- fail
+# closed. A caller that only wants a value can collapse it in one line:
+# `result.unwrap_or(parse_request(raw), bad_request())`.
+fn parse_request(raw: string) -> Result(Request, ReqErr):
     sep := find(raw, crlf() + crlf())
     head := raw
     body := ""
@@ -120,10 +141,10 @@ fn parse_request(raw: string) -> Request:
         body = raw[sep + 4:len(raw)]                 # 4 = len(CRLF CRLF)
     lines := split(head, "\n")
     if len(lines) == 0:
-        return bad_request()
+        return Err(Malformed)
     parts := split(chomp(lines[0]), " ")
     if len(parts) < 3:
-        return bad_request()
+        return Err(Malformed)
     keys := []string
     vals := []string
     for i in range(1, len(lines)):
@@ -132,7 +153,7 @@ fn parse_request(raw: string) -> Request:
         if col > 0:
             push(keys, trim(ln[0:col]))
             push(vals, trim(ln[col + 1:len(ln)]))
-    return Request(parts[0], parts[1], parts[2], keys, vals, to_bytes(body))
+    return Ok(Request(parts[0], parts[1], parts[2], keys, vals, to_bytes(body)))
 
 # The value of header `name` (case-insensitive), or "" if absent.
 fn header(r: Request, name: string) -> string:
@@ -143,26 +164,53 @@ fn header(r: Request, name: string) -> string:
             out = r.header_vals[i]
     return out
 
+# A socket failure, in this package's vocabulary. net.NetErr says what the
+# transport did; ReqErr says what it means for a request.
+fn cause_of(e: net.NetErr) -> ReqErr:
+    if e == net.Eof:
+        return Closed
+    if e == net.Timeout:
+        return Timeout
+    return Failed
+
 # Read one request off a connected socket and parse it. Reads until the header
 # terminator and then exactly Content-Length body bytes (or EOF), bounded so a
 # truncated/hostile peer can't spin forever.
 #
-# On EOF, on a socket read timeout (see net.set_read_timeout_ms), or on a hostile
-# peer that never terminates its headers, the result is a Request whose `method`
-# is "" -- so a keep-alive loop closes the connection on exactly one test.
+# Err says which failure it was, and that is the point of this signature:
+#
+#   Err(Closed)     the peer hung up before a complete head arrived
+#   Err(Timeout)    the read deadline expired (net.set_read_timeout_ms) first
+#   Err(Failed)     the socket read failed
+#   Err(Malformed)  a complete head arrived and is not a valid request
+#
+# All four were `method == ""` before 2026-07-26, which is why server/main.ty
+# reimplemented this loop just to answer 400 to garbage and stay silent on a
+# hangup (FRICTION.md, phase 7). A keep-alive loop that does not care can still
+# close on one test: `result.is_err(read_request(fd))`.
+#
+# A head that arrived intact is parsed even if the BODY was cut short by the peer
+# -- unchanged behaviour, and deliberate: the request line and headers are what
+# routing needs, and a short body is visible as len(r.body) < Content-Length.
 #
 # Once Content-Length is known the read is clamped to the remaining bytes, so a
 # well-behaved client's NEXT request is not swallowed. A client that pipelines
 # (sends request 2 before reading response 1) can still have bytes consumed
 # inside the pre-header 4 KiB read; pipelining is not supported.
-fn read_request(fd: int) -> Request:
+fn read_request(fd: int) -> Result(Request, ReqErr):
     buf := ""
     need := -1                                  # total expected bytes once known
     reading := true
+    why := Failed                               # the transport cause, if one ends the read
+    cut := false                                # a read failed before the head was complete
     for reading:
         he := find(buf, crlf() + crlf())
         if he >= 0 and need < 0:
-            probe := parse_request(buf)
+            # Only the Content-Length matters here, and a malformed head has no
+            # headers to read one from -- so collapsing the Result to an empty
+            # Request keeps the pre-2026-07-26 behaviour exactly (bad_request()
+            # carried no headers either) in one line instead of a match.
+            probe := result.unwrap_or(parse_request(buf), bad_request())
             clh := header(probe, "content-length")
             blen := 0
             if clh != "":
@@ -174,23 +222,21 @@ fn read_request(fd: int) -> Request:
             want := 4096
             if need >= 0 and need - len(buf) < want:
                 want = need - len(buf)
-            # net.read now says WHY it produced nothing -- Err(net.Eof) vs
-            # Err(net.Timeout) vs Err(net.Failed). read_request still collapses
-            # all three into `method == ""`, unchanged on purpose: telling them
-            # apart is a behaviour change to this function's contract and its
-            # callers, and belongs to plan.md phase 3. What changed here is only
-            # that the information now reaches this line instead of being thrown
-            # away inside net.read.
             match net.read(fd, want):
                 Ok(chunk): buf = buf + to_str(chunk)
-                Err(e): reading = false
-    return parse_request(buf)
+                Err(e):
+                    why = cause_of(e)
+                    cut = true
+                    reading = false
+    if cut and find(buf, crlf() + crlf()) < 0:
+        return Err(why)                         # no complete head: the transport reason wins
+    return parse_request(buf)                   # Ok, or Err(Malformed) for garbage
 
 # ---- keep-alive ------------------------------------------------------------
 
 # Does this request ask for the connection to be closed after the response?
-# HTTP/1.1 defaults to keep-alive; HTTP/1.0 defaults to close. A malformed
-# request (method == "") always closes -- fail closed.
+# HTTP/1.1 defaults to keep-alive; HTTP/1.0 defaults to close. An empty Request
+# (bad_request(), the usual unwrap_or fallback) always closes -- fail closed.
 fn connection_close(r: Request) -> bool:
     if r.method == "":
         return true

@@ -1,6 +1,7 @@
 method = GET
 path   = /hello?name=ada
 host   = localhost
+garbage= true
 status ok = true
 ctype  = image/png
 ctype? = application/octet-stream
