@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links server wiki ci hooks ilp32 asan-self clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check check-links server wiki ci hooks ilp32 asan-self clean
 
 all: tychoc
 
@@ -55,6 +55,14 @@ tools: tycho tychofmt tycho-lsp
 # (emit-C identical before/after) and an LSP JSON-RPC smoke test. Part of `make ci`.
 tools-check: tychoc
 	@sh scripts/tools_check.sh
+
+# Entry-point sweep: every program in the tree with an entry point must still
+# COMPILE (`tychoc --emit-c`, so no cc, no link, no external library). Exists
+# because `make ci` builds no example that has its own runner, which is how
+# examples/webserver/main.ty stayed uncompilable for a whole phase with nothing
+# red. Milliseconds. Part of `make ci`. See scripts/entrypoints.sh.
+entrypoints: tychoc
+	@sh scripts/entrypoints.sh
 
 # Spec consistency gate: the collected grammar (spec Appendix A) must stay
 # byte-identical to the defining chapters §3/§4. See scripts/spec_check.sh.

@@ -4520,7 +4520,7 @@ static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's 
  * top of every resolve_expr so children are rvalues by default; only the spine
  * cases (E_INDEX base, E_FIELD/E_TUPIDX lhs) re-enable it for their spine child.
  * Statement handlers that resolve a place target (S_INDEXSET/S_FIELDSET, push's
- * first arg) set it to 1 around that one resolve. #2 (docs/map-mutation.md). */
+ * first arg) set it to 1 around that one resolve. #2 (docs/guides/map-mutation.md). */
 static int g_place = 0;
 static Type g_fn_ret = T_VOID;   /* return type of the proc currently being resolved (for or_return) */
 
@@ -7365,6 +7365,41 @@ static void check_channel_liveness(ProcVec *prog) {
             chan_find_decls(prog, prog->v[i], prog->v[i]->body, prog->v[i]->nbody);
 }
 
+/* Package mode: two definitions of one name are each innocent in their own file,
+ * and the "already defined" diagnostic below fires at the SECOND one, so it names
+ * whichever file sorts later (scan_pkg_files qsorts, `:11759`). For two unrelated
+ * scratch programs sitting in one directory that is routinely the entry file the
+ * user actually named -- the message then blames the file it was asked to build
+ * and never mentions that a sibling was compiled at all. FRICTION.md records four
+ * compile cycles spent working out that the fix was `mkdir`.
+ *
+ * The directory scan is NOT the bug and is not changed: a package may legally
+ * span files (`tests/pkg/multifile/`), and it is entered only when the entry file
+ * declares a `package` header (`:12069-12071`) -- which a scratch program must do
+ * to `import` anything. So the fix is the diagnostic: name the other definition.
+ * Returns "<file>:<line>" for a same-named proc in a DIFFERENT file, else NULL
+ * (a same-file duplicate is self-evident and keeps the plain message). */
+static const char *dup_other_file(ProcVec *prog, int self, const char *name) {
+    const char *mine = prog->v[self]->srcfile;
+    for (int j = 0; j < prog->n; j++) {
+        Proc *o = prog->v[j];
+        if (j == self || !o->srcfile || strcmp(o->name, name) != 0) continue;
+        if (mine && strcmp(o->srcfile, mine) == 0) continue;
+        return sfmt("%s:%d", o->srcfile, o->line);
+    }
+    return NULL;
+}
+__attribute__((noreturn))
+static void die_dup_proc(ProcVec *prog, int self, const char *name) {
+    const char *other = dup_other_file(prog, self, name);
+    if (other)
+        die_at(prog->v[self]->line,
+               "'%s' is already defined -- also at %s, a DIFFERENT file in the same package: "
+               "tychoc compiles every .ty beside the entry file, so two unrelated programs "
+               "cannot share one directory", name, other);
+    die_at(prog->v[self]->line, "'%s' is already defined", name);
+}
+
 static void resolve_program(ProcVec *prog) {
     register_builtins();
     /* CC-4: a channel handle must not outlive its creating scope. Channel(T)
@@ -7418,13 +7453,13 @@ static void resolve_program(ProcVec *prog) {
             check_inout_param_type(pr->line, pr->params[j].type, pr->params[j].is_inout, pr->params[j].name);
         if (pr->generic) {   /* a `$T` template: not a callable Sig -- stash it; instances are made per call */
             if (sig_find(pr->name) || generic_find(pr->name) || consts_find(pr->name))
-                die_at(pr->line, "'%s' is already defined", pr->name);
+                die_dup_proc(prog, i, pr->name);
             TBL_ENSURE(g_generics, g_ngenerics, g_generics_cap);
             g_generics[g_ngenerics++] = pr;
             continue;
         }
         if (sig_find(pr->name) || consts_find(pr->name))
-            die_at(pr->line, "'%s' is already defined", pr->name);
+            die_dup_proc(prog, i, pr->name);
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         s.is_extern = pr->is_extern;

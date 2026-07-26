@@ -47,6 +47,30 @@ than it is:
 FAIL-OPEN CASES (deliberate, RULE 7): a bare `:N` whose paragraph names no path
 is skipped rather than guessed at, and a path outside the implementation trees
 listed in SRC_PREFIX is ignored (cross-document links are check_links.sh's job).
+
+THE SECOND DIRECTION: SOURCE -> DOC (added 2026-07-26)
+-----------------------------------------------------
+Everything above walks Markdown and checks what it cites in the source.  The
+mirror-image citation -- a SOURCE file naming a document -- was checked by
+nothing: `check_links.sh` reads Markdown only, and the pass above ignores any
+path that is not under SRC_PREFIX.  So `compiler/tychoc0.ty`, `compiler/run.sh`
+("Stage 1 of docs/bootstrap.md") and `compiler/fixpoint.sh` ("Stage 4 self-host
+fixpoint (docs/bootstrap.md)") all cited a file that DID NOT EXIST, for as long
+as anyone had been reading them, and both gates were green the whole time.  That
+is the general form of the bug, so it gets the general fix: every tracked
+non-Markdown file under DOC_SCAN_PREFIX is scanned for `docs/<...>.md` mentions
+and the named document must exist (with the line bounds checked too, when the
+mention carries a `:N`).
+
+WHAT THE SECOND DIRECTION DOES **NOT** CATCH:
+  * A source comment pointing at a document that exists but does not say what
+    the comment claims.  Same class as the behaviour caveat above.
+  * A document named without the `.md` suffix, or a directory (`docs/spec/`):
+    not a citation of a file, so not checked.
+  * A doc mentioned from a Markdown file in prose rather than as a link.  Links
+    are check_links.sh's; a bare backticked mention inside a document is
+    deliberately left alone, because the archived internals docs quote paths
+    that were true when they were written and are a record, not a claim.
 """
 import re
 import os
@@ -57,6 +81,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SRC_PREFIX = ("src/", "compiler/", "runtime/", "corelib/", "tests/", "scripts/",
               "tools/", "examples/")
+
+# Source trees scanned for the SOURCE -> DOC direction. Deliberately WIDER than
+# SRC_PREFIX (which governs the md -> src direction and must not move): a comment
+# in `bench/` or `fuzz/` can name a missing document just as easily. `Makefile` is
+# named because it is a file, not a tree -- it carried one of these citations too.
+DOC_SCAN_PREFIX = ("src/", "compiler/", "runtime/", "corelib/", "tests/",
+                   "scripts/", "tools/", "examples/", "bench/", "fuzz/",
+                   "server/", "editors/", ".githooks/", "Makefile")
+
+# A source file naming a document: `docs/<path>.md`, optionally `:N` or `:N-M`.
+# Anchored to `docs/` so it cannot fire on an arbitrary word ending in .md, and
+# the extension is required so `docs/spec/` (a directory) is not a citation.
+DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
 
 CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
                   r'(?:@([^`]+))?`')   # the anchor token MAY contain spaces
@@ -117,16 +154,43 @@ def main():
                         % (where, a, b, cur, anchor,
                            ("; it appears at :" + ", :".join(map(str, hit)))
                            if hit else " (token absent from the whole file)"))
+    # --- the second direction: SOURCE -> DOC (see the header) ----------------
+    srcs = subprocess.run(["git", "ls-files"], cwd=ROOT,
+                          capture_output=True, text=True, check=True).stdout.split()
+    n_doc = 0
+    for sf in srcs:
+        if sf.endswith(".md") or not sf.startswith(DOC_SCAN_PREFIX):
+            continue
+        try:
+            text = open(os.path.join(ROOT, sf), errors="replace").readlines()
+        except (IsADirectoryError, OSError):
+            continue
+        for ln, line in enumerate(text, 1):
+            for m in DOCCITE.finditer(line):
+                doc = m.group(1)
+                n_doc += 1
+                where = "%s:%d  `%s`" % (sf, ln, m.group(0))
+                dl = lines_of(doc)
+                if dl is None:
+                    fails.append("%s -> %s: NO SUCH DOCUMENT" % (where, doc))
+                    continue
+                if m.group(2):
+                    a = int(m.group(2))
+                    b = int(m.group(3)) if m.group(3) else a
+                    if a < 1 or b < a or b > len(dl):
+                        fails.append("%s -> %s has %d lines: OUT OF BOUNDS"
+                                     % (where, doc, len(dl)))
     if "--stats" in sys.argv:
-        print("citation check: %d anchored (content-checked), %d bare (bounds only)"
-              % (n_anchored, n_bare))
+        print("citation check: %d anchored (content-checked), %d bare (bounds only), "
+              "%d source->doc (existence)" % (n_anchored, n_bare, n_doc))
     if fails:
         for f in fails:
             print("STALE  " + f)
         print("citation check: FAILED (%d stale citation(s) above)" % len(fails))
         return 1
     print("citation check: ok (%d anchored contain the token they name, "
-          "%d bare in bounds)" % (n_anchored, n_bare))
+          "%d bare in bounds, %d source->doc citations resolve)"
+          % (n_anchored, n_bare, n_doc))
     return 0
 
 

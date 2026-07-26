@@ -66,6 +66,16 @@ make -s site
 make -s raytrace
 make -s mandelbrot
 
+# Step 3 above builds corelib, corelib-examples, site, raytrace and mandelbrot --
+# and NOTHING else in the tree with an entry point. Every example that has its own
+# runner (webserver, weblog, fetch, sqlite) and `server/` are outside this file, so
+# examples/webserver/main.ty once sat uncompilable for a whole phase with no gate
+# red. This lane is compile-only (`--emit-c`: no cc, no link, no libcurl/sqlite3)
+# and costs milliseconds, so closing that hole is not a reason to run `make ci`
+# less often. It does NOT assert freeze parity -- see scripts/entrypoints.sh.
+step "[3b/13] make entrypoints  (every entry point in the tree still compiles)"
+make -s entrypoints
+
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
 

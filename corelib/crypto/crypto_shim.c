@@ -16,7 +16,7 @@
  *
  * Returned hex strings use a per-thread scratch buffer recycled on the next
  * cx_* call; Tycho arena-copies an extern's returned string at the call site
- * (docs/ffi.md), so recycling is safe. Failure sentinel for string returns is
+ * (docs/guides/ffi.md), so recycling is safe. Failure sentinel for string returns is
  * "!err" (never valid hex); handle returns use NULL (Tycho: is_null).
  *
  * Build: tychoc auto-discovers this file as the core:crypto shim and auto-links
