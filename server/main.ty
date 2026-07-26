@@ -50,6 +50,7 @@ package main
 # NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression,
 # conditional requests, pipelining, virtual hosts. See README.md.
 
+import "core:cli"
 import "core:httpd"
 import "core:net"
 import "core:io"
@@ -509,80 +510,63 @@ fn usage() -> string:
             "  --help, -h       this text\n\n"
             "Both spellings work: --port 8080 and --port=8080.\n")
 
-fn opt_name(a: string) -> string:
-    eq := find(a, "=")
-    if eq > 0:
-        return a[0:eq]
-    return a
-
-fn opt_inline(a: string) -> string:
-    eq := find(a, "=")
-    if eq > 0:
-        return a[eq + 1:len(a)]
-    return ""
-
-fn wants_value(k: string) -> bool:
-    return k == "--root" or k == "--host" or k == "--port" or k == "--workers" or k == "--idle-ms"
-
 fn as_uint(s: string, what: string) -> int:
     if not is_digits(s):
         die("tycho-httpd: " + what + " wants a non-negative integer, got: " + s + "\n")
     return strings.parse_int(s)
 
-fn parse_args(argv: [string]) -> Config:
-    root := "."
-    host := DEF_HOST
-    port := DEF_PORT
-    workers := DEF_WORKERS
-    idle := DEF_IDLE_MS
-    quiet := false
-    i := 0
-    for i < len(argv):
-        a := argv[i]
-        k := opt_name(a)
-        v := opt_inline(a)
-        step := 1
-        if wants_value(k) and find(a, "=") < 0:
-            if i + 1 >= len(argv):
-                die("tycho-httpd: " + k + " needs a value\n\n" + usage())
-            v = argv[i + 1]
-            step = 2
-        if k == "--root":
-            root = v
-        elif k == "--host":
-            host = v
-        elif k == "--port":
-            port = as_uint(v, "--port")
-        elif k == "--workers":
-            workers = as_uint(v, "--workers")
-        elif k == "--idle-ms":
-            idle = as_uint(v, "--idle-ms")
-        elif k == "--quiet" or k == "-q":
-            quiet = true
-        elif k == "--help" or k == "-h":
-            # `exit(0)` (plan.md phase 4). Until then die() was the only exit and it
-            # always exits 1, so an answered --help had to be threaded back to main
-            # as a `help: bool` field on Config -- a data-flow change to work around
-            # a missing status code.
-            print(usage())
-            exit(0)
-        else:
-            die("tycho-httpd: unknown option: " + a + "\n\n" + usage())
-        i += step
+# Until plan.md phase 6 the 45 lines below were a hand-rolled parser -- opt_name,
+# opt_inline, wants_value and a stepping loop -- because core:cli could only read
+# an `=`-attached value and this server's interface is documented as accepting
+# both spellings (usage(), last line). cli.parse_spec now carries the schema, so
+# the only thing left here is the part that is genuinely this program's: which
+# names exist, what their defaults are, and what counts as out of range.
+fn parse_args(av: [string]) -> Config:
+    # the whole schema: names that take a value, and names that are booleans.
+    # Both without dashes, which is the spelling cli.get/cli.flag already take.
+    valued := ["root", "host", "port", "workers", "idle-ms"]
+    boolean := ["quiet", "q", "help", "h"]
+    c := cli.parse_spec(av, valued, boolean)
+
+    # --help wins over a bad flag beside it. The old loop was argv-ordered, so
+    # `--bogus --help` exited 1 and `--help --bogus` exited 0; there is no order
+    # information in a parsed Cli, and of the two invariants "--help always
+    # answers" is the one worth keeping. `exit(0)` is plan.md phase 4: before it,
+    # die() was the only exit and always exited 1, so an answered --help had to
+    # be threaded back to main as a `help: bool` field on Config.
+    if cli.flag(c, "help") or cli.flag(c, "h"):
+        print(usage())
+        exit(0)
+    bad := cli.unknown(c)
+    if len(bad) > 0:
+        die("tycho-httpd: unknown option: " + bad[0] + "\n\n" + usage())
+    # this server takes no positional arguments, so one is as wrong as a typo,
+    # and it keeps the message the hand-rolled loop produced for the same input.
+    stray := cli.positionals(c)
+    if len(stray) > 0:
+        die("tycho-httpd: unknown option: " + stray[0] + "\n\n" + usage())
+    nov := cli.missing(c)
+    if len(nov) > 0:
+        die("tycho-httpd: " + nov[0] + " needs a value\n\n" + usage())
+
+    port := as_uint(cli.get(c, "port", str(DEF_PORT)), "--port")
+    workers := as_uint(cli.get(c, "workers", str(DEF_WORKERS)), "--workers")
+    idle := as_uint(cli.get(c, "idle-ms", str(DEF_IDLE_MS)), "--idle-ms")
     if port > 65535:
         die("tycho-httpd: --port must be 0..65535\n")
     if workers < 1 or workers > 256:
         die("tycho-httpd: --workers must be 1..256\n")
     if idle < 1:
         die("tycho-httpd: --idle-ms must be at least 1\n")
-    return Config(path.clean(root), host, port, workers, idle, quiet)
+    return Config(path.clean(cli.get(c, "root", ".")), cli.get(c, "host", DEF_HOST),
+                  port, workers, idle, cli.flag(c, "quiet") or cli.flag(c, "q"))
 
 fn main():
-    raw := args()
-    argv := []string
-    for i in range(1, len(raw)):
-        push(argv, raw[i])
-    cfg := parse_args(argv)
+    # cli.argv() is args() with the program path dropped (plan.md phase 6).
+    # This was a four-line copy loop, and the identical loop was in
+    # examples/weblog/main.ty, because args() includes argv[0] and cli.parse
+    # does not want it.
+    cfg := parse_args(cli.argv())
 
     # --root sanity, asked as four separate questions. Until phase 5 this was one:
     #     if len(io.list(cfg.root)) == 0:  "... is empty or not a directory"

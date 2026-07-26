@@ -126,16 +126,9 @@ fn demo_lines() -> [string]:
     return L
 
 fn main():
-    # args() includes argv[0] (the program path); core:cli.parse expects it
-    # already stripped, so drop it before parsing.
-    raw := args()
-    argv := []string
-    ai := 0
-    for ai in range(len(raw)):
-        if ai == 0:
-            continue
-        push(argv, raw[ai])
-    c := cli.parse(argv)
+    # cli.argv() is args() with argv[0] (the program path) dropped, which is what
+    # cli.parse wants. This was the four-line copy loop above -- plan.md phase 6.
+    c := cli.parse(cli.argv())
     files := cli.positionals(c)
     topk := strings.parse_int(cli.get(c, "top", "5"))
     if topk < 1:
