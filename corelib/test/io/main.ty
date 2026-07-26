@@ -7,6 +7,7 @@
 # root) and test membership only, never directory order.
 package main
 import "core:io"
+import "core:os"                 # os.system: the only way to make a directory (no mkdir builtin)
 import "core:result"
 
 fn b2i(b: bool) -> int:
@@ -32,6 +33,19 @@ fn why(r: Result(bytes, io.IoErr)) -> string:
         return "NotFound"
     if e == io.IsDir:
         return "IsDir"
+    return "Failed"
+
+# The same collapse for is_dir's Result(bool, IoErr). Note there is no IsDir arm:
+# being a directory is Ok(true) here, not a failure.
+fn dwhy(r: Result(bool, io.IoErr)) -> string:
+    if result.is_ok(r):
+        if result.unwrap_or(r, false):
+            return "dir"
+        return "file"
+    d := io.Failed                       # a qualified variant cannot be a $E argument
+    e := result.err_or(r, d)
+    if e == io.NotFound:
+        return "NotFound"
     return "Failed"
 
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
@@ -101,6 +115,28 @@ fn main():
     println(f"read_empty len={nb(rbe)} why={why(rbe)}")
     println(f"read_missing len={nb(rbmiss)} why={why(rbmiss)}")
     println(f"read_dir len={nb(rbdir)} why={why(rbdir)}")
+
+    # is_dir: the stat(2) the corelib went without until 2026-07-26. The EMPTY
+    # directory is the whole point -- `len(io.list(p)) > 0`, the only directory
+    # test that existed before, calls it a FILE, which is the wrong answer a real
+    # server shipped (plan.md phase 4). Ok(true) and Ok(false) are both successes;
+    # only "nothing there" is an Err.
+    #
+    # There is no mkdir builtin and no io.make_dir (searched docs/spec/16-builtins.md
+    # §29.10, all of corelib/, src/tychoc.c, runtime/ -- zero hits), so the empty
+    # directory is made with os.system, under /tmp like every other path here, and
+    # removed first so a rerun is deterministic.
+    edir := "/tmp/tycho_corelib_io_emptydir"
+    mk := os.system("rm -rf /tmp/tycho_corelib_io_emptydir && mkdir -p /tmp/tycho_corelib_io_emptydir")
+    dfull := io.is_dir("/tmp")
+    dempty := io.is_dir(edir)
+    dfile := io.is_dir(binf)
+    dmiss := io.is_dir("/tmp/tycho_corelib_io_absent.xyz")
+    println(f"mkdir_rc={mk} isdir_tmp={dwhy(dfull)} isdir_empty={dwhy(dempty)}")
+    println(f"isdir_file={dwhy(dfile)} isdir_missing={dwhy(dmiss)}")
+    # the same empty directory through the OLD test, side by side: this line IS the
+    # wrong answer, and the line above it is the right one.
+    println(f"list_empty={len(io.list(edir))} old_test_says_dir={b2i(len(io.list(edir)) > 0)}")
 
     # a missing file reads as ""
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")

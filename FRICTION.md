@@ -62,18 +62,32 @@ language forced that — `or_return` was sitting right there.
 > and the ~100 corelib lines that bought it are recorded in `plan.md`'s verdict.
 > One item in this file is closed. The `stat` item is not, and is now known not to
 > be an error-model problem at all.
+>
+> **Closed out, from `plan.md` phase 4 (added on a user directive after phase 3
+> called it done).** The `stat` item too: `io.is_dir(p) -> Result(bool, IoErr)`
+> exists over a 4-line `stat(2)` shim, and `resolve()` asks it instead of
+> `len(io.list(p)) > 0`, so a directory redirects to its slash form whether or not
+> it holds an index and a non-directory never does. `server/main.ty` stayed at 371
+> code lines. The plan's Goal ("the two known wrong answers fixed") is met — and the
+> half that needed a syscall cost 3% of the lines the half that needed a type did.
 
 ## The score against this file, 2026-07-26
 
 The `Option`/`Result` plan was run *because* of this file, so it owes it a tally.
-Of the 12 phase-7 items below: **1 closed** (the `read_head` reimplementation),
-**1 partly closed** (`resolve()`'s wrong answer — the 0-byte `200` is now a `404`;
-the missing `stat` behind it is untouched and was never a return-type problem),
-**10 untouched**. Five *new* items were created by the work itself, in the two
-sections that follow. That is not a flattering ratio, and it is the real one:
-`FRICTION.md`'s verdict that adopting `Option`/`Result` "would remove more
-friction than every other item combined" **did not hold** — it removed the item it
-used as its own illustration, and cost five to do it.
+Of the 12 phase-7 items below: **2 closed** — the `read_head` reimplementation
+(phase 3) and the missing `stat`/`is_dir` (phase 4) — and **10 untouched**. Six
+*new* items were created by the work itself, in the three sections that follow.
+That is not a flattering ratio, and it is the real one: `FRICTION.md`'s verdict
+that adopting `Option`/`Result` "would remove more friction than every other item
+combined" **did not hold** — it removed the item it used as its own illustration,
+and cost five to do it.
+
+The second closure deserves its own line, because it is evidence *against* the
+verdict rather than for it: `stat` was closed by 4 lines of C and 10 of Tycho with
+no `Option`, no `Result` and no `or_return` involved in the fix, and it is the only
+one of the two closures that changed what a client receives. The error-model work
+made failure *sayable*; the syscall made an answer *right*. Those are different
+kinds of win and this file was conflating them.
 
 ## Phase 7 — writing the server
 
@@ -82,7 +96,7 @@ used as its own illustration, and cost five to do it.
 - **Phase 7** — `httpd.reason_phrase` is a closed `if`-chain and `httpd.response()` takes no reason, so status `431` goes on the wire as `HTTP/1.1 431 Status`. The workaround is to bypass the constructor and build `httpd.Response(431, "Request Header Fields Too Large", []string, []string, body)` positionally — it works across a package boundary, which is good, but it couples the caller to the struct's field order to set a string. **Bit a second time in `plan.md` phase 3:** answering `408` needed the identical bypass, so the workaround got factored into a local `phrased_response(status, reason)` — a private reimplementation of the constructor the corelib should have had.
 - **Phase 7** — no `\r` escape in string literals (`\n \t \\ \"` only), so the most common byte pair in HTTP is a function call, `httpd.crlf()`. And `const TERM = httpd.crlf() + httpd.crlf()` is rejected — `error: const value must be a literal` — so the header terminator has to be a function that reallocates two strings on every loop iteration.
 - **Phase 7** — no multi-line string literal and no line continuation, so the 10-line HTML error page is 10 consecutive `s += "..."` statements. (`+=` does exist; I wrote `s = s + ...` for half the file before checking, because nothing in the corelib I had read used it.)
-- **Phase 7** — there is no `stat` and no `is_dir`. `io.exists` answers by listing the parent directory, and the only directory test available is `len(io.list(p)) > 0`, which reports an **empty directory as a file** — `server/main.ty`'s `resolve()` ships a documented wrong answer (a 0-byte `200`) because the question cannot be asked. **Still open, and now known to be unrelated to the error model:** `plan.md` phase 2 turned the 0-byte `200` into a `404` (via `io.read_bytes` → `Err(io.IsDir)`), and phase 3 measured what is left — `GET /emptydir` answers `404` where `301 -> /emptydir/` is correct, while both shapes terminate at the same `404`. No return type can express a question the OS was never asked; this one needs the syscall.
+- ~~**Phase 7** — there is no `stat` and no `is_dir`. `io.exists` answers by listing the parent directory, and the only directory test available is `len(io.list(p)) > 0`, which reports an **empty directory as a file** — `server/main.ty`'s `resolve()` ships a documented wrong answer (a 0-byte `200`) because the question cannot be asked.~~ **CLOSED, `plan.md` phase 4** — and it was never an error-model item, which is the finding worth keeping. Phase 2 turned the 0-byte `200` into a `404` (`io.read_bytes` → `Err(io.IsDir)`); phase 3 measured the residue and left it; phase 4 wrote the syscall: `io.is_dir(p) -> Result(bool, IoErr)` over a 4-line `iox_stat_kind` in `io_shim.c`, and `resolve()` now asks the kernel. `GET /emptydir` answers `301 -> /emptydir/` instead of `404` (measured live against a `296bbc2` binary), a non-directory never redirects, and `server/main.ty` did not gain a line — 371 before, 371 after. The `Result` is house style; the fix is `stat`. **The comparison this file should remember: 14 library lines added a question and moved a status code, where ~100 added return types and moved none.**
 - **Phase 7** — `args()` includes `argv[0]` but `cli.parse` requires it removed, so every program opens with the same four-line copy loop; `examples/weblog/main.ty:129` has the identical loop with a comment explaining the same thing.
 - **Phase 7** — `core:cli` cannot express `--root DIR`: values must be `=`-attached by design, so any CLI wanting the conventional Unix spelling hand-rolls its parser. That is 45 of this server's lines.
 - **Phase 7** — `die()` is the language's only exit and it always exits **1**, so `--help` cannot be answered with status 0 through it. The fix was to thread a `help: bool` field through the config struct so `main` could return normally — a data-flow change to work around a missing `exit(0)`.
@@ -119,6 +133,14 @@ stop reimplementing the read loop.
 - **`Option`/`Result` phase 3** — **a tuple literal will not infer a `Result` element.** `return (Err(A), "partial")` from a function declared `-> (Result(int, E), string)` is rejected with `error: tuple element 1 needs a concrete value`, pointing at the `return`; the same `Err(A)` is accepted as a bare `return` from a `-> Result(int, E)` function, and accepted inside a tuple once it has been through a typed local (`out: Result(int, E) = Err(A)`) or a helper function. So the one shape the language provides for "return a value AND a classification" costs an extra local and an extra assignment per exit, purely because inference does not reach into the tuple. It is why `httpd.read_request_capped` builds its outcome in `out` instead of returning it directly.
 - **`Option`/`Result` phase 3** — tuples are the right shape for this and **nothing pointed at them**. The obvious reading of "a function returns one value" sends you to an `inout` out-param or a wrapper struct; `docs/spec/03-types.md:193` and `docs/spec/02-grammar.md:137` do document 2–8 element tuples with destructuring (`got, raw := f()`), but no corelib function in the tree returns one, so there is no example to copy. Both alternatives were written and compiled before the tuple was found: `inout string` works (§11.3) and costs the caller a dummy `raw := ""`; a `struct` with a `Result` field also works (verified — a `Result` *can* be a struct field, even though it cannot be a tuple literal element). Three shapes, one documented, none demonstrated.
 - **`Option`/`Result` phase 3** — a **payload-free error enum cannot say "how much"**, so the `431` decision had to become its own variant. `Err(TooLarge)` tells the caller the cap was hit but not what the cap was or how far past it the peer got, and adding that payload would break the `==` comparison the whole design rests on (no nested patterns — see phase 1). The five-variant enum is the right call here, but the pattern does not scale: every quantitative failure needs either a variant or a second return value.
+
+## Phase 4 of the Option/Result plan — the missing syscall
+
+Found while writing `io.is_dir` and its test.
+
+- **`Option`/`Result` phase 4** — **nothing in Tycho can create a directory.** Verified absent, not assumed: `docs/spec/16-builtins.md` §29.10 lists five filesystem/time builtins (`read_file`, `write_file`, `list_dir`, `clock`, `now`) and none of them makes a directory, and `mkdir`/`make_dir`/`create_dir` return zero hits across `corelib/`, `src/tychoc.c` and `runtime/`. There is no remove either. So `corelib/test/io` — the test for a `stat(2)` wrapper — has to build its empty directory with `os.system("rm -rf … && mkdir -p …")`: a corelib test depending on `/bin/sh` to set up a filesystem state the corelib itself cannot reach. The asymmetry is the finding: the library can now *classify* a directory but not *make* one.
+- **`Option`/`Result` phase 4** — `io.exists` and `io.is_dir` now answer overlapping questions by different means, and the cheaper one is the newer one: `exists` lists the whole parent directory (O(entries), and it cannot see a `.`/`..`-only leaf) where `is_dir` is one `stat`. `resolve()` ends up calling both on the same path. A `stat`-backed `exists` is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.
+- **`Option`/`Result` phase 4** — reordering two guards to make room for a new one silently changed a security answer: hoisting `hidden_segment(path.clean(rel))` above the `index.html` append made `GET /` return **403**, because for the root target `rel` is `""` and `path.clean("")` returns `"."` (`corelib/path/path.ty:104-105`), which `hidden_segment` reads as a dotfile. Nothing in the compiler or the corelib could have caught it — `clean("")` returning `"."` is documented POSIX behaviour and both spellings type-check identically. It was caught by the live matrix (`50-request flood 0/50 200`), which is the argument for keeping that matrix.
 
 ### Two defects that were not expressible in Tycho at all
 

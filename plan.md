@@ -790,9 +790,10 @@ wrong answers fixed. Against that bar, with the real numbers:
 | before the plan (`eb42c3e`) | 371 |
 | Phase 1 (`556119e`) | 381 (+10) |
 | Phase 2 (`eefc609`) | 390 (+9) |
-| Phase 3 (this commit) | **371 (−19)** |
+| Phase 3 | **371 (−19)** |
+| Phase 4 (`is_dir`) | **371 (0)** |
 
-**Net across three phases: zero.** The application ended exactly where it started. What it
+**Net across four phases: zero.** The application ended exactly where it started. What it
 bought is not fewer lines — it is that the 371 lines now include a `408`, a silent close, a
 `431` from a named cause, and a `404` where a 0-byte `200` used to go out, and they no
 longer include a reimplementation of the standard library. Clarity went up; the line count
@@ -812,19 +813,31 @@ chosen fallback, `len(raw) > 0` asks whether the peer spoke, `fsp == ""` is
 `path.safe_join`'s documented fail-closed contract. `if len(x) == 0` meaning "it failed" is
 gone.
 
-**The two known wrong answers: one fixed, one half-fixed and the residue is not a
-return-type problem.**
+**The two known wrong answers: BOTH fixed — but only one of them by this plan's premise.**
+
+*(Rewritten after Phase 4, 2026-07-26. Until then this section said wrong answer #2 was
+"half-fixed and the residue is not a return-type problem", and the Out-of-scope section said
+`io.stat` was deliberately left undone. The user overruled the deferral: the Goal says "the
+two known wrong answers fixed", and a `404` where a `301` belongs is not fixed. Phase 4 wrote
+the syscall. The **diagnosis** in the old text was right and is kept below — what changed is
+that the missing syscall is no longer missing.)*
 
 1. **malformed-vs-hangup — FIXED, end to end, and the only one of the two the plan's premise
    could ever have fixed.** `Malformed` → `400`, `Closed` → nothing at all, `Timeout` → `408`
    or a quiet close depending on whether a request had begun, `TooLarge` → `431`. Measured
    live above, and before/after against the phase-2 binary.
-2. **empty-dir-vs-file — the wrong answer is fixed, the wrong *status* is not.** The
-   documented 0-byte `200` became a `404` in Phase 2 (measured against a `556119e` binary).
-   What remains is `GET /emptydir` answering `404` where `301 -> /emptydir/` would be
-   correct — and that is a missing `stat` syscall, exactly as Phase 1 predicted on day one.
-   No `Option`, no `Result` and no error enum can express a question the OS was never asked.
-   Measured this phase: both shapes end at the same `404`, so it is left undone on purpose.
+2. **empty-dir-vs-file — FIXED, in two unrelated pieces, and the second piece owes this
+   plan's premise nothing.** The documented 0-byte `200` became a `404` in Phase 2 via
+   `io.read_bytes -> Err(io.IsDir)` (measured against a `556119e` binary) — that half *was*
+   the error model. The remaining wrong *status* — `GET /emptydir` answering `404` where
+   `301 -> /emptydir/` is correct — was closed in Phase 4 by `io.is_dir`, a 4-line `stat(2)`
+   shim, and measured live against a `296bbc2` binary: `404 621` → `301 Location: /emptydir/`.
+   **Exactly as Phase 1 predicted on day one, no `Option`, no `Result` and no error enum
+   could have fixed it: it was a question the OS was never asked.** The `Result` on
+   `is_dir(p) -> Result(bool, IoErr)` is house style, not the fix; the fix is `stat`. And the
+   shape of the two costs is the plan's sharpest single comparison: the error-model half cost
+   ~100 corelib lines and bought clarity at zero line reduction, while the missing-syscall
+   half cost **4 lines of C, 10 of Tycho, and 0 application lines** and moved a status code.
 
 **Was the plan worth running?** Yes, but for a narrower reason than the premise claimed.
 `FRICTION.md`'s verdict was that adopting `Option`/`Result` "would remove more friction than
@@ -836,7 +849,13 @@ unresolvable in generic argument lists, and no `Result` inference in a tuple lit
 error model is better where it was ambiguous and unchanged where it was not, which is a
 smaller claim than the one the plan opened with and the one the evidence supports.
 
-- [ ] **Phase 4 — added 2026-07-26 on user directive: close the Goal's last unmet clause**
+**Phase 4's postscript to that tally:** a *second* `FRICTION.md` item is now closed — the
+missing `stat`/`is_dir` — and it was closed by 14 lines that have nothing to do with
+`Option`, `Result` or `or_return`. Two of the twelve phase-7 items are done; one of the two
+was cheap and was not the thing this plan was about. That is worth stating plainly rather
+than folding into the plan's own win column.
+
+- [x] **Phase 4 — added 2026-07-26 on user directive: close the Goal's last unmet clause**
   - Phase 3 left `resolve()`'s wrong *status* undone on purpose, with numbers (see Phase 3's
     "`stat` decision" evidence, `plan.md:630`): `GET /emptydir` answers `404` where
     `301 -> /emptydir/` is correct, because "is this a directory" cannot be asked — there is
@@ -857,15 +876,198 @@ smaller claim than the one the plan opened with and the one the evidence support
     `/about` still `301` and files still `200`, and every golden matches or its change is
     justified in the evidence.
 
+#### Phase 4 evidence — 2026-07-26
+
+**The missing syscall is `stat(2)`, and it is 4 lines of C.**
+`corelib/io/io_shim.c:129-152` adds `iox_stat_kind(path) -> tycho_int`, reusing the status
+code space `iox_read_file` already had (`TY_RF_MISS 0` / `TY_RF_OK 1` / `TY_RF_DIR 2` /
+`TY_RF_ERR 3`) and the `ty_rf_errno()` classifier Phase 2 wrote — no second copy of the
+errno mapping, as the phase required. It returns a **plain scalar**, not the
+`status: inout int` shape `netx_read`/`iox_read_file` use, because there is no payload
+competing for the return value; the kind and the failure share one code space. `stat`, not
+`lstat`, on purpose: a symlink to a directory *is* a directory for the question "does this
+URL need a trailing slash".
+
+`corelib/io/io.ty:105-125` wraps it in Phase 2's style:
+
+```tycho
+fn is_dir(p: string) -> Result(bool, IoErr):
+    k := iox_stat_kind(p)
+    if k == RF_DIR:  return Ok(true)
+    if k == RF_OK:   return Ok(false)
+    if k == RF_MISS: return Err(NotFound)
+    return Err(Failed)
+```
+
+**Note which variant is absent: `IsDir` is not an error here, it is `Ok(true)`.** Same enum,
+two of its three variants — being a directory is the answer this function exists to give.
+No `stat` struct, no mtime, no size: the phase asked for the smallest surface that answers
+the question, and this is it.
+
+**Exercised by the corelib test** (`corelib/test/io/main.ty:119-139`, helper at `:40-51`), including the case the
+whole item is about — and the *old* test on the same path, side by side, so the golden
+records the wrong answer next to the right one (`corelib/test/io.out`, 3 new lines):
+
+```
+mkdir_rc=0 isdir_tmp=dir isdir_empty=dir
+isdir_file=file isdir_missing=NotFound
+list_empty=0 old_test_says_dir=0        <- `len(io.list(p)) > 0` says an EMPTY DIR is a file
+```
+
+There is **no mkdir**: searched `docs/spec/16-builtins.md` §29.10 (five filesystem/time
+builtins, none of them create a directory), all of `corelib/`, `src/tychoc.c` and `runtime/`
+— zero hits. So the test makes its empty directory with `os.system("rm -rf … && mkdir -p …")`
+under `/tmp`, like every other path in that file, and removes it first so a rerun is
+deterministic. Recorded in `FRICTION.md` and as an unchecked phase below; **not** fixed here
+(a `make_dir` is a write-side API this phase does not name).
+
+##### `resolve()` — the fix, and the wrong first attempt
+
+`server/main.ty:273-285`. The old test was `len(io.list(fsp)) > 0`, i.e. **a directory's
+contents decided its status**. Now:
+
+```tycho
+    if not dir_form:
+        isdir := io.is_dir(fsp)                    # bound to a local: a qualified name
+        if result.unwrap_or(isdir, false):         # cannot be a generic call's argument
+            return Route(301, "", p + "/")         # /dir -> /dir/, index or not
+```
+
+Only the non-`dir_form` branch can be a directory — the `dir_form` path has `index.html`
+appended, so `fsp` is a file path there. `Ok(false)` (it is a file) and `Err(NotFound)` both
+fall through to the existing `io.exists` check, so a missing path still becomes a `404`. The
+Phase 2 trap was hit and avoided as instructed: `result.unwrap_or(io.is_dir(fsp), false)`
+inline would not compile, so the value is bound first.
+
+**The first attempt was wrong and the live matrix caught it.** It moved the `is_dir` test
+*above* the `index.html` append, which also moved the `hidden_segment(path.clean(rel))` check
+above it — and for `GET /`, `rel` is `""`, `path.clean("")` is `"."` (`corelib/path/path.ty:104-105`), so `hidden_segment`
+fired and the document root answered **`403 Forbidden`** (measured: `w3 GET / 403 629`,
+`50-request flood 0/50 200`, keep-alive `403 403 403`). The false assumption was "appending
+`index.html` cannot change the hidden-segment answer" — it can, because for `/` it is the
+difference between `.` and `index.html`. Fixed by leaving the original order untouched and
+testing `is_dir` *after* `safe_join`, in the one branch that can be a directory.
+
+##### The before/after, against a binary built from `296bbc2`
+
+`git archive 296bbc2 | tar -x` into a scratch tree, built with
+`TYCHO_CORELIB=<tree>/corelib ./tychoc <tree>/server/main.ty` (`src/tychoc.c:3862-3866` — the
+env var is the documented override, so the BEFORE binary links the BEFORE corelib). Same
+document root for both: a copy of `server/www` plus an empty `emptydir/`.
+
+| request | BEFORE (`296bbc2`) | AFTER (this phase) |
+|---|---|---|
+| `GET /emptydir` | `404 Not Found`, 621-byte error page | **`301 Moved Permanently`, `Location: /emptydir/`**, 56 bytes |
+| `GET /emptydir/` | `404 Not Found` | `404 Not Found` (no `index.html` — correct) |
+| `GET /about` | `301`, `Location: /about/` | `301`, `Location: /about/` |
+| `GET /about/` | `200 OK`, 940 bytes | `200 OK`, 940 bytes |
+| `GET /index.html` | `200 OK`, 2659 bytes | `200 OK`, 2659 bytes |
+| `GET /img` | `301`, `Location: /img/` | `301`, `Location: /img/` |
+
+Access log, the new line and the ones that must not have moved:
+
+```
+w1 GET /emptydir 301 56 0.145ms      <- was: 404 621
+w3 GET /about    301 56 0.145ms
+w2 GET /img      301 56 0.121ms
+```
+
+##### Verify — commands run, real output
+
+Gate constraint honoured: **`make ci`, `make test` and `make corelib` were NOT run.** Every
+program was compiled and run directly with `./tychoc`, as Phases 1–3 did.
+
+13 entry points — every program importing `core:io`, `core:net`, `core:httpd` or
+`core:result` — all green:
+
+```
+ok corelib/test/{httpd,io,net,result}/main.ty
+ok examples/corelib/{httpd,io,net,result}/main.ty
+ok examples/{fetch,site,weblog,webserver}/main.ty
+ok server/main.ty
+```
+
+9 goldens, run then compared:
+
+```
+CHANGED corelib/test/io.out    +3 lines (the is_dir block above) -- justified: new capability
+same    corelib/test/{httpd,net,result}.out
+same    examples/corelib/{httpd,io,net,result}.out
+ok      examples/webserver  (sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)")
+```
+
+Live server, `127.0.0.1:18099`, `--workers 4`, `--idle-ms 800`, driven by raw sockets
+(`python3`) so the hostile cases are exact. **The full Phase 3 matrix, unchanged:**
+
+```
+GET /            200 OK  text/html; charset=utf-8  2659      GET /style.css 200 text/css 1726
+GET /data.json   200 OK  application/json           294       GET /nope.html 404 Not Found
+HEAD /           200 OK  Content-Length=2659, body=0 bytes    POST /         405, Allow: GET, HEAD
+GET /../../etc/passwd  403 Forbidden                          GET /.git      403 Forbidden
+GARBAGE\r\n\r\n            -> 400 Bad Request                       (Malformed)
+Content-Length: 0x10       -> 400 Bad Request                       (smuggling primitive)
+20 KiB head, no terminator -> 431 Request Header Fields Too Large    (TooLarge, reason intact)
+(a) zero-byte hangup            -> no response,  log lines added 0   (Closed, silent)
+(b) partial head then stall     -> 408 Request Timeout, log lines added 1
+(c) connect, idle past 800ms    -> no response,  log lines added 0   (keep-alive expiry)
+keep-alive, 3 requests one fd   -> 200 200 200
+50-request flood                -> 50/50 200,  driver exit 0
+log format unchanged: `w<id> <method> <target> <status> <bytes> <ms>`, all 4 workers seen
+```
+
+**Nothing regressed: the `431`, the `408`, the silent close and the log format are
+byte-identical between the BEFORE and AFTER runs; the only difference in the whole matrix is
+`/emptydir`.**
+
+##### Measurements
+
+Non-comment, non-blank code lines, `git show HEAD:<f>` vs working tree:
+
+| unit | before | after | Δ |
+|---|---|---|---|
+| `server/`'s `resolve` | 30 | 30 | **0** |
+| `server/main.ty` whole file | 371 | **371** | **0** |
+| `corelib/io/io.ty` | 66 | 76 | +10 (`is_dir` 9 + the `extern`) |
+| `corelib/io/io_shim.c` (raw lines) | 126 | 154 | +28 (4 code, 1 include, 23 comment) |
+| `corelib/test/io/main.ty` | 79 | 99 | +20 (`dwhy` 11 + 9 assertion lines) |
+
+**The application did not grow by a line.** Four code lines of `is_dir` branch replaced the
+four of `len(io.list(fsp)) > 0` plus its two-branch body, and the wrong answer went away. This
+is the *opposite* shape from the rest of the plan: the fix that finally moved a status code
+cost 0 application lines and ~14 library lines, because it added a **question**, not a return
+type.
+
+- [ ] **Phase 5 — NOT STARTED: two things Phase 4 found and refused to absorb**
+  - **There is no way to create a directory from Tycho.** Verified absent by searching
+    `docs/spec/16-builtins.md` §29.10 (the five filesystem/time builtins), all of `corelib/`,
+    `src/tychoc.c` and `runtime/` — no `mkdir`, no `make_dir`, no `create_dir`. So
+    `corelib/test/io` cannot construct the empty directory that `io.is_dir` exists to
+    classify; it shells out with `os.system("mkdir -p …")`, which is a corelib test taking a
+    dependency on `/bin/sh` to test a syscall. An `io.make_dir(p) -> bool` (or a `Result`, if
+    `EEXIST` vs `EACCES` is worth separating) is the obvious fix, plus its sibling gap: there
+    is no remove either, so the test cannot clean up without `rm -rf`.
+  - **`server/main.ty:553` still asks the old question at startup:**
+    `if len(io.list(cfg.root)) == 0: die("--root is not a readable directory")` — which calls
+    an *empty but perfectly readable* document root unreadable, and would answer the same for
+    a plain file. `io.is_dir` now makes the honest test available
+    (`Ok(true)` → fine, `Ok(false)` → "not a directory", `Err(NotFound)` → "does not exist"),
+    with three accurate messages where there is one wrong one. Left alone deliberately:
+    Phase 4's scope named `resolve()`, and a startup `die` is not a wrong answer on the wire.
+  - Neither blocks anything. Both are recorded in `FRICTION.md` as well.
+
 ## Out of scope
 
 - **Nothing new earned a phase from Phase 3.** Two candidates were considered and both were
   refused rather than absorbed: (i) `httpd.reason_phrase` / `httpd.response()` still cannot
   set a reason phrase, so `408` needed the same positional-`Response` bypass `431` did — a
   ~5-line corelib fix, but it is a `FRICTION.md` phase-7 item and not this plan's subject, so
-  it is recorded there as "bit a second time" and left; (ii) `io.stat` / `io.is_dir`, measured
-  and deliberately left undone (see Phase 3's evidence). The three new compiler limitations
-  Phase 3 found are recorded in `FRICTION.md`, unfixed, as the anti-scope requires.
+  it is recorded there as "bit a second time" and left; (ii) `io.stat` / `io.is_dir`, which
+  Phase 3 measured and deliberately left undone — **that deferral was overruled by the user
+  and the work is now DONE in Phase 4** (`io.is_dir`, a real `stat(2)`; `GET /emptydir` →
+  `301 -> /emptydir/`, measured live against a `296bbc2` binary). This item is kept, struck
+  through by Phase 4, so the reversal stays visible rather than being quietly rewritten. The
+  three new compiler limitations Phase 3 found are recorded in `FRICTION.md`, unfixed, as the
+  anti-scope requires.
 - The rest of `FRICTION.md`. It is a deliverable, not a queue: `\r` escapes, multi-line
   strings, `cli` argument spelling, `die()` always exiting 1, `getpeername`, `bytes`
   having no operators — all real, none of them this plan's subject. They stay recorded.

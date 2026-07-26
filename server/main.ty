@@ -36,6 +36,10 @@ package main
 #   * a file that vanished or turned out to be a directory between resolve() and
 #     the read is Err(io.IsDir) / Err(io.NotFound) -> 404, where the empty
 #     `bytes` used to be served as a 0-byte 200.
+#   * resolve() asks io.is_dir, a real stat(2), instead of `len(io.list(p)) > 0`,
+#     so a directory redirects to its slash form whether or not it holds an
+#     index -- and only a directory does. That one was never an error-model
+#     problem: it was a missing syscall (plan.md phase 4).
 #   * httpd.write_response's `-1` is gone; emit is a tail call onto it and so
 #     spends zero lines on plumbing.
 #   * `or_return` only short-circuits out of a function that returns a matching
@@ -266,18 +270,20 @@ fn resolve(root: string, target: string) -> Route:
     fsp := path.safe_join(root, rel)
     if fsp == "":
         return Route(403, "", "")                  # absolute, or escapes root
+    # A target with NO trailing slash that names a directory redirects to the slash
+    # form, and "is this a directory" is finally asked of the KERNEL: io.is_dir is a
+    # real stat(2) (plan.md phase 4). Only this branch can be one -- the dir_form
+    # path has index.html appended, so fsp is a file path there. The old test was
+    # `len(io.list(fsp)) > 0`, which calls an EMPTY directory a file, so /emptydir
+    # answered 404 where 301 -> /emptydir/ is correct: a directory's CONTENTS
+    # decided its STATUS. Ok(false) (it is a file) and Err(NotFound) both fall
+    # through to the exists check below, which is where a missing path becomes 404.
+    if not dir_form:
+        isdir := io.is_dir(fsp)                    # bound to a local: a qualified name
+        if result.unwrap_or(isdir, false):         # cannot be a generic call's argument
+            return Route(301, "", p + "/")         # /dir -> /dir/, index or not
     if not io.exists(fsp):
-        return Route(404, "", "")
-    # "Is this a directory" still cannot be asked: there is no io.stat / io.is_dir,
-    # and len(io.list(p)) > 0 reports an EMPTY directory as a file. Measured, this
-    # phase, against a live server: /about -> 301 /about/ -> 200, but /emptydir ->
-    # 404 where a stat would give 301 /emptydir/ -> 404. Both shapes terminate at
-    # the same 404, no content is withheld and none is misserved, so the shim is
-    # left unwritten (plan.md phase 3 records the decision and the numbers).
-    if len(io.list(fsp)) > 0:                      # it is a directory (or an empty one is not)
-        if dir_form:
-            return Route(404, "", "")              # /dir/ with no index.html
-        return Route(301, "", p + "/")             # /dir -> /dir/
+        return Route(404, "", "")                  # incl. /dir/ with no index.html
     return Route(200, fsp, "")
 
 # ---- the connection loop ---------------------------------------------------
