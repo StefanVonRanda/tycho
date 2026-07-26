@@ -50,15 +50,39 @@ language forced that — `or_return` was sitting right there.
 > that remain true are `path.safe_join`, the `io` write side, `net.udp_*` and
 > `net.set_read_timeout_ms` — each deliberately left on a sentinel that has
 > exactly one meaning.
+>
+> **Closed out, from `plan.md` phase 3.** The headline's own worked example — the
+> `read_head` reimplementation in the phase-7 list below — is **gone**. `server/`
+> calls `httpd.read_request_capped(conn, MAX_HEAD)` and acts on the cause it
+> returns: `Malformed` → `400`, `Closed` → no response and no log line,
+> `Timeout` → `408` (or a quiet close for a keep-alive idle expiry), `TooLarge` →
+> `431`. 19 lines of duplicated corelib loop and a local `Head` struct deleted;
+> `server/main.ty` ended the plan at 371 code lines, **exactly where it started**.
+> The honest arithmetic: the application did not get shorter, it got *truthful*,
+> and the ~100 corelib lines that bought it are recorded in `plan.md`'s verdict.
+> One item in this file is closed. The `stat` item is not, and is now known not to
+> be an error-model problem at all.
+
+## The score against this file, 2026-07-26
+
+The `Option`/`Result` plan was run *because* of this file, so it owes it a tally.
+Of the 12 phase-7 items below: **1 closed** (the `read_head` reimplementation),
+**1 partly closed** (`resolve()`'s wrong answer — the 0-byte `200` is now a `404`;
+the missing `stat` behind it is untouched and was never a return-type problem),
+**10 untouched**. Five *new* items were created by the work itself, in the two
+sections that follow. That is not a flattering ratio, and it is the real one:
+`FRICTION.md`'s verdict that adopting `Option`/`Result` "would remove more
+friction than every other item combined" **did not hold** — it removed the item it
+used as its own illustration, and cost five to do it.
 
 ## Phase 7 — writing the server
 
 - **Phase 7** — `send` is a builtin, and defining `fn send(conn, r, head_only, keep) -> int` is accepted **silently**; the collision surfaces only at the call site as `error: send(ch, v) takes a channel and a value`, which points at my call and describes a channel operation I never wrote. Nothing is reported at the definition, which is where the mistake is.
-- **Phase 7** — `httpd.read_request` collapses EOF, idle timeout and a malformed request line into `method == ""`, so a server that must answer `400` to garbage but hang up silently on a disconnect cannot use it at all; `server/main.ty` reimplements the read loop (`read_head`) purely to keep the raw buffer and recover that one bit.
-- **Phase 7** — `httpd.reason_phrase` is a closed `if`-chain and `httpd.response()` takes no reason, so status `431` goes on the wire as `HTTP/1.1 431 Status`. The workaround is to bypass the constructor and build `httpd.Response(431, "Request Header Fields Too Large", []string, []string, body)` positionally — it works across a package boundary, which is good, but it couples the caller to the struct's field order to set a string.
+- ~~**Phase 7** — `httpd.read_request` collapses EOF, idle timeout and a malformed request line into `method == ""`, so a server that must answer `400` to garbage but hang up silently on a disconnect cannot use it at all; `server/main.ty` reimplements the read loop (`read_head`) purely to keep the raw buffer and recover that one bit.~~ **CLOSED, `plan.md` phase 3.** `read_request` returns `Result(Request, ReqErr)` with five named causes, and `read_request_capped(fd, cap)` returns the raw buffer as the second element of a tuple, so the cap decision (`431`) and the log line for an unparseable request no longer need a private read loop. `read_head`, `struct Head` and `term()` are deleted.
+- **Phase 7** — `httpd.reason_phrase` is a closed `if`-chain and `httpd.response()` takes no reason, so status `431` goes on the wire as `HTTP/1.1 431 Status`. The workaround is to bypass the constructor and build `httpd.Response(431, "Request Header Fields Too Large", []string, []string, body)` positionally — it works across a package boundary, which is good, but it couples the caller to the struct's field order to set a string. **Bit a second time in `plan.md` phase 3:** answering `408` needed the identical bypass, so the workaround got factored into a local `phrased_response(status, reason)` — a private reimplementation of the constructor the corelib should have had.
 - **Phase 7** — no `\r` escape in string literals (`\n \t \\ \"` only), so the most common byte pair in HTTP is a function call, `httpd.crlf()`. And `const TERM = httpd.crlf() + httpd.crlf()` is rejected — `error: const value must be a literal` — so the header terminator has to be a function that reallocates two strings on every loop iteration.
 - **Phase 7** — no multi-line string literal and no line continuation, so the 10-line HTML error page is 10 consecutive `s += "..."` statements. (`+=` does exist; I wrote `s = s + ...` for half the file before checking, because nothing in the corelib I had read used it.)
-- **Phase 7** — there is no `stat` and no `is_dir`. `io.exists` answers by listing the parent directory, and the only directory test available is `len(io.list(p)) > 0`, which reports an **empty directory as a file** — `server/main.ty`'s `resolve()` ships a documented wrong answer (a 0-byte `200`) because the question cannot be asked.
+- **Phase 7** — there is no `stat` and no `is_dir`. `io.exists` answers by listing the parent directory, and the only directory test available is `len(io.list(p)) > 0`, which reports an **empty directory as a file** — `server/main.ty`'s `resolve()` ships a documented wrong answer (a 0-byte `200`) because the question cannot be asked. **Still open, and now known to be unrelated to the error model:** `plan.md` phase 2 turned the 0-byte `200` into a `404` (via `io.read_bytes` → `Err(io.IsDir)`), and phase 3 measured what is left — `GET /emptydir` answers `404` where `301 -> /emptydir/` is correct, while both shapes terminate at the same `404`. No return type can express a question the OS was never asked; this one needs the syscall.
 - **Phase 7** — `args()` includes `argv[0]` but `cli.parse` requires it removed, so every program opens with the same four-line copy loop; `examples/weblog/main.ty:129` has the identical loop with a comment explaining the same thing.
 - **Phase 7** — `core:cli` cannot express `--root DIR`: values must be `=`-attached by design, so any CLI wanting the conventional Unix spelling hand-rolls its parser. That is 45 of this server's lines.
 - **Phase 7** — `die()` is the language's only exit and it always exits **1**, so `--help` cannot be answered with status 0 through it. The fix was to thread a `help: bool` field through the config struct so `main` could return normally — a data-flow change to work around a missing `exit(0)`.
@@ -86,6 +110,15 @@ Found while adding `core:result` and converting the two genuinely ambiguous call
 - **`Option`/`Result` phase 2** — converting a call that a big block consumes costs an **indentation level**, not just lines: `server/main.ty`'s `serve_conn` went 60 → 71 code lines almost entirely because `match httpd.parse_request(raw)` has to wrap the whole request-handling body to bind `Ok(req)`. There is no `if let`, no early-return binding form, and `or_return` is unavailable (the enclosing function returns a served count) — so the only tool re-indents 30 lines.
 - **`Option`/`Result` phase 2** — the FFI trick for classifying a `bytes` result (`status: inout int` threaded ahead of the two out-params) had to be reproduced verbatim in `corelib/io/io_shim.c` from `net_shim.c`, because it is still undocumented in `docs/spec/14-ffi.md`. Two shims now depend on an ABI detail written down only in each other's comments.
 - **`Option`/`Result` phase 2** — `examples/webserver/main.ty` was left **uncompilable by phase 1** (`error: ordering compares two ints ...` on `if srv < 0`, against the converted `net.listen`): it imports `core:net` but was not in that commit's file list, and no gate builds it (`make ci` skips it — see the phase 0 note below), so nothing went red for a whole phase. Fixed here because it also consumes `io.read_bytes` and `httpd.read_request`.
+
+## Phase 3 of the Option/Result plan — acting on the cause, and deleting `read_head`
+
+Found while moving the cap and the raw buffer into `core:httpd` so `server/` could
+stop reimplementing the read loop.
+
+- **`Option`/`Result` phase 3** — **a tuple literal will not infer a `Result` element.** `return (Err(A), "partial")` from a function declared `-> (Result(int, E), string)` is rejected with `error: tuple element 1 needs a concrete value`, pointing at the `return`; the same `Err(A)` is accepted as a bare `return` from a `-> Result(int, E)` function, and accepted inside a tuple once it has been through a typed local (`out: Result(int, E) = Err(A)`) or a helper function. So the one shape the language provides for "return a value AND a classification" costs an extra local and an extra assignment per exit, purely because inference does not reach into the tuple. It is why `httpd.read_request_capped` builds its outcome in `out` instead of returning it directly.
+- **`Option`/`Result` phase 3** — tuples are the right shape for this and **nothing pointed at them**. The obvious reading of "a function returns one value" sends you to an `inout` out-param or a wrapper struct; `docs/spec/03-types.md:193` and `docs/spec/02-grammar.md:137` do document 2–8 element tuples with destructuring (`got, raw := f()`), but no corelib function in the tree returns one, so there is no example to copy. Both alternatives were written and compiled before the tuple was found: `inout string` works (§11.3) and costs the caller a dummy `raw := ""`; a `struct` with a `Result` field also works (verified — a `Result` *can* be a struct field, even though it cannot be a tuple literal element). Three shapes, one documented, none demonstrated.
+- **`Option`/`Result` phase 3** — a **payload-free error enum cannot say "how much"**, so the `431` decision had to become its own variant. `Err(TooLarge)` tells the caller the cap was hit but not what the cap was or how far past it the peer got, and adding that payload would break the `==` comparison the whole design rests on (no nested patterns — see phase 1). The five-variant enum is the right call here, but the pattern does not scale: every quantitative failure needs either a variant or a second return value.
 
 ### Two defects that were not expressible in Tycho at all
 
@@ -121,6 +154,17 @@ model is worse, and it is worse by choice rather than by capability, because the
 language already ships `Option`, `Result` and `or_return` and the standard
 library uses them once in 386 functions. Adopting them across the IO surface
 would remove more friction from this file than every other item combined.
+
+**Postscript, 2026-07-26.** That last sentence was acted on and it was wrong. See
+"The score against this file" above: three phases of adoption closed one item,
+half-closed a second, created five new ones, and left `server/main.ty` at the same
+371 code lines it started at. The narrower claim survives intact and is the one to
+carry forward: **where a sentinel is genuinely ambiguous, `Result` is a clear win;
+where it has exactly one meaning, converting it is line-neutral at the call site
+and pure cost in the package.** The first sentence of this verdict — that Tycho
+cannot yet make *failure* pleasant — still holds; what changed is that the reason
+is ergonomics (`unwrap_or`, nested patterns, `map_err`, inference) rather than the
+absence of `Option` and `Result` from the type system.
 
 ## Earlier phases
 

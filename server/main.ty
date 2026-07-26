@@ -15,30 +15,33 @@ package main
 # handles is N stack frames. See plan.md, phase 1, for the measurements that
 # settled this (8 workers, 8 concurrent 500ms clients, 509ms wall).
 #
-# REQUEST READING. This file does its own head read rather than calling
-# httpd.read_request. The reason is narrow and worth stating: read_request
-# reports EOF, an idle timeout, and a malformed request line the same way --
-# `method == ""`. A server that has to answer 400 to garbage while closing
-# silently on a hangup needs to tell those apart, and the only way to do that is
-# to hold the raw buffer. read_head below is that buffer, plus a 16 KiB cap so a
-# peer cannot make us grow a string forever.
+# REQUEST READING. One call: `got, raw := httpd.read_request_capped(conn, MAX_HEAD)`.
+# This file used to reimplement the read loop -- 19 lines and a local `Head`
+# struct -- for one reason: read_request reported EOF, an idle timeout and a
+# malformed request line the same way, as `method == ""`, so a server that must
+# answer 400 to garbage while hanging up silently on a disconnect could not use
+# it. The corelib says which failure it was now (httpd.ReqErr), and takes the
+# byte cap as a parameter and hands the raw buffer back, so the reimplementation
+# is gone (plan.md phase 3; FRICTION.md phase 7).
 #
-# ERROR MODEL, 2026-07-26. core:net's fallible TCP calls return
-# Result(T, net.NetErr) instead of a negative int or the empty `bytes`. What that
-# bought here, concretely: read_head now returns WHY it stopped (net.Eof vs
-# net.Timeout vs net.Failed) instead of just an empty buffer, so the idle-expiry
-# and clean-hangup cases are finally distinguishable at this level; and
-# httpd.write_response's `-1` is gone. `or_return` only short-circuits out of a
-# function that returns a matching Result, so the functions here that return a
-# Response or a count collapse theirs with core:result's `unwrap_or` -- which
-# replaced the hand-written `nwrote` helper this file used to carry (plan.md,
-# phases 1 and 2).
+# ERROR MODEL, 2026-07-26. core:net's fallible TCP calls, httpd.parse_request /
+# read_request and io.read_bytes all return Result(T, E) instead of a negative
+# int, an empty `bytes` or an empty method string. What that bought here, in the
+# four places it is visible:
 #
-# httpd.parse_request and io.read_bytes are Results too now, and both bought a
-# real answer here: a malformed head is Err(httpd.Malformed) rather than a
-# Request whose method is "", and a file that vanished or turned out to be a
-# directory between resolve() and the read is Err -- where the empty `bytes` used
-# to be served as a 0-byte 200.
+#   * serve_conn ACTS on the reason. Err(httpd.Closed) closes with no response
+#     and no log line; Err(httpd.Timeout) on a started request answers 408;
+#     Err(httpd.TooLarge) answers 431; Err(httpd.Malformed) answers 400. Those
+#     were one indistinguishable "nothing arrived" before phase 1.
+#   * a file that vanished or turned out to be a directory between resolve() and
+#     the read is Err(io.IsDir) / Err(io.NotFound) -> 404, where the empty
+#     `bytes` used to be served as a 0-byte 200.
+#   * httpd.write_response's `-1` is gone; emit is a tail call onto it and so
+#     spends zero lines on plumbing.
+#   * `or_return` only short-circuits out of a function that returns a matching
+#     Result, so the functions here that return a Response or a count collapse
+#     theirs with core:result's `unwrap_or` -- which replaced the hand-written
+#     `nwrote` helper this file used to carry (plan.md phases 1 and 2).
 #
 # NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression,
 # conditional requests, pipelining, virtual hosts. See README.md.
@@ -58,8 +61,7 @@ const DEF_HOST    = "127.0.0.1"
 const DEF_PORT    = 8080
 const DEF_WORKERS = 8
 const DEF_IDLE_MS = 5000
-const MAX_HEAD    = 16384      # request head cap; past this -> 431, connection closed
-const CHUNK       = 4096       # socket read size
+const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
 
@@ -80,10 +82,6 @@ struct Route:
     location: string
 
 # ---- small helpers ---------------------------------------------------------
-
-# The header terminator, CRLF CRLF. Tycho string literals have no \r escape.
-fn term() -> string:
-    return httpd.crlf() + httpd.crlf()
 
 fn is_ctl(c: int) -> bool:
     return c < 32 or c == 127
@@ -170,6 +168,8 @@ fn explain(status: int) -> string:
         return "No file is published at that path."
     if status == 405:
         return "This server is read-only. Use GET or HEAD."
+    if status == 408:
+        return "The request was not completed before the idle timeout expired."
     if status == 431:
         return "The request headers exceeded this server's limit."
     return "The server could not complete the request."
@@ -196,14 +196,20 @@ fn error_response(status: int) -> httpd.Response:
         r = httpd.with_header(r, "Allow", "GET, HEAD")
     return r
 
-# 431 is outside httpd.reason_phrase's table, which would render it as the
-# placeholder "Status". Build the Response directly so the wire carries the real
-# reason phrase.
-fn oversize_response() -> httpd.Response:
-    reason := "Request Header Fields Too Large"
-    body := to_bytes(error_body(431, reason))
-    r := httpd.Response(431, reason, []string, []string, body)
+# 408 and 431 are both outside httpd.reason_phrase's table, which would render
+# them as the placeholder "Status". Build the Response directly so the wire
+# carries the real reason phrase. (FRICTION.md phase 7 records why this has to
+# bypass the constructor: httpd.response() takes no reason.)
+fn phrased_response(status: int, reason: string) -> httpd.Response:
+    body := to_bytes(error_body(status, reason))
+    r := httpd.Response(status, reason, []string, []string, body)
     return httpd.with_header(r, "Content-Type", "text/html; charset=utf-8")
+
+fn oversize_response() -> httpd.Response:
+    return phrased_response(431, "Request Header Fields Too Large")
+
+fn timeout_response() -> httpd.Response:
+    return phrased_response(408, "Request Timeout")
 
 fn redirect_response(location: string) -> httpd.Response:
     body := to_bytes("<!doctype html><meta charset=\"utf-8\"><title>301</title>\n")
@@ -262,41 +268,19 @@ fn resolve(root: string, target: string) -> Route:
         return Route(403, "", "")                  # absolute, or escapes root
     if not io.exists(fsp):
         return Route(404, "", "")
-    if len(io.list(fsp)) > 0:                      # it is a directory
+    # "Is this a directory" still cannot be asked: there is no io.stat / io.is_dir,
+    # and len(io.list(p)) > 0 reports an EMPTY directory as a file. Measured, this
+    # phase, against a live server: /about -> 301 /about/ -> 200, but /emptydir ->
+    # 404 where a stat would give 301 /emptydir/ -> 404. Both shapes terminate at
+    # the same 404, no content is withheld and none is misserved, so the shim is
+    # left unwritten (plan.md phase 3 records the decision and the numbers).
+    if len(io.list(fsp)) > 0:                      # it is a directory (or an empty one is not)
         if dir_form:
             return Route(404, "", "")              # /dir/ with no index.html
         return Route(301, "", p + "/")             # /dir -> /dir/
     return Route(200, fsp, "")
 
 # ---- the connection loop ---------------------------------------------------
-
-# Read until the header terminator, EOF, the idle timeout, or the cap.
-#
-# Returns the raw buffer AND why the read stopped. Before core:net returned a
-# Result this function could only return the buffer, because `net.read` reported
-# EOF, an idle timeout and a hard error as one value -- the empty `bytes`. The
-# reason now survives, so a caller can log an idle expiry differently from a peer
-# that vanished mid-head. `why` is net.Eof when the head arrived intact.
-struct Head:
-    raw: string
-    why: net.NetErr
-
-fn read_head(conn: int) -> Head:
-    buf := ""
-    reading := true
-    why := net.Eof
-    for reading:
-        if find(buf, term()) >= 0:
-            reading = false
-        elif len(buf) >= MAX_HEAD:
-            reading = false
-        else:
-            match net.read(conn, CHUNK):
-                Ok(chunk): buf += to_str(chunk)
-                Err(e):
-                    why = e
-                    reading = false
-    return Head(buf, why)
 
 # httpd.write_response returns Result(int, net.NetErr) now, and emit is a tail
 # call onto it -- so emit propagates the failure by returning the same type and
@@ -337,96 +321,106 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     served := 0
     alive := true
     for alive and served < MAX_REQS:
-        h := read_head(conn)
-        raw := h.raw
-        if len(raw) == 0:
-            # Nothing arrived. `h.why` now says WHICH nothing: net.Timeout is the
-            # keep-alive idle expiry, net.Eof is a clean hangup, net.Failed is a
-            # reset. Before this phase all three were the empty `bytes` and this
-            # branch could not have asked. Acting on the distinction (a 408, a
-            # different log line) is plan.md phase 3; making it askable was this
-            # phase, and it compiles.
-            alive = false
-        else:
-            sw := time.start()
-            served += 1
-            if find(raw, term()) < 0:
-                # No terminator: either the peer blew the cap, or it stopped
-                # talking mid-head. Both end the connection; only the codes differ.
-                st := 400
-                r := error_response(400)
-                if len(raw) >= MAX_HEAD:
-                    st = 431
-                    r = oversize_response()
-                n := result.unwrap_or(emit(conn, r, false, false), -1)
-                log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
+        # ONE corelib call does the read, the cap and the parse. `raw` is the second
+        # tuple element, for the two jobs the Result cannot do: name a request that
+        # would not parse in the access log, and answer "did this peer even start
+        # talking" below. This one line replaced a 19-line local read loop and its
+        # `Head` struct.
+        got, raw := httpd.read_request_capped(conn, MAX_HEAD)
+        sw := time.start()
+        match got:
+            Err(e):
+                # The five causes, ACTED ON rather than collapsed. This is what
+                # plan.md phases 1-3 were for: the old local read loop could only
+                # say "nothing arrived", so each of these was a 400 or a silent
+                # close chosen by guessing from len(raw).
+                #
+                #   Closed    the peer hung up. No response, no log line: there is
+                #             nobody to answer and nothing was asked.
+                #   Failed    the socket is broken (reset, bad fd); a write would
+                #             fail too, so treat it like Closed.
+                #   Timeout   the SO_RCVTIMEO deadline expired. With bytes in `raw`
+                #             a request was under way and stalled -- 408 is the
+                #             honest answer. With `raw` empty this is only
+                #             keep-alive idle expiry, which no client is waiting on
+                #             (nginx closes quietly here too), so close quietly.
+                #   TooLarge  MAX_HEAD bytes with no terminator -> 431. This is the
+                #             cap decision that used to be `len(raw) >= MAX_HEAD`.
+                #   Malformed a complete head that is not HTTP -> 400.
                 alive = false
-            else:
-                # httpd.parse_request returns Result(Request, httpd.ReqErr) now, so
-                # "this is not HTTP" is Err(httpd.Malformed) rather than a Request
-                # whose method is "" -- the sentinel this branch used to sniff.
-                match httpd.parse_request(raw):
-                    Err(e):
-                        r := error_response(400)
-                        n := result.unwrap_or(emit(conn, r, false, false), -1)
-                        log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
+                answer := e == httpd.Malformed or e == httpd.TooLarge
+                if e == httpd.Timeout and len(raw) > 0:
+                    answer = true
+                if answer:
+                    served += 1
+                    st := 400
+                    r := error_response(400)
+                    if e == httpd.TooLarge:
+                        st = 431
+                        r = oversize_response()
+                    elif e == httpd.Timeout:
+                        st = 408
+                        r = timeout_response()
+                    n := result.unwrap_or(emit(conn, r, false, false), -1)
+                    log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
+            Ok(req):
+                served += 1
+                keep := not httpd.connection_close(req)
+                # read_request_capped consumes Content-Length body bytes, so a
+                # well-formed bodied request no longer desyncs the socket by
+                # itself -- but one whose body it had to truncate at MAX_HEAD
+                # would, and this server serves no method that takes a body.
+                # Answer, then close.
+                clh := httpd.header(req, "content-length")
+                if clh != "" or httpd.header(req, "transfer-encoding") != "":
+                    keep = false
+                # A Content-Length that is not a plain decimal count ("-5", "1x",
+                # "0x10") is a request smuggling primitive, not a typo. Refuse it
+                # rather than letting to_uint's lenient parse pick a number.
+                bad_len := clh != "" and not is_digits(clh)
+                head_only := req.method == "HEAD"
+                target := log_safe(req.path)
+                if bad_len:
+                    r := error_response(400)
+                    n := result.unwrap_or(emit(conn, r, false, false), -1)
+                    log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
+                    alive = false
+                elif req.method != "GET" and req.method != "HEAD":
+                    r := error_response(405)
+                    n := result.unwrap_or(emit(conn, r, false, keep), -1)
+                    log_req(cfg, wid, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
+                    if n < 0:
                         alive = false
-                    Ok(req):
-                        keep := not httpd.connection_close(req)
-                        # We serve no method that takes a body, and read_head stops
-                        # at the terminator, so an entity body would be left in the
-                        # socket and desync the next request. Answer, then close.
-                        clh := httpd.header(req, "content-length")
-                        if clh != "" or httpd.header(req, "transfer-encoding") != "":
-                            keep = false
-                        # A Content-Length that is not a plain decimal count ("-5",
-                        # "1x", "0x10") is a request smuggling primitive, not a
-                        # typo. Refuse it rather than letting to_uint's lenient
-                        # parse pick a number.
-                        bad_len := clh != "" and not is_digits(clh)
-                        head_only := req.method == "HEAD"
-                        target := log_safe(req.path)
-                        if bad_len:
-                            r := error_response(400)
-                            n := result.unwrap_or(emit(conn, r, false, false), -1)
-                            log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
-                            alive = false
-                        elif req.method != "GET" and req.method != "HEAD":
-                            r := error_response(405)
-                            n := result.unwrap_or(emit(conn, r, false, keep), -1)
-                            log_req(cfg, wid, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
-                            if n < 0:
-                                alive = false
-                        else:
-                            rt := resolve(cfg.root, req.path)
-                            st := rt.status
-                            r := error_response(st)
-                            if st == 200:
-                                # io.read_bytes is a Result now, so the read has an
-                                # answer for a file that vanished (or turned out to
-                                # be a directory) between resolve() and here. The
-                                # empty `bytes` it used to return was served as a
-                                # 0-byte 200 -- indistinguishable from a real empty
-                                # file, and wrong for both.
-                                match io.read_bytes(rt.file):
-                                    Ok(body):
-                                        r = httpd.response(200, body)
-                                        r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
-                                        r = httpd.with_header(r, "Cache-Control", "no-cache")
-                                    Err(e):
-                                        st = 404
-                                        r = error_response(404)
-                            elif st == 301:
-                                r = redirect_response(rt.location)
-                            nb := len(r.body)
-                            if head_only:
-                                nb = 0
-                            n := result.unwrap_or(emit(conn, r, head_only, keep), -1)
-                            log_req(cfg, wid, req.method, target, st, nb, n, time.elapsed_us(sw))
-                            if n < 0:
-                                alive = false       # peer hung up mid-write
-                        if not keep:
-                            alive = false
+                else:
+                    rt := resolve(cfg.root, req.path)
+                    st := rt.status
+                    r := error_response(st)
+                    if st == 200:
+                        # io.read_bytes is a Result now, so the read has an answer
+                        # for a file that vanished (or turned out to be a
+                        # directory) between resolve() and here. The empty `bytes`
+                        # it used to return was served as a 0-byte 200 --
+                        # indistinguishable from a real empty file, and wrong for
+                        # both.
+                        match io.read_bytes(rt.file):
+                            Ok(body):
+                                r = httpd.response(200, body)
+                                r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                                r = httpd.with_header(r, "Cache-Control", "no-cache")
+                            Err(e):
+                                st = 404
+                                r = error_response(404)
+                    elif st == 301:
+                        r = redirect_response(rt.location)
+                    nb := len(r.body)
+                    if head_only:
+                        nb = 0
+                    n := result.unwrap_or(emit(conn, r, head_only, keep), -1)
+                    log_req(cfg, wid, req.method, target, st, nb, n, time.elapsed_us(sw))
+                    if n < 0:
+                        alive = false               # peer hung up mid-write
+                if not keep:
+                    alive = false
     return served
 
 # ---- the worker pool -------------------------------------------------------

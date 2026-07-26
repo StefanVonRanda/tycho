@@ -41,7 +41,7 @@ and prints the one it got, which is what the test scripts use.
 | **Index resolution** | `/` and `/dir/` append `index.html`. `/dir` (no slash) gets a `301` to `/dir/`, so relative links on the page resolve correctly. |
 | **Keep-alive** | HTTP/1.1 default-on, `Connection: close` honoured, HTTP/1.0 defaults to close. Up to 1024 requests per connection. |
 | **Idle timeout** | `SO_RCVTIMEO` on each accepted socket, so a silent peer cannot pin a worker. |
-| **Statuses** | 200, 301, 400, 403, 404, 405, 431. |
+| **Statuses** | 200, 301, 400, 403, 404, 405, 408, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
 | **Logging** | One line per request on stderr: worker, method, target, status, body bytes, duration. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
 
 ## Concurrency

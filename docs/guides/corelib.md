@@ -308,9 +308,14 @@ element type instead of a family of per-type siblings.
   automatically); and the socket glue `read_request(fd) -> Result(Request, httpd.ReqErr)`
   (reads until the header terminator, then exactly Content-Length body bytes, bounded so a
   hostile peer can't spin) — its `Err` says **which** failure, `Malformed` / `Closed` /
-  `Timeout` / `Failed`, where all four used to be `method == ""`, so a server can finally
-  answer `400` to garbage while hanging up silently on a disconnect (`corelib/test/httpd.out`
-  records all four as distinct) / `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
+  `Timeout` / `Failed` / `TooLarge`, where the first four used to be `method == ""`, so a
+  server can finally answer `400` to garbage while hanging up silently on a disconnect
+  (`corelib/test/httpd.out` records four of them as distinct) /
+  `read_request_capped(fd, cap) -> (Result(Request, httpd.ReqErr), string)` (the same read
+  with your own byte budget — reaching it with no header terminator is `Err(TooLarge)`, the
+  `431` decision — plus every byte read as the second tuple element, so an access log can
+  name a request that would not parse; `read_request` is this with `cap = MAX_REQUEST`) /
+  `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
   it returns the same error type `net.write` does, so `or_return` propagates a failed
   send with no sentinel check). **Binary-safe bodies** — `Request.body` and
   `Response.body` are `bytes`, so a PNG or a font round-trips byte for byte; headers stay
