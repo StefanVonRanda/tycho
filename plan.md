@@ -836,6 +836,27 @@ unresolvable in generic argument lists, and no `Result` inference in a tuple lit
 error model is better where it was ambiguous and unchanged where it was not, which is a
 smaller claim than the one the plan opened with and the one the evidence supports.
 
+- [ ] **Phase 4 — added 2026-07-26 on user directive: close the Goal's last unmet clause**
+  - Phase 3 left `resolve()`'s wrong *status* undone on purpose, with numbers (see Phase 3's
+    "`stat` decision" evidence, `plan.md:630`): `GET /emptydir` answers `404` where
+    `301 -> /emptydir/` is correct, because "is this a directory" cannot be asked — there is
+    no `stat`, and `io.exists` works by listing the parent. **The user's call is that the plan
+    is not finished while the Goal says "the two known wrong answers fixed" and one is
+    half-fixed.** This supersedes Phase 3's deferral and Out-of-scope item (ii) below.
+  - Add the missing syscall — `io.stat` and/or `io.is_dir` — as a real shim in
+    `corelib/io/io_shim.c` + `corelib/io/io.ty`, in the `Result` style Phase 2 established
+    for `io.read_bytes` (`io.IoErr`: `NotFound` / `IsDir` / `Failed`). Smallest surface that
+    answers the question; a full `stat` struct is not required if `is_dir` suffices.
+  - Then fix `resolve()` in `server/main.ty` so a directory redirects (`301 -> path/`)
+    whether or not it holds an index, and a non-directory never does.
+  - **Not in scope:** the five ergonomic gaps recorded in `FRICTION.md` (no nested patterns,
+    no `map_err`, qualified names in generic argument lists, `Result` in tuple literals) and
+    the `reason_phrase` item (i) below. Those are recorded, not queued.
+  - Done when: `io.is_dir`/`io.stat` exists and is exercised by a corelib test, `GET
+    /emptydir` answers `301 -> /emptydir/` against a live server with captured output,
+    `/about` still `301` and files still `200`, and every golden matches or its change is
+    justified in the evidence.
+
 ## Out of scope
 
 - **Nothing new earned a phase from Phase 3.** Two candidates were considered and both were
