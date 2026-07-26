@@ -7,6 +7,11 @@ read_bytes len=5 why=Ok
 read_empty len=0 why=Ok
 read_missing len=0 why=NotFound
 read_dir len=0 why=IsDir
+byte_index b0=65 b2=0 b4=68
+byte_slice len=3 s0=66 s1=0 s2=67
+byte_cat len=9 at5=66 at8=33 eqsrc=1
+byte_rebuild len=5 same=1 clamped=2
+reinterp_ret=[ABCDEFGH] len=8 churn=6400
 mkdir=did again=already onfile=Exists noparent=NotFound
 isdir_tmp=dir isdir_empty=dir
 isdir_file=file isdir_missing=NotFound

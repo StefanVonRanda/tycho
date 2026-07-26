@@ -116,9 +116,28 @@ a binary `bytes` with interior `0x00` bytes. There is no `bytes` literal. `bytes
 primarily to cross the FFI boundary as a `(pointer, length)` pair
 ([§24](14-ffi.md)).
 
+**Operators.** `bytes` supports exactly the operator set `string` does, and with
+the same meanings, because it is the same buffer:
+
+| Form | Result | Notes |
+|---|---|---|
+| `len(b)` | `int` | byte count, from the length header (O(1)) |
+| `b[i]` | `int` | the `i`-th byte as `0..255`, **never** a 1-length `bytes` — the same read as `s[i]` ([§5.2.5](#525-string)), same out-of-bounds abort, and **not** a place (`b[i] = v` is a compile error) |
+| `b[i:j]` | `bytes` | a fresh sub-buffer; clamps out-of-range bounds exactly as a string slice does ([§16.6](12-aggregates.md#166-slices-xsab)) |
+| `a + b` | `bytes` | concatenation |
+| `b + 'c'` | `bytes` | appends the char's single byte; one-directional, like `string + char` ([§13.2](09-expressions.md#132-operators)) |
+| `a == b`, `a != b` | `bool` | byte-wise, by the length headers |
+
+There is **no implicit conversion between `string` and `bytes`** in either
+direction: `b + "s"` and `s + b` are type errors. The boundary is crossed only by
+`to_bytes` / `to_str`, both zero-cost reinterprets (§8). Arithmetic other than
+`+` is a type error naming this set. `bytes` has no other operators: iteration
+(`for x in b`) and `in` are not provided.
+
 Constructing a `bytes` from computed byte values — including an interior `0x00`,
-which a `string` cannot hold — and reading it back by reinterpreting to `string`
-(the two share the length-counted buffer):
+which a `string` cannot hold — reading bytes back out by index, taking a
+sub-buffer, and reinterpreting to `string` (the two share the length-counted
+buffer):
 
 ```tycho
 fn main():
@@ -126,11 +145,16 @@ fn main():
     s := to_str(b)                        # reinterpret: same buffer, byte-safe
     println(str(len(b)))                  # 4 — the interior NUL is preserved
     println(str(s[0]) + " " + str(s[2]) + " " + str(s[3]))
+    println(str(b[2]) + " " + str(len(b[1:3])) + " " + str(b[1:3][1]))
+    j := b + to_bytes([33]) + '?'        # bytes + bytes, then bytes + char
+    println(str(len(j)) + " " + str(j[4]) + " " + str(j[5]))
 ```
 
 ```output
 4
 72 0 255
+0 2 0
+6 33 63
 ```
 
 ### 5.2.7 Fixed-width integers `u8`/`u16`/`u32`/`u64`, `i8`/`i16`/`i32`/`i64`

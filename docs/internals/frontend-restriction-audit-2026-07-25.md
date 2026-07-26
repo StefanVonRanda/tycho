@@ -359,8 +359,8 @@ ever emitting that type's declaration. Same family as Phases 19 and 23.
 they named the "a function cannot return a channel" die and the `inout` function-value
 die. Traced from `tests/reject/main_with_param.ty`, whose real message is `'main' must be
 'fn main():' with no return`: both rules live in `resolve_program` —
-`src/tychoc.c:7432@no 'main' procedure` (`no 'main' procedure`) and
-`src/tychoc.c:7457-7458@'main' must be` (the signature rule, one combined test on
+`src/tychoc.c:7453@no 'main' procedure` (`no 'main' procedure`) and
+`src/tychoc.c:7478-7479@'main' must be` (the signature rule, one combined test on
 `nparams != 0 || ret != T_VOID`). tychoc0's twin is at
 `compiler/tychoc0.ty:3911@'main' must be`.
 

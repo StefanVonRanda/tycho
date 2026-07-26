@@ -78,8 +78,12 @@ no conversion at the call site. (Languages whose string is a fat pointer
 
 **Bytes passing.** `bytes` is an immutable binary buffer that, unlike `string`,
 crosses the boundary length-carried — so it can hold interior `0x00` and needs no
-hex marshaling. Build one with `to_bytes(s)` and read it back with `to_str(b)`;
-`len(b)` and `==` work as for strings.
+hex marshaling. Build one with `to_bytes(s)` and read it back with `to_str(b)`.
+`len(b)`, `==`, `b[i]` (the byte as an `int`), `b[i:j]` (a sub-buffer) and `+`
+(with `bytes` or a `char`) all work exactly as for strings — `bytes` is the same
+length-counted buffer, so nothing is converted at those operators
+([spec §5.2.6](../spec/03-types.md#526-bytes)). What it does **not** do is mix
+implicitly with `string`: `b + "s"` is a type error, by design.
 
 - *A `bytes` **parameter** lowers to two C arguments* `(const unsigned char *ptr,
   long len)`. So `extern fn f(b: bytes)` binds to C `void f(const unsigned char *,

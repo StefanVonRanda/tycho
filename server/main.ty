@@ -117,20 +117,27 @@ fn fmt_ms(us: int) -> string:
 # Make an arbitrary byte string safe to put in a log line: control bytes become
 # '.', and it is truncated. A request target is attacker-controlled; it must not
 # be able to inject newlines into the log or paint the terminal.
+#
+# Written in `bytes`, which is what a hostile request target is. `b[i]` reads the
+# byte value, `b[i:i+1]` copies one byte through unchanged, `+` appends; the
+# to_bytes/to_str at the two ends are zero-cost reinterprets of the same buffer
+# (src/tychoc.c:8726), so nothing is converted and nothing is copied twice. This
+# used to detour string -> []int -> to_bytes -> to_str, where the to_bytes([int])
+# leg (src/tychoc.c:8724) was the one REAL conversion and allocation in the path.
 fn log_safe(s: string) -> string:
     n := len(s)
     cut := false
     if n > LOG_FIELD:
         n = LOG_FIELD
         cut = true
-    cs := []int
+    b := to_bytes(s)
+    scrubbed := to_bytes("")
     for i in range(n):
-        c := s[i]
-        if is_ctl(c):
-            push(cs, 46)
+        if is_ctl(b[i]):
+            scrubbed = scrubbed + '.'
         else:
-            push(cs, c)
-    out := to_str(to_bytes(cs))
+            scrubbed = scrubbed + b[i:i + 1]
+    out := to_str(scrubbed)
     if cut:
         out += "..."
     return out

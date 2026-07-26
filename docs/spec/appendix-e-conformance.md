@@ -66,6 +66,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §5.2.1 | `int` = required 64-bit two's-complement (range, defined wrap) | `tests/int_overflow` |
 | §5.2.1 | `int` stays 64-bit under a non-LP64 C data model (no truncation of values, literal arithmetic or length headers) | `tests/int64_width`, the `make ilp32` lane (whole suite rebuilt `gcc -m32`, 64-bit goldens unchanged) |
 | §5.2.3 | `char` is not `int` | `tests/char_ops`, `reject/char_int_eq`, `reject/char_int_mul`, `reject/char_int_ord` |
+| §5.2.6 | `bytes` operators: `b[i]` yields `int` (not a 1-length `bytes`) and is not a place; `b[i:j]` yields `bytes` and clamps; `a + b` and `b + 'c'` concatenate; no implicit `string` mixing; every one byte-safe across an interior `0x00` | `corelib/test/io` (`byte_index`, `byte_slice`, `byte_cat`, `byte_rebuild`), the §5.2.6 example (`scripts/spec_check.sh`), `server/main.ty` (`log_safe`) — no `tests/` fixture, see the note below |
 | §5.2.7 | fixed-width `u32`/`u64`/`f32` | `tests/sized_ints`, `tests/sized_family`, `corelib/test/sha256` |
 | §5.3.2 | fixed-size arrays `[N]T` | `tests/fixed_array`, `reject/fixed_array_bad_length`, `reject/fixed_array_zero_size`, `reject/fixed_array_nonconst_size` |
 | §5.3.5 | maps; composite keys | `tests/maps`, `tests/map_literal_composite_key`, `tests/mapstructkey` |
@@ -260,6 +261,29 @@ are flagged here so the gap is explicit rather than hidden:
   For the same reason **no corelib package can use either form** while
   `examples/webserver/run.sh` asserts `tychoc == tychoc0 == golden` over
   `core:httpd`, `core:net` and `core:io`.
+- **§5.2.6's `bytes` operators** — **fourth** time this mechanism bites, same
+  conclusion. All three are **new acceptances**, so a `tests/` fixture would be a
+  program `tychoc` accepts and the frozen `tychoc0` refuses. Measured, not assumed:
+  `println(str(b[2]))` on a `bytes` gives `line 3: str(x) can't stringify a yte`
+  from a `tychoc0` built at this commit, which `scripts/frontparity.sh:127` would
+  report as a divergence and `compiler/fixpoint.sh:24` as a build failure. The
+  covering fixtures are therefore `corelib/test/io` (golden-validated by
+  `corelib/run.sh`, whose `tychoc0` leg was cut on 2026-07-26) and the §5.2.6
+  specification example, which `scripts/spec_check.sh` compiles and runs. The
+  application witness is `server/main.ty`'s `log_safe`, which no runner feeds to
+  `tychoc0`. Unlike the three notes above, the blocked set was **enumerated** this
+  time rather than assumed: closing the import graph from every file a `tychoc0`
+  runner compiles (`examples/*.ty`, `tools/*.ty`, `tests/*.ty`,
+  `tests/pkg/*/main.ty`, `compiler/tychoc0.ty`, plus the four per-example runners
+  at `examples/webserver/run.sh:24`, `examples/weblog/run.sh:24`,
+  `examples/fetch/run.sh:35` and `examples/sqlite/run.sh:31`) reaches **13** corelib
+  packages — `cli`, `datetime`, `http`, `httpd`, `io`, `json`, `markdown`, `net`,
+  `path`, `result`, `sha256`, `sort`, `strings` — which may **not** use a `bytes`
+  operator. The other **24**, including `base64`, `compress`, `crypto`, `hash`,
+  `hex`, `image`, `md5`, `raster` and `tls` — the packages that would most want
+  them — are outside every `tychoc0` runner and are free to adopt them. Note that
+  `core:cli` is in the blocked set via `examples/weblog/run.sh:24`, not via
+  `scripts/frontparity.sh`, which never sees `examples/<dir>/main.ty`.
 - **§30.3 clamp conditions and §30.5 unspecified behavior** — clamp behavior is
   exercised incidentally by the slice fixtures; the unspecified set is, by
   definition, not pinned (it is enumerated in [Appendix F](appendix-f-impl-defined.md)).
