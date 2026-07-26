@@ -15,6 +15,20 @@ fn b(x: bool) -> int:
 fn crlf() -> string:                             # no \r escape in tycho strings
     return chr(13) + chr(10)
 
+# core:net's TCP calls and httpd.write_response return Result(_, net.NetErr).
+# main() is void so `or_return` cannot short-circuit out of it, and every call
+# here is on loopback and must succeed -- so these two collapse the Result to the
+# int/bytes the assertions below already print, keeping the golden unchanged.
+fn n_of(r: Result(int, net.NetErr)) -> int:
+    match r:
+        Ok(n): return n
+        Err(e): return -1
+
+fn data_of(r: Result(bytes, net.NetErr)) -> bytes:
+    match r:
+        Ok(bs): return bs
+        Err(e): return to_bytes("")
+
 fn main():
     # ---- pure parsing (no socket): a request with headers + body ----
     nl := crlf()
@@ -72,14 +86,14 @@ fn main():
     println("bin_ctype = " + str(b(find(wire_bin, "Content-Type: image/png") >= 0)))
 
     # ---- loopback round trip over core:net ----
-    srv := net.listen("127.0.0.1", 0)
-    port := net.port_of(srv)
-    cli := net.connect("127.0.0.1", port)
-    conn := net.accept(srv)
+    srv := n_of(net.listen("127.0.0.1", 0))
+    port := n_of(net.port_of(srv))
+    cli := n_of(net.connect("127.0.0.1", port))
+    conn := n_of(net.accept(srv))
     println("net_ok = " + str(b(srv >= 0 and port > 0 and cli >= 0 and conn >= 0)))
 
     # client -> server: send the raw request built above
-    net.write(cli, to_bytes(raw))
+    w := n_of(net.write(cli, to_bytes(raw)))
     got := httpd.read_request(conn)
     println("srv_method = " + got.method)
     println("srv_path   = " + got.path)
@@ -88,12 +102,12 @@ fn main():
 
     # server -> client: build + send a response with an extra header
     resp := httpd.with_header(httpd.text_response(200, "pong"), "X-Extra", "yes")
-    n := httpd.write_response(conn, resp)
+    n := n_of(httpd.write_response(conn, resp))
     println("wrote_ok = " + str(b(n > 0)))
     net.close_fd(conn)
 
     # client reads + inspects the response (deterministic header order)
-    wire := to_str(net.read(cli, 4096))
+    wire := to_str(data_of(net.read(cli, 4096)))
     rlines := split(wire, "\n")
     println("status = " + httpd.trim(rlines[0]))            # HTTP/1.1 200 OK
     println("has_extra = " + str(b(find(wire, "X-Extra: yes") >= 0)))
@@ -106,15 +120,15 @@ fn main():
     net.close_fd(cli)
 
     # ---- binary body over a real socket: every byte must survive ----
-    cli2 := net.connect("127.0.0.1", port)
-    conn2 := net.accept(srv)
-    net.write(cli2, to_bytes("GET /logo.png HTTP/1.1" + nl + nl))
+    cli2 := n_of(net.connect("127.0.0.1", port))
+    conn2 := n_of(net.accept(srv))
+    wb := n_of(net.write(cli2, to_bytes("GET /logo.png HTTP/1.1" + nl + nl)))
     rq2 := httpd.read_request(conn2)
     blob := to_bytes([137, 80, 78, 71, 0, 255, 13, 10, 0, 1])
     br := httpd.with_header(httpd.response(200, blob), "Content-Type", httpd.content_type(rq2.path))
-    bn := httpd.write_response(conn2, httpd.with_connection(br, false))
+    bn := n_of(httpd.write_response(conn2, httpd.with_connection(br, false)))
     net.close_fd(conn2)
-    w2 := to_str(net.read(cli2, 4096))
+    w2 := to_str(data_of(net.read(cli2, 4096)))
     s2 := find(w2, nl + nl)
     body2 := w2[s2 + 4:len(w2)]
     println("sock_bin_len   = " + str(len(body2)))
@@ -125,8 +139,8 @@ fn main():
     net.close_fd(cli2)
 
     # ---- an idle peer is dropped, not waited on forever ----
-    cli3 := net.connect("127.0.0.1", port)
-    conn3 := net.accept(srv)
+    cli3 := n_of(net.connect("127.0.0.1", port))
+    conn3 := n_of(net.accept(srv))
     armed := net.set_read_timeout_ms(conn3, 200)
     idle := httpd.read_request(conn3)                       # cli3 sends nothing
     println("timeout_armed  = " + str(b(armed)))

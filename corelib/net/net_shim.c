@@ -59,6 +59,7 @@ static void ty_net_init(void) {
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <errno.h>              /* EAGAIN/EWOULDBLOCK: SO_RCVTIMEO vs a real error */
 /* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
  * emitted program; this shim is a separate translation unit, so it defines the
  * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
@@ -203,20 +204,60 @@ tycho_int netx_write(tycho_int fd, const unsigned char *data, tycho_int len) {
     return off;
 }
 
-/* Read up to `max` bytes (one recv). On EOF (0) or error (<0) yields the empty
- * bytes with *out == NULL (tycho_bytes_from_c allocates an empty buffer and does
- * not free NULL). On data, *out is a malloc'd buffer of the bytes read and the
- * runtime frees it after arena-copying exactly `*outlen` bytes. */
-void netx_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *outlen) {
+/* Read up to `max` bytes (one recv), CLASSIFYING the outcome in *status:
+ *
+ *      TY_RD_DATA (1)  data was read; *out holds *outlen bytes
+ *      TY_RD_EOF  (0)  the peer closed cleanly (recv returned 0)
+ *      TY_RD_TMO  (2)  the SO_RCVTIMEO deadline expired with no data
+ *      TY_RD_ERR  (3)  the read failed for any other reason
+ *
+ * The classification is the whole point of this signature. Until 2026-07-26 this
+ * function returned only `bytes`, so EOF, a timeout and a hard error were all the
+ * empty result, and a caller could not tell "the peer hung up" from "the peer is
+ * being slow" -- the collision that made tycho-httpd unable to answer 400 to
+ * garbage while closing silently on a hangup (FRICTION.md, phase 4/7). recv
+ * distinguishes them at the syscall level; only the FFI shape was throwing the
+ * distinction away, so core:net now hands it up as a Result(bytes, net.NetErr).
+ *
+ * `status` is an `inout int` on the Tycho side, which lowers to a leading
+ * tycho_int* out-param ahead of the two `bytes` return out-params. On EOF, a
+ * timeout or an error, *out stays NULL (tycho_bytes_from_c allocates an empty
+ * buffer and does not free NULL); on data, *out is a malloc'd buffer the runtime
+ * frees after arena-copying exactly *outlen bytes. */
+#define TY_RD_EOF  0
+#define TY_RD_DATA 1
+#define TY_RD_TMO  2
+#define TY_RD_ERR  3
+
+/* Was the last failed recv a receive-timeout rather than a real error? On POSIX
+ * SO_RCVTIMEO surfaces as EAGAIN/EWOULDBLOCK; Winsock reports WSAETIMEDOUT. */
+static int ty_recv_timed_out(void) {
+#ifndef _WIN32
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+#else
+    return WSAGetLastError() == WSAETIMEDOUT;
+#endif
+}
+
+void netx_read(tycho_int fd, tycho_int max, tycho_int *status,
+               unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
+    *status = TY_RD_ERR;
     if (fd < 0 || max <= 0) return;
     unsigned char *buf = (unsigned char *)malloc((size_t)max);
     if (!buf) return;                       /* fail closed: empty result, never a partial read */
+    errno = 0;
     tycho_int n = (tycho_int)recv((int)fd, (char *)buf, (size_t)max, 0);
-    if (n <= 0) { free(buf); return; }      /* EOF or error -> empty */
+    if (n == 0) { free(buf); *status = TY_RD_EOF; return; }
+    if (n < 0) {
+        free(buf);
+        *status = ty_recv_timed_out() ? TY_RD_TMO : TY_RD_ERR;
+        return;
+    }
     *out = buf;
     *outlen = n;
+    *status = TY_RD_DATA;
 }
 
 /* Arm a receive timeout on `fd` (SO_RCVTIMEO). After `ms` milliseconds with no

@@ -7,3 +7,4 @@ ctype? = application/octet-stream
 served = GET /
 alive  = true
 reply  = pong
+wire   = 86 bytes

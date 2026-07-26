@@ -4,20 +4,22 @@
 #
 # You own the accept loop; this package gives you the request/response plumbing:
 #
-#   srv := net.listen("127.0.0.1", 8080)
+#   srv := net.listen("127.0.0.1", 8080) or_return   # in a fn -> Result(_, net.NetErr)
 #   for true:
-#       conn := net.accept(srv)
-#       x := net.set_read_timeout_ms(conn, 5000)   # so an idle peer cannot pin us
-#       alive := true
-#       for alive:
-#           req := httpd.read_request(conn)        # read + parse one request
-#           if req.method == "":                   # EOF, idle timeout, or malformed
-#               alive = false
-#           else:
-#               alive = not httpd.connection_close(req)
-#               r := httpd.text_response(200, "hello\n")
-#               httpd.write_response(conn, httpd.with_connection(r, alive))
-#       net.close_fd(conn)
+#       match net.accept(srv):
+#           Err(e): return Err(e)
+#           Ok(conn):
+#               x := net.set_read_timeout_ms(conn, 5000)  # so an idle peer cannot pin us
+#               alive := true
+#               for alive:
+#                   req := httpd.read_request(conn)       # read + parse one request
+#                   if req.method == "":                  # EOF, idle timeout, or malformed
+#                       alive = false
+#                   else:
+#                       alive = not httpd.connection_close(req)
+#                       r := httpd.text_response(200, "hello\n")
+#                       w := httpd.write_response(conn, httpd.with_connection(r, alive))
+#               net.close_fd(conn)
 #
 # BINARY-SAFE bodies: `Request.body` and `Response.body` are `bytes`, so a PNG or a
 # font round-trips byte for byte. Headers stay `string` -- they are ASCII by spec.
@@ -172,11 +174,16 @@ fn read_request(fd: int) -> Request:
             want := 4096
             if need >= 0 and need - len(buf) < want:
                 want = need - len(buf)
-            chunk := net.read(fd, want)
-            if len(chunk) == 0:                 # EOF, error, or read timeout
-                reading = false
-            else:
-                buf = buf + to_str(chunk)
+            # net.read now says WHY it produced nothing -- Err(net.Eof) vs
+            # Err(net.Timeout) vs Err(net.Failed). read_request still collapses
+            # all three into `method == ""`, unchanged on purpose: telling them
+            # apart is a behaviour change to this function's contract and its
+            # callers, and belongs to plan.md phase 3. What changed here is only
+            # that the information now reaches this line instead of being thrown
+            # away inside net.read.
+            match net.read(fd, want):
+                Ok(chunk): buf = buf + to_str(chunk)
+                Err(e): reading = false
     return parse_request(buf)
 
 # ---- keep-alive ------------------------------------------------------------
@@ -325,15 +332,16 @@ fn render(r: Response) -> bytes:
     return to_bytes(render_head(r) + to_str(r.body))
 
 # Send a response over the socket as head + body, two writes, so the body buffer
-# is never copied into an intermediate string. Returns the total bytes written,
-# or -1 if either write failed (fail closed -- a partial send is an error).
-fn write_response(fd: int, r: Response) -> int:
-    n := net.write(fd, to_bytes(render_head(r)))
-    if n < 0:
-        return -1
+# is never copied into an intermediate string. Ok(total bytes written), or the
+# net.NetErr of whichever write failed (fail closed -- a partial send is an error).
+#
+# This is the function that settles whether `or_return` is usable in a real IO
+# path. It returns Result(_, net.NetErr) -- the SAME error type net.write returns
+# -- so `or_return` propagates the failure with no `if n < 0` and no match. Both
+# `-1` returns disappear; the six lines of sentinel checking become two operators.
+fn write_response(fd: int, r: Response) -> Result(int, net.NetErr):
+    n := net.write(fd, to_bytes(render_head(r))) or_return
     if len(r.body) == 0:
-        return n
-    m := net.write(fd, r.body)
-    if m < 0:
-        return -1
-    return n + m
+        return Ok(n)
+    m := net.write(fd, r.body) or_return
+    return Ok(n + m)

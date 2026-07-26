@@ -3,32 +3,64 @@
 # install and nothing to link (the same self-contained model as core:os). Import
 # with `import "core:net"`.
 #
-# A socket is a file descriptor, an `int`. Every call that opens or moves a
-# descriptor returns a NEGATIVE int on failure, so a caller branches on `< 0` and
-# never touches a half-open socket. Payloads are `bytes` (binary-safe: interior
-# NUL bytes survive, unlike a `string`).
+# A socket is a file descriptor, an `int`. Payloads are `bytes` (binary-safe:
+# interior NUL bytes survive, unlike a `string`).
+#
+# ERROR MODEL. Every fallible TCP call returns `Result(T, net.NetErr)`. Until
+# 2026-07-26 each returned a sentinel instead -- a negative int, or the empty
+# `bytes` -- and `net.read`'s empty result meant EOF, an idle timeout AND a hard
+# error at once. A caller could not tell "the peer hung up" from "the peer is
+# slow", which is the collision that stopped tycho-httpd from answering 400 to
+# garbage while closing silently on a hangup (FRICTION.md, phase 4 and phase 7).
+# recv(2) distinguishes those cases; only the return type was throwing the
+# distinction away.
+#
+#   NetErr has NO payload-carrying variant on purpose: a payload-less enum can be
+#   compared with `==`, so a caller that cares about one cause writes
+#   `if e == net.Timeout` instead of a second nested `match`. Tycho has no nested
+#   patterns -- `Err(net.Timeout)` does not parse -- so `==` is the only way to
+#   keep a single-cause test to one line.
 #
 #   -- TCP --
-#   net.listen(host, port) -> int   Bound + listening socket; port 0 asks the
+#   net.listen(host, port) -> Result(int, NetErr)
+#                                   Bound + listening socket; port 0 asks the
 #                                   kernel for an ephemeral port (recover it with
-#                                   net.port_of). -1 on failure.
-#   net.accept(fd) -> int           Accept one pending connection; the connected
-#                                   fd, or -1.
-#   net.connect(host, port) -> int  Connect to host:port; the connected fd, or -1.
-#   net.port_of(fd) -> int          The local port the fd is bound to (useful after
-#                                   binding port 0), or -1.
-#   net.write(fd, data) -> int      Send the whole buffer; bytes sent (== len(data))
-#                                   or -1.
-#   net.read(fd, max) -> bytes      Read up to `max` bytes (one recv); the bytes
-#                                   read, or empty on EOF/error/timeout.
+#                                   net.port_of). Err(Failed) if it cannot bind.
+#   net.accept(fd) -> Result(int, NetErr)
+#                                   Accept one pending connection.
+#   net.connect(host, port) -> Result(int, NetErr)
+#                                   Connect to host:port.
+#   net.port_of(fd) -> Result(int, NetErr)
+#                                   The local port the fd is bound to (useful
+#                                   after binding port 0).
+#   net.write(fd, data) -> Result(int, NetErr)
+#                                   Send the whole buffer; Ok(len(data)), or
+#                                   Err(Failed) if the peer vanished mid-write.
+#   net.read(fd, max) -> Result(bytes, NetErr)
+#                                   Read up to `max` bytes (one recv).
+#                                   Ok(b)          -- b is non-empty
+#                                   Err(Eof)       -- the peer closed cleanly
+#                                   Err(Timeout)   -- the SO_RCVTIMEO deadline
+#                                                     expired with no data
+#                                   Err(Failed)    -- anything else
 #   net.set_read_timeout_ms(fd, ms) -> bool
-#                                   Arm a receive timeout (SO_RCVTIMEO): after `ms`
-#                                   idle milliseconds a read returns EMPTY, exactly
-#                                   as it does at EOF. ms <= 0 restores the blocking
-#                                   default. false if the option could not be set.
+#                                   Arm a receive timeout (SO_RCVTIMEO): after
+#                                   `ms` idle milliseconds a read yields
+#                                   Err(Timeout). ms <= 0 restores the blocking
+#                                   default. false if the option could not be
+#                                   set. NOT converted to a Result: it has one
+#                                   failure with one cause and `false` already
+#                                   collides with nothing, so a Result would add
+#                                   a match and no information.
 #   net.close_fd(fd)                Close the descriptor.
 #
 #   -- UDP --
+#   Still sentinel-based, deliberately. `udp_read`'s empty result cannot be
+#   classified the way `read`'s can: a ZERO-LENGTH DATAGRAM IS LEGAL, so the
+#   empty payload is a real success value, and separating it from an error needs
+#   a shim change of its own rather than a return-type change. Converting these
+#   would move the ambiguity, not remove it.
+#
 #   net.udp_bind(host, port) -> int         Bound datagram socket (port 0 ->
 #                                           ephemeral), or -1.
 #   net.udp_send(fd, host, port, data) -> int   Send one datagram; bytes sent or -1.
@@ -39,6 +71,12 @@
 # and a hostname uses the system resolver. IPv6 is a demand-gated follow-up.
 package net
 
+# Why a socket call failed. Every variant is payload-free so `==` works on it.
+enum NetErr:
+    Eof                # the peer closed the connection cleanly (recv == 0)
+    Timeout            # the SO_RCVTIMEO deadline expired with no data
+    Failed             # the syscall failed (bad fd, refused, reset, ...)
+
 # ---- shim externs (libc sockets; defined in net_shim.c) ----
 # The `netx_` prefix keeps these off the real libc socket symbols (listen/connect
 # /accept are libc names), so each binds to the shim, not the kernel wrapper.
@@ -47,36 +85,71 @@ extern fn netx_accept(fd: int) -> int
 extern fn netx_connect(host: string, port: int) -> int
 extern fn netx_port_of(fd: int) -> int
 extern fn netx_write(fd: int, data: bytes) -> int
-extern fn netx_read(fd: int, max: int) -> bytes
+# `status` is the recv classification: 0 EOF, 1 data, 2 timeout, 3 error. It is an
+# `inout int`, which lowers to a tycho_int* out-param ahead of the two out-params
+# the `bytes` return uses -- see the block comment on netx_read in net_shim.c.
+extern fn netx_read(fd: int, max: int, status: inout int) -> bytes
 extern fn netx_set_read_timeout(fd: int, ms: int) -> int
 extern fn netx_close(fd: int)
 extern fn netx_udp_bind(host: string, port: int) -> int
 extern fn netx_udp_send(fd: int, host: string, port: int, data: bytes) -> int
 extern fn netx_udp_read(fd: int, max: int) -> bytes
 
+# The shim's read-status codes, named once so net.read reads as prose.
+const RD_EOF  = 0
+const RD_DATA = 1
+const RD_TMO  = 2
+
 # ---- TCP ----
-fn listen(host: string, port: int) -> int:
-    return netx_listen(host, port)
+fn listen(host: string, port: int) -> Result(int, NetErr):
+    fd := netx_listen(host, port)
+    if fd < 0:
+        return Err(Failed)
+    return Ok(fd)
 
-fn accept(fd: int) -> int:
-    return netx_accept(fd)
+fn accept(fd: int) -> Result(int, NetErr):
+    c := netx_accept(fd)
+    if c < 0:
+        return Err(Failed)
+    return Ok(c)
 
-fn connect(host: string, port: int) -> int:
-    return netx_connect(host, port)
+fn connect(host: string, port: int) -> Result(int, NetErr):
+    fd := netx_connect(host, port)
+    if fd < 0:
+        return Err(Failed)
+    return Ok(fd)
 
-fn port_of(fd: int) -> int:
-    return netx_port_of(fd)
+fn port_of(fd: int) -> Result(int, NetErr):
+    p := netx_port_of(fd)
+    if p < 0:
+        return Err(Failed)
+    return Ok(p)
 
-fn write(fd: int, data: bytes) -> int:
-    return netx_write(fd, data)
+# Send the whole buffer. Ok(n) with n == len(data); the shim loops over short
+# writes, so a partial send is reported as a failure rather than a smaller n.
+fn write(fd: int, data: bytes) -> Result(int, NetErr):
+    n := netx_write(fd, data)
+    if n < 0:
+        return Err(Failed)
+    return Ok(n)
 
-fn read(fd: int, max: int) -> bytes:
-    return netx_read(fd, max)
+# One recv. Ok(b) with b non-empty, or the reason it produced nothing -- Eof,
+# Timeout, or Failed. These were one value (empty `bytes`) before 2026-07-26.
+fn read(fd: int, max: int) -> Result(bytes, NetErr):
+    st := 0
+    b := netx_read(fd, max, &st)
+    if st == RD_DATA:
+        return Ok(b)
+    if st == RD_EOF:
+        return Err(Eof)
+    if st == RD_TMO:
+        return Err(Timeout)
+    return Err(Failed)
 
-# Arm a receive timeout on `fd`: after `ms` idle milliseconds a read yields the
-# empty bytes, the same result as EOF -- deliberately, because a server drops the
-# connection either way. `ms <= 0` restores the blocking default. Returns false if
-# the socket option could not be set (fail closed: the socket keeps blocking).
+# Arm a receive timeout on `fd`: after `ms` idle milliseconds a read yields
+# Err(Timeout), which is now distinct from Err(Eof). `ms <= 0` restores the
+# blocking default. Returns false if the socket option could not be set (fail
+# closed: the socket keeps blocking).
 fn set_read_timeout_ms(fd: int, ms: int) -> bool:
     return netx_set_read_timeout(fd, ms) == 1
 
@@ -84,6 +157,7 @@ fn close_fd(fd: int):
     netx_close(fd)
 
 # ---- UDP ----
+# Sentinel-based; see the note in the header block for why.
 fn udp_bind(host: string, port: int) -> int:
     return netx_udp_bind(host, port)
 
