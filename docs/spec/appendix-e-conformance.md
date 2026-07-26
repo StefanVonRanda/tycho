@@ -203,6 +203,8 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §29.5 | `char_at` yields `char`; `s[i]` still yields `int`; OOB aborts | `tests/char_at`, `tests/abort/char_at_oob`, `reject/char_at_arg_index_type`, `reject/char_at_arg_recv_type` |
 | §29.6 | array builtins; `len` on scalar rejected | `tests/pop`, `tests/reservecomposite`, `reject/len_scalar` |
 | §29.12 | abnormal termination (`die`) | `tests/die` |
+| §29.12 | `exit(code)` terminates with an explicit status (`0` included) | `server/main.ty` (`--help`) — no `tests/` fixture, see the note below |
+| §29.12.1 | `die`/`exit` are diverging: legal as a value `if`/`match` tail; all-diverging rejected | `server/main.ty` (`srv := match net.listen(...)`) — no `tests/` fixture, see the note below |
 | §30.1 | defined two's-complement wraparound | `tests/int_overflow` |
 | §30.2 | the abort set (div0, bounds, empty pop, …) | `tests/abort/div_zero`, `abort/div_overflow`, `abort/mod_zero`, `abort/index_oob`, `abort/chr_oob`, `abort/pop_empty`, `abort/reserve_range` |
 | §30.4 | defined string/map behavior (byte-safe, insertion order) | `tests/string_nul`, `tests/map_insorder`, `tests/maparraykey` |
@@ -247,6 +249,17 @@ are flagged here so the gap is explicit rather than hidden:
   typed local. Note that §6.1 already listed "a tuple or array literal's element
   type" as a checking context: for §6.2(7) the **implementation**, not the
   specification, was the thing out of conformance.
+- **§29.12's `exit` and §29.12.1's divergence rule** — third time this mechanism
+  bites, same conclusion. `exit` is a **new builtin** and divergence is a **new
+  acceptance**, so a `tests/` fixture for either would be a program the live
+  compiler accepts and the frozen `tychoc0` refuses — which is exactly what
+  `scripts/frontparity.sh:127` reports as a divergence, and `compiler/fixpoint.sh:24`
+  as a build failure. The witness is `server/main.ty`, which no runner feeds to
+  `tychoc0`: it calls `exit(0)` for `--help` (status verified with `echo $?`) and
+  binds `srv := match net.listen(...)` with `Err(e): die(...)` as the failure arm.
+  For the same reason **no corelib package can use either form** while
+  `examples/webserver/run.sh` asserts `tychoc == tychoc0 == golden` over
+  `core:httpd`, `core:net` and `core:io`.
 - **§30.3 clamp conditions and §30.5 unspecified behavior** — clamp behavior is
   exercised incidentally by the slice fixtures; the unspecified set is, by
   definition, not pinned (it is enumerated in [Appendix F](appendix-f-impl-defined.md)).

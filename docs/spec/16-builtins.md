@@ -77,9 +77,10 @@ numeric-polymorphic like `str`.
 | `args()` | `-> [string]` | Sig | The command-line arguments; `args()[0]` is the program name. |
 | `getenv(name)` | `string -> string` | Sig | The environment variable's value, or `""` if unset. |
 | `die(msg)` | `string -> void` | Sig | Print `msg` to stderr and terminate the process with exit status `1`; never returns (§29.12). |
+| `exit(code)` | `int -> void` | Sig | Terminate the process with exit status `code`, printing nothing; never returns (§29.12). |
 
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
-stringify. All eight are `Sig` builtins with fixed signatures.
+stringify. All nine are `Sig` builtins with fixed signatures.
 
 > Provenance: `src/tychoc.c:4144-4163`; `eprint` codegen `:8283`; `die` codegen
 > `:8362-8364`.
@@ -279,11 +280,45 @@ and require an import.
 
 ## 29.12 Abnormal termination
 
-`die(msg)` (§29.3) is the **only** user-callable abort in the language: it prints
-`msg` to stderr and terminates the process with exit status `1`, and MUST NOT
-return. There is **no** `assert`, `panic`, or `abort` builtin — no such name is
-registered in `register_builtins` and none is special-cased in `resolve_expr`
-(verified by searching `src/tychoc.c`).
+Tycho has exactly **two** user-callable process terminators, and both MUST NOT
+return:
+
+| Builtin | Status | Writes | Use |
+|---|---|---|---|
+| `die(msg)` | always `1` | `msg` + `"\n"` to stderr | an abort with a reason |
+| `exit(code)` | `code` | nothing | an ordinary answered exit, including `exit(0)` |
+
+`exit(code)` passes `code` to the host's process-exit facility, so on POSIX only
+the low 8 bits are observable by the parent (`wait(2)`), exactly as in C. Buffered
+stdout written before the call is flushed. `exit` exists because `die` cannot
+answer `--help`: a program that has done what it was asked needs status `0`, and
+routing that through `die` would report failure. There is **no** `assert`,
+`panic`, or `abort` builtin — no such name is registered in `register_builtins`
+and none is special-cased in `resolve_expr` (verified by searching
+`src/tychoc.c`).
+
+### 29.12.1 Both are DIVERGING calls
+
+`die` and `exit` are declared `-> void` (Tycho has no bottom type), but the
+compiler additionally models them as **diverging**: control does not leave the
+call. A conforming implementation MUST therefore accept either one as the tail of
+a value `if`/`match` branch, even though the branch produces no value:
+
+```tycho
+srv := match net.listen(host, port):
+    Ok(fd): fd
+    Err(e): die("cannot bind")
+```
+
+A diverging tail takes no part in branch unification ([§6.5](04-inference.md)) and
+is not rewritten into an assignment to the destination — it stays the plain
+statement it is. If **every** branch diverges there is nothing to bind and the
+declaration is rejected; write the `if`/`match` as a statement instead.
+
+Divergence is recognized by name, and that is sound rather than convenient:
+`die`/`exit` are registered builtins, so a program that defines either name is
+rejected (`error: 'die' is already defined`) and the name cannot mean anything
+else. A qualified `pkg.die` or a call through a function *value* is not diverging.
 
 The runtime does abort on its own for defined error conditions — an
 out-of-bounds index, a `pop` on an empty array, division or modulo by a zero
@@ -294,7 +329,10 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:4153`, codegen `:8362-8364`; no
+> Provenance: `die` `Sig` `src/tychoc.c:4153`, codegen `:8362-8364`; `exit` `Sig`
+> beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
+> skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
+> rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:4140-4171` or the
 > `resolve_expr` magic block (`case E_CALL:` `:4833`, running through `reserve`
 > at `:5468`).

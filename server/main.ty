@@ -76,7 +76,6 @@ struct Config:
     workers: int
     idle_ms: int
     quiet: bool
-    help: bool          # --help was asked for; main prints usage and exits 0
 
 # What a request target resolved to. `status` 200 means serve `file`; 301 means
 # redirect to `location`; anything else is an error to render.
@@ -541,9 +540,12 @@ fn parse_args(argv: [string]) -> Config:
         elif k == "--quiet" or k == "-q":
             quiet = true
         elif k == "--help" or k == "-h":
-            # Cannot just die(): die is the language's only exit and it always
-            # exits 1, which is the wrong status for an answered --help.
-            return Config("", "", 0, 1, 1, false, true)
+            # `exit(0)` (plan.md phase 4). Until then die() was the only exit and it
+            # always exits 1, so an answered --help had to be threaded back to main
+            # as a `help: bool` field on Config -- a data-flow change to work around
+            # a missing status code.
+            print(usage())
+            exit(0)
         else:
             die("tycho-httpd: unknown option: " + a + "\n\n" + usage())
         i += step
@@ -553,7 +555,7 @@ fn parse_args(argv: [string]) -> Config:
         die("tycho-httpd: --workers must be 1..256\n")
     if idle < 1:
         die("tycho-httpd: --idle-ms must be at least 1\n")
-    return Config(path.clean(root), host, port, workers, idle, quiet, false)
+    return Config(path.clean(root), host, port, workers, idle, quiet)
 
 fn main():
     raw := args()
@@ -561,9 +563,6 @@ fn main():
     for i in range(1, len(raw)):
         push(argv, raw[i])
     cfg := parse_args(argv)
-    if cfg.help:
-        print(usage())
-        return
 
     # --root sanity, asked as four separate questions. Until phase 5 this was one:
     #     if len(io.list(cfg.root)) == 0:  "... is empty or not a directory"
@@ -572,9 +571,9 @@ fn main():
     # an unreadable one all produced the same sentence, and three of them are
     # operator errors while the first is not. io.is_dir (phase 4) separates them:
     # Ok(true)/Ok(false) are both answers, Err says why there is none. Still a
-    # WARNING and not a die(): serving an empty tree is legal (every request 404s
-    # honestly), and die() always exits 1, which is the wrong status for a
-    # judgement call about someone else's directory.
+    # WARNING and not a die()/exit(): serving an empty tree is legal -- every
+    # request 404s honestly -- so a judgement call about someone else's directory
+    # is not this program's to terminate on, whatever status it could now pick.
     match io.is_dir(cfg.root):
         Ok(isdir):
             if not isdir:
@@ -586,17 +585,13 @@ fn main():
         Err(e):
             eprint("tycho-httpd: warning: " + cfg.root + " cannot be read\n")
 
-    # The one place the conversion cost a line. A value match would read best --
-    #     srv := match net.listen(cfg.host, cfg.port):
-    #         Ok(fd): fd
-    #         Err(e): die("...")
-    # -- but die() is typed void and the compiler does not model it as diverging,
-    # so that is rejected: "a value if/match branch must produce a value, not
-    # void". The statement form needs a dummy initializer, which is one line more
-    # than the sentinel version and puts a 0 in `srv` that nothing can read.
-    srv := 0
-    match net.listen(cfg.host, cfg.port):
-        Ok(fd): srv = fd
+    # The value-match form, which is what a Result is for. Until plan.md phase 4
+    # this needed a dummy `srv := 0` and a statement match, because die() is typed
+    # void and was not modelled as DIVERGING -- so the failure arm was rejected with
+    # "a value if/match branch must produce a value, not void", and the Result
+    # version came out one line LONGER than the `if srv < 0: die(...)` it replaced.
+    srv := match net.listen(cfg.host, cfg.port):
+        Ok(fd): fd
         Err(e): die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
     # -1 in the banner if unknowable.
     bound := result.unwrap_or(net.port_of(srv), -1)

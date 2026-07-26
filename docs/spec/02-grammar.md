@@ -263,8 +263,11 @@ ValueCtrl   ::= If | Match              /* value form: block branches ending in 
   as the tail of a declaration (`:=`, typed `=`), an assignment, a place
   assignment, or a `return`. Each branch/arm is an indented block whose final
   statement is a value expression (a bare value expression is the one-statement
-  case); a value `if` MUST have an `else`; a value `match` MUST be exhaustive; all
-  branches MUST unify to one type. These rules are given in §13/§14.
+  case), **or** a diverging call — `die`/`exit`, which produces no value because
+  control leaves the program ([§29.12.1](16-builtins.md)); a value `if` MUST have
+  an `else`; a value `match` MUST be exhaustive; all non-diverging branches MUST
+  unify to one type, and at least one branch MUST be non-diverging. These rules
+  are given in §13/§14.
 
 > Provenance: `parse_if` (`:2338`), `parse_match` (`:2409`, `:2723`), `for`/
 > `parallel` (`:2731-2827`), `select` (`:2686-2722`), value-control routing

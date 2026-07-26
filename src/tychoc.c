@@ -2815,6 +2815,31 @@ static Stmt *parse_value_ctrl(Parser *ps) {
     return NULL;
 }
 
+/* DIVERGENCE. A call that never returns: `die(msg)` and `exit(code)`, the two
+ * builtins that end the process. Both are typed T_VOID (there is no bottom type),
+ * so the value if/match rule "every branch produces a value" would reject them —
+ * but a branch that leaves the program produces no value BY DEFINITION, and it is
+ * the natural spelling of the failure arm:
+ *     srv := match net.listen(h, p):
+ *         Ok(fd): fd
+ *         Err(e): die("cannot bind")
+ * Modelled here, not with a type: a diverging tail is neither rewritten into
+ * `name = tail` nor offered to branch unification. It stays the plain statement
+ * it already is.
+ *
+ * The test is SYNTACTIC, and that is sound rather than convenient: `die`/`exit`
+ * are registered builtins, and a program that defines either name is rejected
+ * outright (`error: 'die' is already defined`, the `dup_check` in register order),
+ * so the name cannot mean anything else. `sval` is the written name both before
+ * resolution (the parser stores it verbatim) and after (builtins are never
+ * mangled — codegen matches `die` on `e->sval` the same way), so one predicate
+ * serves the parse-time rewrite and the resolve-time unification. `!qual`
+ * excludes `pkg.die` and `!lhs` excludes calling a function VALUE. */
+static int expr_diverges(Expr *e) {
+    return e && e->kind == E_CALL && !e->qual && !e->lhs && e->sval &&
+           (!strcmp(e->sval, "die") || !strcmp(e->sval, "exit"));
+}
+
 /* rewrite the single-expr tail of every branch/arm of a value if/match into a
  * concrete statement (S_RETURN / S_ASSIGN / place-set) — the parse-time desugar
  * for the non-declaration tail positions. `kind` is the target StmtKind;
@@ -2832,6 +2857,7 @@ static void ctrl_rewrite_tails(Stmt *c, StmtKind kind, char *name, Expr *target)
         Stmt **body = (i < nbr) ? branches[i] : c->arms[i - nbr].body;
         int nb = (i < nbr) ? bn[i] : c->arms[i - nbr].nbody;
         Stmt *se = body[nb - 1];                     /* the S_EXPR(tail) — the LAST statement of the branch */
+        if (expr_diverges(se->expr)) continue;        /* die()/exit(): no value to place; leave the statement alone */
         Stmt *ns = new_stmt(kind, se->line);
         if (kind == S_RETURN)      { ns->expr = se->expr; }
         else if (kind == S_ASSIGN) { ns->name = name; ns->expr = se->expr; }
@@ -2841,14 +2867,19 @@ static void ctrl_rewrite_tails(Stmt *c, StmtKind kind, char *name, Expr *target)
 }
 
 /* collect the (already-resolved) tail expression of every branch/arm — used to
- * unify their types for a `:=` value if/match. Mirrors ctrl_rewrite_tails. */
+ * unify their types for a `:=` value if/match. Mirrors ctrl_rewrite_tails,
+ * INCLUDING its divergence skip: a `die()`/`exit()` tail contributes no type, so
+ * the two stay in lockstep about which tails carry a value. */
+static void ctrl_tail_push(Expr **out, int *n, Expr *e) {
+    if (!expr_diverges(e)) out[(*n)++] = e;
+}
 static void ctrl_collect_tails(Stmt *c, Expr **out, int *n) {
     if (c->kind == S_IF) {
-        out[(*n)++] = c->body[c->nbody - 1]->expr;   /* the tail is the LAST statement of the branch */
+        ctrl_tail_push(out, n, c->body[c->nbody - 1]->expr);   /* the tail is the LAST statement of the branch */
         if (c->nels == 1 && c->els[0]->kind == S_IF) ctrl_collect_tails(c->els[0], out, n);
-        else out[(*n)++] = c->els[c->nels - 1]->expr;
+        else ctrl_tail_push(out, n, c->els[c->nels - 1]->expr);
     } else {   /* S_MATCH */
-        for (int i = 0; i < c->narms; i++) out[(*n)++] = c->arms[i].body[c->arms[i].nbody - 1]->expr;
+        for (int i = 0; i < c->narms; i++) ctrl_tail_push(out, n, c->arms[i].body[c->arms[i].nbody - 1]->expr);
     }
 }
 
@@ -4268,6 +4299,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="ncpu",   .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* worker count = parallel-for fan-out width */
     g_sigs[g_nsigs++] = (Sig){ .name="chr",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="die",    .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="exit",   .ret=T_VOID,         .params={ T_INT },                   .nparams=1, .builtin=1 };   /* terminate with an explicit status; die() is exit(1) with a message. Diverging (expr_diverges) */
     g_sigs[g_nsigs++] = (Sig){ .name="str",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="substr", .ret=T_STRING,       .params={ T_STRING, T_INT, T_INT },  .nparams=3, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="find",   .ret=T_INT,          .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
@@ -6584,6 +6616,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 g_value_ctrl--;
                 Expr *tails[64]; int nt = 0;
                 ctrl_collect_tails(s->ctrl, tails, &nt);
+                /* Every branch diverged (die/exit only), so nothing can be bound and
+                 * `t` would stay at its T_VOID sentinel and be pushed as the var's
+                 * type. Fail closed with the fix rather than declare a void local. */
+                if (nt == 0)
+                    die_at(s->line, "every branch of this value if/match diverges, so there is no value to bind to '%s' -- write the if/match as a plain statement", s->name);
                 Type t = T_VOID;              /* T_VOID doubles as the "unset" sentinel (a void tail dies first) */
                 for (int i = 0; i < nt; i++) {
                     Type ti = tails[i]->type;
@@ -8627,6 +8664,13 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
         return sfmt("tycho_die(%s)", gen_expr(e->args[0], arena));
+    }
+    /* exit(code): C's exit(3) directly -- no runtime wrapper, because there is
+     * nothing to wrap. stdio is flushed by exit() itself, so a `println` before it
+     * is not lost, and only the low 8 bits reach the parent (POSIX wait status).
+     * Never returns; see expr_diverges. */
+    if (!strcmp(e->sval, "exit")) {
+        return sfmt("exit((int)(%s))", gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "str")) {
         Type at = e->args[0]->type;
