@@ -234,9 +234,11 @@ If          ::= "if" Expr ":" NEWLINE Block
                 ( "else" ":" NEWLINE Block )?
 Match       ::= "match" Expr ":" NEWLINE INDENT MatchArm+ DEDENT
 MatchArm    ::= Pattern ":" NEWLINE Block
-Pattern     ::= IDENT ( "(" IDENT ( "," IDENT )* ")" )?     /* variant, with 0..8 bindings */
-              | IDENT "." IDENT                             /* pkg.Variant */
-              | "_"                                         /* wildcard */
+Pattern     ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?   /* variant, with 0..8 bindings */
+              | VariantName "(" SubPattern ")"               /* Ok/Err/Some: one nested level */
+              | "_"                                          /* wildcard */
+VariantName ::= IDENT | IDENT "." IDENT                       /* Variant or pkg.Variant */
+SubPattern  ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?
 For         ::= "for" IDENT "in" "range" "(" Expr ( "," Expr ( "," Expr )? )? ")" ":" NEWLINE Block
               | "for" IDENT "in" Expr ":" NEWLINE Block
               | "for" Expr ":" NEWLINE Block

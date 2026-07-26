@@ -80,6 +80,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 |---|---|---|
 | §6.3 | `:=` / typed-decl synthesis | `tests/inference`, `reject/result_bare_decl` |
 | §6.4 | pending (ungrounded) types rejected | `tests/reject/infer_bare_empty`, `reject/infer_use_before_ground` |
+| §6.2(7) | a tuple literal is checked element-wise (a `Result` element grounds) | `corelib/test/result` (`outcome`) — no `tests/` fixture, see the note below |
 | §6.5 | branch unification for value `if`/`match` | `tests/if_expr`, `tests/match_expr`, `reject/if_expr_type_mismatch` |
 
 ### §7 Generics
@@ -145,6 +146,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §14.4 | loops; `range` step 0 reject/abort | `tests/foreach`, `tests/while_loop`, `tests/range_negative_step`, `reject/range_step_zero_lit`, `tests/abort/range_step_zero` |
 | §14.4 | `break` / `continue` | `tests/break_continue`, `tests/loop_return` |
 | §19.4 | `match` statement; exhaustive; wildcard-last | `tests/enums`, `tests/matchwild`, `reject/match_non_exhaustive`, `reject/match_dup_arm`, `reject/match_wildcard_not_last` |
+| §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `corelib/test/result` (`why`, `io_why`) — no `tests/` fixture, see the note below |
 
 ### §15 Functions
 
@@ -233,6 +235,18 @@ are flagged here so the gap is explicit rather than hidden:
   `tests/` would therefore redden two runners at a file that must not be edited
   (see E.1's `tychoc0` freeze). The same constraint is why `core:httpd` keeps
   `crlf()` instead of writing the literal.
+- **§14.3.1 nested patterns and §6.2(7)'s tuple-element checking** — same
+  mechanism, same conclusion: both are covered by `corelib/test/result`, which
+  `corelib/run.sh` golden-validates and no runner feeds to the frozen `tychoc0`,
+  and deliberately **not** by a `tests/` fixture, because `tests/*.ty` and
+  `tests/pkg/*/main.ty` go to `tychoc0` and its grammar has neither form. Measured,
+  not assumed: rewriting `httpd.read_request_capped` to `return (Err(why), buf)`
+  makes `examples/webserver/run.sh` report `returning
+  (Result(,httpd__ReqErr),str) but this function returns
+  (Result(httpd__Request,httpd__ReqErr),str)`, which is why that function keeps its
+  typed local. Note that §6.1 already listed "a tuple or array literal's element
+  type" as a checking context: for §6.2(7) the **implementation**, not the
+  specification, was the thing out of conformance.
 - **§30.3 clamp conditions and §30.5 unspecified behavior** — clamp behavior is
   exercised incidentally by the slice fixtures; the unspecified set is, by
   definition, not pinned (it is enumerated in [Appendix F](appendix-f-impl-defined.md)).

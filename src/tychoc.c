@@ -840,7 +840,11 @@ static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
  * enum (an AST: Add(Expr, Expr)) is finite, the same way arrays/strings are.
  * Variant names are globally unique, so a constructor or match arm names the
  * variant directly with no qualification. */
-typedef struct { char *name; Type payload[8]; int npayload; } Variant;
+/* `name` is package-mangled ("net__Timeout"); `raw` is the name as written
+ * ("Timeout"), kept so a NESTED match pattern can name a variant unqualified --
+ * inside `Err(...)` the payload's enum type is already known, so no qualifier is
+ * needed to disambiguate (see enum_variant_index). */
+typedef struct { char *name; char *raw; Type payload[8]; int npayload; } Variant;
 typedef struct { char *name; Variant *variants; int nvariants; int variants_cap; int line;
                  int generic; Type typarams[TYCHO_MAX_TYPARAMS]; int ntyparams;
                  int from_tmpl; Type from_args[TYCHO_MAX_TYPARAMS]; int nfrom_args; } EnumDef;   /* generics: `enum Tree($T)` template; instances substitute $T in variant payloads. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
@@ -866,6 +870,18 @@ static int enum_find(const char *name) {
 }
 /* find a variant by its (globally unique) name: returns its enum id, and writes
  * the variant index through *vi. -1 if not a known variant. */
+/* index of the variant of enum type `t` named `nm`, or -1. `nm` matches either the
+ * mangled name (from a qualified `net.Timeout` nested pattern) or the name as
+ * written (`Timeout`) -- unlike an expression, a nested pattern already knows the
+ * payload's enum type, so an unqualified variant name is unambiguous there. */
+static int enum_variant_index(Type t, const char *nm) {
+    if (!IS_ENUM(t) || !nm) return -1;
+    EnumDef *ed = &g_enums[ENUM_ID(t)];
+    for (int v = 0; v < ed->nvariants; v++)
+        if (!strcmp(ed->variants[v].name, nm) ||
+            (ed->variants[v].raw && !strcmp(ed->variants[v].raw, nm))) return v;
+    return -1;
+}
 static int variant_find(const char *vname, int *vi) {
     for (int e = 0; e < g_nenums; e++)
         for (int v = 0; v < g_enums[e].nvariants; v++)
@@ -1422,8 +1438,24 @@ typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
 
 typedef struct Stmt Stmt;
 /* one arm of a `match`: a variant name (Some/None or an enum variant), the
- * names it binds from the payload, and its block. */
-typedef struct { char *variant; char *binds[8]; int nbinds; Stmt **body; int nbody; int line; } MatchArm;
+ * names it binds from the payload, and its block.
+ *
+ * `sub` is ONE level of NESTED pattern on the single payload of an `Ok`/`Err`/
+ * `Some` arm -- `Err(net.Timeout)`, `Err(Timeout)`, `Err(C(n))` -- holding the
+ * inner variant's name as written (mangled when the pattern was qualified);
+ * `subbinds` are the names that inner variant's payload binds. NULL means the arm
+ * binds its payload plainly (`Err(e)`).
+ *
+ * A bare `Err(A)` is ambiguous at parse time -- binding, or nullary variant? It
+ * parses as a binding and the RESOLVER promotes it to a `sub` once the payload
+ * type is known (match_arm_payload). Before 2026-07-26 there was no promotion and
+ * no error: the arm bound a variable named `A` and therefore matched EVERY `Err`,
+ * surfacing only as "duplicate Err arm" if a second arm existed (FRICTION.md:139).
+ * `sub_vi` is the resolved variant index, or -1 for an unrefined arm; codegen
+ * reads it rather than recomputing, so the arm is visited once. */
+typedef struct { char *variant; char *binds[8]; int nbinds;
+                 char *sub; char *subbinds[8]; int nsubbinds; int sub_line; int sub_vi;
+                 Stmt **body; int nbody; int line; } MatchArm;
 struct Stmt {
     StmtKind kind;
     int      line;
@@ -1724,6 +1756,7 @@ static int enum_instantiate(int tmpl, Type *binds) {
     int nv = g_enums[tmpl].nvariants;
     for (int v = 0; v < nv; v++) {
         char *vname = g_enums[tmpl].variants[v].name;
+        char *vraw  = g_enums[tmpl].variants[v].raw;
         int   np    = g_enums[tmpl].variants[v].npayload;
         Type  pl[8];
         for (int f = 0; f < np; f++)
@@ -1732,7 +1765,7 @@ static int enum_instantiate(int tmpl, Type *binds) {
         TBL_ENSURE(e->variants, e->nvariants, e->variants_cap);
         e = &g_enums[id];
         Variant *dst = &e->variants[e->nvariants];
-        dst->name = vname; dst->npayload = np;
+        dst->name = vname; dst->raw = vraw; dst->npayload = np;
         for (int f = 0; f < np; f++) dst->payload[f] = pl[f];
         e->nvariants++;
     }
@@ -2726,11 +2759,37 @@ static Stmt *parse_match(Parser *ps, int line, int value) {
         else
             arm->variant = pkg_mangle(vname);
         arm->nbinds = 0; arm->line = vn->line;
+        arm->sub = NULL; arm->nsubbinds = 0; arm->sub_line = vn->line; arm->sub_vi = -1;
         if (accept(ps, TK_LPAREN)) {
-            while (!at(ps, TK_RPAREN)) {
-                if (arm->nbinds >= 8) die_at(vn->line, "too many bindings (max 8)");
-                arm->binds[arm->nbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
-                if (!accept(ps, TK_COMMA)) break;
+            /* One level of NESTED pattern, when the spelling is unambiguous at
+             * parse time: `pkg.Variant` (a DOT follows) or `Variant(b, ...)` (an
+             * LPAREN follows). A bare `Name` cannot be told from a binding here --
+             * it stays in binds[] and the resolver promotes it if the payload's
+             * enum has a variant by that name (MatchArm, above). */
+            if (at(ps, TK_IDENT) && (peek(ps, 1)->kind == TK_DOT || peek(ps, 1)->kind == TK_LPAREN)) {
+                Tok *sn = eat(ps, TK_IDENT, "a nested variant name");
+                arm->sub_line = sn->line;
+                if (accept(ps, TK_DOT)) {          /* qualified `pkg.Variant` */
+                    const char *inm = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
+                    check_pkg_private(sn->text, inm, sn->line);
+                    arm->sub = sfmt("%s%s", pkg_prefix_for(sn->text), inm);
+                } else {
+                    arm->sub = (char *)sn->text;   /* unqualified: matched by `raw` */
+                }
+                if (accept(ps, TK_LPAREN)) {       /* the nested variant's own payload bindings */
+                    while (!at(ps, TK_RPAREN)) {
+                        if (arm->nsubbinds >= 8) die_at(sn->line, "too many bindings (max 8)");
+                        arm->subbinds[arm->nsubbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
+                        if (!accept(ps, TK_COMMA)) break;
+                    }
+                    eat(ps, TK_RPAREN, "')' after the nested pattern's bindings");
+                }
+            } else {
+                while (!at(ps, TK_RPAREN)) {
+                    if (arm->nbinds >= 8) die_at(vn->line, "too many bindings (max 8)");
+                    arm->binds[arm->nbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
+                    if (!accept(ps, TK_COMMA)) break;
+                }
             }
             eat(ps, TK_RPAREN, "')'");
         }
@@ -3011,6 +3070,7 @@ static Stmt *parse_stmt(Parser *ps) {
             }
             MatchArm *arm = &s->arms[s->narms];
             arm->variant = an->text; arm->nbinds = 0; arm->line = an->line;
+            arm->sub = NULL; arm->nsubbinds = 0; arm->sub_line = an->line; arm->sub_vi = -1;
             Expr *che = NULL;
             if (!strcmp(an->text, "recv")) {
                 eat(ps, TK_LPAREN, "'(' after recv");
@@ -3774,6 +3834,7 @@ static void parse_enum(Parser *ps) {
             die_at(vn->line, "variant name '%s' is already used in this package", vn->text);
         Variant *var = &ed->variants[ed->nvariants];
         var->name = vmn;
+        var->raw = (char *)vn->text;   /* as written, for an unqualified nested pattern */
         var->npayload = 0;
         if (accept(ps, TK_LPAREN)) {     /* a payload tuple, e.g. Add(Expr, Expr) */
             while (!at(ps, TK_RPAREN)) {
@@ -5909,6 +5970,27 @@ static Type resolve_exp(Expr *e, Type want) {
                    e->kind == E_OK ? "Ok" : "Err", type_name(in));
         return e->type = want;
     }
+    /* (e1, ..., en) checked against a tuple destination of the same arity: push
+     * each element's expected type INTO the element, so a `Result`/`Option`/bare
+     * `[]` element grounds from context exactly as it does as a bare return or a
+     * struct field (FRICTION.md:159 -- `return (Err(A), "partial")` from a
+     * `-> (Result(int, E), string)` fn used to die "tuple element 1 needs a
+     * concrete value", because E_TUPLE was synthesis-only and Ok/Err synthesize
+     * to T_OK_PARTIAL/T_ERR_PARTIAL). Each element is resolved EXACTLY ONCE and
+     * the SYNTHESIZED element types are returned, not `want`: a mismatch then
+     * reports through the caller's own equality check with its own message
+     * instead of a second visit to the same node (plan.md phase 1). */
+    if (e->kind == E_TUPLE && IS_TUP(want) && e->nargs == tup_n(want) &&
+        e->nargs >= 2 && e->nargs <= 8) {
+        Type elems[8];
+        for (int i = 0; i < e->nargs; i++) {
+            Type et = resolve_exp(e->args[i], tup_elem(want, i));
+            if (et == T_VOID || et == T_NONE || et == T_OK_PARTIAL || et == T_ERR_PARTIAL)
+                die_at(e->line, "tuple element %d needs a concrete value", i + 1);
+            elems[i] = et;
+        }
+        return e->type = tup_of(elems, e->nargs);
+    }
     Type t = resolve_expr(e);
     if (t == T_NONE && IS_OPT(want)) return e->type = want;
     /* Ok(v)/Err(e): the value fixes one of Result's two params; `want` must be a
@@ -6094,6 +6176,7 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
             for (int a = 0; a < s->narms; a++) {
                 int save = g_pf_nloc;
                 for (int b = 0; b < s->arms[a].nbinds; b++) pf_add_local(s->arms[a].binds[b]);
+                for (int b = 0; b < s->arms[a].nsubbinds; b++) pf_add_local(s->arms[a].subbinds[b]);
                 pf_scan_body(s->arms[a].body, s->arms[a].nbody, loopdepth);
                 g_pf_nloc = save;
             }
@@ -6142,7 +6225,8 @@ static void resolve_parfor(Stmt *s) {
             Stmt *sel = new_stmt(S_SELECT, s->line);
             sel->arms = (MatchArm *)xmalloc(2 * sizeof(MatchArm));
             sel->sel_ch = (Expr **)xmalloc(2 * sizeof(Expr *));
-            memset(sel->arms, 0, 2 * sizeof(MatchArm));
+            memset(sel->arms, 0, 2 * sizeof(MatchArm));   /* sub = NULL: no nested pattern */
+            sel->arms[0].sub_vi = sel->arms[1].sub_vi = -1;
             sel->narms = 2;
             sel->arms[0].variant = "recv"; sel->arms[0].nbinds = 1;
             sel->arms[0].binds[0] = var;
@@ -6409,6 +6493,71 @@ static const char *discarded_map_get(Expr *e) {
     return NULL;
 }
 
+/* ---- nested match patterns (plan.md phase 3 / FRICTION.md:139) --------------
+ *
+ * One `match` side (the Ok, Err or Some arms) is a small ordered decision list:
+ * zero or more REFINED arms, each testing one variant of the payload's enum, and
+ * at most one UNREFINED arm binding the payload whole. `plain` records the
+ * unrefined arm's line (0 = none) so a refined arm written AFTER it is rejected as
+ * dead rather than silently unreachable; `cov` marks the variants the refined arms
+ * matched, which is what makes the side exhaustive without an unrefined arm. */
+typedef struct { int plain; int *cov; int ncov; } SideCov;
+
+/* Is this side of the match total? Either its unrefined arm covers it, or the
+ * refined arms named every variant of the payload enum. */
+static int side_total(SideCov *sc, Type pt) {
+    if (sc->plain) return 1;
+    if (!sc->cov) return 0;
+    for (int v = 0; v < sc->ncov; v++) if (!sc->cov[v]) return 0;
+    (void)pt;
+    return 1;
+}
+
+/* Check one Ok/Err/Some arm against its payload type `pt`, push what it binds, and
+ * record it in `sc`. Sets arm->sub_vi to the refined variant index, or -1.
+ *
+ * This is where a bare `Err(A)` is PROMOTED from a binding to a pattern. Doing it
+ * here rather than in the parser is the whole point: only the resolver knows that
+ * the payload is an enum with a variant `A`. It is idempotent -- a promoted arm has
+ * arm->sub set and skips the promotion branch -- because a generic function's body
+ * is cloned per instance and re-resolved (plan.md phase 1: resolution is not
+ * single-pass, and a non-idempotent in-place rewrite is exactly what bit there). */
+static void match_arm_payload(MatchArm *arm, Type pt, const char *tag, SideCov *sc) {
+    if (sc->plain)
+        die_at(arm->line, "duplicate %s arm", tag);   /* an unrefined arm already took this side */
+    if (!arm->sub) {
+        if (arm->nbinds != 1)
+            die_at(arm->line, "%s(x) binds exactly one value", tag);
+        int vi = enum_variant_index(pt, arm->binds[0]);
+        if (vi < 0) {                                 /* an ordinary binding */
+            vars_push(arm->binds[0], pt, 1);
+            arm->sub_vi = -1;
+            sc->plain = arm->line ? arm->line : 1;
+            return;
+        }
+        if (g_enums[ENUM_ID(pt)].variants[vi].npayload != 0)
+            die_at(arm->line, "'%s' is a variant of %s that carries a payload -- write "
+                   "%s(%s(x)) to match it, or rename the binding",
+                   arm->binds[0], type_name(pt), tag, arm->binds[0]);
+        arm->sub = arm->binds[0]; arm->nbinds = 0; arm->nsubbinds = 0;
+    }
+    if (!IS_ENUM(pt))
+        die_at(arm->sub_line, "a nested pattern needs an enum payload, but %s here carries %s",
+               tag, type_name(pt));
+    int vi = enum_variant_index(pt, arm->sub);
+    if (vi < 0)
+        die_at(arm->sub_line, "'%s' is not a variant of %s", arm->sub, type_name(pt));
+    EnumDef *ed = &g_enums[ENUM_ID(pt)];
+    Variant *var = &ed->variants[vi];
+    if (arm->nsubbinds != var->npayload)
+        die_at(arm->sub_line, "%s binds %d value(s), got %d", var->raw, var->npayload, arm->nsubbinds);
+    for (int b = 0; b < arm->nsubbinds; b++) vars_push(arm->subbinds[b], var->payload[b], 1);
+    arm->sub_vi = vi;
+    if (!sc->cov) { sc->ncov = ed->nvariants; sc->cov = (int *)calloc((size_t)sc->ncov, sizeof(int)); }
+    if (sc->cov[vi]) die_at(arm->sub_line, "duplicate %s(%s) arm", tag, var->raw);
+    sc->cov[vi] = 1;
+}
+
 /* >0 while resolving the single-expr tails of a value if/match (see S_EXPR case) */
 static int g_value_ctrl = 0;
 static void resolve_stmt(Stmt *s, Type ret) {
@@ -6602,16 +6751,14 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 }
             if (IS_OPT(st)) {
                 Type inner = opt_inner(st);
-                int some = 0, none = 0;
+                SideCov some = {0}; int none = 0;
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
                     int m = vars_mark();
                     if (!strcmp(arm->variant, "_")) {
                         /* catch-all: no binding */
                     } else if (!strcmp(arm->variant, "Some")) {
-                        if (some) die_at(arm->line, "duplicate Some arm");
-                        if (arm->nbinds != 1) die_at(arm->line, "Some(x) binds exactly one value");
-                        vars_push(arm->binds[0], inner, 1); some = 1;
+                        match_arm_payload(arm, inner, "Some", &some);
                     } else if (!strcmp(arm->variant, "None")) {
                         if (none) die_at(arm->line, "duplicate None arm");
                         if (arm->nbinds != 0) die_at(arm->line, "None binds nothing");
@@ -6622,30 +6769,30 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
-                if (!wild && (!some || !none)) die_at(s->line, "match on an Option must cover both Some and None");
+                if (!wild && (!side_total(&some, inner) || !none))
+                    die_at(s->line, "match on an Option must cover both Some and None");
+                free(some.cov);
             } else if (IS_RES(st)) {
                 Type okt = res_ok(st), errt = res_err(st);
-                int ok = 0, err = 0;
+                SideCov ok = {0}, err = {0};
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
                     int m = vars_mark();
                     if (!strcmp(arm->variant, "_")) {
                         /* catch-all: no binding */
                     } else if (!strcmp(arm->variant, "Ok")) {
-                        if (ok) die_at(arm->line, "duplicate Ok arm");
-                        if (arm->nbinds != 1) die_at(arm->line, "Ok(x) binds exactly one value");
-                        vars_push(arm->binds[0], okt, 1); ok = 1;
+                        match_arm_payload(arm, okt, "Ok", &ok);
                     } else if (!strcmp(arm->variant, "Err")) {
-                        if (err) die_at(arm->line, "duplicate Err arm");
-                        if (arm->nbinds != 1) die_at(arm->line, "Err(e) binds exactly one value");
-                        vars_push(arm->binds[0], errt, 1); err = 1;
+                        match_arm_payload(arm, errt, "Err", &err);
                     } else {
                         die_at(arm->line, "a Result's arms are Ok(x), Err(e), and _, not '%s'", arm->variant);
                     }
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
-                if (!wild && (!ok || !err)) die_at(s->line, "match on a Result must cover both Ok and Err");
+                if (!wild && (!side_total(&ok, okt) || !side_total(&err, errt)))
+                    die_at(s->line, "match on a Result must cover both Ok and Err");
+                free(ok.cov); free(err.cov);
             } else if (IS_ENUM(st)) {
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
                 int *covered = (int *)calloc((size_t)ed->nvariants, sizeof(int));
@@ -6664,6 +6811,18 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     Variant *var = &ed->variants[vi];
                     if (arm->nbinds != var->npayload)
                         die_at(arm->line, "%s binds %d value(s), got %d", var->name, var->npayload, arm->nbinds);
+                    /* A nested pattern is supported on an Option/Result payload only
+                     * (match_arm_payload). Reject the spellings that would otherwise
+                     * bind silently here -- the same trap one level down. */
+                    if (arm->sub)
+                        die_at(arm->sub_line, "a nested pattern is only supported inside "
+                               "Ok(...), Err(...) or Some(...) -- match %s's payload in its own match",
+                               var->raw);
+                    for (int b = 0; b < arm->nbinds; b++)
+                        if (enum_variant_index(var->payload[b], arm->binds[b]) >= 0)
+                            die_at(arm->line, "'%s' is a variant of %s, not a binding name -- "
+                                   "match it in its own match, or rename the binding",
+                                   arm->binds[b], type_name(var->payload[b]));
                     int m = vars_mark();
                     for (int b = 0; b < arm->nbinds; b++) vars_push(arm->binds[b], var->payload[b], 1);
                     resolve_block(arm->body, arm->nbody, ret);
@@ -7331,6 +7490,8 @@ static int stmt_unsafe(Stmt *s, const char *iv, const char *arr) {
     if (stmts_unsafe(s->body, s->nbody, iv, arr)) return 1;
     if (stmts_unsafe(s->els,  s->nels,  iv, arr)) return 1;
     for (int a = 0; a < s->narms; a++) {
+        for (int b = 0; b < s->arms[a].nsubbinds; b++)
+            if (!strcmp(s->arms[a].subbinds[b], iv) || !strcmp(s->arms[a].subbinds[b], arr)) return 1;
         for (int b = 0; b < s->arms[a].nbinds; b++)
             if (!strcmp(s->arms[a].binds[b], iv) || !strcmp(s->arms[a].binds[b], arr)) return 1;
         if (stmts_unsafe(s->arms[a].body, s->arms[a].nbody, iv, arr)) return 1;
@@ -7539,6 +7700,7 @@ static int body_defines(Stmt **body, int n, const char *nm) {
             for (int k = 0; k < s->nnames; k++) if (!strcmp(s->names[k], nm)) return 1;
         for (int a = 0; a < s->narms; a++) {
             for (int b = 0; b < s->arms[a].nbinds; b++) if (!strcmp(s->arms[a].binds[b], nm)) return 1;
+            for (int b = 0; b < s->arms[a].nsubbinds; b++) if (!strcmp(s->arms[a].subbinds[b], nm)) return 1;
             if (body_defines(s->arms[a].body, s->arms[a].nbody, nm)) return 1;
         }
         if (body_defines(s->body, s->nbody, nm)) return 1;
@@ -9133,6 +9295,70 @@ static char *gen_lvalue(Expr *e, const char *arena) {
     return gen_expr(e, arena);
 }
 
+/* Emit ONE side of an Option/Result match -- its Ok, Err or Some arms -- as an
+ * ordered decision chain. `val` is the C expression for the payload (`_m3.errv`),
+ * `pt` its Tycho type.
+ *
+ * Refined arms (a nested pattern, arm->sub_vi >= 0) become tag tests on the payload
+ * enum, in SOURCE order. The unrefined arm -- or the `_` wildcard -- is the trailing
+ * else. With neither, the else traps, exactly as the enum dispatch in gen_stmt does:
+ * the resolver has already proved the side total, so this is unreachable, but it
+ * keeps the generated C provably returning on every path.
+ *
+ * A refined arm binds nothing from the payload itself (the test IS the information);
+ * it binds only its nested variant's own payload fields, borrowed or copied on the
+ * same rule the enum dispatch uses. */
+static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val,
+                           int ind, MatchArm *wildarm, const char *scope, Type ret) {
+    MatchArm *plain = NULL;
+    int nref = 0;
+    for (int i = 0; i < s->narms; i++) {
+        MatchArm *a = &s->arms[i];
+        if (strcmp(a->variant, tag)) continue;
+        if (a->sub_vi < 0) { plain = a; continue; }
+        EnumDef *ed = &g_enums[ENUM_ID(pt)];
+        Variant *var = &ed->variants[a->sub_vi];
+        indent(o, ind);
+        fprintf(o, "%sif (%s->tag == %d) {\n", nref ? "else " : "", val, a->sub_vi);
+        nref++;
+        int m = cv_mark();
+        if (var->npayload > 0 && a->nsubbinds > 0) {
+            int bid = g_blk++;
+            indent(o, ind + 1);
+            fprintf(o, "E_%s_%s *_p%d = &%s->u.%s;\n", ed->name, var->name, bid, val, var->name);
+            for (int b = 0; b < a->nsubbinds; b++) {
+                char *field = sfmt("_p%d->f%d", bid, b);
+                int borrow = type_is_heap(var->payload[b])
+                    && !block_mutates(a->body, a->nbody, a->subbinds[b]);
+                indent(o, ind + 1);
+                fprintf(o, "%sh_%s = %s;\n", c_type(var->payload[b]), a->subbinds[b],
+                        borrow ? field : copy_into(var->payload[b], scope, field));
+                cv_push(a->subbinds[b], borrow ? NULL : scope);
+            }
+        }
+        gen_block(o, a->body, a->nbody, ind + 1, scope, ret);
+        cv_restore(m);
+        indent(o, ind); fprintf(o, "}\n");
+    }
+    int bind = ind + (nref ? 1 : 0);
+    if (nref) { indent(o, ind); fprintf(o, "else {\n"); }
+    if (plain) {
+        int borrow = type_is_heap(pt) && !block_mutates(plain->body, plain->nbody, plain->binds[0]);
+        indent(o, bind);
+        fprintf(o, "%sh_%s = %s;\n", c_type(pt), plain->binds[0],
+                borrow ? val : copy_into(pt, scope, val));
+        int m = cv_mark(); cv_push(plain->binds[0], borrow ? NULL : scope);
+        gen_block(o, plain->body, plain->nbody, bind, scope, ret);
+        cv_restore(m);
+    } else if (wildarm) {
+        gen_block(o, wildarm->body, wildarm->nbody, bind, scope, ret);
+    } else {
+        indent(o, bind);
+        fprintf(o, "fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1);\n");
+    }
+    if (nref) { indent(o, ind); fprintf(o, "}\n"); }
+}
+
 /* CC-3 parallel for site: spawn K = tycho_ncpu() chunk tasks of the lifted
  * __par<N> proc through the CC-1 trampoline (HSpawnA_<sid>/tycho_spawn_<sid>),
  * deep-copying every capture into each task's root arena, then join in chunk
@@ -9774,56 +10000,22 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             for (int i = 0; i < s->narms; i++)
                 if (!strcmp(s->arms[i].variant, "_")) wildarm = &s->arms[i];
             if (IS_OPT(st)) {
-                Type inner = opt_inner(st);
-                MatchArm *some = NULL, *none = NULL;
+                MatchArm *none = NULL;
                 for (int i = 0; i < s->narms; i++)
-                    if (!strcmp(s->arms[i].variant, "Some")) some = &s->arms[i];
-                    else if (!strcmp(s->arms[i].variant, "None")) none = &s->arms[i];
+                    if (!strcmp(s->arms[i].variant, "None")) none = &s->arms[i];
                 indent(o, ind + 1); fprintf(o, "if (_m%d.has) {\n", mid);
-                if (some) {
-                    indent(o, ind + 2);
-                    int sborrow = type_is_heap(inner)
-                        && !block_mutates(some->body, some->nbody, some->binds[0]);
-                    fprintf(o, "%sh_%s = %s;\n", c_type(inner), some->binds[0],
-                            sborrow ? sfmt("_m%d.val", mid)
-                                    : copy_into(inner, scope, sfmt("_m%d.val", mid)));
-                    int m = cv_mark(); cv_push(some->binds[0], sborrow ? NULL : scope);
-                    gen_block(o, some->body, some->nbody, ind + 2, scope, ret);
-                    cv_restore(m);
-                } else gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
-                indent(o, ind + 1); fprintf(o, "} else {\n");
+                gen_match_side(o, s, "Some", opt_inner(st), sfmt("_m%d.val", mid),
+                               ind + 2, wildarm, scope, ret);
+                indent(o, ind + 1); fprintf(o, "} else {\n");   /* None binds nothing */
                 gen_block(o, none ? none->body : wildarm->body, none ? none->nbody : wildarm->nbody, ind + 2, scope, ret);
                 indent(o, ind + 1); fprintf(o, "}\n");
             } else if (IS_RES(st)) {   /* Ok(x) -> .okv / Err(e) -> .errv, tag is .ok */
-                Type okt = res_ok(st), errt = res_err(st);
-                MatchArm *okarm = NULL, *errarm = NULL;
-                for (int i = 0; i < s->narms; i++)
-                    if (!strcmp(s->arms[i].variant, "Ok")) okarm = &s->arms[i];
-                    else if (!strcmp(s->arms[i].variant, "Err")) errarm = &s->arms[i];
                 indent(o, ind + 1); fprintf(o, "if (_m%d.ok) {\n", mid);
-                if (okarm) {
-                    indent(o, ind + 2);
-                    int okborrow = type_is_heap(okt)
-                        && !block_mutates(okarm->body, okarm->nbody, okarm->binds[0]);
-                    fprintf(o, "%sh_%s = %s;\n", c_type(okt), okarm->binds[0],
-                            okborrow ? sfmt("_m%d.okv", mid)
-                                     : copy_into(okt, scope, sfmt("_m%d.okv", mid)));
-                    int m = cv_mark(); cv_push(okarm->binds[0], okborrow ? NULL : scope);
-                    gen_block(o, okarm->body, okarm->nbody, ind + 2, scope, ret);
-                    cv_restore(m);
-                } else gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
+                gen_match_side(o, s, "Ok", res_ok(st), sfmt("_m%d.okv", mid),
+                               ind + 2, wildarm, scope, ret);
                 indent(o, ind + 1); fprintf(o, "} else {\n");
-                if (errarm) {
-                    indent(o, ind + 2);
-                    int errborrow = type_is_heap(errt)
-                        && !block_mutates(errarm->body, errarm->nbody, errarm->binds[0]);
-                    fprintf(o, "%sh_%s = %s;\n", c_type(errt), errarm->binds[0],
-                            errborrow ? sfmt("_m%d.errv", mid)
-                                      : copy_into(errt, scope, sfmt("_m%d.errv", mid)));
-                    int m2 = cv_mark(); cv_push(errarm->binds[0], errborrow ? NULL : scope);
-                    gen_block(o, errarm->body, errarm->nbody, ind + 2, scope, ret);
-                    cv_restore(m2);
-                } else gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
+                gen_match_side(o, s, "Err", res_err(st), sfmt("_m%d.errv", mid),
+                               ind + 2, wildarm, scope, ret);
                 indent(o, ind + 1); fprintf(o, "}\n");
             } else {   /* IS_ENUM: a tag dispatch; each arm binds its payload */
                 EnumDef *ed = &g_enums[ENUM_ID(st)];

@@ -40,8 +40,11 @@ package httpd
 import "core:net"
 import "core:result"
 
-# Why a request could not be produced. Every variant is payload-free so `==` works
-# on it (Tycho has no nested patterns: `Err(httpd.Timeout)` does not parse).
+# Why a request could not be produced. Every variant is payload-free, so both
+# spellings work on it: `==` for a one-line test, and a nested pattern
+# (`Err(httpd.Timeout):`, since plan.md phase 3) for a caller already writing a
+# `match` -- which is how server/main.ty acts on all five causes. Payload-free is
+# KEPT: a payload would break every `==` call site in the tree.
 #
 # These four were ONE value -- a Request whose `method` is "" -- until 2026-07-26.
 # A server that must answer 400 to garbage while hanging up silently on a
@@ -272,6 +275,16 @@ fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     # TooLarge is the initializer because it is the ONLY other way out of the loop
     # above: with no terminator in `buf`, either a read failed (cut) or the cap was
     # reached. `buf` goes back either way -- Ok or Err.
+    #
+    # `out` IS KEPT DELIBERATELY, and no longer because the compiler needs it: as of
+    # plan.md phase 3 a tuple literal DOES infer a Result element, so
+    # `return (Err(why), buf)` compiles under src/tychoc.c. It does not compile under
+    # the FROZEN compiler/tychoc0.ty, which examples/webserver/run.sh feeds this
+    # package (it asserts tychoc == tychoc0 == golden) and which reports
+    # `returning (Result(,httpd__ReqErr),str) but this function returns
+    # (Result(httpd__Request,httpd__ReqErr),str)` -- measured, not assumed. Same
+    # reach as the \r literal in phase 2: this file cannot use anything tychoc0
+    # rejects. The direct form is demonstrated in corelib/test/result instead.
     out: Result(Request, ReqErr) = Err(TooLarge)
     if find(buf, term) < 0:
         if cut:

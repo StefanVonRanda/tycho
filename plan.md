@@ -620,7 +620,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   - Nothing else found. `scripts/tools_check.sh`, `spec_check.sh`, `check_links.sh`,
     `check_citations.py` and `frontparity.sh` were all green at the end of the phase.
 
-- [ ] **Phase 3 — nested patterns, and `Result` in a tuple literal**
+- [x] **Phase 3 — nested patterns, and `Result` in a tuple literal**
   - Items: `FRICTION.md:139` — there are **no nested patterns**: `Err(net.Timeout)` is
     rejected with `error: expected ')'`, and worse, `Err(A)` for a nullary variant *parses as
     a binding named `A`*, surfacing only as `error: duplicate Err arm` if a second arm exists.
@@ -637,6 +637,308 @@ is a completed phase under this plan's Goal, and it is not a failure.
     `Result` can be a tuple literal element; the workaround locals are removed.
   - Verify: corelib + 13 entry points compile; 9 goldens match; `server/` live matrix
     unchanged; new regression tests pass.
+
+  #### Phase 3 — DONE. Evidence
+
+  ##### Both items reproduced first, with real output, against the pre-fix compiler
+
+  Five scratch programs, each in its own directory (`FRICTION.md:141`):
+
+  ```
+  r1  Err(net.Timeout)  -> error: expected ')'                 (col points at the `.`)
+  r2  Err(C(n))         -> error: expected ')'                 (col points at the `(`)
+  r3  Err(A) / Err(B)   -> error: duplicate Err arm            <- the ONLY symptom
+  r4  Err(A) alone      -> BUILT, and RAN: "errA"              <- the silent misparse
+  r5  return (Err(A),"partial") -> error: tuple element 1 needs a concrete value
+  ```
+
+  `r4` is the item's real content: one `Err(A)` arm **compiled and ran**, because `A`
+  was a binding. Nothing was reported at the arm, which is where the mistake is.
+
+  ##### Root cause 1: the pattern grammar had no recursion, and a bare name is ambiguous
+
+  `MatchArm` was a flat list of *binding names*, not a pattern
+  (`src/tychoc.c:1426` at HEAD: `char *binds[8]; int nbinds;`), and the parser's arm
+  loop ate one bare `TK_IDENT` per slot:
+
+  ```c
+  /* src/tychoc.c:2732 at HEAD -- the whole of it */
+  arm->binds[arm->nbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
+  ```
+
+  So `net.Timeout` died on the `.` and `C(n)` on the `(` — "expected `')'`" was the
+  arm loop refusing anything but `IDENT , IDENT`. And `A` **fit**, as a binding.
+  The ambiguity is real and cannot be resolved in the parser: `Err(x)` is a binding
+  and `Err(A)` is a pattern, and only the payload's *type* tells them apart. That is
+  why the fix has a parse half and a resolve half, and why the resolve half is where
+  the misparse dies.
+
+  Second mechanism, in codegen: an `Option`/`Result` match was **not** an arm chain
+  at all. It was a hard binary `if`, with exactly one Ok arm and one Err arm found by
+  name (`src/tychoc.c:9799-9803` at HEAD, `okarm`/`errarm` single pointers). Multiple
+  `Err` arms had nowhere to go, which is the structural reason the item is bigger
+  than a parser tweak.
+
+  ##### Root cause 2: `E_TUPLE` was synthesis-only, and `Ok`/`Err` synthesize a *partial*
+
+  `Ok(v)`/`Err(e)` deliberately resolve to `T_OK_PARTIAL`/`T_ERR_PARTIAL` — half a
+  `Result`, with context expected to supply the other half (`src/tychoc.c:4663-4668`).
+  `resolve_exp` (checking mode) grounds them against an `IS_RES(want)`
+  (`src/tychoc.c:5904-5911`), and that is why a bare `return Err(A)` and a typed local
+  both work. But there was **no `E_TUPLE` arm in `resolve_exp` at all**: a tuple
+  literal always fell through to the synthesis path (`:4670-4681`), which resolves
+  each element with no expected type and rejects a partial:
+
+  ```c
+  /* src/tychoc.c:4676-4677 -- the error the item recorded, in the SYNTHESIS path */
+  if (et == T_VOID || et == T_NONE || et == T_OK_PARTIAL || et == T_ERR_PARTIAL)
+      die_at(e->line, "tuple element %d needs a concrete value", i + 1);
+  ```
+
+  The finding worth keeping: **the spec already said this should work.**
+  `docs/spec/04-inference.md` §6.1 has listed "a tuple or array literal's element
+  type" as a context that supplies an expected type since it was written. The
+  implementation, not the specification, was out of conformance — so item 2 is a
+  **conformance bug**, not a language addition, and it is recorded that way in
+  `appendix-e-conformance.md`.
+
+  ##### What landed (`src/tychoc.c`: +257 / −65 = **+192 lines**, of which **116 are code**)
+
+  | # | change | site | code lines |
+  |---|---|---|---|
+  | 1 | `E_TUPLE` checking arm in `resolve_exp` — element-wise, each element resolved **once** | `src/tychoc.c:5913-5923` | 11 |
+  | 2 | `Variant.raw` (the name as written) + `enum_variant_index` | `:843-847`, `:869-880` | 9 |
+  | 3 | `MatchArm.sub` / `subbinds` / `sub_line` / `sub_vi` | `:1426-1443` | 3 |
+  | 4 | parser: one nested pattern, `pkg.V` or `V(b,…)` | `:2761-2790` | 22 |
+  | 5 | resolver: `SideCov` + `side_total` + `match_arm_payload` (promotion, ordering, coverage) | `:6496-6559` | 42 |
+  | 6 | resolver: `Ok`/`Err`/`Some` arms rewritten onto it | `:6702-6795` | 12 |
+  | 7 | resolver: hard error for a variant name bound in a **plain enum** arm | `:6814-6824` | 8 |
+  | 8 | codegen: `gen_match_side` — the ordered chain, replacing the binary `if` | `:9297-9358` | (net) 9 |
+
+  Item 2 is **11 code lines**, and it returns the *synthesized* element types rather
+  than `want`, on purpose: a mismatch then reports through the caller's own equality
+  check with the caller's own message, so there is no second visit to the node.
+  Phase 1's lesson applied directly — the failure there was an in-place rewrite that
+  ran twice. `match_arm_payload` is idempotent for the same reason and says so: a
+  promoted arm has `sub` set and skips the promotion branch, which matters because
+  `clone_block` (`:7010`) clones a generic body per instance and re-resolves it.
+
+  The **rule that kills the misparse by construction**: inside a pattern the
+  payload's enum type is already known, so a name that is a variant of that enum is
+  **always a pattern, never a binding** — `Err(Timeout)` and `Err(net.Timeout)` are
+  the same pattern. `enum_variant_index` matches on the mangled name **or** on
+  `Variant.raw`, which is the one new field this needed.
+
+  ##### Refused, with the number
+
+  - **Nesting inside a plain enum arm** (`match e: Wrap(A):`). Cost measured by
+    reading the two functions it would need: the enum arm loop
+    (`src/tychoc.c:6795-6836`) would gain per-payload-slot coverage — `covered[]`
+    becomes 2-dimensional, since `Wrap(A)` and `Wrap(B)` are two arms for one variant
+    — and the enum dispatch in `gen_stmt` (`:9849-9899`) would need `gen_match_side`'s
+    chain nested inside each tag test, i.e. a second level of `else if` with its own
+    fallback and its own trap. **2 functions, ~70 lines**, for a shape no code in the
+    tree writes. **Refused — but the trap is closed anyway**, which was the phase's
+    non-negotiable half: the bare-name case there is a hard error, not a bind.
+  - **Deeper than one level** (`Err(C(D(n)))`) and **non-enum nested patterns**
+    (`Err(3)`, a literal). Both need `MatchArm.sub` to become a recursive `Pattern`
+    node with its own resolve and codegen walk — the same ~70 lines plus recursion.
+    Refused. Both reject cleanly:
+
+  ```
+  r10/main.ty:14: error: 'A' is a variant of Cause, not a binding name -- match it in its own match, or rename the binding
+  r11/main.ty:12: error: expected ')' after the nested pattern's bindings
+  r12/main.ty:7:  error: expected a binding name
+  r13/main.ty:11: error: duplicate Err(A) arm
+  ```
+
+  ##### Scratch programs, every shape, with real output
+
+  ```
+  r1  Err(net.Timeout) / Err(net.Eof) / Err(e)   -> "ok 3"  "eof"  "timeout"
+  r2  Err(C(n))            payload-carrying nested  -> "c 42"
+  r3  Err(A) / Err(B)      two bare arms            -> "errA"        (was: duplicate Err arm)
+  r4  Err(A) alone         -> error: match on a Result must cover both Ok and Err
+                              ^ the misparse is now a HARD ERROR
+  r5  return (Err(A), "partial") from -> (Result(int,E), string)     -> "partial"
+  r6  VALUE-form match with a nested arm + `_`     -> "timeout" "other" "ok 2"
+  r7  refined arms cover EVERY variant, no Err(e) and no `_`
+                           -> "c 7 seven"  "b"  "a"  "ok 2"
+  r8  Err(e) BEFORE Err(A) -> error: duplicate Err arm   (the dead arm is rejected)
+  r9  Some(A) / Some(e) / None  on an Option payload -> "none" "some other" "some a"
+  ```
+
+  ##### Workarounds removed — and one KEPT, with the measurement that forced it
+
+  | site | before | after |
+  |---|---|---|
+  | `server/main.ty` `serve_conn` | `Err(e)` + 5 × `e == httpd.X` + an `answer` bool | **5 arms, one per cause**; shared wire+log tail factored into `refuse()` |
+  | `server/main.ty` root check | `Err(e)` + `if e == io.NotFound` + `else` | `Err(io.NotFound)` / `Err(e)` |
+  | `corelib/test/httpd` `why` | `is_ok` + `err_or` + 4 × `==` | 5 arms (`Err(httpd.Malformed)` …) |
+  | `corelib/test/io` `why`/`dwhy`/`fswhy` | 3 × (`is_ok` + `err_or` + `==` chain) | 3 matches, one arm per cause |
+  | `examples/corelib/result` `describe` | `is_ok` + `err_or` + `==` chain | 4 arms |
+  | `corelib/httpd/httpd.ty` `read_request_capped` | typed local `out` | **`out` KEPT** — see below |
+
+  **`out` is kept, and it is not a compiler limit any more.** `return (Err(why), buf)`
+  compiles under `src/tychoc.c`. It does **not** compile under the frozen
+  `compiler/tychoc0.ty`, which `examples/webserver/run.sh:24-27` feeds this package
+  while asserting `tychoc == tychoc0 == golden`. Measured by actually making the
+  change and running the runner:
+
+  ```
+  webserver: tychoc0 BUILD FAILED
+  line 540: returning (Result(,httpd__ReqErr),str) but this function returns
+            (Result(httpd__Request,httpd__ReqErr),str)
+                return (Err(why), buf)
+  ```
+
+  Identical in kind to phase 2's `crlf()` finding, and it generalises: **nothing in
+  `corelib/`, `tools/`, `tests/` or top-level `examples/` may use a nested pattern
+  either.** That is why the sites converted above are all in `server/`,
+  `corelib/test/` and `examples/corelib/` — the three places phase 2 mapped as
+  outside the frozen compiler's reach. The reason is written into `httpd.ty` at the
+  `out` declaration, into `result.ty`, `io.ty` and `httpd.ty`'s enum headers, and
+  into `docs/guides/corelib.md`.
+
+  ##### Line deltas, honestly
+
+  | file | before | after | note |
+  |---|---|---|---|
+  | `src/tychoc.c` | 11840 | **12032** | +192 total, **+116 code** (180 added − 64 removed) |
+  | `server/main.ty` | 600 (378 code) | 611 (**380 code**) | **+2 code lines.** The 5 arms and `refuse()` cost 2 more lines than the `answer` bool they replace; what went is the two-step, not the line count |
+  | `corelib/test/io/main.ty` | 121 code | **115 code** | −6 |
+  | `corelib/test/result/main.ty` | 2 code added → 71 lines | | the regression, mostly comment |
+
+  ##### Regression test, and why it is where it is
+
+  `corelib/test/result` gains `why` (bare nullary, payload-carrying, and a
+  three-variant exhaustive set), `io_why` (qualified `Err(io.NotFound)` + `_`) and
+  `outcome` (a `Result` in a tuple literal, destructured by the caller). Golden
+  recorded, 8 new lines in `corelib/test/result.out`.
+
+  **It cannot live in `tests/`**, and that is a consequence of the freeze rather than
+  a choice: `compiler/fixpoint.sh:24` and `scripts/frontparity.sh:127-128` feed every
+  `tests/*.ty` and `tests/pkg/*/main.ty` to the frozen `tychoc0`. Recorded in
+  `docs/spec/appendix-e-conformance.md` beside phase 2's identical note. The stronger
+  coverage is incidental: `corelib/test/{io,httpd}` and `examples/corelib/result` had
+  their `==` chains **rewritten as nested patterns** and their goldens still match
+  byte for byte — proof the new codegen is behaviour-identical to the code it
+  replaced, on four functions, not just on a fixture written to pass.
+
+  ##### Spec
+
+  - `docs/spec/02-grammar.md` — `Pattern` gains `VariantName` and `SubPattern`;
+    `appendix-a-grammar.md` regenerated to match (it is a checked projection).
+  - `docs/spec/10-statements.md` — new **§14.3.1 Nested patterns**: one level,
+    `Option`/`Result` payloads only, the unqualified-variant rule, the
+    "a variant name is always a pattern, never a binding" consequence, the ordered
+    decision list, and the three exhaustiveness routes, with a `tycho` example.
+  - `docs/spec/04-inference.md` — §6.2 gains item **7**, tuple literals checked
+    element-wise.
+  - `docs/spec/appendix-e-conformance.md` — two matrix rows (§14.3.1, §6.2(7)) plus
+    the no-`tests/`-fixture note carrying the measured `tychoc0` error.
+
+  ##### Gate spend: `make ci` and `make test` — **NOT run.** The day's single run was
+  spent by phase 1 (commit `5187724`); phase 2 (`667f0d9`) also verified by hand.
+  Every command below actually run, in the foreground:
+
+  ```
+  ok compile corelib/test/{httpd,io,net,result}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                    -- 13 entry points, 0 failures
+  sh corelib/run.sh          -> "corelib: all green (tychoc matches goldens)"
+  sh examples/corelib/run.sh -> "corelib examples: all green"
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"  -- 9th golden
+  sh scripts/frontparity.sh  -> agreed: 288  diverged: 0   (unchanged from phase 2)
+  sh scripts/tools_check.sh  -> "tools-check: ok"
+                                810 files checked (compilable=379)
+                                idempotence-fails=0 semantic-fails=0
+  sh scripts/spec_check.sh   -> Appendix A matches; Appendix E resolves; 7 examples pass
+  sh scripts/check_links.sh  -> ok (128 markdown files, no dead relative links)
+  python3 scripts/check_citations.py -> ok (22 anchored, 1403 bare)
+  cc -O2 -Wall -Wextra -std=c11 src/tychoc.c  -> 0 warnings
+  ```
+
+  `frontparity` at **288 / 0** is the proof the freeze was respected rather than
+  merely acknowledged, and `tools_check` at **810 / 0 / 0** is the proof `tychofmt`
+  needed no change: nested patterns are ordinary tokens and the formatter is
+  token-preserving, exactly as phase 2 found for adjacent literals.
+
+  ##### The `server/` live matrix, run twice and diffed
+
+  `127.0.0.1:18099`, `--workers 4 --idle-ms 800`, raw sockets. Run once against a
+  binary built from **`git show HEAD:server/main.ty`** and once against the new
+  source, both with the new compiler (the compiler changes are strictly additive, so
+  HEAD's source is unaffected):
+
+  ```
+  GET /            200 2659 text/html; charset=utf-8   GET /style.css 200 1726 text/css
+  GET /data.json   200 294  application/json           GET /favicon.ico 200 441 image/x-icon
+  GET /nope.html   404 621                             GET /../../etc/passwd 403
+  POST /           405 Allow: GET, HEAD                HEAD / 200 Content-Length=2659 body=0
+  GARBAGE -> 400                                       Content-Length: 0x10 -> 400
+  20 KiB head, no terminator -> 431 Request Header Fields Too Large
+  (a) zero-byte hangup        -> no bytes, log lines added 0
+  (b) partial head then stall -> 408 Request Timeout, log lines added 1
+  (c) idle past 800ms         -> 0 bytes, log lines added 0
+  GET /emptydir -> 301 Location: /emptydir/ 56   /about -> 301 /about/   /img -> 301 /img/
+  keep-alive 3 requests on ONE fd -> 200 200 200      50-request flood -> 50/50 200
+  access log workers seen: w1 w2 w3 w4    format `w<id> <method> <target> <status> <bytes> <ms>`
+  clean exit: SIGTERM -> killed by signal 15 (wait status 143)
+
+  diff old.txt new.txt -> TRANSCRIPTS IDENTICAL, case for case (both full passes)
+  access log, worker id + timings masked -> IDENTICAL
+  served bytes vs disk: favicon.ico 441, index.html 2659, style.css 1726,
+                        data.json 294  -- all BYTE-IDENTICAL
+  ```
+
+  **A near-miss worth recording, because it would have been a false green.** The
+  first old/new pair reported "identical transcripts" while *both* runs had actually
+  died at the 408 case: an orphaned server from an earlier aborted run still held
+  `:18099`, so every binary failed identically at `cannot bind`. The driver now
+  fails closed on a bind collision and reaps its child with `atexit`, and the exit
+  line reports the real disposition (`killed by signal 15`) instead of arithmetic on
+  a status it never checked. Two identical failures are not agreement — the same
+  shape of mistake `FRICTION.md:169` records the live matrix catching once before.
+
+  ##### Citation gate, because `src/tychoc.c` grew 192 lines
+
+  Fourteen anchored citations staled. Proven to be **my** redness before shifting
+  anything: `git stash push -- src/tychoc.c` → `citation check: ok (22 anchored,
+  1403 bare)`. Each anchor shifted by its own measured delta, not by the file total,
+  because the edits are spread through the file: `"bounded"` **+33**
+  (`1767-1783`→`1800-1816`), `parse_extern_fn` **+60** (`3530-3600`→`3590-3660`),
+  `no 'main' procedure` / `'main' must be` **+159** (`7236`→`7395`,
+  `7261-7262`→`7420-7421`), `compile_package` / `int main(` / `system(cmd)` **+192**
+  (`11577-11582`→`11769-11774`, `11698-11802`→`11890-11994`, `11836`→`12028`), across
+  `docs/spec/15-program.md`, `docs/spec/03-types.md`,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` and
+  `docs/internals/plan-front-door-DONE.md`. Gate green again. Third phase running,
+  third time this happened.
+
+  ##### Stale claims corrected, because the phase falsified them
+
+  Eight live files asserted "Tycho has no nested patterns" as a fact about the
+  language. Leaving them would be the most expensive kind of wrong — a reader
+  designing around an absence that no longer exists. Corrected in
+  `corelib/result/result.ty`, `corelib/io/io.ty`, `corelib/httpd/httpd.ty`,
+  `corelib/test/{io,httpd}/main.ty`, `examples/corelib/result/main.ty` and
+  `docs/guides/corelib.md` (3 places), each now stating what is true **and** why
+  `corelib/` still cannot use the form. The corelib's error enums stay payload-free —
+  Anti-scope forbids that redesign, and `==` remains the right tool for a caller who
+  is not opening a `match`.
+
+  One correction is **phase 1's residue, not mine**: `docs/guides/corelib.md` still
+  carried "**One caveat, and it is load-bearing:** a `pkg.name` written directly in a
+  generic call's argument list does not resolve", which phase 1 fixed. Removed while
+  rewriting that sentence.
+
+  ##### Out of scope, found, not absorbed
+
+  - Nothing new. The two refusals above are costed, the frozen-`tychoc0` reach is a
+    consequence of a freeze this plan already lists as deliberately-kept debris, and
+    all four doc gates plus `frontparity` were green at the end of the phase.
 
 - [ ] **Phase 4 — `exit(code)`, and `die()` as a diverging call**
   - Items: `FRICTION.md:128` — `die()` is the language's only exit and always exits **1**, so

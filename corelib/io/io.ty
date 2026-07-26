@@ -31,8 +31,11 @@ package io
 import "core:strings"
 import "core:path"
 
-# Why a file could not be read. Every variant is payload-free so `==` works on it
-# (Tycho has no nested patterns: `Err(io.IsDir)` does not parse).
+# Why a file could not be read. Every variant is payload-free, so both spellings
+# work on it: `==` for a caller who wants a one-line test, and a nested pattern
+# (`Err(io.IsDir):`, since plan.md phase 3) for one already writing a `match`.
+# Payload-free is KEPT: giving a variant a payload would break every `==` call site
+# in the tree, and nothing here needs to say "how much".
 enum IoErr:
     NotFound           # no such path
     IsDir              # the path names a directory, not a file

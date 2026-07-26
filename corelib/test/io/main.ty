@@ -24,46 +24,42 @@ fn b2i(b: bool) -> int:
 fn nb(r: Result(bytes, io.IoErr)) -> int:
     return len(result.unwrap_or(r, to_bytes("")))
 
-# WHICH outcome, as a stable string. `err_or` + `==` is the whole reason IoErr's
-# variants are payload-free: Tycho has no nested patterns, so `Err(io.IsDir)`
-# would not parse as a match arm.
+# WHICH outcome, as a stable string. One arm per cause, since plan.md phase 3;
+# this was `is_ok` + `err_or` plus three `e == io.X` comparisons, because
+# `Err(io.IsDir)` did not parse as a match arm. Written this way here and not in
+# corelib/io itself: no runner feeds corelib/test/ to the frozen
+# compiler/tychoc0.ty, whose grammar still has no nested pattern.
 fn why(r: Result(bytes, io.IoErr)) -> string:
-    if result.is_ok(r):
-        return "Ok"
-    e := result.err_or(r, io.Failed)
-    if e == io.NotFound:
-        return "NotFound"
-    if e == io.IsDir:
-        return "IsDir"
-    return "Failed"
+    match r:
+        Ok(bs): return "Ok"
+        Err(io.NotFound): return "NotFound"
+        Err(io.IsDir): return "IsDir"
+        _: return "Failed"
 
 # The same collapse for is_dir's Result(bool, IoErr). Note there is no IsDir arm:
 # being a directory is Ok(true) here, not a failure.
 fn dwhy(r: Result(bool, io.IoErr)) -> string:
-    if result.is_ok(r):
-        if result.unwrap_or(r, false):
-            return "dir"
-        return "file"
-    e := result.err_or(r, io.Failed)
-    if e == io.NotFound:
-        return "NotFound"
-    return "Failed"
+    match r:
+        Ok(isdir):
+            if isdir:
+                return "dir"
+            return "file"
+        Err(io.NotFound): return "NotFound"
+        _: return "Failed"
 
 # make_dir / remove: the same Result(bool, IoErr), but Ok's boolean means "did the
 # filesystem change" rather than "is it a directory" -- so it gets its own labels.
 # `did` = created/removed, `already` = it was already in the asked-for state (both
 # successes). Err(Exists) is make_dir's only extra variant.
 fn fswhy(r: Result(bool, io.IoErr)) -> string:
-    if result.is_ok(r):
-        if result.unwrap_or(r, false):
-            return "did"
-        return "already"
-    e := result.err_or(r, io.Failed)
-    if e == io.NotFound:
-        return "NotFound"
-    if e == io.Exists:
-        return "Exists"
-    return "Failed"
+    match r:
+        Ok(changed):
+            if changed:
+                return "did"
+            return "already"
+        Err(io.NotFound): return "NotFound"
+        Err(io.Exists): return "Exists"
+        _: return "Failed"
 
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
     out := ""

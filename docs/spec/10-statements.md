@@ -44,6 +44,41 @@ rejected at compile time. Payload bindings are visible only within their arm. Th
 statement form runs a block per arm; the value form (arms are blocks ending in a
 value expression, tail position) is defined in §13.5.
 
+### 14.3.1 Nested patterns
+
+An `Ok`, `Err` or `Some` arm MAY refine its single payload with **one** nested
+pattern instead of binding it: `Err(net.Timeout)`, `Err(Timeout)`,
+`Err(TooBig(n))`. The nested pattern names a variant of the payload's enum type
+and MAY bind that variant's own payload into 0–8 names. Nesting is **one level
+deep** and is permitted **only** on an `Option`/`Result` payload: inside a plain
+enum arm a nested pattern is rejected, and the payload MUST be matched in its own
+`match`.
+
+Because the payload's enum type is already known at the pattern, the nested
+variant MAY be written **unqualified** even when its enum belongs to another
+package — `Err(Timeout)` and `Err(net.Timeout)` are the same pattern. It follows
+that **a name that is a variant of the payload's enum is always a pattern, never a
+binding**: `Err(Timeout)` does not bind a variable called `Timeout`. Where such a
+name is not a legal pattern (it carries a payload but was written bare, or the
+enclosing arm is a plain enum arm) the program is **rejected**; it is never
+silently read as a binding.
+
+A side of the match (its `Ok` arms, its `Err` arms, its `Some` arms) is an ordered
+decision list: refined arms are tested in source order, then the unrefined arm for
+that side, if any. An unrefined arm therefore MUST come last among its side's
+arms — a refined arm written after one is dead and is rejected as a duplicate. Two
+refined arms naming the same variant are likewise rejected. A side is exhaustive
+when it has an unrefined arm, when its refined arms name every variant of the
+payload's enum, or when a `_` arm is present.
+
+```tycho
+match httpd.read_request(fd):
+    Ok(req): serve(req)
+    Err(httpd.TooLarge): refuse(431)
+    Err(httpd.Timeout): refuse(408)
+    Err(e): close()
+```
+
 ## 14.4 Loops
 
 Tycho has one loop keyword, `for`, in three shapes; `break` and `continue` are

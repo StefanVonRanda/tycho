@@ -248,12 +248,13 @@ element type instead of a family of per-type siblings.
   (`docs/spec/10-statements.md:75`), so a `main()`, or a handler that returns a
   `Response`, needs another way — and before this package the only one was a four-line
   `match` per call site (three copies of it existed in this tree). `err_or` plus `==` is
-  how a caller asks *which* failure happened: Tycho has no nested patterns, so
-  `Err(io.IsDir)` is not a legal match arm, which is why the corelib's error enums are
-  payload-free. **One caveat, and it is load-bearing:** a `pkg.name` written directly in a
-  generic call's argument list does not resolve (`result.unwrap_or(net.port_of(fd), -1)` →
-  `error: package 'net' has no symbol 'net__port_of'`), so bind the Result — and any
-  qualified fallback — to a local first. Pure computation: no shim, no allocation, nothing
+  how a caller asks *which* failure happened **without writing a `match` at all** — a
+  one-line `if`. A caller who *is* writing one should use a nested pattern instead
+  (`Err(io.IsDir):`, legal since 2026-07-26,
+  [§14.3.1](../spec/10-statements.md#1431-nested-patterns)); the corelib's error enums
+  stay payload-free so both spellings keep working. Nothing in `corelib/` may use a
+  nested pattern itself: those packages are also compiled by the frozen
+  `compiler/tychoc0.ty`. Pure computation: no shim, no allocation, nothing
   aborts.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
@@ -270,7 +271,7 @@ element type instead of a family of per-type siblings.
   zero bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three
   outcomes that were the same empty `bytes` until 2026-07-26, which is how a static file
   server ends up serving a 0-byte `200` for a path it cannot read. The variants are
-  payload-free so `==` works on them (no nested patterns). Three calls go past the
+  payload-free so both `==` and a nested `Err(io.IsDir)` arm work on them. Three calls go past the
   builtins to real syscalls, because `list`'s empty-directory-vs-non-directory ambiguity
   was never a return-type problem — it was a missing `stat(2)`:
   `is_dir(p) -> Result(bool, io.IoErr)` asks it (`Ok(true)`/`Ok(false)` are both answers,
@@ -296,8 +297,8 @@ element type instead of a family of per-type siblings.
   **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
   `write` gives `Result(int, …)` (bytes sent), `read` gives `Result(bytes, …)`. Payloads
   are binary-safe `bytes`. `NetErr` is `Eof` / `Timeout` / `Failed`, all payload-free so
-  a single cause can be tested with `==` (`if e == net.Timeout`) rather than a nested
-  `match` — Tycho has no nested patterns, so `Err(net.Timeout)` does not parse.
+  a single cause can be tested with `==` (`if e == net.Timeout`) without opening a
+  `match` at all — or, inside one, with a nested `Err(net.Timeout)` arm (§14.3.1).
   `read` **distinguishes** a clean hangup (`Err(Eof)`) from an expired receive deadline
   (`Err(Timeout)`) from a hard error (`Err(Failed)`); before 2026-07-26 all three were
   the same empty `bytes`. `set_read_timeout_ms(fd, ms)` arms `SO_RCVTIMEO` and stays a

@@ -18,12 +18,17 @@
 #           Ok(n): return n
 #           Err(e): return -1
 #
-# THE `==` CONSTRAINT. Tycho has no nested patterns -- `Err(net.Timeout)` is
-# rejected with `error: expected ')'` -- so asking *which* failure happened means
-# comparing a payload-free variant with `==`. `err_or` is the accessor that makes
-# that a one-liner:
+# WHY `==` AND NOT A PATTERN. As of 2026-07-26 (plan.md phase 3) Tycho DOES have
+# nested patterns, so `Err(net.Timeout):` is a legal match arm and is the clearer
+# spelling when the caller is already writing a `match`. `err_or` + `==` stays the
+# idiom for the caller who is NOT -- a one-line test inside an `if`, with no arm
+# for the Ok case it does not care about:
 #
 #   if result.err_or(net.read(fd, 4096), net.Timeout) == net.Timeout:
+#
+# It also keeps working where a nested pattern cannot: this package is compiled by
+# the frozen compiler/tychoc0.ty (examples/webserver/run.sh), whose grammar has no
+# nested pattern, so nothing in `corelib/` may use one.
 #
 # HISTORICAL CAVEAT, FIXED 2026-07-26 (plan.md phase 1). A qualified name written
 # anywhere in a generic call's argument list used to fail to resolve, so every
@@ -68,9 +73,11 @@ fn is_err(r: Result($T, $E)) -> bool:
         Err(e): return true
 
 # The Err payload, or `fallback` if the Result is Ok. This is how a caller asks
-# WHICH failure happened without a nested pattern: compare the answer with `==`
-# against a payload-free variant. `fallback` may be written inline as a qualified
-# variant (`net.Failed`) -- see the HISTORICAL CAVEAT in the header.
+# WHICH failure happened without writing a `match` at all: compare the answer with
+# `==` against a payload-free variant. (A caller who IS writing a match should use
+# a nested pattern -- `Err(net.Timeout):` -- see the header.) `fallback` may be
+# written inline as a qualified variant (`net.Failed`) -- see the HISTORICAL
+# CAVEAT in the header.
 fn err_or(r: Result($T, $E), fallback: $E) -> $E:
     match r:
         Ok(v): return fallback

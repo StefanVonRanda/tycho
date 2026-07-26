@@ -327,6 +327,15 @@ fn log_req(cfg: Config, wid: int, method: string, target: string, status: int, n
     ln += str(status) + " " + str(n) + " " + fmt_ms(us) + tail + "\n"
     eprint(ln)
 
+# Answer a request that could not be read, and log it. The three refusable read
+# failures (400 Malformed, 408 Timeout, 431 TooLarge) differ only in status and
+# body, so the wire-and-log tail lives here once instead of in each arm of
+# serve_conn's cause match. `-` is the method: there is no parsed request to name
+# one, and first_line(raw) is all the log can honestly report.
+fn refuse(cfg: Config, wid: int, conn: int, raw: string, st: int, r: httpd.Response, sw: int):
+    n := result.unwrap_or(emit(conn, r, false, false), -1)
+    log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
+
 fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     served := 0
     alive := true
@@ -339,40 +348,43 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
         got, raw := httpd.read_request_capped(conn, MAX_HEAD)
         sw := time.start()
         match got:
-            Err(e):
-                # The five causes, ACTED ON rather than collapsed. This is what
-                # plan.md phases 1-3 were for: the old local read loop could only
-                # say "nothing arrived", so each of these was a 400 or a silent
-                # close chosen by guessing from len(raw).
-                #
-                #   Closed    the peer hung up. No response, no log line: there is
-                #             nobody to answer and nothing was asked.
-                #   Failed    the socket is broken (reset, bad fd); a write would
-                #             fail too, so treat it like Closed.
-                #   Timeout   the SO_RCVTIMEO deadline expired. With bytes in `raw`
-                #             a request was under way and stalled -- 408 is the
-                #             honest answer. With `raw` empty this is only
-                #             keep-alive idle expiry, which no client is waiting on
-                #             (nginx closes quietly here too), so close quietly.
-                #   TooLarge  MAX_HEAD bytes with no terminator -> 431. This is the
-                #             cap decision that used to be `len(raw) >= MAX_HEAD`.
-                #   Malformed a complete head that is not HTTP -> 400.
+            # The five causes, ACTED ON rather than collapsed, and since plan.md
+            # phase 3 each one is its OWN ARM. This used to be `Err(e)` followed by
+            # five `e == httpd.X` comparisons and an `answer` bool, because there
+            # were no nested patterns; the causes are the same, the two-step is not.
+            # (What phases 1-3 were for: the old local read loop could only say
+            # "nothing arrived", so each of these was a 400 or a silent close chosen
+            # by guessing from len(raw).)
+            #
+            #   Closed    the peer hung up. No response, no log line: there is
+            #             nobody to answer and nothing was asked.
+            #   Failed    the socket is broken (reset, bad fd); a write would fail
+            #             too, so treat it like Closed.
+            Err(httpd.Closed):
                 alive = false
-                answer := e == httpd.Malformed or e == httpd.TooLarge
-                if e == httpd.Timeout and len(raw) > 0:
-                    answer = true
-                if answer:
+            Err(httpd.Failed):
+                alive = false
+            #   Timeout   the SO_RCVTIMEO deadline expired. With bytes in `raw` a
+            #             request was under way and stalled -- 408 is the honest
+            #             answer. With `raw` empty this is only keep-alive idle
+            #             expiry, which no client is waiting on (nginx closes
+            #             quietly here too), so close quietly.
+            Err(httpd.Timeout):
+                alive = false
+                if len(raw) > 0:
                     served += 1
-                    st := 400
-                    r := error_response(400)
-                    if e == httpd.TooLarge:
-                        st = 431
-                        r = oversize_response()
-                    elif e == httpd.Timeout:
-                        st = 408
-                        r = timeout_response()
-                    n := result.unwrap_or(emit(conn, r, false, false), -1)
-                    log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
+                    refuse(cfg, wid, conn, raw, 408, timeout_response(), sw)
+            #   TooLarge  MAX_HEAD bytes with no terminator -> 431. This is the cap
+            #             decision that used to be `len(raw) >= MAX_HEAD`.
+            Err(httpd.TooLarge):
+                alive = false
+                served += 1
+                refuse(cfg, wid, conn, raw, 431, oversize_response(), sw)
+            #   Malformed a complete head that is not HTTP -> 400.
+            Err(httpd.Malformed):
+                alive = false
+                served += 1
+                refuse(cfg, wid, conn, raw, 400, error_response(400), sw)
             Ok(req):
                 served += 1
                 keep := not httpd.connection_close(req)
@@ -569,11 +581,10 @@ fn main():
                 eprint("tycho-httpd: warning: " + cfg.root + " is not a directory\n")
             elif len(io.list(cfg.root)) == 0:
                 eprint("tycho-httpd: warning: " + cfg.root + " is an empty directory\n")
+        Err(io.NotFound):
+            eprint("tycho-httpd: warning: " + cfg.root + " does not exist\n")
         Err(e):
-            if e == io.NotFound:
-                eprint("tycho-httpd: warning: " + cfg.root + " does not exist\n")
-            else:
-                eprint("tycho-httpd: warning: " + cfg.root + " cannot be read\n")
+            eprint("tycho-httpd: warning: " + cfg.root + " cannot be read\n")
 
     # The one place the conversion cost a line. A value match would read best --
     #     srv := match net.listen(cfg.host, cfg.port):
