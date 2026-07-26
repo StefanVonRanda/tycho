@@ -940,7 +940,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     consequence of a freeze this plan already lists as deliberately-kept debris, and
     all four doc gates plus `frontparity` were green at the end of the phase.
 
-- [ ] **Phase 4 — `exit(code)`, and `die()` as a diverging call**
+- [x] **Phase 4 — `exit(code)`, and `die()` as a diverging call**
   - Items: `FRICTION.md:128` — `die()` is the language's only exit and always exits **1**, so
     `--help` cannot answer status 0 through it; the workaround threaded a `help: bool` field
     through `server/`'s config struct. `FRICTION.md:140` — `die()` is typed `void` and is not
@@ -954,6 +954,268 @@ is a completed phase under this plan's Goal, and it is not a failure.
     Ok(fd): fd / Err(e): die(...)` compiles.
   - Verify: `./tycho-httpd --help; echo $?` prints 0; corelib + 13 entry points compile;
     9 goldens match; `server/` live matrix unchanged.
+
+  #### Phase 4 — DONE. Evidence
+
+  ##### Both items reproduced first, with real output, against the pre-fix compiler
+
+  Scratch programs, each in its own directory (`FRICTION.md:145`):
+
+  ```
+  d1  srv := match net.listen(...): Ok(fd): fd / Err(e): die("cannot bind")
+      -> error: a value if/match branch must produce a value, not void      (line 7, the Err arm)
+  d2  exit(0)
+      -> error: unknown procedure 'exit' -- core:path has `ext` -- add `import "core:path"`...
+  d3  die("bye")  -> BUILT, ran, exit=1                                     <- always 1
+  d6  x = if n > 0: 1 / else: die("neg")
+      -> error: cannot assign void to 'x' of type int    <- the SAME gap, a different message
+  ```
+
+  `d6` is the part the item did not record: the value-`if`/`match` rule is broken in
+  **four** tail positions, not one, and each reports differently because three of the
+  four are desugared at parse time and only `:=` defers to the resolver.
+
+  ##### Root cause: divergence is a property of the TAIL DESUGAR, not of a type
+
+  There is no bottom type in Tycho, and adding one would touch every unification
+  site. The value if/match desugar has exactly two halves that must agree about
+  which branch carries a value:
+
+  - `ctrl_rewrite_tails` (`src/tychoc.c:2847`) turns each branch's trailing `S_EXPR`
+    into `name = tail` / `return tail` / a place-set. It runs at **parse** time for
+    `x = …`, `place = …` and `return …` (`:3058`, `:3285`, `:3307`) and at **resolve**
+    time for the `:=` / typed-decl form (`:6645`).
+  - `ctrl_collect_tails` (`:2876`) hands the resolved tails to the unification loop in
+    the `S_DECL` value-`ctrl` arm of `resolve_stmt` (`:6613-6635`), where a `T_VOID`
+    tail is the error the items quote:
+
+  ```c
+  /* src/tychoc.c:6629-6630 -- unchanged; a diverging tail simply never reaches it */
+  if (ti == T_VOID)
+      die_at(tails[i]->line, "a value if/match branch must produce a value, not void");
+  ```
+
+  **Both now skip a diverging tail**, so the branch keeps the plain statement it
+  already was: no destination, no contributed type. Because the skip went into the
+  shared desugar rather than into the `:=` case, all four tail positions were fixed
+  at once — which is *smaller* than special-casing one, not larger.
+
+  ##### The predicate is syntactic, and that is sound rather than convenient
+
+  ```c
+  /* src/tychoc.c:2838 */
+  static int expr_diverges(Expr *e) {
+      return e && e->kind == E_CALL && !e->qual && !e->lhs && e->sval &&
+             (!strcmp(e->sval, "die") || !strcmp(e->sval, "exit"));
+  }
+  ```
+
+  Three facts make the name-match safe, each verified rather than assumed:
+
+  1. **A program cannot define either name.** Measured: `fn die(s: string) -> int` →
+     `error: 'die' is already defined`, and with the new `Sig` in place
+     `fn exit(n: int) -> int` → `error: 'exit' is already defined`. This is the
+     distinction `FRICTION.md:120`'s `send` item is about — `send` is a **magic**
+     builtin, special-cased in `resolve_expr` (`src/tychoc.c:5382`) and absent from
+     `g_sigs`, which is precisely why *it* can be shadowed silently. `die`/`exit` are
+     `Sig` builtins and go through the duplicate check.
+  2. **`e->sval` is the written name before AND after resolution**, because builtins
+     are never mangled — which is why codegen has always matched `die` the same way
+     (`:8665`). One predicate therefore serves both the parse-time rewrite and the
+     resolve-time unification, and cannot disagree with itself between the two.
+  3. `!e->qual` excludes `pkg.die`; `!e->lhs` excludes a call through a function
+     *value*.
+
+  ##### Fail-closed half: every branch diverging is a hard error
+
+  `t` starts at `T_VOID` as the loop's "unset" sentinel, so an all-diverging
+  if/match would have pushed a **void local**. Rejected with the fix in the message:
+
+  ```
+  d8/main.ty:4: error: every branch of this value if/match diverges, so there is no
+                       value to bind to 'x' -- write the if/match as a plain statement
+  ```
+
+  ##### The `exit` spelling, and why not `die(msg, code)`
+
+  A new `Sig` builtin `exit(int) -> void` (`src/tychoc.c:4302`), emitting **C's
+  `exit(3)` directly** (`:8672-8674`) with no `tycho_exit` wrapper. Three reasons,
+  in order of weight:
+
+  1. The builtin `Sig` table is **fixed-arity** (`.nparams`, `register_builtins`
+     `:4288`), so `die(msg)` / `die(msg, code)` would need overload handling in the
+     resolver that no other builtin has.
+  2. The two calls want different **streams**: `die` writes stderr, an answered
+     `--help` writes stdout. Folding them would make the status the only difference
+     between two things that differ in more than status.
+  3. Emitting C's `exit` rather than adding a runtime function means
+     `runtime/tycho_rt.c` is **untouched**, so the runtime text embedded in every
+     emitted `.c` does not move. There is also nothing to wrap: `exit()` flushes
+     stdio itself (verified — `d2` prints `before` then exits 0), and only the low 8
+     bits reach the parent, same as C.
+
+  `tycho_die` is deliberately **not** given `noreturn`: `runtime/tycho_rt.c:1190-1192`
+  documents the defensive `return (T){0}` that a dying branch still gets, and
+  `block_ends_in_return` (`src/tychoc.c:9220`) drives both that codegen decision and
+  the fall-off-the-end lint. So a `-> int` function whose `else` branch dies still
+  warns — **measured as pre-existing, not introduced**: the identical warning fires on
+  the plain statement form `if n > 0: return n * 2 / else: die("neg")`. Left alone on
+  purpose; changing it would hand C a real fall-off-the-end path.
+
+  ##### What landed (`src/tychoc.c`: +48 / −4 = **+44 lines**, of which **14 are code**)
+
+  | # | change | site | code lines |
+  |---|---|---|---|
+  | 1 | `expr_diverges` | `src/tychoc.c:2838-2841` | 4 |
+  | 2 | `ctrl_rewrite_tails` skips a diverging tail | `:2860` | 1 |
+  | 3 | `ctrl_tail_push` + its 3 call sites in `ctrl_collect_tails` | `:2873-2884` | 3 (+3 rewritten) |
+  | 4 | `exit` `Sig` | `:4302` | 1 |
+  | 5 | all-branches-diverge rejection | `:6622-6623` | 2 |
+  | 6 | `exit` codegen | `:8672-8674` | 3 |
+
+  ##### `--help` exit status, and the workarounds removed
+
+  ```
+  ./tycho-httpd --help ; echo $?   ->  0        (usage on stdout, 20 lines)
+  ./tycho-httpd -h     ; echo $?   ->  0
+  ./tycho-httpd --nope ; echo $?   ->  1        ("unknown option: --nope" + usage, stderr)
+  diff old --help vs new --help    ->  BYTE-IDENTICAL
+  diff old --nope vs new --nope    ->  BYTE-IDENTICAL
+  ```
+
+  where *old* is a binary built from `git show HEAD:server/main.ty`. Removed:
+
+  - `struct Config`'s **`help: bool`** field, and with it the 7th positional argument
+    at both `Config(...)` sites — the `--help` arm's `return Config("", "", 0, 1, 1,
+    false, true)` is now `print(usage())` + `exit(0)`.
+  - `main`'s **`if cfg.help: print(usage()); return`** block.
+  - the **dummy `srv := 0`** and its statement `match`, now the item's own spelling:
+
+  ```tycho
+  srv := match net.listen(cfg.host, cfg.port):
+      Ok(fd): fd
+      Err(e): die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
+  ```
+
+  Proven to still fire: with `:18131` held by another process, `d1` printed nothing on
+  stdout, `cannot bind` on stderr, and exited **1**.
+
+  **Line delta for `server/main.ty`: 611 → 606 total, 380 → 376 code lines (−4).**
+  It is the second time in this plan the application got *shorter* (phase 1 was
+  380 → 378), and the first time a `Result` call site got shorter than the sentinel
+  code it replaced — which is the specific claim `FRICTION.md:145` disputed.
+
+  ##### Gate spend: `make ci` and `make test` — **NOT run.** The day's single run was
+  spent by phase 1 (commit `5187724`); phases 2 and 3 also verified by hand. Every
+  command below actually run, in the foreground, on this phase's tree:
+
+  ```
+  ok compile corelib/test/{httpd,io,net,result}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                    -- 13 entry points, 0 failures
+  same corelib/test/{httpd,io,net,result}.out
+  same examples/corelib/{httpd,io,net,result}.out  -- 8 goldens byte-identical
+  sh corelib/run.sh          -> "corelib: all green (tychoc matches goldens)"
+  sh examples/corelib/run.sh -> "corelib examples: all green"
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"  -- 9th golden
+  sh scripts/frontparity.sh  -> agreed: 288  diverged: 0   (unchanged from phases 2-3)
+  sh scripts/tools_check.sh  -> "tools-check: ok"
+                                810 files checked (compilable=379)
+                                idempotence-fails=0 semantic-fails=0
+  sh scripts/spec_check.sh   -> Appendix A matches; Appendix E resolves; 7 examples pass
+  sh scripts/check_links.sh  -> ok (128 markdown files, no dead relative links)
+  python3 scripts/check_citations.py -> ok (22 anchored, 1432 bare)
+  cc -O2 -Wall -Wextra -std=c11 src/tychoc.c  -> 0 warnings
+  ```
+
+  `frontparity` at **288 / 0** is the proof the freeze was respected: a `tests/`
+  fixture for `exit` or for a diverging arm would be a program `tychoc` accepts and
+  the frozen `tychoc0` refuses, which is exactly what that script reports as a
+  divergence. Recorded in `docs/spec/appendix-e-conformance.md`; the witness is
+  `server/main.ty`, which no runner feeds to `tychoc0`. **Third phase, third time
+  this constraint bound, and the first time it bound a new BUILTIN rather than new
+  syntax** — checked before writing the fixture, not at verify time.
+
+  ##### The `server/` live matrix, run twice and diffed
+
+  `127.0.0.1:18099`, `--workers 4 --idle-ms 800`, raw sockets, driven by **phase 3's
+  own driver reused** (the one that fails closed on a bind collision and reaps with
+  `atexit`; the port was checked free before each run). Once against a binary built
+  from `git show HEAD:server/main.ty`, once against the new source, both with the new
+  compiler:
+
+  ```
+  GET /            200 2659 text/html; charset=utf-8   GET /style.css 200 1726 text/css
+  GET /data.json   200 294  application/json           GET /favicon.ico 200 441 image/x-icon
+  GET /nope.html   404 621                             GET /../../etc/passwd 403
+  POST /           405 Allow: GET, HEAD                HEAD / 200 Content-Length=2659 body=0
+  GARBAGE -> 400                                       Content-Length: 0x10 -> 400
+  20 KiB head, no terminator -> 431 Request Header Fields Too Large
+  (a) zero-byte hangup        -> no bytes, log lines added 0
+  (b) partial head then stall -> 408 Request Timeout, log lines added 1
+  (c) idle past 800ms         -> 0 bytes, log lines added 0
+  GET /emptydir -> 301 Location: /emptydir/ 56   /about -> 301 /about/   /img -> 301 /img/
+  keep-alive 3 requests on ONE fd -> 200 200 200      50-request flood -> 50/50 200
+  access log workers seen: w1 w2 w3 w4
+  clean exit: SIGTERM -> killed by signal 15 (wait status 143)
+
+  diff old.txt new.txt                          -> TRANSCRIPTS IDENTICAL, case for case
+  access log, worker id + timings masked         -> IDENTICAL, line for line (69 / 69)
+  served bytes vs disk: index.html 2659, style.css 1726, data.json 294,
+                        favicon.ico 441          -- all BYTE-IDENTICAL
+  ```
+
+  Both runs reported `MATRIX OK: every assertion passed`, and both came up on a port
+  verified free first — the near-miss phase 3 recorded (two identical *failures*
+  reading as agreement) cannot recur silently, but it was checked anyway.
+
+  ##### Citation gate, because `src/tychoc.c` grew 44 lines
+
+  Eleven anchored citations staled. Proven to be **my** redness before shifting
+  anything: `git stash push -- src/tychoc.c` → `citation check: ok (22 anchored,
+  1432 bare)`. Shifted by **two** measured deltas, not one, because the edits
+  straddle the anchors: `no 'main' procedure` / `'main' must be` **+37** (the five
+  resolver-side edits above them: `7395`→`7432`, `7420-7421`→`7457-7458`), and
+  `compile_package` / `system(cmd)` **+44** = the file total (`:11769-11774`→
+  `:11813-11818`, `:12028`→`:12072`), the `exit` codegen arm sitting between them.
+  Across `docs/spec/15-program.md`,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` and
+  `docs/internals/plan-front-door-DONE.md`. Gate green again. Fourth phase, fourth
+  time.
+
+  ##### Documented
+
+  - `docs/spec/16-builtins.md` — §29.3 table gains the `exit(code)` row ("all eight"
+    → "all nine"); §29.12 rewritten as a two-terminator table with the low-8-bits
+    and stdout-flush contract; **new §29.12.1** states the divergence rule, its
+    all-diverging rejection, and why name-matching is sound.
+  - `docs/spec/04-inference.md` §6.5 — the diverging-tail exemption to branch
+    unification (this is the section that states the rule the item hit).
+  - `docs/spec/10-statements.md` §14.8 — retitled `die`, `exit`, and termination;
+    `die` is still the only *abort*, `exit` is the answered exit.
+  - `docs/spec/02-grammar.md` §4.3.2 — `ValueCtrl`'s branch shape now admits a
+    diverging call, and requires at least one non-diverging branch.
+  - `docs/spec/appendix-e-conformance.md` — two §29.12 rows plus the
+    no-`tests/`-fixture note carrying the `frontparity` reason.
+
+  ##### Stale claim corrected
+
+  `server/main.ty:575` still read "die() always exits 1, which is the wrong status
+  for a judgement call about someone else's directory" — a *reason* that no longer
+  holds, attached to a decision that still does. Rewritten to say the decision
+  (warn, never terminate, because serving an empty tree is legal) without asserting
+  the absence. `docs/internals/plan-option-result-DONE.md`'s two copies are left
+  alone: that file is an **archived** plan and its value is being the record of what
+  was true when it ran.
+
+  ##### Out of scope, found, not absorbed
+
+  - Nothing new. The `send`-shadowing item (`FRICTION.md:120`) is *adjacent* — this
+    phase's soundness argument rests on `Sig` builtins being duplicate-checked while
+    magic builtins are not — but it is a different item with its own phase, and the
+    `Sig`/magic asymmetry it describes was confirmed here (`src/tychoc.c:5382`), not
+    changed.
 
 - [ ] **Phase 5 — the corelib's small honest wins**
   - Items, all small and all measured as biting real code:

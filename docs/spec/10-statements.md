@@ -122,12 +122,16 @@ outlives the return. `or_return` binds tighter than any binary operator.
 `delete m[k]` removes the entry for key `k` from the map place `m` (which may be
 a bare variable, a field, or a nested place). Deleting an absent key is a no-op.
 
-## 14.8 `die` and termination
+## 14.8 `die`, `exit`, and termination
 
-`die(msg)` prints `msg` to standard error and terminates the program with a
-non-zero status; it never returns and is typed `void`, so a non-`void` function
-that `die`s in one branch still type-checks. `die` is the only user-callable
-abort ([§29](16-builtins.md); there is no `assert`/`panic`). Other
+`die(msg)` prints `msg` to standard error and terminates the program with status
+`1`. `exit(code)` terminates with status `code` and prints nothing — that is the
+one for a program that has *answered* (a `--help` needs `0`, which `die` cannot
+give). Both are typed `void`, so a non-`void` function that `die`s in one branch
+still type-checks, **and** both are modelled as **diverging**, so either is legal
+as the tail of a value `if`/`match` branch even though it produces no value
+([§29.12.1](16-builtins.md)). `die` is the only user-callable *abort*
+([§29](16-builtins.md); there is no `assert`/`panic`). Other
 terminating conditions (division by zero, out-of-bounds access, and the like) are
 the defined runtime aborts of [§30](17-runtime.md). Normal
 termination occurs when `main` returns, after which all program storage is

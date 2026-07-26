@@ -108,6 +108,14 @@ place-assignment / `return` tail positions a destination type flows into each
 branch, so adaptation and bare-sum-constructor fixing apply there. A branch
 whose type cannot be made equal to the others is rejected.
 
+A branch whose tail is a **diverging** call — `die(msg)` or `exit(code)`
+([§29.12.1](16-builtins.md)) — is **exempt**: control never leaves it, so it
+carries no type, takes no part in unification, and is not rewritten into an
+assignment to the destination. This is what makes the failure arm of a `Result`
+readable (`Err(e): die("cannot bind")`) instead of costing a dummy initializer and
+a statement `match`. If every branch diverges there is no value at all and the
+declaration is rejected.
+
 ## 6.6 Non-goals of inference
 
 A conforming implementation MUST NOT perform inference beyond the local,
