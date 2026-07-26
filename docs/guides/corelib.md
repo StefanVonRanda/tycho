@@ -258,11 +258,14 @@ element type instead of a family of per-type siblings.
   aborts.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
-  splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
+  splitting; it also imported `core:path` for the old `exists`, which the `stat`-backed
+  one no longer needs). `read(p)` (`""` if missing/unreadable),
   `write(p, s)` (truncate, returns false if unopenable), `append(p, s)` (read-rewrite,
   not atomic), `read_lines(p)` / `write_lines(p, lines)` (newline-terminated round-trip),
-  `list(p)` (entry basenames), `exists(p)` (no exists builtin, so it lists the parent and
-  checks membership). For inputs too large to slurp, a **bounded-memory streaming line
+  `list(p)` (entry basenames), `exists(p)` (**one `stat(2)`** since 2026-07-26 — it used
+  to list the parent directory and check membership, O(entries) and blind to a leaf under
+  an unlistable parent; `false` still means "`stat` could not say yes", so it fails
+  closed). For inputs too large to slurp, a **bounded-memory streaming line
   reader** over a libc `getline` shim: `open_lines(p)` → `read_line(r)` (`Some(line)` /
   `None` at EOF) → `close_lines(r)`, plus `fold_lines(p, init, f)` — peak memory is
   O(longest line), not O(file). `read_bytes(p) -> Result(bytes, io.IoErr)` reads a whole
@@ -295,6 +298,10 @@ element type instead of a family of per-type siblings.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
   no `deps`, nothing to install). Every fallible TCP call returns
   **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
+  `peer_addr(fd)` gives `Result(string, …)` — the connected peer's address as text
+  (`getpeername` + `inet_ntop`), the other half of `port_of`'s `getsockname` and the
+  field a real access log leads with; it was missing until 2026-07-26, which put the
+  client address out of reach of any Tycho server,
   `write` gives `Result(int, …)` (bytes sent), `read` gives `Result(bytes, …)`. Payloads
   are binary-safe `bytes`. `NetErr` is `Eof` / `Timeout` / `Failed`, all payload-free so
   a single cause can be tested with `==` (`if e == net.Timeout`) without opening a
@@ -313,7 +320,10 @@ element type instead of a family of per-type siblings.
   accept loop. `parse_request(raw) -> Result(Request, httpd.ReqErr)` (method/path/version,
   case-insensitive `header(r, name)`, honors Content-Length; `Err(Malformed)` on a
   malformed request line);
-  `response(status, body: bytes)` / `text_response(status, body: string)` /
+  `response(status, body: bytes)` (standard reason phrase) /
+  `response_reason(status, reason, body: bytes)` (your own phrase, for a status the
+  table does not carry — so no caller has to build the struct positionally to set
+  one string) / `text_response(status, body: string)` /
   `with_header(r, k, v)` / `with_body(r, b)` / `render_head(r) -> string` /
   `render(r) -> bytes` (Content-Length and a default `text/plain` Content-Type are added
   automatically); and the socket glue `read_request(fd) -> Result(Request, httpd.ReqErr)`

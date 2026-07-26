@@ -26,7 +26,9 @@
 # BINARY-SAFE bodies: `Request.body` and `Response.body` are `bytes`, so a PNG or a
 # font round-trips byte for byte. Headers stay `string` -- they are ASCII by spec.
 # Build a text body with `text_response(status, s)` (or `response(status,
-# to_bytes(s))`); read one back with `to_str(r.body)`.
+# to_bytes(s))`); read one back with `to_str(r.body)`. For a status `reason_phrase`
+# does not know, or your own wording, `response_reason(status, reason, body)` sets
+# the phrase without building the struct positionally.
 #
 # `write_response` sends the ASCII head and the body as two separate `net.write`
 # calls, so the body buffer is never copied into an intermediate string. `render`
@@ -331,14 +333,29 @@ fn reason_phrase(status: int) -> string:
         return "Not Found"
     if status == 405:
         return "Method Not Allowed"
+    if status == 408:
+        return "Request Timeout"
+    if status == 431:
+        return "Request Header Fields Too Large"
     if status == 500:
         return "Internal Server Error"
     return "Status"
 
+# Build a response with an EXPLICIT reason phrase. This is the escape hatch for a
+# status this table does not carry, and it exists so that no caller has to build
+# the struct positionally to set one string: `httpd.Response(431, "...", []string,
+# []string, body)` worked, but it coupled the caller to the field order, and
+# server/main.ty carried a private phrased_response() doing exactly that for two
+# statuses (408, 431) until 2026-07-26 -- FRICTION.md phase 7. Both are now in the
+# table above, so the bypass is gone AND unnecessary; this function is what makes
+# the next one unnecessary too.
+fn response_reason(status: int, reason: string, body: bytes) -> Response:
+    return Response(status, reason, []string, []string, body)
+
 # Build a response with a standard reason phrase, no extra headers yet. The body
 # is `bytes`, so it is binary-safe; for a text body use text_response.
 fn response(status: int, body: bytes) -> Response:
-    return Response(status, reason_phrase(status), []string, []string, body)
+    return response_reason(status, reason_phrase(status), body)
 
 # The text convenience: response(status, to_bytes(body)).
 fn text_response(status: int, body: string) -> Response:

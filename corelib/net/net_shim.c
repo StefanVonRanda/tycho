@@ -19,6 +19,7 @@
 #include <sys/time.h>           /* struct timeval, for SO_RCVTIMEO */
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <arpa/inet.h>          /* inet_ntop -- netx_peer_addr */
 #include <netdb.h>
 #include <unistd.h>
 #define TY_CLOSE close
@@ -187,6 +188,34 @@ tycho_int netx_port_of(tycho_int fd) {
     socklen_t len = sizeof a;
     if (getsockname((int)fd, (struct sockaddr *)&a, &len) != 0) return -1;
     return (tycho_int)ntohs(a.sin_port);
+}
+
+/* The PEER's address as presentation text (getpeername + inet_ntop): "127.0.0.1"
+ * for IPv4, the compressed form for IPv6, "" if the fd is not connected, is a
+ * family this shim does not know (AF_UNIX), or the call fails. Fail closed on the
+ * empty string: core:net turns it into Err(Failed) rather than logging a lie.
+ *
+ * The buffer is `__thread`, not `static`: N worker TASKS are N pthreads sharing
+ * one listening fd, so a single shared buffer would be a data race on the one
+ * field an access log wants most (crypto_shim.c:43 sets the same precedent). The
+ * caller only ever sees a copy anyway -- an extern `-> string` return is wrapped
+ * in tycho_str_copy at the call site (src/tychoc.c:8387), so the borrow ends
+ * before the next request can overwrite it. */
+const char *netx_peer_addr(tycho_int fd) {
+    static __thread char buf[INET6_ADDRSTRLEN];
+    buf[0] = '\0';
+    if (fd < 0) return buf;
+    struct sockaddr_storage ss;
+    socklen_t len = sizeof ss;
+    if (getpeername((int)fd, (struct sockaddr *)&ss, &len) != 0) return buf;
+    if (ss.ss_family == AF_INET) {
+        struct sockaddr_in *v4 = (struct sockaddr_in *)&ss;
+        if (!inet_ntop(AF_INET, &v4->sin_addr, buf, sizeof buf)) buf[0] = '\0';
+    } else if (ss.ss_family == AF_INET6) {
+        struct sockaddr_in6 *v6 = (struct sockaddr_in6 *)&ss;
+        if (!inet_ntop(AF_INET6, &v6->sin6_addr, buf, sizeof buf)) buf[0] = '\0';
+    }
+    return buf;
 }
 
 /* Send the whole buffer (looping over short writes); returns the byte count sent

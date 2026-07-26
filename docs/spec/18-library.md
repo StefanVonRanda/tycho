@@ -266,7 +266,9 @@ TCP and UDP sockets via a **libc-only shim** (`net_shim.c`, pure POSIX sockets; 
 `deps`, same self-contained model as `core:os`). Core tier. A socket is a file
 descriptor (`int`); every open/move call returns a **negative int on failure**;
 payloads are `bytes` (binary-safe). TCP: `listen(host, port)` (port 0 ⇒
-ephemeral), `accept(fd)`, `connect(host, port)`, `port_of(fd)`, `write(fd, data)`,
+ephemeral), `accept(fd)`, `connect(host, port)`, `port_of(fd)` (getsockname — the
+LOCAL port), `peer_addr(fd)` (getpeername — the REMOTE address as text, the field
+an access log leads with), `write(fd, data)`,
 `read(fd, max)`, `close_fd(fd)`. UDP: `udp_bind(host, port)`,
 `udp_send(fd, host, port, data)`, `udp_read(fd, max)`. Source
 `corelib/net/net.ty`, `corelib/net/net_shim.c`.

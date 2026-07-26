@@ -173,8 +173,10 @@ fn main():
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")
     println(f"missing=[{miss}] len={len(miss)}")
 
-    # exists via list_dir membership (repo-relative paths; string-literal args
-    # bound to locals first -- f-string holes can't hold a string literal)
+    # exists, one stat(2) since plan.md phase 5 (it was list_dir membership; these
+    # four answers are unchanged by the swap, which is what the golden proves).
+    # Repo-relative paths; string-literal args bound to locals first -- f-string
+    # holes can't hold a string literal.
     es := b2i(io.exists("corelib/test/io/main.ty"))
     en := b2i(io.exists("corelib/test/io/nope.xyz"))
     println(f"exists_self={es} exists_no={en}")
