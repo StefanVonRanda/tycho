@@ -30,8 +30,7 @@ fn nb(r: Result(bytes, io.IoErr)) -> int:
 fn why(r: Result(bytes, io.IoErr)) -> string:
     if result.is_ok(r):
         return "Ok"
-    d := io.Failed                       # a qualified variant cannot be a $E argument
-    e := result.err_or(r, d)
+    e := result.err_or(r, io.Failed)
     if e == io.NotFound:
         return "NotFound"
     if e == io.IsDir:
@@ -45,8 +44,7 @@ fn dwhy(r: Result(bool, io.IoErr)) -> string:
         if result.unwrap_or(r, false):
             return "dir"
         return "file"
-    d := io.Failed                       # a qualified variant cannot be a $E argument
-    e := result.err_or(r, d)
+    e := result.err_or(r, io.Failed)
     if e == io.NotFound:
         return "NotFound"
     return "Failed"
@@ -60,8 +58,7 @@ fn fswhy(r: Result(bool, io.IoErr)) -> string:
         if result.unwrap_or(r, false):
             return "did"
         return "already"
-    d := io.Failed                       # a qualified variant cannot be a $E argument
-    e := result.err_or(r, d)
+    e := result.err_or(r, io.Failed)
     if e == io.NotFound:
         return "NotFound"
     if e == io.Exists:

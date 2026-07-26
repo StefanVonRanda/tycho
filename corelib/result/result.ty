@@ -23,28 +23,26 @@
 # comparing a payload-free variant with `==`. `err_or` is the accessor that makes
 # that a one-liner:
 #
-#   d := net.Failed                                  # see the caveat below
-#   if result.err_or(net.read(fd, 4096), d) == net.Timeout:
+#   if result.err_or(net.read(fd, 4096), net.Timeout) == net.Timeout:
 #
-# CAVEAT, measured -- BIND ANY `pkg.x` ARGUMENT TO A LOCAL FIRST. A qualified
-# name written ANYWHERE in a generic call's argument list does not resolve. It is
-# not about which parameter, and not about variants; it is generic instantiation
-# losing the qualifier:
+# HISTORICAL CAVEAT, FIXED 2026-07-26 (plan.md phase 1). A qualified name written
+# anywhere in a generic call's argument list used to fail to resolve, so every
+# call site in this tree bound the value to a local first:
 #
-#   result.unwrap_or(net.port_of(fd), -1)     # error: package 'net' has no symbol
-#                                             #        'net__port_of'
-#   result.err_or(r, net.Failed)              # error: unknown variable 'net'
-#   result.unwrap_or(r, httpd.bad_request())  # error: package 'httpd' has no symbol
-#                                             #        'httpd__bad_request'
+#   result.unwrap_or(net.port_of(fd), -1)     # was: package 'net' has no symbol
+#                                             #      'net__port_of'
+#   result.err_or(r, net.Failed)              # was: unknown variable 'net'
+#   result.unwrap_or(r, httpd.bad_request())  # was: package 'httpd' has no symbol
+#                                             #      'httpd__bad_request'
 #
-#   r := net.port_of(fd)                      # all three work when bound first
-#   n := result.unwrap_or(r, -1)
-#
-# The same spellings are accepted everywhere else -- in `==`, and as an argument
-# to a concretely-typed parameter. An UNqualified call is fine inline
-# (`result.unwrap_or(emit(conn, r), -1)` compiles), so the tax is one extra line
-# per corelib call site, against the four a hand-written `match` costs. Every
-# consumer in this tree binds first.
+# The cause was not generics losing the qualifier. Resolution is not single-pass:
+# instantiate_generic resolves every argument once to infer `$T`, then the
+# concrete-signature loop resolves the SAME node again -- and the
+# `pkg.name` -> `pkg__name` rewrite mutated the node in place without being
+# idempotent (the doubled prefix in the old error text was the tell). The generic
+# struct and generic enum literal paths resolved their arguments twice for the
+# same reason, so `Box(net.Failed)` failed identically. All three spellings above
+# now compile; `tests/pkg/generic_qual_arg` is the regression.
 #
 # Everything here is generic over `$T` / `$E` and total: no aborts, no panics,
 # no allocation. There is nothing to import and no shim.
@@ -71,8 +69,8 @@ fn is_err(r: Result($T, $E)) -> bool:
 
 # The Err payload, or `fallback` if the Result is Ok. This is how a caller asks
 # WHICH failure happened without a nested pattern: compare the answer with `==`
-# against a payload-free variant. `fallback` must be a local, not a qualified
-# variant literal -- see the CAVEAT in the header.
+# against a payload-free variant. `fallback` may be written inline as a qualified
+# variant (`net.Failed`) -- see the HISTORICAL CAVEAT in the header.
 fn err_or(r: Result($T, $E), fallback: $E) -> $E:
     match r:
         Ok(v): return fallback

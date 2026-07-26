@@ -1397,6 +1397,12 @@ struct Expr {
     const char *pkg;   /* E_CALL: prefix of the package this call appears in ("" = main); used to resolve a package-local name */
     const char *qual;  /* E_CALL: explicit qualifier of `pkg.name(...)` (the source ident, e.g. "geom"); NULL if unqualified */
     Type   *typeargs; int ntypeargs;   /* E_CALL: explicit call-site type args `name$(int, ...)`; 0 = none (inferred) */
+    int     pkg_done;  /* E_CALL: this node's `pkg.name` -> `pkg__name` rewrite already ran. Resolution is NOT
+                        * single-pass: instantiate_generic (and the generic struct/enum paths) resolve every
+                        * argument once to infer `$T`, then the concrete-signature loop resolves the SAME node
+                        * again against the bound parameter type. e->sval is rewritten in place and e->qual is
+                        * kept, so a second pass would mangle the mangled name (`net.net__port_of`) and report
+                        * "package 'net' has no symbol 'net__port_of'". This latch makes the rewrite idempotent. */
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
@@ -4832,7 +4838,15 @@ static Type resolve_expr_inner(Expr *e) {
                 if (g_enums[eid].generic)   /* nullary variant of a generic enum: no $T to fix */
                     die_at(e->line, "%s.%s is a variant of a generic enum; supply the type explicitly, e.g. %s.%s$(int)",
                            e->lhs->sval, e->sval, e->lhs->sval, e->sval);
+                /* e->lhs MUST be cleared: this node is now an E_CALL, and the E_CALL arm
+                 * treats a non-NULL lhs as a call-on-expression (an indirect call through a
+                 * fn VALUE) and resolves it. A second resolve of this node -- which happens
+                 * for every argument of a generic call, a generic struct literal or a generic
+                 * enum payload, all of which resolve their arguments once to infer `$T` and
+                 * again against the bound type -- would then resolve the package ident `net`
+                 * as a variable and die with "unknown variable 'net'". */
                 e->kind = E_CALL; e->sval = q; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;
+                e->lhs = NULL; e->pkg_done = 1;
                 return e->type = ENUM_TYPE(eid);
             }
             g_place = _place;                  /* s.field is a place iff s is (spine) */
@@ -5073,14 +5087,17 @@ static Type resolve_expr_inner(Expr *e) {
              * name before any lookup. An explicit `pkg.name` (e->qual) MUST resolve
              * in that package; an implicit name in an imported package (e->pkg) tries
              * its own package first, else falls through to builtins/unprefixed. */
-            if (e->qual) {
+            if (e->pkg_done) {
+                /* already package-resolved by an earlier pass over this same node -- e->sval
+                 * is the mangled name and must not be prefixed a second time (see Expr.pkg_done). */
+            } else if (e->qual) {
                 check_pkg_private(e->qual, e->sval, e->line);
                 int _vi;
                 char *q = sfmt("%s%s", pkg_prefix_for(e->qual), e->sval);
                 if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0 || variant_find(q, &_vi) >= 0)
-                    e->sval = q;
+                    { e->sval = q; e->pkg_done = 1; }
                 else if (generic_find(q))     /* a generic template lives in the generics registry, not a Sig */
-                    { e->sval = q; e->qual = NULL; }   /* adopt the mangled name + drop qual so the generic dispatch below instantiates it */
+                    { e->sval = q; e->qual = NULL; e->pkg_done = 1; }   /* adopt the mangled name + drop qual so the generic dispatch below instantiates it */
                 else {
                     const char *sg = suggest_pkg_symbol(e->qual, e->sval);   /* F8: did-you-mean within the package */
                     if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?", e->qual, e->sval, sg);
@@ -5090,9 +5107,9 @@ static Type resolve_expr_inner(Expr *e) {
                 int _vi;
                 char *q = sfmt("%s%s", e->pkg, e->sval);
                 if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0 || variant_find(q, &_vi) >= 0)
-                    e->sval = q;
+                    { e->sval = q; e->pkg_done = 1; }
                 else if (generic_find(q))      /* a package-local generic: rewrite so the generic dispatch below instantiates it */
-                    e->sval = q;
+                    { e->sval = q; e->pkg_done = 1; }
             }
             /* a call whose name is a newtype wraps its underlying value: Meters(x)
              * with x : float -> Meters. Zero-cost; codegen is the identity. */
