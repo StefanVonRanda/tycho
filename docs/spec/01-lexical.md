@@ -248,28 +248,56 @@ byte** (a value `0`–`255`) of type `char`. The supported escapes are `\n`, `\t
 `\r`, `\0`, `\\`, and `\'`. An empty literal (`''`), an unterminated literal, or
 one holding more than one byte is a lexical error.
 
-> Provenance: `src/tychoc.c:371-395`.
+> Provenance: `src/tychoc.c:402-425`.
 
 ### 3.9.4 String literals
 
 ```ebnf
-StrLit ::= '"' StrElem* '"'
+StrLit ::= StrPiece StrPiece*
+StrPiece ::= '"' StrElem* '"'
 StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
-StrEscape ::= "\" ( "n" | "t" | "\" | '"' )
+StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
 ```
 
-A string literal is delimited by double quotes and denotes a `string` value. It
-is single-line: an embedded newline is an error (`unterminated string
-literal`). The supported escapes are exactly `\n`, `\t`, `\\`, and `\"` — a
+A string literal is delimited by double quotes and denotes a `string` value. One
+piece is single-line: an embedded newline is an error (`unterminated string
+literal`). The supported escapes are exactly `\n`, `\t`, `\r`, `\\`, and `\"` — a
 smaller set than C; any other `\`-escape is rejected. A raw control byte below
 `0x20` (except tab) is rejected and MUST be written with an escape. A single
-string literal is limited to a fixed maximum length (`string too long` beyond
-it). Consequently a string *literal* cannot contain a `NUL` byte; a byte-safe
-`string`/`bytes` *value* containing interior `NUL`s is produced at run time
-(e.g. via `bytes`), not written as a literal.
+string-literal *piece* is limited to a fixed maximum length (`string too long`
+beyond it). Consequently a string *literal* cannot contain a `NUL` byte; a
+byte-safe `string`/`bytes` *value* containing interior `NUL`s is produced at run
+time (e.g. via `bytes`), not written as a literal.
 
-> Provenance: `src/tychoc.c:297-368`; escape set `:350-351`; control-byte
-> rejection `:359-360`; length bound `:304`,`:310`.
+**Adjacent pieces join.** Two or more string literals written next to one another
+are one literal, concatenated left to right at parse time: `"ab" "cd"` is `"abcd"`.
+Because the implicit line-join inside `(`…`)` and `[`…`]`
+([§3.2](#32-logical-lines-and-newline)) suppresses the newline, this is how a
+**multi-line string** is written:
+
+```tycho
+page := ("<!doctype html>\n"
+         "<title>hello</title>\n"
+         "<p>body</p>\n")
+```
+
+There is no other multi-line string form and no backslash line-continuation. An
+**f-string never joins** ([§3.9.5](#395-f-string-interpolated-literals)): it is
+already sugar for a `+` chain, so `f"a" "b"` and `"a" f"b"` are each a syntax
+error, as they were before joining existed. Joining is defined on the literals'
+*escaped source text*, which is sound only because every escape is exactly two
+characters — the reason `\0` and `\xNN` are not in the escape set (a greedy C-style
+`\x` would absorb a hex digit across a join, and a `\0` would truncate the
+interned literal, whose length comes from `strlen`).
+
+Concatenating two string literals with `+` also folds to one literal in a
+`const` ([§12.2](08-declarations.md#122-constants)), so `const TERM = "\r\n" + "\r\n"`
+is a single four-byte literal and not a run-time concatenation.
+
+> Provenance: `src/tychoc.c:319-400`; escape set `:373-382`; control-byte
+> rejection `:389-391`; per-piece length bound `:326`,`:332`; adjacent join
+> `:2150-2166`; `const` string fold `:4006-4012`; `tycho_str_intern`'s `strlen`
+> `runtime/tycho_rt.c:1005`.
 
 ### 3.9.5 f-string (interpolated) literals
 

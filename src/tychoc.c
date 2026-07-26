@@ -369,8 +369,17 @@ static TokVec lex(const char *src) {
                         buf[bn++] = *p++;
                         if (!*p) die_at(line, "unterminated string literal");
                         char e = *p;
-                        if (e != 'n' && e != 't' && e != '\\' && e != '"')
-                            die_at(line, "unsupported escape \\%c (use \\n \\t \\\\ \\\")", e);
+                        /* `\r` is here because CRLF is the most common byte pair in HTTP
+                         * and it used to cost a function call (`httpd.crlf()`).
+                         * `\0` and `\xNN` are deliberately NOT in this set: the literal's
+                         * text is pasted verbatim into a C string literal and interned by
+                         * strlen (codegen `:8671`, `tycho_str_intern` at
+                         * `runtime/tycho_rt.c:1005`), so a `\0` would truncate the
+                         * interned length, and C's `\x` is greedy over hex digits so
+                         * `"\x41" "1"` would mean `\x411`. Both need a byte-exact
+                         * re-escaper plus a decoded length on the emit path. */
+                        if (e != 'n' && e != 't' && e != 'r' && e != '\\' && e != '"')
+                            die_at(line, "unsupported escape \\%c (use \\n \\t \\r \\\\ \\\")", e);
                         buf[bn++] = *p++;
                     } else {
                         /* reject raw control bytes in the literal text (tab
@@ -2141,7 +2150,20 @@ static Expr *parse_primary(Parser *ps) {
     if (t->kind == TK_STR)  {
         ps->p++;
         if (t->ival) return desugar_interp(t->text, t->line);   /* f"..." interpolated string */
-        Expr *e = new_expr(E_STR, t->line);  e->sval = t->text; return e;
+        /* ADJACENT STRING LITERALS JOIN (C / Python rule): `"a" "b"` is the one
+         * literal `"ab"`. With the implicit line-join already inside (...) / [...]
+         * (tests/multiline_literals.ty) this IS Tycho's multi-line string form:
+         *     s := ("line one\n"
+         *           "line two\n")
+         * Sound on raw text: escapes are kept as source text here, and every Tycho
+         * escape is exactly two characters (\n \t \r \\ \"), so no escape can absorb
+         * a byte across the join -- which is also why \0 and \xNN are not in the
+         * escape set (see the lexer). An f-string never joins (it is already sugar
+         * for a `+` chain): both `f"a" "b"` and `"a" f"b"` stay the two expressions
+         * they were and fail exactly as before. */
+        char *sv = t->text;
+        while (at(ps, TK_STR) && !cur(ps)->ival) { sv = sfmt("%s%s", sv, cur(ps)->text); ps->p++; }
+        Expr *e = new_expr(E_STR, t->line);  e->sval = sv; return e;
     }
     if (t->kind == TK_TRUE) { ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 1; return e; }
     if (t->kind == TK_FALSE){ ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 0; return e; }
@@ -3982,6 +4004,12 @@ static Expr *const_fold(Expr *e, int refs) {
         return e;
     }
     Expr *a = const_fold(e->lhs, refs), *b = const_fold(e->rhs, refs);
+    if (e->op == TK_PLUS && a->kind == E_STR && b->kind == E_STR) {
+        /* `const TERM = "\r\n" + "\r\n"` folds to one literal, so a header terminator
+         * is a literal and not two allocations per loop iteration. Same raw-text
+         * soundness argument as the adjacent-literal join in parse_primary. */
+        Expr *n = new_expr(E_STR, e->line); n->sval = sfmt("%s%s", a->sval, b->sval); return n;
+    }
     if (a->kind != E_INT || b->kind != E_INT) return e;   /* int-only const arithmetic */
     /* HOST WIDTH: every fold arm runs in fixed 64-bit, never in `long`. tycho `int` is
      * 64-bit two's-complement by spec, so a compiler hosted on an ILP32 machine (where

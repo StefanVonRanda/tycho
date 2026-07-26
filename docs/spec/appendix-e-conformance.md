@@ -55,6 +55,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §3.9.2 | float literals (exp / leading-dot forms) | `tests/float_exp`, `tests/float_dot`, `reject/float_exp_bad` |
 | §3.9.3 | character literals | `tests/char_basic`, `tests/char_byte` |
 | §3.9.4 | string literals; escapes; interior NUL | `tests/multiline_literals`, `tests/string_nul`, `reject/string_escape` |
+| §3.9.4 | `\r` escape; adjacent-literal join (multi-line string) | `corelib/test/csv`, `corelib/test/httpd` (`\r`), `server/main.ty`'s `error_body`/`usage` (join) — see the note below |
 | §3.9.5 | f-string escape rule | `tests/reject/fstring_escape` |
 
 ### §5 Types
@@ -118,6 +119,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
 | §12.2 | `const` (literal/folded); reassign/nonliteral rejected | `tests/const_toplevel`, `tests/const_expr`, `reject/const_reassign`, `reject/const_expr_divzero`, `reject/const_expr_localref` |
+| §12.2 | `const` folds `+` over two string literals | no `tests/` fixture — see the note below |
 | §12.3 | scope & shadowing rules | `tests/shadow_string`, `tests/shadow_call`, `reject/param_shadow`, `reject/dup_local` |
 | §12.4 | compound assignment | `tests/compound_assign`, `tests/compound_index_eval` |
 | §12.5 | name resolution; unknown name rejected | `tests/reject/unknown_var`, `reject/unknown_type`, `reject/unknown_fn_stmt` |
@@ -220,6 +222,17 @@ are flagged here so the gap is explicit rather than hidden:
 - **§10.2 escape rule** — enforced structurally (re-home on escape); the closest
   behavioral witnesses are the closure fixtures above and the memory dogfood
   benches, but there is no single reject fixture for "a value escaped its arena."
+- **§3.9.4 `\r` / adjacent-literal join and §12.2's string fold** — all three are
+  covered by committed, golden-validated programs (`corelib/test/csv` and
+  `corelib/test/httpd` under `make corelib`; `server/main.ty`'s `error_body` and
+  `usage` under `make server`), but deliberately **not** by a `tests/` fixture. The
+  reason is mechanical, not an oversight: `compiler/fixpoint.sh:24` and
+  `scripts/frontparity.sh:127` feed every `tests/*.ty`, `tests/pkg/*/main.ty`,
+  `examples/*.ty` and `tools/*.ty` to the **frozen** `tychoc0`, whose lexer rejects
+  `\r` (`compiler/tychoc0.ty:195`) and knows no adjacent-literal join. A fixture in
+  `tests/` would therefore redden two runners at a file that must not be edited
+  (see E.1's `tychoc0` freeze). The same constraint is why `core:httpd` keeps
+  `crlf()` instead of writing the literal.
 - **§30.3 clamp conditions and §30.5 unspecified behavior** — clamp behavior is
   exercised incidentally by the slice fixtures; the unspecified set is, by
   definition, not pinned (it is enumerated in [Appendix F](appendix-f-impl-defined.md)).

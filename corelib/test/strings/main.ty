@@ -38,7 +38,7 @@ fn main():
     # ---- lines: every documented shape ----
     println("l1=[" + jn(strings.lines("a" + chr(10) + "b")) + "]")                       # l1=[a|b]
     println("l2=[" + jn(strings.lines("a" + chr(10) + "b" + chr(10))) + "]")             # l2=[a|b]
-    println("l3=[" + jn(strings.lines("a" + chr(13) + chr(10) + "b")) + "]")             # l3=[a|b]
+    println("l3=[" + jn(strings.lines("a\r\nb")) + "]")                                  # l3=[a|b]
     println("l4=" + str(len(strings.lines(""))))                                    # l4=0
     println("l5=" + str(len(strings.lines(chr(10)))))                               # l5=1 (one empty line)
     # ---- replace (package) + find (builtin substring search) ----

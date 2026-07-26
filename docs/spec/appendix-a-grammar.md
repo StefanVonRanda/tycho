@@ -47,9 +47,10 @@ FloatLit ::= [0-9]+ "." [0-9]+ Exp?
 Exp      ::= ("e" | "E") ("+" | "-")? [0-9]+
 CharLit ::= "'" ( CharEscape | (any byte except "'", "\", newline) ) "'"
 CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" )
-StrLit ::= '"' StrElem* '"'
+StrLit ::= StrPiece StrPiece*
+StrPiece ::= '"' StrElem* '"'
 StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
-StrEscape ::= "\" ( "n" | "t" | "\" | '"' )
+StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
 ```
 
 ### A.3 Phrase grammar (§4)
