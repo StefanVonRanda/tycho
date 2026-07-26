@@ -21,9 +21,10 @@
 # `read` is "" for a missing/unreadable file (indistinguishable from an empty
 # one), `write`/`append`/`write_lines` return false if the path can't be opened,
 # and `list` is [] for anything that is not a directory. Those sentinels have ONE
-# meaning each on the write side, and `list`'s ambiguity (an empty directory vs a
-# non-directory) is a missing stat(2), not a missing return type -- a Result
-# cannot fix it. Nothing here aborts.
+# meaning each on the write side. `list`'s ambiguity (an empty directory vs a
+# non-directory) was never a return-type problem: it is a missing stat(2), and
+# since 2026-07-26 the stat is here -- ask `is_dir(p)`, not `len(list(p)) > 0`
+# (plan.md phase 4). Nothing here aborts.
 package io
 import "core:strings"
 import "core:path"
@@ -73,6 +74,9 @@ extern fn iox_close_lines(r: ptr)
 # two out-params the `bytes` return uses -- see the block comment on iox_read_file
 # in io_shim.c.
 extern fn iox_read_file(path: string, status: inout int) -> bytes
+# stat(2): the same status codes, with 1 meaning "exists and is not a directory".
+# A plain scalar return -- no `inout` needed, because nothing else occupies it.
+extern fn iox_stat_kind(path: string) -> int
 
 # The shim's read_file status codes, named once so read_bytes reads as prose.
 const RF_MISS = 0
@@ -95,6 +99,31 @@ fn read_bytes(p: string) -> Result(bytes, IoErr):
         return Err(NotFound)
     if st == RF_DIR:
         return Err(IsDir)
+    return Err(Failed)
+
+# Is `p` a directory? Ok(true) for a directory, Ok(false) for something that
+# exists and is not one (a file, a fifo, a symlink to any of those -- stat(2)
+# follows links, so a symlink to a directory answers Ok(true)). Err(NotFound) if
+# nothing is there, Err(Failed) if it is there but unstattable (no search
+# permission on a parent, a symlink loop, ...).
+#
+# Note which variant is ABSENT: IsDir is not an error here, it is Ok(true). Being
+# a directory is the answer this function exists to give, not a failure to give
+# one -- the same enum, used for its other two variants.
+#
+# This replaces the only directory test the corelib used to offer,
+# `len(io.list(p)) > 0`, which reports an EMPTY DIRECTORY AS A FILE. That was a
+# documented wrong answer in a real server (a redirect withheld for
+# /emptydir; FRICTION.md phase 7, plan.md phase 4) and it was never fixable by a
+# return type -- stat(2) is the missing question, not the missing answer.
+fn is_dir(p: string) -> Result(bool, IoErr):
+    k := iox_stat_kind(p)
+    if k == RF_DIR:
+        return Ok(true)
+    if k == RF_OK:
+        return Ok(false)
+    if k == RF_MISS:
+        return Err(NotFound)
     return Err(Failed)
 
 # Open a streaming line reader over `path`. Returns a null ptr (check is_null) if

@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
+#include <sys/stat.h>            /* stat(2) + S_ISDIR -- iox_stat_kind */
 /* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
  * emitted program; this shim is a separate translation unit, so it defines the
  * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
@@ -123,4 +124,31 @@ void iox_read_file(const char *path, tycho_int *status,
     *out = buf;
     *outlen = (tycho_int)len;
     *status = TY_RF_OK;
+}
+
+/* What KIND of thing `path` is, in the same status codes iox_read_file uses:
+ *
+ *      TY_RF_DIR  (2)  it is a directory
+ *      TY_RF_OK   (1)  it exists and is NOT a directory (file, symlink target,
+ *                      fifo, device -- anything a server would try to send)
+ *      TY_RF_MISS (0)  no such path (ENOENT), or a non-directory used as one
+ *                      (ENOTDIR, e.g. "/etc/hostname/x")
+ *      TY_RF_ERR  (3)  it is there but cannot be stat'ed (EACCES on a parent
+ *                      directory, ELOOP, ENAMETOOLONG, ...)
+ *
+ * This is the syscall that was missing, and its absence was a documented wrong
+ * answer for a whole plan: with only list_dir, "is this a directory" had to be
+ * asked as `len(io.list(p)) > 0`, which calls an EMPTY directory a file
+ * (FRICTION.md, phase 7; plan.md phase 4). No Result and no error enum can
+ * express a question the OS was never asked -- so we ask it.
+ *
+ * stat(2), not lstat(2), on purpose: a symlink to a directory IS a directory for
+ * the purpose of "does this URL need a trailing slash". Returns a plain scalar --
+ * no `inout` status is needed because the kind and the failure share one code
+ * space, unlike iox_read_file where a `bytes` payload occupies the return. */
+tycho_int iox_stat_kind(const char *path) {
+    struct stat st;
+    errno = 0;
+    if (stat(path, &st) != 0) return ty_rf_errno();   /* ENOENT/ENOTDIR -> MISS */
+    return S_ISDIR(st.st_mode) ? TY_RF_DIR : TY_RF_OK;
 }
