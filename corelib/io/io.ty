@@ -24,7 +24,9 @@
 # meaning each on the write side. `list`'s ambiguity (an empty directory vs a
 # non-directory) was never a return-type problem: it is a missing stat(2), and
 # since 2026-07-26 the stat is here -- ask `is_dir(p)`, not `len(list(p)) > 0`
-# (plan.md phase 4). Nothing here aborts.
+# (plan.md phase 4). `make_dir` / `remove` (2026-07-26, plan.md phase 5) also
+# return a `Result`, for the same reason `read_bytes` does: their failures are
+# ambiguous. Nothing here aborts.
 package io
 import "core:strings"
 import "core:path"
@@ -34,6 +36,9 @@ import "core:path"
 enum IoErr:
     NotFound           # no such path
     IsDir              # the path names a directory, not a file
+    Exists             # something is already there, and it is NOT a directory
+                       # (make_dir only -- see make_dir for why it needs its own
+                       # variant instead of folding into Failed)
     Failed             # the path exists but could not be read (permissions, ...)
 
 # Whole file as a string ("" if missing/unreadable -- same as an empty file).
@@ -77,11 +82,16 @@ extern fn iox_read_file(path: string, status: inout int) -> bytes
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int
+# mkdir(2) / remove(3), one entry each, in the same code space (plus FS_EXISTS).
+extern fn iox_make_dir(path: string) -> int
+extern fn iox_remove(path: string) -> int
 
 # The shim's read_file status codes, named once so read_bytes reads as prose.
 const RF_MISS = 0
 const RF_OK   = 1
 const RF_DIR  = 2
+# make_dir only: occupied by a non-directory. See iox_make_dir in io_shim.c.
+const FS_EXISTS = 4
 
 # Read the whole file as raw bytes -- interior NUL bytes are preserved (unlike
 # read(), whose string truncates at the first NUL). The right tool for binary
@@ -124,6 +134,63 @@ fn is_dir(p: string) -> Result(bool, IoErr):
         return Ok(false)
     if k == RF_MISS:
         return Err(NotFound)
+    return Err(Failed)
+
+# Create the single directory `p` (mode 0777 & ~umask). NOT `mkdir -p`: a missing
+# parent is Err(NotFound), not a tree to build.
+#
+#   Ok(true)        created it
+#   Ok(false)       it was already a directory -- nothing to do, goal already holds
+#   Err(Exists)     something else is there (a file, a fifo, ...)
+#   Err(NotFound)   a path component above it does not exist
+#   Err(Failed)     it could not be created (permissions, read-only fs, ...)
+#
+# WHY A Result AND NOT A bool. Phase 1's rule is that a sentinel earns a Result
+# only when it is AMBIGUOUS -- when one failure value means several things the
+# caller must act on differently. `false` here would mean four things, and two of
+# them are opposites: EEXIST-on-a-directory is the caller's goal ALREADY MET,
+# while EEXIST-on-a-file, ENOENT and EACCES are all "you will not get it". A
+# bool caller has to re-derive that with is_dir(p) after every failed make_dir,
+# which is the sentinel-collision shape this plan exists to remove. So the split
+# is not decoration: it is the difference between "done" and "give up", and it is
+# free -- mkdir already returns EEXIST and stat already answers who is in the way.
+#
+# Note the Ok(bool) shape, same as is_dir's: BOTH booleans are successes. `true`
+# is "I changed the filesystem", `false` is "it was already how you asked for it".
+fn make_dir(p: string) -> Result(bool, IoErr):
+    k := iox_make_dir(p)
+    if k == RF_OK:
+        return Ok(true)
+    if k == RF_DIR:
+        return Ok(false)
+    if k == FS_EXISTS:
+        return Err(Exists)
+    if k == RF_MISS:
+        return Err(NotFound)
+    return Err(Failed)
+
+# Remove ONE entry: a file (unlink) or an EMPTY directory (rmdir). Not recursive.
+#
+#   Ok(true)        it was there and is gone
+#   Ok(false)       nothing was there -- "make it not exist" already holds
+#   Err(Failed)     it is there and would not go: a NON-EMPTY directory, no write
+#                   permission on the parent, a sticky parent you do not own, ...
+#
+# Same reasoning as make_dir: a bool `false` would conflate "already absent" (the
+# goal) with "non-empty directory" (a bug in the caller's cleanup order) and with
+# "permission denied", which are three different next moves. Ok(false) for a
+# missing path is the deliberate half of that -- deleting nothing is not a
+# failure, so a cleanup path does not need a match at all.
+#
+# There is no recursive variant on purpose. Err(Failed) on a non-empty directory
+# is what stops this from being `rm -rf` behind a corelib name; a caller that
+# wants a tree gone removes what it made, in order (corelib/test/io does).
+fn remove(p: string) -> Result(bool, IoErr):
+    k := iox_remove(p)
+    if k == RF_OK:
+        return Ok(true)
+    if k == RF_MISS:
+        return Ok(false)
     return Err(Failed)
 
 # Open a streaming line reader over `path`. Returns a null ptr (check is_null) if

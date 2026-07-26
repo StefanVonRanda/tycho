@@ -270,10 +270,20 @@ element type instead of a family of per-type siblings.
   zero bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three
   outcomes that were the same empty `bytes` until 2026-07-26, which is how a static file
   server ends up serving a 0-byte `200` for a path it cannot read. The variants are
-  payload-free so `==` works on them (no nested patterns). The rest of the module keeps
-  the builtins' sentinels deliberately — each has one meaning on the write side, and
-  `list`'s empty-directory-vs-non-directory ambiguity is a missing `stat(2)`, not a
-  missing return type. Nothing aborts.
+  payload-free so `==` works on them (no nested patterns). Three calls go past the
+  builtins to real syscalls, because `list`'s empty-directory-vs-non-directory ambiguity
+  was never a return-type problem — it was a missing `stat(2)`:
+  `is_dir(p) -> Result(bool, io.IoErr)` asks it (`Ok(true)`/`Ok(false)` are both answers,
+  `Err(NotFound)` is no answer — an **empty directory is a directory**, which
+  `len(list(p)) > 0` gets wrong), and `make_dir(p)` / `remove(p)` — `mkdir(2)` and
+  `remove(3)`, **one entry, never recursive** — return the same `Result(bool, io.IoErr)`,
+  where `Ok(true)` means "changed it" and `Ok(false)` means "it was already how you asked".
+  `make_dir` splits `EEXIST` into `Ok(false)` (already a directory: goal met) and
+  `Err(Exists)` (something else is in the way: goal unreachable); a missing parent is
+  `Err(NotFound)` — there is no `mkdir -p`. `remove` treats a missing path as `Ok(false)`
+  and a **non-empty directory as `Err(Failed)`**, which is what keeps it from being
+  `rm -rf` behind a corelib name. The rest of the module keeps the builtins' sentinels
+  deliberately — each has one meaning on the write side. Nothing aborts.
 - **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the

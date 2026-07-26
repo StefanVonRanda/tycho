@@ -70,15 +70,26 @@ language forced that — `or_return` was sitting right there.
 > it holds an index and a non-directory never does. `server/main.ty` stayed at 371
 > code lines. The plan's Goal ("the two known wrong answers fixed") is met — and the
 > half that needed a syscall cost 3% of the lines the half that needed a type did.
+>
+> **Correction from `plan.md` phase 5.** "Exactly where it started" was true for four
+> phases and is no longer: phase 5 replaced the startup `--root` check's one wrong
+> message with four accurate ones and `server/main.ty` ended at **380** code lines,
+> +9. The plan's own final number is a *growth*, not a wash.
 
 ## The score against this file, 2026-07-26
 
 The `Option`/`Result` plan was run *because* of this file, so it owes it a tally.
-Of the 12 phase-7 items below: **2 closed** — the `read_head` reimplementation
-(phase 3) and the missing `stat`/`is_dir` (phase 4) — and **10 untouched**. Six
-*new* items were created by the work itself, in the three sections that follow.
-That is not a flattering ratio, and it is the real one: `FRICTION.md`'s verdict
-that adopting `Option`/`Result` "would remove more friction than every other item
+Final, after all five phases:
+
+- **Of the 12 phase-7 items below: 2 closed, 10 untouched.** The `read_head`
+  reimplementation (phase 3) and the missing `stat`/`is_dir` (phase 4).
+- **The work created 6 new items of its own**, in the sections that follow — and
+  **phase 5 closed 1 of them** (nothing in Tycho could create a directory), leaving
+  5 open. Net across the whole plan: **−2 original, +5 new.**
+- **`server/main.ty`: 371 code lines before, 380 after.** It got 9 lines *longer*.
+
+That is not a flattering ratio and it is the real one: this file's verdict that
+adopting `Option`/`Result` "would remove more friction than every other item
 combined" **did not hold** — it removed the item it used as its own illustration,
 and cost five to do it.
 
@@ -88,6 +99,21 @@ no `Option`, no `Result` and no `or_return` involved in the fix, and it is the o
 one of the two closures that changed what a client receives. The error-model work
 made failure *sayable*; the syscall made an answer *right*. Those are different
 kinds of win and this file was conflating them.
+
+**Phase 5's own contribution to the tally, stated plainly.** It was acknowledged
+out-of-Goal cleanup, run on a user directive after the Goal was met. It closed the
+directory-creation gap with `io.make_dir` / `io.remove` (35 library lines,
+`Result(bool, IoErr)` both, non-recursive on purpose) and deleted the `os.system`
+shell-out from `corelib/test/io` — a corelib test no longer needs `/bin/sh` to set
+up a syscall test. It found **no new language friction at all**: every construct it
+needed already worked, including a new payload-free variant on a shared error enum
+with no call site to update. And it cost the application **+9 lines**, all of them
+in one startup check, to replace a single wrong message ("`--root` is empty or not
+a directory", said for an empty directory, a plain file, a missing path and an
+unreadable one alike) with four accurate ones. That is the phase-5 finding worth
+carrying: `Result` made the distinctions *available*; **spending them costs one
+branch per cause**, and nothing about the error model makes accuracy free at the
+call site.
 
 ## Phase 7 — writing the server
 
@@ -138,7 +164,7 @@ stop reimplementing the read loop.
 
 Found while writing `io.is_dir` and its test.
 
-- **`Option`/`Result` phase 4** — **nothing in Tycho can create a directory.** Verified absent, not assumed: `docs/spec/16-builtins.md` §29.10 lists five filesystem/time builtins (`read_file`, `write_file`, `list_dir`, `clock`, `now`) and none of them makes a directory, and `mkdir`/`make_dir`/`create_dir` return zero hits across `corelib/`, `src/tychoc.c` and `runtime/`. There is no remove either. So `corelib/test/io` — the test for a `stat(2)` wrapper — has to build its empty directory with `os.system("rm -rf … && mkdir -p …")`: a corelib test depending on `/bin/sh` to set up a filesystem state the corelib itself cannot reach. The asymmetry is the finding: the library can now *classify* a directory but not *make* one.
+- ~~**`Option`/`Result` phase 4** — **nothing in Tycho can create a directory.** Verified absent, not assumed: `docs/spec/16-builtins.md` §29.10 lists five filesystem/time builtins (`read_file`, `write_file`, `list_dir`, `clock`, `now`) and none of them makes a directory, and `mkdir`/`make_dir`/`create_dir` return zero hits across `corelib/`, `src/tychoc.c` and `runtime/`. There is no remove either. So `corelib/test/io` — the test for a `stat(2)` wrapper — has to build its empty directory with `os.system("rm -rf … && mkdir -p …")`: a corelib test depending on `/bin/sh` to set up a filesystem state the corelib itself cannot reach. The asymmetry is the finding: the library can now *classify* a directory but not *make* one.~~ **CLOSED, `plan.md` phase 5.** `io.make_dir(p)` (`mkdir(2)`, no `-p`) and `io.remove(p)` (`remove(3)`, one entry, **never recursive**) both return `Result(bool, IoErr)` where `Ok(true)` is "changed it" and `Ok(false)` is "already how you asked" — `make_dir` splits `EEXIST` into `Ok(false)` (already a directory: goal met) and `Err(Exists)` (a file is in the way: goal unreachable), which is exactly the ambiguity test this plan was built on. `corelib/test/io` no longer imports `core:os` and the `rm -rf && mkdir -p` line is gone. A non-empty directory is `Err(Failed)`, which is the property that keeps `io.remove` from being `rm -rf` behind a corelib name.
 - **`Option`/`Result` phase 4** — `io.exists` and `io.is_dir` now answer overlapping questions by different means, and the cheaper one is the newer one: `exists` lists the whole parent directory (O(entries), and it cannot see a `.`/`..`-only leaf) where `is_dir` is one `stat`. `resolve()` ends up calling both on the same path. A `stat`-backed `exists` is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.
 - **`Option`/`Result` phase 4** — reordering two guards to make room for a new one silently changed a security answer: hoisting `hidden_segment(path.clean(rel))` above the `index.html` append made `GET /` return **403**, because for the root target `rel` is `""` and `path.clean("")` returns `"."` (`corelib/path/path.ty:104-105`), which `hidden_segment` reads as a dotfile. Nothing in the compiler or the corelib could have caught it — `clean("")` returning `"."` is documented POSIX behaviour and both spellings type-check identically. It was caught by the live matrix (`50-request flood 0/50 200`), which is the argument for keeping that matrix.
 
@@ -178,10 +204,12 @@ library uses them once in 386 functions. Adopting them across the IO surface
 would remove more friction from this file than every other item combined.
 
 **Postscript, 2026-07-26.** That last sentence was acted on and it was wrong. See
-"The score against this file" above: three phases of adoption closed one item,
-half-closed a second, created five new ones, and left `server/main.ty` at the same
-371 code lines it started at. The narrower claim survives intact and is the one to
-carry forward: **where a sentinel is genuinely ambiguous, `Result` is a clear win;
+"The score against this file" above: five phases of adoption closed **two** of this
+file's twelve items, created six new ones (one since closed), spent **182 library
+code lines**, and left `server/main.ty` **nine lines longer** than it started —
+371 → 380 — with the growth coming from the phase that made a startup message
+*accurate*, not from the four that made failures *sayable*. The narrower claim
+survives intact and is the one to carry forward: **where a sentinel is genuinely ambiguous, `Result` is a clear win;
 where it has exactly one meaning, converting it is line-neutral at the call site
 and pure cost in the package.** The first sentence of this verdict — that Tycho
 cannot yet make *failure* pleasant — still holds; what changed is that the reason

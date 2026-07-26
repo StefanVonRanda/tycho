@@ -7,9 +7,12 @@ read_bytes len=5 why=Ok
 read_empty len=0 why=Ok
 read_missing len=0 why=NotFound
 read_dir len=0 why=IsDir
-mkdir_rc=0 isdir_tmp=dir isdir_empty=dir
+mkdir=did again=already onfile=Exists noparent=NotFound
+isdir_tmp=dir isdir_empty=dir
 isdir_file=file isdir_missing=NotFound
 list_empty=0 old_test_says_dir=0
+wrote_inner=1 rm_nonempty=Failed rm_file=did
+rm_dir=did rm_again=already left=0
 missing=[] len=0
 exists_self=1 exists_no=0
 exists_mk=1 list_ge1=1

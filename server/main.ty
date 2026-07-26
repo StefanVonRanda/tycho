@@ -550,8 +550,27 @@ fn main():
         print(usage())
         return
 
-    if len(io.list(cfg.root)) == 0:
-        eprint("tycho-httpd: warning: " + cfg.root + " is empty or not a directory\n")
+    # --root sanity, asked as four separate questions. Until phase 5 this was one:
+    #     if len(io.list(cfg.root)) == 0:  "... is empty or not a directory"
+    # -- and the "or" in that message is the corelib admitting it could not tell.
+    # An empty-but-perfectly-good document root, a plain file, a missing path and
+    # an unreadable one all produced the same sentence, and three of them are
+    # operator errors while the first is not. io.is_dir (phase 4) separates them:
+    # Ok(true)/Ok(false) are both answers, Err says why there is none. Still a
+    # WARNING and not a die(): serving an empty tree is legal (every request 404s
+    # honestly), and die() always exits 1, which is the wrong status for a
+    # judgement call about someone else's directory.
+    match io.is_dir(cfg.root):
+        Ok(isdir):
+            if not isdir:
+                eprint("tycho-httpd: warning: " + cfg.root + " is not a directory\n")
+            elif len(io.list(cfg.root)) == 0:
+                eprint("tycho-httpd: warning: " + cfg.root + " is an empty directory\n")
+        Err(e):
+            if e == io.NotFound:
+                eprint("tycho-httpd: warning: " + cfg.root + " does not exist\n")
+            else:
+                eprint("tycho-httpd: warning: " + cfg.root + " cannot be read\n")
 
     # The one place the conversion cost a line. A value match would read best --
     #     srv := match net.listen(cfg.host, cfg.port):
