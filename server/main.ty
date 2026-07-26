@@ -23,6 +23,16 @@ package main
 # to hold the raw buffer. read_head below is that buffer, plus a 16 KiB cap so a
 # peer cannot make us grow a string forever.
 #
+# ERROR MODEL, 2026-07-26. core:net's fallible TCP calls return
+# Result(T, net.NetErr) instead of a negative int or the empty `bytes`. What that
+# bought here, concretely: read_head now returns WHY it stopped (net.Eof vs
+# net.Timeout vs net.Failed) instead of just an empty buffer, so the idle-expiry
+# and clean-hangup cases are finally distinguishable at this level; and
+# httpd.write_response's `-1` is gone. What it cost: an `nwrote` helper, because
+# the corelib has no `unwrap_or` and this file's functions return a Response or a
+# count, not a Result -- and `or_return` only short-circuits out of a function
+# that returns a Result with the same error type. See plan.md, phase 1.
+#
 # NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression,
 # conditional requests, pipelining, virtual hosts. See README.md.
 
@@ -252,26 +262,39 @@ fn resolve(root: string, target: string) -> Route:
 
 # ---- the connection loop ---------------------------------------------------
 
-# Read until the header terminator, EOF, the idle timeout, or the cap. Returns
-# the raw buffer; "" means the peer went away without saying anything, which is
-# an ordinary keep-alive expiry and not worth a log line.
-fn read_head(conn: int) -> string:
+# Read until the header terminator, EOF, the idle timeout, or the cap.
+#
+# Returns the raw buffer AND why the read stopped. Before core:net returned a
+# Result this function could only return the buffer, because `net.read` reported
+# EOF, an idle timeout and a hard error as one value -- the empty `bytes`. The
+# reason now survives, so a caller can log an idle expiry differently from a peer
+# that vanished mid-head. `why` is net.Eof when the head arrived intact.
+struct Head:
+    raw: string
+    why: net.NetErr
+
+fn read_head(conn: int) -> Head:
     buf := ""
     reading := true
+    why := net.Eof
     for reading:
         if find(buf, term()) >= 0:
             reading = false
         elif len(buf) >= MAX_HEAD:
             reading = false
         else:
-            chunk := net.read(conn, CHUNK)
-            if len(chunk) == 0:                    # EOF, error, or read timeout
-                reading = false
-            else:
-                buf += to_str(chunk)
-    return buf
+            match net.read(conn, CHUNK):
+                Ok(chunk): buf += to_str(chunk)
+                Err(e):
+                    why = e
+                    reading = false
+    return Head(buf, why)
 
-fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> int:
+# httpd.write_response returns Result(int, net.NetErr) now, and emit is a tail
+# call onto it -- so emit propagates the failure by returning the same type and
+# spends ZERO lines on plumbing. No `or_return` is even needed here; matching
+# error types make the sentinel check disappear entirely.
+fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> Result(int, net.NetErr):
     out := httpd.with_connection(r, keep)
     out = httpd.with_header(out, "Server", VERSION)
     out = httpd.with_header(out, "Date", http_date())
@@ -282,6 +305,16 @@ fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> int:
         out = httpd.with_header(out, "Content-Length", str(len(out.body)))
         out = httpd.with_body(out, to_bytes(""))
     return httpd.write_response(conn, out)
+
+# Bytes written, or -1 if the write failed. serve_conn logs a byte count and
+# decides whether to keep the connection, so somewhere the Result has to collapse
+# to an int -- and there is NO `unwrap_or` / `is_ok` in the corelib or in the
+# builtin table, so this is the collapse, written once and reused four times.
+# That absence is the one real ergonomic cost measured in this phase.
+fn nwrote(w: Result(int, net.NetErr)) -> int:
+    match w:
+        Ok(n): return n
+        Err(e): return -1
 
 # One line per request on stderr: worker, method, target, status, body bytes,
 # duration. Built whole and written with a single eprint, because N workers
@@ -306,9 +339,16 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     served := 0
     alive := true
     for alive and served < MAX_REQS:
-        raw := read_head(conn)
+        h := read_head(conn)
+        raw := h.raw
         if len(raw) == 0:
-            alive = false                          # idle expiry or clean hangup
+            # Nothing arrived. `h.why` now says WHICH nothing: net.Timeout is the
+            # keep-alive idle expiry, net.Eof is a clean hangup, net.Failed is a
+            # reset. Before this phase all three were the empty `bytes` and this
+            # branch could not have asked. Acting on the distinction (a 408, a
+            # different log line) is plan.md phase 3; making it askable was this
+            # phase, and it compiles.
+            alive = false
         else:
             sw := time.start()
             served += 1
@@ -320,7 +360,7 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 if len(raw) >= MAX_HEAD:
                     st = 431
                     r = oversize_response()
-                n := emit(conn, r, false, false)
+                n := nwrote(emit(conn, r, false, false))
                 log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
                 alive = false
             else:
@@ -340,12 +380,12 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 target := log_safe(req.path)
                 if req.method == "" or bad_len:
                     r := error_response(400)
-                    n := emit(conn, r, false, false)
+                    n := nwrote(emit(conn, r, false, false))
                     log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
                     alive = false
                 elif req.method != "GET" and req.method != "HEAD":
                     r := error_response(405)
-                    n := emit(conn, r, false, keep)
+                    n := nwrote(emit(conn, r, false, keep))
                     log_req(cfg, wid, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
                     if n < 0:
                         alive = false
@@ -362,7 +402,7 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                     nb := len(r.body)
                     if head_only:
                         nb = 0
-                    n := emit(conn, r, head_only, keep)
+                    n := nwrote(emit(conn, r, head_only, keep))
                     log_req(cfg, wid, req.method, target, rt.status, nb, n, time.elapsed_us(sw))
                     if n < 0:
                         alive = false               # peer hung up mid-write
@@ -376,15 +416,20 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
     served := 0
     running := true
     for running:
-        conn := net.accept(srv)
-        if conn < 0:
-            running = false                        # listener closed: wind down
-        else:
-            armed := net.set_read_timeout_ms(conn, cfg.idle_ms)
-            if not armed and not cfg.quiet:
-                eprint("w" + str(wid) + " warn: idle timeout not armed\n")
-            served += serve_conn(cfg, conn, wid)
-            net.close_fd(conn)
+        # `if conn < 0` became `Err(e)`. accept_loop returns the served count, not
+        # a Result, so `or_return` is NOT available here (the compiler rejects it:
+        # "or_return requires the enclosing function to return a Result, but it
+        # returns int"). A match is the only tool, and it costs the same two
+        # branches the sentinel test cost -- with the fd unreachable on failure.
+        match net.accept(srv):
+            Ok(conn):
+                armed := net.set_read_timeout_ms(conn, cfg.idle_ms)
+                if not armed and not cfg.quiet:
+                    eprint("w" + str(wid) + " warn: idle timeout not armed\n")
+                served += serve_conn(cfg, conn, wid)
+                net.close_fd(conn)
+            Err(e):
+                running = false                    # listener closed: wind down
     return served
 
 # Worker k spawns worker k+1 into a frame-local, then runs its own accept loop;
@@ -489,10 +534,19 @@ fn main():
     if len(io.list(cfg.root)) == 0:
         eprint("tycho-httpd: warning: " + cfg.root + " is empty or not a directory\n")
 
-    srv := net.listen(cfg.host, cfg.port)
-    if srv < 0:
-        die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
-    bound := net.port_of(srv)
+    # The one place the conversion cost a line. A value match would read best --
+    #     srv := match net.listen(cfg.host, cfg.port):
+    #         Ok(fd): fd
+    #         Err(e): die("...")
+    # -- but die() is typed void and the compiler does not model it as diverging,
+    # so that is rejected: "a value if/match branch must produce a value, not
+    # void". The statement form needs a dummy initializer, which is one line more
+    # than the sentinel version and puts a 0 in `srv` that nothing can read.
+    srv := 0
+    match net.listen(cfg.host, cfg.port):
+        Ok(fd): srv = fd
+        Err(e): die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
+    bound := nwrote(net.port_of(srv))              # -1 in the banner if unknowable
 
     banner := "tycho-httpd: serving " + cfg.root
     banner += " on http://" + cfg.host + ":" + str(bound) + "/"

@@ -83,7 +83,7 @@ to any of them makes the change worse than the sentinels:
 
 ## Phases
 
-- [ ] **Phase 1 — PROBE: convert ONE package, rewrite the server against it, compare**
+- [x] **Phase 1 — PROBE: convert ONE package, rewrite the server against it, compare**
   - Pick `core:io` or `core:net` — whichever `server/main.ty` leans on hardest for
     fallible calls; read the server first and say which and why.
   - Answer the three design questions above **by writing code**: convert that one
@@ -99,21 +99,258 @@ to any of them makes the change worse than the sentinels:
     side-by-side comparison recorded, and a **recommendation with a reason** on whether to
     proceed, and in what form.
 
-- [ ] **Phase 2 — CONTINGENT on Phase 1: roll out to the fallible IO surface**
-  - Only if Phase 1 says it is better. Scope set by Phase 1's finding, not by this text.
-  - Package order should follow what `server/` and the examples actually use — `io`,
-    `net`, `httpd`, `path` first; a package no real program calls fallibly can wait.
+#### Phase 1 evidence — 2026-07-26
+
+**Package picked: `core:net`, not `core:io`.** `server/main.ty` makes 4 fallible `net`
+calls with **4 different sentinels** — `net.accept` a negative int (old `:379`),
+`net.read` empty `bytes` (old `:267`), `net.set_read_timeout_ms` `false` (old `:383`),
+`net.listen` a negative int (old `:492`) — against 2 fallible `io` calls
+(`io.read_bytes` old `:356`, `io.list` old `:247`/`:489`). And `net.read` is the call
+behind the plan's marquee bug: the EOF-vs-timeout collision is created inside
+`netx_read` (`corelib/net/net_shim.c:217` before this phase: `if (n <= 0) { free(buf);
+return; }` — one branch for EOF and error alike). `io`'s bug (empty dir vs file) is not
+a sentinel problem at all; it needs a `stat` that does not exist, so it could not test
+the premise.
+
+##### The three design questions, answered by compiling
+
+**1. `Option` or `Result`? → `Result(T, E)` with `E` a per-package, payload-free enum.**
+
+`Option` was ruled out immediately: the whole point is *which* failure, and `None`
+carries none. For `E`, all three candidates were tried on paper against the collisions
+that actually bit `server/`:
+
+| `E` | verdict |
+|---|---|
+| `string` | rejected — distinguishing a cause means comparing strings at every call site, and it allocates on a path a server takes per request |
+| corelib-wide enum | rejected — `Eof`/`Timeout` are meaningless for `path.safe_join`, and every package importing one error hub makes a dependency hub out of it |
+| **per-package enum** | **chosen** — variants match reality; verified to work across a package boundary |
+
+Cross-package use is verified, not assumed: a scratch package declaring `enum ReadErr`
+and returning `Result(bytes, ReadErr)` compiled and ran from a consumer that named the
+type as `probenet.ReadErr` and the variants as `probenet.Eof` / `probenet.Failed(errno)`.
+
+The variants are **payload-free on purpose** (`corelib/net/net.ty:75-80`): `Eof`,
+`Timeout`, `Failed`. That is a direct consequence of question 3 below — a payload-free
+enum compares with `==`, and `==` is the only way to test one cause in one line.
+
+**2. Does `or_return` compose at IO call sites? → YES where the enclosing function
+returns the same `Result`, and it is a HARD COMPILE ERROR where it does not.**
+
+Not read off the spec. Compiled:
+
+```
+probe1.ty:14: error: or_return requires the enclosing function to return a Result, but it returns int
+    14 |     b := probenet.read(fd, 10) or_return
+```
+
+So the answer is conditional, and the condition is the finding. The place it pays best
+is exactly the place the friction lived — `httpd.write_response`, whose old body was six
+lines of `-1` plumbing:
+
+```tycho
+# BEFORE                                       # AFTER
+fn write_response(fd, r) -> int:               fn write_response(fd, r) -> Result(int, net.NetErr):
+    n := net.write(fd, to_bytes(render_head(r)))    n := net.write(fd, to_bytes(render_head(r))) or_return
+    if n < 0:                                       if len(r.body) == 0:
+        return -1                                       return Ok(n)
+    if len(r.body) == 0:                            m := net.write(fd, r.body) or_return
+        return n                                    return Ok(n + m)
+    m := net.write(fd, r.body)
+    if m < 0:
+        return -1
+    return n + m
+```
+
+**10 code lines → 6.** Both `-1`s gone, both `if n < 0` gone. `server/main.ty`'s `emit`
+then propagates for *free* — it is a tail call onto `write_response` with the same
+error type, so it spends **zero** lines on plumbing and does not even need `or_return`
+(`server/main.ty:293-307`).
+
+Where the enclosing function owns a real return type, `or_return` is unavailable and a
+`match` is the tool. `accept_loop` returns a served count, so:
+
+```tycho
+# BEFORE (14 code lines)                       # AFTER (14 code lines)
+conn := net.accept(srv)                        match net.accept(srv):
+if conn < 0:                                       Ok(conn):
+    running = false                                    armed := net.set_read_timeout_ms(conn, cfg.idle_ms)
+else:                                                  ...
+    armed := net.set_read_timeout_ms(...)          Err(e):
+    ...                                                running = false
+```
+
+**Line-neutral.** The gain is that `conn` does not exist on the failing path; the cost
+is nothing. That is the typical case, not the good case and not the bad one.
+
+The good case generalises: introduce **one** function boundary returning
+`Result(_, net.NetErr)` and every call inside becomes a one-liner. `examples/corelib/net/main.ty`
+is now `roundtrip() -> Result(int, net.NetErr)` with seven `or_return`s and *no error
+handling in the body at all*, plus a three-line `match` in `main()`. `or_return` also
+works inside a call argument, verified:
+`to_str(net.read(conn, 64) or_return)`.
+
+**3. What does the call site actually look like? → mostly the same; better when a
+boundary can be introduced, worse in two named spots.**
+
+The honest bad news, both measured:
+
+- **There is no `unwrap_or` / `is_ok` / `is_some` anywhere.** Searched
+  `docs/spec/16-builtins.md`, `docs/spec/12-aggregates.md` and all of `corelib/` —
+  zero hits. Any caller that must collapse a `Result` to a value hand-writes a
+  three-line `match`. `server/main.ty:309-317` (`nwrote`) is that helper, written once
+  and used five times; `corelib/test/httpd/main.ty:18-30` and
+  `corelib/test/net/main.ty:20-38` each needed their own copy. **This is the single
+  largest real cost of the conversion.**
+- **`die()` cannot be the tail of a value-`match` arm.** The natural form
+  `srv := match net.listen(...): Ok(fd): fd / Err(e): die("...")` is rejected —
+  `error: a value if/match branch must produce a value, not void`
+  — because `die` is typed `void` and the compiler does not model it as diverging. The
+  statement form needs a dummy `srv := 0`, which is **one line worse** than the
+  sentinel version it replaced (`server/main.ty:537-549`).
+- **There are no nested patterns.** `Err(net.Timeout)` does not parse
+  (`error: expected ')'`), and neither does `Err(C(n))` for a local enum. Worse,
+  `Err(A)` where `A` is a nullary variant parses as a **binding named `A`**, not a
+  pattern — surfaced only because a second arm then gives `error: duplicate Err arm`.
+  So distinguishing causes always costs either a second `match` or `==` comparisons.
+  **This is why `NetErr` has no payload:** `if e == net.Timeout` is one line;
+  `match e:` is three.
+
+##### Measurements
+
+Non-comment, non-blank code lines, `git show HEAD:<f>` vs working tree:
+
+| unit | before | after | Δ |
+|---|---|---|---|
+| `httpd.write_response` | 10 | 6 | **−4** (`or_return`) |
+| `server/`'s `accept_loop` | 14 | 14 | 0 |
+| `server/`'s `read_head` | 15 | 19 | +4 (buys the `Head` struct + the reason) |
+| `examples/corelib/net/main.ty` | 14 | 19 | +5 (the `roundtrip` boundary + top `match`) |
+| `server/main.ty` whole file | 371 | 381 | **+10 (+2.7%)** |
+| `corelib/net/net.ty` | 34 | 64 | **+30** |
+
+The `+30` in `net.ty` is where the honesty matters: ~10 of it is the `NetErr` enum and
+`read`'s classification (real information), and ~20 is six one-line sentinel forwarders
+becoming four-to-five-line `Result` constructors that add **no** information —
+`net.listen`, `net.connect`, `net.accept`, `net.port_of`, `net.write` each had exactly
+one failure with one meaning.
+
+**Both known wrong answers, expressibility:**
+
+- **malformed-vs-hangup: now expressible AND measured correct.** `corelib/test/net/main.ty`
+  asserts both halves and the golden records them: `eof=Eof` (peer closed cleanly) and
+  `tmo=Timeout` (armed 50 ms deadline expired). These were the *same empty `bytes`*
+  before this phase. `server/main.ty`'s `read_head` now returns
+  `Head{raw, why: net.NetErr}` so the connection loop can ask
+  (`server/main.ty:272-291`). Acting on it — a `408`, a different log line — is Phase 3.
+- **empty-dir-vs-file: NOT addressed, and a `Result` cannot address it.** `io.list`
+  returning `[]` for both an empty directory and a non-directory is a missing *syscall*
+  (`stat`), not a missing return type. Phase 3's own text already said so.
+
+**`set_read_timeout_ms` and all of UDP were deliberately left on sentinels**
+(`corelib/net/net.ty:46-56`, `:57-66`). `set_read_timeout_ms`'s `false` has one cause
+and collides with nothing, so a `Result` would add a `match` and no information.
+`udp_read` is worse than a no-op: **a zero-length datagram is legal**, so its empty
+result is a real success value, and changing the return type alone would move the
+ambiguity rather than remove it.
+
+##### Verify — commands run, real output
+
+```
+$ ./tychoc server/main.ty -o …/tycho-httpd
+built …/tycho-httpd
+$ ./tychoc corelib/test/net/main.ty   … | diff corelib/test/net.out -      → net golden OK
+$ ./tychoc corelib/test/httpd/main.ty … | diff corelib/test/httpd.out -    → httpd golden OK   (UNCHANGED)
+$ ./tychoc corelib/test/io/main.ty    … | diff corelib/test/io.out -       → io golden OK      (UNCHANGED)
+$ ./tychoc examples/corelib/net/main.ty   … | diff examples/corelib/net.out -    → ex net golden OK
+$ ./tychoc examples/corelib/httpd/main.ty … | diff examples/corelib/httpd.out -  → ex httpd golden OK
+```
+
+`corelib/test/net.out` gained exactly the three new assertion lines
+(`eof=Eof`, `armed=true`, `tmo=Timeout`); the two example goldens gained one
+byte-count line each. Nothing else moved. **`make ci` / `make test` were NOT run** (gate
+constraint).
+
+The rewritten server, served live on `127.0.0.1:18099`, `--workers 4`, hit with curl:
+
+```
+GET /            200 2659 text/html; charset=utf-8
+GET /style.css   200 1726 text/css; charset=utf-8
+HEAD /           200 0
+GET /nope.html   404
+GET /../../etc/passwd (--path-as-is)  403
+POST /           405
+printf 'GARBAGE\r\n\r\n' | nc     → HTTP/1.1 400 Bad Request     (not a silent close)
+printf 'GET / HTTP/1.1\r\n' | nc  → hangup handled, no crash
+keep-alive, 3 requests one connection → 200 200 200
+50-request flood → 50 done, exit 0
+stderr: w1/w2/w3/w4 GET / 200 2659 0.19ms   (all four workers live)
+```
+
+##### RECOMMENDATION — proceed to Phase 2, but **narrowed**, and add the missing helper first
+
+**The premise holds, but only for half of what it claimed.** Precisely:
+
+1. **Where a sentinel is genuinely AMBIGUOUS, `Result` is a clear win and should be
+   rolled out.** `net.read` went from one value meaning three things to three variants,
+   and the test measures them as distinct. This is the part worth doing.
+2. **Where a sentinel has exactly ONE meaning, conversion is not worth it.** Five of
+   `core:net`'s six converted calls fell in this bucket: `accept_loop` came out
+   line-for-line identical, and `net.ty` grew ~20 lines to say nothing new. The
+   type-safety gain (an unopened fd is unreachable) is real but small, and it is not
+   what `FRICTION.md` was complaining about.
+3. **`or_return` is the whole payoff and it is conditional.** It paid −40% on
+   `write_response` and erased `emit`'s plumbing entirely, but only because those
+   functions could be made to return `Result(_, net.NetErr)`. In a `main()` or a handler
+   returning a `Response` it is a compile error, and the fallback costs a hand-written
+   three-line unwrap **because the corelib has no `unwrap_or`**.
+
+So Phase 2 should NOT be "convert `io`, `net`, `httpd`, `path` uniformly". It should be
+"add the missing combinator, then convert the three genuinely ambiguous calls and stop".
+Phases 2 and 3 are rewritten below to match.
+
+- [ ] **Phase 2 — NARROWED by Phase 1: add the missing combinators, then convert only the AMBIGUOUS calls**
+  - **Rewritten 2026-07-26 from Phase 1's finding.** The original text said "roll out to
+    the fallible IO surface" in package order. Phase 1 measured that converting an
+    *unambiguous* sentinel is line-neutral at the call site and costs ~4 lines per
+    function in the package, so a uniform roll-out is now explicitly out of scope.
+  - **First, close the ergonomic gap Phase 1 found**, because it taxes every conversion
+    after it: there is no `unwrap_or` / `is_ok` / `is_some` anywhere in the builtins or
+    the corelib, so `server/main.ty`, `corelib/test/net`, `corelib/test/httpd` each
+    hand-rolled the same three-line collapse. Decide where it lives (a builtin, or a
+    `core:result` package) and land it with its consumers. Judge the design against the
+    fact that Tycho has **no nested patterns**, so it must work with `==` on
+    payload-free variants.
+  - **Then convert exactly these, and nothing else** — the calls whose sentinel means
+    more than one thing:
+    - `io.read_bytes` — empty `bytes` means missing **and** empty **and** a directory.
+    - `httpd.parse_request` / `httpd.read_request` — `method == ""` means EOF **and**
+      timeout **and** malformed. Phase 1 left `read_request` collapsing all three on
+      purpose (`corelib/httpd/httpd.ty`, the note above the `match`); the information
+      now reaches it, so this is where it gets used.
+    - `io.list` — only if a `stat`-based answer lands in Phase 3; a `Result` alone
+      cannot separate an empty directory from a non-directory.
+  - **Explicitly NOT converted, with the reason recorded:** `path.safe_join` (`""` is
+    fail-closed with one meaning — Phase 1 measured this class as line-neutral),
+    `io.write` / `io.append` / `io.write_lines` (`false`, one cause), `net.udp_*`
+    (a zero-length datagram makes the empty result a real success value),
+    `net.set_read_timeout_ms` (already done: left as `bool`).
   - Every consumer must land with it: `examples/*`, `corelib/test/*`, `server/`, goldens.
-  - **Not a sweep for its own sake.** Convert what buys clarity; leave what does not and
-    say which.
 
 - [ ] **Phase 3 — CONTINGENT: fix the two wrong answers in `server/`**
-  - `resolve()` reports an empty directory as a 0-byte `200` because `is_dir` cannot be
-    asked (there is no `stat`; `io.exists` works by listing the parent). Needs a real
-    `io.stat`/`io.is_dir`, which may be its own small addition regardless of Phase 1.
-  - The read loop cannot distinguish a malformed request from a hangup, which is why
-    `server/main.ty` reimplements `read_head` instead of using `httpd.read_request`.
-  - Done when both are expressible and `server/main.ty` drops its workarounds.
+  - **Halved by Phase 1.** The malformed-vs-hangup half is now *expressible*:
+    `net.read` returns `Err(net.Eof)` / `Err(net.Timeout)` / `Err(net.Failed)` (measured
+    in `corelib/test/net.out`) and `server/main.ty`'s `read_head` carries the reason out
+    in `Head.why`. What is left is to **act** on it — a `408` on `net.Timeout` rather
+    than a silent close, and dropping `server/main.ty`'s reimplemented `read_head` in
+    favour of a `httpd.read_request` that reports the same three causes (which is
+    Phase 2's `read_request` conversion).
+  - The other half is **untouched and cannot be fixed by a return type**: `resolve()`
+    reports an empty directory as a 0-byte `200` because `is_dir` cannot be asked (there
+    is no `stat`; `io.exists` works by listing the parent). This needs a real
+    `io.stat`/`io.is_dir` — a new shim call, independent of the `Option`/`Result` work.
+  - Done when `server/main.ty` drops both workarounds: the hand-rolled `read_head`, and
+    `resolve()`'s documented wrong answer.
 
 ## Out of scope
 

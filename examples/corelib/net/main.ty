@@ -1,20 +1,35 @@
 # Example: core:net -- a loopback TCP round-trip (server + client, one program).
+#
+# Every core:net TCP call returns Result(T, net.NetErr), so the whole round trip
+# lives in one function that returns the SAME Result -- and then `or_return` does
+# all the error handling. There is not one `if fd < 0` in the body, and there is
+# no way to accidentally use a socket that failed to open.
+#
+# The one structural requirement is that function boundary: `main()` returns void,
+# so `or_return` cannot short-circuit out of it. Introduce a single fallible
+# function and one `match` at the top, and every call inside is a one-liner.
 package main
 import "core:net"
 
-fn main():
-    srv := net.listen("127.0.0.1", 0)         # 0 = an OS-chosen ephemeral port
-    port := net.port_of(srv)
+fn roundtrip() -> Result(int, net.NetErr):
+    srv := net.listen("127.0.0.1", 0) or_return    # 0 = an OS-chosen ephemeral port
+    port := net.port_of(srv) or_return
 
-    cli := net.connect("127.0.0.1", port)     # queued in the listen backlog
-    conn := net.accept(srv)                   # pick up the pending connection
+    cli := net.connect("127.0.0.1", port) or_return    # queued in the listen backlog
+    conn := net.accept(srv) or_return                  # pick up the pending connection
 
-    net.write(cli, to_bytes("ping"))
-    println("server received: " + to_str(net.read(conn, 64)))
+    sent := net.write(cli, to_bytes("ping")) or_return
+    println("server received: " + to_str(net.read(conn, 64) or_return))
 
-    net.write(conn, to_bytes("pong"))
-    println("client received: " + to_str(net.read(cli, 64)))
+    replied := net.write(conn, to_bytes("pong")) or_return
+    println("client received: " + to_str(net.read(cli, 64) or_return))
 
     net.close_fd(cli)
     net.close_fd(conn)
     net.close_fd(srv)
+    return Ok(sent + replied)
+
+fn main():
+    match roundtrip():
+        Ok(n): println("bytes written: " + str(n))
+        Err(e): eprint("net example: the loopback round trip failed\n")

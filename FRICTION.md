@@ -34,6 +34,13 @@ were exactly this collision: the server could not tell a malformed request from
 a hangup, and cannot tell an empty directory from a file. Nothing about the
 language forced that — `or_return` was sitting right there.
 
+> **Status, 2026-07-26.** The `net.*` rows above are historical: `core:net`'s
+> fallible TCP calls now return `Result(T, net.NetErr)` and `net.read`
+> distinguishes `Eof` / `Timeout` / `Failed` (`plan.md` phase 1). What that phase
+> *measured* is that the win is confined to the ambiguous sentinels — converting
+> an unambiguous one is line-for-line neutral — and that the conversion surfaced
+> five new ergonomic gaps of its own, recorded below.
+
 ## Phase 7 — writing the server
 
 - **Phase 7** — `send` is a builtin, and defining `fn send(conn, r, head_only, keep) -> int` is accepted **silently**; the collision surfaces only at the call site as `error: send(ch, v) takes a channel and a value`, which points at my call and describes a channel operation I never wrote. Nothing is reported at the definition, which is where the mistake is.
@@ -48,6 +55,17 @@ language forced that — `or_return` was sitting right there.
 - **Phase 7** — `net.accept` hands back a bare fd and `core:net` exposes `getsockname` (`netx_port_of`) but no `getpeername`, so an access log cannot record the client address — the single most useful field in a real access log is unreachable from Tycho.
 - **Phase 7** — scrubbing control bytes out of a hostile request target (`log_safe`) has to go `string` → `[]int` → `to_bytes` → `to_str`, because a `string` cannot be rebuilt in place and `bytes` cannot be indexed. The Phase 2 `to_str`/`to_bytes` sandwich, biting exactly as predicted, in the one function where a server must be paranoid.
 - **Phase 7** — `parallel for` and `spawn` are the only concurrency shapes, and neither can express "hand this connection to whoever is free". One worker owns one connection for its whole life, so N workers is a hard cap of N concurrent connections; there is no way to write an event loop or a work queue over accepted fds without a channel of ints and a hand-rolled dispatcher.
+
+## Phase 1 of the Option/Result plan — converting `core:net`
+
+Found while converting `core:net`'s fallible TCP surface to `Result(T, net.NetErr)` and
+rewriting `server/`, `corelib/httpd`, both corelib tests and both examples against it.
+
+- **`Option`/`Result` phase 1** — there is no `unwrap_or`, `is_ok`, `is_some` or `is_err` anywhere: searched `docs/spec/16-builtins.md`, `docs/spec/12-aggregates.md` and all of `corelib/`, zero hits. Every caller whose own return type is not a `Result` hand-writes the same three-line `match` to collapse one — `server/main.ty`'s `nwrote`, and a separate copy each in `corelib/test/net/main.ty` and `corelib/test/httpd/main.ty`. It is the single largest cost of adopting `Result`, and it is a missing three-line library function.
+- **`Option`/`Result` phase 1** — there are **no nested patterns**: `Err(net.Timeout)` is rejected with `error: expected ')'`, and so is `Err(C(n))` for a local enum. Worse, `Err(A)` where `A` is a nullary variant *parses* — as a **binding named `A`**, not as a pattern — and the mistake surfaces only if a second arm exists, as `error: duplicate Err arm`. So telling two failure causes apart always costs a second `match`, which is why `net.NetErr` was given payload-free variants: `if e == net.Timeout` is one line where `match e:` is three.
+- **`Option`/`Result` phase 1** — `die()` is typed `void` and the compiler does not model it as diverging, so it cannot be the tail of a value-`match` arm: `srv := match net.listen(...): Ok(fd): fd / Err(e): die("cannot bind")` is rejected with `a value if/match branch must produce a value, not void`. The statement form needs a dummy `srv := 0` first, making the `Result` version **one line longer** than the `if srv < 0: die(...)` it replaced — the only call site in `server/` where the conversion cost a line.
+- **`Option`/`Result` phase 1** — `tychoc` compiles every `.ty` in the entry file's directory, not just the entry file, so two unrelated scratch programs side by side collide with `'main' is already defined` pointing at the file you asked it to build. Nothing says the sibling file is involved; it cost four compile cycles to work out that the fix was `mkdir`.
+- **`Option`/`Result` phase 1** — the FFI has no way for C to return a classification alongside a `bytes` payload, and `-> Result(T, E)` is not a documented `extern` return shape (`docs/spec/14-ffi.md:20-47` lists only scalars, sized ints, `string`/`Option(string)`, `bytes`, `[int]`/`[float]`, `ptr`, handles, and numeric `inout`). Making `net.read` say *why* it read nothing needed `status: inout int` threaded ahead of the two `bytes` out-params — which works, and is undocumented as the way to do this.
 
 ### Two defects that were not expressible in Tycho at all
 

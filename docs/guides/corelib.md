@@ -261,13 +261,21 @@ element type instead of a family of per-type siblings.
   yourself (no array-argv form yet). The stdout-capture read loop lives in `os_shim.c`, so
   Tycho only ever receives the finished, NUL-terminated string.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
-  no `deps`, nothing to install). `listen`/`accept`/`connect`/`port_of`/`write`/`read`/
-  `close_fd` and `udp_bind`/`udp_send`/`udp_read`; fds are `int` (negative = failure),
-  payloads are binary-safe `bytes`. `set_read_timeout_ms(fd, ms)` arms `SO_RCVTIMEO`:
-  after `ms` idle milliseconds a read returns **empty**, exactly as it does at EOF —
-  deliberately indistinguishable, because a server drops the connection either way.
-  `ms <= 0` restores the blocking default; `false` means the option could not be set
-  (fail closed — the socket keeps blocking).
+  no `deps`, nothing to install). Every fallible TCP call returns
+  **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
+  `write` gives `Result(int, …)` (bytes sent), `read` gives `Result(bytes, …)`. Payloads
+  are binary-safe `bytes`. `NetErr` is `Eof` / `Timeout` / `Failed`, all payload-free so
+  a single cause can be tested with `==` (`if e == net.Timeout`) rather than a nested
+  `match` — Tycho has no nested patterns, so `Err(net.Timeout)` does not parse.
+  `read` **distinguishes** a clean hangup (`Err(Eof)`) from an expired receive deadline
+  (`Err(Timeout)`) from a hard error (`Err(Failed)`); before 2026-07-26 all three were
+  the same empty `bytes`. `set_read_timeout_ms(fd, ms)` arms `SO_RCVTIMEO` and stays a
+  plain `bool` — one failure, one cause, no collision to remove; `ms <= 0` restores the
+  blocking default and `false` means the option could not be set (fail closed — the
+  socket keeps blocking). The **UDP** calls (`udp_bind`/`udp_send`/`udp_read`) are still
+  sentinel-based on purpose: a zero-length datagram is legal, so `udp_read`'s empty
+  result is a real success value and a return-type change alone would not remove the
+  ambiguity.
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; you own the
   accept loop. `parse_request(raw) -> Request` (method/path/version, case-insensitive
@@ -277,7 +285,9 @@ element type instead of a family of per-type siblings.
   `render(r) -> bytes` (Content-Length and a default `text/plain` Content-Type are added
   automatically); and the socket glue `read_request(fd)` (reads until the header
   terminator, then exactly Content-Length body bytes, bounded so a hostile peer can't
-  spin) / `write_response(fd, r)`. **Binary-safe bodies** — `Request.body` and
+  spin) / `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
+  it returns the same error type `net.write` does, so `or_return` propagates a failed
+  send with no sentinel check). **Binary-safe bodies** — `Request.body` and
   `Response.body` are `bytes`, so a PNG or a font round-trips byte for byte; headers stay
   `string` (ASCII by spec). `write_response` sends head and body as two `net.write` calls,
   so the body buffer is never copied into an intermediate string.

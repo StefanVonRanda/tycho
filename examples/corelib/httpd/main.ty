@@ -8,6 +8,30 @@ import "core:httpd"
 fn crlf() -> string:                    # tycho strings have no \r escape
     return chr(13) + chr(10)
 
+# The socket half of the demo. It returns Result(_, net.NetErr) -- the same error
+# type every core:net TCP call and httpd.write_response return -- so `or_return`
+# handles every failure and the body has no sentinel checks at all.
+fn round_trip(nl: string) -> Result(int, net.NetErr):
+    srv := net.listen("127.0.0.1", 0) or_return          # port 0 -> kernel picks one
+    port := net.port_of(srv) or_return
+    conn_out := net.connect("127.0.0.1", port) or_return
+    conn_in := net.accept(srv) or_return
+
+    asked := net.write(conn_out, to_bytes("GET / HTTP/1.1" + nl + nl)) or_return
+    served := httpd.read_request(conn_in)
+    println("served = " + served.method + " " + served.path)   # GET /
+    println("alive  = " + str(not httpd.connection_close(served)))   # true: HTTP/1.1
+    answered := httpd.write_response(conn_in, httpd.text_response(200, "pong")) or_return
+    net.close_fd(conn_in)
+
+    reply := to_str(net.read(conn_out, 512) or_return)
+    body := reply[find(reply, nl + nl) + 4:len(reply)]
+    println("reply  = " + body)                          # pong
+
+    net.close_fd(conn_out)
+    net.close_fd(srv)
+    return Ok(asked + answered)
+
 fn main():
     nl := crlf()
 
@@ -29,21 +53,6 @@ fn main():
     println("ctype? = " + httpd.content_type("/data.bin"))              # application/octet-stream
 
     # --- a real one-request round trip to ourselves over 127.0.0.1 ---
-    srv := net.listen("127.0.0.1", 0)                    # port 0 -> kernel picks one
-    port := net.port_of(srv)
-    conn_out := net.connect("127.0.0.1", port)
-    conn_in := net.accept(srv)
-
-    net.write(conn_out, to_bytes("GET / HTTP/1.1" + nl + nl))
-    served := httpd.read_request(conn_in)
-    println("served = " + served.method + " " + served.path)   # GET /
-    println("alive  = " + str(not httpd.connection_close(served)))   # true: HTTP/1.1
-    httpd.write_response(conn_in, httpd.text_response(200, "pong"))
-    net.close_fd(conn_in)
-
-    reply := to_str(net.read(conn_out, 512))
-    body := reply[find(reply, nl + nl) + 4:len(reply)]
-    println("reply  = " + body)                          # pong
-
-    net.close_fd(conn_out)
-    net.close_fd(srv)
+    match round_trip(nl):
+        Ok(n): println("wire   = " + str(n) + " bytes")
+        Err(e): eprint("httpd example: the loopback round trip failed\n")
