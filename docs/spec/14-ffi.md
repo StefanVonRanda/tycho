@@ -56,6 +56,71 @@ back with `to_int` **sign-extends** the signed types (`i8`/`i16`/`i32`/`i64`) an
 `-56`. An `extern` parameter of a sized type requires an argument of that exact
 type (a bare `int` is a type error).
 
+### 24.1.1 Returning a payload **and** a classification
+
+An `extern` return is one value, and `-> Result(T, E)` is **not** a crossable
+return shape: `Result` is a Tycho aggregate with no flat C ABI, and it is absent
+from §24.1 deliberately, not by omission. So a C function whose failure has more
+than one *cause* — `bytes` that came back empty because the peer closed, because
+a timeout expired, or because the read failed — has one documented spelling:
+
+**a numeric `inout` out-parameter carrying the classification, alongside the
+payload return.** The classification is a plain `int` (a small enumerated code the
+package maps onto its own error enum); the payload keeps whatever crossable return
+type it already had.
+
+```tycho
+# corelib/net/net.ty: 0 EOF, 1 data, 2 timeout, 3 error
+extern fn netx_read(fd: int, max: int, status: inout int) -> bytes
+```
+
+**The C ABI, and it is the one rule worth knowing.** Written parameters lower in
+written order, an `inout` becoming a `T*` (§24.1); a `bytes` or array *return*
+lowers to a `void` function with **two trailing** out-params
+(`unsigned char **out, tycho_int *outlen`) appended after all of them. So the
+classification pointer sits **ahead** of the payload out-params even though it is
+written last, and the C definition must match that order exactly:
+
+```c
+void netx_read(tycho_int fd, tycho_int max, tycho_int *status,
+               unsigned char **out, tycho_int *outlen);
+```
+
+Emitted prototype, for a `bytes` return and for a `string` parameter respectively:
+
+```c
+extern void netx_read(tycho_int , tycho_int , tycho_int *, unsigned char **, tycho_int *);
+extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
+```
+
+Rules that follow from §24.1 and are not optional:
+
+- The classification parameter must be a **numeric scalar or `ptr`** — that is the
+  whole `inout` crossable set. A `string`, `bytes`, handle or composite `inout` is
+  rejected, so the classification cannot be a message; it is a code.
+- **Set it on every path, first.** The shim writes a failure code before anything
+  can fail (`*status = TY_RD_ERR;` in `corelib/net/net_shim.c`) so an early
+  `return` fails closed rather than leaving the caller's variable untouched.
+- **The payload must still be valid on the failure paths.** Leaving `*out = NULL`
+  is correct: `tycho_bytes_from_c` builds an empty buffer and frees nothing.
+- The Tycho-side wrapper is what turns the pair into a `Result` — the FFI never
+  produces one. `net.read` reads `status` and returns `Ok(b)` / `Err(Eof)` /
+  `Err(Timeout)` / `Err(Failed)`; `io.read_bytes` does the same over
+  `iox_read_file`'s codes.
+
+**When NOT to use it.** If the classification and the failure share one integer
+and there is no separate payload, return the code directly and skip the out-param:
+`extern fn iox_stat_kind(path: string) -> int` is the same four codes as
+`iox_read_file`'s with no `inout`, because the *kind* is the whole answer.
+
+> Provenance: the shape is used twice — `netx_read` (`corelib/net/net_shim.c:236-259`,
+> declared `corelib/net/net.ty:99-102`) and `iox_read_file`
+> (`corelib/io/io_shim.c:61-96`, declared `corelib/io/io.ty:81-85`). The ordering
+> rule is `gen_extern_proto` (`src/tychoc.c:10385-10397`): written params first,
+> the return's out-params appended. Written down here because it was reproduced
+> verbatim from one shim into the other with this section listing neither it nor
+> `-> Result(T, E)` (FRICTION.md).
+
 ### 24.2 Linking
 
 An `extern "Lib"` adds `-lLib` to the link line; a package's `deps` file adds

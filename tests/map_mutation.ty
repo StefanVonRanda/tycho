@@ -1,4 +1,4 @@
-# In-place map-value mutation (#2, docs/map-mutation.md): m[k] as a PLACE.
+# In-place map-value mutation (#2, docs/guides/map-mutation.md): m[k] as a PLACE.
 # Exercises every place form on both composite and scalar maps: push(m[k], v)
 # (fresh + existing key), m[k][i] = x (nested), m[k] op= v (scalar, incl fresh
 # key = zero + v), m[k] = v (plain, with heap value), m[k].field = x (auto-insert

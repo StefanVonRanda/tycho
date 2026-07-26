@@ -1726,6 +1726,22 @@ is a completed phase under this plan's Goal, and it is not a failure.
   corelib golden re-recorded byte-identically, which is the check that a blanket RECORD
   did not paper over a regression.
 
+  > **CORRECTED BY PHASE 8, 2026-07-26 — this claim is WRONG.** `core:cli` **is**
+  > inside the frozen compiler's reach, via `examples/weblog/run.sh:24`. The
+  > enumeration below is right about *where* `core:cli` is imported (it names
+  > `examples/weblog/`) and wrong about that not being a tychoc0 input: that runner
+  > feeds `examples/weblog/main.ty` to a freshly built `tychoc0`, and
+  > `scripts/frontparity.sh` never saw `examples/<dir>/main.ty`, so its 288 / 0
+  > could not have confirmed it either way. Measured in phase 8: a `tychoc0` built
+  > at that commit, fed `examples/weblog/main.ty`, emits **81 `cli__` symbols**, and
+  > giving `corelib/cli/cli.ty` a `\r` escape reddens the (now-extended) frontparity
+  > at `examples/weblog/main.ty` while the pre-phase-8 script stays green at 288 / 0
+  > on the identical tree. Phase 6 was harmless only because it added no syntax
+  > `tychoc0` rejects — `cli.argv`/`parse_spec` use nothing new. Phase 7 recorded the
+  > same finding (`plan.md:2160-2167`); the authoritative statement is
+  > `docs/spec/appendix-e-conformance.md` §E.2's `bytes`-operator note, and the
+  > 13-blocked / 24-free split there is what frontparity now enforces.
+
   **`core:cli` is out of frozen `tychoc0`'s reach, checked before designing** (as the
   brief required), so unlike phases 2, 3 and 5 nothing had to be left un-modernised:
   `corelib/run.sh:6-11` and `examples/corelib/run.sh:6-8` both record that their tychoc0
@@ -2157,7 +2173,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     operators close the item without it, and Anti-scope says `bytes` gets operators,
     not a new buffer type.
 
-- [ ] **Phase 8 — tooling and doc debt, where each item is a trap for the next person**
+- [x] **Phase 8 — tooling and doc debt, where each item is a trap for the next person**
   - Items: `FRICTION.md:141` — `tychoc` compiles every `.ty` in the entry file's directory,
     so two scratch programs side by side collide with `'main' is already defined` pointing at
     the file you asked it to build; it cost four compile cycles to work out.
@@ -2181,6 +2197,268 @@ is a completed phase under this plan's Goal, and it is not a failure.
   - Verify: two scratch programs in one directory, one built, real output captured; the new
     coverage reddened deliberately once (break `examples/webserver`, see it fail, fix it);
     the citation gate run over the tree.
+
+  #### Phase 8 — DONE. Evidence
+
+  ##### Item 1 (`FRICTION.md:144`) — the sibling collision is a DIAGNOSTIC bug, not a scan bug
+
+  Three facts the item did not have, all read out of the source before anything was
+  written:
+
+  1. **The directory scan is conditional.** `src/tychoc.c:12069-12071` picks
+     `compile_package(input, pkg)` over single-file `parse_program(toks.v)` only when
+     `detect_package` finds a `package` header. Measured: two *headerless* scratch
+     files side by side build fine (the sibling is never read); two `package main`
+     files collide. So the trap is armed **exactly** when a scratch program imports
+     the corelib — which is what every probe in this plan is.
+  2. **A package may legally span files.** `tests/pkg/multifile/{main,util}.ty` is
+     the committed fixture. "Compile only the entry file" would delete a documented
+     feature to improve a message, so it was not on the table (Anti-scope).
+  3. **Which file gets blamed depends on sort order.** `scan_pkg_files` qsorts
+     (`src/tychoc.c:11759`) and the check fires at the *second* definition. Measured
+     both ways on the pre-fix compiler:
+
+     ```
+     sibling named aprobe.ty (sorts FIRST):
+       sib5/main.ty:5: error: 'main' is already defined      <- blames the file you asked for
+     sibling named probe2.ty (sorts LAST):
+       sib4/probe2.ty:5: error: 'main' is already defined    <- blames the sibling, unexplained
+     ```
+
+  Fix: `die_dup_proc` + `dup_other_file` (`src/tychoc.c`, **13 code lines**, +37/−2 with
+  comments) scan the ProcVec for a same-named proc in a **different** file and name it.
+  After:
+
+  ```
+  .../sib5/main.ty:5: error: 'main' is already defined -- also at .../sib5/aprobe.ty:5,
+      a DIFFERENT file in the same package: tychoc compiles every .ty beside the entry
+      file, so two unrelated programs cannot share one directory
+       5 | fn main():
+  ```
+
+  A same-file duplicate keeps the plain message (`sib6/main.ty:6: error: 'f' is already
+  defined`) — self-evident, and lengthening it would be noise. `tests/pkg/multifile`
+  still builds and prints `area=42`.
+
+  **Proof it touched nothing but an error path:** `--emit-c` output compared against a
+  compiler built from `git show HEAD:src/tychoc.c`, over all 15 entry points →
+  `emitted C compared for 15 entry points, differing = 0`.
+
+  ##### Item 2 (`FRICTION.md:155` + Phase 7's out-of-scope finding) — two holes, two fixes
+
+  **(a) No gate compiled `examples/webserver`.** `scripts/ci.sh` step 3 builds corelib,
+  corelib-examples, site, raytrace, mandelbrot — and nothing else with an entry point.
+  New `scripts/entrypoints.sh` (`make entrypoints`, CI step **3b**) compiles all 11
+  entry points under `examples/` plus `server/main.ty` with `--emit-c`, which stops
+  before `cc`: no link, no libcurl/sqlite3/libpng, ~7 ms per program, so it is not a
+  reason to run `make ci` less often (the phase's stated constraint).
+
+  Reddened deliberately **twice**, with the runner, never `make ci`:
+
+  ```
+  restore `if lr < 0` in examples/webserver/main.ty (this item's own breakage):
+    FAIL    examples/webserver/main.ty
+            examples/webserver/main.ty:199: error: ordering compares two ints, two
+            floats, two strings, or two values of the same numeric newtype
+    entrypoints: FAILED (1 of 11 entry points do not compile)
+  rename examples/webserver/main.ty away (the VACUITY case, phase 1b's lesson):
+    entrypoints: MUST-COVER FILE GONE: examples/webserver/main.ty -- this lane asserts
+    LESS than it claims; fix the list or restore the file
+  restored: entrypoints: ok (11 entry points compile with tychoc)
+  ```
+
+  **(b) The freeze-enforcement story, and the Phase 6 / Phase 7 contradiction —
+  RESOLVED IN PHASE 7's FAVOUR, measured.** The question is whether `core:cli` is
+  inside the frozen `tychoc0`'s reach. It is:
+
+  ```
+  ./tychoc compiler/tychoc0.ty -o T/tychoc0        (as the four runners do)
+  T/tychoc0 examples/weblog/main.ty > T/wl0.c      -> exit 0
+  grep -c 'cli__' T/wl0.c                          -> 81
+  ```
+
+  The frozen compiler compiles `corelib/cli/cli.ty`. **Phase 6's own evidence contains
+  the error** (`plan.md:1745-1754`): it enumerated `examples/weblog/` as a `core:cli`
+  consumer and then wrote "none of them a tychoc0 input", while
+  `examples/weblog/run.sh:24` feeds `examples/weblog/main.ty` to a freshly built
+  `tychoc0`. Its `frontparity` 288 / 0 could not have contradicted it, because that
+  script never fed `examples/<dir>/main.ty` — the blind spot *is* the reason the wrong
+  conclusion looked confirmed. **Where a future reader will hit both claims:**
+  `plan.md:1729-1744` is now an in-place `CORRECTED BY PHASE 8` block quoting this
+  measurement and pointing at the authoritative statement; `plan.md:2160-2167` (Phase
+  7's finding) needed no change; `docs/spec/appendix-e-conformance.md` §E.2 already
+  had it right and is now updated to say the split is *checked* rather than argued;
+  `FRICTION.md`'s phase-7 line is struck with the same numbers. Phase 6 was harmless
+  in fact — `cli.argv`/`parse_spec` use no post-freeze syntax — and that is luck, not
+  method.
+
+  **Then the blind spot itself was closed, because it is 6 lines of glob.**
+  `scripts/frontparity.sh` now also feeds the four per-example entry points its own
+  runners feed (`examples/{fetch/main,sqlite/demo,weblog/main,webserver/main}.ty`),
+  plus the `TYCHO_CORELIB` export they need, and is fail-closed if one is gone.
+  **288 → 292 agreed, 0 diverged.** Reddened deliberately in the shape Phase 7 said
+  no gate could catch — a freeze-blocked corelib package adopting new syntax:
+
+  ```
+  give corelib/cli/cli.ty a `\r` escape (tychoc accepts it; tychoc0:195 rejects it):
+    EXTENDED script:  FAIL examples/weblog/main.ty (tychoc ACCEPTED it, tychoc0 REFUSED it)
+                        lex: unsupported string escape (use \n \t \\ \")
+                          43 |     return "\r\n"
+                      agreed: 291   diverged: 1
+    HEAD's script, IDENTICAL TREE:
+                      agreed: 288   diverged: 0
+                      frontparity: all green
+  restored: agreed: 292   diverged: 0
+  ```
+
+  `server/` and `examples/corelib/{result,httpd}` are excluded **by name, with the
+  measured reason** (`server/` → `parse: line 2348: unexpected token`;
+  `examples/corelib/result` → `parse: line 571: unexpected token`;
+  `examples/corelib/httpd` → `lex: unsupported string escape`): those are the
+  witnesses deliberately written outside the freeze, so globbing them would redden the
+  lane at intended state. `examples/{life,minesweeper,raytrace,site,snake,mandelbrot}`
+  are excluded because no `tychoc0` runner feeds them — including them would make the
+  lane assert **more** than the freeze requires and turn a free program into a blocked
+  one. Residual, stated plainly: `frontparity` is still not in `make ci` (it is a
+  removed gate's harness, kept on disk on purpose), so enforcement is a runner you
+  invoke — but it is now **one** runner that sees the whole reach instead of four that
+  each see a slice.
+
+  ##### Item 3 (`FRICTION.md:145`, `:154`) — the FFI classification shape is now §24.1.1
+
+  `docs/spec/14-ffi.md` gains **§24.1.1 "Returning a payload and a classification"**:
+  the `inout` classification alongside the payload return, `-> Result(T, E)` stated as
+  absent **by decision** (a Tycho aggregate has no flat C ABI; the wrapper on the Tycho
+  side is what makes the `Result`), and the ordering rule neither shim's comment states
+  as a *rule* — written params in written order, an `inout` becoming `T*`, then a
+  `bytes`/array return **appending** two trailing out-params, so the classification
+  pointer sits ahead of the payload's although written last. Read out of
+  `gen_extern_proto` (`src/tychoc.c:10385-10397`) and confirmed against emitted C:
+
+  ```
+  extern void netx_read(tycho_int , tycho_int , tycho_int *, unsigned char **, tycho_int *);
+  extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
+  ```
+
+  Plus the four rules that make it safe (numeric-scalar-only, set the failure code
+  first, leave `*out = NULL`, the `Result` is built on the Tycho side) and the half
+  neither shim says: **when not to use it** — `iox_stat_kind(path) -> int` carries the
+  same four codes with no `inout`, because there the kind is the whole answer. Both
+  shims are cited as worked examples, so the third one copies a spec, not a sibling.
+
+  ##### Item 4 (`FRICTION.md:163`) — the premise was false, and that is the finding
+
+  "No corelib function in the tree returns one" was wrong **by five**:
+  `strings.split_once` (`corelib/strings/strings.ty:193`) and `path.split_path`
+  (`corelib/path/path.ty:95`) date to `39d75be`, `datetime.parse_offset -> (int, bool)`
+  — the value-and-verdict shape the item needed, exactly — to `4c7f8a5`, plus
+  `bignum.divmod` and `datetime.civil_from_days`. So the three alternatives were not
+  written for want of a demonstration; they were written because **§5.3.3 was four
+  sentences with no example, no citation and no statement of what the shape is for.**
+  §5.3.3 now says a tuple is the shape for "a value AND a classification", why the two
+  alternatives cost more, that a `Result` element may be written inline since §6.2(7),
+  and carries a **runnable, gated** example plus all five corelib functions by
+  `path:line` and a pointer to §24.1.1 for the C boundary:
+
+  ```
+  sh scripts/spec_check.sh -> spec-examples: ok docs/spec/03-types.md:231 (tychoc)
+                              spec-examples: 8 runnable example(s), all pass   (was 7)
+  ```
+
+  ##### Item 5 (`FRICTION.md:238`) — write it, and gate the direction that missed it
+
+  Two corrections to the item: the `Makefile` **no longer mentions `bootstrap`**
+  (`grep -c bootstrap Makefile` → `0`; phase 0 removed the target), and the live
+  citations are **three**, not two — `compiler/tychoc0.ty:617`, `compiler/run.sh:3`,
+  `compiler/fixpoint.sh:2`. Since `compiler/tychoc0.ty` is **frozen**, "remove the
+  citations" was never an available option: writing the document was the only way to
+  satisfy "no live file cites a document that does not exist."
+
+  `docs/bootstrap.md` names the stages those headers cite by number — Stage 1
+  (`compiler/run.sh`'s differential over 51 `compiler/tests/` fixtures), Stages 2–3
+  (the A/B/C self-emission chain), Stage 4 (`fixpoint.sh`'s byte-identical `B == C`),
+  Stage D (package programs both ways), Stage E (`pkg-split.sh`) — states that **none
+  is a gate any more**, and carries the two consequences that keep costing time: the
+  freeze reaching 13 corelib packages, and tychoc0's own `:N` self-citations being off
+  by −50.
+
+  **The general form of the bug is now gated.** `scripts/check_citations.py` grew a
+  second direction: every tracked **non-Markdown** file under a wider prefix set
+  (`DOC_SCAN_PREFIX`, which adds `Makefile`, `bench/`, `fuzz/`, `server/`, `editors/`,
+  `.githooks/`) is scanned for `docs/<...>.md` mentions; the document must exist, with
+  line bounds checked when a `:N` is present. `SRC_PREFIX` was **not** touched — moving
+  it would change the md→src pass. Proven against the pre-fix state:
+
+  ```
+  mv docs/bootstrap.md aside; python3 scripts/check_citations.py
+    STALE  compiler/fixpoint.sh:2   `docs/bootstrap.md` -> NO SUCH DOCUMENT
+    STALE  compiler/run.sh:3        `docs/bootstrap.md` -> NO SUCH DOCUMENT
+    STALE  compiler/tychoc0.ty:617  `docs/bootstrap.md` -> NO SUCH DOCUMENT
+  ```
+
+  **On its first real run it found four more instances of the same bug**, none of them
+  `bootstrap`: `docs/memory-model.md`, `docs/ffi.md` and `docs/map-mutation.md` (twice)
+  cited by `bench/prongB/iter_transform.ty:10`, `corelib/crypto/crypto_shim.c:19`,
+  `src/tychoc.c:4523` and `tests/map_mutation.ty:1` — all three documents had moved
+  into `docs/guides/` and no gate could see it. Four one-path fixes. The lane is
+  deliberately narrow, and its header says what it cannot catch (a document that
+  exists but does not say what the comment claims; a directory or suffix-less mention;
+  a bare prose mention inside another Markdown file, because the archived internals
+  docs quote paths that were true when written and are a record, not a claim).
+
+  ##### Citation gate, because `src/tychoc.c` grew 35 lines
+
+  Twelve anchored citations staled by the uniform `+35` shift below the insertion at
+  `:7368`, across `docs/spec/15-program.md`,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` and
+  `plan-front-door-DONE.md`. Proven to be **this phase's** redness before shifting
+  anything (each token verified present at the same range in `git show HEAD:src/tychoc.c`)
+  and shifted by the computed delta: `7453`→`7488`, `7478-7479`→`7513-7514`,
+  `11856-11861`→`11891-11896`, `11933-12037`→`11968-12072`, `12115`→`12150`.
+
+  ##### Verify — every command actually run, in the foreground, on this tree
+
+  **`make ci` / `make test` NOT run — the day's single run was spent by Phase 1
+  (`5187724`).** `src/tychoc.c` WAS touched, so the compiler-phase mitigation applies;
+  in place of a full `server/` live matrix the change was proven to be error-path-only
+  by byte-comparing emitted C against a HEAD-built compiler over all 15 entry points
+  (0 differences), plus a live 4-worker smoke on `127.0.0.1:18099`. The by-hand list
+  phases 2–7 used, reused verbatim:
+
+  ```
+  cc -O2 -fwrapv -Wall -Wextra -std=c11 -Ibuild src/tychoc.c  -> 0 warnings
+  ok compile corelib/test/{httpd,io,net,result,cli}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result,cli}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                       -- 15 entry points, 0 failures
+  emitted C vs HEAD-built tychoc, same 15 entry points -> differing = 0
+  sh corelib/run.sh            -> "corelib: all green (tychoc matches goldens)"
+                                  (skip image -- libpng absent in this environment)
+  sh examples/corelib/run.sh   -> "corelib examples: all green"
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"  -- 9th golden
+  sh scripts/entrypoints.sh    -> "entrypoints: ok (11 entry points compile with tychoc)"  NEW
+  sh scripts/frontparity.sh    -> agreed: 292  diverged: 0   (was 288 / 0; +4 entry points)
+  sh scripts/tools_check.sh    -> "tools-check: ok"  (pkgresolve + bytes-rehome lanes green)
+  sh scripts/spec_check.sh     -> Appendix A matches; Appendix E resolves;
+                                  8 runnable examples, all pass (incl. 03-types.md:231)
+  sh scripts/check_links.sh    -> ok (129 markdown files, no dead relative links)
+  python3 scripts/check_citations.py --stats
+                               -> 22 anchored, 1549 bare, 76 source->doc : ok
+  live: ./tycho-httpd --workers 4 --idle-ms 800 on :18099
+        GET /            200 (2846 B)   GET /style.css       200 (1912 B)
+        GET /nope.html   404 (789 B)    GET /../../etc/passwd 403 (797 B)
+        GARBAGE          400            SIGTERM -> clean exit
+  git diff --stat corelib/ examples/ server/ -> ONLY corelib/crypto/crypto_shim.c
+                                  (+1/-1, the docs/guides/ffi.md path fix). NO golden moved.
+  ```
+
+  ##### Out of scope, found, not absorbed
+
+  - Nothing new beyond the four stale doc paths, which were fixed because the gate this
+    phase added cannot be green while they exist (and a gate left red is worse than no
+    gate — phase 1b). `docs/bootstrap.md` is **not linked from `docs/README.md`**; the
+    link checker checks links, not orphans, so this is a one-line note rather than a
+    defect: a future docs-index pass should list it.
 
 - [ ] **Phase 9 — the two items that need a decision, not a patch**
   - Item A: `FRICTION.md:131` — `parallel for` and `spawn` are the only concurrency shapes

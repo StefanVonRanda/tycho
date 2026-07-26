@@ -16,11 +16,11 @@ the C boundary, and how — is [§24](14-ffi.md). This chapter
 specifies only *program- and package-level* structure and does not restate
 those rules.
 
-> Provenance: entry point `src/tychoc.c:7453@no 'main' procedure` (no `main`),
-> `:7478-7479@'main' must be` (the signature rule); compilation unit
-> `compile_package` `:11856-11861@compile_package`, driver `:11933-12037@int main(`;
+> Provenance: entry point `src/tychoc.c:7488@no 'main' procedure` (no `main`),
+> `:7513-7514@'main' must be` (the signature rule); compilation unit
+> `compile_package` `:11891-11896@compile_package`, driver `:11968-12072@int main(`;
 > `extern` `parse_extern_fn` `:3590-3660@parse_extern_fn`; the C compiler
-> invocation `:12115@system(cmd)`.
+> invocation `:12150@system(cmd)`.
 
 ## 27. Program structure
 
@@ -29,10 +29,10 @@ those rules.
 A program MUST define exactly one procedure named `main`. It MUST take no
 parameters and MUST return `void`; the declaration form is `fn main():`. An
 implementation MUST reject a program that defines no `main` (the reference
-diagnoses `no 'main' procedure`, `src/tychoc.c:7453@no 'main' procedure`) and MUST
+diagnoses `no 'main' procedure`, `src/tychoc.c:7488@no 'main' procedure`) and MUST
 reject a `main` that declares any parameter or a non-`void` return type — the
 reference enforces both halves in one test inside `resolve_program`,
-`:7478-7479@'main' must be`; `compiler/tychoc0.ty` checks it at parse time in
+`:7513-7514@'main' must be`; `compiler/tychoc0.ty` checks it at parse time in
 `parse_program`, `compiler/tychoc0.ty:3911@'main' must be`.
 
 A minimal complete program is therefore:

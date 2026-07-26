@@ -282,8 +282,17 @@ are flagged here so the gap is explicit rather than hidden:
   operator. The other **24**, including `base64`, `compress`, `crypto`, `hash`,
   `hex`, `image`, `md5`, `raster` and `tls` — the packages that would most want
   them — are outside every `tychoc0` runner and are free to adopt them. Note that
-  `core:cli` is in the blocked set via `examples/weblog/run.sh:24`, not via
-  `scripts/frontparity.sh`, which never sees `examples/<dir>/main.ty`.
+  `core:cli` is in the blocked set via `examples/weblog/run.sh:24`. **Since
+  2026-07-26 that is checkable rather than argued:** `scripts/frontparity.sh` fed
+  `examples/*.ty` and never `examples/<dir>/main.ty`, so the 13-blocked set ran
+  through packages no runner in `scripts/` could see; it now also feeds the four
+  per-example entry points those runners use, and the enumeration above is what it
+  enforces. Measured both ways on one tree: giving `corelib/cli/cli.ty` a `\r`
+  escape leaves the old script at `agreed: 288  diverged: 0` and makes the current
+  one report `FAIL examples/weblog/main.ty ... lex: unsupported string escape`.
+  `server/` and `examples/corelib/{result,httpd}` are deliberately **excluded**
+  from that lane — they are the witnesses written outside the freeze, so including
+  them would redden it at intended state.
 - **§30.3 clamp conditions and §30.5 unspecified behavior** — clamp behavior is
   exercised incidentally by the slice fixtures; the unspecified set is, by
   definition, not pinned (it is enumerated in [Appendix F](appendix-f-impl-defined.md)).

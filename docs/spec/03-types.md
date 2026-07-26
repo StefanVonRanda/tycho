@@ -219,6 +219,54 @@ structurally. Its elements are accessed by position (`t.0`, `t.1`) and are
 assignable places. Multiple return values and destructuring use tuples
 (§17).
 
+**A tuple is the shape for "a value AND a classification."** This is worth stating
+outright because the two obvious alternatives both work and both cost more: an
+`inout` out-parameter (§11.3) makes the caller declare a dummy to receive, and a
+wrapper `struct` adds a nominal type per call site. A tuple needs neither, and
+`a, b := f()` destructuring reads at the call site as two results rather than one
+object. Since §6.2(7) a tuple **literal**'s elements are checked against the
+declared element types, so a `Result` element may be written inline
+(`return (Err(Timeout), buf)`) without a typed local.
+
+```tycho
+# The value and the verdict leave together; nothing is a sentinel.
+fn parse_port(s: string) -> (int, bool):
+    if len(s) == 0:
+        return (0, false)
+    n := 0
+    for i in range(len(s)):
+        d := s[i] - 48
+        if d < 0 or d > 9:
+            return (0, false)
+        n = n * 10 + d
+    if n > 65535:
+        return (0, false)
+    return (n, true)
+
+fn main():
+    p, ok := parse_port("8080")
+    println(str(p) + " " + str(ok))
+    q, bad := parse_port("80x0")
+    println(str(q) + " " + str(bad))
+```
+
+```output
+8080 true
+0 false
+```
+
+Worked examples in the corelib, because the shape is easy to miss when the type
+section is the only place it appears: `strings.split_once(s, sep) -> (before, after)`
+(`corelib/strings/strings.ty:193`), `path.split_path(p) -> (dir, base)`
+(`corelib/path/path.ty:95`), `datetime.parse_offset(s, at) -> (int, bool)` — the
+value-and-verdict form above (`corelib/datetime/datetime.ty:248`),
+`bignum.divmod(a, b) -> (Big, Big)` (`corelib/bignum/bignum.ty:265`), and
+`httpd.read_request_capped(fd, cap) -> (Result(Request, ReqErr), string)`
+(`corelib/httpd/httpd.ty:242`), which carries a classification *and* the raw bytes
+that produced it. For a C function that must classify a payload the FFI has its own
+shape, since a tuple does not cross the boundary — see
+[§24.1.1](14-ffi.md#2411-returning-a-payload-and-a-classification).
+
 ### 5.3.4 Structs
 
 A `struct` is a **nominal product type** with named fields, constructed

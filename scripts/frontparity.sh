@@ -68,12 +68,34 @@
 # IN:  examples/*.ty, tests/*.ty, tests/conc/*.ty, tests/warn/*.ty,
 #      tests/abort/*.ty, tests/diag/*.ty, tools/*.ty, compiler/tychoc0.ty,
 #      tests/pkg/*/main.ty (standalone driver, the `tychoc0 <entry>` form
-#      `compiler/fixpoint.sh:48` uses).
+#      `compiler/fixpoint.sh:48` uses), and the four per-example package entry
+#      points `examples/{fetch,sqlite,weblog,webserver}/<entry>.ty` (below).
 # NOT: tests/reject/** — the other direction, already gated (see above).
 #      corelib/ and examples/corelib/ — `make corelib` runs both compilers over
 #      them with per-module dependency skips this lane does not replicate, the
-#      same boundary `scripts/asan_self.sh:69-70` draws.
+#      same boundary `scripts/asan_self.sh:69-70` draws. Also `examples/corelib/`
+#      holds two DELIBERATE divergences the freeze created and Appendix E records
+#      (`result/main.ty` uses a nested pattern, `httpd/main.ty` a `\r` escape),
+#      so globbing it here would redden the lane at documented, intended state.
+#      server/ — same reason, measured: tychoc0 gives `parse: line 2348:
+#      unexpected token` on it (it calls `exit(0)` and binds a value-`match` whose
+#      failure arm dies). It is the program deliberately written OUTSIDE the
+#      freeze; no runner feeds it to tychoc0 and this lane must not either.
 #      Output equality — that is fixpoint's job and this lane never runs a program.
+#
+# THE `examples/<dir>/` BLIND SPOT THIS LANE HAD UNTIL 2026-07-26
+# ---------------------------------------------------------------
+# The glob above fed `examples/*.ty` and never `examples/<dir>/main.ty`, while
+# FOUR per-example runners do feed theirs to tychoc0 — `examples/webserver/run.sh:24`,
+# `examples/weblog/run.sh:24`, `examples/fetch/run.sh:35`, `examples/sqlite/run.sh:31`.
+# So the frozen compiler's real reach over the CORELIB ran through packages this
+# lane could not see: `core:cli` is inside the freeze via `examples/weblog`, which
+# plan.md Phase 6 concluded was outside it (harmless only because that phase added
+# no new syntax to `core:cli`). Measured, not argued: a tychoc0 built at this commit,
+# fed `examples/weblog/main.ty`, emits 81 `cli__` symbols. Adding those entry points
+# closes the gap — the enumerated 13-blocked / 24-free corelib split in
+# docs/spec/appendix-e-conformance.md §E.2 is now checkable by running this script
+# instead of by closing the import graph on paper.
 #
 # H0 (env, optional): use an already-built tychoc0 instead of building one. For
 # reproducing a divergence against a patched compiler; unset in every gate run.
@@ -83,6 +105,10 @@ set -u
 cd "$(dirname "$0")/.." || exit 2
 
 TYCHOC="${TYCHOC:-./tychoc}"
+# The four per-example entry points import `core:*`. tychoc finds the corelib
+# relative to its own binary; tychoc0 is built into a temp dir, so it needs this
+# the same way examples/*/run.sh does (`export TYCHO_CORELIB="$PWD/corelib"`).
+export TYCHO_CORELIB="${TYCHO_CORELIB:-$PWD/corelib}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -132,6 +158,17 @@ for d in tests/pkg/*/; do
     [ -d "$d" ] || continue
     [ -f "${d}main.ty" ] || continue
     check_one "${d}main.ty" "${d}main.ty"
+done
+# The four per-example entry points their own run.sh feeds to tychoc0 (see the
+# blind-spot note in the header). Named, not globbed over `examples/*/`: this set
+# is exactly "what a tychoc0 runner compiles", and `examples/{life,minesweeper,
+# raytrace,site,snake,mandelbrot}` have no such runner, so silently adopting them
+# here would make this lane assert MORE than the freeze actually requires and turn
+# a free program into a blocked one. A new tychoc0 runner adds its entry here.
+for hi in examples/fetch/main.ty examples/sqlite/demo.ty \
+          examples/weblog/main.ty examples/webserver/main.ty; do
+    [ -f "$hi" ] || { echo "frontparity: FATAL — $hi is gone; a tychoc0 runner's entry point cannot be checked"; exit 2; }
+    check_one "$hi" "$hi"
 done
 
 echo "-----------------------------------------"

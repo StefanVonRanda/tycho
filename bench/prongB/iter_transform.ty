@@ -7,7 +7,7 @@
 # proves the reassigned old buffer is dead + uniquely owned, so the compiler emits
 # arena_recycle to hand it back for the next iteration to reuse (FBIP from STATIC
 # reasoning). 3.5 GB -> 4 MB, flat in m. See RESULTS.md "the arena's worst case,
-# then CLOSED" and docs/memory-model.md.
+# then CLOSED" and docs/guides/memory-model.md.
 fn step(a: [int], p: int) -> [int]:
     b := []int
     for i in range(len(a)):
