@@ -1780,7 +1780,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     proof to demonstrate something `corelib/test/cli/main.ty` already asserts. One line in
     `FRICTION.md`.
 
-- [ ] **Phase 7 — `bytes` gets operators**
+- [x] **Phase 7 — `bytes` gets operators**
   - Items: `FRICTION.md:224` — `bytes` supports **only** `len()`, `to_str()` and crossing the
     FFI: `a + b`, `b[i]` and `b[i:j]` are all rejected, so every non-trivial manipulation
     detours through `to_str`, works in `string`, and `to_bytes` back. `FRICTION.md:130` —
@@ -1798,6 +1798,364 @@ is a completed phase under this plan's Goal, and it is not a failure.
   - Verify: a scratch program exercising all three operations against known bytes, including
     an interior `0x00`; `server/` still serves the PNG/ICO/TTF byte-exact (`cmp` against
     disk, as the last plan's phase-2 evidence did); 9 goldens match.
+
+  #### Phase 7 — DONE. Evidence
+
+  ##### All three rejections plus the misleading diagnostic, reproduced first
+
+  Against `./tychoc` built from `HEAD`, each in its own directory
+  (`FRICTION.md:141`):
+
+  ```
+  b1  c := a + b     -> error: arithmetic requires two ints or two floats (got bytes, bytes)
+                               -- convert one side, e.g. to_float(x) to compute in floats,
+                                  or to_int(x) in ints            <- the misleading advice
+  b2  a[1]           -> error: can only index an array, a string, or a map (as a place)
+  b3  a[1:3]         -> error: can only slice an array, soa, or string
+  ```
+
+  Verbatim matches for `FRICTION.md:225` and `:226` (now `:225`/`:226` after the
+  strike-throughs). The diagnostic is the item's whole point: `to_float(x)` on a
+  buffer is not advice, it is noise.
+
+  ##### Root cause: there was nothing to build — `bytes` IS `string`'s buffer
+
+  `src/tychoc.c:498` declares `T_BYTES` as "the same length-headered `char*` repr as
+  string (so all string runtime ops apply)", and `:1289` lowers it to `char *`. The
+  string runtime is **entirely header-driven**, never NUL-driven:
+  `tycho_str_len` reads `((const tycho_int *)s)[-1]` (`runtime/tycho_rt.c:1023`),
+  `tycho_str_get` bounds-checks against that header (`:1037`), `tycho_str_substr`
+  clamps against it (`:1059`), `tycho_str_concat` sizes from both headers (`:874`).
+  So `FRICTION.md:227`'s measured fact — `string` is already fully byte-safe — is
+  not merely *related* to this item, it **is** the implementation. **Zero new
+  runtime code, zero new C.**
+
+  What landed (`src/tychoc.c`: **+56 / −13 = +43 lines, of which 19 are code**):
+
+  | # | change | site | code lines |
+  |---|---|---|---|
+  | 1 | `E_INDEX`: `bt == T_BYTES` yields `T_INT` | `src/tychoc.c:4937` | 1 |
+  | 2 | `E_SLICE`: `bt == T_BYTES` yields `T_BYTES` | `:4947` | 1 |
+  | 3 | `TK_PLUS`: `lt == T_BYTES` with `bytes` or `char` rhs | `:5869-5874` | 5 |
+  | 4 | the `bytes`-aware arithmetic diagnostic | `:5931-5933` | 4 |
+  | 5 | codegen: `tycho_str_get` / `tycho_str_substr` / `tycho_str_concat{,_char}` predicates widened | `:9038`, `:9045`, `:9204` | 3 (edits) |
+  | 6 | in-place accumulator widened to `bytes` (`is_self_append`, the sidecar decl, the rebind resync) | `:8037-8038`, `:9587`, `:9813` | 3 (edits) |
+  | 7 | **`is_reinterpret_of_place`** — the use-after-free, below | `:8147-8168`, `:8182` | 8 |
+
+  Two diagnostics also gained `bytes` where they enumerate what is indexable /
+  sliceable / index-assignable (`:4938`, `:4951`, `:6979`) — the same courtesy
+  `len(...)`'s message already extended.
+
+  ##### The one design decision: `b[i]` returns `int`
+
+  A byte **value** in `0..255`, not a 1-length `bytes`. Three reasons, in order of
+  weight:
+
+  1. **It is what the motivating function wants.** `log_safe` asks `is_ctl(b[i])`,
+     i.e. `c < 32 or c == 127`. A 1-length `bytes` would have to be compared
+     against constructed 1-length buffers, or unwrapped, to ask a numeric question.
+  2. **`s[i]` already yields `int`** (`src/tychoc.c:4937`, normative at
+     `docs/spec/03-types.md` §5.2.5 and deliberately *not* `char`). One
+     representation must not have two indexing meanings, or `to_str`/`to_bytes` —
+     which are casts, not conversions — would silently change what `[i]` means.
+  3. **It allocates nothing.** `tycho_str_get` is a bounds check and a byte load; a
+     1-length `bytes` is an arena allocation per index, i.e. O(n) allocations to
+     walk a buffer.
+
+  The cost is the same one `string` pays: `b[i] == 'c'` does not type-check, and
+  appending a byte back needs `b[i:i+1]` (a 1-length sub-buffer) or a `char`
+  literal. `b + 'c'` was added for exactly that, mirroring `string + char`.
+
+  ##### The use-after-free this uncovered — pre-existing, and it blocked the item
+
+  Writing `log_safe` in `bytes` produced a server that **died**: `w1 127.0.0.1 w1
+  200 2659` in the access log (the method field showing `w1`), then
+  `tycho: out of memory`. Root cause, read rather than guessed:
+
+  ```c
+  /* src/tychoc.c:9565 -- the decl re-home test */
+  if (is_place(s->expr) && type_is_heap(s->decl_type) && !can_move_from(s->expr, owner))
+      v = copy_into(s->decl_type, owner, v);
+  ```
+
+  `is_place` covered `E_IDENT`/`E_FIELD`/`E_INDEX`/`E_TUPIDX`/`E_SLICE` — not
+  `E_CALL`. But `to_str`/`to_bytes`/`to_under` are **zero-cost reinterprets**
+  (`:8745`, the fact `FRICTION.md`'s `to_bytes("")` refusal already measured): they
+  return their argument's pointer. So `out := to_str(b)` over a `_scope`-owned
+  `bytes` was treated as a freshly-owned value, the copy was skipped, and
+  `arena_free(&_scope); return _ret;` returned freed memory. **`ret_must_copy` had
+  the same blind spot**, so `return to_str(acc)` was dangling too.
+
+  Isolated, with **no phase-7 syntax in the program at all** (`to_bytes([int])` is
+  the pre-existing way to get a scope-owned `bytes`):
+
+  ```tycho
+  fn scrub(cs: [int]) -> string:
+      b := to_bytes(cs)
+      out := to_str(b)
+      return out
+  ```
+  ```
+  tychoc built from `git show HEAD:src/tychoc.c` : got=[8] len=8
+  tychoc at this commit                          : got=[ABCDEFGH] len=8
+  ```
+
+  Emitted C, before and after:
+
+  ```diff
+  -char *h_out = h_b;                              /* alias into _scope */
+  +char *h_out = tycho_str_copy(_parent, h_b);     /* re-homed */
+   { char *_ret = h_out; arena_free(&_scope); return _ret; }
+  ```
+
+  Fix: `is_reinterpret_of_place` (8 code lines) makes a zero-cost reinterpret of a
+  place a place, with `to_bytes([int])` excluded because that one really does
+  allocate (`:8743`); `ret_must_copy` recurses through it so a `_parent`-owned local
+  still needs no copy. **Fixed in-phase rather than deferred because it blocked the
+  item**: every `bytes`-domain spelling of `log_safe` hits it, and two of the four
+  candidate shapes measured (`return to_str(b)` and a returned `bytes` accumulator)
+  printed the right answer while emitting a dangling return — a false green that
+  would have shipped. Same class as the `copy_into` `T_BYTES` gap phase 1b
+  un-rotted: a missing re-home, one line from a UAF. Pinned by `reinterp_ret` in
+  `corelib/test/io` with an arena-churn loop between the call and the read.
+
+  ##### `log_safe`, before and after
+
+  ```diff
+  -    cs := []int
+  -    for i in range(n):
+  -        c := s[i]
+  -        if is_ctl(c):
+  -            push(cs, 46)
+  -        else:
+  -            push(cs, c)
+  -    out := to_str(to_bytes(cs))
+  +    b := to_bytes(s)
+  +    scrubbed := to_bytes("")
+  +    for i in range(n):
+  +        if is_ctl(b[i]):
+  +            scrubbed = scrubbed + '.'
+  +        else:
+  +            scrubbed = scrubbed + b[i:i + 1]
+  +    out := to_str(scrubbed)
+  ```
+
+  `string` → `bytes` → `string`, where both ends are zero-cost reinterprets
+  (`src/tychoc.c:8745`) — so the `[]int` **and** the one real allocation in the old
+  path (`to_bytes([int])`, `:8743`) are both gone. Emitted C confirms it:
+  `char *h_b = h_s;` is the whole of `to_bytes`, and the two branches are
+  `tycho_str_append_char(&_scope, &h_scrubbed, …, 46LL)` and
+  `tycho_str_append(&_scope, &h_scrubbed, …, tycho_str_substr(…))` — the **in-place**
+  accumulator, so the loop is O(n) as the old `push` loop was, not the O(n²) a naive
+  per-byte concat would be.
+
+  **Honest line count: 0.** `server/main.ty` is **341 code lines before and after**,
+  and `log_safe` is **17 code lines before and after**. The win is that the function
+  works in one domain instead of three, and that the one allocation is gone — not
+  that it got shorter. Same shape as phase 3's `+2`.
+
+  ##### The scrubber re-verified against a HEAD-built binary — this is the paranoid function
+
+  The live matrix never sends a hostile target, so `log_safe` was driven directly
+  (`scrub.py`, 2 workers) and the **access log** read back:
+
+  ```
+  w1 127.0.0.1 - GET /x......... 400 631 0.132ms      <- control bytes 1..31 + 0x7f
+  w2 127.0.0.1 GET /AAAA…(160 A's)... 200 …          <- 300-byte target -> 160 + "..."
+  w1 127.0.0.1 GE.T / 405 647 0.051ms                 <- control byte in the METHOD
+  w2 127.0.0.1 - GET /a. 400 631 0.102ms              <- "\r\nw9 INJECTED …" injection attempt
+  total log lines: 4        control bytes surviving anywhere in the log: 0
+  diff old new -> SCRUBBER OUTPUT IDENTICAL, old vs new
+  ```
+
+  The injection attempt is the one that matters: 4 requests, 4 log lines, no
+  `w9 INJECTED` line, and `\r` rendered as `.`.
+
+  ##### Byte-exactness of the binary assets, `cmp`-equivalent against disk
+
+  Added to phase 3's fail-closed driver (`matrix.py`), so both binaries run it:
+
+  ```
+  GET  /img/logo.png                200 cl=7883  disk=7883  served=7883  BYTE-IDENTICAL=True  ct=image/png
+  HEAD /img/logo.png                200 Content-Length=7883  body=0
+  GET  /favicon.ico                 200 cl=441   disk=441   served=441   BYTE-IDENTICAL=True  ct=image/x-icon
+  HEAD /favicon.ico                 200 Content-Length=441   body=0
+  GET  /fonts/quicksand-regular.ttf 200 cl=95440 disk=95440 served=95440 BYTE-IDENTICAL=True  ct=font/ttf
+  HEAD /fonts/quicksand-regular.ttf 200 Content-Length=95440 body=0
+  ```
+
+  Body compared against `open(path,'rb').read()` in full, not by length;
+  `Content-Length` asserted equal to the file size; every `HEAD` reports that same
+  length and sends **0** body bytes.
+
+  ##### The scratch program: all three operators across an interior `0x00`
+
+  Own directory, `bytesop/`. `"ab" + chr(0) + "cd"` (there is no `bytes` literal and
+  no `\xNN`, so `chr(0)` is the only spelling), plus the real 7883-byte PNG:
+
+  ```
+  len       = 5          dump      = 97 98 00 99 100
+  b[0] = 97   b[2] = 0   b[4] = 100                  <- the interior NUL reads as 0
+  cat len   = 10         cat dump  = 97 98 00 99 100 97 98 00 99 100   cat b[7] = 0
+  plus char = 6  97 98 00 99 100 90                  <- bytes + 'Z'
+  slice len = 3          slice dump= 98 00 99         <- a slice ACROSS the NUL
+  open lo   = 97 98      open hi   = 99 100           empty = 0        <- b[:2] b[3:] b[2:2]
+  roundtrip = 4 0        eq = true    neq = false     <- to_str(mid+…); == is byte-wise
+  png len   = 7883       png sig  = 137 80 78 71 013 010 26 010
+                         png ihdr = 00 00 00 013 73 72 68 82   <- three interior NULs
+  rebuilt   = 7883 same=true          <- png[0:half] + png[half:len]
+  bytewise  = 7883 same=true          <- 7883 iterations of acc = acc + png[i:i+1]
+  ```
+
+  `png ihdr` is the point: the IHDR chunk length is `00 00 00 0D`, three NUL bytes
+  read individually and one length of 13, from a slice taken past two other NULs.
+
+  ##### Regression fixtures, and why they are where they are
+
+  `corelib/test/io` gains `byte_index` / `byte_slice` / `byte_cat` / `byte_rebuild`
+  over the buffer `io.read_bytes` returns (`"AB" NUL "CD"`, interior `0x00` at index
+  2) plus `reinterp_ret` for the use-after-free. **5 new golden lines, a pure
+  append** — the 18 pre-existing lines are byte-identical, which is the proof
+  nothing else in `core:io` moved.
+
+  **It cannot live in `tests/`, for the fourth time in this plan**, and this time
+  the constraint was *enumerated* instead of assumed. Measured: a `tychoc0` built at
+  this commit refuses `println(str(b[2]))` with `line 3: str(x) can't stringify a
+  yte`, and `compiler/fixpoint.sh:24` + `scripts/frontparity.sh:127` feed every
+  `tests/*.ty` and `tests/pkg/*/main.ty` to it. Closing the import graph from every
+  file a `tychoc0` runner compiles reaches **13** corelib packages that may not use
+  these operators (`cli` `datetime` `http` `httpd` `io` `json` `markdown` `net`
+  `path` `result` `sha256` `sort` `strings`) and leaves **24** free (`base64`
+  `compress` `crypto` `hash` `hex` `image` `md5` `raster` `tls` among them — the
+  packages that would most want them). Recorded in
+  `docs/spec/appendix-e-conformance.md`.
+
+  One workaround was removed outside `server/`: `corelib/test/image` indexed a
+  `to_str(png)` view because "`bytes` itself is not indexable"; it now indexes `png`
+  directly. That test is **skipped** without libpng, so it was verified by diffing
+  the emitted C — the only delta is `char *h_sig = h_png;` disappearing and
+  `tycho_str_get(h_sig, i)` becoming `tycho_str_get(h_png, i)`: the identical call
+  on the identical pointer. One `FRICTION.md` line records that it was not run.
+
+  ##### Spec and guides
+
+  - `docs/spec/03-types.md` §5.2.6 — a normative operator table (`len`, `b[i]`→`int`
+    and not a place, `b[i:j]`→`bytes` and clamping, `a+b`, `b+'c'`, `==`), the "no
+    implicit `string` mixing" rule, the explicit "no iteration, no `in`" limit, and
+    a runnable example extended with all three (`scripts/spec_check.sh` compiles and
+    runs it: `ok docs/spec/03-types.md:142`).
+  - `docs/spec/09-expressions.md` §13.2 — a `bytes` concatenation paragraph beside
+    the string one, including what the failure diagnostic must name.
+  - `docs/spec/12-aggregates.md` §16.2 / §16.6 — `b[i]` is not a place; a `bytes`
+    slice is a string slice that yields `bytes`.
+  - `docs/spec/17-runtime.md` §30.2 / §30.3 / §30.4 — the same abort for `b[i]`, the
+    same compile error for `b[i] = v`, slices named in the clamp clause, and `b[i]`
+    added to the byte-safety guarantee.
+  - `docs/spec/appendix-e-conformance.md` — a §5.2.6 matrix row and the fourth
+    freeze note, this one carrying the enumerated 13/24 split.
+  - `docs/guides/ffi.md` — the "`len(b)` and `==` work as for strings" sentence now
+    names all five operators; the archived `docs/internals/plan-webserver-DONE.md:428`
+    claim ("`bytes` supports exactly three things") is annotated as superseded rather
+    than rewritten, since it is a record of what was measured then.
+
+  ##### Citation gate, because `src/tychoc.c` grew 43 lines
+
+  Twelve anchored citations staled across `docs/spec/15-program.md`,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` and
+  `plan-front-door-DONE.md`. Proven to be **my** redness before shifting anything —
+  `git show HEAD:src/tychoc.c | sed -n '7432p;11813p;12072p'` contains all three
+  single-line tokens — and shifted by the delta *computed* with `difflib` rather
+  than eyeballed: `+21` below line 7432 and `+43` above it (`7432`→`7453`,
+  `7457-7458`→`7478-7479`, `11813-11818`→`11856-11861`,
+  `11890-11994`→`11933-12037`, `12072`→`12115`). Gate green:
+  `ok (22 anchored, 1505 bare)`.
+
+  ##### Verify — every command actually run, in the foreground, on this tree
+
+  **`make ci` / `make test` NOT run — the day's single run was spent by Phase 1
+  (`5187724`).** The by-hand list phases 2–6 used, reused verbatim, after the final
+  compiler build:
+
+  ```
+  cc -O2 -fwrapv -Wall -Wextra -std=c11 src/tychoc.c   -> 0 warnings
+  ok compile corelib/test/{httpd,io,net,result,cli}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result,cli}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                       -- 15 entry points, 0 failures
+  sh corelib/run.sh            -> "corelib: all green (tychoc matches goldens)"
+                                  (skip image -- libpng absent in this environment)
+  sh examples/corelib/run.sh   -> "corelib examples: all green"
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"  -- 9th golden
+  sh scripts/frontparity.sh    -> agreed: 288  diverged: 0   (unchanged, phases 2-6)
+  sh scripts/tools_check.sh    -> "tools-check: ok"
+                                  810 files checked (compilable=379)
+                                  idempotence-fails=0 semantic-fails=0
+                                  bytes-rehome: "bytes field re-homed on struct return"
+  sh scripts/spec_check.sh     -> Appendix A matches; Appendix E resolves;
+                                  7 runnable examples, all pass (incl. 03-types.md:142)
+  sh scripts/check_links.sh    -> ok (128 markdown files, no dead relative links)
+  python3 scripts/check_citations.py -> ok (22 anchored, 1505 bare)
+  git diff --stat corelib/ examples/  -> ONLY corelib/test/io.out moved (+5, pure append)
+  ```
+
+  `tools_check`'s **`bytes-rehome` lane is directly relevant and it is green**: this
+  phase touched `bytes` and `copy_into`'s neighbourhood, and that lane asserts the
+  `T_BYTES` deep-copy on struct return is still emitted (phase 1b proved the lane is
+  live by deleting the line and watching it redden). `frontparity` at 288 / 0 is the
+  proof the freeze was respected — **`compiler/tychoc0.ty` was not touched.**
+
+  ##### The `server/` live matrix, run twice and diffed
+
+  `127.0.0.1:18099`, `--workers 4 --idle-ms 800`, raw sockets, phase 3's driver
+  (fail-closed on a bind collision, `atexit` reaper), port confirmed free first.
+  Diffed against a binary built from **`git show HEAD:server/main.ty`** with the new
+  compiler, since the compiler changes are additive:
+
+  ```
+  GET /            200 2659 text/html; charset=utf-8   GET /style.css 200 1726 text/css
+  GET /data.json   200 294  application/json           GET /favicon.ico 200 441 image/x-icon
+  GET /nope.html   404 621                             GET /../../etc/passwd 403
+  POST /           405 Allow: GET, HEAD                HEAD / 200 Content-Length=2659 body=0
+  GET/HEAD png+ico+ttf -> BYTE-IDENTICAL x3, Content-Length = file size, HEAD body 0
+  GARBAGE -> 400                                       Content-Length: 0x10 -> 400
+  20 KiB head, no terminator -> HTTP/1.1 431 Request Header Fields Too Large
+  (a) zero-byte hangup        -> no bytes, log lines added 0
+  (b) partial head then stall -> HTTP/1.1 408 Request Timeout, log lines added 1
+  (c) idle past 800ms         -> 0 bytes, log lines added 0
+  GET /emptydir -> 301 Location: /emptydir/ 56   /about -> 301 /about/   /img -> 301 /img/
+  keep-alive 3 requests on ONE fd -> 200 200 200      50-request flood -> 50/50 200
+  access log workers seen: w1 w2 w3 w4
+  clean exit: SIGTERM -> killed by signal 15 (wait status 143)
+
+  both runs                          -> MATRIX OK: every assertion passed
+  diff old.txt new.txt               -> TRANSCRIPTS IDENTICAL, case for case
+  access log, worker id + timings masked -> IDENTICAL, line for line (75 / 75)
+  ```
+
+  **The first attempt at this matrix FAILED, and that is the phase's most valuable
+  evidence.** The new binary served six requests, logged them with a garbled method
+  field, and died of `tycho: out of memory` at the seventh — the use-after-free
+  above. A phase that had trusted "the operators compile and the scratch program
+  prints the right numbers" would have shipped a server that crashes on its seventh
+  request.
+
+  ##### Out of scope, found, not absorbed
+
+  - **`scripts/frontparity.sh` cannot see the whole frozen-`tychoc0` reach.** It
+    feeds `examples/*.ty` but never `examples/<dir>/main.ty`, while
+    `examples/{webserver,weblog,fetch,sqlite}/run.sh` each feed theirs to `tychoc0`.
+    So `core:cli` **is** inside the freeze (via `examples/weblog/run.sh:24`), which
+    phase 6 recorded as outside it — harmless only because phase 6 added no new
+    syntax there. None of the four runners is in `make ci`, so **no gate can catch a
+    corelib package adopting new syntax.** One `FRICTION.md` line; making it
+    checkable wants a runner, which is not this plan's business.
+  - **`corelib/test/image` is skipped without libpng**, so its golden asserts
+    nothing in this environment. One `FRICTION.md` line, with the emitted-C diff
+    that stands in for running it.
+  - Nothing else. The `bytes` **literal** (`\xNN`-capable), already costed at ~35
+    lines in `FRICTION.md`'s `to_bytes("")` refusal, was **not** built: the three
+    operators close the item without it, and Anti-scope says `bytes` gets operators,
+    not a new buffer type.
 
 - [ ] **Phase 8 — tooling and doc debt, where each item is a trap for the next person**
   - Items: `FRICTION.md:141` — `tychoc` compiles every `.ty` in the entry file's directory,

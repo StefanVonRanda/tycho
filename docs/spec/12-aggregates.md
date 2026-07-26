@@ -75,9 +75,9 @@ semantics are specified in §30.)
 
 Read as an rvalue, `a[i]` yields the element **by copy** for a composite element
 and by value for a scalar one. Used on the left of an assignment or as the spine
-of a place, `a[i]` is a place (§16.3). Indexing a `string` (`s[i]`) yields the
-`i`-th byte as an `int` and is **not** a place — see
-[§5.2.5](03-types.md#525-string).
+of a place, `a[i]` is a place (§16.3). Indexing a `string` (`s[i]`) or a `bytes`
+(`b[i]`) yields the `i`-th byte as an `int` and is **not** a place — see
+[§5.2.5](03-types.md#525-string) and [§5.2.6](03-types.md#526-bytes).
 
 ### 16.3 Element places
 
@@ -185,6 +185,11 @@ substring: there is no zero-copy string view. A string slice also **clamps**
 out-of-range bounds rather than aborting (`start < 0` → `0`, `end > len` → `len`,
 `end < start` → empty) — unlike an array slice, which aborts — because it is
 exactly `substr(s, a, b)`, the equivalent function form (§29).
+
+A **`bytes` slice** `b[a:b]` behaves identically to a string slice — always
+copies, clamps rather than aborts, same four bound forms — and yields `bytes`
+([§5.2.6](03-types.md#526-bytes)). It is the same operation on the same buffer;
+only the static type of the result differs.
 
 ### 16.7 Element-type restriction
 

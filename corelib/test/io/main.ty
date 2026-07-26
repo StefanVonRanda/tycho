@@ -18,6 +18,18 @@ fn b2i(b: bool) -> int:
         return 1
     return 0
 
+# REGRESSION (plan.md phase 7): a returned string that ALIASES a scope-owned
+# `bytes` must be re-homed into the caller's arena. `to_str` is a zero-cost
+# reinterpret, so `out` here IS `b`'s buffer -- but the compiler reported the
+# initializer as a call (a "fresh value"), skipped the copy, and freed the scope
+# before returning. Measured before the fix: this printed `[8]` for a buffer
+# holding "ABCDEFGH". Nothing about this shape needs core:io; it lives here
+# because `io.read_bytes` is how a real program gets a scope-owned `bytes`.
+fn reinterp_ret(cs: [int]) -> string:
+    b := to_bytes(cs)
+    out := to_str(b)
+    return out
+
 # The two collapses a Result caller needs, now that io.read_bytes returns one.
 # main() is void, so `or_return` cannot short-circuit out of it; core:result's
 # combinators are the one-line alternative to a `match` per call site.
@@ -128,6 +140,38 @@ fn main():
     println(f"read_empty len={nb(rbe)} why={why(rbe)}")
     println(f"read_missing len={nb(rbmiss)} why={why(rbmiss)}")
     println(f"read_dir len={nb(rbdir)} why={why(rbdir)}")
+
+    # The `bytes` operators (plan.md phase 7), on the buffer io.read_bytes just
+    # handed back -- 5 bytes, with an interior 0x00 at index 2. This is the one
+    # property that would break if any of the three went through NUL-terminated
+    # code: b[2] would abort or read past, len(b[1:4]) would be 1, and a concat
+    # would stop at the NUL. It CANNOT live in tests/ -- frozen tychoc0 rejects
+    # `b[i]` with "str(x) can't stringify a yte" (see docs/spec/appendix-e).
+    bb := result.unwrap_or(rb, to_bytes(""))
+    b0 := bb[0]
+    bnul := bb[2]                        # the interior NUL, read as 0
+    blast := bb[4]
+    println(f"byte_index b0={b0} b2={bnul} b4={blast}")
+    span := bb[1:4]                      # "B" NUL "C" -- a slice ACROSS the NUL
+    println(f"byte_slice len={len(span)} s0={span[0]} s1={span[1]} s2={span[2]}")
+    both := bb + span + '!'              # bytes+bytes, then bytes+char
+    println(f"byte_cat len={len(both)} at5={both[5]} at8={both[8]} eqsrc={b2i(both[0:5] == bb)}")
+    # byte-at-a-time rebuild: the shape a scrubber uses, and the accumulator the
+    # compiler now grows in place for bytes as it does for string.
+    acc := to_bytes("")
+    for i in range(len(bb)):
+        acc = acc + bb[i:i + 1]
+    println(f"byte_rebuild len={len(acc)} same={b2i(acc == bb)} clamped={len(bb[3:99])}")
+    # the re-home regression above: call it, then churn the arena hard enough that
+    # a dangling buffer would be overwritten, THEN read the result.
+    codes := []int
+    for i in range(8):
+        push(codes, 65 + i)
+    held := reinterp_ret(codes)
+    churn := ""
+    for i in range(400):
+        churn += "ZZZZZZZZZZZZZZZZ"
+    println(f"reinterp_ret=[{held}] len={len(held)} churn={len(churn)}")
 
     # is_dir: the stat(2) the corelib went without until 2026-07-26. The EMPTY
     # directory is the whole point -- `len(io.list(p)) > 0`, the only directory

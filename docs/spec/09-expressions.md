@@ -39,6 +39,15 @@ deliberately **one-directional**: `char + string` is a type error — you append
 a string, you do not prepend to a char. For symmetric composition, convert
 explicitly with `str(c)`. Both compilers implement exactly this.
 
+**`bytes` concatenation.** `+` on two `bytes` concatenates them, and `bytes +
+char` appends the char's single byte — the same two forms `string` has, with the
+same one-directional rule, because `bytes` is the same length-counted buffer
+([§5.2.6](03-types.md#526-bytes)). There is **no** mixing with `string`: `b + "s"`
+and `s + b` are type errors, and the boundary is crossed only by explicit
+`to_bytes`/`to_str`. Any other arithmetic on a `bytes` operand is a compile error
+that names the three operators `bytes` does have (`+`, `b[i]`, `b[i:j]`) rather
+than suggesting a numeric conversion.
+
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
 values; ordering applies only to the ordered set

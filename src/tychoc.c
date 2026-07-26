@@ -4928,8 +4928,14 @@ static Type resolve_expr_inner(Expr *e) {
                 die_at(e->line, "index must be int");
             if (is_array(bt)) return e->type = arr_elem(bt);   /* array element */
             if (IS_SOA(bt)) return e->type = soa_struct(bt);   /* soa element (only valid under .field) */
-            if (bt == T_STRING) return e->type = T_INT;        /* string byte */
-            die_at(e->line, "can only index an array, a string, or a map (as a place)");
+            /* A string byte and a bytes byte are the SAME read: both are the
+             * length-headered char* buffer (T_BYTES at :498), so both lower to
+             * tycho_str_get. The result is the byte VALUE as an int (0..255),
+             * not a 1-length buffer: that is what a byte-classifying loop
+             * (`if is_ctl(b[i])`) wants, it needs no allocation, and it keeps
+             * `b[i]` and `s[i]` from meaning different things for one repr. */
+            if (bt == T_STRING || bt == T_BYTES) return e->type = T_INT;
+            die_at(e->line, "can only index an array, a string, bytes, or a map (as a place)");
         }
         case E_SLICE: {   /* xs[a:b] — a sub-range of the same array/soa type; s[a:b] -> a substring */
             Type bt = resolve_expr(e->lhs);
@@ -4938,10 +4944,11 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs && resolve_expr(e->args[0]) != T_INT)
                 die_at(e->line, "slice end must be int");
             if (bt == T_STRING) return e->type = T_STRING;   /* a string slice is a fresh substring */
+            if (bt == T_BYTES) return e->type = T_BYTES;     /* bytes: same substr, stays bytes */
             if (IS_BOUNDED(bt))   /* a slice would need a .data view; bounded stores inline */
                 die_at(e->line, "cannot slice a bounded[...] value; copy it into a [%s] first", type_name(arr_elem(bt)));
             if (!is_array(bt) && !IS_SOA(bt))
-                die_at(e->line, "can only slice an array, soa, or string");
+                die_at(e->line, "can only slice an array, soa, a string, or bytes");
             return e->type = bt;
         }
         case E_FIELD: {
@@ -5856,6 +5863,14 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "cannot concatenate string with %s", type_name(rt));
                 return e->type = T_STRING;   /* string + char appends one byte (no alloc) */
             }
+            /* bytes + bytes / bytes + char: the same two concats, because bytes IS
+             * string's buffer (:498). No implicit widening from string: crossing
+             * the intent boundary stays explicit (to_bytes/to_str). */
+            if (e->op == TK_PLUS && lt == T_BYTES) {
+                if (rt != T_BYTES && rt != T_CHAR)
+                    die_at(e->line, "cannot concatenate bytes with %s -- to_bytes(x) to widen, or to_str(b) to work in strings", type_name(rt));
+                return e->type = T_BYTES;
+            }
             /* reject division / modulo by a literal zero at compile time
              * (otherwise UB / SIGFPE at runtime). Checks the parsed value so
              * `x / 0` and `x % 0` are caught regardless of literal spelling. */
@@ -5910,6 +5925,12 @@ static Type resolve_expr_inner(Expr *e) {
                 e->lhs->kind = E_FLOAT; e->lhs->fval = (double)e->lhs->ival; e->lhs->type = T_FLOAT;
                 return e->type = T_FLOAT;
             }
+            /* `to_float(x)` / `to_int(x)` is useless advice for a buffer, and it was
+             * what `bytes + bytes` used to be told (FRICTION.md:225). Name the three
+             * operators bytes actually has instead. */
+            if (lt == T_BYTES || rt == T_BYTES)
+                die_at(e->line, "bytes has no arithmetic (got %s, %s) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)",
+                       type_name(lt), type_name(rt));
             die_at(e->line, "arithmetic requires two ints or two floats (got %s, %s) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints",
                    type_name(lt), type_name(rt));
         }
@@ -6955,7 +6976,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 break;
             }
             if (!is_array(baset))
-                die_at(s->line, "can only index-assign an array element (strings themselves are immutable)");
+                die_at(s->line, "can only index-assign an array element (strings and bytes are immutable)");
             Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
             if (tt != vt)
                 die_at(s->line, "cannot assign %s to a %s element", type_name(vt), type_name(tt));
@@ -8010,8 +8031,11 @@ static int g_naccum = 0;
 static int is_self_append(Stmt *s) {
     if (s->kind != S_ASSIGN || !s->expr) return 0;
     Expr *e = s->expr;
-    if (!(e->kind == E_BINOP && e->op == TK_PLUS && e->type == T_STRING)) return 0;
-    for (Expr *cur = e; cur->kind == E_BINOP && cur->op == TK_PLUS && cur->type == T_STRING; cur = cur->lhs)
+    /* T_BYTES too: same length-headered buffer, so tycho_str_append grows it by the
+     * same rules and the uniqueness argument is unchanged. Without this, a
+     * byte-at-a-time build (`out = out + b[i:i+1]`) would be O(n^2). */
+    if (!(e->kind == E_BINOP && e->op == TK_PLUS && (e->type == T_STRING || e->type == T_BYTES))) return 0;
+    for (Expr *cur = e; cur->kind == E_BINOP && cur->op == TK_PLUS && (cur->type == T_STRING || cur->type == T_BYTES); cur = cur->lhs)
         if (cur->lhs->kind == E_IDENT && !strcmp(cur->lhs->sval, s->name)) return 1;
     return 0;
 }
@@ -8120,9 +8144,24 @@ static char *copy_into(Type t, const char *arena, char *val) {
  * aliases its bytes, so storing a *heap* place into a same-or-longer-lived
  * location must deep-copy. A literal/call/concat/split result is already a
  * fresh value owned by the arena it was built in — no copy needed. */
+/* The ZERO-COST reinterprets (`:8745`) return their argument's pointer
+ * unchanged -- they are casts, not constructions. So `to_str(b)` over a place is
+ * itself a place: it reads existing storage and binding/returning it MUST copy.
+ * Reported as a call, it used to slip past both is_place and ret_must_copy, and
+ * `out := to_str(b); return out` over a _scope-owned bytes local returned a
+ * dangling pointer (measured: "got=[8]" for a buffer holding "ABCDEFGH").
+ * `to_bytes([int])` is excluded -- that one really does allocate (`:8743`). */
+static int is_reinterpret_of_place(Expr *e);
 static int is_place(Expr *e) {
     return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX
-        || e->kind == E_TUPIDX || e->kind == E_SLICE;   /* a slice aliases its source; binding it copies */
+        || e->kind == E_TUPIDX || e->kind == E_SLICE   /* a slice aliases its source; binding it copies */
+        || is_reinterpret_of_place(e);
+}
+static int is_reinterpret_of_place(Expr *e) {
+    if (e->kind != E_CALL || e->nargs != 1 || e->lhs || !e->sval) return 0;
+    if (strcmp(e->sval, "to_str") && strcmp(e->sval, "to_bytes") && strcmp(e->sval, "to_under")) return 0;
+    if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT) return 0;   /* a real conversion */
+    return is_place(e->args[0]);
 }
 
 /* A heap return value must be deep-copied into the caller's arena when it READS
@@ -8137,6 +8176,10 @@ static int is_place(Expr *e) {
  * self-hosting tychoc0, whose field_type/sig_ret/resolve_nt return Ctx fields). */
 static int ret_must_copy(Expr *e) {
     if (e->kind == E_IDENT) return !cv_in_parent(e->sval);
+    /* see is_reinterpret_of_place: `return to_str(x)` is `return x` with a
+     * different static type, so ask the same question of x (a _parent-owned
+     * local still needs no copy -- the reinterpret does not change where it lives) */
+    if (is_reinterpret_of_place(e)) return ret_must_copy(e->args[0]);
     return is_place(e);
 }
 
@@ -8992,14 +9035,14 @@ static char *gen_expr(Expr *e, const char *arena) {
             }
             char *a = gen_expr(e->lhs, arena);
             char *ix = gen_expr(e->rhs, arena);
-            if (e->lhs->type == T_STRING)
-                return sfmt("tycho_str_get(%s, %s)", a, ix);   /* O(1): length header, no strlen */
+            if (e->lhs->type == T_STRING || e->lhs->type == T_BYTES)
+                return sfmt("tycho_str_get(%s, %s)", a, ix);   /* O(1): length header, no strlen (bytes: same buffer) */
             if (index_in_range(e->lhs, e->rhs))               /* monotone loop index: skip the bounds check */
                 return sfmt("(%s).data[%s]", a, ix);
             return sfmt("tycho_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
         }
         case E_SLICE: {
-            if (e->lhs->type == T_STRING) {   /* s[a:b] -> a fresh substring (substr) */
+            if (e->lhs->type == T_STRING || e->lhs->type == T_BYTES) {   /* s[a:b] / b[a:b] -> a fresh sub-buffer (substr; byte-safe, header lengths) */
                 int id = g_blk++;
                 char *s  = gen_expr(e->lhs, arena);
                 char *lo = e->rhs ? gen_expr(e->rhs, arena) : sfmt("0L");
@@ -9158,7 +9201,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
             /* and/or lower to C's short-circuiting && / || via op_str below */
-            if (e->op == TK_PLUS && e->lhs->type == T_STRING)
+            if (e->op == TK_PLUS && (e->lhs->type == T_STRING || e->lhs->type == T_BYTES))
                 return e->rhs->type == T_CHAR
                     ? sfmt("tycho_str_concat_char(%s, %s, %s)", arena, l, r)
                     : sfmt("tycho_str_concat(%s, %s, %s)", arena, l, r);
@@ -9541,7 +9584,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * with its buffer — never hoist these). cap 0 = "not growable in
              * place yet", so the first append allocates and the initial buffer
              * (possibly a string literal in .rodata) is never written. */
-            if (s->decl_type == T_STRING && is_accum(s->name)) {
+            if ((s->decl_type == T_STRING || s->decl_type == T_BYTES) && is_accum(s->name)) {
                 indent(o, ind);
                 fprintf(o, "tycho_int _len_h_%s = ((const tycho_int *)h_%s)[-1]; tycho_int _cap_h_%s = 0;\n",
                         s->name, s->name, s->name);
@@ -9767,7 +9810,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* a non-self assignment to a tracked accumulator rebinds its
              * buffer; resync sidecars (cap 0 = the new buffer isn't ours to
              * grow in place — forces the next append to allocate). */
-            if (is_accum(s->name) && s->expr->type == T_STRING && !is_inout_param(s->name))
+            if (is_accum(s->name) && (s->expr->type == T_STRING || s->expr->type == T_BYTES) && !is_inout_param(s->name))
                 fprintf(o, "%*s_len_h_%s = ((const tycho_int *)h_%s)[-1]; _cap_h_%s = 0;\n",
                         ind * 4, "", s->name, s->name, s->name);
             break;

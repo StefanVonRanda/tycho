@@ -46,7 +46,8 @@ A conforming implementation MUST abort on each of the following:
 - **Array index out of bounds**, on both read (`a[i]`) and write (`a[i] = v`).
 - **String index out of bounds** (`s[i]`, and `char_at(s, i)` — the same read
   with the same abort, §29.5). (`s[i] = v` is a *compile* error — strings are
-  immutable.)
+  immutable.) A `bytes` index `b[i]` is the same read with the same abort, and
+  `b[i] = v` is the same compile error.
 - **`pop` from an empty array.**
 - **`reserve` with a negative or excessive capacity.**
 - **`split` with an empty separator.**
@@ -59,16 +60,18 @@ A conforming implementation MUST abort on each of the following:
 
 ## 30.3 Conditions that clamp
 
-- **`substr(s, start, end)`** clamps out-of-range bounds rather than aborting:
-  `start < 0` becomes `0`, `end > len` becomes `len`, and `end < start` yields an
-  empty result. This is the one bounds situation that does not abort.
+- **`substr(s, start, end)`**, and the slice forms `s[a:b]` / `b[a:b]` it
+  implements, clamp out-of-range bounds rather than aborting: `start < 0` becomes
+  `0`, `end > len` becomes `len`, and `end < start` yields an empty result. This
+  is the one bounds situation that does not abort.
 
 ## 30.4 Defined string and map behavior
 
 - **Byte-safe strings.** `string` and `bytes` carry an explicit length; every
   length-sensitive operation uses that length, not a `NUL` terminator, so
   interior `NUL` bytes are preserved and compared. `len` is a constant-time
-  header read. `s[i]` yields the byte as an `int` in `0..255`, never negative.
+  header read. `s[i]` and `b[i]` yield the byte as an `int` in `0..255`, never
+  negative; `+` and `[a:b]` on either are byte-safe for the same reason.
 - **Hash-flooding resistance.** Maps use a keyed hash (SipHash in the reference)
   seeded from a per-process random key, so an adversary cannot craft key
   collisions without the key. This is a defined security property of maps, not

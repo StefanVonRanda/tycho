@@ -425,7 +425,10 @@ Written while trying to stand up the simplest possible concurrent server.
   b[1:3]    ->  error: can only slice an array, soa, or string
   ```
 
-  **`bytes` supports exactly three things: `len()`, `to_str()`, and crossing the FFI.** No
+  **`bytes` supports exactly three things: `len()`, `to_str()`, and crossing the FFI.** *(No
+  longer true as of 2026-07-26: `a + b`, `b[i]` and `b[i:j]` were added — see
+  [spec §5.2.6](../spec/03-types.md#526-bytes). The measurement below is kept as
+  the record of what was true when this plan ran.)* No
   concatenation, no indexing, no slicing, no literal, no empty value (`to_bytes("")` is the
   only spelling). It is a transport wrapper, not a buffer type.
 
