@@ -28,10 +28,17 @@ package main
 # bought here, concretely: read_head now returns WHY it stopped (net.Eof vs
 # net.Timeout vs net.Failed) instead of just an empty buffer, so the idle-expiry
 # and clean-hangup cases are finally distinguishable at this level; and
-# httpd.write_response's `-1` is gone. What it cost: an `nwrote` helper, because
-# the corelib has no `unwrap_or` and this file's functions return a Response or a
-# count, not a Result -- and `or_return` only short-circuits out of a function
-# that returns a Result with the same error type. See plan.md, phase 1.
+# httpd.write_response's `-1` is gone. `or_return` only short-circuits out of a
+# function that returns a matching Result, so the functions here that return a
+# Response or a count collapse theirs with core:result's `unwrap_or` -- which
+# replaced the hand-written `nwrote` helper this file used to carry (plan.md,
+# phases 1 and 2).
+#
+# httpd.parse_request and io.read_bytes are Results too now, and both bought a
+# real answer here: a malformed head is Err(httpd.Malformed) rather than a
+# Request whose method is "", and a file that vanished or turned out to be a
+# directory between resolve() and the read is Err -- where the empty `bytes` used
+# to be served as a 0-byte 200.
 #
 # NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression,
 # conditional requests, pipelining, virtual hosts. See README.md.
@@ -39,6 +46,7 @@ package main
 import "core:httpd"
 import "core:net"
 import "core:io"
+import "core:result"
 import "core:path"
 import "core:url"
 import "core:strings"
@@ -306,16 +314,6 @@ fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> Result(int
         out = httpd.with_body(out, to_bytes(""))
     return httpd.write_response(conn, out)
 
-# Bytes written, or -1 if the write failed. serve_conn logs a byte count and
-# decides whether to keep the connection, so somewhere the Result has to collapse
-# to an int -- and there is NO `unwrap_or` / `is_ok` in the corelib or in the
-# builtin table, so this is the collapse, written once and reused four times.
-# That absence is the one real ergonomic cost measured in this phase.
-fn nwrote(w: Result(int, net.NetErr)) -> int:
-    match w:
-        Ok(n): return n
-        Err(e): return -1
-
 # One line per request on stderr: worker, method, target, status, body bytes,
 # duration. Built whole and written with a single eprint, because N workers
 # share one stderr and there is no lock to take.
@@ -360,54 +358,75 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 if len(raw) >= MAX_HEAD:
                     st = 431
                     r = oversize_response()
-                n := nwrote(emit(conn, r, false, false))
+                n := result.unwrap_or(emit(conn, r, false, false), -1)
                 log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
                 alive = false
             else:
-                req := httpd.parse_request(raw)
-                keep := not httpd.connection_close(req)
-                # We serve no method that takes a body, and read_head stops at
-                # the terminator, so an entity body would be left in the socket
-                # and desync the next request. Answer, then close.
-                clh := httpd.header(req, "content-length")
-                if clh != "" or httpd.header(req, "transfer-encoding") != "":
-                    keep = false
-                # A Content-Length that is not a plain decimal count ("-5", "1x",
-                # "0x10") is a request smuggling primitive, not a typo. Refuse it
-                # rather than letting to_uint's lenient parse pick a number.
-                bad_len := clh != "" and not is_digits(clh)
-                head_only := req.method == "HEAD"
-                target := log_safe(req.path)
-                if req.method == "" or bad_len:
-                    r := error_response(400)
-                    n := nwrote(emit(conn, r, false, false))
-                    log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
-                    alive = false
-                elif req.method != "GET" and req.method != "HEAD":
-                    r := error_response(405)
-                    n := nwrote(emit(conn, r, false, keep))
-                    log_req(cfg, wid, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
-                    if n < 0:
+                # httpd.parse_request returns Result(Request, httpd.ReqErr) now, so
+                # "this is not HTTP" is Err(httpd.Malformed) rather than a Request
+                # whose method is "" -- the sentinel this branch used to sniff.
+                match httpd.parse_request(raw):
+                    Err(e):
+                        r := error_response(400)
+                        n := result.unwrap_or(emit(conn, r, false, false), -1)
+                        log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
                         alive = false
-                else:
-                    rt := resolve(cfg.root, req.path)
-                    r := error_response(rt.status)
-                    if rt.status == 200:
-                        body := io.read_bytes(rt.file)
-                        r = httpd.response(200, body)
-                        r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
-                        r = httpd.with_header(r, "Cache-Control", "no-cache")
-                    elif rt.status == 301:
-                        r = redirect_response(rt.location)
-                    nb := len(r.body)
-                    if head_only:
-                        nb = 0
-                    n := nwrote(emit(conn, r, head_only, keep))
-                    log_req(cfg, wid, req.method, target, rt.status, nb, n, time.elapsed_us(sw))
-                    if n < 0:
-                        alive = false               # peer hung up mid-write
-                if not keep:
-                    alive = false
+                    Ok(req):
+                        keep := not httpd.connection_close(req)
+                        # We serve no method that takes a body, and read_head stops
+                        # at the terminator, so an entity body would be left in the
+                        # socket and desync the next request. Answer, then close.
+                        clh := httpd.header(req, "content-length")
+                        if clh != "" or httpd.header(req, "transfer-encoding") != "":
+                            keep = false
+                        # A Content-Length that is not a plain decimal count ("-5",
+                        # "1x", "0x10") is a request smuggling primitive, not a
+                        # typo. Refuse it rather than letting to_uint's lenient
+                        # parse pick a number.
+                        bad_len := clh != "" and not is_digits(clh)
+                        head_only := req.method == "HEAD"
+                        target := log_safe(req.path)
+                        if bad_len:
+                            r := error_response(400)
+                            n := result.unwrap_or(emit(conn, r, false, false), -1)
+                            log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
+                            alive = false
+                        elif req.method != "GET" and req.method != "HEAD":
+                            r := error_response(405)
+                            n := result.unwrap_or(emit(conn, r, false, keep), -1)
+                            log_req(cfg, wid, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
+                            if n < 0:
+                                alive = false
+                        else:
+                            rt := resolve(cfg.root, req.path)
+                            st := rt.status
+                            r := error_response(st)
+                            if st == 200:
+                                # io.read_bytes is a Result now, so the read has an
+                                # answer for a file that vanished (or turned out to
+                                # be a directory) between resolve() and here. The
+                                # empty `bytes` it used to return was served as a
+                                # 0-byte 200 -- indistinguishable from a real empty
+                                # file, and wrong for both.
+                                match io.read_bytes(rt.file):
+                                    Ok(body):
+                                        r = httpd.response(200, body)
+                                        r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                                        r = httpd.with_header(r, "Cache-Control", "no-cache")
+                                    Err(e):
+                                        st = 404
+                                        r = error_response(404)
+                            elif st == 301:
+                                r = redirect_response(rt.location)
+                            nb := len(r.body)
+                            if head_only:
+                                nb = 0
+                            n := result.unwrap_or(emit(conn, r, head_only, keep), -1)
+                            log_req(cfg, wid, req.method, target, st, nb, n, time.elapsed_us(sw))
+                            if n < 0:
+                                alive = false       # peer hung up mid-write
+                        if not keep:
+                            alive = false
     return served
 
 # ---- the worker pool -------------------------------------------------------
@@ -546,7 +565,11 @@ fn main():
     match net.listen(cfg.host, cfg.port):
         Ok(fd): srv = fd
         Err(e): die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
-    bound := nwrote(net.port_of(srv))              # -1 in the banner if unknowable
+    # -1 in the banner if unknowable. The Result is bound first because a
+    # `pkg.call(...)` cannot be written inside a generic call's argument list --
+    # see the CAVEAT in corelib/result/result.ty.
+    pr := net.port_of(srv)
+    bound := result.unwrap_or(pr, -1)
 
     banner := "tycho-httpd: serving " + cfg.root
     banner += " on http://" + cfg.host + ":" + str(bound) + "/"

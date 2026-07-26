@@ -1,0 +1,8 @@
+bytes    = 8
+missing  = 0
+file     = read 8 bytes
+absent   = no such file
+dir      = that is a directory
+line1    = one
+line2    = two
+line3    = <eof>

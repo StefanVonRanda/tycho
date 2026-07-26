@@ -17,6 +17,7 @@ package main
 import "core:httpd"
 import "core:net"
 import "core:io"
+import "core:result"
 import "core:strings"
 import "core:sort"
 import "core:markdown"
@@ -74,10 +75,13 @@ fn static_asset(p: string) -> Asset:
         return Asset(false, "", to_bytes(""))
     if not safe_asset(name):
         return Asset(false, "", to_bytes(""))
-    body := io.read_bytes(ROOT + "/static/" + name)
-    if len(body) == 0:
+    # io.read_bytes returns Result(bytes, io.IoErr): a missing asset is
+    # Err(io.NotFound), which no longer looks like a zero-byte file.
+    rb := io.read_bytes(ROOT + "/static/" + name)
+    if result.is_err(rb):
         return Asset(false, "", to_bytes(""))
-    return Asset(true, httpd.content_type(name), body)
+    empty := to_bytes("")
+    return Asset(true, httpd.content_type(name), result.unwrap_or(rb, empty))
 
 # Assets go through the ordinary Response path now that bodies are `bytes` --
 # the hand-rolled header writer this example used to carry is gone.
@@ -189,13 +193,18 @@ fn main():
         pe := getenv("PORT")
         if pe != "":
             port = strings.parse_int(pe)
-        srv := net.listen("127.0.0.1", port)
-        if srv < 0:
+        # core:net's TCP calls return Result(T, net.NetErr) and httpd.read_request
+        # returns Result(Request, httpd.ReqErr). main() is void, so `or_return` is
+        # unavailable here and core:result's combinators do the collapsing.
+        lr := net.listen("127.0.0.1", port)
+        if result.is_err(lr):
             eprint("webserver: cannot bind 127.0.0.1:" + str(port) + " (in use?)\n")
             return
+        srv := result.unwrap_or(lr, -1)
         eprint("webserver: serving http://127.0.0.1:" + str(port) + "/\n")
         for true:
-            conn := net.accept(srv)
+            ar := net.accept(srv)
+            conn := result.unwrap_or(ar, -1)
             if conn < 0:
                 continue
             # HTTP/1.1 keep-alive: serve requests off one socket until the peer
@@ -204,19 +213,24 @@ fn main():
             armed := net.set_read_timeout_ms(conn, IDLE_MS)
             alive := true
             for alive:
-                req := httpd.read_request(conn)
-                if req.method == "":            # EOF, idle timeout, or malformed
-                    alive = false
-                else:
-                    alive = not httpd.connection_close(req)
-                    a := static_asset(req.path)
-                    resp := httpd.text_response(200, "")
-                    if a.ok:
-                        resp = asset_response(a)
-                    else:
-                        resp = route(req)
-                    if httpd.write_response(conn, httpd.with_connection(resp, alive)) < 0:
-                        alive = false           # peer hung up mid-write
+                # Err says which failure: httpd.Malformed deserves a 400, while
+                # Closed and Timeout just end the connection.
+                match httpd.read_request(conn):
+                    Err(e):
+                        if e == httpd.Malformed:
+                            w := httpd.write_response(conn, httpd.text_response(400, "bad request\n"))
+                        alive = false
+                    Ok(req):
+                        alive = not httpd.connection_close(req)
+                        a := static_asset(req.path)
+                        resp := httpd.text_response(200, "")
+                        if a.ok:
+                            resp = asset_response(a)
+                        else:
+                            resp = route(req)
+                        wr := httpd.write_response(conn, httpd.with_connection(resp, alive))
+                        if result.is_err(wr):
+                            alive = false       # peer hung up mid-write
             net.close_fd(conn)
     else:
         # Deterministic self-test: dispatch a fixed route list through the same
@@ -225,7 +239,9 @@ fn main():
         paths := ["/", "/blog", "/blog/hello-tycho", "/wiki/getting-started", "/blog/../secret", "/blog/missing", "/nope"]
         j := 0
         for j in range(len(paths)):
-            req := httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr)
+            pr := httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr)
+            empty := httpd.bad_request()
+            req := result.unwrap_or(pr, empty)
             resp := route(req)
             println("### GET " + paths[j] + " -> " + str(resp.status))
             print(to_str(resp.body))

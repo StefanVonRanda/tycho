@@ -7,7 +7,7 @@ clen   = 13
 missing= []
 body   = {"a":"hello"}
 bodylen= 13
-bad_method_empty = 1
+bad_why = Malformed
 --- render ---
 HTTP/1.1 404 Not Found
 Content-Length: 4
@@ -47,4 +47,8 @@ sock_bin_ctype = 1
 sock_bin_conn  = 1
 sock_bin_wrote = 1
 timeout_armed  = 1
+timeout_why    = Timeout
 timeout_closes = 1
+garbage_why    = Malformed
+hangup_why     = Closed
+partial_why    = Closed

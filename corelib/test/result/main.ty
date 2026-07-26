@@ -1,0 +1,82 @@
+# corelib test: exercises core:result -- the Result/Option collapses that every
+# caller was hand-writing as a four-line `match` before this package existed
+# (plan.md phase 2). Pure computation, no filesystem and no socket, so the run is
+# hermetic. Output locked to corelib/test/result.out (corelib/run.sh).
+#
+# The point of each assertion:
+#   * the combinators are generic -- int, string, bytes and a struct payload all
+#     instantiate from the same four lines
+#   * they work over an error type declared in ANOTHER package (io.IoErr) as well
+#     as one declared locally
+#   * err_or + `==` is how a caller asks WHICH failure, because Tycho has no
+#     nested patterns (`Err(io.IsDir)` is not a legal match arm)
+package main
+import "core:result"
+import "core:io"
+
+fn b(x: bool) -> int:
+    if x:
+        return 1
+    return 0
+
+enum Local:
+    Nope
+    Worse
+
+struct Pair:
+    a: int
+    b: string
+
+fn mk(ok: bool) -> Result(int, Local):
+    if ok:
+        return Ok(7)
+    return Err(Worse)
+
+fn mkstr(ok: bool) -> Result(string, Local):
+    if ok:
+        return Ok("hi")
+    return Err(Nope)
+
+fn mkpair(ok: bool) -> Result(Pair, Local):
+    if ok:
+        return Ok(Pair(1, "one"))
+    return Err(Nope)
+
+fn mkopt(ok: bool) -> Option(string):
+    if ok:
+        return Some("here")
+    return None
+
+fn main():
+    # ---- unwrap_or: the workhorse, over four different payload types ----
+    println("int_ok    = " + str(result.unwrap_or(mk(true), -1)))
+    println("int_err   = " + str(result.unwrap_or(mk(false), -1)))
+    println("str_ok    = " + result.unwrap_or(mkstr(true), "fallback"))
+    println("str_err   = " + result.unwrap_or(mkstr(false), "fallback"))
+    dp := Pair(0, "none")                        # bind: a struct literal is fine, but see below
+    println("struct_ok = " + result.unwrap_or(mkpair(true), dp).b)
+    println("struct_err= " + result.unwrap_or(mkpair(false), dp).b)
+
+    # ---- is_ok / is_err ----
+    println("is_ok     = " + str(b(result.is_ok(mk(true)))) + " " + str(b(result.is_ok(mk(false)))))
+    println("is_err    = " + str(b(result.is_err(mk(true)))) + " " + str(b(result.is_err(mk(false)))))
+
+    # ---- err_or: WHICH failure, compared with == on a payload-free variant ----
+    dl := Nope
+    println("err_of_err= " + str(b(result.err_or(mk(false), dl) == Worse)))
+    println("err_of_ok = " + str(b(result.err_or(mk(true), dl) == Nope)))   # the fallback
+
+    # ---- an error type from ANOTHER package: io.IoErr over bytes ----
+    # A qualified name cannot be written directly in a generic argument position
+    # (see the CAVEAT in corelib/result/result.ty), so both defaults are locals.
+    miss := io.read_bytes("/tmp/tycho_corelib_result_absent.xyz")
+    di := io.Failed
+    de := to_bytes("")
+    println("io_is_err = " + str(b(result.is_err(miss))))
+    println("io_why    = " + str(b(result.err_or(miss, di) == io.NotFound)))
+    println("io_bytes  = " + str(len(result.unwrap_or(miss, de))))
+
+    # ---- the Option half ----
+    println("some_or   = " + result.some_or(mkopt(true), "dflt"))
+    println("none_or   = " + result.some_or(mkopt(false), "dflt"))
+    println("is_some   = " + str(b(result.is_some(mkopt(true)))) + " " + str(b(result.is_some(mkopt(false)))))

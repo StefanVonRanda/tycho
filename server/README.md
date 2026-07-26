@@ -108,9 +108,14 @@ to a browser", and each would have been scope the plan did not ask for.
 
 Two known rough edges, stated rather than hidden:
 
-- An **empty directory** is served as a 0-byte `200` rather than a `404`. There
-  is no `stat` or `is_dir` in the corelib; the only directory test available is
-  `len(io.list(p)) > 0`, which cannot distinguish an empty directory from a file.
+- An **empty directory** is answered `404`, not the `301` to `<path>/` a real
+  directory gets. `resolve()` still cannot ask "is this a directory" — there is no
+  `stat` or `is_dir` in the corelib, and the only test available is
+  `len(io.list(p)) > 0`, which reports an empty directory as a file. What changed
+  on 2026-07-26 (plan.md phase 2) is the *answer*: `io.read_bytes` returns
+  `Result(bytes, io.IoErr)`, so the read that follows says `Err(io.IsDir)` and this
+  server sends a `404` instead of the 0-byte `200` it used to. Measured, same
+  document root: pre-phase-2 binary `GET /emptydir` → `200 0`, now → `404`.
 - The **access log has no client address**. `net.accept` returns a bare fd and
   `core:net` exposes `getsockname` but not `getpeername`, so the field a real
   access log most wants is not reachable from Tycho.
