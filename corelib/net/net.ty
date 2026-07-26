@@ -33,6 +33,16 @@
 #   net.port_of(fd) -> Result(int, NetErr)
 #                                   The local port the fd is bound to (useful
 #                                   after binding port 0).
+#   net.peer_addr(fd) -> Result(string, NetErr)
+#                                   The REMOTE address of a connected fd as text
+#                                   ("127.0.0.1", or the compressed IPv6 form) --
+#                                   getpeername, the other half of port_of's
+#                                   getsockname. Err(Failed) if the fd is not
+#                                   connected or the family is unknown. Until
+#                                   2026-07-26 this was missing, which put the
+#                                   most useful field of an access log out of
+#                                   reach of any Tycho server (FRICTION.md
+#                                   phase 7).
 #   net.write(fd, data) -> Result(int, NetErr)
 #                                   Send the whole buffer; Ok(len(data)), or
 #                                   Err(Failed) if the peer vanished mid-write.
@@ -84,6 +94,7 @@ extern fn netx_listen(host: string, port: int) -> int
 extern fn netx_accept(fd: int) -> int
 extern fn netx_connect(host: string, port: int) -> int
 extern fn netx_port_of(fd: int) -> int
+extern fn netx_peer_addr(fd: int) -> string
 extern fn netx_write(fd: int, data: bytes) -> int
 # `status` is the recv classification: 0 EOF, 1 data, 2 timeout, 3 error. It is an
 # `inout int`, which lowers to a tycho_int* out-param ahead of the two out-params
@@ -124,6 +135,16 @@ fn port_of(fd: int) -> Result(int, NetErr):
     if p < 0:
         return Err(Failed)
     return Ok(p)
+
+# The peer's address as text. Ok("127.0.0.1"); Err(Failed) if the fd is not a
+# connected socket, or its address family is one the shim does not render. The
+# empty string is never an Ok value -- an access log that cannot name the client
+# should say so, not print a blank column.
+fn peer_addr(fd: int) -> Result(string, NetErr):
+    a := netx_peer_addr(fd)
+    if a == "":
+        return Err(Failed)
+    return Ok(a)
 
 # Send the whole buffer. Ok(n) with n == len(data); the shim loops over short
 # writes, so a partial send is reported as a failure rather than a smaller n.

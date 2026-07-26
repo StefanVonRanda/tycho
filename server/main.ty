@@ -204,21 +204,13 @@ fn error_response(status: int) -> httpd.Response:
         r = httpd.with_header(r, "Allow", "GET, HEAD")
     return r
 
-# 408 and 431 are both outside httpd.reason_phrase's table, which would render
-# them as the placeholder "Status". Build the Response directly so the wire
-# carries the real reason phrase. (FRICTION.md phase 7 records why this has to
-# bypass the constructor: httpd.response() takes no reason.)
-fn phrased_response(status: int, reason: string) -> httpd.Response:
-    body := to_bytes(error_body(status, reason))
-    r := httpd.Response(status, reason, []string, []string, body)
-    return httpd.with_header(r, "Content-Type", "text/html; charset=utf-8")
-
-fn oversize_response() -> httpd.Response:
-    return phrased_response(431, "Request Header Fields Too Large")
-
-fn timeout_response() -> httpd.Response:
-    return phrased_response(408, "Request Timeout")
-
+# ONE ERROR CONSTRUCTOR, and this is why there used to be two: 408 and 431 were
+# outside httpd.reason_phrase's table, so httpd.response() rendered them as the
+# placeholder "Status" and the only way to set the phrase was to build the struct
+# positionally -- a private phrased_response() reimplementing the corelib's own
+# constructor, plus a named wrapper per status. Both codes are in the table since
+# 2026-07-26 (plan.md phase 5) and httpd.response_reason() exists for the ones that
+# are not, so error_response(431) and error_response(408) are the whole of it.
 fn redirect_response(location: string) -> httpd.Response:
     body := to_bytes("<!doctype html><meta charset=\"utf-8\"><title>301</title>\n")
     r := httpd.response(301, body)
@@ -282,12 +274,31 @@ fn resolve(root: string, target: string) -> Route:
     # answered 404 where 301 -> /emptydir/ is correct: a directory's CONTENTS
     # decided its STATUS. Ok(false) (it is a file) and Err(NotFound) both fall
     # through to the exists check below, which is where a missing path becomes 404.
-    if not dir_form:
-        if result.unwrap_or(io.is_dir(fsp), false):
+    # ONE stat(2) now answers all three tails. This used to be io.is_dir followed by
+    # io.exists on the SAME path -- two calls, one question, and the second was the
+    # expensive one (it listed the whole parent). io.exists is stat-backed as of
+    # plan.md phase 5, which is what made the pair visibly redundant rather than
+    # merely ugly, so the pair collapses into the one Result that already carried
+    # every answer:
+    #   Ok(true)   a directory. With no trailing slash that is a 301 to the slash
+    #              form; WITH one, fsp already ends in index.html, so a directory
+    #              there is a directory NAMED index.html -- unservable, 404. (That
+    #              was a 200 -> read_bytes -> Err(IsDir) -> 404 before: same status,
+    #              one syscall fewer and no wrong intermediate.)
+    #   Ok(false)  it is there and is not a directory: serve it.
+    #   Err(_)     nothing there, or there and unstattable -- 404 both ways, fail
+    #              closed. Includes /dir/ with no index.html.
+    # (A literal nested pattern -- `Ok(true)` -- is not legal; plan.md phase 3 refused
+    # non-enum nested patterns with the cost written down. So the bool is bound.)
+    match io.is_dir(fsp):
+        Ok(isdir):
+            if not isdir:
+                return Route(200, fsp, "")
+            if dir_form:
+                return Route(404, "", "")
             return Route(301, "", p + "/")         # /dir -> /dir/, index or not
-    if not io.exists(fsp):
-        return Route(404, "", "")                  # incl. /dir/ with no index.html
-    return Route(200, fsp, "")
+        Err(e):
+            return Route(404, "", "")
 
 # ---- the connection loop ---------------------------------------------------
 
@@ -307,14 +318,20 @@ fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> Result(int
         out = httpd.with_body(out, to_bytes(""))
     return httpd.write_response(conn, out)
 
-# One line per request on stderr: worker, method, target, status, body bytes,
-# duration. Built whole and written with a single eprint, because N workers
+# One line per request on stderr: worker, CLIENT, method, target, status, body
+# bytes, duration. Built whole and written with a single eprint, because N workers
 # share one stderr and there is no lock to take.
+#
+# `peer` is the client address, from net.peer_addr (getpeername) -- the field every
+# real access log leads with, and one that no Tycho program could obtain before
+# 2026-07-26: core:net wrapped getsockname and nothing else (FRICTION.md phase 7,
+# plan.md phase 5). It is `-` when the fd could not be asked, which is honest
+# rather than blank: an unaskable fd is a connection that has already gone.
 #
 # `wrote` is what write_response returned. It is < 0 when the peer vanished
 # mid-response; the line then reports 0 bytes and says so, rather than claiming
 # a body that never reached anyone.
-fn log_req(cfg: Config, wid: int, method: string, target: string, status: int, nbytes: int, wrote: int, us: int):
+fn log_req(cfg: Config, wid: int, peer: string, method: string, target: string, status: int, nbytes: int, wrote: int, us: int):
     if cfg.quiet:
         return
     n := nbytes
@@ -322,7 +339,7 @@ fn log_req(cfg: Config, wid: int, method: string, target: string, status: int, n
     if wrote < 0:
         n = 0
         tail = " write-failed"
-    ln := "w" + str(wid) + " " + log_safe(method) + " " + target + " "
+    ln := "w" + str(wid) + " " + peer + " " + log_safe(method) + " " + target + " "
     ln += str(status) + " " + str(n) + " " + fmt_ms(us) + tail + "\n"
     eprint(ln)
 
@@ -331,13 +348,16 @@ fn log_req(cfg: Config, wid: int, method: string, target: string, status: int, n
 # body, so the wire-and-log tail lives here once instead of in each arm of
 # serve_conn's cause match. `-` is the method: there is no parsed request to name
 # one, and first_line(raw) is all the log can honestly report.
-fn refuse(cfg: Config, wid: int, conn: int, raw: string, st: int, r: httpd.Response, sw: int):
+fn refuse(cfg: Config, wid: int, peer: string, conn: int, raw: string, st: int, r: httpd.Response, sw: int):
     n := result.unwrap_or(emit(conn, r, false, false), -1)
-    log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
+    log_req(cfg, wid, peer, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
 
 fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     served := 0
     alive := true
+    # Asked ONCE per connection, not once per request: the peer of an accepted fd
+    # cannot change, and keep-alive would otherwise repeat the syscall per request.
+    peer := result.unwrap_or(net.peer_addr(conn), "-")
     for alive and served < MAX_REQS:
         # ONE corelib call does the read, the cap and the parse. `raw` is the second
         # tuple element, for the two jobs the Result cannot do: name a request that
@@ -372,18 +392,18 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 alive = false
                 if len(raw) > 0:
                     served += 1
-                    refuse(cfg, wid, conn, raw, 408, timeout_response(), sw)
+                    refuse(cfg, wid, peer, conn, raw, 408, error_response(408), sw)
             #   TooLarge  MAX_HEAD bytes with no terminator -> 431. This is the cap
             #             decision that used to be `len(raw) >= MAX_HEAD`.
             Err(httpd.TooLarge):
                 alive = false
                 served += 1
-                refuse(cfg, wid, conn, raw, 431, oversize_response(), sw)
+                refuse(cfg, wid, peer, conn, raw, 431, error_response(431), sw)
             #   Malformed a complete head that is not HTTP -> 400.
             Err(httpd.Malformed):
                 alive = false
                 served += 1
-                refuse(cfg, wid, conn, raw, 400, error_response(400), sw)
+                refuse(cfg, wid, peer, conn, raw, 400, error_response(400), sw)
             Ok(req):
                 served += 1
                 keep := not httpd.connection_close(req)
@@ -404,12 +424,12 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 if bad_len:
                     r := error_response(400)
                     n := result.unwrap_or(emit(conn, r, false, false), -1)
-                    log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
+                    log_req(cfg, wid, peer, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
                     alive = false
                 elif req.method != "GET" and req.method != "HEAD":
                     r := error_response(405)
                     n := result.unwrap_or(emit(conn, r, false, keep), -1)
-                    log_req(cfg, wid, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
+                    log_req(cfg, wid, peer, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
                     if n < 0:
                         alive = false
                 else:
@@ -437,7 +457,7 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                     if head_only:
                         nb = 0
                     n := result.unwrap_or(emit(conn, r, head_only, keep), -1)
-                    log_req(cfg, wid, req.method, target, st, nb, n, time.elapsed_us(sw))
+                    log_req(cfg, wid, peer, req.method, target, st, nb, n, time.elapsed_us(sw))
                     if n < 0:
                         alive = false               # peer hung up mid-write
                 if not keep:

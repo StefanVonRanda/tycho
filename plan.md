@@ -1217,7 +1217,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     `Sig`/magic asymmetry it describes was confirmed here (`src/tychoc.c:5382`), not
     changed.
 
-- [ ] **Phase 5 — the corelib's small honest wins**
+- [x] **Phase 5 — the corelib's small honest wins**
   - Items, all small and all measured as biting real code:
     - `FRICTION.md:122` — `httpd.reason_phrase` is a closed `if`-chain and `httpd.response()`
       takes no reason, so `431` went on the wire as `HTTP/1.1 431 Status`. **Bit twice**: the
@@ -1238,6 +1238,255 @@ is a completed phase under this plan's Goal, and it is not a failure.
   - Verify: 9 goldens match or their change is justified; `server/` live matrix shows the
     real reason phrases on the `431`/`408` lines and a client address in the log; corelib +
     13 entry points compile.
+
+  #### Phase 5 — DONE. Evidence
+
+  ##### Gate spend: `make ci` / `make test` — **NOT run.** The day's single run was spent
+  by phase 1 (`5187724`); phases 2, 3 and 4 also verified by hand and this is the
+  fourth. No `src/tychoc.c` change in this phase, so the compiler is byte-identical
+  to `241c159` and the exception at the top of this file does not apply.
+
+  ##### Item 1 — reason phrases (`FRICTION.md:122`). Landed. **+6 corelib code lines,
+  −4 in the application.**
+
+  The fix is two halves, and the second is the one the item was actually asking for:
+
+  1. `408` and `431` joined `reason_phrase`'s table (`corelib/httpd/httpd.ty:336-339`),
+     so the *existing* constructor now renders them.
+  2. `response_reason(status, reason, body)` (`:352-353`) — the constructor that takes a
+     reason. `response()` is now one line on top of it (`:357-358`), so there is exactly
+     one place that builds a `Response` positionally and it is inside the package that
+     owns the struct. That is what closes the item for the NEXT status nobody thought of;
+     adding two table rows alone would have left the gap.
+
+  **Wire proof, from the constructor alone** — one probe program, `render_head` of
+  `httpd.response(s, …)`, compiled against a `git archive HEAD` tree (HEAD corelib) and
+  against this one, both with the same `./tychoc`:
+
+  ```
+  --- HEAD corelib ---            --- NEW corelib ---
+  HTTP/1.1 408 Status             HTTP/1.1 408 Request Timeout
+  HTTP/1.1 431 Status             HTTP/1.1 431 Request Header Fields Too Large
+  HTTP/1.1 200 OK                 HTTP/1.1 200 OK
+  HTTP/1.1 404 Not Found          HTTP/1.1 404 Not Found
+  ```
+
+  `phrased_response()` is **deleted**, and with it `oversize_response()` and
+  `timeout_response()` — the two named wrappers existed only to hold the two literal
+  phrases. Both call sites are now `error_response(431)` / `error_response(408)`, the same
+  constructor the other four statuses already used. `server/main.ty` **376 → 372 code
+  lines**; three functions became zero.
+
+  **The live wire is UNCHANGED for `431`/`408`, and that is the expected result, not a
+  miss.** The bypass produced the correct bytes — that was its whole point. What moved is
+  *where* the phrase comes from: the response bodies are still 680 and 661 bytes, so the
+  `<title>431 Request Header Fields Too Large</title>` the bypass wrote by hand is now
+  written by the library, byte for byte. The regression the item recorded
+  (`HTTP/1.1 431 Status`) is only reachable through `httpd.response()`, which is exactly
+  what the probe above tests, and it is the spelling every *other* caller of `core:httpd`
+  would have used.
+
+  ##### Item 2 — `getpeername` (`FRICTION.md:129`). Landed, shim **and** consumer.
+
+  - `netx_peer_addr(fd)` in `corelib/net/net_shim.c:204-219` (17 code lines + the
+    `<arpa/inet.h>` include): `getpeername` into a `sockaddr_storage`, then `inet_ntop`
+    for `AF_INET` **and** `AF_INET6`; `""` for an unconnected fd, an unknown family or a
+    failed call.
+  - `net.peer_addr(fd) -> Result(string, NetErr)` (`corelib/net/net.ty:143-147`): `""` is
+    never an `Ok` — an access log that cannot name the client must say so, not print a
+    blank column.
+  - **The buffer is `__thread`, not `static`.** N workers are N pthreads sharing one
+    listening fd, so a shared buffer would be a data race on precisely the field this
+    item exists to add. `corelib/crypto/crypto_shim.c:43` set that precedent. The borrow
+    is safe because an extern `-> string` return is copied at the call site
+    (`src/tychoc.c:8387`, `is_extern_str_call` → `tycho_str_copy`), so the Tycho value
+    outlives the next request's overwrite. Verified live under the 50-request flood
+    across 4 workers: every line carries the address, none is truncated or empty.
+  - Consumer: `log_req` gained a `peer` column, asked **once
+    per connection** rather than once per request — the peer of an accepted fd cannot
+    change, and keep-alive would otherwise repeat the syscall per request
+    (`server/main.ty:334`, `:351`, `:360`).
+
+  **The access log line, before and after** (same case, same matrix, same port):
+
+  ```
+  before:  w1 GET / 200 2659 0.286ms
+  after:   w1 127.0.0.1 GET / 200 2659 0.210ms
+  before:  w3 - GET / HTTP/1.1. 431 680 0.114ms
+  after:   w3 127.0.0.1 - GET / HTTP/1.1. 431 680 0.111ms
+  ```
+
+  69 lines before, 69 after; with the new column and the timings masked the two logs are
+  **identical line for line (69 / 69)**, so the peer column is the *only* change to the
+  log. `cc -O2 -Wall -Wextra` on `net_shim.c`: **0 warnings**.
+
+  ##### Item 3 — `io.exists` is one `stat` (`FRICTION.md:168`), and the redundancy DOES go away
+
+  `exists` is now `iox_stat_kind(p)` and two comparisons (`corelib/io/io.ty:252-254`) —
+  the same shim call `is_dir` uses. It **fails closed**: `false` means "stat could not say
+  yes", folding an unstattable path in with a missing one, which is what the old
+  list-the-parent version did too (an unlistable parent yielded no entries) and the safe
+  direction for the one shape that consumes it. A caller needing the distinction wants
+  `is_dir`, whose `Err(Failed)` says exactly that.
+
+  Two consequences the item did not predict:
+
+  - **`core:io` lost a dependency.** `path.base`/`path.dir` were needed *only* by the old
+    `exists`, so `import "core:path"` is gone from `corelib/io/io.ty`. The module that was
+    written up as "the first corelib module to COMPOSE other core modules" now composes
+    one, not two. `corelib/io/io.ty` **98 → 93 code lines**.
+  - **`resolve()`'s double call is gone, and it collapsed further than a call count.**
+    `is_dir` then `exists` on the same path was two syscalls asking one question; making
+    the second a `stat` is what made that visibly redundant rather than merely ugly. The
+    pair is now ONE `match io.is_dir(fsp)` reading all three answers off the Result
+    (`server/main.ty:293-302`): `Ok(true)` → `301` (or `404` when `dir_form` already
+    appended `index.html`, i.e. a directory *named* `index.html`), `Ok(false)` → `200`,
+    `Err(_)` → `404`. That last corner was a `200` → `read_bytes` → `Err(IsDir)` → `404`
+    before: same status, one syscall fewer, and no wrong intermediate. Per request for a
+    real file the path went **2 syscalls (1 opendir/readdir walk + 1 stat) → 1 stat**.
+  - The arm binds a bool (`Ok(isdir)`) rather than matching `Ok(true)`, because a literal
+    nested pattern is refused — `error: expected a binding name`, measured here, exactly
+    the refusal phase 3 costed at ~70 lines and declined. Written at the site.
+
+  `corelib/test/io.out` is **byte-identical** before and after, which is the proof the
+  swap changed the means and not the meaning: the golden records `exists` on a file, a
+  missing path, `Makefile`, and a directory that was just removed — four answers, all
+  unchanged.
+
+  ##### Item 4 — the empty `bytes` (`FRICTION.md:227`). **REFUSED, with the number.**
+
+  Costed by reading the emit path rather than guessing, and the measurement changed the
+  answer: **the status quo costs nothing at run time.** `T_BYTES` lowers to `char *` —
+  "the same length-headered buffer as string" (`src/tychoc.c:1289`) — and `to_bytes` on a
+  string is a **zero-cost reinterpret**, not a conversion (`:8702`, the `to_str`/`to_bool`/
+  `to_bytes` newtype-unwrap arm). So `to_bytes("")` emits the same interned `""` a literal
+  would, and the complaint is 11 characters of spelling at **10 sites in the whole tree**
+  (counted: 4 in `corelib/test/`, 2 in `examples/corelib/result`, 1 each in
+  `corelib/httpd/httpd.ty:142`, `corelib/image/image.ty:37`, `corelib/test/compress`,
+  `server/main.ty`).
+
+  Two candidate spellings measured against the current compiler:
+
+  ```
+  b: bytes = ""    -> error: declared type bytes but value is string
+  b: bytes = []    -> error: cannot type a bare [] here -- no expected type
+                             (write []T, or use it where the element type is known)
+  ```
+
+  The cheapest landing is therefore a checking-mode arm in `resolve_exp` grounding a
+  string *literal* against an expected `T_BYTES` — **~6 code lines**, structurally the
+  same shape as phase 3's `E_TUPLE` arm (11 lines), needing **no codegen and no runtime**
+  because the representation is already identical. Refused anyway, on three counts:
+
+  1. It puts an **implicit string→bytes conversion** into the type system. That is a
+     language change with spec text in `04-inference.md` §6.1 and `03-types.md` plus an
+     Appendix E row — call it ~25 lines of docs for 6 of code — and this plan's
+     Anti-scope forbids redesigns.
+  2. **It cannot be used at the site the item names.** "Every struct default" is
+     `corelib/httpd/httpd.ty:142`'s `Request("", "", "", []string, []string, to_bytes(""))`,
+     and `core:httpd` is compiled by the frozen `compiler/tychoc0.ty` through
+     `examples/webserver/run.sh`. Fourth phase in a row this constraint has bound
+     (`\r`, `exit`, the tuple `Result`, now this).
+  3. A **real** `bytes` literal — byte-exact, `\xNN`-capable — is already costed at
+     **~35 lines across 3 functions plus a new runtime entry point** in the `\r` item
+     (`FRICTION.md:123`), and it belongs to phase 7 (`bytes` operators), not here.
+
+  **Net: 0 lines, 0 bytes of emitted code, and one number written down.** The item is
+  settled, not fixed.
+
+  ##### Line deltas
+
+  | file | change |
+  |---|---|
+  | `corelib/httpd/httpd.ty` | code **249 → 255** (+6): 4 table rows, `response_reason`, `response` rewritten |
+  | `corelib/net/net.ty` | code **64 → 70** (+6): 1 extern, `peer_addr` |
+  | `corelib/net/net_shim.c` | **332 → 361** lines (+29; 17 code, 12 comment) |
+  | `corelib/io/io.ty` | code **98 → 93** (−5): `exists` is 2 lines, `import "core:path"` gone |
+  | `server/main.ty` | code **376 → 372** (−4): 3 functions deleted, `resolve` tail collapsed, `peer` threaded |
+  | `corelib/test/io/main.ty`, `docs/guides/corelib.md`, `docs/spec/18-library.md` | comment/doc only |
+
+  Library +7 Tycho code lines and +17 C; application −4. The first phase of this plan
+  where the corelib grew and the application shrank at the same time.
+
+  ##### Verify — every command actually run, in the foreground, on this tree
+
+  ```
+  ok compile corelib/test/{httpd,io,net,result}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                        -- 13 entry points, 0 failures
+  same corelib/test/{httpd,io,net,result}.out
+  same examples/corelib/{httpd,io,net,result}.out  -- 8 goldens byte-identical
+  sh corelib/run.sh            -> "corelib: all green (tychoc matches goldens)"
+  sh examples/corelib/run.sh   -> "corelib examples: all green"
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"  -- 9th golden
+  sh scripts/frontparity.sh    -> agreed: 288  diverged: 0  (unchanged, phases 2-4)
+  sh scripts/tools_check.sh    -> "tools-check: ok"
+  sh scripts/spec_check.sh     -> 7 runnable examples, all pass
+  sh scripts/check_links.sh    -> ok (128 markdown files, no dead relative links)
+  python3 scripts/check_citations.py -> ok (22 anchored, 1459 bare)
+  cc -O2 -Wall -Wextra corelib/net/net_shim.c -> 0 warnings
+  ```
+
+  **All 9 goldens diffed and all 9 match.** The one change that was *expected* to move a
+  golden did not have to: the access-log format change is in `server/`, which no golden
+  covers, and it is recorded above as a before/after instead.
+
+  The **9th golden is the load-bearing one this phase**: `examples/webserver/run.sh`
+  asserts `tychoc == tychoc0 == golden` over `core:httpd`, `core:net` and `core:io` — the
+  three packages edited here. It is green, so the frozen compiler accepts every line
+  added, and `frontparity` at **288 / 0** confirms nothing new-syntax slipped in. That was
+  designed for, not discovered: every addition is a plain function, a plain `if` arm and
+  an `extern` of an already-legal shape.
+
+  `check_citations` reports 1459 bare with the code change in (was 1432 at phase 4): the
+  27 new in-source `path:line` references in these comments. Re-run after this evidence
+  and the `FRICTION.md` entries were written: **1487, still ok, all in bounds** — the
+  gate was run again on the prose, not only on the code.
+
+  ##### The `server/` live matrix, run twice and diffed
+
+  `127.0.0.1:18099`, `--workers 4 --idle-ms 800`, raw sockets, **phase 3's driver reused**
+  (fails closed on a bind collision, reaps with `atexit`). The port was checked free
+  before each run (`ss -ltn | grep -c 18099` → `0`, both times). The "before" binary is
+  built from a **`git archive HEAD` tree with its own corelib**, not just
+  `HEAD:server/main.ty` — the corelib changed this phase, so a HEAD server against the new
+  corelib would have compared the wrong thing. Confirmed by grepping the emitted C for
+  `httpd__response_reason` / `netx_peer_addr`: **0 hits**, i.e. the HEAD corelib really was
+  the one compiled.
+
+  ```
+  GET /            200 2659 text/html; charset=utf-8   GET /style.css 200 1726 text/css
+  GET /data.json   200 294  application/json           GET /favicon.ico 200 441 image/x-icon
+  GET /nope.html   404 621                             GET /../../etc/passwd 403
+  POST /           405 Allow: GET, HEAD                HEAD / 200 Content-Length=2659 body=0
+  GARBAGE -> 400                                       Content-Length: 0x10 -> 400
+  20 KiB head, no terminator -> HTTP/1.1 431 Request Header Fields Too Large
+  (a) zero-byte hangup        -> no bytes, log lines added 0
+  (b) partial head then stall -> HTTP/1.1 408 Request Timeout, log lines added 1
+  (c) idle past 800ms         -> 0 bytes, log lines added 0
+  GET /emptydir -> 301 Location: /emptydir/ 56   /about -> 301 /about/   /img -> 301 /img/
+  keep-alive 3 requests on ONE fd -> 200 200 200      50-request flood -> 50/50 200
+  access log workers seen: w1 w2 w3 w4
+  clean exit: SIGTERM -> killed by signal 15 (wait status 143)
+
+  diff old.txt new.txt                     -> TRANSCRIPTS IDENTICAL, case for case
+  access log, peer column + timings masked -> IDENTICAL, line for line (69 / 69)
+  ```
+
+  Both runs reported `MATRIX OK: every assertion passed`. Every case moved by this phase
+  is in there: `/emptydir` → `301` and `/nope.html` → `404` exercise the collapsed
+  `resolve()` tail, the `431`/`408` cases carry the real phrases with no bypass in the
+  source, and all 68 request lines carry `127.0.0.1`.
+
+  ##### Out of scope, found, not absorbed
+
+  - `corelib/net/net_shim.c` does not compile standalone under `-std=c11`: `getaddrinfo`
+    and `struct addrinfo` need `_POSIX_C_SOURCE`/`_DEFAULT_SOURCE`, and strict ISO mode
+    hides them (`resolve4`, `:84-89`). **Pre-existing, not mine** — the `git archive HEAD`
+    copy fails identically with the same 4 errors — and invisible in practice because
+    `tychoc` invokes plain `cc` (`src/tychoc.c:11976`), whose default is `gnu17`. Filed as
+    one line in `FRICTION.md`; no phase.
 
 - [ ] **Phase 6 — `core:cli` and `args()`**
   - Items: `FRICTION.md:126` — `args()` includes `argv[0]` but `cli.parse` requires it
