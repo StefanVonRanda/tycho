@@ -350,13 +350,28 @@ element type instead of a family of per-type siblings.
   empty `bad_request()` always closes) and `with_connection(r, alive)`; pair it with
   `net.set_read_timeout_ms` so an idle peer cannot pin a worker. CRLF is built with
   `chr(13)` (tycho strings have no `\r` escape).
-- **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` (pass
-  your arguments **without** `argv[0]`) sorts the vector into three buckets: `--key=value`
-  **options**, boolean **flags** (`--flag`, and short clusters `-abc` → `a`/`b`/`c`), and
-  **positionals** (everything else, plus everything after a bare `--`). Values always attach
-  with `=`, so the parser needs no schema of which options take a value — `--verbose` is
-  unambiguously a flag. Accessors: `get(c, key, default)`, `has(c, key)`, `flag(c, name)`
-  (long or short), `positionals(c)`, `count(c)`. Uses parallel arrays, not maps.
+- **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` sorts the
+  vector into three buckets: `--key=value` **options**, boolean **flags** (`--flag`, and short
+  clusters `-abc` → `a`/`b`/`c`), and **positionals** (everything else, plus everything after
+  a bare `--`). Values always attach with `=`, so `parse` needs **no schema** of which options
+  take a value — `--verbose` is unambiguously a flag and `--out=x` unambiguously an option.
+  `argv()` is the builtin `args()` with `args()[0]` (the program path) dropped, which is what
+  `parse` wants, so a program's whole front door is `c := cli.parse(cli.argv())` — no copy
+  loop. Pass a vector to `parse` yourself and it is used as given; the skip lives in `argv()`,
+  not in `parse`, so a synthetic argv with no program name in it is never eaten.
+  `parse_spec(argv, valued, boolean) -> Cli` is the **schema-carrying** form, and it is what
+  buys the space-separated Unix spelling `--root DIR`: `valued` and `boolean` list long option
+  names and short flag letters **without dashes**, the same spelling `get`/`flag` take. It is
+  an addition, not a migration — `parse` is unchanged and every `=`-attached spelling means
+  the same thing in both. Its rules: a `valued` name consumes the next argument **as-is**
+  (getopt's rule, so `--root --port` sets root to `--port`) or lands in `missing(c)` if there
+  is nothing after it; a `boolean` name spelled `--flag=v` sets the flag and **drops** `v`; a
+  name in neither list, and a short cluster containing a letter in neither, land in
+  `unknown(c)` as written. No short option takes a value (`-p 80` is not a spelling this
+  package has — it would make `-abc` ambiguous); use `--port 80`. Accessors:
+  `get(c, key, default)`, `has(c, key)`, `flag(c, name)` (long or short), `positionals(c)`,
+  `count(c)`, `missing(c)`, `unknown(c)`. Uses parallel arrays, not maps. `server/main.ty`
+  is the worked example: 5 valued names, 4 boolean, and no parser of its own.
 - **`raster`** — pure-Tycho raster image codecs, **BMP** and **QOI**, with no external
   dependency (unlike `core:image`'s libpng-backed PNG). An `Image` is 8-bit RGBA (4
   bytes/pixel, row-major, top-to-bottom); pixel data is `bytes`. `encode_bmp`/`decode_bmp`

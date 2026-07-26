@@ -1488,7 +1488,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     `tychoc` invokes plain `cc` (`src/tychoc.c:11976`), whose default is `gnu17`. Filed as
     one line in `FRICTION.md`; no phase.
 
-- [ ] **Phase 6 — `core:cli` and `args()`**
+- [x] **Phase 6 — `core:cli` and `args()`**
   - Items: `FRICTION.md:126` — `args()` includes `argv[0]` but `cli.parse` requires it
     removed, so every program opens with the same four-line copy loop (`server/main.ty` and
     `examples/weblog/main.ty:129` carry identical copies, the second with a comment
@@ -1502,6 +1502,283 @@ is a completed phase under this plan's Goal, and it is not a failure.
   - Verify: every existing CLI spelling in the tree still works (`server/` and
     `examples/weblog` both driven with real flags, output captured); 9 goldens match;
     `server/main.ty`'s line count recorded before and after.
+
+  #### Phase 6 — DONE. Evidence
+
+  ##### The `=`-attached design decision, quoted, and how it was preserved
+
+  It is deliberate and the file says so in its own header, at HEAD
+  (`corelib/cli/cli.ty:9-11`):
+
+  ```
+  # Values are ALWAYS attached with `=` (`--out=file`), so the parser needs no
+  # schema of which options take a value: `--verbose` is unambiguously a flag and
+  # `--out=x` unambiguously an option.
+  ```
+
+  So the decision is not "`=` is prettier" — it is **schema-freedom**: `parse` can sort
+  any vector with no declaration from the caller, and that property is exactly what
+  `--root DIR` cannot have. You cannot know whether `DIR` is `--root`'s value or a
+  positional without being told that `--root` takes one. The two are therefore not in
+  conflict and there was nothing to reverse; the fix is an **addition** that asks for the
+  schema only from callers that want the second spelling:
+
+  - `parse(av)` is unchanged, still schema-free, and is now one line on top of the shared
+    loop (`corelib/cli/cli.ty`, `parse_into(av, []string, []string, false)`).
+  - `parse_spec(av, valued, boolean)` is the same loop with `strict = true`.
+  - One loop, not two, so the two entry points cannot drift on the spellings they share.
+
+  **Proof that `parse` did not move**: `corelib/test/cli.out`'s pre-existing 16 lines are
+  byte-identical (`git diff` on the golden is **+26 / −0**, a pure append), and
+  `examples/corelib/cli.out` — which only ever calls `parse` — is untouched. The new test
+  also asserts it from the inside: fed the *schema* vector, `parse` still reports
+  `has(root) = no` / `flag(root) = yes` (a bare `--root` is a flag to it) and
+  `missing`/`unknown` both empty, because it cannot have those conditions.
+
+  The rule table is written down in three places: `corelib/cli/cli.ty`'s `parse_spec`
+  doc comment (the authority), `docs/guides/corelib.md:353`, and as executable assertions
+  in `corelib/test/cli/main.ty`.
+
+  ##### Decisions the item did not specify, made and documented
+
+  | Question | Decision | Why |
+  |---|---|---|
+  | how a flag declares it takes a value | two `[string]` lists, `valued` + `boolean`, names **without** dashes | same spelling `get`/`flag` already take; no new struct, no builder |
+  | `--root --port` | root **=** `"--port"`, consumed as-is | getopt's rule, and it is **bit-for-bit what the hand-rolled parser did** (`server/main.ty:545-549` at HEAD consumed `argv[i+1]` unconditionally). Guessing would make `--root -1` unspellable |
+  | `--root` with nothing after it | recorded in `missing(c)`, as written | the caller owns the message; `server/` still prints `--root needs a value` |
+  | `--quiet=1` on a boolean | flag set, value **dropped** | preserves HEAD's behaviour exactly (verified, case 14 of 47) |
+  | unrecognised name / bad short cluster | recorded in `unknown(c)`, **as written** | lets `server/` reproduce its old message verbatim, `--bogus=1` and `-qx` included |
+  | `--` | ends option parsing and vanishes | unchanged from HEAD `parse`, documented since the file was written (`:12-13`) |
+  | bare `-` | positional | unchanged, the stdin convention |
+  | short option with a value (`-p 80`) | **refused** | it would make `-abc` ambiguous. Use `--port 80` |
+
+  ##### `args()`/`argv[0]`: `cli.argv()`, and why not a skip inside `parse`
+
+  `fn argv() -> [string]: a := args(); return a[1:len(a)]` — 3 code lines. Array slicing
+  and calling the `args()` builtin from inside a package both already worked; measured
+  with a scratch package before writing anything (`n=3` from `prog aa bb cc`).
+
+  **Why not make `parse` skip element 0**, which was the other option offered: two
+  consumers in this tree build a *synthetic* argv with no program name in it
+  (`corelib/test/cli/main.ty:14`, `examples/corelib/cli/main.ty:14`), so a `parse` that
+  dropped element 0 would have silently eaten `--out=build/app` — the first real option —
+  in both. That is a wrong answer, not an error, and `examples/corelib/cli.out` would have
+  had to be re-recorded to bless it. `parse` stays a pure function over a vector; the
+  argv[0] convention lives in the function whose name is about argv. The new test asserts
+  the mismatch the wrapper absorbs: **`len(args()) = 1`, `len(cli.argv()) = 0`.**
+
+  Both copy loops are gone. `server/main.ty` is now `cfg := parse_args(cli.argv())` and
+  `examples/weblog/main.ty:129` is `c := cli.parse(cli.argv())` — its 4-line loop and the
+  3-line comment explaining it deleted together, which is the real tell that this was
+  friction and not a design.
+
+  ##### Flag-by-flag, all 47 spellings, HEAD binary vs phase-6 binary
+
+  Driven with `--port 0` so no two cases can collide on a port; the **stderr banner is the
+  parse result** (it prints root/host/port/workers/idle), exit `124` = still serving when
+  `timeout` killed it. Both binaries built from the same tree state via `git stash` /
+  `stash pop`, confirmed distinct by their emitted C: `httpd_before.c` has
+  `opt_name`/`wants_value` and **0** `parse_spec`; `httpd_after.c` has **4** `parse_spec`
+  and **0** `opt_name`.
+
+  | # | spelling | HEAD | phase 6 |
+  |---|---|---|---|
+  | 1 | *(no args)* | `serving . … workers=8 idle=5000ms` | same |
+  | 2-3 | `--root=DIR` / **`--root DIR`** | `serving …/server/www` | same |
+  | 4-5 | `--host=A` / **`--host A`** | ok | same |
+  | 6-7 | `--port=N` / **`--port N`** | ok | same |
+  | 8-9 | `--workers=3` / **`--workers 3`** | `workers=3` | same |
+  | 10-11 | `--idle-ms=250` / **`--idle-ms 250`** | `idle=250ms` | same |
+  | 12-13 | `--quiet` / `-q` | ok | same |
+  | 14 | `--quiet=1` (value on a boolean) | serves | same |
+  | 15-17 | all-attached / all-spaced / mixed | `workers=2 idle=300ms` | same |
+  | 18-20 | repeated `--root` (last wins) / trailing slash / `--root=` | ok | same |
+  | 21-22 | `--help` / `-h` | **exit 0** | **exit 0** |
+  | 23-25 | `--bogus` / `--bogus=1` / `-x` | exit 1, `unknown option: <as written>` | same |
+  | 26 | `-qh` | exit 1 `unknown option: -qh` | **exit 0 (help)** — widened |
+  | 27 | bare `--` | exit 1 `unknown option: --` | **serves** — widened |
+  | 28-30 | bare `-` / positional / `--=x` | exit 1, `unknown option: <as written>` | same |
+  | 31-35 | `--root`/`--port`/`--host`/`--workers`/`--idle-ms` with no value | exit 1 `<name> needs a value` | same |
+  | 36-37 | `--port abc` / `--port=abc` | exit 1 `wants a non-negative integer, got: abc` | same |
+  | 38-41 | `--port 70000` / `--workers 0` / `--workers 300` / `--idle-ms 0` | exit 1, range message | same |
+  | 42 | `--port -1` | exit 1 `…got: -1` | same |
+  | 43-44 | `--root /no/such/dir` / `--root <a file>` | warning + serves | same |
+  | 45 | `--root --port` | root=`--port`, then `cannot bind` | same |
+  | 46 | `--help --bogus` | exit 0 | same |
+  | 47 | `--bogus --help` | exit 1 | **exit 0** — widened |
+
+  ```
+  diff <condensed before> <condensed after>  -> 44 of 47 IDENTICAL, 3 diverge
+  ```
+
+  **Every one of the 3 divergences turns an error into a success on a spelling that never
+  worked**, so nothing that worked before stopped working — which is the constraint the
+  phase set. Named, not buried:
+
+  - **`-qh`** — HEAD's parser had no short-cluster rule at all (it string-compared whole
+    tokens, `server/main.ty:560-562`), so `-qh` was simply unknown. `core:cli` has had
+    `-abc → a,b,c` since it was written, `q` and `h` are both declared boolean, so the
+    cluster now resolves and the `h` answers `--help`.
+  - **bare `--`** — HEAD rejected the POSIX end-of-options marker because `opt_name("--")`
+    returned `"--"` and fell through to the unknown arm; an accident, not a decision.
+    Proven directly with a free port, since case 27's exit stayed `1` only because
+    `:8080` is occupied on this host:
+
+  ```
+  httpd_before --port 0 --   -> exit=1  tycho-httpd: unknown option: --
+  httpd_after  --port 0 --   -> exit=124 serving . on http://127.0.0.1:PORT/
+  ```
+
+  - **`--bogus --help`** — HEAD's loop was argv-*ordered*, so the first of the two won:
+    `--bogus --help` exited 1 and `--help --bogus` exited 0. A parsed `Cli` carries no
+    order, so one of the two had to be picked; "`--help` always answers" is the invariant
+    worth keeping, and it is the one Phase 4 (`c8be42b`) landed `exit(0)` for. Recorded in
+    the source at the check itself, not only here.
+
+  ##### `examples/weblog`, driven with real flags
+
+  Six invocations × 2 binaries, output hashed: `(none)`, `--top=2`, `--top=3 <log>`,
+  `<log>`, `--top=1 -- <log>`, `--verbose <log>`.
+
+  ```
+  md5 pairs: 218477721317 e5c66b0594f0 6615b2a9c34e f4ff539a5131 0a963cd0ac8d f4ff539a5131
+  before == after on all six, exit 0 on all twelve
+  ```
+
+  The `--` case and the `--verbose` (unknown-to-weblog flag) case are in there on purpose:
+  `weblog` calls plain `parse`, so those are the spellings that would have moved if the
+  shared loop had changed `parse`'s behaviour. They did not.
+
+  ##### Line deltas — the number is the point of this phase
+
+  | file | code lines | delta |
+  |---|---|---|
+  | `server/main.ty` | **372 → 341** | **−31** |
+  | `examples/weblog/main.ty` | **170 → 163** | **−7** |
+  | `corelib/cli/cli.ty` | **57 → 102** | **+45** |
+  | `corelib/test/cli/main.ty` | 37 → 101 | +64 (coverage) |
+  | `docs/guides/corelib.md` | doc only | — |
+
+  What was deleted from `server/main.ty`, measured region by region at HEAD:
+
+  ```
+  opt_name + opt_inline + wants_value   12 code lines   -> deleted outright
+  parse_args (the stepping loop)        43              -> 32
+  main()'s argv[0] copy loop             4              -> 0
+                                        --                 --
+                                        59                 32   (+1 for `import "core:cli"`)
+  ```
+
+  So **`FRICTION.md:127`'s "45 of this server's lines" was an UNDER-count**: the
+  hand-rolled parser plus its copy loop was **59** code lines, and what replaces it is
+  **32** — of which 2 are the schema itself (`valued := [...]`, `boolean := [...]`) and
+  the rest is the part that is genuinely this program's: which names exist, their
+  defaults, and what counts as out of range. Nothing left in `server/main.ty` splits a
+  token or counts an index.
+
+  A tightening worth recording because it moved the headline number by 9: the schema was
+  first written as 11 `push(valued, "root")` statements, then collapsed to two array
+  literals after checking that `["root", "host"]` — an array literal **with elements** —
+  compiles. It does; `server/main.ty` went 350 → 341, and the full 47-case matrix was
+  re-run on the tightened binary to confirm nothing moved.
+
+  **Library +45, application −38.** The library line is spent once and every future
+  consumer of `core:cli` gets `--flag VALUE`, `missing()` and `unknown()` for nothing;
+  `+45` also buys `parse`'s replacement, since `parse_into` (54 lines) subsumes HEAD's
+  27-line `parse` rather than sitting beside it. This is the inverse of the shape the
+  archived plan's own tally complained about (`FRICTION.md:79`: *"`server/main.ty`: 371
+  code lines before, 380 after. It got 9 lines longer."*) — here the application shrank
+  by 38 and no gate moved.
+
+  ##### Verify — every command actually run, in the foreground, on this tree
+
+  **`make ci` / `make test` NOT run — the day's single run was spent by Phase 1
+  (`5187724`).** The by-hand list Phases 2-5 used, reused verbatim:
+
+  ```
+  ok compile corelib/test/{httpd,io,net,result}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                    -- 13 entry points, 0 failures
+  ok compile corelib/test/cli/main.ty, examples/corelib/cli/main.ty
+                                               -- +2, the packages THIS phase touched
+  same corelib/test/{httpd,io,net,result}.out
+  same examples/corelib/{httpd,io,net,result}.out      -- 8 goldens byte-identical
+  same corelib/test/cli.out  same examples/corelib/cli.out
+  sh corelib/run.sh            -> "corelib: all green"  (ok cli; 37 ok, 0 fail)
+  sh examples/corelib/run.sh   -> "corelib examples: all green" (ok cli; 36 ok, 0 fail)
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"  -- 9th golden
+  sh scripts/frontparity.sh    -> agreed: 288  diverged: 0   (unchanged, phases 2-5)
+  sh scripts/tools_check.sh    -> "tools-check: ok"
+  sh scripts/spec_check.sh     -> 7 runnable examples, all pass
+  sh scripts/check_links.sh    -> ok (128 markdown files, no dead relative links)
+  python3 scripts/check_citations.py -> ok (22 anchored, 1487 bare)
+  ```
+
+  **The one golden that moved is `corelib/test/cli.out`, and it is +26 / −0.** A pure
+  append: the 16 pre-existing lines are byte-identical, which is the phase's proof that
+  `parse` is unchanged. The 26 new lines are the `parse_spec` assertions — both spellings
+  agreeing (`both same = yes`), `--quiet=1` setting the flag, `missing[0] = --port`, the
+  four `unknown` entries as written (`--bogus`, `--bogus=1`, `-x`, `-qx`), the getopt
+  swallow (`swallow = --port`), `parse`'s unchanged verdicts, and
+  `nargs = 1` / `nargv = 0`. Re-recorded with `RECORD=1 sh corelib/run.sh`, and
+  `git diff --stat corelib/test/` confirms **only** that one golden moved — every other
+  corelib golden re-recorded byte-identically, which is the check that a blanket RECORD
+  did not paper over a regression.
+
+  **`core:cli` is out of frozen `tychoc0`'s reach, checked before designing** (as the
+  brief required), so unlike phases 2, 3 and 5 nothing had to be left un-modernised:
+  `corelib/run.sh:6-11` and `examples/corelib/run.sh:6-8` both record that their tychoc0
+  legs were cut on 2026-07-26; `examples/webserver/run.sh` feeds tychoc0 only
+  `examples/webserver/main.ty`, which imports `core:httpd`/`net`/`io` and not `core:cli`;
+  `scripts/frontparity.sh:126-127` and `compiler/fixpoint.sh:24` feed `examples/*.ty`,
+  `tests/*.ty`, `tools/*.ty` and `tests/pkg/*/`, and a tree-wide grep for `core:cli`
+  returns only `corelib/cli/`, `corelib/test/cli/`, `examples/corelib/cli/`,
+  `examples/weblog/` and now `server/` — none of them a tychoc0 input. `frontparity` at
+  288 / 0 confirms it after the fact. **`compiler/tychoc0.ty` was not touched.**
+
+  ##### `server/` live matrix, 4 workers on `:18099`, diffed against a HEAD binary
+
+  Phase 3's driver (`matrix.py`, fail-closed on a bind collision at `:26-30`, `atexit`
+  reaper at `:20`), port confirmed free before each run. Diffed against a **HEAD-built
+  binary**, not a recorded transcript, because Phase 5 added the peer-address column.
+
+  ```
+  GET /            200 2659 text/html; charset=utf-8   GET /style.css 200 1726 text/css
+  GET /data.json   200 294  application/json           GET /favicon.ico 200 441 image/x-icon
+  GET /nope.html   404 621                             GET /../../etc/passwd 403
+  POST /           405 Allow: GET, HEAD                HEAD / 200 Content-Length=2659 body=0
+  GARBAGE -> 400                                       Content-Length: 0x10 -> 400
+  20 KiB head, no terminator -> HTTP/1.1 431 Request Header Fields Too Large
+  (a) zero-byte hangup        -> no bytes, log lines added 0
+  (b) partial head then stall -> HTTP/1.1 408 Request Timeout, log lines added 1
+  (c) idle past 800ms         -> 0 bytes, log lines added 0
+  GET /emptydir -> 301 Location: /emptydir/ 56   /about -> 301 /about/   /img -> 301 /img/
+  keep-alive 3 requests on ONE fd -> 200 200 200      50-request flood -> 50/50 200
+  access log workers seen: w1 w2 w3 w4
+  clean exit: SIGTERM -> killed by signal 15 (wait status 143)
+
+  both runs                                -> MATRIX OK: every assertion passed
+  diff old.txt new.txt                     -> TRANSCRIPTS IDENTICAL, case for case
+  access log, timings masked               -> IDENTICAL, line for line (69 / 69)
+  ```
+
+  Expected to be identical and it is: this phase changed only how the *arguments* are
+  read, and the matrix drives the server with the same `--root server/www --port 18099
+  --workers 4 --idle-ms 800` in both — through the hand-rolled parser in one binary and
+  through `cli.parse_spec` in the other. The identical transcript **is** the assertion
+  that the two parsers agree on the spelling the driver uses, on top of the 47-case
+  matrix that covers the ones it does not.
+
+  ##### Out of scope, found, not absorbed
+
+  - Nothing found that needed a new phase. The one incidental discovery —
+    `["a", "b"]`, an array literal with elements, compiles — is not a defect; it was used
+    to tighten `server/main.ty` by 9 lines and is recorded above.
+  - `examples/corelib/cli/main.ty` still shows only `parse`. Left deliberately: its golden
+    is this phase's proof that `parse` did not move, and re-recording it would spend that
+    proof to demonstrate something `corelib/test/cli/main.ty` already asserts. One line in
+    `FRICTION.md`.
 
 - [ ] **Phase 7 — `bytes` gets operators**
   - Items: `FRICTION.md:224` — `bytes` supports **only** `len()`, `to_str()` and crossing the

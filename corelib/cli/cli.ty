@@ -6,14 +6,22 @@
 #   - flags       `--flag`, `-f`, `-abc`     -> boolean presence     (cli.flag)
 #   - positional  everything else + all args after a bare `--`       (cli.positionals)
 #
-# Values are ALWAYS attached with `=` (`--out=file`), so the parser needs no
-# schema of which options take a value: `--verbose` is unambiguously a flag and
-# `--out=x` unambiguously an option. A short cluster `-abc` sets flags a, b, c.
-# A lone `-` is a positional (the stdin convention). `--` ends option parsing;
-# every argument after it is positional even if it looks like an option.
+# In `parse`, values are ALWAYS attached with `=` (`--out=file`), so the parser
+# needs no schema of which options take a value: `--verbose` is unambiguously a
+# flag and `--out=x` unambiguously an option. A short cluster `-abc` sets flags
+# a, b, c. A lone `-` is a positional (the stdin convention). `--` ends option
+# parsing; every argument after it is positional even if it looks like an option.
+#
+# `parse_spec(argv, valued, boolean)` is the SCHEMA-CARRYING form, added because
+# `--root DIR` -- the conventional Unix spelling -- cannot be recognised without
+# knowing that `--root` takes a value. It is an ADDITION, not a replacement: the
+# schema-free design decision above is what `parse` still is, unchanged, and
+# every `=`-attached spelling means exactly the same thing in both. See
+# `parse_spec` for the full rule table.
 #
 # The argv you pass is your program's own arguments -- do NOT include argv[0]
-# (the program name). `cli.parse(args)` where `args` is the builtin arg vector.
+# (the program name). `cli.argv()` is exactly that vector, so the whole of a
+# program's front door is `c := cli.parse(cli.argv())`.
 package cli
 
 struct Cli:
@@ -21,6 +29,19 @@ struct Cli:
     vals: [string]        # option values, parallel to keys
     flags: [string]       # flag names present (long and short)
     positional: [string]  # positional arguments, in order
+    noval: [string]       # parse_spec: valued options that ran out of argv  (cli.missing)
+    unk: [string]         # parse_spec: tokens the schema does not name       (cli.unknown)
+
+# Your program's own arguments: the builtin `args()` with `args()[0]` -- the
+# program path -- dropped, which is exactly what `parse` wants. This is a
+# separate function rather than a skip inside `parse` on purpose: `parse` is a
+# pure function over a vector, and the two consumers in this tree that build a
+# synthetic argv (`corelib/test/cli/main.ty:14`, `examples/corelib/cli/main.ty:14`)
+# have no program name in it, so a `parse` that dropped element 0 would silently
+# eat their first real option. `args()[1:]` inline is the same thing.
+fn argv() -> [string]:
+    a := args()
+    return a[1:len(a)]
 
 # `--` prefix test (a long option or long flag).
 fn is_long(s: string) -> bool:
@@ -30,34 +51,101 @@ fn is_long(s: string) -> bool:
 fn is_short(s: string) -> bool:
     return len(s) >= 2 and s[0] == 45 and s[1] != 45
 
-# Parse an argument vector into a Cli.
-fn parse(argv: [string]) -> Cli:
+# Is `s` in `xs`? The schema lists are short (a handful of option names), so a
+# linear scan is the right shape -- same reason the Cli itself is parallel arrays.
+fn in_list(xs: [string], s: string) -> bool:
+    for i in range(len(xs)):
+        if xs[i] == s:
+            return true
+    return false
+
+# The one parse loop. `strict` selects which of the two public entry points is
+# calling: false = `parse` (schema-free, every unrecognised `--x` is a flag),
+# true = `parse_spec` (schema-carrying, an unrecognised token is recorded).
+fn parse_into(av: [string], valued: [string], boolean: [string], strict: bool) -> Cli:
     keys := []string
     vals := []string
     flags := []string
     pos := []string
-    n := len(argv)
+    noval := []string
+    unk := []string
+    n := len(av)
     only_pos := false
-    for i in range(n):
-        a := argv[i]
+    i := 0
+    for i < n:
+        a := av[i]
+        step := 1
         if only_pos:
             push(pos, a)
         elif a == "--":
-            only_pos = true
+            only_pos = true                     # end of options; `--` itself vanishes
         elif is_long(a):
             body := a[2:len(a)]                 # strip the leading "--"
             eq := find(body, "=")
             if eq >= 0:
-                push(keys, body[0:eq])
-                push(vals, body[eq + 1:len(body)])
-            else:
+                name := body[0:eq]
+                if in_list(boolean, name):
+                    push(flags, name)           # `--quiet=1`: a flag is a flag, value dropped
+                elif not strict or in_list(valued, name):
+                    push(keys, name)
+                    push(vals, body[eq + 1:len(body)])
+                else:
+                    push(unk, a)
+            elif in_list(valued, body):
+                # `--root DIR`. The next argument is taken WHATEVER it looks like,
+                # which is getopt's rule: `--root --port` sets root to "--port".
+                # A schema cannot tell a missing value from a wrong one, and
+                # guessing would make `--root -1` unspellable.
+                if i + 1 >= n:
+                    push(noval, a)
+                else:
+                    push(keys, body)
+                    push(vals, av[i + 1])
+                    step = 2
+            elif not strict or in_list(boolean, body):
                 push(flags, body)               # `--verbose`
+            else:
+                push(unk, a)
         elif is_short(a):
-            for j in range(1, len(a)):          # `-abc` -> a, b, c
-                push(flags, chr(a[j]))
+            bad := false
+            for j in range(1, len(a)):
+                if strict and not in_list(boolean, chr(a[j])):
+                    bad = true
+            if bad:
+                push(unk, a)                    # the whole cluster, as written
+            else:
+                for k in range(1, len(a)):      # `-abc` -> a, b, c
+                    push(flags, chr(a[k]))
         else:
             push(pos, a)                        # positional, incl. a lone "-"
-    return Cli(keys, vals, flags, pos)
+        i += step
+    return Cli(keys, vals, flags, pos, noval, unk)
+
+# Parse an argument vector into a Cli. Schema-free: values must be `=`-attached.
+fn parse(av: [string]) -> Cli:
+    return parse_into(av, []string, []string, false)
+
+# Parse with a schema, which buys the space-separated spelling `--root DIR`.
+# `valued` and `boolean` name LONG options and short flag letters WITHOUT their
+# dashes -- the same spelling `get`/`flag` take. The full rule table:
+#
+#   `--name=v`,  name in valued   -> option (key `name`, value `v`)
+#   `--name v`,  name in valued   -> option; the next argument is consumed as-is
+#   `--name`,    name in valued, nothing after it -> recorded in `missing(c)`
+#   `--name`,    name in boolean  -> flag
+#   `--name=v`,  name in boolean  -> flag; `v` is DROPPED, because a boolean has
+#                                    no value to carry. (`--quiet=1` sets quiet.)
+#   `--name`/`--name=v`, name in neither -> recorded in `unknown(c)`, as written
+#   `-abc`, every letter in boolean       -> flags a, b, c
+#   `-abc`, any letter not in boolean     -> the whole cluster in `unknown(c)`
+#   `-`                                   -> positional (the stdin convention)
+#   `--`                                  -> ends option parsing and vanishes
+#   anything else                         -> positional
+#
+# Nothing here reads a value for a SHORT option: `-p 80` is not a spelling this
+# package has, and adding it would make `-abc` ambiguous. Use `--port 80`.
+fn parse_spec(av: [string], valued: [string], boolean: [string]) -> Cli:
+    return parse_into(av, valued, boolean, true)
 
 # The value of option `key`, or `dflt` if it was not supplied. Last one wins if
 # an option is repeated.
@@ -89,3 +177,13 @@ fn positionals(c: Cli) -> [string]:
 # How many positionals were parsed.
 fn count(c: Cli) -> int:
     return len(c.positional)
+
+# `parse_spec` only: valued options written with no value after them, as written
+# (`--port`). Empty from `parse`, which cannot have the condition.
+fn missing(c: Cli) -> [string]:
+    return c.noval
+
+# `parse_spec` only: tokens the schema does not name, as written (`--bogus`,
+# `--bogus=1`, `-x`). Empty from `parse`, which accepts every option name.
+fn unknown(c: Cli) -> [string]:
+    return c.unk

@@ -48,3 +48,94 @@ fn main():
     push(rep, "--o=a")
     push(rep, "--o=b")
     println("repeat = " + cli.get(cli.parse(rep), "o", "?"))
+
+    # ---- parse_spec: the schema-carrying form, which adds `--root DIR` -------
+    # The schema names LONG options that take a value and boolean flag names
+    # (long names and short letters), both without dashes.
+    valued := []string
+    push(valued, "root")
+    push(valued, "port")
+    boolean := []string
+    push(boolean, "quiet")
+    push(boolean, "q")
+
+    # every spelling in one vector: spaced, attached, a boolean with an attached
+    # value (dropped), a short cluster, a value that looks like an option, and
+    # a `--` terminator.
+    s := []string
+    push(s, "--root")            # spaced value  -> root = /srv/www
+    push(s, "/srv/www")
+    push(s, "--port=8080")       # attached value -> port = 8080
+    push(s, "--quiet")           # boolean long
+    push(s, "-q")                # boolean short
+    push(s, "file.txt")          # positional
+    push(s, "--")
+    push(s, "--root")            # positional: after the terminator
+    sp := cli.parse_spec(s, valued, boolean)
+    println("spec root  = " + cli.get(sp, "root", "?"))
+    println("spec port  = " + cli.get(sp, "port", "?"))
+    println("spec quiet = " + yn(cli.flag(sp, "quiet")))
+    println("spec q     = " + yn(cli.flag(sp, "q")))
+    println("spec npos  = " + str(cli.count(sp)))
+    println("spec nmiss = " + str(len(cli.missing(sp))))
+    println("spec nunk  = " + str(len(cli.unknown(sp))))
+    sps := cli.positionals(sp)
+    for i in range(len(sps)):
+        println("spec pos[" + str(i) + "]= " + sps[i])
+
+    # the SAME options, `=`-attached throughout: parse_spec must agree with
+    # itself across the two spellings, which is the whole point of the addition.
+    t := []string
+    push(t, "--root=/srv/www")
+    push(t, "--port")
+    push(t, "8080")
+    tp := cli.parse_spec(t, valued, boolean)
+    println("both same  = " + yn(cli.get(tp, "root", "?") == cli.get(sp, "root", "?")
+                                and cli.get(tp, "port", "?") == cli.get(sp, "port", "?")))
+
+    # a boolean spelled with an attached value: the flag is set, the value dropped.
+    b1 := []string
+    push(b1, "--quiet=1")
+    println("bool=val   = " + yn(cli.flag(cli.parse_spec(b1, valued, boolean), "quiet")))
+
+    # a valued option with nothing after it -> missing(), as written.
+    m := []string
+    push(m, "--port")
+    mp := cli.parse_spec(m, valued, boolean)
+    println("miss n     = " + str(len(cli.missing(mp))))
+    println("miss[0]    = " + cli.missing(mp)[0])
+
+    # unrecognised tokens -> unknown(), as written, one entry each; a short
+    # cluster with a bad letter is reported whole.
+    u := []string
+    push(u, "--bogus")
+    push(u, "--bogus=1")
+    push(u, "-x")
+    push(u, "-qx")
+    up := cli.parse_spec(u, valued, boolean)
+    println("unk n      = " + str(len(cli.unknown(up))))
+    uks := cli.unknown(up)
+    for i in range(len(uks)):
+        println("unk[" + str(i) + "]    = " + uks[i])
+
+    # a valued option swallows the next argument whatever it looks like (getopt).
+    g := []string
+    push(g, "--root")
+    push(g, "--port")
+    gp := cli.parse_spec(g, valued, boolean)
+    println("swallow    = " + cli.get(gp, "root", "?"))
+    println("swallow nu = " + str(len(cli.unknown(gp))))
+
+    # `parse` is UNCHANGED by the addition: schema-free, so missing/unknown are
+    # always empty and a bare `--root` is still a flag, not an option.
+    p0 := cli.parse(s)
+    println("free root  = " + yn(cli.has(p0, "root")))
+    println("free flag  = " + yn(cli.flag(p0, "root")))
+    println("free nmiss = " + str(len(cli.missing(p0))))
+    println("free nunk  = " + str(len(cli.unknown(p0))))
+
+    # cli.argv(): args() with argv[0] dropped. The harness passes no arguments,
+    # so this is 0 -- and args() itself is 1, which is the mismatch the wrapper
+    # exists to absorb.
+    println("nargs      = " + str(len(args())))
+    println("nargv      = " + str(len(cli.argv())))
