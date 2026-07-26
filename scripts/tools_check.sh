@@ -268,10 +268,17 @@ echo ">>> bytes-rehome: a bytes field of a returned struct is deep-copied into t
 # freed scope -- a use-after-free that served garbage from the webserver dogfood.
 # The bytes must be re-homed (tycho_str_copy, same as a string). Emission-level so
 # it's deterministic (the runtime manifestation is arena-layout dependent).
+#
+# The compile's exit status is CHECKED. It was not, once: `io.read_bytes` became
+# `Result(bytes, io.IoErr)` and the old fixture's bare `len(d)` stopped compiling,
+# so for three commits this lane asserted nothing and reported its own rot as
+# `grep: .../brh/main.c: No such file or directory`. A stale fixture must fail loudly.
 mkdir -p "$TMP/brh"
-printf 'package main\nimport "core:io"\nstruct B:\n    data: bytes\nfn mk(p: string) -> B:\n    d := io.read_bytes(p)\n    if len(d) == 0:\n        return B(to_bytes(""))\n    return B(d)\nfn main():\n    b := mk("Makefile")\n    println(str(len(b.data)))\n' > "$TMP/brh/main.ty"
-TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/brh/main.ty" --emit-c >/dev/null 2>&1
-if grep -q 'tycho_str_copy(_parent, h_d)' "$TMP/brh/main.c"; then
+printf 'package main\nimport "core:io"\nimport "core:result"\nstruct B:\n    data: bytes\nfn mk(p: string) -> B:\n    d := result.unwrap_or(io.read_bytes(p), to_bytes(""))\n    if len(d) == 0:\n        return B(to_bytes(""))\n    return B(d)\nfn main():\n    b := mk("Makefile")\n    println(str(len(b.data)))\n' > "$TMP/brh/main.ty"
+if ! TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/brh/main.ty" --emit-c >/dev/null 2>"$TMP/brh.err"; then
+    echo "    bytes-rehome FIXTURE STALE: it no longer compiles, so this lane asserts NOTHING"
+    sed 's/^/      /' "$TMP/brh.err"; fail=1
+elif grep -q 'tycho_str_copy(_parent, h_d)' "$TMP/brh/main.c"; then
     echo "    bytes field re-homed on struct return"
 else
     echo "    bytes field NOT re-homed -- copy_into missing T_BYTES (dangling UAF!)"; fail=1

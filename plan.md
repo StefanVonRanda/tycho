@@ -279,7 +279,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     `tools_check.sh` inside a clean `git archive HEAD` tree: identical failure. New
     unchecked phase below.
 
-- [ ] **Phase 1b — `tools_check.sh`'s `bytes-rehome` lane is red at HEAD**
+- [x] **Phase 1b — `tools_check.sh`'s `bytes-rehome` lane is red at HEAD**
   - Found by Phase 1's gate sweep, **not caused by it** (proven against a pristine
     `git archive HEAD` tree). `scripts/tools_check.sh:272`'s fixture writes
     `d := io.read_bytes(p)` / `len(d)`, which the `Result` conversion of the archived plan's
@@ -293,6 +293,98 @@ is a completed phase under this plan's Goal, and it is not a failure.
     `T_BYTES` path, reddens for the right reason.
   - Verify: run `sh scripts/tools_check.sh` — green; then break it on purpose once and
     capture the failure line.
+
+  #### Phase 1b — DONE. Evidence
+
+  `scripts/tools_check.sh` only. **`src/tychoc.c` untouched** (`git diff --stat` after
+  the sweep: `scripts/tools_check.sh | 13 ++++++++++---`, nothing else). **No `make ci`,
+  no `make test`** — the day's single run was spent by phase 1. `scripts/tools_check.sh`
+  was run directly, four times.
+
+  ##### The fixture, before and after
+
+  ```diff
+  -d := io.read_bytes(p)                                    # bare bytes since eefc609 -> Result
+  +import "core:result"
+  +d := result.unwrap_or(io.read_bytes(p), to_bytes(""))    # the one-liner phase 1 unblocked
+  ```
+
+  Worth naming: this is the **first use of phase 1's fix outside its own regression
+  test**. `FRICTION.md:148` said the blocked spelling was exactly
+  `result.unwrap_or(io.read_bytes(p), empty)`; it compiles here in one line, and
+  `--emit-c` still names the local `h_d`, so the lane's grep needed no change.
+
+  ##### The exit status, before and after
+
+  ```diff
+  -TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/brh/main.ty" --emit-c >/dev/null 2>&1
+  -if grep -q 'tycho_str_copy(_parent, h_d)' "$TMP/brh/main.c"; then
+  +if ! TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/brh/main.ty" --emit-c >/dev/null 2>"$TMP/brh.err"; then
+  +    echo "    bytes-rehome FIXTURE STALE: it no longer compiles, so this lane asserts NOTHING"
+  +    sed 's/^/      /' "$TMP/brh.err"; fail=1
+  +elif grep -q 'tycho_str_copy(_parent, h_d)' "$TMP/brh/main.c"; then
+  ```
+
+  Three outcomes now, where there were two: invariant held / invariant broken /
+  **cannot ask**. The stderr is captured and printed indented rather than sent to
+  `/dev/null`, so the STALE branch shows the compiler's own words.
+
+  ##### Green (run 1 and run 4, run 4 being the restored tree that is committed)
+
+  ```
+  >>> bytes-rehome: a bytes field of a returned struct is deep-copied into the caller's arena
+      bytes field re-homed on struct return
+  tools-check: ok
+  ```
+
+  Whole-script context from run 1 (unchanged by this phase, quoted to show nothing else
+  moved): `810 files checked (compilable=379) idempotence-fails=0 semantic-fails=0`, LSP
+  smoke all-True, both `pkgsnip`/`pkgresolve` lanes green.
+
+  ##### Deliberate breakage (a) — the assertion is live, not merely green
+
+  Deleted `case T_BYTES: return sfmt("tycho_str_copy(%s, %s)", arena, val);`
+  (`src/tychoc.c:7858`) so `bytes` falls through to the identity `return val`, rebuilt,
+  re-ran:
+
+  ```
+  >>> bytes-rehome: a bytes field of a returned struct is deep-copied into the caller's arena
+      bytes field NOT re-homed -- copy_into missing T_BYTES (dangling UAF!)
+  tools-check: FAIL
+  ```
+
+  Restored with `git checkout -- src/tychoc.c`. **This is the proof the lane was worth
+  un-rotting rather than deleting:** the use-after-free it was written for is still one
+  deleted line away.
+
+  ##### Deliberate breakage (b) — a stale fixture now fails loudly, in the compiler's words
+
+  Re-injected the old spelling (`d := io.read_bytes(p)`) into the fixture:
+
+  ```
+  >>> bytes-rehome: a bytes field of a returned struct is deep-copied into the caller's arena
+      bytes-rehome FIXTURE STALE: it no longer compiles, so this lane asserts NOTHING
+        /tmp/tmp.0OwMLuyuhR/brh/main.ty:8: error: len(...) takes an array, a string, bytes, a map, or a soa
+             8 |     if len(d) == 0:
+  tools-check: FAIL
+  ```
+
+  That is the **exact error the old lane swallowed for three commits**, now on stdout
+  under a message that names the failure mode. Contrast the pre-fix behaviour recorded
+  by phase 1: `grep: .../brh/main.c: No such file or directory`.
+
+  ##### Citation gate, because the file grew 7 lines
+
+  `python3 scripts/check_citations.py` →
+  `citation check: ok (22 anchored contain the token they name, 1357 bare in bounds)`.
+  The one anchored citation into this file (`docs/internals/plan-front-door-DONE.md:5966`
+  → `scripts/tools_check.sh:121`) is above the edit, so nothing shifted.
+
+  ##### Out of scope, not fixed, not silently absorbed
+
+  Nothing new found. The `scripts/tools_check.sh:273` reference inside the now-struck
+  `FRICTION.md` entry is left as written: it is a claim about the pre-fix file and the
+  strikethrough marks it historical.
 
 - [ ] **Phase 2 — `\r`, multi-line strings, and `const` folding**
   - Items: `FRICTION.md:123` — no `\r` escape in string literals, so the most common byte
