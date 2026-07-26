@@ -7,8 +7,11 @@
 # root) and test membership only, never directory order.
 package main
 import "core:io"
-import "core:os"                 # os.system: the only way to make a directory (no mkdir builtin)
 import "core:result"
+# No core:os here any more. Until 2026-07-26 this test imported it to run
+# os.system("rm -rf ... && mkdir -p ..."), because the corelib could not make a
+# directory -- a corelib test shelling out to /bin/sh to set up a syscall test.
+# io.make_dir / io.remove replaced it (plan.md phase 5).
 
 fn b2i(b: bool) -> int:
     if b:
@@ -46,6 +49,23 @@ fn dwhy(r: Result(bool, io.IoErr)) -> string:
     e := result.err_or(r, d)
     if e == io.NotFound:
         return "NotFound"
+    return "Failed"
+
+# make_dir / remove: the same Result(bool, IoErr), but Ok's boolean means "did the
+# filesystem change" rather than "is it a directory" -- so it gets its own labels.
+# `did` = created/removed, `already` = it was already in the asked-for state (both
+# successes). Err(Exists) is make_dir's only extra variant.
+fn fswhy(r: Result(bool, io.IoErr)) -> string:
+    if result.is_ok(r):
+        if result.unwrap_or(r, false):
+            return "did"
+        return "already"
+    d := io.Failed                       # a qualified variant cannot be a $E argument
+    e := result.err_or(r, d)
+    if e == io.NotFound:
+        return "NotFound"
+    if e == io.Exists:
+        return "Exists"
     return "Failed"
 
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
@@ -122,21 +142,39 @@ fn main():
     # server shipped (plan.md phase 4). Ok(true) and Ok(false) are both successes;
     # only "nothing there" is an Err.
     #
-    # There is no mkdir builtin and no io.make_dir (searched docs/spec/16-builtins.md
-    # §29.10, all of corelib/, src/tychoc.c, runtime/ -- zero hits), so the empty
-    # directory is made with os.system, under /tmp like every other path here, and
-    # removed first so a rerun is deterministic.
+    # The empty directory is now made with io.make_dir -- no os.system, no /bin/sh.
+    # The two unprinted removes ahead of it make the run deterministic whatever a
+    # previous (or crashed) run left behind, INNER FIRST because io.remove is not
+    # recursive: a non-empty directory is Err(Failed), by design.
     edir := "/tmp/tycho_corelib_io_emptydir"
-    mk := os.system("rm -rf /tmp/tycho_corelib_io_emptydir && mkdir -p /tmp/tycho_corelib_io_emptydir")
+    inner := edir + "/inner.txt"
+    pre1 := io.remove(inner)             # unprinted: prior state is unknown
+    pre2 := io.remove(edir)              # unprinted: ditto
+    mk := io.make_dir(edir)              # did: created
+    mkagain := io.make_dir(edir)         # already: EEXIST on a directory is the goal
+    mkonfile := io.make_dir(binf)        # Exists: EEXIST on a plain file is not
+    mkdeep := io.make_dir("/tmp/tycho_corelib_io_absent.xyz/child")   # NotFound: no parent
+    println(f"mkdir={fswhy(mk)} again={fswhy(mkagain)} onfile={fswhy(mkonfile)} noparent={fswhy(mkdeep)}")
     dfull := io.is_dir("/tmp")
     dempty := io.is_dir(edir)
     dfile := io.is_dir(binf)
     dmiss := io.is_dir("/tmp/tycho_corelib_io_absent.xyz")
-    println(f"mkdir_rc={mk} isdir_tmp={dwhy(dfull)} isdir_empty={dwhy(dempty)}")
+    println(f"isdir_tmp={dwhy(dfull)} isdir_empty={dwhy(dempty)}")
     println(f"isdir_file={dwhy(dfile)} isdir_missing={dwhy(dmiss)}")
     # the same empty directory through the OLD test, side by side: this line IS the
     # wrong answer, and the line above it is the right one.
     println(f"list_empty={len(io.list(edir))} old_test_says_dir={b2i(len(io.list(edir)) > 0)}")
+
+    # remove: single-entry, and the test cleans up after itself. `rm -rf` used to be
+    # the only way to do this. The middle line is the reason there is no recursive
+    # variant -- a non-empty directory is Err(Failed), not a silently deleted tree.
+    wi := io.write(inner, "x")
+    rmfull := io.remove(edir)            # Failed: ENOTEMPTY, inner.txt is in it
+    rminner := io.remove(inner)          # did: a file
+    rmdir := io.remove(edir)             # did: an empty directory
+    rmgone := io.remove(edir)            # already: nothing there is not a failure
+    println(f"wrote_inner={b2i(wi)} rm_nonempty={fswhy(rmfull)} rm_file={fswhy(rminner)}")
+    println(f"rm_dir={fswhy(rmdir)} rm_again={fswhy(rmgone)} left={b2i(io.exists(edir))}")
 
     # a missing file reads as ""
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")

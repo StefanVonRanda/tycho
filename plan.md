@@ -83,6 +83,12 @@ to any of them makes the change worse than the sentinels:
 
 ## Phases
 
+> **THIS PLAN IS COMPLETE.** All five phases are done and committed: Phase 1 `556119e`,
+> Phase 2 `eefc609`, Phase 3 `296bbc2`, Phase 4 `4fa192d`, Phase 5 (this commit). The
+> Goal was met at Phase 4; Phase 5 was acknowledged out-of-Goal cleanup, run on a user
+> directive. The final accounting for all five phases is in **"Goal verdict — all five
+> phases"** below, after Phase 5's evidence. Nothing here is open.
+
 - [x] **Phase 1 — PROBE: convert ONE package, rewrite the server against it, compare**
   - Pick `core:io` or `core:net` — whichever `server/main.ty` leans on hardest for
     fallible calls; read the server first and say which and why.
@@ -1037,7 +1043,7 @@ is the *opposite* shape from the rest of the plan: the fix that finally moved a 
 cost 0 application lines and ~14 library lines, because it added a **question**, not a return
 type.
 
-- [ ] **Phase 5 — NOT STARTED: two things Phase 4 found and refused to absorb**
+- [x] **Phase 5 — DONE: two things Phase 4 found and refused to absorb**
   - **There is no way to create a directory from Tycho.** Verified absent by searching
     `docs/spec/16-builtins.md` §29.10 (the five filesystem/time builtins), all of `corelib/`,
     `src/tychoc.c` and `runtime/` — no `mkdir`, no `make_dir`, no `create_dir`. So
@@ -1055,8 +1061,263 @@ type.
     Phase 4's scope named `resolve()`, and a startup `die` is not a wrong answer on the wire.
   - Neither blocks anything. Both are recorded in `FRICTION.md` as well.
 
+#### Phase 5 evidence — 2026-07-26
+
+Run on a direct user directive after the Goal was already met by Phase 4. Same measurement
+standard, same anti-scope, two items and nothing more.
+
+##### Item 1 — `io.make_dir` / `io.remove`, and the `bool`-vs-`Result` decision
+
+Absence re-verified before building, not assumed (`RULE 11`): `mkdir|make_dir|create_dir|
+rmdir|remove_dir|unlink|remove(` across `corelib/`, `src/`, `runtime/`, `docs/spec/`,
+`server/`, `examples/` returned only `pool.remove` (an unrelated slot-pool call) and
+`corelib/test/io`'s own `os.system("… mkdir -p …")` line. `docs/spec/16-builtins.md` §29.10
+still lists exactly five filesystem/time builtins, none of which makes or removes anything.
+
+**Decision: `Result(bool, IoErr)` for both, not `bool`.** Phase 1's rule is that a sentinel
+earns a `Result` only when it is *ambiguous*, and this is the clearest case in the plan:
+
+- `make_dir`: a `false` would mean four things, and **two of them are opposites**.
+  `EEXIST` on a directory is *the caller's goal already met*; `EEXIST` on a file, `ENOENT`
+  on a parent and `EACCES` are all "you will never get it". A `bool` caller must call
+  `is_dir(p)` after every failed `make_dir` to tell those apart — which is the
+  sentinel-collision shape this plan exists to remove, re-created in a brand-new function.
+  So: `Ok(true)` created, `Ok(false)` already a directory, `Err(Exists)` occupied by a
+  non-directory, `Err(NotFound)` no parent, `Err(Failed)` the rest.
+- `remove`: `false` would conflate "already absent" (the goal) with "non-empty directory"
+  (a bug in the caller's cleanup *order*) and "permission denied" — three different next
+  moves. `Ok(true)` removed, `Ok(false)` nothing was there, `Err(Failed)` it would not go.
+- One new `IoErr` variant, `Exists`. Payload-free like the rest, so `==` still works and no
+  existing `match` changes (nothing matches on `IoErr` directly — Tycho has no nested
+  patterns, which is why the enum is flat in the first place).
+- `Ok(bool)` where **both booleans are successes**, exactly the shape Phase 4 chose for
+  `is_dir`: `true` = "I changed the filesystem", `false` = "it was already how you asked".
+- Deliberately **not** recursive, and that is load-bearing: a non-empty directory is
+  `Err(Failed)` (`ENOTEMPTY`). That property is the only thing separating `io.remove` from
+  `rm -rf` behind a corelib name. The test cleans up by removing what it made, in order.
+
+**The shell-out is gone.** `corelib/test/io/main.ty` no longer imports `core:os`; the
+`os.system("rm -rf … && mkdir -p …")` line is deleted. All five outcomes are exercised, and
+the golden records them (`corelib/test/io.out`, +3 net lines):
+
+```
+mkdir=did again=already onfile=Exists noparent=NotFound
+wrote_inner=1 rm_nonempty=Failed rm_file=did
+rm_dir=did rm_again=already left=0
+```
+
+Deterministic across runs (two consecutive runs `cmp`-identical), including from a dirty
+prior state: two *unprinted* removes run first, **inner file before directory**, because
+`remove` is not recursive.
+
+Docs: `docs/spec/16-builtins.md` §29.10 was **not** touched — it enumerates `Sig` builtins
+with provenance into `src/tychoc.c`, and these are corelib shim functions, not builtins.
+`docs/guides/corelib.md`'s `io` paragraph *does* enumerate the module's surface, so it was
+updated — and it turned out Phase 4 had never added `is_dir` there either, leaving the
+sentence "`list`'s … ambiguity is a missing `stat(2)`" reading as though the stat were still
+missing. Fixed in the same paragraph.
+
+##### Item 2 — the startup `--root` check, four causes instead of one message
+
+The plan text quoted this line as a `die()`; the actual source at `server/main.ty:553` was a
+**warning**, not a fatal (`git show HEAD:server/main.ty` line 553-554), so it stays a warning
+— serving an empty tree is legal and `die()` always exits 1, which is the wrong status for a
+judgement call about someone else's directory. What changed is that it now tells the truth.
+
+BEFORE — one message for three unrelated causes, measured against a binary built from
+`HEAD` (`4fa192d`):
+
+```
+  server/www                   -> 0 warning(s):
+  /tmp/ph5_emptyroot           -> tycho-httpd: warning: /tmp/ph5_emptyroot is empty or not a directory
+  server/main.ty               -> tycho-httpd: warning: server/main.ty is empty or not a directory
+  /tmp/ph5_does_not_exist      -> tycho-httpd: warning: /tmp/ph5_does_not_exist is empty or not a directory
+```
+
+AFTER — the four required cases plus the unreadable branch, real stderr:
+
+```
+--- (a) normal dir  --root server/www
+tycho-httpd: serving server/www on http://127.0.0.1:43935/  workers=1 idle=5000ms
+--- (b) EMPTY dir   --root /tmp/ph5_emptyroot
+tycho-httpd: warning: /tmp/ph5_emptyroot is an empty directory
+tycho-httpd: serving /tmp/ph5_emptyroot on http://127.0.0.1:35125/  workers=1 idle=5000ms
+--- (c) plain file  --root server/main.ty
+tycho-httpd: warning: server/main.ty is not a directory
+tycho-httpd: serving server/main.ty on http://127.0.0.1:43543/  workers=1 idle=5000ms
+--- (d) missing     --root /tmp/ph5_does_not_exist
+tycho-httpd: warning: /tmp/ph5_does_not_exist does not exist
+tycho-httpd: serving /tmp/ph5_does_not_exist on http://127.0.0.1:45693/  workers=1 idle=5000ms
+--- (e) unreadable  --root /tmp/ph5_noperm/inner   (parent chmod 000)
+tycho-httpd: warning: /tmp/ph5_noperm/inner cannot be read
+tycho-httpd: serving /tmp/ph5_noperm/inner on http://127.0.0.1:44615/  workers=1 idle=5000ms
+```
+
+Exit codes, all four cases: `timeout 1 tycho-httpd … ; rc=124` — i.e. **still running when
+the 1s timeout killed it**, so every case including (a) the normal directory and (b) the
+empty one starts successfully. (a) emits no warning at all, which the old check also managed
+— but only because `server/www` is non-empty; an empty root used to be slandered.
+
+##### Verify — commands run, real output
+
+Gate constraint honoured: **`make ci`, `make test` and `make corelib` were NOT run.** Every
+program was compiled and run directly with `./tychoc`, as Phases 1–4 did. The changed golden
+was recorded by running the test binary, not by the harness.
+
+13 entry points — every program importing `core:io`, `core:net`, `core:httpd` or
+`core:result` — all green:
+
+```
+ok corelib/test/{httpd,io,net,result}/main.ty
+ok examples/corelib/{httpd,io,net,result}/main.ty
+ok examples/{fetch,site,weblog,webserver}/main.ty
+ok server/main.ty
+```
+
+9 goldens, run then compared:
+
+```
+CHANGED corelib/test/io.out  +4/-1 (+3 net) -- justified: make_dir/remove are new capability,
+                             and the replaced line was the os.system exit code (`mkdir_rc=0`)
+same    corelib/test/{httpd,net,result}.out
+same    examples/corelib/{httpd,io,net,result}.out
+ok      examples/webserver  (sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)")
+```
+
+Live server, `127.0.0.1:18099`, `--workers 4 --idle-ms 800`, Phase 3/4's own driver scripts
+re-run unchanged against a Phase-5 binary. **The full matrix, byte-identical to Phase 4:**
+
+```
+GET /            200 OK  text/html; charset=utf-8  2659     GET /style.css 200 text/css 1726
+GET /data.json   200 OK  application/json           294      GET /nope.html 404  (621)
+HEAD /           200 OK  Content-Length=2659, body=0 bytes   POST /   405, Allow: GET, HEAD
+GET /../../etc/passwd  403 Forbidden                         GET /.git      403 Forbidden
+GARBAGE + terminator       -> 400 Bad Request                      (Malformed)
+Content-Length: 0x10       -> 400 Bad Request                      (smuggling primitive)
+20 KiB head, no terminator -> 431 Request Header Fields Too Large   (reason phrase intact)
+(a) zero-byte hangup           -> no response,  log lines added 0   (Closed, silent)
+(b) partial head then stall    -> 408 Request Timeout, log lines added 1
+(c) connect, idle past 800ms   -> no response,  log lines added 0
+GET /emptydir  -> 301 Location: /emptydir/     GET /emptydir/ -> 404 (no index -- correct)
+GET /about     -> 301 Location: /about/        GET /about/    -> 200 OK (940)
+GET /img       -> 301 Location: /img/
+keep-alive, 3 requests one fd  -> 200 200 200
+50-request flood               -> 50/50 200,  DRIVER-EXIT 0, driver rc=0
+log format unchanged: `w<id> <method> <target> <status> <bytes> <ms>`, all 4 workers seen
+```
+
+**Nothing on the wire moved.** The `431`, the `408`, the silent close, the `301 -> /emptydir/`
+and the log format are identical to Phase 4's captured run; this phase touched startup output
+and the corelib only.
+
+##### Measurements
+
+Non-comment, non-blank code lines, `git show HEAD:<f>` vs working tree (C counted with
+comment lines excluded as well):
+
+| unit | before | after | Δ |
+|---|---|---|---|
+| `server/main.ty` whole file | 371 | **380** | **+9** |
+| the `--root` check inside it | 2 | 11 | +9 |
+| `corelib/io/io.ty` | 76 | 98 | +22 (`make_dir` 11, `remove` 7, 2 externs, 1 const, 1 variant) |
+| `corelib/io/io_shim.c` (code) | 77 | 90 | +13 |
+| `corelib/io/io_shim.c` (raw) | 154 | 203 | +49 (13 code, 36 comment) |
+| `corelib/test/io/main.ty` | 99 | 124 | +25 (`fswhy` 12, the make_dir/remove blocks 13) |
+
+**The application grew by 9 lines, and this is the first phase in the plan where it grew and
+stayed grown.** Phases 1–4 ended at exactly 371. The 9 lines bought four accurate startup
+messages where there was one wrong one — an honest trade, but it is a *cost*, not a saving,
+and it is the opposite of the Goal's "fewer lines of error plumbing". Worth being blunt
+about: `is_dir` made the honest answer *possible* in Phase 4 at zero application lines;
+*saying* it costs one branch per cause, and there are four causes.
+
+35 library code lines (22 Tycho + 13 C) for `make_dir`/`remove`. What they bought is not a
+status code — it is that a corelib test no longer shells out to `/bin/sh` to set up a
+syscall test, and that "make a directory" is finally answerable in Tycho at all.
+
+## Goal verdict — all five phases
+
+*(Phase 3 wrote a verdict for phases 1–3 and Phase 4 amended it in place; both are above,
+inside Phase 3's evidence, and are left as written. This is the final accounting.)*
+
+**Lines — the application:**
+
+| | `server/main.ty` |
+|---|---|
+| before the plan (`eb42c3e`) | 371 |
+| Phase 1 (`556119e`) | 381 (+10) |
+| Phase 2 (`eefc609`) | 390 (+9) |
+| Phase 3 (`296bbc2`) | **371 (−19)** |
+| Phase 4 (`4fa192d`) | **371 (0)** |
+| Phase 5 | **380 (+9)** |
+
+**Net across five phases: +9. There is no line reduction, and there never was one.** The
+Goal asked for "fewer lines of error plumbing"; the measurement says the application ended
+**nine lines longer** than it started. Four phases of error-model work were a wash at 371,
+and the fifth spent 9 lines telling the truth at startup. Everything the plan actually
+achieved is in *what those lines say*, not in how many there are.
+
+**Lines — the library, totalled honestly** (`241c159` → final, non-comment code lines):
+
+| unit | Δ |
+|---|---|
+| `corelib/result/result.ty` | +25 (new file) |
+| `corelib/io/io.ty` | +47 |
+| `corelib/net/net.ty` | +30 |
+| `corelib/httpd/httpd.ty` | +24 |
+| `corelib/io/io_shim.c` | +38 (C code lines) |
+| `corelib/net/net_shim.c` | +18 (C code lines) |
+| **library total** | **+182** |
+
+Plus +178 code lines across the four corelib test programs (`io` +65, `result` +51,
+`httpd` +39, `net` +23). **182 library lines and 178 test lines to move one application
+from 371 lines to 380.**
+
+**What was actually delivered, per Goal clause:**
+
+1. *"a fallible call says so in its type"* — for the **ambiguous** calls only, which is
+   Phase 1's measured recommendation and not the plan's opening premise. `net`'s TCP surface,
+   `io.read_bytes`, `io.is_dir`, `io.make_dir`, `io.remove` and `httpd.read_request` return
+   `Result`. The unambiguous sentinels (`io.write`, `path.safe_join`, `httpd.write_response`)
+   were deliberately left alone, because converting them measured as line-neutral at the call
+   site and pure cost in the package.
+2. *"handling failure at the call site is shorter than ignoring it"* — **not achieved, and
+   not achievable as stated.** `or_return` cannot short-circuit out of a function that
+   returns `Response` or `void`, so the call sites use `match` and `core:result`'s
+   combinators. Handling failure is *clearer* than ignoring it, not shorter.
+3. *"the two known wrong answers fixed"* — **both fixed**, and only one of them by the
+   plan's premise. Malformed-vs-hangup was the error model (Phase 3: `400`/`408`/`431`/silent
+   close). Empty-dir-vs-file was a missing `stat(2)` (Phase 4: `301 -> /emptydir/`), which no
+   return type could ever have fixed.
+4. *"no sentinel-collision bugs left"* — holds. Every remaining sentinel test in
+   `server/main.ty` is a real question, not a failure sniff.
+
+**The comparison the plan should be remembered for:** ~100 corelib lines of error-model
+conversion moved **zero** status codes and reduced **zero** application lines; 14 lines of
+`stat(2)` moved one status code at zero application cost; and 9 application lines bought four
+honest startup messages. Adding a **question** the OS was never asked beat adding a **return
+type** to a question already answered, by two orders of magnitude on cost-per-fix. Phase 1
+predicted that on day one and every later phase measured it again.
+
+**Was the plan worth running?** Yes, for a narrower reason than it opened with. It closed
+**2 of `FRICTION.md`'s 12 phase-7 items** (`read_head` in Phase 3, `stat`/`is_dir` in Phase
+4), made a third expressible, and **created six new items of its own** — of which Phase 5
+closed exactly one (the directory-creation gap Phase 4 surfaced), leaving five open. So the
+running total against the file the plan was written to serve: 2 of 12 original items closed,
+10 untouched, 6 created, 1 of those 6 closed. The error model is better where it was
+ambiguous and unchanged where it was not. That is a much smaller claim than "would remove
+more friction than every other item combined", and it is the one the numbers support.
+
 ## Out of scope
 
+- **Nothing new earned a phase from Phase 5, and it found no new language friction.** Two
+  things were noticed and neither is a phase: (i) `docs/guides/corelib.md` had never been
+  updated with Phase 4's `is_dir` — fixed inside Phase 5, since the same paragraph had to
+  gain `make_dir`/`remove` and it was left asserting that `stat(2)` was still missing;
+  (ii) `io.exists` is still the O(entries) parent-listing version where one `stat` would do,
+  which is already recorded in `FRICTION.md` as a Phase 4 item and stays there, unfixed. No
+  `examples/corelib/io` demo was added for `make_dir`/`remove` — the corelib test covers all
+  five outcomes and an example is not a defect.
 - **Nothing new earned a phase from Phase 3.** Two candidates were considered and both were
   refused rather than absorbed: (i) `httpd.reason_phrase` / `httpd.response()` still cannot
   set a reason phrase, so `408` needed the same positional-`Response` bypass `431` did — a

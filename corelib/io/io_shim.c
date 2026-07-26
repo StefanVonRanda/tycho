@@ -152,3 +152,52 @@ tycho_int iox_stat_kind(const char *path) {
     if (stat(path, &st) != 0) return ty_rf_errno();   /* ENOENT/ENOTDIR -> MISS */
     return S_ISDIR(st.st_mode) ? TY_RF_DIR : TY_RF_OK;
 }
+
+/* One code the read/stat space has no use for: the path is occupied by something
+ * that is NOT a directory, so make_dir cannot have what it asked for. TY_RF_OK
+ * cannot carry it -- OK already means "I did it" below. */
+#define TY_FS_EXISTS 4
+
+/* mkdir(2) the SINGLE directory `path` (0777 & ~umask). Parents are not created:
+ * this is mkdir, not `mkdir -p`, and a missing parent is TY_RF_MISS.
+ *
+ *      TY_RF_OK     (1)  created it
+ *      TY_RF_DIR    (2)  it was ALREADY a directory -- EEXIST, and the caller's
+ *                        goal already holds, so core:io reports it as Ok(false)
+ *      TY_FS_EXISTS (4)  EEXIST on something that is not a directory
+ *      TY_RF_MISS   (0)  a path component does not exist (ENOENT/ENOTDIR)
+ *      TY_RF_ERR    (3)  anything else (EACCES, EROFS, ENOSPC, ELOOP, ...)
+ *
+ * EEXIST is the reason this returns a code and not a bool: "already a directory"
+ * and "a file is in the way" are the same failed mkdir but opposite answers to
+ * the only question a caller has. stat(2) separates them, so ask it -- the same
+ * move iox_stat_kind is, one layer up. Until this function existed there was no
+ * way to make a directory from Tycho at all, so corelib/test/io built one with
+ * os.system("mkdir -p"), i.e. a corelib test shelling out to /bin/sh to set up a
+ * syscall test (plan.md phase 5). */
+tycho_int iox_make_dir(const char *path) {
+    errno = 0;
+    if (mkdir(path, 0777) == 0) return TY_RF_OK;
+    if (errno == EEXIST)                                  /* who is in the way? */
+        return iox_stat_kind(path) == TY_RF_DIR ? TY_RF_DIR : TY_FS_EXISTS;
+    return ty_rf_errno();
+}
+
+/* remove(3) ONE entry: unlink(2) for a non-directory, rmdir(2) for a directory.
+ *
+ *      TY_RF_OK   (1)  it was there and is gone now
+ *      TY_RF_MISS (0)  nothing was there (ENOENT/ENOTDIR) -- core:io reports this
+ *                      as Ok(false), because "make it not exist" already holds
+ *      TY_RF_ERR  (3)  it is there and could not be removed: a NON-EMPTY
+ *                      directory (ENOTEMPTY, or EEXIST on some systems), EACCES,
+ *                      EBUSY, EPERM on a sticky parent, ...
+ *
+ * Deliberately NOT recursive. A tree walk is a different function with a much
+ * worse failure mode, and the one caller that needs cleanup (corelib/test/io)
+ * removes what it made, in order. So ENOTEMPTY is a real error here, and that is
+ * the property that keeps this from being `rm -rf` in a shim. */
+tycho_int iox_remove(const char *path) {
+    errno = 0;
+    if (remove(path) == 0) return TY_RF_OK;
+    return ty_rf_errno();
+}
