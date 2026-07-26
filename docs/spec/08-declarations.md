@@ -35,8 +35,10 @@ const NAME = ConstExpr
 A `const` binds a name to a compile-time constant, at module top level or inside
 a function body. The right-hand side MUST fold to a single literal at compile
 time: a literal, or (for the folding forms) integer arithmetic, bitwise, and
-unary operations over literals and — at top level — backward references to
-earlier top-level constants. A `const` is an immutable named literal, folded at
+unary operations over literals, `+` over two **string** literals, and — at top
+level — backward references to earlier top-level constants. The string form means
+a constant such as `const TERM = "\r\n" + "\r\n"` is one literal, not a run-time
+concatenation ([§3.9.4](01-lexical.md#394-string-literals)). A `const` is an immutable named literal, folded at
 each use site (it has no run-time storage). Reassigning a `const`, or a
 non-constant right-hand side, is an error. A top-level `const` MUST NOT collide
 with a struct, enum, newtype, handle, variant, function, or another constant of

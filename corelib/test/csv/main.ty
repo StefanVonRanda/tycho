@@ -56,7 +56,7 @@ fn main():
     show("qquote    = ", qquote)               # a"b|c
     qnl := "\"a\nb\",c"
     show("qnewline  = ", qnl)                  # a\nb|c
-    crlf := "a,b" + chr(13) + "\nc,d"          # \r has no string escape; build it
+    crlf := "a,b\r\nc,d"                       # `\r` is a string escape since phase 2
     show("crlf      = ", crlf)                 # a|b ; c|d
     qempty := "\"\",x"
     show("qempty    = ", qempty)               # |x

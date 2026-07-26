@@ -386,7 +386,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   `FRICTION.md` entry is left as written: it is a claim about the pre-fix file and the
   strikethrough marks it historical.
 
-- [ ] **Phase 2 — `\r`, multi-line strings, and `const` folding**
+- [x] **Phase 2 — `\r`, multi-line strings, and `const` folding**
   - Items: `FRICTION.md:123` — no `\r` escape in string literals, so the most common byte
     pair in HTTP is a function call (`httpd.crlf()`), and `const TERM = httpd.crlf() +
     httpd.crlf()` is rejected (`error: const value must be a literal`), making the header
@@ -401,6 +401,224 @@ is a completed phase under this plan's Goal, and it is not a failure.
     documents whatever landed.
   - Verify: corelib + 13 entry points compile; 9 goldens match; the HTTP wire bytes are
     unchanged (`server/` live matrix, byte-compared as phases 3–5 of the last plan did).
+
+  #### Phase 2 — DONE. Evidence
+
+  ##### Root cause: the escape set was small because a literal is pasted, not decoded
+
+  All three items share one mechanism, and it is not "the lexer forgot `\r`". A string
+  literal's contents are kept as **raw source text** through the whole compiler
+  (`src/tychoc.c:323-325`, the comment says so) and pasted **verbatim** into the
+  generated C string literal, which the runtime then interns by `strlen`:
+
+  ```c
+  /* src/tychoc.c:8671 -- one site, and it pastes e->sval straight through */
+  return sfmt("({ static char *_l = 0; if (!_l) _l = tycho_str_intern(\"%s\"); _l; })", e->sval);
+  /* runtime/tycho_rt.c:1005 */
+  size_t n = strlen(s);
+  ```
+
+  So the escape set is exactly **the set of escapes C spells the same way and that are
+  two characters wide**. `\r` qualifies, which is why it cost **one character**
+  (`e != 'r'` added at `src/tychoc.c:382`). `\0` and `\xNN` do not, and that is a
+  refusal with a number, not a shrug — see below.
+
+  The same two-characters-wide property is what makes the other two items **text**
+  operations rather than value operations: concatenating two literals' raw texts is
+  concatenating their values, because no escape can absorb a byte across the seam.
+
+  ##### What landed (3 edits, `src/tychoc.c`: +31 / −3 = **+28 lines**, of which 9 are code)
+
+  | # | change | site | code lines |
+  |---|---|---|---|
+  | 1 | `\r` in the string escape set + the diagnostic text | `src/tychoc.c:373-382` | 2 |
+  | 2 | adjacent string literals join (`"a" "b"` → `"ab"`) | `src/tychoc.c:2164-2165` | 2 |
+  | 3 | `const_fold` folds `+` over two `E_STR` | `src/tychoc.c:4006-4012` | 5 |
+
+  The rest of the +28 is the comment block explaining why the escape set is what it is.
+  **Multi-line strings needed no new delimiter**, and this is the finding worth keeping:
+  implicit line-joining inside `(`…`)` / `[`…`]` **already existed** — `tests/multiline_literals.ty:1-2`
+  is a committed fixture for it — so item `FRICTION.md:124` was half solved before the
+  phase started and only the *literal* half was missing. `("a\n"` newline `"b\n")` is the
+  form; `f"a" "b"` and `"a" f"b"` still fail, deliberately, because an f-string is already
+  sugar for a `+` chain.
+
+  ##### Refused, with the number: `\0` and `\xNN`
+
+  Not "out of scope" — mechanically blocked by the paste-through emit path, measured by
+  reading the three functions that would have to change: the lexer's pass-through becomes
+  a decode-to-bytes (`src/tychoc.c:319-400`); the one emit site that pastes the text needs
+  a `\xNN`-emitting re-escaper next to the 10-line one already there (`:8671`, escaper at
+  `:11722-11734`); and `tycho_str_intern` needs a length-carrying twin, because its
+  contract is literally "a C string, `strlen`-bounded" (`runtime/tycho_rt.c:1000-1012`).
+  **3 functions changed + 1 new runtime entry point, on the order of 35 lines.** A `\0`
+  would silently truncate the interned length and `"\x41" "1"` would lex in C as `\x411`
+  — both are corruption, not diagnostics, which is why they are refused rather than
+  half-added. Both still reject cleanly:
+
+  ```
+  n1/main.ty:2: error: unsupported escape \0 (use \n \t \r \\ \")
+  n2/main.ty:2: error: unsupported escape \x (use \n \t \r \\ \")
+  n3/main.ty:3: error: expected ')'      <- f"a{x}" "b", an f-string never joins
+  n4/main.ty:2: error: expected ')'      <- "a" f"b", same
+  ```
+
+  ##### Scratch program: `"\r\n"` vs `httpd.crlf()`, byte for byte
+
+  Own directory (`FRICTION.md:141`). All five assertions, then `od -c` on the joined head:
+
+  ```
+  lit           = CR LF, len 2
+  lit == httpd.crlf()            byte for byte
+  local const fold == crlf()     byte for byte
+  const TERM == crlf()+crlf()    len 4, one literal
+  multi-line join == 1 literal  len 36
+  joined head, CRLF every seam   == crlf() build
+
+  0000020   .   1       2   0   0       O   K  \r  \n   C   o   n   t   e
+  0000040   n   t   -   L   e   n   g   t   h   :       2  \r  \n  \r  \n
+  ```
+
+  `const TERM = "\r\n" + "\r\n"` is the exact spelling `FRICTION.md:123` recorded as
+  rejected; it compiles and folds to one 4-byte literal.
+
+  ##### THE CONSTRAINT THAT SHAPED THE PHASE: the frozen `tychoc0` owns the corelib
+
+  `httpd.crlf()` is **kept deliberately**, and not for compatibility — because it is
+  **impossible** to write the literal there. `examples/webserver/run.sh:20-27` builds
+  `examples/webserver/main.ty` (which `import`s `core:httpd`) with the FROZEN `tychoc0`
+  and asserts `tychoc == tychoc0 == golden`, and `compiler/tychoc0.ty:195` rejects `\r`:
+  `lex: unsupported string escape (use \n \t \\ \")`. The frozen compiler's reach was
+  mapped before touching anything, by reading the globs rather than guessing:
+
+  | reached by `tychoc0` (literal FORBIDDEN) | why |
+  |---|---|
+  | `corelib/httpd`, `net`, `io`, `result`, `strings`, `sort`, `markdown` | imported by `examples/webserver/main.ty:17-23` |
+  | `tests/*.ty`, `tests/pkg/*/main.ty`, `examples/*.ty` | `compiler/fixpoint.sh:24`,`:34` |
+  | + `tests/{conc,warn,abort,diag}/*.ty`, `tools/*.ty` | `scripts/frontparity.sh:127-128` |
+  | **NOT reached (literal used here)** | |
+  | `server/`, `corelib/test/*/`, `examples/corelib/*/` | no runner feeds them to `tychoc0` |
+
+  So `tools/lsp.ty:256`'s `"" + '\r' + '\n'` is kept too, with the reason written into the
+  file. Verified, not assumed: **`sh scripts/frontparity.sh` → `agreed: 288 diverged: 0`**
+  after the change. That number is the proof the constraint was respected rather than
+  merely acknowledged.
+
+  ##### Sites updated — the half that actually closes the items
+
+  | file | what changed | lines |
+  |---|---|---|
+  | `server/main.ty` | `error_body`: 12 `s +=` → **one** parenthesized expression; `usage`: 11 `s +=` → one | 596 → **600** total, **378 → 378 code** |
+  | `corelib/httpd/httpd.ty` | `crlf()` KEPT + 9-line reason; `read_request_capped` hoists `term := crlf() + crlf()` out of the read loop (`:239`) | 430 → **441** |
+  | `corelib/test/httpd/main.ty` | local `fn crlf()` deleted → `nl := "\r\n"` | 201 → **198** |
+  | `examples/corelib/httpd/main.ty` | same | 73 → **70** |
+  | `corelib/test/csv/main.ty` | `"a,b" + chr(13) + "\nc,d"` → `"a,b\r\nc,d"` | −0 |
+  | `corelib/test/strings/main.ty` | `chr(13) + chr(10)` → `"\r\nb"` inside the literal | −0 |
+  | `tests/reject/string_escape.ty` | comment: the set is `\n \t \r \\ \"` now | −0 |
+
+  **Honest on `server/main.ty`: it did not get shorter** — 378 code lines before and
+  after. The win is 23 statements collapsing into 2 expressions with no mutable
+  accumulator, and it is measurable in the emitted C: `tycho_str_concat` sites go
+  **145 → 138**, because every run of static markup is now one interned literal instead
+  of a run-time append. `usage()`'s output is byte-identical (`cmp` of `--help` from a
+  binary built from `git show HEAD:server/main.ty` vs the new one: **identical, 526 bytes**).
+  The `term` hoist removes two allocations and a concat **per read-loop iteration**, which
+  is the cost `FRICTION.md:123` actually named.
+
+  ##### Spec (citation-gated tree, so all four gates were run)
+
+  `docs/spec/01-lexical.md` §3.9.4 rewritten: `StrLit ::= StrPiece StrPiece*`,
+  `StrEscape` gains `"r"`, the multi-line form documented with a `tycho` example, the
+  f-string non-join stated, and the raw-text soundness argument written down as the
+  reason `\0`/`\xNN` are absent. §12.2 in `docs/spec/08-declarations.md` gains the string
+  fold. `docs/spec/appendix-a-grammar.md` regenerated (it is GENERATED from the in-chapter
+  EBNF — `make spec-check` caught the drift, which is that gate doing its job).
+  `appendix-e-conformance.md` gains two rows **and a note saying why neither form has a
+  `tests/` fixture**, since `tests/*.ty` is frozen-`tychoc0` territory.
+
+  ##### Gate spend: `make ci` and `make test` — **NOT run.** The day's single run was
+  spent by phase 1 (commit `5187724`). Verified by hand, every command below actually run:
+
+  ```
+  ok compile corelib/test/{httpd,io,net,result}/main.ty
+  ok compile examples/corelib/{httpd,io,net,result}/main.ty
+  ok compile examples/{fetch,site,weblog,webserver}/main.ty
+  ok compile server/main.ty                        -- 13 entry points, 0 failures
+  same corelib/test/{httpd,io,net,result}.out
+  same examples/corelib/{httpd,io,net,result}.out  -- 8 goldens byte-identical
+  sh examples/webserver/run.sh -> "webserver: ok (tychoc == tychoc0 == golden)"   -- 9th
+  sh corelib/run.sh            -> "corelib: all green (tychoc matches goldens)"   -- incl. csv, strings
+  sh examples/corelib/run.sh   -> "corelib examples: all green"
+  sh scripts/tools_check.sh    -> "tools-check: ok"  (810 files, idempotence-fails=0 semantic-fails=0)
+  python3 scripts/check_citations.py -> ok (22 anchored, 1367 bare)
+  sh scripts/spec_check.sh     -> Appendix A matches; Appendix E resolves; 7 examples pass
+  sh scripts/check_links.sh    -> ok (128 markdown files)
+  sh scripts/frontparity.sh    -> agreed: 288  diverged: 0
+  ```
+
+  The formatter lane is worth naming: **810 files, 0 idempotence and 0 semantic failures
+  with the new adjacent-literal syntax live in `server/main.ty`** — `tychofmt` needed no
+  change, because joining happens in the parser and the formatter is token-preserving.
+
+  ##### The wire is unchanged, byte-compared against HEAD's own binary
+
+  Stronger than comparing to a transcript: the HEAD `server/main.ty` was built with the
+  **new** compiler (all three changes are strictly additive, so HEAD's source is unaffected
+  by them) and both binaries were driven over the recorded matrix on `127.0.0.1:18099`,
+  `--workers 4 --idle-ms 800`, with the previous plan's own raw-socket driver reused
+  unmodified. Every response captured to a file and `cmp`'d:
+
+  ```
+  identical  200_index.raw  (2846 bytes, Date masked)   identical  400.raw  (801)
+  identical  404.raw        (789)                        identical  403.raw  (797)
+  identical  405.raw        (842)                        identical  431.raw  (870)
+  identical  301.raw        (253)
+  all responses byte-identical except Date: 1 (1 = yes)
+  CR bytes per response, old vs new: 404 7/7  403 7/7  405 8/8  400 7/7  431 7/7  301 8/8  200 8/8
+  ```
+
+  The only differing bytes in the raw capture were the `Date:` header (`07:32:02` vs
+  `07:26:16`) — the two runs were six minutes apart; `od -c` of the 404 head confirms the
+  divergence starts and ends inside that one line. The live transcripts are identical
+  case for case with per-request timings masked:
+
+  ```
+  GET /            200 2659 text/html         GET /style.css 200 1726 text/css
+  GET /data.json   200 294  application/json  GET /nope.html 404 621
+  HEAD /           200 Content-Length=2659 body=0     POST /  405 Allow: GET, HEAD
+  GET /../../etc/passwd 403
+  GARBAGE -> 400        Content-Length: 0x10 -> 400
+  20 KiB head, no terminator -> 431 Request Header Fields Too Large
+  (a) zero-byte hangup        -> no bytes, log lines added 0
+  (b) partial head then stall -> 408 Request Timeout, log lines added 1
+  (c) connect, idle past 800ms -> no bytes, log lines added 0
+  GET /emptydir -> 301 Location: /emptydir/ 56   /about -> 301 /about/   /img -> 301 /img/
+  GET /favicon.ico -> 200 441 image/x-icon
+  keep-alive 3 requests on ONE fd -> 200 200 200     50-request flood -> 50/50 200
+  access log: all 4 workers seen (w1 w2 w3 w4), format `w<id> <method> <target> <status> <bytes> <ms>`
+  clean exit: SIGTERM -> wait status 143 (= 128+15)
+  diff of the two full transcripts, timings masked: IDENTICAL, case for case
+  ```
+
+  ##### Citation gate, because `src/tychoc.c` grew 28 lines
+
+  Eleven anchored citations staled by exactly **+28** (`7208`→`7236`, `7233-7234`→`7261-7262`,
+  `11549-11554`→`11577-11582`, `11808`→`11836`), across `docs/spec/15-program.md`,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` and
+  `docs/internals/plan-front-door-DONE.md`. Proven to be **my** redness before shifting
+  anything: `git show HEAD:src/tychoc.c | sed -n '7208p;7233,7234p;11549,11554p;11808p'`
+  contains all four cited tokens, and `git diff --numstat` reports `31 3` = +28. Shifted by
+  the measured delta; gate green again. Same failure mode phase 1 hit, same fix.
+
+  ##### Out of scope, found, not absorbed
+
+  - **No `tests/` fixture is possible for either new form** while `compiler/fixpoint.sh:24`
+    and `scripts/frontparity.sh:127` feed `tests/*.ty` to the frozen `tychoc0`. Recorded in
+    `docs/spec/appendix-e-conformance.md` and in `FRICTION.md`, and it is a **consequence**
+    of the freeze this plan already lists as deliberately-kept debris — not new work. The
+    coverage that does exist is golden-validated (`make corelib`, `server/`).
+  - Nothing else found. `scripts/tools_check.sh`, `spec_check.sh`, `check_links.sh`,
+    `check_citations.py` and `frontparity.sh` were all green at the end of the phase.
 
 - [ ] **Phase 3 — nested patterns, and `Result` in a tuple literal**
   - Items: `FRICTION.md:139` — there are **no nested patterns**: `Err(net.Timeout)` is

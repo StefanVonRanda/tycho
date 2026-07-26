@@ -91,8 +91,17 @@ fn trim(s: string) -> string:
         b = b - 1
     return s[a:b]
 
-# CR-LF, the HTTP line terminator. tycho strings have no `\r` escape, so the CR
-# (byte 13) is built with chr() rather than written as a literal.
+# CR-LF, the HTTP line terminator.
+#
+# `"\r\n"` IS a string literal since plan.md phase 2, so this function is no longer
+# forced -- it is KEPT DELIBERATELY, and this package must keep using it. `core:httpd`
+# is compiled by the FROZEN self-hosted `tychoc0` (`examples/webserver/run.sh` imports
+# this package and asserts `tychoc == tychoc0 == golden`), and tychoc0's lexer rejects
+# `\r`: `compiler/tychoc0.ty:195`, "lex: unsupported string escape (use \n \t \\ \")".
+# Writing the literal here would break that comparison at a file that is frozen and
+# must not be edited. It also stays a public entry point that callers already use
+# (`examples/webserver/main.ty:237`). Use `"\r\n"` in any program tychoc0 does not
+# compile -- `server/main.ty` and `corelib/test/`, for instance.
 fn crlf() -> string:
     return chr(13) + chr(10)
 
@@ -231,8 +240,10 @@ fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     reading := true
     why := Failed                               # the transport cause, if one ends the read
     cut := false                                # a read failed before the head was complete
+    term := crlf() + crlf()                     # hoisted: two allocations + a concat per
+                                                # loop iteration otherwise (FRICTION.md:123)
     for reading:
-        he := find(buf, crlf() + crlf())
+        he := find(buf, term)
         if he >= 0 and need < 0:
             # Only the Content-Length matters here, and a malformed head has no
             # headers to read one from -- so collapsing the Result to an empty
@@ -262,7 +273,7 @@ fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     # above: with no terminator in `buf`, either a read failed (cut) or the cap was
     # reached. `buf` goes back either way -- Ok or Err.
     out: Result(Request, ReqErr) = Err(TooLarge)
-    if find(buf, crlf() + crlf()) < 0:
+    if find(buf, term) < 0:
         if cut:
             out = Err(why)                      # no complete head: the transport reason wins
     else:

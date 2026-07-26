@@ -1,5 +1,7 @@
 # An unknown string escape -- here `\ ` (backslash-space) -- is invalid: only
-# \n \t \\ \" are valid string escapes. tychoc rejected this at lex time, but
+# \n \t \r \\ \" are valid string escapes (`\r` was added by plan.md phase 2;
+# tychoc0 stops at \n \t \\ \" and this fixture is chosen to be rejected by
+# both). tychoc rejected this at lex time, but
 # tychoc0 silently ACCEPTED it (fail-open: it skipped the escaped byte without
 # validating, then emitted a C string literal gcc would mangle). The reject-fuzzer
 # surfaced it as an accept/reject divergence (divergence_6). Both lexers now reject.

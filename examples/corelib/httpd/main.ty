@@ -6,9 +6,6 @@ import "core:net"
 import "core:httpd"
 import "core:result"
 
-fn crlf() -> string:                    # tycho strings have no \r escape
-    return chr(13) + chr(10)
-
 # The socket half of the demo. It returns Result(_, net.NetErr) -- the same error
 # type every core:net TCP call and httpd.write_response return -- so `or_return`
 # handles every failure and the body has no sentinel checks at all.
@@ -37,7 +34,7 @@ fn round_trip(nl: string) -> Result(int, net.NetErr):
     return Ok(asked + answered)
 
 fn main():
-    nl := crlf()
+    nl := "\r\n"                        # a literal since plan.md phase 2
 
     # --- parse a request (no socket needed) ---
     raw := "GET /hello?name=ada HTTP/1.1" + nl + "Host: localhost" + nl + "Accept: text/plain" + nl + nl

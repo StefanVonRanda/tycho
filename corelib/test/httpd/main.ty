@@ -13,9 +13,6 @@ fn b(x: bool) -> int:
         return 1
     return 0
 
-fn crlf() -> string:                             # no \r escape in tycho strings
-    return chr(13) + chr(10)
-
 # core:net's TCP calls and httpd.write_response return Result(_, net.NetErr), and
 # httpd.parse_request / read_request return Result(Request, httpd.ReqErr). main()
 # is void so `or_return` cannot short-circuit out of it, and every call here is on
@@ -49,7 +46,7 @@ fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
 
 fn main():
     # ---- pure parsing (no socket): a request with headers + body ----
-    nl := crlf()
+    nl := "\r\n"                                 # a literal since plan.md phase 2
     raw := "POST /submit?id=7 HTTP/1.1" + nl + "Host: localhost" + nl + "Content-Type: application/json" + nl + "Content-Length: 13" + nl + nl + "{\"a\":\"hello\"}"
     p := rq(httpd.parse_request(raw))
     println("method = " + p.method)
