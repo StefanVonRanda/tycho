@@ -547,7 +547,7 @@ above) — acting on it is Phase 3, which is what Phase 3 is now scoped to.
   ~10 lines of `net` Result plumbing on top of this phase's own changes. Its golden
   (`examples/webserver/expected.out`) now matches for the first time since Phase 1.
 
-- [ ] **Phase 3 — REWRITTEN by Phase 2: act on the reasons, and drop `read_head`**
+- [x] **Phase 3 — REWRITTEN by Phase 2: act on the reasons, and drop `read_head`**
   - **Both halves have moved.** Phase 1 made the transport reason *expressible*; Phase 2
     put it in `httpd.read_request` (`Malformed` / `Closed` / `Timeout` / `Failed`, all four
     measured in `corelib/test/httpd.out`) and, as a side effect of `io.read_bytes`
@@ -579,8 +579,272 @@ above) — acting on it is Phase 3, which is what Phase 3 is now scoped to.
     distinction is exercised against a live server with captured output, and every golden
     still matches.
 
+#### Phase 3 evidence — 2026-07-26
+
+**`read_head` and `struct Head` are gone.** The 19 code lines and the local struct are
+replaced by **one** line:
+
+```tycho
+got, raw := httpd.read_request_capped(conn, MAX_HEAD)
+```
+
+`term()` went with them (2 more lines — it existed only because both the read loop and its
+caller had to search for CRLF CRLF themselves), and so did `const CHUNK`.
+
+##### The raw-buffer decision: THREE shapes measured, the tuple won
+
+The phase named two options. Checking `docs/spec/03-types.md:193` and
+`docs/spec/02-grammar.md:137` before asserting anything surfaced a third: Tycho **has
+tuples** (anonymous products, 2–8 elements), so a function can return two values. All three
+were compiled, not reasoned about:
+
+| shape | corelib cost | call site | verdict |
+|---|---|---|---|
+| **(b) keep a thin local read** — i.e. git HEAD, unchanged | 0 | 21 lines (`read_head` 19 + `term()` 2), a duplicate of the corelib's own loop, and the `Head` struct | rejected — it fails the phase's Done-when, and it is *already measured live*: the BEFORE run below is this option in production |
+| **(a-i) cap param + `raw: inout string`** | +8 | **2** lines (`raw := ""` then the call) | rejected — the dummy `""` initializer is exactly the "pre-seed a value that means nothing" habit this plan exists to remove |
+| **(a-ii) cap param + tuple return** | +11 | **1** line | **chosen** |
+
+Option (b) is not a thought experiment: `git archive HEAD` was built and driven, and it is
+the BEFORE column below. It was *capable* of the `408` — Phase 1 gave its `read_head` a
+`why: net.NetErr` — so the choice was never about capability. It was about 21 lines of
+duplicated corelib loop living in an application, and about the fact that the cap and the
+raw buffer are things **every** server needs and only this one had.
+
+The tuple cost +3 corelib lines over `inout` and saved 1 line per call site, and it
+surfaced a real compiler limitation (recorded in `FRICTION.md`): a tuple literal will not
+infer a `Result` element —
+
+```
+httpd.ty:7: error: tuple element 1 needs a concrete value
+     7 |         return (Err(A), "partial")
+```
+
+— so the outcome is built in a typed local (`out: Result(Request, ReqErr) = Err(TooLarge)`)
+and returned as `(out, buf)`. That is the +3.
+
+**The `431` decision moved into the corelib as a fifth `ReqErr` variant, `TooLarge`**, and
+the cap became a parameter (`MAX_REQUEST = 1048576` is now a named default rather than a
+magic number inside the loop). `len(raw) >= MAX_HEAD` in the application is gone. **`431`
+did not regress** — measured on the wire below, reason phrase included.
+
+##### The `stat` decision: NOT written, and here are the numbers
+
+`resolve()` still cannot ask "is this a directory". Measured against the live server, all
+four directory shapes, document root with `about/` and `img/` populated and `emptydir/`
+empty:
+
+```
+GET /about       -> 301 Moved Permanently   Location: /about/
+GET /about/      -> 200 OK
+GET /img         -> 301 Moved Permanently   Location: /img/
+GET /emptydir    -> 404 Not Found      <- a stat would make this 301 -> /emptydir/
+GET /emptydir/   -> 404 Not Found      <- and the redirect would land HERE
+```
+
+**The reason it is left undone: both shapes terminate at the same `404`.** An empty
+directory has no `index.html` by definition, so the redirect a `stat` would buy leads to
+the identical status the client already got — one intermediate hop, no content withheld and
+none misserved. Against that, `io.stat`/`io.is_dir` is a new C shim, a new FFI extern, a new
+`io.ty` wrapper and a golden change, in a phase whose Done-when does not mention it. The
+plan explicitly licensed leaving it, the measurement agrees, and the reason is now written
+into `server/main.ty`'s `resolve()` where the next reader will hit it.
+
+##### The four causes, ACTED ON — live server, captured output
+
+`127.0.0.1:18099`, `--workers 4`, `--idle-ms 800` (short so the timeout cases finish),
+document root a copy of `server/www` plus an empty `emptydir/`. Driven by raw sockets
+(`python3`, no HTTP client) so the hostile cases are exact.
+
+```
+== normal traffic ==
+GET /                 200 OK   text/html; charset=utf-8   2659 bytes
+GET /style.css        200 OK   text/css; charset=utf-8    1726 bytes
+GET /nope.html        404 Not Found
+GET /emptydir         404 Not Found                       (was a 0-byte 200 pre-phase-2)
+GET /../../etc/passwd 403 Forbidden
+HEAD /                200 OK   Content-Length=2659, body=0 bytes
+POST /                405 Method Not Allowed   Allow: GET, HEAD
+
+== malformed / hostile ==
+GARBAGE\r\n\r\n              -> HTTP/1.1 400 Bad Request                      (Malformed)
+Content-Length: 0x10         -> HTTP/1.1 400 Bad Request                      (smuggling)
+20 KiB head, no terminator   -> HTTP/1.1 431 Request Header Fields Too Large  (TooLarge)
+
+== keep-alive ==   3 requests on ONE fd -> 200 200 200
+== flood ==        50/50 200,  python driver exit 0
+```
+
+**The distinction this phase exists for, with the log lines that prove it:**
+
+```
+(a) connect, send ZERO bytes, hang up          -> Err(httpd.Closed)
+    response: none            server log lines added: 0     <-- silent, as required
+(b) partial head, then stall past --idle-ms    -> Err(httpd.Timeout), raw non-empty
+    response: HTTP/1.1 408 Request Timeout     server log lines added: 1
+(c) connect, send nothing, let --idle-ms fire  -> Err(httpd.Timeout), raw EMPTY
+    response: none            server log lines added: 0     <-- keep-alive idle expiry
+```
+
+The access log, four hostile lines out of 65, showing the causes are separated on stderr
+and the log FORMAT is unchanged (`w<id> <method> <target> <status> <bytes> <ms>`):
+
+```
+w4 - GARBAGE. 400 631 0.049ms
+w1 - GET / HTTP/1.1. 400 631 0.045ms          # bad Content-Length
+w2 - GET /toobig HTTP/1.1. 431 680 0.046ms    # TooLarge -> 431, reason phrase intact
+w4 - GET /stall HTTP/1.1. 408 661 0.163ms     # Timeout with bytes in flight -> 408
+```
+
+`first_line(raw)` is what puts `GET /stall HTTP/1.1` in that last line. It is the second
+job the tuple's raw buffer does, and without it the `408` and the `431` would log `-`.
+
+**(c) is a deliberate decision, not an oversight.** `Err(Timeout)` alone is not enough to
+choose: a deadline that expires with an empty buffer is keep-alive idle expiry, which no
+client is waiting on (nginx closes quietly there too), while one that expires mid-request is
+a stalled request and `408` is the honest answer. The test is `len(raw) > 0` — and note that
+this is *not* a sentinel sniff of the kind this plan removes: it asks a real question ("did
+the peer begin a request") of a buffer we legitimately hold, and the *cause* still comes
+from the type.
+
+##### The behaviour change, measured against the phase-2 binary
+
+The one case Phase 2's evidence flagged as "the new information is not acted on yet" — a
+peer that sends half a request line and hangs up. Both binaries, same document root,
+`git archive HEAD | tar -x` for the BEFORE:
+
+```
+BEFORE (git HEAD = eefc609, phase 2):
+  response: HTTP/1.1 400 Bad Request
+  log lines added: 1     w1 - GET /partial HTTP/1.1. 400 631 0.089ms
+AFTER (this phase):
+  response: <no bytes at all>
+  log lines added: 0
+```
+
+**That is a deliberate, stated change**, not a side effect: the peer is gone, so a `400` is
+written to a socket nobody is reading and a line is logged for a request nobody made.
+`httpd.read_request` calls it `Closed` (proven distinct in `corelib/test/httpd.out` since
+Phase 2) and `serve_conn` now acts on it. `431` and the log format are unchanged; `408` is
+new.
+
+##### Measurements
+
+Non-comment, non-blank code lines, `git show HEAD:<f>` vs working tree:
+
+| unit | before | after | Δ |
+|---|---|---|---|
+| `server/`'s `read_head` + `struct Head` + `term()` | 21 | **1** (the call) | **−20** |
+| `server/`'s `serve_conn` | 71 | 69 | −2 |
+| `server/`'s deepest indent inside `serve_conn` | 40 cols | **32 cols** | **−2 levels** |
+| `server/`'s `oversize_response` → `phrased_response` + 2 callers | 5 | 8 | +3 (`408` needs the same `reason_phrase` bypass `431` did) |
+| `server/main.ty` whole file | 390 | **371** | **−19 (−4.9%)** |
+| `httpd.read_request` → `read_request` + `read_request_capped` + `MAX_REQUEST` | 30 | 39 | +9 |
+| `corelib/httpd/httpd.ty` whole file | 237 | 248 | +11 (+9 above, +1 `TooLarge`, +1 blank-free rounding) |
+
+**Phase 2's +11 on `serve_conn` was handed back and then some.** Phase 2 paid an
+indentation level because `match httpd.parse_request(raw)` had to wrap the whole
+request-handling body; `read_request_capped` parses inside the same call, so that level is
+gone (40 → 32 columns) and the block it wrapped is back at its pre-phase-2 depth.
+
+##### Verify — commands run, real output
+
+Gate constraint honoured: **`make ci`, `make test` and `make corelib` were NOT run.** Every
+program was compiled and run directly with `./tychoc`, as Phases 1 and 2 did.
+
+13 entry points, every program in the tree importing `core:io`, `core:net`, `core:httpd` or
+`core:result` — all green:
+
+```
+ok corelib/test/{httpd,io,net,result}/main.ty
+ok examples/corelib/{httpd,io,net,result}/main.ty
+ok examples/{fetch,site,weblog,webserver}/main.ty
+ok server/main.ty
+```
+
+`examples/webserver/main.ty` — the one Phase 1 left uncompilable — still builds, and its
+golden still matches (`sh examples/webserver/run.sh` → `webserver: ok (tychoc == tychoc0 ==
+golden)`).
+
+9 goldens, run then `cmp`:
+
+```
+same corelib/test/{httpd,io,net,result}.out
+same examples/corelib/{httpd,io,net,result}.out
+same examples/webserver/expected.out
+```
+
+**Not one golden moved.** The whole change is in a function no test drives with a cap
+smaller than 1 MiB, so the fifth `ReqErr` variant is unobservable to them — which is the
+right outcome for a phase that must not regress anything.
+
+##### The plan's own Goal, settled — the honest verdict
+
+The Goal's bar was: `server/main.ty` rewritten against the new surface and **measurably
+better** — fewer lines of error plumbing, no sentinel-collision bugs left, the two known
+wrong answers fixed. Against that bar, with the real numbers:
+
+**Lines: a wash, and the wash is the finding.**
+
+| | `server/main.ty` |
+|---|---|
+| before the plan (`eb42c3e`) | 371 |
+| Phase 1 (`556119e`) | 381 (+10) |
+| Phase 2 (`eefc609`) | 390 (+9) |
+| Phase 3 (this commit) | **371 (−19)** |
+
+**Net across three phases: zero.** The application ended exactly where it started. What it
+bought is not fewer lines — it is that the 371 lines now include a `408`, a silent close, a
+`431` from a named cause, and a `404` where a 0-byte `200` used to go out, and they no
+longer include a reimplementation of the standard library. Clarity went up; the line count
+did not go down. **The plan's standard is measurement, and the measurement says "no
+reduction".**
+
+The corelib is where the lines went: `net.ty` +30, `io.ty` +15, `httpd.ty` +30,
+`result.ty` +25 new — **about +100 code lines of library** to make one 371-line application
+say the true thing. Phase 1's finding stands and is worth repeating as the plan's own
+verdict: **converting an ambiguous sentinel pays; converting an unambiguous one is
+line-neutral at the call site and pure cost in the package.** Roughly 20 of `net.ty`'s +30
+bought nothing and would not be done again.
+
+**Sentinel-collision bugs: none left in `server/main.ty`.** Every remaining sentinel test in
+the file is a genuine question, not a failure sniff: `n < 0` on `emit` is `unwrap_or`'s
+chosen fallback, `len(raw) > 0` asks whether the peer spoke, `fsp == ""` is
+`path.safe_join`'s documented fail-closed contract. `if len(x) == 0` meaning "it failed" is
+gone.
+
+**The two known wrong answers: one fixed, one half-fixed and the residue is not a
+return-type problem.**
+
+1. **malformed-vs-hangup — FIXED, end to end, and the only one of the two the plan's premise
+   could ever have fixed.** `Malformed` → `400`, `Closed` → nothing at all, `Timeout` → `408`
+   or a quiet close depending on whether a request had begun, `TooLarge` → `431`. Measured
+   live above, and before/after against the phase-2 binary.
+2. **empty-dir-vs-file — the wrong answer is fixed, the wrong *status* is not.** The
+   documented 0-byte `200` became a `404` in Phase 2 (measured against a `556119e` binary).
+   What remains is `GET /emptydir` answering `404` where `301 -> /emptydir/` would be
+   correct — and that is a missing `stat` syscall, exactly as Phase 1 predicted on day one.
+   No `Option`, no `Result` and no error enum can express a question the OS was never asked.
+   Measured this phase: both shapes end at the same `404`, so it is left undone on purpose.
+
+**Was the plan worth running?** Yes, but for a narrower reason than the premise claimed.
+`FRICTION.md`'s verdict was that adopting `Option`/`Result` "would remove more friction than
+every other item combined". Measured: it removed **one** item completely (the `read_head`
+reimplementation, which was the headline's own example) and made a second expressible, at a
+cost of ~100 corelib lines and **five new ergonomic gaps** now recorded in `FRICTION.md` —
+no `unwrap_or` (fixed, `core:result`), no nested patterns, no `map_err`, qualified names
+unresolvable in generic argument lists, and no `Result` inference in a tuple literal. The
+error model is better where it was ambiguous and unchanged where it was not, which is a
+smaller claim than the one the plan opened with and the one the evidence supports.
+
 ## Out of scope
 
+- **Nothing new earned a phase from Phase 3.** Two candidates were considered and both were
+  refused rather than absorbed: (i) `httpd.reason_phrase` / `httpd.response()` still cannot
+  set a reason phrase, so `408` needed the same positional-`Response` bypass `431` did — a
+  ~5-line corelib fix, but it is a `FRICTION.md` phase-7 item and not this plan's subject, so
+  it is recorded there as "bit a second time" and left; (ii) `io.stat` / `io.is_dir`, measured
+  and deliberately left undone (see Phase 3's evidence). The three new compiler limitations
+  Phase 3 found are recorded in `FRICTION.md`, unfixed, as the anti-scope requires.
 - The rest of `FRICTION.md`. It is a deliverable, not a queue: `\r` escapes, multi-line
   strings, `cli` argument spelling, `die()` always exiting 1, `getpeername`, `bytes`
   having no operators — all real, none of them this plan's subject. They stay recorded.

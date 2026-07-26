@@ -52,6 +52,7 @@ enum ReqErr:
     Closed             # the peer hung up before a complete request arrived
     Timeout            # the socket read deadline expired (net.set_read_timeout_ms)
     Failed             # the socket read failed (reset, bad fd, ...)
+    TooLarge           # the cap was reached with no header terminator in sight -> 431
 
 struct Request:
     method: string        # "GET", "POST", ...
@@ -173,6 +174,11 @@ fn cause_of(e: net.NetErr) -> ReqErr:
         return Timeout
     return Failed
 
+# The default cap for read_request: the most a single request may occupy in
+# memory before the head must have terminated. A server with a tighter budget
+# passes its own to read_request_capped -- server/main.ty uses 16 KiB.
+const MAX_REQUEST = 1048576
+
 # Read one request off a connected socket and parse it. Reads until the header
 # terminator and then exactly Content-Length body bytes (or EOF), bounded so a
 # truncated/hostile peer can't spin forever.
@@ -183,8 +189,9 @@ fn cause_of(e: net.NetErr) -> ReqErr:
 #   Err(Timeout)    the read deadline expired (net.set_read_timeout_ms) first
 #   Err(Failed)     the socket read failed
 #   Err(Malformed)  a complete head arrived and is not a valid request
+#   Err(TooLarge)   `cap` bytes arrived with no header terminator among them
 #
-# All four were `method == ""` before 2026-07-26, which is why server/main.ty
+# All of them were `method == ""` before 2026-07-26, which is why server/main.ty
 # reimplemented this loop just to answer 400 to garbage and stay silent on a
 # hangup (FRICTION.md, phase 7). A keep-alive loop that does not care can still
 # close on one test: `result.is_err(read_request(fd))`.
@@ -198,6 +205,27 @@ fn cause_of(e: net.NetErr) -> ReqErr:
 # (sends request 2 before reading response 1) can still have bytes consumed
 # inside the pre-header 4 KiB read; pipelining is not supported.
 fn read_request(fd: int) -> Result(Request, ReqErr):
+    got, raw := read_request_capped(fd, MAX_REQUEST)
+    return got
+
+# read_request, plus the two things a real server needs and a Result alone cannot
+# carry (plan.md phase 3):
+#
+#   `cap`         the byte budget for one request. Reaching it with no header
+#                 terminator is Err(TooLarge) -- the 431 decision, which used to
+#                 be `len(raw) >= MAX_HEAD` in the caller's own reimplemented
+#                 read loop.
+#   the 2nd value every byte read, on Err as much as on Ok. An access log has to
+#                 name a request that would not parse, and the only thing left to
+#                 name it with is its first line.
+#
+# A TUPLE rather than an `inout` out-param or a returned struct: measured against
+# both (plan.md phase 3), it is the only one of the three where the caller writes
+# ONE line -- `got, raw := read_request_capped(fd, cap)` -- with no dummy `raw :=
+# ""` to initialize and no new type on this package's surface. The cost is inside
+# this function: a tuple literal will not infer a Result element ("error: tuple
+# element 1 needs a concrete value"), so the outcome is built in a typed local.
+fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     buf := ""
     need := -1                                  # total expected bytes once known
     reading := true
@@ -216,21 +244,30 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
             if clh != "":
                 blen = to_uint(clh)
             need = he + 4 + blen
-        if (need >= 0 and len(buf) >= need) or len(buf) >= 1048576:
+        if (need >= 0 and len(buf) >= need) or len(buf) >= cap:
             reading = false
         else:
             want := 4096
             if need >= 0 and need - len(buf) < want:
                 want = need - len(buf)
+            if want > cap - len(buf):
+                want = cap - len(buf)
             match net.read(fd, want):
                 Ok(chunk): buf = buf + to_str(chunk)
                 Err(e):
                     why = cause_of(e)
                     cut = true
                     reading = false
-    if cut and find(buf, crlf() + crlf()) < 0:
-        return Err(why)                         # no complete head: the transport reason wins
-    return parse_request(buf)                   # Ok, or Err(Malformed) for garbage
+    # TooLarge is the initializer because it is the ONLY other way out of the loop
+    # above: with no terminator in `buf`, either a read failed (cut) or the cap was
+    # reached. `buf` goes back either way -- Ok or Err.
+    out: Result(Request, ReqErr) = Err(TooLarge)
+    if find(buf, crlf() + crlf()) < 0:
+        if cut:
+            out = Err(why)                      # no complete head: the transport reason wins
+    else:
+        out = parse_request(buf)                # Ok, or Err(Malformed) for garbage
+    return (out, buf)
 
 # ---- keep-alive ------------------------------------------------------------
 
