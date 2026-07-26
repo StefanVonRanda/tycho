@@ -17,9 +17,12 @@ fn round_trip(nl: string) -> Result(int, net.NetErr):
 
     asked := net.write(conn_out, to_bytes("GET / HTTP/1.1" + nl + nl)) or_return
     # read_request returns Result(Request, httpd.ReqErr) -- a DIFFERENT error type
-    # from this function's Result(_, net.NetErr), so `or_return` cannot carry it.
-    # core:result collapses it in one line.
-    served := result.unwrap_or(httpd.read_request(conn_in), httpd.bad_request())
+    # from this function's Result(_, net.NetErr), so `or_return` cannot carry it on
+    # its own. result.map_err re-labels the error and then `or_return` DOES carry it
+    # (plan.md phase 9), so a request that never arrived ends this function instead
+    # of continuing with a dummy Request nobody sent -- which is what the old
+    # `result.unwrap_or(httpd.read_request(conn_in), httpd.bad_request())` did.
+    served := result.map_err(httpd.read_request(conn_in), net.Failed) or_return
     println("served = " + served.method + " " + served.path)   # GET /
     println("alive  = " + str(not httpd.connection_close(served)))   # true: HTTP/1.1
     answered := httpd.write_response(conn_in, httpd.text_response(200, "pong")) or_return

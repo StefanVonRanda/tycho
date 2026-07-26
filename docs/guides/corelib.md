@@ -242,14 +242,21 @@ element type instead of a family of per-type siblings.
   `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
   RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).
 - **`result`** — the `Result` / `Option` collapses, generic over `$T` and `$E`:
-  `unwrap_or(r, fallback)`, `is_ok(r)`, `is_err(r)`, `err_or(r, fallback)`, and
+  `unwrap_or(r, fallback)`, `is_ok(r)`, `is_err(r)`, `err_or(r, fallback)`,
+  `map_err(r, replacement)`, and
   `some_or(o, fallback)` / `is_some(o)` for the `Option` half. `or_return` unwraps a
   `Result` only inside a function that itself returns a compatible `Result`
   (`docs/spec/10-statements.md:75`), so a `main()`, or a handler that returns a
   `Response`, needs another way — and before this package the only one was a four-line
   `match` per call site (three copies of it existed in this tree). `err_or` plus `==` is
   how a caller asks *which* failure happened **without writing a `match` at all** — a
-  one-line `if`. A caller who *is* writing one should use a nested pattern instead
+  one-line `if`. `map_err(r, replacement)` is the other half of that gap: `or_return`
+  also refuses when the two error types differ, so a function calling two packages'
+  fallible functions used to get `or_return` for one and a hand-written collapse for the
+  other. `map_err` re-labels the error so `or_return` carries it —
+  `req := result.map_err(httpd.read_request(fd), net.Failed) or_return` — at the cost of
+  the original cause, so reach for it where the caller's own enum already has a variant
+  that means what happened. A caller who *is* writing one should use a nested pattern instead
   (`Err(io.IsDir):`, legal since 2026-07-26,
   [§14.3.1](../spec/10-statements.md#1431-nested-patterns)); the corelib's error enums
   stay payload-free so both spellings keep working. Nothing in `corelib/` may use a

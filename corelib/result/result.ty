@@ -49,8 +49,9 @@
 # same reason, so `Box(net.Failed)` failed identically. All three spellings above
 # now compile; `tests/pkg/generic_qual_arg` is the regression.
 #
-# Everything here is generic over `$T` / `$E` and total: no aborts, no panics,
-# no allocation. There is nothing to import and no shim.
+# Everything here is generic over `$T` / `$E` (and `$F`, the second error type
+# map_err re-labels to) and total: no aborts, no panics, no allocation. There is
+# nothing to import and no shim.
 package result
 
 # The Ok payload, or `fallback` if the Result is an Err. The workhorse: it turns
@@ -82,6 +83,41 @@ fn err_or(r: Result($T, $E), fallback: $E) -> $E:
     match r:
         Ok(v): return fallback
         Err(e): return e
+
+# Re-label a Result's error type, so `or_return` works across a package boundary.
+# The Ok payload passes through untouched; an Err becomes `replacement`.
+#
+# WHY THIS EXISTS. `or_return` only short-circuits out of a function whose OWN
+# Result has a compatible error type, so a function that calls two packages' fallible
+# functions gets `or_return` for whichever error type it adopted and a hand-written
+# collapse for the other. examples/corelib/httpd/main.ty's `round_trip` is the
+# recorded case (FRICTION.md:152): it returns Result(int, net.NetErr), seven net.*
+# calls short-circuit through it, and the one httpd.read_request in the middle
+# returns Result(Request, httpd.ReqErr) and had to be collapsed to a dummy Request
+# with unwrap_or -- which throws the failure away and carries on with a request
+# nobody sent. One map_err makes it an early return instead:
+#
+#   req := result.map_err(httpd.read_request(fd), net.Failed) or_return
+#
+# WHY A VALUE AND NOT A FUNCTION. Rust's map_err takes a closure; the function-value
+# form does compile here (measured, plan.md phase 9: `fn map_err(r: Result($T, $E),
+# f: fn($E) -> $F) -> Result($T, $F)` with `Err(e): return Err(f(e))` builds and
+# runs), and it was still not the one adopted. The caller who needs it has ONE
+# target variant in mind, so the function form would cost every call site a named
+# two-line helper to convert an enum -- which is the hand-written collapse this
+# entry exists to delete. A fixed replacement matches the rest of this package,
+# where unwrap_or/err_or/some_or all take a plain fallback and nothing allocates.
+# A caller who genuinely wants per-cause mapping writes the match; it is three lines
+# and it is clearer than a helper plus a combinator.
+#
+# WHAT IT COSTS THE CALLER, stated plainly: the original cause is gone. `map_err`
+# says "this failure is now MY error type's failure", so use it where the caller's
+# own enum already has a variant that means what happened (net.Failed for "the
+# exchange broke"). Where the distinction matters, match on the real error instead.
+fn map_err(r: Result($T, $E), replacement: $F) -> Result($T, $F):
+    match r:
+        Ok(v): return Ok(v)
+        Err(e): return Err(replacement)
 
 # ---- Option ----------------------------------------------------------------
 # The same collapse for the Option half. io.read_line is the corelib's one

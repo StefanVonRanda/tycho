@@ -2460,7 +2460,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     link checker checks links, not orphans, so this is a one-line note rather than a
     defect: a future docs-index pass should list it.
 
-- [ ] **Phase 9 — the two items that need a decision, not a patch**
+- [x] **Phase 9 — the two items that need a decision, not a patch**
   - Item A: `FRICTION.md:131` — `parallel for` and `spawn` are the only concurrency shapes
     and neither expresses "hand this connection to whoever is free", so one worker owns one
     connection for its whole life and **N workers is a hard cap of N concurrent
@@ -2481,6 +2481,265 @@ is a completed phase under this plan's Goal, and it is not a failure.
     with a real cost estimate from reading the source. **A refusal with a number is a pass.**
   - Verify: whatever lands, measured against the recorded baseline (79,712 req/s, 8 clients);
     whatever is refused, the estimate cites `path:line`.
+
+  #### Phase 9 — DONE. Evidence
+
+  Item A: **REFUSED, with the numbers, and the item's premise CORRECTED by measurement.**
+  Item B: **half LANDED (`result.map_err`), half REFUSED with a number (the binding form).**
+  `make ci` / `make test` were **NOT** run — the day's single run was spent by Phase 1
+  (`5187724`). Everything below is a by-hand runner or a live socket.
+
+  ##### The baseline, reproduced on THIS machine first
+
+  Same-machine comparison, so the numbers below mean something. 16 cores
+  (`nproc` = 16), `./tycho-httpd --root server/www --port 18099 --workers 8 --quiet`,
+  `GET /data.json` (294 B — the recorded body size), N client **processes** (not
+  threads), one keep-alive connection each, 800 requests on it:
+
+  ```
+                          recorded (plan-webserver-DONE.md:814-816)   this machine
+    1 client  x 800 req                12,456 req/s                    14,829 req/s
+    4 clients x 800 req                41,046 req/s                    50,150 req/s
+    8 clients x 800 req                79,712 req/s                    93,441 req/s
+  ```
+
+  This box is ~1.17× the recorded one and the shape is unchanged (linear in client
+  count). A second shape was added because it is the one a work queue actually
+  changes — **connection churn**, one request per connection (`Connection: close`),
+  so accept+dispatch is paid 800 times instead of once:
+
+  ```
+    1 / 4 / 8 clients x 800 churned connections    4,696 / 23,613 / 40,292 req/s
+  ```
+
+  And the **concurrency cap**, reproducing `plan-webserver-DONE.md:803-808`: S peers
+  that send a partial head and go silent each pin one worker; then time a real request.
+
+  ```
+    workers=4  silent peers=3  ->  HTTP/1.1 200 OK  in     1 ms   served at once
+    workers=4  silent peers=4  ->  HTTP/1.1 200 OK  in  4753 ms   waited for a worker
+    workers=8  silent peers=7  ->  HTTP/1.1 200 OK  in     1 ms   served at once
+    workers=8  silent peers=8  ->  HTTP/1.1 200 OK  in  4829 ms   waited for a worker
+  ```
+
+  ##### Item A (`FRICTION.md:134`) — the work queue IS writable today, and it does not
+  ##### lift the cap. Both numbers, side by side.
+
+  **The premise is wrong and that is the finding.** The item says there is no way to
+  express "hand this connection to whoever is free" without "a channel of ints and a
+  hand-rolled dispatcher". There is: **the channel of ints and the ten-line dispatcher
+  compile today, with no compiler change**, and the dispatcher is not a workaround —
+  it is the shape. Verified from the source first: `Channel(T)` has type syntax and a
+  spawned worker may take one as a parameter (`src/tychoc.c:612-616`, and the guards
+  at `:1095-1097` / `:7450` forbid only *storing* or *returning* a handle), `send`/
+  `recv`/`close` are builtins over it (`:5392`, `:5401`, `:5412`), and a channel is
+  the language's one deliberately-shared object with a documented MPMC contract —
+  "with multiple receivers, each value is delivered to exactly one receiver"
+  (`docs/spec/13-concurrency.md` §23.1). Then measured with a scratch program: one
+  channel, four recursively-fanned-out workers, 1000 sends → `total = 1000`.
+
+  So it was written in `server/` (**+39 / −1 lines**: `queue_loop`, `queue_worker`, and
+  a `main` that owns the accept loop and sends fds into `channel(int, 64)`), built, and
+  run against the same drivers. `--workers N` now means N servers **plus** the acceptor.
+
+  ```
+                              HEAD (N independent accept loops)   work queue (1 acceptor + N)
+    keep-alive, 1 client              14,829 req/s                    15,309 req/s
+    keep-alive, 4 clients             50,150 req/s                    50,647 req/s
+    keep-alive, 8 clients             93,441 req/s                    91,667 req/s   (-1.9%)
+    churn,      1 client               4,696 req/s                     5,984 req/s
+    churn,      4 clients             23,613 req/s                    21,669 req/s
+    churn,      8 clients             40,292 req/s                    47,205 req/s   (+17.2%)
+
+    cap: workers=4  silent=3            1 ms                            1 ms
+    cap: workers=4  silent=4         4753 ms                         4824 ms
+    cap: workers=8  silent=7            1 ms                            1 ms
+    cap: workers=8  silent=8         4829 ms                         4830 ms
+  ```
+
+  **Throughput: a wash.** −1.9% on the recorded keep-alive shape (inside run-to-run
+  noise), +17.2% on connection churn — one dedicated acceptor beats eight threads
+  contending on `accept(2)`, which is a real result and the only thing in the work
+  queue's favour.
+
+  **The cap: UNCHANGED, to the millisecond.** This is the answer the phase exists to
+  give. N workers is still a hard cap of N concurrent connections, because the cap was
+  never a property of *dispatch* — it is a property of a worker **blocking in
+  `recv(2)`**. A work queue chooses which idle worker gets the next fd; it cannot make
+  a busy worker idle. Worse, it moves the backlog from the kernel to userspace and so
+  makes an unserved connection *look* served:
+
+  ```
+    8 workers, all 8 pinned by silent peers, then 40 COMPLETE requests:
+      40 complete requests handed to the acceptor in 3 ms (all connected)
+      first queued request answered within 1s: False  -- accepted, queued, UNSERVED
+  ```
+
+  The kernel's backlog at least applies `listen()`'s limit and lets `connect()` block;
+  the channel accepts, ACKs and then says nothing. **Not adopted** — reverted, and
+  `server/main.ty` is byte-identical to `HEAD`. The full diff is preserved as the
+  reproduction recipe: two functions (`queue_loop` = the `accept_loop` body with
+  `match recv(ch)` in place of `match net.accept(srv)` and a `None` arm for
+  closed-and-drained; `queue_worker` = the identical recursive fan-out) plus a `main`
+  that does `ch := channel(int, 64)` / `pool := spawn queue_worker(cfg, ch, 1,
+  cfg.workers)` / `for dispatching: match net.accept(srv): Ok(conn): send(ch, conn) /
+  Err(e): dispatching = false` / `close(ch)` / `total := wait(pool)`.
+
+  ###### What WOULD lift the cap, costed, and refused with the number
+
+  Readiness notification — one thread holding many connections. Read out of the source:
+
+  1. **`core:net` has no readiness call and no non-blocking mode.**
+     `corelib/net/net_shim.c` is 361 lines with 12 exported entry points
+     (`:110`, `:162`, `:170`, `:185`, `:204`, `:225`, `:271`, `:300`, `:316`, `:324`,
+     `:339`, `:350`) and not one is `poll`/`select`/`epoll` or `O_NONBLOCK`; the only
+     timeout control is `SO_RCVTIMEO` (`netx_set_read_timeout`, `:300`). The syscall
+     itself is the CHEAP part: `[int]` crosses the FFI in both directions as a
+     `(const long*, long)` pair (`docs/spec/14-ffi.md` §24.1), so
+     `netx_poll(fds, n, ms, out, outlen)` is ~45 C lines and `netx_set_nonblocking`
+     ~8, plus ~20 in `corelib/net/net.ty` (189 lines) for `poll_ready`,
+     `set_nonblocking` and an `Again` variant on `NetErr`.
+  2. **`httpd.read_request_capped` is a BLOCKING accumulator and cannot be reused.**
+     `corelib/httpd/httpd.ty:242-303` holds `buf`, `need`, `reading`, `why`, `cut` as
+     **locals** (`:243-247`) and loops `net.read(fd, want)` (`:271`) until the head is
+     complete. An event loop needs that state to survive between poll wakeups, keyed
+     by fd — so it must be split into a `struct Pending` plus `feed(state, chunk)` and
+     `finish(state)`, ~60 lines, **additive rather than replacing**: three consumers
+     call the blocking form, and this package is compiled by the frozen
+     `compiler/tychoc0.ty` (`examples/webserver/run.sh:24`), so the new struct and
+     functions must also parse there.
+  3. **`serve_conn` is one blocking loop over one fd, and so is the write path.**
+     `server/main.ty:363-473` is **70 code lines**; `netx_write` loops `send()`
+     internally (`corelib/net/net_shim.c:225`), so a slow reader would stall the event
+     loop unless writes are buffered per fd too — ~150 lines replacing 70.
+
+  **~283 lines across 4 files, ~80 of them inside the frozen-`tychoc0` reach**, and it
+  is a redesign of `core:httpd`'s read surface, which this plan's Anti-scope forbids in
+  as many words ("One item, one fix. No redesigns"). **Refused, with that number.**
+  Two things a future reader should weigh against it: the cap is already **tunable** —
+  `--workers` accepts 1..256 (`server/main.ty:564`) and the live-task ceiling is 1024
+  (`runtime/tycho_rt.c:557-562`) — and the item's own headline claim, that neither
+  concurrency shape can express work dispatch, is now measured false.
+
+  ##### Item B, first half (`FRICTION.md:152`) — `map_err` LANDED, 4 code lines
+
+  Writable in Tycho today as a plain library function, and Phase 1's fix is what made
+  it usable: **three** type params, with `$T` passing through untouched and only the
+  error type moving.
+
+  ```tycho
+  fn map_err(r: Result($T, $E), replacement: $F) -> Result($T, $F):
+      match r:
+          Ok(v): return Ok(v)
+          Err(e): return Err(replacement)
+  ```
+
+  **4 code lines** in `corelib/result/result.ty` (+35 with the header explaining the
+  choice). The recorded call site is `examples/corelib/httpd/main.ty:22`, whose
+  `round_trip` returns `Result(int, net.NetErr)` while `httpd.read_request` returns
+  `Result(Request, httpd.ReqErr)`:
+
+  ```
+  before:  served := result.unwrap_or(httpd.read_request(conn_in), httpd.bad_request())
+  after:   served := result.map_err(httpd.read_request(conn_in), net.Failed) or_return
+  ```
+
+  Same line count, different behaviour: the old spelling **continued with a dummy
+  `Request` nobody sent**; the new one ends the function. The example's golden is
+  **byte-identical** (the exchange succeeds, so the changed path is not taken) — which
+  is the proof this touched only the failure path. Regression: `two_types` in
+  `corelib/test/result`, whose golden is **+4 / −0**, a pure append:
+
+  ```
+    map_ok    = 21        # 7 * 3 -- the Ok payload passed through map_err untouched
+    map_err   = -1        # or_return carried the re-labelled failure out
+    map_why   = 1         # ... as io.Failed, the caller's own error type
+    map_thru  = hi        # a string payload: $T is genuinely generic
+  ```
+
+  **The freeze is satisfied, measured not assumed:** `core:result` is inside the frozen
+  `tychoc0`'s reach (`core:httpd` imports it and `examples/webserver/run.sh:24` feeds
+  the package to a freshly built `tychoc0`), and the three-type-param generic compiles
+  there — `webserver: ok (tychoc == tychoc0 == golden)`.
+
+  **Why a value and not a function, recorded because the alternative was built and
+  measured, not assumed.** The function-value form compiles too —
+  `fn map_err(r: Result($T, $E), f: fn($E) -> $F) -> Result($T, $F)` with
+  `Err(e): return Err(f(e))` builds and runs, mapping `A2 -> B2` through a named
+  `conv`. It was still not adopted: the caller who needs this has one target variant in
+  mind, so the function form charges every call site a **named two-line helper to
+  convert an enum** — which is the hand-written collapse this item exists to delete —
+  and nothing else in `core:result` takes a callable (`unwrap_or`/`err_or`/`some_or`
+  all take a plain fallback). The cost `map_err` does charge is written at the
+  declaration: **the original cause is gone.**
+
+  ##### Item B, second half (`FRICTION.md:153`) — the binding form, REFUSED with a number
+
+  **`if let` is not what the item needs, and that is the first finding.**
+  `if let Ok(req) := httpd.parse_request(raw):` still puts the whole body inside its own
+  block at the same depth — it saves an arm, not an indentation level. Only an
+  **early-return binding form** (`x := e or_else: <diverging block>`) flattens anything.
+  Costed both:
+
+  - **`if let` as parser-only sugar: ~45 lines.** The machinery exists. `parse_match`
+    (`src/tychoc.c:2734`) already parses arm patterns into a `MatchArm` carrying
+    `variant`, `binds[8]`, and Phase 3's `sub`/`subbinds`/`sub_vi` (`:1456-1458`); the
+    resolver (`:6799`) and codegen (`:9304`, `:10113`) already handle an ordered
+    Ok/Err decision chain. So it is: a contextual `let` after `TK_IF`, the arm-pattern
+    parser factored out of `parse_match`, and a synthetic two-arm `S_MATCH`. **It
+    would not close the item**, so it was not built.
+  - **The early-return binding form: ~105 code lines in `src/tychoc.c`.** A token
+    beside `TK_ORRETURN` (`:123`); a parse hook on the decl path where
+    `x := if/match` already lives (`:3260`); a resolver unwrap in the `S_DECL` arm that
+    grounds `x` to the Ok payload; a divergence check reusing `expr_diverges`
+    (`:2847`) and `block_ends_in_return` (`:9298`); codegen; and diagnostics beside
+    the existing `or_return requires the enclosing function to return a Result, but it
+    returns %s` (`:4795-4796`). Plus a spec section beside §14.6 `or_return`
+    (`docs/spec/10-statements.md:110`), plus a fixture that — being **new syntax** —
+    can live only in `corelib/test/` or `server/`, never in `tests/` or `examples/`
+    (frozen `tychoc0`; `scripts/frontparity.sh:127` reports it as a divergence).
+
+  **And the payoff, measured rather than assumed.** `serve_conn`
+  (`server/main.ty:363-473`) is **70 code lines** with **six** arms: five `Err` causes
+  that each answer differently (`:390-414` — silent close, silent close, 408, 431, 400)
+  and `Ok(req)`, which holds **45 of the 70**. A binding form moves those 45 out one
+  level and pushes the five causes into the `or_else` block, where they are still the
+  same five-way match. **Net line change ≈ 0**, one indentation level, in **one**
+  function in the whole tree, unusable in `corelib/`. **105 compiler lines for that:
+  refused.**
+
+  The item's own number needs a footnote a future reader should have: the recorded
+  60 → 71 growth was attributed to "no `if let`", but plan.md phase 3 has since turned
+  what was one `Err(e)` plus five `==` tests into five real arms **on purpose**,
+  because acting on the cause is the whole point of the conversion. A happy-path
+  binding form pushes them back into one block. The 11 lines were not bought by a
+  missing keyword; they were bought by a function that has six outcomes.
+
+  ##### Verify — the by-hand sweep, real output
+
+  ```
+    scripts/entrypoints.sh    entrypoints: ok (11 entry points compile with tychoc)
+    scripts/frontparity.sh    agreed: 292   diverged: 0   (skipped, tychoc refused: 15)
+                              all green (tychoc0's frontend accepts every program tychoc accepts)
+    corelib/run.sh            corelib: all green (tychoc matches goldens)   [ok result]
+    examples/corelib/run.sh   corelib examples: all green
+    examples/webserver/run.sh webserver: ok (tychoc == tychoc0 == golden)
+    scripts/tools_check.sh    tools-check: ok
+    scripts/spec_check.sh     spec-examples: 8 runnable example(s), all pass
+    scripts/check_links.sh    link check: ok (129 markdown files, no dead relative links)
+    scripts/check_citations.py citation check: ok (22 anchored ..., 1585 bare in bounds,
+                              77 source->doc citations resolve)
+  ```
+
+  Live matrix on `127.0.0.1:18099`, 4 workers, `--idle-ms 800`, phase 3's fail-closed
+  driver — run even though `server/main.ty` is unchanged, because `core:result` is one
+  of its imports: 200 / 404 / 403 / 405, `HEAD` with a real `Content-Length` and no
+  body, three byte-identical binaries (PNG 7883, ICO 441, TTF 95440), `GARBAGE` → 400,
+  `Content-Length: 0x10` → 400, 20 KiB head → 431, zero-byte hangup → no bytes and
+  **0 log lines**, partial head then stall → 408 and 1 log line, idle past 800 ms → 0
+  bytes and 0 log lines, `GET /emptydir` → `301 Location: /emptydir/`, keep-alive
+  `200 200 200` on one fd, 50-request flood `50/50 200`, all four workers seen in the
+  access log, `SIGTERM` → status 143. **`MATRIX OK: every assertion passed`.**
 
 - [ ] **Phase 10 — re-score `FRICTION.md`, and settle this plan's Goal**
   - Walk every item in the file against the tree — phase 7 (`:118-131`), the created ones

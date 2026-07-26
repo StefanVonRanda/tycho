@@ -57,6 +57,18 @@ fn mkopt(ok: bool) -> Option(string):
         return Some("here")
     return None
 
+# ---- map_err: or_return across TWO error types (plan.md phase 9) ------------
+# The regression for the one thing `or_return` could not do. `two_types` owns
+# Result(int, io.IoErr); `mk` fails with a Local, declared in this file. Before
+# map_err there was no conversion between error enums, so a function touching two
+# packages' fallible calls got or_return for whichever error type it adopted and a
+# hand-written collapse for the other -- which continues with a value nobody
+# produced (FRICTION.md:152). map_err re-labels the error, so the failure ENDS the
+# function, and the ONE type param that moves is the error's: $T passes through.
+fn two_types(ok: bool) -> Result(int, io.IoErr):
+    n := result.map_err(mk(ok), io.Failed) or_return
+    return Ok(n * 3)
+
 # ---- nested patterns (plan.md phase 3 / FRICTION.md:139) -------------------
 #
 # Before 2026-07-26 none of the three arms below could be written:
@@ -147,3 +159,9 @@ fn main():
     r2, s2 := outcome(false)
     println("tup_ok    = " + s1 + " " + str(result.unwrap_or(r1, -1)))
     println("tup_err   = " + s2 + " " + str(result.unwrap_or(r2, -1)))
+
+    # ---- map_err: the Ok passes through, the Err is re-labelled, or_return works ----
+    println("map_ok    = " + str(result.unwrap_or(two_types(true), -1)))         # 21: 7 * 3
+    println("map_err   = " + str(result.unwrap_or(two_types(false), -1)))        # -1: it returned early
+    println("map_why   = " + str(b(result.err_or(two_types(false), io.NotFound) == io.Failed)))
+    println("map_thru  = " + result.unwrap_or(result.map_err(mkstr(true), io.Failed), "no"))

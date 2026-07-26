@@ -22,3 +22,7 @@ nest_qual = absent
 nest_dir  = a directory
 tup_ok    = full 3
 tup_err   = partial -1
+map_ok    = 21
+map_err   = -1
+map_why   = 1
+map_thru  = hi
