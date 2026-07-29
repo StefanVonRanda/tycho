@@ -116,7 +116,7 @@ and there is no separate payload, return the code directly and skip the out-para
 > Provenance: the shape is used twice — `netx_read` (`corelib/net/net_shim.c:236-259`,
 > declared `corelib/net/net.ty:99-102`) and `iox_read_file`
 > (`corelib/io/io_shim.c:61-96`, declared `corelib/io/io.ty:81-85`). The ordering
-> rule is `gen_extern_proto` (`src/tychoc.c:10385-10397`): written params first,
+> rule is `gen_extern_proto` (`src/tychoc.c:10433-10445`): written params first,
 > the return's out-params appended. Written down here because it was reproduced
 > verbatim from one shim into the other with this section listing neither it nor
 > `-> Result(T, E)` (FRICTION.md).

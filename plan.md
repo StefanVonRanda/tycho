@@ -882,7 +882,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     one glob line, and the single gate that glob can redden is gate 1 above, which
     ran the whole ASan corpus.
 
-- [ ] **Phase 6 (found by phase 2, not absorbed) — bare `src/tychoc.c:N`
+- [x] **Phase 6 (found by phase 2, not absorbed) — bare `src/tychoc.c:N`
       citations all shifted by +48, and §3.8's Provenance now points at the
       wrong feature outright**
   - Phase 2 inserted 48 lines at `src/tychoc.c:402`. Every **anchored**
@@ -911,6 +911,190 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     reading the cited line, starting with §3.8), and `make check-links` green.
   - Sequencing: **after** phase 3, which will edit `tools/*.ty` and the editor
     grammars but not `src/tychoc.c`, so the +48 offset is stable from here.
+  - **DONE 2026-07-29. 45 citations repaired across four files. The phase's
+    headline premise is FALSE and the measurement is the phase's main product:
+    the bare `src/tychoc.c:N` citations did NOT "all shift by +48". Exactly 23
+    of 447 in-scope suspects did. The other ~400 are stale by 68 to 3520 lines
+    and were already wrong before this plan started.** That population is filed
+    as phase 9 below rather than swept here, for the reason given there.
+
+    **The insert, confirmed before anything was touched.** `git diff
+    --unified=0 b895e66~1 b895e66 -- src/tychoc.c` is a single hunk,
+    `@@ -401,0 +402,48 @@`, and the file went 12154 → 12202 lines. So old
+    `src/tychoc.c:1-401` is untouched and old `src/tychoc.c:402-12154` is today's
+    `src/tychoc.c:450-12202`. `b895e66` is also the LAST commit to touch
+    `src/tychoc.c`, so the offset is stable, exactly as the phase predicted.
+
+    **Population, counted with `scripts/check_citations.py`'s own `CITE` regex
+    and its own paragraph-scoped path inheritance** (so a continuation `` `:N` ``
+    is attributed to the same file the gate would attribute it to).
+
+    | population | count |
+    |---|---|
+    | citations resolving to `src/tychoc.c` in tracked Markdown | 921 |
+    | — of those, anchored (`path:N@token`, gate-checked, repaired in phase 2) | 15 |
+    | — of those, bare | 906 |
+    | bare, ABOVE the insert (`N` < 402) — unaffected by construction | 64 |
+    | bare, BELOW the insert (`N` >= 402) — the suspect set | 842 |
+    | suspects in archived `docs/internals/plan-*-DONE.md` — deliberately left | 374 |
+    | suspects in `plan.md` itself — outside the phase's named scope | 21 |
+    | **suspects in scope (`FRICTION.md` + `docs/` minus the archived plans)** | **447** |
+
+    The 374 archived refs break down as `docs/internals/plan-front-door-DONE.md`
+    242, `docs/internals/plan-friction-DONE.md` 89,
+    `docs/internals/plan-int64-DONE.md` 39, `docs/internals/plan-1.0-freeze-DONE.md`
+    2, `docs/internals/plan-option-result-DONE.md` 1 and
+    `docs/internals/plan-webserver-DONE.md` 1. **Left alone on phase 4's rule** —
+    frozen verification evidence; renumbering it would falsify the record.
+
+    Non-Markdown, the "any script or source comment" half: **65** citations,
+    after excluding `compiler/tychoc0.ty` (79 refs, frozen, excluded by name the
+    way phase 8 below requires), `scripts/check_citations.py`'s docstring (which
+    shows citation *syntax*, not citations) and `src/tychoc.c`'s own quotation of
+    a historical UBSan message. **Not one of the 65 is a +48 shift either** —
+    deltas run 2 to 787 — so 64 of them go to phase 9 with the rest. The one
+    repaired here is `corelib/net/net_shim.c:202`, because it names the same
+    site as `FRICTION.md:220` and leaving the two disagreeing would be worse
+    than either being stale.
+
+    **How each new number was derived, and why it is not arithmetic.** For every
+    citation: `git blame` the citing line → fetch `src/tychoc.c` at that commit →
+    take the exact text of the cited range → search today's file for that text.
+    That produces a *candidate*, which was then **confirmed by opening the
+    current source and reading it against the sentence**. The confirmation step
+    is not ceremony: the candidate generator was WRONG at least three times,
+    because a citation that was already stale when its doc line was last edited
+    yields "where the stale target went". `FRICTION.md:253`'s `` `:4663-4668` ``
+    ("`Ok`/`Err` resolving to a *partial* is deliberate") generated
+    `src/tychoc.c:4743`, which is `return e->type = task_of(s->ret);` — spawn,
+    not `Result`. The real site is `src/tychoc.c:4804-4809`, found by grepping
+    `T_OK_PARTIAL`. Same for `` `:5904-5911` `` and `FRICTION.md:220`'s
+    `` `src/tychoc.c:8387` ``.
+
+    **§3.8's Provenance — the one the phase called worse than stale.**
+    `docs/spec/01-lexical.md:174` read `` `src/tychoc.c:398-433` `` with "`::` is
+    lexed at `:402`". Today `src/tychoc.c:402` is `if (c == '`') {` — the opening
+    line of phase 2's raw-string scanner, an unrelated feature. Re-derived by
+    reading, and plan.md's predicted values are **confirmed**: the operator block
+    runs `src/tychoc.c:477-513` (`477` is the comment `/* operators (two-char
+    first) */`; `511` the `unexpected character '%c'` catch-all; `512-513` the
+    bracket-depth bookkeeping that closes the block) and `::` is
+    `src/tychoc.c:482`, `else if (c == ':' && c2 == ':') { k = TK_COLONCOLON;
+    len = 2; }`. Both written.
+
+    **The repairs, each with the text of the line landed on.** 45 edits; every
+    path is spelled in full because a bare `` `:N` `` in a Markdown table binds
+    to the previously-named path and would redden the gate on this very table —
+    the trap that caught phase 4 and phase 5.
+
+    | citation site | old | new | what is at the new line |
+    |---|---|---|---|
+    | `docs/spec/01-lexical.md:47` | `src/tychoc.c:437` | `src/tychoc.c:520` | `if (*p == '#') while (*p && *p != '\n') p++;` |
+    | `docs/spec/01-lexical.md:83` | `src/tychoc.c:442-443` | `src/tychoc.c:525-526` | the `TK_DEDENT` flush loop + `TK_EOF` push |
+    | `docs/spec/01-lexical.md:140` | `src/tychoc.c:3689-3698` | `src/tychoc.c:4208-4217` | the top-level `package`/`import`/`extern`/`const`/`subscript` contextual chain |
+    | `docs/spec/01-lexical.md:141` | `src/tychoc.c:2611`/`src/tychoc.c:2627` | `src/tychoc.c:3060`/`src/tychoc.c:3076` | `!strcmp(t->text, "const")` / `!strcmp(t->text, "delete")` |
+    | `docs/spec/01-lexical.md:141` | `src/tychoc.c:1582`/`src/tychoc.c:2026` | `src/tychoc.c:1855`/`src/tychoc.c:2343` | `!strcmp(t->text, "soa")` (type) / `!strcmp(t->text, "soa")` (literal) |
+    | `docs/spec/01-lexical.md:141` | `src/tychoc.c:3028` | `src/tychoc.c:3523` | `!strcmp(cur(ps)->text, "where")` |
+    | `docs/spec/01-lexical.md:142` | `src/tychoc.c:2994` | `src/tychoc.c:3489` | `!strcmp(cur(ps)->text, "sink")` |
+    | `docs/spec/01-lexical.md:142` | `src/tychoc.c:2748` | `src/tychoc.c:3198` | `!strcmp(cur(ps)->text, "range")` |
+    | `docs/spec/01-lexical.md:174` (§3.8) | `src/tychoc.c:398-433` | `src/tychoc.c:477-513` | the operator table (see above) |
+    | `docs/spec/01-lexical.md:174` (§3.8) | `src/tychoc.c:402` | `src/tychoc.c:482` | `k = TK_COLONCOLON; len = 2;` |
+    | `docs/spec/01-lexical.md:184` (§3.9) | `src/tychoc.c:2227-2232` | `src/tychoc.c:2557-2563` | `parse_unary` + `expression nesting too deep` |
+    | `docs/spec/01-lexical.md:251` (§3.9.3) | `src/tychoc.c:402-425` | `src/tychoc.c:450-473` | the char-literal scanner — **a true +48** |
+    | `docs/spec/01-lexical.md:355` (§3.9.5) | `src/tychoc.c:1826-1866` | `src/tychoc.c:2125-2179` | `interp_join` through the end of `desugar_interp` |
+    | `docs/spec/14-ffi.md:119` | `src/tychoc.c:10385-10397` | `src/tychoc.c:10433-10445` | `gen_extern_proto`'s written-param loop — **a true +48** |
+    | `corelib/net/net_shim.c:202` | `src/tychoc.c:8387` | `src/tychoc.c:8512-8515` | the `gen_extern_raw` header comment naming the `tycho_str_copy` wrap |
+    | `FRICTION.md:214` | `src/tychoc.c:4006-4012` | `src/tychoc.c:4147-4151` | `if (e->op == TK_PLUS && a->kind == E_STR && b->kind == E_STR)` — five lines, as the sentence says |
+    | `FRICTION.md:214` (×2) | `src/tychoc.c:8671` | `src/tychoc.c:9003` | `tycho_str_intern(\"%s\")` — the verbatim-paste emit site |
+    | `FRICTION.md:214` | `src/tychoc.c:11722-11734` | `src/tychoc.c:12085-12096` | `c_escape_path` — the existing ~10-line escaper |
+    | `FRICTION.md:220` | `src/tychoc.c:8387` | `src/tychoc.c:8512-8515` | (same `gen_extern_raw` comment) |
+    | `FRICTION.md:224` | `src/tychoc.c:8745` | `src/tychoc.c:8828-8829` | the `to_str`/`to_bool`/`to_under`/`to_bytes` zero-cost arm |
+    | `FRICTION.md:224` | `src/tychoc.c:8743` | `src/tychoc.c:8826-8827` | `to_bytes` over `T_ARRAY_INT` → `tycho_bytes_from_intarr` (the one real allocation) |
+    | `FRICTION.md:224` | `src/tychoc.c:8155` | `src/tychoc.c:8238` | `static int is_place(Expr *e) {` |
+    | `FRICTION.md:225` | `src/tychoc.c:612-616` | `src/tychoc.c:660-664` | the `Channel(T)` type comment — **+48** |
+    | `FRICTION.md:225` | `src/tychoc.c:1095-1097`/`src/tychoc.c:7450` | `src/tychoc.c:1143-1145`/`src/tychoc.c:7498` | the store guard and the `IS_CHAN(pr->ret)` return guard — **+48** |
+    | `FRICTION.md:225` | `src/tychoc.c:5392`/`5401`/`5412` | `src/tychoc.c:5440`/`5449`/`5460` | the `send`/`recv`/`close` `IS_CHAN` checks — **+48** |
+    | `FRICTION.md:233` | `src/tychoc.c:6795-6836` | `src/tychoc.c:6903-6942` | the enum arm loop, `covered[]` alloc through `free(covered)` |
+    | `FRICTION.md:233` | `src/tychoc.c:9849-9899` | `src/tychoc.c:10193-10226` | the enum tag-test chain, `_m%d->tag == %d` |
+    | `FRICTION.md:234` | `src/tychoc.c:2847`/`src/tychoc.c:2876` | `src/tychoc.c:2895`/`src/tychoc.c:2924` | `ctrl_rewrite_tails` / `ctrl_collect_tails` — **+48** |
+    | `FRICTION.md:234` | `src/tychoc.c:6613-6635` | `src/tychoc.c:6681-6704` | `case S_DECL:` through the tail-unification loop |
+    | `FRICTION.md:235` | `src/tychoc.c:12069-12071`/`src/tychoc.c:11759` | `src/tychoc.c:12117-12119`/`src/tychoc.c:11807` | `detect_package` argv arm / `scan_pkg_files` — **+48** |
+    | `FRICTION.md:236` | `src/tychoc.c:10385-10397` | `src/tychoc.c:10433-10445` | `gen_extern_proto` — **+48** |
+    | `FRICTION.md:242` | `src/tychoc.c:6895` | `src/tychoc.c:7188` | `Type at_ = resolve_expr(e->args[j]);` inside `instantiate_generic` |
+    | `FRICTION.md:242` | `src/tychoc.c:5565` | `src/tychoc.c:5741` | `Type at_ = resolve_exp(e->args[i], s->params[i]);` |
+    | `FRICTION.md:253` | `src/tychoc.c:4663-4668` | `src/tychoc.c:4804-4809` | `case E_OK: case E_ERR:` → `T_OK_PARTIAL`/`T_ERR_PARTIAL` |
+    | `FRICTION.md:253` | `src/tychoc.c:5904-5911` | `src/tychoc.c:6097-6101` | the `IS_RES(want)` grounding of a partial |
+    | `FRICTION.md:318` | `src/tychoc.c:498`/`src/tychoc.c:4937` | `src/tychoc.c:546`/`src/tychoc.c:4985` | the `T_BYTES` repr comment / `T_STRING \|\| T_BYTES` index → `T_INT` — **+48** |
+    | `FRICTION.md:321` | `src/tychoc.c:1289` | `src/tychoc.c:1337` | `case T_BYTES: return "char *";` — **+48** |
+    | `FRICTION.md:321` | `src/tychoc.c:8702` | `src/tychoc.c:8828-8829` | the zero-cost reinterpret arm |
+    | `FRICTION.md:329` | `src/tychoc.c:4523` | `src/tychoc.c:4571` | the `docs/guides/map-mutation.md` comment the gate found — **+48** |
+    | `FRICTION.md:333` | `src/tychoc.c:7858` | `src/tychoc.c:8192` | `case T_BYTES:` in `copy_into` |
+    | `FRICTION.md:335` | `src/tychoc.c:11976` | `src/tychoc.c:12102` | `const char *cc = "cc";` |
+    | `FRICTION.md:340` | `src/tychoc.c:8955`/`8144`/`7126` (the "is now" half) | `src/tychoc.c:9003`/`8192`/`7174` | intern site / `copy_into` `T_BYTES` / `instantiate_generic` — **+48** |
+
+    **Four citations deliberately NOT repointed, each for a stated reason.**
+    1. `FRICTION.md:233`'s `` `src/tychoc.c:2732` at `667f0d9` `` and
+       `FRICTION.md:253`'s `` `src/tychoc.c:4670-4681` at `667f0d9` `` are
+       **pinned to a named commit**. They cite a historical tree on purpose and
+       cannot rot; repointing them to HEAD would destroy the pin.
+    2. `FRICTION.md:340`'s three "cited by X **as** `src/tychoc.c:8671` /
+       `:7858` / `:6895`" values are the *as-found record* of what other entries
+       used to say — phase 4's `FRICTION.md:222` rule. Only the "**is now**" half
+       was repointed. Because this phase then repaired those other entries, one
+       clause was added to that sentence saying so, rather than leaving the
+       reader to discover that the `as` numbers no longer match the entries they
+       quote.
+    3. `FRICTION.md:233`'s `` `src/tychoc.c:9799-9803` `` names code that **no
+       longer exists** — the hard binary `if` that `gen_match_side` replaced. No
+       line can be correct, so the sentence now says "as it stood then; the
+       replacement `gen_match_side` is at `src/tychoc.c:9481`", which is the same
+       treatment `FRICTION.md:222` got.
+
+    **Verify — gate 1, `env -u LD_PRELOAD python3 scripts/check_citations.py`:**
+    ```
+    citation check: ok (22 anchored contain the token they name, 1794 bare in bounds, 82 source->doc citations resolve)
+    CIT_RC=0
+    ```
+    **Verify — gate 2, `env -u LD_PRELOAD sh scripts/check_links.sh`:**
+    ```
+    link check: ok (130 markdown files, no dead relative links)
+    LNK_RC=0
+    ```
+    **Verify — gate 3, `env -u LD_PRELOAD sh scripts/spec_check.sh`** (run
+    because `docs/spec/01-lexical.md` and `docs/spec/14-ffi.md` were touched):
+    ```
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 8 runnable example(s), all pass
+    SPEC_RC=0
+    ```
+    Not run, per the Gate ladder: `make ci`. The whole diff is line numbers
+    inside citations in three Markdown files plus one C **comment**; nothing
+    reaches a compiled artifact.
+
+    **Scope, restated honestly.** The phase's Done-when says *every* bare
+    `src/tychoc.c:N` ref in `FRICTION.md`, `docs/` and any script or source
+    comment. `FRICTION.md` and `docs/spec/01-lexical.md` (the chapter §3.8 lives
+    in) are complete — every suspect in both was read and either repaired or
+    recorded above. The other ~400 are **not** done, and were re-scoped into
+    phase 9 rather than swept, because the phase's own instruction forbids
+    landing numbers with "a false air of correctness" and the candidate
+    generator demonstrably produces those when a citation was already stale.
+    Roughly 400 unread repairs would be exactly that failure at scale.
+
+    **The open question the phase was asked to settle: should
+    `scripts/check_citations.py` grow an anchored form for these, or should a
+    spec `> Provenance:` line be REQUIRED to be anchored? Answer: require it for
+    Provenance lines, and this phase is the evidence.** §3.8 is the proof by
+    construction — `src/tychoc.c:402` stayed in bounds through phase 2 and
+    quietly became the raw-string scanner while claiming to be `::`. Written
+    `src/tychoc.c:482@TK_COLONCOLON` it could not have survived, exactly as the
+    22 anchored citations survived. The numbers now support making it a rule
+    rather than a suggestion: a `> Provenance:` line names a specific mechanism
+    by definition, there are far fewer of them than the 1794 bare refs, and each
+    already has an obvious distinctive token. This agrees with phase 4's
+    recommendation and narrows it: **the two should land as one gate change,
+    which is phase 9's second half.**
 
 - [ ] **Phase 7 (found by phase 3, not absorbed) — nothing in any gate ever
       parses the two editor grammars, so both can rot silently**
@@ -967,6 +1151,61 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   - Sequencing: after phase 6, which will settle the `:N@token` question for bare
     citations; if the gate grows an anchored form, this sweep should adopt it
     rather than land more bare `:N` refs that rot the same way.
+
+- [ ] **Phase 9 (found by phase 6, not absorbed) — the `src/tychoc.c` citation
+      base is stale tree-wide by 68 to 3520 lines, not by 48, and the gate is
+      structurally blind to all of it**
+  - Phase 6 went looking for phase 2's `+48` drift and found it in **23** of
+    **447** in-scope Markdown citations. It repaired those, plus every other
+    suspect in `FRICTION.md` and `docs/spec/01-lexical.md`, and stopped. What is
+    left is a **different defect that this plan did not cause**: citations
+    written against a `src/tychoc.c` many commits older than HEAD, whose targets
+    have since moved by 68 to 3520 lines. Phase 6's own measurement of the
+    delta spread is the evidence — the modal shift is not 48 but 215, 508, 495,
+    2284 and so on, one cluster per compiler phase that ever inserted lines.
+  - The remaining population, all of it still passing the gate because a bare
+    `:N` is bounds-checked only:
+    - **369 in `docs/`** — the largest holdings are
+      `docs/spec/16-builtins.md` (51), `docs/internals/generics-stage2-body-cloning.md`
+      (52), `docs/internals/generics-gap-fixes-plan.md` (44),
+      `docs/spec/15-program.md` (39), `docs/spec/12-aggregates.md` (38),
+      `docs/spec/03-types.md` (26), `docs/rfc/ffi-threading-design-review.md` (26),
+      `docs/spec/02-grammar.md` (19),
+      `docs/internals/frontend-restriction-audit-2026-07-25.md` (14),
+      `docs/rfc/value-lifetime-regions.md` (9), and a long tail of 1–6 each.
+    - **64 in non-Markdown files** — `tests/reject/*.ty` fixture headers (~30,
+      each naming the exact rejection site), `tests/arity_limits_max.ty` (10),
+      `server/main.ty` (2), `tests/rtparity/run.py` (2),
+      `scripts/asan_self.sh` (1) and `tests/bounded_const_cap.ty` (1).
+    - **Excluded by name, not forgotten:** `compiler/tychoc0.ty` (79 refs) is
+      frozen and cannot be repaired — the same exclusion phase 8 above requires,
+      and `docs/bootstrap.md:106` already records its self-citations being off
+      by −50. The archived `docs/internals/plan-*-DONE.md` set (374 refs) stays
+      frozen on phase 4's rule.
+  - **The method phase 6 used, and its one failure mode, both of which this
+    phase inherits.** Blame the citing line → read `src/tychoc.c` at that commit
+    → find that exact text in today's file. It generates a candidate cheaply for
+    the whole population at once. It is **wrong whenever the citation was
+    already stale when its line was last edited**, because it then tracks the
+    stale target rather than the intended one — phase 6 hit that three times in
+    47 and caught it only by reading. So the candidate is a search aid, never
+    the answer: every repair still costs one read of the current source.
+  - **Do the gate change first, not last.** Phases 4 and 6 both concluded the
+    same thing from different evidence: bare `:N` is checked for bounds and
+    nothing else, which is precisely why 400-odd citations could rot invisibly
+    for months. `scripts/check_citations.py` already parses `:N@token` for any
+    path — it needs no new syntax, only a rule about where the anchored form is
+    required. The cheap, high-yield rule both phases converged on: **require it
+    on every `> Provenance:` line and on any citation naming a single named
+    construct; leave range and narrative refs bare.** Landing that BEFORE the
+    sweep means the sweep's 400 new numbers are gate-checked from birth instead
+    of becoming the next generation of silent rot.
+  - Done when: `check_citations.py` enforces the anchored form on Provenance
+    lines and `make ci` is green with it; the 369 + 64 refs above are repaired
+    against the current source, each read; `compiler/tychoc0.ty` and the
+    archived plans are excluded with the reason stated in the checker itself.
+  - Sequencing: after phase 8, which is the same defect at a smaller scale and
+    should adopt whatever anchored form this phase settles.
 
 ## Out of scope
 
