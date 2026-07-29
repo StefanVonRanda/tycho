@@ -9,7 +9,9 @@
 # no longer exercises elision at all** — it now only locks in that the emitted
 # indexing is correct, which is true elided or not. The golden is unchanged for
 # exactly that reason, which is also why the loss is invisible to `make test`.
-# Restoring elision for the three-clause form is carried as a phase in plan.md.
+# Restoring elision for the three-clause form is carried as phase 27 of plan.md.
+# 223 sequential sites across 97 files matched the elidable shape before phase 6
+# and none does now; measured, not estimated -- see phase 6's evidence.
 fn main():
     a := []int
     for i := 0; i < 20; i += 1:
