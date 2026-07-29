@@ -2,9 +2,9 @@
 """Runtime-parity lane: the two runtimes must offer the same feature surface.
 
 Tycho ships TWO runtimes. tychoc embeds runtime/tycho_rt.c verbatim into every
-file it emits (Makefile:23-26, src/tychoc.c:26). tychoc0 -- the self-hosted
+file it emits (Makefile:23-26, src/tychoc.c:28). tychoc0 -- the self-hosted
 compiler -- writes its OWN runtime out as C string literals (compiler/tychoc0.ty
-:9595, `fn preamble`). They are maintained by hand, independently, and until this
+:10555, `fn preamble`). They are maintained by hand, independently, and until this
 lane existed NOTHING compared them.
 
 That is not hypothetical. TYCHO_ARENA_STATS existed in runtime/tycho_rt.c and
@@ -12,7 +12,7 @@ was silently a no-op in every binary tychoc0 built, for as long as it took
 someone to notice by hand (fixed in 2b24ca6). `make fixpoint` cannot see this
 class of bug: it compares tychoc0 against ITSELF byte-for-byte and against
 tychoc only BEHAVIOURALLY, on programs that never trip a trap or read an env
-knob (compiler/fixpoint.sh:16-30). A runtime feature that is merely *absent*
+knob (compiler/fixpoint.sh:29-43). A runtime feature that is merely *absent*
 changes no output on the happy path, so every existing lane stays green.
 
 WHAT IS COMPARED, AND WHY THAT KEY
@@ -37,7 +37,7 @@ Both sides are measured the SAME way: compile tests/rtparity/surface.ty with
 each compiler and read the emitted C. That is deliberately wider than diffing
 runtime/tycho_rt.c against tychoc0's string literals, because some traps are not
 in the runtime file at all -- `tycho: range step is zero` is emitted inline by
-the loop codegen (src/tychoc.c:9636, compiler/tychoc0.ty:8593) -- and comparing
+the loop codegen (src/tychoc.c:10343, compiler/tychoc0.ty:9513) -- and comparing
 generated C against generated C catches those too.
 
 Because both compilers emit per-type helpers and traps ON DEMAND, the probe

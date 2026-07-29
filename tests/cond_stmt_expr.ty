@@ -78,7 +78,7 @@ fn main():
 
     # the value-`if` form (ROADMAP 2.1). It is NOT a third call site: a value-`if`
     # re-enters the ordinary `if` codegen via SValDecl (see the comment at
-    # compiler/tychoc0.ty:8802), so it reaches the same cond_unwrap. It was
+    # compiler/tychoc0.ty:9454), so it reaches the same cond_unwrap. It was
     # broken on baseline for the same reason and is covered here explicitly.
     v := if arr[1]:
         10

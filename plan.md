@@ -1268,7 +1268,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   And the `813` in `/home/igzo/github/tycho/editors/zed/README.md:14` is still a
   hand-written number no gate compares against the tree — filed as phase 12.
 
-- [ ] **Phase 8 (found by phase 4, not absorbed) — the same rot outside
+- [x] **Phase 8 (found by phase 4, not absorbed) — the same rot outside
       `FRICTION.md` and `docs/`: non-Markdown runners citing each other**
   - Phase 4 swept `FRICTION.md` and `docs/` and, by declared exception, the one
     line phase 1 had written into `tests/run.sh`. It did **not** sweep the rest of
@@ -1292,6 +1292,191 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   - Sequencing: after phase 6, which will settle the `:N@token` question for bare
     citations; if the gate grows an anchored form, this sweep should adopt it
     rather than land more bare `:N` refs that rot the same way.
+  - **DONE 2026-07-29.** Population counted for the first time, 17 references
+    across 12 files repaired by reading, and the gate extended to a third
+    direction. **Every path below is written in full**, because a bare `` `:N` ``
+    in this block inherits the previously-named path and reddens the gate on this
+    very evidence — the trap that caught phases 4, 5, 6 and 10.
+
+    **THE POPULATION, counted at HEAD (`cc3b1a3` + this phase's edits).** Every
+    tracked non-Markdown file was scanned for a `path:N` / `path:N-M` naming
+    another tracked non-Markdown file. **121 explicit references**, plus **10
+    bare `:N` continuations** riding on a path named earlier on the same physical
+    line (`compiler/fixpoint.sh:14`'s `` `:37` ``/`` `:81` ``, `Makefile` refs in
+    `/home/igzo/github/tycho/scripts/asan_self.sh`, and so on) — **131 total**.
+    The 121 is the number the new gate reports, because it resolves only the
+    explicit form.
+
+    | citing file | refs |
+    |---|---|
+    | `/home/igzo/github/tycho/scripts/frontparity.sh` | 16 |
+    | `/home/igzo/github/tycho/tests/arity_limits_max.ty` | 10 |
+    | `/home/igzo/github/tycho/scripts/check_citations.py` | 6 (syntax examples in its own header) |
+    | `/home/igzo/github/tycho/scripts/asan_self.sh` | 6 |
+    | `/home/igzo/github/tycho/tests/rtparity/run.py` | 5 |
+    | `/home/igzo/github/tycho/tests/postfreeze/rawstring.ty` | 4 |
+    | `/home/igzo/github/tycho/server/main.ty` | 3 |
+    | `/home/igzo/github/tycho/tools/lsp.ty` | 3 |
+    | `/home/igzo/github/tycho/tests/reject/rawstring_unterminated.ty` | 3 |
+    | `/home/igzo/github/tycho/corelib/cli/cli.ty`, `/home/igzo/github/tycho/corelib/httpd/httpd.ty`, `/home/igzo/github/tycho/corelib/test/result/main.ty`, `/home/igzo/github/tycho/src/tychoc.c`, `/home/igzo/github/tycho/tests/run.sh`, `/home/igzo/github/tycho/tools/tychofmt.ty` | 2 each |
+    | 40 further files (the `tests/reject/*.ty` fixture headers, one each) | 1 each |
+
+    By **target**, which is the split that decided the scope: `src/tychoc.c` 76,
+    `tests/run.sh` 14, `Makefile` 10, `compiler/fixpoint.sh` 5,
+    `scripts/frontparity.sh` 5, `compiler/tychoc0.ty` 4,
+    `scripts/tools_check.sh` 3, and 14 singletons.
+
+    **Two classes excluded, by name, with the reason.**
+    1. `/home/igzo/github/tycho/compiler/tychoc0.ty` as a **citing** file —
+       frozen, and `/home/igzo/github/tycho/docs/bootstrap.md:106` already records
+       its self-citations as off by −50. Citations *into* it from live files were
+       checked and two were repaired (below).
+    2. `tests/diag/*.err` and `tests/warn/*.err` — **20 hits that are not
+       citations at all.** A golden line like
+       `tests/diag/dym_var.ty:3: error: unknown variable 'coutn'` is compiler
+       output, generated, owned by `make test`. Counting them would have inflated
+       the population by 15% and pointed a doc gate at a generated file.
+
+    **The 17 repairs, each with the text of the line landed on.** All 17 were
+    **in bounds** and named a real line describing something else — §3.8's failure
+    mode, not the harmless `+N` shift.
+
+    | citation site | old target | new target | text at the new line |
+    |---|---|---|---|
+    | `/home/igzo/github/tycho/tests/rtparity/run.py:15` | `compiler/fixpoint.sh:16-30` | `compiler/fixpoint.sh:29-43` | `./tychoc "$H" -o "$T/A"` … through the `tests/*.ty examples/*.ty` differential `done` |
+    | `/home/igzo/github/tycho/tests/rtparity/run.py:5` | `src/tychoc.c:26` | `src/tychoc.c:28` | `#include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */` |
+    | `/home/igzo/github/tycho/tests/rtparity/run.py:7` | `compiler/tychoc0.ty:9595` | `compiler/tychoc0.ty:10555` | `fn preamble() -> string:` |
+    | `/home/igzo/github/tycho/tests/rtparity/run.py:40` | `src/tychoc.c:9636` | `src/tychoc.c:10343` | the `if (_step%d == 0) { … "tycho: range step is zero\n" … }` emit |
+    | `/home/igzo/github/tycho/tests/rtparity/run.py:40` | `compiler/tychoc0.ty:8593` | `compiler/tychoc0.ty:9513` | tychoc0's `"tycho: range step is zero\n"` header emit |
+    | `/home/igzo/github/tycho/tests/cond_stmt_expr.ty:81` | `compiler/tychoc0.ty:8802` | `compiler/tychoc0.ty:9454` | `# (:1185) and a value-`if` re-enters here via SValDecl (:8519), so` |
+    | `/home/igzo/github/tycho/corelib/test/result/main.ty:17` | `compiler/fixpoint.sh:24` | `compiler/fixpoint.sh:37` + `:47` | `for f in tests/*.ty examples/*.ty; do` and `for d in tests/pkg/*/; do` |
+    | `/home/igzo/github/tycho/corelib/test/result/main.ty:18` | `scripts/frontparity.sh:127` | `scripts/frontparity.sh:164-165` | the two-line `for hi in examples/*.ty tests/*.ty …` glob |
+    | `/home/igzo/github/tycho/tools/lsp.ty:258` | `scripts/frontparity.sh:127` | `scripts/frontparity.sh:164-165` | same glob — it is the line that carries `tools/*.ty` |
+    | `/home/igzo/github/tycho/scripts/asan_self.sh:10` | `Makefile:85-86` | `Makefile:103-106` | `# Differential test suite: every examples/*.ty and tests/*.ty built both` … `# tests/run.sh and docs/thesis.md §3.` |
+    | `/home/igzo/github/tycho/scripts/asan_self.sh:11` | `Makefile:202` + `:214` | `Makefile:245` + `:246` | the `ilp32: ASan lane SKIPPED …` echo and `@CC="gcc -m32" TYCHO_NO_ASAN=1 sh tests/run.sh` |
+    | `/home/igzo/github/tycho/scripts/asan_self.sh:72` | `Makefile:214` | `Makefile:245` | the same `ASan lane SKIPPED for ilp32` echo |
+    | `/home/igzo/github/tycho/scripts/editors_check.sh:24` | `Makefile:238` | `Makefile:245` | the same echo — the string the sentence quotes verbatim |
+    | `/home/igzo/github/tycho/scripts/frontparity.sh:102` | `examples/fetch/run.sh:35` | `examples/fetch/run.sh:33` | `if ! { "$TYCHOC" examples/fetch/main.ty --bundle 2>/dev/null \| "$T/h0" > "$T/h0.c" …` |
+    | `/home/igzo/github/tycho/scripts/frontparity.sh:102` | `examples/sqlite/run.sh:31` | `examples/sqlite/run.sh:29` | `if ! { "$TYCHOC" demo.ty --bundle 2>/dev/null \| "$T/h0" > "$T/h0.c" …` |
+    | `/home/igzo/github/tycho/tests/reject/rawstring_unterminated.ty:10` | `tests/run.sh:161-166` | `tests/run.sh:167` | `for hi in tests/reject/*.ty; do` |
+    | `/home/igzo/github/tycho/tests/postfreeze/nested_pattern.ty:12` | `scripts/frontparity.sh:78` | `scripts/frontparity.sh:88-91` | `#      holds two DELIBERATE divergences … (`result/main.ty` uses a nested pattern, `httpd/main.ty` a `\r` escape)` |
+
+    **Three findings worth more than the table.**
+
+    1. **`/home/igzo/github/tycho/scripts/editors_check.sh:24` was stale the day
+       it was written.** Phase 7 landed that file on 2026-07-29 and cited
+       `Makefile:238` for a string that has never been on line 238 — `:238` is
+       `@gcc -m32 build/.m32probe.c -o build/.m32probe …`, and the quoted
+       `"ASan lane SKIPPED for ilp32"` is at `Makefile:245`. This is the
+       "garbage in" case the checker header names, produced by *this plan*, one
+       phase before the phase that hunts it.
+    2. **The two worst were in `/home/igzo/github/tycho/tests/rtparity/run.py`,
+       and both halves of its `make fixpoint` claim were wrong in different
+       directions.** Phase 4's note that `compiler/fixpoint.sh:16-30` should be
+       `:29-43` is confirmed at HEAD and unchanged by phase 7: the self-emission
+       chain is `compiler/fixpoint.sh:29-35` (build A, B, C; `cmp -s "$T/cA.c"
+       "$T/cB.c"`) and the behavioural differential is
+       `compiler/fixpoint.sh:37-43`. `:16-30` today lands on the OUT-OF-SCOPE
+       comment about `tests/postfreeze/` plus the `cd`/`CC=`/`mktemp` setup —
+       in bounds, plausible, about nothing the sentence describes.
+    3. **`compiler/tychoc0.ty` being frozen does NOT make citations into it
+       safe.** Two of them (`/home/igzo/github/tycho/tests/rtparity/run.py:7`
+       and `:40`, and `/home/igzo/github/tycho/tests/cond_stmt_expr.ty:81`) were
+       off by 861, 920 and 652 lines respectively. A frozen target cannot drift,
+       so these were wrong when written — and nothing has ever read them since.
+
+    **The `src/tychoc.c` half was deliberately NOT swept, and it is 76 of the
+    121.** `/home/igzo/github/tycho/tests/reject/*.ty` (≈30 headers),
+    `/home/igzo/github/tycho/tests/arity_limits_max.ty` (10),
+    `/home/igzo/github/tycho/server/main.ty` (2),
+    `/home/igzo/github/tycho/tests/bounded_const_cap.ty` (1) and the rest are
+    **verbatim the non-Markdown population phase 9 enumerated and phase 9 was
+    dropped over**. Repairing them is the hand sweep that was explicitly
+    de-authorised, so it was not attempted in whole or in part. Two `src/tychoc.c`
+    refs WERE repaired — both in
+    `/home/igzo/github/tycho/tests/rtparity/run.py`, both sitting inside a
+    sentence whose other half this phase was already rewriting. Leaving half a
+    sentence knowingly false to honour a scope line would have been worse than
+    the two extra greps. Declared, not smuggled.
+
+    **THE GATE QUESTION, ANSWERED: yes for bounds, no for content — and the
+    second half is filed as phase 13 rather than half-built.** A third direction
+    was added to `/home/igzo/github/tycho/scripts/check_citations.py`
+    (260 → 321 lines: **18 lines of executable code**, the rest header). It scans
+    the same tracked non-Markdown set the SOURCE → DOC pass already walks and
+    bounds-checks every `path:N` naming another tracked non-Markdown file.
+    - **Cheap:** it reuses `lines_of()`, the `git ls-files` call and the `fails`
+      list that were already there. One new regex, one new counter.
+    - **Honest about its reach:** all 17 repairs above were IN BOUNDS. This check
+      would have caught **none** of them. Its value is the other half — a ref
+      past EOF or naming a deleted file now reddens instead of rotting, which is
+      exactly the one failure phase 4's bounds check did catch out of its 23.
+    - **What is NOT cheap, and why it is phase 13:** catching the wrong-line class
+      needs the anchored `path:N@token` form, and `CITE` requires a backtick span
+      while source citations are written in bare comment prose
+      (`(src/tychoc.c:8512-8515)`). That is a grammar change plus 121 call sites.
+      Building it halfway — a new regex with no adoption — would have produced a
+      counter that proves nothing.
+
+    **Verify — gate 1, `python3 scripts/check_citations.py`:**
+    ```
+    citation check: ok (104 anchored contain the token they name, 1911 bare in bounds, 83 source->doc citations resolve, 121 source->source in bounds)
+    RC=0
+    ```
+    `--stats` splits out the new class:
+    ```
+    citation check: 104 anchored (content-checked, 51 of them the mandatory `> Provenance:` single-line refs), 1911 bare (bounds only), 83 source->doc (existence), 121 source->source (bounds)
+    ```
+    (`source->doc` moved 82 → 83 because the new header block itself names
+    `docs/bootstrap.md:106` as the reason `compiler/tychoc0.ty` is excluded.)
+
+    **Verify — gate 2, the deliberate break, both directions, against the FINAL
+    script.** `/home/igzo/github/tycho/tests/rtparity/run.py:15`'s repaired
+    `compiler/fixpoint.sh:29-43` was temporarily widened to `29-430`:
+    ```
+    STALE  tests/rtparity/run.py:15  `compiler/fixpoint.sh:<29-430>` -> compiler/fixpoint.sh has 95 lines: OUT OF BOUNDS
+    citation check: FAILED (1 stale citation(s) above)
+    BROKEN_RC=1
+    ```
+    (Angle brackets added in that transcript only. The checker reads fenced
+    blocks, so quoting its own message verbatim reddens the gate on THIS evidence
+    block — the identical footgun phases 4 and 10 both recorded, now hit by the
+    check this phase added. Recorded rather than silently worked around.)
+    Restored from the pre-break copy, byte-for-byte:
+    ```
+    citation check: ok (104 anchored contain the token they name, 1911 bare in bounds, 83 source->doc citations resolve, 121 source->source in bounds)
+    RESTORED_RC=0
+    ```
+    **Verify — gate 3, `sh scripts/check_links.sh`:**
+    ```
+    link check: ok (131 markdown files, no dead relative links)
+    LNK_RC=0
+    ```
+    **Verify — gate 4, the script whose executable code changed, run once:** that
+    is `scripts/check_citations.py` itself, run above (gates 1 and 2).
+
+    **Zero line-shift blast radius, checked mechanically.** Every one of the 12
+    edited files is 1:1 — several are themselves citation targets
+    (`/home/igzo/github/tycho/scripts/asan_self.sh:69-70` is cited by
+    `/home/igzo/github/tycho/scripts/frontparity.sh:88`;
+    `/home/igzo/github/tycho/scripts/frontparity.sh:164-165` by four sites), so a
+    line added anywhere would have created the rot this phase exists to remove:
+    ```
+    $ git diff --numstat        # before plan.md was touched
+    3 3 corelib/test/result/main.ty      1 1 tests/postfreeze/nested_pattern.ty
+    3 3 scripts/asan_self.sh             1 1 tests/reject/rawstring_unterminated.ty
+    1 1 scripts/editors_check.sh         4 4 tests/rtparity/run.py
+    1 1 scripts/frontparity.sh           1 1 tools/lsp.ty
+    1 1 tests/cond_stmt_expr.ty
+    ```
+    **Not run, deliberately: `make test`, `make ci`, `compiler/fixpoint.sh`,
+    `scripts/asan_self.sh`.** Per the Gate ladder in
+    `/home/igzo/github/tycho/CLAUDE.md`, nothing here can reach a compiled
+    artifact. The three `.ty` files and the one `corelib/` file were edited
+    **inside `#` comments only**, with no line-count change, so the emitted C of
+    every fixture is byte-identical and the `tests/diag/*.err` goldens that name
+    fixture line numbers are untouched. The one script whose executable code
+    changed is the citation gate, and it was run.
 
 - ~~**Phase 9 (found by phase 6, not absorbed) — the `src/tychoc.c` citation
       base is stale tree-wide by 68 to 3520 lines, not by 48, and the gate is
@@ -1656,6 +1841,40 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     `/home/igzo/github/tycho/editors/zed/README.md`'s corpus count disagrees
     with the tree, proven by perturbing one or the other; `make ci` green.
   - Sequencing: independent of phases 8, 9 and 11. Any time after phase 7.
+
+- [ ] **Phase 13 (found by phase 8, not absorbed) — the source→source gate is
+      bounds-only, and the wrong-line class is 100% of what phase 8 found**
+  - Phase 8 added a third direction to
+    `/home/igzo/github/tycho/scripts/check_citations.py` that bounds-checks the
+    121 `path:N` refs one tracked non-Markdown file makes to another. It repaired
+    17 of them. **All 17 were in bounds**, so the new check would have caught
+    zero. It is a real guard against a ref past EOF or a renamed target, and
+    nothing more.
+  - The fix is the anchored form the docs already use — `path:N@token`, which
+    `CITE` and the anchor comparison already implement. The obstacle is
+    syntactic, not conceptual: `CITE` requires the ref to sit in a backtick span,
+    and source citations are written in bare comment prose —
+    `(src/tychoc.c:8512-8515)` at
+    `/home/igzo/github/tycho/corelib/net/net_shim.c:202`,
+    `# src/tychoc.c:3661` at
+    `/home/igzo/github/tycho/tests/reject/enum_typaram_max.ty:2`. So this needs a
+    second matcher with its own delimiter rules, plus a decision on which of the
+    121 must carry an anchor.
+  - Phase 4's rule is the one to reuse and it splits this population cleanly:
+    require the anchor where a citation names a **mechanism** (a glob, a loop, a
+    `Sig`, a `die_at`), leave narrative and range refs bare. On phase 8's own
+    numbers that is roughly the 45 non-`src/tychoc.c` refs — the `Makefile`,
+    `tests/run.sh`, `compiler/fixpoint.sh` and `scripts/frontparity.sh` targets
+    that runners cite at each other and that move on every edit.
+  - **Do not let this drag in the 76 `src/tychoc.c`-targeted refs.** Those are
+    phase 9's dropped population and dropping them was a decision. If the
+    anchored form makes the sweep gate-driven rather than hand-driven, that is
+    the argument for reopening phase 9 — make it explicitly, do not arrive there
+    by scope creep.
+  - Done when: the checker requires `path:N@token` for source→source citations
+    naming a mechanism, proven by a deliberate break in both directions; the
+    in-scope refs carry anchors; the two doc gates are green.
+  - Sequencing: after phase 8. Independent of phases 11 and 12.
 
 ## Status — stopped at phase 6, deliberately, 2026-07-29
 

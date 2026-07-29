@@ -99,7 +99,7 @@
 # ---------------------------------------------------------------
 # The glob above fed `examples/*.ty` and never `examples/<dir>/main.ty`, while
 # FOUR per-example runners do feed theirs to tychoc0 — `examples/webserver/run.sh:24`,
-# `examples/weblog/run.sh:24`, `examples/fetch/run.sh:35`, `examples/sqlite/run.sh:31`.
+# `examples/weblog/run.sh:24`, `examples/fetch/run.sh:33`, `examples/sqlite/run.sh:29`.
 # So the frozen compiler's real reach over the CORELIB ran through packages this
 # lane could not see: `core:cli` is inside the freeze via `examples/weblog`, which
 # plan.md Phase 6 concluded was outside it (harmless only because that phase added

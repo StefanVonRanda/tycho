@@ -109,6 +109,39 @@ WHAT THE SECOND DIRECTION DOES **NOT** CATCH:
     are check_links.sh's; a bare backticked mention inside a document is
     deliberately left alone, because the archived internals docs quote paths
     that were true when they were written and are a record, not a claim.
+
+THE THIRD DIRECTION: SOURCE -> SOURCE (added 2026-07-29, plan.md phase 8)
+-------------------------------------------------------------------------
+The runners cite each other as heavily as the docs cite the compiler:
+`scripts/frontparity.sh` names lines of `tests/run.sh`, `tests/rtparity/run.py`
+names lines of `compiler/fixpoint.sh`, `scripts/asan_self.sh` names lines of the
+`Makefile`.  Phase 8 counted 131 such references and found 17 of them pointing
+at the wrong line.  Neither pass above could see any of them: the first walks
+only `*.md`, and the second matches only paths under `docs/` ending in `.md`.
+So this pass scans the same tracked non-Markdown set as the second direction and
+checks every `path:N` / `path:N-M` naming another TRACKED NON-MARKDOWN file for
+existence and bounds.
+
+COVERAGE, STATED NARROWLY SO IT IS NOT READ WIDER.  Bounds and existence only --
+exactly the bare-citation semantics of the first pass, with the same blind spot:
+a reference that drifts onto a different-but-existing line still passes.  All 17
+that phase 8 repaired were IN BOUNDS and wrong, so this check would have caught
+none of them.  Its value is the other half: a citation that points past EOF, or
+at a file that has been renamed or deleted, now reddens instead of rotting.
+Requiring the anchored `path:N@token` form here too WOULD catch the wrong-line
+class, but source citations are written in comment prose without backticks and
+the CITE regex above needs a backtick span, so that is a real change to both the
+grammar and 131 call sites -- filed as its own plan.md phase, not smuggled in.
+
+EXCLUDED BY NAME, WITH THE REASON:
+  * `compiler/tychoc0.ty` -- the FROZEN bootstrap compiler.  Its self-citations
+    are known to be off by -50 (recorded at docs/bootstrap.md:106) and the file
+    cannot be edited, so policing it would produce an unfixable red.  Citations
+    INTO it from live files are still checked; only its own are skipped.
+  * `*.err` / `*.out` -- GOLDEN COMPILER OUTPUT.  A line like
+    `tests/diag/dym_var.ty:3: error: unknown variable` is a diagnostic the
+    compiler printed, not a citation a human wrote, and `make test` owns whether
+    it is right.  A doc gate must never demand an edit to a generated file.
 """
 import re
 import os
@@ -132,6 +165,17 @@ DOC_SCAN_PREFIX = ("src/", "compiler/", "runtime/", "corelib/", "tests/",
 # Anchored to `docs/` so it cannot fire on an arbitrary word ending in .md, and
 # the extension is required so `docs/spec/` (a directory) is not a citation.
 DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
+
+# A source file naming another SOURCE file (the third direction). The `:N` is
+# MANDATORY here -- a bare `tests/run.sh` is a mention, not a citation -- and the
+# match is filtered against the tracked-file set below, so `foo.c:12` quoted from
+# some tool's output cannot fire unless `foo.c` is really in the repo.
+SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)'
+                     r':(\d+)(?:-(\d+))?')
+
+# Files whose OWN source->source citations are not policed (see the header).
+SRC_SKIP_CITER = ("compiler/tychoc0.ty",)
+SRC_SKIP_SUFFIX = (".err", ".out")
 
 CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
                   r'(?:@([^`]+))?`')   # the anchor token MAY contain spaces
@@ -218,7 +262,8 @@ def main():
     # --- the second direction: SOURCE -> DOC (see the header) ----------------
     srcs = subprocess.run(["git", "ls-files"], cwd=ROOT,
                           capture_output=True, text=True, check=True).stdout.split()
-    n_doc = 0
+    tracked = set(srcs)
+    n_doc, n_src = 0, 0
     for sf in srcs:
         if sf.endswith(".md") or not sf.startswith(DOC_SCAN_PREFIX):
             continue
@@ -226,7 +271,21 @@ def main():
             text = open(os.path.join(ROOT, sf), errors="replace").readlines()
         except (IsADirectoryError, OSError):
             continue
+        # --- the third direction: SOURCE -> SOURCE (see the header) ----------
+        cites_src = not (sf in SRC_SKIP_CITER or sf.endswith(SRC_SKIP_SUFFIX))
         for ln, line in enumerate(text, 1):
+            if cites_src:
+                for m in SRCCITE.finditer(line):
+                    tgt = m.group(1)
+                    if tgt.endswith(".md") or tgt not in tracked:
+                        continue
+                    n_src += 1
+                    sl = lines_of(tgt)
+                    a = int(m.group(2))
+                    b = int(m.group(3)) if m.group(3) else a
+                    if a < 1 or b < a or b > len(sl):
+                        fails.append("%s:%d  `%s` -> %s has %d lines: OUT OF BOUNDS"
+                                     % (sf, ln, m.group(0), tgt, len(sl)))
             for m in DOCCITE.finditer(line):
                 doc = m.group(1)
                 n_doc += 1
@@ -244,15 +303,17 @@ def main():
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the mandatory "
               "`> Provenance:` single-line refs), %d bare (bounds only), "
-              "%d source->doc (existence)" % (n_anchored, n_prov, n_bare, n_doc))
+              "%d source->doc (existence), %d source->source (bounds)"
+              % (n_anchored, n_prov, n_bare, n_doc, n_src))
     if fails:
         for f in fails:
             print("STALE  " + f)
         print("citation check: FAILED (%d stale citation(s) above)" % len(fails))
         return 1
     print("citation check: ok (%d anchored contain the token they name, "
-          "%d bare in bounds, %d source->doc citations resolve)"
-          % (n_anchored, n_bare, n_doc))
+          "%d bare in bounds, %d source->doc citations resolve, "
+          "%d source->source in bounds)"
+          % (n_anchored, n_bare, n_doc, n_src))
     return 0
 
 
