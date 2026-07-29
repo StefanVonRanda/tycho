@@ -962,7 +962,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   spec is phase 9, and `docs/spec/01-lexical.md:170`'s "There is no range
   operator (`..`)" is now false and is already carried as phase 24.
 
-- [ ] **Phase 6 — rewrite all 549 `range()` sites**
+- [x] **Phase 6 — rewrite all 549 `range()` sites**
   - Scope: every `.ty` in the tree except frozen `compiler/tychoc0.ty`.
     Sequential counting → three-clause; the 17 `parallel for … in range(…)` →
     `0..<N`.
@@ -977,9 +977,225 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     worked around.
   - Done when: `grep -rn "in range(" --include='*.ty' .` returns only
     `compiler/tychoc0.ty`, and every gate is green.
-  - Verify: `make test`, then `make conc`, then `make corelib`, then
-    `make ci`. This is the second phase that earns a full sweep, because it
-    touches every area of the tree at once.
+  - Verify: `make test`, then `make conc`, then `make corelib` and
+    `make corelib-examples`. **Not `make ci` — see the sequencing correction
+    below.**
+
+  #### Sequencing correction, 2026-07-29 — phase 8 must run before this phase's sweep
+
+  The first attempt at this phase completed the rewrite and then reddened
+  `make ci` at step `[9b/13] editors-check`: `CORPUS PARSE MISMATCH`, **189 files
+  newly failing** in the zed tree-sitter grammar's corpus parse. Those 189 are
+  exactly the files the rewrite touched.
+
+  **The cause is a plan error, not a defect in the rewrite.** `scripts/editors_check.sh`
+  (added by the previous plan's phase 7) parses every `.ty` file in the tree with
+  the zed grammar and asserts the set of files that fail to parse is exactly the
+  known-bad set. The grammar does not know `;` or `..<` — teaching it is **phase 8**.
+  So the moment the corpus is rewritten, that gate reddens by construction, and
+  no amount of care in the rewrite avoids it.
+
+  **The false assumption, stated plainly:** that tooling could trail the corpus,
+  as it did for raw strings and for element-wise array arithmetic. It could then
+  because only a handful of fixtures used the new syntax and `editors_check.sh`
+  did not yet exist for the first of them. Here 189 files change at once, against
+  a gate that compares the whole corpus.
+
+  **The order from here is 6 → 8 → 7 → 9 → 10.** Phase 8 (tooling learns `;` and
+  `..<`) moves ahead of phase 7 (delete `range()`), so the tree returns to green
+  as soon as possible. `make ci` is run once, by phase 10, as it always was.
+
+  **Evidence (2026-07-29).**
+
+  **First, where the work actually is, because `git log` does not say so.** The
+  rewrite is **not** in a commit of its own. The first agent left 213 dirty `.ty`
+  files, and they were swept into **6ca63ca**, whose message is
+  *"docs: repair Appendix E's dead postfreeze fixture citations"* and describes
+  only the doc fix. That commit is 215 files, +599/-593. A future reader looking
+  for the 549-site rewrite will not find it under a matching subject line; it is
+  under that one. Nothing was rewritten or amended to fix this — 6ca63ca is
+  already the parent of this commit and rewriting shared history is worse than a
+  wrong subject line. This paragraph is the pointer instead.
+
+  **The audit, which is what this run was for.** The whole `.ty` half of 6ca63ca
+  was re-derived mechanically rather than spot-checked: `git show 6ca63ca -U0 --
+  '*.ty'` parsed into (old line, new line) pairs, the `range(...)` argument list
+  re-split at top-level commas, and each new three-clause header re-parsed and
+  checked against the arguments it came from — init equals the start, the
+  condition bound equals the stop, the condition **operator matches the sign of
+  the step**, the bound is **exclusive** (`<`/`>`, never `<=`/`>=`,
+  `docs/spec/10-statements.md:90-96`), the post amount equals the step, and the
+  loop variable is unchanged in all three clauses. **569 sites** in **209 files**;
+  after discarding 3 comment lines that merely mention `range`, **566 real
+  sites**. Per spelling:
+
+  | old spelling | sites | rewritten to |
+  |---|---|---|
+  | `range(n)` | 417 | `for i := 0; i < n; i += 1:` |
+  | `range(a, b)` | 119 | `for i := a; i < b; i += 1:` |
+  | `range(a, b, step)`, literal **positive** step | 9 | `i < b; i += step` |
+  | `range(a, b, step)`, literal **negative** step | 3 | `i > b; i -= |step|` |
+  | `range(a, b, step)`, **non-literal** step | 1 | *(fixture deleted, below)* |
+  | `parallel for … in range(…)` | 14 | `parallel for i in 0..<N:` |
+  | `parallel for … in range(0, 10, 2)` | 1 | *(fixture deleted, below)* |
+
+  **Every one of the 566 passed.** Zero sites had an inclusive bound, zero had a
+  mismatched bound or start, zero changed the loop variable, and **zero had the
+  sign defect** the Pre-flight named as the most likely: all three negative-step
+  sites are in `tests/range_negative_step.ty` and all three use `>`, not `<` —
+  `range(3, 0, -1)` → `for i := 3; i > 0; i -= 1:`, `range(10, 0, -3)` →
+  `for i := 10; i > 0; i -= 3:`, and the zero-trip
+  case `range(5, 5, -1)` → `for i := 5; i > 5; i -= 1:`, which correctly runs
+  **zero** times. That fixture has a golden and it passes, so the zero-trip case
+  is asserted rather than merely inspected.
+
+  **No non-literal step was invented a translation for.** The single
+  `range(0, 10, z[0])` site — a step whose sign is not statically known, which
+  the phase brief warns has *no* correct three-clause form — was **not**
+  rewritten. Its fixture was deleted (below). So the answer to "did the first
+  agent invent one?" is **no**, and there is nothing to un-invent.
+
+  **One real oversight, found and fixed by this run.** `tests/conc/parfor.ty:12`
+  was **`parallel for i in range(1, 11):`** — still live, missed by the sweep. It
+  is exactly the case the phase brief asks about: a `parallel for` counting from a
+  **non-zero** lower bound, which `0..<N` cannot express. **This is why phase 5's
+  non-zero-lower-bound tripwire (`src/tychoc.c:3358-3359`) never fired — the site
+  was skipped, not hit.** The tripwire is not broken; it was never reached. Fixed
+  by moving the offset into the body, which is the only shape `0..<N` allows:
+
+  ```
+  parallel for i in 0..<10:
+      s = s + (i + 1)
+      if i + 1 < 6:
+          p = p * (i + 1)
+  ```
+
+  The golden is **byte-identical**, which is the proof the iteration space did not
+  move (`s` = 1+…+10 = 55, `p` = 1·2·3·4·5 = 120):
+
+  ```
+  $ ./tychoc tests/conc/parfor.ty -o /tmp/.../pf.bin && /tmp/.../pf.bin >/tmp/.../pf.out
+  $ cmp /tmp/.../pf.out tests/conc/parfor.out && echo "GOLDEN MATCH"
+  GOLDEN MATCH
+  ```
+
+  Verdict on the plan's "if any exist, that is a finding that changes phase 5's
+  scope": one existed, and it does **not** change phase 5's scope. Phase 5's
+  refusal is correct and the site had a faithful rewrite; what it changes is the
+  claim that the sweep was complete. It was not, and only reading the diff found
+  it.
+
+  **The `parallel for` population, re-derived.** The plan said **17** counting
+  sites. The real number is **15**: 14 rewritten to `0..<N` and 1 deleted. All 14
+  had a lower bound of **0** already (10 were `range(n)`, 4 were `range(0, b)`),
+  so none of them could have tripped the tripwire either. The tree now has 35
+  `parallel for` sites, 19 of them `0..<`; the surplus over 14 is phase 5's own
+  new fixtures.
+
+  **Three fixtures were deleted, not rewritten — a coverage loss that needs
+  naming.** Each tested a `range()`-only guarantee with **no** three-clause or
+  `0..<N` equivalent, so none could be rewritten:
+
+  - `tests/reject/range_step_zero_lit.ty` — a **literal** `0` step must be
+    refused at compile time.
+  - `tests/abort/range_step_zero.ty` — a **runtime** `0` step must abort rather
+    than spin. This is the `range(0, 10, z[0])` site above.
+  - `tests/conc/reject/parfor_step.ty` — `parallel for i in range(0, 10, 2)`, a
+    non-unit step on a `parallel for`, must be refused.
+
+  The first two are the zero-step guarantee the Pre-flight already records as a
+  deliberate, permanent loss (a three-clause post clause is arbitrary code, so no
+  equivalent check is possible) and which **phase 9** must write into the spec.
+  The third becomes *unrepresentable* once `range()` is gone, since `0..<N` has no
+  step syntax at all. So all three deletions are correct in the end state. What is
+  not correct is the **timing**: `range()` is still in the compiler until phase 7,
+  so its zero-step checks and its `parallel`-step refusal are now **untested
+  between here and phase 7**. Self-resolving, but carried as **phase 28** so it is
+  a decision on the record rather than an accident. The counts confirm the
+  deletions exactly and nothing else moved: `make test` 543 → **541** (the two
+  `tests/` fixtures) and `make conc` 38 → **37** (the one `tests/conc/` fixture).
+
+  **The "elision loss" the first agent reported but did not explain.** Resolved.
+  It is **bounds-check elision**, and it is **real, deliberate, and undocumented
+  in the plan until now**.
+
+  `src/tychoc.c:10791-10801` gates elision on fields only an `S_FORRANGE` node
+  has — `s->r_start` being a literal `0`, `s->r_step == NULL`, and `s->r_stop`
+  being a `len(ident)` call. When it fires it records the (loop var, array) pair
+  in `g_elide[]` (`src/tychoc.c:7891-7893`) and indexing emits raw `.data[i]`
+  instead of the checked accessor. **`S_FOR3` has no such arm**, so every loop
+  this phase rewrote lost it. Proven on the two spellings side by side, same
+  program, `--emit-c`:
+
+  ```
+  for i in range(len(a)):        ->   h_s = (h_s + (h_a).data[h_i]);
+  for i := 0; i < len(a); i += 1: ->  h_s = (h_s + tycho_arr_int_get(h_a, h_i));
+  ```
+
+  **Scale: 223 sequential sites across 97 files** matched the elidable shape
+  (`for X in range(len(IDENT)):`) before this phase and none does now. Counted
+  from the diff, not estimated.
+
+  **It is a performance loss only, not a correctness one** — the fallback
+  `tycho_arr_int_get` is the *checked* accessor, so the tree got slower and
+  safer, never wrong. That is why no golden moved and why `make test` cannot see
+  it.
+
+  **Why `bench-guard` stayed green, which is the part worth knowing.** Not because
+  there is no regression — because it measures the wrong two programs.
+  `bench/guard.sh:31` runs exactly `binary_trees` and `maptree`, and the four
+  loops this phase rewrote in them are `range(n)`, `range(mind, maxd + 1, 2)`,
+  `range(iters)` and `range(200)`. **Not one is the `range(len(A))` shape
+  elision requires**, so neither workload could have observed the loss. Its gate
+  is also relative and loose (healthy ~0.23x C against a 0.60x gate); this run
+  measured 35% and 22% of C. So "bench-guard is ok" was true and meant nothing
+  about elision. Restoring elision for `S_FOR3` is carried as **phase 27**;
+  `tests/bounds_elision.ty` is annotated in place so the fixture no longer claims
+  to test something it stopped testing.
+
+  **The 4 files still matching `in range(`, all four accounted for.** Three are
+  prose, one is frozen; **no live loop remains**:
+
+  ```
+  compiler/tychoc0.ty:537,1427,1432,6505,13861,13887   frozen, out of scope
+  tests/bounds_elision.ty:5                            comment (the HISTORY note)
+  tests/for3.ty:4                                      comment (names the mechanism)
+  ```
+
+  `tests/conc/parfor.ty` was the fourth and is the oversight fixed above.
+
+  **Verify — six gates, each run in the foreground, one per command.**
+
+  ```
+  $ make test                       passed: 541   failed: 0        all green
+  $ make conc                       conc: passed 37   failed 0
+  $ make corelib                    corelib: all green (tychoc matches goldens)
+  $ make corelib-examples           corelib examples: all green
+  $ sh bench/guard.sh               ok binary_trees tycho=273ms C=765ms (35% of C, gate <60%)
+                                    ok maptree      tycho=122ms C=545ms (22% of C, gate <60%)
+                                    bench-guard: ok (tycho beats C on tree workloads)
+  $ python3 scripts/check_citations.py    citation check: ok (125 anchored contain the
+                                    token they name, 1985 bare in bounds, 102 source->doc
+                                    citations resolve, 107 source->source in bounds)
+  $ sh scripts/spec_check.sh        spec-examples: 9 runnable example(s), all pass
+  ```
+
+  Exit status was read explicitly for the two whose tail line could hide a
+  failure: `spec_check exit=0`, `citations exit=0`.
+
+  **`make ci` was NOT run, deliberately.** It reddens by construction at step
+  `[9b/13] editors-check` with `CORPUS PARSE MISMATCH` over 189 files, because the
+  zed tree-sitter grammar does not know `;` or `..<` — that is **phase 8**, which
+  the sequencing correction above moved ahead of phase 7 for exactly this reason.
+  Running it here would produce a known-red result that says nothing about this
+  phase. `make ci` is run once, by phase 10. `editors/` and `tools/` were not
+  touched.
+
+  **Left alone, deliberately.** `docs/internals/diagnostic-parity-2026-07-25.md:384`
+  still names `range_step_zero_lit` in a table of past diagnostics. It is history
+  of what the compilers reported on that date, it is a bare fixture name rather
+  than a path citation, and no gate reads it. Rewriting it would make the record
+  lie.
 
 - [ ] **Phase 7 — delete the counting form and the `range` builtin**
   - Scope: parser, typechecker, codegen, builtin table; `tests/reject/` fixture
@@ -1139,6 +1355,58 @@ Unclosed discoveries from the two previous plans; none blocking.
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for
       binary arithmetic over typed operands. **Phase 10 of this plan will hit the
       same wall for loops.**
+
+- [ ] **Phase 27** — **bounds-check elision does not reach the three-clause
+      form, and phase 6 silently turned it off tree-wide.** Elision is gated on
+      `S_FORRANGE`'s `r_start`/`r_stop`/`r_step` fields at
+      `src/tychoc.c:10791-10801`; `S_FOR3` has no equivalent arm, so
+      `for i := 0; i < len(a); i += 1:` emits the checked accessor
+      (`tycho_arr_int_get(h_a, h_i)`) where `for i in range(len(a)):` emitted raw
+      `(h_a).data[h_i]`. **223 sequential sites across 97 files** lost it in phase
+      6. Correctness is unaffected — the fallback is the *checked* path — so this
+      is purely performance, which is why every golden held.
+  - Scope: `src/tychoc.c`'s `S_FOR3` codegen arm and `stmts_unsafe`; no `.ty`
+    changes. The recogniser must match the same shape it matches for
+    `S_FORRANGE`: init is a literal `0`, condition is `i < len(IDENT)` with `<`
+    strictly, post is `i += 1` exactly, and the body must pass the existing
+    `stmts_unsafe` guard (no reassign/shadow of the array or the index, no
+    passing the array whole to a call). A negative or non-unit step, a `<=`
+    bound, or a non-`len` bound must **not** elide.
+  - Note the shape check is strictly harder here than for `S_FORRANGE`: there the
+    three parts are separate AST fields, here they are an init statement, a
+    condition expression and a post statement that must be *proved* to form a
+    unit-stride scan. Fail closed — if the shape is not certain, do not elide.
+  - Done when: `tests/bounds_elision.ty` emits `.data[i]` again for its four
+    loops, its HISTORY note is updated to say elision was restored, a fixture
+    proves a non-elidable three-clause loop (reassigned array, `<=` bound, step
+    2) still emits the checked accessor, and `TYCHOC_NO_BOUNDS_ELISION`
+    (`src/tychoc.c:7896`) still disables it.
+  - Verify: `make test`, then diff `--emit-c` output for both spellings and show
+    they now agree, then `sh bench/guard.sh`. **Add an elision-shaped workload to
+    `bench/guard.sh`** — phase 6 established that neither `binary_trees` nor
+    `maptree` contains one, so the guard cannot currently observe this class of
+    regression at all.
+
+- [ ] **Phase 28** — **three `range()`-only fixtures were deleted in phase 6 and
+      their guarantees are untested until phase 7 removes the feature.**
+      `tests/reject/range_step_zero_lit.ty` (literal `0` step refused at compile
+      time), `tests/abort/range_step_zero.ty` (runtime `0` step aborts rather
+      than spins) and `tests/conc/reject/parfor_step.ty` (a non-unit step on a
+      `parallel for` is refused). None could be rewritten — none has a
+      three-clause or `0..<N` equivalent — so deleting them is correct in the end
+      state. The gap is the *interval*: `range()` is still in the compiler until
+      phase 7, and those three checks are now unasserted.
+  - Decide, and record the decision rather than letting it lapse: either restore
+    the three fixtures until phase 7 deletes them with the feature, or state in
+    phase 7's evidence that they were retired early on purpose. Restoring them is
+    cheap (`git show 6ca63ca^:<path>`) and would make phase 7's own deletion of
+    `range()` provably complete rather than merely believed.
+  - The permanent half is already owned elsewhere: the zero-step guarantee has no
+    successor in either new form and **phase 9** must state that in the spec as a
+    deliberate trade. This phase is only about the fixtures.
+  - Done when: `plan.md` records which of the two options was taken and why, and
+    if restored, `make test` and `make conc` return to 543 and 38 until phase 7
+    moves them again.
 
 ## Out of scope
 
