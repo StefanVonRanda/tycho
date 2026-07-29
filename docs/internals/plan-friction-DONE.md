@@ -494,8 +494,8 @@ is a completed phase under this plan's Goal, and it is not a failure.
   | reached by `tychoc0` (literal FORBIDDEN) | why |
   |---|---|
   | `corelib/httpd`, `net`, `io`, `result`, `strings`, `sort`, `markdown` | imported by `examples/webserver/main.ty:17-23` |
-  | `tests/*.ty`, `tests/pkg/*/main.ty`, `examples/*.ty` | `compiler/fixpoint.sh:24`,`:34` |
-  | + `tests/{conc,warn,abort,diag}/*.ty`, `tools/*.ty` | `scripts/frontparity.sh:127-128` |
+  | `tests/*.ty`, `tests/pkg/*/main.ty`, `examples/*.ty` | `compiler/fixpoint.sh`,`:34` |
+  | + `tests/{conc,warn,abort,diag}/*.ty`, `tools/*.ty` | `scripts/frontparity.sh` |
   | **NOT reached (literal used here)** | |
   | `server/`, `corelib/test/*/`, `examples/corelib/*/` | no runner feeds them to `tychoc0` |
 
@@ -612,8 +612,8 @@ is a completed phase under this plan's Goal, and it is not a failure.
 
   ##### Out of scope, found, not absorbed
 
-  - **No `tests/` fixture is possible for either new form** while `compiler/fixpoint.sh:24`
-    and `scripts/frontparity.sh:127` feed `tests/*.ty` to the frozen `tychoc0`. Recorded in
+  - **No `tests/` fixture is possible for either new form** while `compiler/fixpoint.sh`
+    and `scripts/frontparity.sh` feed `tests/*.ty` to the frozen `tychoc0`. Recorded in
     `docs/spec/appendix-e-conformance.md` and in `FRICTION.md`, and it is a **consequence**
     of the freeze this plan already lists as deliberately-kept debris — not new work. The
     coverage that does exist is golden-validated (`make corelib`, `server/`).
@@ -817,7 +817,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   recorded, 8 new lines in `corelib/test/result.out`.
 
   **It cannot live in `tests/`**, and that is a consequence of the freeze rather than
-  a choice: `compiler/fixpoint.sh:24` and `scripts/frontparity.sh:127-128` feed every
+  a choice: `compiler/fixpoint.sh` and `scripts/frontparity.sh` feed every
   `tests/*.ty` and `tests/pkg/*/main.ty` to the frozen `tychoc0`. Recorded in
   `docs/spec/appendix-e-conformance.md` beside phase 2's identical note. The stronger
   coverage is incidental: `corelib/test/{io,httpd}` and `examples/corelib/result` had
@@ -1747,7 +1747,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   `corelib/run.sh:6-11` and `examples/corelib/run.sh:6-8` both record that their tychoc0
   legs were cut on 2026-07-26; `examples/webserver/run.sh` feeds tychoc0 only
   `examples/webserver/main.ty`, which imports `core:httpd`/`net`/`io` and not `core:cli`;
-  `scripts/frontparity.sh:126-127` and `compiler/fixpoint.sh:24` feed `examples/*.ty`,
+  `scripts/frontparity.sh` and `compiler/fixpoint.sh` feed `examples/*.ty`,
   `tests/*.ty`, `tools/*.ty` and `tests/pkg/*/`, and a tree-wide grep for `core:cli`
   returns only `corelib/cli/`, `corelib/test/cli/`, `examples/corelib/cli/`,
   `examples/weblog/` and now `server/` — none of them a tychoc0 input. `frontparity` at
@@ -2037,7 +2037,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   **It cannot live in `tests/`, for the fourth time in this plan**, and this time
   the constraint was *enumerated* instead of assumed. Measured: a `tychoc0` built at
   this commit refuses `println(str(b[2]))` with `line 3: str(x) can't stringify a
-  yte`, and `compiler/fixpoint.sh:24` + `scripts/frontparity.sh:127` feed every
+  yte`, and `compiler/fixpoint.sh` + `scripts/frontparity.sh` feed every
   `tests/*.ty` and `tests/pkg/*/main.ty` to it. Closing the import graph from every
   file a `tychoc0` runner compiles reaches **13** corelib packages that may not use
   these operators (`cli` `datetime` `http` `httpd` `io` `json` `markdown` `net`
@@ -2370,7 +2370,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   Two corrections to the item: the `Makefile` **no longer mentions `bootstrap`**
   (`grep -c bootstrap Makefile` → `0`; phase 0 removed the target), and the live
   citations are **three**, not two — `compiler/tychoc0.ty:617`, `compiler/run.sh:3`,
-  `compiler/fixpoint.sh:2`. Since `compiler/tychoc0.ty` is **frozen**, "remove the
+  `compiler/fixpoint.sh`. Since `compiler/tychoc0.ty` is **frozen**, "remove the
   citations" was never an available option: writing the document was the only way to
   satisfy "no live file cites a document that does not exist."
 
@@ -2697,7 +2697,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     returns %s` (`:4795-4796`). Plus a spec section beside §14.6 `or_return`
     (`docs/spec/10-statements.md:110`), plus a fixture that — being **new syntax** —
     can live only in `corelib/test/` or `server/`, never in `tests/` or `examples/`
-    (frozen `tychoc0`; `scripts/frontparity.sh:127` reports it as a divergence).
+    (frozen `tychoc0`; `scripts/frontparity.sh` reports it as a divergence).
 
   **And the payoff, measured rather than assumed.** `serve_conn`
   (`server/main.ty:363-473`) is **70 code lines** with **six** arms: five `Err` causes
@@ -2787,7 +2787,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   | `FRICTION.md:218` | `core:cli` cannot express `--root DIR` | this p6 | CLOSED ✓ | **live**: the server was driven all phase with `--root server/www --host … --port … --workers 4`; `fn parse_spec` present |
   | `FRICTION.md:219` | `die()` always exits 1 | this p4 | CLOSED ✓ | **ran**: `--help` → exit `0`, `--bogus` → exit `1` |
   | `FRICTION.md:220` | no `getpeername` | this p5 | CLOSED ✓ | **live access log**: `w1 127.0.0.1 GET / 200`, all four workers, no blank column; `netx_peer_addr` + `__thread` buffer |
-  | `FRICTION.md:222` | frozen-`tychoc0` reach bigger than `frontparity` saw | this p8 | CLOSED ✓ | **ran** `scripts/frontparity.sh` → `agreed: 292 diverged: 0`; the four per-example entry points are fed at `scripts/frontparity.sh:159-160` and `scripts/frontparity.sh:168-169` |
+  | `FRICTION.md:222` | frozen-`tychoc0` reach bigger than `frontparity` saw | this p8 | CLOSED ✓ | **ran** `scripts/frontparity.sh` → `agreed: 292 diverged: 0`; the four per-example entry points are fed at `scripts/frontparity.sh` and `scripts/frontparity.sh` |
   | `FRICTION.md:224` | `to_str`/`to_bytes` sandwich in `log_safe` | this p7 | CLOSED ✓ | **ran**: `bytes concat ABCDEF idx 66 slice CD`; `reinterp_ret` pin present in `corelib/test/io` |
   | `FRICTION.md:232` | no `unwrap_or`/`is_ok`/`is_err`/`is_some` | O/R p2 | CLOSED, **never struck** | all seven combinators in `corelib/result/result.ty:59-132`; **ran** `result.unwrap_or(io.read_bytes(…), to_bytes("fallback"))` inline |
   | `FRICTION.md:233` | no nested patterns, `Err(A)` misparses as a bind | this p3 | CLOSED ✓ | **ran**: `Err(A)`/`Err(e)`/`Ok(v)` arms → `okab`; `gen_match_side` + `'A' is a variant of … not a binding name` present |

@@ -1,11 +1,38 @@
 #!/usr/bin/env python3
-"""Runtime-parity lane: the two runtimes must offer the same feature surface.
+"""Runtime-parity lane -- RETIRED 2026-07-29. This lane no longer runs.
 
-Tycho ships TWO runtimes. tychoc embeds runtime/tycho_rt.c verbatim into every
-file it emits (Makefile:23-26, src/tychoc.c:28). tychoc0 -- the self-hosted
-compiler -- writes its OWN runtime out as C string literals (compiler/tychoc0.ty
-:10555, `fn preamble`). They are maintained by hand, independently, and until this
-lane existed NOTHING compared them.
+WHY IT IS RETIRED, FIRST
+------------------------
+This lane compared TWO runtimes, and one of them is gone. tychoc embeds
+runtime/tycho_rt.c verbatim into every file it emits; the self-hosted
+compiler/tychoc0.ty wrote its OWN runtime out as C string literals. tychoc0 is
+FROZEN, and the breaking loop-syntax change of 2026-07-29 (three-clause `for`
+and bare `for:` replace `for i in range(...)`, `range` deleted) means it can no
+longer parse the corpus, so no lane builds it. There is no second runtime left
+to compare against, and unlike the fuzz parity lanes there is no written-down
+oracle here that could stand in for it -- the whole method was
+implementation-vs-implementation. See compiler/fixpoint.sh's header, ROADMAP.md
+and docs/architecture.md.
+
+WHAT IS LOST -- and this one has a named victim
+-----------------------------------------------
+The drift class this lane existed to catch is now uncaught. TYCHO_ARENA_STATS
+existed in runtime/tycho_rt.c and was silently a no-op in every binary tychoc0
+built, for as long as it took someone to notice by hand (fixed in 2b24ca6). That
+survived because a runtime feature which is merely *absent* changes no output on
+the happy path, so every output-comparing lane stays green. With only one runtime
+in the tree the specific two-runtime drift cannot recur -- but the general shape
+does: nothing now asserts that runtime/tycho_rt.c actually WIRES UP the env knobs,
+abort diagnostics and arena-stats rows it defines. A knob that stops being read is
+still invisible to every gate. Replacing this with a single-runtime lane -- assert
+the emitted C of tests/rtparity/surface.ty still contains each expected getenv()
+name, trap text and stats row against a recorded list -- would recover most of the
+value and is deliberately left undone rather than pretended.
+
+WHAT IT DID, WHILE IT RAN
+-------------------------
+The two runtimes were maintained by hand, independently, and until this lane
+existed NOTHING compared them.
 
 That is not hypothetical. TYCHO_ARENA_STATS existed in runtime/tycho_rt.c and
 was silently a no-op in every binary tychoc0 built, for as long as it took
@@ -130,16 +157,10 @@ def emitted_c(tmp):
     if r.returncode != 0:
         die("tychoc could not compile the probe:\n" + r.stdout + r.stderr)
 
-    h0 = os.path.join(tmp, "tychoc0")
-    r = subprocess.run([tychoc, os.path.join(ROOT, "compiler", "tychoc0.ty"), "-o", h0],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        die("could not build tychoc0:\n" + r.stdout + r.stderr)
-
-    with open(PROBE, encoding="utf-8") as f:
-        r = subprocess.run([h0], stdin=f, capture_output=True, text=True)
-    if r.returncode != 0:
-        die("tychoc0 could not compile the probe:\n" + r.stderr)
+    # The second half of this function built a tychoc0 from compiler/tychoc0.ty and
+    # fed it the same probe, so the two emitted C files could be compared. Removed
+    # 2026-07-29: no lane builds tychoc0. main() returns before reaching here.
+    die("the tychoc0 side of this lane was removed on 2026-07-29")
 
     with open(out_c + ".c", encoding="utf-8", errors="replace") as f:
         return f.read(), r.stdout
@@ -180,6 +201,14 @@ def compare(kind, pat, c_src, h0_src, allow_c, allow_h0):
 
 
 def main():
+    print("rtparity: RETIRED 2026-07-29 -- this lane no longer runs.\n"
+          "          It compared tychoc's runtime against the one the frozen tychoc0\n"
+          "          emitted; no lane builds tychoc0 any more, so there is no second\n"
+          "          runtime to compare against. See this file's docstring for what\n"
+          "          is now uncaught, plus ROADMAP.md and docs/architecture.md.",
+          flush=True)
+    return 0
+
     tmp = tempfile.mkdtemp(prefix="rtparity.")
     try:
         c_src, h0_src = emitted_c(tmp)

@@ -11,9 +11,7 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `python3 scripts/check_citations.py` | <1s | any `path:line` written in Markdown, comments, or evidence blocks |
 | `sh scripts/check_links.sh` | <1s | relative Markdown links |
 | `sh scripts/spec_check.sh` | ~6s | runnable examples in `docs/spec/`, Appendix A vs §3/§4 |
-| `sh scripts/frontparity.sh` | ~3s + a `tychoc0` build | anything the frozen compiler compiles: `src/tychoc.c`, `tools/*.ty`, `tests/*.ty`, `examples/*.ty` |
 | `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
-| `sh compiler/fixpoint.sh` | minutes | self-hosting; only for `compiler/tychoc0.ty` or codegen |
 | `sh scripts/asan_self.sh` | minutes | `src/tychoc.c` under ASan/UBSan over the whole corpus |
 | `make test` | minutes | compiler or runtime behaviour, any fixture or golden |
 | `make ci` | **~19 min** | a new CI step, or a release |
@@ -24,12 +22,22 @@ cheapest gate that can actually redden for your change.** Running a broader one
   They cannot affect a compiled artifact, so `make test` cannot tell you
   anything `check_citations.py` did not.
 - **A `.ty` fixture or a corelib change** → `make test`.
-- **`src/tychoc.c`** → `make test`, plus `scripts/frontparity.sh` if the change
-  could alter what the frontend accepts.
+- **`src/tychoc.c`** → `make test`.
 - **`make ci` runs once**, at the end of a chain of related work, or when a
   phase adds a CI step. Not per phase. Not "to confirm". Once.
 - If you are unsure which gate covers your change, that is a question to ask,
   not a reason to run the expensive one.
+
+### Two gates that used to be here
+
+`sh scripts/frontparity.sh` and `sh compiler/fixpoint.sh` were **retired on
+2026-07-29** and are no longer runnable gates. Both built the frozen
+`compiler/tychoc0.ty` and checked the live compiler against it; the breaking
+loop-syntax change of that date means the frozen compiler can no longer parse
+the corpus. The scripts are still on disk and their headers record what they
+proved and what their loss costs — `ROADMAP.md` and `docs/architecture.md` carry
+the same in prose. **Nothing replaces them**: a change that silently narrows what
+`src/tychoc.c` accepts no longer has a second implementation to disagree with it.
 
 ### Why this file exists
 

@@ -34,6 +34,20 @@ drawn from:
 > specification and locked by a recorded fixture. Rows below that cite a
 > `*parity` **lane** name refer to gates that no longer run; the clause is
 > normative regardless, and the fixture citations beside it still hold.
+>
+> **2026-07-29 — the lanes themselves are retired.** The 2026-07-26 freeze took
+> `tychoc0` out of `make ci`, but `compiler/fixpoint.sh` and
+> `scripts/frontparity.sh` were still hand-run, and fourteen other non-gated
+> runners still built a `tychoc0`. As of 2026-07-29 **nothing builds it**: the
+> three-clause `for` and bare `for:` replaced `for i in range(...)` and the frozen
+> compiler cannot parse the corpus. See `ROADMAP.md` and
+> [docs/architecture.md](../architecture.md) for what that costs. Every rationale
+> below that explains a fixture's *location* by "the frozen compiler would refuse
+> it" — the `tests/postfreeze/` notes, the `corelib/test/` and `examples/corelib/`
+> carve-outs, the `\r` and adjacent-literal and nested-pattern constraints —
+> describes a constraint **that no longer binds**. Those fixtures have not been
+> relocated yet; that is tracked as its own phase. The clauses they back are
+> normative either way.
 
 ## E.2 The coverage matrix
 
@@ -232,8 +246,8 @@ are flagged here so the gap is explicit rather than hidden:
   covered by committed, golden-validated programs (`corelib/test/csv` and
   `corelib/test/httpd` under `make corelib`; `server/main.ty`'s `error_body` and
   `usage` under `make server`), but deliberately **not** by a `tests/` fixture. The
-  reason is mechanical, not an oversight: `compiler/fixpoint.sh:37` and
-  `scripts/frontparity.sh:164` feed every `tests/*.ty`, `tests/pkg/*/main.ty`,
+  reason is mechanical, not an oversight: `compiler/fixpoint.sh` and
+  `scripts/frontparity.sh` feed every `tests/*.ty`, `tests/pkg/*/main.ty`,
   `examples/*.ty` and `tools/*.ty` to the **frozen** `tychoc0`, whose lexer rejects
   `\r` (`compiler/tychoc0.ty:195`) and knows no adjacent-literal join. A fixture in
   `tests/` would therefore redden two runners at a file that must not be edited
@@ -250,8 +264,8 @@ are flagged here so the gap is explicit rather than hidden:
   purpose. It is not an exception carved for this clause; it is where any fixture
   for post-freeze syntax goes from now on, which is what closes the open
   `FRICTION.md` item "new language syntax can no longer be given a `tests/`
-  fixture". The exclusion is structural, not a skip list: `compiler/fixpoint.sh:37`
-  and `:81` and `scripts/frontparity.sh:164` all glob `tests/*.ty`, which does not
+  fixture". The exclusion is structural, not a skip list: `compiler/fixpoint.sh`
+  and `compiler/fixpoint.sh` and `scripts/frontparity.sh` all glob `tests/*.ty`, which does not
   descend into subdirectories, so nothing under `tests/postfreeze/` is ever handed
   to a `tychoc0`-derived binary. `tests/run.sh:135-153` runs it with the full
   native-vs-ASan + golden discipline, so the lane is gated, only not by the two
@@ -272,7 +286,7 @@ are flagged here so the gap is explicit rather than hidden:
   bites, same conclusion. `exit` is a **new builtin** and divergence is a **new
   acceptance**, so a `tests/` fixture for either would be a program the live
   compiler accepts and the frozen `tychoc0` refuses — which is exactly what
-  `scripts/frontparity.sh:157` reports as a divergence, and `compiler/fixpoint.sh:37`
+  `scripts/frontparity.sh` reports as a divergence, and `compiler/fixpoint.sh`
   as a build failure. The witness is `server/main.ty`, which no runner feeds to
   `tychoc0`: it calls `exit(0)` for `--help` (status verified with `echo $?`) and
   binds `srv := match net.listen(...)` with `Err(e): die(...)` as the failure arm.
@@ -283,8 +297,8 @@ are flagged here so the gap is explicit rather than hidden:
   conclusion. All three are **new acceptances**, so a `tests/` fixture would be a
   program `tychoc` accepts and the frozen `tychoc0` refuses. Measured, not assumed:
   `println(str(b[2]))` on a `bytes` gives `line 3: str(x) can't stringify a yte`
-  from a `tychoc0` built at this commit, which `scripts/frontparity.sh:157` would
-  report as a divergence and `compiler/fixpoint.sh:37` as a build failure. The
+  from a `tychoc0` built at this commit, which `scripts/frontparity.sh` would
+  report as a divergence and `compiler/fixpoint.sh` as a build failure. The
   covering fixtures are therefore `corelib/test/io` (golden-validated by
   `corelib/run.sh`, whose `tychoc0` leg was cut on 2026-07-26) and the §5.2.6
   specification example, which `scripts/spec_check.sh` compiles and runs. The
@@ -316,12 +330,12 @@ are flagged here so the gap is explicit rather than hidden:
   for §14.3.1 was already there. Every §16.8 program is a **new acceptance**:
   `a * b` on two arrays is a type error to the frozen `tychoc0`, so a fixture in
   `tests/*.ty` would be a program `tychoc` compiles and `tychoc0` refuses —
-  `scripts/frontparity.sh:157` reports that as a divergence. The whole fixture
+  `scripts/frontparity.sh` reports that as a divergence. The whole fixture
   set therefore lives in `tests/postfreeze/`, which no `tychoc0`-derived binary
   is fed, and is gated by `tests/run.sh:148-153` with the full native-vs-ASan +
   golden discipline. One placement is worth stating because it is not obvious: the
   `[T]` length-mismatch **abort** fixture is at `tests/postfreeze/abort/`, not
-  `tests/abort/`, because `scripts/frontparity.sh:164` globs `tests/abort/*.ty`
+  `tests/abort/`, because `scripts/frontparity.sh` globs `tests/abort/*.ty`
   and scores "tychoc accepted it, tychoc0 refused it" as a divergence — and an
   abort fixture is by construction a program tychoc accepts. `tests/run.sh:172-189`
   runs that directory as its own lane, requiring a nonzero exit and a `tycho:`

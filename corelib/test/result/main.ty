@@ -13,12 +13,17 @@
 #     this file is its regression -- see `why`, `sized` and `outcome` below
 #
 # THIS is the regression home for nested patterns and for a Result inside a tuple
-# literal, and the reason is the frozen compiler, not taste: `tests/*.ty` and
-# `tests/pkg/*/main.ty` are fed to compiler/tychoc0.ty by compiler/fixpoint.sh:37
-# and :47, and by scripts/frontparity.sh:164-165; tychoc0 is frozen at a grammar
-# that has neither. corelib/test/ is golden-validated by corelib/run.sh, reaches no
-# frozen compiler, so a new-syntax fixture can live here and nowhere in tests/.
-# (Same constraint phase 2 recorded for adjacent string literals.)
+# literal, and the reason WAS the frozen compiler, not taste: `tests/*.ty` and
+# `tests/pkg/*/main.ty` used to be fed to compiler/tychoc0.ty by
+# compiler/fixpoint.sh and scripts/frontparity.sh, and tychoc0 is frozen at a
+# grammar that has neither construct. corelib/test/ is golden-validated by
+# corelib/run.sh, reached no frozen compiler, so a new-syntax fixture could live
+# here and nowhere in tests/.
+#
+# THAT CONSTRAINT NO LONGER BINDS. Both lanes were retired on 2026-07-29 and
+# nothing builds tychoc0 any more (see the header of compiler/fixpoint.sh,
+# ROADMAP.md and docs/architecture.md), so these fixtures could now live in
+# tests/. They have not been moved yet -- that is tracked as its own phase.
 package main
 import "core:result"
 import "core:io"

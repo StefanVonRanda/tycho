@@ -106,7 +106,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
 
 ## Phases
 
-- [ ] **Phase 1 — retire the `tychoc0` freeze lanes**
+- [x] **Phase 1 — retire the `tychoc0` freeze lanes**
   - Scope: `scripts/frontparity.sh`, `compiler/fixpoint.sh`, the `tychoc0` legs
     of the 15 non-gated runners that build it (`fuzz/run_leak.py`,
     `fuzz/run_pkg.py`, `fuzz/minimize.py`, `fuzz/run_parforparity.py`,
@@ -125,6 +125,170 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   - Verify: `make ci` (this phase changes what runs, so it is one of the two
     phases that earns a full sweep), then `sh scripts/check_links.sh` and
     `python3 scripts/check_citations.py` — many documents cite these scripts.
+
+  **Evidence (2026-07-29).**
+
+  **The runner list, re-derived — the plan's was wrong in both directions.**
+  Derived by `grep -rln tychoc0 --include='*.sh' --include='*.py'
+  --include='Makefile'`, which found **36** files, then reading each to separate a
+  real leg from a comment. A comment is not a leg, and seven of the plan's fifteen
+  were comment-only.
+
+  - **Plan named, but comment-only — already retired on 2026-07-26, nothing to
+    do:** `/home/igzo/github/tycho/fuzz/run_leak.py`,
+    `/home/igzo/github/tycho/fuzz/run.py`,
+    `/home/igzo/github/tycho/fuzz/run_reject.py`,
+    `/home/igzo/github/tycho/tests/recursion/run.sh`,
+    `/home/igzo/github/tycho/tests/conc/run.sh`,
+    `/home/igzo/github/tycho/tests/ffi/run.sh`,
+    `/home/igzo/github/tycho/examples/site/run.sh`. Each carries a `HISTORY:` note
+    saying its tychoc0 legs were cut on 2026-07-26.
+  - **Plan missed, but a real leg:** `/home/igzo/github/tycho/compiler/run.sh`
+    (the Stage-1 bootstrap differential),
+    `/home/igzo/github/tycho/examples/weblog/run.sh`,
+    `/home/igzo/github/tycho/examples/webserver/run.sh`,
+    `/home/igzo/github/tycho/fuzz/run_typeparity.py`,
+    `/home/igzo/github/tycho/tools/prof/profile.sh` (its `self` emitter mode), and
+    `/home/igzo/github/tycho/compiler/pkg-split.sh` (reads `tychoc0.ty` as source;
+    orphaned because its only caller was `compiler/fixpoint.sh`).
+  - **Plan named and correct:** `/home/igzo/github/tycho/fuzz/run_pkg.py`,
+    `/home/igzo/github/tycho/fuzz/minimize.py`,
+    `/home/igzo/github/tycho/fuzz/run_parforparity.py`,
+    `/home/igzo/github/tycho/fuzz/run_unaryparity.py`,
+    `/home/igzo/github/tycho/fuzz/run_eqparity.py`,
+    `/home/igzo/github/tycho/tests/rtparity/run.py`,
+    `/home/igzo/github/tycho/examples/sqlite/run.sh`,
+    `/home/igzo/github/tycho/examples/fetch/run.sh`.
+
+  Net: **16 real legs**, not 15, and only 8 of the plan's 15 were real.
+
+  **Confirmed, as the phase brief predicted:** nothing in
+  `/home/igzo/github/tycho/Makefile` and no step of
+  `/home/igzo/github/tycho/scripts/ci.sh` invokes any of them. `make ci` runs
+  exactly what it ran before this phase. No surprise wiring was found.
+
+  **The retire-vs-delete rule applied.** Nothing was `git rm`'d. The tree's own
+  2026-07-26 precedent (keep the lane, drop the tychoc0 leg, leave a `HISTORY:`
+  header — see `/home/igzo/github/tycho/fuzz/run.py`) was followed, split three
+  ways by what survives removal of the leg:
+
+  1. **No non-tychoc0 half exists → keep the file, replace the body with a
+     retirement note that prints and exits.** `/home/igzo/github/tycho/compiler/fixpoint.sh`,
+     `/home/igzo/github/tycho/scripts/frontparity.sh`,
+     `/home/igzo/github/tycho/compiler/run.sh`,
+     `/home/igzo/github/tycho/tests/rtparity/run.py`,
+     `/home/igzo/github/tycho/fuzz/minimize.py`. Each header records what the lane
+     proved, why it went, and what is now uncaught.
+  2. **A written-down oracle survives → keep the lane, drop only the tychoc0
+     leg.** `/home/igzo/github/tycho/fuzz/run_eqparity.py`,
+     `/home/igzo/github/tycho/fuzz/run_unaryparity.py`,
+     `/home/igzo/github/tycho/fuzz/run_parforparity.py` keep their `expect` table
+     and still gate `tychoc` against it; `FIXTURE DRIFT` was renamed
+     `ORACLE DIVERGENCE` since it is now the only assertion.
+     `/home/igzo/github/tycho/fuzz/run_typeparity.py` has **no** `expect` table —
+     the tychoc0 verdict *was* its oracle — so what remains is strictly weaker (an
+     exhaustive fail-closed sweep) and its header says exactly that rather than
+     pretending otherwise. `/home/igzo/github/tycho/fuzz/run_pkg.py` keeps leg 1
+     as a smoke test.
+  3. **Orphaned or mode-only → keep, annotate.**
+     `/home/igzo/github/tycho/compiler/pkg-split.sh` (only caller retired);
+     `/home/igzo/github/tycho/tools/prof/profile.sh` (the `self` emitter now
+     refuses with a pointer, the default `tychoc` emitter is untouched).
+
+  **A coupling that would have been broken silently.** In both
+  `/home/igzo/github/tycho/examples/fetch/run.sh` and
+  `/home/igzo/github/tycho/examples/sqlite/run.sh` the ASan/UBSan leg sanitized the
+  C that **tychoc0** emitted, so deleting the tychoc0 leg would have deleted the
+  sanitizer's input with it. Both are repointed at `tychoc --emit-c` output, so the
+  use-after-free coverage (transient curl body / `sqlite3_column_text` pointer
+  copied into the arena) survives — now over one implementation, not two. Stated in
+  both headers.
+
+  **What was written into the docs.** `/home/igzo/github/tycho/ROADMAP.md` gained a
+  section "The `tychoc0` freeze lanes were retired on 2026-07-29", and
+  `/home/igzo/github/tycho/docs/architecture.md` a section "2026-07-29: the freeze
+  lanes were retired — nothing builds `tychoc0` now". Both say, in plain words:
+  what ended is **continuous proof that `tychoc0` accepts what `tychoc` accepts**;
+  the differential caught a real over-tightening of the newtype path that made
+  `tychoc0` refuse `if dup == ids:` in
+  `/home/igzo/github/tycho/tests/newtype_agg.ty`, which the C compiler accepted
+  without complaint; **the class of defect now uncaught is a silent narrowing of
+  what the frontend accepts**, invisible to goldens because a newly-rejected
+  program never reaches the comparison; and `compiler/tychoc0.ty` **stays on disk**
+  as the self-hosting artifact, still the largest Tycho program in the tree, still
+  fed to `tychoc` as *input* by `/home/igzo/github/tycho/scripts/asan_self.sh`.
+  `/home/igzo/github/tycho/docs/architecture.md` also names two smaller losses no
+  other lane covered: `fuzz/run_pkg.py`'s tychoc0 legs were the only consumers of
+  the `tychoc --bundle` package stream, and `tests/rtparity/run.py` the only check
+  that the embedded runtime wires up the env knobs it defines.
+  `/home/igzo/github/tycho/CLAUDE.md`'s gate table no longer lists either script
+  and gained a short "Two gates that used to be here" note.
+
+  **Corrected a claim that was already false.**
+  `/home/igzo/github/tycho/ROADMAP.md` said "No gate builds or runs it" as of
+  2026-07-26. That was true only of `make ci`; two hand-run lanes and fourteen
+  other runners built it right up to today. The wording is fixed and the
+  distinction recorded. `/home/igzo/github/tycho/ROADMAP.md`'s "two independent
+  compilers held to byte-identical self-hosting" is likewise gone from the
+  present-tense description of the harness.
+
+  **Verify 1 — no runner builds `tychoc0`.**
+  `grep -rn "tychoc0\.ty" --exclude-dir=.git --include='*.sh' --include='*.py'
+  --include='Makefile' .` with comment lines filtered leaves exactly three hits,
+  none of which builds a compiler:
+
+  ```
+  compiler/pkg-split.sh:30:H="$HERE/tychoc0.ty"          # reads it as source text
+  scripts/check_citations.py:137:  * `compiler/tychoc0.ty` -- the FROZEN ...   # prose
+  scripts/check_citations.py:177:SRC_SKIP_CITER = ("compiler/tychoc0.ty",)     # a path constant
+  ```
+
+  `/home/igzo/github/tycho/scripts/asan_self.sh` still names
+  `compiler/tychoc0.ty` on its corpus line — deliberately: it feeds it to `tychoc`
+  as **input**, which is the artifact use the phase preserves.
+
+  **Verify 2 — citations.** 49 citations pointed into the two retired scripts and
+  went out of bounds. Repaired by stripping the line anchor (a line number into a
+  script that is now a retirement note is meaningless) across
+  `/home/igzo/github/tycho/FRICTION.md`,
+  `/home/igzo/github/tycho/docs/internals/plan-friction-DONE.md`,
+  `/home/igzo/github/tycho/docs/internals/plan-postfreeze-rawstring-DONE.md`,
+  `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md`,
+  `/home/igzo/github/tycho/tests/run.sh`,
+  `/home/igzo/github/tycho/tools/lsp.ty`,
+  `/home/igzo/github/tycho/tests/postfreeze/nested_pattern.ty` and
+  `/home/igzo/github/tycho/corelib/test/result/main.ty` — 69 named anchors and 11
+  bare `:N` continuation refs. Final:
+
+  ```
+  citation check: ok (125 anchored contain the token they name, 1943 bare in bounds,
+  102 source->doc citations resolve, 96 source->source in bounds)
+  ```
+
+  **Verify 3 — links.**
+
+  ```
+  link check: ok (133 markdown files, no dead relative links)
+  ```
+
+  **Verify 4 — `make ci`.** Exceeded the 10-minute per-command cap, so it was run
+  to a log with a wrapper capturing the status directly. The exit status is
+  **observed, not derived** — `CI_EXIT=$?` was written by the wrapper:
+
+  ```
+   CI GREEN -- tree is good
+  ================================================================
+  CI_EXIT=0
+  ```
+
+  Lane detail from the same run: `ok=177 skip=23 timeout=0 FAIL=0` (fuzz),
+  `accepted=31 rejected=169 FAIL=0` (fuzz-reject), `ok=131 skip=19 FAIL=0`
+  (fuzz-leak). As predicted, `make ci` was unaffected by this phase.
+
+  **Smoke-tested the rewired runners** (none is in `make ci`):
+  `examples/weblog/run.sh` → `weblog: ok`; `examples/webserver/run.sh` →
+  `webserver: ok`; `examples/sqlite/run.sh` → `sqlite: green`.
+  `examples/fetch/run.sh` is **red, and was already red at HEAD** — see phase 20.
 
 - [ ] **Phase 2 — fold `tests/postfreeze/` back into `tests/`**
   - Scope: `tests/postfreeze/*.ty` + goldens → `tests/`; `tests/postfreeze/abort/`
@@ -252,6 +416,44 @@ Unclosed discoveries from the two previous plans; none blocking.
       were deliberately not swept; same class as the dropped phase 9.
 - [ ] **Phase 18** — `docs/internals/spec-plan.md:605` cites
       `appendix-e-conformance.md:187` for a §9.5 claim; that line is the §24.2 row.
+- [ ] **Phase 20** — `examples/fetch/run.sh` is red, and was red **before** this
+      plan started. Two independent pre-existing faults, both found by phase 1 and
+      neither caused by it. (a) `SHIM` named `corelib/http/http_shim.c` alone while
+      `examples/fetch/main.ty` also imports `core:io`, so the link failed with
+      `undefined reference to iox_close_lines / iox_stat_kind`. **Measured, not
+      assumed:** `git show HEAD:examples/fetch/run.sh` run at HEAD fails at exactly
+      that link step. Phase 1 fixed this one (it had to, to keep the ASan leg
+      alive). (b) Behind it sits the real blocker — `examples/fetch/expected.out`
+      records a cache filename `tycho_fetch_<hash>.json` whose hash derives from
+      the URL, and the URL embeds `$PWD`, so **the golden is only reproducible in
+      the directory it was recorded in** (wants `e3de3da05e1cd879`, gets
+      `5124059f6a7ee320`). Making the cache key path-independent is a `core:http`
+      change and was left alone. The lane is not in `make ci`, which is how it
+      stayed red unnoticed. Note this is the exact blind spot
+      `scripts/entrypoints.sh` was created for — that gate proves entry points
+      *compile*, not that their runners *pass*.
+
+- [ ] **Phase 21** — the freeze no longer constrains where fixtures live, and
+      several files still say it does. `corelib/test/result/main.ty`,
+      `examples/corelib/httpd/main.ty` and the `§E.2` rationales in
+      `docs/spec/appendix-e-conformance.md` place fixtures outside `tests/`
+      *because the frozen compiler would refuse them* — nested patterns, `\r`
+      escapes, adjacent string literals, `Result` in a tuple literal. With no lane
+      building `tychoc0` that constraint is void and those fixtures can come home.
+      Phase 1 annotated the claims in place rather than moving anything; phase 2
+      already folds `tests/postfreeze/` back and is the natural place to widen.
+
+- [ ] **Phase 22** — `fuzz/run_typeparity.py` lost its oracle, not just its second
+      opinion. Unlike `run_eqparity.py` / `run_unaryparity.py` / `run_parforparity.py`,
+      which carry a written-down `expect` table, its only assertion *was* `tychoc ==
+      tychoc0`. What survives is an exhaustive fail-closed sweep (no crash; every
+      accept emits compilable C) over the scalar binop matrix, which no longer
+      catches a changed type *rule*. Adding an `expect` table in the style of
+      `fuzz/run_eqparity.py` would restore a real oracle. Same shape, smaller:
+      `tests/rtparity/run.py` could become a single-runtime lane asserting the C
+      emitted for `tests/rtparity/surface.ty` still contains each expected
+      `getenv()` name, trap text and stats row against a recorded list.
+
 - [ ] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for
       binary arithmetic over typed operands. **Phase 10 of this plan will hit the

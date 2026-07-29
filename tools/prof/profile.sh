@@ -4,25 +4,31 @@
 #   program.ty  the tycho program to profile (compiled to C, then sampled)
 #   input-file  fed to the program's stdin each run (default: /dev/null)
 #   N-runs      how many runs to accumulate samples over (default: 400)
-#   emitter     compiler that emits program.ty to C: "tychoc" (default) or "self"
-#               ("self" = tychoc0 emitting itself — the real self-hosted codegen).
 # Prints the CPU-time breakdown by the tycho function that drives each hot leaf.
 #
-# Example — profile the self-hosted compiler self-compiling:
-#   tools/prof/profile.sh compiler/tychoc0.ty compiler/tychoc0.ty 600 self
+# RETIRED MODE, 2026-07-29: a fourth argument `self` used to build a tychoc0 from
+# compiler/tychoc0.ty and have it emit its own C — the real self-hosted codegen
+# under the profiler, which is how the emitter's hot paths were measured on a
+# 16k-line input. tychoc0 is FROZEN and the breaking loop-syntax change of
+# 2026-07-29 means it can no longer parse the corpus, so no lane builds it; see
+# the header of compiler/fixpoint.sh, ROADMAP.md and docs/architecture.md. The
+# default `tychoc` emitter is unaffected, and `tools/prof/profile.sh
+# compiler/tychoc0.ty compiler/tychoc0.ty 600` still profiles tychoc compiling
+# that same 16k-line program — what is gone is profiling the SELF-HOSTED codegen.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-HI="${1:?usage: profile.sh <program.ty> [input] [N] [tychoc|self]}"
+HI="${1:?usage: profile.sh <program.ty> [input] [N]}"
 IN="${2:-/dev/null}"; N="${3:-400}"; EMIT="${4:-tychoc}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 [ -x ./tychoc ] || { echo "build ./tychoc first (make tychoc)"; exit 2; }
 
 if [ "$EMIT" = self ]; then
-    ./tychoc compiler/tychoc0.ty -o "$T/h0" >/dev/null 2>&1 || { echo "build tychoc0 failed"; exit 1; }
-    "$T/h0" < "$HI" > "$T/p.c" 2>/dev/null || { echo "self-emit failed"; exit 1; }
-else
-    ./tychoc "$HI" --emit-c -o "$T/p" >/dev/null 2>&1 || { echo "tychoc emit failed"; exit 1; }
+    echo "profile.sh: the 'self' emitter was RETIRED 2026-07-29 -- it built a tychoc0," >&2
+    echo "            and no lane builds tychoc0 any more. Drop the 4th argument to" >&2
+    echo "            profile with tychoc. See this file's header." >&2
+    exit 2
 fi
+./tychoc "$HI" --emit-c -o "$T/p" >/dev/null 2>&1 || { echo "tychoc emit failed"; exit 1; }
 cc -O2 -no-pie -rdynamic -fno-omit-frame-pointer -g "$T/p.c" tools/prof/prof_shim.c -o "$T/prof" -ldl \
     || { echo "compile failed"; exit 1; }
 
