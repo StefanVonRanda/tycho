@@ -118,12 +118,12 @@ typedef enum {
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH, TK_PERCENT,
     TK_PIPE, TK_CARET, TK_TILDE, TK_SHL, TK_SHR,
-    TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
+    TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW, TK_SEMI,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE, TK_HANDLE,
     TK_BREAK, TK_CONTINUE,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
-    TK_DOT, TK_ELLIPSIS, TK_DOLLAR,
+    TK_DOT, TK_ELLIPSIS, TK_DOTLT, TK_DOLLAR,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR, TK_KW_BYTES,
     TK_KW_U32, TK_KW_U64, TK_KW_F32,
     TK_KW_U8, TK_KW_U16, TK_KW_I8, TK_KW_I16, TK_KW_I32, TK_KW_I64
@@ -479,6 +479,7 @@ static TokVec lex(const char *src) {
             TokKind k; int len = 1;
             if (c == '/' && c2 == '/') { g_err_col = tcol; die_at(line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division"); }
             if (c == '.' && c2 == '.' && p[2] == '.') { k = TK_ELLIPSIS; len = 3; }  /* variadic `...T` / spread `x...` */
+            else if (c == '.' && c2 == '.' && p[2] == '<') { k = TK_DOTLT; len = 3; }  /* `0..<N`: half-open counting range (parallel for) */
             else if (c == ':' && c2 == ':')      { k = TK_COLONCOLON; len = 2; }
             else if (c == ':' && c2 == '=') { k = TK_COLONEQ;    len = 2; }
             else if (c == '=' && c2 == '=') { k = TK_EQEQ;       len = 2; }
@@ -502,6 +503,7 @@ static TokVec lex(const char *src) {
             else if (c == ']') k = TK_RBRACKET;
             else if (c == '.') k = TK_DOT;
             else if (c == ',') k = TK_COMMA;
+            else if (c == ';') k = TK_SEMI;     /* three-clause `for init; cond; post:` */
             else if (c == '&') k = TK_AMP;
             else if (c == '%') k = TK_PERCENT;
             else if (c == '|') k = TK_PIPE;

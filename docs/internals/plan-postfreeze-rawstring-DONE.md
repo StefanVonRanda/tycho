@@ -1088,7 +1088,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     Provenance lines, and this phase is the evidence.** §3.8 is the proof by
     construction — `src/tychoc.c:402` stayed in bounds through phase 2 and
     quietly became the raw-string scanner while claiming to be `::`. Written
-    `src/tychoc.c:482@TK_COLONCOLON` it could not have survived, exactly as the
+    `src/tychoc.c:483@TK_COLONCOLON` it could not have survived, exactly as the
     22 anchored citations survived. The numbers now support making it a rule
     rather than a suggestion: a `> Provenance:` line names a specific mechanism
     by definition, there are far fewer of them than the 1794 bare refs, and each
@@ -1641,34 +1641,34 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     | `docs/spec/01-lexical.md:47` | `src/tychoc.c:244` | `src/tychoc.c:264@*p != '\n' && *p != '#'` | the token loop, which stops at `#` |
     | `docs/spec/01-lexical.md:82` | `src/tychoc.c:230` | `src/tychoc.c:249@indentation too deep` | the indent-depth bound |
     | `docs/spec/01-lexical.md:354` | `src/tychoc.c:289` | `src/tychoc.c:311@!(c == 'f' && p[1] == '"')` | the identifier scanner declining the `f` of `f"…"` |
-    | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3459` | `src/tychoc.c:4001@parse_package_decl` | `static void parse_package_decl(Parser *ps) {` |
-    | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3466` | `src/tychoc.c:4008@parse_import_decl` | `static void parse_import_decl(Parser *ps) {` |
-    | `docs/spec/03-types.md:382` | `src/tychoc.c:567` | `src/tychoc.c:634@task_container_err` | `static void task_container_err(void) {` |
-    | `docs/spec/03-types.md:382` | `src/tychoc.c:607` | `src/tychoc.c:674@chan_container_err` | `static void chan_container_err(void) {` |
-    | `docs/spec/03-types.md:385` | `src/tychoc.c:5418` | `src/tychoc.c:5703@reserve does not apply to a bounded` | that `die_at` |
-    | `docs/spec/03-types.md:462` | `src/tychoc.c:7115` | `src/tychoc.c:8540@identity equality` | the `IS_FUNC(t)` arm of the equality emitter |
-    | `docs/spec/10-statements.md:8` | `src/tychoc.c:2338` | `src/tychoc.c:2710@parse_if` | `static Stmt *parse_if(Parser *ps, int line) {` |
-    | `docs/spec/10-statements.md:9` | `src/tychoc.c:2409` | `src/tychoc.c:2816@parse_match` | `static Stmt *parse_match(Parser *ps, int line, int value) {` |
-    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9641` | `src/tychoc.c:11496@pop from an empty array` | the emitted array-`pop` abort |
-    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9960` | `src/tychoc.c:11662@pop from an empty array` | the emitted SOA-`pop` abort |
-    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1613` | `src/tychoc.c:1938@a tuple has at most 8 elements` | the arity cap |
-    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1617` | `src/tychoc.c:1942@a tuple type needs at least two elements` | the arity floor |
-    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9918` | `src/tychoc.c:11631@m.elive[e]` | the emitted `keys()` walk |
-    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9931` | `src/tychoc.c:11586@m->ecount++` | the append that *defines* the order |
+    | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3459` | `src/tychoc.c:4003@parse_package_decl` | `static void parse_package_decl(Parser *ps) {` |
+    | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3466` | `src/tychoc.c:4010@parse_import_decl` | `static void parse_import_decl(Parser *ps) {` |
+    | `docs/spec/03-types.md:382` | `src/tychoc.c:567` | `src/tychoc.c:636@task_container_err` | `static void task_container_err(void) {` |
+    | `docs/spec/03-types.md:382` | `src/tychoc.c:607` | `src/tychoc.c:676@chan_container_err` | `static void chan_container_err(void) {` |
+    | `docs/spec/03-types.md:385` | `src/tychoc.c:5418` | `src/tychoc.c:5705@reserve does not apply to a bounded` | that `die_at` |
+    | `docs/spec/03-types.md:462` | `src/tychoc.c:7115` | `src/tychoc.c:8542@identity equality` | the `IS_FUNC(t)` arm of the equality emitter |
+    | `docs/spec/10-statements.md:8` | `src/tychoc.c:2338` | `src/tychoc.c:2712@parse_if` | `static Stmt *parse_if(Parser *ps, int line) {` |
+    | `docs/spec/10-statements.md:9` | `src/tychoc.c:2409` | `src/tychoc.c:2818@parse_match` | `static Stmt *parse_match(Parser *ps, int line, int value) {` |
+    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9641` | `src/tychoc.c:11498@pop from an empty array` | the emitted array-`pop` abort |
+    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9960` | `src/tychoc.c:11664@pop from an empty array` | the emitted SOA-`pop` abort |
+    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1613` | `src/tychoc.c:1940@a tuple has at most 8 elements` | the arity cap |
+    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1617` | `src/tychoc.c:1944@a tuple type needs at least two elements` | the arity floor |
+    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9918` | `src/tychoc.c:11633@m.elive[e]` | the emitted `keys()` walk |
+    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9931` | `src/tychoc.c:11588@m->ecount++` | the append that *defines* the order |
     | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:509` | `runtime/tycho_rt.c:751@c->seq, c->pos + 1, memory_order_release` | the publish in `tycho_chan_send_commit` |
     | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:521` | `runtime/tycho_rt.c:763@memory_order_acquire) - (pos + 1)` | the acquire load in the recv claim |
     | `docs/spec/14-ffi.md:9` | `runtime/tycho_rt.c:1026` | `runtime/tycho_rt.c:1284@tycho_arr_int_from_c` | that boundary copy routine |
-    | `docs/spec/16-builtins.md:85` | `src/tychoc.c:8283` | `src/tychoc.c:8846@tycho_eprint` | the `eprint` emit |
-    | `docs/spec/16-builtins.md:116` | `src/tychoc.c:4152` | `src/tychoc.c:4382@.name="chr"` | the `chr` `Sig` |
-    | `docs/spec/16-builtins.md:143` | `src/tychoc.c:4158` | `src/tychoc.c:4389@.name="split"` | the `split` `Sig` |
-    | `docs/spec/16-builtins.md:145` | `src/tychoc.c:4157` | `src/tychoc.c:4388@.name="char_at"` | the `char_at` `Sig` |
-    | `docs/spec/16-builtins.md:146` | `src/tychoc.c:8686` | `src/tychoc.c:9349@tycho_str_get` | the `E_INDEX` `s[i]` emit |
+    | `docs/spec/16-builtins.md:85` | `src/tychoc.c:8283` | `src/tychoc.c:8848@tycho_eprint` | the `eprint` emit |
+    | `docs/spec/16-builtins.md:116` | `src/tychoc.c:4152` | `src/tychoc.c:4384@.name="chr"` | the `chr` `Sig` |
+    | `docs/spec/16-builtins.md:143` | `src/tychoc.c:4158` | `src/tychoc.c:4391@.name="split"` | the `split` `Sig` |
+    | `docs/spec/16-builtins.md:145` | `src/tychoc.c:4157` | `src/tychoc.c:4390@.name="char_at"` | the `char_at` `Sig` |
+    | `docs/spec/16-builtins.md:146` | `src/tychoc.c:8686` | `src/tychoc.c:9351@tycho_str_get` | the `E_INDEX` `s[i]` emit |
     | `docs/spec/16-builtins.md:148` | `compiler/tychoc0.ty:6698` | `compiler/tychoc0.ty:6770@hi_sidx` | tychoc0's `s[i]` emit |
-    | `docs/spec/16-builtins.md:218` | `src/tychoc.c:6819` | `src/tychoc.c:7285@"defaultable"` | the `defaultable` predicate |
-    | `docs/spec/16-builtins.md:243` | `src/tychoc.c:4151` | `src/tychoc.c:4381@.name="ncpu"` | the `ncpu` `Sig` |
-    | `docs/spec/16-builtins.md:332` | `src/tychoc.c:4153` | `src/tychoc.c:4383@.name="die"` | the `die` `Sig` |
-    | `docs/spec/16-builtins.md:337` | `src/tychoc.c:4833` | `src/tychoc.c:5079@case E_CALL:` | the `resolve_expr` call arm |
-    | `docs/spec/16-builtins.md:338` | `src/tychoc.c:5468` | `src/tychoc.c:5691@"reserve"` | `reserve` inside that arm |
+    | `docs/spec/16-builtins.md:218` | `src/tychoc.c:6819` | `src/tychoc.c:7287@"defaultable"` | the `defaultable` predicate |
+    | `docs/spec/16-builtins.md:243` | `src/tychoc.c:4151` | `src/tychoc.c:4383@.name="ncpu"` | the `ncpu` `Sig` |
+    | `docs/spec/16-builtins.md:332` | `src/tychoc.c:4153` | `src/tychoc.c:4385@.name="die"` | the `die` `Sig` |
+    | `docs/spec/16-builtins.md:337` | `src/tychoc.c:4833` | `src/tychoc.c:5081@case E_CALL:` | the `resolve_expr` call arm |
+    | `docs/spec/16-builtins.md:338` | `src/tychoc.c:5468` | `src/tychoc.c:5693@"reserve"` | `reserve` inside that arm |
 
     (32 rows; the remaining two stale ones are `docs/spec/01-lexical.md:141`'s
     `` `soa` `` pair, which were correct lines but whose anchors had to be the
@@ -1897,10 +1897,10 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     `src/tychoc.c:12098` and the file ends at `:12202`, so the range was **82
     lines early at both ends** and its first 82 lines are `find_file`/argument
     plumbing. Repaired to `src/tychoc.c:12298-12402@int main(`. Also
-    `docs/spec/15-program.md:22`'s `src/tychoc.c:3672-3742@parse_extern_fn`
+    `docs/spec/15-program.md:22`'s `src/tychoc.c:3674-3744@parse_extern_fn`
     included the function's opening line as its **last** line; the function is
     `src/tychoc.c:3707-3777`. And `docs/spec/03-types.md:376`'s
-    `src/tychoc.c:1882-1898@"bounded"` ended one line into the `bounded` branch
+    `src/tychoc.c:1884-1900@"bounded"` ended one line into the `bounded` branch
     that starts at `src/tychoc.c:1863` and runs to `:1880`. **Three of the nine
     anchored ranges were misaligned** — a 33% failure rate in the class the gate
     reports as green, which is the caveat's whole point.
