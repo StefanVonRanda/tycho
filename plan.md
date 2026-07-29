@@ -1207,6 +1207,47 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   - Sequencing: after phase 8, which is the same defect at a smaller scale and
     should adopt whatever anchored form this phase settles.
 
+## Status — stopped at phase 6, deliberately, 2026-07-29
+
+**Phases 1–6 are done and the tree is green.** The plan as approved was phases
+1–3; phases 4–9 were all filed by phase agents as out-of-scope discoveries,
+under the scope-lock rule that says work found outside a phase is appended, never
+silently absorbed. Six ran. **Phases 7, 8 and 9 are left unchecked by the user's
+explicit decision**, not by oversight and not because they failed.
+
+```
+30058a2  phase 1  tests/postfreeze/, a fixture lane outside the freeze
+b895e66  phase 2  backtick raw string literals
+d572181  phase 3  tychofmt, LSP and editor grammars learn raw strings
+1d8ed4b  phase 4  repoint stale fixpoint.sh / frontparity.sh citations
+309c59a  phase 5  asan_self.sh and the postfreeze corpus
+782af20  phase 6  repoint src/tychoc.c citations after the raw-string insert
+```
+
+The Goal's two objects are both met: `tests/postfreeze/` exists and is proven
+(a `tychoc0` built at HEAD refuses its canary, while both frozen-compiler lanes
+still report `agreed: 292  diverged: 0`), and backtick raw strings ship in the
+compiler, the formatter, the LSP and both editor grammars. The last full sweep
+was phase 3's `make ci` → `CI GREEN`, exit 0; phases 4–6 touched only Markdown
+and comments, and phase 5's `asan_self.sh` ran green at `compiled: 544 failed: 0`.
+
+**Why the remaining three were stopped rather than run.** They are all one
+problem, and it is not this plan's problem. Phase 6 counted **921 citations to
+`src/tychoc.c` alone, 906 of them bare**, and found that only 23 of the 447
+in-scope suspects were phase 2's `+48` — the rest were stale by 68 to 3520 lines
+*before this plan started*. `scripts/check_citations.py` validates a bare `:N`
+only for being in bounds, which is precisely why they rotted silently, and it is
+why phases 4, 5 and 6 each reddened the gate **on their own evidence blocks** and
+nowhere else. Sweeping ~400 more references by hand is symptom-chasing at a rate
+the next line-shifting commit undoes. Phase 9 already carries the settled answer —
+require `:N@token` anchoring on `> Provenance:` lines, landing *before* any sweep —
+and that is the thing worth doing first, in its own plan, on its own evidence.
+
+**If work resumes here, read this first:** phases 7, 8 and 9 below are written
+against the tree as of `782af20`. Phase 9's own line numbers will have drifted if
+anything touched `src/tychoc.c` in between — which is the joke, and also the
+point.
+
 ## Out of scope
 
 - **`new_ideas.md` item 1 — `${name}` interpolation.** Dropped by the user's
