@@ -1207,7 +1207,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   - Sequencing: after phase 8, which is the same defect at a smaller scale and
     should adopt whatever anchored form this phase settles.
 
-- [ ] **Phase 10 — anchor `> Provenance:` lines, and make the gate require it**
+- [x] **Phase 10 — anchor `> Provenance:` lines, and make the gate require it**
   - **Resumed 2026-07-29 by explicit request: the gate change only.** This is
     phase 9's first bullet ("do the gate change first, not last") carved out and
     run on its own. The ~400-citation hand sweep phase 9 describes is **still not
@@ -1243,6 +1243,240 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   - Verify: `python3 scripts/check_citations.py`, then the deliberate-break
     check above, then `sh scripts/check_links.sh` and `sh scripts/spec_check.sh`.
     Not `make ci` — see "Gate ladder".
+  - **DONE 2026-07-29.** Shipped: the mandatory-anchor rule in
+    `scripts/check_citations.py` (198 → 260 lines: 19 lines of code, the rest the
+    header the phase required), and 48 newly anchored single-line refs across
+    eight `docs/spec/` files. **Every path below is spelled in full**, because a
+    bare `` `:N` `` in this block would inherit the previously-named path and
+    redden the gate on this very evidence — the trap that caught phases 4, 5 and 6.
+
+    **Population re-derived, and the plan's count was off by one.** The phase says
+    57 `> Provenance:` lines; there are **56**, and there were 56 at `782af20` too
+    (`git grep -c '^> Provenance:' 782af20 -- '*.md'` summed = 56; same at HEAD).
+    Per-file, all in `docs/spec/`: `01-lexical.md` 12, `16-builtins.md` 11,
+    `02-grammar.md` 10, `03-types.md` 5, `04-inference.md`/`14-ffi.md`/
+    `18-library.md` 2 each, and 1 each in `05-generics.md`, `06-conversions.md`,
+    `07-memory-model.md`, `08-declarations.md`, `09-expressions.md`,
+    `10-statements.md`, `11-functions.md`, `12-aggregates.md`,
+    `13-concurrency.md`, `15-program.md`, `17-runtime.md`,
+    `appendix-a-grammar.md`. Otherwise the plan's distribution is exact.
+
+    **The archived set is excluded two ways, and the second is the one that
+    matters.** (1) Empirically it has nothing to exclude: `git grep -c
+    '^> Provenance:'` over tracked Markdown returns **only** `docs/spec/` files —
+    zero hits in `docs/internals/plan-*-DONE.md`. (2) The checker excludes it **by
+    name anyway** (`ARCHIVED` + the `frozen` guard), because phase 4 settled that
+    those files are frozen verification evidence and a new gate rule must never be
+    able to demand an edit there. Exclusion (1) is true today; (2) keeps it true if
+    someone pastes a Provenance line into an archived plan tomorrow.
+
+    **A scope decision the phase's wording left open: the rule polices the whole
+    BLOCK, not the opening line.** A `> Provenance:` block is hard-wrapped, and
+    **34 of the 48 offending refs sit on a `>` continuation line, not on the
+    `> Provenance:` line itself** (14 head / 34 continuation, measured before any
+    edit). A line-only rule would have policed 29% of the population and would be
+    evadable by pressing Enter. The checker therefore opens the block at
+    `> Provenance:` and closes it at the first non-blockquote line. Cost: two
+    lines of code.
+
+    **What the 48 turned out to be. Only 14 were merely un-anchored; 34 were
+    pointing at the wrong line and were repaired by reading.**
+
+    | outcome | count |
+    |---|---|
+    | anchored in place (cited line was correct) | 14 |
+    | **stale — repaired against the current source, then anchored** | **34** |
+    | converted from a single-line ref to a range | 0 |
+    | ranges left bare, per the rule | 113 + 50 |
+
+    Nothing was converted to a range: every one of the 48 had a real single-line
+    subject once the right line was found. The nearest case was
+    `docs/spec/12-aggregates.md`'s `keys()` insertion order, whose two cited lines
+    named a map representation that no longer exists (a slot-linked list); the
+    current design has two genuine single-line sites — the walk and the
+    append — so it stayed two anchored singles rather than becoming one range.
+
+    **The 34 stale ones, each with the text of the line landed on.**
+
+    | citation site | old | new (anchored) | text at the new line |
+    |---|---|---|---|
+    | `docs/spec/01-lexical.md:47` | `src/tychoc.c:222` | `src/tychoc.c:238@*p == '#') {` | the comment-only-line skip |
+    | `docs/spec/01-lexical.md:47` | `src/tychoc.c:244` | `src/tychoc.c:264@*p != '\n' && *p != '#'` | the token loop, which stops at `#` |
+    | `docs/spec/01-lexical.md:82` | `src/tychoc.c:230` | `src/tychoc.c:249@indentation too deep` | the indent-depth bound |
+    | `docs/spec/01-lexical.md:354` | `src/tychoc.c:289` | `src/tychoc.c:311@!(c == 'f' && p[1] == '"')` | the identifier scanner declining the `f` of `f"…"` |
+    | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3459` | `src/tychoc.c:3967@parse_package_decl` | `static void parse_package_decl(Parser *ps) {` |
+    | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3466` | `src/tychoc.c:3974@parse_import_decl` | `static void parse_import_decl(Parser *ps) {` |
+    | `docs/spec/03-types.md:382` | `src/tychoc.c:567` | `src/tychoc.c:634@task_container_err` | `static void task_container_err(void) {` |
+    | `docs/spec/03-types.md:382` | `src/tychoc.c:607` | `src/tychoc.c:674@chan_container_err` | `static void chan_container_err(void) {` |
+    | `docs/spec/03-types.md:385` | `src/tychoc.c:5418` | `src/tychoc.c:5669@reserve does not apply to a bounded` | that `die_at` |
+    | `docs/spec/03-types.md:462` | `src/tychoc.c:7115` | `src/tychoc.c:8406@identity equality` | the `IS_FUNC(t)` arm of the equality emitter |
+    | `docs/spec/10-statements.md:8` | `src/tychoc.c:2338` | `src/tychoc.c:2676@parse_if` | `static Stmt *parse_if(Parser *ps, int line) {` |
+    | `docs/spec/10-statements.md:9` | `src/tychoc.c:2409` | `src/tychoc.c:2782@parse_match` | `static Stmt *parse_match(Parser *ps, int line, int value) {` |
+    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9641` | `src/tychoc.c:11296@pop from an empty array` | the emitted array-`pop` abort |
+    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9960` | `src/tychoc.c:11462@pop from an empty array` | the emitted SOA-`pop` abort |
+    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1613` | `src/tychoc.c:1904@a tuple has at most 8 elements` | the arity cap |
+    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1617` | `src/tychoc.c:1908@a tuple type needs at least two elements` | the arity floor |
+    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9918` | `src/tychoc.c:11431@m.elive[e]` | the emitted `keys()` walk |
+    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9931` | `src/tychoc.c:11386@m->ecount++` | the append that *defines* the order |
+    | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:509` | `runtime/tycho_rt.c:751@c->seq, c->pos + 1, memory_order_release` | the publish in `tycho_chan_send_commit` |
+    | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:521` | `runtime/tycho_rt.c:763@memory_order_acquire) - (pos + 1)` | the acquire load in the recv claim |
+    | `docs/spec/14-ffi.md:9` | `runtime/tycho_rt.c:1026` | `runtime/tycho_rt.c:1284@tycho_arr_int_from_c` | that boundary copy routine |
+    | `docs/spec/16-builtins.md:85` | `src/tychoc.c:8283` | `src/tychoc.c:8712@tycho_eprint` | the `eprint` emit |
+    | `docs/spec/16-builtins.md:116` | `src/tychoc.c:4152` | `src/tychoc.c:4348@.name="chr"` | the `chr` `Sig` |
+    | `docs/spec/16-builtins.md:143` | `src/tychoc.c:4158` | `src/tychoc.c:4355@.name="split"` | the `split` `Sig` |
+    | `docs/spec/16-builtins.md:145` | `src/tychoc.c:4157` | `src/tychoc.c:4354@.name="char_at"` | the `char_at` `Sig` |
+    | `docs/spec/16-builtins.md:146` | `src/tychoc.c:8686` | `src/tychoc.c:9122@tycho_str_get` | the `E_INDEX` `s[i]` emit |
+    | `docs/spec/16-builtins.md:148` | `compiler/tychoc0.ty:6698` | `compiler/tychoc0.ty:6770@hi_sidx` | tychoc0's `s[i]` emit |
+    | `docs/spec/16-builtins.md:218` | `src/tychoc.c:6819` | `src/tychoc.c:7151@"defaultable"` | the `defaultable` predicate |
+    | `docs/spec/16-builtins.md:243` | `src/tychoc.c:4151` | `src/tychoc.c:4347@.name="ncpu"` | the `ncpu` `Sig` |
+    | `docs/spec/16-builtins.md:332` | `src/tychoc.c:4153` | `src/tychoc.c:4349@.name="die"` | the `die` `Sig` |
+    | `docs/spec/16-builtins.md:337` | `src/tychoc.c:4833` | `src/tychoc.c:5045@case E_CALL:` | the `resolve_expr` call arm |
+    | `docs/spec/16-builtins.md:338` | `src/tychoc.c:5468` | `src/tychoc.c:5657@"reserve"` | `reserve` inside that arm |
+
+    (32 rows; the remaining two stale ones are `docs/spec/01-lexical.md:141`'s
+    `` `soa` `` pair, which were correct lines but whose anchors had to be the
+    *comments* `soa [Struct]` / `soa []Struct` to tell the type-position and
+    literal-position sites apart — counted as anchored-in-place, not stale.)
+
+    **Two findings worth more than the numbers.**
+
+    1. **`docs/spec/01-lexical.md:47`, the comment section, cited neither of the
+       two lines that implement comments.** Written at `a0236cd` against a
+       `src/tychoc.c` whose `:222` was the comment-only-line skip and whose `:244`
+       was the token loop; both drifted, and today `:222` is `line++;` and `:244`
+       an INDENT/DEDENT comment. In bounds, plausible, and about nothing the
+       section describes. Exactly §3.8's failure mode, in the first Provenance
+       line in the spec.
+    2. **The blame-and-relocate method failed where phase 9 predicted it would.**
+       `docs/spec/03-types.md:382`'s `` `:567` `` and `` `:607` `` were *already*
+       stale at `b895e668`, the commit that last touched that doc line, so blaming
+       it just reproduced the stale target. Found by reading instead: the affine-
+       element rejections are `task_container_err` / `chan_container_err`, which
+       `arrc_sized_b` calls, and the two `tests/reject/bounded_*_elem.ty` fixtures
+       the same Provenance line already names confirm which two of the three.
+
+    **Zero line-shift blast radius, on purpose.** Anchors are long, so the first
+    draft grew `docs/spec/01-lexical.md` by 9 lines — which would have invalidated
+    every `docs/spec/01-lexical.md:N` reference in `FRICTION.md`, `docs/` and this
+    plan's own phase 6 table, i.e. this phase would have created the exact rot it
+    exists to stop. Every block was re-wrapped to its **original line count**
+    (phase 4's technique). Verified mechanically — every hunk is `@@ -N,k +N,k @@`:
+    ```
+    $ git diff --numstat -- docs/spec/
+    12  12  docs/spec/01-lexical.md      3   3  docs/spec/12-aggregates.md
+    1   1   docs/spec/02-grammar.md      1   1  docs/spec/13-concurrency.md
+    3   3   docs/spec/03-types.md        1   1  docs/spec/14-ffi.md
+    2   2   docs/spec/10-statements.md   11  11 docs/spec/16-builtins.md
+    $ git diff -U0 -- docs/spec/ | grep -c '^@@'   # 26 hunks
+    unbalanced hunks: 0     (start line and length equal on both sides, all 26)
+    ```
+    No gate enforces line width in `docs/spec/` (`grep -n 'wc -L\|length'
+    scripts/spec_check.sh scripts/check_links.sh` finds nothing), so a few
+    Provenance lines are now long. That is the deliberate trade.
+
+    **Verify — gate 1, `env -u LD_PRELOAD python3 scripts/check_citations.py`:**
+    ```
+    citation check: ok (71 anchored contain the token they name, 1864 bare in bounds, 82 source->doc citations resolve)
+    RC=0
+    ```
+    23 anchored before this phase, 71 after. `--stats` splits out the new class:
+    ```
+    citation check: 71 anchored (content-checked, 51 of them the mandatory `> Provenance:` single-line refs), 1864 bare (bounds only), 82 source->doc (existence)
+    ```
+    (51, not 48: three single-line refs inside Provenance blocks were already
+    anchored before this phase and are now covered by the rule.)
+
+    **Why re-running that gate now prints bigger numbers, stated rather than
+    left to confuse.** Every count quoted in this phase — 71 anchored, 1864
+    bare — was measured on the tree **before this evidence block was written**.
+    This block is itself Markdown full of citations, so writing it moved the
+    totals to `104 anchored / 1911 bare`, and the 33 new anchored ones are the
+    repair table above, each now content-checked by the gate it documents. The
+    gate is green at both points; only the arithmetic moved.
+
+    **Verify — gate 2, the deliberate break, both directions, run against the
+    FINAL script.** Deleted the anchor on `docs/spec/01-lexical.md:174`
+    (`` `:482@TK_COLONCOLON` `` → `` `:482` ``):
+    ```
+    STALE  docs/spec/01-lexical.md:174  `:482` -> un-anchored single-line ref in a `> Provenance:` block; write src/tychoc.c:482@<token> with a token that appears on that line. It currently reads: else if (c == ':' && c2 == ':')      { k = TK_COLONCOLON; len = 2; }
+    citation check: FAILED (1 stale citation(s) above)
+    BROKEN_RC=1
+    ```
+    (The checker reads fenced blocks, so the backticks the real output puts
+    around its suggested anchored form are stripped in the transcript above —
+    quoting it verbatim made the gate red a second time, on this evidence block,
+    and then a third time on the sentence explaining the second. Same footgun
+    phase 4 hit; recorded rather than silently worked around.)
+    The diagnostic names the **file**, the **line**, the **offending reference**,
+    the form to write instead, and the text of the target line — the four things
+    phases 4, 5 and 6 each lost time to not having. Restored:
+    ```
+    citation check: ok (71 anchored contain the token they name, 1864 bare in bounds, 82 source->doc citations resolve)
+    RESTORED_RC=0
+    ```
+    Note what this break does **not** trip: `` `:482` `` is in bounds, so the
+    pre-existing bounds check was silent about it. The new rule is the only thing
+    that sees it.
+
+    **Verify — gate 3, `env -u LD_PRELOAD sh scripts/check_links.sh`:**
+    ```
+    link check: ok (130 markdown files, no dead relative links)
+    LNK_RC=0
+    ```
+    **Verify — gate 4, `env -u LD_PRELOAD sh scripts/spec_check.sh`:**
+    ```
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 8 runnable example(s), all pass
+    SPEC_RC=0
+    ```
+    Not run, deliberately: `make ci`. Per the Gate ladder nothing here can reach a
+    compiled artifact — the diff is one Python gate plus prose line numbers in
+    eight Markdown files.
+
+    **Explicitly NOT done, so the next reader does not think it was missed.**
+    Phase 9's ~400-citation hand sweep was not authorised and was not attempted,
+    not even partially. Bare **ranges** on Provenance lines were left bare, which
+    is the rule, not an oversight — but several of them are demonstrably stale,
+    and that is filed as phase 11 below rather than absorbed here.
+
+- [ ] **Phase 11 (found by phase 10, not absorbed) — the bare RANGES on
+      `> Provenance:` lines are stale too, and the rule cannot see them**
+  - Phase 10 anchored all 48 single-line refs inside `> Provenance:` blocks and
+    found 34 of them pointing at the wrong line. The same blocks carry **163 bare
+    ranges** (50 on the opening line, 113 on continuations) which the new rule
+    deliberately exempts — a range has no single subject token, so forcing an
+    anchor produces a false one. Nothing checks them beyond bounds, and several
+    were confirmed wrong **while phase 10 was reading their single-line
+    neighbours**:
+    - `docs/spec/16-builtins.md:85` cites `src/tychoc.c:4144-4163` for the nine
+      I/O `Sig` registrations; `register_builtins` is `src/tychoc.c:4336-4368` and
+      `src/tychoc.c:4144-4163` is inside the *const-fold* arm. The same file's
+      `src/tychoc.c:4140-4171` (line 336, named as `register_builtins` outright),
+      `src/tychoc.c:4155-4156` (`substr`/`find` `Sig`, really
+      `src/tychoc.c:4352-4353`) and `src/tychoc.c:4164-4165` (`is_null`/`to_ptr`
+      `Sig`, really `src/tychoc.c:4361-4362`) are the same drift.
+    - `docs/spec/16-builtins.md:145` cites `src/tychoc.c:8212-8220` for `char_at`
+      codegen; it is `src/tychoc.c:8641-8648`.
+    - `docs/spec/13-concurrency.md:9` cites `runtime/tycho_rt.c:286-610` for the
+      runtime and `runtime/tycho_rt.c:381-545` for the channel ring; the channel
+      section opens at `runtime/tycho_rt.c:608` and the ring runs past
+      `runtime/tycho_rt.c:795`.
+  - **And one anchored range shows the caveat the checker's own header warns
+    about.** `docs/spec/03-types.md:376` cites
+    `src/tychoc.c:727-739@arrc_sized_b` and **passes**, because line 736 — the
+    function's opening line — is inside 727-739. But the function is
+    `src/tychoc.c:736-748`: the range is misaligned by nine lines and its first
+    nine lines are an unrelated comment about `int64_t` sizes. A live instance of
+    "a drift that keeps the anchor token inside the new range".
+  - Why it was not swept in phase 10: phase 10's scope lock was the single-line
+    refs and the gate. Re-deriving 163 ranges by reading is the same shape of work
+    as phase 9's sweep, at a tenth the size — and it should reuse phase 9's
+    method and its stated failure mode rather than reinvent them.
+  - Done when: every bare range inside a `> Provenance:` block resolves to the
+    region its clause describes, spot-checked by reading; the anchored ranges are
+    re-aligned to the construct they name; `make check-links` green.
+  - Sequencing: with or after phase 9. It is the same defect and the same method.
 
 ## Status — stopped at phase 6, deliberately, 2026-07-29
 

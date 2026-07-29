@@ -27,6 +27,44 @@ WHAT IS CHECKED
               anchor token.  The token is chosen when the citation is verified,
               so it is the expected content a bare `path:N` cannot carry.
 
+THE ONE PLACE ANCHORING IS MANDATORY: `> Provenance:` BLOCKS (added 2026-07-29)
+------------------------------------------------------------------------------
+Anchoring is opt-in everywhere except one construct, where it is REQUIRED:
+
+    inside a `> Provenance:` block, a SINGLE-LINE ref MUST be `path:N@token`.
+
+A `> Provenance:` block is the blockquote that opens with `> Provenance:` plus
+every `>` line that continues it -- the whole block, not only the first physical
+line, because these blocks are hard-wrapped and most of their citations sit on a
+continuation line.  Policing only the opening line would make the rule evadable
+by pressing Enter.
+
+WHY HERE AND NOWHERE ELSE.  A Provenance line is the spec's claim that a rule is
+implemented AT A NAMED SITE.  When it rots it does not merely mislead, it asserts
+something false about a mechanism: `01-lexical.md` §3.8 said "`::` is lexed at
+`:402`" while `src/tychoc.c:402` had become the opening line of the raw-string
+scanner -- in bounds, plausible, and about an unrelated feature.  Bare `:N` is
+checked for bounds only, so nothing saw it.  Narrative refs elsewhere in the
+prose do not carry that weight and stay opt-in.
+
+WHY RANGES ARE EXEMPT -- DO NOT "FIX" THIS BY REQUIRING THEM TOO.  A range
+(`path:N-M`) cites a *region*: a loop, a function body, a table.  It has no
+single subject token, so an anchor for it must be invented from one arbitrary
+line inside it.  That produces a FALSE anchor -- a token the gate will happily
+keep matching while the region around it drifts -- which is strictly worse than
+a bare range, because it reads as verified when it is not.  A Provenance block
+is therefore normally a MIX: anchored single-line refs plus bare ranges, and the
+mix is correct, not an oversight.  The converse is a useful signal: if a
+single-line ref has no distinctive token to anchor to, the citation probably
+wanted to be a range.
+
+ARCHIVED PLANS ARE EXCLUDED, on the rule phase 4 of plan.md settled: the
+`docs/internals/plan-*-DONE.md` set is frozen verification evidence, line numbers
+recorded as they stood when the work was done.  Renumbering them would falsify
+the record rather than repair it, so this gate must never demand an edit there.
+(At the time the rule landed those files carried zero `> Provenance:` lines, so
+the exclusion is a guard against a future one, not a way to pass today.)
+
 WHAT THIS DOES **NOT** CATCH -- stated plainly so the coverage is not read wider
 than it is:
   * A BARE citation that drifts onto a different-but-existing line.  That is the
@@ -101,6 +139,9 @@ CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
                                        # silently matched nothing and scored those
                                        # citations as unchecked. Fail closed.
 
+# Frozen verification evidence: never demand an anchor here (see the header).
+ARCHIVED = ("docs/internals/plan-", "-DONE.md")
+
 _cache = {}
 
 
@@ -116,9 +157,11 @@ def lines_of(path):
 def main():
     mds = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
                          capture_output=True, text=True, check=True).stdout.split()
-    fails, n_bare, n_anchored = [], 0, 0
+    fails, n_bare, n_anchored, n_prov = [], 0, 0, 0
     for md in mds:
         cur = None
+        frozen = md.startswith(ARCHIVED[0]) and md.endswith(ARCHIVED[1])
+        prov = False
         for ln, line in enumerate(open(os.path.join(ROOT, md), errors="replace"), 1):
             # A bare `:N` inherits the last path named in the SAME paragraph.
             # Carrying it further is what makes long documents unusable: a `:8969`
@@ -126,6 +169,13 @@ def main():
             # into that file, and treating it as one yields noise, not findings.
             if not line.strip():
                 cur = None
+            # A `> Provenance:` BLOCK: the opening line plus every `>` line that
+            # continues it. Anything that is not a blockquote line closes it.
+            stripped = line.lstrip()
+            if stripped.startswith("> Provenance:"):
+                prov = True
+            elif not stripped.startswith(">"):
+                prov = False
             for m in CITE.finditer(line):
                 if m.group(1):
                     cur = m.group(1)
@@ -145,8 +195,19 @@ def main():
                     continue
                 if anchor is None:
                     n_bare += 1
+                    # THE ONE MANDATORY ANCHOR (see the header). A single-line ref
+                    # inside a `> Provenance:` block must carry `@token`; a RANGE
+                    # must not be forced to, so it is deliberately not checked here.
+                    if prov and b == a and not frozen:
+                        fails.append(
+                            "%s -> un-anchored single-line ref in a `> Provenance:` "
+                            "block; write `%s:%d@<token>` with a token that appears "
+                            "on that line. It currently reads: %s"
+                            % (where, cur, a, src[a - 1].strip()[:70] or "(blank)"))
                     continue
                 n_anchored += 1
+                if prov and b == a and not frozen:
+                    n_prov += 1
                 if not any(anchor in src[i - 1] for i in range(a, b + 1)):
                     hit = [i for i, l in enumerate(src, 1) if anchor in l][:3]
                     fails.append(
@@ -181,8 +242,9 @@ def main():
                         fails.append("%s -> %s has %d lines: OUT OF BOUNDS"
                                      % (where, doc, len(dl)))
     if "--stats" in sys.argv:
-        print("citation check: %d anchored (content-checked), %d bare (bounds only), "
-              "%d source->doc (existence)" % (n_anchored, n_bare, n_doc))
+        print("citation check: %d anchored (content-checked, %d of them the mandatory "
+              "`> Provenance:` single-line refs), %d bare (bounds only), "
+              "%d source->doc (existence)" % (n_anchored, n_prov, n_bare, n_doc))
     if fails:
         for f in fails:
             print("STALE  " + f)
