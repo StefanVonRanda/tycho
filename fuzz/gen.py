@@ -40,12 +40,46 @@ class Gen:
         # when run.py stopped counting timeouts as skips).
         self.loop_vars = set()
 
+    # The FFI-width type names are reserved words (`src/tychoc.c:197-205`), and
+    # `fresh("i")` walks straight into i8 / i16 / i32 / i64 as the uid counter
+    # passes them. Every binding position refuses them with "expected an
+    # expression" -- measured on 2026-07-30 for a plain `i8 := 5`, a foreach
+    # `for i8 in xs:`, a `parallel for i8 in 0..<3:` and a three-clause init.
+    # Not verifiable directly (the form is deleted) but strongly implied: the old
+    # `for i8 in range(n):` bound its counter through the same loop-variable slot
+    # the foreach form still uses, and that slot refuses `i8` today -- so these
+    # seeds were already being counted as silent skips before this plan.
+    # 4 of 40 seeds died on it while this file was being fixed. Skip the
+    # colliding uids instead of renaming every prefix.
+    RESERVED = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"}
+
     def fresh(self, p="v"):
         self.uid += 1
+        while p + str(self.uid) in Gen.RESERVED:
+            self.uid += 1
         return p + str(self.uid)
 
     def emit(self, ind, s):
         self.out.append("    " * ind + s)
+
+    # `range()` was DELETED from the language on 2026-07-29 (plan.md phase 7):
+    # the counting loop is now three-clause `for i := 0; i < N; i += 1:` and the
+    # parallel counting loop is `parallel for i in 0..<N:`. This generator kept
+    # emitting `for i in range(...)` and every generated program was therefore
+    # rejected (25/25 seeds, `range() was removed` diagnostic), which trips
+    # run.py's 30% skip ceiling. Emit the surviving forms through these two
+    # helpers so a future syntax change has one place to touch.
+    #
+    # NOTE the one semantic difference: `range(len(a))` evaluated `len(a)` ONCE,
+    # the three-clause condition re-evaluates it every iteration. Every call
+    # site below has a body that does not change the length it counts over, so
+    # the two are equivalent here. A length-mutating body must NOT use count().
+    def count(self, ind, i, stop):
+        self.emit(ind, "for " + i + " := 0; " + i + " < " + stop + "; " + i + " += 1:")
+
+    def countdown(self, ind, i, hi, step):
+        # `range(hi, 0, -step)`: start at hi, stop BEFORE 0, stride -step.
+        self.emit(ind, "for " + i + " := " + str(hi) + "; " + i + " > 0; " + i + " -= " + str(step) + ":")
 
     def _kv(self, t):
         # Split a map type "{K:V}" on its TOP-LEVEL colon. V may itself be a map
@@ -250,15 +284,15 @@ class Gen:
             add(ind, "len(" + name + ")")
         elif t.startswith("[") and t[1:-1] == "int":
             i = self.fresh("i")
-            self.emit(ind, "for " + i + " in range(len(" + name + ")):")
+            self.count(ind, i, "len(" + name + ")")
             add(ind+1, name + "[" + i + "]")
         elif t.startswith("[") and t[1:-1] == "float":
             i = self.fresh("i")
-            self.emit(ind, "for " + i + " in range(len(" + name + ")):")
+            self.count(ind, i, "len(" + name + ")")
             add(ind+1, "to_int(" + name + "[" + i + "])")
         elif t.startswith("[") and t[1:-1] == "string":
             i = self.fresh("i")
-            self.emit(ind, "for " + i + " in range(len(" + name + ")):")
+            self.count(ind, i, "len(" + name + ")")
             add(ind+1, "len(" + name + "[" + i + "])")
         elif t.startswith("Option(") and t.endswith(")"):
             inner = t[7:-1]                                  # "int" or "string"
@@ -275,7 +309,7 @@ class Gen:
             kt, vt = self._kv(t)
             ks = self.fresh("k"); ii = self.fresh("i")
             self.emit(ind, ks + " := keys(" + name + ")")   # [string] or [int] keys
-            self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
+            self.count(ind, ii, "len(" + ks + ")")
             add(ind+1, "len(str(" + ks + "[" + ii + "] in " + name + "))")   # str(bool): present key -> "true"
             if vt.startswith("["):                  # composite (array) value: bind the borrow + recurse
                 gv = self.fresh("gv")
@@ -295,7 +329,7 @@ class Gen:
             xs = self.fresh("xs"); er = self.fresh("e"); ii = self.fresh("i")
             self.emit(ind, "match " + name + ":")
             self.emit(ind+1, "Ok(" + xs + "):")
-            self.emit(ind+2, "for " + ii + " in range(len(" + xs + ")):")
+            self.count(ind+2, ii, "len(" + xs + ")")
             add(ind+3, xs + "[" + ii + "]")
             self.emit(ind+1, "Err(" + er + "):")
             add(ind+2, "len(" + er + ")")
@@ -303,7 +337,7 @@ class Gen:
             inner = t[8:-2]                                  # "int" or "string"
             contrib = "x" if inner == "int" else "len(x)"
             ii = self.fresh("i")
-            self.emit(ind, "for " + ii + " in range(len(" + name + ")):")
+            self.count(ind, ii, "len(" + name + ")")
             self.emit(ind+1, "match " + name + "[" + ii + "]:")
             self.emit(ind+2, "Some(x):")
             add(ind+3, contrib)
@@ -652,7 +686,7 @@ class Gen:
             ks = self.fresh("ks")
             self.emit(ind, ks + " := keys(" + m + ")")
             i = self.fresh("i")
-            self.emit(ind, "for " + i + " in range(len(" + ks + ")):")
+            self.count(ind, i, "len(" + ks + ")")
             self.emit(ind+1, "acc = acc + len(to_under(" + ks + "[" + i + "]))")
             return
         if k == "enumkey_use":         # fieldless-enum key: stored as its TAG, keys() rebuilds the
@@ -668,7 +702,7 @@ class Gen:
             ks = self.fresh("ek")
             self.emit(ind, ks + " := keys(" + m + ")")
             i = self.fresh("i")
-            self.emit(ind, "for " + i + " in range(len(" + ks + ")):")
+            self.count(ind, i, "len(" + ks + ")")
             self.emit(ind+1, "match " + ks + "[" + i + "]:")
             self.emit(ind+2, "FzA:")
             self.emit(ind+3, "acc = acc + 1")
@@ -888,10 +922,10 @@ class Gen:
             n = self.r.randint(1, 4)                # empty literal, push, len, a[i].f read/write, gather)
             s = self.fresh("sp"); kk = self.fresh("k"); g = self.fresh("g"); ii = self.fresh("i")
             self.emit(ind, s + " := soa []SoaP")
-            self.emit(ind, "for " + kk + " in range(" + str(n) + "):")
+            self.count(ind, kk, str(n))
             self.emit(ind+1, "push(" + s + ", SoaP(" + kk + ", " + kk + " + 1))")
             self.emit(ind, s + "[0].a = " + s + "[0].a + 1")          # scatter (n>=1 -> in bounds)
-            self.emit(ind, "for " + ii + " in range(len(" + s + ")):")
+            self.count(ind, ii, "len(" + s + ")")
             self.emit(ind+1, "acc = acc + " + s + "[" + ii + "].a + " + s + "[" + ii + "].b")
             self.emit(ind, g + " := " + s + "[0]")                    # whole-element gather
             self.emit(ind, "acc = acc + " + g + ".a")
@@ -905,11 +939,11 @@ class Gen:
             self.emit(ind, "acc = acc + " + a + " + " + b)
             env[a] = "int"; env[b] = "int"
             return
-        if k == "negrange":            # negative-step range: for i in range(hi, lo, -1|-2)
+        if k == "negrange":            # counting DOWN: was range(hi, 0, -1|-2), now three-clause
             i = self.fresh("i")
             hi = self.r.randint(2, 5)
-            step = self.r.choice(["-1", "-2"])
-            self.emit(ind, "for " + i + " in range(" + str(hi) + ", 0, " + step + "):")
+            step = self.r.choice([1, 2])
+            self.countdown(ind, i, hi, step)
             self.emit(ind+1, "acc = acc + " + i)
             return
         if k == "matchpop":            # match on a SIDE-EFFECTING subject: match pop(arr)
@@ -926,7 +960,7 @@ class Gen:
             return
         if k == "orret_loop":          # or_return helper called IN A LOOP with the Err path taken
             i = self.fresh("i"); rv = self.fresh("r"); v = self.fresh("v"); e = self.fresh("e")
-            self.emit(ind, "for " + i + " in range(" + str(self.r.randint(2, 4)) + "):")
+            self.count(ind, i, str(self.r.randint(2, 4)))
             self.emit(ind+1, rv + " := orret_chain((" + i + " - 1))")    # i=0 -> orret_chain(-1) -> Err propagated
             self.emit(ind+1, "match " + rv + ":")
             self.emit(ind+2, "Ok(" + v + "):")
@@ -1027,10 +1061,10 @@ class Gen:
             ints = [n0 for n0, t0 in arr_vars if t0 == "[int]"]
             if ints and self.r.random() < 0.5:      # capture an env array: per-chunk deep copy
                 src = self.r.choice(ints)
-                self.emit(ind, "parallel for i" + p + " in range(len(" + src + ")):")
+                self.emit(ind, "parallel for i" + p + " in 0..<len(" + src + "):")
                 self.emit(ind + 1, p + " += " + src + "[i" + p + "] % 50")
             else:
-                self.emit(ind, "parallel for i" + p + " in range(" + str(self.r.randint(3, 25)) + "):")
+                self.emit(ind, "parallel for i" + p + " in 0..<" + str(self.r.randint(3, 25)) + ":")
                 self.emit(ind + 1, p + " += (i" + p + " * 7 + 3) % 97")
             self.emit(ind, "acc = acc + " + p)
             return
@@ -1040,7 +1074,7 @@ class Gen:
             n = self.r.randint(1, 12); base = self.r.randint(0, 20)
             self.emit(ind, ch + " := channel(int, " + str(self.r.choice([1, 2, 4, 8])) + ")")
             self.emit(ind, co + " := spawn fz_drain(" + ch + ")")
-            self.emit(ind, "for i" + ch + " in range(" + str(n) + "):")
+            self.count(ind, "i" + ch, str(n))
             self.emit(ind + 1, "send(" + ch + ", i" + ch + " + " + str(base) + ")")
             self.emit(ind, "close(" + ch + ")")
             self.emit(ind, "acc = acc + wait(" + co + ")")
@@ -1123,7 +1157,7 @@ class Gen:
         elif k == "loop" and budget > 2:
             i = self.fresh("i")
             self.loop_vars.add(i)        # counter must never be written (termination)
-            self.emit(ind, "for " + i + " in range(" + str(self.r.randint(2,3)) + "):")
+            self.count(ind, i, str(self.r.randint(2,3)))
             benv = dict(env); benv[i] = "int"
             if self.r.random() < 0.45:           # heap built, THEN a conditional break/continue:
                 bc = self.r.choice(["continue", "break"])   # the loop-iteration arena (and the
@@ -1188,9 +1222,9 @@ class Gen:
         # richer generics (the `generic_rich` kind): a numeric-constrained sum, a
         # defaultable-constrained total seeded from zero$(T), and a generic struct.
         self.out += ["fn fz_gsum(xs: [$T]) -> $T where numeric(T):", "    acc := xs[0]",
-                     "    for i in range(len(xs)):", "        if i > 0:", "            acc = acc + xs[i]", "    return acc", ""]
+                     "    for i := 0; i < len(xs); i += 1:", "        if i > 0:", "            acc = acc + xs[i]", "    return acc", ""]
         self.out += ["fn fz_gtotal(xs: [$T]) -> $T where defaultable(T):", "    acc := zero$(T)",
-                     "    for i in range(len(xs)):", "        acc = acc + xs[i]", "    return acc", ""]
+                     "    for i := 0; i < len(xs); i += 1:", "        acc = acc + xs[i]", "    return acc", ""]
         self.out += ["struct FzBox($T):", "    v: T", ""]
         # generic-struct + concrete-newtype PARAM coverage (the core:pool `Handle`
         # family): a concrete newtype param BESIDE a generic-struct param, and a
@@ -1204,18 +1238,18 @@ class Gen:
         self.out += ["type FzHandle = int", ""]
         self.out += ["fn fz_slot(b: FzBox($T), h: FzHandle) -> int:", "    return to_int(h)", ""]
         self.out += ["fn fz_mkhandle(b: FzBox($T)) -> FzHandle:", "    return FzHandle(0)", ""]
-        self.out += ["fn fillA(xs: inout [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
-        self.out += ["fn fz_sgrow(s: inout string, n: int):", "    for i in range(n):", "        s = s + \"y\"", ""]
-        self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]
+        self.out += ["fn fillA(xs: inout [int], n: int):", "    for i := 0; i < n; i += 1:", "        push(xs, i)", ""]
+        self.out += ["fn fz_sgrow(s: inout string, n: int):", "    for i := 0; i < n; i += 1:", "        s = s + \"y\"", ""]
+        self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i := 0; i < n; i += 1:", "        push(r, (i + 1))", "    return r", ""]
         # transform [int]->[int] used by the `arr_rebuild` kind: `a = xform(a)`
         # reassigns a loop-carried array from a CALL, exercising the liveness-
         # driven buffer-recycle codegen (the call reads a's old buffer to build
         # the result, so recycling must happen after the call, not before).
         # bounded (result in [0,99]) so repeated `a = xform(a)` can't overflow long.
-        self.out += ["fn xform(a: [int]) -> [int]:", "    r := []int", "    for i in range(len(a)):",
+        self.out += ["fn xform(a: [int]) -> [int]:", "    r := []int", "    for i := 0; i < len(a); i += 1:",
                      "        v := a[i] + 1", "        push(r, (v - (v / 100) * 100))", "    return r", ""]
         self.out += ["fn mkRes(d: int) -> Result([int], string):", "    if d < 0:", "        return Err(\"neg\")",
-                     "    r := []int", "    for i in range(d):", "        push(r, (i + 1))", "    return Ok(r)", ""]
+                     "    r := []int", "    for i := 0; i < d; i += 1:", "        push(r, (i + 1))", "    return Ok(r)", ""]
         # SOA element struct (int fields, so it checksums) + or_return helpers.
         self.out += ["struct SoaP:", "    a: int", "    b: int", ""]
         self.out += ["fn orret_mk(d: int) -> Result(int, string):", "    if d < 0:", "        return Err(\"neg\")",
@@ -1232,9 +1266,9 @@ class Gen:
         self.out += ["fn mksum(a: [int]) -> fn(int) -> int:", "    return fn(x: int) -> int: x + len(a)", ""]
         # concurrency + inference fuzz vocabulary (the CC/B kinds); deterministic
         # by construction (sums are interleaving/thread-count independent).
-        self.out += ["fn fz_work(a: [int], k: int) -> int:", "    s := 0", "    for i in range(len(a)):",
+        self.out += ["fn fz_work(a: [int], k: int) -> int:", "    s := 0", "    for i := 0; i < len(a); i += 1:",
                      "        s = s + a[i] * k", "    return s % 1000", ""]
-        self.out += ["fn fz_join(s: string, n: int) -> string:", "    r := s", "    for i in range(n):",
+        self.out += ["fn fz_join(s: string, n: int) -> string:", "    r := s", "    for i := 0; i < n; i += 1:",
                      "        r = r + \"x\"", "    return r", ""]
         self.out += ["fn fz_drain(ch: Channel(int)) -> int:", "    s := 0", "    for true:",
                      "        match recv(ch):", "            Some(v):", "                s = s + v",
