@@ -790,12 +790,156 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
   words). The one behavioural claim this phase could and did test itself is the
   §16.8 example, above. `make ci` is still phase 4's.
 
-- [ ] **Phase 4 — the one full sweep**
+- [x] **Phase 4 — the one full sweep**
   - `make ci`, once, at the end of the chain, per `CLAUDE.md`'s gate budget. This
     is the phase that runs the fuzzers, the ILP32 rebuild and the TSan lane over
     everything phases 1 and 2 added.
   - Done when: `CI GREEN`, exit 0. If it reddens, name the step and whether this
     plan caused it.
+
+  ### Evidence — phase 4, 2026-07-29
+
+  **The verdict.** One `make ci`, foreground, at `3a07a5c` with a clean tree
+  (`git status --porcelain` = the pre-existing untracked `new_ideas.md` only).
+  `LD_PRELOAD` confirmed empty before the run (`echo "[$LD_PRELOAD]"` → `[]`), so
+  no sanitizer lane could fail spuriously.
+
+      >>> [1/13]  build (make tychoc)
+      >>> [2/13]  make test  (golden output + ASan/UBSan/LeakSanitizer)
+                  passed: 537   failed: 0
+      >>> [2b/13] make ilp32  (fixture suite rebuilt under -m32)
+                  ilp32: -m32 toolchain OK (32-bit long, 64-bit int64_t verified)
+                  passed: 537   failed: 0
+      >>> [2c/13] make asan-self
+                  asan-self: compiled: 551   failed: 0
+      >>> [3/13]  make corelib        >>> [3b/13] make entrypoints
+                                      entrypoints: ok (11 entry points compile with tychoc)
+      >>> [4/13]  make conc           conc: passed 37   failed 0
+      >>> [5/13]  make ffi            ffi: green
+      >>> [6/13]  make fuzz N=200          ok=177 skip=23 timeout=0 FAIL=0
+      >>> [7/13]  make fuzz-reject N=200   accepted=31 rejected=169 FAIL=0
+      >>> [8/13]  make fuzz-leak N=150     ok=131 skip=19 FAIL=0
+      >>> [9/13]  make tools-check    tools-check: ok
+      >>> [9b/13] make editors-check  editors-check: ok
+      >>> [10/13] bench-guard         >>> [11/13] make recursion  (all green)
+      >>> [12/13] make spec-check     spec-examples: 9 runnable example(s), all pass
+      >>> [13/13] make check-links
+                  link check: ok (132 markdown files, no dead relative links)
+                  citation check: ok (125 anchored contain the token they name,
+                                      2024 bare in bounds, 83 source->doc citations
+                                      resolve, 122 source->source in bounds)
+      ================================================================
+       CI GREEN -- tree is good
+      ================================================================
+
+  **Timing.** `/home/igzo/github/tycho/scripts/ci.sh` prints **no** per-step
+  timing (`grep -c "elapsed\|took\|seconds"` over the captured log = 0), so only
+  wall clock is available: started 16:37:28 CEST, `CI GREEN` and process exit at
+  16:54:37 CEST — **17m09s**, against the ~19 min budgeted in
+  `/home/igzo/github/tycho/CLAUDE.md:19`.
+
+  **On "exit 0", stated precisely.** The run was launched detached so it could
+  be waited on across the tool's 10-minute per-command cap, so its numeric exit
+  status was not captured directly. What *is* proven: the log contains **zero**
+  `make: ***` / `Error N` lines, and `/home/igzo/github/tycho/scripts/ci.sh:17`
+  is `set -eu` with `printf ' CI GREEN -- tree is good\n'` as the last statement
+  of the file (line 128, followed only by the closing `bar`). Under `set -e`,
+  reaching that banner requires every one of the thirteen steps to have exited
+  0, and nothing after it can fail. `make` also printed `Leaving directory`
+  without an error line. Exit 0 is therefore derived, not observed.
+
+  **The citation gate did NOT redden.** The task brief flagged phase 17's ~344
+  deliberately-deferred bare refs as the likely suspect if it had; it did not
+  fire, because `/home/igzo/github/tycho/scripts/check_citations.py` only
+  bounds-checks a bare ref — which is exactly why phase 17 exists. `2024 bare in
+  bounds` here against `2023` in phase 3's evidence: +1, this evidence block's
+  own new refs. Nothing was fixed and nothing needed fixing; scope held.
+
+  ---
+
+  **The four never-before-covered lanes — what each actually exercised.**
+
+  Method, so the claims below are falsifiable: `./tychoc <f> --emit-c` on a
+  corpus, then grep the emitted C for `_ewa = (`, the opening of the
+  statement-expression `gen_ew_arith` emits
+  (`/home/igzo/github/tycho/src/tychoc.c:9185`, `:9191`). Calibrated on a known
+  positive and a known negative before it was trusted:
+  `tests/postfreeze/array_arith.ty` emits **34** occurrences; a fuzz program
+  emits **0**. The runtime helper `tycho_ew_len` is NOT a usable marker — it is
+  written into the prelude of *every* emitted program
+  (`static void tycho_ew_len(...)` at line 2426 of every `.c` checked), so a
+  grep for it matches 100% of programs and proves only that the helper compiles.
+
+  1. **ILP32 (`-m32`) — PROVEN to exercise the new code.** This was the lane the
+     brief called the real risk, because phases 1 and 2 added integer arithmetic
+     over sized int types. Step 2b ran the full fixture suite rebuilt under
+     `-m32` and the new fixtures are named green inside that step's own output
+     (log lines 805-834 and 1068-1069, between the `[2b/13]` header at 551 and
+     its `passed: 537` at 1092): `postfreeze_array_arith`,
+     `postfreeze_array_arith_fresh`, `postfreeze_array_bcast`,
+     `postfreeze_array_bcast_fresh`, `pfabort_array_arith_len`,
+     `reject_array_arith_fixlen`, `diag_array_arith_fixlen`,
+     `diag_array_bcast_widen`. Those are golden comparisons, so the `u8`/`i8`
+     wrap values, the `f32` cases and the runtime length-mismatch abort all
+     produced **byte-identical output under a 32-bit `long`** as under LP64. The
+     pre-flight's unverified ILP32 risk (phase 1 evidence, "Not verified") is
+     now closed. Note the lane's own caveat, printed at log line 553: the
+     **ASan sub-lane is skipped under ilp32** (no 32-bit ASan runtime under
+     multilib); 64-bit `make test` covers ASan.
+
+  2. **`asan-self` — PROVEN to exercise the new typechecker arms.** `compiled:
+     551  failed: 0`, against `548` in phase 1's evidence: **+3**, and
+     `/home/igzo/github/tycho/scripts/asan_self.sh:150` globs
+     `tests/postfreeze/*.ty`, so the four new fixtures are in that corpus. This
+     is the first time the ASan+UBSan build of the compiler has run **phase 2's**
+     broadcast typechecker (phase 1's own asan-self run predates it, as phase 1's
+     evidence states). It proves `tychoc`'s *own* execution is clean while
+     compiling the new arms; the emitted *program's* runtime cleanliness comes
+     from step 2's postfreeze lane, which builds and runs each fixture both
+     native and under ASan+UBSan and requires identical output
+     (`/home/igzo/github/tycho/tests/run.sh:148-153`; log lines 261-267).
+     `tests/postfreeze/abort/` is a subdirectory and is **not** in that glob, so
+     the abort fixture is not part of the asan-self corpus — stated, not glossed.
+
+  3. **The three fuzz lanes — GREEN, but they did NOT reach the new code.** This
+     is the honest answer and it is measurable, not a guess. Regenerated the
+     exact 200-seed corpus (`python3 fuzz/gen.py <seed>`, seeds 1-200,
+     deterministic per `/home/igzo/github/tycho/fuzz/README.md`), emitted C for
+     every one tychoc accepts (177/200 — matching the lane's own `ok=177
+     skip=23`), and grepped:
+
+         fuzz corpus: 0/177 emitted programs contain a real element-wise use site
+
+     `/home/igzo/github/tycho/fuzz/gen.py` is type-directed and has no
+     binary-arithmetic-over-typed-operands generator at all — no `["+","-","*"]`
+     choice list exists in it; its only operator choices are the compound
+     assignments at `:692` and `:817`, both on scalars. So the element-wise and
+     broadcast arms are outside the generator's grammar. `fuzz-leak` (150 seeds)
+     uses the same generator, so the same holds. `fuzz-reject` mutates text and
+     asserts only fail-closed behaviour. **What the fuzz lanes DO prove:** the
+     new arms caused no regression anywhere in the 177-program corpus, and every
+     one of those programs compiled and ran with the new `tycho_ew_len` helper in
+     its prelude under ASan/UBSan and under LeakSanitizer. **What they do not
+     prove:** anything about element-wise arithmetic itself. Filed as phase 19.
+
+  4. **`conc` / TSan — GREEN, but it did NOT reach the new allocation path
+     either, by the same measurement.** All 11 `tests/conc/*.ty` fixtures emitted
+     C; `0/11` contain a `_ewa = (` use site. `conc: passed 37 failed 0` (37 =
+     the fixtures × the native/ASan/TSan legs) therefore says the new code did
+     not break the concurrency lane, and that the new prelude helper compiles
+     clean under TSan — not that an element-wise allocation was ever raced. The
+     phase-1 arena allocation (`/home/igzo/github/tycho/src/tychoc.c:9194`) has
+     **not** been exercised concurrently by any gate in this tree. Also filed as
+     phase 19; it is the same gap in a second lane.
+
+  **Summary of the four, in one line each.** ILP32: proven exercised, green.
+  asan-self: proven exercised, green. Fuzzers: proven **not** exercised, green.
+  TSan/conc: proven **not** exercised, green.
+
+  **Files changed:** `/home/igzo/github/tycho/plan.md` only — this phase runs
+  gates and records them. No source, test, or doc file was touched; nothing
+  reddened, so nothing needed fixing and the scope lock never came under
+  pressure.
 
 ## Carried forward from the previous plan
 
@@ -876,6 +1020,29 @@ Filed by phase agents as they ran; none blocking, none closed.
       together: repoint this one, and decide whether the anchored `path:N@token`
       form should be **mandatory** for a doc→doc ref into `docs/spec/`, which is
       what would have caught it.
+- [ ] **Phase 19 — no fuzz lane and no concurrency lane can reach element-wise
+      array arithmetic, and the gap is in the generator, not the seeds.** Found
+      by phase 4 while measuring what the full sweep actually covered, and
+      measured rather than assumed: regenerating the 200-seed corpus and
+      grepping the emitted C for `_ewa = (` (the `gen_ew_arith`
+      statement-expression, `/home/igzo/github/tycho/src/tychoc.c:9185`) gives
+      **0/177**, and `tests/conc/*.ty` gives **0/11**. The cause is structural —
+      `/home/igzo/github/tycho/fuzz/gen.py` is type-directed and contains no
+      binary-arithmetic-over-typed-operands generator at all (its only operator
+      choices are the compound assignments at `:692` and `:817`, both scalar), so
+      no seed count fixes it. Two separable pieces of work: (a) teach `gen.py` to
+      emit `arr OP arr` and `arr OP scalar` / `scalar OP arr` when it has two
+      array variables of the same element type in scope — the differential and
+      leak lanes would then cover the new allocation path, and the `[T]`
+      length-mismatch abort becomes a shape the fuzzer can find on its own; (b)
+      add one `tests/conc/` fixture that builds an element-wise result inside a
+      `spawn`/`parallel-for` body, so the arena allocation at
+      `/home/igzo/github/tycho/src/tychoc.c:9194` is exercised under TSan. Not
+      blocking and not a defect — the feature is covered by goldens, ASan/UBSan,
+      ILP32 and asan-self — but "green" in those three lanes currently carries no
+      information about this feature, and that should be written down rather than
+      assumed away. Related to nothing else in this list; it is a coverage gap,
+      not a citation one.
 - [ ] **Phase 15 — `docs/corelib.md` does not exist.** Moved to
       `docs/guides/corelib.md` by `68e5b39`; a dead backticked doc path in prose
       is invisible to `scripts/check_links.sh`, which only validates real
