@@ -79,13 +79,20 @@ module.exports = grammar({
 
     char: ($) => token(seq("'", choice(/[^'\\]/, /\\./), "'")),
 
+    // `..<` is the half-open counting range of `parallel for i in 0..<N:`
+    // (src/tychoc.c:482). It is listed even though `.` `.` `<` would already
+    // lex: tree-sitter takes the longest match, so naming it makes the range one
+    // `operator` node instead of three, which is what highlights.scm colours.
     operator: ($) =>
       choice(
+        "..<",
         ":=", "->", "==", "!=", "<=", ">=", "<<", ">>",
         "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
         "+", "-", "*", "/", "%", "<", ">", "=", "&", "|", "^", "~", ".", "$",
       ),
 
-    punctuation: ($) => choice("(", ")", "[", "]", "{", "}", ",", ":"),
+    // `;` separates the three clauses of `for init; cond; post:`
+    // (src/tychoc.c:506). Without it 204 corpus files failed to lex.
+    punctuation: ($) => choice("(", ")", "[", "]", "{", "}", ",", ":", ";"),
   },
 });

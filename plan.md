@@ -1205,7 +1205,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     and `make test` is green.
   - Verify: `make test`, then `python3 scripts/check_citations.py`.
 
-- [ ] **Phase 8 — `tychofmt`, the LSP, and the editor grammars learn `;` and `..<`**
+- [x] **Phase 8 — `tychofmt`, the LSP, and the editor grammars learn `;` and `..<`**
   - Scope: `tools/tychofmt.ty`, `tools/lsp.ty`, `editors/vscode/`,
     `editors/zed/`. Each carries its own lexer or grammar.
   - Note that with phase 1 done, `tools/*.ty` is no longer constrained by a
@@ -1215,6 +1215,188 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     unchanged; the LSP tokenises `;` and `..<` without desynchronising; both
     editor grammars highlight them; `scripts/editors_check.sh` green.
   - Verify: `sh scripts/tools_check.sh`, then `make editors-check`.
+
+  - **DONE 2026-07-29.** Four edits, one per component. Both gates that were red
+    at the start of this phase are green.
+
+    **What each component was actually doing wrong, read before patching.**
+
+    - **`tools/tychofmt.ty` — stage 1 was already correct, stage 2 was not.** The
+      lexer's operator branch ends in a 1-char catch-all, so `;` and the three
+      bytes of `..<` always landed in tokens and the *lossless* round-trip was
+      never at risk. What broke was the **re-spacer**: `sep_needs_space`
+      suppresses the space before `)`, `]`, `,`, `:` and around `.`, and knew
+      neither new lexeme. `;` got a space before it and `..<` got one after it.
+    - **`tools/lsp.ty` — one scanner had a real defect.** The semantic-token
+      number scanner consumed digits **and any `.`** unconditionally, so in
+      `0..<N` it swallowed the first two bytes of the operator into the number
+      token. `;` needed nothing: it falls to the classifier's final `else`, which
+      advances one byte and emits no token, exactly as `+` and `:=` do.
+      `find_occurrences` needed nothing either, for the same reason.
+    - **`editors/zed/grammars/tycho/grammar.js` — only `;` was fatal.** `..<`
+      already lexed, as `.` `.` `<`, because all three are in `operator`; `;` was
+      in neither `operator` nor `punctuation`, so every three-clause loop failed
+      to lex. `..<` is named anyway so tree-sitter's longest match makes the range
+      **one** node for `highlights.scm` instead of three.
+    - **`editors/vscode/syntaxes/tycho.tmLanguage.json`** — TextMate takes the
+      **first** matching pattern, not the longest, so the `..<` rule is placed
+      *above* the general operator rule whose `[<>]` class would otherwise claim
+      the `<`.
+
+    **The four edits.**
+
+    | file | line | change |
+    |---|---|---|
+    | `tools/tychofmt.ty` | 58 | new `is_three_op`, the `..<` lexeme |
+    | `tools/tychofmt.ty` | 231 | longest-match-first in the operator branch |
+    | `tools/tychofmt.ty` | 327 | no space before `;` |
+    | `tools/tychofmt.ty` | 331 | no space either side of `..<` |
+    | `tools/lsp.ty` | 1230 | a `.` opening a `..` pair is not part of a number |
+    | `editors/zed/grammars/tycho/grammar.js` | 88 | `"..<"` in `operator` |
+    | `editors/zed/grammars/tycho/grammar.js` | 96 | `";"` in `punctuation` |
+    | `editors/vscode/syntaxes/tycho.tmLanguage.json` | 50 | `keyword.operator.range.tycho` |
+    | `editors/vscode/syntaxes/tycho.tmLanguage.json` | 56 | `punctuation.separator.tycho` |
+
+    `editors/zed/grammars/tycho/src/` regenerated with
+    `npx --yes tree-sitter-cli@0.25 generate --abi 15` per `editors/zed/README.md`
+    (`parser.c`, `grammar.json`, `node-types.json`).
+
+    **(a) `tychofmt` round-trips both constructs — proven by `cmp`, not by eye.**
+    The comparison is load-bearing in both directions: the **pre-phase-8**
+    `tychofmt`, rebuilt from `git show HEAD:tools/tychofmt.ty`, is run over the
+    same files.
+
+    ```
+    $ for f in tests/for_bare.ty tests/for3.ty tests/conc/parfor_dotlt.ty \
+               examples/mandelbrot/main.ty tools/lsp.ty tools/tychofmt.ty; do
+          ./tychofmt "$f" > rt.ty; cmp -s "$f" rt.ty && echo "ROUND-TRIP UNCHANGED: $f"
+      done
+    ROUND-TRIP UNCHANGED: tests/for_bare.ty
+    ROUND-TRIP UNCHANGED: tests/for3.ty
+    ROUND-TRIP UNCHANGED: tests/conc/parfor_dotlt.ty
+    ROUND-TRIP UNCHANGED: examples/mandelbrot/main.ty
+    ROUND-TRIP UNCHANGED: tools/lsp.ty
+    ROUND-TRIP UNCHANGED: tools/tychofmt.ty
+
+    $ ./tychofmt_old tests/for3.ty | diff tests/for3.ty -
+    12c12
+    <     for i := 0; i < 5; i += 1:
+    ---
+    >     for i := 0 ; i < 5 ; i += 1:
+    $ ./tychofmt_old tests/conc/parfor_dotlt.ty | diff tests/conc/parfor_dotlt.ty -
+    24c24
+    <     parallel for i in 0..<1000:
+    ---
+    >     parallel for i in 0..< 1000:
+    ```
+
+    `tests/for_bare.ty` (the bare `for:`) round-tripped **before** the change too
+    — `for:` is a keyword and a colon, and `ct == ":"` already suppressed the
+    space. It is asserted rather than assumed, and it is the file that proves the
+    new `;` rule did not disturb the existing colon rule.
+    `examples/mandelbrot/main.ty` covers `0..<(n * 4)`, i.e. `..<` followed by an
+    opener rather than a bare identifier.
+
+    **(b) the LSP tokenises both without desynchronising — checked by decoding
+    the delta-encoded array back to source slices.** A buffer holding a
+    three-clause loop, a `parallel for … 0..<n:`, a float `1.5` and a bare `for:`
+    was opened over real JSON-RPC and `textDocument/semanticTokens/full`
+    requested. The LSP emits `(deltaLine, deltaChar, length, type)` quintuples, so
+    a single wrong length shifts **every later token in the file** — decoding the
+    whole array back to `lines[ln][ch:ch+length]` and asserting each slice is the
+    lexeme it claims to be is what "without desynchronising" means here, and it is
+    stronger than eyeballing the two new lexemes.
+
+    ```
+    line 2 col 4  'for'  keyword    line 2 col 8  'i'  variable
+    line 2 col 13 '0'    number     line 2 col 16 'i'  variable   <- after the 1st ';'
+    line 2 col 20 'n'    variable   line 2 col 23 'i'  variable   <- after the 2nd ';'
+    line 2 col 28 '1'    number
+    line 4 col 22 '0'    number     line 4 col 26 'n'  variable   <- either side of '..<'
+    line 6 col 9  '1.5'  number                                   <- float unharmed
+    line 7 col 4  'for'  keyword                                  <- bare `for:`
+    LSP-CHECK: ok
+    ```
+
+    No emitted token contains a `;` or a `..` byte, and every decoded slice equals
+    its source text. `textDocument/references` on the `i` of the three-clause
+    header returned exactly `[(2,8), (2,16), (2,23), (3,18)]` — the init
+    declaration, the condition use, the post use and the body use, all four and
+    nothing else, which is the check that `find_occurrences` did not need
+    touching. Against the **pre-phase-8** server, rebuilt from
+    `git show HEAD:tools/lsp.ty`, the same script reports
+    `line 4 col 22 '0..' number` and `LSP-CHECK: FAIL` — the defect reproduced
+    before the fix and gone after it.
+
+    **(c) the known-bad set, before and after.** `scripts/editors_check.sh:86-88`
+    enumerates one file. Both directions were measured over the same 825-file
+    corpus, the "before" figure by regenerating the **pre-phase-8** `grammar.js`
+    into a temp directory and running `tree-sitter parse -q` over it:
+
+    | | files failing to parse | known-bad set |
+    |---|---|---|
+    | before | **205** | `tests/reject/rawstring_unterminated.ty` + 204 others |
+    | after | **1** | `tests/reject/rawstring_unterminated.ty`, unchanged |
+
+    The known-bad set is **byte-identical before and after**: nothing was added to
+    it and nothing was removed from it. The 204 that stopped failing are exactly
+    the files phase 6 rewrote plus the two fixtures phases 3-5 added.
+    **205, not the 189 the phase brief quoted:** 189 was measured during phase 6's
+    first attempt, before phase 6's final commit also rewrote `tools/lsp.ty` and
+    before `tests/reject/semi_no_grammar.ty`, `tests/reject/for3_empty_clause.ty`
+    and the rest of the phase-3-to-5 fixtures were in the tree. The number is a
+    count of the same defect, not a different one.
+
+    **Two files in that 204 deserve a sentence, because they are `tests/reject/`
+    fixtures that now PARSE.** `tests/reject/semi_no_grammar.ty` (a statement
+    terminator `x := 1;`) and `tests/reject/for3_empty_clause.ty` are compiler
+    rejects, and the zed grammar accepts both — correctly. The grammar is **flat
+    and token-level** by construction (`editors/zed/grammars/tycho/grammar.js:1-7`:
+    it "lexes a .ty file into a flat stream of tokens … without modelling block
+    structure"), so it has no notion of *where* a `;` is allowed and never did
+    have one for any other token either. `scripts/editors_check.sh:78-85` states
+    the same rule from the other side: the known-bad set is for **lexical**
+    rejects only, and 239 semantic reject fixtures are expected to parse. These
+    two join that majority. Their compiler-level rejection is unaffected and
+    asserted by `make test` below.
+
+    **(d) the real gate output.** Both gates that were red at the start of this
+    phase, plus the two the change could reach:
+
+    ```
+    $ sh scripts/tools_check.sh
+    >>> formatter: idempotence + semantic preservation
+        825 files checked  (compilable=388)  idempotence-fails=0  semantic-fails=0
+    >>> lsp: scripted JSON-RPC smoke
+        init=True  diag(valid->[]=True invalid->diag=True loop-warn=True)  hover(local=True fn=True)  def=True
+        docsym=True  completion=True  references=True  rename=True  inlay=True  fstr-rename=True  sighelp=True  wsym=True  semtok=True
+    …
+    tools-check: ok
+
+    $ make editors-check
+    >>> editors: JSON syntax (vscode)
+        ok  editors/vscode/syntaxes/tycho.tmLanguage.json
+        ok  editors/vscode/language-configuration.json
+    >>> editors: zed grammar regenerated with npx --yes tree-sitter-cli@0.25 (tree-sitter 0.25.10 …)
+        src/ matches grammar.js byte for byte (parser.c, grammar.json, node-types.json, tree_sitter/)
+    >>> editors: zed grammar over the corpus (825 .ty files)
+        825 files parsed; the only failure is the enumerated known-bad set (tests/reject/rawstring_unterminated.ty )
+    editors-check: ok
+
+    $ make test
+    passed: 541   failed: 0
+    all green
+    ```
+
+    `make ci` was **not** run — phase 10 owns it and phase 7 has not landed.
+
+    **Not verified, stated because a future reader will want it.** The two editor
+    grammars are checked for *lexing* (tree-sitter parses the corpus; the JSON is
+    well-formed), not for the *colours* a user sees. Nothing in the tree renders a
+    highlight and asserts a scope name, so `keyword.operator.range.tycho` and
+    `punctuation.separator.tycho` are correct-by-convention, not by test. Risk if
+    wrong: `;` or `..<` shows unstyled in VS Code. That is the same standing gap
+    the previous plan's phase 7 named when it added `scripts/editors_check.sh`.
 
 - [ ] **Phase 9 — the spec**
   - Scope: `docs/spec/10-statements.md` §14.4 (the three shapes become four, and
@@ -1401,6 +1583,27 @@ Unclosed discoveries from the two previous plans; none blocking.
     phase 7's evidence that they were retired early on purpose. Restoring them is
     cheap (`git show 6ca63ca^:<path>`) and would make phase 7's own deletion of
     `range()` provably complete rather than merely believed.
+
+- [ ] **Phase 29** — **the LSP's semantic-token classifier is missing three
+      keywords the other two grammars have, and `parallel for i in 0..<N:` is
+      where it shows.** Found by phase 8 while decoding the token array: in
+      `parallel for j in 0..<n:` the LSP classifies `parallel` as **variable**
+      (type 3), not keyword (type 0). `tools/lsp.ty:1163`'s `sem_is_keyword`
+      lists 30 words and omits **`parallel`, `select` and `or_return`**, all
+      three of which `editors/zed/grammars/tycho/grammar.js:37-41` and
+      `editors/vscode/syntaxes/tycho.tmLanguage.json:42` do list. So the same
+      buffer is highlighted one way by the tree-sitter grammar and another by the
+      server, and a `parallel for` header — the construct this whole plan adds a
+      spelling for — is the most visible case.
+  - Out of phase 8's scope on purpose: none of the three is `;` or `..<`, they
+    were all missing before this plan started, and phase 8's brief says smallest
+    change that satisfies "Done when".
+  - Not verified: whether `handle` / `sink` / `where` / `const`, which
+    `sem_is_keyword` **does** list, are still keywords in `src/tychoc.c`. The list
+    may have drifted in both directions; check both before editing it.
+  - Done when: the three grammars agree on the keyword set, or the divergence is
+    written down as deliberate. Verify: `sh scripts/tools_check.sh` (the
+    `semtok=` leg) and `make editors-check`.
   - The permanent half is already owned elsewhere: the zero-step guarantee has no
     successor in either new form and **phase 9** must state that in the spec as a
     deliberate trade. This phase is only about the fixtures.
