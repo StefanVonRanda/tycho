@@ -1207,6 +1207,43 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   - Sequencing: after phase 8, which is the same defect at a smaller scale and
     should adopt whatever anchored form this phase settles.
 
+- [ ] **Phase 10 — anchor `> Provenance:` lines, and make the gate require it**
+  - **Resumed 2026-07-29 by explicit request: the gate change only.** This is
+    phase 9's first bullet ("do the gate change first, not last") carved out and
+    run on its own. The ~400-citation hand sweep phase 9 describes is **still not
+    authorised** and must not be attempted here.
+  - The defect, established twice over by phases 4 and 6: `scripts/check_citations.py`
+    validates a bare `path:N` only for being **in bounds**, so a citation whose
+    target has moved keeps passing. Phase 6 measured the result — 921 citations
+    to `src/tychoc.c`, 906 of them bare, ~400 stale by 68 to 3520 lines. The 23
+    anchored `path:N@token` citations are the only ones that have ever survived a
+    line shift by being *caught*, and they are why phase 2's `+48` was repaired
+    the same hour it was introduced.
+  - Scope: `scripts/check_citations.py` (198 lines), and the `> Provenance:`
+    lines it will newly police. There are **57 outside the archived
+    `docs/internals/plan-*-DONE.md` set**, concentrated in `docs/spec/`
+    (`01-lexical.md` 12, `16-builtins.md` 11, `02-grammar.md` 10, `03-types.md` 5,
+    and 1–2 each across the rest).
+  - **The rule to implement, and its one real subtlety.** On a `> Provenance:`
+    line, a **single-line** `path:N` reference MUST be written `path:N@token` and
+    the gate fails if it is not. A **range** (`path:N-M`) stays bare — phase 4's
+    recommendation says so explicitly, and it is right: a range has no single
+    subject token to anchor to, and forcing one would produce a false anchor,
+    which is worse than a bare ref. Every Provenance line therefore ends up a
+    mix, and the gate must accept that mix rather than demanding uniformity.
+  - Anchoring is not a mechanical rewrite: the token must be one that actually
+    appears on the cited line **and** identifies what the sentence is about. Pick
+    it by reading the line. If a cited line has no distinctive token, that is a
+    signal the citation wants to be a range, not that the rule is wrong.
+  - Done when: `scripts/check_citations.py` rejects an un-anchored single-line
+    ref on a `> Provenance:` line (proven by deleting one anchor and watching it
+    redden, then restoring it); all 57 Provenance lines satisfy the new rule; the
+    gate is green; and the script's own header documents the rule and states why
+    ranges are exempt.
+  - Verify: `python3 scripts/check_citations.py`, then the deliberate-break
+    check above, then `sh scripts/check_links.sh` and `sh scripts/spec_check.sh`.
+    Not `make ci` — see "Gate ladder".
+
 ## Status — stopped at phase 6, deliberately, 2026-07-29
 
 **Phases 1–6 are done and the tree is green.** The plan as approved was phases
