@@ -1515,6 +1515,7 @@ struct Expr {
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
+               S_FOR3, /* three-clause `for init; cond; post:` — see the note on `els` below */
                S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL, S_MASSIGN,
                S_BREAK, S_CONTINUE,
                S_CONST, /* `const NAME = <literal>` local: folded at use, no runtime storage */
@@ -1553,6 +1554,17 @@ struct Stmt {
     char    *names[8]; int nnames;       /* S_MDECL targets: `a, b := f()` */
     Type     mtypes[8];                  /* S_MDECL resolved element types */
     Stmt   **body; int nbody;
+    /* S_FOR3 reuses the generic sub-statement slots rather than adding fields of
+     * its own, and the split is not arbitrary. `expr` is the condition (as
+     * S_WHILE). The POST clause is the LAST element of `body` because it runs on
+     * every iteration, so every per-iteration analysis in this file -- append
+     * fusion, block_mutates, count_reads_b, clone_block, the escape scan -- must
+     * see it, and all of them walk `body` generically. The INIT clause is
+     * `els[0]` (nels == 1) because it runs once, before the loop, like a
+     * prelude; the same generic walkers still reach it via `els`. Adding
+     * `Stmt *init, *post` instead would have hidden both subtrees from ~20
+     * walkers that would each need a new line. Codegen names them
+     * `s->els[0]` and `s->body[s->nbody-1]`. */
     Stmt   **els;  int nels;
     MatchArm *arms; int narms;           /* S_MATCH / S_SELECT (variant = "recv"/"default"/"closed") */
     Expr   **sel_ch;                     /* S_SELECT: per-arm channel expr (NULL for default/closed) */
@@ -3227,6 +3239,89 @@ static Stmt *parse_stmt(Parser *ps) {
     if (t->kind == TK_FOR) {
         ps->p++;
         int par_here = g_parallel_ctx; g_parallel_ctx = 0;   /* only THIS for is parallel; nested fors below are not */
+        /* bare `for:` -- an infinite loop, exited by `break` or `return`. It is
+         * the condition form with a literal `true`, which is the same node
+         * resolve_parfor already builds for the channel-drain worker, so
+         * break/continue, the loop arena and wl_check (which skips a constant
+         * condition) all need no new case. */
+        if (at(ps, TK_COLON)) {
+            ps->p++;
+            eat(ps, TK_NEWLINE, "newline");
+            Stmt *s = new_stmt(S_WHILE, t->line);
+            Expr *tru = new_expr(E_BOOL, t->line); tru->ival = 1;
+            s->expr = tru;
+            s->body = parse_block(ps, &s->nbody);
+            return s;
+        }
+        /* three-clause `for init; cond; post:`.
+         *
+         * A top-level `;` on the header line is the ONLY thing that tells this
+         * form from `for C:`, and it is unambiguous because `;` has no other
+         * grammar anywhere in the language (tests/reject/semi_no_grammar.ty
+         * keeps the C-style statement terminator illegal). So: scan the header
+         * to end of line, tracking () and [] depth, and record the two `;` and
+         * the LAST top-level `:` -- last, because a typed init (`i: int = 0`)
+         * puts a colon of its own ahead of the block's.
+         *
+         * ALL THREE CLAUSES ARE REQUIRED; `for:` is the only degenerate form.
+         * That is not a rule imposed on the grammar, it is what the grammar
+         * already says: there is no empty-statement production in this parser
+         * (parse_stmt on a NEWLINE is an error), so `for ; c; p:` has nothing to
+         * parse in the init slot, and an empty condition would have no `bool` to
+         * check. Each is refused by name below rather than by whatever parse_stmt
+         * happened to say. */
+        {
+            int i_semi1 = -1, i_semi2 = -1, i_colon = -1, depth = 0;
+            for (int k = 0; ; k++) {
+                TokKind kk = peek(ps, k)->kind;
+                if (kk == TK_NEWLINE || kk == TK_EOF) break;
+                if (kk == TK_LPAREN || kk == TK_LBRACKET) depth++;
+                else if (kk == TK_RPAREN || kk == TK_RBRACKET) depth--;
+                else if (depth == 0 && kk == TK_SEMI) {
+                    if (i_semi1 < 0) i_semi1 = k;
+                    else if (i_semi2 < 0) i_semi2 = k;
+                    else die_at(t->line, "a three-clause `for` has exactly three clauses: `for init; cond; post:`");
+                } else if (depth == 0 && kk == TK_COLON) i_colon = k;
+            }
+            if (i_semi1 >= 0) {
+                if (i_semi2 < 0)
+                    die_at(t->line, "a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses");
+                if (i_colon < i_semi2)
+                    die_at(t->line, "expected ':' before the block");
+                if (i_semi1 == 0)
+                    die_at(t->line, "the init clause is required -- write `for:` for an infinite loop");
+                if (i_semi2 == i_semi1 + 1)
+                    die_at(t->line, "the condition clause is required -- write `for:` for an infinite loop");
+                if (i_colon == i_semi2 + 1)
+                    die_at(t->line, "the post clause is required -- write `for cond:` for a loop that advances in its body");
+                /* Rewrite the first ';' and the block ':' to NEWLINE so the init
+                 * and post clauses parse through parse_stmt itself. That is the
+                 * point: `:=`, a typed decl, `=` and every compound `op=` form
+                 * come along for free, instead of a second hand-written copy of
+                 * the assignment grammar that could drift from the first. */
+                peek(ps, i_semi1)->kind = TK_NEWLINE;
+                peek(ps, i_colon)->kind = TK_NEWLINE;
+                Stmt *init = parse_stmt(ps);
+                if (init->kind != S_DECL && init->kind != S_ASSIGN)
+                    die_at(init->line, "the init clause of a three-clause `for` is a declaration or an assignment");
+                Expr *cond = parse_expr(ps);
+                eat(ps, TK_SEMI, "';' after the condition");
+                Stmt *post = parse_stmt(ps);
+                if (post->kind != S_ASSIGN)
+                    die_at(post->line, "the post clause of a three-clause `for` is an assignment to a variable (`i += 1`)");
+                eat(ps, TK_NEWLINE, "newline");
+                Stmt *s = new_stmt(S_FOR3, t->line);
+                s->expr = cond;
+                s->els = (Stmt **)xmalloc(sizeof(Stmt *));
+                s->els[0] = init; s->nels = 1;
+                int nb = 0; Stmt **ub = parse_block(ps, &nb);
+                s->body = (Stmt **)xmalloc((size_t)(nb + 1) * sizeof(Stmt *));
+                for (int k = 0; k < nb; k++) s->body[k] = ub[k];
+                s->body[nb] = post;       /* post is the last body statement: it runs every iteration */
+                s->nbody = nb + 1;
+                return s;
+            }
+        }
         /* counting form `for i in range(...)` or foreach `for x in COLL:` */
         if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_IN) {
             Tok *var = eat(ps, TK_IDENT, "a loop variable");
@@ -6408,6 +6503,14 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
             g_pf_nloc = save;
             return;
         }
+        case S_FOR3: {   /* a three-clause loop nested in a parallel-for body */
+            int save = g_pf_nloc;
+            pf_scan_stmt(s->els[0], loopdepth);   /* init: an S_DECL registers its name as chunk-local */
+            pf_scan_expr(s->expr);
+            pf_scan_body(s->body, s->nbody, loopdepth + 1);   /* body + post */
+            g_pf_nloc = save;
+            return;
+        }
         case S_MATCH: {
             pf_scan_expr(s->expr);
             for (int a = 0; a < s->narms; a++) {
@@ -7086,6 +7189,28 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "for condition must be bool");
             resolve_block(s->body, s->nbody, ret);
             wl_check(s);
+            break;
+        }
+        case S_FOR3: {
+            /* The loop variable is scoped to the loop by exactly the mechanism
+             * S_FORRANGE uses -- a vars_mark() before it is bound and a
+             * vars_restore() after the body -- except that the binding is done
+             * by resolving the init statement instead of by a hand-written
+             * vars_push, so a typed init and an assign-only init behave as they
+             * would anywhere else.
+             *
+             * The post clause is resolved AFTER the body block has been popped,
+             * so it sees the loop scope and NOT the body's locals. That matches
+             * where it runs and keeps `continue` honest: the jump to the post
+             * clause skips the body's declarations, so a post clause allowed to
+             * read one would read an uninitialized value. */
+            int m = vars_mark();
+            resolve_stmt(s->els[0], ret);
+            if (resolve_expr(s->expr) != T_BOOL)
+                die_at(s->line, "for condition must be bool");
+            resolve_block(s->body, s->nbody - 1, ret);
+            resolve_stmt(s->body[s->nbody - 1], ret);
+            vars_restore(m);
             break;
         }
         case S_SELECT: {   /* CC-5: blocks until a recv arm fires, all channels close+drain, or default */
@@ -9592,6 +9717,32 @@ static const char **g_taskvars;   /* full finalizer calls, e.g. "tycho_task_fini
 static int g_taskvars_cap = 0;
 static int g_ntaskvars = 0;
 static int g_loop_taskmark[64];   /* g_ntaskvars at each enclosing loop's body entry */
+/* Per enclosing loop: the block id of its post clause, or -1 if it has none.
+ * A `continue` in a three-clause loop MUST run the post clause, so it is emitted
+ * as `goto _post<id>` rather than a C `continue` (which jumps straight to the
+ * condition and would skip it -- a loop that only advances in its post clause
+ * would spin forever). Every loop writes its slot before g_loop_depth++, so a
+ * plain loop's -1 always overwrites whatever a sibling three-clause loop left. */
+static int g_loop_post[64];
+
+/* Does a `continue` in this body bind to THIS loop? Descends through if / match /
+ * select bodies (a continue there escapes outward to the enclosing loop) but not
+ * into a nested loop, which captures its own. Used only to decide whether the
+ * post-clause label is emitted at all, so no unused label ever reaches cc. */
+static int body_continues(Stmt **body, int n) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if (!s) continue;
+        if (s->kind == S_CONTINUE) return 1;
+        if (s->kind == S_WHILE || s->kind == S_FORRANGE || s->kind == S_FOR3) continue;
+        if (body_continues(s->body, s->nbody)) return 1;
+        if (body_continues(s->els, s->nels)) return 1;
+        for (int a = 0; a < s->narms; a++)
+            if (body_continues(s->arms[a].body, s->arms[a].nbody)) return 1;
+        if (s->ctrl && body_continues(&s->ctrl, 1)) return 1;
+    }
+    return 0;
+}
 static void taskvar_push(const char *call) {
     TBL_ENSURE(g_taskvars, g_ntaskvars, g_taskvars_cap);
     g_taskvars[g_ntaskvars++] = call;
@@ -10458,7 +10609,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * finished here, because the jump skips the block-end finishes. */
             { int tmark = g_loop_taskmark[g_loop_depth - 1];
               if (g_ntaskvars > tmark) { indent(o, ind); fprintf(o, "%s\n", task_finishes_from(tmark)); } }
-            indent(o, ind); fprintf(o, "%s;\n", s->kind == S_BREAK ? "break" : "continue");
+            /* a three-clause loop's post clause sits after the body inside the
+             * while, so `continue` jumps to it instead of over it */
+            { int pid = s->kind == S_CONTINUE ? g_loop_post[g_loop_depth - 1] : -1;
+              indent(o, ind);
+              if (pid >= 0) fprintf(o, "goto _post%d;\n", pid);
+              else           fprintf(o, "%s;\n", s->kind == S_BREAK ? "break" : "continue"); }
             break;
         }
         case S_WHILE: {
@@ -10472,6 +10628,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             char *ss = sfmt("&_scr%d", id);
             ascope_push(ss);   /* a return inside the loop must free _scrN too */
             g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
+            g_loop_post[g_loop_depth] = -1;                /* no post clause: `continue` is a C continue */
             g_loop_depth++;    /* moves are unsafe inside a loop (single read runs N times) */
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
             g_loop_depth--;
@@ -10480,6 +10637,39 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             fuse_close(o, _fo, ind + 1);   /* break falls through to here; flush the cursors */
             indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
             indent(o, ind); fprintf(o, "}\n");
+            break;
+        }
+        case S_FOR3: {   /* `for init; cond; post:` */
+            int id = g_blk++;
+            int m = cv_mark();
+            char *ss = sfmt("&_scr%d", id);
+            indent(o, ind); fprintf(o, "{\n");
+            /* init runs once, inside the loop's own C block and in the ENCLOSING
+             * arena: the C block scoping is what makes the loop variable die with
+             * the loop, and the outer arena is what an assignment to it (from the
+             * body or from the post clause) will target via cv_arena -- so its
+             * storage must not be the per-iteration scratch that arena_reset
+             * recycles. An if-body decl is placed the same way. */
+            gen_stmt(o, s->els[0], ind + 1, scope, ret);
+            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
+            int _fo = fuse_open(o, s->body, s->nbody, ind + 1, s->expr);
+            char *c = cond_unwrap(gen_expr(s->expr, scope));
+            indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
+            indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
+            ascope_push(ss);   /* a return inside the loop must free _scrN too */
+            g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
+            g_loop_post[g_loop_depth] = id;                /* `continue` -> goto _postN */
+            g_loop_depth++;    /* moves are unsafe inside a loop (single read runs N times) */
+            gen_block(o, s->body, s->nbody - 1, ind + 2, ss, ret);
+            if (body_continues(s->body, s->nbody - 1)) { indent(o, ind + 2); fprintf(o, "_post%d: ;\n", id); }
+            gen_stmt(o, s->body[s->nbody - 1], ind + 2, ss, ret);   /* the post clause, every iteration */
+            g_loop_depth--;
+            g_nascope--;
+            indent(o, ind + 1); fprintf(o, "}\n");
+            fuse_close(o, _fo, ind + 1);   /* break falls through to here; flush the cursors */
+            indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
+            indent(o, ind); fprintf(o, "}\n");
+            cv_restore(m);     /* the init variable leaves scope with the loop */
             break;
         }
         case S_SELECT: {   /* CC-5: try every recv arm; closed when ALL drain; else default or pause+retry.
@@ -10551,6 +10741,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             cv_push(s->name, ss);   /* loop var is an int value; owner is irrelevant but tracked */
             ascope_push(ss);        /* a return inside the loop must free _scrN too */
             g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
+            g_loop_post[g_loop_depth] = -1;                /* no post clause: `continue` is a C continue */
             g_loop_depth++;         /* moves are unsafe inside a loop (single read runs N times) */
             /* bounds-check elision: `for i in range(len(A)):` proves A[i] in-range
              * for the body, provided the body never reassigns/shadows A or i and

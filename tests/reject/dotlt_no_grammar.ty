@@ -5,7 +5,7 @@
 # phase 5 (see plan.md's Pre-flight: allowing it would be `range()` under a new
 # name). Today the refusal comes from the foreach branch of the `for` parser,
 # which parses `0` as the collection expression and then demands the block
-# colon at src/tychoc.c:3264:
+# colon at src/tychoc.c:3359:
 #
 #     error: expected ':' before the block
 #

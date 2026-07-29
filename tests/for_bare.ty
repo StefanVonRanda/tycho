@@ -1,0 +1,48 @@
+# Bare `for:` -- an infinite loop, left by `break` or `return` (plan.md phase 4).
+# It is the condition form with a literal `true`, so `break`, `continue`, the
+# loop arena and the return path are the ones that were already there.
+fn first_over(k: int, lim: int) -> int:
+    n := 0
+    for:
+        n = n + k
+        if n > lim:
+            return n        # a `return` leaves an infinite loop, freeing its arena
+    return 0                # not reached
+
+fn main():
+    # break exits
+    n := 0
+    for:
+        n = n + 1
+        if n >= 3:
+            break
+    println("n=" + str(n))                      # 3
+
+    # continue skips the rest of the body; this loop advances in its BODY, so
+    # the counter is what proves the jump landed back at the top
+    hits := ""
+    m := 0
+    for:
+        m = m + 1
+        if m > 6:
+            break
+        if m / 2 * 2 == m:
+            continue
+        hits = hits + str(m) + ","
+    println("hits=" + hits)                     # 1,3,5,
+
+    # nested: an inner `for:` broken out of, inside an outer one
+    outer := 0
+    total := 0
+    for:
+        outer = outer + 1
+        inner := 0
+        for:
+            inner = inner + 1
+            if inner > 2:
+                break
+            total = total + 1
+        if outer >= 3:
+            break
+    println("total=" + str(total))               # 6
+    println("over=" + str(first_over(7, 20)))    # 21
