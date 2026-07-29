@@ -48,9 +48,12 @@ Exp      ::= ("e" | "E") ("+" | "-")? [0-9]+
 CharLit ::= "'" ( CharEscape | (any byte except "'", "\", newline) ) "'"
 CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" )
 StrLit ::= StrPiece StrPiece*
-StrPiece ::= '"' StrElem* '"'
+StrPiece ::= QuotedPiece | RawPiece
+QuotedPiece ::= '"' StrElem* '"'
 StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
 StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
+RawPiece ::= "`" RawElem* "`"
+RawElem ::= (any byte except "`" and raw control bytes below 0x20 other than tab and newline)
 ```
 
 ### A.3 Phrase grammar (§4)
@@ -173,6 +176,21 @@ Lambda  ::= "fn" "(" LambdaParams? ")" ( "->" Type )? ":" Expr
 LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
 ```
 <!-- END GENERATED -->
+
+**Note — `RawPiece` ([§3.9.4](01-lexical.md#394-string-literals)).** The
+`RawElem` production above says which *bytes* a backtick-delimited piece may
+contain; the rule it cannot express is that **no escape is interpreted** inside
+one. A backslash is a backslash, so `` `a\nb` `` is four characters, and an
+embedded newline is a literal newline byte — `RawPiece` is the only literal
+terminal that spans source lines. Having no escape at all, it has no backtick
+escape either, so it cannot contain a backtick; one is written by joining a
+`QuotedPiece`, in which a backtick is an ordinary byte. `RawPiece` is a
+`StrPiece`, so it joins with adjacent pieces of either kind, and there is no
+`` f`…` `` interpolated raw form.
+
+> Provenance: `src/tychoc.c:402-448`; adjacent join `:2234-2246`;
+> [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
+> `tests/postfreeze/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 
 ## A.4 Non-terminals defined in prose elsewhere
 

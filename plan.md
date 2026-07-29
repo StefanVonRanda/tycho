@@ -221,7 +221,7 @@ before.
     so the rest of `make ci` cannot be affected. Not re-run end to end: the full
     ~15-minute gate.
 
-- [ ] **Phase 2 — backtick raw string literals in `tychoc`**
+- [x] **Phase 2 — backtick raw string literals in `tychoc`**
   - Scope: the string lexer in `src/tychoc.c` (the literal scanner at `:319-400`,
     the escape table at `:373-382`, the control-byte rejection at `:389-391`, and
     the adjacent-join at `:2150-2166`); `docs/spec/01-lexical.md` §3.9.4 and the
@@ -249,6 +249,134 @@ before.
     with nothing else, but a scanner change that reddens `tools/*.ty` under
     `tychoc0` must surface here). **Not `make ci`** — see "Gate ladder" below.
     Foreground, one command each.
+  - **DONE 2026-07-29.** Shipped: the raw-literal scanner at
+    `src/tychoc.c:402-448`; §3.9.4 of `docs/spec/01-lexical.md` (grammar, prose,
+    Provenance); the `RawPiece` / `RawElem` productions plus a note and
+    Provenance line in `docs/spec/appendix-a-grammar.md`;
+    `tests/postfreeze/rawstring.ty` + its golden; and
+    `tests/reject/rawstring_unterminated.ty`.
+
+    **Answers to the three questions the phase was told to settle.**
+
+    1. **Does a backtick mean anything to the lexer today?** No. Grepping
+       `src/tychoc.c` for a backtick at HEAD returned only comment prose — no
+       token kind, no case, no table entry. It fell through the operator chain to the
+       catch-all `die_at(line, "unexpected character '%c'", c)` (pre-edit `:463`,
+       now `:511`). Confirmed from the other side: a `tychoc0` built at HEAD
+       still does exactly that —
+       ```
+       $ /tmp/h0 tests/postfreeze/rawstring.ty --emit-c >/dev/null; echo "H0_RC=$?"
+       lex: unexpected character
+         18 |     a := `hello raw`
+                       ^
+       H0_RC=1
+       ```
+       which is why the fixture belongs in `tests/postfreeze/` and not `tests/`.
+
+    2. **The join decision: a raw literal MAY join.** The lines that decided it
+       are `src/tychoc.c:2234-2246` (the comment's soundness argument is stated
+       as a property of the *stored escaped text* — "every Tycho escape is
+       exactly two characters" — not of the syntax that produced the token) and
+       `:2246` itself, `while (at(ps, TK_STR) && !cur(ps)->ival) { sv =
+       sfmt("%s%s", sv, cur(ps)->text); ... }`, which is a plain text
+       concatenation gated only on `ival`, the f-string flag. So the join is
+       safe for any token whose text meets that two-character-escape invariant.
+       The scanner therefore **re-escapes** a raw piece's bytes as it reads them
+       (`\n` `\t` `\\` `\"`, at `:430-433`) and emits an ordinary `TK_STR` with
+       `ival = 0`. Nothing downstream can tell which spelling produced it, so
+       the parser needed **no change at all** and both `` `raw ` "and normal" ``
+       and `` "normal and " `raw` `` are one literal. The conservative
+       alternative the Pre-flight offered (never join, `` `a` "b" `` a syntax
+       error) was rejected because it is the *larger* change — it needs a new
+       per-token rawness flag and an error path — and because the code's own
+       stated condition is met.
+
+       Re-escaping is also load-bearing for a second reason, independent of the
+       join: codegen `:9003` pastes `sval` verbatim into a C string literal
+       (`tycho_str_intern("%s")`), so a raw newline or `"` must never reach it.
+
+    3. **Does the per-piece length bound apply to raw pieces?** Yes, and
+       deliberately the same bound. The quoted scanner's `char buf[4096]` /
+       `bn + 2 >= (int)sizeof buf` pair (`:326`, `:332`) is mirrored by
+       `char rbuf[4096]` at `:425` and the two `string too long` checks at
+       `:437` and `:440` — two-byte check on the re-escape path, one-byte on
+       the verbatim path. A raw piece that overflows reports `string too long`
+       at its **opening** line, as does the unterminated case (`:444`).
+
+    **Control bytes stay rejected, in the raw scanner itself.** `:434-435`
+    repeats the quoted branch's rule with newline now excepted alongside tab —
+    a raw CR, NUL or other byte below `0x20` is still
+    `raw control byte in string literal`. The rule did not live elsewhere.
+
+    **Verify — gate 1, `env -u LD_PRELOAD make test`:**
+    ```
+    ok    postfreeze_rawstring
+    ok    reject_rawstring_unterminated
+    -----------------------------------------
+    passed: 529   failed: 0
+    all green
+    ```
+    (527 before this phase, +2 for the two new fixtures.) The reject fixture's
+    asserted diagnostic, captured directly:
+    ```
+    $ ./tychoc tests/reject/rawstring_unterminated.ty --emit-c -o /tmp/rj; echo "RC=$?"
+    tests/reject/rawstring_unterminated.ty:13: error: unterminated raw string literal
+        13 |     s := `this literal never closes
+    RC=1
+    ```
+    Line 13 is the **opening** line, which is the point of `startline`.
+
+    **Verify — gate 2, `env -u LD_PRELOAD sh scripts/frontparity.sh`:**
+    ```
+    frontparity: agreed: 292   diverged: 0   (skipped, tychoc refused: 15)
+    frontparity: all green (tychoc0's frontend accepts every program tychoc accepts)
+    ```
+    `agreed` is 292, unchanged from phase 1's baseline: the new scanner path did
+    not redden a single `tools/*.ty` under the frozen `tychoc0`.
+
+    **A gate the phase was not told to run, run anyway, because the edit broke
+    it.** Inserting 48 lines at `src/tychoc.c:402` shifted every line below it,
+    and `scripts/check_citations.py` validates 22 **anchored** `path:N@token`
+    citations for actually containing the token they name. Fifteen of them went
+    stale immediately:
+    ```
+    citation check: FAILED (15 stale citation(s) above)
+    ```
+    All fifteen were a pure `+48` shift and were repaired to the lines the
+    checker itself reported, across four files —
+    `docs/spec/15-program.md`, `docs/spec/03-types.md`,
+    `docs/internals/frontend-restriction-audit-2026-07-25.md` and
+    `docs/internals/plan-front-door-DONE.md`. Those last two are **outside this
+    phase's named scope**; they were touched because leaving them stale reddens
+    `make ci`, which phase 3 must run, and the repair is a line number in a
+    citation and nothing else. After:
+    ```
+    link check: ok (130 markdown files, no dead relative links)
+    citation check: ok (22 anchored contain the token they name, 1720 bare in bounds, 82 source->doc citations resolve)
+    ```
+    Also re-run, because Appendix A is a **mechanically generated projection**
+    of the §3/§4 grammar blocks (`gen_grammar.sh`, marker at
+    `appendix-a-grammar.md:32`): the first draft put prose inside the generated
+    region and `make spec-check` correctly refused it. The prose and Provenance
+    now sit after `<!-- END GENERATED -->` and the productions match §3.9.4 byte
+    for byte:
+    ```
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 8 runnable example(s), all pass
+    ```
+
+    **Golden is tracked, not ignored** (phase 1's `.gitignore` finding):
+    ```
+    $ git check-ignore -v tests/postfreeze/rawstring.out
+    .gitignore:100:!/tests/postfreeze/*.out	tests/postfreeze/rawstring.out
+    $ git add -n tests/postfreeze/rawstring.out
+    add 'tests/postfreeze/rawstring.out'
+    ```
+
+    **Not run:** `make ci` — per the Gate ladder, it runs once at the end of
+    phase 3. The three gates above are the ones this edit can redden, plus the
+    two documentation gates it did redden and now does not.
 
 - [ ] **Phase 3 — raw strings in `tychofmt`, the LSP, and the editor grammars**
   - Scope: `tools/tychofmt.ty`, `tools/lsp.ty`, `editors/vscode/`,
@@ -321,6 +449,36 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     `sh scripts/asan_self.sh` is green, or the header states why it is out.
   - Sequencing: worth doing **after** phase 2, so it has real new-lexer code to
     cover rather than one nested-pattern canary.
+
+- [ ] **Phase 6 (found by phase 2, not absorbed) — bare `src/tychoc.c:N`
+      citations all shifted by +48, and §3.8's Provenance now points at the
+      wrong feature outright**
+  - Phase 2 inserted 48 lines at `src/tychoc.c:402`. Every **anchored**
+    (`path:N@token`) citation below that line was repaired inside phase 2,
+    because `scripts/check_citations.py` fails on those and `make ci` would have
+    gone red. Every **bare** `:N` citation below line 402 is now off by 48 and
+    the gate is silent about it, because it only checks bare refs for being *in
+    bounds* — 1720 of them are. Same rot mechanism phase 4 records for the two
+    shell scripts, now with a much larger blast radius.
+  - **One of them is worse than merely stale and is the reason this is a phase
+    rather than a footnote.** `docs/spec/01-lexical.md`'s §3.8 Provenance reads
+    `src/tychoc.c:398-433` with "`::` is lexed at `:402`". That range was
+    already wrong before phase 2 (the operator table was at `:429-465` at HEAD);
+    after phase 2 `:402` is the **opening line of the raw-string scanner**, so
+    the citation now confidently names an unrelated feature. Post-phase-2 the
+    operator table is at `:477-513` and `::` at `:482`. §3.8 was outside phase
+    2's named scope (§3.9.4 and the appendix grammar), so it was left alone
+    rather than silently absorbed.
+  - Worth deciding here, not just sweeping: whether `check_citations.py` should
+    grow an anchored form for these, or whether a spec Provenance line should be
+    required to be anchored (`:N@token`) so that a source edit can never
+    silently rot it. The 22 anchored citations survived phase 2 *because* the
+    gate checks them; the 1720 bare ones did not.
+  - Done when: bare `src/tychoc.c:N` refs across `docs/` and `FRICTION.md`
+    resolve to the line the surrounding sentence describes (spot-checked by
+    reading the cited line, starting with §3.8), and `make check-links` green.
+  - Sequencing: **after** phase 3, which will edit `tools/*.ty` and the editor
+    grammars but not `src/tychoc.c`, so the +48 offset is stable from here.
 
 ## Out of scope
 
