@@ -1096,7 +1096,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     recommendation and narrows it: **the two should land as one gate change,
     which is phase 9's second half.**
 
-- [ ] **Phase 7 (found by phase 3, not absorbed) — nothing in any gate ever
+- [x] **Phase 7 (found by phase 3, not absorbed) — nothing in any gate ever
       parses the two editor grammars, so both can rot silently**
   - Phase 3 changed `editors/vscode/syntaxes/tycho.tmLanguage.json` and
     `editors/zed/grammars/tycho/grammar.js` and had to verify them **by hand**,
@@ -1126,6 +1126,147 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     backtick does not auto-close. Two entries.
   - Done when: a gate exists that fails if `grammar.js` and `src/parser.c`
     disagree, and `make ci` is green with it.
+
+  **DONE.** New gate `/home/igzo/github/tycho/scripts/editors_check.sh`, wired as
+  `make editors-check` (`/home/igzo/github/tycho/Makefile:59-64`) and as step
+  `[9b/13]` of `/home/igzo/github/tycho/scripts/ci.sh:103-113`. Plus the two
+  backtick entries in
+  `/home/igzo/github/tycho/editors/vscode/language-configuration.json:9` and `:11`.
+
+  **The three facts phase 3 filed, re-verified before building on them:**
+  `/home/igzo/github/tycho/scripts/tools_check.sh:25` still excludes the
+  directory by name, and `grep -rn editors Makefile scripts/*.sh` still returns
+  exactly that one line. `npx --yes tree-sitter-cli@0.25 generate --abi 15` into
+  a temp dir still reproduces
+  `/home/igzo/github/tycho/editors/zed/grammars/tycho/src/` byte for byte (all
+  six files: `parser.c`, `grammar.json`, `node-types.json`, and the three
+  `tree_sitter/*.h`), so the committed artifact was in sync at the time of
+  writing — the gate is a guard, not a repair. Neither vscode JSON was checked
+  by anything.
+
+  **The ERROR count is NOT the reject-fixture count, and the phase text's guess
+  that it would be is wrong.** `ls tests/reject/ | wc -l` = 239, but
+  `tree-sitter parse -q` over all 813 `.ty` files reports exactly ONE failure:
+
+  ```
+  $ cd <tmp generated grammar> && npx --yes tree-sitter-cli@0.25 parse -q $(find /home/igzo/github/tycho -name '*.ty' -not -path '*/.git/*')
+  /home/igzo/github/tycho/tests/reject/rawstring_unterminated.ty   Parse: 0.02 ms   37208 bytes/ms   (ERROR [12, 9] - [14, 0])
+  ```
+
+  The other 238 reject fixtures are **semantic** rejects — type mismatches,
+  affine violations, arity errors — whose syntax is well-formed and which a
+  highlighting grammar MUST parse. Only one is lexical. So the assertion encoded
+  in `/home/igzo/github/tycho/scripts/editors_check.sh:86-88` is the enumerated
+  known-bad set (one path), diffed **both ways** at
+  `/home/igzo/github/tycho/scripts/editors_check.sh:97`: a new ERROR is a
+  regression, and a known-bad file that starts parsing means the grammar grew a
+  hole. The reasoning is in that file's comment at
+  `/home/igzo/github/tycho/scripts/editors_check.sh:76-85` so nobody re-derives
+  "1" as a magic constant.
+
+  **Step numbering: `[9b/13]`, not `[14/14]`.** `/home/igzo/github/tycho/scripts/ci.sh`
+  already uses `2b`, `2c` and `3b` for a sub-lane of a numbered step, and the
+  `/13` denominator counts the numbered steps, of which there are still exactly
+  13. Checked that no other file prints these labels:
+  `grep -rn '/13\]' --include='*.md' --include='*.sh' --include=Makefile .`
+  returns only `/home/igzo/github/tycho/plan.md` evidence blocks.
+
+  **Verify 1 — the gate directly, `sh scripts/editors_check.sh`, exit 0:**
+  ```
+  >>> editors: JSON syntax (vscode)
+      ok  editors/vscode/syntaxes/tycho.tmLanguage.json
+      ok  editors/vscode/language-configuration.json
+  >>> editors: zed grammar regenerated with npx --yes tree-sitter-cli@0.25 (tree-sitter 0.25.10 (da6fe9beb4f7f67beb75914ca8e0d48ae48d6406))
+      src/ matches grammar.js byte for byte (parser.c, grammar.json, node-types.json, tree_sitter/)
+  >>> editors: zed grammar over the corpus (813 .ty files)
+      813 files parsed; the only failure is the enumerated known-bad set (tests/reject/rawstring_unterminated.ty )
+  editors-check: ok
+  ```
+
+  **Verify 2 — the divergence proof, BOTH directions.** Perturbed
+  `/home/igzo/github/tycho/editors/zed/grammars/tycho/grammar.js:43` only —
+  `choice("true", "false", "null")` -> `choice("true", "false", "null", "nil")` —
+  leaving the committed `src/` untouched, exactly the "edited the .js alone"
+  failure phase 3 described. RED, exit 1:
+  ```
+  >>> editors: zed grammar regenerated with npx --yes tree-sitter-cli@0.25 (tree-sitter 0.25.10 (...))
+      GENERATED src/ IS STALE: editors/zed/grammars/tycho/src does not match grammar.js.
+      Regenerate: (cd editors/zed/grammars/tycho && npx --yes tree-sitter-cli@0.25 generate --abi 15)
+        diff -r /tmp/tmp.EKwOwmVrIC/src/grammar.json editors/zed/grammars/tycho/src/grammar.json
+        205,208d204
+        <         },
+        <         {
+        <           "type": "STRING",
+        <           "value": "nil"
+        diff -r /tmp/tmp.EKwOwmVrIC/src/node-types.json editors/zed/grammars/tycho/src/node-types.json
+        242c242
+        <     "named": false
+        ...
+  editors-check: FAIL
+  ```
+  Note the corpus lane stayed green through this — the corpus alone would NOT
+  have caught it, because a new keyword alternative breaks no existing file.
+  Only the `cmp` catches it. Then restored from a pre-edit copy
+  (`git diff --stat editors/zed/grammars/tycho/grammar.js` empty), GREEN again,
+  exit 0:
+  ```
+  >>> editors: zed grammar regenerated with npx --yes tree-sitter-cli@0.25 (tree-sitter 0.25.10 (da6fe9beb4f7f67beb75914ca8e0d48ae48d6406))
+      src/ matches grammar.js byte for byte (parser.c, grammar.json, node-types.json, tree_sitter/)
+  editors-check: ok
+  ```
+
+  **Verify 3 — the CLI-absent skip.** A PATH with no `npx` and no `node`
+  (symlink dir holding only `python3 mktemp cp diff sed find sort wc tr awk head
+  rm cat dirname basename ls sh`) — note `/usr/bin/npx` exists on this host, so
+  merely dropping the nvm bin was not enough and the stub dir is the honest
+  test. `env PATH=<stub> /bin/sh scripts/editors_check.sh`, exit **0**:
+  ```
+  --- npx on that PATH?
+  npx: NOT FOUND
+  >>> editors: JSON syntax (vscode)
+      ok  editors/vscode/syntaxes/tycho.tmLanguage.json
+      ok  editors/vscode/language-configuration.json
+  >>> editors: zed grammar SKIPPED (tree-sitter CLI unavailable: 'npx --yes tree-sitter-cli@0.25 --version' failed -- offline, or no npx. The JSON lane above still ran.)
+  editors-check: ok (grammar lanes skipped)
+  ```
+  The JSON lane still ran and still asserted — it needs only `python3`, which
+  `/home/igzo/github/tycho/scripts/ci.sh:87` already depends on. Skip wording
+  follows `/home/igzo/github/tycho/Makefile:238`'s "ASan lane SKIPPED for ilp32".
+
+  **Verify 4 — `sh scripts/tools_check.sh`:**
+  ```
+  >>> bytes-rehome: a bytes field of a returned struct is deep-copied into the caller's arena
+      bytes field re-homed on struct return
+  tools-check: ok
+  ```
+
+  **Verify 5 — `make ci`, exit 0, all 13 numbered steps + 4 lettered sub-lanes:**
+  ```
+  >>> [9/13] make tools-check  (formatter idempotence + semantic preservation + LSP smoke)
+  >>> [9b/13] make editors-check  (zed grammar: src/ still generated from grammar.js, corpus still parses; vscode JSON is JSON)
+      ok  editors/vscode/syntaxes/tycho.tmLanguage.json
+      ok  editors/vscode/language-configuration.json
+      src/ matches grammar.js byte for byte (parser.c, grammar.json, node-types.json, tree_sitter/)
+      813 files parsed; the only failure is the enumerated known-bad set (tests/reject/rawstring_unterminated.ty )
+  editors-check: ok
+  >>> [10/13] bench-guard  (tree-alloc wall: tycho must beat C -- perf regression gate)
+  ...
+  >>> [13/13] make check-links  (every relative Markdown link resolves to a real file; every provenance citation still resolves)
+  citation check: ok (104 anchored contain the token they name, 1911 bare in bounds, 82 source->doc citations resolve)
+  ================================================================
+   CI GREEN -- tree is good
+  ================================================================
+  ```
+  Cost: the `[9b]` lane is ~15s wall (one npx resolve + one generate + 813
+  parses at ~0.02ms each), on a `make ci` that already runs ~11 minutes.
+
+  **What this gate does NOT cover, stated so nobody assumes otherwise.** It
+  never *builds* the vscode extension or validates the tmLanguage against the
+  TextMate schema — it only asserts the file is parseable JSON, so a
+  syntactically valid but semantically wrong `match` regex still ships silently.
+  It does not check the zed `languages/` queries (`highlights.scm` etc.) at all.
+  And the `813` in `/home/igzo/github/tycho/editors/zed/README.md:14` is still a
+  hand-written number no gate compares against the tree — filed as phase 12.
 
 - [ ] **Phase 8 (found by phase 4, not absorbed) — the same rot outside
       `FRICTION.md` and `docs/`: non-Markdown runners citing each other**
@@ -1477,6 +1618,33 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     region its clause describes, spot-checked by reading; the anchored ranges are
     re-aligned to the construct they name; `make check-links` green.
   - Sequencing: with or after phase 9. It is the same defect and the same method.
+
+- [ ] **Phase 12 (found by phase 7, not absorbed) — the corpus SIZE in
+      `editors/zed/README.md` is still a hand-typed number**
+  - Phase 7's gate now proves the zed grammar parses the corpus, but the corpus
+    *count* in the prose is still unguarded.
+    `/home/igzo/github/tycho/editors/zed/README.md:14` reads "813 committed
+    `.ty` files (excluding `editors/`, `node_modules/` and …". This is the exact
+    claim that rotted before: it said **462** until phase 3 rewrote it, having
+    been wrong by several hundred files for an unknown number of commits.
+    Phase 7 left it because a README's prose number is outside "a gate that
+    parses the grammars", and inventing a prose-number checker is a different
+    piece of machinery from `tree-sitter generate | cmp`.
+  - The cheap version is three lines in
+    `/home/igzo/github/tycho/scripts/editors_check.sh`: the script already
+    computes `nfiles` (`/home/igzo/github/tycho/scripts/editors_check.sh:92`)
+    with the same exclusion list the README recites, so assert that `$nfiles`
+    appears in `editors/zed/README.md`. Cost: one `grep`.
+  - Consider at the same time whether any *other* hand-typed corpus count in the
+    tree deserves the same treatment — phase 3's evidence quotes `813 files
+    checked` from `scripts/tools_check.sh` and phase 5's quotes `compiled: 542`
+    from the ASan lane, and those are computed, not typed. A quick
+    `grep -rn '\b813\b'` over `*.md` would say whether the README is the only
+    typed one. Do NOT widen this into a general numeric-claim checker.
+  - Done when: `make editors-check` fails if
+    `/home/igzo/github/tycho/editors/zed/README.md`'s corpus count disagrees
+    with the tree, proven by perturbing one or the other; `make ci` green.
+  - Sequencing: independent of phases 8, 9 and 11. Any time after phase 7.
 
 ## Status — stopped at phase 6, deliberately, 2026-07-29
 
