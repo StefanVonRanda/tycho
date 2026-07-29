@@ -790,7 +790,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   have buried the feature. The two refs inside the fixtures this plan owns were
   fixed by hand as above.
 
-- [ ] **Phase 5 — `parallel for i in 0..<N:`**
+- [x] **Phase 5 — `parallel for i in 0..<N:`**
   - Scope: parser, the `parallel for` path (`src/tychoc.c` around the
     `S_FORRANGE` `parallel` flag at `:1558`), codegen; fixtures in `tests/conc/`.
   - `0..<N` is legal **only** in `parallel for` (see Pre-flight). Sequential `for
@@ -800,6 +800,167 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     threads, the sequential refusal has a `tests/reject/` fixture with its
     diagnostic asserted, and `tests/conc/` fixtures pass native, ASan and TSan.
   - Verify: `make conc`, then `make test`.
+
+  **Evidence (2026-07-29).**
+
+  **The whole feature is 42 lines in one place, and no new node.** `0..<N` is
+  parsed at `src/tychoc.c:3329-3370` into **exactly** the `S_FORRANGE` node that
+  `range(0, N)` already built — `r_start` a literal `0`, `r_stop` the parsed `N`,
+  `r_step` NULL. So resolve (`src/tychoc.c:7281`), `resolve_parfor`, the lifted
+  `__parN` chunk proc, the fan-out at `src/tychoc.c:9932` and `gen_stmt`'s
+  `S_FORRANGE` case are all untouched: the chunking machinery is the code that
+  was already there and already gated. Only the spelling is new. `cc -Wall
+  -Wextra` clean.
+
+  **How parallel-only legality is enforced, and where.** The `for` parser already
+  carries `int par_here = g_parallel_ctx` (`src/tychoc.c:3241`) — set by the
+  `TK_PARALLEL` handler for the directly-following `for` and cleared so nested
+  loops do not inherit it. That flag is the whole enforcement: `if (!par_here)
+  die_at(...)` at `src/tychoc.c:3355-3357`, **inside the parser**, before any
+  node exists. Nothing in the typechecker or codegen needs to know about it, and
+  a sequential `0..<N` cannot reach a later pass. Verdict on the Pre-flight's
+  "if it proves unworkable, say so": **it did not.** The context is a single
+  local `int` already in scope for another purpose, and the check is one
+  condition. The wart the Pre-flight predicted is real but it is a wart in the
+  *language*, not in the implementation — nothing here argues for generalising
+  `0..<N` to sequential loops, and it was not generalised.
+
+  **The header is scanned, not peeked.** A top-level `..<` is located by the same
+  depth-tracking scan the `;` header used (`src/tychoc.c:3346-3353`), so
+  `for i in (a+b)..<n:` reaches a diagnostic about `..<` rather than falling
+  through the foreach branch to "expected ':' before the block" — which is what
+  a `peek(ps, 1) == TK_DOTLT` test would have done.
+
+  **The sequential diagnostic, exact text.** From
+  `tests/diag/dotlt_sequential.err`, recorded byte-for-byte:
+
+  ```
+  tests/diag/dotlt_sequential.ty:8: error: `0..<N` counts only in a `parallel for` -- write `for idx := 0; idx < N; idx += 1:` for a sequential count
+       8 |     for idx in 0..<10:
+  ```
+
+  The loop variable is substituted into the replacement form (`%s` three times,
+  `src/tychoc.c:3356-3357`), so the message is copy-pasteable rather than
+  generic. There is no caret row because the site uses `t->line` with no column,
+  which is the existing convention for the surrounding `for`-header errors.
+
+  **A second refusal, not asked for but required by the shape.** `0..<N` counts
+  from zero by construction (the plan's phase 6 says a non-zero start has no
+  `0..<N` equivalent), so a non-zero lower bound is refused **by name** instead
+  of being silently misparsed — `src/tychoc.c:3358-3359`:
+
+  ```
+  $ ./tychoc /tmp/.../nz.ty -o /tmp/.../nz.bin      # parallel for i in a..<10:
+  :4: error: `parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound
+  $ ./tychoc /tmp/.../paren.ty -o /tmp/.../paren.bin # parallel for i in (n+1)..<10:
+  :4: error: `parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound
+  ```
+
+  This matters for phase 6: a `parallel for … in range(a, b)` with `a != 0` will
+  **fail loudly** on rewrite rather than silently changing its iteration space.
+
+  **Proof the body runs across threads rather than serially — measured, not
+  argued.** The golden alone cannot tell the two apart (integer `+`/`*`
+  reductions are associative and exact, which is the point). So a scratch program
+  with a `parallel for i in 0..<8:` over a body of 2e9 iterations each was timed
+  twice on a 16-CPU host, with `TYCHO_THREADS` pinning the chunk count
+  (`runtime/tycho_rt.c:847-852`):
+
+  ```
+  TYCHO_THREADS=8   35999999994   14.54s user  791% cpu   1.838 total
+  TYCHO_THREADS=1   35999999994   11.68s user   99% cpu  11.685 total
+  ```
+
+  Same answer; **791% CPU against 99%**, and 1.8s wall against 11.7s. Eight
+  chunks ran concurrently on eight cores. A serial lowering cannot produce 791%
+  of one CPU. (Backing source: each chunk is a real 1:1 OS thread —
+  `tycho_task_start` calls `pthread_create` at `runtime/tycho_rt.c:577`, and the
+  spawn loop issues `K = tycho_ncpu()` of them at `src/tychoc.c:9939-9955`.) A
+  first attempt at this measurement read `Threads:` out of `/proc/<pid>/status`
+  and reported **1**; that number was wrong and is recorded here because it is
+  the kind of thing that gets believed — `pgrep -f threads.bin` had matched the
+  *shell* running the harness, whose command line contains the string. The pid
+  was wrong, not the threading.
+
+  **The `tests/conc/` fixture and its hand-checked golden.**
+  `tests/conc/parfor_dotlt.ty` covers six things, every expected value computed
+  by hand **before** the golden was written, never blessed from output:
+
+  | case | expects | why |
+  |---|---|---|
+  | `0..<1000`, `total += i*i` | `332833500` | `999*1000*1999/6`; a dropped or repeated chunk boundary moves it |
+  | `0..<(n * 4)`, `n := 3` | `12` | N is an expression, evaluated once |
+  | `0..<1` | `1` then `0` | smallest non-empty space; exclusive bound; `i == 0` |
+  | `0..<0` | `0` | empty space — the body must not run |
+  | `0..<6`, product | `120` | `1*2*3*4*5`, a `*` reduction over the same shape |
+
+  Chunk-count independence was measured rather than assumed —
+  `TYCHO_THREADS=1, 3, 13, 64` all produce the identical six lines, and
+  `TYCHO_THREADS=7` output `cmp`s clean against `tests/conc/parfor_dotlt.out`.
+  That is what makes the golden safe on a host with a different CPU count.
+
+  **The fate of `tests/reject/dotlt_no_grammar.ty`: renamed, not deleted, not
+  weakened.** `git mv` to `tests/reject/dotlt_sequential.ty` (git scores it `R`),
+  because the old name is now false — `..<` *has* a grammar; only this use of it
+  is illegal. Its header was rewritten to name the new diagnostic and to record
+  what phase 3's refusal used to be. The reject lane
+  (`tests/run.sh:158-169`) asserts only nonzero exit + non-empty diagnostic, so
+  the **exact text** is locked separately by a new `tests/diag/` golden,
+  `tests/diag/dotlt_sequential.ty` + `.err` — the diag lane `cmp`s compiler
+  stderr byte-for-byte (`tests/run.sh:218-236`). Both fixtures were `git add`ed
+  **before** the final citation run (phase 3 found an untracked file's citations
+  are not checked at all).
+
+  **Verify 1 — `make conc`** (native + ASan/UBSan + TSan, each against the
+  golden, silent sanitizers required):
+
+  ```
+  conc: passed 38   failed 0
+  ```
+
+  37 before; +1 is `parfor_dotlt`. TSan clean over the new fixture means the
+  chunked reduction merge is race-free for this shape too. `tests/conc/parfor.ty`
+  — which uses both `parallel for i in range(...)` and `parallel for x in xs:` —
+  is in that 38 and still green, so **the existing counting form and the foreach
+  form both keep working**, as phase 6 requires.
+
+  **Verify 2 — `make test`.** `passed: 543   failed: 0`, `all green`. Phase 4
+  left it at 542; +1 is exactly `tests/diag/dotlt_sequential` (the reject fixture
+  was renamed, not added, so that lane's count is unchanged).
+
+  **Verify 3 — citations.** The gate reddened as predicted: **66 stale anchored
+  refs**, every one an anchor into `src/tychoc.c` past the insertion point.
+  Repaired through a `difflib.SequenceMatcher` line map built from `git show
+  HEAD:src/tychoc.c` against the working tree (12595 → 12637 lines, **all 12595
+  old lines matched equal** — this phase inserted only, and edited nothing in
+  place). Only refs the gate itself reported STALE were rewritten, each by
+  `map[old]`. 66 across 10 files:
+  `docs/internals/plan-postfreeze-rawstring-DONE.md` 20,
+  `docs/spec/12-aggregates.md` 14, `docs/spec/16-builtins.md` 10,
+  `docs/spec/15-program.md` 7, `docs/spec/01-lexical.md` 4,
+  `docs/internals/plan-front-door-DONE.md` 3,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` 2,
+  `docs/spec/02-grammar.md` 2, `docs/spec/03-types.md` 2,
+  `docs/spec/09-expressions.md` 2. Every file is `+n -n` in `git diff
+  --numstat`, so the documentation diff is **line-for-line neutral**. Final:
+
+  ```
+  citation check: ok (125 anchored contain the token they name, 1971 bare in bounds,
+  102 source->doc citations resolve, 105 source->source in bounds)
+  ```
+
+  1956 → 1971 bare and 100 → 105 source→source are the refs in the three new /
+  rewritten fixture headers.
+
+  **Left alone, deliberately.** The bare `src/tychoc.c:N` class (phase 17) is now
+  shifted by a further 42 lines. The file only grew, so every one is still in
+  bounds and the gate cannot see them; the refs inside this phase's own fixtures
+  are anchored or were written after the insertion, so they are correct.
+
+  **Not run, and why.** `make ci` is phase 10's, per `CLAUDE.md`'s gate budget.
+  `sh scripts/spec_check.sh` was not run because this phase writes no spec — the
+  spec is phase 9, and `docs/spec/01-lexical.md:170`'s "There is no range
+  operator (`..`)" is now false and is already carried as phase 24.
 
 - [ ] **Phase 6 — rewrite all 549 `range()` sites**
   - Scope: every `.ty` in the tree except frozen `compiler/tychoc0.ty`.
@@ -960,6 +1121,19 @@ Unclosed discoveries from the two previous plans; none blocking.
       `.ty` is untracked and a `git add -A` would commit it. Two candidate fixes,
       both small: default `--emit-c` with no `-o` to stdout, or add the emitted
       sibling to `.gitignore` by pattern. Not urgent, not this plan's subject.
+
+- [ ] **Phase 26** — **the `parallel for` gate diagnostic will be wrong the
+      moment phase 7 lands.** Found by phase 5, left alone because rewriting it
+      now would make it wrong in the other direction. `src/tychoc.c:3235` refuses
+      a `parallel` applied to anything that is not an `S_FORRANGE` with
+      *"parallel supports 'for x in range(...)' and 'for x in collection' loops
+      only"* — the message a user gets for `parallel for i := 0; i < 3; i += 1:`
+      today. Phase 5 added a third accepted spelling (`0..<N`) that the message
+      does not mention, and phase 7 deletes the only spelling it does mention.
+      After phase 7 it should read *"parallel supports `for i in 0..<N` and
+      `for x in collection` loops only"*. One line; do it inside phase 7 rather
+      than as its own commit, and note `docs/spec/13-concurrency.md:78` says the
+      same thing in prose (that half is phase 9's).
 
 - [ ] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for

@@ -1,0 +1,26 @@
+# A SEQUENTIAL `for i in 0..<N:` is refused deliberately, and stays refused.
+# `0..<N` exists so `parallel for` keeps a statically-shaped iteration space to
+# chunk across threads; accepting it in a plain `for` would make it `range()`
+# under a new name and leave the three-clause form with nothing to do
+# (plan.md's Pre-flight, phase 5). Refused at src/tychoc.c:3356 with
+#
+#     error: `0..<N` counts only in a `parallel for` --
+#            write `for i := 0; i < N; i += 1:` for a sequential count
+#
+# naming the replacement form, with the loop variable substituted in.
+#
+# WAS tests/reject/dotlt_no_grammar.ty, written by phase 3 when `..<` lexed
+# (TK_DOTLT, src/tychoc.c:482) but had no grammar at all. Renamed here because
+# the token now HAS a grammar and only this use of it is illegal. Phase 3's
+# refusal came from the foreach branch parsing `0` as the collection and then
+# demanding the block colon ("expected ':' before the block"); what phase 5
+# changes is the message, not the verdict. Note it never died in the LEXER even
+# before phase 3 -- `0..<3` lexed as INT '.' '.' '<' INT and was refused at the
+# postfix-field site.
+#
+# This lane asserts only that the refusal is loud: nonzero exit plus a non-empty
+# diagnostic (tests/run.sh:158-169). The EXACT text is locked byte-for-byte by
+# the golden at tests/diag/dotlt_sequential.err.
+fn main():
+    for i in 0..<3:
+        print(str(i))
