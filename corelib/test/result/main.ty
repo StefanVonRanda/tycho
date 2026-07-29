@@ -14,9 +14,9 @@
 #
 # THIS is the regression home for nested patterns and for a Result inside a tuple
 # literal, and the reason is the frozen compiler, not taste: `tests/*.ty` and
-# `tests/pkg/*/main.ty` are fed to compiler/tychoc0.ty by compiler/fixpoint.sh:24
-# and scripts/frontparity.sh:127, and tychoc0 is frozen at a grammar that has
-# neither. corelib/test/ is golden-validated by corelib/run.sh and reaches no
+# `tests/pkg/*/main.ty` are fed to compiler/tychoc0.ty by compiler/fixpoint.sh:37
+# and :47, and by scripts/frontparity.sh:164-165; tychoc0 is frozen at a grammar
+# that has neither. corelib/test/ is golden-validated by corelib/run.sh, reaches no
 # frozen compiler, so a new-syntax fixture can live here and nowhere in tests/.
 # (Same constraint phase 2 recorded for adjacent string literals.)
 package main
