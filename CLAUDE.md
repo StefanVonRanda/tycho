@@ -1,0 +1,71 @@
+# Working in this repo
+
+## Gate budget — read this before running anything
+
+This tree has a lot of gates and some of them are very expensive. **Run the
+cheapest gate that can actually redden for your change.** Running a broader one
+"to be safe" is not caution, it is twenty minutes of someone else's day.
+
+| Gate | Cost | Reddens for |
+|---|---|---|
+| `python3 scripts/check_citations.py` | <1s | any `path:line` written in Markdown, comments, or evidence blocks |
+| `sh scripts/check_links.sh` | <1s | relative Markdown links |
+| `sh scripts/spec_check.sh` | ~6s | runnable examples in `docs/spec/`, Appendix A vs §3/§4 |
+| `sh scripts/frontparity.sh` | ~3s + a `tychoc0` build | anything the frozen compiler compiles: `src/tychoc.c`, `tools/*.ty`, `tests/*.ty`, `examples/*.ty` |
+| `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
+| `sh compiler/fixpoint.sh` | minutes | self-hosting; only for `compiler/tychoc0.ty` or codegen |
+| `sh scripts/asan_self.sh` | minutes | `src/tychoc.c` under ASan/UBSan over the whole corpus |
+| `make test` | minutes | compiler or runtime behaviour, any fixture or golden |
+| `make ci` | **~19 min** | a new CI step, or a release |
+
+### The rule
+
+- **Markdown, comments, evidence blocks** → the two doc gates. Nothing else.
+  They cannot affect a compiled artifact, so `make test` cannot tell you
+  anything `check_citations.py` did not.
+- **A `.ty` fixture or a corelib change** → `make test`.
+- **`src/tychoc.c`** → `make test`, plus `scripts/frontparity.sh` if the change
+  could alter what the frontend accepts.
+- **`make ci` runs once**, at the end of a chain of related work, or when a
+  phase adds a CI step. Not per phase. Not "to confirm". Once.
+- If you are unsure which gate covers your change, that is a question to ask,
+  not a reason to run the expensive one.
+
+### Why this file exists
+
+A ten-phase plan in this repo spent most of its wall-clock waiting on `make ci`
+runs that could not have failed — phases that edited only Markdown, each
+re-running a nineteen-minute suite. The evidence is in
+`docs/internals/plan-friction-DONE.md` and in `plan.md`'s "Gate ladder" section.
+The gates are good; running all of them every time is not using them, it is
+avoiding thinking about which one applies.
+
+## Environment
+
+`~/.zshenv` drops `LD_PRELOAD` when it is the tmux `block-nnp.so` shim. If you
+ever see `ASan runtime does not come first in initial library list`, that shim
+is back in the environment and **the tree is not at fault** — it scored 251/527
+spurious failures before this was found. Re-run under `env -u LD_PRELOAD` and
+say so rather than changing anything in the repo.
+
+## Citations
+
+`path:line` references are load-bearing here and `scripts/check_citations.py`
+gates them. Two things that bite every time:
+
+- A **bare** `:N` binds to the **previously named path in the same document**.
+  Write full paths in evidence blocks, or the gate resolves your citation
+  against whatever file you happened to mention last. Four separate phases have
+  reddened the gate on their own write-ups this way.
+- Inside a `> Provenance:` block, a **single-line** ref must be anchored
+  `path:N@token`; a **range** stays bare, deliberately — a range has no single
+  subject token and forcing one produces a false anchor. Do not "fix" the
+  exemption.
+
+## Plans
+
+Substantial work runs through `plan.md`: one phase at a time, each phase
+verified and committed on its own, evidence appended under the phase rather
+than pasted into chat. Work discovered outside a phase's scope is appended to
+`plan.md` as a new unchecked phase — never silently absorbed into the phase
+that found it.
