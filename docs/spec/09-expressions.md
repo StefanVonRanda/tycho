@@ -65,8 +65,8 @@ mismatches, and literal adaptation of a broadcast scalar — is
 > Provenance: array ⊕ array arm `src/tychoc.c:5987-6017`; broadcast arm
 > `src/tychoc.c:6046-6072`; the per-element-type operator set
 > `src/tychoc.c:1022@elem_arith_ok`; the arms an array operand still falls
-> through to — shift `src/tychoc.c:6108@shift operators require integer operands`,
-> modulo/bitwise `src/tychoc.c:6216@modulo / bitwise operators`.
+> through to — shift `src/tychoc.c:6105@shift operators require integer operands`,
+> modulo/bitwise `src/tychoc.c:6213@modulo / bitwise operators`.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
