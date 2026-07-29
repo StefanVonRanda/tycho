@@ -1293,9 +1293,20 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     citations; if the gate grows an anchored form, this sweep should adopt it
     rather than land more bare `:N` refs that rot the same way.
 
-- [ ] **Phase 9 (found by phase 6, not absorbed) — the `src/tychoc.c` citation
+- ~~**Phase 9 (found by phase 6, not absorbed) — the `src/tychoc.c` citation
       base is stale tree-wide by 68 to 3520 lines, not by 48, and the gate is
-      structurally blind to all of it**
+      structurally blind to all of it**~~ **DROPPED 2026-07-29, by decision, not
+      by verification.** The finding below stands — the ~400 stale references are
+      real and were measured, not estimated. What was rejected is the *remedy*:
+      a hand sweep costing hours to reach a state with nothing holding it. The
+      next commit that inserts lines into `src/tychoc.c` re-rots every reference
+      the sweep would have fixed, because these are bare refs in prose and no
+      gate can see them. Phase 10 already anchored the citations that carry
+      weight — the 48 single-line refs on `> Provenance:` lines, now gate-enforced
+      — and that is the durable half of this phase's own recommendation. Anyone
+      resuming this should extend the gate's reach first and let the sweep follow
+      from what the gate reddens, rather than sweeping by hand again. Left
+      unstruck below as the measurement it is.
   - Phase 6 went looking for phase 2's `+48` drift and found it in **23** of
     **447** in-scope Markdown citations. It repaired those, plus every other
     suspect in `FRICTION.md` and `docs/spec/01-lexical.md`, and stopped. What is
