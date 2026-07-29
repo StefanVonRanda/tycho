@@ -62,7 +62,18 @@ module.exports = grammar({
 
     // token(...) makes each literal ONE atomic lexer token, so `extras`
     // (whitespace / # comments) are never applied to the characters inside it.
-    string: ($) => token(seq('"', repeat(choice(/[^"\\]/, /\\./)), '"')),
+    // Both spellings are ONE `string` node, so highlights.scm's `(string) @string`
+    // covers the raw form with no query change. The backtick form interprets no
+    // escapes (hence no /\\./ alternative — a backslash is an ordinary byte) and
+    // /[^`]/ matches a newline, so it spans lines like the compiler's scanner
+    // (src/tychoc.c:402-448).
+    string: ($) =>
+      token(
+        choice(
+          seq('"', repeat(choice(/[^"\\]/, /\\./)), '"'),
+          seq("`", repeat(/[^`]/), "`"),
+        ),
+      ),
 
     fstring: ($) => token(seq('f"', repeat(choice(/[^"\\]/, /\\./)), '"')),
 

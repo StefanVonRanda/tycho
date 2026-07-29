@@ -331,6 +331,10 @@
     "named": false
   },
   {
+    "type": "inout",
+    "named": false
+  },
+  {
     "type": "input",
     "named": false
   },
@@ -360,10 +364,6 @@
   },
   {
     "type": "match",
-    "named": false
-  },
-  {
-    "type": "mut",
     "named": false
   },
   {

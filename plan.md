@@ -378,7 +378,7 @@ before.
     phase 3. The three gates above are the ones this edit can redden, plus the
     two documentation gates it did redden and now does not.
 
-- [ ] **Phase 3 — raw strings in `tychofmt`, the LSP, and the editor grammars**
+- [x] **Phase 3 — raw strings in `tychofmt`, the LSP, and the editor grammars**
   - Scope: `tools/tychofmt.ty`, `tools/lsp.ty`, `editors/vscode/`,
     `editors/zed/`. Each has its own lexer or grammar and each will mis-tokenise
     a backtick literal until taught it.
@@ -394,6 +394,188 @@ before.
     `agreed` count must not fall — a fall means `tools/` stopped compiling under
     `tychoc0`), then — as the **last** phase in the chain — the full
     `make ci` with fuzz on. This is the one place the whole suite runs.
+  - **DONE 2026-07-29.** Shipped: the raw-literal branch in `tychofmt`'s lexer
+    (`tools/tychofmt.ty:162-184`) plus the `ends_nl` guard in `fmt`
+    (`:245-252`, `:417-420`); the `inraw` cross-line state in **both** of the
+    LSP's own scanners — `find_occurrences` (`tools/lsp.ty:783-805`) and
+    `handle_semantic_tokens` (`:1181-1208`); the `string.quoted.other.raw.tycho`
+    begin/end rule in `editors/vscode/syntaxes/tycho.tmLanguage.json:27-32`; and
+    a second alternative inside the tree-sitter `string` rule in
+    `editors/zed/grammars/tycho/grammar.js`, with `src/parser.c`,
+    `src/grammar.json` and `src/node-types.json` regenerated.
+
+    **No `tools/*.ty` source uses a raw string** — the constraint that made this
+    phase real. Both lexers detect the token by byte value (`c == 96`), and every
+    backtick that appears in `tools/` is inside a `#` comment, which both the
+    frozen `tychoc0` and `tychofmt` consume before the raw branch is ever
+    reached. Proven by gate 2 below: `agreed` is still 292.
+
+    **Design decision: a raw literal is a `KStr` / `ty = 4`, not a new kind.**
+    `tychofmt` reuses `KStr` so `prev_is_value` (`:71-83`), `is_operand`
+    (`:295-300`) and `sep_needs_space` (`:306-325`) treat it as the string
+    operand it is, with no edits to any of them. The zed grammar likewise puts
+    both spellings in the one `string` node, so `languages/tycho/highlights.scm`'s
+    `(string) @string` covers it with **no query change**.
+
+    **The one thing a line-based scanner gets wrong, and how each fixed it.** A
+    raw literal may span source lines, so every scanner that iterates
+    `split(text, "\n")` needs state carried across the loop. `tychofmt` does not
+    (its token stream is one flat pass over the source, and stage 2 splits only
+    on `KNL` tokens, so the literal's interior newlines never reach the indent
+    stack). The LSP's two scanners do, hence `inraw`.
+
+    **(a) `tychofmt` round-trips the fixture — proven by `cmp`, not by eye.**
+    ```
+    $ ./tychofmt tests/postfreeze/rawstring.ty > /tmp/rs.fmt.ty
+    $ cmp tests/postfreeze/rawstring.ty /tmp/rs.fmt.ty && echo IDENTICAL
+    IDENTICAL
+    ```
+    (`cmp` is silent on success; `diff -u` printed nothing.) The change is
+    load-bearing — the **pre-phase-3** `tychofmt`, rebuilt from `git show HEAD`,
+    corrupted the literal's bytes on 32 diff lines by re-spacing its interior:
+    ```
+    -    a := `hello raw`          +    a := ` hello raw `
+    -    b := `a\nb`               +    b := ` a \ nb `
+    -    c := `one                 +    c := ` one
+     two                            two
+    -three`                        +three `
+    ```
+    `` `a\nb` `` becoming `` ` a \ nb ` `` is a semantic change, not cosmetics.
+
+    **The one bug this phase found in phase 2's own fixtures.** With the raw
+    branch added, `tests/reject/rawstring_unterminated.ty` failed
+    `scripts/tools_check.sh:29`'s idempotence bar:
+    ```
+      NOT IDEMPOTENT: ./tests/reject/rawstring_unterminated.ty
+        813 files checked  (compilable=381)  idempotence-fails=1  semantic-fails=0
+    ```
+    Cause, read rather than guessed: an **unterminated** raw literal runs to EOF,
+    so its token text swallows the file's final newline; `fmt`'s code branch then
+    appended `"\n"` unconditionally, and the file grew by one newline per pass.
+    Fixed by `ends_nl` — append the newline only when the line's text does not
+    already end in one. This is a no-op for every other line in the tree (no
+    other token can contain a newline), which is why `idempotence-fails` and
+    `semantic-fails` are both 0 across all 813 files afterwards. The reject
+    fixture now formats to itself byte for byte:
+    ```
+    $ ./tychofmt tests/reject/rawstring_unterminated.ty > /tmp/u1.ty
+    $ ./tychofmt /tmp/u1.ty > /tmp/u2.ty && cmp /tmp/u1.ty /tmp/u2.ty && echo IDEMPOTENT ok
+    IDEMPOTENT ok
+    $ cmp tests/reject/rawstring_unterminated.ty /tmp/u1.ty && echo "AND byte-identical to source"
+    AND byte-identical to source
+    ```
+
+    **(b) How the LSP was checked: a scripted JSON-RPC session, not inspection.**
+    A three-line raw literal whose interior repeats the identifier being renamed,
+    driven through `semanticTokens/full` + `textDocument/rename`
+    (buffer: `fn main():` / `    q := \`one q` / `two q` / `three\`` /
+    `    println(q)`). Decoded from the LSP delta encoding to absolute
+    `(line, char, len, type)`; legend index 4 is `string`, 2 `function`,
+    3 `variable`:
+    ```
+      semantic tokens (line, char, len, type):
+        (0, 0, 2, 0)     fn        -> keyword
+        (0, 3, 4, 2)     main      -> function
+        (1, 4, 1, 3)     q         -> variable
+        (1, 9, 6, 4)     `one q    -> STRING (opens at col 9, runs to EOL)
+        (2, 0, 5, 4)     two q     -> STRING (whole line)
+        (3, 0, 6, 4)     three`    -> STRING (through the closing backtick)
+        (4, 4, 7, 2)     println   -> function      <- resynchronised
+        (4, 12, 1, 3)    q         -> variable      <- resynchronised
+      raw-open=True raw-mid=True raw-close=True  resync(line4 code)=True
+      rename edits=[(1, 4), (4, 12)]
+      LSP_RAW_RC=0
+    ```
+    Line 4 classifying as code is the "does not desynchronise the rest of the
+    file" assertion. The rename returning **exactly two** edits — the declaration
+    and the use, and neither of the two `q`s **inside** the literal — is the
+    `find_occurrences` half. Without `inraw` the pre-change code took the
+    catch-all `else: c = c + 1` / `i = i + 1` at the backtick, so lines 2-3 were
+    scanned as ordinary code: the literal's text would have been classified as
+    variables and a rename would have **edited bytes inside a string literal**.
+
+    **(c) Both editor grammars.** vscode: a `begin`/`end` pair on `` ` `` with no
+    nested patterns (no escapes to model) and no end-of-line anchor, so it spans
+    lines. zed: verified by running the regenerated parser over the corpus —
+    ```
+    $ npx tree-sitter-cli@0.25 generate --abi 15        # per editors/zed/README.md
+    $ npx tree-sitter-cli@0.25 parse tests/postfreeze/rawstring.ty | grep -c 'ERROR\|MISSING'
+    0
+    $ ... | grep 'string \['
+      (string [30, 9] - [32, 6])      <- the three-line raw literal, ONE node
+      (string [39, 9] - [39, 15])     <- `raw `
+      (string [39, 16] - [39, 28])    <-        "and normal"   (the join pair)
+    $ npx tree-sitter-cli@0.25 parse -q <all 813 .ty files> | grep -c 'ERROR\|MISSING'
+    1
+    ```
+    That single remaining error is `tests/reject/rawstring_unterminated.ty`,
+    which is a reject fixture and must not parse. `editors/zed/README.md`'s
+    stale "parses all 462 committed `.ty` files" claim was refreshed to this
+    measurement (it predates several hundred files and was already wrong).
+
+    **Verify — gate 1, `env -u LD_PRELOAD sh scripts/tools_check.sh`:**
+    ```
+    >>> formatter: idempotence + semantic preservation
+        813 files checked  (compilable=381)  idempotence-fails=0  semantic-fails=0
+    >>> lsp: scripted JSON-RPC smoke
+        init=True  diag(valid->[]=True invalid->diag=True loop-warn=True)  hover(local=True fn=True)  def=True
+        docsym=True  completion=True  references=True  rename=True  inlay=True  fstr-rename=True  sighelp=True  wsym=True  semtok=True
+    tools-check: ok
+    ```
+    `semantic-fails=0` over 381 compilable files is the strong half: `tychoc
+    --emit-c` is byte-identical before vs after formatting.
+
+    **Verify — gate 2, `env -u LD_PRELOAD sh scripts/frontparity.sh`:**
+    ```
+    frontparity: agreed: 292   diverged: 0   (skipped, tychoc refused: 15)
+    frontparity: all green (tychoc0's frontend accepts every program tychoc accepts)
+    ```
+    292, the phase 1 and phase 2 baseline: `tools/tychofmt.ty` and `tools/lsp.ty`
+    still compile under the **frozen** `tychoc0` after learning the token.
+
+    **Verify — gate 3, `env -u LD_PRELOAD make ci`, all thirteen steps, exit 0.**
+    Ran ~19 minutes, past the 10-minute per-command cap, so it was run detached
+    to a log and waited on in-turn:
+    ```
+    [2/13]  make test          passed: 529   failed: 0   ->  all green
+    [2b/13] make ilp32         -m32 toolchain OK (32-bit long, 64-bit int64_t verified)
+    [2c/13] make asan-self     compiled: 542   failed: 0   (ASan+UBSan over the whole corpus)
+    [3/13]  make corelib       corelib: all green (tychoc matches goldens) / corelib examples: all green
+    [3b/13] make entrypoints   ok (11 entry points compile with tychoc)
+    [4/13]  make conc          passed 37   failed 0
+    [5/13]  make ffi           green
+    [6/13]  make fuzz N=200        DONE: ok=177 skip=23 timeout=0 FAIL=0
+    [7/13]  make fuzz-reject N=200 DONE: accepted=31 rejected=169 FAIL=0
+    [8/13]  make fuzz-leak N=150   DONE: ok=131 skip=19 FAIL=0
+    [9/13]  make tools-check   tools-check: ok
+    [10/13] bench-guard        ok
+    [11/13] make recursion     recursion-cap: all green
+    [12/13] make spec-check    Appendix A grammar matches §3/§4 (ok); Appendix E citations resolve (ok);
+                               spec-examples: 8 runnable example(s), all pass
+    [13/13] make check-links   link check: ok (130 markdown files)
+                               citation check: ok (22 anchored, 1732 bare in bounds, 82 source->doc)
+    ================================================================
+     CI GREEN -- tree is good
+    ================================================================
+    CI_RC=0
+    ```
+    Phase 2's new scanner path is covered here by `[2c] asan-self` (the ASan+UBSan
+    compiler over 542 programs) and by the three fuzz sweeps, none of which
+    regressed.
+
+    **Ordering caveat, same discipline as phase 1.** One file changed *after* the
+    `CI GREEN` run: the `editors/zed/README.md` count above. It is prose in a
+    Markdown file that no compiled artifact reads, and the one gate that reads it
+    was re-run afterwards and is green — `link check: ok (130 markdown files)` /
+    `citation check: ok (22 anchored …, 1732 bare in bounds, 82 source->doc …)`.
+    Not re-run end to end: the full ~19-minute gate.
+
+    **Deliberately NOT changed, so the next reader does not think it was missed.**
+    `editors/vscode/language-configuration.json` lists `"` in `autoClosingPairs`
+    and `surroundingPairs` but not `` ` ``. Typing a backtick therefore does not
+    auto-close. That is an editing affordance, not highlighting, and this phase's
+    Done-when is highlighting; it is recorded as phase 7 below rather than
+    absorbed.
 
 ## Gate ladder
 
@@ -479,6 +661,37 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     reading the cited line, starting with §3.8), and `make check-links` green.
   - Sequencing: **after** phase 3, which will edit `tools/*.ty` and the editor
     grammars but not `src/tychoc.c`, so the +48 offset is stable from here.
+
+- [ ] **Phase 7 (found by phase 3, not absorbed) — nothing in any gate ever
+      parses the two editor grammars, so both can rot silently**
+  - Phase 3 changed `editors/vscode/syntaxes/tycho.tmLanguage.json` and
+    `editors/zed/grammars/tycho/grammar.js` and had to verify them **by hand**,
+    because no gate touches `editors/`: `scripts/tools_check.sh:25` excludes it
+    from the formatter sweep by name (`-not -path './editors/*'`) and none of
+    `scripts/ci.sh`'s thirteen steps mentions the directory (`grep -rn editors
+    Makefile scripts/*.sh` returns exactly that one line). Consequences already
+    visible in the tree:
+    - `editors/zed/README.md` claimed the grammar "parses all 462 committed
+      `.ty` files" — the tree has had 813 for a long time. Phase 3 re-measured
+      and rewrote the claim, but nothing stops it rotting again.
+    - The checked-in `src/parser.c` is a **generated** artifact. Nothing verifies
+      it is in sync with `grammar.js`; an edit to the `.js` alone would ship a
+      parser that silently does not implement it.
+    - The tmLanguage JSON is not even syntax-checked, let alone exercised.
+  - Cheapest real gate, and it needs no new dependency at CI time beyond the one
+    the README already documents: `npx tree-sitter-cli@0.25 generate --abi 15`
+    into a temp dir and `cmp` against the committed `src/`, then
+    `tree-sitter parse -q` over the corpus asserting the ERROR count is exactly
+    the number of `tests/reject/` fixtures. Both were run by hand in phase 3 and
+    both are one command. Guard it behind a "tree-sitter CLI present" check so an
+    offline `make ci` skips rather than fails, the way `[2b] ilp32` already skips
+    its ASan lane.
+  - Also in this phase, since it is the same file set and phase 3 deliberately
+    left it: `editors/vscode/language-configuration.json` has `"` in
+    `autoClosingPairs` and `surroundingPairs` but not `` ` ``, so typing a
+    backtick does not auto-close. Two entries.
+  - Done when: a gate exists that fails if `grammar.js` and `src/parser.c`
+    disagree, and `make ci` is green with it.
 
 ## Out of scope
 
