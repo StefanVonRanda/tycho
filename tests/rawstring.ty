@@ -1,8 +1,10 @@
-# Post-freeze fixture: backtick raw string literals -- `...`.
+# Backtick raw string literals -- `...`.
 #
-# Why it lives here and not in tests/: the frozen compiler/tychoc0.ty has no
-# backtick token at all, so it refuses the character outright. tests/postfreeze/
-# is the directory the two tychoc0-derived lanes never glob (tests/run.sh:135-153).
+# HISTORY: this fixture was written into tests/postfreeze/ on 2026-07-29, because
+# the frozen compiler/tychoc0.ty has no backtick token at all and refused the
+# character outright, and that directory was the one the two tychoc0-derived
+# lanes never globbed. Those lanes were retired the same day and the fixture came
+# home to tests/, where the main golden loop scores it.
 #
 # Semantics under test (lexer: src/tychoc.c:402-448):
 #   - no escape is interpreted -- a backslash is a backslash;

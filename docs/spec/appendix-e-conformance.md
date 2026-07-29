@@ -43,11 +43,12 @@ drawn from:
 > compiler cannot parse the corpus. See `ROADMAP.md` and
 > [docs/architecture.md](../architecture.md) for what that costs. Every rationale
 > below that explains a fixture's *location* by "the frozen compiler would refuse
-> it" — the `tests/postfreeze/` notes, the `corelib/test/` and `examples/corelib/`
-> carve-outs, the `\r` and adjacent-literal and nested-pattern constraints —
-> describes a constraint **that no longer binds**. Those fixtures have not been
-> relocated yet; that is tracked as its own phase. The clauses they back are
-> normative either way.
+> it" — the `corelib/test/` and `examples/corelib/` carve-outs, the `\r` and
+> adjacent-literal and nested-pattern constraints — describes a constraint **that
+> no longer binds**. `tests/postfreeze/` was the first to go: it was folded back
+> into `tests/` and `tests/abort/` on 2026-07-29 and no longer exists. The
+> remaining fixtures have not been relocated yet; that is tracked as its own
+> phase. The clauses they back are normative either way.
 
 ## E.2 The coverage matrix
 
@@ -161,7 +162,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §14.4 | loops; `range` step 0 reject/abort | `tests/foreach`, `tests/while_loop`, `tests/range_negative_step`, `reject/range_step_zero_lit`, `tests/abort/range_step_zero` |
 | §14.4 | `break` / `continue` | `tests/break_continue`, `tests/loop_return` |
 | §19.4 | `match` statement; exhaustive; wildcard-last | `tests/enums`, `tests/matchwild`, `reject/match_non_exhaustive`, `reject/match_dup_arm`, `reject/match_wildcard_not_last` |
-| §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/postfreeze/nested_pattern`, `corelib/test/result` (`why`, `io_why`) — see the note below on why the `tests/` fixture lives in `postfreeze/` |
+| §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/nested_pattern`, `corelib/test/result` (`why`, `io_why`) — see the note below |
 
 ### §15 Functions
 
@@ -181,7 +182,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §16.2 | indexing & bounds; OOB aborts | `tests/abort/index_oob`, `tests/bounds_elision` |
 | §16.4 | growth `push`; in-place append; alias guard | `tests/push_fusion`, `tests/append_alias`, `reject/push_scalar` |
 | §16.6 | slices | `tests/slices`, `tests/string_slice`, `reject/slice_inout_alias` |
-| §16.8 | element-wise arithmetic; broadcast (order kept, literal adapts); fresh result; `[N]T` mismatch rejected, `[T]` mismatch aborts | `tests/postfreeze/array_arith`, `tests/postfreeze/array_bcast`, `tests/postfreeze/array_arith_fresh`, `tests/postfreeze/array_bcast_fresh`, `tests/postfreeze/abort/array_arith_len`, `reject/array_arith_fixlen`, `tests/diag/array_arith_fixlen`, `tests/diag/array_bcast_widen` — post-freeze, see the note below |
+| §16.8 | element-wise arithmetic; broadcast (order kept, literal adapts); fresh result; `[N]T` mismatch rejected, `[T]` mismatch aborts | `tests/array_arith`, `tests/array_bcast`, `tests/array_arith_fresh`, `tests/array_bcast_fresh`, `tests/abort/array_arith_len`, `reject/array_arith_fixlen`, `tests/diag/array_arith_fixlen`, `tests/diag/array_bcast_widen` — post-freeze, see the note below |
 | §17.1 | struct construction & fields | `tests/named_fields`, `tests/recursive_structs` |
 | §17.3 | recursion only through a container | `tests/recursive_structs`, `tests/recursive_enum_array` |
 | §17.4 | tuples; index-assign/range rejected | `tests/tuples`, `tests/tuple_assign`, `reject/tuple_elem_index_assign`, `reject/tuple_index_range` |
@@ -259,21 +260,17 @@ are flagged here so the gap is explicit rather than hidden:
   and deliberately **not** by a `tests/*.ty` fixture, because `tests/*.ty` and
   `tests/pkg/*/main.ty` go to `tychoc0` and its grammar has neither form.
   **Amended 2026-07-29:** nested patterns now DO have a `tests/` fixture —
-  `tests/postfreeze/nested_pattern` — because that directory is the third place,
-  after `server/` and `examples/corelib/`, held outside the `tychoc0` lanes on
-  purpose. It is not an exception carved for this clause; it is where any fixture
-  for post-freeze syntax goes from now on, which is what closes the open
-  `FRICTION.md` item "new language syntax can no longer be given a `tests/`
-  fixture". The exclusion is structural, not a skip list: `compiler/fixpoint.sh`
-  and `compiler/fixpoint.sh` and `scripts/frontparity.sh` all glob `tests/*.ty`, which does not
-  descend into subdirectories, so nothing under `tests/postfreeze/` is ever handed
-  to a `tychoc0`-derived binary. `tests/run.sh:135-153` runs it with the full
-  native-vs-ASan + golden discipline, so the lane is gated, only not by the two
-  frozen-compiler gates. Measured, not assumed — this is what would happen if it
-  leaked: a `tychoc0` built at HEAD reports `parse: line 34: unexpected token` on
-  `tests/postfreeze/nested_pattern.ty` (its line 34 is the `Err(TooBig(n))` arm;
-  the payload-free `Err(NotFound)` on line 33 does not redden it, because that
-  grammar reads the name as a payload binding). §6.2(7) is unchanged by this and
+  `tests/nested_pattern`. It was first written into `tests/postfreeze/`, a
+  directory held outside the `tychoc0` lanes on purpose, which is what closed the
+  open `FRICTION.md` item "new language syntax can no longer be given a `tests/`
+  fixture". Later the same day the `tychoc0` lanes were retired outright, the
+  constraint that made the directory necessary went with them, and the fixture
+  moved to `tests/`, where the main golden loop scores it with the full
+  native-vs-ASan + golden discipline. Measured, not assumed — this is what the
+  directory was protecting against: a `tychoc0` built on 2026-07-29 reported
+  `parse: line 34: unexpected token` on the fixture (line 34 was the
+  `Err(TooBig(n))` arm; the payload-free `Err(NotFound)` before it does not redden
+  it, because that grammar reads the name as a payload binding). §6.2(7) is unchanged by this and
   keeps `corelib/test/result` as its only witness. Measured,
   not assumed: rewriting `httpd.read_request_capped` to `return (Err(why), buf)`
   makes `examples/webserver/run.sh` report `returning
@@ -330,16 +327,17 @@ are flagged here so the gap is explicit rather than hidden:
   for §14.3.1 was already there. Every §16.8 program is a **new acceptance**:
   `a * b` on two arrays is a type error to the frozen `tychoc0`, so a fixture in
   `tests/*.ty` would be a program `tychoc` compiles and `tychoc0` refuses —
-  `scripts/frontparity.sh` reports that as a divergence. The whole fixture
-  set therefore lives in `tests/postfreeze/`, which no `tychoc0`-derived binary
-  is fed, and is gated by `tests/run.sh:148-153` with the full native-vs-ASan +
-  golden discipline. One placement is worth stating because it is not obvious: the
-  `[T]` length-mismatch **abort** fixture is at `tests/postfreeze/abort/`, not
-  `tests/abort/`, because `scripts/frontparity.sh` globs `tests/abort/*.ty`
-  and scores "tychoc accepted it, tychoc0 refused it" as a divergence — and an
-  abort fixture is by construction a program tychoc accepts. `tests/run.sh:172-189`
-  runs that directory as its own lane, requiring a nonzero exit and a `tycho:`
-  message. `tests/reject/` needed no such move (it appears in no frontparity
+  `scripts/frontparity.sh` reported that as a divergence. The whole fixture
+  set therefore went into `tests/postfreeze/`, which no `tychoc0`-derived binary
+  was fed, and its `[T]` length-mismatch **abort** fixture into
+  `tests/postfreeze/abort/` rather than `tests/abort/`, because
+  `scripts/frontparity.sh` globbed `tests/abort/*.ty` and an abort fixture is by
+  construction a program tychoc accepts. **Amended 2026-07-29:** the `tychoc0`
+  lanes were retired, so both placements were undone the same day — the set is now
+  `tests/array_arith`, `tests/array_bcast`, `tests/array_arith_fresh`,
+  `tests/array_bcast_fresh` under the main golden loop and
+  `tests/abort/array_arith_len` under the abort lane, which requires a nonzero
+  exit and a `tycho:` message. `tests/reject/` needed no such move (it appears in no frontparity
   glob, and a program tychoc refuses is skipped there anyway), and
   `tests/diag/array_arith_fixlen` / `array_bcast_widen` carry the byte-for-byte
   diagnostics, because the reject lane asserts only that a diagnostic is

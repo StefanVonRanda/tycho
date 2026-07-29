@@ -190,7 +190,7 @@ escape either, so it cannot contain a backtick; one is written by joining a
 
 > Provenance: `src/tychoc.c:402-448`; adjacent join `:2234-2246`;
 > [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
-> `tests/postfreeze/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
+> `tests/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 
 ## A.4 Non-terminals defined in prose elsewhere
 

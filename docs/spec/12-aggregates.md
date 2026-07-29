@@ -283,8 +283,9 @@ division or modulo by an integer **literal** `0` is a compile error, by a zero
 by zero`, exit `1`), and `float`/`f32` division by zero stays IEEE (`inf`) — the
 §13.2 rules exactly, not a second set.
 
-This is **post-freeze** syntax: it is a type error to the frozen `tychoc0`, so
-its fixtures live in `tests/postfreeze/` (Appendix E.2.1).
+This is **post-freeze** syntax: it is a type error to the frozen `tychoc0`. Its
+fixtures lived in `tests/postfreeze/` until the `tychoc0` lanes were retired on
+2026-07-29; they are now in `tests/` and `tests/abort/` (Appendix E.2.1).
 
 > Provenance: two-array arm `src/tychoc.c:5987-6017`, broadcast arm
 > `src/tychoc.c:6046-6072`; per-element-type operator set
