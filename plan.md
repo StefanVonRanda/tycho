@@ -589,7 +589,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   new defect: a file that is not in the repo is not yet the repo's problem. Left
   as a note, not a phase.
 
-- [ ] **Phase 4 — three-clause `for init; cond; post:` and bare `for:`**
+- [x] **Phase 4 — three-clause `for init; cond; post:` and bare `for:`**
   - Scope: parser, typechecker, codegen; fixtures in `tests/`.
   - `init` is a declaration or assignment, `cond` a `bool` expression, `post` an
     assignment. The loop variable is scoped to the loop, as `range()`'s was.
@@ -602,6 +602,193 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     post clause still runs, a `break` out of `for:`, and nesting; all match
     goldens.
   - Verify: `make test`, then `python3 scripts/check_citations.py`.
+
+  **Evidence (2026-07-29).**
+
+  **Bare `for:` needed no new node and no new codegen.** It is parsed as the
+  condition form with a literal `true` (`src/tychoc.c:3242-3255`) — the same
+  `S_WHILE` + `E_BOOL` node `resolve_parfor` already builds for the channel-drain
+  worker at `src/tychoc.c:6580-6583`. So `break`, `continue`, the loop arena, the
+  return path and `wl_check` (which returns early on a constant condition,
+  `src/tychoc.c:6800`) are all the code that was already there and already
+  exercised — `tests/break_continue.ty:38` has been writing `for true:` all along.
+
+  **The loop variable is scoped by the mechanism the brief named, not a second
+  one.** `S_FORRANGE` scopes its variable with `vars_mark()` / `vars_push` /
+  `resolve_block` / `vars_restore` (`src/tychoc.c:7238-7250`). `S_FOR3` does
+  exactly that at `src/tychoc.c:7194-7215`, with one difference: the binding is
+  made by **resolving the init statement** instead of a hand-written `vars_push`,
+  so a `:=` init, a typed `i: int = 0` init and an assign-only init all behave as
+  they would anywhere else in the language. Measured, not argued:
+
+  ```
+  $ cat /tmp/q.ty
+  fn main():
+      for i := 0; i < 3; i += 1:
+          println("x")
+      println(str(i))
+  $ ./tychoc /tmp/q.ty -o /tmp/q.bin
+  /tmp/q.ty:4: error: unknown variable 'i'
+  ```
+
+  and `tests/for3.ty`'s last block shadows an outer `i := 99` with a loop `i`
+  and prints `outer_i=99` after the loop.
+
+  **The one design decision worth a future reader's time: where init and post
+  live in the AST.** `S_FOR3` reuses the generic sub-statement slots rather than
+  adding `Stmt *init, *post` fields — `expr` is the condition, `els[0]` is the
+  init, and the post clause is the **last element of `body`**
+  (`src/tychoc.c:1556-1567`). This is not tidiness. Roughly twenty analyses in
+  this file walk `body`/`els` generically and would each have needed a new line
+  for two new fields: `clone_block` (`src/tychoc.c:11153-11171`, generic instantiation
+  — a missed subtree there is a dropped clause in every generic function),
+  `fuse_gather`/`fuse_open`, `block_mutates`, `body_defines`, `count_reads_b`,
+  `body_pushcount`, `collect_escapes`, `collect_accums`, `chan_scan_body`,
+  `stmt_unsafe`, `wl_scan_body`, `emit_locals`. Post goes in `body` because it
+  runs **every iteration**, so every per-iteration analysis must see it; init
+  goes in `els` because it runs **once**. With that split, the only places that
+  needed a new case are the four that genuinely differ: the parser, the resolver,
+  codegen, and `pf_scan_stmt`. `cc -Wall -Wextra` was the check on that claim —
+  `pf_scan_stmt` is a `default`-less switch over `StmtKind`, so it named itself.
+  The build is warning-clean. Also verified before inserting `S_FOR3` mid-enum
+  that nothing compares `StmtKind` by range or serialises it (`grep -n
+  "StmtKind"` returns six hits, all declarations), so placement next to
+  `S_FORRANGE` is free.
+
+  **`continue` runs the post clause, and the proof is in the emitted C.** A C
+  `continue` jumps to the condition, which would skip a post clause sitting at
+  the end of the loop body — the classic bug. So a `continue` whose innermost
+  loop is an `S_FOR3` is emitted as `goto _post<id>` instead
+  (`src/tychoc.c:10611-10617`), with the label placed immediately before the post
+  clause (`src/tychoc.c:10664-10665`). `g_loop_post[]` (`src/tychoc.c:9720-9726`)
+  carries the block id per enclosing loop and every other loop writes `-1` into
+  its slot before `g_loop_depth++`, so a plain loop nested inside a three-clause
+  one always overwrites. The label is emitted **only** when a `continue` actually
+  binds to that loop (`body_continues`, `src/tychoc.c:9728-9745`, which descends
+  into `if`/`match`/`select` bodies but not into a nested loop), so no unused
+  label ever reaches `cc`. From `--emit-c` on the `odd=` loop of `tests/for3.ty`:
+
+  ```c
+          if (((h_i / 2LL) * 2LL) == h_i) {
+              goto _post2;
+          }
+          ...tycho_str_append(&_scope, &h_odd, ...);
+          _post2: ;
+          h_i = (h_i + 1LL);
+      }
+  ```
+
+  and the nested case emits `_post11` (outer) / `_post12` (inner) with each
+  `continue` going to its own label. The fixture is written so this **cannot**
+  fail quietly: in `tests/for3.ty`'s `odd=` loop `i` advances *only* in the post
+  clause, so a `continue` that skipped it would not print a wrong answer, it
+  would never terminate. `timeout 10 /tmp/for3.bin` exits 0.
+
+  **The empty-clause decision: all three clauses are required, `for:` is the only
+  degenerate form.** This is what the grammar already said rather than a rule
+  imposed on it. The header is parsed by rewriting the first `;` and the block `:`
+  to `NEWLINE` in the token array and then calling **`parse_stmt` itself** for the
+  init and post clauses (`src/tychoc.c:3302-3312`) — which is why `:=`, a typed
+  decl, `=` and every compound `op=` form work without a second copy of the
+  assignment grammar that could drift from the first. This parser has no
+  empty-statement production, so an empty init or post has nothing to parse, and
+  an empty condition has no `bool` to check. Each is refused **by name** rather
+  than by whatever `parse_stmt` said next:
+
+  ```
+  for ; i < 3; i += 1:          error: the init clause is required -- write `for:` for an infinite loop
+  for i := 0; ; i += 1:         error: the condition clause is required -- write `for:` for an infinite loop
+  for i := 0; i < 3; :          error: the post clause is required -- write `for cond:` for a loop that advances in its body
+  for i := 0; i < 3:            error: a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses
+  for i := 0; i < 3; i += 1; i: error: a three-clause `for` has exactly three clauses: `for init; cond; post:`
+  for i := 0; i < 3; j := 1:    error: the post clause of a three-clause `for` is an assignment to a variable (`i += 1`)
+  ```
+
+  `tests/reject/for3_empty_clause.ty` locks the first. **Init is restricted to a
+  decl or a plain assignment and post to a plain assignment** — deliberately, not
+  incidentally: an index or field target (`a[f()] += 1`) routes through
+  `hoist_index_calls`, whose single-eval temp is queued on `g_pending` and flushed
+  by `parse_block` into the *enclosing* block, which for a post clause would
+  evaluate it once instead of per iteration. Refusing the shape is smaller and
+  safer than teaching the queue about loop headers.
+
+  **How the form is recognised, and why it cannot collide with `for C:`.** A
+  top-level `;` on the header line is the only discriminator, and it is
+  unambiguous because `;` has no other grammar anywhere. The scan
+  (`src/tychoc.c:3258-3288`) tracks `()`/`[]` depth and records the two `;` plus
+  the **last** top-level `:` — last, because a typed init (`i: int = 0`) puts a
+  colon of its own ahead of the block's. There are no brace tokens in this lexer,
+  so `()` and `[]` are the whole nesting alphabet.
+
+  **`parallel for` with either new shape is refused by the gate that was already
+  there** (`src/tychoc.c:3234`), because neither produces an `S_FORRANGE`:
+
+  ```
+  $ ./tychoc /tmp/p.ty -o /tmp/p.bin      # parallel for i := 0; i < 3; i += 1:
+  /tmp/p.ty:2: error: parallel supports 'for x in range(...)' and 'for x in collection' loops only
+  ```
+
+  **The two phase-3 reject fixtures still fail, and for the right reasons.** Both
+  re-run by hand after the change:
+
+  ```
+  tests/reject/semi_no_grammar.ty  rc=1  :15: error: expected newline
+  tests/reject/dotlt_no_grammar.ty rc=1  :20: error: expected ':' before the block
+  ```
+
+  `semi_no_grammar.ty` matters most: `;` now has a grammar *inside a `for`
+  header*, and `x := 1;` is still refused at the decl's trailing `eat(NEWLINE)`
+  because the header scan only runs after a `for`. Neither fixture was deleted or
+  weakened. Their two bare `src/tychoc.c:N` refs were shifted by this phase's
+  insertions and were repaired by hand through the same line map used below
+  (`:3349`→`:3444`, `:3264`→`:3359`); the gate cannot see a bare ref, so this was
+  a deliberate fix, not a gate response.
+
+  **Verify 1 — `make test`.** `passed: 542   failed: 0`, `all green`. Phase 3 left
+  it at 539; +3 is exactly `tests/for3.ty`, `tests/for_bare.ty` and
+  `tests/reject/for3_empty_clause.ty`. Both goldens were hand-checked value by
+  value before being recorded, not blessed from output:
+
+  ```
+  asc=01234        desc=54321       odd=1,3,5,7,     stop=3
+  grid=00 01 10 11 20 21            tot=6            pairs=00 02 20 22 30 32
+  outer_i=99       tot2=8
+  n=3              hits=1,3,5,      total=6          over=21
+  ```
+
+  The golden lane runs each fixture native **and** under ASan/LSan, so the
+  per-iteration `_scrN` reset and the `arena_free` after the loop are covered for
+  both new shapes — including the `return` out of a bare `for:` in
+  `tests/for_bare.ty`, which is the path that has to free the loop arena itself.
+
+  **Verify 2 — citations.** The gate reddened as predicted: **81 stale anchored
+  refs**, every one an anchor into `src/tychoc.c` past an insertion point.
+  Repaired through a `difflib.SequenceMatcher` line map built from `git show
+  HEAD:src/tychoc.c` against the working tree (12404 → 12595 lines, 12403 matched
+  equal; the single unmatched old line is the `StmtKind` enum line this phase
+  edited in place, and no citation anchored it). Only refs the gate itself
+  reported STALE were rewritten, each by `map[old]`. 81 across 11 files:
+  `docs/internals/plan-postfreeze-rawstring-DONE.md` 26,
+  `docs/spec/12-aggregates.md` 16, `docs/spec/16-builtins.md` 10,
+  `docs/spec/01-lexical.md` 8, `docs/spec/15-program.md` 8,
+  `docs/internals/plan-front-door-DONE.md` 3,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` 2,
+  `docs/spec/03-types.md` 2, `docs/spec/09-expressions.md` 2,
+  `docs/spec/10-statements.md` 2, `docs/spec/02-grammar.md` 1. Every file is
+  `+n -n` in `git diff --numstat`, so the documentation diff is **line-for-line
+  neutral**. Final, with the new fixtures `git add`ed first (phase 3 found an
+  untracked file's citations are not checked at all):
+
+  ```
+  citation check: ok (125 anchored contain the token they name, 1956 bare in bounds,
+  102 source->doc citations resolve, 100 source->source in bounds)
+  ```
+
+  **Left alone, deliberately.** The bare `src/tychoc.c:N` class (phase 17) is now
+  shifted by a further ~190 lines. The file only grew, so every one is still in
+  bounds and the gate cannot see them; sweeping ~344 unrelated refs here would
+  have buried the feature. The two refs inside the fixtures this plan owns were
+  fixed by hand as above.
 
 - [ ] **Phase 5 — `parallel for i in 0..<N:`**
   - Scope: parser, the `parallel for` path (`src/tychoc.c` around the
@@ -761,6 +948,18 @@ Unclosed discoveries from the two previous plans; none blocking.
       `appendix-e-conformance.md` — not this one. Fold it into phase 9 rather
       than running it separately; the two new rows and the corrected sentence
       belong in the same commit as the rest of the spec.
+
+- [ ] **Phase 25** — **`--emit-c` with no `-o` drops an untracked `.c` inside the
+      tree, and `.gitignore` does not cover it.** Found by phase 4 while looking at
+      the generated C for a fixture. `./tychoc --emit-c tests/for3.ty > /tmp/x.c`
+      prints `wrote tests/for3.c` and writes the C **next to the source**, not to
+      the redirected stdout — so the redirect captures only the status line and the
+      artifact lands in `tests/`. `git check-ignore tests/for3.c` exits 1: the
+      `.gitignore` entries for emitted C are a hand-listed set of specific paths
+      (`/compiler/*.c`, `/tychoc0.c`, `/tychofmt.c`, …), so a `.c` beside any other
+      `.ty` is untracked and a `git add -A` would commit it. Two candidate fixes,
+      both small: default `--emit-c` with no `-o` to stdout, or add the emitted
+      sibling to `.gitignore` by pattern. Not urgent, not this plan's subject.
 
 - [ ] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for

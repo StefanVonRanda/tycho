@@ -43,7 +43,7 @@ arithmetic, bitwise, unary, and backward references to earlier top-level
 constants); its rules are given in §8 and §13. Package resolution,
 visibility, and merging are specified in §28.
 
-> Provenance: `parse_package_decl` `src/tychoc.c:4003@parse_package_decl`, `parse_import_decl` `:4010@parse_import_decl`, `parse_const`
+> Provenance: `parse_package_decl` `src/tychoc.c:4098@parse_package_decl`, `parse_import_decl` `:4105@parse_import_decl`, `parse_const`
 > (`src/tychoc.c:4183-4200`).
 
 ### 4.1.1 Functions

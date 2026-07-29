@@ -1,0 +1,70 @@
+# Three-clause `for init; cond; post:` (plan.md phase 4).
+#
+# The loop variable is bound by the init clause and scoped to the loop, by the
+# same vars_mark/vars_restore mechanism `for i in range(...)` uses
+# (src/tychoc.c:7238) -- the last block here is the proof.
+#
+# All three clauses are required; `for:` (tests/for_bare.ty) is the only
+# degenerate form.
+fn main():
+    # ascending
+    asc := ""
+    for i := 0; i < 5; i += 1:
+        asc = asc + str(i)
+    println("asc=" + asc)                  # 01234
+
+    # descending: the post clause counts down and the condition is `>`
+    desc := ""
+    for i := 5; i > 0; i -= 1:
+        desc = desc + str(i)
+    println("desc=" + desc)                # 54321
+
+    # `continue` MUST run the post clause. `i` advances ONLY there, so a
+    # `continue` that skipped it would not print a wrong answer -- it would
+    # never terminate. That is deliberate: this is the one shape that fails
+    # loudly instead of quietly if the post clause is jumped over.
+    odd := ""
+    for i := 0; i < 8; i += 1:
+        if i / 2 * 2 == i:
+            continue
+        odd = odd + str(i) + ","
+    println("odd=" + odd)                  # 1,3,5,7,
+
+    # `break` leaves WITHOUT running the post clause
+    stop := 0
+    for i := 0; i < 100; i += 1:
+        if i == 4:
+            break
+        stop = i
+    println("stop=" + str(stop))           # 3
+
+    # nesting: the inner break binds to the inner loop only
+    tot := 0
+    grid := ""
+    for r := 0; r < 3; r += 1:
+        for c := 0; c < 3; c += 1:
+            if c == 2:
+                break
+            grid = grid + str(r) + str(c) + " "
+            tot = tot + 1
+    println("grid=" + grid)                # 00 01 10 11 20 21
+    println("tot=" + str(tot))             # 6
+
+    # a `continue` in the OUTER loop of a nest still runs the outer post clause,
+    # and the inner loop's own `continue` is unaffected
+    pairs := ""
+    for a := 0; a < 4; a += 1:
+        if a == 1:
+            continue
+        for b := 0; b < 3; b += 1:
+            if b == 1:
+                continue
+            pairs = pairs + str(a) + str(b) + " "
+    println("pairs=" + pairs)              # 00 02 20 22 30 32
+
+    # the init variable is scoped to the loop: the outer `i` is untouched
+    i := 99
+    for i := 0; i < 2; i += 1:
+        tot = tot + 1
+    println("outer_i=" + str(i))           # 99
+    println("tot2=" + str(tot))            # 8
