@@ -461,7 +461,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   GOLDEN MATCH
   ```
 
-- [ ] **Phase 3 — lex `;` and `..<`**
+- [x] **Phase 3 — lex `;` and `..<`**
   - Scope: the lexer in `src/tychoc.c` only. No parser use yet.
   - `;` is a new single-character token. `..<` is a new three-character token;
     check what `.` and `..` currently do before choosing how to lex it, and say
@@ -472,6 +472,122 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     last plan's phases 1 and 2 shifted 69 and 31 anchored refs respectively and
     had to repair each through a real line map. Run `python3
     scripts/check_citations.py` and repair before committing.
+
+  **Evidence (2026-07-29).**
+
+  **What `.` and `..` do today, read before choosing anything.** The lexer's
+  operator section is a hand-written `if / else if` chain ordered
+  **longest-match-first**, `src/tychoc.c:477-513`. Three facts govern `..<`:
+
+  1. **`...` is already a three-character token**, `TK_ELLIPSIS`, tested first at
+     `src/tychoc.c:481` (variadic `...T` at `src/tychoc.c:3527`, spread `x...`
+     at `src/tychoc.c:2578`).
+  2. **`.` alone is `TK_DOT`**, the single-char fallback at `src/tychoc.c:504`,
+     used for field/tuple access.
+  3. **`..` is not a token and never was.** `grep -n "TK_DOTDOT"` returns
+     nothing; `0..3` lexed as `INT DOT DOT INT` and died in the *parser*.
+
+  **How `..<` was disambiguated, and why no care was needed against floats.**
+  The plan warned about number lexing. Checked rather than assumed: the float
+  branch at `src/tychoc.c:281` requires `*p == '.' && isdigit(p[1])`, so a `.`
+  followed by a non-digit is **never** consumed into a numeric literal. In
+  `0..<3` the second character after `0` is `.`, not a digit, so the `0` closes
+  as `TK_INT` and the operator chain sees `..<` intact. No interaction, no
+  lookahead hack. The one real ambiguity is `...` vs `..<`, and it is resolved
+  by *following the chain's existing discipline rather than introducing a
+  second style*: the new three-character test sits immediately after the
+  `TK_ELLIPSIS` test and before every two-character test
+  (`src/tychoc.c:482`), so maximal munch still holds by construction — `...`
+  cannot be stolen by `..<` and neither can be stolen by `.`.
+
+  **The diff is three lines and two tokens.** `TK_SEMI` appended to the existing
+  enum line `src/tychoc.c:121`, `TK_DOTLT` to `src/tychoc.c:126` (no new enum
+  lines — nothing in the tree compares `TokKind` by range, verified by grepping
+  for `>= TK_` / `<= TK_`, which returns nothing, so placement is free and the
+  citation shift is held to +2). Lexing: `src/tychoc.c:482` (`..<`) and
+  `src/tychoc.c:506` (`;`). `cc -Wall -Wextra` clean.
+
+  **The observable result: the parser refuses them now, not the lexer.**
+  Measured on both compilers — the HEAD compiler was rebuilt from
+  `git show HEAD:src/tychoc.c` rather than reasoned about.
+
+  | program | before (HEAD) | after |
+  |---|---|---|
+  | `x := 1;` | `error: unexpected character ';'` (lexer, `src/tychoc.c:511`) | `error: expected newline` (parser, `src/tychoc.c:3349`) |
+  | `for i in 0..<3:` | `error: expected a field name or tuple index after '.'` | `error: expected ':' before the block` (parser, `src/tychoc.c:3264`) |
+
+  **A correction to the phase brief, stated because it was asserted as fact.**
+  The brief said both tokens "die in the lexer with `unexpected character`".
+  That is true of `;` only. `..<` **never** reached the lexer's error path — it
+  lexed as `.` `.` `<` and was already a parser refusal, just at the wrong
+  place with a diagnostic about field access. What phase 3 changes for `..<` is
+  *which token the parser sees*, not *who does the refusing*. The fixture says
+  so rather than claiming a lexer fix it did not make.
+
+  **The two fixtures**, both chosen so they survive the phases that come next:
+
+  - `tests/reject/semi_no_grammar.ty` — `x := 1;`. A C-style statement
+    terminator is illegal today and stays illegal after phase 4, where `;`
+    separates `for`-header clauses and nothing else. (The three-clause loop
+    itself was deliberately **not** used as the fixture: phase 4 makes it legal
+    and the fixture would have to be deleted.)
+  - `tests/reject/dotlt_no_grammar.ty` — sequential `for i in 0..<3:`. Refused
+    now for want of grammar, and refused *deliberately* after phase 5, which
+    only has to replace the diagnostic. This is the fixture phase 5's "Done
+    when" already asks for.
+
+  Both exit **1** with a non-empty diagnostic, which is exactly what the
+  `tests/reject/` lane at `tests/run.sh:158-169` asserts. Note what that lane
+  does **not** do: it never compares the diagnostic text. The assertion that
+  each message is the *right* one is the table above plus the message written
+  into each fixture's header comment; the lane only proves the refusal is loud.
+
+  **Verify 1 — `make test`.** `passed: 539   failed: 0`, `all green`. Phase 2
+  left it at 537; +2 is exactly the two new reject fixtures and nothing else
+  moved.
+
+  **Verify 2 — citations.** The gate reddened as predicted: **85 stale anchored
+  refs**, every one an anchor into `src/tychoc.c` past an insertion point.
+  Repaired through a real `difflib.SequenceMatcher` line map built from
+  `git show HEAD:src/tychoc.c` against the working tree (12402 → 12404 lines,
+  12400 matched equal; the 2 unmatched are the two enum lines this phase
+  modified in place, and no citation anchored either). Only refs the gate itself
+  reported STALE were rewritten, each by `map[old]`, never by guessing from the
+  diagnostic text. 85 repaired across 11 files: `docs/spec/12-aggregates.md` 17,
+  `docs/internals/plan-postfreeze-rawstring-DONE.md` 27,
+  `docs/spec/01-lexical.md` 10, `docs/spec/16-builtins.md` 10,
+  `docs/spec/15-program.md` 5, `docs/spec/03-types.md` 4,
+  `docs/spec/09-expressions.md` 3, `docs/internals/plan-front-door-DONE.md` 3,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` 2,
+  `docs/spec/02-grammar.md` 2, `docs/spec/10-statements.md` 2. Every file is
+  `+n -n` in `git diff --numstat`, so the documentation diff is **line-for-line
+  neutral** and nothing citing *into* those files moved. Final:
+
+  ```
+  citation check: ok (125 anchored contain the token they name, 1940 bare in bounds,
+  102 source->doc citations resolve, 99 source->source in bounds)
+  ```
+
+  95 → 99 source→source is the four `src/tychoc.c:N` refs in the two new
+  fixture headers.
+
+  **The bare-ref class was left alone, deliberately.** Bare `src/tychoc.c:N`
+  refs past line 482 are now 1–2 lines light. The file only grew, so every one
+  is still in bounds and the gate cannot see it — the same class phase 17
+  already carries, and sweeping it here would have buried a three-line lexer
+  change under a few hundred unrelated edits.
+
+  **A gate hole worth knowing, found while checking my own work.** An
+  **untracked** file's citations are not checked at all: `check_citations.py`
+  builds its citer set from `git ls-files` (`scripts/check_citations.py:263-265`).
+  Proven by deliberately corrupting a ref to line 99999 of src/tychoc.c (written
+  without backticks here on purpose — backticked it would be a citation, and an
+  out-of-bounds one) — silent while
+  the fixture was untracked, `OUT OF BOUNDS` the moment it was `git add`ed. Both
+  fixtures were therefore staged *before* the final gate run, not after. This is
+  a sibling of phase 23 (an absolute path is silently unchecked) rather than a
+  new defect: a file that is not in the repo is not yet the repo's problem. Left
+  as a note, not a phase.
 
 - [ ] **Phase 4 — three-clause `for init; cond; post:` and bare `for:`**
   - Scope: parser, typechecker, codegen; fixtures in `tests/`.
@@ -630,6 +746,21 @@ Unclosed discoveries from the two previous plans; none blocking.
       `SRC_PREFIX` test. Note this WILL redden on the archived plans on first run
       (they cite the deleted directory), so it needs a decision on frozen records
       first — sibling of phase 13.
+
+- [ ] **Phase 24** — **`docs/spec/01-lexical.md` is missing from phase 9's
+      scope, and it is the file that goes *wrong*, not merely stale.** Found by
+      phase 3. §3.8 "Operators and punctuation" (`docs/spec/01-lexical.md:144-170`)
+      is the token inventory, ordered *"longest-match first"* — the exact
+      discipline phase 3 followed — and it lists `...` at `:150` while listing
+      neither `;` nor `..<`. Worse, `docs/spec/01-lexical.md:170` states in
+      plain words: **"There is no range operator (`..`); ranges are written
+      with the"** `range()` builtin — a sentence this plan makes false twice
+      over (phase 5 adds `..<`, phase 7 deletes `range`). Phase 9's scope names
+      `02-grammar.md`, `appendix-a-grammar.md`, `10-statements.md`,
+      `13-concurrency.md`, `16-builtins.md`, `appendix-b-keywords.md` and
+      `appendix-e-conformance.md` — not this one. Fold it into phase 9 rather
+      than running it separately; the two new rows and the corrected sentence
+      belong in the same commit as the rest of the spec.
 
 - [ ] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for
