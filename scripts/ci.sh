@@ -100,6 +100,18 @@ fi
 step "[9/13] make tools-check  (formatter idempotence + semantic preservation + LSP smoke)"
 sh scripts/tools_check.sh
 
+# Step 9 sweeps every .ty in the tree EXCEPT ./editors/*, which it excludes by
+# name (scripts/tools_check.sh:25), and no other step here mentions the directory
+# -- so the two editor grammars were the one shipped artifact no gate ever
+# parsed. editors/zed/grammars/tycho/src/parser.c is GENERATED from grammar.js;
+# this lane regenerates it into a temp dir and cmp's, then parses the whole
+# corpus with the result. Numbered 9b, not 14: 2b/2c/3b are the existing
+# convention for a sub-lane of a step, and the /13 denominator counts the
+# numbered steps. The tree-sitter CLI comes from npx, so the grammar lanes SKIP
+# when it is unavailable; the JSON lane needs only python3 and always runs.
+step "[9b/13] make editors-check  (zed grammar: src/ still generated from grammar.js, corpus still parses; vscode JSON is JSON)"
+make -s editors-check
+
 step "[10/13] bench-guard  (tree-alloc wall: tycho must beat C -- perf regression gate)"
 sh bench/guard.sh
 
