@@ -742,7 +742,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     question for `src/tychoc.c` and the two should land as one gate change, which
     is why this is a recommendation here and not an edit.
 
-- [ ] **Phase 5 (found by phase 1, not absorbed) — should `scripts/asan_self.sh`
+- [x] **Phase 5 (found by phase 1, not absorbed) — should `scripts/asan_self.sh`
       see `tests/postfreeze/`?**
   - `scripts/asan_self.sh:135` globs `examples/*.ty tests/*.ty tests/conc/*.ty
     tests/reject/*.ty …`, which does not descend, so `tests/postfreeze/` is
@@ -759,6 +759,128 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     `sh scripts/asan_self.sh` is green, or the header states why it is out.
   - Sequencing: worth doing **after** phase 2, so it has real new-lexer code to
     cover rather than one nested-pattern canary.
+  - **DONE 2026-07-29. Decision: the omission was an OVERSIGHT, and
+    `tests/postfreeze/*.ty` is now in the glob.** Shipped: the directory added to
+    the glob (`scripts/asan_self.sh:150-152`, was `:135-137`) and to the COVERAGE
+    IN list (`:63`), plus a new titled block at `:75-90` stating why this lane
+    includes what the two frozen-compiler lanes deliberately exclude.
+
+    **What settled it, in the order it was read.**
+
+    1. **The freeze boundary cannot apply here, because no frozen binary runs.**
+       `compiler/fixpoint.sh` and `scripts/frontparity.sh` exclude
+       `tests/postfreeze/` because they drive a **`tychoc0`-derived** binary that
+       by construction cannot parse post-freeze syntax. This lane's subject is
+       `$SAN`, built from `src/tychoc.c` with `-fsanitize` at
+       `scripts/asan_self.sh:99-100` and invoked at `:113` — the **live**
+       compiler. `compiler/tychoc0.ty` does appear in the glob, but as a
+       *subject file being compiled*, never as the compiler. So the two lanes'
+       shared reason for the exclusion has no counterpart here.
+    2. **The COVERAGE note names every exclusion it means, and does not name this
+       one.** The `NOT:` list (`:69-73`) gives four exclusions each with its
+       reason — `corelib/` and `examples/corelib/` (per-module dependency skips),
+       the fuzz corpora (generated, not committed), `-m32` (no 32-bit ASan
+       runtime), and emitted-program runtime behaviour (`tests/run.sh` owns it).
+       `tests/postfreeze/` is in neither list. Read together with the phase's own
+       observation that the glob names each subdirectory explicitly, silence is
+       not a boundary here: this file's convention is that a boundary is *stated*.
+    3. **The dates make it conclusive rather than inferential.** The lane was
+       written before the directory existed, so the COVERAGE note could not have
+       excluded it:
+       ```
+       $ git log --diff-filter=A -1 --format='%ad %h' --date=short -- scripts/asan_self.sh
+       2026-07-25 1d620c5
+       $ git log --diff-filter=A -1 --format='%ad %h' --date=short -- tests/postfreeze/
+       2026-07-29 b895e66
+       ```
+       Four days apart, and `b895e66` is phase 1 of *this* plan.
+    4. **The IN list's own stated invariant was broken by the omission.** It
+       describes its corpus as "the same corpus `make test` and `make conc`
+       score". `make test` has scored `tests/postfreeze/` since phase 1 added the
+       loop at `tests/run.sh:148-152`. Adding the directory restores the note's
+       own claim; leaving it out would have required weakening that sentence.
+
+    **The plan's claim about raw-string coverage — checked, and true, with one
+    qualification worth recording.** Searching every file inside the *old* glob
+    for a backtick in code position (stripping `#` comments) returns hits in
+    `compiler/tychoc0.ty` (≈30), `tools/lsp.ty:740` and many `tests/`/`examples/`
+    files — but **every one of them is a backtick inside a double-quoted string
+    literal** (diagnostic text like `` "a select arm is `recv(ch, x):`" ``), which
+    the quoted-string scanner consumes without the raw branch at
+    `src/tychoc.c:402-448` ever being entered. The single genuine raw literal in
+    the old glob is `tests/reject/rawstring_unterminated.ty:13`, and it exercises
+    only the **failure** path — it runs to EOF and dies at `src/tychoc.c:444`. So
+    before this phase, the raw scanner's success paths — the terminating
+    backtick, the re-escape loop at `src/tychoc.c:430-433`, the `rbuf[4096]`
+    bound at `src/tychoc.c:425` and `src/tychoc.c:437-440`, the control-byte
+    rejection at `src/tychoc.c:434-435`, and the multi-line and join cases —
+    had **no ASan coverage at all**. `tests/postfreeze/rawstring.ty` is the only
+    fixture in the tree that covers them, which is the strongest single argument
+    for the decision.
+
+    **Verify — gate 1, `env -u LD_PRELOAD sh scripts/asan_self.sh`:**
+    ```
+    asan-self: building build/tychoc-asan  (ASan+UBSan, -fno-sanitize-recover=all)
+    -----------------------------------------
+    asan-self: compiled: 544   failed: 0
+    asan-self: all green (tychoc's own execution is ASan+UBSan clean over the corpus)
+    ASAN_RC=0
+    ```
+    **544 is the assertion, not just the `failed: 0`.** Phase 3 recorded
+    `[2c/13] make asan-self  compiled: 542` — so the delta is exactly +2, the two
+    files in `tests/postfreeze/`. A different delta would have meant the glob
+    edit caught something other than what it named. **No sanitizer report on
+    phase 2's new buffer-handling code**: the raw scanner is clean under
+    ASan+UBSan on its success paths, measured rather than assumed.
+
+    **Verify — gate 2, `env -u LD_PRELOAD python3 scripts/check_citations.py`:**
+    ```
+    citation check: ok (22 anchored contain the token they name, 1793 bare in bounds, 82 source->doc citations resolve)
+    CIT_RC=0
+    ```
+    Also `sh -n scripts/asan_self.sh` → `SYNTAX OK`.
+
+    That gate was run **twice**, and the first run was red on *this evidence
+    block* — worth recording, because it is phase 6's thesis reproduced by
+    accident. The paragraph above originally wrote the raw scanner's lines as
+    bare `` `:444` ``, `` `:430-433` `` and so on. The checker binds a bare `:N`
+    to the **last path named in the prose**, which was
+    `tests/reject/rawstring_unterminated.ty` (15 lines), so all six resolved
+    against the wrong file:
+    ```
+    STALE  plan.md:812  `<:444>` -> tests/reject/rawstring_unterminated.ty has 15 lines: OUT OF BOUNDS
+    citation check: FAILED (6 stale citation(s) above)
+    ```
+    (angle brackets added so quoting the message does not reproduce the failure,
+    the same dodge phase 4 needed.) It was caught only because the wrong file was
+    *short*; had the mis-bound target been long enough, all six would have passed
+    the bounds check while naming unrelated lines. Repaired by spelling
+    `src/tychoc.c:` on each.
+
+    **The header's line count was NOT held constant, but `:63-73` was — and that
+    was the constraint.** Phase 4's lesson applies: two live citations point at
+    `scripts/asan_self.sh:69-70` (`scripts/frontparity.sh:88`, and
+    `docs/internals/plan-front-door-DONE.md:5907`, archived). The `NOT:` list had
+    to stay on exactly those lines. So the IN list was **re-wrapped to the same
+    six lines** (`:63-68`) rather than grown, and the twelve-line rationale block
+    was inserted **after** `:73` where it shifts nothing any citation names. Both
+    numbers re-checked after the edit: `:69` is still `# NOT: corelib/ …` and
+    `:70` still `#      skips this lane deliberately does not replicate);`.
+
+    **One citation now stale by design, declared rather than repaired.** This
+    phase's own problem statement above says `scripts/asan_self.sh:135` globs the
+    corpus; the glob is at `:150` after the edit. That sentence is the **as-found**
+    record of why the phase existed, in the style of `FRICTION.md:222`'s
+    struck-through entry — repointing it to `:150` would make it describe a glob
+    that no longer has the property it complains about. `docs/internals/
+    plan-webserver-DONE.md:169`'s `asan_self.sh:137` is frozen archived evidence
+    and stays, per phase 4's rule. Neither breaks the gate: both are bare `:N`
+    refs and both are in bounds, which is precisely the rot phase 6 is about.
+
+    **Not run, deliberately:** `make ci`. Per the Gate ladder the full sweep runs
+    at the end of a chain; the diff here is one shell script's comment block and
+    one glob line, and the single gate that glob can redden is gate 1 above, which
+    ran the whole ASan corpus.
 
 - [ ] **Phase 6 (found by phase 2, not absorbed) — bare `src/tychoc.c:N`
       citations all shifted by +48, and §3.8's Provenance now points at the

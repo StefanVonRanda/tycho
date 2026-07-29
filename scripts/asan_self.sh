@@ -60,17 +60,32 @@
 #
 # COVERAGE — what is in, and what is NOT
 # -------------------------------------
-# IN:  examples/*.ty, tests/*.ty, tests/pkg/*/main.ty, tests/reject/*.ty,
-#      tests/reject/pkg/*/main.ty, tests/abort/*.ty, tests/diag/*.ty,
-#      tests/warn/*.ty, tests/conc/*.ty — the same corpus `make test` and
-#      `make conc` score — plus the four largest real Tycho programs in the tree
-#      (compiler/tychoc0.ty, tools/tycho.ty, tools/tychofmt.ty, tools/lsp.ty),
-#      which exercise deeper generic/aggregate shapes than any single fixture.
+# IN:  examples/*.ty, tests/*.ty, tests/postfreeze/*.ty, tests/pkg/*/main.ty,
+#      tests/reject/*.ty, tests/reject/pkg/*/main.ty, tests/abort/*.ty,
+#      tests/diag/*.ty, tests/warn/*.ty, tests/conc/*.ty — the same corpus
+#      `make test` and `make conc` score — plus the four largest real Tycho
+#      programs in the tree (compiler/tychoc0.ty, tools/tycho.ty,
+#      tools/tychofmt.ty, tools/lsp.ty), deeper shapes than any single fixture.
 # NOT: corelib/ and examples/corelib/ (their harnesses have per-module dependency
 #      skips this lane deliberately does not replicate); the fuzz corpora
 #      (generated, not committed); -m32 (no 32-bit ASan runtime under multilib,
 #      same reason Makefile:214 skips it); and the emitted programs' own runtime
 #      behaviour (tests/run.sh owns that).
+#
+# WHY tests/postfreeze/ IS IN, WHERE THE TWO FROZEN-COMPILER LANES HOLD IT OUT
+# ----------------------------------------------------------------------------
+# compiler/fixpoint.sh and scripts/frontparity.sh exclude that directory on
+# purpose, and say so in their own headers: they drive a tychoc0-DERIVED binary,
+# and the 2026-07-26 freeze means tychoc0 cannot parse post-freeze syntax at all,
+# so a fixture there would redden them by construction. None of that reasoning
+# reaches this lane. Here the binary under test is the LIVE compiler — :99-100
+# builds src/tychoc.c with -fsanitize — and compiler/tychoc0.ty appears in the
+# glob below as a SUBJECT file, never as the compiler. Post-freeze syntax is
+# precisely what src/tychoc.c is meant to accept, so the scanner code that
+# accepts it is the code most wanting a sanitizer run, not least wanting one.
+# Its earlier absence was a matter of dates, not a boundary: this lane was
+# written 2026-07-25 (1d620c5) and tests/postfreeze/ did not exist until
+# b895e66, four days later, so the list above could not have named it.
 #
 # The whole lane runs in well under a minute on the measured host, so it is wired
 # into scripts/ci.sh unconditionally with no subsetting.
@@ -132,8 +147,8 @@ check_one() {
     rm -f "$TMP/out.c"
 }
 
-for hi in examples/*.ty tests/*.ty tests/conc/*.ty tests/reject/*.ty \
-          tests/abort/*.ty tests/diag/*.ty tests/warn/*.ty \
+for hi in examples/*.ty tests/*.ty tests/postfreeze/*.ty tests/conc/*.ty \
+          tests/reject/*.ty tests/abort/*.ty tests/diag/*.ty tests/warn/*.ty \
           compiler/tychoc0.ty tools/tycho.ty tools/tychofmt.ty tools/lsp.ty; do
     [ -e "$hi" ] || continue
     check_one "$hi" "$hi"
