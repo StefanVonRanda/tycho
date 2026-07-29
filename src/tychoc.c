@@ -5982,10 +5982,8 @@ static Type resolve_expr_inner(Expr *e) {
              * they fall through to those arms and refuse an array exactly as
              * they do today.
              *
-             * One array and one scalar is NOT handled here: broadcast is a
-             * separate change, and until it lands `a * 2` keeps its current
-             * diagnostic from the end of this chain rather than a new one that
-             * would have to be unwritten. */
+             * One array and one scalar is handled by the broadcast arm directly
+             * below, which shares this arm's legality rule. */
             if (is_array(lt) && is_array(rt) &&
                 (e->op == TK_PLUS || e->op == TK_MINUS || e->op == TK_STAR ||
                  e->op == TK_SLASH || e->op == TK_PERCENT)) {
@@ -6016,6 +6014,61 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "`%s` is not defined element-wise on %s, because `%s` is not defined on %s",
                            arith_op_spell(e->op), type_name(lt), arith_op_spell(e->op), type_name(arr_elem(lt)));
                 return e->type = lt;
+            }
+            /* Scalar broadcast (post-freeze). `a OP s` and `s OP a` scale every
+             * element: a FRESH array whose i-th element is `a[i] OP s` (resp.
+             * `s OP a[i]`). The scalar may sit on either side, and for the
+             * non-commutative operators the ORDER IS KEPT -- `2 - [5,1]` is
+             * `[-3,1]`, never `[3,-1]`. Nothing here swaps the operands, and
+             * gen_ew_arith keeps lhs on the left too.
+             *
+             * Placed with the array OP array arm, i.e. after the shift arm and
+             * before the modulo/bitwise arm, for the same reason: `%` against an
+             * array must reach here, `&`/`|`/`^`/shifts must not.
+             *
+             * Literal adaptation does NOT fall out of the arms below. Every one
+             * of them keys off the OTHER operand's scalar type -- the sized-int
+             * rule tests is_sized_int(rt), the f32 rule tests T_F32, the B-1
+             * float rule tests T_FLOAT -- and an array type is none of those, so
+             * none of them fires for `[1.0, 2.0] * 2`. The three rules are
+             * therefore re-applied here against the ELEMENT type, with the same
+             * value-directional restriction: a LITERAL adapts, a variable never
+             * widens. `[1.0,2.0] * 2` is then exactly `1.0 * 2`, and
+             * `[1.0,2.0] * n` for an int variable `n` is refused exactly as
+             * `1.0 * n` is.
+             *
+             * After adaptation the scalar must be AT the element type. That is
+             * the rule the array OP array arm above applies (two arrays must
+             * share an element type), so `['a','b'] + 1` is refused here just as
+             * `[char] + [int]` is refused there -- even though the scalar
+             * `'a' + 1` is legal further down. Fail closed, and consistent with
+             * the arm this one extends. */
+            if (is_array(lt) != is_array(rt) &&
+                (e->op == TK_PLUS || e->op == TK_MINUS || e->op == TK_STAR ||
+                 e->op == TK_SLASH || e->op == TK_PERCENT)) {
+                int lhs_is_arr = is_array(lt);
+                Type at = lhs_is_arr ? lt : rt;
+                Type st = lhs_is_arr ? rt : lt;
+                Expr *sc = lhs_is_arr ? e->rhs : e->lhs;
+                if (IS_BOUNDED(at) || IS_SIZEPARAM_ARR(at))
+                    die_at(e->line, "element-wise `%s` is defined for [T] and [N]T only (got %s, %s)",
+                           arith_op_spell(e->op), type_name(lt), type_name(rt));
+                Type et = arr_elem(at);
+                if (sc->kind == E_INT && is_sized_int(et)) { sc->type = et; st = et; }
+                else if (et == T_F32 && (sc->kind == E_INT || sc->kind == E_FLOAT)) {
+                    if (sc->kind == E_INT) { sc->kind = E_FLOAT; sc->fval = (double)sc->ival; }
+                    sc->type = T_F32; st = T_F32;
+                } else if (et == T_FLOAT && st == T_INT && sc->kind == E_INT) {
+                    sc->kind = E_FLOAT; sc->fval = (double)sc->ival; sc->type = T_FLOAT; st = T_FLOAT;
+                }
+                if (st != et)
+                    die_at(e->line, "element-wise `%s` requires the scalar to have the array's element type (got %s and %s) -- "
+                           "a literal adapts, but a variable never widens",
+                           arith_op_spell(e->op), type_name(lt), type_name(rt));
+                if (!elem_arith_ok(e->op, et))
+                    die_at(e->line, "`%s` is not defined element-wise on %s, because `%s` is not defined on %s",
+                           arith_op_spell(e->op), type_name(at), arith_op_spell(e->op), type_name(et));
+                return e->type = at;
             }
             /* modulo / bitwise: integer-only, both operands the same integer type
              * (int, u32, or u64) — no implicit int/u32 mixing beyond literal adaptation. */
@@ -9095,8 +9148,9 @@ static char *gen_arith_op(TokKind op, Type rt, char *l, char *r) {
     return trunc_result(rt, sfmt("(%s %s %s)", l, op_str(op), r));
 }
 
-/* Emit element-wise `a OP b` on two arrays of type `e->type`, as one GCC
- * statement-expression that builds a FRESH array and returns it. Freshness is
+/* Emit element-wise `a OP b` -- two arrays, or one array and one broadcast
+ * scalar -- as one GCC statement-expression that builds a FRESH array of type
+ * `e->type` and returns it. Freshness is
  * the point: Tycho is value-semantics, so `c := a * b` must neither alias nor
  * mutate `a` or `b`. Both operands are copied into locals first (so a
  * side-effecting operand is evaluated exactly once), the result gets its own
@@ -9108,25 +9162,41 @@ static char *gen_arith_op(TokKind op, Type rt, char *l, char *r) {
  * Two shapes, because the two array kinds have different C structs:
  *   [T]   -> { data, len, cap }: lengths must match, checked at RUNTIME.
  *   [N]T  -> { v[N] }:           lengths match by construction, the typechecker
- *                                already refused two different static Ns. */
+ *                                already refused two different static Ns.
+ * A broadcast has one array and one scalar, so it has no second length and
+ * emits no runtime check at all. */
 static char *gen_ew_arith(Expr *e, char *l, char *r, const char *arena) {
     Type at = e->type, et = arr_elem(at);
     const char *act = c_type(at), *ect = c_type(et);
-    char *body = gen_arith_op(e->op, et,
-                              IS_FIXARR(at) ? "_ewa.v[_ewi]" : "_ewa.data[_ewi]",
-                              IS_FIXARR(at) ? "_ewb.v[_ewi]" : "_ewb.data[_ewi]");
+    /* Which sides are arrays. Exactly one may be a scalar (broadcast); the
+     * typechecker has already refused every other combination. `_ewa` is ALWAYS
+     * the lhs and `_ewb` ALWAYS the rhs -- the operands are never reordered, so
+     * `2 - a` emits `2 - a[i]` and `a - 2` emits `a[i] - 2`. */
+    int la = is_array(e->lhs->type), ra = is_array(e->rhs->type);
+    const char *ax = la ? (IS_FIXARR(at) ? "_ewa.v[_ewi]" : "_ewa.data[_ewi]") : "_ewa";
+    const char *bx = ra ? (IS_FIXARR(at) ? "_ewb.v[_ewi]" : "_ewb.data[_ewi]") : "_ewb";
+    char *body = gen_arith_op(e->op, et, (char *)ax, (char *)bx);
+    /* each local takes its own C type: the array side the array struct, the
+     * scalar side the element type (so it is evaluated exactly once, like the
+     * array operands, and a side-effecting scalar is not re-run per element). */
+    const char *lct = la ? act : ect, *rct = ra ? act : ect;
+    const char *src = la ? "_ewa" : "_ewb";   /* the array side: length + shape */
     if (IS_FIXARR(at))
-        return sfmt("({ %s_ewa = (%s); %s_ewb = (%s); %s_ewr = _ewa;\n"
+        return sfmt("({ %s_ewa = (%s); %s_ewb = (%s); %s_ewr = %s;\n"
                     "   for (tycho_int _ewi = 0; _ewi < %lld; _ewi++) _ewr.v[_ewi] = %s;\n"
                     "   _ewr; })",
-                    act, l, act, r, act, (long long)fixarr_size(at), body);
+                    lct, l, rct, r, act, src, (long long)fixarr_size(at), body);
+    /* a broadcast has only one length, so there is nothing to mismatch: the
+     * runtime check is emitted only when BOTH sides are arrays. */
     return sfmt("({ %s_ewa = (%s); %s_ewb = (%s);\n"
-                "   if (_ewa.len != _ewb.len) tycho_ew_len(_ewa.len, _ewb.len);\n"
-                "   %s_ewr; _ewr.len = _ewa.len; _ewr.cap = _ewa.len;\n"
+                "%s"
+                "   %s_ewr; _ewr.len = %s.len; _ewr.cap = %s.len;\n"
                 "   _ewr.data = _ewr.len ? (%s*)arena_alloc(%s, (size_t)_ewr.len * sizeof(%s)) : 0;\n"
                 "   for (tycho_int _ewi = 0; _ewi < _ewr.len; _ewi++) _ewr.data[_ewi] = %s;\n"
                 "   _ewr; })",
-                act, l, act, r, act, ect, arena, ect, body);
+                lct, l, rct, r,
+                (la && ra) ? "   if (_ewa.len != _ewb.len) tycho_ew_len(_ewa.len, _ewb.len);\n" : "",
+                act, src, src, ect, arena, ect, body);
 }
 
 static char *gen_expr(Expr *e, const char *arena) {
@@ -9453,9 +9523,10 @@ static char *gen_expr(Expr *e, const char *arena) {
             /* ordering on strings is lexicographic via strcmp */
             if (is_cmp(e->op) && base_of(e->lhs->type) == T_STRING)   /* string or a string newtype */
                 return sfmt("(tycho_str_cmp(%s, %s) %s 0)", l, r, op_str(e->op));
-            /* element-wise arithmetic on two arrays: the only binary operator
-             * whose result type is an array (`==` yields bool, `+` on string /
-             * bytes yields those), so the result type alone identifies it. */
+            /* element-wise arithmetic (two arrays, or an array and a broadcast
+             * scalar): the only binary operator whose result type is an array
+             * (`==` yields bool, `+` on string / bytes yields those), so the
+             * result type alone identifies it. */
             if (is_array(e->type))
                 return gen_ew_arith(e, l, r, arena);
             /* every scalar arithmetic/bitwise/shift op, incl. the division and

@@ -1,0 +1,2 @@
+tests/diag/array_bcast_widen.ty:12: error: element-wise `*` requires the scalar to have the array's element type (got [float] and int) -- a literal adapts, but a variable never widens
+    12 |     println(str(f * n))

@@ -384,7 +384,7 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
   This is line-number maintenance forced by phase 1's own edit, not spec
   authorship — phase 3 still owns every word of the spec's content.
 
-- [ ] **Phase 2 — scalar broadcast, both directions**
+- [x] **Phase 2 — scalar broadcast, both directions**
   - Scope: the same typechecker arm and codegen; fixtures in `tests/postfreeze/`.
   - `a * 2` and `2 * a` scale every element; the scalar may be on either side for
     commutative operators, and for non-commutative ones (`-`, `/`, `%`) both
@@ -399,6 +399,228 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
     non-commutative swap test above, and the int-literal-against-float-array case;
     all match goldens.
   - Verify: `make test`, then `sh scripts/frontparity.sh`. Not `make ci`.
+
+  ### Evidence — phase 2, 2026-07-29
+
+  **Broadcast needed its OWN literal adaptation — it does NOT fall out of the
+  existing code.** This was the phase's open question and the answer is
+  unambiguous. Every literal-adaptation arm keys off the *other operand's scalar
+  type*, and an array type is none of those, so not one of them fires for
+  `[1.0, 2.0] * 2`:
+
+  | rule | the test it makes | fires for `[float] * 2`? |
+  |---|---|---|
+  | sized-int literal | `/home/igzo/github/tycho/src/tychoc.c:5899` — `is_sized_int(rt)` | no: `rt`/`lt` is an array constructor, not a sized int |
+  | f32 literal | `/home/igzo/github/tycho/src/tychoc.c:5901` — `rt == T_F32` | no |
+  | B-1 int→float | `/home/igzo/github/tycho/src/tychoc.c:6100` — `lt == T_FLOAT` | no |
+
+  So the three rules are re-applied inside the broadcast arm against the
+  **element** type (`/home/igzo/github/tycho/src/tychoc.c:6057-6062`), keeping the
+  value-directional restriction verbatim: a LITERAL adapts, a variable never
+  widens. Verified as a matched pair against the all-scalar behaviour it must
+  mirror — the array form and the scalar form agree in both directions:
+
+      $ ./tychoc ...   # n := 2; f := [1.0, 2.0]; f * n
+      error: element-wise `*` requires the scalar to have the array's element type (got [float] and int) -- a literal adapts, but a variable never widens
+      $ ./tychoc ...   # n := 2; 1.0 * n                      -- the SCALAR reference
+      error: arithmetic requires two ints or two floats (got float, int) -- convert one side, ...
+
+  and the positive half is three fixture lines that must all print `[2.0, 4.0]`:
+  `f * 2` (int literal adapts), `f * 2.0`, `2 * f`. Locked as
+  `/home/igzo/github/tycho/tests/postfreeze/array_bcast.out:17-19`. The negative
+  half is locked byte-for-byte in `/home/igzo/github/tycho/tests/diag/array_bcast_widen.err`,
+  because the reject lane asserts only that a diagnostic is non-empty.
+
+  **The scalar must land AT the element type — a deliberate narrowing, stated.**
+  After adaptation the scalar's type must equal the element type, which makes
+  `['a','b'] + 1` a compile error even though the all-scalar `'a' + 1` is legal
+  at `/home/igzo/github/tycho/src/tychoc.c:6093-6096` (`char±int -> char`). This
+  is not an oversight: phase 1's array⊕array arm already refuses `[char] + [int]`
+  for the same reason (`/home/igzo/github/tycho/src/tychoc.c:5996`), so allowing
+  the mixed case only in the broadcast direction would make broadcast *more*
+  permissive than the arm it extends. Fail closed and consistent. It also avoids
+  the question of what `[int] + 'a'` yields, which would be a `[char]` — a type
+  carried-forward phase 16 records cannot even be spelled.
+
+  **Divide / modulo by zero: NOT invented — it falls out, and was measured on
+  both sides.** The scalar case has two distinct behaviours and broadcast
+  reproduces each exactly, because the element emit calls `gen_arith_op`
+  (`/home/igzo/github/tycho/src/tychoc.c:9115`) verbatim, exactly as phase 1's
+  array⊕array arm does:
+
+  | case | scalar behaviour | broadcast behaviour | mechanism |
+  |---|---|---|---|
+  | literal zero divisor | `error: division by zero` at compile time | identical | the literal check at `/home/igzo/github/tycho/src/tychoc.c:5956-5961` runs BEFORE the broadcast arm, so `[1,2] / 0` never reaches it |
+  | zero VARIABLE divisor | `tycho: division by zero`, exit 1 | identical | `tycho_idiv` via `gen_arith_op` |
+  | `%` by zero variable | `tycho: modulo by zero`, exit 1 | identical | `tycho_imod` |
+  | zero ELEMENT, `s OP a` | n/a | `tycho: division by zero` / `tycho: modulo by zero`, exit 1 | same guard, per element |
+  | float `/ 0.0` | `inf` (IEEE), exit 0 | `[inf, inf]`, exit 0 | float `/` stays a raw C operator |
+
+  Measured, not reasoned:
+
+      $ ...  # z := 0; [1, 2] / z      ->  tycho: division by zero   (exit 1)
+      $ ...  # z := 0; 1 / z           ->  tycho: division by zero   (exit 1)   -- the reference
+      $ ...  # z := 0; [1, 2] % z      ->  tycho: modulo by zero     (exit 1)
+      $ ...  # 2 / [1, 0]              ->  tycho: division by zero   (exit 1)   -- zero ELEMENT
+      $ ...  # 7 % [5, 0]              ->  tycho: modulo by zero     (exit 1)
+      $ ...  # z := 0.0; [1.0,2.0] / z ->  [inf, inf]                (exit 0)
+      $ ...  # z := 0.0; 1.0 / z       ->  inf                       (exit 0)   -- the reference
+
+  Because a broadcast has no second length, **no abort fixture was needed** and
+  none was added — `tests/postfreeze/abort/` is untouched. The runtime length
+  check is emitted only when both sides are arrays
+  (`/home/igzo/github/tycho/src/tychoc.c:9198`).
+
+  **The swap test, and its output.** `-`, `/` and `%` are not commutative, so an
+  implementation that normalised `s OP a` into `a OP s` would still typecheck and
+  still return an array of the right length. Nothing in the typechecker reorders
+  the operands, and `gen_ew_arith` keeps `_ewa` bound to the lhs and `_ewb` to the
+  rhs unconditionally (`/home/igzo/github/tycho/src/tychoc.c:9175-9178`) — the
+  array-ness of a side decides only whether its text is indexed, never which side
+  it is. Proved from the outside, with operands chosen so a swap is visible:
+
+      2 - [5, 1]   ->  [-3, 1]        [5, 1] - 2   ->  [3, -1]
+      4 / [8, 2]   ->  [0, 2]         [8, 2] / 4   ->  [2, 0]
+      3 % [7, 2]   ->  [3, 1]         [7, 2] % 3   ->  [1, 2]
+
+  Each pair is a mirror image, so a swap turns one line into the other and the
+  golden fails. Locked at
+  `/home/igzo/github/tycho/tests/postfreeze/array_bcast.out:11-16`. Both orders
+  are additionally exercised for every legal operator on every legal element type
+  — `int`, `u8`, `i8`, `float`, `f32`, `char`, newtype-over-`int`,
+  newtype-over-`float`, `[3]int`, `[2]float`, and the empty `[T]` — in
+  `/home/igzo/github/tycho/tests/postfreeze/array_bcast.ty` (82 golden lines).
+  The wrapping cases are the sharpest: `to_u8(100) - u` on `u = [200,100]` is
+  `[156, 0]` where `u - to_u8(100)` is `[100, 0]`, and `to_i8(100) - s` on
+  `s = [100,-9]` is `[0, 109]` against `[0, -109]`. Every golden line was checked
+  against a hand computation before it was written, not accepted because it ran.
+
+  **Freshness for the broadcast form.**
+  `/home/igzo/github/tycho/tests/postfreeze/array_bcast_fresh.ty` is the twin of
+  phase 1's array⊕array file, and it is not redundant: the broadcast emitter
+  declares one local at the ARRAY type and one at the ELEMENT type and takes the
+  result's length *and capacity* from whichever side is the array
+  (`/home/igzo/github/tycho/src/tychoc.c:9183`), so sizing the result from the
+  wrong side is a bug phase 1's fixture cannot reach. Golden
+  (`/home/igzo/github/tycho/tests/postfreeze/array_bcast_fresh.out`), abridged:
+
+        [2, 4, 6]        c := a * 2
+        [2, 4, 6]        after a[0] = 99          -- c unchanged
+        [-89, 8, 7]      d := 10 - a              -- scalar-on-the-left allocates too
+        [-89, 8, 7]      after a[1] = 50          -- d unchanged
+        4 3              push(a, 4): len(a)=4, len(c)=3   -- no shared spine
+        [2, 4, 6, 8]     push(c, 8) ...
+        [99, 50, 3, 4]   ... did not reach back into a
+        [9, 19, 29]      (b * 10) - 1, chained, with b intact
+        [10, 14, 18]     (b + g) * 2 -- the two forms compose
+        10 20 30 / 77 2 3    fixed [3]T: q := p * 10, then p[0] = 77
+        2                q[1] = 55 did not reach p[1]
+
+  **Scope: no new runtime helper, no new allocation path, so
+  `scripts/asan_self.sh` was NOT run.** The gate budget in
+  `/home/igzo/github/tycho/CLAUDE.md` allows it only for a new allocation path
+  phase 1 did not already cover, and there is none: `/home/igzo/github/tycho/runtime/tycho_rt.c`
+  is **untouched** by this phase (`git diff --stat` lists no runtime file), and
+  the emitted spine still comes from the single `arena_alloc` phase 1 added
+  (`/home/igzo/github/tycho/src/tychoc.c:9194`). The broadcast change to that
+  statement-expression is which C type each *operand local* gets, not how the
+  result is allocated. The new code is nonetheless sanitizer-exercised: the
+  postfreeze lane (`/home/igzo/github/tycho/tests/run.sh:148-153`) builds and runs
+  every fixture BOTH native and under ASan+UBSan and requires identical output,
+  so both new fixtures ran clean under both. Phase 1's end-of-file discipline for
+  `runtime/tycho_rt.c` therefore never came up.
+
+  **Citations shifted and repaired: 31.** Verified GREEN in a clean state first,
+  so there was a real baseline rather than an assumption:
+
+      $ python3 scripts/check_citations.py          # BEFORE any edit
+      citation check: ok (110 anchored contain the token they name, 2013 bare in bounds, 83 source->doc citations resolve, 122 source->source in bounds)
+
+  The typechecker arm and the codegen both sit mid-file, so they shifted every
+  line below them and the gate reddened with `FAILED (29 stale citation(s))`.
+  Repaired by mapping old→new through the **actual `difflib` opcodes** between
+  `HEAD:src/tychoc.c` and the working copy — 12332 old lines, 12314 mapped
+  one-to-one, 18 inside edited hunks — and NOT through the checker's
+  "it appears at :N" candidate list, which is ambiguous for a token like
+  `tycho_str_get` (three candidates) and would have picked wrong. The remapper
+  replicates the checker's path-binding rule exactly (a bare `:N` inherits the
+  last path named in the same paragraph; `cur` resets on a blank line,
+  `/home/igzo/github/tycho/scripts/check_citations.py:211-215`).
+
+  31 were rewritten, not 29: two more had shifted but their token happened to
+  still appear on the old line, so the gate could not see them. Repairing only
+  what the gate reports would have left those two silently pointing at the wrong
+  line — the same class of silent rot phase 1 documented for
+  `/home/igzo/github/tycho/runtime/tycho_rt.c`. One range,
+  `docs/spec/04-inference.md`'s `src/tychoc.c:4715-5987`, straddles an edited
+  hunk and has no faithful image; the remapper **refuses to guess** and left it,
+  and the gate accepts it (it is bare, hence bounds-checked only, and still in
+  bounds).
+
+  Only digits changed. Proved rather than asserted — masking every run of digits
+  in the diff makes the removed and added line sets identical:
+
+      $ git diff --stat -- '*.md'
+      8 files changed, 28 insertions(+), 28 deletions(-)
+      $ <mask digits in the +/- lines, sort, compare>
+      PROOF: with digits masked, removed lines == added lines -> ONLY line numbers changed
+
+  So the diff is line-for-line neutral and nothing citing *into* those eight
+  documents moved. Files re-anchored:
+  `/home/igzo/github/tycho/docs/internals/frontend-restriction-audit-2026-07-25.md`,
+  `/home/igzo/github/tycho/docs/internals/plan-front-door-DONE.md`,
+  `/home/igzo/github/tycho/docs/internals/plan-postfreeze-rawstring-DONE.md`,
+  `/home/igzo/github/tycho/docs/spec/01-lexical.md`,
+  `/home/igzo/github/tycho/docs/spec/03-types.md`,
+  `/home/igzo/github/tycho/docs/spec/12-aggregates.md`,
+  `/home/igzo/github/tycho/docs/spec/15-program.md`,
+  `/home/igzo/github/tycho/docs/spec/16-builtins.md`. This is line-number
+  maintenance forced by this phase's own edit; phase 3 still owns every word of
+  the spec's content.
+
+  Only **anchored** refs were remapped. The ~300 bare `src/tychoc.c:N` refs that
+  also shifted were deliberately left alone — see the new phase 17 below, filed
+  rather than silently absorbed.
+
+  **The gates (foreground, one per command; `make ci` NOT run).**
+
+      $ make test
+      passed: 537   failed: 0        (534 before -- +3, all new)
+      all green
+        ok postfreeze_array_bcast / ok postfreeze_array_bcast_fresh
+        ok diag_array_bcast_widen
+
+      $ sh scripts/frontparity.sh          # BEFORE, captured before any edit
+      frontparity: agreed: 292   diverged: 0   (skipped, tychoc refused: 16)
+      $ sh scripts/frontparity.sh          # AFTER
+      frontparity: agreed: 292   diverged: 0   (skipped, tychoc refused: 17)
+      frontparity: all green
+      `agreed` did not fall -- 292 before, 292 after, diverged still 0. `skipped`
+      rose by exactly 1: the new tests/diag/array_bcast_widen.ty, which tychoc
+      refuses. Nothing moved from `agreed` into `diverged`.
+
+      $ python3 scripts/check_citations.py
+      citation check: ok (110 anchored contain the token they name, 2013 bare in bounds, 83 source->doc citations resolve, 122 source->source in bounds)
+      (identical to the pre-edit baseline in all four counts)
+
+      $ sh scripts/check_links.sh          # ran because 8 .md files were touched
+      link check: ok (132 markdown files, no dead relative links)
+
+  `cc -O2 -fwrapv -Wall -Wextra -std=c11` builds `src/tychoc.c` with **no
+  warnings** after every edit.
+
+  **Files changed:** `/home/igzo/github/tycho/src/tychoc.c`,
+  `/home/igzo/github/tycho/tests/postfreeze/array_bcast.ty` + `.out`,
+  `/home/igzo/github/tycho/tests/postfreeze/array_bcast_fresh.ty` + `.out`,
+  `/home/igzo/github/tycho/tests/diag/array_bcast_widen.ty` + `.err`, plus the
+  eight re-anchored documents above. `runtime/tycho_rt.c` and `tests/run.sh` were
+  NOT touched — the broadcast form needed no new lane and no new helper.
+
+  **Not verified.** `make ci` was not run (phase 4 owns it, once), so the
+  fuzzers, the ILP32 rebuild and the TSan lane have not seen this code. Risk if
+  ILP32 differs: the broadcast statement-expression sizes its spine with the same
+  `tycho_int`/`size_t` arithmetic phase 1 used and this phase did not change that
+  line, so the ILP32 exposure is phase 1's, not new. Unverified until phase 4.
 
 - [ ] **Phase 3 — the spec, and the conformance record**
   - Scope: `docs/spec/09-expressions.md` (the arithmetic section that currently
@@ -463,6 +685,28 @@ Filed by phase agents as they ran; none blocking, none closed.
       deliberate and already reasoned out in `/home/igzo/github/tycho/FRICTION.md:214`
       (a string literal's text is pasted verbatim into the emitted C), but the
       missing *type name* is a separate and much smaller question.
+
+- [ ] **Phase 17 — bare `src/tychoc.c:N` refs drift silently on every edit to
+      that file, and there are ~300 of them.** Found while repairing phase 2's
+      citation fallout. `scripts/check_citations.py` verifies the token only for
+      the **anchored** `path:N@token` form; a bare `:N` is bounds-checked and
+      nothing more, so it stays "green" while pointing at the wrong line. Phase 2
+      measured the size of this: remapping every citation that binds to
+      `src/tychoc.c` through a `difflib` line map moves **375** refs across **27**
+      files, of which only **31** are anchored. The other ~344 are bare, and
+      phases 1 and 2 have now each shifted them without repair — they are
+      cumulatively wrong by both phases' insertions. Phase 2 deliberately did not
+      touch them: most live in frozen `docs/internals/plan-*-DONE.md` evidence
+      that describes the tree as it was at that commit, so silently rewriting
+      their numbers is not obviously correct, and it is a large unreviewable diff
+      to smuggle into a codegen phase. The decision needed is a policy one — do
+      frozen archives get re-anchored, or pinned to a commit? — which is why this
+      is a phase and not a fix. Related to but distinct from carried-forward
+      phase 13, which is about source→source refs; this is doc→source.
+      A remapper that does the mechanical half correctly (replicating the
+      checker's paragraph-scoped path binding, refusing to guess inside edited
+      hunks) was written for phase 2 and its approach is described in that
+      phase's evidence.
 
 - [ ] **Phase 15 — `docs/corelib.md` does not exist.** Moved to
       `docs/guides/corelib.md` by `68e5b39`; a dead backticked doc path in prose

@@ -1,0 +1,12 @@
+# The exact wording of the broadcast scalar-type diagnostic, for the case that
+# matters most: an int VARIABLE against a float array.
+#
+# `[1.0, 2.0] * 2` is legal -- the int LITERAL adapts to the element type, just
+# as it does in the all-scalar `1.0 * 2`. `[1.0, 2.0] * n` for an int VARIABLE is
+# NOT, because a variable never widens, and the all-scalar `1.0 * n` is refused
+# for the same reason. This lane locks the message so the two halves of that rule
+# cannot drift apart silently.
+fn main():
+    n := 2
+    f := [1.0, 2.0]
+    println(str(f * n))

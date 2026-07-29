@@ -459,4 +459,4 @@ is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is 
 one-byte glyph.)
 
 > Provenance: `src/tychoc.c:5875-5908` (equality/ordering resolver); function-
-> value identity equality `:8487@identity equality`.
+> value identity equality `:8540@identity equality`.

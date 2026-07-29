@@ -1,0 +1,78 @@
+# Scalar broadcast returns a FRESH array. Tycho is value-semantics, so
+# `c := a * 2` must neither alias nor mutate `a`, and later writes to either side
+# must not be visible through the other.
+#
+# tests/postfreeze/array_arith_fresh.ty proves the same property for the
+# array-OP-array form. This file is its broadcast twin, because the two go
+# through different codegen shapes: the broadcast emitter declares one local at
+# the ARRAY type and one at the ELEMENT type, and takes the result's length and
+# capacity from whichever side is the array. A bug there (sharing the source
+# spine instead of allocating a new one, or sizing the result from the wrong
+# side) is exactly what this file catches, and it catches it from the OUTSIDE --
+# by observing values -- rather than by inspecting the emitted C.
+fn main():
+    a := [1, 2, 3]
+    c := a * 2
+    println(str(c))                          # [2, 4, 6]
+
+    # mutate the source AFTER the operation: the result must not move
+    a[0] = 99
+    println(str(c))                          # [2, 4, 6]   -- unchanged
+    println(str(a))                          # [99, 2, 3]  -- a kept its own values
+
+    # the scalar-on-the-left direction allocates through the same path
+    d := 10 - a
+    println(str(d))                          # [-89, 8, 7]
+    a[1] = 50
+    println(str(d))                          # [-89, 8, 7] -- unchanged
+    println(str(a))                          # [99, 50, 3]
+
+    # growing the source must not reach into the result: separate spines, and
+    # the result's capacity came from its own allocation, not from a's
+    push(a, 4)
+    println(str(len(a)) + " " + str(len(c)))  # 4 3
+    println(str(c))                          # [2, 4, 6]
+
+    # ... and growing the RESULT must not reach back into the source
+    push(c, 8)
+    println(str(c))                          # [2, 4, 6, 8]
+    println(str(a))                          # [99, 50, 3, 4]
+
+    # writing into the result must not reach back into the source either
+    c[2] = 42
+    println(str(c))                          # [2, 4, 42, 8]
+    println(str(a))                          # [99, 50, 3, 4]
+
+    # chaining: a broadcast whose operand is itself a broadcast, with both
+    # sources intact afterwards
+    b := [1, 2, 3]
+    e := (b * 10) - 1
+    println(str(e))                          # [9, 19, 29]
+    println(str(b))                          # [1, 2, 3]
+
+    # mixing the two forms: array-OP-array feeding a broadcast, and back
+    g := [4, 5, 6]
+    h := (b + g) * 2
+    println(str(h))                          # [10, 14, 18]
+    println(str(b) + " " + str(g))           # [1, 2, 3] [4, 5, 6]
+    k := (b * 3) + g
+    println(str(k))                          # [7, 11, 15]
+    println(str(b) + " " + str(g))           # [1, 2, 3] [4, 5, 6]
+
+    # fixed [N]T: a different C struct (an inline array, copied by value), so
+    # freshness is proved separately rather than assumed from the growable case
+    p: [3]int = [1, 2, 3]
+    q := p * 10
+    p[0] = 77
+    println(str(q[0]) + " " + str(q[1]) + " " + str(q[2]))   # 10 20 30
+    println(str(p[0]) + " " + str(p[1]) + " " + str(p[2]))   # 77 2 3
+    q[1] = 55
+    println(str(p[1]))                       # 2   -- q's write did not reach p
+    println(str(q[0]) + " " + str(q[1]) + " " + str(q[2]))   # 10 55 30
+
+    # a float array, where the element store is a different width
+    fs := [1.5, 2.5]
+    fc := fs * 2
+    fs[0] = 9.0
+    println(str(fc))                         # [3.0, 5.0]
+    println(str(fs))                         # [9.0, 2.5]
