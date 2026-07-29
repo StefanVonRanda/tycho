@@ -774,8 +774,13 @@ fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], 
 # literal text is skipped but identifiers inside each `{...}` interpolation hole
 # ARE matched (so rename/references reach `x` in f"got {x}"); `{{`/`}}` are literal
 # braces, holes nest, and a nested "..." string inside a hole is skipped verbatim.
+# A backtick raw literal (src/tychoc.c:402-448) is skipped too, and because it may
+# span source lines the `inraw` flag carries the state across the line loop --
+# without it the closing lines of a multi-line raw literal would be scanned as
+# ordinary code and a rename could edit text inside the literal.
 fn find_occurrences(text: string, name: string) -> [int]:
     out := []int
+    inraw := false                                         # inside a `...` raw literal that opened on an earlier line
     lines := split(text, "\n")
     for li in range(len(lines)):
         s := lines[li]
@@ -783,7 +788,21 @@ fn find_occurrences(text: string, name: string) -> [int]:
         c := 0
         for c < n:
             ch := s[c]
-            if ch == 35:                                   # '#' -> rest of line is a comment
+            if inraw:                                      # continuation of a multi-line raw literal
+                for c < n and s[c] != 96:
+                    c = c + 1
+                if c < n:
+                    c = c + 1                              # the closing backtick
+                    inraw = false
+            elif ch == 96:                                 # `...` raw literal: no escapes, may span lines
+                c = c + 1
+                for c < n and s[c] != 96:
+                    c = c + 1
+                if c < n:
+                    c = c + 1                              # closing backtick
+                else:
+                    inraw = true                           # unterminated on this line -> continues below
+            elif ch == 35:                                 # '#' -> rest of line is a comment
                 c = n
             elif ch == 102 and c + 1 < n and s[c + 1] == 34:   # f"..." interpolated string
                 c = c + 2                                  # skip the `f` and the opening quote
@@ -1130,7 +1149,9 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
     send_result(id, "[" + out + "]")
 
 # ---- semanticTokens: a lexical classifier -----------------------------------
-# A whole-buffer tokenizer: comments (`#`..EOL), strings ("..." / '...' with \-esc),
+# A whole-buffer tokenizer: comments (`#`..EOL), strings ("..." / '...' with \-esc,
+# and backtick raw literals, which carry `inraw` across lines because they may span
+# them -- without it the tail lines would be classified as code),
 # numbers, keywords, built-in types, functions (an identifier directly before `(`),
 # else variables. Emitted as the LSP delta-encoded int array -- 5 per token:
 # (deltaLine, deltaChar, length, tokenType, 0). Coarser than a full symbol resolve,
@@ -1157,6 +1178,7 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
     nd := 0
     pline := 0                                       # previous token's line/char (for the delta)
     pchar := 0
+    inraw := false                                   # inside a `...` raw literal opened on an earlier line
     lines := split(text, "\n")
     for li in range(len(lines)):
         s := lines[li]
@@ -1166,7 +1188,26 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
             c := s[i]
             start := i
             ty := 0 - 1                              # -1 -> not a token (advance one char)
-            if c == 35:                              # '#' -> comment to end of line
+            if inraw:                                # continuation of a multi-line raw literal
+                j := i
+                for j < n and s[j] != 96:
+                    j = j + 1
+                if j < n:
+                    j = j + 1                        # the closing backtick ends it
+                    inraw = false
+                i = j
+                ty = 4
+            elif c == 96:                            # `...` raw literal: no escapes, may span lines
+                j := i + 1
+                for j < n and s[j] != 96:
+                    j = j + 1
+                if j < n:
+                    j = j + 1                        # closing backtick
+                else:
+                    inraw = true                     # runs on into the next line
+                i = j
+                ty = 4
+            elif c == 35:                            # '#' -> comment to end of line
                 i = n
                 ty = 6
             elif c == 34 or c == 39:                 # '"'/'\'' string or char literal

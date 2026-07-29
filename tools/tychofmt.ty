@@ -24,7 +24,7 @@ enum TKind:
     KIdent      # identifier or keyword
     KInt
     KFloat
-    KStr        # "..."
+    KStr        # "..." or a raw `...` (both are string operands; see lex())
     KFStr       # f"..."
     KChar       # '...'
     KOp         # operator or punctuation (one lexeme)
@@ -159,6 +159,29 @@ fn lex(src: string) -> [Tok]:
                 i = i + 1
             push(toks, Tok(KChar, substr(src, start, i), sl, sc))
             col = col + (i - start)
+        elif c == 96:                                 # raw string `...` (src/tychoc.c:402-448)
+            # No escape is interpreted, so a backslash does NOT skip the next byte
+            # (the `"..."` branch above must, this one must not), and there is no
+            # escape for a backtick: the first one closes. An embedded newline is
+            # part of the literal, so this ONE token can span source lines -- which
+            # is why line/col are re-derived byte by byte below instead of by
+            # `col + (i - start)`. Stage 2 splits lines on KNL tokens only, so the
+            # literal's interior newlines never reach the indent stack and its bytes
+            # are re-emitted verbatim by fmt_line's `out = out + t.text`.
+            i = i + 1
+            for i < n and src[i] != 96:
+                i = i + 1
+            if i < n:
+                i = i + 1                             # closing backtick
+            push(toks, Tok(KStr, substr(src, start, i), sl, sc))
+            j := start
+            for j < i:
+                if src[j] == 10:
+                    line = line + 1
+                    col = 0
+                else:
+                    col = col + 1
+                j = j + 1
         elif is_dig(c):                               # number (int or float)
             for i < n and is_dig(src[i]):
                 i = i + 1
@@ -218,6 +241,15 @@ fn indent_str(depth: int) -> string:
         s = s + "    "
         k = k + 1
     return s
+
+# Does `s` already end in a newline? Only ONE token can ever contain one: an
+# UNTERMINATED raw literal (tests/reject/rawstring_unterminated.ty), which runs to
+# EOF and so swallows the file's last newline. fmt() appends "\n" after each line,
+# so without this check that file grows by one newline on every pass -- exactly the
+# idempotence bar scripts/tools_check.sh:29 enforces. Every other line's text ends
+# on a token, never a newline, so this is a no-op for them.
+fn ends_nl(s: string) -> bool:
+    return len(s) > 0 and s[len(s) - 1] == 10
 
 fn is_blank(line: [Tok]) -> bool:
     i := 0
@@ -382,7 +414,10 @@ fn fmt(toks: [Tok]) -> string:
             blanks = 0
             if is_topdef(line) and prevkind == "code":   # group top-level defs with one blank
                 out = out + "\n"
-            out = out + fmt_line(line, &levels) + "\n"
+            txt := fmt_line(line, &levels)
+            out = out + txt
+            if not ends_nl(txt):
+                out = out + "\n"
             prevkind = "code"
     return out
 
