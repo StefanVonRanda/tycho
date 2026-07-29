@@ -44,7 +44,7 @@ A comment begins with `#` and runs to the end of the line. Comments do not
 nest, and there is no block-comment form. A `#` inside a string or character
 literal is an ordinary byte, not a comment.
 
-> Provenance: `src/tychoc.c:222`, `:244`, `:437`.
+> Provenance: `src/tychoc.c:222`, `:244`, `:520`.
 
 ## 3.4 Indentation (`INDENT` / `DEDENT`)
 
@@ -80,7 +80,7 @@ lines:
 A block in the phrase grammar is therefore `INDENT Stmt+ DEDENT` ([§4](02-grammar.md)).
 
 > Provenance: `src/tychoc.c:208-240` (measure + INDENT/DEDENT), `:230`
-> (depth bound), `:442-443` (EOF flush).
+> (depth bound), `:525-526` (EOF flush).
 
 ## 3.5 Tokens
 
@@ -137,9 +137,9 @@ is unaffected. They are **not** reserved:
   `to_int`, `wait`, `send`, `recv`, `close`, …) is an ordinary identifier
   resolved as a call; none is reserved ([§29](16-builtins.md)).
 
-> Provenance: contextual dispatch at `src/tychoc.c:3689-3698` (top level),
-> `:2611`/`:2627` (`const`/`delete`), `:1582`/`:2026` (`soa`), `:3028`
-> (`where`), `:2994` (`sink`), `:2748` (`range`).
+> Provenance: contextual dispatch at `src/tychoc.c:4208-4217` (top level),
+> `:3060`/`:3076` (`const`/`delete`), `:1855`/`:2343` (`soa`), `:3523`
+> (`where`), `:3489` (`sink`), `:3198` (`range`).
 
 ## 3.8 Operators and punctuation
 
@@ -171,7 +171,7 @@ literal (§3.9.5). There is no range operator (`..`); ranges are written with th
 `range(…)` form in a `for` head (§4). Operator precedence and associativity are
 defined with the expression grammar in [§4.5](02-grammar.md#45-operator-precedence-and-associativity).
 
-> Provenance: `src/tychoc.c:398-433`. `::` is lexed at `:402` but no grammar
+> Provenance: `src/tychoc.c:477-513`. `::` is lexed at `:482` but no grammar
 > production consumes it.
 
 ## 3.9 Literals
@@ -181,7 +181,7 @@ chains) is limited to a fixed depth; a more deeply nested expression is rejected
 (`expression nesting too deep`) — a fail-closed guard, the expression-level
 counterpart to the indentation-depth bound (§3.4).
 
-> Provenance: `src/tychoc.c:2227-2232`.
+> Provenance: `src/tychoc.c:2557-2563`.
 
 ### 3.9.1 Integer literals
 
@@ -248,7 +248,7 @@ byte** (a value `0`–`255`) of type `char`. The supported escapes are `\n`, `\t
 `\r`, `\0`, `\\`, and `\'`. An empty literal (`''`), an unterminated literal, or
 one holding more than one byte is a lexical error.
 
-> Provenance: `src/tychoc.c:402-425`.
+> Provenance: `src/tychoc.c:450-473`.
 
 ### 3.9.4 String literals
 
@@ -352,7 +352,7 @@ a type accepted by `str` (the numeric and string scalars); other hole types are
 rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 
 > Provenance: lexing `src/tychoc.c:289`,`:297-367`; desugar `interp_join` /
-> `desugar_interp`, `:1826-1866`.
+> `desugar_interp`, `:2125-2179`.
 
 ### 3.9.6 Boolean and pointer literals
 
