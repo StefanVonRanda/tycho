@@ -45,6 +45,16 @@
     { "name": "constant.language.tycho", "match": "\\b(true|false|null)\\b" },
     { "name": "storage.type.tycho", "match": "\\b(int|float|string|bool|char|ptr|void)\\b" },
     { "name": "support.function.builtin.tycho", "match": "\\b(print|println|str|len|push|pop|range|split|substr|find|read_file|write_file|read_all|list_dir|args|getenv|input|chr|die|is_null|sqrt|pow|floor|fabs|map_get|map_set|reserve)\\b" },
-    { "name": "keyword.operator.tycho", "match": ":=|->|==|!=|<=|>=|[-+*/%<>=&|^~]" }
+    {
+      "comment": "`..<` (src/tychoc.c:482) must precede the general operator rule: it is three characters and TextMate takes the first matching pattern, not the longest, so the `<` alternative below would otherwise claim it",
+      "name": "keyword.operator.range.tycho",
+      "match": "\\.\\.<"
+    },
+    { "name": "keyword.operator.tycho", "match": ":=|->|==|!=|<=|>=|[-+*/%<>=&|^~]" },
+    {
+      "comment": "clause separator of `for init; cond; post:` (src/tychoc.c:506); scoped as a separator, like `,`, not as an operator",
+      "name": "punctuation.separator.tycho",
+      "match": ";"
+    }
   ]
 }

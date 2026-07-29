@@ -49,6 +49,15 @@ fn is_aln(c: int) -> bool:
 fn is_two_op(s: string) -> bool:
     return s == "->" or s == ":=" or s == "==" or s == "!=" or s == "<=" or s == ">=" or s == "<<" or s == ">>" or s == "+=" or s == "-=" or s == "*=" or s == "/=" or s == "%=" or s == "&=" or s == "|=" or s == "^="
 
+# The one 3-char lexeme this formatter needs to keep whole: `..<`, the half-open
+# counting range of `parallel for i in 0..<N:` (src/tychoc.c:482). Lexed as three
+# separate KOps it still ROUND-TRIPS (stage 1 is lossless either way), but stage 2
+# would re-space the tail: sep_needs_space suppresses the space around a `.`, not
+# around a `<`, so `0..<N` came out `0..< N`. `...` (TK_ELLIPSIS, src/tychoc.c:481)
+# is deliberately NOT here -- it is all dots, so the `.` rule already tightens it.
+fn is_three_op(s: string) -> bool:
+    return s == "..<"
+
 # Consume an optional float exponent `[eE][+-]?digits` starting at `i`; returns the
 # new index, or `i` unchanged if there is no valid exponent. Used so `1e10`, `1.5e-3`,
 # and `.25e3` lex as ONE float token (the lexer used to stop before the `e`, splitting
@@ -213,10 +222,15 @@ fn lex(src: string) -> [Tok]:
             push(toks, Tok(KIdent, substr(src, start, i), sl, sc))
             col = col + (i - start)
         else:                                         # operator / punctuation
+            three := ""
+            if i + 2 < n:
+                three = substr(src, i, i + 3)
             two := ""
             if i + 1 < n:
                 two = substr(src, i, i + 2)
-            if is_two_op(two):
+            if is_three_op(three):                    # longest match first, as the compiler's chain is
+                i = i + 3
+            elif is_two_op(two):
                 i = i + 2
             else:
                 i = i + 1                             # catch-all 1-char: guarantees no byte is skipped
@@ -310,9 +324,11 @@ fn sep_needs_space(reals: [Tok], i: int) -> bool:
     ct := c.text
     if pt == "(" or pt == "[":                    # no padding after an opener
         return false
-    if ct == ")" or ct == "]" or ct == "," or ct == ":":   # nor before a closer / separator / colon
+    if ct == ")" or ct == "]" or ct == "," or ct == ":" or ct == ";":   # nor before a closer / separator / colon / clause `;`
         return false
     if pt == "." or ct == ".":                    # field access a.b
+        return false
+    if pt == "..<" or ct == "..<":                # counting range 0..<N binds tight, like `.`
         return false
     if ct == "(" and ((p.kind == KIdent and not is_kw(pt)) or pt == ")" or pt == "]"):
         return false                              # call: f(  )(  ](

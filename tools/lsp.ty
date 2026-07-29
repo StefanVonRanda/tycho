@@ -1222,8 +1222,12 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
                     i = n
                 ty = 4
             elif c >= 48 and c <= 57:                # number (digits + a decimal point)
+                # A `.` that starts a `..` pair is NOT part of the number: it opens
+                # `..<` (src/tychoc.c:482) or `...` (src/tychoc.c:481). Without this
+                # guard `0..<N` painted `0..` as one number token -- the digit, and
+                # two thirds of the operator beside it, in the number colour.
                 j := i
-                for j < n and ((s[j] >= 48 and s[j] <= 57) or s[j] == 46):
+                for j < n and ((s[j] >= 48 and s[j] <= 57) or (s[j] == 46 and not (j + 1 < n and s[j + 1] == 46))):
                     j = j + 1
                 i = j
                 ty = 5
