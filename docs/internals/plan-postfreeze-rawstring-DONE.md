@@ -600,7 +600,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     - `FRICTION.md:215` and `:334` still say `compiler/fixpoint.sh`; the loop is
       at `:37` since phase 1.
     - `scripts/frontparity.sh` is cited in `FRICTION.md:215`, `:219`, `:244`,
-      `docs/spec/appendix-e-conformance.md:274` and `:285`, and has been stale
+      `docs/spec/appendix-e-conformance.md:275` and `:285`, and has been stale
       **since before this plan** — the glob was already at `:152` at HEAD and phase
       1's header note moved it to `:164`. Also `scripts/frontparity.sh`'s own
       header cites `tests/run.sh` at its lines 148, 159, 178, 199, 262 and
@@ -619,7 +619,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     offsets. Two of the listed refs turned out to be **right already** and were
     left alone: `compiler/fixpoint.sh` (cited by `FRICTION.md:329` and
     `docs/bootstrap.md:5`) really is the `docs/bootstrap.md` header line, and
-    `docs/spec/appendix-e-conformance.md:252-253`'s `:37`/`:81`/`:164` were
+    `docs/spec/appendix-e-conformance.md:253-254`'s `:37`/`:81`/`:164` were
     already repaired by phase 1.
 
     **The repairs, each with the text of the line landed on.**

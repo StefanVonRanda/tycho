@@ -7,7 +7,7 @@ work, with K=ncpu workers and channel-capacity backpressure.
 ## Why this, and why it is not already shipped
 
 Bounded fan-out of a **known** count is already expressible and tested
-(`tests/conc/select_parfor.ty`): `parallel for i in range(0, N)` with a `select`
+(`tests/conc/select_parfor.ty`): `parallel for i in 0..<N` with a `select`
 inside, K=ncpu chunks sharing a captured channel. The single-consumer
 drain-until-closed loop is also already idiomatic (`tests/conc/select.ty`):
 `for true: select { recv(ch,x): ...; closed: break }`.
@@ -48,7 +48,7 @@ known:
 2. **Resolve.** `type_of(EXPR)`:
    - `Channel(T)` → drain-mode; bind `x : T`.
    - array/string → reconstruct the existing index desugar (`x := EXPR[i]` over
-     `range(0, len(EXPR))`) — same emission as today, so `parfor.ty` stays green.
+     an index node `0 .. len(EXPR)`) — same emission as today, so `parfor.ty` stays green.
 3. **Codegen (drain-mode).** Reuse the chunk-proc lift + reduction-join exactly.
    Differences from range-mode: `_pk = tycho_ncpu()` (one worker per chunk, not a
    split range), and each chunk body is the drain loop instead of a counted
@@ -108,7 +108,7 @@ make test → make fixpoint, all green before next)
   - Parser parallel+foreach: require the source be an identifier, emit a deferred
     `S_FORRANGE` (`foreach=1`, `name`=var, `r_start`=source ident, `body`=raw).
   - `resolve_parfor` top: type-branch the source — `IS_CHAN` → drain form
-    (`parallel for __pw in range(0,ncpu()): for true: select{recv(src,x):BODY;
+    (a synthesised `parallel for __pw in 0..<ncpu(): for true: select{recv(src,x):BODY;
     closed:break}`); array/string → the existing index form; else die.
 - **DONE — tychoc0 (self-hosted) + landed.** All gates green: `make test` 230/0,
   `make conc` 36/0 (incl. the tychoc0 parity differential on `parfor_chan.ty`),

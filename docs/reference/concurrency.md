@@ -51,11 +51,11 @@ function can never return while its tasks run, and an un-waited task can never l
 
 ```
 total := 0
-parallel for i in range(1000000):   # K = ncpu() chunk tasks (TYCHO_THREADS overrides)
+parallel for i in 0..<1000000:      # K = ncpu() chunk tasks (TYCHO_THREADS overrides)
     total += score(i)               # reduction: chunk-local partials, folded at join
 ```
 
-`parallel for` (over a range or a collection) lifts the body into a chunk procedure: captures
+`parallel for` (over `0..<N` or a collection) lifts the body into a chunk procedure: captures
 deep-copy into each task, and a reduction accumulator (`+` or `*` on `int`/`float`) starts from
 the operator's identity per chunk and folds at the in-order join — so an integer result is
 identical for any thread count. Any *other* write to an outer variable is a compile error: there

@@ -389,9 +389,9 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
 ### D. Concurrency ordering & memory model — informal today
 23. **Channel MPMC message ordering** — the Vyukov ring is FIFO per ticket, but
     no per-sender / total-order guarantee is stated for multiple producers/
-    consumers. Pin the guarantee. **[CLOSED — 13-concurrency.md:118-125]**
+    consumers. Pin the guarantee. **[CLOSED — 13-concurrency.md:142-149]**
 24. **`select` arm fairness/priority** — tried in listed order, or fair?
-    (Implementation scans in listed order via `try_recv`.) Pin. **[CLOSED — 13-concurrency.md:141-142]**
+    (Implementation scans in listed order via `try_recv`.) Pin. **[CLOSED — 13-concurrency.md:165-166]**
 25. **Happens-before axioms** — what a deep copy publishes across spawn→body,
     send→recv, task→wait. Assert as ordering rules, not prose. **[CLOSED — 13-concurrency.md:31-42]**
 26. **`wait` re-entrancy** — waiting a task from a thread other than the spawner.
@@ -602,7 +602,7 @@ changes an observable behavior claim.
   output, or accept/reject decision", with `:70-71` limiting the licence to *when*
   and *whether* storage is allocated or freed. No static preconditions are spelled
   out normatively. Cross-referenced by `docs/spec/appendix-g-glossary.md:29-31`
-  and `docs/spec/appendix-e-conformance.md:187` (§9.5 is evidenced by the whole
+  and `docs/spec/appendix-e-conformance.md:188` (§9.5 is evidenced by the whole
   differential suite + `make fixpoint`, not one fixture).
 - ~~`int`-width conformance (punch-list 16): require 64-bit lowering vs. scope to
   LP64. Recommend require-64-bit.~~ **RESOLVED (2026-07-23):** require 64-bit

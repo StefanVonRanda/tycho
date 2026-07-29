@@ -2695,7 +2695,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
     (`:2847`) and `block_ends_in_return` (`:9298`); codegen; and diagnostics beside
     the existing `or_return requires the enclosing function to return a Result, but it
     returns %s` (`:4795-4796`). Plus a spec section beside §14.6 `or_return`
-    (`docs/spec/10-statements.md:110`), plus a fixture that — being **new syntax** —
+    (`docs/spec/10-statements.md:143`), plus a fixture that — being **new syntax** —
     can live only in `corelib/test/` or `server/`, never in `tests/` or `examples/`
     (frozen `tychoc0`; `scripts/frontparity.sh` reports it as a divergence).
 

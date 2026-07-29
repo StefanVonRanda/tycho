@@ -104,7 +104,7 @@ fn main():
 ```
 fn main():
     acc := []string                 # in main's arena
-    for i in range(1_000_000):
+    for i := 0; i < 1000000; i += 1:   # no digit separators: `1_000_000` does not lex
         push(acc, str(i))           # str(i) temp in scratch; copied into acc
     # scratch stays bounded; acc grows O(n) — intended, not a leak
 ```

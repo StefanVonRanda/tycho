@@ -695,10 +695,10 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
      src/tychoc.c` (the two phases, exactly) has **four** hunks, at `base_of`,
      `resolve_expr_inner`, `op_str` and `gen_expr` — none inside `lex` or any
      `parse_*` function, so `parse_expr`
-     (`/home/igzo/github/tycho/docs/spec/02-grammar.md:378`, citing
+     (`/home/igzo/github/tycho/docs/spec/02-grammar.md:403`, citing
      `src/tychoc.c:2586-2654`) is untouched. `*` `/` `%` already sit at binding
      level 3 and `+` `-` at level 4
-     (`/home/igzo/github/tycho/docs/spec/02-grammar.md:361-362`); `a * b` on two
+     (`/home/igzo/github/tycho/docs/spec/02-grammar.md:386-387`); `a * b` on two
      arrays parses today and always did — only its TYPING is new. Appendix A is
      additionally a *generated* projection of §3/§4
      (`/home/igzo/github/tycho/scripts/spec_check.sh:24-33`), so hand-editing it
@@ -1052,7 +1052,7 @@ Filed by phase agents as they ran; none blocking, none closed.
 - [ ] **Phase 18 — doc→doc citations drift exactly like doc→source ones, and one
       is already wrong.** Found by phase 3 while measuring what its own
       insertions would shift. `/home/igzo/github/tycho/docs/internals/spec-plan.md:605`
-      cites `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:187` as
+      cites `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:188` as
       the cross-reference for "§9.5 is evidenced by the whole differential suite
       + `make fixpoint`, not one fixture". That line is the **§24.2 linking / cc
       invocation** row, and was already so before phase 3 touched anything —

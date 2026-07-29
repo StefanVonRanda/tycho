@@ -159,8 +159,9 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
-| §14.4 | loops; three-clause ascending/descending | `tests/foreach`, `tests/while_loop`, `tests/for3`, `tests/for_bare`, `tests/range_negative_step` |
-| §14.4 | `break` / `continue` | `tests/break_continue`, `tests/loop_return` |
+| §14.4 | the four loop shapes: condition, infinite, three-clause (ascending and descending), foreach | `tests/foreach`, `tests/while_loop`, `tests/for3`, `tests/for_bare`, `tests/range_negative_step` |
+| §14.4 | all three clauses required; `range()` removed; `0..<N` refused outside `parallel for` | `reject/for3_empty_clause`, `tests/diag/range_removed`, `reject/dotlt_sequential`, `tests/diag/dotlt_sequential` — diagnostics are byte-for-byte, see the note below |
+| §14.4 | `break` / `continue`; `continue` runs the three-clause post clause | `tests/break_continue`, `tests/loop_return`, `tests/for3` |
 | §19.4 | `match` statement; exhaustive; wildcard-last | `tests/enums`, `tests/matchwild`, `reject/match_non_exhaustive`, `reject/match_dup_arm`, `reject/match_wildcard_not_last` |
 | §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/nested_pattern`, `corelib/test/result` (`why`, `io_why`) — see the note below |
 
@@ -198,7 +199,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 |---|---|---|
 | §23.x | spawn / Task / wait (affine, implicit join) | `tests/conc/basic`, `tests/conc/implicit`, `reject/task_copy` |
 | §23.1 | channels (Vyukov, capacity, select) | `tests/conc/chan`, `tests/conc/chancap1`, `tests/conc/select`, `reject/send_wrong_type`, `reject/chan_reassign` |
-| §23.x | parallel-for; channel-drain | `tests/conc/parfor`, `tests/conc/parfor_chan`, `tests/conc/select_parfor`, `parforparity` lane |
+| §23.x | parallel-for (`0..<N` counting form and foreach); channel-drain | `tests/conc/parfor`, `tests/conc/parfor_dotlt`, `tests/conc/parfor_chan`, `tests/conc/select_parfor`, `parforparity` lane |
 | §24.1 | FFI crossable types (scalars/str/bytes/handles/sized) | `tests/ffi`, `examples/sqlite/demo.ty` |
 | §24.2 | linking / cc invocation | `tests/ffi/run.sh`, `examples/sqlite` |
 | §25 | typed handle decl: name must not collide with a struct/enum/newtype/handle | `tests/reject/handle_dup_name` |
@@ -342,6 +343,12 @@ are flagged here so the gap is explicit rather than hidden:
   `tests/diag/array_arith_fixlen` / `array_bcast_widen` carry the byte-for-byte
   diagnostics, because the reject lane asserts only that a diagnostic is
   non-empty.
+- **§14.4 loop refusals** — `tests/reject/` asserts only a nonzero exit and a
+  non-empty diagnostic, so the two messages a user is most likely to meet are
+  locked byte-for-byte by the `tests/diag/` lane: `tests/diag/range_removed` (the
+  removed counting form, whose message names both replacements) and
+  `tests/diag/dotlt_sequential` (a sequential `0..<N`, whose message names the
+  three-clause form with the user's own loop variable substituted in).
 - **§30.3 clamp conditions and §30.5 unspecified behavior** — clamp behavior is
   exercised incidentally by the slice fixtures; the unspecified set is, by
   definition, not pinned (it is enumerated in [Appendix F](appendix-f-impl-defined.md)).

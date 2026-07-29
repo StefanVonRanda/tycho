@@ -607,7 +607,7 @@ codegen.
 
     **PROBE 4 — `keys()` order, which decides whether json.ty's round-trip can
     change.** `docs/spec/12-aggregates.md:400-402` and `17-runtime.md:75` make
-    `keys(m)` **insertion order**, normatively (`appendix-e-conformance.md:183`,
+    `keys(m)` **insertion order**, normatively (`appendix-e-conformance.md:184`,
     §30.4). So a `[string: Json]` object round-trips member order unchanged —
     confirmed empirically by the golden diff below, not assumed.
 
@@ -1496,7 +1496,7 @@ codegen.
     `docs/spec/appendix-a-grammar.md:81-90` lists `$IDENT`, `soa[T]`, `fn(…)`,
     tuple, `[`-forms, `Option`/`Result`/`Channel`, `QualName TypeArgs?` and
     `PrimType` — no `bounded`. `grep -rn 'bounded' docs/spec/` returns 4 hits in
-    3 files (`16-builtins.md:214`, `13-concurrency.md:100,:115`,
+    3 files (`16-builtins.md:214`, `13-concurrency.md:124,:139`,
     `07-memory-model.md:136`) and every one is about a *bounded channel* or
     bounded memory, not the type form. `docs/spec/02-grammar.md` has none.
   - Class: **doc drift / spec incompleteness, NOT a compiler divergence** — both
@@ -4127,7 +4127,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
         println(str(recv(ch)))
     ```
     `recv(ch)` has type **`Option(T)`**, not `T` — `docs/spec/16-builtins.md:227`
-    ("`recv(ch)` | `Channel(T) -> Option(T)`") and `13-concurrency.md:109` ("yields
+    ("`recv(ch)` | `Channel(T) -> Option(T)`") and `13-concurrency.md:133` ("yields
     `Option(T)`: `Some(v)` for a …"). So `str(recv(ch))` renders `Some(7)`, and
     `Some(7)` is the **correct** output for that program. The audit compared it against
     a bare `7`, which no spelling of that line produces.

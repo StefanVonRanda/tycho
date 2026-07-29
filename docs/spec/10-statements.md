@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3054-3408` (`parse_if` `:2730@parse_if`,
-> `parse_match` `:2836@parse_match`, `for` `:3191-3277`, `select` `:3135-3172`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3108-3578` (`parse_if` `:2730@parse_if`,
+> `parse_match` `:2836@parse_match`, `for` `:3245-3446`, `select` `:3189-3225`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -81,23 +81,56 @@ match httpd.read_request(fd):
 
 ## 14.4 Loops
 
-Tycho has one loop keyword, `for`, in three shapes; `break` and `continue` are
+Tycho has one loop keyword, `for`, in four shapes; `break` and `continue` are
 valid in every shape and are errors outside a loop.
 
 **Condition (`while`) form** — `for C:` runs its body while the `bool` condition
 `C` holds.
 
-**Counting form** — `for i in range(a, b, step):` binds `i` (an `int`, scoped to
-the loop) to successive values from `a` toward `b`, stepping by `step`. `range(n)`
-means `range(0, n, 1)`; `range(a, b)` means step `1`. The bound `b` is exclusive.
-A **negative step** counts downward. A **zero step** never advances the counter,
-so it is a program error: a literal `0` step is **rejected at compile time**, and
-a step that evaluates to `0` at run time **aborts** (`tycho: range step is zero`)
-— the same fail-closed discipline as division by zero.
+**Infinite form** — `for:` runs its body until a `break` or a `return`. It is
+the condition form with a literal `true` and nothing about it is otherwise
+special.
+
+**Three-clause form** — `for init; cond; post:` runs `init` once, then runs the
+body while the `bool` `cond` holds, running `post` after every iteration. `init`
+is a declaration or an assignment and `post` is an assignment to a variable; a
+variable that `init` declares is scoped to the loop, and `post` is evaluated in
+the loop's scope, not the body's, so it cannot read a body-local. **All three
+clauses are required** — this grammar has no empty-statement production to put
+in one — and `for:` is the only degenerate form. A `continue` **runs the post
+clause**: it jumps *to* `post`, not past it, so a loop that advances only in
+`post` still terminates.
 
 **Foreach form** — `for x in xs:` iterates a collection: an array (binding each
 element) or a `string` (binding each byte as an `int`). The **collection is
 evaluated exactly once** before the loop.
+
+There is **no counting form**, and `range` is not a name the language knows.
+`for i in range(a, b, step):` was removed on 2026-07-29; a `for` head that names
+`range` is refused with both replacements spelled out. Count sequentially with
+the three-clause form; count in parallel with `parallel for i in 0..<N:`
+([§22](13-concurrency.md#22-parallel-for)), which is the only context where
+`0..<N` is legal — a sequential `for i in 0..<N:` is refused.
+
+**The zero-step guarantee is gone, and that is a deliberate trade, not an
+oversight.** `range()` rejected a literal `0` step at compile time and
+**aborted** on a step that evaluated to `0` at run time — the same fail-closed
+discipline as division by zero. A three-clause `post` is arbitrary code, so no
+equivalent check exists: `for i := 0; i < n; i += 0:` is an infinite loop and
+the implementation **does not diagnose it**, at compile time or at run time.
+`0..<N` steps by `1` implicitly and so has no zero-step case at all. What was
+bought is a single loop form that says its own direction and amount in the
+source instead of inferring them from the sign of a step expression.
+
+> Provenance: bare `for:` `src/tychoc.c:3253@TK_COLON`; the three-clause header
+> scan and its five required-clause refusals `src/tychoc.c:3279-3328`; `init`
+> parsed by `parse_stmt` itself `src/tychoc.c:3310@parse_stmt`; loop scoping and
+> the post clause resolved outside the body block `src/tychoc.c:7248-7253`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:10661-10664` with the
+> label at `src/tychoc.c:10711@_post%d`; the `range()` refusal
+> `src/tychoc.c:3387@was removed: write`. The step codegen and its zero-step
+> guards still exist but are unreachable: every remaining `S_FORRANGE` producer
+> writes a NULL step (`src/tychoc.c:1553-1559`).
 
 ## 14.5 `return`
 

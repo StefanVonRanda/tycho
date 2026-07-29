@@ -82,8 +82,8 @@ list. That is stronger than the item asked for.
 
 | # | Item | Verdict | Evidence |
 |---|---|---|---|
-| 23 | channel MPMC message ordering | CLOSED — pinned | `13-concurrency.md:118-125` — "a **single** sender's values are received in the order it sent them (FIFO). Among **concurrent** senders, the relative order… is whichever order those sends linearized — a race the language does not otherwise order. With multiple receivers, each value is delivered to exactly one receiver, in ticket order." |
-| 24 | `select` arm fairness/priority | CLOSED — pinned | `13-concurrency.md:141-142` — "Ready arms are tried in **listed (lexical) order**, and the first ready arm is taken; `select` is **not fair**" |
+| 23 | channel MPMC message ordering | CLOSED — pinned | `13-concurrency.md:142-149` — "a **single** sender's values are received in the order it sent them (FIFO). Among **concurrent** senders, the relative order… is whichever order those sends linearized — a race the language does not otherwise order. With multiple receivers, each value is delivered to exactly one receiver, in ticket order." |
+| 24 | `select` arm fairness/priority | CLOSED — pinned | `13-concurrency.md:165-166` — "Ready arms are tried in **listed (lexical) order**, and the first ready arm is taken; `select` is **not fair**" |
 | 25 | happens-before axioms | CLOSED — pinned | `13-concurrency.md:31-42` — three stated axioms: "**`spawn` → body**", "**`send` → `recv`**" ("a release store paired with an acquire load on the ring cell"), "**task → `wait`**" |
 | 26 | `wait` re-entrancy from a non-spawner thread | CLOSED — pinned (**by construction**) | `13-concurrency.md:70-74` — "A `Task` handle cannot be copied, reassigned, stored in a container, captured by a closure, or passed as an argument (it is affine and non-storable). It therefore can never reach a thread other than the one that created it… waiting a task from another thread is **not expressible in the language**." |
 

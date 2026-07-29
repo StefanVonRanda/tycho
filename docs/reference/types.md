@@ -55,7 +55,7 @@ A `char` is one byte, written with a quoted literal — `'x'`, with the escapes
 
 ```
 s := ""
-for d in range(0, 10):
+for d := 0; d < 10; d += 1:
     s = s + ('0' + d)          # zero-allocation one-byte append per digit
 ```
 

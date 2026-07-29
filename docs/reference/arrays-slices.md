@@ -67,13 +67,13 @@ promoted into the caller's arena, so it never dangles.
 ```
 fn make_squares(n: int) -> [int]:   # returned: promoted into the caller's arena
     r := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, i * i)
     return r
 
 fn sum(a: [int]) -> int:            # parameter: a read-only borrow
     total := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         total = total + a[i]
     return total
 ```
@@ -113,7 +113,7 @@ introduces a size parameter `$N` that the call infers from the argument, and ins
 ```
 fn sum(xs: [$N]int) -> int:      # N is inferred from the argument
     total := 0
-    for i in range(N):           # N is a compile-time int in the body
+    for i := 0; i < N; i += 1:   # N is a compile-time int in the body
         total = total + xs[i]
     return total
 
