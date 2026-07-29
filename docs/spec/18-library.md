@@ -31,7 +31,7 @@ arena. Where a package threads mutable state (for example a PRNG seed), it does
 so through an explicit `inout` parameter at the call site, not through a global
 ([§11](07-memory-model.md#11-inout)).
 
-> Provenance: `docs/corelib.md:4-8`.
+> Provenance: `docs/guides/corelib.md:3-8`.
 
 The one deliberate exception is a **C-owned opaque handle** returned as `ptr`
 (§31.3): such a handle is *not* arena-managed and MUST be released by the

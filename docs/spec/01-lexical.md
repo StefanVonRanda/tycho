@@ -4,8 +4,8 @@ This chapter defines how a Tycho source file is decomposed into a stream of
 **tokens**. The token stream — including the synthetic layout tokens `NEWLINE`,
 `INDENT`, and `DEDENT` — is the input to the phrase grammar ([§4](02-grammar.md)).
 
-> Provenance: the lexer is `src/tychoc.c:196-445` (`lex`), the token kinds
-> `:107-122` (`TokKind`), the keyword table `:156-192` (`keyword`).
+> Provenance: the lexer is `src/tychoc.c:211-528` (`lex`), the token kinds
+> `:114-130` (`TokKind`), the keyword table `:165-207` (`keyword`).
 
 ## 3.1 Source text
 
@@ -79,7 +79,7 @@ lines:
 
 A block in the phrase grammar is therefore `INDENT Stmt+ DEDENT` ([§4](02-grammar.md)).
 
-> Provenance: `src/tychoc.c:208-240` (measure + INDENT/DEDENT),
+> Provenance: `src/tychoc.c:224-260` (measure + INDENT/DEDENT),
 > `:249@indentation too deep` (depth bound), `:525-526` (EOF flush).
 
 ## 3.5 Tokens
@@ -112,7 +112,7 @@ keywords. `or_return` is matched as a single word (it is not `or` followed by
 `_return`).
 
 > Provenance: the complete reserved set is exactly `keyword()`,
-> `src/tychoc.c:156-192`. There is no `while` keyword (the loop keyword is
+> `src/tychoc.c:165-207`. There is no `while` keyword (the loop keyword is
 > `for`, §4); there is no `char` or `void` type keyword (the `char` type arises
 > only from character literals and inference, and `void` is the implicit
 > no-return type).
@@ -202,7 +202,7 @@ relying on defined wraparound — §30). An integer literal adapts to
 a `float`, `u32`, `u64`, or `f32` context by the literal-adaptation rules of the
 type system (§8); it does not change the literal's syntax.
 
-> Provenance: `src/tychoc.c:279-285` (accumulation + overflow check).
+> Provenance: `src/tychoc.c:299-306` (accumulation + overflow check).
 
 ### 3.9.2 Float literals
 
@@ -233,8 +233,8 @@ Two disambiguation rules are normative:
   float, but for a different reason: the `.` is not followed by a digit, so no
   fractional part forms and it tokenizes as `INT(1) "." IDENT(e5)`.
 
-> Provenance: `src/tychoc.c:249-277`; the leading-dot predicate is
-> `tok_postfixable`, `:151-154`.
+> Provenance: `src/tychoc.c:269-294`; the leading-dot predicate is
+> `tok_postfixable`, `:160-163`.
 
 ### 3.9.3 Character literals
 
