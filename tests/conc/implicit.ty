@@ -6,7 +6,7 @@
 
 fn slow(n: int) -> int:
     acc := 0
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         acc = acc + i
     return acc
 
@@ -18,7 +18,7 @@ fn early(n: int) -> int:
 
 fn looper() -> int:
     total := 0
-    for i in range(6):
+    for i := 0; i < 6; i += 1:
         t := spawn slow(100)
         if i == 5:
             break           # break: pending t finished before the jump

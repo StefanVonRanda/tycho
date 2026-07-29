@@ -11,7 +11,7 @@ fn b2i(b: bool) -> int:
 
 fn vis(s: string) -> string:                   # make control bytes visible
     out := ""
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c == 10:
             out = out + "\\n"
@@ -25,11 +25,11 @@ fn vis(s: string) -> string:                   # make control bytes visible
 
 fn dump(rows: [[string]]) -> string:           # rows joined by " ; ", fields by "|"
     out := ""
-    for r in range(len(rows)):
+    for r := 0; r < len(rows); r += 1:
         if r > 0:
             out = out + " ; "
         row := rows[r]
-        for c in range(len(row)):
+        for c := 0; c < len(row); c += 1:
             if c > 0:
                 out = out + "|"
             out = out + vis(row[c])

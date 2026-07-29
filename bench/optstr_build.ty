@@ -9,7 +9,7 @@
 # guard for this is the differential fuzzer, which now generates [Option(string)].
 fn main():
     last := 0
-    for i in range(1000000):
+    for i := 0; i < 1000000; i += 1:
         a := [Some(str(i))]
         push(a, Some(str(i + 1)))
         push(a, None)

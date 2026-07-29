@@ -6,7 +6,7 @@ fn yn(b: bool) -> string:
 fn total(m: [string: float]) -> float:
     ks := keys(m)
     s := 0.0
-    for i in range(len(ks)):
+    for i := 0; i < len(ks); i += 1:
         s = s + m.get(ks[i], 0.0)
     return s
 

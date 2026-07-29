@@ -6,36 +6,36 @@
 # buffer). The checksum is only right if every transform saw the correct input.
 fn step(a: [int], add: int) -> [int]:
     b := []int
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         b2 := a[i] + add        # reads a (the OLD buffer) — must still be intact here
         push(b, b2 * 2 - add)
     return b
 
 fn scale(xs: [float], by: float) -> [float]:
     r := []float
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         push(r, xs[i] * by + 1.0)
     return r
 
 fn main():
     a := []int
-    for i in range(50):
+    for i := 0; i < 50; i += 1:
         push(a, i)
     # reassign-from-call in a loop: each pass recycles the previous a's buffer
-    for j in range(30):
+    for j := 0; j < 30; j += 1:
         a = step(a, j)
     s := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         s = s + a[i] - (s / 7) * 0
 
     # float path (the gate also covers [float])
     f := []float
-    for i in range(20):
+    for i := 0; i < 20; i += 1:
         push(f, to_float(i))
-    for j in range(10):
+    for j := 0; j < 10; j += 1:
         f = scale(f, 1.0)
     fs := 0
-    for i in range(len(f)):
+    for i := 0; i < len(f); i += 1:
         fs = fs + to_int(f[i])
 
     println("s=" + str(s - (s / 1000000007) * 1000000007))

@@ -1,13 +1,13 @@
 fn maxv(xs: [$T]) -> $T where comparable(T):
     m := xs[0]
-    for i in range(1, len(xs)):
+    for i := 1; i < len(xs); i += 1:
         if xs[i] > m:
             m = xs[i]
     return m
 
 fn sum(xs: [$T]) -> $T where numeric(T):
     total := xs[0]
-    for i in range(1, len(xs)):
+    for i := 1; i < len(xs); i += 1:
         total = total + xs[i]
     return total
 
@@ -21,7 +21,7 @@ fn show(x: $T) -> string where has_str(T):
 # -- the exact shape of core:sort's argsort, silently reddening `make corelib`.
 fn indices(xs: [$T]) -> [int] where comparable(T):
     r := []int
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         push(r, i)
     return r
 

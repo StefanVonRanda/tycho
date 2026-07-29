@@ -12,7 +12,7 @@ struct Pool:
 
 fn fill(p: bounded[CAP]int) -> int:
     total := 0
-    for i in range(0, len(p)):
+    for i := 0; i < len(p); i += 1:
         total = total + p[i]
     return total
 

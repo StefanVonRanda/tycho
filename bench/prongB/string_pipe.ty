@@ -9,13 +9,13 @@ fn main():
     kk := 256
     p := 1000003
     checksum := 0
-    for j in range(m):
+    for j := 0; j < m; j += 1:
         s := ""
-        for i in range(kk):
+        for i := 0; i < kk; i += 1:
             d := (i + j) - ((i + j) / 10) * 10
             s = s + ('0' + d)
         h := 0
-        for i in range(len(s)):
+        for i := 0; i < len(s); i += 1:
             h = h + s[i]
         ck := checksum + h
         checksum = ck - (ck / p) * p

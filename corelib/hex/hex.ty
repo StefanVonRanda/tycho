@@ -21,7 +21,7 @@ fn hex_digit(n: int, upper: bool) -> int:
 
 fn encode_impl(s: string, upper: bool) -> string:
     cs := []int                                # gather digits, materialize once (to_bytes/to_str)
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         b := s[i]
         push(cs, hex_digit(b / 16, upper))
         push(cs, hex_digit(b % 16, upper))
@@ -40,7 +40,7 @@ fn encode_upper(s: string) -> string:
 # case. A trailing odd nibble is dropped. See the byte-safety caveat above.
 fn decode(s: string) -> string:
     nibs := []int
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         v := char.hex_val(s[i])
         if v >= 0:
             push(nibs, v)
@@ -58,7 +58,7 @@ fn is_valid(s: string) -> bool:
     n := len(s)
     if n % 2 != 0:
         return false
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         if char.hex_val(s[i]) < 0:
             return false
     return true

@@ -43,7 +43,7 @@ fn main():
             push(stack, n.edges[i])
             i = i - 1
     joined := ""
-    for i in range(len(order)):
+    for i := 0; i < len(order); i += 1:
         if i > 0:
             joined = joined + ","
         joined = joined + order[i]

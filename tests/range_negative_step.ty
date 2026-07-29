@@ -1,13 +1,22 @@
-# range() with a negative step must count down (sign-aware loop condition).
-# Regression: tychoc0 hardcoded `i < stop`, so range(3, 0, -1) never ran.
+# A descending three-clause loop must count down: `i > stop` with a decreasing
+# post clause, and it must run zero times when start == stop.
+#
+# HISTORY: this was `range()`-with-a-negative-step until 2026-07-29. The
+# original regression it caught was tychoc0 hardcoding `i < stop`, so
+# range(3, 0, -1) never ran. Phase 6 of plan.md rewrote the three descending
+# sites to `for i := a; i > b; i -= s:` — the same iteration sequences and the
+# SAME golden, which is what makes the rewrite checkable. Note the direction is
+# now spelled by the author in the condition rather than inferred from the sign
+# of a step, so the class of bug this file was written for cannot recur here;
+# what it guards now is that the author-written descending form works.
 fn main():
-    for i in range(3, 0, -1):
+    for i := 3; i > 0; i -= 1:
         print(str(i))
-    for i in range(10, 0, -3):
+    for i := 10; i > 0; i -= 3:
         print(str(i))
-    for i in range(0, 3):
+    for i := 0; i < 3; i += 1:
         print(str(i))
     n := 0
-    for i in range(5, 5, -1):
+    for i := 5; i > 5; i -= 1:
         n = n + 1
     print("empty " + str(n))

@@ -23,14 +23,14 @@ fn sumv(t: Tree) -> int:
 
 fn build(n: int) -> Tree:
     t := Leaf(0)
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         t = Pair(t, Leaf(i + 1))    # self-rebuild -> loop-carried move
     return t
 
 fn build_snap(n: int) -> int:
     t := Leaf(0)
     snap := Leaf(0)
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         t = Pair(t, Leaf(i + 1))
         if i == 2:
             snap = t                # deep-copied snapshot, frozen at 4 leaves

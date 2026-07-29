@@ -8,16 +8,16 @@
 # Regression: both compilers once printed ~100004950 here (b's buffer reused).
 fn mkv(n: int, base: int) -> [int]:
     r := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, base + i)
     return r
 
 fn main():
     a := mkv(100, 0)        # b will be 0..99 (sum 4950)
     b := a                  # may move a's buffer to b (a read exactly once)
-    for j in range(50):
+    for j := 0; j < 50; j += 1:
         a = mkv(100, 1000000)   # distinct values, same size: would clobber b if reused
     s := 0
-    for i in range(len(b)):
+    for i := 0; i < len(b); i += 1:
         s = s + b[i]        # 4950 iff b's buffer was left intact
     println(str(s))

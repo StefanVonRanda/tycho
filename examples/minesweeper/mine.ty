@@ -29,7 +29,7 @@ fn xnext(s: int) -> int:               # LCG, fits 63 bits, no overflow/mask nee
 fn place_mines(g: inout Game):
     r := g.rng
     placed := 0
-    for tries in range(0, 1000000):
+    for tries := 0; tries < 1000000; tries += 1:
         if placed >= g.nmines:
             break
         r = xnext(r)
@@ -40,11 +40,11 @@ fn place_mines(g: inout Game):
     g.rng = r
 
 fn compute_counts(g: inout Game):
-    for y in range(0, g.h):
-        for x in range(0, g.w):
+    for y := 0; y < g.h; y += 1:
+        for x := 0; x < g.w; x += 1:
             c := 0
-            for dy in range(0 - 1, 2):
-                for dx in range(0 - 1, 2):
+            for dy := 0 - 1; dy < 2; dy += 1:
+                for dx := 0 - 1; dx < 2; dx += 1:
                     nx := x + dx
                     ny := y + dy
                     if nx >= 0 and nx < g.w and ny >= 0 and ny < g.h:
@@ -57,7 +57,7 @@ fn new_game(w: int, h: int, nmines: int, seed: int) -> Game:
     cnt := []int
     shown := []int
     flag := []int
-    for i in range(0, w * h):
+    for i := 0; i < w * h; i += 1:
         push(mine, 0)
         push(cnt, 0)
         push(shown, 0)
@@ -80,8 +80,8 @@ fn reveal(g: inout Game, x: int, y: int):
         g.state = 2
         return
     if g.cnt[idx] == 0:
-        for dy in range(0 - 1, 2):
-            for dx in range(0 - 1, 2):
+        for dy := 0 - 1; dy < 2; dy += 1:
+            for dx := 0 - 1; dx < 2; dx += 1:
                 if not (dx == 0 and dy == 0):
                     reveal(&g, x + dx, y + dy)
 
@@ -89,7 +89,7 @@ fn check_win(g: inout Game):
     if g.state != 0:
         return
     hidden_safe := 0
-    for i in range(0, g.w * g.h):
+    for i := 0; i < g.w * g.h; i += 1:
         if g.mine[i] == 0 and g.shown[i] == 0:
             hidden_safe = hidden_safe + 1
     if hidden_safe == 0:
@@ -109,7 +109,7 @@ fn toggle_flag(g: inout Game, x: int, y: int):
 
 fn count_flags(g: Game) -> int:
     c := 0
-    for i in range(0, g.w * g.h):
+    for i := 0; i < g.w * g.h; i += 1:
         if g.flag[i] == 1:
             c = c + 1
     return c
@@ -117,8 +117,8 @@ fn count_flags(g: Game) -> int:
 # one cell -> a 3-char field. cursor cell is bracketed when show_cursor.
 fn render(g: Game, show_cursor: bool, reveal_all: bool) -> string:
     out := ""
-    for y in range(0, g.h):
-        for x in range(0, g.w):
+    for y := 0; y < g.h; y += 1:
+        for x := 0; x < g.w; x += 1:
             idx := y * g.w + x
             ch := "."
             if g.flag[idx] == 1 and g.shown[idx] == 0:
@@ -151,7 +151,7 @@ fn run_demo():
     print(render(g, false, false))
     println("")
     # reveal the first empty (count-0) cell -> triggers the flood fill
-    for i in range(0, g.w * g.h):
+    for i := 0; i < g.w * g.h; i += 1:
         if g.mine[i] == 0 and g.cnt[i] == 0:
             play_reveal(&g, i % g.w, i / g.w)
             break
@@ -164,7 +164,7 @@ fn run_demo():
     println("")
     # step on the first UNFLAGGED mine -> loss (a flagged mine is protected from
     # reveal, so we must pick one we didn't flag); show the whole board
-    for i in range(0, g.w * g.h):
+    for i := 0; i < g.w * g.h; i += 1:
         if g.mine[i] == 1 and g.flag[i] == 0:
             play_reveal(&g, i % g.w, i / g.w)
             break
@@ -174,7 +174,7 @@ fn run_demo():
         println("result: LOSS")
     println("\n=== game B: 5x5, 3 mines, seed 7 (clear all safe cells) ===\n")
     gb := new_game(5, 5, 3, 7)
-    for i in range(0, gb.w * gb.h):
+    for i := 0; i < gb.w * gb.h; i += 1:
         if gb.mine[i] == 0:
             play_reveal(&gb, i % gb.w, i / gb.w)
     print(render(gb, false, false))
@@ -186,7 +186,7 @@ fn run_play():
     g := new_game(12, 9, 15, 12345)
     esc := chr(27)
     clear := esc + "[2J" + esc + "[H"
-    for tick in range(0, 1000000):
+    for tick := 0; tick < 1000000; tick += 1:
         print(clear + render(g, true, g.state == 2) + status(g))
         if g.state != 0:
             break

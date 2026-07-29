@@ -11,7 +11,7 @@ fn main():
     # build the document: [ {"id":i,"cat":i%32,"amt":(i*P)%1000,"name":"u<i%1000>"}, ... ]
     doc := "["
     i := 0
-    for i in range(0, n):
+    for i := 0; i < n; i += 1:
         if i > 0:
             doc = doc + ","
         doc = doc + "{\"id\":" + str(i) + ",\"cat\":" + str(i % 32) + ",\"amt\":" + str((i * 2654435761) % 1000) + ",\"name\":\"u" + str(i % 1000) + "\"}"
@@ -22,7 +22,7 @@ fn main():
     acc := 0
     m := json.len_of(j)
     k := 0
-    for k in range(0, m):
+    for k := 0; k < m; k += 1:
         e := json.at(j, k)
         acc = acc + json.as_num(json.get(e, "id")) + json.as_num(json.get(e, "cat")) + json.as_num(json.get(e, "amt")) + json.len_of(json.get(e, "name"))
     println(str(acc))

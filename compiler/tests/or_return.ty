@@ -26,7 +26,7 @@ fn first_two(xs: [int]) -> Result([int], string):
 fn doubled_head(xs: [int]) -> Result([int], string):
     h := first_two(xs) or_return
     out := []int
-    for i in range(len(h)):
+    for i := 0; i < len(h); i += 1:
         push(out, h[i] * 2)
     return Ok(out)
 

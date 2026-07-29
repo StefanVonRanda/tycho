@@ -34,11 +34,11 @@ fn main():
     # reduce into total/inset. Interleaving-independent -> deterministic.
     total := 0
     inset := 0
-    parallel for py in range(h):
+    parallel for py in 0..<h:
         cy := ymin + (ymax - ymin) * to_float(py) / to_float(h)
         rowsum := 0
         rowin := 0
-        for px in range(w):
+        for px := 0; px < w; px += 1:
             cx := xmin + (xmax - xmin) * to_float(px) / to_float(w)
             e := escape(cx, cy, maxit)
             rowsum = rowsum + e
@@ -52,9 +52,9 @@ fn main():
     pw := 74
     ph := 30
     art := ""
-    for ry in range(ph):
+    for ry := 0; ry < ph; ry += 1:
         cy := ymin + (ymax - ymin) * to_float(ry) / to_float(ph)
-        for rx in range(pw):
+        for rx := 0; rx < pw; rx += 1:
             cx := xmin + (xmax - xmin) * to_float(rx) / to_float(pw)
             e := escape(cx, cy, maxit)
             idx := e * 9 / maxit

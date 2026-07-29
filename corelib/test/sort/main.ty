@@ -4,7 +4,7 @@ import "core:sort"
 
 fn jn(xs: [int]) -> string:
     r := ""
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if i > 0:
             r = r + ","
         r = r + str(xs[i])
@@ -26,7 +26,7 @@ fn main():
     counts := [3, 7, 1]
     ord := sort.argsort_desc(counts)
     line := ""
-    for i in range(len(ord)):
+    for i := 0; i < len(ord); i += 1:
         line = line + words[ord[i]] + ":" + str(counts[ord[i]]) + " "
     println(line)                                     # fox:7 the:3 jumps:1
     # by_key with a closure: sort by distance from 50

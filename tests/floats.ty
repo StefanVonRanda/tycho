@@ -7,7 +7,7 @@ fn mag2(v: Vec) -> float:
 
 fn avg(xs: [int]) -> float:
     total := 0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         total = total + xs[i]
     return to_float(total) / to_float(len(xs))
 

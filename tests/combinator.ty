@@ -26,7 +26,7 @@ fn many(p: fn(string, int) -> PR) -> fn(string, int) -> PR:
 fn many_run(p: fn(string, int) -> PR, s: string, pos: int) -> PR:
     acc := ""
     cur := pos
-    for tick in range(0, 1000000):
+    for tick := 0; tick < 1000000; tick += 1:
         r := p(s, cur)
         if not r.ok or r.pos == cur:     # failed, or matched empty -> stop (no infinite loop)
             break

@@ -9,13 +9,13 @@ fn fib(n: int) -> int:
 
 fn shout(s: string, n: int) -> string:
     acc := ""
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         acc = acc + s
     return acc
 
 fn sum(xs: [int]) -> int:
     t := 0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         t = t + xs[i]
     return t
 

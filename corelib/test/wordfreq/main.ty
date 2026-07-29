@@ -28,7 +28,7 @@ fn main():
     for w in words:
         push(nums, counts.get(w, 0))
     ord := sort.argsort_desc(nums)
-    for i in range(len(ord)):
+    for i := 0; i < len(ord); i += 1:
         if nums[ord[i]] > 1:
             println(words[ord[i]] + " " + str(nums[ord[i]]))
     println(f"unique={len(words)}")

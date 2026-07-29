@@ -43,15 +43,15 @@ fn digest(msg: string) -> [int]:
     # --- pad: message, 0x80, zeros to 56 mod 64, then 64-bit LE bit length ---
     n := len(msg)
     buf := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(buf, msg[i])
     push(buf, 128)
     zeros := (56 - (len(buf) % 64) + 64) % 64
-    for i in range(zeros):
+    for i := 0; i < zeros; i += 1:
         push(buf, 0)
     bitlen := n * 8
     bl := bitlen
-    for i in range(8):
+    for i := 0; i < 8; i += 1:
         push(buf, bl % 256)
         bl = bl / 256
 
@@ -122,6 +122,6 @@ fn digest(msg: string) -> [int]:
 fn hex(msg: string) -> string:
     b := digest(msg)
     out := ""
-    for i in range(16):
+    for i := 0; i < 16; i += 1:
         out = out + hex2(b[i])
     return out

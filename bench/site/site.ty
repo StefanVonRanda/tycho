@@ -13,7 +13,7 @@
 
 fn atoi(s: string) -> int:
     v := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 48 and c <= 57:
             v = v * 10 + (c - 48)
@@ -22,14 +22,14 @@ fn atoi(s: string) -> int:
 fn sw(s: string, p: string) -> bool:       # starts_with, inlined
     if len(s) < len(p):
         return false
-    for i in range(len(p)):
+    for i := 0; i < len(p); i += 1:
         if s[i] != p[i]:
             return false
     return true
 
 fn esc(s: string) -> string:               # & < > -> entities
     out := ""
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c == 38:
             out = out + "&amp;"
@@ -45,7 +45,7 @@ fn render(body: string) -> string:         # block-level Markdown subset -> HTML
     out := ""
     in_list := false
     lines := split(body, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         t := lines[i]
         if len(t) == 0:
             if in_list:
@@ -84,10 +84,10 @@ fn main():
         n := atoi(a[2])
         fnv := 2166136261
         total := 0
-        for i in range(n):
+        for i := 0; i < n; i += 1:
             html := render(read_file(dir + "/" + str(i) + ".md"))
             j := 0
-            for j in range(len(html)):
+            for j := 0; j < len(html); j += 1:
                 fnv = (fnv ^ html[j]) % 4294967296
                 fnv = (fnv * 16777619) % 4294967296
             total = total + len(html)

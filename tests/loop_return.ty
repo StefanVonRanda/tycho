@@ -6,9 +6,9 @@
 # sanitizer build sees no use-after-free from the added frees.
 
 fn squares(target: int, n: int) -> [int]:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         r := []int
-        for j in range(i + 1):
+        for j := 0; j < i + 1; j += 1:
             push(r, j * j)
         if i == target:
             return r              # return a heap [int] from inside two loops
@@ -26,7 +26,7 @@ fn count_down(start: int) -> int:
 fn main():
     xs := squares(3, 10)             # i=3 -> [0, 1, 4, 9]
     s := ""
-    for idx in range(len(xs)):
+    for idx := 0; idx < len(xs); idx += 1:
         s = s + str(xs[idx]) + " "
     println(s)               # "0 1 4 9 "
     println("len(squares(7,10))=" + str(len(squares(7, 10))))   # 8 elements

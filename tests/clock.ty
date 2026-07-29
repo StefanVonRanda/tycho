@@ -5,7 +5,7 @@
 fn main():
     t0 := clock()
     s := 0
-    for i in range(100000):
+    for i := 0; i < 100000; i += 1:
         s = s + i
     dt := clock() - t0
     println("sum=" + str(s))

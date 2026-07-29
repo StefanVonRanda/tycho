@@ -10,7 +10,7 @@ struct Item:
 
 fn main():
     last := 0
-    for i in range(1000000):
+    for i := 0; i < 1000000; i += 1:
         a := [Item("x" + str(i), i)]
         push(a, Item("y" + str(i), i))
         push(a, Item("z" + str(i), i))

@@ -124,7 +124,7 @@ fn parse_value(s: string, n: int, pos: inout int) -> Json:
 
 fn esc(s: string) -> string:
     out := ""
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c == 34:
             out = out + "\\\""
@@ -154,14 +154,14 @@ fn to_json(j: Json) -> string:
             return "\"" + esc(s) + "\""
         JArr(xs):
             out := "["
-            for i in range(len(xs)):
+            for i := 0; i < len(xs); i += 1:
                 if i > 0:
                     out = out + ","
                 out = out + to_json(xs[i])
             return out + "]"
         JObj(ks, vs):
             out := "{"
-            for i in range(len(ks)):
+            for i := 0; i < len(ks); i += 1:
                 if i > 0:
                     out = out + ","
                 out = out + "\"" + esc(ks[i]) + "\":" + to_json(vs[i])
@@ -170,7 +170,7 @@ fn to_json(j: Json) -> string:
 fn get(j: Json, key: string) -> Json:
     match j:
         JObj(ks, vs):
-            for i in range(len(ks)):
+            for i := 0; i < len(ks); i += 1:
                 if ks[i] == key:
                     return vs[i]
             return JNull
@@ -246,7 +246,7 @@ fn starts_with(s: string, p: string) -> bool:
 
 fn digits_to_int(s: string) -> int:
     v := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 48 and c <= 57:
             v = v * 10 + (c - 48)
@@ -315,7 +315,7 @@ fn path_base(p: string) -> string:
 # file:// uri are attacker-shaped -- never interpolate them raw into a command).
 fn shq(s: string) -> string:
     out := "'"
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         if s[i] == 39:                                  # 39 = single quote
             out = out + "'\\''"
         else:
@@ -325,7 +325,7 @@ fn shq(s: string) -> string:
 # does the buffer declare a package? (only the first non-blank/comment line can)
 fn has_package(text: string) -> bool:
     lines := split(text, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         s := ltrim(lines[i])
         if s == "" or starts_with(s, "#"):
             continue
@@ -372,7 +372,7 @@ fn diagnose(uri: string, text: string, cc: string):
     diags := ""
     nd := 0
     elines := split(errtext, "\n")
-    for i in range(len(elines)):
+    for i := 0; i < len(elines); i += 1:
         el := elines[i]
         if starts_with(el, tmp):                       # a diagnostic header (not a snippet/caret line)
             sev := 1
@@ -453,7 +453,7 @@ fn def_matches(line: string, kw: string, name: string) -> bool:
 # 0-based line where `name` is defined (fn/struct/enum/type), else -1
 fn find_def(text: string, name: string) -> int:
     lines := split(text, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         s := lines[i]
         if def_matches(s, "fn", name) or def_matches(s, "struct", name) or def_matches(s, "enum", name) or def_matches(s, "type", name):
             return i
@@ -461,7 +461,7 @@ fn find_def(text: string, name: string) -> int:
 
 # document store: parallel arrays uri -> (buffer text, --symbols index, project index)
 fn doc_set(uris: inout [string], texts: inout [string], syms: inout [string], projs: inout [string], uri: string, text: string, sym: string, proj: string):
-    for i in range(len(uris)):
+    for i := 0; i < len(uris); i += 1:
         if uris[i] == uri:
             texts[i] = text
             syms[i] = sym
@@ -473,7 +473,7 @@ fn doc_set(uris: inout [string], texts: inout [string], syms: inout [string], pr
     push(projs, proj)
 
 fn doc_get(uris: [string], arr: [string], uri: string) -> string:
-    for i in range(len(uris)):
+    for i := 0; i < len(uris); i += 1:
         if uris[i] == uri:
             return arr[i]
     return ""
@@ -498,7 +498,7 @@ fn uri_to_path(uri: string) -> string:
 
 fn has_import(text: string) -> bool:
     lines := split(text, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         if starts_with(ltrim(lines[i]), "import "):
             return true
     return false
@@ -554,7 +554,7 @@ fn pkg_members(projs: string, pkg: string) -> string:
     lines := split(projs, "\n")
     out := ""
     nd := 0
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 4 and f[0] == "fn" and starts_with(f[1], prefix):
             member := substr(f[1], len(prefix), len(f[1]))
@@ -569,7 +569,7 @@ fn pkg_members(projs: string, pkg: string) -> string:
 fn pkg_fn_sig(projs: string, pkg: string, member: string) -> string:
     want := pkg + "__" + member
     lines := split(projs, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 4 and f[0] == "fn" and f[1] == want:
             return demangle_sig(f[3], pkg)
@@ -580,7 +580,7 @@ fn pkg_fn_sig(projs: string, pkg: string, member: string) -> string:
 fn sym_enclosing_fn(syms: string, cl: int) -> int:
     lines := split(syms, "\n")
     best := 0 - 1
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 3 and f[0] == "fn":
             fl := digits_to_int(f[2])
@@ -591,7 +591,7 @@ fn sym_enclosing_fn(syms: string, cl: int) -> int:
 # type of param `name` in the function whose start line is `fnline`, or ""
 fn sym_param_type(syms: string, name: string, fnline: int) -> string:
     lines := split(syms, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 4 and f[0] == "param" and f[1] == name and digits_to_int(f[3]) == fnline:
             return f[2]
@@ -662,11 +662,11 @@ fn call_sig_query(text: string, line: int, ch: int) -> string:
 # resolved description of a top-level `name` (fn sig / struct / enum / type), or ""
 fn sym_describe(syms: string, name: string) -> string:
     lines := split(syms, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 4 and f[0] == "fn" and f[1] == name:
             return f[3]
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 2 and f[1] == name:
             if f[0] == "struct":
@@ -680,7 +680,7 @@ fn sym_describe(syms: string, name: string) -> string:
 # 0-based def line of a top-level `name` (fn/struct/enum) from the index, or -1
 fn sym_def_line(syms: string, name: string) -> int:
     lines := split(syms, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 3 and f[1] == name and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
             return digits_to_int(f[2]) - 1
@@ -689,7 +689,7 @@ fn sym_def_line(syms: string, name: string) -> int:
 # inferred type of local `name` in the function whose start line is `fnline`, or ""
 fn sym_local_type(syms: string, name: string, fnline: int) -> string:
     lines := split(syms, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 4 and f[0] == "local" and f[1] == name and digits_to_int(f[3]) == fnline:
             return f[2]
@@ -698,7 +698,7 @@ fn sym_local_type(syms: string, name: string, fnline: int) -> string:
 # 0-based decl line of local `name` in the function at `fnline`, or -1
 fn sym_local_defline(syms: string, name: string, fnline: int) -> int:
     lines := split(syms, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 5 and f[0] == "local" and f[1] == name and digits_to_int(f[3]) == fnline:
             return digits_to_int(f[4]) - 1
@@ -782,7 +782,7 @@ fn find_occurrences(text: string, name: string) -> [int]:
     out := []int
     inraw := false                                         # inside a `...` raw literal that opened on an earlier line
     lines := split(text, "\n")
-    for li in range(len(lines)):
+    for li := 0; li < len(lines); li += 1:
         s := lines[li]
         n := len(s)
         c := 0
@@ -884,7 +884,7 @@ fn name_end_col(s: string, name: string) -> int:
 # append space-separated `words` as completion items of `kind`
 fn add_items_from(words: string, kind: int, out: inout string, nd: inout int):
     ws := split(words, " ")
-    for wi in range(len(ws)):
+    for wi := 0; wi < len(ws); wi += 1:
         w := ws[wi]
         if w != "":
             if nd > 0:
@@ -903,7 +903,7 @@ fn handle_document_symbol(id: Json, uris: [string], syms: [string], params: Json
     out := ""
     nd := 0
     lines := split(sx, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 3 and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
             kind := 12                                     # SymbolKind.Function
@@ -921,7 +921,7 @@ fn handle_document_symbol(id: Json, uris: [string], syms: [string], params: Json
 # ASCII-lowercased copy, for case-insensitive workspace-symbol matching
 fn lower(s: string) -> string:
     out := ""
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 65 and c <= 90:
             c = c + 32
@@ -936,12 +936,12 @@ fn handle_workspace_symbol(id: Json, uris: [string], syms: [string], params: Jso
     q := lower(as_str(get(params, "query")))
     out := ""
     nd := 0
-    for u in range(len(uris)):
+    for u := 0; u < len(uris); u += 1:
         uri := uris[u]
         if uri == "":
             continue
         lines := split(syms[u], "\n")
-        for i in range(len(lines)):
+        for i := 0; i < len(lines); i += 1:
             f := split(lines[i], "\t")
             if len(f) >= 3 and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
                 if q != "" and find(lower(f[1]), q) < 0:
@@ -977,7 +977,7 @@ fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], 
     out := ""
     nd := 0
     lines := split(sx, "\n")
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         f := split(lines[i], "\t")
         if len(f) >= 4 and (f[0] == "local" or f[0] == "param") and digits_to_int(f[3]) == efn:
             if nd > 0:
@@ -1135,7 +1135,7 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
     slines := split(sx, "\n")
     out := ""
     nd := 0
-    for i in range(len(slines)):
+    for i := 0; i < len(slines); i += 1:
         f := split(slines[i], "\t")
         if len(f) >= 5 and f[0] == "local":
             l0 := digits_to_int(f[4]) - 1                  # decl line, 0-based
@@ -1180,7 +1180,7 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
     pchar := 0
     inraw := false                                   # inside a `...` raw literal opened on an earlier line
     lines := split(text, "\n")
-    for li in range(len(lines)):
+    for li := 0; li < len(lines); li += 1:
         s := lines[li]
         n := len(s)
         i := 0

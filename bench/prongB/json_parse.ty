@@ -114,14 +114,14 @@ fn walk(j: Json) -> int:                 # node count + numbers + string/key byt
             return 1
         JArr(xs):
             t := 1
-            for i in range(len(xs)):
+            for i := 0; i < len(xs); i += 1:
                 t = t + walk(xs[i])
             return t
         JObj(ks, vs):
             t := 1
-            for i in range(len(ks)):
+            for i := 0; i < len(ks); i += 1:
                 t = t + len(ks[i])
-            for i in range(len(vs)):
+            for i := 0; i < len(vs); i += 1:
                 t = t + walk(vs[i])
             return t
 

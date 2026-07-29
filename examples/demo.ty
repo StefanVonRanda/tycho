@@ -19,11 +19,11 @@ fn main():
     countdown(5)
 
     println("squares:")
-    for i in range(1, 6):            # counting form
+    for i := 1; i < 6; i += 1:            # counting form
         println("  " + str(i) + "^2 = " + str(i * i))
 
     print("evens 0..10: ")
-    for i in range(0, 11, 2):
+    for i := 0; i < 11; i += 2:
         print(str(i) + " ")
     println("")
 

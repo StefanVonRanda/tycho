@@ -34,7 +34,7 @@ fn main():
     push(data, 3)
     push(data, 7)
     i := 0
-    for i in range(0, len(data)):
+    for i := 0; i < len(data); i += 1:
         h[data[i]] = h.get(data[i], 0) + 1
     println("h3=" + str(h.get(3, 0)) + " h7=" + str(h.get(7, 0)))   # 3 2
     sumk := 0

@@ -22,11 +22,11 @@ fn use_reg(r: register) -> int:       # keyword-named struct as a parameter type
 fn main():
     hs := 0                           # var `hs` (runtime helper name)
     default := 3                      # C keyword as a variable
-    for case in range(default):       # loop var `case` (C keyword)
+    for case := 0; case < default; case += 1:       # loop var `case` (C keyword)
         hs = hs + 1
     scopy := ""                       # string accumulator named like the runtime `scopy`
     static := 4                       # C keyword
-    for union in range(static):       # loop var `union` (C keyword)
+    for union := 0; union < static; union += 1:       # loop var `union` (C keyword)
         scopy = scopy + "x"
     b := Vv(sc(static))               # call user `sc`; construct the keyword-named enum
     i2s := 0                          # var `i2s` (runtime helper name)

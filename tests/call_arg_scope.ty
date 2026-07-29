@@ -6,7 +6,7 @@
 
 fn build(n: int) -> [int]:
     r := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, i * 10)
     return r
 
@@ -25,6 +25,6 @@ fn main():
 
     # loop: transient arg each iteration, result stored to an outer heap var
     last := []int
-    for i in range(5):
+    for i := 0; i < 5; i += 1:
         last = echo(build(i + 1))   # build(i+1) is a transient; last gets a copy
     println("last_len=" + str(len(last)) + " last0=" + str(last[0]))  # 5, 0

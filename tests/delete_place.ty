@@ -17,7 +17,7 @@ fn main():
     ks := keys(c.idx)
     out := ""
     i := 0
-    for i in range(0, len(ks)):
+    for i := 0; i < len(ks); i += 1:
         out = out + str(ks[i]) + "=" + str(c.idx[ks[i]]) + " "
     println(out)              # 1=10 3=30 2=99
 

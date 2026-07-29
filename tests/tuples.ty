@@ -11,7 +11,7 @@ fn stats(xs: [int]) -> (int, int, int):       # min, max, sum
     lo := xs[0]
     hi := xs[0]
     total := 0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if xs[i] < lo:
             lo = xs[i]
         if xs[i] > hi:
@@ -21,7 +21,7 @@ fn stats(xs: [int]) -> (int, int, int):       # min, max, sum
 
 fn labelled(xs: [int]) -> (string, [int]):    # heap element: a label + a buffer
     ys := []int
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         push(ys, xs[i] * 2)
     return "doubled", ys
 

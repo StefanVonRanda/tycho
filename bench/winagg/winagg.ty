@@ -13,10 +13,10 @@ fn main():
     seed := 1
     checksum := 0
     win := 0
-    for win in range(nw):
+    for win := 0; win < nw; win += 1:
         m := []int: [int]                                   # fresh per-window map (transient)
         e := 0
-        for e in range(w):
+        for e := 0; e < w; e += 1:
             seed = (seed * 1103515245 + 12345) % 2147483647 # LCG, stays in [0, 2^31)
             gid := seed % g
             v := (seed / g) % 100
@@ -24,11 +24,11 @@ fn main():
         # reduce the window: order-independent sum of list lengths + values over all groups
         ks := keys(m)
         ki := 0
-        for ki in range(len(ks)):
+        for ki := 0; ki < len(ks); ki += 1:
             lst := m.get(ks[ki], []int)
             checksum = checksum + len(lst)
             li := 0
-            for li in range(len(lst)):
+            for li := 0; li < len(lst); li += 1:
                 checksum = checksum + lst[li]
         # m (and ks/lst) go out of scope here -> the arena frees the whole window in bulk
     println("windows=" + str(nw) + " checksum=" + str(checksum))

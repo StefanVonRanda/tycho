@@ -18,7 +18,7 @@ fn main():
 
     p.slots[1] = 99                       # index set
     total := 0
-    for i in range(0, len(p.slots)):      # iterate by index
+    for i := 0; i < len(p.slots); i += 1:      # iterate by index
         total = total + p.slots[i]
     println("total " + str(total))
 

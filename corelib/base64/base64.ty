@@ -98,7 +98,7 @@ fn encode_url(s: string) -> string:
 # See the BYTE-SAFETY CAVEAT above re: 0x00 in the decoded plaintext.
 fn decode(s: string) -> string:
     vals := []int                      # gather the 6-bit values
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         v := dec_val(s[i])
         if v >= 0:
             push(vals, v)

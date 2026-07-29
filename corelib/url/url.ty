@@ -35,7 +35,7 @@ fn up_hex(n: int) -> int:                  # nibble (0..15) -> uppercase hex byt
 
 fn encode_impl(s: string, plus_space: bool) -> string:
     cs := []int                                # gather the output bytes, materialize once
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if is_unreserved(c):
             push(cs, c)

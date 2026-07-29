@@ -117,7 +117,7 @@ fn parse_value(s: string, n: int, pos: inout int) -> Json:
 
 fn esc(s: string) -> string:                   # minimal string escaping
     out := ""
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c == 34:
             out = out + "\\\""
@@ -145,7 +145,7 @@ fn to_json(j: Json) -> string:
             return "\"" + esc(s) + "\""
         JArr(xs):
             out := "["
-            for i in range(len(xs)):
+            for i := 0; i < len(xs); i += 1:
                 if i > 0:
                     out = out + ","
                 out = out + to_json(xs[i])
@@ -198,7 +198,7 @@ fn count_nums(j: Json) -> int:                  # recursive walk: sum every numb
             return x
         JArr(xs):
             t := 0
-            for i in range(len(xs)):
+            for i := 0; i < len(xs); i += 1:
                 t = t + count_nums(xs[i])
             return t
         JObj(m):

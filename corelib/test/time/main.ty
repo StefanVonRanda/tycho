@@ -7,7 +7,7 @@ import "core:time"
 fn main():
     sw := time.start()
     s := 0
-    for i in range(1000000):
+    for i := 0; i < 1000000; i += 1:
         s = s + i
     println(f"sum={s}")
     println(f"elapsed_ns_nonneg={time.elapsed_ns(sw) >= 0}")

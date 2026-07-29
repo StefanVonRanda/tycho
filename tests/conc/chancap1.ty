@@ -16,7 +16,7 @@ fn drain(ch: Channel(int)) -> int:
 fn main():
     ch := channel(int, 1)
     co := spawn drain(ch)
-    for i in range(11):
+    for i := 0; i < 11; i += 1:
         send(ch, i + 17)
     close(ch)
     a := wait(co)

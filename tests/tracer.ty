@@ -63,7 +63,7 @@ fn clamp01(x: float) -> float:
 fn ray_color(r: Ray, spheres: [Sphere], light: Vec3) -> Vec3:
     best := 1000000.0
     hi := 0 - 1
-    for k in range(0, len(spheres)):
+    for k := 0; k < len(spheres); k += 1:
         t := hit_sphere(spheres[k], r)
         if t > 0.001 and t < best:
             best = t
@@ -94,8 +94,8 @@ fn render_ascii(w: int, h: int, spheres: [Sphere], light: Vec3) -> string:
     ramp := " .:-=+*#%@"
     aspect := to_float(w) / to_float(h) * 0.62   # chars are ~2x tall as wide
     out := ""
-    for j in range(0, h):
-        for i in range(0, w):
+    for j := 0; j < h; j += 1:
+        for i := 0; i < w; i += 1:
             u := (to_float(i) + 0.5) / to_float(w)
             v := (to_float(j) + 0.5) / to_float(h)
             px := (2.0 * u - 1.0) * aspect
@@ -115,8 +115,8 @@ fn render_ascii(w: int, h: int, spheres: [Sphere], light: Vec3) -> string:
 fn render_ppm(w: int, h: int, spheres: [Sphere], light: Vec3) -> string:
     aspect := to_float(w) / to_float(h)
     out := "P3\n" + str(w) + " " + str(h) + "\n255\n"
-    for j in range(0, h):
-        for i in range(0, w):
+    for j := 0; j < h; j += 1:
+        for i := 0; i < w; i += 1:
             u := (to_float(i) + 0.5) / to_float(w)
             v := (to_float(j) + 0.5) / to_float(h)
             px := (2.0 * u - 1.0) * aspect

@@ -7,7 +7,7 @@ fn main():
     w := 50000
     ring := []string
     i := 0
-    for i in range(w):
+    for i := 0; i < w; i += 1:
         push(ring, "")
     acc := 0
     i = 0

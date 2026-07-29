@@ -37,7 +37,7 @@ fn main():
 
     println("npos   = " + str(cli.count(c)))
     ps := cli.positionals(c)
-    for i in range(len(ps)):
+    for i := 0; i < len(ps); i += 1:
         println("pos[" + str(i) + "]= " + ps[i])
 
     # edge cases: empty argv, and a repeated option (last wins).
@@ -80,7 +80,7 @@ fn main():
     println("spec nmiss = " + str(len(cli.missing(sp))))
     println("spec nunk  = " + str(len(cli.unknown(sp))))
     sps := cli.positionals(sp)
-    for i in range(len(sps)):
+    for i := 0; i < len(sps); i += 1:
         println("spec pos[" + str(i) + "]= " + sps[i])
 
     # the SAME options, `=`-attached throughout: parse_spec must agree with
@@ -115,7 +115,7 @@ fn main():
     up := cli.parse_spec(u, valued, boolean)
     println("unk n      = " + str(len(cli.unknown(up))))
     uks := cli.unknown(up)
-    for i in range(len(uks)):
+    for i := 0; i < len(uks); i += 1:
         println("unk[" + str(i) + "]    = " + uks[i])
 
     # a valued option swallows the next argument whatever it looks like (getopt).

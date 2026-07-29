@@ -2,7 +2,7 @@
 
 fn join(parts: [string], sep: string) -> string:
     out := ""
-    for i in range(0, len(parts)):
+    for i := 0; i < len(parts); i += 1:
         if i > 0:
             out = out + sep
         out = out + parts[i]
@@ -17,6 +17,6 @@ fn main():
 
     # build a [string] across a loop, then join it back
     tags := []string
-    for i in range(0, 3):
+    for i := 0; i < 3; i += 1:
         push(tags, "tag" + str(i))   # each pushed string is copied into tags' arena
     println("csv: " + join(tags, ","))       # tag0,tag1,tag2

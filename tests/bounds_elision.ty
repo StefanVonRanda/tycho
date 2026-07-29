@@ -1,34 +1,41 @@
-# Bounds-check elision (tychoc): `for i in range(len(A)):` makes A[i] provably
-# in-range, so the per-element check is skipped. This locks in the CORRECTNESS
-# of the elided codegen — reads, in-place writes, nested loops over two arrays,
-# and access under an `if`. (The "must NOT elide when A/i is reassigned or A is
-# passed to a call" half is covered by the fuzzer + the OOB-abort cases.)
+# Indexed-loop correctness — reads, in-place writes, nested loops over two
+# arrays, and access under an `if`.
+#
+# HISTORY: until 2026-07-29 this fixture was named for what it proved, bounds-
+# check ELISION: `for i in range(len(A)):` let the compiler prove A[i] in-range
+# and skip the per-element check (src/tychoc.c:10788-10801). That optimisation
+# keys off S_FORRANGE only. Phase 6 of plan.md rewrote every loop here to the
+# three-clause form, which is S_FOR3 and has no elision arm, so **this fixture
+# no longer exercises elision at all** — it now only locks in that the emitted
+# indexing is correct, which is true elided or not. The golden is unchanged for
+# exactly that reason, which is also why the loss is invisible to `make test`.
+# Restoring elision for the three-clause form is carried as a phase in plan.md.
 fn main():
     a := []int
-    for i in range(20):
+    for i := 0; i < 20; i += 1:
         push(a, i * 3)
 
     # read elision
     s := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         s = s + a[i]
 
     # in-place write elision (a[i] = ...), then read under an `if`
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         a[i] = a[i] + 1
     t := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         if a[i] > 30:
             t = t + a[i]
 
     # nested loops over two distinct arrays — inner indexes b, outer indexes a;
     # neither array is reassigned or passed to a call, so both elide
     b := []int
-    for i in range(5):
+    for i := 0; i < 5; i += 1:
         push(b, i + 100)
     cross := 0
-    for i in range(len(a)):
-        for j in range(len(b)):
+    for i := 0; i < len(a); i += 1:
+        for j := 0; j < len(b); j += 1:
             cross = cross + a[i] * b[j]
 
     println("s=" + str(s))

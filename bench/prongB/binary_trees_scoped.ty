@@ -21,7 +21,7 @@ fn check(t: Tree) -> int:
 
 fn pow2(n: int) -> int:
     r := 1
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         r = r * 2
     return r
 
@@ -34,10 +34,10 @@ fn main():
 
     longlived := make(maxd)
 
-    for d in range(mind, maxd + 1, 2):
+    for d := mind; d < maxd + 1; d += 2:
         iters := pow2(maxd - d + mind)
         sum := 0
-        for i in range(iters):
+        for i := 0; i < iters; i += 1:
             t := make(d)            # transient bound to the inner-loop scratch
             sum = sum + check(t)
         println(str(iters) + " trees of depth " + str(d) + " check: " + str(sum))

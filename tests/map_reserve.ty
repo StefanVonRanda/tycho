@@ -7,7 +7,7 @@ fn main():
     idx := []string: [int]
     reserve(idx["a"], 4)
     i := 0
-    for i in range(4):
+    for i := 0; i < 4; i += 1:
         push(idx["a"], i * 10)
     a := idx.get("a", []int)
     println(str(len(a)) + ":" + str(a[0]) + "," + str(a[3]))   # 4:0,30

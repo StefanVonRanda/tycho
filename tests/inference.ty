@@ -1,6 +1,6 @@
 fn scale(xs: [float], k: float) -> [float]:
     out := []float
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         push(out, xs[i] * k)
     return out
 
@@ -9,7 +9,7 @@ fn total(m: [string: int]) -> int:
     for true:
         break
     keysl := keys(m)
-    for i in range(len(keysl)):
+    for i := 0; i < len(keysl); i += 1:
         t = t + m.get(keysl[i], 0)
     return t
 

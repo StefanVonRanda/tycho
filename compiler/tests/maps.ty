@@ -12,7 +12,7 @@ fn yn(b: bool) -> string:
 fn sumvals(m: [string: int]) -> int:
     ks := keys(m)
     total := 0
-    for i in range(len(ks)):
+    for i := 0; i < len(ks); i += 1:
         total = total + m.get(ks[i], 0)
     return total
 
@@ -25,7 +25,7 @@ fn drop(m: inout [string: int], k: string):
 fn main():
     counts := []string: int
     words := ["a", "b", "a", "c", "a", "b"]
-    for i in range(len(words)):
+    for i := 0; i < len(words); i += 1:
         counts[words[i]] = counts.get(words[i], 0) + 1
     println("a=" + str(counts.get("a", 0)) + " b=" + str(counts.get("b", 0)) + " c=" + str(counts.get("c", 0)))
     println("distinct=" + str(len(counts)) + " total=" + str(sumvals(counts)))
@@ -51,12 +51,12 @@ fn main():
     println("after_drop x_has=" + yn("x" in m) + " len=" + str(len(m)))
 
     t := []string: int
-    for i in range(50):
+    for i := 0; i < 50; i += 1:
         t["k" + str(i)] = i
-    for i in range(50):
+    for i := 0; i < 50; i += 1:
         delete t["k" + str(i)]
     println("emptied len=" + str(len(t)))
-    for i in range(30):
+    for i := 0; i < 30; i += 1:
         t["k" + str(i)] = i * 2
     println("refilled len=" + str(len(t)) + " k7=" + str(t.get("k7", -1)) + " k49=" + str(t.get("k49", -1)))
 

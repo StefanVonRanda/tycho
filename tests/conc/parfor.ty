@@ -3,7 +3,7 @@ fn score(n: int) -> int:
 
 fn main():
     total := 0
-    parallel for i in range(1000):
+    parallel for i in 0..<1000:
         total += score(i)
     print(str(total))
 
@@ -23,6 +23,6 @@ fn main():
     print(str(sum))
 
     f := 0.0
-    parallel for i in range(4):
+    parallel for i in 0..<4:
         f = f + 1.5
     print(str(to_int(f)))

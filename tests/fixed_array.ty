@@ -16,7 +16,7 @@ fn dot(a: [3]float, b: [3]float) -> float:      # fixed-array params, by value
 
 fn ramp() -> [W]int:                            # const-sized return
     r: [W]int = [0, 0, 0, 0]
-    for i in range(W):
+    for i := 0; i < W; i += 1:
         r[i] = i * 10
     return r
 

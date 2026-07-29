@@ -3,13 +3,13 @@
 # when the array is observed mid-loop.
 fn sum_arr(xs: [int]) -> int:
     s := 0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         s = s + xs[i]
     return s
 
 fn build_break(n: int) -> [int]:        # break: flush via fall-through after the loop
     b := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         if i == 5:
             push(b, 999)
             break
@@ -18,7 +18,7 @@ fn build_break(n: int) -> [int]:        # break: flush via fall-through after th
 
 fn build_cont(n: int) -> [int]:         # continue: cursor survives in registers
     b := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         if i % 2 == 0:
             continue
         push(b, i)
@@ -26,7 +26,7 @@ fn build_cont(n: int) -> [int]:         # continue: cursor survives in registers
 
 fn build_ret(n: int) -> [int]:          # return inside loop: flush-before-return
     b := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(b, i)
         if i == 3:
             return b
@@ -34,19 +34,19 @@ fn build_ret(n: int) -> [int]:          # return inside loop: flush-before-retur
 
 fn build_nested() -> [int]:             # nested loops push the SAME array: one cursor
     b := []int
-    for i in range(3):
-        for j in range(3):
+    for i := 0; i < 3; i += 1:
+        for j := 0; j < 3; j += 1:
             push(b, i * 10 + j)
     return b
 
 fn build_two() -> int:                  # two cursors live in one loop
     a := []int
     b := []int
-    for i in range(4):
+    for i := 0; i < 4; i += 1:
         push(a, i)
         push(b, i * i)
     s := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         s = s + a[i] + b[i]
     return s
 
@@ -60,7 +60,7 @@ fn build_while() -> [int]:              # while-form loop
 
 fn build_readmid() -> [int]:            # reads len(b) mid-loop -> must NOT fuse, still correct
     b := []int
-    for i in range(5):
+    for i := 0; i < 5; i += 1:
         push(b, i)
         if len(b) == 3:
             push(b, 100)

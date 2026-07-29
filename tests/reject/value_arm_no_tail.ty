@@ -4,7 +4,7 @@
 fn main():
     x := if true:
         acc := 0
-        for i in range(3):
+        for i := 0; i < 3; i += 1:
             acc = acc + i
     else:
         9

@@ -5,7 +5,7 @@
 
 fn sum(s: [int]) -> int:
     t := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         t = t + s[i]
     return t
 
@@ -18,7 +18,7 @@ struct P:
 
 fn sumx(ps: [P]) -> int:
     t := 0
-    for i in range(len(ps)):
+    for i := 0; i < len(ps); i += 1:
         t = t + ps[i].x
     return t
 

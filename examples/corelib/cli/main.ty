@@ -31,5 +31,5 @@ fn main():
     println("nargs   = " + str(cli.count(c)))             # 2
 
     ps := cli.positionals(c)
-    for i in range(len(ps)):
+    for i := 0; i < len(ps); i += 1:
         println("pos " + str(i) + "   = " + ps[i])        # src/main.ty ; --not-a-flag

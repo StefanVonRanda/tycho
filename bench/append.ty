@@ -4,7 +4,7 @@
 # ~828 MB at this N. make bench asserts peak RSS stays far below that.
 fn build(n: int) -> string:
     acc := ""
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         acc = acc + "x"
     return acc
 

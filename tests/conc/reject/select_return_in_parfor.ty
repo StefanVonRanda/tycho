@@ -6,7 +6,7 @@
 fn main():
     a := channel(int, 8)
     send(a, 1)
-    parallel for i in range(0, 1):
+    parallel for i in 0..<1:
         select:
             recv(a, x):
                 return

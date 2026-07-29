@@ -13,7 +13,7 @@ fn build(n: int) -> [int: int]:
     counts := []int: int
     word := ""
     i := 0
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         match classify(i):
             Some(bucket):
                 counts[bucket] = counts.get(bucket, 0) + 1
@@ -26,6 +26,6 @@ fn main():
     c := build(20)
     ks := keys(c)
     total := 0
-    for i in range(len(ks)):
+    for i := 0; i < len(ks); i += 1:
         total = total + c.get(ks[i], 0)
     println("buckets=" + str(len(c)) + " total=" + str(total))

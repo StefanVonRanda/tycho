@@ -21,13 +21,13 @@ fn total(t: Tree) -> int:
 
 fn comb(n: int) -> Tree:
     t := Leaf(1)
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         t = Pair(t, Leaf(1))
     return t
 
 fn main():
     t := comb(1200)              # 1201 leaves, all value 1 -> total = 1201
     acc := 0
-    for i in range(3000):
+    for i := 0; i < 3000; i += 1:
         acc = acc + total(t)     # borrowed: O(n)/pass; copied: O(n^2)/pass
     println(str(acc))       # 3000 * 1201 = 3603000

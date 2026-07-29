@@ -12,7 +12,7 @@
 fn word(n: int) -> string:
     s := ""
     m := n
-    for d in range(3):                 # 3 letters -> 17576 distinct, covers VOCAB
+    for d := 0; d < 3; d += 1:                 # 3 letters -> 17576 distinct, covers VOCAB
         s = s + chr(97 + m % 26)
         m = m / 26
     return s
@@ -30,10 +30,10 @@ fn main():
 
     state := 2463534242             # fixed LCG seed
     f := 0
-    for f in range(n_files):
+    for f := 0; f < n_files; f += 1:
         body := ""
         w := 0
-        for w in range(words_per_file):
+        for w := 0; w < words_per_file; w += 1:
             state = (state * 1103515245 + 12345) % 2147483648
             idx := state % vocab
             body = body + word(idx)

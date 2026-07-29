@@ -2,19 +2,19 @@
 # value-semantic copy, and arrays across function boundaries.
 fn make_squares(n: int) -> [int]:
     r := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, i * i)
     return r
 
 fn sum(a: [int]) -> int:
     total := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         total = total + a[i]
     return total
 
 fn doubled(a: [int]) -> [int]:
     b := a                         # value-semantic copy
-    for i in range(len(b)):
+    for i := 0; i < len(b); i += 1:
         b[i] = b[i] * 2
     return b
 
@@ -25,7 +25,7 @@ fn main():
     println("len = " + str(len(xs)))
 
     s := 0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         s = s + xs[i]
     println("sum = " + str(s))
 

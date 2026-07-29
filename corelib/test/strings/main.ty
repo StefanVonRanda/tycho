@@ -62,7 +62,7 @@ fn main():
 
 fn jn(xs: [string]) -> string:    # local join with '|' so pieces are visible
     r := ""
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if i > 0:
             r = r + "|"
         r = r + xs[i]

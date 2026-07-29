@@ -75,7 +75,7 @@ fn fswhy(r: Result(bool, io.IoErr)) -> string:
 
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
     out := ""
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if i > 0:
             out = out + "|"
         out = out + xs[i]
@@ -159,17 +159,17 @@ fn main():
     # byte-at-a-time rebuild: the shape a scrubber uses, and the accumulator the
     # compiler now grows in place for bytes as it does for string.
     acc := to_bytes("")
-    for i in range(len(bb)):
+    for i := 0; i < len(bb); i += 1:
         acc = acc + bb[i:i + 1]
     println(f"byte_rebuild len={len(acc)} same={b2i(acc == bb)} clamped={len(bb[3:99])}")
     # the re-home regression above: call it, then churn the arena hard enough that
     # a dangling buffer would be overwritten, THEN read the result.
     codes := []int
-    for i in range(8):
+    for i := 0; i < 8; i += 1:
         push(codes, 65 + i)
     held := reinterp_ret(codes)
     churn := ""
-    for i in range(400):
+    for i := 0; i < 400; i += 1:
         churn += "ZZZZZZZZZZZZZZZZ"
     println(f"reinterp_ret=[{held}] len={len(held)} churn={len(churn)}")
 

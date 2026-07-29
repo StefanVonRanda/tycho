@@ -26,21 +26,21 @@ struct Bag:                                   # FIELD position, aggregate elemen
 
 fn take_pts(ps: bounded[4]Pt) -> int:         # PARAM position
     t := 0
-    for i in range(0, len(ps)):
+    for i := 0; i < len(ps); i += 1:
         t = t + ps[i].x + ps[i].y
     return t
 
 fn take_pairs(qs: bounded[3](int, int)) -> int:
     t := 0
-    for i in range(0, len(qs)):
+    for i := 0; i < len(qs); i += 1:
         t = t + qs[i].0 * qs[i].1
     return t
 
 fn take_rows(rs: bounded[2]bounded[3]int) -> int:
     t := 0
-    for i in range(0, len(rs)):
+    for i := 0; i < len(rs); i += 1:
         r := rs[i]
-        for j in range(0, len(r)):
+        for j := 0; j < len(r); j += 1:
             t = t + r[j]
     return t
 

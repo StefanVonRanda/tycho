@@ -11,7 +11,7 @@ fn main():
 
     order := sort.argsort(ages)            # indices that put ages in ascending order
     by_age := []string
-    for i in range(len(order)):
+    for i := 0; i < len(order); i += 1:
         push(by_age, names[order[i]])
     println("by age (asc) = " + arrays.join(by_age, ", "))   # alice, bob, charlie
 

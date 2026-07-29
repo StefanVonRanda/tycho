@@ -140,7 +140,7 @@ fn parse(s: string) -> Json:
 
 fn esc(s: string) -> string:                   # minimal JSON string escaping
     out := ""
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c == 34:                            # "
             out = out + "\\\""
@@ -168,14 +168,14 @@ fn stringify(j: Json) -> string:
             return "\"" + esc(s) + "\""
         JArr(xs):
             out := "["
-            for i in range(len(xs)):
+            for i := 0; i < len(xs); i += 1:
                 if i > 0:
                     out = out + ","
                 out = out + stringify(xs[i])
             return out + "]"
         JObj(ks, vs):
             out := "{"
-            for i in range(len(ks)):
+            for i := 0; i < len(ks); i += 1:
                 if i > 0:
                     out = out + ","
                 out = out + "\"" + esc(ks[i]) + "\":" + stringify(vs[i])
@@ -201,7 +201,7 @@ fn kind(j: Json) -> string:                    # "null"/"bool"/"num"/"str"/"arr"
 fn get(j: Json, key: string) -> Json:          # object field, else JNull
     match j:
         JObj(ks, vs):
-            for i in range(len(ks)):
+            for i := 0; i < len(ks); i += 1:
                 if ks[i] == key:
                     return vs[i]
             return JNull

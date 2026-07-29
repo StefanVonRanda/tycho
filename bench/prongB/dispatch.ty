@@ -8,10 +8,10 @@ fn main():
     n := 2000
     k := 2000
     total := 0
-    for p in range(0, k, 1):
+    for p := 0; p < k; p += 1:
         fs := []fn(int) -> int
-        for i in range(0, n, 1):
+        for i := 0; i < n; i += 1:
             push(fs, fn(x: int) -> int: x * (i + 1) + p)
-        for i in range(0, n, 1):
+        for i := 0; i < n; i += 1:
             total = (total + fs[i](7)) & 1048575
     println(str(total))
