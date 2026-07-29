@@ -1197,13 +1197,234 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   than a path citation, and no gate reads it. Rewriting it would make the record
   lie.
 
-- [ ] **Phase 7 — delete the counting form and the `range` builtin**
+- [x] **Phase 7 — delete the counting form and the `range` builtin**
   - Scope: parser, typechecker, codegen, builtin table; `tests/reject/` fixture
     asserting `range` is no longer a known name.
   - Done when: `for i in range(3):` is refused with a diagnostic that names the
     three-clause form as the replacement, `range` is gone from the builtin table,
     and `make test` is green.
   - Verify: `make test`, then `python3 scripts/check_citations.py`.
+
+  **Evidence (2026-07-29).** Ran after phase 8, per the sequencing correction
+  above.
+
+  **There was no builtin table entry to delete, and this is the phase's first
+  real finding.** `range` was never a procedure. It was recognised in exactly
+  **one** place — by lexeme, inside a `for` header — and `grep -n '"range"'
+  src/tychoc.c` returned that single hit. `parse_fn`'s own note
+  (`src/tychoc.c:3634`) already said so: `range` is a *contextual identifier*
+  like `soa`, `sink` and `where`, not a reserved word and not a builtin. Measured
+  on the HEAD compiler **before** any change, so it is a before/after fact rather
+  than a claim about the end state:
+
+  ```
+  x := range(3)   ->   error: unknown procedure 'range'      (HEAD, and still)
+  ```
+
+  So "`range` is gone from the builtin table" was satisfied by deleting one
+  parser branch; nothing in the typechecker, codegen or any name table held it.
+
+  **What is still load-bearing for `0..<N`, worked out before deleting
+  anything.** `S_FORRANGE` is **kept whole**. It has five producers and only one
+  of them was `range()`:
+
+  | producer | site | r_step |
+  |---|---|---|
+  | `parallel for i in 0..<N:` | `src/tychoc.c:3370` | NULL |
+  | `parallel for x in COLL:` (deferred, `foreach=1`) | `src/tychoc.c:3412` | NULL |
+  | sequential `for x in COLL:` desugar → `for _fiN in 0 .. len(_fcN)` | `src/tychoc.c:3431` | NULL |
+  | `resolve_parfor`'s channel-drain worker `__pw` over `ncpu()` | `src/tychoc.c:6603` | NULL |
+  | `resolve_parfor`'s parallel-foreach index loop | `src/tychoc.c:6630` | NULL |
+  | ~~`for i in range(a, b, step):`~~ | *deleted* | **the only non-NULL** |
+
+  Deleting the node would therefore have broken not only `parallel for i in
+  0..<N:` but **every foreach loop in the language**, since `for x in xs:`
+  desugars into an `S_FORRANGE` index loop. The resolve arm, `gen_stmt`'s
+  `S_FORRANGE` case, `resolve_parfor`, the lifted `__parN` chunk proc, the
+  bounds-check elision at `src/tychoc.c:10793` and the ~12 generic
+  body/expr walkers that touch `r_start`/`r_stop`/`r_step` are all untouched.
+
+  **What was deleted: 20 lines of parser, replaced by 3 lines of refusal.** The
+  branch at old `src/tychoc.c:3371-3391` (consume `range`, parse 1–3 arguments,
+  fill `r_start`/`r_stop`/`r_step`) is gone. The lexeme test is **kept** so the
+  refusal can name the replacements — without it the header falls through to the
+  foreach branch and dies at resolve with `unknown procedure 'range'`, which
+  names neither replacement. New site `src/tychoc.c:3387`, exact text, with the
+  loop variable substituted four times so it is copy-pasteable:
+
+  ```
+  tests/diag/range_removed.ty:12: error: `range()` was removed: write `for idx := 0; idx < N; idx += 1:` to count, or `parallel for idx in 0..<N:` to count in parallel
+      12 |     for idx in range(0, 10, 2):
+  ```
+
+  **`r_step` is now permanently NULL, and was annotated rather than removed.**
+  With `range(a,b,step)` gone, every remaining producer writes NULL (table
+  above), so the step codegen (`src/tychoc.c:10776-10782`, including the runtime
+  `range step is zero` abort), the literal-zero refusal
+  (`src/tychoc.c:7292`) and `resolve_parfor`'s step refusal
+  (`src/tychoc.c:6645`) are all unreachable. They were **kept** and each carries
+  a HISTORY note saying so, for two reasons: no test can exercise a deletion of
+  them, so removing them would be an unverifiable change; and phase 27's elision
+  recogniser is specified against `s->r_step == NULL`. The removal is filed as
+  **phase 30** rather than smuggled in here.
+
+  **Two user-facing messages that named a deleted form.** Both are the phase-26
+  class — a diagnostic that would have been a lie the moment this phase landed:
+
+  - **Phase 26, as filed.** `src/tychoc.c:3241` said *"parallel supports 'for x
+    in range(...)' and 'for x in collection' loops only"*. Now: **"parallel
+    supports \`for i in 0..<N\` and \`for x in collection\` loops only"**.
+    Observed on `parallel for i := 0; i < 3; i += 1:`. The prose half
+    (`docs/spec/13-concurrency.md:78`) is left to phase 9 as the filing says.
+  - **Not filed by anyone, found here.** The `wl_check` warning at
+    `src/tychoc.c:6850` suggested *"consider `for x in range(...)`"* to a user
+    whose loop never progresses — advice to write the form this phase deletes.
+    Now suggests `for i := 0; i < n; i += 1:`. Its golden
+    `tests/warn/loop_no_progress.err` locked the old text and **reddened `make
+    test`** (`passed: 542 failed: 1`); the golden was updated by hand after
+    reading the diff, not blessed with `RECORD=1`.
+
+  Also reworded, because it named a syntax the user can no longer write:
+  `src/tychoc.c:7284` `range(...) arguments must be int` → `a counting `for`
+  needs int bounds`, and the runtime abort string → `loop step is zero`.
+
+  **Phase 28 — the three deleted fixtures, decided one at a time.** All three
+  are **retired early on purpose**; none was restored. The plan offered
+  restore-until-phase-7 as an option and it was rejected: the interval it would
+  have covered is this commit's parent, the fixtures would be deleted again in
+  the same phase that added them, and their guarantees are gone in the end state
+  regardless.
+
+  | fixture | guarantee | survives the language? | verdict |
+  |---|---|---|---|
+  | `tests/reject/range_step_zero_lit.ty` | literal `0` step refused at compile time | **no** — a three-clause post clause is arbitrary code, so `for i := 0; i < n; i += 0:` cannot be diagnosed; `0..<N` has no step to be zero | stay deleted (Pre-flight's stated loss) |
+  | `tests/abort/range_step_zero.ty` | runtime `0` step aborts rather than spins | **no** — same reason; also the site's own step `z[0]` had no correct three-clause form, which is why phase 6 could not rewrite it | stay deleted |
+  | `tests/conc/reject/parfor_step.ty` | a non-unit step on a `parallel for` is refused | **unrepresentable** — `0..<N` has no step syntax, so the program cannot be written to be refused | stay deleted |
+
+  `tests/conc/reject/` still holds 22 other fixtures, so no lane was emptied.
+
+  **What replaces them: two fixtures, because one lane cannot assert what
+  matters.** `tests/reject/range_removed.ty` asserts `range` is no longer a
+  known name — but that lane (`tests/run.sh:158-169`) checks only a nonzero exit
+  and a non-empty stderr, so on its own it could pass on *any* diagnostic,
+  including one that never names the replacement. `tests/diag/range_removed.ty`
+  + `.err` locks the exact text byte-for-byte (`tests/run.sh:218-236`), which is
+  what this phase's "Done when" actually asks for. Same split phase 5 used for
+  the mirror-image refusal (`tests/diag/dotlt_sequential`). Both were `git
+  add`ed **before** the final citation run — phase 3 established that an
+  untracked file's citations are not checked at all.
+
+  **`parallel for i in 0..<N:` still works — measured, not assumed.**
+
+  ```
+  $ ./tychoc /tmp/.../r3.ty -o /tmp/.../r3.bin && /tmp/.../r3.bin
+  28
+  ```
+
+  (`parallel for i in 0..<8:` summing `i` — 0+1+…+7 = 28, computed before
+  running.) The stronger evidence is `make conc` below: `tests/conc/parfor.ty`
+  and `tests/conc/parfor_dotlt.ty` both run native + ASan/UBSan + TSan against
+  their goldens and both are in the 37.
+
+  **A gate the phase brief did not list, and it caught a real break.**
+  `sh scripts/spec_check.sh` (~6s) compiles the runnable examples in
+  `docs/spec/`. `docs/spec/03-types.md:237` was still `for i in range(len(s)):`
+  — phase 6 swept `.ty` files, not fenced `tycho` blocks in Markdown — so this
+  phase turned a passing spec example into a compile error:
+
+  ```
+  spec-examples: FAIL docs/spec/03-types.md:231 [tychoc] — transpile error
+      ex_4_2.ty:6: error: `range()` was removed: ...
+  ```
+
+  Rewritten in place to `for i := 0; i < len(s); i += 1:` (one line for one
+  line). This is a `make ci` step, so leaving it would have reddened phase 10
+  with a cause four phases upstream. **23 further `in range(` sites remain in
+  prose across 18 live documents** (`grep -rn 'in range(' docs/ README.md ROADMAP.md
+  FRICTION.md`, excluding the archived `plan-*-DONE.md` records) — none of them runnable, none gated, and only
+  `docs/spec/` is in phase 9's scope. The rest is filed as **phase 31**.
+
+  **Verify 1 — `make test`.**
+
+  ```
+  passed: 543   failed: 0        all green
+  ```
+
+  Phase 8 left it at 541; +2 is exactly `reject_range_removed` and
+  `diag_range_removed`. (The first run was `passed: 542 failed: 1` on
+  `warn_loop_no_progress`, the golden described above.)
+
+  **Verify 2 — `make conc`.**
+
+  ```
+  conc: passed 37   failed 0
+  ```
+
+  Unchanged from phase 6's 37 — this phase adds no concurrency fixture and
+  removes none, and every existing `parallel for` (both the `0..<N` spelling and
+  the foreach spelling) still compiles and matches its golden under TSan.
+
+  **Verify 3 — `sh scripts/tools_check.sh`.**
+
+  ```
+  tools-check: ok
+  TOOLS_EXIT=0
+  ```
+
+  **Verify 4 — citations.** The gate reddened as predicted: **77 stale anchored
+  refs**. Repaired through a `difflib.SequenceMatcher` line map built from `git
+  show HEAD:src/tychoc.c` against the working tree (12637 → 12642 lines, 12609
+  matched equal). Only refs the gate itself reported STALE were rewritten, each
+  by `map[old]`. **76 repaired mechanically** across 11 files:
+  `docs/internals/plan-postfreeze-rawstring-DONE.md` 23,
+  `docs/spec/12-aggregates.md` 16, `docs/spec/16-builtins.md` 10,
+  `docs/spec/01-lexical.md` 7, `docs/spec/15-program.md` 6,
+  `docs/internals/plan-front-door-DONE.md` 3, `docs/spec/03-types.md` 3,
+  `docs/internals/frontend-restriction-audit-2026-07-25.md` 2,
+  `docs/spec/02-grammar.md` 2, `docs/spec/09-expressions.md` 2,
+  `docs/spec/10-statements.md` 2. Every one of those files is `+n -n` in `git
+  diff --numstat`, so the citation repair is **line-for-line neutral**.
+
+  **The 77th could not be mapped, and it is the interesting one.**
+  `docs/spec/01-lexical.md:142` anchored src/tychoc.c:3371@"range" (written
+  here without backticks on purpose — backticked it would be a live citation
+  into a line that no longer exists, and would redden the gate again) — a
+  citation into a **deleted** line, which no line map can move. §3.7 listed
+  `range` as a contextual identifier *dispatched* in a `for` head; that is no
+  longer what happens. Repointed by hand to `:3386@"range"` (the surviving
+  lexeme test) and the §3.7 bullet reworded to say the lexeme is recognised
+  **only to refuse it**. This is spec prose and the spec is phase 9's, but
+  leaving the sentence would have been a statement this phase made false, so it
+  was corrected rather than deferred; both edits are one line for one line, so
+  `docs/spec/01-lexical.md` stays `+4 -4` and nothing citing *into* it moved.
+  Final:
+
+  ```
+  citation check: ok (125 anchored contain the token they name, 2014 bare in bounds,
+  102 source->doc citations resolve, 120 source->source in bounds)
+  ```
+
+  (1985 → 2014 bare and 107 → 120 source→source: the refs in the two new fixture
+  headers and in this evidence block. Measured **after** this block was written,
+  which is why it is not the 1994 the tree scored before it. One ref in this
+  block did redden the gate on its first run — the archived
+  src/tychoc.c:3371@"range" above — and is why it is written bare.)
+
+  Exit status read explicitly (`CIT_EXIT=0`, `SPEC_EXIT=0`) for the two gates
+  whose tail line can hide a failure — `spec_check.sh` prints its summary and
+  exits 1 without the word "FAIL" on the last line, which is how the
+  `03-types.md` break above was nearly missed.
+
+  **Left alone, deliberately.** `editors/zed/grammars/tycho/grammar.js:49` still
+  lists `range` among the highlighted builtins, and the generated
+  `src/parser.c`/`grammar.json` carry an `anon_sym_range`. It is a *highlight*
+  list, not a parse rule, so `scripts/editors_check.sh` is unaffected and both
+  new fixtures parse; changing it needs a `tree-sitter generate` re-run, which is
+  phase 8's territory. Filed as **phase 32**. The bare `src/tychoc.c:N` class
+  (phase 17) is now shifted by a further ~5 lines; the file grew net, every bare
+  ref is still in bounds and the gate cannot see them.
+
+  **`make ci` was NOT run** — phase 10 owns it, per `CLAUDE.md`'s gate budget.
 
 - [x] **Phase 8 — `tychofmt`, the LSP, and the editor grammars learn `;` and `..<`**
   - Scope: `tools/tychofmt.ty`, `tools/lsp.ty`, `editors/vscode/`,
@@ -1610,6 +1831,77 @@ Unclosed discoveries from the two previous plans; none blocking.
   - Done when: `plan.md` records which of the two options was taken and why, and
     if restored, `make test` and `make conc` return to 543 and 38 until phase 7
     moves them again.
+  - **Closed by phase 7**: the option taken was *retire early on purpose*.
+    Nothing was restored; the per-fixture reasoning and the two replacement
+    fixtures are in phase 7's evidence.
+
+- [ ] **Phase 30** — **`Stmt.r_step` is dead and its three guards are
+      unreachable.** Found by phase 7. `range(a, b, step)` was the only producer
+      of a non-NULL `r_step`; with it deleted, all five surviving `S_FORRANGE`
+      producers write NULL (the table in phase 7's evidence). So the step
+      codegen (`src/tychoc.c:10776-10782`, including the emitted runtime
+      `tycho: range step is zero` abort), the literal-zero refusal
+      (`src/tychoc.c:7292`) and `resolve_parfor`'s
+      `parallel for does not support a range step` (`src/tychoc.c:6645`) can
+      never fire. Phase 7 annotated all three rather than deleting them, for two
+      stated reasons: no test can exercise the deletion, so it would be an
+      unverifiable change; and **phase 27's elision recogniser is specified
+      against `s->r_step == NULL`**, so this phase must not land before it.
+  - Scope: `src/tychoc.c` only — the `r_step` field, its ~10 walker mentions,
+    the `_step%d` codegen and the three guards above. No `.ty` change, no
+    diagnostic a user can currently see.
+  - Order: **after phase 27**, or phase 27's brief must be rewritten first.
+  - Done when: `grep -n r_step src/tychoc.c` is empty, `for i in 0..<N`, every
+    foreach loop and every `parallel for` still emit the same C as before
+    (diff `--emit-c` for a fixture of each shape), and `make test` + `make conc`
+    hold at their current counts.
+  - Verify: `make test`, then `make conc`, then `python3
+    scripts/check_citations.py` (deletions here shift `src/tychoc.c` anchors).
+
+- [ ] **Phase 31** — **23 `in range(` sites remain in prose across 18 live
+      documents.** Found by phase 7, which fixed only the one that reddened a
+      gate. Phase 6 swept `.ty` files; nothing swept fenced `tycho` blocks in
+      Markdown, and `scripts/spec_check.sh` runs only the examples it can
+      execute — `docs/spec/03-types.md:237` was one of those and broke the
+      moment `range()` went, which is how the class was found. The rest are
+      unexecuted snippets no gate reads, so they are wrong quietly.
+  - Scope: **not** `docs/spec/` — that is phase 9's. This phase owns
+    `docs/tutorial.md`, `docs/reference/` (`basics.md`, `arrays-slices.md`,
+    `types.md`, `enums-options.md`, `concurrency.md`), `docs/guides/`
+    (`arrays-structs.md`, `concurrency.md`), `docs/architecture.md` and the
+    live `docs/internals/` design notes (`sink-prototype.md`,
+    `value-semantics-limits.md`, `parfor-channel-drain-design.md`).
+  - **Leave the archives alone.** `docs/internals/plan-*-DONE.md` and
+    `docs/internals/diagnostic-parity-2026-07-25.md` record what was true on the
+    day; rewriting them makes the record lie. Same rule phase 2 applied.
+  - `docs/reference/basics.md:121` is the sharp one: it documents
+    `range(a, b, step)` **including a negative step**, a semantics with no
+    successor. It needs the three-clause equivalent *and* the note that the
+    zero-step diagnostic is gone.
+  - Done when: no live document shows a `range()` loop as current syntax, and
+    every rewritten snippet has been compiled by hand (they are unexecuted — the
+    gate will not catch a typo).
+  - Verify: `sh scripts/spec_check.sh`, `sh scripts/check_links.sh`, `python3
+    scripts/check_citations.py`.
+
+- [ ] **Phase 32** — **the zed grammar still lists `range` as a builtin.**
+      Found by phase 7. `editors/zed/grammars/tycho/grammar.js:49` has `range`
+      in the builtin-highlight list, and the generated
+      `editors/zed/grammars/tycho/src/grammar.json`,
+      `editors/zed/grammars/tycho/src/parser.c` and `.../src/node-types.json`
+      carry the corresponding `anon_sym_range`. A user typing `range` now gets
+      it painted as a builtin by the editor and refused by the compiler.
+  - Left out of phase 7 deliberately: it is a *highlight* list, not a parse
+    rule, so `scripts/editors_check.sh` is unaffected and both of phase 7's new
+    fixtures parse cleanly. Changing it needs a `tree-sitter generate` re-run,
+    which is phase 8's toolchain, not phase 7's.
+  - Check the VS Code grammar for the same word before assuming zed is alone —
+    phase 7 grepped `editors/` for `"range"` and only zed matched, but that grep
+    would miss a regex alternation that spells it without quotes.
+  - Done when: `range` is not highlighted as a builtin by either editor, the
+    generated files are regenerated rather than hand-edited, and
+    `make editors-check` is green.
+  - Verify: `make editors-check`.
 
 ## Out of scope
 

@@ -1,0 +1,13 @@
+# Locks the exact text of the `range()` removal diagnostic (src/tychoc.c:3387).
+# The message must name BOTH replacements and substitute the loop variable, so
+# it can be copy-pasted: the three-clause `for` for a sequential count, and
+# `parallel for i in 0..<N:` for a parallel one. Same discipline as
+# tests/diag/dotlt_sequential.ty, which locks the mirror-image refusal.
+#
+# The reject lane cannot assert this: tests/run.sh:158-169 checks only that the
+# exit is nonzero and stderr non-empty. This lane cmps stderr against
+# tests/diag/range_removed.err (tests/run.sh:218-236).
+
+fn main():
+    for idx in range(0, 10, 2):
+        println(str(idx))

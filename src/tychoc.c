@@ -1550,7 +1550,13 @@ struct Stmt {
     Type     annot;        /* explicit annotation when typed_decl */
     Expr    *expr;         /* value / condition / return / S_INDEXSET rhs / match scrutinee */
     Expr    *target;       /* S_INDEXSET lvalue (an E_INDEX) */
-    Expr    *r_start, *r_stop, *r_step;  /* S_FORRANGE; r_step NULL means 1 */
+    Expr    *r_start, *r_stop, *r_step;  /* S_FORRANGE; r_step NULL means 1. HISTORY:
+                                          * r_step is ALWAYS NULL since 2026-07-29 --
+                                          * `range(a,b,step)` was its only producer and
+                                          * it is gone; `0..<N` and the foreach/parfor
+                                          * desugarings all step by 1. The step codegen
+                                          * and its zero-step guards are now unreachable
+                                          * (kept, not deleted -- see plan.md phase 30). */
     char    *names[8]; int nnames;       /* S_MDECL targets: `a, b := f()` */
     Type     mtypes[8];                  /* S_MDECL resolved element types */
     Stmt   **body; int nbody;
@@ -3230,9 +3236,9 @@ static Stmt *parse_stmt(Parser *ps) {
         ps->p++;
         if (!at(ps, TK_FOR)) die_at(t->line, "expected 'for' after 'parallel'");
         g_parallel_ctx = 1;              /* the TK_FOR handler consumes this for the directly-following for */
-        Stmt *s = parse_stmt(ps);        /* parses the for (range form, or foreach: deferred for type-directed lowering) */
+        Stmt *s = parse_stmt(ps);        /* parses the for (`0..<N`, or foreach: deferred for type-directed lowering) */
         if (s->kind != S_FORRANGE)
-            die_at(t->line, "parallel supports 'for x in range(...)' and 'for x in collection' loops only");
+            die_at(t->line, "parallel supports `for i in 0..<N` and `for x in collection` loops only");
         s->parallel = 1;
         return s;
     }
@@ -3322,7 +3328,7 @@ static Stmt *parse_stmt(Parser *ps) {
                 return s;
             }
         }
-        /* counting form `for i in range(...)` or foreach `for x in COLL:` */
+        /* counting form `parallel for i in 0..<N:` or foreach `for x in COLL:` */
         if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_IN) {
             Tok *var = eat(ps, TK_IDENT, "a loop variable");
             eat(ps, TK_IN, "'in'");
@@ -3368,27 +3374,18 @@ static Stmt *parse_stmt(Parser *ps) {
                     return s;   /* caller (TK_PARALLEL) sets s->parallel = 1 */
                 }
             }
-            if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "range") && peek(ps, 1)->kind == TK_LPAREN) {
-                ps->p++;                     /* consume 'range' */
-                eat(ps, TK_LPAREN, "'('");
-                Stmt *s = new_stmt(S_FORRANGE, t->line);
-                s->name = var->text;
-                Expr *a1 = parse_expr(ps);
-                Expr *a2 = NULL, *a3 = NULL;
-                if (accept(ps, TK_COMMA)) a2 = parse_expr(ps);
-                if (a2 && accept(ps, TK_COMMA)) a3 = parse_expr(ps);
-                eat(ps, TK_RPAREN, "')'");
-                eat(ps, TK_COLON, "':' before the block");
-                eat(ps, TK_NEWLINE, "newline");
-                if (!a2) {                   /* range(n): 0 .. n */
-                    Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
-                    s->r_start = zero; s->r_stop = a1; s->r_step = NULL;
-                } else {                     /* range(a, b[, step]) */
-                    s->r_start = a1; s->r_stop = a2; s->r_step = a3;
-                }
-                s->body = parse_block(ps, &s->nbody);
-                return s;
-            }
+            /* HISTORY: `for i in range(a, b, step):` was the counting form until
+             * 2026-07-29, when it was replaced by the three-clause `for` and, for
+             * `parallel for`, by `0..<N`. `range` was never a procedure -- it was
+             * recognised only here, by lexeme, in a `for` header (see parse_fn's
+             * note on contextual identifiers), so deleting this branch deletes the
+             * whole feature. Without the branch below the header would fall
+             * through to foreach and die with "unknown procedure 'range'" at
+             * resolve, which names neither replacement; the refusal is kept
+             * explicit so the diagnostic can be copy-pasted. */
+            if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "range") && peek(ps, 1)->kind == TK_LPAREN)
+                die_at(t->line, "`range()` was removed: write `for %s := 0; %s < N; %s += 1:` to count, or `parallel for %s in 0..<N:` to count in parallel",
+                       var->text, var->text, var->text, var->text);
             /* foreach over a collection (array or string):
              *   for x in COLL:        _fcN := COLL
              *       <body>      ==>    for _fiN in range(0, len(_fcN)):
@@ -6643,6 +6640,8 @@ static void resolve_parfor(Stmt *s) {
             die_at(s->line, "parallel for expects an array, string, or channel");
         }
     }
+    /* unreachable since 2026-07-29: r_step is always NULL (`0..<N` has no step
+     * syntax and `range()` is gone). Kept as a fail-closed assertion. */
     if (s->r_step) die_at(s->line, "parallel for does not support a range step");
     if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
         die_at(s->line, "parallel for needs an int range");
@@ -6848,7 +6847,7 @@ static void wl_check(Stmt *s) {           /* s is an S_WHILE */
         for (int j = 0; j < nm; j++)
             if (!strcmp(cv[i], muts[j])) return;   /* a condition variable is changed -> progresses */
     warn_at(s->line, "loop condition never changes; this `for` may run forever "
-                     "(forgot to advance a variable? consider `for x in range(...)`)");
+                     "(forgot to advance a variable? consider `for i := 0; i < n; i += 1:`)");
 }
 
 /* "pure" builtins have no side effect, so discarding the result in statement
@@ -7282,9 +7281,15 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (resolve_expr(s->r_start) != T_INT ||
                 resolve_expr(s->r_stop)  != T_INT ||
                 (s->r_step && resolve_expr(s->r_step) != T_INT))
-                die_at(s->line, "range(...) arguments must be int");
+                die_at(s->line, "a counting `for` needs int bounds");
+            /* HISTORY: the literal-zero-step refusal below is UNREACHABLE since
+             * 2026-07-29 -- `range(a,b,step)` was the only way to write a step and
+             * it is gone, so r_step is always NULL (see the Stmt field's note). The
+             * guarantee it enforced does not survive into the three-clause form: a
+             * post clause is arbitrary code, so `for i := 0; i < n; i += 0:` cannot
+             * be diagnosed. plan.md's Pre-flight records that as a deliberate loss. */
             if (s->r_step && s->r_step->kind == E_INT && s->r_step->ival == 0)
-                die_at(s->line, "range step is zero (the loop would never terminate)");
+                die_at(s->line, "loop step is zero (the loop would never terminate)");
             int m = vars_mark();
             vars_push(s->name, T_INT, 1);   /* loop variable is int, scoped to the loop */
             resolve_block(s->body, s->nbody, ret);
