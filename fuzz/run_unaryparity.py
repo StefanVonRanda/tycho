@@ -1,40 +1,41 @@
 #!/usr/bin/env python3
-# Unary-operator parity: tychoc (the C reference compiler) and tychoc0 (self-
-# hosted) MUST agree on whether `-x`, `~x`, `not x` type-check (accept) or are
-# rejected, for x drawn from every scalar/composite/newtype operand.
-#
-# Why it exists: the parity-lane family (run_typeparity.py scalar binops,
-# run_eqparity.py composite ==) left unary operators uncovered, and the fixpoint
-# differential is OUTPUT-only so it can't see an accept/reject divergence.
-# tychoc's unary rules are STRICTER than the binary-arithmetic rules:
+# Unary-operator typing: `-x`, `~x`, `not x` must type-check (accept) or be
+# rejected exactly as the `expect` oracle says, for x drawn from every
+# scalar/composite/newtype operand. tychoc's unary rules are STRICTER than the
+# binary-arithmetic rules:
 #   -x   : base must be int/float        (numeric newtype ok: -Meters is a Meters)
 #   ~x   : type must be EXACTLY int      (so ~Slot, a newtype-int, is rejected)
 #   not x: type must be bool
-# tychoc0 DESUGARS `-x`->(0-x) and `~x`->((0-x)-1) at parse, so they fall under
-# the permissive arithmetic rules (char +/- int, int-literal -> float), which
-# over-accept `~float`, `~char`, `-char`, ... This lane pins those down.
 #
 # A case is (op, operand): a program `c := OP x` over a fixed prelude of typed
-# decls. PARITY (tychoc == tychoc0) is the assertion; `expect` (tychoc's rule,
-# encoded below) is a sanity check on the fixture. A both-accept program must
-# also emit C that compiles in both.
+# decls. `expect` (those rules, encoded below) is the oracle. An accepted program
+# must also emit C that compiles.
 #
-# DOCUMENTED SKIP -- newtype identity erasure: tychoc0 stores a newtype as its
-# base, so `~Slot` desugars to int arithmetic and accepts, while tychoc rejects
-# it (a Slot is not the literal type int). tychoc0 cannot tell them apart by
-# design (same precedent as run_eqparity.py), so `~<newtype-over-int>` is skipped
-# and counted. `~<newtype-over-float>` is NOT skipped: ~float is itself illegal,
-# so once the float fail-open is closed the newtype-float case rejects too.
+# HISTORY -- THE PARITY ASSERTION WAS RETIRED 2026-07-29. Until then this lane was
+# also a DIFFERENTIAL against the frozen self-hosted tychoc0, and that side was
+# the sharper one: tychoc0 DESUGARS `-x`->(0-x) and `~x`->((0-x)-1) at parse, so
+# unary fell under its permissive arithmetic rules (char +/- int, int-literal ->
+# float) and over-accepted `~float`, `~char`, `-char`. Comparing two
+# implementations that reach the answer by different routes is what made those
+# fail-opens visible.
+#
+# WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
+# of 2026-07-29 (three-clause `for` and bare `for:` replace `for i in range(...)`,
+# `range` deleted) means it can no longer parse the corpus, so no lane builds it.
+# See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
+#
+# WHAT IS LOST: the second route to the answer. The `expect` oracle is written
+# down in this file and still gates tychoc, so a regression AWAY from the stated
+# rules still reddens; what no longer reddens is a wrong rule that the oracle and
+# the compiler agree on.
 #
 # Usage: run_unaryparity.py        (no seeds -- the matrix is fixed)
 import os, subprocess, sys, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TYCHOC = os.path.join(REPO, "tychoc")
-HSRC = os.path.join(REPO, "compiler", "tychoc0.ty")
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 RUN_TIMEOUT = 30
-BUILD_TIMEOUT = 300
 
 PRELUDE = '''\
 type Slot = int
@@ -102,16 +103,6 @@ def tychoc_verdict(src, base):
     c = base + ".c" if v == "accept" and os.path.exists(base + ".c") else None
     return v, c
 
-def tychoc0_verdict(h0, src, cpath):
-    with open(src, "rb") as fi:
-        r = subprocess.run([h0], stdin=fi, capture_output=True, timeout=RUN_TIMEOUT)
-    v = classify(r.returncode)
-    if v == "accept" and r.stdout:
-        with open(cpath, "wb") as fo:
-            fo.write(r.stdout)
-        return v, cpath
-    return v, None
-
 def c_compiles(cpath):
     if not cpath or not os.path.exists(cpath) or os.path.getsize(cpath) == 0:
         return True
@@ -119,26 +110,12 @@ def c_compiles(cpath):
                        capture_output=True, text=True, timeout=RUN_TIMEOUT)
     return r.returncode == 0
 
-def build_tychoc0(tmp):
-    base = os.path.join(tmp, "h0src")
-    r = subprocess.run([TYCHOC, HSRC, "--emit-c", "-o", base],
-                       capture_output=True, text=True, timeout=BUILD_TIMEOUT)
-    if r.returncode != 0 or not os.path.exists(base + ".c"):
-        print("FATAL: tychoc could not emit tychoc0 C:\n" + r.stderr[:1500]); sys.exit(2)
-    exe = os.path.join(tmp, "tychoc0")
-    b = subprocess.run(["cc", "-O2", "-fwrapv", "-std=c11", "-pthread", base + ".c", "-o", exe, "-lm"],
-                       capture_output=True, text=True, timeout=BUILD_TIMEOUT)
-    if b.returncode != 0:
-        print("FATAL: tychoc0 C did not compile:\n" + b.stderr[:1500]); sys.exit(2)
-    return exe
-
 def main():
     if not os.path.exists(TYCHOC):
         print("run 'make' first (no ./tychoc)"); sys.exit(2)
     os.makedirs(FINDINGS, exist_ok=True)
     tmp = tempfile.mkdtemp()
     try:
-        h0 = build_tychoc0(tmp)
         src = os.path.join(tmp, "p.ty")
         total = 0; skipped = 0
         fails = []
@@ -154,22 +131,14 @@ def main():
                 label = "%s %s" % (op, operand[1])
                 exp = expect(op, operand)
                 hv, hc = tychoc_verdict(src, os.path.join(tmp, "hc"))
-                zv, zc = tychoc0_verdict(h0, src, os.path.join(tmp, "h0.c"))
                 if hv == "CRASH":
                     fails.append((label, "tychoc CRASH", "", prog)); continue
-                if zv == "CRASH":
-                    fails.append((label, "tychoc0 CRASH", "", prog)); continue
                 if hv != exp:
-                    fails.append((label, "FIXTURE DRIFT", "tychoc=%s expected=%s" % (hv, exp), prog)); continue
-                if hv != zv:
-                    fails.append((label, "ACCEPT/REJECT DIVERGENCE",
-                                  "tychoc=%s tychoc0=%s" % (hv, zv), prog)); continue
+                    fails.append((label, "ORACLE DIVERGENCE", "tychoc=%s expected=%s" % (hv, exp), prog)); continue
                 if hv == "accept" and not c_compiles(hc):
                     fails.append((label, "tychoc accepted, emitted C does not compile", "", prog)); continue
-                if zv == "accept" and not c_compiles(zc):
-                    fails.append((label, "tychoc0 accepted, emitted C does not compile", "", prog)); continue
         if fails:
-            print("UNARY-PARITY FAIL: %d/%d cases diverge (%d newtype-erasure skipped)\n" % (len(fails), total, skipped))
+            print("UNARY-PARITY FAIL: %d/%d cases diverge (%d skipped)\n" % (len(fails), total, skipped))
             for i, (label, kind, detail, prog) in enumerate(fails):
                 print("  [%s]  %s   %s" % (kind, label, detail))
                 tag = (label).replace(" ", "_").replace("~", "tilde").replace("-", "neg").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
@@ -177,9 +146,10 @@ def main():
                     f.write("# %s -- %s %s\n%s" % (kind, label, detail, prog))
             print("\nfindings saved in fuzz/findings/unaryparity_*.ty")
             sys.exit(1)
-        print("unary-parity: %d/%d unary-operator cases AGREE "
-              "(accept/reject + emitted C; newtype identity enforced, 0 skipped) -- tychoc == tychoc0"
-              % (total, total))
+        print("unary-parity: %d/%d unary-operator cases match the oracle "
+              "(accept/reject + emitted C; newtype identity enforced, 0 skipped).\n"
+              "              NOTE: the tychoc0 differential was retired 2026-07-29 -- "
+              "see this file's header." % (total, total))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

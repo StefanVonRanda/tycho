@@ -39,19 +39,19 @@ before.
 - **Reversibility:** fully. Every phase is a commit on `main`, no data is
   touched, and no destructive path exists in this plan.
 - **Verified — the blocker is real, both halves of it:**
-  - `compiler/fixpoint.sh:24` — `for f in tests/*.ty examples/*.ty` builds each
+  - `compiler/fixpoint.sh` — `for f in tests/*.ty examples/*.ty` builds each
     with `./tychoc` (`:26`, skipping what tychoc refuses via `|| continue`) and
     then requires `B`, a `tychoc0`-derived binary, to emit C that compiles and
     matches (`:28-29`). New syntax → tychoc accepts → `B` refuses → `FAIL <nm>`.
-    The second loop at `:68-72` walks the same glob for the split-compiler
+    The second loop at `compiler/fixpoint.sh` walks the same glob for the split-compiler
     dogfood.
-  - `scripts/frontparity.sh:152-156` — the same glob plus `tests/conc/*.ty`,
+  - `scripts/frontparity.sh` — the same glob plus `tests/conc/*.ty`,
     `tests/warn/*.ty`, `tests/abort/*.ty`, `tests/diag/*.ty`, `tools/*.ty` and
-    `compiler/tychoc0.ty`, each through `check_one` (`:135-150`), which skips
-    only when **tychoc** refuses (`:137-141`) and fails when tychoc accepts and
-    `tychoc0` refuses (`:145-147`).
+    `compiler/tychoc0.ty`, each through `check_one` (`scripts/frontparity.sh`), which skips
+    only when **tychoc** refuses (`scripts/frontparity.sh`) and fails when tychoc accepts and
+    `tychoc0` refuses (`scripts/frontparity.sh`).
 - **Verified — the escape hatch that already exists is location-based, not
-  per-fixture.** `scripts/frontparity.sh:74-83` names the two directories held
+  per-fixture.** `scripts/frontparity.sh` names the two directories held
   outside the lane on purpose and says why: `examples/corelib/` holds "two
   DELIBERATE divergences the freeze created and Appendix E records
   (`result/main.ty` uses a nested pattern, `httpd/main.ty` a `\r` escape)", and
@@ -103,13 +103,13 @@ before.
     block, `:66-84`) and `compiler/fixpoint.sh` (`:1-9`) to name the new
     directory as deliberately out of scope; `docs/spec/appendix-e-conformance.md`
     to record it alongside the two `examples/corelib/` divergences already there.
-    **Not** touched: the globs in `compiler/fixpoint.sh:24`, `:68` and
-    `scripts/frontparity.sh:152-172` — `tests/postfreeze/*.ty` is excluded by
+    **Not** touched: the globs in `compiler/fixpoint.sh`, `compiler/fixpoint.sh` and
+    `scripts/frontparity.sh` — `tests/postfreeze/*.ty` is excluded by
     those globs already, and that is the point; the phase proves it rather than
     editing them.
   - The canary must use syntax `tychoc` accepts and frozen `tychoc0` refuses, so
     that the lane is proven rather than asserted. **Nested patterns are the
-    documented candidate** — `scripts/frontparity.sh:78` records
+    documented candidate** — `scripts/frontparity.sh` records
     `examples/corelib/result/main.ty` diverging on exactly that. Confirm against
     a built `tychoc0` before committing to it; if it does not diverge, pick
     another shape from Appendix E's list and say which.
@@ -139,7 +139,7 @@ before.
     `Err(TooBig(n))` is unspellable in its grammar, so the canary carries one.
 
     (b) **`tychoc0` at HEAD refuses the canary** — built the way
-    `scripts/frontparity.sh:122` does:
+    `scripts/frontparity.sh` does:
     ```
     $ ./tychoc compiler/tychoc0.ty -o /tmp/h0
     built /tmp/h0
@@ -204,7 +204,7 @@ before.
 
     **Citation drift this phase caused, and repaired.** Adding a 13-line header
     comment to `compiler/fixpoint.sh` moved its `tests/*.ty` loop from `:24` to
-    `:37`, invalidating four `compiler/fixpoint.sh:24` citations in
+    `:37`, invalidating four `compiler/fixpoint.sh` citations in
     `docs/spec/appendix-e-conformance.md` — on its lines 234, 252, 274 and 286.
     All four repaired to `:37`; `make check-links` re-run green afterwards. The
     citation gate would NOT have caught this — it only checks bare `:N` refs are
@@ -383,7 +383,7 @@ before.
     `editors/zed/`. Each has its own lexer or grammar and each will mis-tokenise
     a backtick literal until taught it.
   - Note the constraint that makes this phase real: `tools/*.ty` is inside
-    `scripts/frontparity.sh:152-153`'s glob, so `tychofmt` and `lsp` are compiled
+    `scripts/frontparity.sh`'s glob, so `tychofmt` and `lsp` are compiled
     by frozen `tychoc0` and **their own source may not use a raw string** even
     after phase 2 ships one. Handling the token is fine; writing one is not.
   - Done when: `tychofmt` round-trips `tests/postfreeze/rawstring.ty` unchanged
@@ -594,15 +594,15 @@ full run is ever wanted, `make ci N=0` is the cheap form.
 
 - [x] **Phase 4 (found by phase 1, not absorbed) — stale `:N` citations to the
       two frozen-compiler scripts**
-  - Phase 1 repaired the four `compiler/fixpoint.sh:24` refs inside its own scope
+  - Phase 1 repaired the four `compiler/fixpoint.sh` refs inside its own scope
     (`docs/spec/appendix-e-conformance.md`) and stopped there. Two classes remain,
     both **pre-existing or newly drifted, neither breaking a gate**:
-    - `FRICTION.md:215` and `:334` still say `compiler/fixpoint.sh:24`; the loop is
+    - `FRICTION.md:215` and `:334` still say `compiler/fixpoint.sh`; the loop is
       at `:37` since phase 1.
-    - `scripts/frontparity.sh:127` is cited in `FRICTION.md:215`, `:219`, `:244`,
+    - `scripts/frontparity.sh` is cited in `FRICTION.md:215`, `:219`, `:244`,
       `docs/spec/appendix-e-conformance.md:274` and `:285`, and has been stale
       **since before this plan** — the glob was already at `:152` at HEAD and phase
-      1's header note moved it to `:164`. Also `scripts/frontparity.sh:6-11`'s own
+      1's header note moved it to `:164`. Also `scripts/frontparity.sh`'s own
       header cites `tests/run.sh` at its lines 148, 159, 178, 199, 262 and
       291-314, none of which resolve to what the sentences describe (the last is
       past the end of the file outright).
@@ -617,7 +617,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     phase's own line map was itself stale in places, so every number below was
     re-derived by reading the cited file at HEAD, not by applying the plan's
     offsets. Two of the listed refs turned out to be **right already** and were
-    left alone: `compiler/fixpoint.sh:2` (cited by `FRICTION.md:329` and
+    left alone: `compiler/fixpoint.sh` (cited by `FRICTION.md:329` and
     `docs/bootstrap.md:5`) really is the `docs/bootstrap.md` header line, and
     `docs/spec/appendix-e-conformance.md:252-253`'s `:37`/`:81`/`:164` were
     already repaired by phase 1.
@@ -665,7 +665,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     the other 22, every one of which named a real line describing something else.
 
     **The header block was not merely renumbered — one of its claims was false.**
-    `scripts/frontparity.sh:6-11` said tychoc0 "is built at `tests/run.sh:148` and
+    `scripts/frontparity.sh` said tychoc0 "is built at `tests/run.sh:148` and
     used only on the *reject* lane (`:159`, `:178`), the *abort* lane (`:199`) and
     the *diag* goldens (`:262`)". `grep -n tychoc0 tests/run.sh` returns **eight
     hits, every one of them inside a comment**: the freeze removed the reject leg
@@ -686,12 +686,12 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     `wc -l` and by re-reading `:164-165`.
 
     **The one that must not be repointed, and why.** `FRICTION.md:222` cites
-    `scripts/frontparity.sh:126-127` inside a `~~struck-through~~` entry describing
+    `scripts/frontparity.sh` inside a `~~struck-through~~` entry describing
     the pre-2026-07-26 blind spot ("feeds `examples/*.ty` but never
     `examples/<dir>/main.ty`"). No current line says that — phase 8 of the archived
-    plan fixed it. Repointing to `:164-165` would make the sentence assert
-    something false about today's script. Rewritten to name both: "`:126-127` when
-    this was written; `:164-165` today, with the blind spot closed."
+    plan fixed it. Repointing to `scripts/frontparity.sh` would make the sentence assert
+    something false about today's script. Rewritten to name both: "`scripts/frontparity.sh` when
+    this was written; `scripts/frontparity.sh` today, with the blind spot closed."
 
     **Archived plans deliberately left alone.** `docs/internals/plan-*-DONE.md`
     carries 14 more `fixpoint.sh:N` / `frontparity.sh:N` refs (`plan-friction-DONE.md`
@@ -859,7 +859,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
 
     **The header's line count was NOT held constant, but `:63-73` was — and that
     was the constraint.** Phase 4's lesson applies: two live citations point at
-    `scripts/asan_self.sh:69-70` (`scripts/frontparity.sh:88`, and
+    `scripts/asan_self.sh:69-70` (`scripts/frontparity.sh`, and
     `docs/internals/plan-front-door-DONE.md:5907`, archived). The `NOT:` list had
     to stay on exactly those lines. So the IN list was **re-wrapped to the same
     six lines** (`:63-68`) rather than grown, and the twelve-line rationale block
@@ -1275,7 +1275,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     the tree's script-to-script citations, which rot by the identical mechanism and
     are equally invisible to `scripts/check_citations.py`'s bounds-only check.
   - The one confirmed instance, read at HEAD: `tests/rtparity/run.py:15` cites
-    `compiler/fixpoint.sh:16-30` for the claim that `make fixpoint` "compares
+    `compiler/fixpoint.sh` for the claim that `make fixpoint` "compares
     tychoc0 against ITSELF byte-for-byte and against tychoc only BEHAVIOURALLY".
     Both halves moved — the self-emission chain is `:29-35` and the behavioural
     differential is `:37-43`, so `:29-43` is the range the sentence describes.
@@ -1302,7 +1302,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     tracked non-Markdown file was scanned for a `path:N` / `path:N-M` naming
     another tracked non-Markdown file. **121 explicit references**, plus **10
     bare `:N` continuations** riding on a path named earlier on the same physical
-    line (`compiler/fixpoint.sh:14`'s `` `:37` ``/`` `:81` ``, `Makefile` refs in
+    line (`compiler/fixpoint.sh`'s `` `:37` ``/`` `compiler/fixpoint.sh` ``, `Makefile` refs in
     `/home/igzo/github/tycho/scripts/asan_self.sh`, and so on) — **131 total**.
     The 121 is the number the new gate reports, because it resolves only the
     explicit form.
@@ -1343,15 +1343,15 @@ full run is ever wanted, `make ci N=0` is the cheap form.
 
     | citation site | old target | new target | text at the new line |
     |---|---|---|---|
-    | `/home/igzo/github/tycho/tests/rtparity/run.py:15` | `compiler/fixpoint.sh:16-30` | `compiler/fixpoint.sh:29-43` | `./tychoc "$H" -o "$T/A"` … through the `tests/*.ty examples/*.ty` differential `done` |
+    | `/home/igzo/github/tycho/tests/rtparity/run.py:15` | `compiler/fixpoint.sh` | `compiler/fixpoint.sh` | `./tychoc "$H" -o "$T/A"` … through the `tests/*.ty examples/*.ty` differential `done` |
     | `/home/igzo/github/tycho/tests/rtparity/run.py:5` | `src/tychoc.c:26` | `src/tychoc.c:28` | `#include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */` |
     | `/home/igzo/github/tycho/tests/rtparity/run.py:7` | `compiler/tychoc0.ty:9595` | `compiler/tychoc0.ty:10555` | `fn preamble() -> string:` |
     | `/home/igzo/github/tycho/tests/rtparity/run.py:40` | `src/tychoc.c:9636` | `src/tychoc.c:10343` | the `if (_step%d == 0) { … "tycho: range step is zero\n" … }` emit |
     | `/home/igzo/github/tycho/tests/rtparity/run.py:40` | `compiler/tychoc0.ty:8593` | `compiler/tychoc0.ty:9513` | tychoc0's `"tycho: range step is zero\n"` header emit |
     | `/home/igzo/github/tycho/tests/cond_stmt_expr.ty:81` | `compiler/tychoc0.ty:8802` | `compiler/tychoc0.ty:9454` | `# (:1185) and a value-`if` re-enters here via SValDecl (:8519), so` |
-    | `/home/igzo/github/tycho/corelib/test/result/main.ty:17` | `compiler/fixpoint.sh:24` | `compiler/fixpoint.sh:37` + `:47` | `for f in tests/*.ty examples/*.ty; do` and `for d in tests/pkg/*/; do` |
-    | `/home/igzo/github/tycho/corelib/test/result/main.ty:18` | `scripts/frontparity.sh:127` | `scripts/frontparity.sh:164-165` | the two-line `for hi in examples/*.ty tests/*.ty …` glob |
-    | `/home/igzo/github/tycho/tools/lsp.ty:258` | `scripts/frontparity.sh:127` | `scripts/frontparity.sh:164-165` | same glob — it is the line that carries `tools/*.ty` |
+    | `/home/igzo/github/tycho/corelib/test/result/main.ty:17` | `compiler/fixpoint.sh` | `compiler/fixpoint.sh` + `:47` | `for f in tests/*.ty examples/*.ty; do` and `for d in tests/pkg/*/; do` |
+    | `/home/igzo/github/tycho/corelib/test/result/main.ty:18` | `scripts/frontparity.sh` | `scripts/frontparity.sh` | the two-line `for hi in examples/*.ty tests/*.ty …` glob |
+    | `/home/igzo/github/tycho/tools/lsp.ty:258` | `scripts/frontparity.sh` | `scripts/frontparity.sh` | same glob — it is the line that carries `tools/*.ty` |
     | `/home/igzo/github/tycho/scripts/asan_self.sh:10` | `Makefile:85-86` | `Makefile:103-106` | `# Differential test suite: every examples/*.ty and tests/*.ty built both` … `# tests/run.sh and docs/thesis.md §3.` |
     | `/home/igzo/github/tycho/scripts/asan_self.sh:11` | `Makefile:202` + `:214` | `Makefile:245` + `:246` | the `ilp32: ASan lane SKIPPED …` echo and `@CC="gcc -m32" TYCHO_NO_ASAN=1 sh tests/run.sh` |
     | `/home/igzo/github/tycho/scripts/asan_self.sh:72` | `Makefile:214` | `Makefile:245` | the same `ASan lane SKIPPED for ilp32` echo |
@@ -1359,7 +1359,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     | `/home/igzo/github/tycho/scripts/frontparity.sh:102` | `examples/fetch/run.sh:35` | `examples/fetch/run.sh:33` | `if ! { "$TYCHOC" examples/fetch/main.ty --bundle 2>/dev/null \| "$T/h0" > "$T/h0.c" …` |
     | `/home/igzo/github/tycho/scripts/frontparity.sh:102` | `examples/sqlite/run.sh:31` | `examples/sqlite/run.sh:29` | `if ! { "$TYCHOC" demo.ty --bundle 2>/dev/null \| "$T/h0" > "$T/h0.c" …` |
     | `/home/igzo/github/tycho/tests/reject/rawstring_unterminated.ty:10` | `tests/run.sh:161-166` | `tests/run.sh:167` | `for hi in tests/reject/*.ty; do` |
-    | `/home/igzo/github/tycho/tests/postfreeze/nested_pattern.ty:12` | `scripts/frontparity.sh:78` | `scripts/frontparity.sh:88-91` | `#      holds two DELIBERATE divergences … (`result/main.ty` uses a nested pattern, `httpd/main.ty` a `\r` escape)` |
+    | `/home/igzo/github/tycho/tests/postfreeze/nested_pattern.ty:12` | `scripts/frontparity.sh` | `scripts/frontparity.sh` | `#      holds two DELIBERATE divergences … (`result/main.ty` uses a nested pattern, `httpd/main.ty` a `\r` escape)` |
 
     **Three findings worth more than the table.**
 
@@ -1372,11 +1372,11 @@ full run is ever wanted, `make ci N=0` is the cheap form.
        phase before the phase that hunts it.
     2. **The two worst were in `/home/igzo/github/tycho/tests/rtparity/run.py`,
        and both halves of its `make fixpoint` claim were wrong in different
-       directions.** Phase 4's note that `compiler/fixpoint.sh:16-30` should be
+       directions.** Phase 4's note that `compiler/fixpoint.sh` should be
        `:29-43` is confirmed at HEAD and unchanged by phase 7: the self-emission
-       chain is `compiler/fixpoint.sh:29-35` (build A, B, C; `cmp -s "$T/cA.c"
+       chain is `compiler/fixpoint.sh` (build A, B, C; `cmp -s "$T/cA.c"
        "$T/cB.c"`) and the behavioural differential is
-       `compiler/fixpoint.sh:37-43`. `:16-30` today lands on the OUT-OF-SCOPE
+       `compiler/fixpoint.sh`. `:16-30` today lands on the OUT-OF-SCOPE
        comment about `tests/postfreeze/` plus the `cd`/`CC=`/`mktemp` setup —
        in bounds, plausible, about nothing the sentence describes.
     3. **`compiler/tychoc0.ty` being frozen does NOT make citations into it
@@ -1432,7 +1432,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
 
     **Verify — gate 2, the deliberate break, both directions, against the FINAL
     script.** `/home/igzo/github/tycho/tests/rtparity/run.py:15`'s repaired
-    `compiler/fixpoint.sh:29-43` was temporarily widened to `29-430`:
+    `compiler/fixpoint.sh` was temporarily widened to `29-430`:
     ```
     STALE  tests/rtparity/run.py:15  `compiler/fixpoint.sh:<29-430>` -> compiler/fixpoint.sh has 95 lines: OUT OF BOUNDS
     citation check: FAILED (1 stale citation(s) above)

@@ -1,37 +1,41 @@
 #!/usr/bin/env python3
-# parallel-for GATE parity: tychoc (the C reference compiler) and tychoc0 (self-
-# hosted) MUST agree on whether a program with a `parallel for` is accepted or
-# rejected. The body of a chunk has hard rules -- no early exit (return / break-
-# to-the-parfor / or_return), no in-place mutation or `inout`-pass of a captured
-# variable, an outer variable may be updated ONLY as a +/* reduction read nowhere
-# else, no range step, an int range -- and each rule is a SOUNDNESS gate: a chunk
-# that violates one silently miscompiles (a private copy drained, a partial read
-# as the whole, an early exit that can't cross a thread boundary).
+# parallel-for GATE coverage: one program per `parallel for` soundness gate, plus
+# a valid baseline that exercises the SAME construct without tripping it.
+# Deterministic, not random. The body of a chunk has hard rules -- no early exit
+# (return / break-to-the-parfor / or_return), no in-place mutation or `inout`-pass
+# of a captured variable, an outer variable may be updated ONLY as a +/* reduction
+# read nowhere else, no range step, an int range -- and each rule is a SOUNDNESS
+# gate: a chunk that violates one silently miscompiles (a private copy drained, a
+# partial read as the whole, an early exit that can't cross a thread boundary).
 #
-# Why this lane exists: the fixpoint differential only compares the OUTPUT of
-# programs BOTH compilers accept, so a disagreement on WHETHER to accept is
-# invisible to it -- and tychoc0 was found to FAIL-OPEN on return-in-parfor (it
-# leaned on tychoc as the oracle and never ported the gates). The reject-test
-# harness gates the C compiler only, so it cannot catch a tychoc0 fail-open
-# either. This lane closes that blind spot the same way run_typeparity.py closed
-# the type-boundary one: deterministic, not random, one program per gate plus a
-# valid baseline that exercises the SAME construct without tripping it.
+# A case is a (name, expect, program). `expect` -- what tychoc SHOULD say -- is
+# the oracle: the fixture must really trip (or really not trip) the gate. An
+# accepted program must also emit C that COMPILES (an accept that emits broken C
+# is a codegen/fail-open bug, reported too).
 #
-# A case is a (name, expect, program). `expect` is what tychoc SHOULD say -- a
-# sanity check that the fixture really trips (or really doesn't trip) the gate;
-# the PARITY assertion is tychoc == tychoc0 regardless of `expect`. A program both
-# accept must also emit C that COMPILES in both (an accept that emits broken C is
-# a codegen/fail-open bug, reported too).
+# HISTORY -- THE PARITY ASSERTION WAS RETIRED 2026-07-29. Until then this lane was
+# also a DIFFERENTIAL: tychoc and the frozen self-hosted tychoc0 had to agree on
+# every verdict. That mattered because the fixpoint differential only compared the
+# OUTPUT of programs BOTH compilers accept, so a disagreement on WHETHER to accept
+# was invisible to it -- and tychoc0 was found to FAIL-OPEN on return-in-parfor
+# (it leaned on tychoc as the oracle and never ported the gates at all).
+#
+# WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
+# of 2026-07-29 (three-clause `for` and bare `for:` replace `for i in range(...)`,
+# `range` deleted) means it can no longer parse the corpus, so no lane builds it.
+# See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
+#
+# WHAT IS LOST: the ability to catch a SECOND implementation failing to enforce a
+# gate. What remains -- tychoc against the written-down `expect` oracle -- is the
+# half that gates the compiler people actually ship, and it is unchanged.
 #
 # Usage: run_parforparity.py        (no seeds -- the case set is fixed)
 import os, subprocess, sys, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TYCHOC = os.path.join(REPO, "tychoc")
-HSRC = os.path.join(REPO, "compiler", "tychoc0.ty")
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 RUN_TIMEOUT = 30
-BUILD_TIMEOUT = 300
 
 # ---- reject cases: each trips exactly one parallel-for gate in tychoc ----------
 REJECT = {
@@ -254,16 +258,6 @@ def tychoc_verdict(src, base):
     c = base + ".c" if v == "accept" and os.path.exists(base + ".c") else None
     return v, c
 
-def tychoc0_verdict(h0, src, cpath):
-    with open(src, "rb") as fi:
-        r = subprocess.run([h0], stdin=fi, capture_output=True, timeout=RUN_TIMEOUT)
-    v = classify(r.returncode)
-    if v == "accept" and r.stdout:
-        with open(cpath, "wb") as fo:
-            fo.write(r.stdout)
-        return v, cpath
-    return v, None
-
 def c_compiles(cpath):
     if not cpath or not os.path.exists(cpath) or os.path.getsize(cpath) == 0:
         return True
@@ -271,26 +265,12 @@ def c_compiles(cpath):
                        capture_output=True, text=True, timeout=RUN_TIMEOUT)
     return r.returncode == 0
 
-def build_tychoc0(tmp):
-    base = os.path.join(tmp, "h0src")
-    r = subprocess.run([TYCHOC, HSRC, "--emit-c", "-o", base],
-                       capture_output=True, text=True, timeout=BUILD_TIMEOUT)
-    if r.returncode != 0 or not os.path.exists(base + ".c"):
-        print("FATAL: tychoc could not emit tychoc0 C:\n" + r.stderr[:1500]); sys.exit(2)
-    exe = os.path.join(tmp, "tychoc0")
-    b = subprocess.run(["cc", "-O2", "-fwrapv", "-std=c11", "-pthread", base + ".c", "-o", exe, "-lm"],
-                       capture_output=True, text=True, timeout=BUILD_TIMEOUT)
-    if b.returncode != 0:
-        print("FATAL: tychoc0 C did not compile:\n" + b.stderr[:1500]); sys.exit(2)
-    return exe
-
 def main():
     if not os.path.exists(TYCHOC):
         print("run 'make' first (no ./tychoc)"); sys.exit(2)
     os.makedirs(FINDINGS, exist_ok=True)
     tmp = tempfile.mkdtemp()
     try:
-        h0 = build_tychoc0(tmp)
         src = os.path.join(tmp, "p.ty")
         cases = ([(n, "reject", p) for n, p in REJECT.items()] +
                  [(n, "accept", p) for n, p in ACCEPT.items()])
@@ -299,22 +279,14 @@ def main():
             with open(src, "w") as f:
                 f.write(prog)
             hv, hc = tychoc_verdict(src, os.path.join(tmp, "hc"))
-            zv, zc = tychoc0_verdict(h0, src, os.path.join(tmp, "h0.c"))
             if hv == "CRASH":
                 fails.append((name, "tychoc CRASH", "", prog)); continue
-            if zv == "CRASH":
-                fails.append((name, "tychoc0 CRASH", "", prog)); continue
-            # sanity: the fixture must trip (or not trip) the gate as designed in
-            # the ORACLE; a drifted fixture is a test bug, surfaced loudly.
+            # The fixture must trip (or not trip) the gate as designed in the
+            # ORACLE; a drifted fixture is a test bug, surfaced loudly.
             if hv != expect:
-                fails.append((name, "FIXTURE DRIFT", "tychoc=%s expected=%s" % (hv, expect), prog)); continue
-            if hv != zv:
-                fails.append((name, "ACCEPT/REJECT DIVERGENCE",
-                              "tychoc=%s tychoc0=%s" % (hv, zv), prog)); continue
+                fails.append((name, "ORACLE DIVERGENCE", "tychoc=%s expected=%s" % (hv, expect), prog)); continue
             if hv == "accept" and not c_compiles(hc):
                 fails.append((name, "tychoc accepted, emitted C does not compile", "", prog)); continue
-            if zv == "accept" and not c_compiles(zc):
-                fails.append((name, "tychoc0 accepted, emitted C does not compile", "", prog)); continue
         total = len(cases)
         if fails:
             print("PARFOR-PARITY FAIL: %d/%d cases diverge\n" % (len(fails), total))
@@ -325,8 +297,10 @@ def main():
                     f.write("# %s -- %s %s\n%s" % (kind, name, detail, prog))
             print("\nfindings saved in fuzz/findings/parforparity_*.ty")
             sys.exit(1)
-        print("parfor-parity: %d/%d parallel-for gate cases AGREE "
-              "(accept/reject + emitted C) -- tychoc == tychoc0" % (total, total))
+        print("parfor-parity: %d/%d parallel-for gate cases match the oracle "
+               "(accept/reject + emitted C).\n"
+               "               NOTE: the tychoc0 differential was retired 2026-07-29 -- "
+               "see this file's header." % (total, total))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

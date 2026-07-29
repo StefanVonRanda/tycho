@@ -1,94 +1,58 @@
 #!/bin/sh
-# Stage 4 self-host fixpoint (docs/bootstrap.md). The 3-stage bootstrap:
-#   A = tychoc (the C compiler) building tychoc0.ty              -> exe A
-#   B = A building tychoc0.ty (C emitted by A, then cc'd)       -> exe B
-#   C = B building tychoc0.ty (C emitted by B, then cc'd)       -> exe C
-# Assert the emitted C of B and C is byte-identical (so B == C): A was built by
-# the C compiler, B and C by a Tycho-built compiler, so cB == cC proves the Tycho
-# compiler reproduces itself exactly. Also checks B differentially reproduces
-# the C compiler's golden output across tests/ + examples/.
+# Stage 4 self-host fixpoint (docs/bootstrap.md) — RETIRED 2026-07-29.
+# This lane no longer runs and no longer builds tychoc0.
 #
-# OUT OF SCOPE, ON PURPOSE: tests/postfreeze/*.ty. Those programs are written to
-# use syntax the LIVE tychoc accepts and the FROZEN tychoc0 does not, so B — a
-# tychoc0-derived binary — cannot build them and must never be asked to. Both
-# loops below (`:37` and `:81`) glob `tests/*.ty`, which does not descend into
-# subdirectories, so the exclusion is structural: do NOT add tests/postfreeze to
-# either glob. Measured, not assumed: a tychoc0 built at HEAD reports `parse:
-# line 34: unexpected token` on tests/postfreeze/nested_pattern.ty, which here
-# would surface as the undifferentiated `FAIL <nm> (B differs from the C
-# compiler)` at `:42`. That directory is gated by tests/run.sh:135-153 instead,
-# with the same native-vs-ASan + golden discipline; scripts/frontparity.sh's
-# COVERAGE block and docs/spec/appendix-e-conformance.md §E.2 record the same
-# boundary.
-set -u
-cd "$(dirname "$0")/.."
-CC="${CC:-cc}"
-[ -x ./tychoc ] || { echo "run 'make' first"; exit 2; }
-H=compiler/tychoc0.ty
-T=$(mktemp -d)
-./tychoc "$H" -o "$T/A"            >/dev/null 2>&1 || { echo "FAIL: C compiler could not build tychoc0"; exit 1; }
-"$T/A" < "$H" > "$T/cA.c"           2>/dev/null     || { echo "FAIL: A could not compile tychoc0.ty"; exit 1; }
-$CC -O2 -fwrapv -o "$T/B" "$T/cA.c" -lm     2>/dev/null     || { echo "FAIL: emitted C (cA) did not compile"; exit 1; }
-"$T/B" < "$H" > "$T/cB.c"           2>/dev/null     || { echo "FAIL: B could not compile tychoc0.ty"; exit 1; }
-$CC -O2 -fwrapv -o "$T/C" "$T/cB.c" -lm     2>/dev/null     || { echo "FAIL: emitted C (cB) did not compile"; exit 1; }
-if ! cmp -s "$T/cA.c" "$T/cB.c"; then echo "FAIL: B != C (self-emission not a fixed point)"; rm -rf "$T"; exit 1; fi
-echo "ok   B == C : tychoc0 reproduces itself byte-identically ($(wc -l <"$T/cA.c") lines C)"
-fail=0
-for f in tests/*.ty examples/*.ty; do
-    nm=$(basename "$f")
-    ./tychoc "$f" -o "$T/ref" >/dev/null 2>&1 || continue
-    ref="$("$T/ref" </dev/null 2>/dev/null)"
-    "$T/B" < "$f" > "$T/g.c" 2>/dev/null && $CC -O2 -fwrapv -o "$T/g" "$T/g.c" -lm 2>/dev/null \
-        && [ "$ref" = "$("$T/g" </dev/null 2>/dev/null)" ] || { echo "FAIL $nm (B differs from the C compiler)"; fail=1; }
-done
-# Package programs (Stage D): the Tycho-built compiler B builds each tests/pkg
-# fixture from `tychoc --bundle <entry>` (the post-order package stream, each
-# `package` header switching B's mangling prefix) and must match the C compiler.
-for d in tests/pkg/*/; do
-    [ -d "$d" ] || continue
-    nm=$(basename "$d")
-    entry="$d/main.ty"
-    [ -f "$entry" ] || continue
-    ./tychoc "$entry" -o "$T/pref" >/dev/null 2>&1 || { echo "FAIL pkg_$nm (C compiler could not build it)"; fail=1; continue; }
-    ref="$("$T/pref" </dev/null 2>/dev/null)"
-    if ./tychoc "$entry" --bundle 2>/dev/null | "$T/B" > "$T/pg.c" 2>/dev/null && $CC -O2 -fwrapv -o "$T/pg" "$T/pg.c" -lm 2>/dev/null; then
-        [ "$ref" = "$("$T/pg" </dev/null 2>/dev/null)" ] || { echo "FAIL pkg_$nm (B differs from the C compiler)"; fail=1; }
-    else
-        echo "FAIL pkg_$nm (tychoc0 could not compile the bundle)"; fail=1
-    fi
-    # Standalone driver: B compiles the package directly from disk (read_file /
-    # list_dir / args — no `tychoc --bundle` middleman) and must match too.
-    if "$T/B" "$entry" > "$T/sd.c" 2>/dev/null && $CC -O2 -fwrapv -o "$T/sd" "$T/sd.c" -lm 2>/dev/null; then
-        [ "$ref" = "$("$T/sd" </dev/null 2>/dev/null)" ] || { echo "FAIL pkg_$nm (standalone tychoc0 <path> differs)"; fail=1; }
-    else
-        echo "FAIL pkg_$nm (standalone tychoc0 could not compile the package)"; fail=1
-    fi
-done
-# Dogfood (Stage E): split tychoc0.ty itself into a two-package program
-# (compiler/pkg-split.sh -> `main` importing `rt`) and prove the SELF-HOSTED
-# compiler handles itself packaged:
-#   - the C compiler builds the split (Apkg);
-#   - Apkg compiling its own --bundle is a fixed point (Epkg==Fpkg);
-#   - the multi-package compiler emits byte-identical C to the single-file
-#     compiler (B) on every fixture — repackaging changes no output.
-sh compiler/pkg-split.sh "$T/split" 2>/dev/null || { echo "FAIL: could not split tychoc0"; fail=1; }
-if ./tychoc "$T/split/main.ty" -o "$T/Apkg" >/dev/null 2>&1; then
-    ./tychoc "$T/split/main.ty" --bundle > "$T/sb.ty" 2>/dev/null
-    if "$T/Apkg" < "$T/sb.ty" > "$T/eA.c" 2>/dev/null && $CC -O2 -fwrapv -o "$T/Epkg" "$T/eA.c" -lm 2>/dev/null \
-       && "$T/Epkg" < "$T/sb.ty" > "$T/eB.c" 2>/dev/null; then
-        cmp -s "$T/eA.c" "$T/eB.c" || { echo "FAIL split-tychoc0 self-emission is not a fixed point"; fail=1; }
-        sdiff=0
-        for f in tests/*.ty examples/*.ty; do
-            "$T/B"    < "$f" > "$T/u.c" 2>/dev/null
-            "$T/Epkg" < "$f" > "$T/v.c" 2>/dev/null
-            cmp -s "$T/u.c" "$T/v.c" || { echo "FAIL split-tychoc0 differs from single-file on $(basename "$f")"; sdiff=1; fail=1; }
-        done
-        [ "$sdiff" -eq 0 ] && [ "$fail" -eq 0 ] && echo "ok   split tychoc0 (2 packages) self-hosts E==F and matches the single-file compiler"
-    else
-        echo "FAIL split-tychoc0 could not self-build"; fail=1
-    fi
-else
-    echo "FAIL: C compiler could not build the split tychoc0"; fail=1
-fi
-rm -rf "$T"
-[ "$fail" -eq 0 ] && echo "fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)" || { echo "fixpoint: FAIL"; exit 1; }
+# WHAT IT PROVED, WHILE IT RAN
+# ----------------------------
+# The 3-stage bootstrap, and that it reached a fixed point:
+#   A = tychoc (the C compiler) building compiler/tychoc0.ty   -> exe A
+#   B = A building tychoc0.ty (C emitted by A, then cc'd)      -> exe B
+#   C = B building tychoc0.ty (C emitted by B, then cc'd)      -> exe C
+# A was built by the C compiler; B and C by a Tycho-built compiler. Asserting
+# the emitted C of B and C byte-identical (B == C) is the self-hosting result:
+# the Tycho compiler reproduces itself exactly. On top of that it checked, over
+# tests/*.ty + examples/*.ty, that B differentially reproduced the C compiler's
+# golden output; that the package path agreed both via `tychoc --bundle` and via
+# the standalone `tychoc0 <entry>` driver over tests/pkg/*/; and the Stage E
+# dogfood, where compiler/pkg-split.sh splits tychoc0.ty into a two-package
+# program that must self-host (E == F) and emit byte-identical C to the
+# single-file compiler on every fixture.
+#
+# It also carried the OUTPUT half of the differential that scripts/frontparity.sh
+# carried the FRONTEND half of, and it is where the newtype over-tightening of
+# `tests/newtype_agg.ty` first surfaced (as the undifferentiated `FAIL
+# newtype_agg.ty (B differs from the C compiler)`, which is why frontparity.sh
+# was written).
+#
+# WHY IT WAS RETIRED
+# ------------------
+# On 2026-07-29 the language took a BREAKING change: the three-clause `for` and
+# bare `for:` replace `for i in range(...)`, and the `range` builtin is deleted.
+# `compiler/tychoc0.ty` is FROZEN and unmaintained, so it cannot parse the new
+# loop syntax — and this lane requires a tychoc0-derived binary to compile the
+# whole corpus. A frozen compiler and an evolving corpus are not co-satisfiable.
+#
+# WHAT IS LOST, PLAINLY
+# ---------------------
+# Continuous proof that the self-hosting fixed point still holds at HEAD, and
+# continuous proof that a second independent implementation produces the same
+# program output as the C compiler. It was never in `make ci` (verified: no
+# Makefile target, no step of scripts/ci.sh invoked it) — it was hand-run — so
+# retiring it changes nothing about what `make ci` covers.
+#
+# WHAT compiler/tychoc0.ty STILL IS
+# ---------------------------------
+# It stays on disk, unchanged. The self-hosting result it established in 2026 is
+# a historical fact and remains true of that commit; ROADMAP.md records it as
+# finished work and it still is. `scripts/asan_self.sh` still feeds it to
+# `tychoc` as INPUT, the largest single Tycho source in the tree. What ended is
+# the claim that the fixed point is RE-PROVEN on every run — not the result.
+# compiler/pkg-split.sh, whose only caller was this script, is likewise retired
+# in place rather than deleted.
+echo "fixpoint: RETIRED 2026-07-29 — this lane no longer runs."
+echo "          It proved the 3-stage bootstrap reached a fixed point (B == C) and"
+echo "          that the self-hosted compiler matched the C compiler's output."
+echo "          Retired because the breaking loop-syntax change makes the frozen"
+echo "          compiler unable to parse the corpus. See the header of this file,"
+echo "          ROADMAP.md and docs/architecture.md."
+exit 0

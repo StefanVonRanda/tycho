@@ -136,7 +136,7 @@ done
 # accepts and the FROZEN compiler/tychoc0.ty does not, so it gets the same
 # native-vs-ASan + golden discipline as everything above but lives in its own
 # directory to stay OUT of the two tychoc0-derived lanes:
-# `compiler/fixpoint.sh:37`/`:81` and `scripts/frontparity.sh:164-165` glob
+# `compiler/fixpoint.sh`/`:81` and `scripts/frontparity.sh` glob
 # `tests/*.ty`, which does not descend, so nothing here is ever fed to a
 # tychoc0-derived binary. That is the whole point of the directory — before it
 # existed, any fixture for syntax added after the 2026-07-26 freeze reddened
@@ -156,7 +156,7 @@ done
 # BUILD with tychoc, run native-only, require a nonzero exit and a 'tycho:'
 # message -- but for programs whose syntax the FROZEN compiler refuses.
 #
-# They cannot live in tests/abort/: `scripts/frontparity.sh:164-165` globs
+# They cannot live in tests/abort/: `scripts/frontparity.sh` globs
 # `tests/abort/*.ty` and scores "tychoc accepted it, tychoc0 refused it" as a
 # divergence. An abort fixture is a program tychoc ACCEPTS, so a post-freeze one
 # put there would redden that lane by construction. tests/reject/ has no such

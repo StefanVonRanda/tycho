@@ -15,8 +15,16 @@
 #
 # Generated from tychoc0.ty by function NAME (robust to line shifts), so it never
 # drifts: the split is always exactly the current compiler, just repackaged.
-# `make fixpoint` regenerates it and asserts it (a) self-hosts byte-identically
-# and (b) emits identical C to the single-file compiler on every fixture.
+#
+# ORPHANED 2026-07-29. Its only caller was compiler/fixpoint.sh, which
+# regenerated the split and asserted it (a) self-hosted byte-identically and (b)
+# emitted identical C to the single-file compiler on every fixture. That lane is
+# RETIRED — see the header of compiler/fixpoint.sh for why, and ROADMAP.md /
+# docs/architecture.md for what the project gave up. This script builds no
+# compiler itself; it only rewrites compiler/tychoc0.ty, which stays on disk. It
+# is kept, not deleted, because it is the only record of where the compiler's
+# one clean package seam actually falls (a one-way main -> rt dependency), and
+# that is worth having if the multi-package path is ever revisited.
 set -eu
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 H="$HERE/tychoc0.ty"

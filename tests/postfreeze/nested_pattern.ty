@@ -9,7 +9,7 @@
 # The canary itself is a NESTED PATTERN (docs/spec/10-statements.md:47-55): an
 # `Ok`/`Err`/`Some` arm refining its single payload with one nested pattern.
 # docs/spec/appendix-e-conformance.md:150 records §14.3.1 as having no `tests/`
-# fixture for exactly this reason, and `scripts/frontparity.sh:88-91` records
+# fixture for exactly this reason, and `scripts/frontparity.sh` records
 # `examples/corelib/result/main.ty` being held out of the parity lane over it.
 #
 # Its job is to FAIL LOUDLY if this directory ever leaks into a tychoc0 lane.

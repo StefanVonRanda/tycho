@@ -40,6 +40,43 @@ diagnostic naming the keyword, while `tychoc0` still accepts it. tychoc0 is not
 deprecated for being wrong; it correctly compiles the language it was frozen against.
 `tychoc` is the reference implementation and [the spec](spec/) is normative.
 
+### 2026-07-29: the freeze lanes were retired — nothing builds `tychoc0` now
+
+The 2026-07-26 freeze removed tychoc0 from **`make ci`**. It did not remove it from the
+tree: two hand-run lanes (`compiler/fixpoint.sh`, `scripts/frontparity.sh`) and fourteen
+other non-gated runners still built a `tychoc0` and still ran it, right up to
+2026-07-29. On that date the language took a breaking change — the three-clause
+`for i := 0; i < n; i += 1:` and bare `for:` replace `for i in range(...)`, and the
+`range` builtin is deleted — and a frozen compiler that must still compile the whole
+corpus stopped being co-satisfiable with a corpus adopting new syntax. `tychoc0` cannot
+parse the new loop forms and never will. **Every lane that built it is retired.**
+
+**What ended, in plain words.** Continuous proof that `tychoc0` accepts what `tychoc`
+accepts, and that the two produce identical program output. That proof was load-bearing
+at least once: an over-tightening of the newtype path made `tychoc0` refuse
+`if dup == ids:` (`tests/newtype_agg.ty`), which reddened `compiler/fixpoint.sh`. The C
+compiler accepted that program without complaint — the defect was visible *only* because
+a second, independent implementation disagreed. **The class of defect now uncaught is
+exactly that:** a silent narrowing of what the frontend accepts, where the only compiler
+left to consult is the one that was narrowed. Recorded goldens do not catch it, because
+a program that is newly rejected never reaches the golden comparison. Nothing in
+`make ci` replaces this and nothing is planned to.
+
+Two smaller losses worth naming, because no other lane covered them:
+`fuzz/run_pkg.py`'s tychoc0 legs were the only consumers anywhere of the
+`tychoc --bundle` post-order package stream, and `tests/rtparity/run.py` was the only
+check that the runtime `tychoc` embeds actually wires up the env knobs, abort
+diagnostics and arena-stats rows it defines.
+
+**Retired, not deleted.** Every lane keeps its file, with a header recording what it
+proved, what its loss costs, and that it stopped running on 2026-07-29 — so a future
+reader asking "was this ever checked?" finds an answer rather than an absence.
+`compiler/tychoc0.ty` itself is untouched on disk: it is the evidence that Tycho
+self-hosts (a fact about the commit that proved it, which retiring a lane cannot undo),
+it is still the largest single Tycho program in the tree, and `make asan-self` still
+feeds it to `tychoc` as **input** under ASan/UBSan. What ended is the claim that it is
+*continuously checked*.
+
 ## The verification surface
 
 `make ci` runs the whole gate locally — there is no hosted CI, by policy. What each
@@ -65,9 +102,13 @@ step proves:
 > Until 2026-07-26 this table also listed `fixpoint`, `frontparity`, `rtparity`,
 > `fuzz-pkg`, `typeparity`, `parforparity`, `eqparity` and `unaryparity`, and several
 > rows above asserted that `tychoc` and `tychoc0` **agree**. Every one of those was a
-> two-implementation gate. They were removed with the freeze; what survives gates
+> two-implementation gate. They were removed from `make ci` with the freeze, and the
+> scripts themselves were retired on 2026-07-29 (see above). What survives gates
 > `tychoc` against a **recorded golden** or a stated fail-closed invariant, never
-> against a second compiler.
+> against a second compiler. Some of those scripts still exist and still run something
+> useful — `fuzz/run_eqparity.py`, `run_unaryparity.py` and `run_parforparity.py` keep
+> their written-down `expect` oracle and gate `tychoc` against it — but the second
+> opinion is gone from all of them, and their headers say so.
 
 The `make hooks` pre-push gate runs the full deterministic lane set plus a fast fuzz
 smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a green tree.

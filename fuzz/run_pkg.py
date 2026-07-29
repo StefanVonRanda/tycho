@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
-# Package differential fuzzer. The single-file generator (gen.py/run.py) compiles
-# one file from stdin and so can NEVER reach the package-mangling code paths --
-# exactly where the mangle_type and generic-instance-over-tuple bugs hid this
-# cycle. This generates a random two-package program (a `geom` helper package + a
-# `main` that imports it) exercising cross-package types and calls, then compiles
-# each THREE ways and asserts byte-identical output:
-#   tychoc <dir>/main.ty                          (the C reference)
-#   tychoc --bundle | tychoc0                     (the post-order package stream)
-#   tychoc0 <dir>/main.ty                          (standalone: reads the dir itself)
-# A compile-accept discrepancy or an output divergence is a FAIL (seed reported).
+# Package fuzzer. The single-file generator (gen.py/run.py) compiles one file from
+# stdin and so can NEVER reach the package-mangling code paths -- exactly where the
+# mangle_type and generic-instance-over-tuple bugs hid. This generates a random
+# two-package program (a `geom` helper package + a `main` that imports it)
+# exercising cross-package types and calls, compiles it with tychoc, runs it, and
+# FAILS if it does not build and run cleanly (seed reported).
 # Deterministic per seed. Usage: run_pkg.py [N]   (N defaults to 200).
+#
+# HISTORY -- THE DIFFERENTIAL WAS RETIRED 2026-07-29. Until then each program was
+# compiled THREE ways and their output required to be byte-identical:
+#   tychoc <dir>/main.ty                     (the C reference)
+#   tychoc --bundle | tychoc0                (the post-order package stream)
+#   tychoc0 <dir>/main.ty                    (standalone: reads the dir itself)
+#
+# WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
+# of 2026-07-29 (three-clause `for` and bare `for:` replace `for i in range(...)`,
+# `range` deleted) means it can no longer parse the corpus, so no lane builds it.
+# See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
+#
+# WHAT IS LOST, AND IT IS THE INTERESTING HALF: legs (2) and (3) were the only
+# coverage anywhere of the `--bundle` post-order package STREAM and of a compiler
+# resolving a package directory from disk on its own. Nothing else in the tree
+# consumes `--bundle` output. What remains is a smoke test -- random cross-package
+# programs must still compile and run under tychoc -- with no second opinion and
+# no check that the bundle stream is even well formed.
 import sys, os, random, subprocess, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -63,7 +77,7 @@ def run(exe):
     except subprocess.TimeoutExpired:
         return None
 
-def classify(seed, h0):
+def classify(seed):
     geom, main = gen_pkg(seed)
     d = tempfile.mkdtemp()
     try:
@@ -71,53 +85,33 @@ def classify(seed, h0):
         open(d + "/geom/g.ty", "w").write(geom)
         open(d + "/main.ty", "w").write(main)
         ent = d + "/main.ty"
-        # (1) tychoc reference
+        # tychoc reference. Legs (2) and (3) -- the two tychoc0 legs that made this
+        # a differential -- were retired 2026-07-29; see the file header.
         ta = subprocess.run([TYCHOC, ent, "-o", d + "/tb"], capture_output=True, text=True, env=ENV, timeout=30)
-        a_ok = ta.returncode == 0
-        # (2) tychoc0 via the --bundle post-order stream
-        b_ok = False
-        bd = subprocess.run([TYCHOC, ent, "--bundle"], capture_output=True, text=True, env=ENV, timeout=30)
-        if bd.returncode == 0:
-            e = subprocess.run([h0], input=bd.stdout, capture_output=True, text=True, timeout=30)
-            if e.returncode == 0 and e.stdout.strip():
-                open(d + "/b.c", "w").write(e.stdout)
-                b_ok = subprocess.run(CC + [d + "/b.c", "-o", d + "/bb"], capture_output=True).returncode == 0
-        # (3) tychoc0 standalone (reads the package dir itself)
-        c_ok = False
-        e = subprocess.run([h0, ent], capture_output=True, text=True, env=ENV, timeout=30)
-        if e.returncode == 0 and e.stdout.strip():
-            open(d + "/s.c", "w").write(e.stdout)
-            c_ok = subprocess.run(CC + [d + "/s.c", "-o", d + "/sb"], capture_output=True).returncode == 0
-        if not a_ok and not b_ok and not c_ok:
+        if ta.returncode != 0:
             return "skip", None
-        if not (a_ok and b_ok and c_ok):
-            return "FAIL", "compile-discrepancy: tychoc=%s bundle=%s standalone=%s" % (a_ok, b_ok, c_ok)
-        oa, ob, oc = run(d + "/tb"), run(d + "/bb"), run(d + "/sb")
-        if oa is None or ob is None or oc is None:
-            return "FAIL", "run failed: tychoc=%r bundle=%r standalone=%r" % (oa, ob, oc)
-        if not (oa == ob == oc):
-            return "FAIL", "output diverge: tychoc=%r bundle=%r standalone=%r" % (oa, ob, oc)
+        oa = run(d + "/tb")
+        if oa is None:
+            return "FAIL", "tychoc built it but the program did not run cleanly"
         return "ok", None
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 200
-    tmp = tempfile.mkdtemp()
-    h0 = os.path.join(tmp, "h0")
-    if subprocess.run([TYCHOC, os.path.join(REPO, "compiler/tychoc0.ty"), "-o", h0], capture_output=True).returncode != 0:
-        print("run_pkg: could not build tychoc0"); sys.exit(2)
     tally = {"ok": 0, "skip": 0, "FAIL": 0}
     fails = []
     for seed in range(n):
-        verdict, msg = classify(seed, h0)
+        verdict, msg = classify(seed)
         tally[verdict] += 1
         if verdict == "FAIL":
             fails.append((seed, msg)); print("FAIL seed %d: %s" % (seed, msg))
         if (seed + 1) % 100 == 0:
             print("... %d/%d  ok=%d skip=%d FAIL=%d" % (seed + 1, n, tally["ok"], tally["skip"], tally["FAIL"]))
-    shutil.rmtree(tmp, ignore_errors=True)
     print("DONE: ok=%d skip=%d FAIL=%d" % (tally["ok"], tally["skip"], tally["FAIL"]))
+    print("NOTE: the two tychoc0 legs (--bundle stream, standalone package read) were"
+          "\n      retired 2026-07-29 -- see this file's header. This is now a smoke"
+          "\n      test, not a differential.")
     sys.exit(1 if tally["FAIL"] else 0)
 
 if __name__ == "__main__":
