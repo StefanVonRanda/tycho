@@ -63,11 +63,11 @@ structured**, meaning:
 
 ```
 total := 0
-parallel for i in range(400000000):   # K = ncpu chunk tasks; TYCHO_THREADS overrides
+parallel for i in 0..<400000000:      # K = ncpu chunk tasks; TYCHO_THREADS overrides
     total += (i * 31 + 7) % 1000003   # reduction: chunk-local partial, folded at the join
 ```
 
-Works over a range or a collection. The body lifts into a chunk procedure:
+Works over `0..<N` or a collection. The body lifts into a chunk procedure:
 captures deep-copy into each task (that's the real per-chunk cost), and reduction
 accumulators — `acc = acc + e` / `acc = acc * e` and the `+=`/`*=` forms, on
 outer `int`/`float` locals, up to four — start from the operator's identity per
@@ -94,11 +94,11 @@ parallel for j in jobs:             # K = ncpu() workers share the one queue
 ```
 
 This is the bounded-fan-out idiom — N items not known up front, at most `cap`
-buffered, work spread across `ncpu()` workers — without you sizing a `range`
+buffered, work spread across `ncpu()` workers — without you sizing a `0..<N`
 yourself. Each item is taken by exactly one worker (the MPMC queue), so integer
 reductions are deterministic. The producer must `close(ch)` when done or the
-workers park waiting for more. It desugars to a `parallel for` over `range(0,
-ncpu())` whose body is `for true: select { recv(ch, x): … ; closed: break }`, so
+workers park waiting for more. It desugars to a `parallel for` over `0..<ncpu()`
+whose body is `for true: select { recv(ch, x): … ; closed: break }`, so
 the same fail-closed gates apply and the source must name a variable. `ncpu()`
 (the fan-out width, overridable with `TYCHO_THREADS`) is also callable directly.
 Worked example: `tests/conc/workers.ty`.

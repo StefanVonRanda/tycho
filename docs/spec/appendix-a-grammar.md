@@ -133,10 +133,14 @@ Pattern     ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?   /* variant, with
               | "_"                                          /* wildcard */
 VariantName ::= IDENT | IDENT "." IDENT                       /* Variant or pkg.Variant */
 SubPattern  ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?
-For         ::= "for" IDENT "in" "range" "(" Expr ( "," Expr ( "," Expr )? )? ")" ":" NEWLINE Block
-              | "for" IDENT "in" Expr ":" NEWLINE Block
-              | "for" Expr ":" NEWLINE Block
-ParallelFor ::= "parallel" For          /* the For MUST be a range or foreach form */
+For         ::= "for" ForInit ";" Expr ";" ForPost ":" NEWLINE Block  /* three-clause; all three REQUIRED */
+              | "for" IDENT "in" Expr ":" NEWLINE Block               /* foreach */
+              | "for" Expr ":" NEWLINE Block                          /* condition */
+              | "for" ":" NEWLINE Block                               /* infinite */
+ForInit     ::= Decl | TypedDecl | Assign | CompoundAssign  /* the ';' supplies the clause's NEWLINE */
+ForPost     ::= Assign | CompoundAssign                     /* the ':' supplies it; target MUST be a variable */
+ParallelFor ::= "parallel" "for" IDENT "in" "0" "..<" Expr ":" NEWLINE Block  /* counting; the `0` is a literal */
+              | "parallel" "for" IDENT "in" IDENT ":" NEWLINE Block           /* foreach; the source MUST be a name */
 Select      ::= "select" ":" NEWLINE INDENT SelectArm+ DEDENT
 SelectArm   ::= "recv" "(" Expr "," IDENT ")" ":" NEWLINE Block
               | "default" ":" NEWLINE Block

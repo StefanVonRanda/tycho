@@ -32,7 +32,7 @@ variable of the same name is unaffected).
 | `sink` | parameter modifier |
 | `yield` | `subscript` body |
 | `free` | `handle` body |
-| `range` | `for … in` head |
+| `range` | `for … in` head — recognised **only to refuse it** since 2026-07-29 (§14.4) |
 | `None`, `Some`, `Ok`, `Err` | value constructors |
 | `_` | `match` wildcard pattern |
 | all builtin names (`len`, `push`, `str`, `wait`, …) | resolved as calls; never reserved ([§29](16-builtins.md)) |

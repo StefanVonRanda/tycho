@@ -142,7 +142,7 @@ ignore the absence, because reading it requires an exhaustive `match`.
 
 ```
 fn index_of(xs: [int], target: int) -> Option(int):
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if xs[i] == target:
             return Some(i)
     return None              # None's type comes from the return type

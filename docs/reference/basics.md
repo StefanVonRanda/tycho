@@ -48,7 +48,7 @@ may mutate the buffer (a plain borrow is read-only); consuming, so the caller gi
 ```
 fn scale2(xs: sink [int]) -> int:
     s := 0
-    for i in range(0, len(xs)):
+    for i := 0; i < len(xs); i += 1:
         xs[i] = xs[i] * 2          # legal: a sink parameter is mutable
         s = s + xs[i]
     return s
@@ -116,18 +116,30 @@ else:
 
 for cond:                   # condition form: repeat while cond is true
     ...
-for i in range(n):          # counting form: i goes 0 .. n-1
+for:                        # infinite form: until a break or a return
     ...
-for i in range(a, b):       # a .. b-1   (range(a, b, step); step may be negative)
+for i := 0; i < n; i += 1:  # three-clause form: i goes 0 .. n-1
+    ...
+for i := a; i > b; i -= s:  # counting down — the direction is in the condition
     ...
 for x in xs:                # foreach: each element of an array, or each byte of a string
     ...
 
 break                       # exit the nearest enclosing loop
-continue                    # skip to its next iteration
+continue                    # skip to its next iteration (runs the post clause)
 ```
 
-In the counting form the loop variable is an `int` scoped to the loop; the foreach form binds
-each element of an array (`[T]`) or each byte of a string, evaluating the collection once. The
-condition form takes any `bool`. `break` and `continue` work in every shape and are an error
-outside a loop.
+In the three-clause form all three clauses are required (`for:` is the only degenerate form);
+the init is a declaration or an assignment, the post is an assignment to a variable, and a
+variable the init declares is scoped to the loop. `continue` **runs the post clause**, so a
+loop that advances only there still terminates. The foreach form binds each element of an
+array (`[T]`) or each byte of a string, evaluating the collection once. The condition form
+takes any `bool`. `break` and `continue` work in every shape and are an error outside a loop.
+
+There is no counting form and no `range`: `for i in range(a, b, step):` was removed on
+2026-07-29, and a `for` head that names `range` is refused with its replacements. Say the
+direction in the condition (`i > b` with `i -= s`) instead of in the sign of a step. **One
+guarantee was lost with it, deliberately:** `range()` rejected a literal `0` step at compile
+time and aborted on a runtime `0`; a post clause is arbitrary code, so `for i := 0; i < n;
+i += 0:` is an infinite loop that nothing diagnoses. To count in parallel, use
+`parallel for i in 0..<N:`, which steps by 1 implicitly and so has no zero-step case at all.

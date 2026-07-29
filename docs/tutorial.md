@@ -49,7 +49,7 @@ Hold that thought — it's the whole trick, and section 9 explains what it buys 
 
 ```
 fn main():
-    for i in range(5):            # 0, 1, 2, 3, 4
+    for i := 0; i < 5; i += 1:    # 0, 1, 2, 3, 4
         if i % 2 == 0:
             println(str(i) + " even")
         else:
@@ -60,7 +60,7 @@ fn main():
         println(str(x))
 ```
 
-`range(a, b)` and `range(a, b, step)` also exist; `for cond:` is the while-loop form.
+`for cond:` is the while-loop form, `for:` loops until a `break`, and `parallel for i in 0..<N:` counts in parallel.
 
 ## 4. Collections
 

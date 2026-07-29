@@ -75,10 +75,27 @@ expressible in the language.
 
 ## 22. `parallel for`
 
-`parallel for` applies to a counting or foreach loop ([§14.4](10-statements.md#144-loops))
-and runs its iterations across worker threads. The iteration space is split into
-chunks; the reference implementation uses `ncpu()` chunks and MAY expose an
-override (`TYCHO_THREADS`). Each chunk's captured values are deep-copied into it.
+`parallel for` applies to a **counting** or a **foreach** loop
+([§14.4](10-statements.md#144-loops)) and runs its iterations across worker
+threads. The iteration space is split into chunks; the reference implementation
+uses `ncpu()` chunks and MAY expose an override (`TYCHO_THREADS`). Each chunk's
+captured values are deep-copied into it.
+
+The counting spelling is `parallel for i in 0..<N:`, and this is the **only**
+context in which `0..<N` is legal — a sequential `for i in 0..<N:` is a compile
+error naming the three-clause form as its replacement ([§14.4](10-statements.md#144-loops)).
+`0` MUST be a literal `0` (a non-zero or computed lower bound is a compile
+error), `N` is an ordinary `int` expression evaluated **once** at the fan-out,
+the bound is **exclusive**, and the step is implicitly `1` — so, unlike the
+`range(a, b, step)` form this replaced, there is no step to be zero and nothing
+to diagnose. `parallel for x in xs:` is the foreach spelling and `xs` MUST be a
+bare name (an array or a `Channel`), not an expression.
+
+The three-clause and infinite `for` shapes **cannot** be parallel: a chunk is a
+statically shaped sub-range of a known iteration space, and a three-clause
+loop's post clause is arbitrary code, so its iteration count is not knowable
+before the loop runs. `parallel for init; cond; post:` and `parallel for:` are
+compile errors.
 
 The only outer-scope write a `parallel for` body may perform is into a
 **reduction accumulator** — a variable combined with `+` or `*` (on `int` or
@@ -92,6 +109,13 @@ chunk results are folded at an **in-order join**. Therefore:
 
 Any other write to an outer-scope variable from a `parallel for` body is a
 **compile error** — there is nothing to race on.
+
+> Provenance: `0..<N` parsed at `src/tychoc.c:3351-3376`; parallel-only refusal
+> `src/tychoc.c:3361@par_here`; literal-zero refusal `src/tychoc.c:3364@ival != 0`;
+> any other loop shape under `parallel` refused at `src/tychoc.c:3240@S_FORRANGE`
+> (it is the only node the chunker accepts). Chunk fan-out `K = ncpu()`
+> `src/tychoc.c:9944-9955`; each chunk is a real OS thread,
+> `runtime/tycho_rt.c:577@pthread_create`.
 
 ## 23. Channels and `select`
 

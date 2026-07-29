@@ -64,7 +64,7 @@ struct Trie:
 fn insert(t: inout Trie, s: string):
     cur := 0
     i := 0
-    for i in range(0, len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if not (c in t.nodes[cur].kids):
             push(t.nodes, TrieNode([]int: int, false))

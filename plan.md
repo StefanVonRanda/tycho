@@ -444,7 +444,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   expected to exist.**
 
   **Out of scope, deliberately left.** The two spec fixture tables were repointed
-  (`/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:165`,`:185`) but
+  (`/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:166`,`:185`) but
   the §E.2 rationale text for `corelib/test/`, `examples/corelib/` and the `\r` /
   adjacent-literal carve-outs was not — that is phase 21's job, and phase 21 is
   now the only thing standing between those fixtures and `tests/`.
@@ -1619,7 +1619,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     wrong: `;` or `..<` shows unstyled in VS Code. That is the same standing gap
     the previous plan's phase 7 named when it added `scripts/editors_check.sh`.
 
-- [ ] **Phase 9 — the spec**
+- [x] **Phase 9 — the spec**
   - Scope: `docs/spec/10-statements.md` §14.4 (the three shapes become four, and
     the counting form goes), `docs/spec/13-concurrency.md` §22 (`parallel for`'s
     counting spelling), `docs/spec/02-grammar.md` and
@@ -1633,6 +1633,248 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     9 and 82 lines off that still passed the gate.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`,
     `sh scripts/spec_check.sh`.
+
+  **Evidence (2026-07-29).** Phases 14, 24 and 31 were folded in, as briefed.
+
+  **What was written, and where.**
+
+  - **`docs/spec/10-statements.md` §14.4** — rewritten from three shapes to four.
+    The condition and foreach paragraphs are unchanged; new paragraphs for the
+    **infinite** form and the **three-clause** form (init/cond/post kinds, loop
+    scoping, `post` resolved in the loop scope and not the body's, **all three
+    clauses required**, and `continue` running the post clause), a paragraph
+    saying there is no counting form and `range` is not a name the language
+    knows, and a paragraph stating the **zero-step loss as a deliberate trade**
+    in the words the Pre-flight asked for. A new `> Provenance:` block cites
+    every one of those claims. Also repaired the chapter provenance at
+    `docs/spec/10-statements.md:8-10`, whose `for` and `select` refs were stale
+    by ~400 lines from phases 3–5 (`:3191-3277`→`:3245-3446`,
+    `:3135-3172`→`:3189-3225`, `parse_stmt` `:3054-3408`→`:3108-3578`).
+  - **`docs/spec/13-concurrency.md` §22** — the counting spelling is now stated:
+    `parallel for i in 0..<N:`, the only context where `0..<N` is legal, literal
+    `0` required, `N` evaluated once, exclusive bound, implicit step `1` and
+    therefore **no zero-step case at all**. Also states, with the reason, that
+    the three-clause and infinite shapes **cannot** be parallel — a post clause
+    is arbitrary code so the iteration count is not knowable before the loop
+    runs. New `> Provenance:` block.
+  - **`docs/spec/02-grammar.md` §4.3.2** — the `For` production genuinely
+    changed: the `range` alternative is gone, replaced by a three-clause
+    alternative plus a bare `"for" ":"` alternative, with two new non-terminals
+    `ForInit` / `ForPost` naming exactly the statement kinds the parser accepts.
+    `ParallelFor` no longer says `"parallel" For`; it spells its own two
+    alternatives, because the `0..<N` form does not exist under a bare `for`.
+    Prose bullets rewritten to four shapes plus the required-clauses rule, the
+    `;`-and-`:`-supply-the-NEWLINE explanation, and the removal of `range`.
+  - **`docs/spec/appendix-a-grammar.md`** — kept in sync **mechanically, not by
+    hand**: the GENERATED region was replaced with the output of
+    `sh scripts/gen_grammar.sh` (which extracts every `::=`-bearing fence from
+    §3/§4), so `spec_check.sh` check 1 compares like with like. `git diff` on
+    that file is exactly the 8-line `For`/`ParallelFor` hunk and nothing else,
+    which is the proof the region was regenerated rather than edited.
+  - **`docs/spec/appendix-e-conformance.md`** — §14.4 row reworded to the four
+    shapes; **new row** for the required-clauses rule, the `range()` removal and
+    the `0..<N` refusal (`reject/for3_empty_clause`, `tests/diag/range_removed`,
+    `reject/dotlt_sequential`, `tests/diag/dotlt_sequential`); `break`/`continue`
+    row now also names the post-clause rule and `tests/for3`; §23.x parallel-for
+    row gains `tests/conc/parfor_dotlt`. A new note explains why the two
+    user-facing loop diagnostics live in `tests/diag/` and not `tests/reject/`.
+    Every cited fixture was `ls`-verified before the row was written, and
+    `spec_check.sh` check 2 re-proves it.
+  - **`docs/spec/appendix-b-keywords.md:35`** — the `range` contextual-identifier
+    row now says it is recognised **only to refuse it**.
+  - **`docs/spec/16-builtins.md` — nothing to change, and this is a finding, not
+    an omission.** The phase brief and the plan's own scope line both say
+    "`range` removed" from this chapter. `grep -n range docs/spec/16-builtins.md`
+    returns exactly two hits, `:131` ("the byte range `[a, b)`", about `substr`)
+    and `:140` ("every in-range `i`"), neither of which is the counting form.
+    That matches phase 7's finding that `range` never had a builtin-table entry:
+    it was one lexeme test in one `for` header, so §29 never listed it and there
+    was nothing to delete. The chapter's "complete, normative catalog" claim at
+    `docs/spec/16-builtins.md:5` was already true and stays true.
+
+  **Phase 24, folded in — `docs/spec/01-lexical.md` §3.8.** The false sentence at
+  `:170` is gone: it now reads "The **only** range operator is `..<`; `..` alone
+  is not a token, and the `range(…)` form it replaced is gone (§14.4)". The token
+  inventory gained both new tokens **without adding a row**, by extending two
+  existing rows the same way the table already groups same-length spellings
+  (`==` `!=` `<=` `>=` share a row): `..<` joins `...` (both three characters,
+  and the source tests them in that order, which is what "longest-match first"
+  means here) and `;` joins `,` as a separator. The §3.8 provenance now anchors
+  `:482@TK_DOTLT` and `:506@TK_SEMI`. §3.7's contextual-identifier list needed
+  nothing — phase 7 had already amended `docs/spec/01-lexical.md:133` to
+  "`range` (in the head of a `for … in`, **only to refuse it**)".
+
+  **Phase 14, folded in — `docs/spec/02-grammar.md`'s escaped provenance.** All
+  eight refs are rewritten with **full paths**, and every single-line ref among
+  them is anchored. Why they were unchecked is now written into the block itself:
+  `check_citations.py` resets its inherited path at a blank line
+  (`scripts/check_citations.py:214-215`) and only polices refs whose path starts
+  with `SRC_PREFIX` (`scripts/check_citations.py:226-227`), so a `> Provenance:` paragraph that
+  names **no** path leaves `cur` at `None` — the refs are skipped entirely and
+  the mandatory-anchor rule never fires. Every one had gone stale by ~400 lines.
+  The old values are written below **without backticks on purpose** — they are
+  historical numbers, not citations, and backticking them would bind each one to
+  whatever path this paragraph named last, which is exactly the trap being
+  described: parse_if 2338 → `src/tychoc.c:2730`; parse_match 2409 / 2723 →
+  `src/tychoc.c:2836` (definition) and `src/tychoc.c:2915` (value form);
+  `for`/`parallel` 3181-3277 → `src/tychoc.c:3235-3446`; select 3135-3172 →
+  `src/tychoc.c:3189-3225`; and the five value-control routing sites 2655, 2858,
+  2872, 2881, 2903 → `src/tychoc.c:3159`, `src/tychoc.c:3479`,
+  `src/tychoc.c:3493`, `src/tychoc.c:3502`, `src/tychoc.c:3524`.
+  Each target line was opened and read
+  before its ref was written; every single-line ref is anchored on a token that
+  line actually contains, which is what the gate now checks (`n_anchored`
+  125 → 144).
+
+  **Phase 31, folded in — the live-document sweep.** 23 prose sites across the
+  18 documents phase 31 named are rewritten. Loop bodies: `docs/tutorial.md:52`,
+  `docs/reference/enums-options.md:145`, `docs/reference/types.md:58`,
+  `docs/reference/basics.md:51`, `docs/reference/arrays-slices.md:70`/`:76`/
+  `:116`, `docs/internals/value-semantics-limits.md:67`,
+  `docs/internals/sink-prototype.md:16`, `docs/guides/arrays-structs.md:107`.
+  Parallel spellings → `0..<N`: `docs/reference/concurrency.md:54` (+ its "over a
+  range" prose), `docs/guides/concurrency.md:66`/`:100` (+ "sizing a `range`
+  yourself" and the `range(0, ncpu())` desugar),
+  `docs/internals/parfor-channel-drain-design.md:10`/`:51`/`:111` — the last two
+  describe the *internal* desugar, which still builds an `S_FORRANGE`, so they
+  now say "an index node `0 .. len(EXPR)`" and "a synthesised `parallel for __pw
+  in 0..<ncpu()`" rather than pretending a surface syntax that no longer exists.
+  `docs/reference/basics.md:117-133` is the one phase 31 called sharp and it got
+  the full treatment: the form list is now four shapes, and two new paragraphs
+  carry the required-clauses rule, the `continue` rule, the direction-in-the-
+  condition idiom that replaces a negative step, and the **lost zero-step
+  diagnostic**. `docs/architecture.md:49` and `ROADMAP.md:47` needed nothing —
+  phase 1 had already written them as "replace `for i in range(...)`".
+  `FRICTION.md:316`'s `parallel for i in range(N)` was respelled `0..<N` (its
+  claim about `min(N, ncpu())` is unaffected, same node). Left alone
+  deliberately, per phase 31's archive rule: `docs/internals/spec-design-review.md:74`
+  and `docs/internals/spec-plan.md:457` are dated records of defect #21 (`range`
+  step 0) and rewriting them would make the record lie about what was reviewed;
+  `docs/internals/diagnostic-parity-2026-07-25.md:82` likewise.
+
+  **The snippets were compiled, not eyeballed — and one of them was already
+  broken before this phase touched it.** Phase 31's "Done when" requires it: no
+  gate compiles an unexecuted `docs/` fence. Every rewritten loop was collected
+  into one scratch program and built and run with the real compiler; the
+  expected values were computed by hand first:
+
+  ```
+  0123456789        # types.md char-append loop
+  1                 # enums-options.md index_of([10,20,30], 20)
+  30                # basics.md / sink-prototype.md scale2([5,5,5])
+  14                # arrays-slices.md sum(make_squares(4)) = 0+1+4+9
+  60                # arrays-slices.md fixed-length sum([10,20,30])
+  1000              # arrays-structs.md push loop
+  0 even 1 odd 2 even 3 odd 4 even    # tutorial.md control flow
+  22                # basics.md descending 10,7,4,1
+  23                # bare `for:` broken out by `break`
+  499500            # parallel for i in 0..<1000, sum = 999*1000/2
+  ```
+
+  The first build **failed**, and the failure was pre-existing, not introduced:
+  `docs/guides/arrays-structs.md:107` read `range(1_000_000)`, and Tycho has
+  **no digit-group separator** (`docs/spec/01-lexical.md:192-194` says so;
+  measured — `x := 1_000` gives `error: expected newline` with the caret on the
+  `_`). So that snippet had never compiled in either spelling. It now reads
+  `1000000` with a comment saying why. This is the class filed as **phase 33**
+  below: nothing compiles the unexecuted fences, so they rot silently.
+
+  **Line-count discipline, and where it was and was not held.** Five files were
+  edited **line-for-line neutral** (`+n -n` in `git diff --numstat`):
+  `docs/spec/01-lexical.md` 5/5, `docs/spec/appendix-b-keywords.md` 1/1, and the
+  three internals docs. Six files genuinely grew, because the language grew and a
+  new normative rule cannot be re-wrapped into zero lines:
+  `docs/spec/10-statements.md` +33, `docs/spec/02-grammar.md` +25,
+  `docs/spec/13-concurrency.md` +24, `docs/spec/appendix-e-conformance.md` +7,
+  `docs/spec/appendix-a-grammar.md` +4, `docs/reference/basics.md` +12. **Every
+  inbound citation past each insertion point was found and repaired**, by
+  grepping for each target file's `:N` form and diffing old against new content
+  at the mapped line before rewriting it:
+
+  | target | shift | refs repaired |
+  |---|---|---|
+  | `docs/spec/10-statements.md:110` (§14.6) | +33 | `FRICTION.md`, `docs/internals/plan-friction-DONE.md` |
+  | `docs/spec/02-grammar.md:361-362`, `:378` | +25 | `docs/internals/plan-array-arith-DONE.md` |
+  | `docs/spec/13-concurrency.md:100`,`:109`,`:115`,`:118-125`,`:141-142` | +24 | `docs/internals/plan-front-door-DONE.md`, `docs/internals/spec-plan-audit-2026-07-24.md`, `docs/internals/spec-plan.md` |
+  | `docs/spec/appendix-e-conformance.md:165`,`:183`,`:187`,`:201`,`:252-253`,`:274` | +1 | `plan.md`, `docs/internals/plan-front-door-DONE.md`, `docs/internals/plan-1.0-freeze-DONE.md`, `docs/internals/spec-plan.md`, `docs/internals/plan-array-arith-DONE.md`, `docs/internals/plan-int64-DONE.md`, `docs/internals/plan-postfreeze-rawstring-DONE.md` |
+  | `docs/spec/appendix-a-grammar.md` | +4 at `:136` | none — every inbound ref is `:21`–`:98`, all above the hunk |
+  | `docs/reference/basics.md` | +12 at `:117` | none — the only inbound ref is `:24-70` |
+
+  **The rule applied to archives, stated so the next reader can disagree with
+  it:** a pointer whose *target text is unchanged* was repointed (the §4.5
+  precedence table, the channel-ordering paragraphs) even inside a
+  `plan-*-DONE.md`, because a line number is a pointer and not a claim about the
+  past. A pointer whose *target text this phase rewrote* was left where it was —
+  `docs/spec/02-grammar.md:272-274` is cited four times in the archives as the
+  site of the eight stale refs, and repointing those would make the archives
+  appear to describe text that no longer says what they say it says. Those four
+  are bare doc-refs the gate does not police at all (no `docs/` prefix, so they
+  never reach `SRC_PREFIX`), and they are the same carried class as phase 17.
+
+  **The full `git diff --numstat`** (28 files, `docs/` + `FRICTION.md` +
+  `plan.md`; no source, no fixture, no script touched — this phase is Markdown
+  only, which is why the gate budget allowed three cheap gates and nothing else):
+
+  ```
+  2   2   FRICTION.md                                     5   5   docs/spec/01-lexical.md
+  1   1   docs/guides/arrays-structs.md                  36  11   docs/spec/02-grammar.md
+  5   5   docs/guides/concurrency.md                     43  10   docs/spec/10-statements.md
+  3   3   docs/internals/parfor-channel-drain-design.md  28   4   docs/spec/13-concurrency.md
+  2   2   docs/internals/plan-1.0-freeze-DONE.md          8   4   docs/spec/appendix-a-grammar.md
+  3   3   docs/internals/plan-array-arith-DONE.md         1   1   docs/spec/appendix-b-keywords.md
+  1   1   docs/internals/plan-friction-DONE.md           10   3   docs/spec/appendix-e-conformance.md
+  3   3   docs/internals/plan-front-door-DONE.md          2   2   docs/tutorial.md
+  1   1   docs/internals/plan-int64-DONE.md              20   8   docs/reference/basics.md
+  2   2   docs/internals/plan-postfreeze-rawstring-DONE.md  2 2   docs/reference/concurrency.md
+  1   1   docs/internals/sink-prototype.md                1   1   docs/reference/enums-options.md
+  2   2   docs/internals/spec-plan-audit-2026-07-24.md    1   1   docs/reference/types.md
+  3   3   docs/internals/spec-plan.md                     3   3   docs/reference/arrays-slices.md
+  1   1   docs/internals/value-semantics-limits.md      278   6   plan.md
+  ```
+
+  Nine of the twelve `docs/internals/` and `docs/reference/` entries are exactly
+  `+n -n`, which is the check that a snippet rewrite or a citation repair moved no
+  line under anything citing into it. `node-compile-cache/` is untracked and
+  pre-existing (it is untracked at `3f68a00` too) and was **not** staged;
+  `git status --short` was read before `git add` for exactly that reason, after a
+  previous agent on this plan left ~213 files staged.
+
+  **Verify 1 — citations.**
+
+  ```
+  citation check: ok (144 anchored contain the token they name, 2040 bare in bounds,
+  102 source->doc citations resolve, 120 source->source in bounds)
+  ```
+
+  125 → 144 anchored is this phase's 19 new anchors (10-statements §14.4, §22,
+  §3.8, and the nine in the repaired §4.3.2 block). Baseline before the phase was
+  `125 anchored / 2014 bare`, so nothing was un-anchored to make the gate pass.
+  **The gate caught one of my own refs and it is worth recording**, because it is
+  the failure `CLAUDE.md` warns about and it fired on the write-up rather than on
+  the spec: the phase-14 paragraph above first spelled the *old* line numbers as
+  `` `:2338` `` and friends, and a bare `:N` binds to the last path named in the
+  same paragraph — which there was `scripts/check_citations.py`, a 322-line file.
+  `STALE plan.md:1715 :2338 -> scripts/check_citations.py has 322 lines: OUT OF
+  BOUNDS`. Fixed by writing the historical numbers unbackticked and every live
+  ref with its full path, not by widening the bound.
+
+  **Verify 2 — links.**
+
+  ```
+  link check: ok (134 markdown files, no dead relative links)
+  ```
+
+  **Verify 3 — spec-check.** Exit 0.
+
+  ```
+  spec-check: Appendix A grammar matches §3/§4 (ok)
+  spec-check: all Appendix E fixture citations resolve (ok)
+  spec-examples: 9 runnable example(s), all pass
+  ```
+
+  **Not run, and why.** `make test` and `make ci` were not run: this phase edits
+  Markdown only and cannot affect a compiled artifact, per `CLAUDE.md`'s gate
+  budget. `make ci` is phase 10's, once.
 
 - [ ] **Phase 10 — the full sweep**
   - `make ci`, once. Report per-lane whether the new loop forms are actually
@@ -1649,9 +1891,13 @@ Unclosed discoveries from the two previous plans; none blocking.
       unguarded; `scripts/editors_check.sh` already computes it.
 - [ ] **Phase 13** — an anchored form for source→source citations; phase 8 of the
       first plan proved its bounds check catches none of the wrong-line class.
-- [ ] **Phase 14** — a `> Provenance:` block naming no path escapes the mandatory
+- [x] **Phase 14** — a `> Provenance:` block naming no path escapes the mandatory
       anchor rule by accident; 8 stale refs in `docs/spec/02-grammar.md:272-274`.
       **Note phase 9 of this plan edits that file** — worth doing together.
+      **CLOSED — folded into phase 9**, which repaired all eight with full paths
+      and anchors and wrote the reason for the escape into the block. The
+      *general* gate hardening (make the anchor rule fire on a pathless
+      Provenance block) was **not** done and is filed as phase 34.
 - [ ] **Phase 15** — `docs/corelib.md` does not exist (moved to
       `docs/guides/corelib.md` by `68e5b39`); a dead backticked path in prose.
 - [ ] **Phase 16** — `char` has arithmetic but no spellable type name, no
@@ -1659,7 +1905,7 @@ Unclosed discoveries from the two previous plans; none blocking.
 - [ ] **Phase 17** — ~344 bare `src/tychoc.c:N` refs shifted by the last plan and
       were deliberately not swept; same class as the dropped phase 9.
 - [ ] **Phase 18** — `docs/internals/spec-plan.md:605` cites
-      `appendix-e-conformance.md:187` for a §9.5 claim; that line is the §24.2 row.
+      `appendix-e-conformance.md:188` for a §9.5 claim; that line is the §24.2 row.
 - [ ] **Phase 20** — `examples/fetch/run.sh` is red, and was red **before** this
       plan started. Two independent pre-existing faults, both found by phase 1 and
       neither caused by it. (a) `SHIM` named `corelib/http/http_shim.c` alone while
@@ -1714,7 +1960,10 @@ Unclosed discoveries from the two previous plans; none blocking.
       (they cite the deleted directory), so it needs a decision on frozen records
       first — sibling of phase 13.
 
-- [ ] **Phase 24** — **`docs/spec/01-lexical.md` is missing from phase 9's
+- [x] **Phase 24** — **CLOSED, folded into phase 9** (§3.8's false "no range
+      operator" sentence corrected; `..<` and `;` added to the inventory without
+      growing the file). Original filing follows.
+      **`docs/spec/01-lexical.md` is missing from phase 9's
       scope, and it is the file that goes *wrong*, not merely stale.** Found by
       phase 3. §3.8 "Operators and punctuation" (`docs/spec/01-lexical.md:144-170`)
       is the token inventory, ordered *"longest-match first"* — the exact
@@ -1858,7 +2107,10 @@ Unclosed discoveries from the two previous plans; none blocking.
   - Verify: `make test`, then `make conc`, then `python3
     scripts/check_citations.py` (deletions here shift `src/tychoc.c` anchors).
 
-- [ ] **Phase 31** — **23 `in range(` sites remain in prose across 18 live
+- [x] **Phase 31** — **CLOSED, folded into phase 9** (all 23 sites rewritten and
+      every rewritten loop compiled and run; the archives and dated review
+      records were left alone as this filing required). Original filing follows.
+      **23 `in range(` sites remain in prose across 18 live
       documents.** Found by phase 7, which fixed only the one that reddened a
       gate. Phase 6 swept `.ty` files; nothing swept fenced `tycho` blocks in
       Markdown, and `scripts/spec_check.sh` runs only the examples it can
@@ -1902,6 +2154,62 @@ Unclosed discoveries from the two previous plans; none blocking.
     generated files are regenerated rather than hand-edited, and
     `make editors-check` is green.
   - Verify: `make editors-check`.
+
+- [ ] **Phase 33** — **no gate compiles the unexecuted `tycho` fences in `docs/`,
+      and one of them had never compiled at all.** Found by phase 9 while
+      honouring phase 31's "compiled by hand" requirement.
+      `docs/guides/arrays-structs.md:107` used the digit separator `1_000_000`,
+      which Tycho does not have — `docs/spec/01-lexical.md:192-194` says so, and
+      `x := 1_000` gives `error: expected newline` with the caret on the `_`
+      (measured on the built `./tychoc`). The snippet was therefore broken
+      *before* the `range()` rewrite and in both spellings.
+      `scripts/spec_examples.sh` only builds a ```` ```tycho ```` fence that is
+      **paired with an ```` ```output ```` fence** (9 such examples in the whole
+      spec, `scripts/spec_check.sh` check 3); every other fence in `docs/` — the
+      overwhelming majority, and all of `docs/reference/`, `docs/guides/`,
+      `docs/tutorial.md` — is never parsed by anything.
+  - The cheap version is not "pair every fence with an output block": most are
+    fragments with no `main`. It is a **parse-only** lane — a `--check`-style
+    front-end pass over each fence that declares an `fn`, skipping fences marked
+    as fragments. Decide the opt-out marker before writing it, or the lane will
+    be red on prose and get disabled.
+  - Done when: a gate parses the fences it can and names the ones it skipped, and
+    `docs/guides/arrays-structs.md`'s snippet is covered by it.
+  - Verify: the new gate, plus `sh scripts/spec_check.sh`.
+
+- [ ] **Phase 34** — **the pathless-`> Provenance:` gate hole is still open in
+      the tool, only closed in the one file phase 14 named.** Phase 9 repaired
+      `docs/spec/02-grammar.md`'s eight refs by hand, but
+      `scripts/check_citations.py` still cannot see the class: `cur` is reset at
+      every blank line (`scripts/check_citations.py:214-215`) and a ref whose
+      inherited path is `None` is `continue`d before the anchor rule runs
+      (`scripts/check_citations.py:226-227`). So any future `> Provenance:` block
+      that opens a paragraph without naming a path gets **zero** checking —
+      no bounds check, no anchor requirement.
+  - The fix is not "carry `cur` across paragraphs" — the comment at
+    `scripts/check_citations.py:211-213` explains why that was deliberately
+    removed. It is to make a `> Provenance:` block that contains a `:N` ref and
+    names no path a **hard failure in its own right**: fail closed, with a
+    message telling the author to write the path.
+  - Done when: a pathless Provenance ref reddens the gate, the whole tree is
+    swept for the class, and `python3 scripts/check_citations.py` is green.
+  - Verify: `python3 scripts/check_citations.py`.
+
+- [ ] **Phase 35** — **two `for i in range(len(A)):` sites survive outside
+      phase 31's scope, and they cannot simply be respelled.** Found by phase 9.
+      `bench/prongB/RESULTS.md:170` (footnote ²) and `tests/bounds_elision.ty:5`
+      both describe the bounds-check-elision recogniser in terms of the deleted
+      counting form. Phase 9 left them alone **on purpose**: phase 27 records
+      that elision does **not** reach the three-clause loop, so rewriting the
+      syntax in either place would turn a stale sentence into a false claim about
+      the current compiler, and `RESULTS.md`'s 132 → 47 ms is a dated
+      measurement whose provenance is the old form.
+  - Do this **with or after phase 27**, not before: once elision reaches the
+    three-clause loop the fixture comment and the footnote can be rewritten
+    truthfully, and not until then.
+  - Done when: neither file describes a deleted syntax as the trigger, and
+    `RESULTS.md` says which form the recorded numbers were measured with.
+  - Verify: `make test` (the fixture), `python3 scripts/check_citations.py`.
 
 ## Out of scope
 

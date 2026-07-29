@@ -957,7 +957,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     Not claimed anywhere: that `corelib/image` was compile-verified. It still is
     not (no libpng in this env, Phase 3), but it is an extended-tier corelib
     package, not part of the `int` width claim, and Appendix E already scopes
-    `deps`-tier packages as extended-tier only (`appendix-e-conformance.md:201`).
+    `deps`-tier packages as extended-tier only (`appendix-e-conformance.md:202`).
 
     **3. `docs/spec/appendix-e-conformance.md` — one row added** under `### §5
     Types`, directly after the existing `§5.2.1` row, matching the file's

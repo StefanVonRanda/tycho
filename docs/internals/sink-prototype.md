@@ -13,7 +13,7 @@ Syntax mirrors `inout` (convention after the colon): `x: sink T`.
 ```
 fn scale2(xs: sink [int]) -> int:   # xs is OWNED and MUTABLE (a borrow is read-only)
     s := 0
-    for i in range(0, len(xs)):
+    for i := 0; i < len(xs); i += 1:
         xs[i] = xs[i] * 2           # legal only because xs is `sink`
         s = s + xs[i]
     return s

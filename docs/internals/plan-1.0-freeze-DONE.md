@@ -404,7 +404,7 @@ command; commits carry NO trailers (repo convention).
     preconditions spelled out normatively. Verify `docs/spec/07-memory-model.md`
     §9.5 (`:64-79`) already states exactly that (MUST never change observable
     behavior), cross-checked by `appendix-g-glossary.md:29-31` and
-    `appendix-e-conformance.md:187`. Then mark the bullet RESOLVED-as-already-in-spec
+    `appendix-e-conformance.md:188`. Then mark the bullet RESOLVED-as-already-in-spec
     with the citations. Only if §9.5 does NOT actually state the by-fiat rule, add
     the one minimal normative sentence there and record that as the change.
   - Done when: all three §11 bullets read as resolved with `path:line` citations
@@ -458,7 +458,7 @@ command; commits carry NO trailers (repo convention).
     Cross-checks opened and quoted: `docs/spec/appendix-g-glossary.md:29-31`
     ("**Observationally transparent** — of a storage optimization: never changes any
     observed value, output, or accept/reject decision") and
-    `docs/spec/appendix-e-conformance.md:187` ("**§5.1 identity, §9.4 uniqueness,
+    `docs/spec/appendix-e-conformance.md:188` ("**§5.1 identity, §9.4 uniqueness,
     §9.5 transparent optimizations, §10.4 soundness** — properties of the model proven
     by the whole differential suite + byte-identical fixpoint, not one fixture").
   - Gates (each its own foreground command, exit 0):

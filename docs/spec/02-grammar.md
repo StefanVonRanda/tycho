@@ -239,10 +239,14 @@ Pattern     ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?   /* variant, with
               | "_"                                          /* wildcard */
 VariantName ::= IDENT | IDENT "." IDENT                       /* Variant or pkg.Variant */
 SubPattern  ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?
-For         ::= "for" IDENT "in" "range" "(" Expr ( "," Expr ( "," Expr )? )? ")" ":" NEWLINE Block
-              | "for" IDENT "in" Expr ":" NEWLINE Block
-              | "for" Expr ":" NEWLINE Block
-ParallelFor ::= "parallel" For          /* the For MUST be a range or foreach form */
+For         ::= "for" ForInit ";" Expr ";" ForPost ":" NEWLINE Block  /* three-clause; all three REQUIRED */
+              | "for" IDENT "in" Expr ":" NEWLINE Block               /* foreach */
+              | "for" Expr ":" NEWLINE Block                          /* condition */
+              | "for" ":" NEWLINE Block                               /* infinite */
+ForInit     ::= Decl | TypedDecl | Assign | CompoundAssign  /* the ';' supplies the clause's NEWLINE */
+ForPost     ::= Assign | CompoundAssign                     /* the ':' supplies it; target MUST be a variable */
+ParallelFor ::= "parallel" "for" IDENT "in" "0" "..<" Expr ":" NEWLINE Block  /* counting; the `0` is a literal */
+              | "parallel" "for" IDENT "in" IDENT ":" NEWLINE Block           /* foreach; the source MUST be a name */
 Select      ::= "select" ":" NEWLINE INDENT SelectArm+ DEDENT
 SelectArm   ::= "recv" "(" Expr "," IDENT ")" ":" NEWLINE Block
               | "default" ":" NEWLINE Block
@@ -251,11 +255,23 @@ ValueCtrl   ::= If | Match              /* value form: block branches ending in 
 ```
 
 - `elif` is sugar for an `else` block containing a single nested `if`.
-- The three `for` shapes are: **counting** (`for i in range(a[, b[, step]])`;
-  one argument means `0..n`), **foreach** (`for x in collection`, over an array
-  or a string's bytes), and **condition** (`for cond:`, the while-loop form).
+- The four `for` shapes are: **three-clause** (`for init; cond; post:`),
+  **foreach** (`for x in collection`, over an array or a string's bytes),
+  **condition** (`for cond:`, the while-loop form), and **infinite** (`for:`).
   `break`/`continue` are valid in every shape and only inside a loop.
-- `parallel for` applies only to a range or foreach loop (§22).
+- In the three-clause form the `;` and the block `:` stand in for the `NEWLINE`
+  that `Decl`/`TypedDecl`/`Assign`/`CompoundAssign` would otherwise end with:
+  the clauses are parsed by the ordinary statement parser, so a typed init
+  (`i: int = 0`) and every compound `op=` form come along without a second copy
+  of the assignment grammar. **All three clauses are required** — this grammar
+  has no empty-statement production to put in one — and `for:` is the only
+  degenerate form. A `continue` runs the post clause (§14.4).
+- There is **no counting form**. `for i in range(a[, b[, step]])` and the
+  contextual name `range` were removed on 2026-07-29 (§14.4); a `for` head that
+  names `range` is refused with its replacements. `..<` appears in exactly one
+  production, `ParallelFor` — a sequential `for i in 0..<N:` is refused (§22).
+- `parallel for` applies only to the `0..<N` counting form or the foreach form,
+  and its foreach source must be a bare name, not an expression (§22).
 - `match` is exhaustive; a bare variant name is a nullary-variant pattern, a
   parenthesized list binds a variant's payload, `pkg.Variant` matches a
   qualified variant, and `_` is the wildcard (§19).
@@ -269,9 +285,18 @@ ValueCtrl   ::= If | Match              /* value form: block branches ending in 
   unify to one type, and at least one branch MUST be non-diverging. These rules
   are given in §13/§14.
 
-> Provenance: `parse_if` (`:2338`), `parse_match` (`:2409`, `:2723`), `for`/
-> `parallel` (`:3181-3277`), `select` (`:3135-3172`), value-control routing
-> (`:2655`,`:2858`,`:2872`,`:2881`,`:2903`).
+> Provenance: `parse_if` (`src/tychoc.c:2730@parse_if`), `parse_match`
+> (`src/tychoc.c:2836@parse_match`, value form `src/tychoc.c:2915@parse_match`),
+> `for`/`parallel` (`src/tychoc.c:3235-3446`; the three-clause header
+> `src/tychoc.c:3279-3328`, `0..<N` `src/tychoc.c:3351-3376`, the `range`
+> refusal `src/tychoc.c:3386@"range"`), `select` (`src/tychoc.c:3189-3225`),
+> value-control routing (`src/tychoc.c:3159@parse_value_ctrl`,
+> `src/tychoc.c:3479@parse_value_ctrl`, `src/tychoc.c:3493@parse_value_ctrl`,
+> `src/tychoc.c:3502@parse_value_ctrl`, `src/tychoc.c:3524@parse_value_ctrl`).
+> Every ref here was bare before 2026-07-29 and therefore unchecked: a
+> `> Provenance:` block that names no path leaves `check_citations.py` with no
+> path to bind `:N` to, so the mandatory-anchor rule never fired and all eight
+> refs had gone stale by ~400 lines. Full paths are written out for that reason.
 
 ## 4.4 Expressions
 
