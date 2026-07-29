@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4340-4344`,`:4349-4350`,`:4359-4360`; `eprint` codegen `:8712@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4340-4344`,`:4349-4350`,`:4359-4360`; `eprint` codegen `:8793@tycho_eprint`; `die` codegen
 > `:8791-8792`.
 
 ## 29.4 Conversions
@@ -113,7 +113,7 @@ The base-specific `to_int`/`to_float`/`to_str`/`to_bool` and the generic
 [§5.4](03-types.md#54-newtypes)). `str(char)` yields the char's one-byte glyph
 string ([§5.2.4](03-types.md#524-char)).
 
-> Provenance: conversion magic `src/tychoc.c:5480-5536`; `chr` `Sig` `:4348@.name="chr"`,
+> Provenance: conversion magic `src/tychoc.c:5480-5536`; `chr` `Sig` `:4382@.name="chr"`,
 > `is_null`/`to_ptr` `Sig` `:4361-4362`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1021-1025` /
 > `sized_conv_target` `:1010-1020`, resolved inline at `:5496-5502`.
@@ -140,10 +140,10 @@ literally the same bounds-checked call — so neither is faster or safer than th
 other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 [§5.2.5](03-types.md#525-string) for why the wart exists.
 
-> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4352-4353`, `split` `:4355@.name="split"`;
+> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4352-4353`, `split` `:4389@.name="split"`;
 > `len` magic
-> `:5538-5544`; `char_at` `Sig` `src/tychoc.c:4354@.name="char_at"`, codegen `:8641-8648`
-> (`tycho_str_get`, the same call `s[i]` emits at `:9122@tycho_str_get`), tychoc0
+> `:5538-5544`; `char_at` `Sig` `src/tychoc.c:4388@.name="char_at"`, codegen `:8641-8648`
+> (`tycho_str_get`, the same call `s[i]` emits at `:9279@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -215,7 +215,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5046-5062`; `defaultable` predicate `:7151@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5046-5062`; `defaultable` predicate `:7232@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -240,7 +240,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 `ncpu` is the sole `Sig` builtin here.
 
 > Provenance: `wait` `src/tychoc.c:5418-5425`; `channel` `:5426-5436`; `send`
-> `:5437-5445`; `recv` `:5446-5451`; `close` `:5452-5462`; `ncpu` `Sig` `:4347@.name="ncpu"`;
+> `:5437-5445`; `recv` `:5446-5451`; `close` `:5452-5462`; `ncpu` `Sig` `:4381@.name="ncpu"`;
 > task/channel method sugar `:5063-5077`.
 
 ## 29.10 Filesystem and time
@@ -329,10 +329,10 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:4349@.name="die"`, codegen `:8791-8792`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:4383@.name="die"`, codegen `:8791-8792`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:4336-4368` or the
-> `resolve_expr` magic block (`case E_CALL:` `:5045@case E_CALL:`, running
-> through `reserve` at `:5657@"reserve"`).
+> `resolve_expr` magic block (`case E_CALL:` `:5079@case E_CALL:`, running
+> through `reserve` at `:5691@"reserve"`).

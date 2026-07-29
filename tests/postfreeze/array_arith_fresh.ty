@@ -1,0 +1,58 @@
+# Element-wise arithmetic yields a FRESH array. Tycho is value-semantics, so
+# `c := a * b` must neither alias nor mutate `a` or `b`; an implementation that
+# wrote the result back into the left operand's buffer, or returned a shallow
+# view of it, would pass a golden that only checked `c` right after the
+# operation. This fixture is the one that would catch it: it mutates the source
+# AFTERWARDS and asserts the result did not move.
+#
+# Post-freeze -- the frozen tychoc0 refuses this whole file as a type error.
+
+fn main():
+    # growable [int]: mutate each source in turn, then re-read the result
+    a := [1, 2, 3]
+    b := [2, 2, 2]
+    c := a * b
+    println(str(c))                # [2, 4, 6]
+    a[0] = 99
+    println(str(c))                # [2, 4, 6]  -- unchanged by writing a
+    b[1] = 77
+    println(str(c))                # [2, 4, 6]  -- unchanged by writing b
+    println(str(a))                # [99, 2, 3] -- and a itself still holds its own values
+    println(str(b))                # [2, 77, 2]
+
+    # pushing to a source must not reach into the result either
+    push(a, 4)
+    println(str(len(a)) + " " + str(len(c)))    # 4 3
+    println(str(c))                # [2, 4, 6]
+
+    # writing the RESULT must not reach back into either source
+    c[2] = 42
+    println(str(c))                # [2, 4, 42]
+    println(str(a))                # [99, 2, 3, 4]
+    println(str(b))                # [2, 77, 2]
+
+    # [float] behaves the same
+    f := [1.5, 2.5]
+    g := [2.0, 4.0]
+    h := f + g
+    println(str(h))                # [3.5, 6.5]
+    f[0] = 100.0
+    println(str(h))                # [3.5, 6.5]
+
+    # fixed [N]T is stored inline and value-copied; the same rule holds
+    p: [3]int = [1, 2, 3]
+    q: [3]int = [2, 2, 2]
+    fr := p * q
+    println(str(fr[0]) + " " + str(fr[1]) + " " + str(fr[2]))   # 2 4 6
+    p[0] = 99
+    println(str(fr[0]) + " " + str(fr[1]) + " " + str(fr[2]))   # 2 4 6
+    fr[1] = 42
+    println(str(p[0]) + " " + str(p[1]) + " " + str(p[2]))      # 99 2 3
+
+    # chaining: the intermediate is fresh too, so `a * b - b` cannot clobber b
+    a2 := [10, 20]
+    b2 := [1, 2]
+    d2 := a2 * b2 - b2
+    println(str(d2))               # [9, 38]
+    println(str(a2))               # [10, 20]
+    println(str(b2))               # [1, 2]

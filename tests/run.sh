@@ -152,6 +152,42 @@ for hi in tests/postfreeze/*.ty; do
     run_one "$hi" "postfreeze_$name" "tests/postfreeze/$name.out" "$in"
 done
 
+# Post-freeze runtime aborts. Same contract as the tests/abort/ lane below --
+# BUILD with tychoc, run native-only, require a nonzero exit and a 'tycho:'
+# message -- but for programs whose syntax the FROZEN compiler refuses.
+#
+# They cannot live in tests/abort/: `scripts/frontparity.sh:164-165` globs
+# `tests/abort/*.ty` and scores "tychoc accepted it, tychoc0 refused it" as a
+# divergence. An abort fixture is a program tychoc ACCEPTS, so a post-freeze one
+# put there would redden that lane by construction. tests/reject/ has no such
+# problem (it is in no frontparity glob, and frontparity skips whatever tychoc
+# itself refuses), which is why only the abort half needed a new home. Nothing
+# here is fed to a tychoc0-derived binary: `compiler/fixpoint.sh` and
+# `scripts/frontparity.sh` glob `tests/*.ty` and `tests/abort/*.ty`, neither of
+# which descends into this directory.
+#
+# Native-only, like tests/abort/: a deliberate exit(1) leaves live arenas and
+# LeakSanitizer would (correctly, uselessly) report them. No .out golden either
+# -- the subject is the abort, and the stderr message is asserted by the grep.
+for hi in tests/postfreeze/abort/*.ty; do
+    [ -e "$hi" ] || continue
+    name="pfabort_$(basename "$hi" .ty)"
+    if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/pfab" >"$TMP/pfab.log" 2>&1 \
+       || ! $CC -O2 -fwrapv -std=c11 -o "$TMP/pfab.bin" "$TMP/pfab.c" -lm 2>"$TMP/pfab.log"; then
+        note "$name" "tychoc did not build"; sed 's/^/      /' "$TMP/pfab.log"
+        fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    "$TMP/pfab.bin" </dev/null >/dev/null 2>"$TMP/pfab.err"; rc=$?
+    if [ "$rc" -eq 0 ]; then
+        note "$name" "runtime abort did not fire (exit 0)"; fail=$((fail + 1)); fails="$fails $name"
+    elif ! grep -q 'tycho:' "$TMP/pfab.err"; then
+        note "$name" "died (exit $rc) but without a 'tycho:' message"; sed 's/^/      /' "$TMP/pfab.err"
+        fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+
 # Negative paths. tests/reject/*.ty are invalid programs the compiler must
 # REFUSE (nonzero exit + a diagnostic on stderr/stdout) — guards against
 # fail-open parsing/typechecking. tests/abort/*.ty are valid programs whose

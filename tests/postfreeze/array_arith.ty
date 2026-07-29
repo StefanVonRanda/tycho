@@ -1,0 +1,112 @@
+# Element-wise arithmetic on arrays: `a OP b` builds a fresh array whose i-th
+# element is `a[i] OP b[i]`. Post-freeze -- the frozen tychoc0 refuses every line
+# of this file as a type error, which is exactly why it lives here.
+#
+# The operator set is DERIVED, not chosen: `a OP b` on arrays is legal iff
+# `a[i] OP b[i]` is legal for the element type. That gives
+#   int, u8..u64/i8..i64   + - * / %
+#   float, f32             + - * /      (% is integer-only for scalars too)
+#   newtype over int/float + - * /      (% rejects a newtype scalar as well)
+#   char                   + -          (the only two scalar char operators)
+# and nothing else. `&`, `|`, `^`, `<<`, `>>` are not arithmetic and stay
+# scalar-only; the bitwise and shift arms refuse an array exactly as before.
+#
+# Every line below prints REAL VALUES, not just "it compiled": an off-by-one in
+# the element loop or a mis-sized allocation produces plausible garbage rather
+# than a crash, so the golden is the actual check.
+type Meters = float
+type Count = int
+
+fn main():
+    # --- int: all five operators --------------------------------------------
+    a := [1, 2, 3]
+    b := [2, 2, 2]
+    println(str(a * b))            # [2, 4, 6]
+    println(str(a + b))            # [3, 4, 5]
+    println(str(a - b))            # [-1, 0, 1]
+    println(str(a / b))            # [0, 1, 1]   (int / truncates)
+    println(str(a % b))            # [1, 0, 1]
+
+    # --- float: four operators ----------------------------------------------
+    f := [1.5, 2.5, 3.0]
+    g := [2.0, 4.0, 0.5]
+    println(str(f * g))            # [3.0, 10.0, 1.5]
+    println(str(f + g))
+    println(str(f - g))
+    println(str(f / g))            # float / is true division
+
+    # --- f32 -----------------------------------------------------------------
+    ff := []f32
+    push(ff, to_f32(1.5))
+    push(ff, to_f32(2.0))
+    gg := []f32
+    push(gg, to_f32(2.0))
+    push(gg, to_f32(4.0))
+    println(str(ff * gg))          # [3.0, 8.0]
+    println(str(ff + gg))
+    println(str(ff - gg))
+    println(str(ff / gg))
+
+    # --- u8: unsigned, wraps at its own width, and takes % ------------------
+    u := []u8
+    push(u, to_u8(200))
+    push(u, to_u8(100))
+    v := []u8
+    push(v, to_u8(100))
+    push(v, to_u8(3))
+    println(str(u + v))            # [44, 103]  -- 300 wraps mod 256
+    println(str(u - v))            # [100, 97]
+    println(str(u * v))            # [32, 44]   -- 20000 and 300 mod 256
+    println(str(u / v))            # [2, 33]
+    println(str(u % v))            # [0, 1]
+
+    # --- i8: signed sized, wraps too ----------------------------------------
+    s := []i8
+    push(s, to_i8(100))
+    push(s, to_i8(-9))
+    t := []i8
+    push(t, to_i8(100))
+    push(t, to_i8(4))
+    println(str(s + t))            # [-56, -5]  -- 200 wraps into i8
+    println(str(s % t))            # [0, -1]
+
+    # --- char: + and - only, staying in the byte domain ----------------------
+    cs := ['a', 'b']
+    ds := ['\t', '\t']
+    println(str(cs - ds))          # [X, Y]  -- 97-9=88, 98-9=89
+    println(str(ds + cs))          # [j, k]  -- 9+97=106, 9+98=107
+
+    # --- newtype over float: units survive the operation --------------------
+    ms := [Meters(1.5), Meters(2.5)]
+    ns := [Meters(2.0), Meters(4.0)]
+    println(str(ms * ns))          # [3.0, 10.0]
+    println(str(ms + ns))
+    println(str(ms - ns))
+    println(str(ms / ns))
+
+    # --- newtype over int ----------------------------------------------------
+    cq := [Count(7), Count(9)]
+    dq := [Count(2), Count(3)]
+    println(str(cq * dq))          # [14, 27]
+    println(str(cq / dq))          # [3, 3]
+
+    # --- fixed [N]T: same five operators, lengths agreed statically ---------
+    p: [3]int = [10, 20, 30]
+    q: [3]int = [3, 4, 7]
+    r := p * q
+    println(str(r[0]) + " " + str(r[1]) + " " + str(r[2]))    # 30 80 210
+    r2 := p % q
+    println(str(r2[0]) + " " + str(r2[1]) + " " + str(r2[2])) # 1 0 2
+    r3 := p - q
+    println(str(r3[0]) + " " + str(r3[1]) + " " + str(r3[2])) # 7 16 23
+
+    fp: [2]float = [1.5, 2.5]
+    fq: [2]float = [2.0, 4.0]
+    fr := fp / fq
+    println(str(fr[0]) + " " + str(fr[1]))                    # 0.75 0.625
+
+    # --- an empty [T] on both sides is legal and yields an empty array -------
+    e1 := []int
+    e2 := []int
+    println(str(e1 + e2))          # []
+    println(str(len(e1 + e2)))     # 0

@@ -83,7 +83,7 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
 
 ## Phases
 
-- [ ] **Phase 1 — array ⊕ array, both kinds, with the two mismatch behaviours**
+- [x] **Phase 1 — array ⊕ array, both kinds, with the two mismatch behaviours**
   - Scope: the arithmetic arm of the binary-operator typechecker in
     `src/tychoc.c` (the chain ending at `:5982`), the corresponding codegen, one
     new runtime helper if the emitted C wants one, and fixtures + goldens in
@@ -110,6 +110,279 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
     the frozen compiler shows up here), then `sh scripts/asan_self.sh` (this adds
     a new allocation path and the postfreeze corpus is in that lane since phase 5
     of the previous plan). **Not** `make ci`.
+
+  ### Evidence — phase 1, 2026-07-29
+
+  **The derived operator set, and the lines that settled it.** Read
+  `/home/igzo/github/tycho/src/tychoc.c:6020-6063` — the arithmetic chain — and
+  derived the per-element-type set from the arms rather than assuming one. The
+  rule enforced is `a OP b` on arrays is legal **iff** `a[i] OP b[i]` is legal:
+
+  | element type | operators | the arm that settles it |
+  |---|---|---|
+  | `int` | `+ - * / %` | `/home/igzo/github/tycho/src/tychoc.c:6032` (arith), `/home/igzo/github/tycho/src/tychoc.c:6020-6026` (`%`) |
+  | `u8 u16 u32 u64 i8 i16 i32 i64` | `+ - * / %` | `/home/igzo/github/tycho/src/tychoc.c:6036`; `%` likewise from `/home/igzo/github/tycho/src/tychoc.c:6020-6026` (`is_sized_int` passes) |
+  | `float` | `+ - * /` | `/home/igzo/github/tycho/src/tychoc.c:6044`; `%` refused |
+  | `f32` | `+ - * /` | `/home/igzo/github/tycho/src/tychoc.c:6037`; `%` refused |
+  | numeric newtype over `int`/`float` | `+ - * /` | `/home/igzo/github/tycho/src/tychoc.c:6045`; `%` refused |
+  | `char` | `+ -` | `/home/igzo/github/tycho/src/tychoc.c:6038-6043` (`char±char -> char`) |
+
+  The pre-flight's open question was `%`. It is **not** simply int-only: the
+  modulo/bitwise arm at `/home/igzo/github/tycho/src/tychoc.c:6021` tests
+  `(lt != T_INT && !is_sized_int(lt)) || lt != rt`, so `%` is legal for `int`
+  **and** every sized int, and refused for `float`, `f32` and for a newtype over
+  `int` (a newtype's `Type` is not `T_INT`, and `is_sized_int` is false for it
+  too). The array form matches the scalar form exactly in all six rows — the
+  risk the pre-flight named (`[float] % [float]` legal where `float % float` is
+  not) does not materialise. Both refusals verified live:
+
+      $ ./tychoc e.ty            # a := [1.0, 2.0]; a % a
+      error: `%` is not defined element-wise on [float], because `%` is not defined on float
+      $ ./tychoc n.ty            # type Count = int; a := [Count(7), Count(2)]; a % a
+      error: `%` is not defined element-wise on [Count], because `%` is not defined on Count
+
+  `&`, `|`, `^`, `<<`, `>>` are **excluded**, and that was a decision, not an
+  oversight. They are not arithmetic (the Goal above says "arithmetic only"),
+  and the new arm at `/home/igzo/github/tycho/src/tychoc.c:5989` lists only the
+  five arithmetic tokens, so an array operand still falls through to the bitwise
+  arm at `/home/igzo/github/tycho/src/tychoc.c:6020` and the shift arm at
+  `/home/igzo/github/tycho/src/tychoc.c:5965` and is refused there in their
+  existing wording — behaviour unchanged by this phase:
+
+      $ ./tychoc ...   # a := [1, 2]; a & a
+      error: modulo / bitwise operators require two matching integers (got [int], [int])
+      $ ./tychoc ...   # a := [1, 2]; a << a
+      error: shift operators require integer operands (got [int], [int])
+
+  The arm sits at `/home/igzo/github/tycho/src/tychoc.c:5973-6019`, i.e. **after**
+  the shift arm and **before** the modulo/bitwise arm, precisely so that `%` on
+  two int arrays reaches it while `&`/`|`/`^`/shifts do not.
+
+  **`/` and `%` per element keep the scalar guards.** The scalar emit was
+  factored out into `gen_arith_op`
+  (`/home/igzo/github/tycho/src/tychoc.c:9062-9105`) and the element-wise arm
+  calls it verbatim, so an element gets `tycho_idiv`/`tycho_imod`,
+  `tycho_udiv`/`tycho_umod`, the shift width guard and `trunc_result` exactly as
+  a scalar does — an element must not silently get fewer guards than a scalar.
+  Verified: a zero **element** (not a literal, so the compile-time check at
+  `/home/igzo/github/tycho/src/tychoc.c:6001` cannot see it) aborts cleanly
+  instead of raising SIGFPE.
+
+      $ ./tychoc ...   # a := [1, 2]; b := [1, 0]; println(str(a / b))
+      tycho: division by zero          (exit 1)
+
+  **The fixed/growable mixing decision: REFUSED, fail-closed.** A `[N]T` and a
+  `[T]` cannot agree on a length at compile time, and the two kinds carry
+  *different* mismatch rules (compile error vs runtime abort), so a mixed
+  expression would have no single defensible behaviour. Nothing in the code
+  argued for allowing it, so the fail-closed option stands
+  (`/home/igzo/github/tycho/src/tychoc.c:6003-6008`). `bounded[N]T` and the
+  template-only `[$N]T` are refused for the same reason
+  (`/home/igzo/github/tycho/src/tychoc.c:5993-5997`): `bounded` carries a
+  capacity *and* a separate live length, and no element-wise meaning for that
+  pair has been settled. All three verified live:
+
+      error: cannot mix a fixed array and a growable array in element-wise `*` (got [3]int, [int]) -- copy one side into the other's kind first
+      error: element-wise `*` is defined for [T] and [N]T only (got bounded[3]int, bounded[3]int)
+      error: element-wise `*` requires two arrays with the same element type (got [int], [float])
+
+  Scalar broadcast (`a * 2`) deliberately gets **no** new diagnostic here: it
+  falls through to the existing end-of-chain message at
+  `/home/igzo/github/tycho/src/tychoc.c:6063`, unchanged, so phase 2 has nothing
+  to unwrite.
+
+  **The two mismatch behaviours.**
+
+  - `[N]T`: **compile error**, worded off the `==` rule at
+    `/home/igzo/github/tycho/docs/spec/12-aggregates.md:146` ("requires the same
+    static `N`; `==` compares element-wise"). Locked byte-for-byte as
+    `/home/igzo/github/tycho/tests/diag/array_arith_fixlen.err`:
+
+          tests/diag/array_arith_fixlen.ty:7: error: element-wise `*` on a fixed array requires the same static length (got [3]int and [2]int)
+               7 |     c := a * b
+
+  - `[T]`: **runtime abort naming both lengths**, via one new runtime helper
+    `tycho_ew_len` at `/home/igzo/github/tycho/runtime/tycho_rt.c:2418-2430`,
+    written to match `/home/igzo/github/tycho/runtime/tycho_rt.c:187`,
+    `/home/igzo/github/tycho/runtime/tycho_rt.c:197` and
+    `/home/igzo/github/tycho/runtime/tycho_rt.c:1040` in tone and exit behaviour
+    (`fprintf(stderr, "tycho: ...")` then `exit(1)`):
+
+          $ ./tychoc tests/postfreeze/abort/array_arith_len.ty -o ab && ./ab
+          tycho: element-wise arithmetic on arrays of different lengths (3 and 2)
+          (exit 1)
+
+  **The freshness proof.** `gen_ew_arith`
+  (`/home/igzo/github/tycho/src/tychoc.c:9112-9137`) emits a GCC
+  statement-expression that copies both operands into locals, allocates a **new**
+  spine from the arena (`arena_alloc`), and writes every element by value; the
+  element types the arm admits are all scalars, so a shallow element store is a
+  deep copy. `/home/igzo/github/tycho/tests/postfreeze/array_arith_fresh.ty`
+  proves it from the outside rather than by inspection — it mutates each source
+  **after** the operation, pushes to a source, writes into the result, and
+  chains two operations. Golden
+  (`/home/igzo/github/tycho/tests/postfreeze/array_arith_fresh.out`), abridged:
+
+        [2, 4, 6]        c := a * b
+        [2, 4, 6]        after a[0] = 99      -- c unchanged
+        [2, 4, 6]        after b[1] = 77      -- c unchanged
+        [99, 2, 3]       a still holds its own values
+        4 3              push(a, 4): len(a)=4, len(c)=3  -- no shared spine
+        [2, 4, 42]       c[2] = 42 ...
+        [99, 2, 3, 4]    ... did not reach back into a
+        [9, 38]          a2 * b2 - b2, with a2 and b2 both intact afterwards
+
+  **The fixture groups, and where the abort one had to go.**
+
+  1. `/home/igzo/github/tycho/tests/postfreeze/array_arith.ty` — every legal
+     element type × every legal operator, with real values in
+     `/home/igzo/github/tycho/tests/postfreeze/array_arith.out`: `[1,2,3] *
+     [2,2,2]` → `[2, 4, 6]`, `u8` wrap (`200+100` → `44`, `200*100` → `32`),
+     `i8` wrap (`100+100` → `-56`), `char` (`'a'-'\t'` → `X`), `f32`, both
+     newtype kinds, `[3]int` and `[2]float` fixed arrays, and the empty-`[T]`
+     case.
+  2. `/home/igzo/github/tycho/tests/postfreeze/array_arith_fresh.ty` — above.
+  3. `/home/igzo/github/tycho/tests/postfreeze/abort/array_arith_len.ty` —
+     **not** `tests/abort/`, and this is the conclusion the phase was asked to
+     reach and state. `/home/igzo/github/tycho/scripts/frontparity.sh:164-165`
+     globs `tests/abort/*.ty`, and that lane scores "tychoc accepted it, tychoc0
+     refused it" as a **divergence**. An abort fixture is a program tychoc
+     *accepts*, so a post-freeze one placed in `tests/abort/` would have
+     reddened frontparity by construction — exactly the trap `tests/postfreeze/`
+     was created to avoid. `tests/reject/` needed no such move: it appears in
+     **no** frontparity glob (checked the whole loop at
+     `/home/igzo/github/tycho/scripts/frontparity.sh:164-165`), and frontparity
+     skips whatever tychoc itself refuses in any case. So a new lane was added at
+     `/home/igzo/github/tycho/tests/run.sh:157-190`, mirroring the
+     `tests/abort/` contract (build with tychoc, run native-only, require a
+     nonzero exit plus a `tycho:` message). Neither `compiler/fixpoint.sh` nor
+     `scripts/frontparity.sh` descends into it.
+  4. `/home/igzo/github/tycho/tests/reject/array_arith_fixlen.ty` for the `[N]T`
+     mismatch, plus `/home/igzo/github/tycho/tests/diag/array_arith_fixlen.ty`
+     and its `.err` — because the reject lane
+     (`/home/igzo/github/tycho/tests/run.sh:203-209`) asserts only that a
+     diagnostic is *non-empty*, and this phase required the diagnostic itself to
+     be asserted. `tests/diag/*.ty` is in frontparity's glob but skips there,
+     because tychoc refuses it.
+
+  Goldens are tracked, not ignored — confirmed rather than assumed:
+
+      $ git check-ignore -v tests/postfreeze/rawstring.out ; echo "rc=$?"
+      rc=1                                  (no match => not ignored)
+
+  via `/home/igzo/github/tycho/.gitignore:100` (`!/tests/postfreeze/*.out`). The
+  new abort fixture needs no `.out` — its lane asserts stderr, not stdout — so
+  the fact that that exception does not cover `tests/postfreeze/abort/*.out`
+  does not bite.
+
+  **"No new token" — confirmed, not assumed.** Both cheap gates ran green, so
+  `tools/tychofmt.ty`, `tools/lsp.ty` and `editors/` were not touched:
+
+      $ sh scripts/tools_check.sh
+      tools-check: ok
+      $ sh scripts/editors_check.sh
+      818 files parsed; the only failure is the enumerated known-bad set (tests/reject/rawstring_unterminated.ty )
+      editors-check: ok
+
+  **The three gates (foreground, one per command; `make ci` NOT run).**
+
+      $ make test
+      passed: 534   failed: 0
+      all green
+        ... including: ok postfreeze_array_arith / ok postfreeze_array_arith_fresh
+                       ok pfabort_array_arith_len / ok reject_array_arith_fixlen
+                       ok diag_array_arith_fixlen
+      (the postfreeze lane builds and runs each fixture BOTH native and under
+       ASan+UBSan and requires identical output, so the new allocation path is
+       already sanitizer-clean on real values here.)
+
+      $ sh scripts/frontparity.sh          # BEFORE, captured before any edit
+      frontparity: agreed: 292   diverged: 0   (skipped, tychoc refused: 15)
+      $ sh scripts/frontparity.sh          # AFTER
+      frontparity: agreed: 292   diverged: 0   (skipped, tychoc refused: 16)
+      frontparity: all green
+      `agreed` did not fall — 292 before, 292 after. `skipped` rose by exactly 1:
+      the new tests/diag/array_arith_fixlen.ty, which tychoc refuses. Nothing
+      moved from `agreed` into `diverged`.
+
+      $ sh scripts/asan_self.sh
+      asan-self: compiled: 548   failed: 0
+      asan-self: all green (tychoc's own execution is ASan+UBSan clean over the corpus)
+
+  **Files changed:** `/home/igzo/github/tycho/src/tychoc.c`,
+  `/home/igzo/github/tycho/runtime/tycho_rt.c`,
+  `/home/igzo/github/tycho/tests/run.sh`,
+  `/home/igzo/github/tycho/tests/postfreeze/array_arith.ty` + `.out`,
+  `/home/igzo/github/tycho/tests/postfreeze/array_arith_fresh.ty` + `.out`,
+  `/home/igzo/github/tycho/tests/postfreeze/abort/array_arith_len.ty`,
+  `/home/igzo/github/tycho/tests/reject/array_arith_fixlen.ty`,
+  `/home/igzo/github/tycho/tests/diag/array_arith_fixlen.ty` + `.err`.
+
+  **Not verified.** `make ci` was not run (phase 4 owns it, once, per
+  `/home/igzo/github/tycho/CLAUDE.md`), so the fuzzers, the ILP32 rebuild and
+  the TSan lane have not seen this code. Risk if one of them is wrong: the
+  emitted statement-expression sizes its spine with `tycho_int` and `size_t`
+  arithmetic, the same shape as `tycho_arr_C%d_with_cap`
+  (`/home/igzo/github/tycho/src/tychoc.c:11394`), so an ILP32 difference would
+  be surprising — but it is unverified until phase 4.
+
+  **A hazard caught and avoided, worth recording.** The runtime helper was first
+  written next to its two siblings at
+  `/home/igzo/github/tycho/runtime/tycho_rt.c:187` and `:197`, which is where it
+  belongs by subject. That insertion pushed every line below 200 down by 11 —
+  and about twenty `runtime/tycho_rt.c:N` citations point past that line, in
+  `/home/igzo/github/tycho/FRICTION.md:189`, `:214`, `:225`, `:234`, `:316`,
+  `/home/igzo/github/tycho/docs/rfc/value-lifetime-regions.md:36`, `:52`, `:54`,
+  `:144`, `:212`, `:214`, `:269`, `:270`, `:271`, `:273`, `:301`,
+  `/home/igzo/github/tycho/docs/internals/changelog-2026-06.md:24`, and this
+  plan's own Pre-flight. `scripts/check_citations.py` only bounds-checks a
+  source ref (carried-forward phase 13 says so in as many words), so the gate
+  would have stayed **green** while all twenty silently became off-by-eleven.
+  The helper was moved to the end of the file instead, making the diff
+  append-only: `git diff --stat runtime/tycho_rt.c` is `1 file changed, 14
+  insertions(+)`, and `runtime/tycho_rt.c:187`, `:197`, `:843` and `:1040` all
+  still resolve to the lines their citers describe (checked with `sed -n`).
+
+  **The same hazard in `src/tychoc.c`, which could NOT be avoided — so it was
+  repaired.** The typechecker arm and the codegen helpers have to go in the
+  middle of the file, so they shifted every line below them, and 110 anchored
+  `src/tychoc.c:N@token` citations point in from the spec and the archives.
+  `scripts/check_citations.py` is **not** merely a bounds check for these — it
+  verifies the token is actually on the named line — so unlike the runtime case
+  it reddened loudly rather than silently. Measured both sides rather than
+  assumed: a clean `git worktree` at `HEAD` gives
+
+      citation check: ok (110 anchored ..., 2009 bare in bounds, 83 source->doc ..., 121 source->source in bounds)
+
+  and the working tree gave `FAILED (69 stale citation(s))`. All 69 were
+  repaired by mapping each old line to its new one through the **actual
+  `difflib` opcodes** between `HEAD:src/tychoc.c` and the working copy — not
+  through the checker's "it appears at :N" candidate list, which is ambiguous
+  for tokens like `parse_if` (three candidate lines) and would have picked wrong.
+  Only the numbers moved; the `@token` half was never rewritten, and the diff is
+  **59 insertions / 59 deletions across 10 files** — line-for-line neutral, so
+  no citation *into* those documents moved either (phase 3's re-wrap rule,
+  satisfied here for free). Re-verified green:
+
+      $ python3 scripts/check_citations.py
+      citation check: ok (110 anchored contain the token they name, 2013 bare in bounds, 83 source->doc citations resolve, 122 source->source in bounds)
+      $ sh scripts/check_links.sh
+      link check: ok (132 markdown files, no dead relative links)
+      $ sh scripts/spec_check.sh
+      spec-examples: 8 runnable example(s), all pass
+
+  Files re-anchored: `/home/igzo/github/tycho/docs/spec/01-lexical.md`,
+  `/home/igzo/github/tycho/docs/spec/02-grammar.md`,
+  `/home/igzo/github/tycho/docs/spec/03-types.md`,
+  `/home/igzo/github/tycho/docs/spec/10-statements.md`,
+  `/home/igzo/github/tycho/docs/spec/12-aggregates.md`,
+  `/home/igzo/github/tycho/docs/spec/15-program.md`,
+  `/home/igzo/github/tycho/docs/spec/16-builtins.md`,
+  `/home/igzo/github/tycho/docs/internals/frontend-restriction-audit-2026-07-25.md`,
+  `/home/igzo/github/tycho/docs/internals/plan-front-door-DONE.md`,
+  `/home/igzo/github/tycho/docs/internals/plan-postfreeze-rawstring-DONE.md`.
+  This is line-number maintenance forced by phase 1's own edit, not spec
+  authorship — phase 3 still owns every word of the spec's content.
 
 - [ ] **Phase 2 — scalar broadcast, both directions**
   - Scope: the same typechecker arm and codegen; fixtures in `tests/postfreeze/`.
@@ -174,6 +447,23 @@ Filed by phase agents as they ran; none blocking, none closed.
       including 8 stale ones in `docs/spec/02-grammar.md:272-274`. Phase 11 held
       two ranges path-less on purpose to avoid reddening the gate — a workaround
       that should not need to exist.
+- [ ] **Phase 16 — `char` is a scalar type with no type NAME and no `int -> char`
+      conversion.** Found while building phase 1's element-type matrix. `char`
+      has arithmetic (`/home/igzo/github/tycho/src/tychoc.c:6038-6043`,
+      `char±char -> char`) and `str()` prints it, but `[]char` is refused with
+      `error: unknown type 'char'`, so a `[char]` can only be built from a
+      literal of char literals, never annotated, returned by signature, or made
+      empty. There is no `to_char(n)` either (`error: unknown procedure
+      'to_char'`), and the char escape set is `\n \t \r \0 \\ \'` only — no
+      `\xNN` (`error: unsupported char escape`) — so a char outside that set and
+      the printable range cannot be written at all. Net effect: the one element
+      type in phase 1's derived table whose operator set is *narrower* than the
+      others is also the one hardest to test, and phase 1's fixture had to reach
+      it through `['a', 'b'] - ['\t', '\t']`. Not blocking; the escape half is
+      deliberate and already reasoned out in `/home/igzo/github/tycho/FRICTION.md:214`
+      (a string literal's text is pasted verbatim into the emitted C), but the
+      missing *type name* is a separate and much smaller question.
+
 - [ ] **Phase 15 — `docs/corelib.md` does not exist.** Moved to
       `docs/guides/corelib.md` by `68e5b39`; a dead backticked doc path in prose
       is invisible to `scripts/check_links.sh`, which only validates real

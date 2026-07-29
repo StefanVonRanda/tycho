@@ -1,0 +1,26 @@
+# Element-wise arithmetic on two growable [T] arrays of DIFFERENT lengths must
+# abort cleanly at runtime, naming BOTH lengths. A [T] length is only known at
+# run time, so this is the one mismatch the compiler cannot catch; padding the
+# short side or truncating the long one would both be a silent wrong answer.
+#
+# Expected: exit 1 with
+#   tycho: element-wise arithmetic on arrays of different lengths (3 and 2)
+#
+# WHY THIS IS NOT IN tests/abort/. `scripts/frontparity.sh` globs
+# `tests/abort/*.ty` and scores "tychoc accepted it, tychoc0 refused it" as a
+# DIVERGENCE. This program is post-freeze: tychoc accepts it and the frozen
+# tychoc0 refuses it as a type error, so putting it in tests/abort/ would redden
+# frontparity by construction -- the exact trap tests/postfreeze/ exists to
+# avoid. tests/reject/ has no such problem (it is not in frontparity's glob at
+# all, and tychoc refuses those programs anyway, which frontparity skips), but
+# an abort fixture is a program tychoc ACCEPTS, so it needs its own post-freeze
+# home. tests/run.sh runs this directory with the same discipline as
+# tests/abort/: build with tychoc, run native-only, require a nonzero exit and a
+# 'tycho:' message. Native-only because a deliberate exit(1) leaves live arenas
+# and LeakSanitizer would report them, correctly and uselessly.
+
+fn main():
+    a := [1, 2, 3]
+    b := [4, 5]
+    println("about to multiply arrays of different lengths")
+    println(str(a * b))
