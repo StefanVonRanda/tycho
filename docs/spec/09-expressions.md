@@ -48,6 +48,26 @@ and `s + b` are type errors, and the boundary is crossed only by explicit
 that names the three operators `bytes` does have (`+`, `b[i]`, `b[i:j]`) rather
 than suggesting a numeric conversion.
 
+**Element-wise arithmetic on arrays.** The five arithmetic operators also apply
+to two arrays, and to an array against a scalar. `a OP b` on two arrays yields a
+**fresh** array whose `i`-th element is `a[i] OP b[i]`; `a OP s` and `s OP a`
+broadcast the scalar over every element and **keep the operand order**, so
+`2 - [5, 1]` is `[-3, 1]` and never `[3, -1]`. Legality is exactly the scalar
+rule applied per element — `a OP b` is legal **iff** `a[i] OP b[i]` is legal — so
+`int` and every sized integer get `+ - * / %`, `float`, `f32` and a numeric
+newtype get `+ - * /`, and `char` gets `+ -`. `& | ^ << >>` are **not** included:
+they are not arithmetic, so an array operand still reaches the bitwise and shift
+rules below and is refused there, unchanged. Both array kinds participate and
+their two length-mismatch rules differ; the whole rule — the kinds, the
+mismatches, and literal adaptation of a broadcast scalar — is
+[§16.8](12-aggregates.md#168-element-wise-arithmetic).
+
+> Provenance: array ⊕ array arm `src/tychoc.c:5987-6017`; broadcast arm
+> `src/tychoc.c:6046-6072`; the per-element-type operator set
+> `src/tychoc.c:1020@elem_arith_ok`; the arms an array operand still falls
+> through to — shift `src/tychoc.c:5969@shift operators require integer operands`,
+> modulo/bitwise `src/tychoc.c:6077@modulo / bitwise operators`.
+
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
 values; ordering applies only to the ordered set

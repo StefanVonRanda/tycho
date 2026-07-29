@@ -206,6 +206,102 @@ element).
 > under-documentation gap, not a contradiction. See also
 > [§5.3.1](03-types.md#531-arrays-t).
 
+### 16.8 Element-wise arithmetic
+
+The five arithmetic operators of [§13.2](09-expressions.md#132-operators) apply
+to arrays. `a OP b` on two arrays yields a **fresh** array whose `i`-th element
+is `a[i] OP b[i]`; with one array and one scalar the scalar is **broadcast** over
+every element.
+
+```tycho
+fn main():
+    a := [1, 2, 3]
+    b := [2, 2, 2]
+    println(str(a * b))          # element-wise
+    println(str(a * 2))          # broadcast, array on the left
+    println(str(2 - [5, 1]))     # broadcast, scalar on the left — order kept
+```
+
+```output
+[2, 4, 6]
+[2, 4, 6]
+[-3, 1]
+```
+
+**Legality is the scalar rule, element by element.** `a OP b` is legal **iff**
+`a[i] OP b[i]` is legal, so the operator set follows the element type and the
+array form is never more permissive than the scalar form:
+
+| element type | operators |
+|---|---|
+| `int`, and `u8`/`u16`/`u32`/`u64`/`i8`/`i16`/`i32`/`i64` | `+ - * / %` |
+| `float`, `f32`, a newtype over `int` or `float` | `+ - * /` |
+| `char` | `+ -` |
+
+Every other element type (`string`, `bytes`, a struct, a nested array, …) has no
+scalar arithmetic and gets none here. `& | ^ << >>` are **not** element-wise —
+they are not arithmetic — so an array operand reaches the bitwise and shift rules
+of §13.2 and is refused there in their existing wording, unchanged.
+
+**Both array kinds, and their two different mismatch rules.** For a `[N]T` the
+length is static, so both operands MUST have the same `N` and a mismatch is a
+**compile error** — the same requirement `==` already makes to compare two fixed
+arrays element-wise (§16.5). For a `[T]` the lengths are not known until run time,
+so a mismatch **aborts** with a diagnostic naming both lengths (`tycho:
+element-wise arithmetic on arrays of different lengths (3 and 2)`, exit status
+`1`), joining the abort set of §30.2. Neither side is padded and neither is
+truncated: inventing an element would be a silent wrong answer.
+
+**Mixing the kinds is refused.** A `[N]T` and a `[T]` cannot agree on a length at
+compile time and carry different mismatch rules, so a mixed expression has no one
+defensible behavior and is a compile error; copy one side into the other's kind
+first. `bounded[N]T` and the size-generic `[$N]T` ([§7.4](05-generics.md)) are
+refused for the same reason — `bounded` carries a capacity *and* a separate live
+length, and no element-wise meaning for that pair is settled. The two arrays MUST
+also share an element type: `[char] + [int]` is a compile error.
+
+**Broadcast, both directions, order preserved.** `a OP s` and `s OP a` are both
+defined for every legal operator, including the non-commutative `-`, `/` and `%`,
+and the operands are never reordered: `2 - [5, 1]` is `[-3, 1]`, `[5, 1] - 2` is
+`[3, -1]`. The scalar is evaluated once, not once per element. **Literal
+adaptation** applies to the scalar against the **element** type, with the
+value-directional restriction of [§8.1](06-conversions.md): a *literal* adapts
+(`[1.0, 2.0] * 2` is `[2.0, 4.0]`), a *variable* never widens (with `n := 2`,
+`[1.0, 2.0] * n` is a compile error exactly as `1.0 * n` is). After adaptation
+the scalar's type MUST **equal** the element type, which makes `['a', 'b'] + 1` a
+compile error even though the scalar `'a' + 1` is legal (§13.2's byte-domain
+rule). That narrowing is deliberate: allowing it only in the broadcast direction
+would make broadcast more permissive than the two-array rule above, which already
+refuses `[char] + [int]`.
+
+**The result is a fresh array.** Value semantics (§9) holds: neither operand is
+aliased or mutated, mutating a source after `c := a * b` never changes `c`, and
+growing one never grows the other. Every element goes through the same emit a
+scalar operation does, so an element never gets fewer guards than a scalar:
+division or modulo by an integer **literal** `0` is a compile error, by a zero
+*value* or a zero *element* it aborts (`tycho: division by zero` / `tycho: modulo
+by zero`, exit `1`), and `float`/`f32` division by zero stays IEEE (`inf`) — the
+§13.2 rules exactly, not a second set.
+
+This is **post-freeze** syntax: it is a type error to the frozen `tychoc0`, so
+its fixtures live in `tests/postfreeze/` (Appendix E.2.1).
+
+> Provenance: two-array arm `src/tychoc.c:5987-6017`, broadcast arm
+> `src/tychoc.c:6046-6072`; per-element-type operator set
+> `src/tychoc.c:1020@elem_arith_ok`; fixed-length mismatch
+> `src/tychoc.c:6011@on a fixed array requires the same static length`; mixed
+> kinds `src/tychoc.c:6003@cannot mix a fixed array and a growable array`;
+> `bounded`/`[$N]T` `src/tychoc.c:5993@IS_BOUNDED`; element-type mismatch
+> `src/tychoc.c:5996@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
+> element type `src/tychoc.c:6065@requires the scalar to have the array's element type`,
+> its literal adaptation `src/tychoc.c:6057-6062`; the fresh spine
+> `src/tychoc.c:9194@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:9178@gen_arith_op`, operands never reordered
+> `src/tychoc.c:9175@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:9198@tycho_ew_len`, and the abort
+> itself `runtime/tycho_rt.c:2427@arithmetic on arrays of different lengths`;
+> literal-zero divisor `src/tychoc.c:5961@division by zero`.
+
 ---
 
 ## 17. Structs, tuples, `soa`
