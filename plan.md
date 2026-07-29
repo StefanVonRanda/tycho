@@ -2147,7 +2147,51 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     in-scope refs carry anchors; the two doc gates are green.
   - Sequencing: after phase 8. Independent of phases 11 and 12.
 
-## Status — stopped at phase 6, deliberately, 2026-07-29
+## Status — PLAN COMPLETE, 2026-07-29
+
+Every phase is closed: **1–8, 10 and 11 done, 9 dropped by decision.** The
+section below is the earlier stop at phase 6, kept as written because the
+reasoning still holds for phase 9 and the reader should see that the chain was
+stopped, reconsidered, and restarted rather than run straight through.
+
+```
+30058a2  phase 1   tests/postfreeze/, a fixture lane outside the freeze
+b895e66  phase 2   backtick raw string literals
+d572181  phase 3   tychofmt, LSP and editor grammars learn raw strings
+1d8ed4b  phase 4   repoint stale fixpoint.sh / frontparity.sh citations
+309c59a  phase 5   asan_self.sh and the postfreeze corpus
+782af20  phase 6   repoint src/tychoc.c citations after the raw-string insert
+5c6aeae  (stop note — why 7-9 stayed unchecked at that point)
+58c3593  phase 10  carved out of 9: the gate fix, authorised on its own
+a2509a3  phase 10  the citation gate requires anchored Provenance refs
+1afbc84  CLAUDE.md — the gate budget, so agents stop reaching for make ci
+7e2e0d5  phase 7   a gate for the editor grammars
+cc3b1a3  (phase 9 dropped, measurement kept)
+387d7c5  phase 8   repoint script-to-script citations
+1b772c6  phase 11  repoint the stale ranges on Provenance lines
+```
+
+**What the citation phases actually established**, which is worth more than the
+repairs themselves: the tree's `path:line` citations were wrong at a rate nobody
+had measured. Phase 10 found **34 of 48** single-line Provenance refs pointing at
+the wrong line (71%). Phase 11 found **152 of 178** ranges wrong (85%) — higher,
+because a range has two endpoints to drift and no anchor to catch either. Phase 8
+found **17 of 131** source→source refs wrong, every one *in bounds and pointing at
+an unrelated line*, several wrong on the day they were written — including one in
+a script phase 7 had just created, and three into the frozen `compiler/tychoc0.ty`,
+whose target cannot drift at all. Arithmetic recovers none of these; only reading
+does. The gate now covers three directions and enforces anchoring where it can,
+and `CLAUDE.md` records the two rules that caught five phases in a row writing
+their own evidence.
+
+**Left unchecked, all filed by phases as they ran, none blocking:** phase 12 (the
+zed README's hand-typed corpus count), phase 13 (an anchored form for
+source→source citations — the class phase 8's new check provably cannot catch),
+phase 14 (a Provenance block naming no path escapes phase 10's mandatory anchor
+by accident; 8 stale refs in `docs/spec/02-grammar.md:272-274`), phase 15 (the
+dead `docs/corelib.md` path, moved to `docs/guides/corelib.md` by `68e5b39`).
+
+## Status — the earlier stop at phase 6, 2026-07-29
 
 **Phases 1–6 are done and the tree is green.** The plan as approved was phases
 1–3; phases 4–9 were all filed by phase agents as out-of-scope discoveries,
