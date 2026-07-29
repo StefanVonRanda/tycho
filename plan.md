@@ -290,7 +290,7 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   `webserver: ok`; `examples/sqlite/run.sh` → `sqlite: green`.
   `examples/fetch/run.sh` is **red, and was already red at HEAD** — see phase 20.
 
-- [ ] **Phase 2 — fold `tests/postfreeze/` back into `tests/`**
+- [x] **Phase 2 — fold `tests/postfreeze/` back into `tests/`**
   - Scope: `tests/postfreeze/*.ty` + goldens → `tests/`; `tests/postfreeze/abort/`
     → `tests/abort/`; the two loops in `tests/run.sh` that serve them;
     `scripts/asan_self.sh`'s glob; `.gitignore`'s `!/tests/postfreeze/*.out`
@@ -299,6 +299,167 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
     its new home with its golden, and `make test` counts the same number of
     passes as before the move.
   - Verify: `make test` (record the count before and after — they must match).
+
+  **Evidence (2026-07-29).**
+
+  **The count, which is the whole proof.** `make test` **before** any change:
+  `passed: 537   failed: 0`. `make test` **after** the fold: `passed: 537
+  failed: 0`. Equal, so nothing was dropped on the floor. The seven fixtures run
+  from their new homes under new names — the `postfreeze_` and `pfabort_`
+  prefixes are gone because the loops that produced them are gone:
+
+  ```
+  ok    array_arith          ok    array_bcast_fresh
+  ok    array_arith_fresh    ok    nested_pattern
+  ok    array_bcast          ok    rawstring
+  ok    abort_array_arith_len
+  ```
+
+  **The moves, all seven by `git mv` so history follows.** Six fixtures + six
+  goldens `/home/igzo/github/tycho/tests/postfreeze/{array_arith,
+  array_arith_fresh, array_bcast, array_bcast_fresh, nested_pattern,
+  rawstring}.{ty,out}` → `/home/igzo/github/tycho/tests/`; and
+  `/home/igzo/github/tycho/tests/postfreeze/abort/array_arith_len.ty` →
+  `/home/igzo/github/tycho/tests/abort/array_arith_len.ty`. `git status` scored
+  all thirteen as `R` (rename), not add+delete. Both directories then `rmdir`'d;
+  `tests/postfreeze/` does not exist.
+
+  **Collision check, run BEFORE the move, not assumed.** For each of the six
+  names, `tests/<name>.{ty,out,in}` was tested with `[ -e ]`; none existed. Same
+  for `tests/abort/array_arith_len.ty` against the sixteen files already in
+  `/home/igzo/github/tycho/tests/abort/`. Nothing was clobbered and nothing
+  needed renaming.
+
+  **The two loops in `/home/igzo/github/tycho/tests/run.sh`, re-derived not
+  guessed.** They were at `:148-153` (the `tests/postfreeze/*.ty` golden loop,
+  scoring `postfreeze_<name>`) and `:172-189` (the `tests/postfreeze/abort/*.ty`
+  loop, scoring `pfabort_<name>`), with 13 and 17 lines of header above each.
+  Both loops and both headers were replaced by a single 10-line `HISTORY:` note
+  at `/home/igzo/github/tycho/tests/run.sh:135-144`. The fixtures are now scored
+  by the main golden loop at `/home/igzo/github/tycho/tests/run.sh:113-118` and
+  the abort loop at `/home/igzo/github/tycho/tests/run.sh:194-211` — same
+  native-vs-ASan + golden discipline, same abort contract, no new code.
+
+  **`/home/igzo/github/tycho/.gitignore` — the general case confirmed before
+  removing anything.** `!/tests/*.out` at
+  `/home/igzo/github/tycho/.gitignore:94` already un-ignores the broad `*.out`
+  rule at `:89` for exactly `tests/<name>.out`, which is where the six goldens
+  now live; it is where they came from before the lane existed. The
+  `!/tests/postfreeze/*.out` exception was therefore redundant, not load-bearing,
+  and was replaced by a HISTORY note. `tests/abort/` has no golden, so no
+  exception was ever needed there.
+
+  **`/home/igzo/github/tycho/scripts/asan_self.sh` — the glob change is not
+  neutral, and this is the one thing the phase brief left to judgement.**
+  `tests/postfreeze/*.ty` came out of the corpus line (now
+  `/home/igzo/github/tycho/scripts/asan_self.sh:146-148`) and the six fixtures
+  are picked up by the `tests/*.ty` that was already there — no change. But
+  `tests/postfreeze/abort/` was **never** in that glob (it is a subdirectory and
+  the glob does not descend), while `tests/abort/*.ty` **is**. So the fold moves
+  `array_arith_len.ty` into an ASan corpus it had never been in: the lane's
+  corpus grows by one file. That is a coverage gain, not a loss, but it is a
+  change to what `make ci` compiles under a sanitizer, and a fresh failure there
+  would surface at phase 10 with no obvious cause. Measured rather than reasoned
+  about:
+
+  ```
+  $ sh scripts/asan_self.sh
+  asan-self: compiled: 552   failed: 0
+  asan-self: all green (tychoc's own execution is ASan+UBSan clean over the corpus)
+  ASAN_EXIT=0
+  ```
+
+  Stated plainly: 552 is the **after** number. No before-number was taken, so the
+  `+1` is derived from the glob, not measured. What is measured is that the new
+  corpus is clean.
+
+  **A stale self-citation found and fixed in passing.**
+  `/home/igzo/github/tycho/scripts/asan_self.sh`'s header said the sanitized
+  compiler is built at `:99-100`. It was built at `:114-115` before this phase
+  and at `/home/igzo/github/tycho/scripts/asan_self.sh:110-111` after — the ref
+  was already 15 lines off and the bounds check cannot see it (the exact class
+  carried forward as phase 13). It is corrected to `:110-111` because the phase
+  rewrote the sentence around it anyway.
+
+  **The rule applied to frozen records, stated because the brief asked.**
+  *Prose in `docs/internals/plan-*-DONE.md` was not touched at all.* Those files
+  describe a directory that existed when they were written; that is correct
+  history, and rewriting them would make them lie about what was done. **No
+  citation repair was needed either**, and the reason is mechanical rather than
+  lucky: `/home/igzo/github/tycho/scripts/check_citations.py:226` skips any cited
+  path that does not start with `SRC_PREFIX`
+  (`/home/igzo/github/tycho/scripts/check_citations.py:153-155`), and both
+  archived plans write their refs as **absolute** paths
+  (`/home/igzo/github/tycho/tests/postfreeze/…`), which no relative prefix
+  matches. So the ~40 archived references to the directory were never gated and
+  did not go out of bounds when it disappeared. The same rule was applied to
+  phase 1's own evidence block above (`plan.md:255-259`), which is equally a
+  record of what was true on the day.
+
+  **Verify 1 — `make test`, before and after.** Both `passed: 537   failed: 0`,
+  `all green`. Equality is the proof this was a move, not a loss.
+
+  **Verify 2 — citations.**
+
+  ```
+  citation check: ok (125 anchored contain the token they name, 1940 bare in bounds,
+  102 source->doc citations resolve, 95 source->source in bounds)
+  ```
+
+  (Measured at the point the tree changes were complete, before this evidence
+  block was written: 1943→1940 bare and 96→95 source→source. The three retired
+  refs are the loop citations into tests/run.sh — lines 135-153, 148-153 and
+  172-189, all naming loops that no longer exist — in
+  `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md` and in the
+  fixture comments. They are written here without backticks on purpose: as
+  citations they would still pass the bounds check while pointing at unrelated
+  lines, which is exactly the failure mode phase 13 tracks.)
+
+  **Verify 3 — links.**
+
+  ```
+  link check: ok (133 markdown files, no dead relative links)
+  ```
+
+  **Verify 4 — no live reference to the lane remains.**
+
+  ```
+  $ grep -rn postfreeze --exclude-dir=.git . | grep -v '^./docs/internals/plan-.*-DONE\.md:'
+  ```
+
+  returns 17 lines and every one is deliberate: 10 in `plan.md` itself (the
+  Pre-flight note that *asks* for this fold, phase 2's own scope, phase 21's
+  cross-reference, and phase 1's frozen evidence), and 7 `HISTORY:` notes written
+  by this phase in `/home/igzo/github/tycho/.gitignore:97`,
+  `/home/igzo/github/tycho/tests/run.sh:135-136`,
+  `/home/igzo/github/tycho/scripts/asan_self.sh:76`,`:80`,
+  `/home/igzo/github/tycho/tests/nested_pattern.ty:3`,
+  `/home/igzo/github/tycho/tests/rawstring.ty:3` and
+  `/home/igzo/github/tycho/tests/abort/array_arith_len.ty:9`. Three live spec
+  passages also still name it — `/home/igzo/github/tycho/docs/spec/12-aggregates.md:287`,
+  `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:48`,`:263`,`:331-333`
+  — each rewritten to past tense with the fold recorded, because §E.2's whole
+  subject is *why fixtures sit where they sit* and deleting the history would
+  leave the amendments unexplained. **No hit anywhere points at a path that is
+  expected to exist.**
+
+  **Out of scope, deliberately left.** The two spec fixture tables were repointed
+  (`/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:165`,`:185`) but
+  the §E.2 rationale text for `corelib/test/`, `examples/corelib/` and the `\r` /
+  adjacent-literal carve-outs was not — that is phase 21's job, and phase 21 is
+  now the only thing standing between those fixtures and `tests/`.
+
+  **One thing changed after the green `make test`, and re-verified rather than
+  assumed.** A two-line comment in `/home/igzo/github/tycho/tests/nested_pattern.ty`
+  was rewrapped after the suite ran. Comments cannot reach the golden, but the
+  round-trip was re-run rather than argued:
+
+  ```
+  $ ./tychoc tests/nested_pattern.ty -o /tmp/np.bin && /tmp/np.bin </dev/null >/tmp/np.out
+  run rc=0
+  $ cmp /tmp/np.out tests/nested_pattern.out && echo "GOLDEN MATCH"
+  GOLDEN MATCH
+  ```
 
 - [ ] **Phase 3 — lex `;` and `..<`**
   - Scope: the lexer in `src/tychoc.c` only. No parser use yet.
@@ -453,6 +614,22 @@ Unclosed discoveries from the two previous plans; none blocking.
       `tests/rtparity/run.py` could become a single-runtime lane asserting the C
       emitted for `tests/rtparity/surface.ty` still contains each expected
       `getenv()` name, trap text and stats row against a recorded list.
+
+- [ ] **Phase 23** — **an absolute path in a citation is silently unchecked.**
+      Found by phase 2. `/home/igzo/github/tycho/scripts/check_citations.py:226`
+      skips any cited path not starting with `SRC_PREFIX`
+      (`/home/igzo/github/tycho/scripts/check_citations.py:153-155`, all
+      relative: `src/`, `tests/`, …), so a ref written
+      `` `/home/igzo/github/tycho/tests/foo.ty:12` `` matches nothing and is
+      counted as nothing. Deleting `tests/postfreeze/` left roughly forty such
+      refs in the two archived plans pointing at files that no longer exist, and
+      the gate stayed green — the phase relied on this, but the same hole means a
+      full-path evidence block is *less* checked than a relative one, which is the
+      opposite of what `CLAUDE.md`'s "write full paths in evidence blocks" rule
+      leads a writer to expect. Fix: strip a leading `ROOT + '/'` before the
+      `SRC_PREFIX` test. Note this WILL redden on the archived plans on first run
+      (they cite the deleted directory), so it needs a decision on frozen records
+      first — sibling of phase 13.
 
 - [ ] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for

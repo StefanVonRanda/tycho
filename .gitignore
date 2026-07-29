@@ -94,10 +94,10 @@ gmon.out
 !/tests/*.out
 # package-program goldens live in a subdir, so they need a separate un-ignore
 !/tests/pkg/*.out
-# post-freeze goldens likewise (tests/postfreeze/<name>.out) — same reason: the
-# broad *.out rule above would drop them and tests/run.sh would then report
-# "no golden" on a fresh clone
-!/tests/postfreeze/*.out
+# HISTORY: a `!/tests/postfreeze/*.out` exception sat here from 2026-07-29 until
+# later the same day, when the tychoc0 freeze lanes were retired and that
+# directory was folded back into tests/. Its goldens are now covered by the
+# `!/tests/*.out` rule above, which is where they came from.
 # corelib test goldens (corelib/test/<name>.out) are tracked too
 !/corelib/test/*.out
 # FFI regression golden (tests/ffi/expected.out) is tracked too

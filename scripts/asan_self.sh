@@ -60,7 +60,7 @@
 #
 # COVERAGE — what is in, and what is NOT
 # -------------------------------------
-# IN:  examples/*.ty, tests/*.ty, tests/postfreeze/*.ty, tests/pkg/*/main.ty,
+# IN:  examples/*.ty, tests/*.ty, tests/pkg/*/main.ty,
 #      tests/reject/*.ty, tests/reject/pkg/*/main.ty, tests/abort/*.ty,
 #      tests/diag/*.ty, tests/warn/*.ty, tests/conc/*.ty — the same corpus
 #      `make test` and `make conc` score — plus the four largest real Tycho
@@ -72,20 +72,16 @@
 #      same reason Makefile:245 skips it); and the emitted programs' own runtime
 #      behaviour (tests/run.sh owns that).
 #
-# WHY tests/postfreeze/ IS IN, WHERE THE TWO FROZEN-COMPILER LANES HOLD IT OUT
-# ----------------------------------------------------------------------------
-# compiler/fixpoint.sh and scripts/frontparity.sh exclude that directory on
-# purpose, and say so in their own headers: they drive a tychoc0-DERIVED binary,
-# and the 2026-07-26 freeze means tychoc0 cannot parse post-freeze syntax at all,
-# so a fixture there would redden them by construction. None of that reasoning
-# reaches this lane. Here the binary under test is the LIVE compiler — :99-100
-# builds src/tychoc.c with -fsanitize — and compiler/tychoc0.ty appears in the
-# glob below as a SUBJECT file, never as the compiler. Post-freeze syntax is
-# precisely what src/tychoc.c is meant to accept, so the scanner code that
-# accepts it is the code most wanting a sanitizer run, not least wanting one.
-# Its earlier absence was a matter of dates, not a boundary: this lane was
-# written 2026-07-25 (1d620c5) and tests/postfreeze/ did not exist until
-# b895e66, four days later, so the list above could not have named it.
+# HISTORY: from 2026-07-29 the IN list and the glob below also named
+# tests/postfreeze/*.ty, a directory that held fixtures the FROZEN tychoc0 could
+# not parse. Its two lanes (compiler/fixpoint.sh, scripts/frontparity.sh) were
+# retired later the same day and the directory was folded back into tests/, so
+# those fixtures are covered by tests/*.ty here and its one abort fixture by
+# tests/abort/*.ty — which the postfreeze glob never reached, so this lane's
+# corpus grew by one file in the fold. The binary under test is and always was
+# the LIVE compiler: :110-111 builds src/tychoc.c with -fsanitize, and
+# compiler/tychoc0.ty appears in the glob below as a SUBJECT file, never as the
+# compiler.
 #
 # The whole lane runs in well under a minute on the measured host, so it is wired
 # into scripts/ci.sh unconditionally with no subsetting.
@@ -147,7 +143,7 @@ check_one() {
     rm -f "$TMP/out.c"
 }
 
-for hi in examples/*.ty tests/*.ty tests/postfreeze/*.ty tests/conc/*.ty \
+for hi in examples/*.ty tests/*.ty tests/conc/*.ty \
           tests/reject/*.ty tests/abort/*.ty tests/diag/*.ty tests/warn/*.ty \
           compiler/tychoc0.ty tools/tycho.ty tools/tychofmt.ty tools/lsp.ty; do
     [ -e "$hi" ] || continue

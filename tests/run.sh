@@ -132,61 +132,16 @@ for d in tests/pkg/*/; do
     run_one "$entry" "pkg_$name" "tests/pkg/$name.out" "$in"
 done
 
-# Post-freeze programs. tests/postfreeze/<name>.ty uses syntax the LIVE compiler
-# accepts and the FROZEN compiler/tychoc0.ty does not, so it gets the same
-# native-vs-ASan + golden discipline as everything above but lives in its own
-# directory to stay OUT of the two tychoc0-derived lanes:
-# `compiler/fixpoint.sh`/`:81` and `scripts/frontparity.sh` glob
-# `tests/*.ty`, which does not descend, so nothing here is ever fed to a
-# tychoc0-derived binary. That is the whole point of the directory — before it
-# existed, any fixture for syntax added after the 2026-07-26 freeze reddened
-# `make ci` by construction (FRICTION.md; docs/spec/appendix-e-conformance.md
-# §E.2 records the same mechanism for `\r`, adjacent-literal join, nested
-# patterns and `exit`). Goldens at tests/postfreeze/<name>.out, stdin at
-# tests/postfreeze/<name>.in. Single files, like the main loop — a post-freeze
-# PACKAGE would want its own loop, and none exists yet.
-for hi in tests/postfreeze/*.ty; do
-    [ -e "$hi" ] || continue
-    name="$(basename "$hi" .ty)"
-    in="tests/postfreeze/$name.in"; [ -f "$in" ] || in=/dev/null
-    run_one "$hi" "postfreeze_$name" "tests/postfreeze/$name.out" "$in"
-done
-
-# Post-freeze runtime aborts. Same contract as the tests/abort/ lane below --
-# BUILD with tychoc, run native-only, require a nonzero exit and a 'tycho:'
-# message -- but for programs whose syntax the FROZEN compiler refuses.
-#
-# They cannot live in tests/abort/: `scripts/frontparity.sh` globs
-# `tests/abort/*.ty` and scores "tychoc accepted it, tychoc0 refused it" as a
-# divergence. An abort fixture is a program tychoc ACCEPTS, so a post-freeze one
-# put there would redden that lane by construction. tests/reject/ has no such
-# problem (it is in no frontparity glob, and frontparity skips whatever tychoc
-# itself refuses), which is why only the abort half needed a new home. Nothing
-# here is fed to a tychoc0-derived binary: `compiler/fixpoint.sh` and
-# `scripts/frontparity.sh` glob `tests/*.ty` and `tests/abort/*.ty`, neither of
-# which descends into this directory.
-#
-# Native-only, like tests/abort/: a deliberate exit(1) leaves live arenas and
-# LeakSanitizer would (correctly, uselessly) report them. No .out golden either
-# -- the subject is the abort, and the stderr message is asserted by the grep.
-for hi in tests/postfreeze/abort/*.ty; do
-    [ -e "$hi" ] || continue
-    name="pfabort_$(basename "$hi" .ty)"
-    if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/pfab" >"$TMP/pfab.log" 2>&1 \
-       || ! $CC -O2 -fwrapv -std=c11 -o "$TMP/pfab.bin" "$TMP/pfab.c" -lm 2>"$TMP/pfab.log"; then
-        note "$name" "tychoc did not build"; sed 's/^/      /' "$TMP/pfab.log"
-        fail=$((fail + 1)); fails="$fails $name"; continue
-    fi
-    "$TMP/pfab.bin" </dev/null >/dev/null 2>"$TMP/pfab.err"; rc=$?
-    if [ "$rc" -eq 0 ]; then
-        note "$name" "runtime abort did not fire (exit 0)"; fail=$((fail + 1)); fails="$fails $name"
-    elif ! grep -q 'tycho:' "$TMP/pfab.err"; then
-        note "$name" "died (exit $rc) but without a 'tycho:' message"; sed 's/^/      /' "$TMP/pfab.err"
-        fail=$((fail + 1)); fails="$fails $name"
-    else
-        echo "ok    $name"; pass=$((pass + 1))
-    fi
-done
+# HISTORY: two "post-freeze" loops used to sit here, one for tests/postfreeze/*.ty
+# and one for tests/postfreeze/abort/*.ty. That directory existed only because the
+# two tychoc0-derived lanes (`compiler/fixpoint.sh`, `scripts/frontparity.sh`)
+# globbed `tests/*.ty` and `tests/abort/*.ty` without descending, so a fixture
+# using syntax added after the 2026-07-26 freeze reddened them by construction
+# unless it lived one directory deeper. Both lanes were RETIRED on 2026-07-29
+# (see CLAUDE.md, ROADMAP.md, docs/architecture.md), so the constraint is void:
+# the fixtures moved back to tests/ and tests/abort/ on the same day and are now
+# scored by the main golden loop above and the tests/abort/ loop below. Nothing
+# was lost -- the pass count was 537 before the move and 537 after.
 
 # Negative paths. tests/reject/*.ty are invalid programs the compiler must
 # REFUSE (nonzero exit + a diagnostic on stderr/stdout) — guards against
