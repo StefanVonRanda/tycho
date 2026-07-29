@@ -74,9 +74,9 @@ than it is:
     Anchoring is OPT-IN and adoption is partial; `--stats` prints the split, and
     the honest reading of a green run is "no anchored citation has drifted, and
     no citation of either kind points outside its file".
-  * A drift that happens to keep the anchor token inside the new range (e.g. a
-    range citing a `main` check that slides onto a different `main` mention).
-    Pick a token distinctive within the file, not a common word.
+  * A WIDE anchored RANGE that drifts while still containing its token; being
+    distinctive does not save it (phase 11: an `arrc_sized_b` range nine lines
+    off, an `int main(` one eighty-two). Keep a range as tight as its construct.
   * A citation that was wrong the day it was written and anchored to its own
     wrong line (garbage in).
   * A docs claim that is wrong about *behaviour* rather than about a line number.

@@ -4,7 +4,7 @@ The grammar of function declarations, parameters, and the `where` clause is in
 [§4.1.1](02-grammar.md#411-functions). This chapter defines parameter passing,
 variadics, first-class function values, method-call syntax, and subscripts.
 
-> Provenance: `parse_fn` `src/tychoc.c:2972-3072`; parameter modes and the
+> Provenance: `parse_fn` `src/tychoc.c:3457-3567`; parameter modes and the
 > `sink`/`inout` semantics `docs/reference/basics.md:24-70`,
 > `docs/reference/functions.md`.
 

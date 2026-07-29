@@ -1777,7 +1777,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     is the rule, not an oversight — but several of them are demonstrably stale,
     and that is filed as phase 11 below rather than absorbed here.
 
-- [ ] **Phase 11 (found by phase 10, not absorbed) — the bare RANGES on
+- [x] **Phase 11 (found by phase 10, not absorbed) — the bare RANGES on
       `> Provenance:` lines are stale too, and the rule cannot see them**
   - Phase 10 anchored all 48 single-line refs inside `> Provenance:` blocks and
     found 34 of them pointing at the wrong line. The same blocks carry **163 bare
@@ -1814,6 +1814,277 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     region its clause describes, spot-checked by reading; the anchored ranges are
     re-aligned to the construct they name; `make check-links` green.
   - Sequencing: with or after phase 9. It is the same defect and the same method.
+  - **DONE 2026-07-29.** 155 ranges repointed across 17 `docs/spec/` files, plus
+    the sharpened caveat in `/home/igzo/github/tycho/scripts/check_citations.py`.
+    **Every path below is spelled in full**, the trap that reddened five earlier
+    phases on their own write-ups.
+
+    **Population re-derived at HEAD, and the plan's 163 was counting something
+    slightly different.** Walking the checker's own block rule (`> Provenance:`
+    plus every `>` continuation, closed by the first non-blockquote line) over
+    `git ls-files 'docs/spec/*.md'`:
+
+    | class | count |
+    |---|---|
+    | ranges inside `> Provenance:` blocks, total | **178** |
+    | of those, ANCHORED (`path:N-M@token`) | 9 |
+    | of those, BARE | 169 |
+    | bare ranges the gate actually checks (bounds) | 154 |
+    | bare ranges the gate SKIPS — no path named in the paragraph | 12 |
+    | bare ranges into another document (not under `SRC_PREFIX`) | 3 |
+
+    The plan's **163** is exactly the 154 checked bare + the 9 anchored, i.e. the
+    set the checker walks. It missed the **15** it fails open on — 12 code ranges
+    whose paragraph names no path (`docs/spec/17-runtime.md`, and two blocks of
+    `docs/spec/02-grammar.md`) and 3 doc→doc ranges. Those 15 were worked too:
+    they are the same defect, and being invisible to the gate makes them worse,
+    not out of scope. **This phase closed 10 of the 12 path-less ones by writing
+    the full path**, which moves them from unchecked to bounds-checked; the
+    remaining 2 are held bare deliberately (see "the two left bare" below).
+
+    **Outcome. The bare-range population was almost entirely rotten.**
+
+    | outcome | count |
+    |---|---|
+    | **repointed (cited span did not describe its clause)** | **152** |
+    | anchored ranges re-aligned | 3 |
+    | split into two/three ranges because no single span was honest | +3 refs |
+    | verified correct, left untouched | 26 |
+    | total ranges after the phase | 181 |
+
+    26 out of 178 — **85% were wrong**. That is a higher rot rate than phase 10
+    found among the single-line refs (34 of 48, 71%), and the reason is
+    mechanical: a range has two endpoints to drift and no anchor to catch either.
+
+    **Method, and why it is not phase 9's.** Ranges name *constructs*, so they
+    were resolved by building a function index of
+    `/home/igzo/github/tycho/src/tychoc.c` (281 definitions),
+    `/home/igzo/github/tycho/runtime/tycho_rt.c` (175) and
+    `/home/igzo/github/tycho/compiler/tychoc0.ty` (520), matching each clause's
+    named subject to its definition, then **opening both endpoints of every one
+    of the 181 final ranges and reading the line**. No blame-and-shift: phase 6
+    recorded that method failing 3 times in 47 and phase 8 found 17 refs that
+    were wrong *when written*, so no arithmetic recovers them.
+
+    **The seven the phase named, re-verified rather than trusted — all seven
+    were wrong, and two were worse than stated.**
+
+    | citation site | old | new | what the new endpoints actually are |
+    |---|---|---|---|
+    | `docs/spec/16-builtins.md:85` | `src/tychoc.c:4144-4163` | `src/tychoc.c:4340-4344`,`:4349-4350`,`:4359-4360` | the nine I/O `Sig`s are **not contiguous** — see below |
+    | `docs/spec/16-builtins.md:17` | `src/tychoc.c:4140-4171` | `src/tychoc.c:4336-4368` | `static void register_builtins(void) {` … `}` |
+    | `docs/spec/16-builtins.md:336` | `src/tychoc.c:4140-4171` | `src/tychoc.c:4336-4368` | same (second site, same claim) |
+    | `docs/spec/16-builtins.md:143` | `src/tychoc.c:4155-4156` | `src/tychoc.c:4352-4353` | the `substr` `Sig` … the `find` `Sig` |
+    | `docs/spec/16-builtins.md:117` | `src/tychoc.c:4164-4165` | `src/tychoc.c:4361-4362` | the `is_null` `Sig` … the `to_ptr` `Sig` |
+    | `docs/spec/16-builtins.md:145` | `src/tychoc.c:8212-8220` | `src/tychoc.c:8641-8648` | `if (!strcmp(e->sval, "char_at")) {` … `return sfmt("tycho_str_get(%s, %s)", s, ix);` |
+    | `docs/spec/13-concurrency.md:9` | `runtime/tycho_rt.c:286-610` | `runtime/tycho_rt.c:528-841` | `/* ---- tasks (CC-1: …` … the `}` closing `tycho_chan_free` |
+    | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:381-545` | `runtime/tycho_rt.c:623-833` | `/* CC-5: the ring is a Vyukov bounded MPMC queue…` … the `}` closing `tycho_chan_close` |
+    | `docs/spec/03-types.md:376` (ANCHORED) | `src/tychoc.c:727-739@arrc_sized_b` | `src/tychoc.c:736-748@arrc_sized_b` | `static Type arrc_sized_b(Type elem, int64_t size, char bnd) {` … `}` |
+
+    **`docs/spec/16-builtins.md:85` could not be repaired as one range, and that
+    is a finding, not a workaround.** The prose says "All nine are `Sig` builtins";
+    the nine sit in **three separate runs** of `register_builtins` —
+    `src/tychoc.c:4340-4344` (`print`…`read_all`), `src/tychoc.c:4349-4350`
+    (`die`/`exit`) and `src/tychoc.c:4359-4360` (`args`/`getenv`) — separated by
+    `clock`/`now`/`ncpu`/`chr`/`str` and by the string family. The single span
+    containing all nine would be `src/tychoc.c:4340-4360`, which also contains
+    twelve builtins the sentence is not about. Three ranges, per the phase's
+    "do not invent a span".
+
+    **A second misaligned ANCHORED range the phase did not name, found by the
+    same test.** `docs/spec/15-program.md:21` cited
+    `src/tychoc.c:12016-12120@int main(` for the driver. `int main(` is at
+    `src/tychoc.c:12098` and the file ends at `:12202`, so the range was **82
+    lines early at both ends** and its first 82 lines are `find_file`/argument
+    plumbing. Repaired to `src/tychoc.c:12098-12202@int main(`. Also
+    `docs/spec/15-program.md:22`'s `src/tychoc.c:3638-3708@parse_extern_fn`
+    included the function's opening line as its **last** line; the function is
+    `src/tychoc.c:3707-3777`. And `docs/spec/03-types.md:376`'s
+    `src/tychoc.c:1848-1864@"bounded"` ended one line into the `bounded` branch
+    that starts at `src/tychoc.c:1863` and runs to `:1880`. **Three of the nine
+    anchored ranges were misaligned** — a 33% failure rate in the class the gate
+    reports as green, which is the caveat's whole point.
+
+    **Two ranges had drifted onto the WRONG FILE, not merely the wrong line.**
+    In `docs/spec/03-types.md`, `compiler/tychoc0.ty` was named as bare prose
+    (no `:N`), so the following `` `:9748-9783` `` and `` `:2880-2893` ``
+    inherited **`src/tychoc.c`** as their path and were bounds-checked against
+    it. Both now carry the path explicitly:
+    `compiler/tychoc0.ty:10241-10268` (`fn comp_dep_types(…)` … `return deps`)
+    and `compiler/tychoc0.ty:3126-3139` (`fn newtype_under_ok(…)` … its return).
+    A citation that resolves against the wrong file is the worst shape in the
+    taxonomy: in bounds, plausible, and about a different program.
+
+    **A dead path, found because one of its two mentions was a range.**
+    `docs/spec/18-library.md:34` cited `docs/corelib.md` — **that file does not
+    exist**; commit `68e5b39` moved it to `/home/igzo/github/tycho/docs/guides/corelib.md`.
+    No gate saw it: the md→src pass ignores paths outside `SRC_PREFIX`, the
+    source→doc pass reads only non-Markdown files, and `check_links.sh` follows
+    link syntax, not backticked mentions. Repointed to
+    `docs/guides/corelib.md:3-8`, whose lines 3–8 are the thesis-context block on
+    arena allocation that the sentence describes. The sibling mention at
+    `docs/spec/18-library.md:16` carries no `:N`, so it is not a range and not in
+    this phase's scope — filed as phase 15 below.
+
+    **The full repair table** is 155 rows and is not reproduced here; the diff is
+    the record, and every row was checked the same way. The per-file shape:
+
+    | file | ranges repointed | notable |
+    |---|---|---|
+    | `docs/spec/16-builtins.md` | 44 | every `Sig` and every `resolve_expr` magic arm had moved |
+    | `docs/spec/03-types.md` | 20 | incl. the 2 wrong-file ones and 1 anchored |
+    | `docs/spec/01-lexical.md` | 8 of 23 | 15 were already correct — the best file in the tree |
+    | `docs/spec/02-grammar.md` | 19 | incl. 2 held bare on purpose |
+    | `docs/spec/12-aggregates.md` | 14 | |
+    | `docs/spec/14-ffi.md` | 8 | 3 of them into `corelib/` shims |
+    | `docs/spec/17-runtime.md` | 8 | all 8 were path-less; all 8 now carry one |
+    | `docs/spec/05-generics.md` | 6 | |
+    | `docs/spec/04-inference.md` | 5 | 1 split into 2 (`resolve_expr` vs `resolve_exp`) |
+    | `docs/spec/08-declarations.md` | 4 | |
+    | `docs/spec/06-conversions.md`, `docs/spec/09-expressions.md`, `docs/spec/10-statements.md` | 3 each | |
+    | `docs/spec/13-concurrency.md`, `docs/spec/15-program.md` | 2 each | both of 15-program's were anchored |
+    | `docs/spec/11-functions.md`, `docs/spec/18-library.md` | 1 each | |
+
+    **`docs/spec/01-lexical.md` is the counter-example worth naming.** 15 of its
+    23 ranges were already right, because phase 2 and phase 10 both worked in
+    that file within the last day. Citation rot is a function of time since the
+    last read, not of the citation's age — which is the argument for the gate,
+    not against it.
+
+    **The two left bare, deliberately, and the interaction that forced it.**
+    `docs/spec/02-grammar.md:273`'s `` `:3181-3277` `` (`for`/`parallel`) and
+    `` `:3135-3172` `` (`select`) were repointed but NOT given a path. Writing
+    one would set the checker's `cur` for the rest of that paragraph, which would
+    newly police the **eight bare single-line refs on `docs/spec/02-grammar.md:272`
+    and `:274`** (`:2338`, `:2409`, `:2723`, `:2655`, `:2858`, `:2872`, `:2881`,
+    `:2903`) under phase 10's mandatory-anchor rule — and they are stale
+    (`parse_if` is `src/tychoc.c:2676`, `parse_match` is `src/tychoc.c:2782`), so
+    the gate would go red on work this phase is not scoped to do. Filed as phase
+    14. This is a real hole in phase 10's rule, not a quirk of one block: a
+    Provenance block that never names a path is **exempt from the mandatory
+    anchor by accident**.
+
+    **The caveat, sharpened — the phase asked, and two real instances now exist.**
+    `/home/igzo/github/tycho/scripts/check_citations.py`'s "WHAT THIS DOES NOT
+    CATCH" said the wide-range hole was about picking *a common word*. Both real
+    instances disprove that: `arrc_sized_b` occurs 3 times in a 12202-line file
+    and `int main(` exactly once — as distinctive as tokens get — and both ranges
+    still passed while misaligned by 9 and 82 lines. The failure mode is **range
+    width**, not token commonness. The bullet now leads with width, cites both
+    instances, and keeps the common-word warning as the second half. Three lines
+    replaced by three lines; nothing in the tree cites this file by line
+    (`grep -rn 'check_citations.py:[0-9]'` → no matches), so the blast radius is
+    zero either way.
+
+    **Line-count discipline: every touched file is 1:1, verified two ways.**
+    ```
+    $ git diff --numstat
+    7    7   docs/spec/01-lexical.md        7    7   docs/spec/12-aggregates.md
+    14   14  docs/spec/02-grammar.md        2    2   docs/spec/13-concurrency.md
+    17   17  docs/spec/03-types.md          5    5   docs/spec/14-ffi.md
+    4    4   docs/spec/04-inference.md      2    2   docs/spec/15-program.md
+    3    3   docs/spec/05-generics.md       27   27  docs/spec/16-builtins.md
+    2    2   docs/spec/06-conversions.md    3    3   docs/spec/17-runtime.md
+    2    2   docs/spec/08-declarations.md   1    1   docs/spec/18-library.md
+    2    2   docs/spec/09-expressions.md    3    3   scripts/check_citations.py
+    2    2   docs/spec/10-statements.md
+    1    1   docs/spec/11-functions.md
+    $ git diff -U0 | grep -c '^@@'   # 53 hunks
+    unbalanced hunks: 0     (start line and length equal on both sides, all 53)
+    ```
+    Every edit is an in-place number substitution, so no re-wrap was needed and
+    no `docs/spec/N` citation anywhere in the tree moved. Phase 10 grew
+    `docs/spec/01-lexical.md` by 9 lines in its first draft and would have
+    invalidated its own evidence tables; that failure mode is why this is checked
+    rather than assumed.
+
+    **Verify — gate 1, `python3 scripts/check_citations.py`:**
+    ```
+    citation check: ok (104 anchored contain the token they name, 1960 bare in bounds, 83 source->doc citations resolve, 121 source->source in bounds)
+    CIT_RC=0
+    ```
+    **Verify — gate 2, `sh scripts/check_links.sh`:**
+    ```
+    link check: ok (131 markdown files, no dead relative links)
+    LNK_RC=0
+    ```
+    **Verify — gate 3, `sh scripts/spec_check.sh`** (run because this phase
+    touches `docs/spec/`):
+    ```
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 8 runnable example(s), all pass
+    SPEC_RC=0
+    ```
+    **Verify — gate 4, the endpoint read.** All 181 final ranges were dumped with
+    the source text at both endpoints and read; the report is the phase's real
+    evidence and the three gates above only confirm bounds. Nine ranges were
+    tightened after that read because their end landed on a trailing comment or
+    one line short of the block's `}` — e.g. `src/tychoc.c:3181-3281` → `:3181-3277`
+    (`:3278-3281` is the *next* arm's comment) and `src/tychoc.c:5636-5655` →
+    `:5636-5656` (the arm's closing brace).
+
+    **Not run, deliberately:** `make test`, `make ci`, `compiler/fixpoint.sh`,
+    `scripts/asan_self.sh`. Per CLAUDE.md's gate table this phase is Markdown
+    plus one comment block in a Python gate; nothing here can reach a compiled
+    artifact. LD_PRELOAD needed no `env -u` wrapper — the shim is gone from the
+    environment, as CLAUDE.md's Environment note predicted.
+
+    **Explicitly NOT done, so the next reader does not think it was missed.**
+    Bare refs **outside** `> Provenance:` blocks are phase 9's dropped population
+    and were left alone even where this phase proved them wrong — the clearest
+    case is `docs/spec/16-builtins.md:33`, which cites `register_builtins` as
+    `src/tychoc.c:4140-4171` in §29.1 prose while the Provenance line eight lines
+    below it now correctly says `src/tychoc.c:4336-4368`. The two are visibly
+    inconsistent inside one file. That is what a scope lock costs, and it is
+    recorded rather than quietly absorbed.
+
+- [ ] **Phase 14 (found by phase 11, not absorbed) — a `> Provenance:` block
+      that names no path is exempt from phase 10's mandatory anchor by accident**
+  - `scripts/check_citations.py` resolves a bare `:N` against the last path named
+    **in the same paragraph** and `continue`s when there is none (the fail-open
+    rule in its header). Phase 10's mandatory-anchor check sits **after** that
+    `continue`, so a Provenance block whose paragraph never spells a path has its
+    single-line refs skipped entirely — not anchored, not bounds-checked, not
+    seen.
+  - The live instance: `docs/spec/02-grammar.md:272` and `:274` carry eight such
+    refs — `:2338`, `:2409`, `:2723`, `:2655`, `:2858`, `:2872`, `:2881`,
+    `:2903` — and they are stale. `parse_if` is `src/tychoc.c:2676`, `parse_match`
+    is `src/tychoc.c:2782`; phase 10 anchored those same two functions correctly
+    in `docs/spec/10-statements.md` and could not see this block.
+  - Phase 11 repointed that block's two ranges but held them **path-less on
+    purpose**: naming the path there would set `cur` and redden the gate on these
+    eight refs, which is this phase's work, not phase 11's.
+  - Done when: the eight refs are anchored against the lines they actually
+    describe; the block's two ranges get their explicit path back; and the
+    checker either warns on a Provenance block that names no path at all, or its
+    header states plainly that such a block is unpoliced.
+  - Verify: `python3 scripts/check_citations.py`, then delete one of the new
+    anchors and watch it redden, then restore. Not `make ci`.
+
+- [ ] **Phase 15 (found by phase 11, not absorbed) — `docs/corelib.md` does not
+      exist and two gates are structurally unable to say so**
+  - `docs/spec/18-library.md:16` names `docs/corelib.md` as a bare backticked
+    path inside a `> Provenance:` block. The file was moved to
+    `/home/igzo/github/tycho/docs/guides/corelib.md` by commit `68e5b39`. Phase 11
+    repaired the *other* mention (`docs/spec/18-library.md:34`, which carried a
+    line range and was therefore in scope) but not this one.
+  - Why nothing catches it, stated precisely, because the gap is the point: the
+    md→src pass of `scripts/check_citations.py` ignores any path outside
+    `SRC_PREFIX`; its source→doc pass scans only **non**-Markdown files; and
+    `scripts/check_links.sh` resolves Markdown *link* syntax, not a backticked
+    mention. A Markdown file naming a dead document in prose is invisible to all
+    three.
+  - Same shape, worth sweeping together: `docs/spec/18-library.md:18` names
+    `src/tychoc.c` and `corelib/run.sh` bare, and `docs/spec/07-memory-model.md`
+    and `docs/spec/14-ffi.md` open their Provenance blocks with bare
+    `docs/…​.md` mentions. Those resolve today; nothing proves they will.
+  - Done when: every backticked `docs/….md` mention inside a `> Provenance:`
+    block names a file that exists, and the checker gains an existence check for
+    backticked doc paths in Markdown Provenance blocks (the narrowest rule that
+    would have caught this one).
+  - Verify: `python3 scripts/check_citations.py` plus a deliberate break, then
+    `sh scripts/check_links.sh`. Not `make ci`.
 
 - [ ] **Phase 12 (found by phase 7, not absorbed) — the corpus SIZE in
       `editors/zed/README.md` is still a hand-typed number**

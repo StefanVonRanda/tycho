@@ -5,8 +5,8 @@ Tycho calls C through `extern` functions. The boundary is deliberately narrow an
 crosses is copied so that Tycho never holds a pointer into C-owned memory nor
 exposes its own storage to C.
 
-> Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c:3212-3282`;
-> boundary copy routines `runtime/tycho_rt.c:740-761`,`:1284@tycho_arr_int_from_c`,`:1127-1134`; typed handles
+> Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c:3707-3777`;
+> boundary copy routines `runtime/tycho_rt.c:982-998`,`:1284@tycho_arr_int_from_c`,`:1387-1392`; typed handles
 > `docs/internals/typed-handles-design.md`.
 
 ## 24. `extern` and the C boundary
@@ -113,10 +113,10 @@ and there is no separate payload, return the code directly and skip the out-para
 `extern fn iox_stat_kind(path: string) -> int` is the same four codes as
 `iox_read_file`'s with no `inout`, because the *kind* is the whole answer.
 
-> Provenance: the shape is used twice — `netx_read` (`corelib/net/net_shim.c:236-259`,
+> Provenance: the shape is used twice — `netx_read` (`corelib/net/net_shim.c:236-290`,
 > declared `corelib/net/net.ty:99-102`) and `iox_read_file`
-> (`corelib/io/io_shim.c:61-96`, declared `corelib/io/io.ty:81-85`). The ordering
-> rule is `gen_extern_proto` (`src/tychoc.c:10433-10445`): written params first,
+> (`corelib/io/io_shim.c:59-127`, declared `corelib/io/io.ty:81-85`). The ordering
+> rule is `gen_extern_proto` (`src/tychoc.c:10419-10448`): written params first,
 > the return's out-params appended. Written down here because it was reproduced
 > verbatim from one shim into the other with this section listing neither it nor
 > `-> Result(T, E)` (FRICTION.md).

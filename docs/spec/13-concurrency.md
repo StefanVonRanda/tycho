@@ -6,8 +6,8 @@ a private arena per activation ([§10](07-memory-model.md)) — is already a sou
 thread boundary, so the concurrency constructs need no `Sendable` marker, no
 lifetime annotations, and no lock machinery in the language.
 
-> Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:286-610`
-> (channel ring `:381-545`, ordering via the cell `seq` release/acquire `:751@c->seq, c->pos + 1, memory_order_release`,`:763@memory_order_acquire) - (pos + 1)`).
+> Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:528-841`
+> (channel ring `:623-833`, ordering via the cell `seq` release/acquire `:751@c->seq, c->pos + 1, memory_order_release`,`:763@memory_order_acquire) - (pos + 1)`).
 > The ordering guarantees below (channel delivery order, `select` arm order,
 > happens-before, cross-thread `wait`) were pinned from that runtime.
 
