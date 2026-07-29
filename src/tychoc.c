@@ -3326,6 +3326,48 @@ static Stmt *parse_stmt(Parser *ps) {
         if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_IN) {
             Tok *var = eat(ps, TK_IDENT, "a loop variable");
             eat(ps, TK_IN, "'in'");
+            /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
+             * `parallel for`. The runtime chunks a known iteration space across
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:9932), and a
+             * three-clause loop's post clause is arbitrary code, so its iteration
+             * count is not knowable in advance and cannot be chunked. A
+             * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
+             * would make `0..<N` into `range()` under a new name and leave the
+             * three-clause form with nothing to do (plan.md's Pre-flight).
+             * Implicit step 1, ascending, exclusive upper bound -- so unlike
+             * `range()` there is no zero-step case to diagnose at all, and N is
+             * an ordinary expression, evaluated once at the spawn site.
+             *
+             * The header is SCANNED for a top-level `..<` (same shape as the `;`
+             * scan above) rather than tested at peek(1), so `for i in (a+b)..<n:`
+             * and a sequential `for i in 0..<3:` both reach the diagnostic that
+             * fits them instead of "expected ':' before the block". */
+            {
+                int i_dotlt = -1, depth = 0;
+                for (int k = 0; ; k++) {
+                    TokKind kk = peek(ps, k)->kind;
+                    if (kk == TK_NEWLINE || kk == TK_EOF) break;
+                    if (kk == TK_LPAREN || kk == TK_LBRACKET) depth++;
+                    else if (kk == TK_RPAREN || kk == TK_RBRACKET) depth--;
+                    else if (depth == 0 && kk == TK_DOTLT) { i_dotlt = k; break; }
+                }
+                if (i_dotlt >= 0) {
+                    if (!par_here)
+                        die_at(t->line, "`0..<N` counts only in a `parallel for` -- write `for %s := 0; %s < N; %s += 1:` for a sequential count",
+                               var->text, var->text, var->text);
+                    if (i_dotlt != 1 || !at(ps, TK_INT) || cur(ps)->ival != 0)
+                        die_at(t->line, "`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound");
+                    ps->p += 2;                  /* the `0` and the `..<` */
+                    Stmt *s = new_stmt(S_FORRANGE, t->line);
+                    s->name = var->text;
+                    Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
+                    s->r_start = zero; s->r_stop = parse_expr(ps); s->r_step = NULL;
+                    eat(ps, TK_COLON, "':' before the block");
+                    eat(ps, TK_NEWLINE, "newline");
+                    s->body = parse_block(ps, &s->nbody);
+                    return s;   /* caller (TK_PARALLEL) sets s->parallel = 1 */
+                }
+            }
             if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "range") && peek(ps, 1)->kind == TK_LPAREN) {
                 ps->p++;                     /* consume 'range' */
                 eat(ps, TK_LPAREN, "'('");

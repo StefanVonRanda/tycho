@@ -139,7 +139,7 @@ is unaffected. They are **not** reserved:
 
 > Provenance: contextual dispatch at `src/tychoc.c:4208-4217` (top level),
 > `:3108@"const"`/`:3124@"delete"` (`const`/`delete`), `:1903@soa [Struct]`/`:2391@soa []Struct` (`soa`),
-> `:3654@"where"` (`where`), `:3620@"sink"` (`sink`), `:3329@"range"` (`range`).
+> `:3696@"where"` (`where`), `:3662@"sink"` (`sink`), `:3371@"range"` (`range`).
 
 ## 3.8 Operators and punctuation
 
@@ -333,7 +333,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:434-435`, its per-piece bound `:437@rn + 2 >= (int)sizeof rbuf`,`:440@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:444@unterminated raw string literal`; adjacent join `:2234-2246`; `const` string fold
 > `:4147-4151`; codegen pastes the escaped text into a C string literal
-> `:9357@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1005@strlen(s)`.
+> `:9399@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1005@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
