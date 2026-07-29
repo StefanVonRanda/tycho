@@ -79,7 +79,7 @@ fn encode_bmp(img: Image) -> bytes:
     y := h - 1
     for y >= 0:
         row := y * w * 4
-        for x in range(w):
+        for x := 0; x < w; x += 1:
             p := row + x * 4
             push(out, ps[p + 2])           # B
             push(out, ps[p + 1])           # G
@@ -125,12 +125,12 @@ fn decode_bmp(data: bytes) -> Image:
     if offset + rowsize * h > n:
         return empty_image()
     px := []int
-    for y in range(h):
+    for y := 0; y < h; y += 1:
         srcy := h - 1 - y
         if topdown:
             srcy = y
         base := offset + srcy * rowsize
-        for x in range(w):
+        for x := 0; x < w; x += 1:
             p := base + x * bpx
             r := s[p + 2]
             g := s[p + 1]
@@ -182,14 +182,14 @@ fn encode_qoi(img: Image) -> bytes:
     push(out, 4)                           # channels = RGBA
     push(out, 0)                           # colorspace = sRGB with linear alpha
     index := []int
-    for i in range(256):
+    for i := 0; i < 256; i += 1:
         push(index, 0)
     pr := 0
     pg := 0
     pb := 0
     pa := 255
     run := 0
-    for k in range(npx):
+    for k := 0; k < npx; k += 1:
         p := k * 4
         r := ps[p]
         g := ps[p + 1]
@@ -239,7 +239,7 @@ fn encode_qoi(img: Image) -> bytes:
         pg = g
         pb = b
         pa = a
-    for i in range(7):                     # end marker: 7x 0x00 then 0x01
+    for i := 0; i < 7; i += 1:                     # end marker: 7x 0x00 then 0x01
         push(out, 0)
     push(out, 1)
     return to_bytes(out)
@@ -257,7 +257,7 @@ fn decode_qoi(data: bytes) -> Image:
         return empty_image()
     npx := w * h
     index := []int
-    for i in range(256):
+    for i := 0; i < 256; i += 1:
         push(index, 0)
     pr := 0
     pg := 0

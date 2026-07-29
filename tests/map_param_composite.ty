@@ -10,7 +10,7 @@ struct P:
 fn sum_list(m: [string: [int]], term: string) -> int:
     xs := m.get(term, []int)
     s := 0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         s += xs[i]
     return s
 

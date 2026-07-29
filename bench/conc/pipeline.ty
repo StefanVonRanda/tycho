@@ -5,7 +5,7 @@
 # C passes raw pointers, Go shares the string body under its GC, Rust moves
 # ownership. Checksum: total payload length over 1e6 "item-<i>" strings.
 fn producer(ch: Channel(string), n: int) -> int:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         ch.send("item-" + str(i))
     return n
 

@@ -10,7 +10,7 @@
 # then CLOSED" and docs/guides/memory-model.md.
 fn step(a: [int], p: int) -> [int]:
     b := []int
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         t := a[i] * 1103515245 + 12345
         push(b, t - (t / p) * p)
     return b
@@ -19,11 +19,11 @@ fn main():
     m := 2000
     p := 2147483647
     a := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(a, i)
-    for j in range(m):
+    for j := 0; j < m; j += 1:
         a = step(a, p)
     s := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         s = s + a[i]
     println(str(s - (s / 1000003) * 1000003))

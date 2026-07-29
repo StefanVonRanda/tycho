@@ -50,7 +50,7 @@ fn dijkstra(adj: [[Edge]], src: int, n: int) -> [int]:
     INF := 4000000000000000000
     dist := []int
     i := 0
-    for i in range(0, n):
+    for i := 0; i < n; i += 1:
         push(dist, INF)
     dist[src] = 0
     heap := [](int, int)
@@ -62,7 +62,7 @@ fn dijkstra(adj: [[Edge]], src: int, n: int) -> [int]:
         if d > dist[u]:
             continue
         j := 0
-        for j in range(0, len(adj[u])):
+        for j := 0; j < len(adj[u]); j += 1:
             e := adj[u][j]
             nd := d + e.w
             if nd < dist[e.to]:
@@ -76,11 +76,11 @@ fn main():
     state := 88172645463325252
     adj := [][Edge]
     u := 0
-    for u in range(0, n):
+    for u := 0; u < n; u += 1:
         push(adj, []Edge)
-    for u in range(0, n):
+    for u := 0; u < n; u += 1:
         k := 0
-        for k in range(0, deg):
+        for k := 0; k < deg; k += 1:
             state = state * 6364136223846793005 + 1442695040888963407
             to := (state & 1073741823) % n
             state = state * 6364136223846793005 + 1442695040888963407
@@ -91,7 +91,7 @@ fn main():
     sum := 0
     reach := 0
     i := 0
-    for i in range(0, n):
+    for i := 0; i < n; i += 1:
         if dist[i] < INF:
             sum = sum + dist[i]
             reach = reach + 1

@@ -7,7 +7,7 @@ fn is_space(c: int) -> bool:                 # ASCII whitespace: space \t \n \v 
 
 fn to_upper(s: string) -> string:
     cs := []int                              # build the bytes, materialize once (no per-char chr()+append)
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 97 and c <= 122:             # a-z -> A-Z
             push(cs, c - 32)
@@ -17,7 +17,7 @@ fn to_upper(s: string) -> string:
 
 fn to_lower(s: string) -> string:
     cs := []int
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 65 and c <= 90:              # A-Z -> a-z
             push(cs, c + 32)
@@ -29,7 +29,7 @@ fn starts_with(s: string, prefix: string) -> bool:
     if len(prefix) > len(s):
         return false
     i := 0
-    for i in range(len(prefix)):
+    for i := 0; i < len(prefix); i += 1:
         if s[i] != prefix[i]:
             return false
     return true
@@ -39,7 +39,7 @@ fn ends_with(s: string, suffix: string) -> bool:
         return false
     off := len(s) - len(suffix)
     i := 0
-    for i in range(len(suffix)):
+    for i := 0; i < len(suffix); i += 1:
         if s[off + i] != suffix[i]:
             return false
     return true
@@ -50,7 +50,7 @@ fn contains(s: string, sub: string) -> bool:
 fn repeat(s: string, n: int) -> string:
     r := ""
     i := 0
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         r = r + s
     return r
 
@@ -96,7 +96,7 @@ fn lines(s: string) -> [string]:
     # no empty line); "a\r\nb" -> ["a","b"]; "" -> []; "\n" -> [""]
     out := []string
     start := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         if s[i] == 10:
             stop := i
             if stop > start and s[stop - 1] == 13:

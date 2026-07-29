@@ -11,7 +11,7 @@ fn last(xs: [$T]) -> $T:
 # (checked once, at the call that fixes T — not buried in the substituted body).
 fn max_of(xs: [$T]) -> $T where comparable(T):
     m := xs[0]
-    for i in range(1, len(xs)):
+    for i := 1; i < len(xs); i += 1:
         if xs[i] > m:
             m = xs[i]
     return m

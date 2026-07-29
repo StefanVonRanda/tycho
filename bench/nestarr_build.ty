@@ -5,7 +5,7 @@
 # iteration -> O(n) growth (hundreds of MB at this N). Asserts constant RSS.
 fn main():
     last := 0
-    for i in range(1000000):
+    for i := 0; i < 1000000; i += 1:
         g := [[i, i + 1, i + 2]]
         push(g, [i, i, i, i, i])
         push(g, [i * 2, i * 3])

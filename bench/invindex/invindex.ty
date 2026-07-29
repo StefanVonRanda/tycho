@@ -40,11 +40,11 @@ fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> int:
         return 0
     hits := 0
     ci := 0
-    for ci in range(len(postings[p0].docs)):
+    for ci := 0; ci < len(postings[p0].docs); ci += 1:
         doc := postings[p0].docs[ci]
         ok := true
         ti := 1
-        for ti in range(1, len(terms)):
+        for ti := 1; ti < len(terms); ti += 1:
             pj := tidx.get(terms[ti], 0 - 1)
             if pj < 0 or not contains(postings[pj].docs, doc):
                 ok = false
@@ -61,19 +61,19 @@ fn main():
     tidx := []string: int
     seed := 1
     d := 0
-    for d in range(n):
+    for d := 0; d < n; d += 1:
         j := 0
-        for j in range(w):
+        for j := 0; j < w; j += 1:
             seed = (seed * 1103515245 + 12345) % 2147483647    # LCG, stays in [0, 2^31)
             tid := seed % v
             add(&postings, &tidx, "t" + str(tid), d)
 
     sum := 0
     pi := 0
-    for pi in range(len(postings)):
+    for pi := 0; pi < len(postings); pi += 1:
         sum += len(postings[pi].term) + len(postings[pi].docs)
         fj := 0
-        for fj in range(len(postings[pi].freqs)):
+        for fj := 0; fj < len(postings[pi].freqs); fj += 1:
             sum += postings[pi].freqs[fj]
 
     q := []string

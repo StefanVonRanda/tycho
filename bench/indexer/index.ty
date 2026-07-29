@@ -43,7 +43,7 @@ fn worker(ch: Channel(string)) -> [string: int]:
                 text := read_file(path)
                 cur := ""
                 i := 0
-                for i in range(len(text)):
+                for i := 0; i < len(text); i += 1:
                     c := text[i]
                     if c >= 65 and c <= 90:
                         cur = cur + chr(c + 32)
@@ -60,7 +60,7 @@ fn worker(ch: Channel(string)) -> [string: int]:
     return local
 
 fn feed(ch: Channel(string), paths: [string]) -> int:
-    for i in range(len(paths)):
+    for i := 0; i < len(paths); i += 1:
         ch.send(paths[i])
     return len(paths)
 
@@ -71,7 +71,7 @@ fn feed(ch: Channel(string), paths: [string]) -> int:
 # accumulator a place, so map_set grows the caller's map in place, O(distinct).
 fn merge(into: inout [string: int], add: [string: int]):
     ks := keys(add)
-    for i in range(len(ks)):
+    for i := 0; i < len(ks); i += 1:
         k := ks[i]
         into[k] = into.get(k, 0) + add.get(k, 0)
 
@@ -84,7 +84,7 @@ fn main():
 
     names := list_dir(dir)
     paths := []string
-    for i in range(len(names)):
+    for i := 0; i < len(names); i += 1:
         if ends_txt(names[i]):
             push(paths, dir + "/" + names[i])
 
@@ -106,7 +106,7 @@ fn main():
     ks := keys(m)
     tokens := 0
     csum := 0
-    for i in range(len(ks)):
+    for i := 0; i < len(ks); i += 1:
         k := ks[i]
         c := m.get(k, 0)
         tokens = tokens + c

@@ -1,6 +1,6 @@
 # CC-6: sends with no receiver anywhere park once the buffer fills.
 fn feed(ch: Channel(int), n: int) -> int:
-    for i in range(0, n):
+    for i := 0; i < n; i += 1:
         ch.send(i)
     return n
 

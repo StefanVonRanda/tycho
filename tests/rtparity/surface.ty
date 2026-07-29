@@ -30,9 +30,9 @@ fn arrays() -> int:
     push(xs, 4)
     reserve(xs, 16)
     t := xs[0] + pop(xs)
-    for i in range(0, len(xs)):
+    for i := 0; i < len(xs); i += 1:
         t = t + xs[i]
-    for i in range(0, 10, 2):          # stepped range -> the step!=0 trap
+    for i := 0; i < 10; i += 2:          # stepped range -> the step!=0 trap
         t = t + i
     ys := xs[1:]                       # slice -> the slice-bounds trap
     t = t + len(ys)
@@ -96,7 +96,7 @@ fn inline_() -> int:
 
 fn worker(ch: Channel(int), n: int) -> int:
     acc := 0
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         ch.send(i)
         acc = acc + i
     return acc
@@ -105,7 +105,7 @@ fn concurrency() -> int:
     ch := channel(int, 4)              # channel() -> capacity + closed traps
     w := spawn worker(ch, 4)           # spawn -> task-cap + pthread traps
     total := 0
-    for i in range(4):
+    for i := 0; i < 4; i += 1:
         match recv(ch):
             Some(v):
                 total = total + v
@@ -114,7 +114,7 @@ fn concurrency() -> int:
     close(ch)
     total = total + wait(w)
     par := 0
-    parallel for i in range(0, 8):     # parallel for -> the worker-pool path
+    parallel for i in 0..<8:     # parallel for -> the worker-pool path
         par = par + i
     return total + par + ncpu()
 

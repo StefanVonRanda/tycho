@@ -1,5 +1,0 @@
-# a literal zero range step never terminates; both compilers must reject it at
-# compile time (a runtime-computed zero step aborts instead -- see tests/abort).
-fn main():
-    for i in range(0, 10, 0):
-        print(str(i))

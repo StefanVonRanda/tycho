@@ -238,12 +238,12 @@ fn run_demo():
     push(lines, "2 +")
     push(lines, "foo(2)")
     push(lines, "sqrt(0 - 4)")
-    for i in range(0, len(lines)):
+    for i := 0; i < len(lines); i += 1:
         println(lines[i] + "  =>  " + run_line(lines[i], &env))
 
 fn run_repl():
     env := []string: float
-    for tick in range(0, 100000):
+    for tick := 0; tick < 100000; tick += 1:
         line := input()
         if line == "" or line == "quit":
             return

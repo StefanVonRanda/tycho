@@ -23,7 +23,7 @@ fn main():
     st3 := rand.seed(7)
     mx := 0
     mn := 99
-    for i in range(200):
+    for i := 0; i < 200; i += 1:
         v := rand.below(&st3, 10)
         if v > mx:
             mx = v

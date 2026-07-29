@@ -78,7 +78,7 @@ struct Response:
 
 fn ascii_lower(s: string) -> string:
     out := ""
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 65 and c <= 90:                 # 'A'..'Z' -> 'a'..'z'
             out = out + chr(c + 32)
@@ -119,7 +119,7 @@ fn chomp(s: string) -> string:
 # Parse leading decimal digits; stops at the first non-digit. "" or non-numeric -> 0.
 fn to_uint(s: string) -> int:
     v := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c < 48 or c > 57:
             return v
@@ -130,7 +130,7 @@ fn to_uint(s: string) -> int:
 # (the shape of `Connection: keep-alive, Upgrade`).
 fn has_token(hay: string, needle: string) -> bool:
     parts := split(ascii_lower(hay), ",")
-    for i in range(len(parts)):
+    for i := 0; i < len(parts); i += 1:
         if trim(parts[i]) == needle:
             return true
     return false
@@ -162,7 +162,7 @@ fn parse_request(raw: string) -> Result(Request, ReqErr):
         return Err(Malformed)
     keys := []string
     vals := []string
-    for i in range(1, len(lines)):
+    for i := 1; i < len(lines); i += 1:
         ln := chomp(lines[i])
         col := find(ln, ":")
         if col > 0:
@@ -174,7 +174,7 @@ fn parse_request(raw: string) -> Result(Request, ReqErr):
 fn header(r: Request, name: string) -> string:
     want := ascii_lower(name)
     out := ""
-    for i in range(len(r.header_keys)):
+    for i := 0; i < len(r.header_keys); i += 1:
         if ascii_lower(r.header_keys[i]) == want:
             out = r.header_vals[i]
     return out
@@ -437,7 +437,7 @@ fn render_head(r: Response) -> string:
     out := "HTTP/1.1 " + str(r.status) + " " + r.reason + nl
     has_len := false
     has_type := false
-    for i in range(len(r.header_keys)):
+    for i := 0; i < len(r.header_keys); i += 1:
         lk := ascii_lower(r.header_keys[i])
         if lk == "content-length":
             has_len = true

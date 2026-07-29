@@ -54,7 +54,7 @@ fn is_short(s: string) -> bool:
 # Is `s` in `xs`? The schema lists are short (a handful of option names), so a
 # linear scan is the right shape -- same reason the Cli itself is parallel arrays.
 fn in_list(xs: [string], s: string) -> bool:
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if xs[i] == s:
             return true
     return false
@@ -108,13 +108,13 @@ fn parse_into(av: [string], valued: [string], boolean: [string], strict: bool) -
                 push(unk, a)
         elif is_short(a):
             bad := false
-            for j in range(1, len(a)):
+            for j := 1; j < len(a); j += 1:
                 if strict and not in_list(boolean, chr(a[j])):
                     bad = true
             if bad:
                 push(unk, a)                    # the whole cluster, as written
             else:
-                for k in range(1, len(a)):      # `-abc` -> a, b, c
+                for k := 1; k < len(a); k += 1:      # `-abc` -> a, b, c
                     push(flags, chr(a[k]))
         else:
             push(pos, a)                        # positional, incl. a lone "-"
@@ -151,21 +151,21 @@ fn parse_spec(av: [string], valued: [string], boolean: [string]) -> Cli:
 # an option is repeated.
 fn get(c: Cli, key: string, dflt: string) -> string:
     out := dflt
-    for i in range(len(c.keys)):
+    for i := 0; i < len(c.keys); i += 1:
         if c.keys[i] == key:
             out = c.vals[i]
     return out
 
 # Was option `key` (a `--key=value`) supplied at all?
 fn has(c: Cli, key: string) -> bool:
-    for i in range(len(c.keys)):
+    for i := 0; i < len(c.keys); i += 1:
         if c.keys[i] == key:
             return true
     return false
 
 # Was flag `name` present? Long (`--name`) and short (`-n` -> name "n") both count.
 fn flag(c: Cli, name: string) -> bool:
-    for i in range(len(c.flags)):
+    for i := 0; i < len(c.flags); i += 1:
         if c.flags[i] == name:
             return true
     return false

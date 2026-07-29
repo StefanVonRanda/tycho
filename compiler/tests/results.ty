@@ -12,7 +12,7 @@ fn make_range(n: int) -> Result([int], string):
     if n < 0:
         return Err("negative")
     r := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, i)
     return Ok(r)
 

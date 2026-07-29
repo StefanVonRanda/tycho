@@ -31,13 +31,13 @@ fn xnext(s: int) -> int:               # LCG: stays within 63 bits, no bit ops n
     return (s * 1103515245 + 12345) % 2147483648
 
 fn contains(xs: [int], v: int) -> bool:
-    for i in range(0, len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if xs[i] == v:
             return true
     return false
 
 fn hits_body(nb: [int]) -> bool:       # does the head (nb[0]) collide with the rest?
-    for i in range(1, len(nb)):
+    for i := 1; i < len(nb); i += 1:
         if nb[i] == nb[0]:
             return true
     return false
@@ -45,7 +45,7 @@ fn hits_body(nb: [int]) -> bool:       # does the head (nb[0]) collide with the 
 fn spawn_food(g: inout Game):          # place food on a free cell; advance the rng
     r := g.rng
     f := 0 - 1
-    for tries in range(0, 10000):
+    for tries := 0; tries < 10000; tries += 1:
         r = xnext(r)
         cand := r % (g.w * g.h)
         if not contains(g.body, cand):
@@ -91,7 +91,7 @@ fn step(g: inout Game):
     keep := len(g.body)
     if not grew:
         keep = keep - 1                # drop the tail unless we just ate
-    for i in range(0, keep):
+    for i := 0; i < keep; i += 1:
         push(nb, g.body[i])
     g.body = nb
     if hits_body(nb):                  # ran into itself
@@ -113,12 +113,12 @@ fn dirname(d: int) -> string:
 
 fn render(g: Game) -> string:
     out := ""
-    for i in range(0, g.w + 2):        # top border
+    for i := 0; i < g.w + 2; i += 1:        # top border
         out = out + "#"
     out = out + "\n"
-    for y in range(0, g.h):
+    for y := 0; y < g.h; y += 1:
         out = out + "#"
-        for x in range(0, g.w):
+        for x := 0; x < g.w; x += 1:
             cell := y * g.w + x
             if cell == g.body[0]:
                 out = out + "O"        # head
@@ -129,7 +129,7 @@ fn render(g: Game) -> string:
             else:
                 out = out + " "
         out = out + "#\n"
-    for i in range(0, g.w + 2):        # bottom border
+    for i := 0; i < g.w + 2; i += 1:        # bottom border
         out = out + "#"
     out = out + "\n"
     out = out + "score: " + str(g.score) + "\n"
@@ -157,7 +157,7 @@ fn run_demo():
     push(moves, 0)
     push(moves, 0)
     push(moves, 0)
-    for i in range(0, len(moves)):
+    for i := 0; i < len(moves); i += 1:
         turn(&g, moves[i])
         step(&g)
         println("move " + str(i) + " " + dirname(moves[i]) + ":")
@@ -173,8 +173,8 @@ fn run_play():
     g := new_game(30, 16, 1)
     esc := chr(27)
     clear := esc + "[2J" + esc + "[H"           # ANSI clear screen + cursor home
-    for tick in range(0, 1000000):
-        for k in range(0, 64):                  # drain whatever keys are buffered this frame
+    for tick := 0; tick < 1000000; tick += 1:
+        for k := 0; k < 64; k += 1:                  # drain whatever keys are buffered this frame
             key := snake_read_key()
             if key == 0 - 1:
                 break

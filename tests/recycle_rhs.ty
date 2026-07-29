@@ -6,32 +6,32 @@
 # source gate (read >= 2 / not movable) keeps it sound (qq below must stay intact).
 fn mk(n: int, base: int) -> [int]:
     r := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, base + i)
     return r
 fn main():
     a := mk(200, 0)
     sl := 0
-    for j in range(199):
+    for j := 0; j < 199; j += 1:
         sl = sl + a[0]
         a = a[1:]
     b := mk(30, 0)
-    for j in range(10):
+    for j := 0; j < 10; j += 1:
         b = b
     sb := 0
-    for i in range(len(b)):
+    for i := 0; i < len(b); i += 1:
         sb = sb + b[i]
     c := mk(5, 0)
-    for j in range(8):
+    for j := 0; j < 8; j += 1:
         c = [j, j + 1]
     scc := 0
-    for i in range(len(c)):
+    for i := 0; i < len(c); i += 1:
         scc = scc + c[i]
     p := mk(40, 0)
     qq := p
-    for j in range(10):
+    for j := 0; j < 10; j += 1:
         p = mk(40, 1000)
     sq := 0
-    for i in range(len(qq)):
+    for i := 0; i < len(qq); i += 1:
         sq = sq + qq[i]
     println("sl=" + str(sl) + " sb=" + str(sb) + " scc=" + str(scc) + " sq=" + str(sq))

@@ -201,14 +201,14 @@ fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
 
 fn all_digits(s: string, a: int, b: int) -> bool:
-    for i in range(a, b):
+    for i := a; i < b; i += 1:
         if not is_digit(s[i]):
             return false
     return true
 
 fn digits_val(s: string, a: int, b: int) -> int:   # [a, b) assumed all digits
     v := 0
-    for i in range(a, b):
+    for i := a; i < b; i += 1:
         v = v * 10 + (s[i] - 48)
     return v
 

@@ -148,7 +148,7 @@ fn blog_index() -> string:
     ord := sort.argsort_desc(dates)
     md := "# Blog\n\n"
     k := 0
-    for k in range(len(ord)):
+    for k := 0; k < len(ord); k += 1:
         j := ord[k]
         md = md + "- " + dates[j] + " — [" + titles[j] + "](/blog/" + slugs[j] + ")\n"
     return markdown.render(md)
@@ -183,7 +183,7 @@ fn main():
     raw := args()
     serve := false
     i := 0
-    for i in range(len(raw)):
+    for i := 0; i < len(raw); i += 1:
         if raw[i] == "--serve":
             serve = true
 
@@ -237,7 +237,7 @@ fn main():
         cr := httpd.crlf()
         paths := ["/", "/blog", "/blog/hello-tycho", "/wiki/getting-started", "/blog/../secret", "/blog/missing", "/nope"]
         j := 0
-        for j in range(len(paths)):
+        for j := 0; j < len(paths); j += 1:
             req := result.unwrap_or(httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr), httpd.bad_request())
             resp := route(req)
             println("### GET " + paths[j] + " -> " + str(resp.status))
@@ -247,7 +247,7 @@ fn main():
         # metadata -- content type + byte length -- rather than dumping binary.
         spaths := ["/static/style.css", "/favicon.ico", "/static/missing.png", "/static/../secret"]
         k := 0
-        for k in range(len(spaths)):
+        for k := 0; k < len(spaths); k += 1:
             a := static_asset(spaths[k])
             if a.ok:
                 println("### GET " + spaths[k] + " -> 200 " + a.ctype + " (" + str(len(a.body)) + " bytes)")

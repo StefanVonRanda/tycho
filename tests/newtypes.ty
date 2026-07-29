@@ -47,6 +47,6 @@ fn main():
 
     ms := [Meters(1.0), Meters(2.0), Meters(3.0)]
     s := Meters(0.0)
-    for i in range(len(ms)):
+    for i := 0; i < len(ms); i += 1:
         s = s + ms[i]
     println("sum=" + str(s))               # 6

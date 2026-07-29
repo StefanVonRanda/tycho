@@ -3,6 +3,6 @@
 # The pure deep-copy-per-insert path would be O(n^2) (GBs retained in the arena).
 fn main():
     m := []string: int
-    for i in range(40000):
+    for i := 0; i < 40000; i += 1:
         m["k" + str(i)] = i
     println(str(len(m)))

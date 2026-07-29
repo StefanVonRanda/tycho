@@ -8,16 +8,16 @@ package sort
 # Keep your data in parallel arrays, argsort one, and walk every array through
 # the permutation:
 #   ord := sort.argsort_desc(counts)
-#   for i in range(len(ord)): use(words[ord[i]], counts[ord[i]])
+#   for i := 0; i < len(ord); i += 1: use(words[ord[i]], counts[ord[i]])
 # argsort/argsort_desc are generic over the key type (any comparable -- int,
 # float, string, char). All sorts are stable (equal keys keep their original
 # order) and return new arrays; inputs are never mutated.
 
 fn argsort(keys: [$T]) -> [int] where comparable(T):        # ascending, stable
     ord := []int
-    for i in range(len(keys)):
+    for i := 0; i < len(keys); i += 1:
         push(ord, i)
-    for i in range(1, len(ord)):
+    for i := 1; i < len(ord); i += 1:
         cur := ord[i]
         j := i - 1
         for j >= 0 and keys[ord[j]] > keys[cur]:
@@ -28,9 +28,9 @@ fn argsort(keys: [$T]) -> [int] where comparable(T):        # ascending, stable
 
 fn argsort_desc(keys: [$T]) -> [int] where comparable(T):   # descending, stable
     ord := []int
-    for i in range(len(keys)):
+    for i := 0; i < len(keys); i += 1:
         push(ord, i)
-    for i in range(1, len(ord)):
+    for i := 1; i < len(ord); i += 1:
         cur := ord[i]
         j := i - 1
         for j >= 0 and keys[ord[j]] < keys[cur]:
@@ -41,7 +41,7 @@ fn argsort_desc(keys: [$T]) -> [int] where comparable(T):   # descending, stable
 
 fn asc(xs: [$T]) -> [$T] where comparable(T):       # sort the VALUES ascending, stable, new array (the common case)
     out := xs
-    for i in range(1, len(out)):
+    for i := 1; i < len(out); i += 1:
         cur := out[i]
         j := i - 1
         for j >= 0 and out[j] > cur:
@@ -52,7 +52,7 @@ fn asc(xs: [$T]) -> [$T] where comparable(T):       # sort the VALUES ascending,
 
 fn desc(xs: [$T]) -> [$T] where comparable(T):      # sort the VALUES descending, stable, new array
     out := xs
-    for i in range(1, len(out)):
+    for i := 1; i < len(out); i += 1:
         cur := out[i]
         j := i - 1
         for j >= 0 and out[j] < cur:
@@ -63,7 +63,7 @@ fn desc(xs: [$T]) -> [$T] where comparable(T):      # sort the VALUES descending
 
 fn by_key(xs: [$T], key: fn($T) -> int) -> [$T]:    # sort elements by a derived int key, ascending, stable
     out := xs
-    for i in range(1, len(out)):
+    for i := 1; i < len(out); i += 1:
         cur := out[i]
         kc := key(cur)
         j := i - 1

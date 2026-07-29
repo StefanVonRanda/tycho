@@ -1,5 +1,5 @@
 fn feed(ch: Channel(int), base: int, n: int) -> int:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         send(ch, base + i)
     return n
 

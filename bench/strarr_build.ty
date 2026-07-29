@@ -5,7 +5,7 @@
 # -> O(n) growth (hundreds of MB at this N). Asserts constant RSS.
 fn main():
     last := 0
-    for i in range(2000000):
+    for i := 0; i < 2000000; i += 1:
         a := [str(i) + "x"]
         push(a, str(i) + "y")
         push(a, str(i) + "z")

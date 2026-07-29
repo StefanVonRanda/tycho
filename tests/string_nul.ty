@@ -13,6 +13,6 @@ fn main():
     d := substr(b, 0, 3)
     println("dlen=" + str(len(d)) + " d1=" + str(d[1]))            # 3 0
     acc := ""
-    for i in range(3):
+    for i := 0; i < 3; i += 1:
         acc = acc + ("k" + chr(0))                                       # accumulator with embedded NULs
     println("acclen=" + str(len(acc)) + " a1=" + str(acc[1]))       # 6 0

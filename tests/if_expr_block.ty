@@ -49,7 +49,7 @@ fn nested(n: int) -> string:
         else:
             tier = "mid"
         bump := 0
-        for i in range(n):
+        for i := 0; i < n; i += 1:
             bump = bump + 1
         "pos-" + tier + "-" + str(bump)
     else:

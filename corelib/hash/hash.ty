@@ -35,7 +35,7 @@ fn to_hex(h: int) -> string:
 # FNV-1a, 32-bit (offset basis 2166136261, prime 16777619).
 fn fnv1a_32(s: string) -> int:
     h := to_u32(2166136261)
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         h = h ^ to_u32(s[i])
         h = h * to_u32(16777619)           # wraps at 2^32 natively
     return to_int(h)
@@ -43,23 +43,23 @@ fn fnv1a_32(s: string) -> int:
 # Dan Bernstein's djb2 (hash = hash * 33 + c), 32-bit.
 fn djb2(s: string) -> int:
     h := to_u32(5381)
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         h = h * to_u32(33) + to_u32(s[i])
     return to_int(h)
 
 # sdbm (hash = c + hash*65536 + hash*64 - hash), 32-bit.
 fn sdbm(s: string) -> int:
     h := to_u32(0)
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         h = to_u32(s[i]) + (h << 16) + (h << 6) - h
     return to_int(h)
 
 # CRC-32 (IEEE 802.3 / zlib, reflected, polynomial 0xEDB88320), bit by bit.
 fn crc32(s: string) -> int:
     crc := to_u32(4294967295)              # 0xFFFFFFFF
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         crc = crc ^ to_u32(s[i])
-        for k in range(8):
+        for k := 0; k < 8; k += 1:
             if (crc & 1) == 1:
                 crc = (crc >> 1) ^ to_u32(3988292384)   # ^ 0xEDB88320
             else:

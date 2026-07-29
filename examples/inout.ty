@@ -33,6 +33,6 @@ fn main():
     println("swap: " + str(a) + " " + str(b))   # 2 1
 
     st := Stats(0, 0)
-    for i in range(1, 5):
+    for i := 1; i < 5; i += 1:
         record(&st, i)                               # mutate the caller's struct
     println("sum=" + str(st.sum) + " count=" + str(st.count))  # sum=10 count=4

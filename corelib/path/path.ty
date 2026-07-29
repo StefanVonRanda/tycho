@@ -106,7 +106,7 @@ fn clean(p: string) -> string:
     rooted := p[0] == 47
     parts := split(p, "/")
     out := []string                           # stack of kept segments
-    for i in range(len(parts)):
+    for i := 0; i < len(parts); i += 1:
         seg := parts[i]
         if seg == "..":
             if len(out) > 0 and out[len(out) - 1] != "..":
@@ -117,7 +117,7 @@ fn clean(p: string) -> string:
         elif len(seg) > 0 and seg != ".":
             push(out, seg)                     # skip "" (// ) and "."
     r := ""
-    for j in range(len(out)):
+    for j := 0; j < len(out); j += 1:
         if j > 0:
             r = r + "/"
         r = r + out[j]

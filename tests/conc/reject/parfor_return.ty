@@ -1,5 +1,5 @@
 fn f(n: int) -> int:
-    parallel for i in range(n):
+    parallel for i in 0..<n:
         if i > 3:
             return i
     return 0

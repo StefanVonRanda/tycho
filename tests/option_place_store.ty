@@ -5,11 +5,11 @@
 # Reading the options after the loop must still see the right values.
 fn main():
     xs := [Some(0)]
-    for i in range(4):
+    for i := 0; i < 4; i += 1:
         o := Some(i)            # box built in the loop block arena (reset each iter)
         push(xs, o)             # storing a PLACE -> must re-box into xs's arena
     total := 0
-    for j in range(len(xs)):
+    for j := 0; j < len(xs); j += 1:
         match xs[j]:
             Some(v):
                 total = total + v

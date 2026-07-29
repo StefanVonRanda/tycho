@@ -26,6 +26,6 @@ fn describe(n: int) -> string:
 
 fn main():
     acc := "start"
-    for i in range(400):
+    for i := 0; i < 400; i += 1:
         acc = describe(check(make(14)))   # heap target; make(14) is a transient arg
     println(acc)                      # t32767

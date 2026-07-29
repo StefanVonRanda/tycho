@@ -4,14 +4,14 @@
 # from ASCII codes, so the golden is correct independent of the compiler.
 fn sumbytes(s: string) -> int:
     t := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         t = t + s[i]
     return t
 
 fn main():
     a := "ABC"
     t := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         t = t + a[i]
     println(str(t))                  # 65+66+67 = 198
     println(str(sumbytes("hi")))     # 104+105  = 209

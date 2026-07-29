@@ -93,7 +93,7 @@ fn is_ctl(c: int) -> bool:
 fn is_digits(s: string) -> bool:
     if len(s) == 0:
         return false
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         if s[i] < 48 or s[i] > 57:
             return false
     return true
@@ -132,7 +132,7 @@ fn log_safe(s: string) -> string:
         cut = true
     b := to_bytes(s)
     scrubbed := to_bytes("")
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         if is_ctl(b[i]):
             scrubbed = scrubbed + '.'
         else:
@@ -244,7 +244,7 @@ fn redirect_response(location: string) -> httpd.Response:
 
 fn hidden_segment(rel: string) -> bool:
     opening := true
-    for i in range(len(rel)):
+    for i := 0; i < len(rel); i += 1:
         c := rel[i]
         if opening and c == 46:
             return true
@@ -262,7 +262,7 @@ fn resolve(root: string, target: string) -> Route:
     if len(p) == 0 or p[0] != 47:
         return Route(400, "", "")                  # absolute-form or garbage
     dec := url.decode(p)
-    for i in range(len(dec)):
+    for i := 0; i < len(dec); i += 1:
         if is_ctl(dec[i]):
             return Route(400, "", "")
     rel := dec[1:len(dec)]

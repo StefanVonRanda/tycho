@@ -8,7 +8,7 @@ struct Named:
 
 fn sumx(ps: [P]) -> int:
     t := 0
-    for i in range(len(ps)):
+    for i := 0; i < len(ps); i += 1:
         t = t + ps[i].x
     return t
 
@@ -17,7 +17,7 @@ fn addp(ps: inout [P], p: P):
 
 fn make_row(n: int) -> [int]:
     r := []int
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, i * i)
     return r
 

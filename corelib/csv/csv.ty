@@ -75,7 +75,7 @@ fn parse(s: string) -> [[string]]:
 
 # True if a field must be quoted under delimiter `d` (contains d, ", CR, or LF).
 fn needs_quote(f: string, d: int) -> bool:
-    for i in range(len(f)):
+    for i := 0; i < len(f); i += 1:
         c := f[i]
         if c == d or c == 34 or c == 10 or c == 13:
             return true
@@ -85,7 +85,7 @@ fn needs_quote(f: string, d: int) -> bool:
 fn quote_field(f: string) -> string:
     cs := []int                                # gather bytes, materialize once
     push(cs, 34)                               # opening "
-    for i in range(len(f)):
+    for i := 0; i < len(f); i += 1:
         c := f[i]
         if c == 34:
             push(cs, 34)                        # "" -> two quotes
@@ -98,9 +98,9 @@ fn quote_field(f: string) -> string:
 # Serialize rows with an arbitrary single-byte delimiter; each row ends in '\n'.
 fn stringify_delim(rows: [[string]], d: int) -> string:
     out := ""
-    for r in range(len(rows)):
+    for r := 0; r < len(rows); r += 1:
         row := rows[r]
-        for c in range(len(row)):
+        for c := 0; c < len(row); c += 1:
             if c > 0:
                 out = out + chr(d)
             f := row[c]

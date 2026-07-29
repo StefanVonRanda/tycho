@@ -25,7 +25,7 @@ fn ostep(i: int) -> Option(int):
 fn main():
     n := 0
     last := ""
-    for i in range(0, 100000):
+    for i := 0; i < 100000; i += 1:
         match step(i):
             Ok(v):
                 n = n + v

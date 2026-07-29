@@ -7,13 +7,13 @@ fn leaf(v: int) -> Node:
 
 fn sum(n: Node) -> int:
     total := n.val
-    for i in range(len(n.kids)):
+    for i := 0; i < len(n.kids); i += 1:
         total = total + sum(n.kids[i])
     return total
 
 fn depth(n: Node) -> int:
     d := 0
-    for i in range(len(n.kids)):
+    for i := 0; i < len(n.kids); i += 1:
         cd := depth(n.kids[i])
         if cd > d:
             d = cd

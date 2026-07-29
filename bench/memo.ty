@@ -12,6 +12,6 @@ fn fib(n: int, memo: inout [int]) -> int:
 
 fn main():
     memo := []int
-    for i in range(46):
+    for i := 0; i < 46; i += 1:
         push(memo, 0)
     println(str(fib(45, &memo)))

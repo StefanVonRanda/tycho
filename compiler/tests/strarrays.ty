@@ -13,5 +13,5 @@ fn main():
     acc := []string
     collect(&acc, 5)
     println("collected " + str(len(acc)) + ":")
-    for i in range(len(acc)):
+    for i := 0; i < len(acc); i += 1:
         println(acc[i])

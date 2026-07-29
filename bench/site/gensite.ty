@@ -8,7 +8,7 @@
 
 fn atoi(s: string) -> int:
     v := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 48 and c <= 57:
             v = v * 10 + (c - 48)
@@ -17,14 +17,14 @@ fn atoi(s: string) -> int:
 fn word(n: int) -> string:                 # base-26 [a-z], deterministic
     s := ""
     m := n
-    for d in range(3):
+    for d := 0; d < 3; d += 1:
         s = s + chr(97 + m % 26)
         m = m / 26
     return s
 
 fn words(state: inout int, k: int) -> string:
     s := ""
-    for i in range(k):
+    for i := 0; i < k; i += 1:
         state = (state * 1103515245 + 12345) % 2147483648
         if i > 0:
             s = s + " "
@@ -38,10 +38,10 @@ fn main():
     else:
         dir := a[1]
         n := atoi(a[2])
-        for f in range(n):
+        for f := 0; f < n; f += 1:
             state := (1234567 + f * 16807) % 2147483648
             body := "# " + words(&state, 4) + "\n\n"
-            for b in range(8):             # 8 blocks of heading + para + list + escapes -> ~41 lines
+            for b := 0; b < 8; b += 1:             # 8 blocks of heading + para + list + escapes -> ~41 lines
                 body = body + words(&state, 10) + "\n\n"
                 body = body + "## " + words(&state, 3) + "\n\n"
                 body = body + "- " + words(&state, 5) + "\n"

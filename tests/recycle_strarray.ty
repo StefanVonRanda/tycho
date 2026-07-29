@@ -6,29 +6,29 @@
 # (qb must stay intact: a moved spine must not be recycled while shared).
 fn rep(n: int, base: int) -> [string]:
     r := []string
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, str(base + i))
     return r
 fn grow(a: [string]) -> [string]:
     r := []string
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         push(r, a[i] + "x")
     return r
 fn main():
     a := rep(60, 0)
     b := a
-    for j in range(30):
+    for j := 0; j < 30; j += 1:
         a = rep(60, 1000000)
     qa := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         qa = qa + len(a[i])
     c := rep(40, 0)
-    for j in range(20):
+    for j := 0; j < 20; j += 1:
         c = grow(c)
     qc := 0
-    for i in range(len(c)):
+    for i := 0; i < len(c); i += 1:
         qc = qc + len(c[i])
     qb := 0
-    for i in range(len(b)):
+    for i := 0; i < len(b); i += 1:
         qb = qb + len(b[i])
     println("qa=" + str(qa) + " qb=" + str(qb) + " qc=" + str(qc))

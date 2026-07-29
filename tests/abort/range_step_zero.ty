@@ -1,6 +1,0 @@
-# a runtime zero range step must abort, not spin forever (start != stop).
-fn main():
-    z := []int
-    push(z, 0)
-    for i in range(0, 10, z[0]):
-        print(str(i))

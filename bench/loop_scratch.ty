@@ -3,7 +3,7 @@
 # regressed, the scratch arena would grow unbounded (~100s of MB here).
 fn main():
     last := 0
-    for i in range(5000000):
+    for i := 0; i < 5000000; i += 1:
         s := str(i) + "!"
         last = len(s)
     println(str(last))

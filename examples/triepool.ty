@@ -14,7 +14,7 @@ struct Trie:
 fn insert(t: inout Trie, s: string) -> int:    # returns 1 if a NEW word was completed
     cur := 0
     i := 0
-    for i in range(0, len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if not (c in t.nodes[cur].kids):
             push(t.nodes, TrieNode([]int: int, false))
@@ -28,7 +28,7 @@ fn insert(t: inout Trie, s: string) -> int:    # returns 1 if a NEW word was com
 fn has(t: Trie, s: string) -> bool:
     cur := 0
     i := 0
-    for i in range(0, len(s)):
+    for i := 0; i < len(s); i += 1:
         c := s[i]
         if not (c in t.nodes[cur].kids):
             return false
@@ -41,7 +41,7 @@ fn main():
     words := ["cat", "car", "card", "dog"]
     new := 0
     i := 0
-    for i in range(0, len(words)):
+    for i := 0; i < len(words); i += 1:
         new = new + insert(&t, words[i])
     insert(&t, "cat")                                # duplicate: no new word, no new node
     println("nodes=" + str(len(t.nodes)) + " words=" + str(new))

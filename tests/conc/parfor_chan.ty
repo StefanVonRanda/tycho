@@ -4,7 +4,7 @@
 # the reduction (sum of i*i for 0..99 = 328350) is deterministic. Mirrors the
 # manual idiom in workers.ty; both compilers must produce the same output.
 fn produce(ch: Channel(int), n: int) -> int:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         send(ch, i)
     close(ch)                 # workers exit when closed AND drained
     return n

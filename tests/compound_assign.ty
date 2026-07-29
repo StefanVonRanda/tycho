@@ -31,7 +31,7 @@ fn main():
 
     s := ""
     i := 0
-    for i in range(0, 3):
+    for i := 0; i < 3; i += 1:
         s += "ab"                        # in-place accumulator
     println("s=" + s)               # ababab
 

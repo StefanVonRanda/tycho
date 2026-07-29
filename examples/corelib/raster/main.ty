@@ -18,7 +18,7 @@ fn lossless(x: raster.Image, y: raster.Image) -> string:
     sb := to_str(y.pixels)
     if len(sa) != len(sb):
         return "false"
-    for i in range(len(sa)):
+    for i := 0; i < len(sa); i += 1:
         if sa[i] != sb[i]:
             return "false"
     return "true"

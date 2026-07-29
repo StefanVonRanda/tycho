@@ -1,16 +1,16 @@
 fn scale(xs: inout [float], k: float):
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         xs[i] = xs[i] * k
 
 fn total(xs: [float]) -> float:
     s := 0.0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         s = s + xs[i]
     return s
 
 fn make(n: int) -> [float]:
     r := []float
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, to_float(i) * 0.5)
     return r
 

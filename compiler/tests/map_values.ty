@@ -23,7 +23,7 @@ fn main():
     # heap-value lifetime: bind, then force many rehashes; v stays its own copy
     v := m.get("a", "?")
     i := 0
-    for i in range(40):
+    for i := 0; i < 40; i += 1:
         m["k" + str(i)] = "v" + str(i)
     println(v)                            # avocado (not corrupted by rehash)
     println(str(len(keys(m))))            # 42

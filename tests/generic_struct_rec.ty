@@ -8,7 +8,7 @@ struct LL($T):
 
 fn total(n: LL(int)) -> int:
     s := n.head
-    for i in range(0, len(n.tail)):
+    for i := 0; i < len(n.tail); i += 1:
         s = s + total(n.tail[i])
     return s
 

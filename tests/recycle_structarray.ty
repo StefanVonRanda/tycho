@@ -7,29 +7,29 @@ struct P:
     y: int
 fn rep(n: int, base: int) -> [P]:
     r := []P
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(r, P(base + i, base - i))
     return r
 fn step(a: [P]) -> [P]:
     r := []P
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         push(r, P(a[i].x + 1, a[i].y + 1))
     return r
 fn main():
     a := rep(80, 0)
     b := a
-    for j in range(40):
+    for j := 0; j < 40; j += 1:
         a = rep(80, 1000000)
     qa := 0
-    for i in range(len(a)):
+    for i := 0; i < len(a); i += 1:
         qa = qa + a[i].x
     c := rep(50, 0)
-    for j in range(25):
+    for j := 0; j < 25; j += 1:
         c = step(c)
     qc := 0
-    for i in range(len(c)):
+    for i := 0; i < len(c); i += 1:
         qc = qc + c[i].x
     qb := 0
-    for i in range(len(b)):
+    for i := 0; i < len(b); i += 1:
         qb = qb + b[i].x
     println("qa=" + str(qa) + " qb=" + str(qb) + " qc=" + str(qc))

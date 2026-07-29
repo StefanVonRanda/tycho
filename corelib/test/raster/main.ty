@@ -19,7 +19,7 @@ fn push_px(px: inout [int], r: int, g: int, bl: int, a: int):
 fn bsum(bs: bytes) -> int:
     s := to_str(bs)
     t := 0
-    for i in range(len(s)):
+    for i := 0; i < len(s); i += 1:
         t = t + s[i]
     return t
 
@@ -31,7 +31,7 @@ fn same(x: raster.Image, y: raster.Image) -> int:
     sb := to_str(y.pixels)
     if len(sa) != len(sb):
         return 0
-    for i in range(len(sa)):
+    for i := 0; i < len(sa); i += 1:
         if sa[i] != sb[i]:
             return 0
     return 1

@@ -5,7 +5,7 @@
 # consumers' totals is deterministic regardless of how items interleave.
 
 fn producer(ch: Channel(string), n: int) -> int:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         ch.send("item-" + str(i))
     return n
 
@@ -21,7 +21,7 @@ fn consumer(ch: Channel(string)) -> int:
 
 fn pingpong(ch: Channel(int), n: int) -> int:
     acc := 0
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         send(ch, i * i)
         acc = acc + i
     return acc
@@ -41,7 +41,7 @@ fn main():
     ints := channel(int, 4)
     w := spawn pingpong(ints, 6)
     total := 0
-    for i in range(6):
+    for i := 0; i < 6; i += 1:
         match ints.recv():
             Some(v):
                 total = total + v

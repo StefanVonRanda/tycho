@@ -67,7 +67,7 @@ fn main():
     println(str(b.lo) + ":" + str(b.hi) + " " + str(c.lo) + ":" + str(c.hi))
     # value-if in a loop, feeding a string accumulator through a temp
     acc := ""
-    for i in range(5):
+    for i := 0; i < 5; i += 1:
         piece := if i == 3:
             "#"
         else:

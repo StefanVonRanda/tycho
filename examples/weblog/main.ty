@@ -94,11 +94,11 @@ fn ranked(m: [string:int]) -> [string]:
     ks := keys(m)
     vals := []int
     i := 0
-    for i in range(len(ks)):
+    for i := 0; i < len(ks); i += 1:
         push(vals, m[ks[i]])
     idx := sort.argsort_desc(vals)
     out := []string
-    for i in range(len(idx)):
+    for i := 0; i < len(idx); i += 1:
         push(out, ks[idx[i]])
     return out
 
@@ -186,7 +186,7 @@ fn main():
     println("status classes:")
     scs := sort.asc(keys(status))
     i := 0
-    for i in range(len(scs)):
+    for i := 0; i < len(scs); i += 1:
         println("  " + strings.pad_right(scs[i], 6, " ") + strings.pad_left(str(status[scs[i]]), 6, " "))
     println("")
 
@@ -196,7 +196,7 @@ fn main():
     n := len(rp)
     if n > topk:
         n = topk
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         u := rp[i]
         println("  " + strings.pad_left(str(paths[u]), 6, " ") + strings.pad_left(str(pbytes[u]), 9, " ") + "  " + u)
     println("")
@@ -207,11 +207,11 @@ fn main():
     m := len(ri)
     if m > topk:
         m = topk
-    for i in range(m):
+    for i := 0; i < m; i += 1:
         println("  " + strings.pad_left(str(ips[ri[i]]), 6, " ") + "  " + ri[i])
     println("")
 
     println("requests by hour:")
     hrs := sort.asc(keys(hours))
-    for i in range(len(hrs)):
+    for i := 0; i < len(hrs); i += 1:
         println("  " + strings.pad_right(hrs[i], 16, " ") + strings.pad_left(str(hours[hrs[i]]), 5, " "))

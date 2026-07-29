@@ -31,11 +31,11 @@ fn main():
 
     total := 0
     inset := 0
-    parallel for py in range(h):
+    parallel for py in 0..<h:
         cy := ymin + (ymax - ymin) * to_float(py) / to_float(h)
         rowsum := 0
         rowin := 0
-        for px in range(w):
+        for px := 0; px < w; px += 1:
             cx := xmin + (xmax - xmin) * to_float(px) / to_float(w)
             e := escape(cx, cy, maxit)
             rowsum = rowsum + e

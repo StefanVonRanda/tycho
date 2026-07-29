@@ -8,12 +8,12 @@ struct Bag:
     items: [int]
 
 fn fill(b: inout Bag, n: int):
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         push(b.items, i)
 
 fn main():
     last := 0
-    for k in range(200000):
+    for k := 0; k < 200000; k += 1:
         bag := Bag([]int)
         fill(&bag, 200)
         last = len(bag.items)

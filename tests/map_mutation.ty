@@ -21,7 +21,7 @@ fn main():
     push(idx["cat"], 7)
     cat := idx.get("cat", []int)
     print("cat:")
-    for i in range(len(cat)):
+    for i := 0; i < len(cat); i += 1:
         print(" " + str(cat[i]))
     println("")                                                  # cat: 1 4 7
     println("doglen=" + str(len(idx.get("dog", []int))))  # doglen=1
@@ -34,7 +34,7 @@ fn main():
     # [int:int] counter: m[k] += 1, fresh key starts from zero
     cnt := []int: int
     words := [3, 3, 5, 3, 5]
-    for i in range(len(words)):
+    for i := 0; i < len(words); i += 1:
         cnt[words[i]] += 1
     println(str(cnt.get(3, 0)) + "," + str(cnt.get(5, 0)) + "," + str(cnt.get(9, 0)))  # 3,2,0
 

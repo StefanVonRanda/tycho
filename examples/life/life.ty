@@ -1,8 +1,9 @@
 # Conway's Game of Life in Tycho — dogfooding the value-semantic arena model.
 # Each generation builds a BRAND-NEW grid and discards the old one; the arena
-# reclaims it with no free and no GC. Loops use `for x in range(...)` (the
-# idiomatic form -- a manual `for cond:` loop can drop its increment and spin
-# forever, which is exactly the bug the first cut of this program hit).
+# reclaims it with no free and no GC. Loops use the three-clause `for i := a;
+# i < b; i += 1:` form, whose post clause keeps the increment attached to the
+# header -- a bare `for cond:` loop can drop its increment in the body and spin
+# forever, which is exactly the bug the first cut of this program hit.
 #
 #   tycho-lsp ../../tychoc life.ty --shim life_shim.c -o life   (see run.sh)
 #   ./life            # deterministic: a glider over 9 generations (the golden)
@@ -25,16 +26,16 @@ fn at(g: Grid, r: int, c: int) -> int:
 
 fn live_neighbours(g: Grid, r: int, c: int) -> int:
     n := 0
-    for dr in range(0 - 1, 2):
-        for dc in range(0 - 1, 2):
+    for dr := 0 - 1; dr < 2; dr += 1:
+        for dc := 0 - 1; dc < 2; dc += 1:
             if not (dr == 0 and dc == 0):
                 n = n + at(g, r + dr, c + dc)
     return n
 
 fn step(g: Grid) -> Grid:
     cells := []int
-    for r in range(0, g.h):
-        for c in range(0, g.w):
+    for r := 0; r < g.h; r += 1:
+        for c := 0; c < g.w; c += 1:
             ln := live_neighbours(g, r, c)
             alive := at(g, r, c)
             nv := 0
@@ -49,8 +50,8 @@ fn step(g: Grid) -> Grid:
 
 fn render(g: Grid) -> string:
     out := ""
-    for r in range(0, g.h):
-        for c in range(0, g.w):
+    for r := 0; r < g.h; r += 1:
+        for c := 0; c < g.w; c += 1:
             if g.cells[r * g.w + c] == 1:
                 out = out + "#"
             else:
@@ -60,7 +61,7 @@ fn render(g: Grid) -> string:
 
 fn blank(w: int, h: int) -> [int]:
     cells := []int
-    for i in range(0, w * h):
+    for i := 0; i < w * h; i += 1:
         push(cells, 0)
     return cells
 
@@ -87,7 +88,7 @@ fn run_demo():
     cells := blank(w, h)
     set_glider(&cells, w, 0, 0)
     g := Grid(w, h, cells)
-    for gen in range(0, 9):
+    for gen := 0; gen < 9; gen += 1:
         println("generation " + str(gen))
         print(render(g))
         println("")
@@ -103,7 +104,7 @@ fn run_animation():
     g := Grid(w, h, cells)
     esc := chr(27)
     clear := esc + "[2J" + esc + "[H"       # ANSI: clear screen + cursor home
-    for gen in range(0, 300):
+    for gen := 0; gen < 300; gen += 1:
         println(clear + render(g) + "Conway's Life — generation " + str(gen) + "  (Ctrl-C to stop)")
         tycho_life_sleep(60)
         g = step(g)

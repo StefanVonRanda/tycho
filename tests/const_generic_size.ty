@@ -6,7 +6,7 @@
 
 fn sumN(xs: [$N]int) -> int:            # N inferred from the argument's length
     total := 0
-    for i in range(N):                  # N is an int const in the body
+    for i := 0; i < N; i += 1:                  # N is an int const in the body
         total = total + xs[i]
     return total
 
@@ -15,7 +15,7 @@ fn lastOf(xs: [$N]int) -> int:
 
 fn dotN(a: [$N]int, b: [$N]int) -> int: # a and b MUST share one length N
     d := 0
-    for i in range(N):
+    for i := 0; i < N; i += 1:
         d = d + a[i] * b[i]
     return d
 
@@ -24,7 +24,7 @@ fn widthPlusHeight(a: [$W]int, b: [$H]int) -> int:   # two distinct size params
 
 fn avg(xs: [$N]float) -> float:
     s := 0.0
-    for i in range(N):
+    for i := 0; i < N; i += 1:
         s = s + xs[i]
     return s / to_float(N)
 

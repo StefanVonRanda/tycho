@@ -38,7 +38,7 @@ fn render_md(body: string) -> string:
     out := ""
     in_list := false
     lines := strings.lines(body)
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         t := strings.trim(lines[i])
         if len(t) == 0:
             if in_list:
@@ -82,7 +82,7 @@ fn split_content(content: string) -> (string, string):   # (frontmatter, body) o
     body := ""
     in_body := false
     lines := strings.lines(content)
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         if in_body:
             body = body + lines[i] + "\n"
         elif strings.trim(lines[i]) == "---":
@@ -94,7 +94,7 @@ fn split_content(content: string) -> (string, string):   # (frontmatter, body) o
 fn parse_front(fm: string) -> [string: string]:          # `key: value` lines -> a map
     m := []string: string
     lines := strings.lines(fm)
-    for i in range(len(lines)):
+    for i := 0; i < len(lines); i += 1:
         if len(strings.trim(lines[i])) > 0:
             k, v := strings.split_once(lines[i], ":")
             m[strings.trim(k)] = strings.trim(v)
@@ -109,7 +109,7 @@ fn build(site_dir: string, out_dir: string):
 
     authors := []string: string
     rows := csv.parse(io.read(path.join(site_dir, "authors.csv")))
-    for i in range(len(rows)):
+    for i := 0; i < len(rows); i += 1:
         if i > 0:                                        # skip the header row
             authors[csv.get(rows, i, 0)] = csv.get(rows, i, 1)
 
@@ -120,7 +120,7 @@ fn build(site_dir: string, out_dir: string):
     dates := []int
     authnames := []string
     shas := []string
-    for i in range(len(files)):
+    for i := 0; i < len(files); i += 1:
         fname := files[i]
         if path.ext(fname) == ".md":
             fmtext, body := split_content(io.read(path.join(content_dir, fname)))
@@ -144,7 +144,7 @@ fn build(site_dir: string, out_dir: string):
     println("pages  : " + str(len(slugs)))
     println("--- pages by date ---")
     links := ""
-    for i in range(len(order)):
+    for i := 0; i < len(order); i += 1:
         j := order[i]
         iso := datetime.format_iso(datetime.from_unix(dates[j]))
         println(iso + "  " + slugs[j] + ".html  \"" + titles[j] + "\"  by " + authnames[j] + "  [" + shas[j][0:16] + "]")

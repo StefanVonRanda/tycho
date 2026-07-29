@@ -6,7 +6,7 @@
 fn main():
     cnt := []string: int
     words := ["a", "b", "a", "a", "c", "b"]
-    for i in range(len(words)):
+    for i := 0; i < len(words); i += 1:
         cnt[words[i]] = cnt[words[i]] + 1          # the counter idiom (read sugar)
     println("a=" + str(cnt["a"]) + " b=" + str(cnt["b"]) + " c=" + str(cnt["c"]))
     miss := cnt["zzz"]                              # pure read of a missing key -> 0

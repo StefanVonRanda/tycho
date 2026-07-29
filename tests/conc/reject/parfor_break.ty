@@ -1,4 +1,4 @@
 fn main():
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         if i > 3:
             break

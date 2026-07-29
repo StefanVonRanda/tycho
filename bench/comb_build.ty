@@ -19,7 +19,7 @@ fn size(t: Tree) -> int:
 
 fn comb(n: int) -> Tree:
     t := Leaf(1)
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         t = Pair(t, Leaf(1))
     return t
 

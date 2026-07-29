@@ -75,9 +75,9 @@ fn main():
     out := "P3\n" + str(nx) + " " + str(ny) + "\n255\n"
 
     j := 0
-    for j in range(ny):
+    for j := 0; j < ny; j += 1:
         i := 0
-        for i in range(nx):
+        for i := 0; i < nx; i += 1:
             # viewport ray through pixel center
             u := (to_float(i) / to_float(nx)) * 2.0 - 1.0
             v := 1.0 - (to_float(j) / to_float(ny)) * 2.0
@@ -86,7 +86,7 @@ fn main():
             best := 1000000.0
             hit := 0 - 1
             k := 0
-            for k in range(len(scene)):
+            for k := 0; k < len(scene); k += 1:
                 t := hit_sphere(origin, dir, scene[k])
                 if t > 0.0:
                     if t < best:

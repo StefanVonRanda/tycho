@@ -24,7 +24,7 @@ struct Posting:
 fn normalize(w: string) -> string:
     r := ""
     i := 0
-    for i in range(len(w)):
+    for i := 0; i < len(w); i += 1:
         c := w[i]
         if c >= 65 and c <= 90:          # 'A'..'Z' -> 'a'..'z'
             r = r + chr(c + 32)
@@ -55,7 +55,7 @@ fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: 
 fn index_doc(postings: inout [Posting], tidx: inout [string: int], text: string, doc: int):
     words := split(text, " ")
     i := 0
-    for i in range(len(words)):
+    for i := 0; i < len(words); i += 1:
         t := normalize(words[i])
         if len(t) > 0:
             add(&postings, &tidx, t, doc)
@@ -75,11 +75,11 @@ fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> [int]
     if p0 < 0:
         return res
     ci := 0
-    for ci in range(len(postings[p0].docs)):     # candidates = first term's docs (sorted)
+    for ci := 0; ci < len(postings[p0].docs); ci += 1:     # candidates = first term's docs (sorted)
         doc := postings[p0].docs[ci]
         ok := true
         ti := 1
-        for ti in range(1, len(terms)):
+        for ti := 1; ti < len(terms); ti += 1:
             pj := term_slot(tidx, terms[ti])
             if pj < 0 or not contains(postings[pj].docs, doc):
                 ok = false
@@ -90,7 +90,7 @@ fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> [int]
 fn join_ints(xs: [int]) -> string:
     s := ""
     i := 0
-    for i in range(len(xs)):
+    for i := 0; i < len(xs); i += 1:
         if i > 0:
             s = s + ", "
         s = s + str(xs[i])
@@ -107,7 +107,7 @@ fn main():
     postings := []Posting
     tidx := []string: int
     d := 0
-    for d in range(len(corpus)):
+    for d := 0; d < len(corpus); d += 1:
         index_doc(&postings, &tidx, corpus[d], d)
 
     println("docs=" + str(len(corpus)) + " vocab=" + str(len(postings)))
@@ -126,6 +126,6 @@ fn main():
     pt := term_slot(tidx, "the")
     tf := 0
     fi := 0
-    for fi in range(len(postings[pt].freqs)):
+    for fi := 0; fi < len(postings[pt].freqs); fi += 1:
         tf += postings[pt].freqs[fi]
     println("freq(the) = " + str(tf))                                           # 4

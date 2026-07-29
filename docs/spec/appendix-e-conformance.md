@@ -45,7 +45,7 @@ drawn from:
 > below that explains a fixture's *location* by "the frozen compiler would refuse
 > it" — the `corelib/test/` and `examples/corelib/` carve-outs, the `\r` and
 > adjacent-literal and nested-pattern constraints — describes a constraint **that
-> no longer binds**. `tests/postfreeze/` was the first to go: it was folded back
+> no longer binds**. the postfreeze lane (deleted 2026-07-29) was the first to go: it was folded back
 > into `tests/` and `tests/abort/` on 2026-07-29 and no longer exists. The
 > remaining fixtures have not been relocated yet; that is tracked as its own
 > phase. The clauses they back are normative either way.
@@ -159,7 +159,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
-| §14.4 | loops; `range` step 0 reject/abort | `tests/foreach`, `tests/while_loop`, `tests/range_negative_step`, `reject/range_step_zero_lit`, `tests/abort/range_step_zero` |
+| §14.4 | loops; three-clause ascending/descending | `tests/foreach`, `tests/while_loop`, `tests/for3`, `tests/for_bare`, `tests/range_negative_step` |
 | §14.4 | `break` / `continue` | `tests/break_continue`, `tests/loop_return` |
 | §19.4 | `match` statement; exhaustive; wildcard-last | `tests/enums`, `tests/matchwild`, `reject/match_non_exhaustive`, `reject/match_dup_arm`, `reject/match_wildcard_not_last` |
 | §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/nested_pattern`, `corelib/test/result` (`why`, `io_why`) — see the note below |
@@ -260,7 +260,7 @@ are flagged here so the gap is explicit rather than hidden:
   and deliberately **not** by a `tests/*.ty` fixture, because `tests/*.ty` and
   `tests/pkg/*/main.ty` go to `tychoc0` and its grammar has neither form.
   **Amended 2026-07-29:** nested patterns now DO have a `tests/` fixture —
-  `tests/nested_pattern`. It was first written into `tests/postfreeze/`, a
+  `tests/nested_pattern`. It was first written into the postfreeze lane (deleted 2026-07-29), a
   directory held outside the `tychoc0` lanes on purpose, which is what closed the
   open `FRICTION.md` item "new language syntax can no longer be given a `tests/`
   fixture". Later the same day the `tychoc0` lanes were retired outright, the
@@ -328,9 +328,9 @@ are flagged here so the gap is explicit rather than hidden:
   `a * b` on two arrays is a type error to the frozen `tychoc0`, so a fixture in
   `tests/*.ty` would be a program `tychoc` compiles and `tychoc0` refuses —
   `scripts/frontparity.sh` reported that as a divergence. The whole fixture
-  set therefore went into `tests/postfreeze/`, which no `tychoc0`-derived binary
+  set therefore went into the postfreeze lane (deleted 2026-07-29), which no `tychoc0`-derived binary
   was fed, and its `[T]` length-mismatch **abort** fixture into
-  `tests/postfreeze/abort/` rather than `tests/abort/`, because
+  the postfreeze abort lane (deleted 2026-07-29) rather than `tests/abort/`, because
   `scripts/frontparity.sh` globbed `tests/abort/*.ty` and an abort fixture is by
   construction a program tychoc accepts. **Amended 2026-07-29:** the `tychoc0`
   lanes were retired, so both placements were undone the same day — the set is now

@@ -20,6 +20,6 @@ fn fib(n: int, memo: inout [int]) -> int:
 
 fn main():
     memo := []int
-    for i in range(0, 41):
+    for i := 0; i < 41; i += 1:
         push(memo, 0)        # 0 = "not yet computed"
     println("fib(40) = " + str(fib(40, &memo)))   # 102334155

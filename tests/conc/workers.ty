@@ -10,7 +10,7 @@
 # workers interleave: sum of i*i for i in 0..N-1.
 #   N = 100  ->  sum_{0}^{99} i^2 = 99*100*199/6 = 328350
 fn produce(ch: Channel(int), n: int) -> int:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         send(ch, i)             # blocks when the 16-slot buffer is full (backpressure)
     return n
 
@@ -19,7 +19,7 @@ fn main():
     pr := spawn produce(jobs, 100)      # runs concurrently with the workers below
     sum := 0
     # K = ncpu workers, each pulling one job per iteration; 100 iterations total.
-    parallel for i in range(0, 100):
+    parallel for i in 0..<100:
         select:
             recv(jobs, x):
                 sum = sum + x * x       # reduction, folded at the in-order join

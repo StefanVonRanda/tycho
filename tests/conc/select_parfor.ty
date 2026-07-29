@@ -10,7 +10,7 @@
 #   sum(200..231) = 32*200 + 496       = 6400 + 496 = 6896
 #   total                                            = 10592
 fn feed(ch: Channel(int), base: int, n: int) -> int:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         send(ch, base + i)
     return n
 
@@ -23,7 +23,7 @@ fn main():
     pb := wait(tb)
     total := pa + pb
     sum := 0
-    parallel for i in range(0, total):
+    parallel for i in 0..<total:
         select:
             recv(a, x):
                 sum = sum + x
