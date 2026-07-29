@@ -941,6 +941,55 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
   reddened, so nothing needed fixing and the scope lock never came under
   pressure.
 
+## Status — PLAN COMPLETE, 2026-07-29
+
+All four phases done. `new_ideas.md` item 3 is shipped.
+
+```
+0180e69  the plan itself
+70fb00f  phase 1  element-wise arithmetic on arrays
+15c2235  phase 2  scalar broadcast for array arithmetic
+3a07a5c  phase 3  spec the element-wise array arithmetic rules
+e2f4fff  phase 4  the full sweep -- CI GREEN, 17m09s, 13 steps
+```
+
+`[1,2,3] * [2,2,2]` is `[2,4,6]`; `[1,2,3] * 2` is the same; `2 - [5,1]` is
+`[-3,1]` and that line is executable spec, run by `scripts/spec_check.sh`. Both
+array kinds, arithmetic operators only, broadcast both directions, fresh result.
+`make test` 537/0, `frontparity` `agreed: 292` unchanged across all four phases,
+`asan_self` 551/0, `make ci` green.
+
+**Three things the phases established that the plan got wrong or did not know:**
+
+- **The Pre-flight's guess about `%` was wrong.** It assumed int-only; phase 1
+  read `src/tychoc.c:6021` and found every sized int accepted, float/f32/newtypes
+  refused. Deriving the operator set from the arms instead of asserting one is
+  what kept the array form from out-permitting the scalar form.
+- **Broadcast did not fall out of the existing literal adaptation.** Every
+  adaptation arm keys off the *other operand's scalar type*, and an array type is
+  none of those, so nothing fired for `[1.0,2.0] * 2`. Phase 2 re-applied all
+  three against the element type. Had this been assumed rather than read, the
+  feature would have silently refused a case the spec now guarantees.
+- **An abort fixture could not go in `tests/abort/`.** That directory is inside
+  `scripts/frontparity.sh`'s glob and an abort fixture is a program `tychoc`
+  *accepts*, so a post-freeze one would have reddened the frozen-compiler lane by
+  construction. Phase 1 built `tests/postfreeze/abort/` instead. The lane the
+  previous plan opened needed a second room, and this is it.
+
+**What the full sweep proved, and what it did not.** Phase 4 measured coverage
+rather than assuming it: the ILP32 `-m32` rebuild and the `asan-self` lane
+provably exercise the new code (all eight fixtures run as golden comparisons
+under a 32-bit `long`; `asan_self` 551 compiled). The fuzz lanes and the
+TSan/`conc` lane provably do **not** — 0 of 177 generated programs and 0 of 11
+concurrency fixtures contain a use site, because `fuzz/gen.py` has no generator
+for binary arithmetic over typed operands. No seed count fixes that. Filed as
+phase 19 rather than papered over.
+
+One honest caveat, recorded in phase 4's evidence: `make ci`'s exit status is
+*derived*, not observed — the run was detached to outlive the per-command cap, so
+the numeric status was lost. `scripts/ci.sh:17` is `set -eu`, the banner is its
+last statement, and the log has zero `make: ***` lines.
+
 ## Carried forward from the previous plan
 
 Filed by phase agents as they ran; none blocking, none closed.
