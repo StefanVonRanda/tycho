@@ -52,7 +52,7 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
 - **Verified — element-wise arithmetic does not already exist.** `grep -rn
   'element-wise\|elementwise\|broadcast' docs/spec/ docs/*.md` returns four hits,
   all about tuple/array **equality** or a tuple literal being *checked*
-  element-wise (`docs/spec/12-aggregates.md:146`, `:289`,
+  element-wise (`docs/spec/12-aggregates.md:146`, `:385`,
   `docs/spec/04-inference.md:51`, `docs/spec/appendix-e-conformance.md:84`).
   None is arithmetic.
 - **Verified — the runtime already fails loudly in this style.** `runtime/tycho_rt.c`
@@ -622,7 +622,7 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
   `tycho_int`/`size_t` arithmetic phase 1 used and this phase did not change that
   line, so the ILP32 exposure is phase 1's, not new. Unverified until phase 4.
 
-- [ ] **Phase 3 — the spec, and the conformance record**
+- [x] **Phase 3 — the spec, and the conformance record**
   - Scope: `docs/spec/09-expressions.md` (the arithmetic section that currently
     gives `+` only for `string` at `:35` and `bytes` at `:42`),
     `docs/spec/12-aggregates.md` §16 (arrays — where `==`'s element-wise rule
@@ -641,6 +641,154 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
     are green.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`,
     `sh scripts/spec_check.sh`. Not `make test`, not `make ci` — Markdown only.
+
+  ### Evidence — phase 3, 2026-07-29
+
+  **Every line number in phases 1 and 2's evidence was re-derived, not copied.**
+  Phase 2 inserted into the same region phase 1 documented, so phase 1's
+  `/home/igzo/github/tycho/src/tychoc.c:6020-6063` table and its `:6001`,
+  `:5989`, `:5993-5997` refs had already moved by the time this phase read them.
+  Every citation written below was checked by opening the cited line in the
+  tree at `15c2235`.
+
+  **What was written, and where.**
+
+  1. `/home/igzo/github/tycho/docs/spec/09-expressions.md` — a new §13.2
+     paragraph, **"Element-wise arithmetic on arrays"**, placed after the
+     `bytes` paragraph and before **Comparison**. It states the operator set per
+     element type, the `iff` rule, the exclusion of `& | ^ << >>`, freshness,
+     broadcast with order preserved (`2 - [5, 1]` → `[-3, 1]`), and hands the
+     detail to §16.8. Placement is deliberate: the plan's own
+     `/home/igzo/github/tycho/plan.md:36-37` cites
+     `/home/igzo/github/tycho/docs/spec/09-expressions.md:35` (`string` `+`) and
+     `:42` (`bytes` `+`), and inserting *below* both leaves them pointing where
+     they did. Re-verified after the edit: `:35` is still
+     `**String concatenation.**` and `:42` still `**\`bytes\` concatenation.**`.
+  2. `/home/igzo/github/tycho/docs/spec/12-aggregates.md` — a new **§16.8
+     Element-wise arithmetic**, the full rule, between §16.7 and the `---`
+     before §17. It carries: the two-array rule and the per-element-type
+     operator table; the `[N]T` compile error vs the `[T]` runtime abort with
+     the message and exit status quoted; the refusal to mix kinds and the
+     refusal of `bounded[N]T` / `[$N]T`; broadcast in both directions with the
+     order-preservation examples; literal adaptation against the ELEMENT type
+     and the deliberate `['a','b'] + 1` narrowing; freshness; and the
+     divide/modulo-by-zero table reduced to prose. It sits next to §16.5's
+     `==`-compares-element-wise rule (`/home/igzo/github/tycho/docs/spec/12-aggregates.md:146`),
+     which is the rule the `[N]T` mismatch is worded off.
+  3. `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md` — the §16.8
+     row in the §16–19 matrix, citing all eight fixtures, plus an E.2.1 bullet
+     recording that this is the **fifth** time the freeze mechanism bites and
+     the first time it costs nothing, because `tests/postfreeze/` already
+     existed. The bullet states the one non-obvious placement: the abort fixture
+     is at `tests/postfreeze/abort/`, not `tests/abort/`, because
+     `/home/igzo/github/tycho/scripts/frontparity.sh:164` globs
+     `tests/abort/*.ty` and `:157` scores "tychoc ACCEPTED it, tychoc0 REFUSED
+     it" as a divergence. Both lines were opened and read before the citation
+     was written; so were `/home/igzo/github/tycho/tests/run.sh:148-153` (the
+     postfreeze golden loop) and `:172-189` (the postfreeze abort loop). Phase
+     1's evidence gave the latter as `157-190`; the loop actually runs
+     `172-189` (155-171 is its comment header), so the tighter true range was
+     used rather than the inherited one.
+  4. **`/home/igzo/github/tycho/docs/spec/appendix-a-grammar.md` — NOT touched,
+     and this is the phase's stated conclusion, measured rather than asserted.**
+     The feature adds no token and no production: `git diff 0180e69..HEAD --
+     src/tychoc.c` (the two phases, exactly) has **four** hunks, at `base_of`,
+     `resolve_expr_inner`, `op_str` and `gen_expr` — none inside `lex` or any
+     `parse_*` function, so `parse_expr`
+     (`/home/igzo/github/tycho/docs/spec/02-grammar.md:378`, citing
+     `src/tychoc.c:2586-2654`) is untouched. `*` `/` `%` already sit at binding
+     level 3 and `+` `-` at level 4
+     (`/home/igzo/github/tycho/docs/spec/02-grammar.md:361-362`); `a * b` on two
+     arrays parses today and always did — only its TYPING is new. Appendix A is
+     additionally a *generated* projection of §3/§4
+     (`/home/igzo/github/tycho/scripts/spec_check.sh:24-33`), so hand-editing it
+     would have reddened check 1 for a change §3/§4 never made.
+
+  **Provenance discipline.** 15 new anchored single-line refs, every anchor
+  chosen by reading the line it names, and every range kept to its construct
+  (`5987-6017` is the two-array arm exactly; `6046-6072` the broadcast arm
+  exactly; `6057-6062` the three adaptation rules exactly; `1020-1027` was
+  *not* used as a range — `1020@elem_arith_ok` is a tighter true statement).
+  The anchored count moved 110 → 125 and nothing else changed:
+
+      $ python3 scripts/check_citations.py
+      citation check: ok (125 anchored contain the token they name, 2023 bare in bounds, 83 source->doc citations resolve, 122 source->source in bounds)
+
+  **Line growth, and the one citation it moved.** This phase is append-only —
+  three insertions, **zero deletions**, no existing block re-wrapped, so no
+  citation *within* an edited paragraph could move:
+
+      $ git diff --numstat          # the three spec files, final
+      20      0       docs/spec/09-expressions.md
+      96      0       docs/spec/12-aggregates.md
+      20      0       docs/spec/appendix-e-conformance.md
+
+  (`plan.md` also moves, but not as spec text: two 1-for-1 line rewrites — the
+  phase-3 checkbox and the `:289` -> `:385` repair below — plus this evidence
+  block and the new phase 18, both appends.)
+
+  Growth still shifts everything *below* each insertion, so the shift was
+  measured rather than hoped over. Enumerating every citation in the tree that
+  binds to the three files (replicating the checker's paragraph-scoped path
+  binding, `/home/igzo/github/tycho/scripts/check_citations.py:211-215`) found
+  exactly **one live** ref below an insertion point:
+  `/home/igzo/github/tycho/plan.md:55`'s `:289` into
+  `/home/igzo/github/tycho/docs/spec/12-aggregates.md`, the tuple
+  `**Equality.**` line, which the §16.8 insertion moved 289 → 385. Repaired
+  here; only the digits changed. Everything else below an insertion is in a
+  frozen `docs/internals/plan-*-DONE.md`
+  (`/home/igzo/github/tycho/docs/internals/plan-int64-DONE.md:1583`, `:1681`
+  into `09-expressions.md`;
+  `/home/igzo/github/tycho/docs/internals/plan-front-door-DONE.md:606`, `:609`
+  into `12-aggregates.md`;
+  `/home/igzo/github/tycho/docs/internals/plan-postfreeze-rawstring-DONE.md:603`,
+  `:622` into `appendix-e-conformance.md`), which the checker's own rule says
+  must never be renumbered — "line numbers recorded as they stood when the work
+  was done; renumbering them would falsify the record rather than repair it"
+  (`/home/igzo/github/tycho/scripts/check_citations.py:63-66`). Left as records,
+  deliberately.
+
+  **The spec's own example is gate-verified, not hand-computed.** §16.8 carries
+  a ` ```tycho `/` ```output ` pair, so `scripts/spec_examples.sh` compiles and
+  runs it and requires the printed output to equal the block. The runnable count
+  went 8 → 9 and the new one is the third line of the pair — the swap test —
+  which is what makes it worth having:
+
+      spec-examples: ok docs/spec/12-aggregates.md:216 (tychoc)
+      spec-examples: 9 runnable example(s), all pass
+
+  This is safe post-freeze only because that runner's `tychoc0` leg was cut on
+  2026-07-26 (`/home/igzo/github/tycho/scripts/spec_examples.sh:12-16`); before
+  that date a §16.8 example would have reddened the gate by construction, for
+  the same reason its fixtures cannot live in `tests/*.ty`. Checked, not assumed.
+
+  **The three gates (foreground, one per command; `make test` and `make ci` NOT
+  run — this phase edited Markdown only and nothing it touched can reach a
+  compiled artifact, per `/home/igzo/github/tycho/CLAUDE.md:23-25`).**
+
+      $ python3 scripts/check_citations.py
+      citation check: ok (125 anchored contain the token they name, 2023 bare in bounds, 83 source->doc citations resolve, 122 source->source in bounds)
+
+      $ sh scripts/check_links.sh
+      link check: ok (132 markdown files, no dead relative links)
+
+      $ sh scripts/spec_check.sh
+      spec-check: Appendix A grammar matches §3/§4 (ok)
+      spec-check: all Appendix E fixture citations resolve (ok)
+      spec-examples: 9 runnable example(s), all pass
+
+  **Files changed:** `/home/igzo/github/tycho/docs/spec/09-expressions.md`,
+  `/home/igzo/github/tycho/docs/spec/12-aggregates.md`,
+  `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md`, and
+  `/home/igzo/github/tycho/plan.md` (this evidence, the checkbox, the one
+  repaired citation, and the new phase 18 below).
+
+  **Not verified.** That the spec text matches *behaviour* is inherited from
+  phases 1 and 2's fixtures, not re-measured here — no line-checker can see a
+  wrong behavioural claim
+  (`/home/igzo/github/tycho/scripts/check_citations.py:82-83` says so in as many
+  words). The one behavioural claim this phase could and did test itself is the
+  §16.8 example, above. `make ci` is still phase 4's.
 
 - [ ] **Phase 4 — the one full sweep**
   - `make ci`, once, at the end of the chain, per `CLAUDE.md`'s gate budget. This
@@ -708,6 +856,26 @@ Filed by phase agents as they ran; none blocking, none closed.
       hunks) was written for phase 2 and its approach is described in that
       phase's evidence.
 
+- [ ] **Phase 18 — doc→doc citations drift exactly like doc→source ones, and one
+      is already wrong.** Found by phase 3 while measuring what its own
+      insertions would shift. `/home/igzo/github/tycho/docs/internals/spec-plan.md:605`
+      cites `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:187` as
+      the cross-reference for "§9.5 is evidenced by the whole differential suite
+      + `make fixpoint`, not one fixture". That line is the **§24.2 linking / cc
+      invocation** row, and was already so before phase 3 touched anything —
+      verified against the tree at `15c2235`, not inferred:
+      `git show HEAD:docs/spec/appendix-e-conformance.md | sed -n '187p'` prints
+      the `§24.2` row. The §9.5 claim actually lives in the E.2.1 bullet near
+      `:218`. The citation is **bare**, so `scripts/check_citations.py` only
+      bounds-checks it and has stayed green over the whole drift — the same
+      silent class as carried-forward phases 13 and 17, in a third direction
+      (doc→doc). Phase 3 deliberately did **not** renumber it: moving `187` to
+      `188` would preserve the wrongness while looking like a repair, and
+      choosing the *right* target is a content decision about what spec-plan.md
+      meant, outside a Markdown-only phase's scope. Two things to settle
+      together: repoint this one, and decide whether the anchored `path:N@token`
+      form should be **mandatory** for a doc→doc ref into `docs/spec/`, which is
+      what would have caught it.
 - [ ] **Phase 15 — `docs/corelib.md` does not exist.** Moved to
       `docs/guides/corelib.md` by `68e5b39`; a dead backticked doc path in prose
       is invisible to `scripts/check_links.sh`, which only validates real

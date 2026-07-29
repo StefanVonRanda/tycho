@@ -167,6 +167,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §16.2 | indexing & bounds; OOB aborts | `tests/abort/index_oob`, `tests/bounds_elision` |
 | §16.4 | growth `push`; in-place append; alias guard | `tests/push_fusion`, `tests/append_alias`, `reject/push_scalar` |
 | §16.6 | slices | `tests/slices`, `tests/string_slice`, `reject/slice_inout_alias` |
+| §16.8 | element-wise arithmetic; broadcast (order kept, literal adapts); fresh result; `[N]T` mismatch rejected, `[T]` mismatch aborts | `tests/postfreeze/array_arith`, `tests/postfreeze/array_bcast`, `tests/postfreeze/array_arith_fresh`, `tests/postfreeze/array_bcast_fresh`, `tests/postfreeze/abort/array_arith_len`, `reject/array_arith_fixlen`, `tests/diag/array_arith_fixlen`, `tests/diag/array_bcast_widen` — post-freeze, see the note below |
 | §17.1 | struct construction & fields | `tests/named_fields`, `tests/recursive_structs` |
 | §17.3 | recursion only through a container | `tests/recursive_structs`, `tests/recursive_enum_array` |
 | §17.4 | tuples; index-assign/range rejected | `tests/tuples`, `tests/tuple_assign`, `reject/tuple_elem_index_assign`, `reject/tuple_index_range` |
@@ -310,6 +311,25 @@ are flagged here so the gap is explicit rather than hidden:
   `server/` and `examples/corelib/{result,httpd}` are deliberately **excluded**
   from that lane — they are the witnesses written outside the freeze, so including
   them would redden it at intended state.
+- **§16.8 element-wise arithmetic on arrays** — **fifth** time the freeze
+  mechanism bites, and the first time it costs nothing, because the door opened
+  for §14.3.1 was already there. Every §16.8 program is a **new acceptance**:
+  `a * b` on two arrays is a type error to the frozen `tychoc0`, so a fixture in
+  `tests/*.ty` would be a program `tychoc` compiles and `tychoc0` refuses —
+  `scripts/frontparity.sh:157` reports that as a divergence. The whole fixture
+  set therefore lives in `tests/postfreeze/`, which no `tychoc0`-derived binary
+  is fed, and is gated by `tests/run.sh:148-153` with the full native-vs-ASan +
+  golden discipline. One placement is worth stating because it is not obvious: the
+  `[T]` length-mismatch **abort** fixture is at `tests/postfreeze/abort/`, not
+  `tests/abort/`, because `scripts/frontparity.sh:164` globs `tests/abort/*.ty`
+  and scores "tychoc accepted it, tychoc0 refused it" as a divergence — and an
+  abort fixture is by construction a program tychoc accepts. `tests/run.sh:172-189`
+  runs that directory as its own lane, requiring a nonzero exit and a `tycho:`
+  message. `tests/reject/` needed no such move (it appears in no frontparity
+  glob, and a program tychoc refuses is skipped there anyway), and
+  `tests/diag/array_arith_fixlen` / `array_bcast_widen` carry the byte-for-byte
+  diagnostics, because the reject lane asserts only that a diagnostic is
+  non-empty.
 - **§30.3 clamp conditions and §30.5 unspecified behavior** — clamp behavior is
   exercised incidentally by the slice fixtures; the unspecified set is, by
   definition, not pinned (it is enumerated in [Appendix F](appendix-f-impl-defined.md)).
