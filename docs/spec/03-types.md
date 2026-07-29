@@ -373,13 +373,13 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 `reserve` MUST be rejected on a `bounded` value.
 
 > Provenance: the `bounded` branch of `parse_type_inner`,
-> `src/tychoc.c:1800-1816@"bounded"` (capacity `:1769-1779`, element
+> `src/tychoc.c:1848-1864@"bounded"` (capacity `:1769-1779`, element
 > restriction `:1781-1782`); its twin
 > `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
 > deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
 > with the unresolved-name guard at `:11908-11912@[b#`. The affine-element
 > rejection is a type-intern choke point in `src/tychoc.c`
-> (`arrc_sized_b` `src/tychoc.c:679-691@arrc_sized_b`, messages `:567` and `:607`) and an
+> (`arrc_sized_b` `src/tychoc.c:727-739@arrc_sized_b`, messages `:567` and `:607`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
 > Rejections: slice `src/tychoc.c:4754-4755`, `pop` `:5396-5397`, `reserve`
 > `:5418`, over-long literal `:5759-5761`. The full-push trap is emitted at

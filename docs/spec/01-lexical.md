@@ -254,9 +254,12 @@ one holding more than one byte is a lexical error.
 
 ```ebnf
 StrLit ::= StrPiece StrPiece*
-StrPiece ::= '"' StrElem* '"'
+StrPiece ::= QuotedPiece | RawPiece
+QuotedPiece ::= '"' StrElem* '"'
 StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
 StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
+RawPiece ::= "`" RawElem* "`"
+RawElem ::= (any byte except "`" and raw control bytes below 0x20 other than tab and newline)
 ```
 
 A string literal is delimited by double quotes and denotes a `string` value. One
@@ -281,8 +284,9 @@ page := ("<!doctype html>\n"
          "<p>body</p>\n")
 ```
 
-There is no other multi-line string form and no backslash line-continuation. An
-**f-string never joins** ([§3.9.5](#395-f-string-interpolated-literals)): it is
+Apart from a raw piece (below) there is no other multi-line string form, and
+there is no backslash line-continuation. An **f-string never joins**
+([§3.9.5](#395-f-string-interpolated-literals)): it is
 already sugar for a `+` chain, so `f"a" "b"` and `"a" f"b"` are each a syntax
 error, as they were before joining existed. Joining is defined on the literals'
 *escaped source text*, which is sound only because every escape is exactly two
@@ -290,14 +294,48 @@ characters — the reason `\0` and `\xNN` are not in the escape set (a greedy C-
 `\x` would absorb a hex digit across a join, and a `\0` would truncate the
 interned literal, whose length comes from `strlen`).
 
+**Raw pieces.** A piece delimited by backticks — `` `…` `` — is a *raw* string
+piece. **No escape is interpreted inside it:** a backslash is a backslash, so
+`` `a\nb` `` is the four characters `a`, `\`, `n`, `b` and equals `"a\\nb"`. A
+`"` needs no escape. An embedded **newline is a literal newline byte**, so a raw
+piece is the one literal form that genuinely spans source lines:
+
+```tycho
+page := `<!doctype html>
+<title>hello</title>`
+```
+
+Because no escape exists, **there is no way to write a backtick inside a raw
+piece** — the first backtick after the opener closes it. A backtick is an
+ordinary byte inside a *quoted* piece, so a literal that needs one is written by
+joining: ``s := `a` "`" `b` `` is the three characters `` a`b ``. A raw
+piece that is never closed before end of file is rejected (`unterminated raw
+string literal`, reported at the *opening* line). Raw control bytes below `0x20`
+are rejected exactly as in a quoted piece, with tab **and newline** excepted.
+The same fixed per-piece length bound applies (`string too long`).
+
+A raw piece **is** a `StrPiece`, so it joins with adjacent pieces of either kind:
+`` `raw ` "and normal" `` and `` "normal and " `raw` `` are each one literal.
+This is sound under the escaped-source-text rule above because the scanner
+re-escapes a raw piece's bytes into the ordinary two-character escapes as it
+reads them; the token a raw piece produces is an ordinary string token carrying
+escaped text, and nothing downstream can tell which spelling produced it. A raw
+piece is never interpolated: there is no `` f`…` `` form, and `{` inside a raw
+piece is an ordinary byte.
+
 Concatenating two string literals with `+` also folds to one literal in a
 `const` ([§12.2](08-declarations.md#122-constants)), so `const TERM = "\r\n" + "\r\n"`
 is a single four-byte literal and not a run-time concatenation.
 
-> Provenance: `src/tychoc.c:319-400`; escape set `:373-382`; control-byte
-> rejection `:389-391`; per-piece length bound `:326`,`:332`; adjacent join
-> `:2150-2166`; `const` string fold `:4006-4012`; `tycho_str_intern`'s `strlen`
-> `runtime/tycho_rt.c:1005`.
+> Provenance: quoted piece `src/tychoc.c:319-400`; escape set `:373-382`;
+> control-byte rejection `:389-391`; per-piece length bound `:326`,`:332`;
+> raw piece `:402-448`, its re-escape table `:430-433`, its control-byte
+> rejection `:434-435`, its per-piece bound `:437`,`:440`, its unterminated
+> diagnostic `:444`; adjacent join `:2234-2246`; `const` string fold
+> `:4147-4151`; codegen pastes the escaped text into a C string literal
+> `:9003`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1005`.
+> Fixtures: `tests/postfreeze/rawstring.ty`,
+> `tests/reject/rawstring_unterminated.ty`.
 
 ### 3.9.5 f-string (interpolated) literals
 

@@ -399,6 +399,54 @@ static TokVec lex(const char *src) {
                 continue;
             }
 
+            if (c == '`') {
+                /* RAW STRING LITERAL: `...` -- no escape is interpreted, so a
+                 * backslash is a backslash and an embedded newline is a literal
+                 * newline byte (the one genuinely multi-line literal form).
+                 * There is no escape for a backtick, so a raw literal cannot
+                 * contain one; that is the price of needing no escapes at all.
+                 *
+                 * The token this produces is an ORDINARY TK_STR whose text is
+                 * ESCAPED source text, exactly like the `"..."` branch above:
+                 * every byte that a C string literal cannot carry verbatim is
+                 * re-escaped here into one of the four two-character escapes
+                 * the language already has (\n \t \\ \"). Two consequences,
+                 * both deliberate:
+                 *   - codegen `:9003` pastes `sval` straight into a C string
+                 *     literal, so it must be C-safe by the time it gets there;
+                 *   - the adjacent-literal join at `:2234-2246` is sound on
+                 *     this text for the reason stated there -- every escape is
+                 *     exactly two characters -- so a raw piece MAY join with a
+                 *     normal one (`` `a` "b" `` is one literal `ab`). Nothing
+                 *     in the parser needed changing for that.
+                 * `ival` stays 0: a raw literal is never an f-string, so no
+                 * interpolation is performed on its text. */
+                p++;                       /* skip the opening backtick */
+                char rbuf[4096];
+                int rn = 0;
+                int startline = line;      /* diagnostics name the OPENING line */
+                while (*p && *p != '`') {
+                    const char *esc = NULL;
+                    if (*p == '\n')      { esc = "\\n";  p++; line++; ls = p; }   /* keep line/col honest across the literal */
+                    else if (*p == '\t') { esc = "\\t";  p++; }
+                    else if (*p == '\\') { esc = "\\\\"; p++; }
+                    else if (*p == '"')  { esc = "\\\""; p++; }
+                    else if ((unsigned char)*p < 0x20)
+                        die_at(line, "raw control byte in string literal (use an escape such as \\n or \\t)");
+                    if (esc) {
+                        if (rn + 2 >= (int)sizeof rbuf) die_at(startline, "string too long");
+                        rbuf[rn++] = esc[0]; rbuf[rn++] = esc[1];
+                    } else {
+                        if (rn + 1 >= (int)sizeof rbuf) die_at(startline, "string too long");
+                        rbuf[rn++] = *p++;
+                    }
+                }
+                if (*p != '`') die_at(startline, "unterminated raw string literal");
+                p++;                       /* skip the closing backtick */
+                tv_push(&out, (Tok){TK_STR, xstrndup(rbuf, (size_t)rn), 0, startline, 0, tcol});
+                continue;
+            }
+
             if (c == '\'') {        /* char literal: 'x' or one escape -> one byte */
                 p++;
                 long cv;

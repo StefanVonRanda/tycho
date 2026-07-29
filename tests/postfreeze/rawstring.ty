@@ -1,0 +1,54 @@
+# Post-freeze fixture: backtick raw string literals -- `...`.
+#
+# Why it lives here and not in tests/: the frozen compiler/tychoc0.ty has no
+# backtick token at all, so it refuses the character outright. tests/postfreeze/
+# is the directory the two tychoc0-derived lanes never glob (tests/run.sh:135-153).
+#
+# Semantics under test (lexer: src/tychoc.c:402-448):
+#   - no escape is interpreted -- a backslash is a backslash;
+#   - an embedded newline is a literal newline byte, so the form is genuinely
+#     multi-line;
+#   - there is no escape for a backtick, so a raw literal cannot contain one;
+#   - a raw piece MAY join with an adjacent normal piece, because the scanner
+#     stores re-escaped text and the join at src/tychoc.c:2234-2246 is sound on
+#     any text whose escapes are all exactly two characters.
+
+fn main():
+    # 1. single-line: an ordinary `string` value.
+    a := `hello raw`
+    println(a)
+    println(str(len(a)))
+
+    # 2. no escape is interpreted: the two characters \ and n stay two
+    #    characters. The normal literal it is compared against needs \\ to say
+    #    the same thing, which is the whole point of the form.
+    b := `a\nb`
+    println(b)
+    println(str(len(b)))
+    println(str(b == "a\\nb"))
+
+    # 3. three source lines, two literal newline bytes.
+    c := `one
+two
+three`
+    println(c)
+    println(str(len(c)))
+    println(str(c == "one\ntwo\nthree"))
+
+    # 4. adjacent-literal join, both orders. `"a" "b"` is one literal "ab"
+    #    (src/tychoc.c:2234-2246) and a raw piece takes part.
+    d := `raw ` "and normal"
+    println(d)
+    e := "normal and " `raw`
+    println(e)
+
+    # 5. a raw literal ending in a backslash: nothing escapes the closing
+    #    backtick, so this is the four bytes  C : \ .
+    f := `C:\`
+    println(f)
+    println(str(len(f)))
+
+    # 6. a double quote needs no escape inside a raw literal.
+    g := `he said "hi"`
+    println(g)
+    println(str(len(g)))
