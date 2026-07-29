@@ -592,7 +592,7 @@ chain, where it is the thing that catches what the targeted gates could not.
 `scripts/ci.sh:16` documents `make ci N=500` to deepen them; if an intermediate
 full run is ever wanted, `make ci N=0` is the cheap form.
 
-- [ ] **Phase 4 (found by phase 1, not absorbed) — stale `:N` citations to the
+- [x] **Phase 4 (found by phase 1, not absorbed) — stale `:N` citations to the
       two frozen-compiler scripts**
   - Phase 1 repaired the four `compiler/fixpoint.sh:24` refs inside its own scope
     (`docs/spec/appendix-e-conformance.md`) and stopped there. Two classes remain,
@@ -613,6 +613,134 @@ full run is ever wanted, `make ci N=0` is the cheap form.
   - Done when: every `fixpoint.sh:N` / `frontparity.sh:N` ref in `FRICTION.md` and
     `docs/` points at the line the surrounding sentence describes, spot-checked by
     reading the cited line; `make check-links` green.
+  - **DONE 2026-07-29.** Seventeen citations repaired across five files. The
+    phase's own line map was itself stale in places, so every number below was
+    re-derived by reading the cited file at HEAD, not by applying the plan's
+    offsets. Two of the listed refs turned out to be **right already** and were
+    left alone: `compiler/fixpoint.sh:2` (cited by `FRICTION.md:329` and
+    `docs/bootstrap.md:5`) really is the `docs/bootstrap.md` header line, and
+    `docs/spec/appendix-e-conformance.md:252-253`'s `:37`/`:81`/`:164` were
+    already repaired by phase 1.
+
+    **The repairs, each with the text of the line landed on.**
+
+    | citation site | old | new | text at the new line |
+    |---|---|---|---|
+    | `FRICTION.md:215` | `fixpoint.sh:24` | `:37` | `for f in tests/*.ty examples/*.ty; do` |
+    | `FRICTION.md:215` | `frontparity.sh:127` | `:164` | `for hi in examples/*.ty tests/*.ty tests/conc/*.ty tests/warn/*.ty \` |
+    | `FRICTION.md:219` | `frontparity.sh:127` | `:157` | `echo "FAIL  $name  (tychoc ACCEPTED it, tychoc0 REFUSED it)"` |
+    | `FRICTION.md:222` | `frontparity.sh:126-127` | annotated | see "the one that must not be repointed" below |
+    | `FRICTION.md:244` | `frontparity.sh:127` | `:157` | (same `echo "FAIL …"` line) |
+    | `FRICTION.md:334` | `fixpoint.sh:24` | `:37` | `for f in tests/*.ty examples/*.ty; do` |
+    | `FRICTION.md:334` | `frontparity.sh:127` | `:164` | (same glob line) |
+    | `appendix-e:235` | `frontparity.sh:127` | `:164` | (same glob line) |
+    | `appendix-e:274` | `frontparity.sh:127` | `:157` | (same `echo "FAIL …"` line) |
+    | `appendix-e:285` | `frontparity.sh:127` | `:157` | (same `echo "FAIL …"` line) |
+    | `docs/bootstrap.md:50` | `fixpoint.sh:21-22` | `:34-35` | `if ! cmp -s "$T/cA.c" "$T/cB.c"; then …` / `echo "ok   B == C : …"` |
+    | `docs/bootstrap.md:53` | `fixpoint.sh:24-30` | `:37-43` | the `tests/*.ty examples/*.ty` differential loop |
+    | `docs/bootstrap.md:55` | `fixpoint.sh:31-53` | `:44-66` | `# Package programs (Stage D): …` through its `done` |
+    | `frontparity.sh:15` | `fixpoint.sh:24-30` | `:37-43` | (same loop) |
+    | `frontparity.sh:17` | `fixpoint.sh:26` | `:39` | `./tychoc "$f" -o "$T/ref" >/dev/null 2>&1 \|\| continue` |
+    | `frontparity.sh:19` | `fixpoint.sh:28-29` | `:41-42` | `"$T/B" < "$f" > "$T/g.c" 2>/dev/null && $CC …` |
+    | `frontparity.sh:23` | `fixpoint.sh:41-52` | `:44-66` | `# Package programs (Stage D): …` |
+    | `frontparity.sh:24` | `tests/conc/run.sh:63-67` | `:37-61` | `for f in tests/conc/*.ty; do` … `done` |
+    | `frontparity.sh:24` | `tests/run.sh:199` | `:203-220` | `for hi in tests/abort/*.ty; do` … `done` |
+    | `frontparity.sh:38` | `fixpoint.sh:28` | `:41` | the `2>/dev/null` line that discards tychoc0's stderr |
+    | `frontparity.sh:43` | `tests/run.sh` lines 291-314 † | `:260-283` | `for hi in tests/warn/*.ty; do` (6 fixtures, `ls` confirms) |
+    | `frontparity.sh:54` | `tests/run.sh:70` | `:72` | `elif ! $CC -O2 -fwrapv -std=c11 -o "$nat" "$c" -lm …` — the separate cc step |
+    | `frontparity.sh:71` | `fixpoint.sh:48` | `:61` | `if "$T/B" "$entry" > "$T/sd.c" …` — the standalone `tychoc0 <entry>` driver |
+    | `tests/run.sh:139` | `fixpoint.sh:24`/`:68`, `frontparity.sh:152-153` | `:37`/`:81`, `:164-165` | the two globs and the frontparity glob |
+
+    † Written with the path and the numbers separated on purpose. Quoting the old
+    value in citation form made the gate red on **this table** — the only one of
+    the 23 old values that was out of bounds rather than merely wrong:
+    ```
+    STALE  plan.md:649  `tests/run.sh:<291-314>` -> tests/run.sh has 295 lines: OUT OF BOUNDS
+    citation check: FAILED (1 stale citation(s) above)
+    ```
+    (angle brackets added here too — the checker reads fenced blocks, so quoting
+    its own verbatim message reproduced the failure a second time at `plan.md:658`.)
+    An unplanned demonstration of the recommendation at the end of this phase: the
+    bounds check caught the one citation that pointed past EOF and was silent about
+    the other 22, every one of which named a real line describing something else.
+
+    **The header block was not merely renumbered — one of its claims was false.**
+    `scripts/frontparity.sh:6-11` said tychoc0 "is built at `tests/run.sh:148` and
+    used only on the *reject* lane (`:159`, `:178`), the *abort* lane (`:199`) and
+    the *diag* goldens (`:262`)". `grep -n tychoc0 tests/run.sh` returns **eight
+    hits, every one of them inside a comment**: the freeze removed the reject leg
+    (`tests/run.sh:163-166`, "that half is gone") and the abort leg
+    (`:199-202`) on 2026-07-26, and the diag lane never had one (`:226`, "tychoc
+    only"). `:148` is now the `tests/postfreeze/` loop phase 1 added — so the
+    sentence named a line that exists and describes an unrelated lane, the worst
+    kind of stale citation. The paragraph now states the removal instead of the
+    use. The lane's *own* reason to exist is unchanged and still true.
+
+    **Line count of `scripts/frontparity.sh` was held constant on purpose** (189
+    before, 189 after). **Seven sites depend on that glob staying at `:164`** —
+    its own header at `:76` ("The glob at :164 says `tests/*.ty`"),
+    `tests/run.sh:139`, `FRICTION.md:215`, `:222`, `:334`, and
+    `appendix-e:235` and `:253` — so an edit that grew the header by even one line
+    would have invalidated the citations this phase exists to fix.
+    Each replaced paragraph was rewritten to the same number of lines; verified by
+    `wc -l` and by re-reading `:164-165`.
+
+    **The one that must not be repointed, and why.** `FRICTION.md:222` cites
+    `scripts/frontparity.sh:126-127` inside a `~~struck-through~~` entry describing
+    the pre-2026-07-26 blind spot ("feeds `examples/*.ty` but never
+    `examples/<dir>/main.ty`"). No current line says that — phase 8 of the archived
+    plan fixed it. Repointing to `:164-165` would make the sentence assert
+    something false about today's script. Rewritten to name both: "`:126-127` when
+    this was written; `:164-165` today, with the blind spot closed."
+
+    **Archived plans deliberately left alone.** `docs/internals/plan-*-DONE.md`
+    carries 14 more `fixpoint.sh:N` / `frontparity.sh:N` refs (`plan-friction-DONE.md`
+    ×8, `plan-front-door-DONE.md` ×5, `plan-int64-DONE.md` ×3). Those are frozen
+    verification *evidence* — line numbers recorded as they stood when the work was
+    done. Renumbering them to today's tree would falsify the record rather than
+    repair it, so they stay. This is a decision, not deferred work.
+
+    **One file outside the phase's letter, declared.** `tests/run.sh:139` is a
+    `fixpoint.sh:N` ref in neither `FRICTION.md` nor `docs/`, so the scope lock did
+    not name it — but phase 1 of *this* plan wrote it, and it was stale on arrival
+    for exactly the reason phase 4 exists. One line, three numbers, no behaviour.
+    Repaired and recorded here rather than left as a known-false citation.
+
+    **Verify — gate 1, `env -u LD_PRELOAD python3 scripts/check_citations.py`:**
+    ```
+    citation check: ok (22 anchored contain the token they name, 1773 bare in bounds, 82 source->doc citations resolve)
+    CIT_RC=0
+    ```
+    **Verify — gate 2, `env -u LD_PRELOAD sh scripts/check_links.sh`:**
+    ```
+    link check: ok (130 markdown files, no dead relative links)
+    LNK_RC=0
+    ```
+    Not run, deliberately: `make ci`. Per the Gate ladder, nothing here can reach a
+    compiled artifact — the diff is comment prose in two shell scripts and line
+    numbers in three Markdown files.
+
+    **The open question the phase was asked to answer: should
+    `scripts/check_citations.py` anchor script citations the way it anchors the 22
+    named ones? Recommendation: yes, but not by anchoring all of them — make the
+    anchored form available and require it only where a citation names a
+    *mechanism*.** The reason is the failure mode this phase actually found. Bare
+    `:N` is checked for bounds only, so the two ways a citation rots are invisible
+    to it: the silent `+N` shift (which is noise), and the far worse case where the
+    number still resolves but now names an unrelated line — `frontparity.sh:8`'s
+    `tests/run.sh:148`, which drifted from a tychoc0 build onto phase 1's
+    `tests/postfreeze/` loop, and (phase 6) §3.8's `src/tychoc.c:402`, which now
+    names the raw-string scanner while claiming to name `::`. Both would have been
+    caught by `:N@token`; neither was caught by bounds. The 22 anchored citations
+    survived phase 2's `+48` shift *because* the gate checks them. Against blanket
+    anchoring: 1740 bare refs is far too many to convert by hand, and most are
+    range refs (`:37-43`) or narrative pointers where no single token is the
+    subject. So the cheap, high-yield rule is: teach the checker `:N@token` for
+    **any** path (it already parses the form), then require it for citations that
+    name a specific construct — a loop, a glob, a table entry, a `Provenance:`
+    line — and leave range and narrative refs bare. Phase 6 should settle the same
+    question for `src/tychoc.c` and the two should land as one gate change, which
+    is why this is a recommendation here and not an edit.
 
 - [ ] **Phase 5 (found by phase 1, not absorbed) — should `scripts/asan_self.sh`
       see `tests/postfreeze/`?**
@@ -692,6 +820,31 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     backtick does not auto-close. Two entries.
   - Done when: a gate exists that fails if `grammar.js` and `src/parser.c`
     disagree, and `make ci` is green with it.
+
+- [ ] **Phase 8 (found by phase 4, not absorbed) — the same rot outside
+      `FRICTION.md` and `docs/`: non-Markdown runners citing each other**
+  - Phase 4 swept `FRICTION.md` and `docs/` and, by declared exception, the one
+    line phase 1 had written into `tests/run.sh`. It did **not** sweep the rest of
+    the tree's script-to-script citations, which rot by the identical mechanism and
+    are equally invisible to `scripts/check_citations.py`'s bounds-only check.
+  - The one confirmed instance, read at HEAD: `tests/rtparity/run.py:15` cites
+    `compiler/fixpoint.sh:16-30` for the claim that `make fixpoint` "compares
+    tychoc0 against ITSELF byte-for-byte and against tychoc only BEHAVIOURALLY".
+    Both halves moved — the self-emission chain is `:29-35` and the behavioural
+    differential is `:37-43`, so `:29-43` is the range the sentence describes.
+    `:16-30` today spans `cd`/`CC=`/`mktemp` setup plus part of the chain.
+  - Not swept at all, and the reason this is a phase rather than a one-line fix:
+    nobody has counted how many such citations exist. The search is every tracked
+    non-Markdown file (`*.sh`, `*.py`, `*.ty`, `Makefile`) citing another
+    non-Markdown file with a `:N`. `compiler/tychoc0.ty` is a known population —
+    `docs/bootstrap.md:106` records its own self-citations being off by −50 —
+    and it is **frozen**, so it cannot be repaired and must be excluded by name.
+  - Done when: the population is enumerated, each live one points at the line its
+    sentence describes, `compiler/tychoc0.ty` is excluded with the reason stated,
+    and the citation gate is green.
+  - Sequencing: after phase 6, which will settle the `:N@token` question for bare
+    citations; if the gate grows an anchored form, this sweep should adopt it
+    rather than land more bare `:N` refs that rot the same way.
 
 ## Out of scope
 

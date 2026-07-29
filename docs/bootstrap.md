@@ -47,12 +47,12 @@ C = cc(B(H))       B compiles H; the emitted C is cc'd            -> exe C
 Tycho-built one.
 
 **Stage 4 — the fixpoint.** `compiler/fixpoint.sh` asserts the emitted C of `B`
-and of `C` is **byte-identical** (`compiler/fixpoint.sh:21-22`), i.e. `B == C`: the
+and of `C` is **byte-identical** (`compiler/fixpoint.sh:34-35`), i.e. `B == C`: the
 Tycho compiler reproduces itself exactly, so nothing about `tychoc`'s own
 compilation is leaking into the result. The same script then re-runs the Stage 1
-differential over `tests/*.ty` and `examples/*.ty` (`:24-30`).
+differential over `tests/*.ty` and `examples/*.ty` (`:37-43`).
 
-**Stage D — package programs.** Still in `fixpoint.sh` (`:31-53`): every
+**Stage D — package programs.** Still in `fixpoint.sh` (`:44-66`): every
 `tests/pkg/*/` package program is built by `B` in two ways — from `tychoc
 --bundle`'s post-order source stream, and through `tychoc0`'s standalone on-disk
 driver (`read_file`/`list_dir`/`args`, no `--bundle` middleman) — and both must

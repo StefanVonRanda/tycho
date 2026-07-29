@@ -232,7 +232,7 @@ are flagged here so the gap is explicit rather than hidden:
   `corelib/test/httpd` under `make corelib`; `server/main.ty`'s `error_body` and
   `usage` under `make server`), but deliberately **not** by a `tests/` fixture. The
   reason is mechanical, not an oversight: `compiler/fixpoint.sh:37` and
-  `scripts/frontparity.sh:127` feed every `tests/*.ty`, `tests/pkg/*/main.ty`,
+  `scripts/frontparity.sh:164` feed every `tests/*.ty`, `tests/pkg/*/main.ty`,
   `examples/*.ty` and `tools/*.ty` to the **frozen** `tychoc0`, whose lexer rejects
   `\r` (`compiler/tychoc0.ty:195`) and knows no adjacent-literal join. A fixture in
   `tests/` would therefore redden two runners at a file that must not be edited
@@ -271,7 +271,7 @@ are flagged here so the gap is explicit rather than hidden:
   bites, same conclusion. `exit` is a **new builtin** and divergence is a **new
   acceptance**, so a `tests/` fixture for either would be a program the live
   compiler accepts and the frozen `tychoc0` refuses — which is exactly what
-  `scripts/frontparity.sh:127` reports as a divergence, and `compiler/fixpoint.sh:37`
+  `scripts/frontparity.sh:157` reports as a divergence, and `compiler/fixpoint.sh:37`
   as a build failure. The witness is `server/main.ty`, which no runner feeds to
   `tychoc0`: it calls `exit(0)` for `--help` (status verified with `echo $?`) and
   binds `srv := match net.listen(...)` with `Err(e): die(...)` as the failure arm.
@@ -282,7 +282,7 @@ are flagged here so the gap is explicit rather than hidden:
   conclusion. All three are **new acceptances**, so a `tests/` fixture would be a
   program `tychoc` accepts and the frozen `tychoc0` refuses. Measured, not assumed:
   `println(str(b[2]))` on a `bytes` gives `line 3: str(x) can't stringify a yte`
-  from a `tychoc0` built at this commit, which `scripts/frontparity.sh:127` would
+  from a `tychoc0` built at this commit, which `scripts/frontparity.sh:157` would
   report as a divergence and `compiler/fixpoint.sh:37` as a build failure. The
   covering fixtures are therefore `corelib/test/io` (golden-validated by
   `corelib/run.sh`, whose `tychoc0` leg was cut on 2026-07-26) and the §5.2.6

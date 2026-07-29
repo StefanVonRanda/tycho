@@ -4,24 +4,24 @@
 # WHAT WAS MISSING, AND WHY THIS EXISTS
 # -------------------------------------
 # `tests/run.sh:113` compiles each `examples/*.ty` + `tests/*.ty` with `$TYCHOC`
-# alone; tychoc0 appears on the positive lane of that script nowhere. It is built
-# at `tests/run.sh:148` and used only on the *reject* lane (`:159`, `:178`), the
-# *abort* lane (`:199`) and the *diag* goldens (`:262`) — all three of which score
-# tychoc0 REFUSING something. Nothing there scores tychoc0 ACCEPTING what tychoc
-# accepted. So a program tychoc accepts and tychoc0 refuses can score `all green`.
+# alone; tychoc0 appears on the positive lane of that script nowhere. Until
+# 2026-07-26 it was built there and used on the *reject* and *abort* lanes, both
+# of which score tychoc0 REFUSING something; the freeze cut both legs
+# (`tests/run.sh:163-166`, `:199-202`) and today no line of that script runs it at
+# all. So a program tychoc accepts and tychoc0 refuses can score `all green`.
 #
 # WHAT ALREADY COVERS IT, HONESTLY
 # --------------------------------
-# `compiler/fixpoint.sh:24-30` does cover the property over the bulk of the
+# `compiler/fixpoint.sh:37-43` does cover the property over the bulk of the
 # corpus, and this lane does NOT pretend otherwise. That loop walks
-# `tests/*.ty examples/*.ty`, skips whatever tychoc cannot build (`:26 || continue`),
+# `tests/*.ty examples/*.ty`, skips whatever tychoc cannot build (`:39 || continue`),
 # and then requires B — a tychoc0-derived binary — to emit C, cc it, and match
-# tychoc's golden output (`:28-29`). A tychoc0 refusal makes `"$T/B" < "$f"` exit
+# tychoc's golden output (`:41-42`). A tychoc0 refusal makes `"$T/B" < "$f"` exit
 # nonzero, so it does redden. That is exactly why it caught plan.md Phase 33's
 # over-tightening: `tests/newtype_agg.ty:33` (`if dup == ids:`) exercised the shape,
 # and fixpoint printed `FAIL newtype_agg.ty (B differs from the C compiler)`.
-# `tests/pkg/*/` is covered the same way (`:41-52`), `tests/conc/*.ty` by
-# `tests/conc/run.sh:63-67`, `tests/abort/*.ty` by `tests/run.sh:199`, and
+# `tests/pkg/*/` is covered the same way (`:44-66`), `tests/conc/*.ty` by
+# `tests/conc/run.sh:37-61`, `tests/abort/*.ty` by `tests/run.sh:203-220`, and
 # `corelib/` by `make corelib`.
 #
 # So Phase 40's eleven over-rejections were NOT missed for want of a gate — they
@@ -35,12 +35,12 @@
 #
 # WHAT THIS LANE ADDS THAT NONE OF THE ABOVE DOES
 # -----------------------------------------------
-# 1. It names the verdict. fixpoint discards tychoc0's stderr (`:28 2>/dev/null`)
+# 1. It names the verdict. fixpoint discards tychoc0's stderr (`:41 2>/dev/null`)
 #    and reports every cause as one string, "B differs from the C compiler" — a
 #    frontend refusal, a cc failure of the emitted C, and a genuine output
 #    divergence are indistinguishable in it. Phase 40 had to re-run tychoc0 by hand
 #    to learn which. Here the failure line is the refusal and its diagnostic.
-# 2. It widens the glob. `tests/warn/*.ty` (6 programs — `tests/run.sh:291-314`
+# 2. It widens the glob. `tests/warn/*.ty` (6 programs — `tests/run.sh:260-283`
 #    runs `$TYCHOC` only) and `tools/*.ty` (3 — `tycho.ty`, `tychofmt.ty`,
 #    `lsp.ty`, built by `Makefile:38,:44,:49` with tychoc alone, and among the
 #    largest real Tycho programs in the tree) are front-checked against tychoc0 by
@@ -51,7 +51,7 @@
 # THE VERDICT, AND WHY `--emit-c` ON BOTH SIDES
 # ---------------------------------------------
 # Both compilers are invoked frontend-only. `./tychoc F --emit-c -o X` stops after
-# emitting X.c (`tests/run.sh:70` cc's it as a separate step), and `tychoc0 F
+# emitting X.c (`tests/run.sh:72` cc's it as a separate step), and `tychoc0 F
 # --emit-c` writes C to stdout. Comparing a bare `./tychoc F -o X` against tychoc0
 # would conflate tychoc's `cc` step with tychoc0's frontend exit — that is not
 # scored here, and must not be.
@@ -59,16 +59,16 @@
 # The subject is ONE direction: tychoc accepts, tychoc0 refuses. If tychoc refuses,
 # the program is skipped — tychoc's own verdict is owned by `tests/reject/` and
 # `tests/diag/`, and the opposite direction (tychoc0 fail-OPEN on an invalid
-# program) is owned by `tests/run.sh:159`/`:178`. All 15 `tests/diag/*.ty` skip
-# today by construction; they are in the glob so that the day one of them starts
-# being accepted, it is covered without a script edit.
+# program) is owned by nothing since the freeze (`tests/run.sh:163-166`). All 15
+# `tests/diag/*.ty` skip today by construction; they are in the glob so that the
+# day one of them starts being accepted, it is covered without a script edit.
 #
 # COVERAGE — what is in, and what is NOT
 # -------------------------------------
 # IN:  examples/*.ty, tests/*.ty, tests/conc/*.ty, tests/warn/*.ty,
 #      tests/abort/*.ty, tests/diag/*.ty, tools/*.ty, compiler/tychoc0.ty,
 #      tests/pkg/*/main.ty (standalone driver, the `tychoc0 <entry>` form
-#      `compiler/fixpoint.sh:48` uses), and the four per-example package entry
+#      `compiler/fixpoint.sh:61` uses), and the four per-example package entry
 #      points `examples/{fetch,sqlite,weblog,webserver}/<entry>.ty` (below).
 # NOT: tests/postfreeze/*.ty — programs written ON PURPOSE to use syntax the
 #      live compiler accepts and the frozen tychoc0 does not, so that new
