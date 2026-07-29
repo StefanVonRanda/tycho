@@ -7,6 +7,19 @@
 # the C compiler, B and C by a Tycho-built compiler, so cB == cC proves the Tycho
 # compiler reproduces itself exactly. Also checks B differentially reproduces
 # the C compiler's golden output across tests/ + examples/.
+#
+# OUT OF SCOPE, ON PURPOSE: tests/postfreeze/*.ty. Those programs are written to
+# use syntax the LIVE tychoc accepts and the FROZEN tychoc0 does not, so B — a
+# tychoc0-derived binary — cannot build them and must never be asked to. Both
+# loops below (`:37` and `:81`) glob `tests/*.ty`, which does not descend into
+# subdirectories, so the exclusion is structural: do NOT add tests/postfreeze to
+# either glob. Measured, not assumed: a tychoc0 built at HEAD reports `parse:
+# line 34: unexpected token` on tests/postfreeze/nested_pattern.ty, which here
+# would surface as the undifferentiated `FAIL <nm> (B differs from the C
+# compiler)` at `:42`. That directory is gated by tests/run.sh:135-153 instead,
+# with the same native-vs-ASan + golden discipline; scripts/frontparity.sh's
+# COVERAGE block and docs/spec/appendix-e-conformance.md §E.2 record the same
+# boundary.
 set -u
 cd "$(dirname "$0")/.."
 CC="${CC:-cc}"

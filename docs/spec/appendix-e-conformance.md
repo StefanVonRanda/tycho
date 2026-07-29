@@ -147,7 +147,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §14.4 | loops; `range` step 0 reject/abort | `tests/foreach`, `tests/while_loop`, `tests/range_negative_step`, `reject/range_step_zero_lit`, `tests/abort/range_step_zero` |
 | §14.4 | `break` / `continue` | `tests/break_continue`, `tests/loop_return` |
 | §19.4 | `match` statement; exhaustive; wildcard-last | `tests/enums`, `tests/matchwild`, `reject/match_non_exhaustive`, `reject/match_dup_arm`, `reject/match_wildcard_not_last` |
-| §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `corelib/test/result` (`why`, `io_why`) — no `tests/` fixture, see the note below |
+| §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/postfreeze/nested_pattern`, `corelib/test/result` (`why`, `io_why`) — see the note below on why the `tests/` fixture lives in `postfreeze/` |
 
 ### §15 Functions
 
@@ -231,7 +231,7 @@ are flagged here so the gap is explicit rather than hidden:
   covered by committed, golden-validated programs (`corelib/test/csv` and
   `corelib/test/httpd` under `make corelib`; `server/main.ty`'s `error_body` and
   `usage` under `make server`), but deliberately **not** by a `tests/` fixture. The
-  reason is mechanical, not an oversight: `compiler/fixpoint.sh:24` and
+  reason is mechanical, not an oversight: `compiler/fixpoint.sh:37` and
   `scripts/frontparity.sh:127` feed every `tests/*.ty`, `tests/pkg/*/main.ty`,
   `examples/*.ty` and `tools/*.ty` to the **frozen** `tychoc0`, whose lexer rejects
   `\r` (`compiler/tychoc0.ty:195`) and knows no adjacent-literal join. A fixture in
@@ -241,8 +241,25 @@ are flagged here so the gap is explicit rather than hidden:
 - **§14.3.1 nested patterns and §6.2(7)'s tuple-element checking** — same
   mechanism, same conclusion: both are covered by `corelib/test/result`, which
   `corelib/run.sh` golden-validates and no runner feeds to the frozen `tychoc0`,
-  and deliberately **not** by a `tests/` fixture, because `tests/*.ty` and
-  `tests/pkg/*/main.ty` go to `tychoc0` and its grammar has neither form. Measured,
+  and deliberately **not** by a `tests/*.ty` fixture, because `tests/*.ty` and
+  `tests/pkg/*/main.ty` go to `tychoc0` and its grammar has neither form.
+  **Amended 2026-07-29:** nested patterns now DO have a `tests/` fixture —
+  `tests/postfreeze/nested_pattern` — because that directory is the third place,
+  after `server/` and `examples/corelib/`, held outside the `tychoc0` lanes on
+  purpose. It is not an exception carved for this clause; it is where any fixture
+  for post-freeze syntax goes from now on, which is what closes the open
+  `FRICTION.md` item "new language syntax can no longer be given a `tests/`
+  fixture". The exclusion is structural, not a skip list: `compiler/fixpoint.sh:37`
+  and `:81` and `scripts/frontparity.sh:164` all glob `tests/*.ty`, which does not
+  descend into subdirectories, so nothing under `tests/postfreeze/` is ever handed
+  to a `tychoc0`-derived binary. `tests/run.sh:135-153` runs it with the full
+  native-vs-ASan + golden discipline, so the lane is gated, only not by the two
+  frozen-compiler gates. Measured, not assumed — this is what would happen if it
+  leaked: a `tychoc0` built at HEAD reports `parse: line 34: unexpected token` on
+  `tests/postfreeze/nested_pattern.ty` (its line 34 is the `Err(TooBig(n))` arm;
+  the payload-free `Err(NotFound)` on line 33 does not redden it, because that
+  grammar reads the name as a payload binding). §6.2(7) is unchanged by this and
+  keeps `corelib/test/result` as its only witness. Measured,
   not assumed: rewriting `httpd.read_request_capped` to `return (Err(why), buf)`
   makes `examples/webserver/run.sh` report `returning
   (Result(,httpd__ReqErr),str) but this function returns
@@ -254,7 +271,7 @@ are flagged here so the gap is explicit rather than hidden:
   bites, same conclusion. `exit` is a **new builtin** and divergence is a **new
   acceptance**, so a `tests/` fixture for either would be a program the live
   compiler accepts and the frozen `tychoc0` refuses — which is exactly what
-  `scripts/frontparity.sh:127` reports as a divergence, and `compiler/fixpoint.sh:24`
+  `scripts/frontparity.sh:127` reports as a divergence, and `compiler/fixpoint.sh:37`
   as a build failure. The witness is `server/main.ty`, which no runner feeds to
   `tychoc0`: it calls `exit(0)` for `--help` (status verified with `echo $?`) and
   binds `srv := match net.listen(...)` with `Err(e): die(...)` as the failure arm.
@@ -266,7 +283,7 @@ are flagged here so the gap is explicit rather than hidden:
   program `tychoc` accepts and the frozen `tychoc0` refuses. Measured, not assumed:
   `println(str(b[2]))` on a `bytes` gives `line 3: str(x) can't stringify a yte`
   from a `tychoc0` built at this commit, which `scripts/frontparity.sh:127` would
-  report as a divergence and `compiler/fixpoint.sh:24` as a build failure. The
+  report as a divergence and `compiler/fixpoint.sh:37` as a build failure. The
   covering fixtures are therefore `corelib/test/io` (golden-validated by
   `corelib/run.sh`, whose `tychoc0` leg was cut on 2026-07-26) and the §5.2.6
   specification example, which `scripts/spec_check.sh` compiles and runs. The

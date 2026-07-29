@@ -132,6 +132,26 @@ for d in tests/pkg/*/; do
     run_one "$entry" "pkg_$name" "tests/pkg/$name.out" "$in"
 done
 
+# Post-freeze programs. tests/postfreeze/<name>.ty uses syntax the LIVE compiler
+# accepts and the FROZEN compiler/tychoc0.ty does not, so it gets the same
+# native-vs-ASan + golden discipline as everything above but lives in its own
+# directory to stay OUT of the two tychoc0-derived lanes:
+# `compiler/fixpoint.sh:24`/`:68` and `scripts/frontparity.sh:152-153` glob
+# `tests/*.ty`, which does not descend, so nothing here is ever fed to a
+# tychoc0-derived binary. That is the whole point of the directory — before it
+# existed, any fixture for syntax added after the 2026-07-26 freeze reddened
+# `make ci` by construction (FRICTION.md; docs/spec/appendix-e-conformance.md
+# §E.2 records the same mechanism for `\r`, adjacent-literal join, nested
+# patterns and `exit`). Goldens at tests/postfreeze/<name>.out, stdin at
+# tests/postfreeze/<name>.in. Single files, like the main loop — a post-freeze
+# PACKAGE would want its own loop, and none exists yet.
+for hi in tests/postfreeze/*.ty; do
+    [ -e "$hi" ] || continue
+    name="$(basename "$hi" .ty)"
+    in="tests/postfreeze/$name.in"; [ -f "$in" ] || in=/dev/null
+    run_one "$hi" "postfreeze_$name" "tests/postfreeze/$name.out" "$in"
+done
+
 # Negative paths. tests/reject/*.ty are invalid programs the compiler must
 # REFUSE (nonzero exit + a diagnostic on stderr/stdout) — guards against
 # fail-open parsing/typechecking. tests/abort/*.ty are valid programs whose

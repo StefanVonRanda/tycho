@@ -70,7 +70,19 @@
 #      tests/pkg/*/main.ty (standalone driver, the `tychoc0 <entry>` form
 #      `compiler/fixpoint.sh:48` uses), and the four per-example package entry
 #      points `examples/{fetch,sqlite,weblog,webserver}/<entry>.ty` (below).
-# NOT: tests/reject/** — the other direction, already gated (see above).
+# NOT: tests/postfreeze/*.ty — programs written ON PURPOSE to use syntax the
+#      live compiler accepts and the frozen tychoc0 does not, so that new
+#      language work can have a `tests/` fixture at all (the open FRICTION.md
+#      item). The glob at :164 says `tests/*.ty`, which does not descend, so the
+#      exclusion is structural and needs no code here — do not "fix" it by
+#      adding tests/postfreeze/*.ty to that list, which would redden this lane at
+#      documented, intended state exactly as globbing examples/corelib/ would.
+#      Measured: tychoc0 built at HEAD gives `parse: line 34: unexpected token`
+#      on tests/postfreeze/nested_pattern.ty. tests/run.sh:135-153 runs that
+#      directory with the full native-vs-ASan + golden discipline, so it is
+#      gated, just not by THIS lane. Appendix E §E.2 records it alongside the
+#      two examples/corelib/ divergences.
+#      tests/reject/** — the other direction, already gated (see above).
 #      corelib/ and examples/corelib/ — `make corelib` runs both compilers over
 #      them with per-module dependency skips this lane does not replicate, the
 #      same boundary `scripts/asan_self.sh:69-70` draws. Also `examples/corelib/`
