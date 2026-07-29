@@ -104,6 +104,64 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   implicit step of 1 and so has no zero-step case at all. Phase 9 must state this
   as a deliberate trade, not omit it.
 
+## Status — PLAN COMPLETE
+
+All ten phases done and committed, `make ci` green at `CI_EXIT=0` in 1062s on
+2026-07-30. Evidence for each phase is under its own bullet; phase 10 carries the
+per-lane coverage table.
+
+**Commits, in the order they landed** (note phase 8 landed *before* phase 7 —
+the tooling had to understand `;` and `..<` before the counting form was deleted):
+
+| commit | phase |
+|---|---|
+| `49ec39f` | the plan itself |
+| `1b93727` | 1 — retire the `tychoc0` freeze lanes |
+| `f7da4b1` | 2 — fold `tests/postfreeze/` back into `tests/` |
+| `ad92444` | 3 — lex `;` and `..<` |
+| `f4c0afd` | 4 — three-clause `for` and bare `for:` |
+| `d66713c` | 5 — `parallel for i in 0..<N` |
+| `6ca63ca` | (interstitial) repair Appendix E's dead postfreeze citations |
+| `b12e356` | 6 — rewrite every `range()` loop |
+| `b2db983` | 8 — `tychofmt`, LSP and both editor grammars learn `;` and `..<` |
+| `3f68a00` | 7 — delete the counting form and the `range` builtin |
+| `a4f2991` | 9 — the spec |
+| this commit | 10 — the full sweep |
+
+**What shipped.** `for` now has **four shapes**: the three-clause
+`for i := 0; i < n; i += 1:` (new), the bare infinite `for:` (new), the condition
+form `for C:` (already existed, untouched) and the foreach `for x in xs:`
+(untouched). `parallel for` gets its own counting spelling
+`parallel for i in 0..<N:`, legal **only** there — a sequential `for i in 0..<N:`
+is refused, so there is exactly one blessed sequential counting form.
+**`range()` is gone**: not a name the compiler knows, and no `.ty` file in the
+tree uses it. 549 call sites were rewritten.
+
+**Three deliberate losses**, none of them accidents, all of them written into the
+tree rather than only here:
+
+1. **Continuous `tychoc0` checking.** `scripts/frontparity.sh` and
+   `compiler/fixpoint.sh` are retired; a change that silently narrows what
+   `src/tychoc.c` accepts no longer has a second implementation to disagree with
+   it. Nothing replaces them. Recorded in both script headers, `ROADMAP.md`,
+   `docs/architecture.md` and `CLAUDE.md`.
+2. **The zero-step guarantee.** `range()` refused a literal `0` step at compile
+   time and aborted on a runtime `0`. A three-clause post clause is arbitrary
+   code, so `for i := 0; i < n; i += 0:` is an infinite loop no compiler can
+   diagnose; `0..<N` has an implicit step of 1 and so has no zero-step case at
+   all. Stated as a trade in the spec by phase 9.
+3. **Bounds-check elision at 223 sequential sites across 97 files.** The
+   recogniser is gated on `S_FORRANGE`'s `r_start`/`r_stop`/`r_step`
+   (`src/tychoc.c:10791-10801`) and `S_FOR3` has no arm, so those sites now emit
+   the *checked* accessor. Correctness is unaffected — the fallback is the safe
+   path — which is why every golden held and why no gate caught it. Open as
+   phase 27, and phase 10 confirmed `bench-guard` still cannot see it.
+
+**24 unchecked phases remain** in "Carried forward", none blocking. Two of them
+are this plan's own follow-ups (27 bounds-check elision, 30 the dead `r_step`)
+and are ordered: 27 before 30. Note also that phase 28's box is unticked while
+its own last bullet says "Closed by phase 7" — filed as phase 38.
+
 ## Phases
 
 - [x] **Phase 1 — retire the `tychoc0` freeze lanes**
@@ -1876,12 +1934,180 @@ tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
   Markdown only and cannot affect a compiled artifact, per `CLAUDE.md`'s gate
   budget. `make ci` is phase 10's, once.
 
-- [ ] **Phase 10 — the full sweep**
+- [x] **Phase 10 — the full sweep**
   - `make ci`, once. Report per-lane whether the new loop forms are actually
     exercised — the previous plan's phase 4 found the fuzz and TSan lanes
     provably never reached its new code, and `fuzz/gen.py` will have the same
     blind spot here unless it generates loops.
   - Done when: `CI GREEN`, exit 0.
+
+  **VERIFIED 2026-07-30 — `CI GREEN`, `CI_EXIT=0`, 1062s wall (17m42s).**
+  Observed, not derived: the run was wrapped
+  `make ci > …/ci10.log 2>&1; echo "CI_EXIT=$?" >> …` and the log's last line is
+  `CI_EXIT=0`. `LD_PRELOAD` was empty (`echo "[$LD_PRELOAD]"` → `[]`), so no
+  sanitizer lane ran under the tmux shim. All thirteen numbered steps plus every
+  sub-lane ran; nothing was skipped except `image` (missing `libpng`, a
+  pre-existing host dependency gap, not a lane failure).
+
+  Counts, from the log: `make test` **passed 543 failed 0**; `make ilp32`
+  **passed 543 failed 0**; `make conc` **passed 37 failed 0**;
+  `make fuzz N=200` **ok=200 skip=0 timeout=0 FAIL=0**;
+  `make fuzz-reject N=200` **accepted=31 rejected=169 FAIL=0**;
+  `make fuzz-leak N=150` **ok=150 skip=0 FAIL=0**; `editors-check` parsed the
+  corpus at **827 .ty files**; every `tools-check` sub-lane true, `semtok=True`
+  included.
+
+  ### THE SWEEP FOUND A REGRESSION OF THIS CHAIN'S OWN, AND IT BLOCKED CI
+
+  The first `make ci` of this phase was killed at step 2 once the cause was
+  identified by reading, not by waiting: **`fuzz/gen.py` still emitted
+  `for i in range(...)`**, at 18 statement sites and 9 more inside the fixed
+  helper prelude, and phase 7 deleted `range()`. Every generated program was
+  therefore rejected, and `fuzz/run.py:161-163`'s 30% skip ceiling turns that
+  into a hard exit 1 — so step **[6/13]** could not have passed.
+
+  Measured before the fix (`./tychoc --emit-c` over freshly generated seeds):
+  **25/25 seeds rejected**, 270 emitted `range()` loops, every one carrying
+  phase 7's own diagnostic
+  `` `range()` was removed: write `for i := 0; i < N; i += 1:` to count ``.
+  This is unambiguously this chain's regression: phase 6 swept `.ty` files and
+  phase 7 swept the compiler, and neither swept the Python that *writes* Tycho.
+  `fuzz/gen.py` is the only file this phase changed.
+
+  Fix: two helpers, `Gen.count()` (`fuzz/gen.py:75`) and `Gen.countdown()`
+  (`fuzz/gen.py:78`), plus the two `parallel for … in 0..<N` sites
+  (`fuzz/gen.py:1062`, `fuzz/gen.py:1065`) and the nine prelude loops rewritten
+  in place. The semantic hazard is written down at `fuzz/gen.py:71-74`:
+  `range(len(a))` evaluated `len(a)` **once**, the three-clause condition
+  re-evaluates it every iteration, so `count()` is only safe over a body that
+  does not change the length it counts. All 27 call sites were checked
+  individually against that rule; none mutates the length it counts over.
+
+  A **second, pre-existing** fault surfaced behind the first and had to be fixed
+  for the lane to be clean: `fresh("i")` produces `i8`, `i16`, `i32`, `i64` as
+  the uid counter passes them, and those are reserved words
+  (`src/tychoc.c:197-205`). 4 of 40 seeds died on it. Verified on 2026-07-30
+  that this is **not** new with the three-clause form — `i8 := 5`,
+  `for i8 in xs:` (foreach) and `parallel for i8 in 0..<3:` are all refused with
+  `expected an expression`. The deleted `for i8 in range(n):` cannot be tested
+  directly, but it bound its counter through the same loop-variable slot the
+  foreach form still uses, so those seeds were already being counted as silent
+  skips before this plan — the fault is pre-existing, merely unmasked once the
+  `range()` rejections stopped hiding it. `Gen.RESERVED` (`fuzz/gen.py:54`) now
+  skips the colliding uids.
+
+  After the fix, before `make ci`: 60/60 seeds accepted; then the three fuzz
+  lanes run directly — `run.py 40` → ok=40 skip=0 FAIL=0, `run_leak.py 12` →
+  ok=12 skip=0 FAIL=0, `run_reject.py 40` → accepted=7 rejected=33 FAIL=0.
+
+  **Ordering, stated so the green is not overclaimed.** Every *functional* change
+  to `fuzz/gen.py` landed before `make ci` started; `git status --short` was
+  checked immediately before launch and showed exactly one modified file. One
+  edit was made *after* the run finished: the comment block at
+  `fuzz/gen.py:43-54` originally claimed the old `for i8 in range(n):` spelling
+  "tolerated" a reserved loop variable, which is an unverified assertion. It was
+  measured, found false (the foreach and `parallel for` binders refuse `i8` too),
+  and the comment corrected. A comment in a Python file cannot affect a compiled
+  artifact, and the two gates that *can* see it were re-run green afterwards:
+  `python3 scripts/check_citations.py` → 144 anchored / 2043 bare / 102
+  source→doc / 121 source→source, ok; `sh scripts/check_links.sh` → 134 files,
+  no dead links.
+
+  ### Per-lane coverage: EXERCISED vs PROVABLY NOT
+
+  Method, stated so it can be re-run and disbelieved: for each lane, the exact
+  input set the lane consumes was matched line-by-line against three anchored
+  patterns over **non-comment** lines only — `^\s*for\s+IDENT\s*:?=.*;.*;.*:$`
+  for the three-clause form, `^\s*for:\s*$` for the bare form, and `0\.\.<` for
+  the parallel counting form. Comment-only lines are excluded because a naive
+  `\bfor\s*:` scan counts prose about `for:` and inflates the bare-form total
+  from 5 to 14. For the fuzz lanes the measurement is **dynamic**: `fuzz/gen.py`
+  was run over seeds 1..200 — the exact range `make ci` ran — and its output
+  matched with the same patterns.
+
+  | lane | input set | three-clause | bare `for:` | `0..<N` |
+  |---|---|---|---|---|
+  | [2] `make test` · [2b] `ilp32` · [2c] `asan-self` | `tests/` less `tests/conc/` (539 files) | **160** | **5** | **3** |
+  | [4] `make conc` (native + ASan + **TSan**) | `tests/conc/` (37 files) | **12** | 0 | **16** |
+  | [3] `corelib` + `corelib-examples` | `corelib/` (75 files) | **83** | 0 | 0 |
+  | [3] `site`/`raytrace`/`mandelbrot` · [3b] `entrypoints` | `examples/` (70 files) | **95** | 0 | **1** |
+  | [2c] `asan-self` · [3b] `entrypoints` | `compiler/` (52 files) | **38** | 0 | 0 |
+  | [9] `tools-check` · [9b] `editors-check` | **every** tracked `.ty` (827 files) | **538** | **5** | **23** |
+  | [10] `bench-guard` | `bench/prongB/{binary_trees,maptree}.ty` | **4** | 0 | 0 |
+  | [6][8] `fuzz` / `fuzz-leak` (seeds 1..200) | generated | **2268 in 200/200** | **0 in 0/200** | **34 in 33/200** |
+  | [12] `spec-check` runnable examples | ```` ```tycho ```` + ```` ```output ```` pairs in `docs/spec/` | **1** (`docs/spec/03-types.md:237`) | 0 | 0 |
+  | [5] `make ffi` | `tests/ffi/main.ty` | **0** | **0** | **0** |
+  | [11] `make recursion` | inputs generated inline by `tests/recursion/run.sh` | **0** | **0** | **0** |
+  | [7] `fuzz-reject` | `fuzz/gen_malformed.py` token soup | **0** | **0** | **0** |
+  | [13] `check-links` | Markdown links + citations | n/a | n/a | n/a |
+
+  **Provably exercised** (input set contains the form *and* the lane runs the
+  program, not merely compiles it): `make test`, `make ilp32`, `make asan-self`,
+  `make conc` (including the **TSan** leg — 16 `0..<N` sites in 16 of 37 conc
+  fixtures, so unlike the previous plan's phase 4 this feature *is* under the
+  race detector), `corelib`, the three dogfoods, `tools-check`,
+  `editors-check`, `bench-guard`, `spec-check`, and after this phase's fix
+  **all three fuzz lanes**.
+
+  **Provably NOT exercised**, and each for a reason rather than an oversight:
+  `make ffi` (its one fixture `tests/ffi/main.ty` has no loop at all),
+  `make recursion` (its inputs are deep paren/operator nests generated inline,
+  no loops), and `fuzz-reject` (malformed token soup — it asserts fail-closed,
+  not loop semantics).
+
+  **The bare `for:` form is the thin spot, and it is thinner than the table
+  suggests.** All 5 occurrences in the tree are in **one file**,
+  `tests/for_bare.ty` — `grep -rncE '^[[:space:]]*for:[[:space:]]*$'` over every
+  `.ty` returns exactly one path. So the bare form is covered by `make test`,
+  `ilp32`, `asan-self`, `tools-check` and `editors-check` *through a single
+  fixture*, and by **no** fuzz seed (0/200), no conc fixture, no runnable spec
+  example, no benchmark. Filed as phase 36.
+
+  ### Phase 19 — does the blind spot recur?
+
+  **Partly, and the fixed half is fixed.** Phase 19 recorded 0/177 fuzz programs
+  and 0/11 conc fixtures for element-wise array arithmetic. Here the fuzz lane
+  reaches the three-clause form in **200/200** programs and `0..<N` in **33/200**
+  — because this phase had to teach `fuzz/gen.py` the new spellings to unblock
+  CI at all, which closed the fuzz half as a side effect of the regression fix
+  rather than as new work. The conc half is closed too: 16 `0..<N` sites across
+  `tests/conc/`, under TSan. What *does* recur, narrowly, is bare `for:` — no
+  generator emits it (phase 36). Phase 19 itself stays open: it is about
+  element-wise array arithmetic, a different construct, and nothing here touched
+  `fuzz/gen.py`'s arithmetic generators.
+
+  ### Phase 27 — can `bench-guard` see the elision loss? Still no.
+
+  Confirmed against **this** run. `bench/guard.sh:27` iterates exactly
+  `binary_trees maptree`. Those two files contain 4 three-clause loops between
+  them (`bench/prongB/binary_trees.ty` 3, `bench/prongB/maptree.ty` 1) and
+  **zero** loops of the elidable shape — a scan for
+  `for IDENT := 0; IDENT < len(` over both files returns 0. So the guard
+  exercises `S_FOR3` codegen but cannot observe the bounds-check elision the
+  recogniser at `src/tychoc.c:10791-10801` no longer reaches, exactly as phase 27
+  states. Its observed numbers this run:
+
+      ok    binary_trees   tycho=273ms  C=725ms  (37% of C, gate <60%)
+      ok    maptree        tycho=120ms  C=506ms  (23% of C, gate <60%)
+      bench-guard: ok (tycho beats C on tree workloads)
+
+  Green with margin, and green for a reason unrelated to the 223 elision sites.
+  Phase 27's "add an elision-shaped workload to `bench/guard.sh`" remains the
+  only way to make this class observable. Not done here — out of scope.
+
+  ### Phase 30 — `r_step`
+
+  Untouched, as its own filing requires (it must not land before phase 27). No
+  lane in this run can distinguish the three unreachable guards from live code,
+  which is precisely why phase 7 annotated rather than deleted them.
+
+  ### What this phase did NOT do
+
+  No feature was added. `fuzz/gen.py` gained no bare-`for:` generator, no
+  elision-shaped benchmark was written, no unreachable guard was deleted, and
+  the two non-CI parity runners that also still emit `range()` were left alone
+  and filed (phase 37). The only file changed is `fuzz/gen.py`, and only to make
+  it emit the language that now exists.
 
 ## Carried forward
 
@@ -2210,6 +2436,71 @@ Unclosed discoveries from the two previous plans; none blocking.
   - Done when: neither file describes a deleted syntax as the trigger, and
     `RESULTS.md` says which form the recorded numbers were measured with.
   - Verify: `make test` (the fixture), `python3 scripts/check_citations.py`.
+
+- [ ] **Phase 36** — **nothing generates the bare `for:` form, and it lives in a
+      single fixture.** Found by phase 10's coverage sweep. All 5 non-comment
+      occurrences of `^\s*for:\s*$` in the whole tree are in **one file**,
+      `tests/for_bare.ty`; `fuzz/gen.py` emits it in **0 of 200** seeds, no
+      `tests/conc/` fixture uses it, no runnable `docs/spec/` example uses it, no
+      benchmark uses it. So the form is asserted by exactly one golden, and a
+      codegen or arena regression specific to an unconditional loop would be
+      caught only if it happened to break that one program.
+  - This is the narrow recurrence of phase 19's blind spot. The *other* two forms
+    are covered: phase 10 had to teach `fuzz/gen.py` the three-clause form and
+    `0..<N` to unblock CI, so the fuzzer now reaches them in 200/200 and 33/200
+    programs respectively. Only the bare form has no generator.
+  - Scope: `fuzz/gen.py` — a `bare_loop` kind that emits `for:` with a
+    guaranteed-taken `break` (an unterminated loop would hang the lane, so the
+    generator must prove termination the way `loop_vars` already proves the
+    counter is never written), plus at least one `tests/conc/` fixture using it.
+  - Done when: a non-zero number of the 200 CI seeds contain `for:`, measured the
+    way phase 10 measured it, and `make fuzz N=200` stays at skip=0.
+  - Verify: `python3 fuzz/run.py 60`, then `make test`, then `make conc`.
+
+- [ ] **Phase 37** — **two hand-run fuzz lanes still emit `range()` and are dead
+      on arrival.** Found by phase 10 while fixing `fuzz/gen.py`.
+      `fuzz/run_parforparity.py` embeds **28** `parallel for i in range(...)`
+      programs and `fuzz/run_pkg.py` one `for j in range(n):` helper; both were
+      annotated by phase 1 for the `tychoc0` retirement (their headers already
+      name "the breaking loop-syntax change of 2026-07-29") but neither had its
+      *emitted Tycho* rewritten, so every program they feed the compiler is now
+      rejected outright.
+  - **They are not in `make ci`**, which is why the sweep stayed green:
+    `grep -rn 'run_parforparity\|run_pkg\|run_eqparity\|run_typeparity\|run_unaryparity' Makefile scripts/ .githooks/`
+    returns nothing. `scripts/ci.sh` runs only `run.py`, `run_reject.py` and
+    `run_leak.py`. So this costs nothing today and everything the moment someone
+    reaches for the `expect`-table oracle that phase 22 wants to extend.
+  - Note `fuzz/run_parforparity.py:115` is `parallel for i in range(0, 10, 2)`,
+    and `fuzz/run_parforparity.py:171` and `fuzz/run_parforparity.py:179` are
+    `range(1, 8)` — a non-unit step and a non-zero start. Those
+    have **no** `0..<N` equivalent, so they cannot be respelled; they are now
+    tests of a syntax that does not exist and each needs a decision (delete, or
+    convert into a rejection case), not a mechanical rewrite. Same class of
+    decision phase 28 recorded for its three deleted fixtures.
+  - Sibling of phase 22, which wants `run_typeparity.py` to grow a real oracle.
+    Do them together: both are "the parity runners lost their second opinion and
+    nobody re-pointed them at anything".
+  - Done when: every `.py` under `fuzz/` that emits Tycho emits only spellings
+    the current compiler accepts, or says in its header that it is retired.
+  - Verify: run each touched runner directly; `grep -rn 'in range(' fuzz/*.py`
+    shows only Python's own `range`.
+
+- [ ] **Phase 38** — **`plan.md`'s own record is malformed around phases 28-29,
+      and one closed phase reads as open.** Found by phase 10 while counting the
+      carried-forward list. Phase 28's closing bullets — "The permanent half is
+      already owned elsewhere…", "Done when: `plan.md` records which of the two
+      options was taken…" and "**Closed by phase 7**: the option taken was
+      *retire early on purpose*" — sit underneath the **phase 29** bullet, so
+      phase 29 appears to be about fixtures and test counts when it is about the
+      LSP's keyword set. And phase 28's checkbox is still `- [ ]` although its own
+      text says it is closed.
+  - Left alone deliberately: phase 10's scope was the sweep, and silently
+    re-parenting bullets in a record other phases cite is exactly the kind of edit
+    that should be its own commit. Same rule phase 2 applied to the archives.
+  - Done when: phase 28's bullets sit under phase 28, its box is ticked, phase 29
+    reads as the LSP keyword-set phase it is, and the "Status — PLAN COMPLETE"
+    unchecked count is corrected to match.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
 ## Out of scope
 
