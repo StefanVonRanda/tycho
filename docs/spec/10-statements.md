@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3054-3408` (`parse_if` `:2676@parse_if`,
-> `parse_match` `:2782@parse_match`, `for` `:3191-3277`, `select` `:3135-3172`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3054-3408` (`parse_if` `:2710@parse_if`,
+> `parse_match` `:2816@parse_match`, `for` `:3191-3277`, `select` `:3135-3172`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks

@@ -373,7 +373,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 `reserve` MUST be rejected on a `bounded` value.
 
 > Provenance: the `bounded` branch of `parse_type_inner`,
-> `src/tychoc.c:1863-1880@"bounded"` (capacity `:1866-1875`, element
+> `src/tychoc.c:1897-1914@"bounded"` (capacity `:1866-1875`, element
 > restriction `:1877-1878`); its twin
 > `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
 > deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
@@ -382,7 +382,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > (`arrc_sized_b` `src/tychoc.c:736-748@arrc_sized_b`, messages `:634@task_container_err` and `:674@chan_container_err`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
 > Rejections: slice `src/tychoc.c:4996-4997`, `pop` `:5647-5648`, `reserve`
-> `:5669@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
+> `:5703@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
 > `:11197-11200`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
@@ -459,4 +459,4 @@ is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is 
 one-byte glyph.)
 
 > Provenance: `src/tychoc.c:5875-5908` (equality/ordering resolver); function-
-> value identity equality `:8406@identity equality`.
+> value identity equality `:8487@identity equality`.

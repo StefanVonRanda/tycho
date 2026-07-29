@@ -2414,3 +2414,17 @@ char *tycho_map_if_str(Arena *a, TychoMapIF m) {
     }
     return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
 }
+
+/* Element-wise arithmetic on two growable [T] arrays needs equal lengths, and a
+ * [T] length is only known at runtime. A mismatch is a bug in the program, not
+ * a value to invent a result for -- padding the short side or truncating the
+ * long one would both be a silent wrong answer -- so name BOTH lengths and die,
+ * the same shape as an out-of-bounds index (tycho_f2i and tycho_cap_check near
+ * the top of this file are the model; see the note left in their place).
+ * A fixed [N]T mismatch never reaches here: N is static, so the compiler
+ * refuses it outright. */
+static void tycho_ew_len(tycho_int a, tycho_int b) {
+    fprintf(stderr, "tycho: element-wise arithmetic on arrays of different lengths "
+                    "(%" TY_PRId " and %" TY_PRId ")\n", a, b);
+    exit(1);
+}

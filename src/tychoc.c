@@ -997,6 +997,40 @@ static Type base_of(Type t) { return IS_NEWTYPE(t) ? nt_under(t) : t; }
  * -fwrapv; u32/u64 wrap natively as unsigned. */
 static int is_uint(Type t)      { return t == T_U8 || t == T_U16 || t == T_U32 || t == T_U64; }
 static int is_sized_int(Type t) { return is_uint(t) || t == T_I8 || t == T_I16 || t == T_I32 || t == T_I64; }
+/* Element-wise arithmetic on arrays (post-freeze): is `x OP y` legal for two
+ * values of element type `et`? The whole rule is that `a OP b` on arrays is
+ * legal IFF `a[i] OP b[i]` is legal, so this table is DERIVED from the scalar
+ * arms of resolve_expr's binary chain (the arms that end in "arithmetic
+ * requires two ints or two floats"), not invented:
+ *
+ *   int                       + - * / %   the int arm; % from the modulo/bitwise arm
+ *   u8/u16/u32/u64/i8..i64    + - * / %   the sized-numeric arm; % likewise
+ *   float                     + - * /     the float arm; % refused (not an integer)
+ *   f32                       + - * /     the f32 arm;    % refused (not an integer)
+ *   newtype over int/float    + - * /     the newtype arm; % refused -- the modulo arm
+ *                                          tests `lt != T_INT`, true for a newtype,
+ *                                          and is_sized_int() is false for one too
+ *   char                      + -         the char arm (char±char -> char); no * / %
+ *
+ * Everything else (string, bytes, bool, struct, nested array, ...) has no
+ * scalar arithmetic, so it gets none here. `&`, `|`, `^`, `<<` and `>>` are NOT
+ * arithmetic and are deliberately out: they never reach this table, because the
+ * bitwise and shift arms run first and refuse an array operand exactly as they
+ * do today. */
+static int elem_arith_ok(int op, Type et) {
+    if (op == TK_PERCENT) return et == T_INT || is_sized_int(et);
+    if (op != TK_PLUS && op != TK_MINUS && op != TK_STAR && op != TK_SLASH) return 0;
+    if (et == T_INT || et == T_FLOAT || et == T_F32 || is_sized_int(et)) return 1;
+    if (IS_NEWTYPE(et) && (nt_under(et) == T_INT || nt_under(et) == T_FLOAT)) return 1;
+    if (et == T_CHAR) return op == TK_PLUS || op == TK_MINUS;
+    return 0;
+}
+/* the five arithmetic operators, spelled for a diagnostic (op_str is a codegen
+ * helper defined far below this point in the file). */
+static const char *arith_op_spell(int op) {
+    return op == TK_PLUS ? "+" : op == TK_MINUS ? "-" : op == TK_STAR ? "*"
+         : op == TK_SLASH ? "/" : "%";
+}
 /* bit width of a sized/native integer type (for shift over-width guards). */
 static int int_width(Type t) {
     if (t == T_U8  || t == T_I8)  return 8;
@@ -5936,6 +5970,53 @@ static Type resolve_expr_inner(Expr *e) {
                            type_name(lt), type_name(rt));
                 return e->type = lt;   /* result width = the shifted value's */
             }
+            /* Element-wise arithmetic on arrays (post-freeze). `a OP b` yields a
+             * FRESH array whose i-th element is `a[i] OP b[i]`; value semantics
+             * means neither operand is aliased or mutated by it. Legality is
+             * exactly the scalar rule for the element type — see elem_arith_ok,
+             * which derives the per-type operator set from the scalar arms below.
+             *
+             * Placed BEFORE the modulo/bitwise arm on purpose: `%` on two int
+             * arrays has to reach this arm rather than die there. `&`, `|`, `^`
+             * and the two shifts are not arithmetic and are not listed here, so
+             * they fall through to those arms and refuse an array exactly as
+             * they do today.
+             *
+             * One array and one scalar is NOT handled here: broadcast is a
+             * separate change, and until it lands `a * 2` keeps its current
+             * diagnostic from the end of this chain rather than a new one that
+             * would have to be unwritten. */
+            if (is_array(lt) && is_array(rt) &&
+                (e->op == TK_PLUS || e->op == TK_MINUS || e->op == TK_STAR ||
+                 e->op == TK_SLASH || e->op == TK_PERCENT)) {
+                /* bounded[N]T carries a capacity and a separate live length, and
+                 * [$N]T is a template-only size parameter. Neither has a settled
+                 * element-wise meaning, so refuse rather than guess. */
+                if (IS_BOUNDED(lt) || IS_BOUNDED(rt) || IS_SIZEPARAM_ARR(lt) || IS_SIZEPARAM_ARR(rt))
+                    die_at(e->line, "element-wise `%s` is defined for [T] and [N]T only (got %s, %s)",
+                           arith_op_spell(e->op), type_name(lt), type_name(rt));
+                if (arr_elem(lt) != arr_elem(rt))
+                    die_at(e->line, "element-wise `%s` requires two arrays with the same element type (got %s, %s)",
+                           arith_op_spell(e->op), type_name(lt), type_name(rt));
+                /* a fixed [N]T and a growable [T] cannot agree on a length at
+                 * compile time and the mismatch rule differs between them (one
+                 * is a compile error, the other a runtime abort). Fail closed. */
+                if (IS_FIXARR(lt) != IS_FIXARR(rt))
+                    die_at(e->line, "cannot mix a fixed array and a growable array in element-wise `%s` (got %s, %s) -- "
+                           "copy one side into the other's kind first",
+                           arith_op_spell(e->op), type_name(lt), type_name(rt));
+                /* same element type, same kind, still different types => two
+                 * fixed arrays with different static lengths. `==` already
+                 * requires the same static N to compare two fixed arrays
+                 * element-wise; arithmetic requires it for the same reason. */
+                if (lt != rt)
+                    die_at(e->line, "element-wise `%s` on a fixed array requires the same static length (got %s and %s)",
+                           arith_op_spell(e->op), type_name(lt), type_name(rt));
+                if (!elem_arith_ok(e->op, arr_elem(lt)))
+                    die_at(e->line, "`%s` is not defined element-wise on %s, because `%s` is not defined on %s",
+                           arith_op_spell(e->op), type_name(lt), arith_op_spell(e->op), type_name(arr_elem(lt)));
+                return e->type = lt;
+            }
             /* modulo / bitwise: integer-only, both operands the same integer type
              * (int, u32, or u64) — no implicit int/u32 mixing beyond literal adaptation. */
             if (e->op == TK_PERCENT || e->op == TK_AMP || e->op == TK_PIPE || e->op == TK_CARET) {
@@ -8972,6 +9053,82 @@ static const char *op_str(TokKind op) {
     }
 }
 
+/* Emit one SCALAR arithmetic/bitwise/shift operation of result type `rt` over
+ * already-emitted operands `l` and `r`. Factored out of E_BINOP so that the
+ * element-wise array arm can reuse it verbatim for `a[i] OP b[i]`: the guards
+ * below (int `/` and `%` through tycho_idiv/imod, unsigned through udiv/umod,
+ * shifts through the width guard, sized results truncated to their C width) are
+ * exactly the ones a scalar gets, and an element must not silently get fewer. */
+static char *gen_arith_op(TokKind op, Type rt, char *l, char *r) {
+    /* integer division/modulo guard: -fwrapv (the int-overflow contract) makes
+     * signed overflow wrap, but division is the one arithmetic op it does NOT
+     * make total -- x/0, x%0, and LONG_MIN/-1 still trap (SIGFPE). Route int `/`
+     * and `%` (incl. an int newtype) through the runtime guard, which aborts
+     * cleanly with a tycho: message. Signed native/sized -> tycho_idiv/imod;
+     * unsigned sized -> udiv/umod. Float `/` is IEEE (x/0.0 = inf), so it stays
+     * a raw C operator. */
+    if (op == TK_SLASH || op == TK_PERCENT) {
+        Type b = base_of(rt);
+        if (b == T_INT)
+            return sfmt("%s(%s, %s)", op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r);
+        if (is_uint(b))
+            return trunc_result(rt, sfmt("%s(%s, %s)", op == TK_SLASH ? "tycho_udiv" : "tycho_umod", l, r));
+        if (is_sized_int(b))   /* signed sized: i8/i16/i32/i64 */
+            return trunc_result(rt, sfmt("%s(%s, %s)", op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r));
+        /* float / falls through to the raw operator below */
+    }
+    /* shifts route through the runtime guard: count >= width -> 0, negative
+     * count -> clean abort (both C UB otherwise). int/u32/u64 have dedicated
+     * helpers; the narrow and i32/i64 types use the generic width+sign guard,
+     * then truncate the result to their C width. */
+    if (op == TK_SHL || op == TK_SHR) {
+        Type b = base_of(rt);
+        char c = op == TK_SHL ? 'l' : 'r';
+        if (b == T_INT) return sfmt("tycho_sh%c_i(%s, %s)", c, l, r);
+        if (b == T_U32) return sfmt("tycho_sh%c_u32(%s, %s)", c, l, r);
+        if (b == T_U64) return sfmt("tycho_sh%c_u64(%s, %s)", c, l, r);
+        char *g = op == TK_SHL
+            ? sfmt("tycho_shln(%s, %s, %d)", l, r, int_width(b))
+            : sfmt("tycho_shrn(%s, %s, %d, %d)", l, r, int_width(b), !is_uint(b));
+        return trunc_result(rt, g);
+    }
+    return trunc_result(rt, sfmt("(%s %s %s)", l, op_str(op), r));
+}
+
+/* Emit element-wise `a OP b` on two arrays of type `e->type`, as one GCC
+ * statement-expression that builds a FRESH array and returns it. Freshness is
+ * the point: Tycho is value-semantics, so `c := a * b` must neither alias nor
+ * mutate `a` or `b`. Both operands are copied into locals first (so a
+ * side-effecting operand is evaluated exactly once), the result gets its own
+ * spine out of the arena, and every element is written by value. The element
+ * types this arm can reach are all scalars (elem_arith_ok admits int, the sized
+ * ints, float, f32, char and numeric newtypes only), so a shallow element store
+ * IS a deep copy and no copy_into is needed.
+ *
+ * Two shapes, because the two array kinds have different C structs:
+ *   [T]   -> { data, len, cap }: lengths must match, checked at RUNTIME.
+ *   [N]T  -> { v[N] }:           lengths match by construction, the typechecker
+ *                                already refused two different static Ns. */
+static char *gen_ew_arith(Expr *e, char *l, char *r, const char *arena) {
+    Type at = e->type, et = arr_elem(at);
+    const char *act = c_type(at), *ect = c_type(et);
+    char *body = gen_arith_op(e->op, et,
+                              IS_FIXARR(at) ? "_ewa.v[_ewi]" : "_ewa.data[_ewi]",
+                              IS_FIXARR(at) ? "_ewb.v[_ewi]" : "_ewb.data[_ewi]");
+    if (IS_FIXARR(at))
+        return sfmt("({ %s_ewa = (%s); %s_ewb = (%s); %s_ewr = _ewa;\n"
+                    "   for (tycho_int _ewi = 0; _ewi < %lld; _ewi++) _ewr.v[_ewi] = %s;\n"
+                    "   _ewr; })",
+                    act, l, act, r, act, (long long)fixarr_size(at), body);
+    return sfmt("({ %s_ewa = (%s); %s_ewb = (%s);\n"
+                "   if (_ewa.len != _ewb.len) tycho_ew_len(_ewa.len, _ewb.len);\n"
+                "   %s_ewr; _ewr.len = _ewa.len; _ewr.cap = _ewa.len;\n"
+                "   _ewr.data = _ewr.len ? (%s*)arena_alloc(%s, (size_t)_ewr.len * sizeof(%s)) : 0;\n"
+                "   for (tycho_int _ewi = 0; _ewi < _ewr.len; _ewi++) _ewr.data[_ewi] = %s;\n"
+                "   _ewr; })",
+                act, l, act, r, act, ect, arena, ect, body);
+}
+
 static char *gen_expr(Expr *e, const char *arena) {
     switch (e->kind) {
         case E_SPREAD:   /* unreachable: resolve rewrites/rejects every spread before codegen */
@@ -9296,42 +9453,14 @@ static char *gen_expr(Expr *e, const char *arena) {
             /* ordering on strings is lexicographic via strcmp */
             if (is_cmp(e->op) && base_of(e->lhs->type) == T_STRING)   /* string or a string newtype */
                 return sfmt("(tycho_str_cmp(%s, %s) %s 0)", l, r, op_str(e->op));
-            /* integer division/modulo guard: -fwrapv (the int-overflow contract)
-             * makes signed overflow wrap, but division is the one arithmetic op it
-             * does NOT make total -- x/0, x%0, and LONG_MIN/-1 still trap (SIGFPE).
-             * Route int `/` and `%` (incl. an int newtype) through the runtime guard,
-             * which aborts cleanly with a tycho: message. Float `/` is IEEE
-             * (x/0.0 = inf), so it stays a raw C operator. */
-            /* integer division/modulo guard: -fwrapv makes signed overflow wrap,
-             * but x/0, x%0, and MIN/-1 still trap. Route through the runtime guard.
-             * Signed native/sized -> tycho_idiv/imod; unsigned sized -> udiv/umod.
-             * A sized result is truncated to its C width (narrow types promote). */
-            if (e->op == TK_SLASH || e->op == TK_PERCENT) {
-                Type b = base_of(e->type);
-                if (b == T_INT)
-                    return sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r);
-                if (is_uint(b))
-                    return trunc_result(e->type, sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_udiv" : "tycho_umod", l, r));
-                if (is_sized_int(b))   /* signed sized: i8/i16/i32/i64 */
-                    return trunc_result(e->type, sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r));
-                /* float / falls through to the raw operator below */
-            }
-            /* shifts route through the runtime guard: count >= width -> 0, negative
-             * count -> clean abort (both C UB otherwise). int/u32/u64 have dedicated
-             * helpers; the narrow and i32/i64 types use the generic width+sign guard,
-             * then truncate the result to their C width. */
-            if (e->op == TK_SHL || e->op == TK_SHR) {
-                Type b = base_of(e->type);
-                char c = e->op == TK_SHL ? 'l' : 'r';
-                if (b == T_INT) return sfmt("tycho_sh%c_i(%s, %s)", c, l, r);
-                if (b == T_U32) return sfmt("tycho_sh%c_u32(%s, %s)", c, l, r);
-                if (b == T_U64) return sfmt("tycho_sh%c_u64(%s, %s)", c, l, r);
-                char *g = e->op == TK_SHL
-                    ? sfmt("tycho_shln(%s, %s, %d)", l, r, int_width(b))
-                    : sfmt("tycho_shrn(%s, %s, %d, %d)", l, r, int_width(b), !is_uint(b));
-                return trunc_result(e->type, g);
-            }
-            return trunc_result(e->type, sfmt("(%s %s %s)", l, op_str(e->op), r));
+            /* element-wise arithmetic on two arrays: the only binary operator
+             * whose result type is an array (`==` yields bool, `+` on string /
+             * bytes yields those), so the result type alone identifies it. */
+            if (is_array(e->type))
+                return gen_ew_arith(e, l, r, arena);
+            /* every scalar arithmetic/bitwise/shift op, incl. the division and
+             * shift runtime guards -- shared with the element-wise arm above. */
+            return gen_arith_op(e->op, e->type, l, r);
         }
     }
     return sfmt("0");

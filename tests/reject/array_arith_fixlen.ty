@@ -1,0 +1,13 @@
+# Element-wise arithmetic on two FIXED arrays of different static lengths is a
+# COMPILE error, not a runtime abort: N is part of the type, so the compiler can
+# see the mismatch. Same rule `==` already applies when it compares two fixed
+# arrays element-wise -- it too requires the same static N.
+#
+# The exact diagnostic is locked by tests/diag/array_arith_fixlen.err; this lane
+# asserts the refusal itself (nonzero exit + a non-empty diagnostic).
+
+fn main():
+    a: [3]int = [1, 2, 3]
+    b: [2]int = [1, 2]
+    c := a * b
+    println(str(c[0]))

@@ -1,0 +1,8 @@
+# The exact wording of the [N]T length-mismatch diagnostic. tests/reject/ only
+# asserts THAT the compiler refuses this shape; this lane locks WHAT it says, so
+# an error-quality regression fails the build.
+fn main():
+    a: [3]int = [1, 2, 3]
+    b: [2]int = [1, 2]
+    c := a * b
+    println(str(c[0]))
