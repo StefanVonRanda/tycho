@@ -3,7 +3,7 @@
 # Run by `make editors-check` and as a step in `make ci`.
 #
 # Until 2026-07-29 NOTHING in any gate parsed either grammar, so both could rot
-# silently: scripts/tools_check.sh:25 excludes ./editors/* from the formatter
+# silently: scripts/tools_check.sh:25@editors excludes ./editors/* from the formatter
 # sweep by name, and no other step in scripts/ci.sh mentions the directory. The
 # concrete damage that found this: editors/zed/README.md carried a "parses all
 # 462 committed .ty files" claim for hundreds of files past the truth (813), and
@@ -21,7 +21,7 @@
 #
 # The two grammar lanes need the tree-sitter CLI, which is fetched with npx. When
 # it is unavailable (offline, no npx, nothing cached) they SKIP rather than fail
-# -- same call as Makefile:245's "ASan lane SKIPPED for ilp32": a gate that
+# -- same call as Makefile:245@SKIPPED's "ASan lane SKIPPED for ilp32": a gate that
 # hard-fails without network access would be worse than no gate. The JSON lane
 # needs only python3, which scripts/ci.sh already depends on, so it always runs.
 # Override the CLI with e.g. TYCHO_TREE_SITTER='tree-sitter' if you have 0.25

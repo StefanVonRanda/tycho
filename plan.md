@@ -393,14 +393,14 @@ its own last bullet says "Closed by phase 7" — filed as phase 38.
   scoring `postfreeze_<name>`) and `:172-189` (the `tests/postfreeze/abort/*.ty`
   loop, scoring `pfabort_<name>`), with 13 and 17 lines of header above each.
   Both loops and both headers were replaced by a single 10-line `HISTORY:` note
-  at `/home/igzo/github/tycho/tests/run.sh:135-144`. The fixtures are now scored
-  by the main golden loop at `/home/igzo/github/tycho/tests/run.sh:113-118` and
-  the abort loop at `/home/igzo/github/tycho/tests/run.sh:194-211` — same
+  at `tests/run.sh:135-144`. The fixtures are now scored
+  by the main golden loop at `tests/run.sh:113-118` and
+  the abort loop at `tests/run.sh:194-211` — same
   native-vs-ASan + golden discipline, same abort contract, no new code.
 
   **`/home/igzo/github/tycho/.gitignore` — the general case confirmed before
   removing anything.** `!/tests/*.out` at
-  `/home/igzo/github/tycho/.gitignore:94` already un-ignores the broad `*.out`
+  `.gitignore:94` already un-ignores the broad `*.out`
   rule at `:89` for exactly `tests/<name>.out`, which is where the six goldens
   now live; it is where they came from before the lane existed. The
   `!/tests/postfreeze/*.out` exception was therefore redundant, not load-bearing,
@@ -410,7 +410,7 @@ its own last bullet says "Closed by phase 7" — filed as phase 38.
   **`/home/igzo/github/tycho/scripts/asan_self.sh` — the glob change is not
   neutral, and this is the one thing the phase brief left to judgement.**
   `tests/postfreeze/*.ty` came out of the corpus line (now
-  `/home/igzo/github/tycho/scripts/asan_self.sh:146-148`) and the six fixtures
+  `scripts/asan_self.sh:146-148`) and the six fixtures
   are picked up by the `tests/*.ty` that was already there — no change. But
   `tests/postfreeze/abort/` was **never** in that glob (it is a subdirectory and
   the glob does not descend), while `tests/abort/*.ty` **is**. So the fold moves
@@ -434,7 +434,7 @@ its own last bullet says "Closed by phase 7" — filed as phase 38.
   **A stale self-citation found and fixed in passing.**
   `/home/igzo/github/tycho/scripts/asan_self.sh`'s header said the sanitized
   compiler is built at `:99-100`. It was built at `:114-115` before this phase
-  and at `/home/igzo/github/tycho/scripts/asan_self.sh:110-111` after — the ref
+  and at `scripts/asan_self.sh:110-111` after — the ref
   was already 15 lines off and the bounds check cannot see it (the exact class
   carried forward as phase 13). It is corrected to `:110-111` because the phase
   rewrote the sentence around it anyway.
@@ -444,9 +444,9 @@ its own last bullet says "Closed by phase 7" — filed as phase 38.
   describe a directory that existed when they were written; that is correct
   history, and rewriting them would make them lie about what was done. **No
   citation repair was needed either**, and the reason is mechanical rather than
-  lucky: `/home/igzo/github/tycho/scripts/check_citations.py:226` skips any cited
+  lucky: `scripts/check_citations.py:226` skips any cited
   path that does not start with `SRC_PREFIX`
-  (`/home/igzo/github/tycho/scripts/check_citations.py:153-155`), and both
+  (`scripts/check_citations.py:153-155`), and both
   archived plans write their refs as **absolute** paths
   (`/home/igzo/github/tycho/tests/postfreeze/…`), which no relative prefix
   matches. So the ~40 archived references to the directory were never gated and
@@ -488,21 +488,21 @@ its own last bullet says "Closed by phase 7" — filed as phase 38.
   returns 17 lines and every one is deliberate: 10 in `plan.md` itself (the
   Pre-flight note that *asks* for this fold, phase 2's own scope, phase 21's
   cross-reference, and phase 1's frozen evidence), and 7 `HISTORY:` notes written
-  by this phase in `/home/igzo/github/tycho/.gitignore:97`,
-  `/home/igzo/github/tycho/tests/run.sh:135-136`,
-  `/home/igzo/github/tycho/scripts/asan_self.sh:76`,`:80`,
-  `/home/igzo/github/tycho/tests/nested_pattern.ty:3`,
-  `/home/igzo/github/tycho/tests/rawstring.ty:3` and
-  `/home/igzo/github/tycho/tests/abort/array_arith_len.ty:9`. Three live spec
-  passages also still name it — `/home/igzo/github/tycho/docs/spec/12-aggregates.md:287`,
-  `/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:48`,`:263`,`:331-333`
+  by this phase in `.gitignore:97`,
+  `tests/run.sh:135-136`,
+  `scripts/asan_self.sh:76`,`:80`,
+  `tests/nested_pattern.ty:3`,
+  `tests/rawstring.ty:3` and
+  `tests/abort/array_arith_len.ty:9`. Three live spec
+  passages also still name it — `docs/spec/12-aggregates.md:287`,
+  `docs/spec/appendix-e-conformance.md:48`,`:263`,`:331-333`
   — each rewritten to past tense with the fold recorded, because §E.2's whole
   subject is *why fixtures sit where they sit* and deleting the history would
   leave the amendments unexplained. **No hit anywhere points at a path that is
   expected to exist.**
 
   **Out of scope, deliberately left.** The two spec fixture tables were repointed
-  (`/home/igzo/github/tycho/docs/spec/appendix-e-conformance.md:166`,`:185`) but
+  (`docs/spec/appendix-e-conformance.md:166`,`:185`) but
   the §E.2 rationale text for `corelib/test/`, `examples/corelib/` and the `\r` /
   adjacent-literal carve-outs was not — that is phase 21's job, and phase 21 is
   now the only thing standing between those fixtures and `tests/`.
@@ -2140,8 +2140,9 @@ request (`fc921d7`, `7a04e53`).
 
 - [ ] **Phase 12** — `editors/zed/README.md`'s corpus count is hand-typed and
       unguarded; `scripts/editors_check.sh` already computes it.
-- [ ] **Phase 13** — an anchored form for source→source citations; phase 8 of the
+- [x] **Phase 13** — an anchored form for source→source citations; phase 8 of the
       first plan proved its bounds check catches none of the wrong-line class.
+      **CLOSED by batch 1** — evidence under "Batch 1 evidence" below.
 - [x] **Phase 14** — a `> Provenance:` block naming no path escapes the mandatory
       anchor rule by accident; 8 stale refs in `docs/spec/02-grammar.md:272-274`.
       **Note phase 9 of this plan edits that file** — worth doing together.
@@ -2195,12 +2196,13 @@ request (`fc921d7`, `7a04e53`).
       emitted for `tests/rtparity/surface.ty` still contains each expected
       `getenv()` name, trap text and stats row against a recorded list.
 
-- [ ] **Phase 23** — **an absolute path in a citation is silently unchecked.**
-      Found by phase 2. `/home/igzo/github/tycho/scripts/check_citations.py:226`
+- [x] **Phase 23** — **an absolute path in a citation is silently unchecked.**
+      Found by phase 2. `scripts/check_citations.py:226`
       skips any cited path not starting with `SRC_PREFIX`
-      (`/home/igzo/github/tycho/scripts/check_citations.py:153-155`, all
-      relative: `src/`, `tests/`, …), so a ref written
-      `` `/home/igzo/github/tycho/tests/foo.ty:12` `` matches nothing and is
+      (`scripts/check_citations.py:153-155`, all
+      relative: `src/`, `tests/`, …), so a ref written as an absolute path —
+      the repo root spelled out in full, then tests/foo.ty and a line number —
+      matched nothing and was
       counted as nothing. Deleting `tests/postfreeze/` left roughly forty such
       refs in the two archived plans pointing at files that no longer exist, and
       the gate stayed green — the phase relied on this, but the same hole means a
@@ -2582,7 +2584,7 @@ request (`fc921d7`, `7a04e53`).
     `docs/guides/arrays-structs.md`'s snippet is covered by it.
   - Verify: the new gate, plus `sh scripts/spec_check.sh`.
 
-- [ ] **Phase 34** — **the pathless-`> Provenance:` gate hole is still open in
+- [x] **Phase 34** — **the pathless-`> Provenance:` gate hole is still open in
       the tool, only closed in the one file phase 14 named.** Phase 9 repaired
       `docs/spec/02-grammar.md`'s eight refs by hand, but
       `scripts/check_citations.py` still cannot see the class: `cur` is reset at
@@ -2826,6 +2828,194 @@ request (`fc921d7`, `7a04e53`).
   - Note whichever way it goes, `bench/guard.sh:41-71` and
     `tests/bounds_noelide.ty` stay useful: they assert the emitted C, not wall
     time, so they document the decision either way.
+
+- [ ] **Phase 41** — **two bare source→source citations are drifted, and the
+      anchored form batch 1 added is what would have caught them.** Found by
+      batch 1 while looking for citations correct enough to anchor; NOT repaired
+      there, because verifying and repointing the other 121 bare source→source
+      refs is a sweep and belongs with the sweep phases, not with the phase that
+      added the grammar.
+  - `scripts/asan_self.sh:38` says the generic bind vector is xmalloc'd at
+    `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`,
+    an unrelated function. The real site is `src/tychoc.c:7560@gi.binds` — off
+    by ~690 lines, in bounds the whole time, and therefore green.
+  - `tests/rtparity/run.py:67` cites `src/tychoc.c:10343` as "the loop codegen".
+    That line is a bare closing brace.
+  - Both are the exact class phase 8 of the first plan repaired by hand and
+    reported its bounds check would catch none of. The other 121 bare
+    source→source refs have never been audited against their content.
+  - Done when: every source→source ref that names a distinctive line carries
+    `@token`, ranges stay bare, and the anchored/bare split in `--stats` is
+    recorded here so the next reader knows what was audited.
+  - Verify: `python3 scripts/check_citations.py --stats`.
+
+## Batch 1 evidence — phases 13, 23, 34, the citation gate's three blind spots
+
+Ran 2026-07-30 against `cd9893d`. All three phases are changes to
+`scripts/check_citations.py` plus the minimum set of citations needed to keep the
+tree green. **Batch 2's sweep was not touched**: the ~344 bare `src/tychoc.c:N`
+refs are phase 17 and none of the three new checks fires on a bare relative ref.
+
+### What each check does, and where the line was drawn
+
+**Phase 13 — anchored source→source (`scripts/check_citations.py:244`, and the
+content check at `scripts/check_citations.py:395-397`).** `SRCCITE` gained an
+optional `@token` suffix; when present, the cited lines must literally contain
+the token. Two deliberate differences from the Markdown anchor, both forced by
+the medium: the token is `[A-Za-z0-9_]+` with no spaces, because a source
+citation is bare comment prose with no closing delimiter and a space-permitting
+token would swallow the sentence; and there is no construct where it is
+mandatory, because nothing on the source side marks a comment as load-bearing
+the way `> Provenance:` does.
+
+*Line against batch 2:* **opt-in by construction.** Zero of the 133 existing
+source→source refs carried an `@`, so the grammar change alone could not redden
+anything. It was adopted on **8 sites verified by reading the target line**, all
+in shell and Python comments — `Makefile:245@SKIPPED` from `scripts/asan_self.sh`
+(twice), `scripts/editors_check.sh` (once) ; `scripts/tools_check.sh:25@editors`
+from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6643@r_step`
+and `src/tychoc.c:3364@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
+`.ty` file was touched on purpose: a `.ty` edit is `make test` and
+`scripts/tools_check.sh` territory, and this batch's gate budget is the two doc
+gates. Sites whose target line did **not** support the claim were left bare and
+filed as phase 41 rather than silently repaired.
+
+**Phase 23 — an absolute path is a failure (`scripts/check_citations.py:297`).**
+Not resolved against `ROOT`, per the phase: reported instead, naming the
+repo-relative spelling. `cur` is cleared afterwards so a following bare `:N`
+cannot inherit an unspellable path.
+
+*Line against batch 2 — the frozen-record decision phase 23 asked for:* the
+tree holds **187** absolute refs, **161** of them in `docs/internals/plan-*-DONE.md`,
+and ~40 of those name the deleted `tests/postfreeze/`. Enforcing there would
+demand an edit to a frozen record and redden the gate permanently, so the
+archived set is exempt — the same rule and the same reason as the existing
+mandatory-anchor exemption. They were unchecked before and are unchecked now;
+nothing regressed. The remaining **20** live ones were all in `plan.md` and were
+rewritten repo-relative. **Measured, not assumed:** that rewrite moved
+`plan.md`'s refs reaching the bounds check from 133 to 149, +16, which is exactly
+the 2082 → 2098 rise in the tree-wide bare count. The other four resolve to
+`.gitignore` and `docs/…`, outside `SRC_PREFIX`, and stay skipped as
+cross-document links. Untouched and out of scope: 66 backticked absolute paths in
+`plan.md` that carry no `:N` — a mention is not a citation and the rule does not
+see them.
+
+*Left for a human to decide:* `CLAUDE.md`'s Citations section still says "Write
+full paths in evidence blocks", which is the instruction that produced these 187
+absolute refs in the first place — a writer reading it can reasonably spell a
+"full path" as `/home/igzo/…`. The gate now answers that in one run, by name, so
+the loop self-corrects; but the wording and the gate now disagree in tone.
+`CLAUDE.md` was **deliberately not edited** here: it is the instruction file, and
+this batch had no mandate to rewrite it.
+
+**Phase 34 — a pathless `> Provenance:` ref is a failure
+(`scripts/check_citations.py:322`).** Fail-closed, with a message naming the
+missing path. Not "carry `cur` across paragraphs" — that was deliberately
+removed and the comment above the loop says why.
+
+*Line against batch 2:* the population is **0**. All 60 `> Provenance:` blocks in
+the tree already name a path; the 12 that did not were repaired by hand earlier
+(ten by the postfreeze plan's phase 11, two ranges held path-less *on purpose to
+avoid reddening a gate that could not see them* — the workaround that should not
+have needed to exist). So the tree is green with no sweep, and this check is a
+guard against the next one, exactly as the archived-plans exclusion was when it
+landed. Note the rule catches **ranges too**: a range is exempt from the *anchor*
+requirement, never from naming a path.
+
+### The three deliberate-break proofs
+
+Each was run against the **final** version of the script, broken and restored,
+with the gate output read both ways. Backticks are stripped from the quoted
+failures below **on purpose**: this gate does not track code fences, so a quoted
+citation inside one is re-parsed as a live citation and would redden the very
+evidence block that reports it.
+
+```
+A. phase 13 — scripts/asan_self.sh:72, Makefile:245@SKIPPED -> @SKIPPEDX
+   STALE  scripts/asan_self.sh:72  Makefile:245@SKIPPEDX -> lines 245-245 of
+          Makefile do NOT contain 'SKIPPEDX' (token absent from the whole file)
+   citation check: FAILED (1 stale citation(s) above)          exit=1
+   restored -> citation check: ok (... 10 source->source anchored)   exit=0
+
+B. phase 23 — a throwaway tracked docs/ file citing an absolute path
+   STALE  docs/_break_probe.md:5  /home/igzo/github/tycho/src/tychoc.c:402 ->
+          ABSOLUTE PATH, which this gate cannot check: write it repo-relative,
+          as src/tychoc.c:402
+   citation check: FAILED (1 stale citation(s) above)          exit=1
+   rewritten repo-relative -> ok, and the BARE COUNT ROSE 2098 -> 2099: the
+   repaired ref is now actually checked, where the absolute one counted as
+   nothing.                                                    exit=0
+
+C. phase 34 — the same file, a Provenance block opening a paragraph with no path
+   STALE  docs/_break_probe.md:6  :3364@i_dotlt -> a > Provenance: ref that
+          names no path and inherits none from its paragraph; nothing about it
+          is checked. Write the path: <path>:3364@i_dotlt
+   STALE  docs/_break_probe.md:7  :3360-3370 -> (same message)
+   citation check: FAILED (2 stale citation(s) above)          exit=1
+   path written in -> ok, anchored count 144 -> 145, and the range :3360-3370
+   inherits the path and stays bare: the range exemption is intact.  exit=0
+```
+
+The probe file was removed with `git rm --cached` and deleted; `git status
+--short` was read before staging and held only the six intended files.
+
+While writing this block the gate caught **its own author twice**, which is the
+best evidence the checks are live: the docstring's shape-table example was a
+false anchor into `src/tychoc.c` (its two lines contain no `main`), and the
+sentence explaining that fact quoted the bad form as a live citation. The shape
+table now names `src/example.c`, a path deliberately not in the tree, with the
+reason written above it — a grammar of shapes is not a claim about the compiler,
+and binding it to real line numbers would put the gate's own docstring into the
+population every renumbering sweep has to repair.
+
+### Gate output — the real runs
+
+The first run below is the state **before this block was appended**; the second
+is the committed tree. This block is itself full of citations, so writing it
+moved the numbers — which is the gate working on its own evidence, and the
+reason the baseline table gives the committed figures.
+
+```
+python3 scripts/check_citations.py          # before this evidence block
+citation check: ok (144 anchored contain the token they name, 2098 bare in
+bounds, 103 source->doc citations resolve, 123 source->source in bounds,
+10 source->source anchored)
+
+python3 scripts/check_citations.py          # committed tree
+citation check: ok (148 anchored contain the token they name, 2106 bare in
+bounds, 103 source->doc citations resolve, 123 source->source in bounds,
+10 source->source anchored)
+
+sh scripts/check_links.sh
+link check: ok (134 markdown files, no dead relative links)
+
+sh scripts/spec_check.sh
+spec-examples: 9 runnable example(s), all pass
+```
+
+`make ci` and `make test` were **not** run: nothing here reaches a compiled
+artifact. Every edit is a comment, a Markdown line, or the checker itself.
+`python3 -c "import ast"` and `sh -n` were run on all six edited files.
+
+### Baseline for batch 2
+
+| metric | before (`cd9893d`) | after (committed) |
+|---|---|---|
+| md anchored (content-checked) | 144 | 148 |
+| …of them mandatory `> Provenance:` | 85 | 85 |
+| md bare (bounds only) | 2082 | 2106 |
+| source→doc (existence) | 102 | 103 |
+| source→source **bare** (bounds) | 133 | 123 |
+| source→source **anchored** (content) | — | 10 |
+
+The md columns rose by 4 anchored and 24 bare **because of this evidence block**,
+not because of the gate change; the gate-change contribution to the bare column
+is the +16 measured above.
+
+The source→source total is unchanged at 133; ten moved from the bare column to
+the anchored one. `source→doc` rose by one because the new docstring names
+`docs/bootstrap.md:106`. Batch 2 owns the ~344 bare `src/tychoc.c:N` refs inside
+the 2098, and phase 41 owns the 123 bare source→source refs.
 
 ## Out of scope
 

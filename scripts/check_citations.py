@@ -14,12 +14,23 @@ too.  This gate turns that class from "audit again next time" into green/red.
 CITATION SHAPES RECOGNISED (all inside a backtick span; the colon is mandatory,
 so a plain `0` or `9223372036854775807` in prose is NOT a citation):
 
-    `src/tychoc.c:7181`                path + single line                -> BARE
-    `src/tychoc.c:7206-7207`           path + range                      -> BARE
+    `src/example.c:7181`               path + single line                -> BARE
+    `src/example.c:7206-7207`          path + range                      -> BARE
     `:7206-7207`                       continuation: inherits the last path named
                                        IN THE SAME PARAGRAPH              -> BARE
-    `src/tychoc.c:7206-7207@main`      path + range + anchor token    -> ANCHORED
+    `src/example.c:7206-7207@main`     path + range + anchor token    -> ANCHORED
     `:3251@has_prefix`                 anchored continuation          -> ANCHORED
+
+The table names `src/example.c`, which is NOT a file in this tree, ON PURPOSE --
+do not "repair" it to a real path.  This file is itself scanned by the
+source->source pass below, so a shape example spelled with a real path is a live
+citation: this table used to name lines 7206-7207 of `src/tychoc.c` anchored to
+the token `main`, and those two lines say `var->raw);` and `for (int b = 0; ...`
+-- no `main` anywhere near them.  A grammar of shapes is not a
+claim about the compiler, and binding it to real line numbers puts this docstring
+into the population every renumbering sweep has to repair.  Genuine citations in
+the prose below (`docs/bootstrap.md:106`, `src/tychoc.c:402`) are real and stay
+checked; only the shape table is a placeholder.
 
 WHAT IS CHECKED
     BARE      the file exists, and 1 <= N <= M <= (lines in file).
@@ -83,8 +94,48 @@ than it is:
     Different class entirely; no line-checker can see it.
 
 FAIL-OPEN CASES (deliberate, RULE 7): a bare `:N` whose paragraph names no path
-is skipped rather than guessed at, and a path outside the implementation trees
-listed in SRC_PREFIX is ignored (cross-document links are check_links.sh's job).
+is skipped rather than guessed at -- EXCEPT inside a `> Provenance:` block, see
+below -- and a RELATIVE path outside the implementation trees listed in
+SRC_PREFIX is ignored (cross-document links are check_links.sh's job).
+
+AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (added 2026-07-30, plan.md phase 23)
+-----------------------------------------------------------------------------
+`/home/igzo/github/tycho/src/tychoc.c:402` does not start with any SRC_PREFIX
+entry, so until this rule it fell into the skip above and was checked by
+NOTHING -- not existence, not bounds, not its anchor.  That is the worst
+possible outcome, because CLAUDE.md tells writers to "write full paths in
+evidence blocks" (so a bare `:N` cannot bind to whatever file was named last),
+and an absolute path satisfies that instruction to the letter while buying
+LESS checking than the relative form it replaced.  Deleting `tests/postfreeze/`
+left ~40 such refs in the archived plans pointing at files that no longer
+existed, and the gate stayed green throughout.
+
+The fix is deliberately NOT to resolve the absolute path against ROOT.  Inside
+this repo an absolute path is never the right spelling -- it is not portable to
+another checkout and it is not what any other citation in the tree looks like --
+so it is reported with the repo-relative form the author should have written.
+A following bare `:N` does NOT inherit it (`cur` is cleared), because inheriting
+an unspellable path would propagate the same blindness down the paragraph.
+
+ARCHIVED PLANS ARE EXEMPT FROM THIS RULE TOO, and the reason is the one already
+settled below: they are frozen records, ~161 of the 187 absolute refs in the
+tree live in them, and roughly forty of those name the deleted
+`tests/postfreeze/`.  Enforcing here would demand an edit to a record that must
+not be edited, and would redden the gate permanently.  They were unchecked
+before this rule and they are unchecked after it; nothing regressed.
+
+A PATHLESS `> Provenance:` REF IS A FAILURE (added 2026-07-30, plan.md phase 34)
+-------------------------------------------------------------------------------
+The mandatory-anchor rule below keys off a resolved path: a ref whose paragraph
+names none is `continue`d before that rule can run.  So a `> Provenance:` block
+that opens a paragraph without naming a path got ZERO checking -- no file, no
+bounds, no anchor -- and did so by accident, not by anyone's decision.  Twelve
+refs were in that state; ten were repaired by hand and two ranges were left
+path-less ON PURPOSE, to avoid reddening a gate that could not see them.  A
+workaround that exists only because the gate is blind is the signal to fix the
+gate.  Such a ref is now a hard failure telling the author to write the path.
+The fix is NOT to carry `cur` across paragraph breaks -- see the comment at the
+top of the Markdown loop for why that was deliberately removed.
 
 THE SECOND DIRECTION: SOURCE -> DOC (added 2026-07-26)
 -----------------------------------------------------
@@ -122,16 +173,36 @@ So this pass scans the same tracked non-Markdown set as the second direction and
 checks every `path:N` / `path:N-M` naming another TRACKED NON-MARKDOWN file for
 existence and bounds.
 
-COVERAGE, STATED NARROWLY SO IT IS NOT READ WIDER.  Bounds and existence only --
-exactly the bare-citation semantics of the first pass, with the same blind spot:
-a reference that drifts onto a different-but-existing line still passes.  All 17
-that phase 8 repaired were IN BOUNDS and wrong, so this check would have caught
-none of them.  Its value is the other half: a citation that points past EOF, or
-at a file that has been renamed or deleted, now reddens instead of rotting.
-Requiring the anchored `path:N@token` form here too WOULD catch the wrong-line
-class, but source citations are written in comment prose without backticks and
-the CITE regex above needs a backtick span, so that is a real change to both the
-grammar and 131 call sites -- filed as its own plan.md phase, not smuggled in.
+COVERAGE OF THE BARE FORM, STATED NARROWLY SO IT IS NOT READ WIDER.  Bounds and
+existence only -- exactly the bare-citation semantics of the first pass, with the
+same blind spot: a reference that drifts onto a different-but-existing line still
+passes.  All 17 that phase 8 repaired were IN BOUNDS and wrong, so the bare check
+would have caught none of them.  Its value is the other half: a citation that
+points past EOF, or at a file that has been renamed or deleted, reddens instead
+of rotting.
+
+ANCHORED SOURCE -> SOURCE (added 2026-07-30, plan.md phase 13)
+-------------------------------------------------------------
+The wrong-line class needs an expected token, so SRCCITE now accepts an optional
+`@token` suffix and content-checks the cited lines when one is present:
+
+    Makefile:245@SKIPPED           as cited from scripts/asan_self.sh
+    src/tychoc.c:3364@i_dotlt      as cited from fuzz/run_parforparity.py
+
+TWO DIFFERENCES FROM THE MARKDOWN ANCHOR, both forced by the medium.  (1) The
+token is `[A-Za-z0-9_]+` -- no spaces.  A Markdown anchor sits inside a backtick
+span that delimits it, so it may contain spaces; a source citation is bare
+comment prose with NO closing delimiter, so a space-permitting token would
+swallow the rest of the sentence.  (2) It is OPT-IN, with no construct where it
+is mandatory.  There is no source-side equivalent of a `> Provenance:` block --
+nothing marks a comment as making a load-bearing claim -- and the mandatory rule
+earns its keep by applying to a construct an author chose deliberately.
+
+ADOPTION IS PARTIAL AND THE COUNT IS HONEST ABOUT IT: `--stats` prints the
+anchored and bare source->source totals separately.  Anchoring an EXISTING bare
+ref means first verifying it, which is a citation sweep and belongs to a sweep
+phase, not to the phase that added the grammar.  A green run means "no anchored
+source citation has drifted", never "every source citation is right".
 
 EXCLUDED BY NAME, WITH THE REASON:
   * `compiler/tychoc0.ty` -- the FROZEN bootstrap compiler.  Its self-citations
@@ -171,7 +242,7 @@ DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
 # match is filtered against the tracked-file set below, so `foo.c:12` quoted from
 # some tool's output cannot fire unless `foo.c` is really in the repo.
 SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)'
-                     r':(\d+)(?:-(\d+))?')
+                     r':(\d+)(?:-(\d+))?(?:@([A-Za-z0-9_]+))?')
 
 # Files whose OWN source->source citations are not policed (see the header).
 SRC_SKIP_CITER = ("compiler/tychoc0.ty",)
@@ -223,7 +294,38 @@ def main():
             for m in CITE.finditer(line):
                 if m.group(1):
                     cur = m.group(1)
-                if not cur or not cur.startswith(SRC_PREFIX):
+                    # AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (see the header).
+                    if cur.startswith("/"):
+                        if not frozen:
+                            rel = (cur[len(ROOT) + 1:] if cur.startswith(ROOT + "/")
+                                   else None)
+                            tail = m.group(0).strip("`").split(":", 1)[1]
+                            fails.append(
+                                "%s:%d  `%s` -> ABSOLUTE PATH, which this gate "
+                                "cannot check: %s"
+                                % (md, ln, m.group(0).strip("`"),
+                                   "write it repo-relative, as `%s:%s`" % (rel, tail)
+                                   if rel else
+                                   "it names no file inside this repository"))
+                        # Never let a following bare `:N` inherit an absolute
+                        # path: it would be as unchecked as the one above.
+                        cur = None
+                        continue
+                if not cur:
+                    # A `> Provenance:` ref that inherits NO path is not merely
+                    # un-anchored, it is entirely unchecked -- no file, no
+                    # bounds, and the mandatory-anchor rule below never runs.
+                    # Fail closed here; elsewhere a pathless `:N` stays a
+                    # deliberate fail-open skip (see FAIL-OPEN CASES).
+                    if prov and not frozen:
+                        fails.append(
+                            "%s:%d  `%s` -> a `> Provenance:` ref that names no "
+                            "path and inherits none from its paragraph; nothing "
+                            "about it is checked. Write the path: "
+                            "`<path>:%s`" % (md, ln, m.group(0).strip("`"),
+                                             m.group(0).strip("`").lstrip(":")))
+                    continue
+                if not cur.startswith(SRC_PREFIX):
                     continue
                 a = int(m.group(2))
                 b = int(m.group(3)) if m.group(3) else a
@@ -263,7 +365,7 @@ def main():
     srcs = subprocess.run(["git", "ls-files"], cwd=ROOT,
                           capture_output=True, text=True, check=True).stdout.split()
     tracked = set(srcs)
-    n_doc, n_src = 0, 0
+    n_doc, n_src, n_src_anch = 0, 0, 0
     for sf in srcs:
         if sf.endswith(".md") or not sf.startswith(DOC_SCAN_PREFIX):
             continue
@@ -279,13 +381,27 @@ def main():
                     tgt = m.group(1)
                     if tgt.endswith(".md") or tgt not in tracked:
                         continue
-                    n_src += 1
                     sl = lines_of(tgt)
                     a = int(m.group(2))
                     b = int(m.group(3)) if m.group(3) else a
                     if a < 1 or b < a or b > len(sl):
+                        n_src += 1
                         fails.append("%s:%d  `%s` -> %s has %d lines: OUT OF BOUNDS"
                                      % (sf, ln, m.group(0), tgt, len(sl)))
+                        continue
+                    if m.group(4) is None:
+                        n_src += 1
+                        continue
+                    # ANCHORED source -> source (opt-in, see the header): the
+                    # cited lines must literally contain the token.
+                    n_src_anch += 1
+                    if not any(m.group(4) in sl[i - 1] for i in range(a, b + 1)):
+                        hit = [i for i, l in enumerate(sl, 1) if m.group(4) in l][:3]
+                        fails.append(
+                            "%s:%d  `%s` -> lines %d-%d of %s do NOT contain '%s'%s"
+                            % (sf, ln, m.group(0), a, b, tgt, m.group(4),
+                               ("; it appears at :" + ", :".join(map(str, hit)))
+                               if hit else " (token absent from the whole file)"))
             for m in DOCCITE.finditer(line):
                 doc = m.group(1)
                 n_doc += 1
@@ -303,8 +419,9 @@ def main():
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the mandatory "
               "`> Provenance:` single-line refs), %d bare (bounds only), "
-              "%d source->doc (existence), %d source->source (bounds)"
-              % (n_anchored, n_prov, n_bare, n_doc, n_src))
+              "%d source->doc (existence), %d source->source (bounds), "
+              "%d source->source anchored (content-checked)"
+              % (n_anchored, n_prov, n_bare, n_doc, n_src, n_src_anch))
     if fails:
         for f in fails:
             print("STALE  " + f)
@@ -312,8 +429,8 @@ def main():
         return 1
     print("citation check: ok (%d anchored contain the token they name, "
           "%d bare in bounds, %d source->doc citations resolve, "
-          "%d source->source in bounds)"
-          % (n_anchored, n_bare, n_doc, n_src))
+          "%d source->source in bounds, %d source->source anchored)"
+          % (n_anchored, n_bare, n_doc, n_src, n_src_anch))
     return 0
 
 
