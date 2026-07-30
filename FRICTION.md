@@ -317,14 +317,42 @@ Ordered so the top of the list is what to pick up first.
      uncosted, because `N` is a runtime expression (`docs/spec/13-concurrency.md:86`) and
      there is nothing static to warn about. Runtime detail at
      `runtime/tycho_rt.c:843-852` (`tycho_ncpu`).
+   - **Confirmed and bounded by measurement, 2026-07-31** (`plan.md` phase 1, a real
+     `parallel for` program rather than the server that never used one). The 64 is exact
+     and it was forced, at K=200 jobs of 50 ms each: `TYCHO_THREADS=32` → `maxconc=32`,
+     `=64` → `maxconc=64`, `=100` → `maxconc=64` with `ncpu()` reporting 100. **The cap
+     limits width; it does not starve** — 200 items came back 200, unique, at every
+     setting, which is the half the entry left open ("an iteration chunked behind one that
+     never returns never starts" is true only for a body that can fail to return, and a
+     terminating body is never at risk). At the real workload — 560 jobs, `ncpu()` = 16 —
+     the cap is not in the picture at all. So the live half of this item is now just the
+     undocumented ceiling and `ncpu()`'s own false definition above it
+     (`docs/spec/16-builtins.md:251`), split out as `plan.md`'s carried-forward phase 7.
 8. **No direct spelling for N workers** (*Earlier phases*) — reproduced: `hs := [spawn
    work(1), spawn work(2)]` is refused with `tychoc: a task handle cannot be stored in a
    container or aggregate -- wait(t) first` (`src/tychoc.c:639`, `task_container_err`,
    fail-closed at the type-intern choke points so a task cannot escape and be waited twice
-   or never). `server/main.ty:497-503` still pays the recursive fan-out — worker k spawns
+   or never). `server/main.ty:499-501` still pays the recursive fan-out — worker k spawns
    worker k+1 into a frame-local, then runs its own accept loop. **An array of handles is a
    type-system change, not an item-sized fix. Uncosted, and still the honest core of what
    is left**, together with item 7.
+   **NARROWED, 2026-07-31, and the item reads stronger than it is** (`plan.md` phases 1–3).
+   The first program in this tree to actually run a worker pool started **16 workers in one
+   line and stored no handle**: `parallel for` is a direct spelling for N workers, and
+   `parallel for x in ch:` — specified at `docs/spec/13-concurrency.md:91-92`, worked at
+   `docs/guides/concurrency.md:86-104`, fixtured at `tests/conc/parfor_chan.ty:16` — is a
+   direct spelling for a *bounded pool over a queue*, the exact shape this item says has
+   none. So the premise "it is either N hand-written `spawn` lines or a recursive fan-out"
+   is **false for N = ncpu**, which is the N most programs want, and an array of task
+   handles is not what a worker pool needs. **What survives is one sentence and it is
+   sharper than the original:** the program cannot choose N. `ParallelFor`
+   (`docs/spec/02-grammar.md:248-249`) has no width slot in the grammar, so the only knob
+   is `TYCHO_THREADS`, read once per process at `runtime/tycho_rt.c:848` — a fixture runner
+   that wants `-j 4` on a laptop and `-j 32` in CI cannot say so from inside the language,
+   and must be *launched* differently instead. `server/main.ty:499-501`'s recursion is
+   still evidence, but for a **different** want: N long-lived workers each carrying its own
+   `wid`, which `parallel for` genuinely cannot express because a chunk's identity is not
+   observable. Two items, not one, and only the second needs the type system.
 9. **`corelib/test/image` is skipped without libpng** (*Phase 7 of `plan.md`,
    non-blocking*) — confirmed environmental and confirmed *live*: `corelib/image/deps`
    names `libpng`, `pkg-config --exists libpng` fails on this machine, and
@@ -360,11 +388,152 @@ Ordered so the top of the list is what to pick up first.
 already identified — roughly a day between them, and item 1 has a known-good pattern to
 copy four times over. Items 7 and 8 are the concurrency pair and are still the honest
 core: one wants a type-system answer, the other wants a warning there is nothing static
-to warn from. Item 6 wants a decision, not lines. Items 9 and 10 are properties of the
+to warn from. **That sentence did not survive being tested — see the 2026-07-31 section
+below.** Item 8's type-system answer is not what a worker pool wants (it stores no
+handles), and item 7's danger is bounded by measurement; what is left of the pair is one
+missing width parameter. Item 6 wants a decision, not lines. Items 9 and 10 are properties of the
 environment and of the file itself. **The list did not shrink, and that is the finding —
 sixty commits of real language work went past this list without touching it**, because
 every one of them was driven by `new_ideas.md` and by the loop and array plans instead.
 A list nothing is pulling from does not get shorter on its own.
+
+## Re-scored against a real concurrent program, 2026-07-31 (head `9e7a090`)
+
+Everything above about concurrency was written from `server/`, and **`grep -n parallel
+server/main.ty` is empty** — that program used `spawn`/`wait` and never wrote a `parallel
+for` at all. Items 7 and 8, which the score above calls "the honest core of what is left",
+were therefore inference from a program that did not exercise the construct they name.
+
+`tools/prunner/main.ty` does. 479 lines; it runs the whole 560-fixture corpus over a
+bounded channel with a `parallel for` pool and a spawned fan-in collector, and its report
+is byte-identical to `sh tests/run.sh`'s at **7.62x** (471,695 ms → 61,867 ms, `maxconc`
+measured at 16 = `ncpu()`). Evidence under `plan.md` phases 1 and 2. Items 7 and 8 are
+re-scored in place above. What is new is below.
+
+- **The finding that outranks every complaint here: it compiled first try, twice out of
+  two.** Phase 1's ~240-line pool (two channels, a spawned producer, a spawned collector,
+  a `parallel for` with `select`/`recv`, a subprocess call inside the body) and phase 2's
+  479-line rewrite (seven lane judges, `os.run`, structs-with-strings through a channel,
+  `sort.asc`) each built with **no errors and no warnings on the first `./tychoc`**. This
+  file's picture of concurrent Tycho as a fight is not what either phase found, and the
+  expectation of a fight was set *by this file*. "Concurrency is the best thing in the
+  language" (What was good, below) now has a second, independent data point from a
+  workload that is not a web server.
+- **A restriction improved the design, which is the one outcome this file has no category
+  for.** `docs/spec/13-concurrency.md:100` permits a `parallel for` body exactly one
+  outer-scope write — a `+`/`*` reduction on `int`/`float` — and
+  `docs/spec/13-concurrency.md:110-111` makes any other write a compile error
+  (`tests/conc/reject/parfor_push.ty`: "parallel for cannot mutate captured variable 'xs'
+  in place"). A fixture runner's results are per-item, not a scalar sum, so they **must**
+  leave through a second channel carrying an explicit index. That was not a choice — and
+  it is exactly what makes a lost job detectable: an index that never arrives prints
+  `FAIL <name> (NO RESULT — the runner lost this job)` and an index filled twice is
+  rewritten to `DUPLICATE RESULT`. The plan's stated worst case, a parallel runner
+  reporting green over lost work, **cannot happen quietly**, and the restriction is why.
+- **The affine-channel rule cost nothing, at two scales.** `docs/spec/13-concurrency.md:127`
+  ("cannot be returned, stored in a container, or captured") forces the pool to be a scope
+  rather than a reusable object, and `run_pool(js, tmp) -> [Res]` still reads as an
+  ordinary function: channels interior, array of results out. It read the same way at 243
+  toy jobs and at 560 real ones. The friction would start if two call sites wanted to
+  share one pool, and nothing in this tree does.
+- **A struct carrying heap strings crosses a channel exactly like one carrying ints, and
+  this is the single thing that made the work tractable.** `Res{idx, ok, name, reason,
+  t0, t1}` — two strings per message, 560 messages — needs no encoding, no parsing back
+  and produces no aliasing surprise. Probed before it was relied on, half expecting
+  `int`-only. A channel restricted to scalars would have forced a side table keyed by
+  index and every attribution bug that implies.
+- **NEW — §22 of the spec does not describe the construct every per-item worker pool
+  depends on.** `send` on a captured channel from inside a `parallel for` body is what
+  routes results out, and within §22 (`docs/spec/13-concurrency.md:76-121`) the only
+  mention of a channel is that it may be the foreach *source*
+  (`docs/spec/13-concurrency.md:91-92`). Worse, the section states that "each chunk's
+  captured values are deep-copied into it" (`docs/spec/13-concurrency.md:81-82`), which
+  read literally would give every chunk its own private queue — the opposite of what the
+  compiler does and of what 560 jobs crossing one channel proves. The rule is written
+  down, but only in the **non-normative** guide: "the chunk tasks share the captured
+  channels (a channel is a scalar handle, passed by value — not deep-copied per chunk)"
+  (`docs/guides/concurrency.md:154-155`). **A conformance gap, not a language defect** —
+  the implementation is right and the normative document is silent where a second
+  implementation would have to guess. ~3 sentences in §22 plus a carve-out beside the
+  write rule. Filed as `plan.md`'s carried-forward phase 10.
+- **NEW — `iter.map` cannot change the element type, and the lambda syntax hid it.**
+  `corelib/iter/iter.ty:8` is `fn map(xs: [$T], f: fn($T) -> $T) -> [$T]`: **one** type
+  variable, so `[Res] -> [int]` is not expressible through it. Measured — a
+  correctly-spelled lambda gets `error: argument 2 of 'iter__map' is fn(Res) -> int, which
+  does not fit the parameter pattern`. What made this cost time is that the *first*
+  attempt reached for `map(r => r.idx, rs)`, which is not the lambda spelling
+  (`docs/spec/09-expressions.md:187` is `fn(params) -> R: expr`) and gives
+  `error: expected ')'` — so the parse error was read as "lambdas are the problem" and the
+  real signature was never reached. The extraction became a scatter loop, which is better
+  code here anyway, so this cost nothing in the end. **Known cost:** a second type
+  parameter on `map`. Multi-parameter generics work (`corelib/result/result.ty:117` takes
+  three), but that is a *value* parameter — whether the inference reaches a
+  **function-typed** `fn($T) -> $U` parameter is **not verified**, and is the thing to
+  check before costing this. `filter` is unaffected (`fn($T) -> int` already).
+- **NEW, small — `cli.has` answers a narrower question than its name, and there is no
+  diagnostic possible.** A bare `--stats` lands in `Cli.flags`, not `Cli.keys`, so
+  `cli.has(c, "stats")` returns **false** and `cli.flag(c, "stats")` returns true;
+  measured, both spellings compile, both return `bool`, and the failure is a missing line
+  of output with nothing printed. **It is not a defect** — the doc comment at
+  `corelib/cli/cli.ty:159` says outright "Was option `key` (a `--key=value`) supplied at
+  all?", and `has` (`corelib/cli/cli.ty:160`) / `flag` (`corelib/cli/cli.ty:167`) scan
+  different vectors on purpose. The trap is the **name**: `has` reads as the general
+  question and answers only the valued half. A decision (rename to `has_value`, or a
+  `supplied(c, name)` that scans both), not lines — and the only thing here that failed
+  *silently*, which is why it is written down despite being small.
+- **NOT an item, recorded so it is not filed as one.** A multi-line `if A or B or\n C:`
+  does not continue and gives `error: expected an expression` — but wrapping the condition
+  in parentheses works, verified, and implicit joining inside `(`/`[` has existed since
+  `tests/multiline_literals.ty` (see the phase-7 multi-line-string entry below). The
+  language has the feature; the author did not reach for it.
+- **NEW, one line — the guide's bounded-fan-out section points its reader at the
+  desugaring.** `docs/guides/concurrency.md:86-104` introduces `parallel for x in ch:`,
+  explains that it "desugars to a `parallel for` over `0..<ncpu()`" and then closes with
+  "Worked example: `tests/conc/workers.ty`" (`docs/guides/concurrency.md:104`) — and
+  `tests/conc/workers.ty:2-3` says of itself that it is "the pattern `parallel for x in
+  ch:` sugars over; written here with today's primitives". The fixture that demonstrates
+  the sugar is `tests/conc/parfor_chan.ty:16` and the guide does not name it. **This is
+  what actually happened rather than a hypothetical:** this plan's recon read
+  `tests/conc/workers.ty`, copied the manual `0..<N` + `select` idiom into
+  `tools/prunner/main.ty:355-360`, and never learned the sugar existed until phase 3 went
+  looking. The sugar accepts a `send` body — verified with a scratch program, 200 jobs
+  sent, 200 received — so it would have removed the `0..<n` sizing, the `select`
+  scaffolding and the `sent != n` invariant. **Nothing in the language was in the way;
+  one wrong pointer in a guide was.** Fix: name both fixtures at
+  `docs/guides/concurrency.md:104`.
+- **The work-queue refusal below is confirmed a second time, and at the same time shown to
+  be workload-shaped.** That entry (phase 7, refused with a number) established that an
+  MPMC work queue is writable today with no compiler change; this program is an
+  independent instance at 560 jobs and 16 workers. But its *conclusion* — that the queue
+  buys nothing, because the cap is a worker blocking in `recv(2)` — is a property of the
+  **server's** workload, not of the queue. Here the jobs are finite, CPU-and-subprocess
+  bound, and every one terminates, so the same construct is the entire 7.62x. **Same
+  shape, opposite verdict, and the difference is whether a work item is guaranteed to
+  finish.** Neither result generalises without that qualifier.
+
+**What this program did NOT touch, so that nobody over-reads the evidence.** It is *one*
+shape: a bounded pool over a channel with a fan-in, over jobs that all terminate.
+
+- **`select` under contention is untested.** Both `select`s in `tools/prunner/main.ty`
+  have exactly **one** `recv` arm and no `default:` and no `closed:`. Nothing here
+  exercises arm ordering, and the spec's "select is not fair, so an earlier-listed ready
+  channel is always preferred" (`docs/spec/13-concurrency.md:165-167`) was never in play.
+- **No long-lived workers.** Every worker is a `parallel for` chunk that ends with the
+  loop; none outlives the pool's scope. The server's shape — a worker owning a connection
+  for its whole life — is exactly what this says nothing about, and it is the shape item 8
+  still has a live complaint about.
+- **No failure mid-pool.** Every fixture failure here is a *judged verdict*, a value
+  carried in a message. No job aborted, no `die()` ran inside a chunk, nothing sent on a
+  closed channel. What happens to the other fifteen chunks when one aborts is **unknown
+  from this evidence**, and it is the first thing to test before this pattern is trusted
+  where a work item can crash.
+- **Backpressure was never observed biting.** Capacity 16 with a collector draining
+  continuously; the results channel filling and parking a worker did not happen, or at
+  least was not measured.
+- **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:10040`.
+- **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
+  a pool.
 
 ## Phase 7 — writing the server
 
@@ -437,7 +606,7 @@ were unreachable* is the ergonomic finding.
 An honest account needs this half, and the good is not a consolation prize —
 some of it is genuinely better than the mainstream alternatives.
 
-- **Concurrency is the best thing in the language.** `spawn` / `wait`, no async colouring, no executor to configure, no locks anywhere in the server, and real parallelism: 1 / 4 / 8 client processes gave 12,456 / 41,046 / **79,712 req/s**, linear in worker count. The whole pool is five lines. Compare what "8 worker threads sharing an accept loop" costs to write in C.
+- **Concurrency is the best thing in the language.** `spawn` / `wait`, no async colouring, no executor to configure, no locks anywhere in the server, and real parallelism: 1 / 4 / 8 client processes gave 12,456 / 41,046 / **79,712 req/s**, linear in worker count. The whole pool is five lines. Compare what "8 worker threads sharing an accept loop" costs to write in C. **Confirmed 2026-07-31 on a second, non-server workload, which matters because this bullet was written from a program that never used `parallel for`:** `tools/prunner/main.ty` runs 560 fixtures over a bounded channel at **7.62x** (`maxconc` measured at 16 = `ncpu()`), and both of its drafts — ~240 lines and 479 lines — compiled with no errors and no warnings on the first attempt. See the 2026-07-31 re-score section above.
 - **Value semantics made the response builder obviously correct.** `r = httpd.with_header(r, ...)` returns a new value, so a three-call chain has no aliasing question, needs no defensive copy, and cannot be wrong. Zero aliasing bugs across the whole phase. This is the part I would keep unchanged.
 - **`path.safe_join` is exemplary corelib design.** Fail-closed (returns `""`), handles both the absolute-path and the climb-out cases, and documents itself with worked examples including the answers. Thirteen traversal vectors — `..`, `%2e%2e`, `%2E%2E%2f`, `....//`, `//etc/passwd`, `/%00`, `.git` — all refused on the first attempt, with the whole defence being one call plus decoding in the right order.
 - **`httpd.content_type` defaults to `application/octet-stream`, never `text/plain`, and says why in a comment.** That is the correct call and the reasoning was written down where the next person will read it.
