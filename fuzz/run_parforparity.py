@@ -4,7 +4,7 @@
 # Deterministic, not random. The body of a chunk has hard rules -- no early exit
 # (return / break-to-the-parfor / or_return), no in-place mutation or `inout`-pass
 # of a captured variable, an outer variable may be updated ONLY as a +/* reduction
-# read nowhere else, no range step, an int range -- and each rule is a SOUNDNESS
+# read nowhere else, a zero-based int range -- and each rule is a SOUNDNESS
 # gate: a chunk that violates one silently miscompiles (a private copy drained, a
 # partial read as the whole, an early exit that can't cross a thread boundary).
 #
@@ -21,9 +21,17 @@
 # (it leaned on tychoc as the oracle and never ported the gates at all).
 #
 # WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
-# of 2026-07-29 (three-clause `for` and bare `for:` replace `for i in range(...)`,
-# `range` deleted) means it can no longer parse the corpus, so no lane builds it.
+# of 2026-07-29 (the three-clause `for`, bare `for:` and `parallel for i in 0..<N:`
+# replace the old `range()` counting header, which was deleted) means it can no
+# longer parse the corpus, so no lane builds it.
 # See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
+#
+# The PROGRAMS BELOW were left in the deleted syntax by that change and only
+# rewritten 2026-07-30 (plan.md phase 37). Until then every one of them was
+# rejected at parse: the nine accept baselines failed loudly, but the sixteen
+# reject fixtures still "passed" -- rejected for saying `range()`, not for tripping
+# the gate each one exists to test. This lane is not in `make ci`, so nothing said
+# so. Anything added here must be run by hand.
 #
 # WHAT IS LOST: the ability to catch a SECOND implementation failing to enforce a
 # gate. What remains -- tychoc against the written-down `expect` oracle -- is the
@@ -42,21 +50,21 @@ REJECT = {
 "return": '''\
 fn main():
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         if i > 3:
             return
         acc = acc + i
 ''',
 "break_to_parfor": '''\
 fn main():
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         if i > 3:
             break
 ''',
 "or_return": '''\
 fn g(o: Option(int)) -> Option(int):
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         v := o or_return
         acc = acc + v
     return Some(acc)
@@ -66,13 +74,13 @@ fn main():
 "push_capture": '''\
 fn main():
     xs := [1, 2, 3]
-    parallel for i in range(3):
+    parallel for i in 0..<3:
         push(xs, i)
 ''',
 "indexset_capture": '''\
 fn main():
     xs := [1, 2, 3]
-    parallel for i in range(3):
+    parallel for i in 0..<3:
         xs[0] = i
 ''',
 "fieldset_capture": '''\
@@ -80,53 +88,63 @@ struct P:
     x: int
 fn main():
     p := P(0)
-    parallel for i in range(3):
+    parallel for i in 0..<3:
         p.x = i
 ''',
 "assign_nonreduction": '''\
 fn main():
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         acc = i
 ''',
 "reduction_bad_op": '''\
 fn main():
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         acc = acc - i
 ''',
 "read_accumulator": '''\
 fn main():
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         acc = acc + i
         print(str(acc))
 ''',
 "accumulator_two_ops": '''\
 fn main():
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         acc = acc + i
         acc = acc * i
 ''',
-"range_step": '''\
+# REPLACES the retired `range_step` fixture. Until 2026-07-29 the counting header
+# was `range(a, b, step)` and a non-unit step was a SOUNDNESS gate (a strided space
+# cannot be chunked); `parallel for i in range(0, 10, 2)` was its fixture. `0..<N`
+# has no step syntax at all, so that die_at is now unreachable by construction and
+# is kept only as a fail-closed assertion (src/tychoc.c:6643). The constraint that
+# took its place is the LOWER bound: `0..<N` demands a literal `0`
+# (src/tychoc.c:3364), so this is the range-shape rejection that still has a source
+# spelling. Folding the old stride into the body (`0..<5` with `i * 2`) was the
+# other option and was rejected: it turns a gate fixture into a second accept
+# baseline that duplicates `reduction_add` and asserts nothing.
+"range_nonzero_start": '''\
 fn main():
     acc := 0
-    parallel for i in range(0, 10, 2):
+    parallel for i in 1..<10:
         acc = acc + i
 ''',
 "range_not_int": '''\
 fn main():
     acc := 0
     n := 10.0
-    parallel for i in range(0, n):
+    parallel for i in 0..<n:
         acc = acc + i
 ''',
 "range_compound_not_int": '''\
 fn main():
     acc := 0
     n := 5.0
-    parallel for i in range(0, n + n):
+    parallel for i in 0..<n + n:
         acc = acc + i
 ''',
 "pass_capture_as_mut": '''\
@@ -134,21 +152,29 @@ fn bump(xs: inout [int]):
     xs[0] = 9
 fn main():
     xs := [1, 2, 3]
-    parallel for i in range(3):
+    parallel for i in 0..<3:
         bump(&xs)
 ''',
+# The RHS of a multi-assign must be a single TUPLE-valued expression
+# (src/tychoc.c:7054-7057), so this fixture's original body `a, b = b, a` was never
+# valid Tycho: it died at "expected newline" in the parser and never reached the
+# capture gate it names. That was invisible while the whole file died earlier still,
+# on `range()`. Respelled through a tuple-returning call, it now trips
+# "parallel for cannot assign to captured variable 'a'" -- the gate it exists for.
 "multiassign_capture": '''\
+fn swap(x: int, y: int) -> (int, int):
+    return y, x
 fn main():
     a := 0
     b := 0
-    parallel for i in range(3):
-        a, b = b, a
+    parallel for i in 0..<3:
+        a, b = swap(a, b)
 ''',
 "select_return": '''\
 fn main():
     a := channel(int, 8)
     send(a, 1)
-    parallel for i in range(0, 1):
+    parallel for i in 0..<1:
         select:
             recv(a, x):
                 return
@@ -161,31 +187,36 @@ ACCEPT = {
 "reduction_add": '''\
 fn main():
     acc := 0
-    parallel for i in range(100):
+    parallel for i in 0..<100:
         acc = acc + i
     print(str(acc) + "\\n")
 ''',
+# `0..<N` starts at a literal 0 (src/tychoc.c:3364), so the old `range(1, 8)` is
+# respelled `0..<7` with the offset folded into the body. Folding, not renumbering
+# to `0..<8`: a product over a zero-based space is 0, and 0 is also what a
+# reduction that silently drains a private copy produces, so `0..<8` would make the
+# fixture pass for the wrong reason. `(i + 1)` keeps the answer 5040.
 "reduction_mul": '''\
 fn main():
     prod := 1
-    parallel for i in range(1, 8):
-        prod = prod * i
+    parallel for i in 0..<7:
+        prod = prod * (i + 1)
     print(str(prod) + "\\n")
 ''',
 "two_accumulators": '''\
 fn main():
     s := 0
     p := 1
-    parallel for i in range(1, 8):
-        s = s + i
-        p = p * i
+    parallel for i in 0..<7:
+        s = s + (i + 1)
+        p = p * (i + 1)
     print(str(s) + " " + str(p) + "\\n")
 ''',
 "capture_read": '''\
 fn main():
     base := 5
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         acc = acc + (i + base)
     print(str(acc) + "\\n")
 ''',
@@ -193,15 +224,15 @@ fn main():
 fn main():
     m := 6
     acc := 0
-    parallel for i in range(1, m + 2):
+    parallel for i in 0..<m + 2:
         acc = acc + i
     print(str(acc) + "\\n")
 ''',
 "nested_break": '''\
 fn main():
     acc := 0
-    parallel for i in range(10):
-        for j in range(10):
+    parallel for i in 0..<10:
+        for j := 0; j < 10; j += 1:
             if j > 3:
                 break
             acc = acc + j
@@ -210,7 +241,7 @@ fn main():
 "local_indexset": '''\
 fn main():
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         ys := [0, 0, 0]
         ys[0] = i
         acc = acc + ys[0]
@@ -221,7 +252,7 @@ fn bump(xs: inout [int]):
     xs[0] = 9
 fn main():
     acc := 0
-    parallel for i in range(10):
+    parallel for i in 0..<10:
         ys := [0, 0, 0]
         bump(&ys)
         acc = acc + ys[0]
@@ -229,7 +260,7 @@ fn main():
 ''',
 "select_recv": '''\
 fn feed(ch: Channel(int), n: int) -> int:
-    for i in range(n):
+    for i := 0; i < n; i += 1:
         send(ch, i)
     return n
 fn main():
@@ -237,7 +268,7 @@ fn main():
     t := spawn feed(a, 8)
     m := wait(t)
     sum := 0
-    parallel for i in range(0, m):
+    parallel for i in 0..<m:
         select:
             recv(a, x):
                 sum = sum + x

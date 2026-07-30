@@ -14,9 +14,17 @@
 #   tychoc0 <dir>/main.ty                    (standalone: reads the dir itself)
 #
 # WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
-# of 2026-07-29 (three-clause `for` and bare `for:` replace `for i in range(...)`,
-# `range` deleted) means it can no longer parse the corpus, so no lane builds it.
+# of 2026-07-29 (the three-clause `for`, bare `for:` and `parallel for i in 0..<N:`
+# replace the old `range()` counting header, which was deleted) means it can no
+# longer parse the corpus, so no lane builds it.
 # See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
+#
+# `k_array_ret` below was left emitting the deleted `range()` by that change and
+# only rewritten 2026-07-30 (plan.md phase 37). It failed SILENTLY: `classify`
+# returns "skip" whenever tychoc exits non-zero, so a program that no longer parses
+# is counted as skipped, not FAILED, and the runner still printed a green
+# `FAIL=0`. Half of every run was being thrown away. This lane is not in `make ci`,
+# so nothing said so; run it by hand and watch `skip`, not only `FAIL`.
 #
 # WHAT IS LOST, AND IT IS THE INTERESTING HALF: legs (2) and (3) were the only
 # coverage anywhere of the `--bundle` post-order package STREAM and of a compiler
@@ -55,7 +63,7 @@ def k_tuple_ret(r, i):
     return (f"fn pair{i}(n: int) -> (int, int):\n    return n, n + 1\n",
             f"    tp{i} := geom.pair{i}({r.randint(0,9)})\n    acc = acc + tp{i}.0 + tp{i}.1\n")
 def k_array_ret(r, i):
-    return (f"fn arr{i}(n: int) -> [int]:\n    out := []int\n    for j in range(n):\n        push(out, j)\n    return out\n",
+    return (f"fn arr{i}(n: int) -> [int]:\n    out := []int\n    for j := 0; j < n; j += 1:\n        push(out, j)\n    return out\n",
             f"    a{i} := geom.arr{i}({r.randint(1,5)})\n    acc = acc + len(a{i})\n")
 
 KINDS = [k_struct, k_sized, k_newtype, k_enum, k_generic, k_generic_tuple, k_tuple_ret, k_array_ret]
