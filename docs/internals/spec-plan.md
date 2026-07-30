@@ -602,7 +602,11 @@ changes an observable behavior claim.
   output, or accept/reject decision", with `docs/spec/07-memory-model.md:70-71` limiting the licence to *when*
   and *whether* storage is allocated or freed. No static preconditions are spelled
   out normatively. Cross-referenced by `docs/spec/appendix-g-glossary.md:29-31`
-  and `docs/spec/appendix-e-conformance.md:235-241` (§9.5 is evidenced by the
+  and `docs/spec/appendix-e-conformance.md`'s E.2.1 bullet for "§5.1 identity,
+  §9.4 uniqueness, §9.5 transparent optimizations, §10.4 soundness" — named
+  rather than cited by line, because this reference has drifted three times
+  (§24.2 → §17.3 → §15.2 → E.2 fixture rows) and a clause name does not move
+  (§9.5 is evidenced by the
   whole differential suite — every fixture built native *and* under ASan/UBSan
   plus `make fuzz` — not by one fixture). This used to point into E.2's
   per-clause **fixture-coverage matrix** and to cite `make fixpoint` alongside

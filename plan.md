@@ -6246,7 +6246,7 @@ citation the gate now resolves.
 
 ## Phase discovered by batch 12
 
-- [ ] **Phase 66** — **a third drifted Appendix E citation, in the same
+- [x] **Phase 66** — **a third drifted Appendix E citation, in the same
       `docs/internals/spec-plan.md` bullet phase 65 repaired.** Filed rather
       than absorbed: phase 65's scope was the `:188` pair named in its brief,
       and this is a different citation on a different line.
@@ -6272,3 +6272,24 @@ citation the gate now resolves.
 
 Phase 51 was not started: it is the user's language-design decision and its own
 conclusion is that it needs a separate plan.
+
+  ### Evidence — phase 66, 2026-07-30
+
+  Fixed directly rather than by an agent: one citation, target already identified
+  by batch 12. `docs/spec/appendix-e-conformance.md:250-256` was confirmed the real
+  target by reading it — the bullet for "§5.1 identity, §9.4 uniqueness, §9.5
+  transparent optimizations, §10.4 soundness", whose text ("every golden fixture is
+  built native *and* under ASan/UBSan", "`make fuzz` applies the same differential")
+  is what the citing sentence in `docs/internals/spec-plan.md` describes.
+
+  **Repaired by NAME, not by number.** This one reference has now drifted four
+  times — §24.2 → §17.3 → §15.2 → E.2 fixture rows — and each repair set it up to
+  drift again. It now names the E.2.1 bullet by its clause list, which does not
+  move when lines are inserted above it. That is the only form of this citation
+  that stops costing a phase every time Appendix E is edited.
+
+  Gates: `citation check: ok (159 anchored, 2614 bare in bounds, 128 source->doc,
+  169 source->source in bounds, 12 source->source anchored)` — the bare count fell
+  by exactly one, the drifting number being removed rather than repointed;
+  `link check: ok (134 markdown files)`; `spec-check` all three legs green, 9
+  runnable examples pass. No compiled gate run: Markdown only.
