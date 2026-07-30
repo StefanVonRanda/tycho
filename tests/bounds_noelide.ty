@@ -1,0 +1,66 @@
+# The three-clause loops that must NOT get bounds-check elision, and still
+# compute the right answer through the checked accessor.
+#
+# Companion to tests/bounds_elision.ty, which locks the shape that DOES elide.
+# This one locks the boundary: for3_elidable_arr (src/tychoc.c:7955-8005) has to
+# fail closed on every spelling below, because eliding any of them would emit a
+# raw `.data[i]` for an index it has not proved in range. The golden only proves
+# the answers are right (they are right either way); the emitted C is the real
+# subject and phase 27's evidence in plan.md records `--emit-c` counts for each
+# of these six loops. tests/abort/for3_le_bound.ty makes the `<=` case fail at
+# RUNTIME rather than only in the emitted text.
+fn take(xs: [int]) -> int:
+    return len(xs)
+
+fn main():
+    a := []int
+    for i := 0; i < 10; i += 1:
+        push(a, i)
+    b := []int
+    for i := 0; i < 10; i += 1:
+        push(b, i * 2)
+
+    # (1) the body REASSIGNS the array -- stmts_unsafe rejects it, exactly as it
+    # does for `for i in range(len(a)):`. The cached-`len` argument does not
+    # apply here (the condition re-reads len every iteration) but the ELEMENT
+    # buffer still changes under the index, so the check has to stay.
+    r := 0
+    for i := 0; i < len(a); i += 1:
+        r = r + a[i]
+        a = b
+
+    # (2) `<=`, not `<`: the last iteration has i == len(b), so `.data[i]` would
+    # be one past the end. The guard keeps this program correct; the point is
+    # that the accessor stays checked.
+    s := 0
+    for i := 0; i <= len(b); i += 1:
+        if i < len(b):
+            s = s + b[i]
+
+    # (3) a step of 2 -- the post clause is not `i += 1`
+    t := 0
+    for i := 0; i < len(b); i += 2:
+        t = t + b[i]
+
+    # (4) the bound is a variable, not a `len()` call: nothing ties n to b
+    n := len(b)
+    u := 0
+    for i := 0; i < n; i += 1:
+        u = u + b[i]
+
+    # (5) the body passes the whole array to a call, which may be inout
+    v := 0
+    for i := 0; i < len(b); i += 1:
+        v = v + b[i] + take(b)
+
+    # (6) the init is not the literal 0
+    w := 0
+    for i := 1; i < len(b); i += 1:
+        w = w + b[i]
+
+    println("r=" + str(r))
+    println("s=" + str(s))
+    println("t=" + str(t))
+    println("u=" + str(u))
+    println("v=" + str(v))
+    println("w=" + str(w))

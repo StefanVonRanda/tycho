@@ -7953,6 +7953,57 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
     return 0;
 }
 
+/* --- the three-clause form's elidable shape -------------------------------
+ * `for i := 0; i < len(A); i += 1:` is the S_FOR3 spelling of what
+ * `for i in range(len(A)):` used to be, and it is elidable for a slightly
+ * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
+ * before the loop and leans on the body never shrinking A, whereas S_FOR3
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10704), so
+ * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
+ * body by construction. What still has to be PROVED is the rest of the shape.
+ * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
+ * the three parts are an init statement, a condition expression and a post
+ * statement, so each is matched explicitly and anything else falls through to
+ * the checked accessor. Fail closed -- a wrong elision is a memory-safety bug.
+ *
+ *   init  s->els[0]           S_DECL, name = i, value the literal 0
+ *   cond  s->expr             E_BINOP '<' (strictly), lhs = IDENT i,
+ *                             rhs = len(A) with A a bare IDENT
+ *   post  s->body[nbody-1]    S_ASSIGN to i, value E_BINOP '+' (IDENT i, 1)
+ *
+ * So `i <= len(A)`, `i += 2`, `i -= 1`, `i := 1`, `i < n`, `i < len(f(a))` and
+ * a post that assigns anything but i all keep `tycho_arr_*_get`. The body guard
+ * is the SAME `stmts_unsafe` S_FORRANGE uses, run over the body WITHOUT its
+ * last element: the post clause lives there (see the `els`/`body` note at
+ * src/tychoc.c:1563) and assigns i, so including it would report unsafe every
+ * time. Returns the array's name, or NULL when the shape is not certain. */
+static const char *for3_elidable_arr(Stmt *s) {
+    if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
+    Stmt *init = s->els[0], *post = s->body[s->nbody - 1];
+    Expr *cond = s->expr;
+    /* init: `i := 0` (a typed `i: int = 0` is the same S_DECL and also matches) */
+    if (!init || init->kind != S_DECL || !init->name || init->ctrl) return NULL;
+    if (!init->expr || init->expr->kind != E_INT || init->expr->ival != 0) return NULL;
+    const char *iv = init->name;
+    /* cond: `i < len(A)` */
+    if (!cond || cond->kind != E_BINOP || cond->op != TK_LT) return NULL;
+    if (!cond->lhs || cond->lhs->kind != E_IDENT || strcmp(cond->lhs->sval, iv)) return NULL;
+    Expr *bound = cond->rhs;
+    if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
+        bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
+    if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3552-3557) */
+    if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
+    Expr *inc = post->expr;
+    if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
+    if (!inc->lhs || inc->lhs->kind != E_IDENT || strcmp(inc->lhs->sval, iv)) return NULL;
+    if (!inc->rhs || inc->rhs->kind != E_INT || inc->rhs->ival != 1) return NULL;
+    const char *arr = bound->args[0]->sval;
+    if (!strcmp(arr, iv)) return NULL;
+    if (stmts_unsafe(s->body, s->nbody - 1, iv, arr)) return NULL;
+    return arr;
+}
+
 /* Is the access base[idx] a loop index proven in-range (so skip the check)? */
 static int index_in_range(Expr *base, Expr *idx) {
     if (!elision_on() || base->kind != E_IDENT || idx->kind != E_IDENT) return 0;
@@ -10707,9 +10758,19 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
             g_loop_post[g_loop_depth] = id;                /* `continue` -> goto _postN */
             g_loop_depth++;    /* moves are unsafe inside a loop (single read runs N times) */
+            /* bounds-check elision: `for i := 0; i < len(A); i += 1:` proves
+             * A[i] in-range for the body, on the shape proved by
+             * for3_elidable_arr (which also runs stmts_unsafe over the body). */
+            const char *el_arr = for3_elidable_arr(s);
+            if (el_arr) {
+                g_elide[g_nelide].iv = s->els[0]->name;
+                g_elide[g_nelide].arr = el_arr;
+                g_nelide++;
+            }
             gen_block(o, s->body, s->nbody - 1, ind + 2, ss, ret);
             if (body_continues(s->body, s->nbody - 1)) { indent(o, ind + 2); fprintf(o, "_post%d: ;\n", id); }
             gen_stmt(o, s->body[s->nbody - 1], ind + 2, ss, ret);   /* the post clause, every iteration */
+            if (el_arr) g_nelide--;
             g_loop_depth--;
             g_nascope--;
             indent(o, ind + 1); fprintf(o, "}\n");

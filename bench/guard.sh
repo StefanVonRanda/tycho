@@ -37,5 +37,38 @@ for w in binary_trees maptree; do
     rc=1
   fi
 done
-[ "$rc" -eq 0 ] && echo "bench-guard: ok (tycho beats C on tree workloads)" || echo "bench-guard: FAILED"
+
+# --- bounds-check elision -------------------------------------------------
+# The workload above cannot see this class at all: neither binary_trees nor
+# maptree contains a loop of the ELIDABLE shape (`for i := 0; i < len(A); i += 1:`
+# over a body that neither rebinds A nor passes it whole to a call), which is
+# how phase 6 of plan.md turned elision off for 223 sites tree-wide with every
+# gate staying green. bench/prongB/arr_pipeline.ty does contain it -- its two
+# scan loops, bench/prongB/arr_pipeline.ty:16 and :20.
+#
+# The assertion is STRUCTURAL, on the emitted C, and that is a MEASURED
+# decision rather than a preference. Wall time cannot see this class at -O3 --
+# the level this script builds with, and the level `tychoc` itself hands to cc
+# (src/tychoc.c:12695) -- because the three-clause form emits its bound into the
+# C `while` header, so gcc already knows `i < xs.len` and folds the accessor's
+# own `i >= xs.len` test away. Best-of-3 on arr_pipeline, the same program built
+# with and without TYCHOC_NO_BOUNDS_ELISION=1, measured while writing this:
+#     -O3   29 vs 30 ms,  46 vs 46 ms,  47 vs 45 ms   (noise; C_ms moved 24->35
+#                                                      across the same three runs)
+#     -O2   2358 vs 2684 ms  (1.14x)
+#     -O1   2517 vs 4740 ms  (1.88x)
+# A ratio gate at -O3 would therefore be theatre; the emitted C is what actually
+# reddens. Counted, not eyeballed: elision on -> 2 raw `.data[h_i]` and 0
+# `tycho_arr_int_get(h_`; elision off -> 0 and 2.
+./tychoc bench/prongB/arr_pipeline.ty --emit-c -o "$T/ap" >/dev/null 2>&1
+el=$(grep -c '\.data\[h_i\]' "$T/ap.c" || true)
+ck=$(grep -c 'tycho_arr_int_get(h_' "$T/ap.c" || true)
+if [ "$el" -ge 2 ] && [ "$ck" -eq 0 ]; then
+  printf '  ok    %-14s %s raw .data[i], %s checked calls (bounds-check elision live)\n' "arr_pipeline" "$el" "$ck"
+else
+  printf '  FAIL  %-14s %s raw .data[i], %s checked calls -- bounds-check elision no longer reaches `for i := 0; i < len(A); i += 1:`\n' "arr_pipeline" "$el" "$ck"
+  rc=1
+fi
+
+[ "$rc" -eq 0 ] && echo "bench-guard: ok (tycho beats C on tree workloads; elision live on array scans)" || echo "bench-guard: FAILED"
 exit "$rc"

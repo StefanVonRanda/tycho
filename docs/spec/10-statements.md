@@ -126,8 +126,8 @@ source instead of inferring them from the sign of a step expression.
 > scan and its five required-clause refusals `src/tychoc.c:3279-3328`; `init`
 > parsed by `parse_stmt` itself `src/tychoc.c:3310@parse_stmt`; loop scoping and
 > the post clause resolved outside the body block `src/tychoc.c:7248-7253`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:10661-10664` with the
-> label at `src/tychoc.c:10711@_post%d`; the `range()` refusal
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:10712-10715` with the
+> label at `src/tychoc.c:10771@_post%d`; the `range()` refusal
 > `src/tychoc.c:3387@was removed: write`. The step codegen and its zero-step
 > guards still exist but are unreachable: every remaining `S_FORRANGE` producer
 > writes a NULL step (`src/tychoc.c:1553-1559`).
