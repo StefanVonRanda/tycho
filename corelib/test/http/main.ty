@@ -1,6 +1,6 @@
-# corelib test: exercises core:http; the C compiler and tychoc0 must agree, and
-# the output is locked to corelib/test/http.out (corelib/run.sh). Skipped where
-# libcurl is absent (via corelib/http/deps).
+# corelib test: exercises core:http; the output is locked to corelib/test/http.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29. Skipped where libcurl is absent (via corelib/http/deps).
 #
 # This is the DETERMINISTIC OFFLINE path: nothing listens on the loopback port,
 # so the request fails at transport and returns a null handle. It proves the FFI

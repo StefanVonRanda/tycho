@@ -2,8 +2,9 @@
 # PNG, decodes back, and checks identity (PNG is lossless, so the round-trip is
 # exact). The compressed PNG bytes are libpng-version dependent, so the checks are
 # boolean invariants (produced-a-PNG, signature, dimensions, pixel identity, corrupt
-# handling) which are deterministic everywhere. tychoc and tychoc0 must agree and
-# the output is locked to corelib/test/image.out (corelib/run.sh).
+# handling) which are deterministic everywhere. The output is locked to
+# corelib/test/image.out (corelib/run.sh). The tychoc0 cross-check this line used to
+# claim was retired 2026-07-29.
 package main
 import "core:image"
 

@@ -1,5 +1,6 @@
-# corelib test: exercises core:fmath; the C compiler and tychoc0 must agree (corelib/run.sh).
-# Negative float literals are written `0.0 - x` (the codebase's idiom).
+# corelib test: exercises core:fmath; the output is locked to corelib/test/fmath.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29. Negative float literals are written `0.0 - x` (the codebase's idiom).
 package main
 import "core:fmath"
 import "core:math"     # min/max/clamp/sign are generic in core:math now (exercised here over float)

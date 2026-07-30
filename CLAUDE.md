@@ -45,7 +45,7 @@ end, to confirm what you already believe.
 | `make ci` step | run this instead while fixing |
 |---|---|
 | `[2] make test`, `[2b] ilp32`, `[2c] asan-self` | `make test` (`sh scripts/asan_self.sh` for the ASan-specific case) |
-| `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` |
+| `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` / `make fetch` |
 | `[3b] entrypoints` | `sh scripts/entrypoints.sh` |
 | `[4] conc` | `make conc` |
 | `[5] ffi` | `make ffi` |

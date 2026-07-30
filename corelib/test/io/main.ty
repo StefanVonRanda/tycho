@@ -1,5 +1,6 @@
-# corelib test: exercises core:io; the C compiler and tychoc0 must agree, and
-# the output is locked to corelib/test/io.out (corelib/run.sh).
+# corelib test: exercises core:io; the output is locked to corelib/test/io.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29.
 #
 # Filesystem side effects are confined to two fixed throwaway paths under /tmp
 # (never the repo). Each run truncates first, so output is deterministic; the
@@ -38,9 +39,13 @@ fn nb(r: Result(bytes, io.IoErr)) -> int:
 
 # WHICH outcome, as a stable string. One arm per cause, since plan.md phase 3;
 # this was `is_ok` + `err_or` plus three `e == io.X` comparisons, because
-# `Err(io.IsDir)` did not parse as a match arm. Written this way here and not in
-# corelib/io itself: no runner feeds corelib/test/ to the frozen
-# compiler/tychoc0.ty, whose grammar still has no nested pattern.
+# `Err(io.IsDir)` did not parse as a match arm. The old note here said this could
+# be written HERE and not in corelib/io itself because no runner fed corelib/test/
+# to the frozen compiler/tychoc0.ty. That constraint died with the tychoc0 lanes on
+# 2026-07-29 and nothing builds tychoc0 now, so nested patterns are writable
+# anywhere -- tests/nested_pattern.ty is the construct's own fixture under the main
+# golden loop. This arm stays here because it is the core:io lane, not because
+# anything forbids it elsewhere.
 fn why(r: Result(bytes, io.IoErr)) -> string:
     match r:
         Ok(bs): return "Ok"
@@ -145,8 +150,16 @@ fn main():
     # handed back -- 5 bytes, with an interior 0x00 at index 2. This is the one
     # property that would break if any of the three went through NUL-terminated
     # code: b[2] would abort or read past, len(b[1:4]) would be 1, and a concat
-    # would stop at the NUL. It CANNOT live in tests/ -- frozen tychoc0 rejects
-    # `b[i]` with "str(x) can't stringify a yte" (see docs/spec/appendix-e).
+    # would stop at the NUL. This used to say the case CANNOT live in tests/,
+    # because the frozen tychoc0 rejected `b[i]` with "str(x) can't stringify a
+    # yte" and every tests/*.ty was fed to it. That block expired 2026-07-29 with
+    # the tychoc0 lanes, so tests/ is now merely a place this COULD go. It stays
+    # here on §E.1's convention -- a package's own lane covers the package, and
+    # nothing moves merely because it now could. The §3.9.4 interior-NUL clause
+    # already has its own tests/ witnesses for the string side (tests/string_nul,
+    # tests/strbytes); §5.2.6's `bytes` operators are witnessed by this lane, the
+    # §5.2.6 spec example and server/main.ty's log_safe, per the Appendix E row --
+    # whose surrounding note is still written as if tychoc0 ran (plan.md phase 58).
     bb := result.unwrap_or(rb, to_bytes(""))
     b0 := bb[0]
     bnul := bb[2]                        # the interior NUL, read as 0

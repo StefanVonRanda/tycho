@@ -1,6 +1,7 @@
-# corelib test: exercises core:math; the C compiler and tychoc0 must agree (corelib/run.sh).
-# Each group prints its values distinguishably (no lossy checksum-summing: the old
-# sign(-4)+sign(4)+sign(0) fold was 0 even with sign broken).
+# corelib test: exercises core:math; the output is locked to corelib/test/math.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29. Each group prints its values distinguishably (no lossy checksum-summing:
+# the old sign(-4)+sign(4)+sign(0) fold was 0 even with sign broken).
 package main
 import "core:math"
 

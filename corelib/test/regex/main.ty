@@ -1,6 +1,7 @@
 # corelib test: exercises core:regex (POSIX ERE via the auto-discovered C shim).
-# All three paths (tychoc, tychoc0 --bundle, standalone tychoc0) must agree; the
-# harness links corelib/regex/regex_shim.c (no string literals in f-string holes,
+# The output is locked to corelib/test/regex.out (corelib/run.sh); the two other
+# paths this line used to claim (tychoc0 --bundle, standalone tychoc0) were retired
+# 2026-07-29. The harness links corelib/regex/regex_shim.c (no string literals in f-string holes,
 # so match args are passed to normal calls and the bools/ints interpolated).
 package main
 import "core:regex"

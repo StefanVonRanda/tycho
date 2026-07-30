@@ -1,8 +1,9 @@
-# corelib test: exercises core:httpd over core:net entirely on the loopback
-# interface, in one process/thread (connect() into the listen backlog completes
-# the handshake before accept(), so listen -> connect -> accept -> exchange runs
-# single-threaded and hermetic). No fixed port (bind 0 -> ephemeral). tychoc and
-# tychoc0 must agree; output locked to corelib/test/httpd.out (corelib/run.sh).
+# corelib test: exercises core:httpd over core:net entirely on the loopback interface,
+# in one process/thread (connect() into the listen backlog completes the handshake
+# before accept(), so listen -> connect -> accept -> exchange runs single-threaded and
+# hermetic). No fixed port (bind 0 -> ephemeral). The output is locked to
+# corelib/test/httpd.out (corelib/run.sh). The tychoc0 cross-check this line used to
+# claim was retired 2026-07-29.
 package main
 import "core:net"
 import "core:httpd"

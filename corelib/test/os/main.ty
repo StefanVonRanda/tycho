@@ -1,7 +1,8 @@
 # corelib test: exercises core:os. Every command is hermetic and side-effect-free
 # (true / false / exit N / printf) -- no filesystem, network, or process state is
-# touched, so the output is deterministic. tychoc and tychoc0 must agree and the
-# output is locked to corelib/test/os.out (corelib/run.sh).
+# touched, so the output is deterministic. The output is locked to corelib/test/os.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29.
 
 package main
 import "core:os"

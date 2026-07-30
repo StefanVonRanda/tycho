@@ -3945,7 +3945,7 @@ have compiled the new fixture under ASan and TSan. `make ci` was not run.
     comment no longer describing a spec defect.
   - Verify: `sh scripts/spec_check.sh`, then `python3 scripts/check_citations.py`.
 
-- [ ] **Phase 46** — **`tests/rtparity/run.py` is the other half of phase 22 and
+- [x] **Phase 46** — **`tests/rtparity/run.py` is the other half of phase 22 and
       was not done.** Phase 22's entry proposed, beside the `expect` table,
       turning `tests/rtparity/run.py` into a single-runtime lane asserting the C
       emitted for `tests/rtparity/surface.ty` still contains each expected
@@ -4207,7 +4207,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
 
 ## Phases discovered by batch 5
 
-- [ ] **Phase 47** — **`examples/fetch/run.sh` is in no Makefile target, which is
+- [x] **Phase 47** — **`examples/fetch/run.sh` is in no Makefile target, which is
       the reason phase 20 existed at all.** The golden was stale from `39d75be`
       onward and nothing said so, through an entire prior plan and five batches of
       this one. `scripts/entrypoints.sh` proves the entry point *compiles*; it
@@ -4229,7 +4229,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     target — not just the runner, which batch 5 already demonstrated.
   - Verify: the new target, then `make ci` once.
 
-- [ ] **Phase 48** — **the `parallel for` diagnostic's wording is asserted by
+- [x] **Phase 48** — **the `parallel for` diagnostic's wording is asserted by
       nothing.** Batch 5 confirmed `src/tychoc.c:3241` carries the text phase 26
       specified, but confirmed it by reading the source, which is exactly the
       check that does not survive the next edit. `tests/reject/*.ty` asserts only
@@ -4247,7 +4247,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     the message in `src/tychoc.c` is shown reddening it.
   - Verify: `make test`.
 
-- [ ] **Phase 49** — **25 `corelib/test/*/main.ty` headers still claim "the C
+- [x] **Phase 49** — **25 `corelib/test/*/main.ty` headers still claim "the C
       compiler and tychoc0 must agree".** No lane has built `tychoc0` since
       2026-07-29 and `corelib/run.sh:6` already records the retirement in its own
       header, so every per-test header beneath it now advertises a differential
@@ -4263,7 +4263,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     and each edited file still compiles.
   - Verify: `make corelib`, then `python3 scripts/check_citations.py`.
 
-- [ ] **Phase 50** — **`corelib/test/io/main.ty` still explains two fixtures'
+- [x] **Phase 50** — **`corelib/test/io/main.ty` still explains two fixtures'
       *location* by the dead freeze.** `corelib/test/io/main.ty:43` says the
       nested-pattern arm is written there because "no runner feeds corelib/test/
       to the frozen compiler/tychoc0.ty", and `corelib/test/io/main.ty:148` says
@@ -5029,3 +5029,311 @@ fixtures, one spec section and two README lines.
   `scripts/`, `tests/`, `bench/`, `examples/` and `fuzz/` — every in-tree
   consumer uses `--emit-c -o`. A consumer outside the repo would break, and
   `README.md:190` plus the command table are the only notice they get.
+
+## Batch 9 evidence — phases 46, 47, 48, 49, 50
+
+Ran at `5939670`. Subject: runners and fixture headers describing a world the
+retired `tychoc0` freeze took with it.
+
+### Phase 46 — the decision: an `expect` oracle, plus one property leg, and why not the other two
+
+Read the runner before deciding. `tests/rtparity/run.py` was not merely
+oracle-less, it was **dead code**: `main()` printed a retirement notice and
+`return 0`-ed at what is now `tests/rtparity/run.py:210` in the old file, with
+the entire comparison unreachable below it, and `emitted_c()` calling `die()`
+before its own `return`. Nothing in the tree ran it either — `grep -rn rtparity`
+outside `tests/rtparity/` hits only `FRICTION.md`, `plan.md`, four archived
+`docs/internals/plan-*-DONE.md`, `docs/architecture.md`, `compiler/README.md`,
+`docs/bootstrap.md` and `compiler/tychoc0.ty`. **No Makefile target and no CI
+step**, though its own docstring advertised `make rtparity`.
+
+The subject differs from typeparity's, and that is what decided it. Typeparity
+gates a *decision table* (accept/reject per operand pair). This lane gates
+whether the **user-observable runtime surface actually reaches the emitted
+program**: the `getenv()` knobs, the `tycho: ...` trap texts, the
+`TYCHO_ARENA_STATS` row labels. That question is answerable with one
+implementation, which is why retirement was rejected: the named victim in the
+old docstring — `TYCHO_ARENA_STATS` present in `runtime/tycho_rt.c` and a no-op
+in every tychoc0-built binary, found by hand, fixed in `2b24ca6` — is a
+single-implementation bug class.
+
+**A pure property check was measured and rejected as the whole answer.** The
+strongest available property is "everything `runtime/tycho_rt.c` defines reaches
+the emitted C", and it is nearly vacuous today because the embed is verbatim —
+measured, not assumed:
+
+    $ python3 - # extract with the lane's own regexes
+    env emitted= 3 rt= 3 emitted-only= []
+    msg emitted= 28 rt= 24 emitted-only= ['tycho: non-exhaustive match\n',
+        'tycho: push to a full bounded[4]\n', 'tycho: range step is zero\n', 'tycho: slice [%']
+    row emitted= 5 rt= 5 emitted-only= []
+    full rt verbatim in emitted: True
+
+Deleting a `getenv` from the runtime moves both sides together, so the property
+cannot see it. It is **kept anyway** (`rt_subset()`), as the only thing that
+would notice a future tychoc that emits the runtime piecewise — but on its own
+it would catch nothing.
+
+**The `expect` oracle was chosen**, in phase 22's shape: 36 recorded items — 3
+env knobs, 28 diagnostics (24 from the runtime, 4 written inline by codegen), 5
+stats rows. At this arity an enumerated list is a golden, not the photograph
+phase 22 refused at 4608 rows; it is the same mechanism `tests/diag/*.err` uses.
+The four codegen entries are where the lane earns its keep, each citing the
+emitter: `src/tychoc.c:10021`, `:10734` (non-exhaustive match), `:11743`
+(bounded push), `:10886` (range step is zero), `:9647`, `:9666` (slice bounds).
+Both directions fail — a lost trap, and an emitted trap nobody wrote down.
+
+**Negative control — the oracle bites.** `src/tychoc.c:10886`'s emitted trap
+text deleted, compiler rebuilt:
+
+```
+rtparity: FAIL - diagnostic "tycho: range step is zero\n" is in the oracle but NOT emitted. A runtime capability
+          disappeared, or the construct in tests/rtparity/surface.ty that pulls it in did.
+rtparity: FAIL - 1 runtime-surface difference(s) against the oracle in
+          tests/rtparity/run.py. ... rc=1
+```
+
+`src/tychoc.c` restored with `git checkout` and rebuilt; `git status --short
+src/tychoc.c` clean.
+
+**What it still does not buy**, said in the file's header too: the sets were
+recorded off the compiler they gate, so a trap that was *always* wrong is
+invisible. This lane sees a surface item vanish, not one that never worked.
+
+`make rtparity` now exists (`Makefile`, beside `conc`) so the docstring's claim
+is true; it is in no aggregate lane yet — phase 58.
+
+### Phase 47 — the phase's premise was false, and the real hole was one level up
+
+`make fetch` **already existed** and has since `39d75be` — `Makefile:206` in the
+pre-batch tree. What was true is the consequence: no *aggregate* lane ran it, so
+the stale golden `39d75be` left behind survived a prior plan and five batches.
+`scripts/ci.sh:69-75` even enumerated `fetch` among the runners deliberately
+left outside CI.
+
+Wiring required three edits, not one: `make -s fetch` added to `scripts/ci.sh`'s
+step `[3/13]` beside `site`/`raytrace`/`mandelbrot`; the step's own label and the
+"NOTHING else in the tree" comment above `[3b]` corrected, since both enumerated
+the step's contents; and the `fetch:` target comment in `Makefile`, which
+asserted "not in `make ci`" as if it were a decision. `CLAUDE.md`'s step→gate
+table row for `[3]` now names `make fetch` too.
+
+Chosen home: `make ci`, not `make test`. It links `libcurl` and builds under
+ASan — real seconds — and self-skips (`fetch: SKIP (libcurl not installed)`), so
+it is safe there unconditionally and needs no network (`file://` through
+libcurl).
+
+**Negative control on the target, not the runner** (the Done-when asked for
+exactly this):
+
+```
+$ printf 'bytes  : 999\n' >> examples/fetch/expected.out && make fetch
+FAIL: output != golden
+      7d6
+      < bytes  : 999
+fetch: FAIL
+make: *** [Makefile:221: fetch] Error 1
+make rc=2
+```
+
+Golden restored; `git status --short examples/fetch/` clean.
+
+`make ci` was **not** run — the parent brief forbade it and `CLAUDE.md` says it
+is confirmation, not discovery. `sh -n scripts/ci.sh` parses, and the exact
+command the new line runs (`make -s fetch`) was run in the foreground and is
+green. The full sweep is phase 58, which is where a new CI step belongs.
+
+### Phase 48 — the diagnostic is pinned, and the phase's line number had drifted
+
+The message is at `src/tychoc.c:3243`, not `:3241` as the phase entry said —
+`:3241` is the `parse_stmt` call and `:3242` the `S_FORRANGE` test. Cited from
+the fixture as read.
+
+`tests/diag/parallel_three_clause.ty` + `.err` now pin it byte-for-byte under
+`make test`'s diag loop. The golden:
+
+```
+tests/diag/parallel_three_clause.ty:13: error: parallel supports `for i in 0..<N` and `for x in collection` loops only
+    13 |     parallel for i := 0; i < 3; i += 1:
+```
+
+**Negative control — one word flipped** (`only` -> `ONLY`) in `src/tychoc.c`,
+compiler rebuilt, fixture recompiled:
+
+```
+$ cmp tests/diag/parallel_three_clause.err /tmp/dg.log
+... differ: byte 115, line 1
+< ... loops only
+> ... loops ONLY
+```
+
+Restored and rebuilt; the golden matches again and `git status --short
+src/tychoc.c` is clean.
+
+**Checked, and it is not the same arm.** The phase asked about the
+foreach-of-an-expression refusal. `parallel for x in 3:` gives a *different*
+message from a *different* site — `src/tychoc.c:3411`, "parallel for over a
+collection or channel must name a variable (bind it first)" — so it is not
+covered by this fixture and is not in this phase's scope. Filed as phase 60.
+
+### Phases 49 and 50 — headers now say what is true, with the history dated
+
+The convention applied: archived `docs/internals/plan-*-DONE.md` files are
+frozen records and are never rewritten; these are **live source headers
+describing current behaviour**, the opposite case, so they state today's
+guarantee and put the retired one in the past tense with its date.
+
+`grep -rl 'tychoc0 must agree' corelib/test/*/main.ty | wc -l` gave the phase's
+25, and all 25 were rewritten. **The grep undercounted the class by seven**,
+because it is line-oriented and these headers wrap: `compress`, `bignum`,
+`raster` (`must` / `agree` split across lines), `arrays` and `regex` (three-way
+"tychoc0 --bundle and standalone tychoc0 must all agree"), `iter` ("All three
+compile paths must agree") and `crypto` ("the tychoc-vs-tychoc0 diff proves the
+two compilers agree on the FFI"). All seven asserted the same dead differential
+and were corrected the same way — 32 files in total. `grep -rn "must agree"
+corelib/test/*/main.ty` now returns only `corelib/test/cli/main.ty:87`, which is
+about `parse_spec` agreeing with a fixture, not about a compiler.
+
+The rewrite was scripted with a review pass, and the first attempt was **thrown
+away**: an `[^.]*\.` sentence match stopped inside `corelib/test/base64.out` and
+left tails like `2026-07-29.out (corelib/run.sh).` behind. Reverted with `git
+checkout -- corelib/test/`, redone with the sentence end matched explicitly, and
+all 25 headers re-read afterwards; one leftover lowercase sentence start in
+`corelib/test/decimal/main.ty` was fixed by hand.
+
+**Phase 50's decision: correct the comments, move nothing.** Both claims in
+`corelib/test/io/main.ty` were expired, but they are separate clauses:
+
+- The nested-pattern arm's "no runner feeds `corelib/test/` to the frozen
+  compiler" — the same case batch 5 closed for `httpd` and `result`, and it now
+  reads the way those do, pointing at `tests/nested_pattern.ty` as the
+  construct's own fixture.
+- The interior-NUL `bytes` fixture's "It CANNOT live in `tests/`". Checked
+  first, as the phase asked: `tests/string_nul.ty` and `tests/strbytes.ty` cover
+  the **string** side of §3.9.4's interior NUL (length past a NUL, indexing,
+  substr, concat, accumulator, map keys, `find` across a NUL) — so §3.9.4 has
+  its `tests/` witness already. The `b[i]` / `b[i:j]` / `b + b` properties the
+  comment enumerates are **§5.2.6**, a different clause, whose Appendix E row
+  (`docs/spec/appendix-e-conformance.md:98`) already names its witnesses:
+  `corelib/test/io`, the §5.2.6 spec example, and `server/main.ty`'s `log_safe`.
+  Applying §E.1's convention — "a package's own lane covers the package, and
+  nothing moves merely because it now could" — the fixture **stays**, and the
+  comment now says `tests/` is a place it *could* go rather than one it cannot.
+
+Out of scope and filed as phase 59: the Appendix E note under that row
+(`docs/spec/appendix-e-conformance.md:322-345`) is still written in the
+live-freeze present tense ("would be a program `tychoc` accepts and the frozen
+`tychoc0` refuses", "which `scripts/frontparity.sh` would report"). Rewriting it
+is a documentation phase of its own, not a comment edit bolted onto this one.
+
+### Gate output — the real runs
+
+```
+$ make corelib
+corelib: all green (tychoc matches goldens)
+
+$ make corelib-examples
+corelib examples: all green
+
+$ make test
+passed: 551   failed: 0
+all green
+
+$ python3 tests/rtparity/run.py
+rtparity: env knobs         3/ 3 as recorded (ok)
+rtparity: diagnostics      28/28 as recorded (ok)
+rtparity: arena-stats rows  5/ 5 as recorded (ok)
+rtparity: runtime file  every defined surface reaches the emitted C (ok)
+rtparity: emitted runtime surface matches the oracle (3 env knobs, 28 diagnostics, 5 stats rows)
+
+$ sh examples/fetch/run.sh
+fetch: green (http+json+sha256+io+path compose; tychoc+ASan; real libcurl via file://; the tychoc0 leg was retired 2026-07-29)
+
+$ make fetch      # the wired target, same result
+$ make rtparity   # the new target, same result
+
+$ python3 scripts/check_citations.py
+citation check: ok (159 anchored contain the token they name, 2246 bare in bounds,
+121 source->doc citations resolve, 166 source->source in bounds, 11 source->source anchored)
+
+$ sh scripts/check_links.sh
+link check: ok (134 markdown files, no dead relative links)
+```
+
+**551, not 550**, and the +1 is accounted for: `diag_parallel_three_clause`, the
+phase-48 fixture. Nothing else in the count moved; phases 49 and 50 touch
+comments only, so no golden could move, and `make corelib` proves all 32 edited
+files still compile.
+
+**The citation gate caught the Makefile edit.** Adding the `rtparity` target
+shifted `Makefile:253@SKIPPED` to `:267`, reddening four references
+(`scripts/asan_self.sh:11`, `:72`, `scripts/check_citations.py:189`,
+`scripts/editors_check.sh:29`). Repointed to `Makefile:267` — verified the line is the
+ilp32 ASan-skip `echo` — and the gate is green. Anyone adding a Makefile target
+should expect this; it is the third time an anchored `Makefile:N` has moved
+under an unrelated edit.
+
+`make ci` was **not** run. `sh scripts/spec_check.sh` was not run either: no
+fixture directory moved and no Appendix E path changed — the one file added,
+`tests/diag/parallel_three_clause.ty`, is a new path, not a moved one.
+
+## Phases discovered by batch 9
+
+- [ ] **Phase 58** — **two lanes now exist that `make ci` has never swept.**
+      Batch 9 added `make -s fetch` to `scripts/ci.sh`'s step `[3/13]` and
+      created a `make rtparity` target that is in no aggregate lane at all. The
+      fetch line was verified by running the exact command it runs, and
+      `sh -n scripts/ci.sh` parses, but the full sweep has not run since — and
+      per `CLAUDE.md`, a phase that adds a CI step is exactly the phase that owes
+      the sweep. Batch 6's closing `make ci` is the last full run, and it
+      predates both.
+  - Scope: `scripts/ci.sh` (decide whether `rtparity` joins, and under which
+    step number — it is a `tests/` lane, not a corelib dogfood), and one full
+    sweep.
+  - Note the numbering convention: `2b`, `2c`, `3b`, `9b` are sub-lanes of a
+    step and the `/13` denominator counts only the numbered steps.
+  - Done when: `make ci` has been run once, green, with both lanes in it, and
+    the `Makefile` comment on `rtparity` that currently points here is updated.
+  - Verify: `make ci` once. This is the deliberate closing sweep, not discovery.
+
+- [ ] **Phase 59** — **Appendix E's §5.2.6 note is still written as if `tychoc0`
+      ran.** `docs/spec/appendix-e-conformance.md:322-345` argues that a `tests/`
+      fixture for the `bytes` operators "would be a program `tychoc` accepts and
+      the frozen `tychoc0` refuses", cites what `scripts/frontparity.sh` "would
+      report as a divergence" and `compiler/fixpoint.sh` "as a build failure",
+      and enumerates 13 corelib packages that "may **not** use a `bytes`
+      operator" — a live prohibition derived entirely from lanes retired
+      2026-07-29. The row itself
+      (`docs/spec/appendix-e-conformance.md:98`) ends "no `tests/` fixture, see
+      the note below". Batch 9 corrected the two `corelib/test/io/main.ty`
+      comments that pointed at this note but deliberately did not widen into the
+      spec appendix.
+  - Scope: that note, the §5.2.6 row, and any sibling note in the same section
+    written in the same present tense — batch 3 swept documents for this class
+    and Appendix E's notes were not reached. Check the three notes above it,
+    which the text calls the same mechanism biting the first three times.
+  - The blocked-13 enumeration is a **historical measurement** and should be
+    kept as one, in the past tense with its date — not deleted, and not left
+    reading as a live rule.
+  - Decide, and write down, whether §5.2.6 now gets its own `tests/` fixture:
+    the block expired, but §E.1's convention says nothing moves merely because
+    it now could, and `corelib/test/io` already covers it.
+  - Done when: no sentence in the section asserts a live `tychoc0` constraint,
+    and §5.2.6's coverage claim matches what the tree actually runs.
+  - Verify: `sh scripts/spec_check.sh`, `python3 scripts/check_citations.py`,
+    `sh scripts/check_links.sh`. Markdown only — do **not** run `make test`.
+
+- [ ] **Phase 60** — **the second `parallel for` refusal is asserted by
+      nothing.** Phase 48 pinned the three-clause message; the neighbouring arm
+      at `src/tychoc.c:3411` — "parallel for over a collection or channel must
+      name a variable (bind it first)", reached by `parallel for x in <expr>` —
+      has no `tests/diag/` fixture, and `grep -rn "must name a variable" tests
+      docs src` finds it only in `src/tychoc.c` and a prose mention in
+      `docs/guides/concurrency.md:102`. It is the same gap phase 48 closed, one
+      arm over: `tests/reject/*.ty` would accept any nonzero exit with any
+      message.
+  - Scope: one `tests/diag/` fixture and its golden. No `src/tychoc.c` change —
+    the message reads correctly, it is simply unasserted.
+  - Done when: the fixture exists, `make test` scores it (552), and flipping one
+    word of the message is shown reddening it.
+  - Verify: `make test`.

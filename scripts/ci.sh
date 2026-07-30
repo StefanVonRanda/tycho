@@ -59,16 +59,23 @@ make -s ilp32
 step "[2c/13] make asan-self  (the COMPILER built with ASan+UBSan, compiling the whole corpus)"
 make -s asan-self
 
-step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot dogfoods vs goldens)"
+step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch dogfoods vs goldens)"
 make -s corelib
 make -s corelib-examples
 make -s site
 make -s raytrace
 make -s mandelbrot
+# fetch joined this step on 2026-07-30. It is the one dogfood composing core:http
+# end to end, it needs no network (it GETs a file:// URL through libcurl) and it
+# self-skips with `fetch: SKIP (libcurl not installed)`, so it is safe here
+# unconditionally. Before this it was in no aggregate lane at all: its golden was
+# left stale by 39d75be and stayed red, unnoticed, until plan.md batch 5.
+make -s fetch
 
-# Step 3 above builds corelib, corelib-examples, site, raytrace and mandelbrot --
-# and NOTHING else in the tree with an entry point. Every example that has its own
-# runner (webserver, weblog, fetch, sqlite) and `server/` are outside this file, so
+# Step 3 above builds corelib, corelib-examples, site, raytrace, mandelbrot and
+# fetch -- and NOTHING else in the tree with an entry point. The remaining
+# examples with their own runner (webserver, weblog, sqlite) and `server/` are
+# outside this file, so
 # examples/webserver/main.ty once sat uncompilable for a whole phase with no gate
 # red. This lane is compile-only (`--emit-c`: no cc, no link, no libcurl/sqlite3)
 # and costs milliseconds, so closing that hole is not a reason to run `make ci`

@@ -1,7 +1,8 @@
 # corelib test: core:bignum. Pure integer arithmetic -> fully deterministic. The
 # 2^100 and 100! checks are self-verifying against their known canonical values, so
-# a carry/overflow bug fails the assertion (not just the golden). tychoc and tychoc0
-# must agree and the output is locked to corelib/test/bignum.out (corelib/run.sh).
+# a carry/overflow bug fails the assertion (not just the golden). The output is locked
+# to corelib/test/bignum.out (corelib/run.sh); the tychoc0 cross-check this line used
+# to claim was retired 2026-07-29.
 package main
 import "core:bignum"
 

@@ -1,6 +1,6 @@
-# corelib test: exercises core:md5; the C compiler and tychoc0 must agree, and
-# the output is locked to corelib/test/md5.out (corelib/run.sh).
-# Checked against the RFC 1321 test-suite vectors.
+# corelib test: exercises core:md5; the output is locked to corelib/test/md5.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29. Checked against the RFC 1321 test-suite vectors.
 package main
 import "core:md5"
 

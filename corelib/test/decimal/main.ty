@@ -1,6 +1,7 @@
-# corelib test: core:decimal (built on core:bignum). Pure base-10 arithmetic ->
-# fully deterministic. The headline is 0.1 + 0.2 == 0.3 EXACTLY (a float cannot).
-# tychoc and tychoc0 must agree and the output is locked to corelib/test/decimal.out.
+# corelib test: core:decimal (built on core:bignum). Pure base-10 arithmetic -> fully
+# deterministic. The headline is 0.1 + 0.2 == 0.3 EXACTLY (a float cannot). The output
+# is locked to corelib/test/decimal.out (corelib/run.sh). The tychoc0 cross-check this
+# line used to claim was retired 2026-07-29.
 package main
 import "core:decimal"
 

@@ -1,5 +1,6 @@
-# corelib test: exercises core:raster (BMP + QOI, pure Tycho). tychoc and tychoc0
-# must agree; output locked to corelib/test/raster.out (corelib/run.sh). The image
+# corelib test: exercises core:raster (BMP + QOI, pure Tycho). The output is locked to
+# corelib/test/raster.out (corelib/run.sh); the tychoc0 cross-check this line used to
+# claim was retired 2026-07-29. The image
 # is chosen to hit QOI's RGB, RUN, DIFF, RGBA, and INDEX chunks.
 package main
 import "core:raster"
