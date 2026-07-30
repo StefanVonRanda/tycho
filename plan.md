@@ -381,7 +381,7 @@ the last program still in it, and it is the biggest.
   absence instead, which is a claim the tree can check against
   `server/main.ty:617`.
 
-- [ ] **Phase 4 — with a gate in place, what is worth building next**
+- [x] **Phase 4 — with a gate in place, what is worth building next**
   - Scope: a written recommendation appended to this plan. **No implementation.**
   - The README lists eight deliberately-excluded features (TLS, HTTP/2, byte
     ranges, compression, conditional requests, virtual hosts, directory
@@ -400,6 +400,240 @@ the last program still in it, and it is the biggest.
   - Done when: a recommendation is written with its reasoning, naming what it
     would cost and what it would prove.
   - Verify: the two doc gates.
+
+  **The recommendation (2026-07-30).** Nothing was implemented. Every claim below
+  was checked by opening the file named, not by recall; where a claim is inherited
+  from `FRICTION.md` rather than re-derived here it says so.
+
+  *One naming note before anything else.* The brief called the concurrency pair
+  `FRICTION.md` items 3 and 4; at HEAD the re-scored list numbers them **7 and 8**
+  (`FRICTION.md:299` and `FRICTION.md:320`). The brief also dated the re-score
+  `945acfa` and the file says `afa67da` (`FRICTION.md:211`) — both are right and
+  they name different things: `945acfa` is the commit that performed the re-score,
+  `afa67da` is the tree it was scored against. Item numbers below are the file's.
+
+  ### 1. The eight excluded features, ranked by language pressure
+
+  **Build — 1st: conditional requests, the `If-Modified-Since` half only.**
+  This is the only one of the eight that is blocked on something the tree does not
+  have, and it is blocked in exactly the shape this program has produced twice
+  before. `corelib/io/io_shim.c:149` is `iox_stat_kind`: it calls `stat(2)` at
+  `corelib/io/io_shim.c:152` and then **discards the entire `struct stat` except
+  `S_ISDIR`** at `corelib/io/io_shim.c:153`. Grepped `mtime` across `corelib/`,
+  `src/tychoc.c`, `runtime/` and `docs/spec/`: **no hits anywhere.** A file's
+  modification time is therefore unreachable from *any* Tycho program, not merely
+  from this one — the same sentence that was true of `getpeername` before
+  2026-07-26 and of `is_dir` before `4fa192d`. Everything downstream already
+  exists: `corelib/datetime/datetime.ty:77` (`from_unix`),
+  `corelib/datetime/datetime.ty:123` (`pad2`), `corelib/datetime/datetime.ty:140`
+  (`weekday_name`), `corelib/datetime/datetime.ty:146` (`month_name`) and
+  `corelib/datetime/datetime.ty:320` (`parse_clf`) supply every part of an RFC 1123
+  date except the seconds to feed them.
+  The friction is a *design* question with a real caller asking it: what does an
+  `io.stat` return? A `Result(Stat, IoErr)` carrying size, mtime and kind makes
+  `corelib/io/io.ty:133`'s `is_dir` a one-line wrapper and retires the status-code
+  channel `iox_stat_kind` invented — a multi-field syscall result is a shape
+  `core:io` has never had to express.
+  **Cost:** ~10 lines of shim, ~15 in `corelib/io/io.ty`, an
+  `http_date`/`parse_http_date` pair in `core:datetime` ~30, ~20 in
+  `server/main.ty`, ~6 assertions in `server/run.sh`. Half a day.
+  **Proves:** whether Tycho's `Result` + struct return carries a multi-field
+  syscall cleanly, and closes a corelib gap every Tycho program has.
+  **Do not build the `ETag` half.** `corelib/sha256/sha256.ty:150` is `hex(msg)`,
+  so an ETag is one call over a body already in memory. It teaches nothing and it
+  is strictly worse than mtime — it reads the whole file to answer "unchanged?".
+
+  **Build — 2nd: byte ranges, single range only.**
+  `corelib/io/io.ty:107`'s `read_bytes` reads the **whole** file:
+  `corelib/io/io_shim.c:96` is `iox_read_file`, an `fopen` plus the `fread` loop at
+  `corelib/io/io_shim.c:108`. Grepped `pread(`/`lseek(`/`fseek(` across `corelib/`:
+  the only hit is a comment. So `Range: bytes=0-1023` against a 1 GB file means
+  allocating 1 GB. `bytes` slicing landed in `b823bc8`, which is the interesting
+  part: the feature is **expressible today and wrong**, which is a sharper lesson
+  than one that will not compile. Behind it sits the bigger gap it makes visible —
+  `corelib/httpd/httpd.ty:466`'s `write_response` takes a `Response` whose body is
+  wholly in memory, so there is no way to send a file the process cannot hold.
+  **Cost:** shim + `io.read_range` ~20, `Range` parsing ~30, 206 +
+  `Content-Range` ~20, ~8 assertions. Half a day.
+  **Proves:** whether "part of a file" is expressible without inventing a handle
+  type, and it is the cheapest program that makes the missing streaming-response
+  API concrete rather than theoretical.
+  **Stop at one range.** `multipart/byteranges` is where this stops teaching and
+  starts being HTTP; say so in `server/README.md` rather than building it.
+
+  **Build — 3rd, and only if someone wants the answer: pipelining.**
+  The least useful HTTP feature of the eight and the sharpest *language* question,
+  which is the trade this program exists to make. It is also **not
+  "unimplemented" — it is silently lossy**, and that was found by reading
+  `corelib/httpd/httpd.ty:242-296` for this phase rather than assumed:
+  `read_request_capped` is a free function over an fd with no state between calls.
+  Before the head terminator is found it reads in 4096-byte gulps
+  (`corelib/httpd/httpd.ty:266`), so one `recv` can pull the opening bytes of a
+  *second* pipelined request into `buf`; `need` is then computed at
+  `corelib/httpd/httpd.ty:262` and the loop exits at `corelib/httpd/httpd.ty:263`
+  on `len(buf) >= need` — **with the bytes past `need` still in `buf`**. They come
+  back inside the second tuple element and the caller drops them:
+  `server/main.ty:375` binds `raw` and uses it only to name the request in a log
+  line. Nothing corrupts, because the server closes on a bodied request
+  (`server/main.ty:424-425`), but the boundary is not tracked.
+  Fixing it needs a buffered reader that survives the call, and that is the
+  question worth asking: Tycho has structs and `inout` — `corelib/net/net.ty:102`
+  already passes `status: inout int` through an extern — so a `Reader` struct
+  threaded `inout` is expressible; but the tree's *existing* answer to precisely
+  this problem is `corelib/io/io.ty:202-211`, `open_lines`/`read_line`/
+  `close_lines`, which escapes to an opaque C `ptr`. **Can a stateful reader be
+  written in Tycho, or does the corelib reach for `ptr` every time it needs one?**
+  **Cost:** a day, nearly all design. **Risk, stated plainly:** the honest outcome
+  may be "the `ptr` handle was right", in which case the day buys a second data
+  point for a conclusion the tree already reached once. That is worth less than the
+  first two and more than the five below.
+
+  **Never — compression.** The clearest no on the list.
+  `corelib/compress/compress.ty:1-4` is gzip RFC 1952 over zlib in the `bytes`
+  domain and `corelib/compress/compress.ty:17` is the call. `Content-Encoding:
+  gzip` is an `Accept-Encoding` substring test and one line. The hard part is
+  finished, in C, and was written for someone else. Zero pressure.
+
+  **Never — virtual hosts.** Maps are a first-class type
+  (`docs/spec/03-types.md:293`, `docs/spec/12-aggregates.md:457`). A host→root map
+  is a subscript. It exercises nothing that is not already exercised.
+
+  **Never — directory listings.** `corelib/io/io.ty:235` is `list`,
+  `corelib/sort/sort.ty:42` is a stable `asc` over `comparable`, string building is
+  routine. The only thing it adds is an HTML-escaping surface, inside a program
+  whose gate exists to assert that **no byte of a refused path leaks**
+  (`server/README.md:110-114`). Negative value, not merely zero.
+
+  **Never here — TLS**, and the reason is worth writing down because it is not
+  "too hard". `core:tls` is **client-only**: `connect`, `write`, `read`,
+  `close_conn`, `ok` at `corelib/tls/tls.ty:24-36`, with no accept side and no
+  cert/key loading. Server TLS is a new OpenSSL shim *plus* making every I/O site
+  polymorphic over an `int` fd and a `ptr` conn — and the pressure that would apply
+  is "does Tycho have interfaces?", which is answerable **by reading**:
+  `docs/spec/03-types.md:316-320` gives nominal sum types, so
+  `enum Conn { Plain(int), Tls(ptr) }` and a `match` at two sites is the whole
+  design, and it costs a match rather than a language feature. Writing it would
+  confirm a conclusion already in hand. (`corelib/tls/tls_shim.c` is also one of
+  the two files that fails `-std=c11`, `FRICTION.md:232-247` item 1 — fix that
+  first regardless.) If server TLS is genuinely wanted, the demand-gated thing is a
+  TLS *server* in `corelib/tls` driven by a program that needs one; not this one,
+  which `server/README.md:118` tells you to terminate in front of.
+
+  **Never — HTTP/2, emphatically.** HPACK with static and dynamic tables, Huffman
+  coding, flow control, stream multiplexing. The multiplexing half *would* press
+  hard on the concurrency gap — but it presses through several thousand lines of
+  framing that teach nothing, and it needs readiness multiplexing `core:net` does
+  not expose: the only `poll(` in `corelib/net/net_shim.c` is at
+  `corelib/net/net_shim.c:44` and it is **inside a comment**. You would build a
+  `poll` exposure, a stream table and HPACK in order to arrive at a question a
+  hundred-line work queue asks directly. Worst ratio on the page.
+
+  ### 2. The concurrency pair — the server is the wrong vehicle
+
+  **Item 7 (`parallel for` caps at `min(N, ncpu)`): the server cannot exercise it
+  at all.** Verified, not assumed — `grep parallel server/main.ty` is **empty**.
+  The pool is one `spawn` at `server/main.ty:501` and one `wait` at
+  `server/main.ty:503`. No server feature above would introduce a `parallel for`
+  either. And the item's actionable half wants no program: the undocumented
+  64-chunk ceiling at `src/tychoc.c:10040` contradicts
+  `docs/spec/13-concurrency.md:78-82`, and `FRICTION.md:315-317` already says that
+  half "is a ~1-line spec fix and should be split out and taken". **Take the spec
+  fix. It is the cheapest true thing named anywhere in this phase.** The warning
+  half stays open and should: `N` is a runtime expression
+  (`docs/spec/13-concurrency.md:86`), so there is nothing static to warn from.
+
+  **Item 8 (no spelling for N workers): the server is a *weak* vehicle, and that
+  is the finding.** Its N tasks are identical, live until process exit, never
+  complete out of order, and are waited exactly once in order by the recursion at
+  `server/main.ty:499-504`. A program whose handles form a **chain** never needs a
+  **container** of handles — it needs a chain, and it has one, in six lines that
+  work. Adding HTTP features to make it press harder would be building the wrong
+  shape harder.
+  The shape that forces item 8 is a **bounded worker pool draining a channel**: M
+  jobs, N < M workers, completions out of order, results collected. There you hold
+  N handles simultaneously, the count is data-dependent, and the recursive dodge
+  stops being six lines. `send`/`recv`/`close` exist as builtins already
+  (`FRICTION.md:264-276` item 4 pins them at `src/tychoc.c:5609`,
+  `src/tychoc.c:5618`, `src/tychoc.c:5624`).
+  **The concrete program, if one is written: a parallel link checker over the
+  tree's own Markdown.** `scripts/check_links.sh` is a sequential shell script
+  today; `core:net`, `core:http` and `core:tls` supply the client; the job count is
+  data-dependent and far larger than `ncpu`. It clears `ROADMAP.md:23`'s demand
+  gate — a real program that wants the feature — and it turns item 7's chunk cap
+  from a microbenchmark into a **user-visible stall**, because one hung host blocks
+  every job chunked behind it. A parallel test/CI driver is the same shape with a
+  larger payoff (`make ci` is ~19 min, `CLAUDE.md:18`) and a larger blast radius;
+  the link checker is the safer first one.
+  **Caveat, stated rather than buried:** neither program *fixes* item 8. An array
+  of handles is a type-system change — `FRICTION.md:320-327` reproduces the refusal
+  at `src/tychoc.c:639` (`task_container_err`) — and a program can only demonstrate
+  the need, which `server/main.ty:497-498` already does in prose. Write it if you
+  want a second shape's design pressure before touching the affine rule; do not
+  write it expecting the change to fall out.
+
+  ### 3. Signal handling (Phase 5): its own bucket, and here the server *is* right
+
+  It is not a concurrency item, and the difference is not cosmetic. Verified for
+  this phase: grepping `sigaction|SIGTERM|SIGINT|signal(` across `corelib/`,
+  `runtime/` and `src/` matches **one file**, `runtime/tycho_rt.c`, and both hits
+  are false — a comment about `SIGFPE` at `runtime/tycho_rt.c:103` and
+  `pthread_cond_signal` at `runtime/tycho_rt.c:707`. **No signal handler is
+  installed anywhere in the tree.** That is a runtime gap, not a type-system one.
+  The server is the right vehicle because the wind-down already exists and only its
+  trigger is missing: `accept_loop` sets `running = false` on `Err` from
+  `net.accept` at `server/main.ty:494`, and `worker()` returns the summed count at
+  `server/main.ty:503` into the line at `server/main.ty:617`. So the entire feature
+  is "make the blocked `accept` return", and the design question is small and
+  sharp. A Tycho-level handler is a function callable on any thread at any
+  instruction, which the language has no way to type — so the shape to build is
+  almost certainly **not** that. It is the self-pipe (the runtime's handler writes
+  a byte; Tycho reads an fd) or, for this program alone, the runtime calling
+  `shutdown(2)` on the listener. Both `close()` and `shutdown()` are on POSIX's
+  async-signal-safe list; **whether a thread blocked in `accept(2)` actually
+  returns is platform-dependent and must be measured, not reasoned about** — and
+  that measurement is most of the value.
+  **Cost:** ~half a day for the narrow version. `server/run.sh` has already had the
+  assertion written and observed failing, per Phase 1's evidence above.
+  **Proves:** whether the runtime can hand an async event to Tycho code without
+  inventing a new function colour. Cheaper and far less speculative than item 8,
+  and the only item here where the gate already knows what right looks like.
+
+  ### 4. "Do nothing more here" — it very nearly wins
+
+  Stated honestly, because it is the option a list-driven answer would skip. The
+  server has done its job: it produced `MSG_NOSIGNAL` and `TCP_NODELAY`
+  (`server/README.md:170-192`), `getpeername`, `io.is_dir`, both concurrency items,
+  and now a 52-assertion gate inside `make ci` at `[3c/13]`. `ROADMAP.md:23` says
+  library work is "built against a real program that needs it, never ahead of one"
+  — and **nobody needs this server.** Every feature above would be built to make it
+  press on the language, which is that policy read backwards.
+  It loses on one narrow point: **two of the three recommended items are not server
+  features.** A file's mtime and an offset read are `core:io` gaps that every Tycho
+  program has; this server is simply the cheapest program in the tree that notices
+  them. That is the demand gate working, not being dodged. If those two land in
+  `core:io` for their own sake, the server's use of them is ~40 lines and a handful
+  of assertions on a runner that already exists.
+
+  ### The answer, in order
+
+  1. **The 1-line spec fix** for the 64-chunk cap (`src/tychoc.c:10040` vs
+     `docs/spec/13-concurrency.md:78-82`). Minutes. Not a server change.
+  2. **Signals** (Phase 5), narrow version. Half a day. The server is the vehicle.
+  3. **`io` mtime** → conditional requests. Half a day. Corelib gap first.
+  4. **`io` offset read** → single-range 206. Half a day. Corelib gap first.
+  5. **Pipelining**, only if the stateful-reader question is wanted. A day.
+  6. **A worker-pool program** (link checker) if item 8 is to be pushed — *not* a
+     server feature. Uncosted; it demonstrates, it does not fix.
+
+  **Build nothing else in `server/` ever.** TLS, HTTP/2, compression, virtual hosts
+  and directory listings are struck permanently, with the reason recorded above so
+  the question is not re-asked. And if none of 1–6 is picked up, **declaring the
+  server finished is a defensible outcome** and a better one than building
+  compression to make a list shorter.
+
+  *Gates.* Markdown only, as briefed: `python3 scripts/check_citations.py` and
+  `sh scripts/check_links.sh`. Neither `make test` nor `make ci` was run; this
+  phase changed no code. Results recorded under "Status" below.
 
 - [ ] **Phase 5 — the shutdown line at `server/main.ty:617` is unreachable**
   - Found by phase 1, outside its scope (which forbade touching `server/main.ty`),
@@ -474,3 +708,82 @@ the last program still in it, and it is the biggest.
 - **The eight excluded HTTP features.** Phase 4 decides whether any is worth a
   future plan; none is built here.
 - **`compiler/tychoc0.ty`.** Frozen, its lanes retired 2026-07-29, unaffected.
+
+## Status — PLAN COMPLETE
+
+Four phases, four commits, one per phase, in order:
+
+| phase | commit | what shipped |
+|---|---|---|
+| 1 | `937758e` | `server/run.sh` — 52 assertions over a live daemon; `server-check` at `Makefile:245-248`; 13 deliberate-break classes each observed red; 10/10 flake-free |
+| 2 | `af5474d` | the lane in `make ci` as `[3c/13]` (`scripts/ci.sh:111`); two `Makefile` comments rewritten; two `CLAUDE.md` gate-table rows; `CI_EXIT=0` observed once |
+| 3 | `8e01e4a` | `server/README.md` true at HEAD — two false limitations retired with dates, one real error found (`/%00` is 400, not 403), all eight sections checked |
+| 4 | *this commit* | the recommendation above. No code, no script, no other document touched. |
+
+Phase 4's gates, Markdown only: citations `ok (168 anchored, 2609 bare in bounds,
+138 source->doc, 191 source->source in bounds, 12 source->source anchored)` — the
+bare count is 2544 -> 2609, i.e. the 65 new `path:line` refs this write-up added
+and no stale one; links `ok (134 markdown files)`. `git status --short` before the
+commit was one line, ` M plan.md`.
+
+**What the plan set out to do, and did.** `server/main.ty` was the largest program
+in the tree with nothing verifying it. It now has a gate that starts the real
+binary, talks HTTP to it over raw sockets, asserts 52 things, and tears it down on
+every exit path — inside `make ci`, costing ~4s. Its README no longer documents
+two limitations the program does not have. The pattern the tree lacked (a daemon
+under test: `--port 0`, banner-as-readiness, `trap` teardown, no `sleep`) is
+established and written down.
+
+**What remains open, both filed by this plan's own phases:**
+
+- **Phase 5** — the unreachable shutdown line at `server/main.ty:617`. Found by
+  phase 1, out of its scope. Phase 4 recommends taking it, narrow version, and
+  places it *second* on the list: it is a runtime gap (no signal handler exists
+  anywhere in the tree, re-verified in phase 4), it is cheap, and the wind-down
+  machinery it needs already exists at `server/main.ty:494`.
+- **Phase 6** — 110 "`plan.md` phase N" references across 42 files pointing at a
+  rotated plan. Found by phase 3. Not mechanical: each needs `git log -S` against
+  the archived plan it belongs to. Note the recursion — **this plan's own
+  `server/README.md:168` "Filed as phase 5 of `plan.md`" becomes an instance of the
+  defect the moment this file is archived.**
+- **Phase 7** (below) — a latent `core:httpd` defect found by phase 4 while
+  costing pipelining.
+
+Phase 4 additionally recommends, outside this plan: the ~1-line spec fix for the
+undocumented 64-chunk cap (`src/tychoc.c:10040` vs
+`docs/spec/13-concurrency.md:78-82`), an `io` mtime exposure, an `io` offset read,
+and — if `FRICTION.md` item 8 is to be pushed — a worker-pool program that is
+**not** this server.
+
+## Phases filed after the plan closed
+
+- [ ] **Phase 7 — `read_request_capped` discards bytes it has already taken off
+  the socket**
+  - Found by phase 4 while costing pipelining; a correctness finding, not a
+    recommendation, so it is filed rather than absorbed.
+  - **The defect.** `corelib/httpd/httpd.ty:242-296`. Until the head terminator is
+    found the loop reads in 4096-byte gulps (`corelib/httpd/httpd.ty:266`), so a
+    single `recv` can pull in the opening bytes of a *following* request. `need` is
+    then set at `corelib/httpd/httpd.ty:262` and the loop exits at
+    `corelib/httpd/httpd.ty:263` on `len(buf) >= need` — leaving the surplus bytes
+    in `buf`, returned as the second tuple element and dropped by the only caller
+    (`server/main.ty:375` uses `raw` solely to name a request in the log).
+  - **Consequence.** A client that pipelines two GETs on one connection gets the
+    first answered and the second silently swallowed: its bytes are consumed from
+    the socket and discarded, and the server then blocks until the idle timeout.
+    Nothing corrupts — a bodied request already forces close at
+    `server/main.ty:424-425` — but the function's contract is stated nowhere and is
+    not what a reader would assume.
+  - **Not yet reproduced.** This is read from source, not observed on the wire.
+    **The phase's first action is to prove it**, with a raw socket sending two
+    pipelined GETs in one `send`, before anything is changed. If it does not
+    reproduce, say why and close the phase.
+  - **Two honest resolutions**, and the cheap one is probably right: document the
+    contract on `read_request_capped` — "reads at most one request; surplus bytes
+    already taken from the socket are returned in the second element and are the
+    caller's problem" — and have `server/main.ty` close the connection when surplus
+    is present, which is correct behaviour rather than a swallow. The expensive one
+    is the stateful buffered reader phase 4 costs at a day; do not start there.
+  - Scope: `corelib/httpd/httpd.ty` and, if the close is added, `server/main.ty`
+    plus an assertion in `server/run.sh`. Verify: `make server-check` (~4s), plus
+    `make test` if `corelib/httpd/httpd.ty` behaviour changes. Not `make ci`.
