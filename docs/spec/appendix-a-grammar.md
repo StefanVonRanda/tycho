@@ -46,7 +46,8 @@ FloatLit ::= [0-9]+ "." [0-9]+ Exp?
            | "." [0-9]+ Exp?          /* leading-dot form, position-restricted */
 Exp      ::= ("e" | "E") ("+" | "-")? [0-9]+
 CharLit ::= "'" ( CharEscape | (any byte except "'", "\", newline) ) "'"
-CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" )
+CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" ) | "\x" HexDigit HexDigit
+HexDigit ::= "0".."9" | "a".."f" | "A".."F"
 StrLit ::= StrPiece StrPiece*
 StrPiece ::= QuotedPiece | RawPiece
 QuotedPiece ::= '"' StrElem* '"'

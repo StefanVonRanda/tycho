@@ -77,7 +77,20 @@ narrowly with `int`: `char ± int` has type `char`, and the result **wraps to a
 byte** (`0..255`, like `u8`) so the value never escapes the type's range. `char`
 is comparable and ordered (§5.5). `str(char)` yields the one-byte **glyph**
 string (so a `char` interpolates in an f-string); `to_int(char)` / `to_u32(char)`
-yield the byte **value**.
+yield the byte **value**; `to_char(n)` converts the other way, aborting rather
+than wrapping for an `n` outside `0..255`
+([§29.4](16-builtins.md#294-conversions)).
+
+**There is no `char` type keyword, and its absence is normative** — it is
+restated at [§3.6](01-lexical.md#36-keywords) and
+[§4.2](02-grammar.md#42-types), and pinned by
+`tests/reject/char_as_type.ty`. Every `char`-valued expression therefore reaches
+its type by inference: a character literal, `char_at`, `to_char`, or arithmetic
+on those. One consequence is worth stating plainly, because it is the rule the
+absence makes hardest to see: `char`'s operator set is **narrower than `int`'s**
+(`+` and `-` only, §13.2), and that narrowness cannot be exercised by a fixture
+that annotates a type, only by one that infers it — `tests/char_elem_ops.ty` and
+`tests/reject/char_elem_mul.ty` are written that way on purpose.
 
 Indexing a `string` does **not** produce a `char`: `s[i]` yields `int` (§5.2.5).
 The `char`-typed reader is the builtin `char_at(s, i)`

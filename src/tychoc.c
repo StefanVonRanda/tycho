@@ -454,22 +454,22 @@ static TokVec lex(const char *src) {
                 long cv;
                 if (*p == '\\') {
                     p++;
+                    /* `\xNN` takes EXACTLY two hex digits -- fixed width, never C's greedy form. It is
+                     * legal HERE and still refused in a string literal for the reason `\0` is (`:376-382`):
+                     * a char literal decodes to a byte in `ival` right here, while a string literal's text
+                     * stays ESCAPED into codegen, where the join (`:4322`) needs every escape two chars. */
                     switch (*p) {
-                        case 'n':  cv = '\n'; break;
-                        case 't':  cv = '\t'; break;
-                        case 'r':  cv = '\r'; break;
-                        case '0':  cv = '\0'; break;
-                        case '\\': cv = '\\'; break;
-                        case '\'': cv = '\''; break;
-                        default: die_at(line, "unsupported char escape (use \\n \\t \\r \\0 \\\\ \\')");
+                        case 'n': cv = '\n'; break;  case 't': cv = '\t'; break;   case 'r': cv = '\r'; break;
+                        case '0': cv = '\0'; break;  case '\\': cv = '\\'; break;  case '\'': cv = '\''; break;
+                        case 'x': { const char *hx = "0123456789abcdef0123456789ABCDEF";   /* index %16 folds both cases */
+                                    const char *d1 = p[1] ? strchr(hx, p[1]) : 0, *d2 = (p[1] && p[2]) ? strchr(hx, p[2]) : 0;
+                                    if (!d1 || !d2) die_at(line, "\\x takes exactly two hex digits (e.g. '\\x41')");
+                                    cv = 16 * ((d1 - hx) % 16) + (d2 - hx) % 16; p += 2; break; }
+                        default: die_at(line, "unsupported char escape (use \\n \\t \\r \\0 \\xNN \\\\ \\')");
                     }
                     p++;
-                } else if (*p && *p != '\'' && *p != '\n') {
-                    cv = (unsigned char)*p;
-                    p++;
-                } else {
-                    die_at(line, "empty or unterminated char literal");
-                }
+                } else if (*p && *p != '\'' && *p != '\n') { cv = (unsigned char)*p; p++; }
+                else die_at(line, "empty or unterminated char literal");
                 if (*p != '\'') die_at(line, "char literal must be exactly one character");
                 p++;
                 tv_push(&out, (Tok){TK_CHAR, NULL, cv, line, 0, tcol});
@@ -4517,7 +4517,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="clock",  .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* monotonic nanoseconds */
     g_sigs[g_nsigs++] = (Sig){ .name="now",    .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* wall-clock UNIX seconds */
     g_sigs[g_nsigs++] = (Sig){ .name="ncpu",   .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* worker count = parallel-for fan-out width */
-    g_sigs[g_nsigs++] = (Sig){ .name="chr",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="chr",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };   g_sigs[g_nsigs++] = (Sig){ .name="to_char",.ret=T_CHAR, .params={ T_INT }, .nparams=1, .builtin=1 };   /* int -> byte, the two shapes: chr wraps it in a one-byte string, to_char keeps it as a `char`. Same 0..255 abort. */
     g_sigs[g_nsigs++] = (Sig){ .name="die",    .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="exit",   .ret=T_VOID,         .params={ T_INT },                   .nparams=1, .builtin=1 };   /* terminate with an explicit status; die() is exit(1) with a message. Diverging (expr_diverges) */
     g_sigs[g_nsigs++] = (Sig){ .name="str",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
@@ -6882,7 +6882,7 @@ static int is_pure_builtin(const char *n) {
     if (!n) return 0;
     static const char *pure[] = { "str", "substr", "chr", "split", "keys", "find", "char_at",
         "map_get", "map_has", "map_set", "map_del", "sqrt", "pow", "floor", "fabs",
-        "to_float", "to_int", "to_str", "to_bool", "is_null", "len", 0 };
+        "to_float", "to_int", "to_char", "to_str", "to_bool", "is_null", "len", 0 };
     for (int i = 0; pure[i]; i++) if (!strcmp(n, pure[i])) return 1;
     return 0;
 }
@@ -9187,8 +9187,8 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "args")) {
         return sfmt("tycho_args(%s)", arena);
     }
-    if (!strcmp(e->sval, "chr")) {
-        return sfmt("tycho_chr(%s, %s)", arena, gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1184`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:185-187`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+        return sfmt(e->sval[0] == 'c' ? "tycho_chr(%s, %s)" : "((tycho_int)(unsigned char)tycho_chr(%s, %s)[0])", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
         return sfmt("tycho_die(%s)", gen_expr(e->args[0], arena));
