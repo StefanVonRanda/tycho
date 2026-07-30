@@ -10,7 +10,7 @@ hashable composite (see [Keys](#keys)); the value type `V` is *any* type. Like e
 in Tycho, a map is a value — assigning one deep-copies it, two maps compare entry-wise with
 `==`, and a map crosses a function boundary as a read-only borrow unless taken `inout`.
 
-```
+```tycho
 counts := ["ada": 1, "alan": 2]   # a [string: int], typed from the literal
 empty := []string: int            # an empty map (key and value types required)
 
@@ -29,7 +29,7 @@ The type follows from the literal or an annotation: `["a": 1]` is `[string: int]
 missing key inserts the value type's zero first. So the common accumulator patterns are each
 one line:
 
-```
+```tycho
 counts[w] += 1                    # count occurrences (zero-initialized on first sight)
 push(index[term], doc)            # grow a [string: [int]] value in place
 totals[user].balance = 0          # mutate a struct-valued entry's field
@@ -42,7 +42,7 @@ miss — the same read, spelled as a method. `m.get(k)` (no default) is exactly 
 map operation is now operator, keyword, or method syntax (`m[k]`, `m.get`, `in`, `delete`,
 `len`, `keys`) — no snake_case map functions:
 
-```
+```tycho
 counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
 ```
 
@@ -56,7 +56,7 @@ mutates it in place. The loop is **O(n) total**, the same in-place trick as stri
 **insertion order** — the order keys were first inserted. Iterate that to walk the map;
 `k in m` only tests membership, it does not iterate:
 
-```
+```tycho
 for k in keys(counts):
     println(k + " = " + str(counts[k]))
 ```

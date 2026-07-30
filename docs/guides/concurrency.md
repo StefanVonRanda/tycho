@@ -38,7 +38,7 @@ self-hosted transpiler (`tychoc0`).
 
 ## spawn / wait — structured tasks
 
-```
+```tycho
 t := spawn count("a.txt")     # args deep-copied into the task's arena, then the thread starts
 u := spawn count("b.txt")
 total := wait(t) + u.wait()   # join; result deep-copied into the waiting scope; task arena freed
@@ -61,7 +61,7 @@ structured**, meaning:
 
 ## parallel for — fork-join data parallelism
 
-```
+```tycho
 total := 0
 parallel for i in 0..<400000000:      # K = ncpu chunk tasks; TYCHO_THREADS overrides
     total += (i * 31 + 7) % 1000003   # reduction: chunk-local partial, folded at the join
@@ -86,7 +86,7 @@ On the compute-bound reduction this keeps up with C-pthreads here: 37 ms vs C's 
 `parallel for x in ch:` drains a channel with `K = ncpu()` workers, each pulling
 items until the channel is closed **and** drained:
 
-```
+```tycho
 jobs := channel(Job, 16)            # cap bounds buffered work — backpressure
 pr := spawn produce(jobs, n)        # producer sends, then close(jobs) when done
 parallel for j in jobs:             # K = ncpu() workers share the one queue
@@ -105,7 +105,7 @@ Worked example: `tests/conc/workers.ty`.
 
 ## Channels — the one shared object
 
-```
+```tycho
 ch := channel(string, 256)        # bounded; created here, freed at THIS scope's exit
 w := spawn consumer(ch)           # fn consumer(ch: Channel(string)) -> int
 ch.send("item-" + str(i))         # deep copy IN (blocks when full; dies if closed)
@@ -132,7 +132,7 @@ workers can take one. Send-after-close and double-close die loudly.
 
 ## select — multi-channel fan-in
 
-```
+```tycho
 for true:
     select:
         recv(jobs, j):
@@ -190,13 +190,13 @@ at its `ch := channel(T, cap)`, and the compiler can prove that an operation
 appears **nowhere** in it. Three such cases warn (both `tychoc` and `tychoc0`,
 same message and line):
 
-```
+```tycho
 jobs := channel(int, 16)
 p := spawn produce(jobs, 50)
 parallel for j in jobs:              # producer never calls close(jobs)
     total += j
 ```
-```
+```text
 warning: close(jobs) is never called, so this `closed:` arm can never run
          (a `parallel for` over a channel ends only when it is closed)
 ```

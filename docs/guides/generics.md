@@ -23,7 +23,7 @@ are **monomorphized**: every instantiation is ordinary concrete code, chosen at
 compile time. There's no runtime polymorphism, no boxing, no type erasure, and
 — critically — no new pointer or aliasing.
 
-```
+```tycho
 # A generic function: `$T` at its first appearance introduces the type
 # parameter T, inferred from the argument. Later uses write plain `T`.
 fn first(xs: [$T]) -> Option(T):
@@ -44,7 +44,7 @@ fn main():
             println("empty")
 ```
 
-```
+```tycho
 # A generic struct: construction infers the type arguments from the field values
 # (like a generic function call), monomorphizing one concrete struct per tuple.
 struct Pair($A, $B):
@@ -92,7 +92,7 @@ concrete argument type against its parameter's type *pattern*, binding the
 constraint set — only "walk the pattern and the concrete type in lockstep, and
 where the pattern says `$T`, record the concrete type sitting there."
 
-```
+```text
 pattern:  [ $T ]          arg type: [int]            =>  T := int
 pattern:  Option($T)      arg type: Option(string)   =>  T := string
 pattern:  [$K: $V]        arg type: [string: [int]]  =>  K := string, V := [int]
@@ -163,7 +163,8 @@ This keeps the rule simple. It does have a real downside — an error inside a d
 helper points at the instantiation, not always the line you expected — which the
 `where` clause below addresses with optional explicit constraints:
 
-```
+<!-- fence-skip: the body is an ellipsis placeholder, not code -->
+```tycho
 # a `where` clause turns an instantiation-time body error
 # into a checked-up-front signature error with a clear message.
 fn sum(xs: [$T]) -> T where numeric(T):

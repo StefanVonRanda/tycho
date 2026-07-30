@@ -43,7 +43,7 @@ directions:
 
 Because both directions copy, value semantics holds end to end:
 
-```
+```tycho
 v := m.get("a", default)
 m["a"] = other                 # rehashes, moves slots
 use(v)                         # still the old value — v is its own copy

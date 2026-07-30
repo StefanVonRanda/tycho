@@ -11,7 +11,8 @@ corelib is Tycho's standard library: a set of packages under `corelib/`, importe
 `core:` collection root. It's experimental, like the rest of Tycho, but the modules below
 are usable today.
 
-```
+<!-- fence-skip: imports a package, which requires a `package main` line the snippet omits -->
+```tycho
 import "core:math"
 
 fn main():

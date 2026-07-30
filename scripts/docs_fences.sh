@@ -18,16 +18,13 @@
 #   FROZEN     docs/internals/plan-*-DONE.md. Archived verification evidence;
 #              its snippets record syntax as it was at the time and must not be
 #              dragged forward. Same exemption, same reason, as ARCHIVED in
-#              scripts/check_citations.py:258.
+#              scripts/check_citations.py:282@ARCHIVED.
 #   FRAGMENT   a fence containing no `fn` declaration at all. The spec is
 #              written mostly in fragments (a type, an expression, three lines of
 #              a body) and wrapping them in a synthetic `main` would typecheck a
-#              program the document does not contain.
-#
-# As of 2026-07-30 the tree has 40 ```tycho fences: 10 CHECKed, 19 FRAGMENT,
-# 6 MARKED, 5 FROZEN. Ten is a small number and it is the honest one -- the
-# gate's value is that a NEW tycho fence is checked by default, which is what
-# would have caught docs/guides/arrays-structs.md.
+#              program the document does not contain. (A fence that DOES declare
+#              whole `fn`s but no `main` is a different case and is checked --
+#              see the no-main retry in the loop below.)
 #   MARKED     a fence preceded by `<!-- fence-skip: <reason> -->`. For the
 #              fences that DO declare an `fn` but still cannot compile alone:
 #              deliberate error cases, proposed syntax, `extern` blocks against a
@@ -35,12 +32,19 @@
 #              earlier. The reason is printed on every run, so the skip list is
 #              visible rather than a quiet exclusion that grows.
 #
+# THE POPULATION, as of 2026-07-30 (plan.md phase 43 tagged the reader-facing
+# tree): 252 fences in docs/, of which 119 are ```tycho -- 39 CHECKed (6 of them
+# via the no-main retry), 58 FRAGMENT, 17 MARKED, 5 FROZEN. It was 40 tycho
+# fences and 10 CHECKed before that pass. Tagging is what opts a fence in, so
+# the number grows by review, never by a heuristic guessing at a language.
+#
 # WHAT IT DOES NOT CHECK -- read this before trusting it:
 #
-#   * ~155 fences in docs/ opened with a BARE ``` and no language tag. Some are
-#     shell, C, or output; some are Tycho. Nothing here can tell them apart, so
-#     none is checked. Tagging one `tycho` opts it in -- that is the intended
-#     way to grow coverage, one reviewed fence at a time.
+#   * 64 fences in docs/ still open with a BARE ``` and no language tag: 56 in
+#     docs/internals/, 4 in docs/rfc/, 4 in docs/. Some are shell, C, or emitted
+#     output; some are Tycho. Nothing here can tell them apart, so none is
+#     checked. docs/reference/, docs/guides/, docs/tutorial.md and docs/spec/
+#     carry a tag on every fence.
 #   * The MARKED and FRAGMENT sets are not compiled. A fragment can still be
 #     wrong; this gate only proves that what claims to be a whole program is one.
 #   * Nothing is RUN. Output correctness for the 9 runnable spec examples is
@@ -76,8 +80,16 @@ git ls-files 'docs/*.md' | while read -r f; do
       /^```tycho[ \t]*$/ { mode=1; buf=""; start=NR; hasfn=0; next }
       mode==1 && /^```[ \t]*$/ {
           n++
-          id = FILENUM "_" n
-          file = OUT "/f_" NR "_" n ".ty"
+          # The name of the carved file must be unique across the WHOLE run. awk is
+          # re-invoked per document, so `n` restarts at 1 in each and NR is only
+          # a line number: two different documents both closing their first
+          # fence on line 47 used to produce the SAME f_47_1.ty, and the second
+          # silently overwrote the first -- the gate then compiled the fence of
+          # one document while reporting the path of the other. Harmless at the
+          # 40 fences of batch 3, a real mis-report at 119. The path is part of
+          # the name, so a collision needs the same file at the same line.
+          safe = F; gsub(/[^A-Za-z0-9]/, "_", safe)
+          file = OUT "/f_" safe "_" NR "_" n ".ty"
           printf "%s", buf > file
           close(file)
           verdict = "CHECK"; reason = ""
@@ -99,7 +111,7 @@ git ls-files 'docs/*.md' | while read -r f; do
     ' "$f"
 done > "$TMP/index"
 
-nchk=0; nskip=0; nfail=0
+nchk=0; nskip=0; nfail=0; nmain=0
 while IFS='	' read -r src verdict f line reason; do
     [ -n "${src:-}" ] || continue
     if [ "$verdict" != "CHECK" ]; then
@@ -110,6 +122,20 @@ while IFS='	' read -r src verdict f line reason; do
     nchk=$((nchk+1))
     if "$TYCHOC" "$src" --emit-c -o "$src.out" >"$src.log" 2>&1; then
         echo "    ok    $f:$line"
+    elif grep -q "no 'main' procedure" "$src.log" &&
+         { cp "$src" "$src.m"; printf 'fn main():\n    return\n' >> "$src.m"; } &&
+         "$TYCHOC" "$src.m" --emit-c -o "$src.out" >"$src.log" 2>&1; then
+        # NO-MAIN RETRY. A fence may declare complete `fn`s and no `main` --
+        # a reference page showing two generic functions, say. `--emit-c` needs
+        # an entry point, so the whole fence used to be un-checkable and the only
+        # honest option was a fence-skip. Appending an EMPTY `main` typechecks
+        # exactly the declarations the document DOES contain and adds nothing
+        # else, which is why it is not the synthetic-main wrapper phase 33
+        # rejected: that one would have invented a body for loose statements.
+        # Negative control, run before this shipped: a fence whose non-main fn
+        # returns a string from an `-> int` still fails here.
+        nmain=$((nmain+1))
+        echo "    ok    $f:$line  (+ an empty main; the fence declares none)"
     else
         nfail=$((nfail+1))
         echo "docs-fences: FAIL $f:$line -- does not compile" >&2
@@ -117,6 +143,6 @@ while IFS='	' read -r src verdict f line reason; do
     fi
 done < "$TMP/index"
 
-echo "docs-fences: $nchk fence(s) compiled, $nskip skipped (reasons above), $nfail failure(s)"
+echo "docs-fences: $nchk fence(s) compiled ($nmain of them with an appended empty main), $nskip skipped (reasons above), $nfail failure(s)"
 [ "$nfail" -eq 0 ] || exit 1
 exit 0

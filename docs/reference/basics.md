@@ -9,7 +9,7 @@ variables, write expressions, and control flow. Tycho is small — one way to do
 
 ## Procedures
 
-```
+```tycho
 fn add(a: int, b: int) -> int:
     return a + b
 
@@ -25,7 +25,7 @@ By default a parameter is a **copy** (or, for the heap aggregates, a read-only *
 `inout` parameter is mutated in place: the callee writes back into the caller's variable, marked
 with `&` at the call site.
 
-```
+```tycho
 fn incr(n: inout int):
     n = n + 1
 
@@ -45,7 +45,7 @@ caller, with the new bytes built in the caller's arena.
 A third convention, `sink`, marks a parameter the callee **owns and consumes** — owned, so it
 may mutate the buffer (a plain borrow is read-only); consuming, so the caller gives it up:
 
-```
+```tycho
 fn scale2(xs: sink [int]) -> int:
     s := 0
     for i := 0; i < len(xs); i += 1:
@@ -71,7 +71,7 @@ call must still be copied to a longer-lived arena — a property of the arena mo
 
 ## Declarations and assignment
 
-```
+```tycho
 x := 41          # declare + infer the type from the initializer
 y : int = 1      # declare with an explicit type
 x = x + 1        # assign (the variable must already exist)
@@ -106,7 +106,7 @@ map entry (`m[k] += 1`).
 
 There is exactly one loop keyword, `for`, in three shapes — it does everything a `while` would.
 
-```
+```tycho
 if cond:
     ...
 elif other:                 # zero or more elif branches

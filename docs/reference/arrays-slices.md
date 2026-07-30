@@ -10,7 +10,7 @@ Tycho value it has value semantics: assigning an array deep-copies it, so the co
 original never share storage. The element type `T` can be `int`, `float`, `string`, a
 struct, or another array — nested as deep as you like.
 
-```
+```tycho
 xs := [10, 20, 30]      # literal
 ys := []int             # empty (element type required)
 push(xs, 40)            # append in place
@@ -30,7 +30,7 @@ compilers. Assignment is a **deep** copy: copying a `[string]`, `[Point]`, or `[
 bytes, nested structs, and inner buffers too, so mutating the copy never touches the
 original.
 
-```
+```tycho
 ps := [Point(1, 2), Point(3, 4)]   # array of structs
 push(ps, Point(5, 6))
 total := ps[1].x + ps[1].y         # index, then read a field
@@ -46,7 +46,7 @@ A composite-array element is a **mutable place** — you can write through it in
 than rebuilding the whole element. This is a *projection*: the transpiler hands you the
 element's slot in the backing buffer, bounds-checked, with no pointer ever exposed in Tycho.
 
-```
+```tycho
 ps[0].x = 10                       # a field of an element
 push(ps[0].tags, "extra")          # grow an element's array field in place
 grid[1][2] = 60                    # a nested-array element
@@ -64,7 +64,7 @@ it. Mutating a borrowed array (a `push` or an index-set) is a compile error; cop
 (`b := a`) if you want a mutable local, or take the parameter `inout`. A returned array is
 promoted into the caller's arena, so it never dangles.
 
-```
+```tycho
 fn make_squares(n: int) -> [int]:   # returned: promoted into the caller's arena
     r := []int
     for i := 0; i < n; i += 1:
@@ -85,7 +85,8 @@ or an int `const` (`const W = 16` then `[W]int`). Unlike the dynamic `[T]` (a he
 that grows with `push`), a `[N]T` is stored **inline** — no heap, no length header — and
 copied **by value** (a plain memcpy for scalar elements, deep for heap elements):
 
-```
+<!-- fence-skip: statements shown at top level, outside any fn, to keep the example short -->
+```tycho
 v: [3]int = [10, 20, 30]     # inline, exactly 3 elements
 w := v                        # a full value copy
 v[0] = 99                     # w[0] is still 10 — no sharing
@@ -110,7 +111,8 @@ A function can be **generic over the length** of a fixed array. A parameter writ
 introduces a size parameter `$N` that the call infers from the argument, and inside the body
 `N` is an ordinary `int` constant equal to that length:
 
-```
+<!-- fence-skip: statements shown at top level, outside any fn, to keep the example short -->
+```tycho
 fn sum(xs: [$N]int) -> int:      # N is inferred from the argument
     total := 0
     for i := 0; i < N; i += 1:   # N is a compile-time int in the body
@@ -143,7 +145,7 @@ arguments to be the same size, checked at the call.
 `xs[:]` is the whole thing — with every bound checked (`0 ≤ a ≤ b ≤ len`). A slice is an
 ordinary array value, so its cost depends entirely on what you do with it:
 
-```
+```tycho
 xs := [10, 20, 30, 40, 50]
 print(str(sum(xs[1:4])))      # passed to a read-only param: a ZERO-COPY view -> 90
 mid := xs[1:4]                # stored: a deep copy, owning its own buffer

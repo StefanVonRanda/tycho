@@ -95,8 +95,9 @@ than it is:
 
 FAIL-OPEN CASES (deliberate, RULE 7): a bare `:N` whose paragraph names no path
 is skipped rather than guessed at -- EXCEPT inside a `> Provenance:` block, see
-below -- and a RELATIVE path outside the implementation trees listed in
-SRC_PREFIX is ignored (cross-document links are check_links.sh's job).
+below -- and a RELATIVE path outside the trees listed in
+SRC_PREFIX is ignored (a bare Markdown *link* is check_links.sh's job; `docs/`
+joined SRC_PREFIX on 2026-07-30, see the doc->doc section below).
 
 AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (added 2026-07-30, plan.md phase 23)
 -----------------------------------------------------------------------------
@@ -136,6 +137,29 @@ workaround that exists only because the gate is blind is the signal to fix the
 gate.  Such a ref is now a hard failure telling the author to write the path.
 The fix is NOT to carry `cur` across paragraph breaks -- see the comment at the
 top of the Markdown loop for why that was deliberately removed.
+
+DOC -> DOC IS CHECKED TOO (added 2026-07-30, plan.md phase 44)
+--------------------------------------------------------------
+`docs/` was absent from SRC_PREFIX until this change, so a citation from one
+document INTO another -- `docs/spec/18-library.md` naming lines 204-210 of the
+pre-rename path of `docs/guides/corelib.md` (spelled out here it would be a live
+SOURCE -> DOC citation into a file that no longer exists, and this docstring is
+scanned by that pass, so it is deliberately described rather than quoted)
+-- hit the fail-open skip below and was checked by NOTHING: not existence, not
+bounds, not its anchor.  That is how 31 refs to a document renamed eight months
+earlier stayed green, and phase 15 had to repair them by hand because no gate
+could see them.  Adding `docs/` here makes the doc->doc direction ordinary: same
+bounds, same anchors, same mandatory `> Provenance:` rule as a doc->source ref.
+
+WHAT IT REDDENED, AND WHAT THAT SAYS ABOUT THE BARE FORM.  77 refs: 25 naming a
+document that no longer exists at that path, and 52 OUT OF BOUNDS -- of which
+EVERY ONE was a bare `:N` inheriting a `docs/` path from its sentence while
+meaning `src/tychoc.c`.  Not one was a genuine doc->doc citation that had merely
+drifted.  So the widened bounds check is doing double duty: it is the only thing
+that can see a mis-inherited continuation ref, and it sees it as an
+out-of-bounds read into a file two orders of magnitude smaller than the compiler.
+The residual blind spot is the bare form's usual one -- a mis-inherited `:N` that
+happens to land inside the document -- and it is not fixed here.
 
 THE SECOND DIRECTION: SOURCE -> DOC (added 2026-07-26)
 -----------------------------------------------------
@@ -221,8 +245,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SRC_PREFIX = ("src/", "compiler/", "runtime/", "corelib/", "tests/", "scripts/",
-              "tools/", "examples/")
+SRC_PREFIX = ("docs/", "src/", "compiler/", "runtime/", "corelib/", "tests/",
+              "scripts/", "tools/", "examples/")
 
 # Source trees scanned for the SOURCE -> DOC direction. Deliberately WIDER than
 # SRC_PREFIX (which governs the md -> src direction and must not move): a comment
@@ -272,7 +296,7 @@ def lines_of(path):
 def main():
     mds = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
                          capture_output=True, text=True, check=True).stdout.split()
-    fails, n_bare, n_anchored, n_prov = [], 0, 0, 0
+    fails, n_bare, n_anchored, n_prov, n_frozen_doc = [], 0, 0, 0, 0
     for md in mds:
         cur = None
         frozen = md.startswith(ARCHIVED[0]) and md.endswith(ARCHIVED[1])
@@ -326,6 +350,19 @@ def main():
                                              m.group(0).strip("`").lstrip(":")))
                     continue
                 if not cur.startswith(SRC_PREFIX):
+                    continue
+                # DOC -> DOC INSIDE A FROZEN ARCHIVE (added 2026-07-30, phase 44).
+                # Widening SRC_PREFIX to `docs/` reddened 35 refs in the
+                # `plan-*-DONE.md` set, and every one of them is a BARE `:N` that
+                # inherited a `docs/` path from its sentence while meaning
+                # `src/tychoc.c` -- e.g. `:3181-3277` two words after
+                # `docs/spec/02-grammar.md`. Repairing them means editing a frozen
+                # record, which the ARCHIVED rule above forbids, so they are
+                # skipped for the same reason the anchor and absolute-path rules
+                # skip them. Counted separately in --stats so the hole is
+                # declared rather than silent.
+                if frozen and cur.startswith("docs/"):
+                    n_frozen_doc += 1
                     continue
                 a = int(m.group(2))
                 b = int(m.group(3)) if m.group(3) else a
@@ -420,8 +457,10 @@ def main():
         print("citation check: %d anchored (content-checked, %d of them the mandatory "
               "`> Provenance:` single-line refs), %d bare (bounds only), "
               "%d source->doc (existence), %d source->source (bounds), "
-              "%d source->source anchored (content-checked)"
-              % (n_anchored, n_prov, n_bare, n_doc, n_src, n_src_anch))
+              "%d source->source anchored (content-checked), "
+              "%d doc->doc skipped as frozen archive"
+              % (n_anchored, n_prov, n_bare, n_doc, n_src, n_src_anch,
+                 n_frozen_doc))
     if fails:
         for f in fails:
             print("STALE  " + f)

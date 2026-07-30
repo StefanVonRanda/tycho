@@ -447,9 +447,9 @@ the design records; its entry says exactly what remains.
   describe a directory that existed when they were written; that is correct
   history, and rewriting them would make them lie about what was done. **No
   citation repair was needed either**, and the reason is mechanical rather than
-  lucky: `scripts/check_citations.py:226` skips any cited
+  lucky: `scripts/check_citations.py:250` skips any cited
   path that does not start with `SRC_PREFIX`
-  (`scripts/check_citations.py:153-155`), and both
+  (`scripts/check_citations.py:177-179`), and both
   archived plans write their refs as **absolute** paths
   (`/home/igzo/github/tycho/tests/postfreeze/…`), which no relative prefix
   matches. So the ~40 archived references to the directory were never gated and
@@ -640,7 +640,7 @@ the design records; its entry says exactly what remains.
 
   **A gate hole worth knowing, found while checking my own work.** An
   **untracked** file's citations are not checked at all: `check_citations.py`
-  builds its citer set from `git ls-files` (`scripts/check_citations.py:263-265`).
+  builds its citer set from `git ls-files` (`scripts/check_citations.py:287-289`).
   Proven by deliberately corrupting a ref to line 99999 of src/tychoc.c (written
   without backticks here on purpose — backticked it would be a citation, and an
   out-of-bounds one) — silent while
@@ -1452,8 +1452,8 @@ the design records; its entry says exactly what remains.
   into a line that no longer exists, and would redden the gate again) — a
   citation into a **deleted** line, which no line map can move. §3.7 listed
   `range` as a contextual identifier *dispatched* in a `for` head; that is no
-  longer what happens. Repointed by hand to `:3386@"range"` (the surviving
-  lexeme test) and the §3.7 bullet reworded to say the lexeme is recognised
+  longer what happens. Repointed by hand to src/tychoc.c:3386@"range" (the surviving
+  lexeme test; de-backticked — the anchor has since drifted) and the §3.7 bullet reworded to say the lexeme is recognised
   **only to refuse it**. This is spec prose and the spec is phase 9's, but
   leaving the sentence would have been a statement this phase made false, so it
   was corrected rather than deferred; both edits are one line for one line, so
@@ -1709,7 +1709,7 @@ the design records; its entry says exactly what remains.
     in the words the Pre-flight asked for. A new `> Provenance:` block cites
     every one of those claims. Also repaired the chapter provenance at
     `docs/spec/10-statements.md:8-10`, whose `for` and `select` refs were stale
-    by ~400 lines from phases 3–5 (`:3191-3277`→`:3245-3446`,
+    by ~400 lines from phases 3–5 (`src/tychoc.c:3191-3277`→`:3245-3446`,
     `:3135-3172`→`:3189-3225`, `parse_stmt` `:3054-3408`→`:3108-3578`).
   - **`docs/spec/13-concurrency.md` §22** — the counting spelling is now stated:
     `parallel for i in 0..<N:`, the only context where `0..<N` is legal, literal
@@ -1746,7 +1746,7 @@ the design records; its entry says exactly what remains.
   - **`docs/spec/16-builtins.md` — nothing to change, and this is a finding, not
     an omission.** The phase brief and the plan's own scope line both say
     "`range` removed" from this chapter. `grep -n range docs/spec/16-builtins.md`
-    returns exactly two hits, `:131` ("the byte range `[a, b)`", about `substr`)
+    returns exactly two hits, `docs/spec/16-builtins.md:131` ("the byte range `[a, b)`", about `substr`)
     and `:140` ("every in-range `i`"), neither of which is the counting form.
     That matches phase 7's finding that `range` never had a builtin-table entry:
     it was one lexeme test in one `for` header, so §29 never listed it and there
@@ -1769,8 +1769,8 @@ the design records; its entry says exactly what remains.
   eight refs are rewritten with **full paths**, and every single-line ref among
   them is anchored. Why they were unchecked is now written into the block itself:
   `check_citations.py` resets its inherited path at a blank line
-  (`scripts/check_citations.py:214-215`) and only polices refs whose path starts
-  with `SRC_PREFIX` (`scripts/check_citations.py:226-227`), so a `> Provenance:` paragraph that
+  (`scripts/check_citations.py:238-239`) and only polices refs whose path starts
+  with `SRC_PREFIX` (`scripts/check_citations.py:250-251`), so a `> Provenance:` paragraph that
   names **no** path leaves `cur` at `None` — the refs are skipped entirely and
   the mandatory-anchor rule never fires. Every one had gone stale by ~400 lines.
   The old values are written below **without backticks on purpose** — they are
@@ -2195,7 +2195,7 @@ request (`fc921d7`, `7a04e53`).
     stands and is recorded there: `char` is the one element type whose narrower
     operator set (`+`/`-` only, `src/tychoc.c:1029`) is also the hardest to
     write a fixture for.
-- [ ] **Phase 17** — **PARTIAL after batch 2.** The population is not ~344: a
+- [x] **Phase 17** — **PARTIAL after batch 2.** The population is not ~344: a
       re-derivation against the repaired gate found **568 live** bare
       `src/tychoc.c:N` refs (plus 621 more inside the frozen
       `docs/internals/plan-*-DONE.md` archives, which stay untouched). Batch 2
@@ -2220,6 +2220,32 @@ request (`fc921d7`, `7a04e53`).
   - Done when: someone decides, in writing, whether design records get repointed
     or annotated-and-frozen, then applies that decision to the 167 — and repairs
     the three live-entry refs in `plan.md` either way.
+  - **BATCH 10 MADE THE DECISION AND CLOSED THIS BOX. The decision is: do NOT
+    repoint the design records.** A dated study — `frontend-restriction-audit-2026-07-25.md`
+    names its date in its own filename — is a photograph of the tree on that day.
+    Repointing its citations produces a document whose prose is dated and whose
+    citations are current, and a reader has no way to tell that the two halves
+    disagree. A stale ref in a dated record is legible (the title dates it); a
+    fresh ref in a dated record is a lie the reader cannot detect. That is
+    strictly worse, so the answer is annotate-and-freeze, and the annotation is
+    this paragraph plus the `FRICTION.md` entry it is retired into.
+  - **Re-derived against the tree at `b5c8406`, because batch 2's split is eight
+    batches old.** 1457 refs name `src/tychoc.c`: 660 archived, 797 live. The
+    design-record class is now **127** — 90 in non-archived `docs/internals/*.md`,
+    37 in `docs/rfc/*.md` — not 167. `plan.md` holds 240, and batch 2's "three in
+    still-open entries (phases 26 and 30)" is **moot**: both phases are `[x]` as
+    of a later batch, so those refs are completed-phase evidence like the rest.
+  - **What sweeping would and would not buy, measured rather than argued.** All
+    **139 anchored** refs to `src/tychoc.c` in the tree contain the token they
+    name — checked here, 0 bad. So the anchored population is already correct and
+    a sweep would not move it. The other 1318 are bare, which is bounds-only: the
+    gate cannot tell a bare ref that drifted onto a plausible line from one that
+    did not, so "sweeping" them means re-verifying each by hand and anchoring it.
+    That is 1318 hand-verified citations, and the phase-44 sweep in this batch is
+    what a 42-ref version of that costs. It is not a phase, it is a project.
+  - **Retired to `FRICTION.md`** ("The bare `src/tychoc.c:N` citation population")
+    as recorded-not-actioned, with the number, the reason, and the only mechanism
+    that would actually fix it. The box is ticked on the decision, not on a sweep.
 - [x] **Phase 18** — `docs/internals/spec-plan.md:605` cites
       `appendix-e-conformance.md:188` for a §9.5 claim; that line is the §24.2 row.
 - [x] **Phase 20** — `examples/fetch/run.sh` is red, and was red **before** this
@@ -2273,9 +2299,9 @@ request (`fc921d7`, `7a04e53`).
       filed as phase 46.
 
 - [x] **Phase 23** — **an absolute path in a citation is silently unchecked.**
-      Found by phase 2. `scripts/check_citations.py:226`
+      Found by phase 2. `scripts/check_citations.py:250`
       skips any cited path not starting with `SRC_PREFIX`
-      (`scripts/check_citations.py:153-155`, all
+      (`scripts/check_citations.py:177-179`, all
       relative: `src/`, `tests/`, …), so a ref written as an absolute path —
       the repo root spelled out in full, then tests/foo.ty and a line number —
       matched nothing and was
@@ -2723,7 +2749,7 @@ request (`fc921d7`, `7a04e53`).
     `make editors-check` is green.
   - Verify: `make editors-check`.
 
-- [ ] **Phase 33** — **no gate compiles the unexecuted `tycho` fences in `docs/`,
+- [x] **Phase 33** — **no gate compiles the unexecuted `tycho` fences in `docs/`,
       and one of them had never compiled at all.** Found by phase 9 while
       honouring phase 31's "compiled by hand" requirement.
       `docs/guides/arrays-structs.md:107` used the digit separator `1_000_000`,
@@ -2755,7 +2781,7 @@ request (`fc921d7`, `7a04e53`).
     `docs/`: 10 CHECKed, 19 FRAGMENT (no `fn` at all), 6 MARKED
     `<!-- fence-skip: … -->` with a printed reason, 5 FROZEN (in
     `docs/internals/plan-*-DONE.md`, the same exemption as
-    `scripts/check_citations.py:258@ARCHIVED`).
+    `scripts/check_citations.py:282@ARCHIVED`).
   - **What remains unchecked, precisely:**
     1. **~155 fences opened with a bare ```` ``` ```` and no language tag**, of
        which an unknown subset is Tycho. `docs/reference/` has **48** and
@@ -2776,18 +2802,45 @@ request (`fc921d7`, `7a04e53`).
        asserted-red — a negative lane would be strictly better and is not built.
   - Close this box when (1) is resolved, or re-scope it to say the bare-fence
     population is permanently out of reach and close it then.
+  - **BATCH 10 CLOSED THIS BOX.** (1) is resolved for every population it named:
+    `docs/reference/` (48), `docs/guides/` (33) and `docs/tutorial.md` (10) now
+    carry a language tag on every fence, and so do `docs/spec/` and the rest of
+    the reader-facing tree — 90 fences tagged in phase 43, below. **The gate went
+    from 40 `tycho` fences / 10 CHECKed to 119 / 39.** What is left is 64 bare
+    fences in `docs/internals/` (56), `docs/rfc/` (4) and `docs/` (4) — a
+    different and much smaller population, mostly inside the same dated design
+    records phase 17 decided not to touch, and it is filed as **phase 61** rather
+    than held against this box.
+  - **Two things were fixed in the gate itself, and one of them was a real bug.**
+    (a) A **no-main retry**: a fence that declares whole `fn`s but no `main` used
+    to be un-checkable, because `--emit-c` needs an entry point. It is now
+    retried with an *empty* `fn main()` appended, which typechecks exactly the
+    declarations the document contains and invents nothing — 6 fences moved from
+    skip to checked. This is not the synthetic-main wrapper the bullet above
+    rejects: that one would have invented a body for loose statements. (b) The
+    carved temp files were named `f_<closing-line>_<n>.ty` with `n` restarting in
+    every document, so **two documents closing their first fence on the same line
+    collided and one silently overwrote the other** — the gate then compiled one
+    document's fence while printing the other's path. It was live at `b5c8406`
+    (`docs/spec/12-aggregates.md` vs `docs/spec/15-program.md`, both at `:43`),
+    so one of those two was never actually compiled by batch 3's gate; at 119
+    fences there were 8 collisions. The document path is now part of the name.
+  - **Items 2, 3 and 4 of "what remains unchecked" are unchanged and still true**:
+    the 58 FRAGMENT and 17 MARKED fences are not compiled, nothing is run, and
+    the three `generics-stage2-body-cloning.md` must-reject fences are skipped
+    rather than asserted-red. A negative lane is still not built.
 
 - [x] **Phase 34** — **the pathless-`> Provenance:` gate hole is still open in
       the tool, only closed in the one file phase 14 named.** Phase 9 repaired
       `docs/spec/02-grammar.md`'s eight refs by hand, but
       `scripts/check_citations.py` still cannot see the class: `cur` is reset at
-      every blank line (`scripts/check_citations.py:214-215`) and a ref whose
+      every blank line (`scripts/check_citations.py:238-239`) and a ref whose
       inherited path is `None` is `continue`d before the anchor rule runs
-      (`scripts/check_citations.py:226-227`). So any future `> Provenance:` block
+      (`scripts/check_citations.py:250-251`). So any future `> Provenance:` block
       that opens a paragraph without naming a path gets **zero** checking —
       no bounds check, no anchor requirement.
   - The fix is not "carry `cur` across paragraphs" — the comment at
-    `scripts/check_citations.py:211-213` explains why that was deliberately
+    `scripts/check_citations.py:235-237` explains why that was deliberately
     removed. It is to make a `> Provenance:` block that contains a `:N` ref and
     names no path a **hard failure in its own right**: fail closed, with a
     message telling the author to write the path.
@@ -3132,8 +3185,8 @@ refs are phase 17 and none of the three new checks fires on a bare relative ref.
 
 ### What each check does, and where the line was drawn
 
-**Phase 13 — anchored source→source (`scripts/check_citations.py:244`, and the
-content check at `scripts/check_citations.py:395-397`).** `SRCCITE` gained an
+**Phase 13 — anchored source→source (`scripts/check_citations.py:268`, and the
+content check at `scripts/check_citations.py:432-434`).** `SRCCITE` gained an
 optional `@token` suffix; when present, the cited lines must literally contain
 the token. Two deliberate differences from the Markdown anchor, both forced by
 the medium: the token is `[A-Za-z0-9_]+` with no spaces, because a source
@@ -3154,7 +3207,7 @@ and `src/tychoc.c:3366@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
 gates. Sites whose target line did **not** support the claim were left bare and
 filed as phase 41 rather than silently repaired.
 
-**Phase 23 — an absolute path is a failure (`scripts/check_citations.py:297`).**
+**Phase 23 — an absolute path is a failure (`scripts/check_citations.py:321`).**
 Not resolved against `ROOT`, per the phase: reported instead, naming the
 repo-relative spelling. `cur` is cleared afterwards so a following bare `:N`
 cannot inherit an unspellable path.
@@ -3183,7 +3236,7 @@ the loop self-corrects; but the wording and the gate now disagree in tone.
 this batch had no mandate to rewrite it.
 
 **Phase 34 — a pathless `> Provenance:` ref is a failure
-(`scripts/check_citations.py:322`).** Fail-closed, with a message naming the
+(`scripts/check_citations.py:346`).** Fail-closed, with a message naming the
 missing path. Not "carry `cur` across paragraphs" — that was deliberately
 removed and the comment above the loop says why.
 
@@ -3334,24 +3387,24 @@ author's referent went*, never evidence that the author was right.
 **Two earlier findings were reproduced, and they are why the arithmetic alone is
 not enough.** A blame-and-shift pass would have scored both of these green:
 
-- `docs/spec/16-builtins.md:145` cited `char_at`'s codegen at `:8641-8648`;
+- `docs/spec/16-builtins.md:145` cited `char_at`'s codegen at `src/tychoc.c:8641-8648`;
   that block's referent was a **`sink`-parameter diagnostic**, and had been since
   the line was written at `3f68a00`. Repointed to `:9000-9007`, the real
   `char_at` codegen, not to where the wrong block moved.
-- `docs/spec/16-builtins.md:332` cited `die`'s codegen at `:8791-8792`, which was
+- `docs/spec/16-builtins.md:332` cited `die`'s codegen at `src/tychoc.c:8791-8792`, which was
   a comment about `tycho_streq` group-stripping. Repointed to `:9150-9151`. Its
-  two siblings at `:20` and `:86` cited the *same* numbers and were genuinely
+  two siblings at `docs/spec/16-builtins.md:20` and `:86` cited the *same* numbers and were genuinely
   right when written, so they moved with the drift instead — the same numbers
   needed two different repairs.
 
 **The "unchanged since written" bucket is not safe either**, which was the
 sharpest finding. `docs/spec/12-aggregates.md:15` cites `reserve` at
-`:5657-5683` and `:8693-8700`; those are `to_int` and a `sink` diagnostic. The
+`src/tychoc.c:5657-5683` and `:8693-8700`; those are `to_int` and a `sink` diagnostic. The
 line was last written **today** (`fc921d7`, phase 27) — phase 27 shifted
 `src/tychoc.c` by 170 lines, repaired the **anchored** refs on that line, and
 left the bare ones pointing 170 lines short. That is phase 17's premise
-demonstrated on a single line: `` `:11797@pop from an empty array` `` green,
-`` `:5657-5683` `` silently 170 off. The same pattern was found and repaired on
+demonstrated on a single line: src/tychoc.c:11797@'pop from an empty array' (de-backticked: the anchor has drifted) green,
+`` `src/tychoc.c:5657-5683` `` silently 170 off. The same pattern was found and repaired on
 `16-builtins.md:85`, `:116`, `:143`, `:145`, `:218`, `:243` and
 `12-aggregates.md:18`.
 
@@ -3534,7 +3587,7 @@ number the parser actually ran on.
 refs**, and the interesting part is that the line numbers had drifted too.
 `68e5b39` was a pure rename (`git diff --numstat`: `1 1 docs/{ => guides}/corelib.md`),
 but 10 later commits edited `docs/guides/corelib.md`. Spot-check that caught it:
-`docs/spec/18-library.md`'s `io` section cited `docs/corelib.md:204-210`, and
+`docs/spec/18-library.md`'s `io` section cited docs/corelib.md:204-210 (de-backticked: the path it names is the pre-rename one), and
 line 204-210 of the current `docs/guides/corelib.md` is the **`hash`** package,
 not `io`. Repair method: parse the `- **\`pkg\`**` bullets
 in `docs/guides/corelib.md` into per-package line extents, parse
@@ -3583,7 +3636,7 @@ That is precisely the "red on prose, then disabled" failure the entry warned of.
 Settled design: **opt-out with a named reason**, `<!-- fence-skip: … -->`, and
 the reason is printed on every run so the skip list cannot grow quietly. Frozen
 `docs/internals/plan-*-DONE.md` fences are exempt on the same grounds as
-`scripts/check_citations.py:258@ARCHIVED`. Fences with no `fn` are classed
+`scripts/check_citations.py:282@ARCHIVED`. Fences with no `fn` are classed
 FRAGMENT rather than wrapped in a synthetic `main`, because wrapping would
 typecheck a program the document does not contain.
 
@@ -3671,7 +3724,7 @@ edits the `Makefile`: the citation gate does catch this, but only if you run it.
 
 ## Phases discovered by batch 3
 
-- [ ] **Phase 43** — **~155 fences in `docs/` carry no language tag, so nothing
+- [x] **Phase 43** — **~155 fences in `docs/` carry no language tag, so nothing
       can check them.** Found by batch 3 while building `scripts/docs_fences.sh`.
       (Filed as "41" by batch 3, renumbered — 41 and 42 were already taken by
       batch 2's filings. Batches file phases without seeing each other's work, so
@@ -3693,8 +3746,33 @@ edits the `Makefile`: the citation gate does catch this, but only if you run it.
   - Done when: every fence in `docs/reference/` and `docs/guides/` carries a
     language tag, and `make docs-fences` is green over the enlarged set.
   - Verify: `make docs-fences`, `sh scripts/check_links.sh`.
+  - **BATCH 10 DID THE PASS. 90 fences tagged**, one file at a time, by reading
+    each: **79 `tycho`, 6 `text`, 4 `sh`, 1 `ebnf`** across `docs/reference/`
+    (48), `docs/guides/` (32) and `docs/tutorial.md` (10). Nothing was guessed —
+    the non-Tycho eleven are named in the commit: three gdb/lldb/`tychoc`
+    invocations and one `$ ./tychoc f.ty` (`sh`); the `TYCHO_ARENA_STATS` dump, a
+    directory tree, the inference pattern/arg table, a quoted compiler warning,
+    the `subscript <name>(<recv>…)` syntax template and a program's stdout
+    (`text`); the file grammar (`ebnf`).
+  - **11 of the 79 needed a `fence-skip` marker** — the convention phase 33
+    established, not a second one — because they declare an `fn` and still cannot
+    compile alone: three one-file-of-a-multi-file-package examples, three showing
+    statements at top level, two ellipsis-body placeholders, one importing
+    `core:math` without the `package main` line the compiler requires, and two
+    calling a helper the prose names but does not define (`bump`, `parse_digit`).
+    Each marker states which of those it is, and the reason prints on every run.
+  - **The pass found two real documentation bugs, which is the point.** Tycho has
+    no one-line suite — `if c: stmt` and `for x in xs: stmt` are both
+    `error: expected newline`, verified on the built `./tychoc` in both spellings
+    against a two-line control that compiles. `docs/guides/arrays-structs.md`
+    showed `if len(xs) > 0: return Some(xs[0])` and `docs/reference/functions.md`
+    showed `for x in xs: acc = acc + x`. Same class as the `1_000_000` of phase
+    33, in the two most-read files in the tree, and neither had ever been parsed
+    by anything. Both split across lines.
+  - Residual: 64 bare fences in `docs/internals/`, `docs/rfc/` and `docs/` —
+    filed as **phase 61**, not silently absorbed.
 
-- [ ] **Phase 44** — **doc→doc `path:N` citations are checked by nothing, and
+- [x] **Phase 44** — **doc→doc `path:N` citations are checked by nothing, and
       there are 103 stale ones.** Found by batch 3 while fixing phase 15.
       (Filed as "42" by batch 3, renumbered for the same reason as phase 43.)
       `SRC_PREFIX` (`scripts/check_citations.py:224-225`) lists `src/`,
@@ -3711,13 +3789,55 @@ edits the `Makefile`: the citation gate does catch this, but only if you run it.
     without the sweep would leave the tree red.
   - Note the population is concentrated in `plan.md`'s own bare `:N` refs
     inheriting a doc path from the previous sentence, which is the exact class
-    `scripts/check_citations.py:211-213` documents as deliberately not carried
+    `scripts/check_citations.py:235-237` documents as deliberately not carried
     across paragraphs. Read that comment before deciding the fix shape; the
     answer may be to require an explicit path in `docs/`-targeted refs rather
     than to widen the bounds check.
   - Done when: `docs/`-targeted citations are checked, the 103 are resolved, and
     `python3 scripts/check_citations.py` is green.
   - Verify: `python3 scripts/check_citations.py`.
+  - **BATCH 10 SHIPPED THE GATE AND THE SWEEP. It is 77, not 103** — batches 4–9
+    repaired 26 of them incidentally — split **25 `NO SUCH FILE` / 52
+    `OUT OF BOUNDS`**, and the split is the finding. **Every one of the 52 is a
+    bare `:N` that inherited a `docs/` path from its sentence while meaning
+    `src/tychoc.c`**; not one is a genuine doc→doc citation that merely drifted.
+    So the note above is right that the population is concentrated there, and the
+    fix it floated — "require an explicit path in `docs/`-targeted refs" — turned
+    out to be unnecessary machinery: the ordinary bounds check already catches
+    every one of them loudly, because a compiler line number read against a
+    386-line chapter is out of bounds by two orders of magnitude. `docs/` is
+    simply added to `SRC_PREFIX` (`scripts/check_citations.py:248`) and the
+    doc→doc direction becomes ordinary: bounds, anchors, and the mandatory
+    `> Provenance:` rule, same as doc→source.
+  - **One new exemption, and it is the one already settled.** 35 of the 52 sit in
+    the frozen `plan-*-DONE.md` archives, where the ARCHIVED rule forbids
+    demanding an edit; a `docs/`-targeted ref in a frozen file is therefore
+    skipped and **counted in `--stats`** (242 of them) so the hole is declared
+    rather than silent (`scripts/check_citations.py:352`).
+  - **What the other 42 got, per class.** 22 in `docs/rfc/ffi-threading-design-review.md`
+    named `docs/ffi.md` and `docs/concurrency.md`, both moved into `docs/guides/`
+    by `68e5b39`; repointed by building a difflib equal-block map from
+    `68e5b39^` to today and **comparing the cited text old-vs-new for all 22** —
+    identical in every case, so the repoint is evidence of where the referent
+    went, not a guess. One (`:73`) was blank when written and its sentence has
+    always been on the next line; corrected to `:74` and said so. 2 in
+    `docs/spec/appendix-h-differences.md` row H5 named `docs/generics.md`, same
+    rename, mapped `:11`→`:13` and `:205-208`→`:207-210`. 18 in `plan.md`:
+    15 mis-inherited refs given the explicit `src/tychoc.c` path they meant (one
+    of which then correctly re-anchors the two *siblings* on the next line back
+    to `16-builtins.md`, which the naive fix would have silently mis-bound), and
+    3 whose anchor token has since drifted or whose path is quoted *because* it
+    is dead — de-backticked, the convention `plan.md:1450-1452` established for
+    exactly this and states in words.
+  - **Editing the gate's docstring staled 18 live citations into it**, all bare
+    and all still in bounds — the silent class this whole batch is about, caught
+    only by mapping HEAD→working and re-verifying each pair (18/18 text-identical
+    at the new line). Repaired, plus one in `scripts/docs_fences.sh:21` promoted
+    to the anchored form `@ARCHIVED` so it cannot rot silently again.
+  - Two placeholder paths written into the new docstring were themselves parsed
+    as live citations by the pass being documented, on two separate runs. The
+    docstring already warns about this for the doc→source table; it now does the
+    same for its own doc→doc example.
 
 ## Batch 4 evidence — phases 19, 22, 36, coverage the generators cannot reach
 
@@ -5267,7 +5387,7 @@ files still compile.
 
 **The citation gate caught the Makefile edit.** Adding the `rtparity` target
 shifted `Makefile:253@SKIPPED` to `:267`, reddening four references
-(`scripts/asan_self.sh:11`, `:72`, `scripts/check_citations.py:189`,
+(`scripts/asan_self.sh:11`, `:72`, `scripts/check_citations.py:213`,
 `scripts/editors_check.sh:29`). Repointed to `Makefile:267` — verified the line is the
 ilp32 ASan-skip `echo` — and the gate is green. Anyone adding a Makefile target
 should expect this; it is the third time an anchored `Makefile:N` has moved
@@ -5337,3 +5457,317 @@ fixture directory moved and no Appendix E path changed — the one file added,
   - Done when: the fixture exists, `make test` scores it (552), and flipping one
     word of the message is shown reddening it.
   - Verify: `make test`.
+
+## Batch 10 evidence — phases 44, 17, 33, 43: the documentation-citation infrastructure
+
+Gate first, then the sweeps it enables. Phase 44 is what makes 17, 33 and 43
+answerable, which is why it ran first.
+
+### Phase 44 — the doc→doc hole, before and after
+
+`docs/` was absent from `SRC_PREFIX`, so a citation from one document into
+another was `continue`d before any check ran. Measured, not estimated:
+
+```
+$ python3 scripts/check_citations.py --stats          # at b5c8406, before
+citation check: 159 anchored (content-checked, 90 of them the mandatory `> Provenance:`
+             single-line refs), 2266 bare (bounds only), 121 source->doc (existence),
+             167 source->source (bounds), 11 source->source anchored (content-checked)
+citation check: ok
+
+$ python3 scripts/check_citations.py                  # with "docs/" in SRC_PREFIX
+citation check: FAILED (77 stale citation(s) above)
+    25 NO SUCH FILE, 52 OUT OF BOUNDS
+```
+
+77, not batch 3's 103 — batches 4–9 repaired 26 incidentally. The split by citing
+file: `docs/rfc/ffi-threading-design-review.md` 22, `plan.md` 18,
+`docs/spec/appendix-h-differences.md` 2, and 35 inside the frozen
+`docs/internals/plan-*-DONE.md` archives.
+
+**Every one of the 52 OUT OF BOUNDS is a bare `:N` that inherited a `docs/` path
+from its sentence while meaning `src/tychoc.c`.** Not one is a doc→doc citation
+that merely drifted. `plan.md:1712`'s `:3191-3277` sits two words after
+`docs/spec/10-statements.md:8-10`; the chapter has 172 lines. That is why the
+widened bounds check needed no extra machinery — the note on this phase floated
+"require an explicit path in `docs/`-targeted refs", and the data says the
+ordinary check already reddens every one of them by two orders of magnitude.
+
+### Both directions, on the real tree
+
+**The hole, demonstrated at HEAD.** The same two bad refs, appended to
+`docs/README.md`, against the gate as it stood:
+
+```
+$ git show HEAD:scripts/check_citations.py > scripts/_head_gate.py
+$ python3 scripts/_head_gate.py
+citation check: ok (159 anchored ..., 2279 bare in bounds, ...)      # GREEN on both
+```
+
+**The gate, reddening.** Same two refs, gate as shipped:
+
+```
+STALE  docs/README.md:38  docs/spec/01-lexical.md:99999 -> docs/spec/01-lexical.md has 386 lines: OUT OF BOUNDS
+STALE  docs/README.md:38  docs/spec/gone.md:1 -> docs/spec/gone.md: NO SUCH FILE
+citation check: FAILED (2 stale citation(s) above)
+--- restored ---
+citation check: ok (159 anchored ..., 2548 bare in bounds, ...)
+```
+
+**The frozen-archive exemption, reddening.** `if frozen and` replaced by
+`if False and`, nothing else:
+
+```
+$ python3 scripts/check_citations.py | grep -c '^STALE  docs/internals/plan-'
+35
+citation check: FAILED (35 stale citation(s) above)
+--- restored ---
+citation check: ok
+```
+
+Those 35 are the same mis-inheritance class, inside records the ARCHIVED rule
+forbids editing. They are skipped and **counted**: `--stats` now prints
+`242 doc->doc skipped as frozen archive`, so the hole is declared, not silent.
+
+### What the 42 live failures got, and why
+
+| where | n | treatment |
+|---|---|---|
+| `docs/rfc/ffi-threading-design-review.md` | 22 | repointed `docs/{ffi,concurrency}.md` → `docs/guides/…`, line numbers mapped |
+| `plan.md` evidence blocks | 15 | given the explicit `src/tychoc.c` path the sentence meant |
+| `plan.md` | 3 | de-backticked: anchor drifted, or the dead path is the subject |
+| `docs/spec/appendix-h-differences.md` H5 | 2 | docs/generics.md:11, :205-208 (de-backticked: dead path) → `docs/guides/generics.md:13`,`:207-210` |
+
+The rfc repoint is not a path substitution. `68e5b39` was `R097`/`R098`, not a
+pure rename, and three later commits edited each file. A difflib equal-block map
+was built from `68e5b39^` to today and **the cited text was compared old-vs-new
+for all 22 — identical in every one**, which is what makes the new number
+evidence of where the referent went rather than a guess. One exception, recorded:
+docs/ffi.md:73 (de-backticked: dead path) was the blank line under the type table when it was written and
+its sentence has always been on the next line, so it became :74 — repaired, not
+mapped.
+
+The `plan.md` set has the trap worth naming. `plan.md:3341` reads
+"``docs/spec/16-builtins.md:332`` cited `die`'s codegen at :8791-8792" (de-backticked: it means the compiler, not the chapter) and
+the next line's "two siblings at ``:20`` and ``:86``" means the *chapter*, not
+the compiler. Making the first ref explicit re-binds the siblings to
+`src/tychoc.c`, in bounds and wrong. Both had to move, in opposite directions.
+
+Three refs were de-backticked rather than repointed. `src/tychoc.c:3386` no
+longer contains `"range"` and `:11797` no longer contains `pop from an empty
+array`; the third quotes it **because** that path is dead
+— docs/corelib.md:204-210, the citation phase 15 repaired. Repointing any of them would make an
+evidence block claim something its phase never checked. `plan.md:1450-1452`
+established this convention and says so in words.
+
+### The gate's own docstring staled 18 citations into itself
+
+Adding the doc→doc section shifted every line below it. All 18 refs into
+`scripts/check_citations.py` stayed **in bounds** and went silently wrong — the
+exact class this batch exists for. Caught by mapping `HEAD`→working with difflib
+and re-verifying each pair: **18/18 text-identical at the new line**. Repaired,
+and `scripts/docs_fences.sh:21` was promoted to the anchored form `@ARCHIVED` so
+it cannot rot silently again.
+
+Twice, a placeholder path written into the new docstring was parsed as a live
+citation by the pass being documented. The docstring already warns about this for
+the doc→source shape table; it now does the same for its own doc→doc example.
+
+### Phase 17 — the decision, and the numbers it rests on
+
+Re-derived at `b5c8406`, because batch 2's split is eight batches old. **1457**
+refs name `src/tychoc.c`: 660 archived, 797 live. The design-record class is
+**127** (90 non-archived `docs/internals/`, 37 `docs/rfc/`), not batch 2's 167.
+Batch 2's "three in still-open entries (phases 26 and 30)" is **moot** — both are
+`[x]` as of a later batch.
+
+**All 139 anchored refs are correct** — the anchor test re-run over every one,
+0 mismatches. So a sweep would not move the anchored half. The other 1318 are
+bare, i.e. bounds-only, and bounds is exactly the property a drifted citation
+keeps when the target is 12774 lines long.
+
+| class | n | decision |
+|---|---|---|
+| archived `plan-*-DONE.md` | 660 | never sweep — phase 4's rule, unchanged |
+| dated design records | 127 | **do not repoint** — annotate and freeze |
+| `plan.md` completed-phase evidence | most of 240 | do not renumber — same rule |
+| live entries of open phases 51/53/57/60 | 72 | the phase that acts on them verifies them; briefs are claims to check, not facts |
+
+The refusal to repoint the dated records is the decision the phase asked for.
+`frontend-restriction-audit-2026-07-25.md` dates itself in its own filename. Give
+it current coordinates and you get a document whose prose is dated and whose
+citations are not, with nothing telling the reader the halves disagree. **A stale
+ref in a dated record is legible; a fresh one is a lie the reader cannot detect.**
+
+Retired to `FRICTION.md` — the repo's container for recorded-not-actioned — with
+the count, the reason, and the only mechanism that would actually fix it:
+conversion to anchored form, 1318 hand-verified citations. Batch 10's phase-44
+work is a 42-ref instance of that job and it took a batch. **The box is ticked on
+the decision, not on a sweep**, which is what its own Done-when asked for.
+
+### Phases 33 and 43 — the fences
+
+90 fences tagged by reading each one: **79 `tycho`, 6 `text`, 4 `sh`, 1 `ebnf`**
+across `docs/reference/` (48), `docs/guides/` (32), `docs/tutorial.md` (10).
+Nothing guessed — the eleven non-Tycho are gdb/lldb/`tychoc` invocations, the
+`TYCHO_ARENA_STATS` dump, a directory tree, the inference pattern table, a quoted
+compiler warning, the `subscript <name>(<recv>…)` template, a program's stdout,
+and the file grammar.
+
+| | before (`b5c8406`) | after |
+|---|---|---|
+| fences in `docs/` | 252 | 252 |
+| tagged ```` ```tycho ```` | 40 | **119** |
+| CHECKed (compiled) | 10 | **39** (6 via the no-main retry) |
+| FRAGMENT | 19 | 58 |
+| MARKED `fence-skip` | 6 | 17 |
+| FROZEN | 5 | 5 |
+| bare, untagged | ~155 | **64** (`docs/internals/` 56, `docs/rfc/` 4, `docs/` 4) |
+
+```
+$ make docs-fences
+docs-fences: 39 fence(s) compiled (6 of them with an appended empty main), 80 skipped (reasons above), 0 failure(s)
+```
+
+**Two real documentation bugs, which is the point of the exercise.** Tycho has no
+one-line suite: `if c: stmt` and `for x in xs: stmt` are both
+`error: expected newline` on the built `./tychoc`, against two-line controls that
+compile. `docs/guides/arrays-structs.md` showed
+`if len(xs) > 0: return Some(xs[0])`; `docs/reference/functions.md` showed
+`for x in xs: acc = acc + x`. Same class as the `1_000_000` of phase 33, in two
+of the most-read files in the tree, and neither had ever been parsed by anything.
+
+**11 of the 79 needed a `fence-skip`** — phase 33's marker, not a second
+convention: three one-file-of-a-multi-file-package examples, three with
+statements at top level, two ellipsis-body placeholders, one importing
+`core:math` without the `package main` line the compiler requires, and two
+calling a helper the prose names but never defines (`bump`, `parse_digit`).
+
+### Two changes to the fence gate, one of them a real bug
+
+**The no-main retry.** A fence declaring whole `fn`s and no `main` was
+un-checkable, because `--emit-c` needs an entry point; the only honest option was
+a skip. It is now retried with an **empty** `fn main()` appended — which
+typechecks exactly the declarations the document contains and invents nothing.
+This is not the synthetic-main wrapper phase 33 rejected: that one would have
+invented a body for loose statements. Break proof, both directions, on
+`docs/reference/arrays-slices.md:67` (a no-main fence):
+
+```
+docs-fences: FAIL docs/reference/arrays-slices.md:67 -- does not compile
+      <fence>.m:11: error: returning string but proc returns int
+          11 |     return "not an int"
+make rc=2
+--- restored ---
+docs-fences: 39 fence(s) compiled (6 of them with an appended empty main), 80 skipped, 0 failure(s)
+make rc=0
+```
+
+An error in a **non-main** function still reddens, so the lane is coverage rather
+than a rubber stamp. (A first attempt at this proof used a generic `fn id(x: $T)`
+and did *not* redden — an uninstantiated generic body is never checked. Recorded
+because a negative control that fails to fail is the one that would have shipped
+a vacuous lane.)
+
+**The collision bug.** Carved fences were written to `f_<closing-line>_<n>.ty`
+with `n` restarting in each document, so two documents closing their first fence
+on the same line produced the same filename and one silently overwrote the other
+— the gate then compiled one document's fence while printing the other's path.
+**It was live at `b5c8406`**: `docs/spec/12-aggregates.md:43` and
+`docs/spec/15-program.md:43` collide, so one of those two was never actually
+compiled by batch 3's gate. At 119 fences there were 8 collisions, which is how
+it surfaced: `docs/guides/generics.md:47` reported a failure whose source text
+came from a concurrency fence. The document path is now part of the name.
+
+### Gate output — the real runs
+
+```
+$ python3 scripts/check_citations.py --stats
+citation check: 159 anchored (content-checked, 90 of them the mandatory `> Provenance:`
+             single-line refs), 2558 bare (bounds only), 124 source->doc (existence),
+             166 source->source (bounds), 12 source->source anchored (content-checked),
+             242 doc->doc skipped as frozen archive
+citation check: ok (159 anchored contain the token they name, 2558 bare in bounds,
+             124 source->doc citations resolve, 166 source->source in bounds,
+             12 source->source anchored)
+
+$ make docs-fences
+docs-fences: 39 fence(s) compiled (6 of them with an appended empty main), 80 skipped (reasons above), 0 failure(s)
+
+$ sh scripts/check_links.sh
+link check: ok (134 markdown files, no dead relative links)
+
+$ sh scripts/spec_check.sh
+spec-examples: 9 runnable example(s), all pass
+```
+
+Bare citations went 2266 → 2558: +282 doc→doc refs that were checked by nothing
+before, now bounds-checked. Source→doc went 121 → 124, source→source 167 → 166
+with anchored 11 → 12 (one bare ref in `scripts/docs_fences.sh` promoted to
+anchored).
+
+`make test` was **not** run and is unchanged at 551: no `.ty` file, fixture or
+golden was touched — the diff is Markdown, one Python gate and one shell gate,
+and per `CLAUDE.md`'s gate ladder those cannot affect a compiled artifact.
+`make ci` was **not** run; the closing sweep is phase 58's.
+
+## Phases discovered by batch 10
+
+- [ ] **Phase 61** — **64 fences in `docs/` still carry no language tag**, so
+      `make docs-fences` cannot see them: **56 in `docs/internals/`, 4 in
+      `docs/rfc/`, 4 in `docs/`**. This is the residue of phase 43, which tagged
+      the reader-facing tree (`docs/reference/`, `docs/guides/`,
+      `docs/tutorial.md`) and left this deliberately rather than absorbing it.
+  - It is a different job from phase 43 and probably a smaller one. Most of the
+    56 sit in the dated design records that **phase 17 decided not to touch** —
+    `generics-stage2-body-cloning.md`, `generics-gap-fixes-plan.md`, the
+    `*-audit-2026-07-25.md` files — and a fence in a dated study documents syntax
+    as it was, so tagging one `tycho` opts a historical snippet into a gate that
+    checks today's grammar. Decide that before tagging, not after the gate
+    reddens: the answer is probably `text` for the historical ones and `tycho`
+    only where the snippet is still meant to be current.
+  - The same rule as phase 43 applies and is not negotiable: **do not automate
+    the tagging by guessing the language.** A fence mistagged `tycho` reddens the
+    gate on prose and the gate gets disabled.
+  - Done when: every fence in `docs/`, `docs/rfc/` and `docs/internals/` carries
+    a tag, the historical-vs-current decision is written down, and
+    `make docs-fences` is green over the enlarged set.
+  - Verify: `make docs-fences`, `sh scripts/check_links.sh`.
+
+- [ ] **Phase 62** — **the fence gate classifies an `extern fn`-only fence as
+      FRAGMENT, and three of them would pass if it did not.** `scripts/docs_fences.sh`
+      decides FRAGMENT with `$0 ~ /^[ \t]*fn[ \t]/`, which an `extern fn getpid()
+      -> int` line does not match, so `docs/guides/ffi.md:34`, `docs/reference/ffi.md:12`
+      and `docs/reference/generics.md:42` are skipped as "no fn declaration"
+      while all three compile (verified: each was run through `tychoc --emit-c`
+      by hand, two of them needing only the no-main retry the gate already has).
+  - Widening the test to `/^[ \t]*(extern[ \t]+)?fn[ \t]/` is one character
+    class, but it is **not** a free change: it also opts in `docs/guides/ffi.md`'s
+    five-line `extern` catalogue, which fails with `'sqrt' is already defined`
+    because the doc re-declares a builtin. That is arguably a doc bug worth
+    fixing rather than marking, and deciding which is the phase.
+  - Scope: `scripts/docs_fences.sh` and whichever `extern` fences the widened
+    rule reddens. No compiler change.
+  - Done when: the rule counts `extern fn`, every newly-CHECKed fence either
+    compiles or carries a `fence-skip` naming why, and the widening is shown
+    reddening on a broken `extern` fence and going green on restore.
+  - Verify: `make docs-fences`.
+
+- [ ] **Phase 63** — **a mis-inherited bare `:N` that lands *inside* the
+      document it wrongly binds to is still invisible**, and phase 44 proved the
+      mis-inheritance is common rather than theoretical: 52 of its 77 failures
+      were that bug, caught only because a compiler line number is far outside a
+      386-line chapter. A `docs/spec/16-builtins.md` paragraph citing `:20` and
+      meaning `src/tychoc.c:20` would pass silently, and one such pair was
+      repaired by hand in `plan.md:3343` during batch 10 for exactly this reason.
+  - Two candidate fixes, and the phase is choosing between them. (a) Require an
+    explicit path on any ref whose *inherited* path is under `docs/` — fails
+    closed, but costs the continuation form in the appendix-h-style tables where
+    a genuine doc→doc pair sits on one line. (b) Leave the grammar alone and
+    convert the population to anchored form, which is the general cure recorded
+    in `FRICTION.md` for the same class of blindness.
+  - Do NOT ship (a) without counting what it reddens first; batch 3 measured
+    phase 44 before shipping it and that is why phase 44 took one batch instead
+    of two.
+  - Verify: `python3 scripts/check_citations.py`, plus the count of what the
+    chosen rule reddens, taken before the change lands.

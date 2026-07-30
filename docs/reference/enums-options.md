@@ -18,7 +18,7 @@ structurally with `==`, like everything else in the language.
 An `enum` declares a type whose value is exactly one of several named **variants**, each
 carrying a payload of zero or more types. It's the tagged union, or algebraic data type:
 
-```
+```tycho
 enum Shape:
     Circle(float)            # a variant with a payload
     Rect(float, float)
@@ -49,7 +49,7 @@ A variant may carry the enum itself, which makes the type an abstract syntax tre
 the payload is arena-allocated rather than stored inline, a recursive enum is still a finite
 value — no infinitely-large type — and copying one deep-copies the entire tree:
 
-```
+```tycho
 enum Expr:
     Num(float)
     Add(Expr, Expr)          # recursive: a variant carrying Expr
@@ -77,7 +77,7 @@ struct, including recursive payloads that name the enum itself. See [Generics](g
 `match` is how every sum type is consumed. It dispatches on the variant and binds the
 payload in one step:
 
-```
+```tycho
 match shape:
     Circle(r):               # r is bound to the payload (a float here)
         ...
@@ -104,7 +104,7 @@ An `if` or `match` may stand as the whole right-hand side of a `:=`, a typed `x 
 plain `x =` / place assignment, or a `return`. The value of the taken branch/arm becomes the
 value bound, assigned, or returned:
 
-```
+```tycho
 label := match status:          # inferred type (all arms must agree)
     Active:
         "on"
@@ -140,7 +140,7 @@ statement form for those.
 the null-reference problem: a value that may be absent is *typed* as absent, and you can't
 ignore the absence, because reading it requires an exhaustive `match`.
 
-```
+```tycho
 fn index_of(xs: [int], target: int) -> Option(int):
     for i := 0; i < len(xs); i += 1:
         if xs[i] == target:
@@ -174,7 +174,7 @@ None` is `false`), and so do values that merely contain them.
 take on error handling without exceptions. A function that can fail returns one, and the
 caller has to handle both outcomes in a `match`:
 
-```
+```tycho
 fn checked_div(a: int, b: int) -> Result(int, string):
     if b == 0:
         return Err("divide by zero")
@@ -201,7 +201,8 @@ Chaining fallible calls with `match` at every step gets noisy. `or_return` cuts 
 `Err`, returns that `Err` from the enclosing function — which must itself return a
 `Result(_, E)` with the *same* error type `E`:
 
-```
+<!-- fence-skip: calls parse_digit, defined in the fence above this one -->
+```tycho
 fn add_two(a: string, b: string) -> Result(int, string):
     x := parse_digit(a) or_return    # Ok -> bind x; Err -> return it from add_two
     y := parse_digit(b) or_return

@@ -32,7 +32,8 @@ nothing about the C side's thread-safety and isolate it explicitly. The full ana
 
 ## `spawn` and `wait`
 
-```
+<!-- fence-skip: an ellipsis body plus top-level statements; neither is a whole program -->
+```tycho
 fn count(path: string) -> int: ...
 
 t1 := spawn count("a.txt")     # args deep-copied into the task's own arena
@@ -49,7 +50,7 @@ function can never return while its tasks run, and an un-waited task can never l
 
 ## `parallel for`
 
-```
+```tycho
 total := 0
 parallel for i in 0..<1000000:      # K = ncpu() chunk tasks (TYCHO_THREADS overrides)
     total += score(i)               # reduction: chunk-local partials, folded at join
@@ -68,7 +69,7 @@ ring). Value semantics outside it are untouched: `send` deep-copies the payload 
 cell's arena, and `recv` copies out into the receiver's arena, returning `Option(T)` where `None`
 means **closed and drained**.
 
-```
+```tycho
 ch := channel(string, 256)          # bounded; the creating scope frees it
 w := spawn consumer(ch)             # fn consumer(ch: Channel(string)) -> int
 ch.send("item-" + str(i))           # deep copy in (blocks when full)
@@ -91,7 +92,7 @@ declaration's direct right-hand side.
 `select` waits on several channels at once — `recv` arms, plus an optional `default`
 (non-blocking) and `closed` (every listed channel closed and drained) arm:
 
-```
+```tycho
 for true:
     select:
         recv(jobs, j):

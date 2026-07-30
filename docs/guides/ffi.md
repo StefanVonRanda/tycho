@@ -21,7 +21,7 @@ To call a C library you (1) declare each C function you need as an `extern fn`,
 link. Calling `cbrt` from libm needs no link flags, because libm is always
 linked:
 
-```
+```tycho
 extern fn cbrt(x: float) -> float
 
 fn main():
@@ -31,7 +31,7 @@ fn main():
 For a library that isn't linked by default, name it in the declaration. This
 declares `crc32` from zlib and links `-lz` automatically:
 
-```
+```tycho
 extern "z" fn crc32(crc: int, buf: string, n: int) -> int
 ```
 
@@ -44,7 +44,7 @@ limits.
 An `extern fn` is a bodyless declaration whose name *is* the C symbol name,
 optionally prefixed with the library to link:
 
-```
+```tycho
 extern fn getpid() -> int                                # libc (already linked)
 extern fn sqrt(x: float) -> float                        # libm (already linked)
 extern "z" fn crc32(crc: int, buf: string, n: int) -> int    # links -lz
@@ -106,7 +106,7 @@ write their real result through a pointer out-parameter — `int sqlite3_open(co
 char *path, sqlite3 **db)`. Declare the out-parameter `inout` and the transpiler passes
 the address of your local automatically; no hand-written shim:
 
-```
+```tycho
 extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
 
 db := null

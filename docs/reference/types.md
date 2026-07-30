@@ -53,7 +53,7 @@ A `char` is one byte, written with a quoted literal — `'x'`, with the escapes
 - `string + char` appends the byte **in place**, without allocating, so building a string
   one character at a time is a byte-write, not an allocation per character:
 
-```
+```tycho
 s := ""
 for d := 0; d < 10; d += 1:
     s = s + ('0' + d)          # zero-allocation one-byte append per digit
@@ -87,7 +87,7 @@ underlying type (zero cost — a `Meters` *is* a `double` in the generated C), b
 type-incompatible with `float` and with every other newtype. This is Odin's
 `distinct` — Tycho has no *transparent* alias, so `type` always means distinct.
 
-```
+```tycho
 type Meters = float
 type Seconds = float
 
@@ -120,7 +120,7 @@ other direction, every position with a known destination type — declarations, 
 call arguments, `return`, stores, literal elements — *checks* the expression against it.
 This is Pierce–Turner local inference, and it lets the annotation-light forms work:
 
-```
+```tycho
 xs : [int] = []              # bare [] takes the expected array type
 counts(em, [])               # ...in argument position too
 g := f + 2                   # an int literal adapts to a float context (f : float)

@@ -16,10 +16,12 @@ A final parameter written `xs: ...T` is **variadic**: inside the body `xs` is a 
 call packs its trailing arguments into that array. It is sugar over an array — the packed
 `[T]` is a value, deep-copied at the boundary like any array, so it needs no new machinery.
 
-```
+<!-- fence-skip: statements shown at top level, outside any fn, to keep the example short -->
+```tycho
 fn sum(xs: ...int) -> int:
     acc := 0
-    for x in xs: acc = acc + x
+    for x in xs:
+        acc = acc + x
     return acc
 
 sum(1, 2, 3)          # packs [1, 2, 3] -> 6
@@ -42,7 +44,7 @@ sum(nums...)          # spread: pass an existing array -> 15
 A top-level function used as a value has type `fn(P1, ..., Pn) -> R` (drop the `-> R` for a
 `void` return):
 
-```
+```tycho
 fn dbl(x: int) -> int:
     return x * 2
 
@@ -67,7 +69,7 @@ A **lambda** is an anonymous function written inline; its body is a single expre
 implicit return). Parameter and return types are elidable wherever an expected `fn` type
 supplies them — `apply(fn(x): x * 2, 21)`:
 
-```
+```tycho
 fn apply(f: fn(int) -> int, x: int) -> int:
     return f(x)
 
@@ -81,7 +83,7 @@ Closures **capture by value**: the captured variable is deep-copied into the clo
 created, so the closure is independent of any later change to the original. This is what keeps
 the value-semantic model intact — a closure is a plain value, with no shared references.
 
-```
+```tycho
 a := [10, 20]
 get_len := fn() -> int: len(a)
 push(a, 30)                  # mutate the original after capture
@@ -90,7 +92,7 @@ print(str(get_len()))        # 2 -- the closure kept its own copy, not 3
 
 A closure can also **escape** — be returned from the function that created it:
 
-```
+```tycho
 fn make_adder(n: int) -> fn(int) -> int:
     return fn(x: int) -> int: x + n      # captures n, then escapes
 
@@ -105,7 +107,7 @@ value that escapes. The closure carries its own env-copy routine, so the move is
 Function values are full members of the data model — a closure can live in a container and be
 called once stored, and a returned closure can be applied inline:
 
-```
+```tycho
 ops := [make_adder(1), make_adder(100)]   # an array of closures
 print(str(ops[1](5)))                     # 105
 print(str(make_adder(7)(3)))              # 10  (apply a returned closure inline)
@@ -123,7 +125,7 @@ is the receiver. There are no classes, no inheritance, and no `self`: dispatch i
 the receiver's compile-time type), the receiver is passed by value like any argument, and any
 type can be a receiver — a struct, an `int`, anything. Calls chain, including on call results:
 
-```
+```tycho
 a.add(b).norm1()        # == norm1(add(a, b))
 n := 21
 n.doubled()             # == doubled(n) -- an int receiver
@@ -132,7 +134,7 @@ n.doubled()             # == doubled(n) -- an int receiver
 This extends to the built-ins that take a receiver-shaped first argument, so the operations you
 reach for most read the same way your own functions do:
 
-```
+```tycho
 s.split(",")            # == split(s, ",")
 xs.push(9)              # == push(xs, 9)
 xs.len()                # == len(xs)
