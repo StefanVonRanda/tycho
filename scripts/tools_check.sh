@@ -275,7 +275,12 @@ echo ">>> bytes-rehome: a bytes field of a returned struct is deep-copied into t
 # `grep: .../brh/main.c: No such file or directory`. A stale fixture must fail loudly.
 mkdir -p "$TMP/brh"
 printf 'package main\nimport "core:io"\nimport "core:result"\nstruct B:\n    data: bytes\nfn mk(p: string) -> B:\n    d := result.unwrap_or(io.read_bytes(p), to_bytes(""))\n    if len(d) == 0:\n        return B(to_bytes(""))\n    return B(d)\nfn main():\n    b := mk("Makefile")\n    println(str(len(b.data)))\n' > "$TMP/brh/main.ty"
-if ! TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/brh/main.ty" --emit-c >/dev/null 2>"$TMP/brh.err"; then
+# -o is REQUIRED, not decoration: `--emit-c` with no -o writes the C to stdout
+# (src/tychoc.c:12708, plan.md phase 25), which `>/dev/null` would swallow whole.
+# This was the one in-tree caller relying on the old sibling-file default, and it
+# reported the loss exactly as the header above predicts a stale fixture would:
+# `grep: .../brh/main.c: No such file or directory`.
+if ! TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/brh/main.ty" --emit-c -o "$TMP/brh/main" >/dev/null 2>"$TMP/brh.err"; then
     echo "    bytes-rehome FIXTURE STALE: it no longer compiles, so this lane asserts NOTHING"
     sed 's/^/      /' "$TMP/brh.err"; fail=1
 elif grep -q 'tycho_str_copy(_parent, h_d)' "$TMP/brh/main.c"; then

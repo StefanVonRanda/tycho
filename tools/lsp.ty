@@ -1159,8 +1159,20 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # boundaries and the type/function/variable split. Legend order MUST match the
 # tokenTypes list in the initialize capability (keyword,type,function,variable,
 # string,number,comment).
+# The list carries `parallel`, `select` and `or_return` because both editor
+# grammars do -- editors/zed/grammars/tycho/grammar.js:37-38 and
+# editors/vscode/syntaxes/tycho.tmLanguage.json:42 -- and without them the LSP
+# painted `parallel` in a `parallel for j in 0..<n:` header as a VARIABLE while
+# the tree-sitter grammar painted it a keyword, in the same buffer (plan.md
+# phase 29). All three are hard tokens in the compiler's lexer:
+# src/tychoc.c:174 (or_return), :181 (parallel), :182 (select).
+# The four soft ones already here are NOT drift and stay: `handle` is a hard
+# token too (src/tychoc.c:187), while `const`, `sink`, `where` and `soa` are
+# TK_IDENT matched by text in the parser (src/tychoc.c:3116, :3661, :3695,
+# :1911) -- keywords to a reader, contextual to the lexer, and both grammars
+# highlight them.
 fn sem_is_keyword(w: string) -> bool:
-    return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa"
+    return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa" or w == "parallel" or w == "select" or w == "or_return"
 
 fn sem_is_type(w: string) -> bool:
     return w == "int" or w == "float" or w == "string" or w == "bool" or w == "char" or w == "bytes" or w == "ptr" or w == "void" or w == "u8" or w == "u16" or w == "u32" or w == "u64" or w == "i8" or w == "i16" or w == "i32" or w == "i64" or w == "f32"

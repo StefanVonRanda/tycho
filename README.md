@@ -187,7 +187,8 @@ also work. Measured, not asserted: see the tables above.
 [Quick start](#quick-start) above is the 30-second version; here's the rest.
 
 `./tychoc f.ty` transpiles `f.ty` to `f.c` and compiles it to a native binary `f`;
-`-o name` names the output, `--emit-c` stops at the C. The transpiler is one
+`-o name` names the output, `--emit-c` stops at the C (writing it to stdout
+unless `-o` names a file). The transpiler is one
 dependency-free C file. The only optional extras are `pkg-config` plus a library for the
 FFI-backed corelib modules (like `core:http`) and a Go toolchain for the cross-language
 benchmarks — both skip cleanly when absent.
@@ -216,7 +217,7 @@ verifies the whole tree.
 | --- | --- |
 | `make` | Build the `./tychoc` transpiler. |
 | `./tychoc f.ty` | Transpile `f.ty` → `f.c`, compile to native `f`. |
-| `./tychoc f.ty --emit-c` / `-o name` | Stop at the C / name the output. |
+| `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
 | `make test` | Run the test suite (below). |
 | `make bench` | Run the performance guard (below). |
 | `make bootstrap` / `make fixpoint` | Build / self-host-check `compiler/tychoc0.ty`. |

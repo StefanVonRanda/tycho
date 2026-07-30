@@ -11,7 +11,7 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `tycho-lsp`) for
   indentation-significant; full structure would need a C external scanner). The
   generated parser (`src/parser.c`, ABI 15) is committed, so no tree-sitter CLI
   is needed to build it. **`tree-sitter parse -q` over
-  829 committed `.ty` files (excluding `node_modules/` and
+  832 committed `.ty` files (excluding `node_modules/` and
   `fuzz/findings/`) reports exactly ONE `ERROR` node — including `$T` generics and
   backtick raw literals. That one is `tests/reject/rawstring_unterminated.ty`,
   which is a reject fixture and is *supposed* not to parse.**
