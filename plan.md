@@ -217,7 +217,7 @@ the last program still in it, and it is the biggest.
   recipe line, now `Makefile:279`, and was corrected to `,:279` in the same
   edit rather than left beside a number that had just been proved wrong.
 
-- [ ] **Phase 2 — wire `server-check` into `make ci`**
+- [x] **Phase 2 — wire `server-check` into `make ci`**
   - Scope: `scripts/ci.sh` and the `Makefile` comment at `:226-229` that
     currently says the server is deliberately out of CI — that sentence becomes
     false with this phase and must be rewritten, not left.
@@ -231,6 +231,81 @@ the last program still in it, and it is the biggest.
     exit code.
   - Verify: `make ci`, once, waited on in-turn, exit status **observed** not
     derived. This is the phase that earns the sweep — it adds a CI step.
+
+  **Evidence (2026-07-30).** Four files: `scripts/ci.sh` (the step),
+  `Makefile` (two comments), `CLAUDE.md` (two table rows), plus four citation
+  repairs. `server/run.sh` and `server/main.ty` untouched.
+
+  *Where the step went, and why.* `[3c/13]`, immediately after `[3b]
+  entrypoints` (`scripts/ci.sh:93-94`), following the `[2d]` precedent at
+  `scripts/ci.sh:62-70`: a sub-lane letter, not a fourteenth number, because the
+  `/13` denominator counts numbered steps. Two reasons for that slot, both about
+  which gate reports the cheapest true thing first. **Dependency:** `[3b]`
+  compile-checks `server/main.ty` in milliseconds, so a server that does not
+  build reddens there with a compile error rather than arriving here as `FAIL
+  readiness: no startup banner on stderr within 10s` — a message that describes
+  a symptom four steps downstream of its cause. **Cost:** ~4s, so it belongs
+  ahead of the minute-scale fuzz/tools lanes; there is no argument for making a
+  4-second lane wait behind a fuzz campaign. It is a sub-lane of `3b` rather
+  than a sixth dogfood inside `[3]` because everything in step 3 diffs stdout
+  against a recorded golden and this one talks HTTP to a live daemon — different
+  kind of assertion, so a different lane.
+
+  Also corrected in `scripts/ci.sh:85-88`: the `[3b]` comment listed `server/`
+  among the runners "outside this file", which this phase makes false. The
+  webserver/weblog/sqlite half of that sentence is still true and stays.
+
+  *What the `Makefile` comment says now.* `Makefile:226-236`. The old text —
+  "deliberately NOT in `make ci` and asserts nothing, because the thing it
+  produces is a long-running network daemon, not a fixture with a golden" — was
+  wrong in both halves and, worse, stated a false general principle. The
+  replacement records the non-obvious part: **the daemon shape is what makes it
+  gateable.** Binding `--port 0` and printing the bound port in a startup banner
+  (`server/main.ty:610-614`) hands a runner readiness *and* the port on one
+  line, so there is no `sleep` and no fixed port to collide on; a `trap` covers
+  teardown. What is genuinely unassertable is wall-clock (the concurrency and
+  `TCP_NODELAY` numbers), not behaviour. `Makefile:245-246` now records the
+  membership and the step number beside the `server-check` target itself.
+
+  *`CLAUDE.md`.* Two rows. The step→gate map gets `[3c] server-check` →
+  `make server-check`, noting that a red there is a behaviour change in
+  `server/main.ty` or `core:net` rather than a build break, since `[3b]` would
+  have caught that first. The gate-budget table gets `make server-check` at ~4s,
+  because that table is where "cheapest gate that can redden" is looked up and
+  `server/` previously had no row at all — the rule listed `.ty` fixtures and
+  corelib but nothing covering this program.
+
+  *Citation fallout, as phase 1 predicted.* The `Makefile` comment rewrite added
+  8 lines above the `ilp32` recipe and shifted `SKIPPED` from `:278` to `:286`;
+  the citation gate failed with the same four `STALE` lines phase 1 saw, in the
+  same four places. Repointed `278 -> 286` in `scripts/asan_self.sh:11`,
+  `scripts/asan_self.sh:72`, `scripts/editors_check.sh:29` and
+  `scripts/check_citations.py:247`, and the bare `,:279` beside the first (the
+  `TYCHO_NO_ASAN=1` recipe line) to `,:287`, verified by reading
+  `Makefile:286-287` rather than by arithmetic. Nothing cited a `scripts/ci.sh`
+  line below the insert: the refs that exist are in `docs/internals/plan-*-DONE.md`,
+  which `scripts/check_citations.py:316` exempts by name as frozen evidence — so
+  the insert moved no live anchor. Gates after the repair: citations `ok (168
+  anchored, 2523 bare in bounds, 138 source->doc, 191 source->source in bounds,
+  12 source->source anchored)` — the source→source count is one higher than
+  before, which is the new `server/main.ty:610-614` in the `Makefile` comment —
+  and links `ok (134 markdown files)`. `sh -n` and `dash -n` both accept
+  `scripts/ci.sh`; the step string carries no backtick, which is the syntax
+  error `[12b]` shipped with once (`scripts/ci.sh:159-163`).
+
+  *The sweep.* `make ci` run **once**, at the end, after the targeted gates were
+  green — not as a feedback loop. Observed `CI_EXIT=0` and `CI GREEN -- tree is
+  good`, with `>>> [3c/13] make server-check` in the log followed by 52 `ok`
+  lines and `server: OK`. Wall clock was not instrumented at the start; bounded
+  by the two in-turn polls at **still running at 580 s, finished by 1160 s**,
+  consistent with the ~19 min the gate table quotes. The lane's own cost is the
+  ~4s measured in phase 1, so `make ci` is not measurably longer for it.
+
+  *No out-of-scope discovery to file.* The absolute-path citations in the
+  archived plans looked like one until checked: `scripts/check_citations.py:316`
+  exempts `docs/internals/plan-*-DONE.md` deliberately, and the file's own header
+  (`scripts/check_citations.py:109-122`) explains why. Verified before filing,
+  not after.
 
 - [ ] **Phase 3 — `server/README.md` describes the program as it is**
   - Scope: `server/README.md` only.
