@@ -186,9 +186,9 @@ also work. Measured, not asserted: see the tables above.
 
 [Quick start](#quick-start) above is the 30-second version; here's the rest.
 
-`./tychoc f.ty` transpiles `f.ty` to `f.c` and compiles it to a native binary `f`;
+`./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`, removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails, as the evidence);
 `-o name` names the output, `--emit-c` stops at the C (writing it to stdout
-unless `-o` names a file). The transpiler is one
+unless `-o` names a file) — that is how you keep the C. The transpiler is one
 dependency-free C file. The only optional extras are `pkg-config` plus a library for the
 FFI-backed corelib modules (like `core:http`) and a Go toolchain for the cross-language
 benchmarks — both skip cleanly when absent.
@@ -216,7 +216,7 @@ verifies the whole tree.
 | Command | What it does |
 | --- | --- |
 | `make` | Build the `./tychoc` transpiler. |
-| `./tychoc f.ty` | Transpile `f.ty` → `f.c`, compile to native `f`. |
+| `./tychoc f.ty` | Transpile to C, compile to native `f`; the intermediate `f.c` is removed on success, kept on a `cc` failure. |
 | `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
 | `make test` | Run the test suite (below). |
 | `make bench` | Run the performance guard (below). |

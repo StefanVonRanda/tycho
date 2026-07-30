@@ -1,0 +1,21 @@
+# Literal adaptation (docs/spec/06-conversions.md 8.1) reaches ARRAY-LITERAL
+# elements whenever the destination is an array type. plan.md phase 55.
+#
+# The fixed-size half already did this -- `d: [3]u32 = [1, 2, 3]` has compiled
+# since 1.6, because src/tychoc.c:6283 pushed the destination's element type
+# into each element. The DYNAMIC half did not: `a: [u32] = [1, 2]` synthesized
+# `[int]` and died "declared type [u32] but value is [int]", so the only way to
+# build a `[u32]` from literals was `a := []u32` followed by `push(a, 1)`. That
+# asymmetry was the defect; the two forms now take the same path.
+fn main():
+    a: [u32] = [1, 2]
+    b: [float] = [1, 2]        # int literals adapt to float, element-wise
+    c: [f32] = [1.0, 2.0]
+    d: [3]u32 = [1, 2, 3]      # the fixed form, unchanged
+    e: bounded[4]u32 = [1, 2]  # the bounded form, unchanged
+    println(str(to_int(a[0]) + to_int(a[1])))
+    println(str(b[0] + b[1]))
+    println(str(to_int(c[0]) + to_int(c[1])))
+    println(str(to_int(d[2])))
+    println(str(to_int(e[1])))
+    println(str(len(a)))

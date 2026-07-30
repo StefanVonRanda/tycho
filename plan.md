@@ -2307,7 +2307,7 @@ request (`fc921d7`, `7a04e53`).
       than running it separately; the two new rows and the corrected sentence
       belong in the same commit as the rest of the spec.
 
-- [ ] **Phase 25** — **`--emit-c` with no `-o` drops an untracked `.c` inside the
+- [x] **Phase 25** — **`--emit-c` with no `-o` drops an untracked `.c` inside the
       tree, and `.gitignore` does not cover it.** Found by phase 4 while looking at
       the generated C for a fixture. `./tychoc --emit-c tests/for3.ty > /tmp/x.c`
       prints `wrote tests/for3.c` and writes the C **next to the source**, not to
@@ -4319,7 +4319,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     declined with a reason), and §12/§16 match the tree.
   - Verify: `make test`, `sh scripts/spec_check.sh`.
 
-- [ ] **Phase 52** — **the default build leaves `<base>.c` beside the source
+- [x] **Phase 52** — **the default build leaves `<base>.c` beside the source
       too.** Found by batch 6 while closing phase 25, which named only
       `--emit-c`. `./tychoc tests/for3.ty` writes `tests/for3.c`, hands it to
       `cc` (`src/tychoc.c:12757`) and never removes it, so the plain compile
@@ -4355,9 +4355,25 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     reddens `scripts/check_citations.py` and can be repaired mechanically; the
     bare majority would rot silently, and what happens to that population is
     exactly what phase 17 is still open on.
-  - Verify: `make test`, `make conc`, `python3 scripts/check_citations.py`.
+  - **Batch 8 added a THIRD blocker the two above do not cover, and it is the
+    one that would have shipped a wrong spec.** `r_step`'s existence is asserted
+    *normatively* by the spec, not merely by a comment:
+    `docs/spec/10-statements.md:132` says "The step codegen and its zero-step
+    guards still exist but are unreachable", with the provenance
+    `src/tychoc.c:1553-1559` — the `Stmt` field itself. Deleting the field
+    falsifies a published sentence and orphans a spec citation. The Done-when
+    above says nothing about the spec and the Verify line omits
+    `sh scripts/spec_check.sh`, so an agent following this entry as written
+    would leave §14.4 describing code that no longer exists. **Both are now part
+    of the phase**: the deletion must rewrite `docs/spec/10-statements.md:132-133`
+    (the zero-step *trade* at `:115-121` is unaffected and stays) and re-point
+    its provenance. This is also the reason batch 8 did not simply delete the
+    field despite the brief's "either the reasoning is new or the guards go" —
+    the reasoning is new, and phase 17 is still open besides.
+  - Verify: `make test`, `make conc`, `sh scripts/spec_check.sh`,
+    `python3 scripts/check_citations.py`.
 
-- [ ] **Phase 54** — **the three DYNAMIC array element diagnostics are
+- [x] **Phase 54** — **the three DYNAMIC array element diagnostics are
       allow-lists that name neither what works nor what does not.** Found by
       batch 7 while fixing the same defect at the fixed-size sites; the dynamic
       sites were out of that phase's scope and are filed rather than absorbed.
@@ -4374,7 +4390,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     and a `tests/reject/` fixture pins one of them.
   - Verify: `make test`, plus the two doc gates.
 
-- [ ] **Phase 55** — **literal adaptation does not reach array-literal
+- [x] **Phase 55** — **literal adaptation does not reach array-literal
       elements.** `a: [u32] = [1, 2]` is rejected with "declared type `[u32]`
       but value is `[int]`", while `[u32]` is a perfectly legal type — the same
       array built with `a := []u32` then `push(a, 1)` compiles. Found by batch 7
@@ -4386,6 +4402,42 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     pinned by a fixture — an accepting one under `tests/`, or a
     `tests/reject/` case whose diagnostic explains the `push` workaround.
   - Verify: `make test`, `sh scripts/spec_check.sh`, plus the two doc gates.
+
+- [ ] **Phase 56** — **§30 still promises the zero-step abort §14.4 says was
+      removed.** Found by batch 8 while establishing what `r_step` is worth
+      (phase 53). `docs/spec/17-runtime.md:41-42` lists, among the defined
+      aborts, "**A `range` step of zero** — a literal `0` step is a compile
+      error; a step that evaluates to `0` at run time aborts (§10)".
+  - `range(a, b, step)` was removed on 2026-07-29 and
+    `docs/spec/10-statements.md:115-121` says so at length, in the opposite
+    direction: "**The zero-step guarantee is gone, and that is a deliberate
+    trade, not an oversight** … `for i := 0; i < n; i += 0:` is an infinite loop
+    and the implementation **does not diagnose it**, at compile time or at run
+    time." Two normative sections of the same document contradict each other,
+    and the §10 cross-reference points at the section that refutes it.
+  - Not a compiler change: the code already matches §14.4. Delete or rewrite the
+    §30 bullet, and check the abort list in `appendix-e-conformance.md` for a
+    matching row while there.
+  - Done when: no section of `docs/spec/` claims a zero-step diagnostic.
+  - Verify: `sh scripts/spec_check.sh` plus the two doc gates. **Not**
+    `make test` — no `.ty` and no compiler source is involved.
+
+- [ ] **Phase 57** — **three cleanup entries that phase 52 made dead.** Filed,
+      not absorbed, because phase 52's scope was `src/tychoc.c`'s build path.
+  - `Makefile:314`'s `clean` still does `rm -f … tycho.c tychofmt.c
+    tycho-lsp.c`. Those three were the sibling C left by `make tycho`,
+    `make tychofmt` and `make tycho-lsp`; the plain build now removes its own
+    intermediate, so the three `rm -f` arguments can never match. Harmless
+    (`rm -f` on a missing file is a no-op) but misleading.
+  - `.gitignore:35`, `:39`, `:43`, `:49` and `:52` (`/tycho.c`, `/tychofmt.c`,
+    `/tycho-lsp.c`, `/tycho-httpd.c`, `/server/main.c`) ignore the same
+    now-unreachable artifacts. `/compiler/*.c` and `/tychoc0.c` are **not** in
+    this set — those come from `make bootstrap`, a different path.
+  - Decide per entry rather than sweeping: an entry that still catches a real
+    artifact stays. Confirm by building each target and looking, not by reading.
+  - Done when: every remaining entry is one a build can still produce.
+  - Verify: `make tycho tychofmt tycho-lsp server`, then `git status --short`
+    is empty. **Not** `make test`.
 
 ## Batch 6 evidence
 
@@ -4757,3 +4809,223 @@ it is confirmation, not discovery, and this batch had nothing left to confirm.
   `*.sh` and `*.out` — the only hits are in the frozen `compiler/tychoc0.ty`. If
   something outside those trees greps for that string, it would break, and I did
   not search outside the repo.
+
+## Batch 8 evidence
+
+Five phases: 25, 52, 53, 54, 55. One was already done and only needed its box
+ticked; three are code; one is a recorded refusal with new reasoning. Every
+claim below was run against the built compiler, not reasoned about.
+
+### Phase 25 — already landed by batch 6; nothing to redo
+
+The box was unticked, the work was not undone. `src/tychoc.c:12708` computes
+`c_to_stdout`, `src/tychoc.c:12735` opens `stdout` instead of the sibling file,
+and `src/tychoc.c:12741` prints `wrote <path>` only on the `-o` path. Re-run:
+
+    $ rm -f tests/for3.c && ./tychoc --emit-c tests/for3.ty > p25.c
+    rc=0  captured_lines=2595  first=/* Tycho runtime - embedded verbatim int
+    stray tests/for3.c: NO
+    stderr: (empty)
+    $ ./tychoc --emit-c tests/for3.ty -o withO
+    wrote withO.c        rc=0  withO.c exists: YES
+
+Ticked, not re-implemented.
+
+### Phase 52 — the plain build now removes its own intermediate
+
+`src/tychoc.c:12771` is a `remove(c_path)` placed **after** the `cc` return-code
+check, so a failing compile still leaves the C beside the printed command — the
+evidence that message refers to. Measured before and after on the same file:
+
+    $ ./tychoc p52src.ty            # HEAD e9a5457
+    built p52src                     sibling p52src.c: YES
+    $ ./tychoc p52src.ty            # now
+    built p52src                     sibling p52src.c: NO
+    $ ./p52src
+    asc=01234
+    desc=54321
+
+The three things that had to be checked first, and were:
+
+- **Nothing in the tree reads the sibling `.c` of a plain build.** Every in-tree
+  caller that wants the C asks for it: `tests/run.sh:70`, `tests/conc/run.sh:47`,
+  `scripts/entrypoints.sh:63`, `scripts/tools_check.sh:283`, `bench/guard.sh:28`
+  and `bench/guard.sh:63` all pass `--emit-c -o`, which this change does not
+  touch. `make test`, `make conc` and `sh scripts/tools_check.sh` were run anyway
+  because batch 6 was burned by exactly this class.
+- **`--emit-c -o name` still writes `name.c` and still keeps it.** That is the
+  documented way to keep the C (`docs/guides/debugging.md:37`) and it is
+  untouched; `README.md:190` and the command table say so.
+- **The overwrite hazard is pre-existing and was NOT widened.** 27 tracked `.c`
+  files share a basename with a sibling `.ty` — all of `bench/`, the hand-written
+  C ports `README.md:29` builds against. A plain `tychoc bench/json/json.ty`
+  already *overwrote* `bench/json/json.c` before this change existed; the removal
+  happens to a file the same invocation just wrote. Nothing in the tree performs
+  that invocation. Recorded in the comment at `src/tychoc.c:12760` so the next
+  reader does not re-derive it.
+
+Filed as phase 57, not absorbed: `Makefile:314` and five `.gitignore` entries now
+sweep files that can no longer exist.
+
+### Phase 53 — `r_step` stays, and the reason is one nobody had recorded
+
+Not a third "it stays, annotated". Two blockers were already on record (phase 17
+is open, and the 485 citations at lines ≥ 1553 would shift). Batch 8 found a
+third that neither covers, and it is the one that would have shipped a wrong
+document: **the spec asserts the field normatively.**
+`docs/spec/10-statements.md:132` reads "The step codegen and its zero-step guards
+still exist but are unreachable: every remaining `S_FORRANGE` producer writes a
+NULL step", with the provenance `src/tychoc.c:1553-1559` — the `Stmt` field
+declaration itself. Deleting `r_step` falsifies that sentence and orphans that
+citation, and phase 53's Verify line did not list `sh scripts/spec_check.sh` at
+all. The phase entry now carries both.
+
+Re-verified while there, so the next attempt does not re-derive it: `r_step` has
+23 mentions in `src/tychoc.c`, is written `NULL` at all six construction sites
+(`src/tychoc.c:3372`, `src/tychoc.c:3414`, `src/tychoc.c:3433`,
+`src/tychoc.c:6628`, `src/tychoc.c:6655`, `src/tychoc.c:6743`), and the only two
+readers that can act on a non-NULL value — `src/tychoc.c:6670`'s `parallel for`
+refusal and `src/tychoc.c:7316`'s literal-zero rejection — are already commented
+unreachable.
+
+### Phase 54 — the three DYNAMIC diagnostics now name the real rule
+
+Measured first. All six of these compile today and **none** appeared in the old
+allow-list "int, float, bool, string, a struct, an array, or an Option":
+
+    [bytes] rc=0    [(int, int)] rc=0    [[string: int]] rc=0
+    [Option(int)] rc=0    [bool] rc=0    [[int]] rc=0
+
+The real rule is that `void` is the only refused element type, so all three
+messages say that: `src/tychoc.c:2036`, `src/tychoc.c:2353` and
+`src/tychoc.c:5110`.
+
+**The three sites are not equal, and the comments now say which is which.** The
+two parse sites are defensive: `parse_type_inner`'s only `return T_VOID`
+(`src/tychoc.c:2161`) sits after a `die_at` in the `default:` arm, and every
+branch that could produce a void type dies first (`src/tychoc.c:1952`,
+`src/tychoc.c:1966`, `src/tychoc.c:2044`), so no spelling of a type reaches
+them — `[void]` is `unknown type 'void'`, not this message. The resolver site
+`src/tychoc.c:5110` *is* reachable, and is what the new fixture pins:
+
+    $ ./tychoc tests/reject/arr_elem_void.ty
+    tests/reject/arr_elem_void.ty:17: error: an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
+        17 |     xs := [nothing()]
+
+New fixture `tests/reject/arr_elem_void.ty`. Nothing outside `src/tychoc.c` and
+the frozen `compiler/tychoc0.ty` matched the old text.
+
+### Phase 55 — a defect, not a rule, and the fixture that said otherwise was wrong
+
+The phase asked whether this is a compiler fix or a rule to document. The
+deciding measurement is that the **fixed and bounded destinations already
+adapt** — `src/tychoc.c:6295` for `bounded[N]T`, and the fixed branch since 1.6 —
+so "no element-literal adaptation inside an array" was never a rule the compiler
+followed. Only the dynamic `[T]` was left out:
+
+    a: [3]u32        = [1, 2, 3]   rc=0   (before and after)
+    a: bounded[4]u32 = [1, 2]      rc=0   (before and after)
+    a: [u32]         = [1, 2]      rc=1 -> rc=0   was: declared type [u32] but value is [int]
+    a: [float]       = [1, 2]      rc=1 -> rc=0
+    a: [f32]         = [1.0, 2.0]  rc=1 -> rc=0
+    a: [string]      = [1]         rc=1 -> rc=1   now: element 1 of a [string] array is the wrong type
+
+`src/tychoc.c:6283`'s condition widened from `IS_FIXARR(want)` to any array
+destination that is not bounded and not a `[$N]T`/`[$T]` template, and the count
+check became conditional. Line-neutral, deliberately: the block sits directly
+above the provenance range `src/tychoc.c:6303-6314` that
+`docs/spec/06-conversions.md:9` cites, and growing it would have moved that range
+and the citation population phase 17 is open on. Verified with `difflib` against
+HEAD — every edit but the last is an exact in-place replacement, and the last
+block starts at `src/tychoc.c:12759`, past every live citation into that file.
+
+`docs/spec/06-conversions.md:27` now states the rule, also line-neutrally,
+because `fuzz/run_typeparity.py:91` cites `docs/spec/06-conversions.md:13-16` and
+`fuzz/run_typeparity.py:92` cites `docs/spec/06-conversions.md:24` — both would
+have rotted silently under an inserted paragraph. New accepting fixture
+`tests/arr_lit_adapt.ty` plus its golden.
+
+**`make test` caught the thing worth catching, and it is the part to read.**
+`tests/reject/sum_annot_array_payload_widen.ty` failed: its payload was the
+literal `Some([1])` against `Option([u32])`, and its comment asserted "there is
+no element-literal adaptation inside an array (only a bare `[]` and a top-level
+scalar literal adapt)". That claim was already false for two of the three array
+forms when it was written. The fixture's *stated purpose* — "locks
+check_sum_leaf's non-literal payload comparison" — is untouched by phase 55, so
+the payload became a non-literal one (`xs := [1]`, then `Some(xs)`), which still
+rejects with the original diagnostic:
+
+    error: declared type Option([u32]) but value is Some([int])
+
+Its header records why, so nobody "simplifies" it back to a literal. A **value**
+still never adapts; only a literal does, which is §8.1's opening sentence and did
+not change.
+
+### Gates — foreground, one per command, real output
+
+    $ make test
+    passed: 550   failed: 0
+    all green
+
+548 at batch 7 → **550**, accounted for exactly: `arr_lit_adapt` (phase 55's
+accepting fixture) and `reject_arr_elem_void` (phase 54's).
+`reject_sum_annot_array_payload_widen` was rewritten in place, not added, so it
+moves no count.
+
+    $ sh scripts/tools_check.sh
+    ...  semtok=True
+    >>> bytes-rehome: a bytes field of a returned struct is deep-copied into the caller's arena
+        bytes field re-homed on struct return
+    tools-check: ok
+
+    $ make conc
+    conc: passed 38   failed 0
+
+    $ sh scripts/spec_check.sh
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 9 runnable example(s), all pass
+
+    $ python3 scripts/check_citations.py
+    citation check: ok (158 anchored contain the token they name, 2246 bare in bounds,
+    121 source->doc citations resolve, 158 source->source in bounds, 12 source->source anchored)
+
+    $ sh scripts/check_links.sh
+    link check: ok (134 markdown files, no dead relative links)
+
+**The citation gate earned its keep on this batch.** Its first run was RED, and
+the stale reference was a real one, not a line shift:
+`docs/spec/12-aggregates.md:213` anchored line 2036 of `src/tychoc.c` on the
+token `bool` and said in prose "its diagnostic lists `bool` as permitted" — an
+anchor (reproduced here without its `@token`, which the gate would read as a
+live citation and redden on) whose whole point
+was the allow-list phase 54 deleted. The clause now says the diagnostic states
+the rule instead of enumerating it, anchored `src/tychoc.c:2036@void`. Any
+rewrite of a diagnostic in this tree should expect the spec to be quoting it.
+
+`sh scripts/tools_check.sh` and `make conc` were run because the change touches
+the compiler's output path and batch 6 found two lanes that depended on it
+(`scripts/tools_check.sh:283`, `tests/conc/run.sh:41`); both pass `-o` now and
+both stayed green. `make ci` was **not** run: per `CLAUDE.md` it is confirmation,
+not discovery, and the gates above cover a change set of one C file, three
+fixtures, one spec section and two README lines.
+
+### What a future reader should not have to re-derive
+
+- **The plain build's `.c` is gone on success and kept on failure.** If you need
+  the C, ask: `--emit-c -o name`. Do not "restore" the sibling file — phases 25
+  and 52 removed it from two different paths for the same reason, and no
+  `.gitignore` pattern is safe (31 directories hold both `.ty` sources and
+  tracked `.c` files).
+- **`[N]T` and `bounded[N]T` adapt their literal elements and always did.** The
+  1.6 fixed-array branch is where the behaviour started; phase 55 only extended
+  it to `[T]`. Anyone "restoring symmetry" by removing it breaks
+  `tests/arr_lit_adapt.ty`, which pins all three forms.
+- **The two parse-site void guards are unreachable and are kept on purpose.**
+  Deleting them as dead code would remove the fail-closed behaviour the moment
+  `parse_type_inner` gains a branch that can yield `T_VOID`.
+- **Unverified:** whether `remove(c_path)` breaks a *user* workflow outside this
+  repo that depends on the sibling `.c` of a plain build. Searched `Makefile`,
+  `scripts/`, `tests/`, `bench/`, `examples/` and `fuzz/` — every in-tree
+  consumer uses `--emit-c -o`. A consumer outside the repo would break, and
+  `README.md:190` plus the command table are the only notice they get.
