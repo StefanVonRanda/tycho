@@ -266,7 +266,7 @@ already pinned vs. needs discovery).
     `deps`/pkg-config. H
 32. **Core packages** — one section each: math, fmath, char, strings, path,
     arrays, iter, sort, rand, time, datetime, json, csv, base64, hex, url, uuid,
-    hash, md5, sha256, io, os, regex, net, bignum, decimal. *docs/corelib.md +
+    hash, md5, sha256, io, os, regex, net, bignum, decimal. *docs/guides/corelib.md +
     the 6 undocumented packages.* M
 33. **Extended packages** (`deps`-gated) — http (libcurl), crypto (libcrypto),
     compress (zlib), image (libpng), tls (openssl). M
@@ -426,7 +426,7 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
 36. **No `assert`/`abort`/`panic` builtin** — `die` is the only user abort;
     internal aborts are not callable. State precisely. **[CLOSED — 16-builtins.md:267, :280-281]**
 37. **6 undocumented corelib packages** — bignum, compress, decimal, image, net,
-    tls exist in the tree but not in `docs/corelib.md`. Part XII must add them. **[CLOSED — 18-library.md:254/:265/:274/:313/:321/:330]**
+    tls exist in the tree but not in `docs/guides/corelib.md`. Part XII must add them. **[CLOSED — 18-library.md:254/:265/:274/:313/:321/:330]**
 
 ### G. Consequences of the two big scope decisions
 38. **Corelib in scope** → the spec must define the **language↔corelib interface

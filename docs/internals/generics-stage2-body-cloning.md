@@ -157,6 +157,7 @@ fixpoint uses), feeding the program on stdin.
 
 ### Pattern #1 — fresh collection, multiple instantiations
 
+<!-- fence-skip: a program this note documents the compiler REJECTING; it must not compile -->
 ```tycho
 fn dup(xs: [$T]) -> [T]:
     out := []
@@ -186,6 +187,7 @@ fn main():
 
 ### Pattern #2 — typaram-typed local annotation
 
+<!-- fence-skip: a rejected program, and elided with a literal `...` -->
 ```tycho
 fn dup(xs: [$T]) -> [T]:
     out : [$T] = []
@@ -204,6 +206,7 @@ fn dup(xs: [$T]) -> [T]:
 
 ### Pattern #3 — generic calling another generic
 
+<!-- fence-skip: a program this note documents the compiler REJECTING; it must not compile -->
 ```tycho
 fn id(x: $T) -> T: return x
 fn twice(x: $T) -> T: return id(x)

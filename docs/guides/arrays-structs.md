@@ -101,7 +101,7 @@ fn main():
 - `return lines` deep-copies the array into the caller's arena, then
   `read_lines`' arena is freed. The returned value is fully independent.
 
-```
+```tycho
 fn main():
     acc := []string                 # in main's arena
     for i := 0; i < 1000000; i += 1:   # no digit separators: `1_000_000` does not lex

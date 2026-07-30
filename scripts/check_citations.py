@@ -186,7 +186,7 @@ ANCHORED SOURCE -> SOURCE (added 2026-07-30, plan.md phase 13)
 The wrong-line class needs an expected token, so SRCCITE now accepts an optional
 `@token` suffix and content-checks the cited lines when one is present:
 
-    Makefile:245@SKIPPED           as cited from scripts/asan_self.sh
+    Makefile:253@SKIPPED           as cited from scripts/asan_self.sh
     src/tychoc.c:3364@i_dotlt      as cited from fuzz/run_parforparity.py
 
 TWO DIFFERENCES FROM THE MARKDOWN ANCHOR, both forced by the medium.  (1) The

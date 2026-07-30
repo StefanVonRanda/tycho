@@ -1,7 +1,7 @@
 # Appendix H — Differences from the reference documentation
 
 Writing this specification against the source of record surfaced points where the
-reader-facing reference (`docs/reference/*`, `docs/corelib.md`) was stale,
+reader-facing reference (`docs/reference/*`, `docs/guides/corelib.md`) was stale,
 incomplete, or contradicted the implementation. On every such point **this
 specification governs** ([§1](00-conventions.md)). Each was logged here and has
 since been **reconciled** — the reference-doc corrections landed in `cf51e09`
@@ -24,8 +24,8 @@ and has been **fixed** (`compiler/tychoc0.ty` `check_call_args`; locked by
 | H4 | `reference/types.md`: `char ± int` "stays within a byte." | **Correct**: `char` arithmetic wraps to a byte (`0..255`, like `u8`), so the reference matches the language. | `reference/types.md` (§ char) | tightening campaign; `tests/char_byte` |
 | H5 | `docs/generics.md`: appeared to discuss `empty$` as though it were a builtin. | `empty$` is **not** a builtin; `empty$(int)` is the *explicit call-site type-argument* form (`name$(…)`) applied to the generic `empty()`. Only `zero$(T)` is special-cased. | `docs/generics.md:11`, `:205-208` (framed as explicit type args) | already correct |
 | H6 | `reference/builtins.md` — the builtin catalog was incomplete. | Now lists `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`, `to_u64`, `to_f32` (`to_under` and `keys` are cross-referenced on the newtypes/maps pages). | `reference/builtins.md` | `cf51e09` |
-| H7 | `docs/corelib.md` — six packages were absent from the list. | `bignum`, `decimal`, `net`, `compress`, `image`, `tls` are now documented. | `docs/corelib.md:194-257` | `cf51e09` |
-| H8 | `docs/corelib.md` datetime entry. | The `datetime` timezone offset functions (`local_offset`, `offset_at`, `now_local`; fixed-offset `from_unix_at`/`to_unix_at`/`format_iso_tz`) are now documented. | `docs/corelib.md:116-119` | `cf51e09` |
+| H7 | `docs/guides/corelib.md` — six packages were absent from the list. | `bignum`, `decimal`, `net`, `compress`, `image`, `tls` are now documented. | `docs/guides/corelib.md:225-231` (bignum, decimal), `docs/guides/corelib.md:305-324` (net), `docs/guides/corelib.md:412-449` (compress, image, tls) | `cf51e09` |
+| H8 | `docs/guides/corelib.md` datetime entry. | The `datetime` timezone offset functions (`local_offset`, `offset_at`, `now_local`; fixed-offset `from_unix_at`/`to_unix_at`/`format_iso_tz`) are now documented. | `docs/guides/corelib.md:124-139` | `cf51e09` |
 
 ## Notes
 

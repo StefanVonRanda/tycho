@@ -14,6 +14,11 @@
 #   JSON       editors/vscode/syntaxes/tycho.tmLanguage.json and
 #              editors/vscode/language-configuration.json must be parseable JSON.
 #              A typo in either silently disables highlighting in VS Code.
+#   README     the "N committed `.ty` files" claim in editors/zed/README.md must
+#              equal the corpus size this script computes. Added 2026-07-30: the
+#              462 -> 813 repair below was itself hand-typed, so it drifted again
+#              (to 829) within a day. A number a human must remember to update is
+#              not a verified claim, it is a decaying one.
 #   GENERATED  `tree-sitter generate --abi 15` into a temp dir must reproduce the
 #              committed editors/zed/grammars/tycho/src/ byte for byte.
 #   CORPUS     the generated parser must parse every tracked .ty file, with
@@ -21,7 +26,7 @@
 #
 # The two grammar lanes need the tree-sitter CLI, which is fetched with npx. When
 # it is unavailable (offline, no npx, nothing cached) they SKIP rather than fail
-# -- same call as Makefile:245@SKIPPED's "ASan lane SKIPPED for ilp32": a gate that
+# -- same call as Makefile:253@SKIPPED's "ASan lane SKIPPED for ilp32": a gate that
 # hard-fails without network access would be worse than no gate. The JSON lane
 # needs only python3, which scripts/ci.sh already depends on, so it always runs.
 # Override the CLI with e.g. TYCHO_TREE_SITTER='tree-sitter' if you have 0.25
@@ -45,6 +50,35 @@ for j in editors/vscode/syntaxes/tycho.tmLanguage.json \
         echo "    INVALID JSON: $j"; sed 's/^/      /' "$TMP/json.err"; fail=1
     fi
 done
+
+# The corpus file list, computed ONCE and reused by both the README lane below
+# and the CORPUS lane at the bottom. Deliberately the same list for both, so the
+# number the README is checked against is the number the parser actually ran on.
+find "$PWD" -name '*.ty' -not -path '*/.git/*' -not -path '*/node_modules/*' \
+     -not -path "$PWD/fuzz/findings/*" | sort > "$TMP/files"
+nfiles=$(wc -l < "$TMP/files" | tr -d ' ')
+
+# ------------------------------------------------------------- README corpus N
+# editors/zed/README.md states how many .ty files the grammar was verified over.
+# It was hand-typed and read "462" while the truth was 813 -- a claim nothing
+# checked, in the one file a reader consults to decide whether to trust the
+# grammar. Runs BEFORE the tree-sitter availability check on purpose: it needs
+# only `find`, so it must not be skipped offline along with the grammar lanes.
+echo ">>> editors: zed README corpus count"
+rn=$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) committed `\.ty` files.*/\1/p' \
+     editors/zed/README.md | head -1)
+if [ -z "$rn" ]; then
+    echo "    NO COUNT FOUND in editors/zed/README.md -- expected a phrase of the"
+    echo "    form 'N committed \`.ty\` files'. The corpus claim is now gated; do not"
+    echo "    delete or reword it. The tree currently has $nfiles."
+    fail=1
+elif [ "$rn" != "$nfiles" ]; then
+    echo "    STALE: editors/zed/README.md claims $rn committed .ty files, tree has $nfiles."
+    echo "    Fix the README to say $nfiles."
+    fail=1
+else
+    echo "    ok  README says $rn committed .ty files, and so does the tree"
+fi
 
 # ---------------------------------------------------------------- tree-sitter
 if ! $TS --version >"$TMP/ver" 2>/dev/null; then
@@ -87,9 +121,6 @@ cat > "$TMP/want" <<'EOF'
 tests/reject/rawstring_unterminated.ty
 EOF
 
-find "$PWD" -name '*.ty' -not -path '*/.git/*' -not -path '*/node_modules/*' \
-     -not -path "$PWD/fuzz/findings/*" | sort > "$TMP/files"
-nfiles=$(wc -l < "$TMP/files")
 (cd "$TMP" && $TS parse -q $(cat "$TMP/files")) 2>/dev/null \
     | awk -F'\t' '/ERROR|MISSING/ {print $1}' \
     | sed -e 's/[[:space:]]*$//' -e "s|^$PWD/||" | sort -u > "$TMP/got"

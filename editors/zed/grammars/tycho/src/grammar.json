@@ -267,10 +267,6 @@
         },
         {
           "type": "STRING",
-          "value": "range"
-        },
-        {
-          "type": "STRING",
           "value": "split"
         },
         {

@@ -148,6 +148,7 @@ destructor (a `sqlite3*`, a `FILE*`, a zlib stream), declare a **handle** type
 instead — the transpiler frees it automatically at the end of the scope that owns
 it, so it can't leak or be used after close:
 
+<!-- fence-skip: extern block against a real libsqlite3, and no main; compiling it needs --link sqlite3 -->
 ```tycho
 handle Db:                                   # Db's C type is void*; freed by its destructor
     free: sqlite3_close                      # a C symbol (declared as an extern fn below)

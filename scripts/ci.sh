@@ -121,6 +121,9 @@ make -s recursion
 step "[12/13] make spec-check  (spec: Appendix A grammar == §3/§4 · Appendix E fixtures exist · runnable examples match their documented output)"
 make -s spec-check
 
+step "[12b/13] make docs-fences  (every ```tycho fence in docs/ that claims to be a whole program still compiles)"
+make -s docs-fences
+
 step "[13/13] make check-links  (every relative Markdown link resolves to a real file; every provenance citation still resolves)"
 make -s check-links
 
