@@ -9,7 +9,7 @@
       "begin": "f\"",
       "end": "\"",
       "patterns": [
-        { "name": "constant.character.escape.tycho", "match": "\\\\." },
+        { "name": "constant.character.escape.tycho", "match": "\\\\x[0-9a-fA-F]{2}|\\\\." },
         {
           "name": "meta.interpolation.tycho",
           "begin": "\\{",
@@ -22,7 +22,7 @@
       "name": "string.quoted.double.tycho",
       "begin": "\"",
       "end": "\"",
-      "patterns": [{ "name": "constant.character.escape.tycho", "match": "\\\\." }]
+      "patterns": [{ "name": "constant.character.escape.tycho", "match": "\\\\x[0-9a-fA-F]{2}|\\\\." }]
     },
     {
       "comment": "raw string `...`: no escapes at all, and it may span lines (src/tychoc.c:402-448), so no nested patterns and no end-of-line anchor",
