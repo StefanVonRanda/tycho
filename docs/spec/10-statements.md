@@ -128,9 +128,21 @@ source instead of inferring them from the sign of a step expression.
 > the post clause resolved outside the body block `src/tychoc.c:7248-7253`;
 > `continue` emitted as `goto _post<id>` `src/tychoc.c:10712-10715` with the
 > label at `src/tychoc.c:10814@_post%d`; the `range()` refusal
-> `src/tychoc.c:3389@was removed: write`. The step codegen and its zero-step
-> guards still exist but are unreachable: every remaining `S_FORRANGE` producer
-> writes a NULL step (`src/tychoc.c:1553-1559`).
+> `src/tychoc.c:3389@was removed: write`. There is no step in the implementation
+> at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1555-1561`)
+> and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
+> (`src/tychoc.c:10885-10889`).
+>
+> **Amended 2026-07-30 (plan.md phase 53).** This note previously read "The step
+> codegen and its zero-step guards still exist but are unreachable: every
+> remaining `S_FORRANGE` producer writes a NULL step", citing the `Stmt` field
+> `r_step`. That was true from 2026-07-29, when `range(a, b, step)` — the field's
+> only producer — was removed, until 2026-07-30, when the field, the step
+> codegen, the `tycho: range step is zero` abort, the `_stepN > 0 ? … : …`
+> direction ternary, the literal-zero-step refusal and the `parallel for` step
+> refusal were all deleted. The paragraph above is unaffected: the zero-step
+> guarantee was already gone as a language guarantee, and this only removes the
+> dead machinery that used to implement it.
 
 ## 14.5 `return`
 

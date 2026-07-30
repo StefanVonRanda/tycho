@@ -92,7 +92,7 @@ Severity: 🔴 bites immediately + surprising + cryptic error · 🟡 papercut �
 🟢 minor / defensible-by-design.
 
 ### 🔴 F1 — Collection literals can't span multiple lines
-```
+```text
 xs := [
     1,
     2,
@@ -106,7 +106,7 @@ NEWLINE inside brackets.
 depth > 0. Purely lexer-local.
 
 ### 🔴 F2 — `//` is not a comment (only `#` is)
-```
+```text
 // like this        # error: expected 'fn' / expected an expression
 # only this works
 ```
@@ -123,7 +123,7 @@ fail at the `//` line. Worth a maintainer glance in case the lexer has a
 state-dependent path for `//`.
 
 ### 🔴 F3 — Indexing a string yields a raw `int` byte
-```
+```text
 s := "abc"
 s[0]                  # this is int 97, not a char and not "a"
 println(s[0])         # error: argument 1 of 'println' is int, expected string
@@ -137,7 +137,7 @@ since it lists `char` as accepted but the value is already `int`.
 the language has) so `str(s[i])` / `to_int(s[i])` behave as newcomers expect.
 
 ### 🟡 F4 — No named-field struct construction
-```
+```text
 P{x: 1, y: 2}         # error: unexpected character '{'
 P(1, 2)               # positional only
 ```
@@ -147,7 +147,7 @@ cost as programs grow.
 **Fix (optional):** allow `P(x: 1, y: 2)` named args alongside positional.
 
 ### 🟡 F5 — No auto stringify / debug-print for aggregates
-```
+```text
 println(p)            # error: argument 1 is P, expected string
 str(p)                # error: str() takes int/float/bool/char/string…, not a struct
 ```
@@ -158,7 +158,7 @@ only aggregates.)
 builtin. Big quality-of-life win while learning.
 
 ### 🟡 F6 — `println` only accepts `string`
-```
+```text
 println(3 > 2)        # error: bool, expected string   → need str(...)
 println(42)           # same
 ```
@@ -167,7 +167,7 @@ non-string. Compounds with F5.
 **Fix:** auto-`str` scalar args, or a variadic `print`.
 
 ### 🟡 F7 — match arm bodies can't be inline
-```
+```text
 match o:
     Some(i): return x     # error: expected newline
     Some(i):
@@ -262,7 +262,7 @@ generator that mirrors the existing eq/copy helper families.
 
 24-case battery (RUN-OK = compiled and ran correctly):
 
-```
+```text
 05 tuple_basic          RUN-OK      12 option/match         guessed-wrong (no `case` kw; multi-line arms) → works
 06 tuple_return         RUN-OK      13 array push/len       RUN-OK
 07 fstring              RUN-OK      14 sort(xs)             F8

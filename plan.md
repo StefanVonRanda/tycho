@@ -23,7 +23,7 @@ and this is not.
 `for C:` (the condition form) is **already the Odin form** and is untouched —
 `docs/spec/10-statements.md:87`. `new_ideas.md`'s "replace `for cond`" is
 mistaken about that and the note should be corrected when the file is next
-touched. The foreach form `for x in xs:` (`:98`) is likewise untouched.
+touched. The foreach form `for x in xs:` (`docs/spec/10-statements.md:98`) is likewise untouched.
 
 Done looks like: `range` is not a name the compiler knows, no `.ty` file in the
 tree uses it, `for i := 0; i < n; i += 1:` and `for:` and `parallel for i in
@@ -1747,7 +1747,7 @@ the design records; its entry says exactly what remains.
     an omission.** The phase brief and the plan's own scope line both say
     "`range` removed" from this chapter. `grep -n range docs/spec/16-builtins.md`
     returns exactly two hits, `docs/spec/16-builtins.md:131` ("the byte range `[a, b)`", about `substr`)
-    and `:140` ("every in-range `i`"), neither of which is the counting form.
+    and `docs/spec/16-builtins.md:140` ("every in-range `i`"), neither of which is the counting form.
     That matches phase 7's finding that `range` never had a builtin-table entry:
     it was one lexeme test in one `for` header, so §29 never listed it and there
     was nothing to delete. The chapter's "complete, normative catalog" claim at
@@ -1791,7 +1791,7 @@ the design records; its entry says exactly what remains.
   18 documents phase 31 named are rewritten. Loop bodies: `docs/tutorial.md:52`,
   `docs/reference/enums-options.md:145`, `docs/reference/types.md:58`,
   `docs/reference/basics.md:51`, `docs/reference/arrays-slices.md:70`/`:76`/
-  `:116`, `docs/internals/value-semantics-limits.md:67`,
+  `docs/reference/arrays-slices.md:116`, `docs/internals/value-semantics-limits.md:67`,
   `docs/internals/sink-prototype.md:16`, `docs/guides/arrays-structs.md:107`.
   Parallel spellings → `0..<N`: `docs/reference/concurrency.md:54` (+ its "over a
   range" prose), `docs/guides/concurrency.md:66`/`:100` (+ "sizing a `range`
@@ -1858,8 +1858,8 @@ the design records; its entry says exactly what remains.
   | `docs/spec/02-grammar.md:361-362`, `:378` | +25 | `docs/internals/plan-array-arith-DONE.md` |
   | `docs/spec/13-concurrency.md:100`,`:109`,`:115`,`:118-125`,`:141-142` | +24 | `docs/internals/plan-front-door-DONE.md`, `docs/internals/spec-plan-audit-2026-07-24.md`, `docs/internals/spec-plan.md` |
   | `docs/spec/appendix-e-conformance.md:165`,`:183`,`:187`,`:201`,`:252-253`,`:274` | +1 | `plan.md`, `docs/internals/plan-front-door-DONE.md`, `docs/internals/plan-1.0-freeze-DONE.md`, `docs/internals/spec-plan.md`, `docs/internals/plan-array-arith-DONE.md`, `docs/internals/plan-int64-DONE.md`, `docs/internals/plan-postfreeze-rawstring-DONE.md` |
-  | `docs/spec/appendix-a-grammar.md` | +4 at `:136` | none — every inbound ref is `:21`–`:98`, all above the hunk |
-  | `docs/reference/basics.md` | +12 at `:117` | none — the only inbound ref is `:24-70` |
+  | `docs/spec/appendix-a-grammar.md` | +4 at `docs/spec/appendix-e-conformance.md:136` | none — every inbound ref is `docs/spec/appendix-e-conformance.md:21`–`docs/spec/appendix-e-conformance.md:98`, all above the hunk |
+  | `docs/reference/basics.md` | +12 at `docs/spec/appendix-e-conformance.md:117` | none — the only inbound ref is `docs/spec/appendix-e-conformance.md:24-70` |
 
   **The rule applied to archives, stated so the next reader can disagree with
   it:** a pointer whose *target text is unchanged* was repointed (the §4.5
@@ -2322,7 +2322,7 @@ request (`fc921d7`, `7a04e53`).
       scope, and it is the file that goes *wrong*, not merely stale.** Found by
       phase 3. §3.8 "Operators and punctuation" (`docs/spec/01-lexical.md:144-170`)
       is the token inventory, ordered *"longest-match first"* — the exact
-      discipline phase 3 followed — and it lists `...` at `:150` while listing
+      discipline phase 3 followed — and it lists `...` at `docs/spec/01-lexical.md:150` while listing
       neither `;` nor `..<`. Worse, `docs/spec/01-lexical.md:170` states in
       plain words: **"There is no range operator (`..`); ranges are written
       with the"** `range()` builtin — a sentence this plan makes false twice
@@ -2781,7 +2781,7 @@ request (`fc921d7`, `7a04e53`).
     `docs/`: 10 CHECKed, 19 FRAGMENT (no `fn` at all), 6 MARKED
     `<!-- fence-skip: … -->` with a printed reason, 5 FROZEN (in
     `docs/internals/plan-*-DONE.md`, the same exemption as
-    `scripts/check_citations.py:282@ARCHIVED`).
+    `scripts/check_citations.py:316@ARCHIVED`).
   - **What remains unchecked, precisely:**
     1. **~155 fences opened with a bare ```` ``` ```` and no language tag**, of
        which an unknown subset is Tycho. `docs/reference/` has **48** and
@@ -3636,7 +3636,7 @@ That is precisely the "red on prose, then disabled" failure the entry warned of.
 Settled design: **opt-out with a named reason**, `<!-- fence-skip: … -->`, and
 the reason is printed on every run so the skip list cannot grow quietly. Frozen
 `docs/internals/plan-*-DONE.md` fences are exempt on the same grounds as
-`scripts/check_citations.py:282@ARCHIVED`. Fences with no `fn` are classed
+`scripts/check_citations.py:316@ARCHIVED`. Fences with no `fn` are classed
 FRAGMENT rather than wrapped in a synthetic `main`, because wrapping would
 typecheck a program the document does not contain.
 
@@ -4458,7 +4458,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     situation is stated.
   - Verify: `make test`, then `git status --short` after a plain build.
 
-- [ ] **Phase 53** — **delete `Stmt.r_step`, with a Done-when that is actually
+- [x] **Phase 53** — **delete `Stmt.r_step`, with a Done-when that is actually
       satisfiable.** Replaces phase 30, which batch 6 closed as "the guards
       stay" after finding its acceptance criterion self-contradictory: it
       demanded the emitted C be unchanged, but the step machinery *is* emitted
@@ -4486,7 +4486,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     `sh scripts/spec_check.sh`, so an agent following this entry as written
     would leave §14.4 describing code that no longer exists. **Both are now part
     of the phase**: the deletion must rewrite `docs/spec/10-statements.md:132-133`
-    (the zero-step *trade* at `:115-121` is unaffected and stays) and re-point
+    (the zero-step *trade* at `docs/spec/10-statements.md:115-121` is unaffected and stays) and re-point
     its provenance. This is also the reason batch 8 did not simply delete the
     field despite the brief's "either the reasoning is new or the guards go" —
     the reasoning is new, and phase 17 is still open besides.
@@ -4523,7 +4523,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     `tests/reject/` case whose diagnostic explains the `push` workaround.
   - Verify: `make test`, `sh scripts/spec_check.sh`, plus the two doc gates.
 
-- [ ] **Phase 56** — **§30 still promises the zero-step abort §14.4 says was
+- [x] **Phase 56** — **§30 still promises the zero-step abort §14.4 says was
       removed.** Found by batch 8 while establishing what `r_step` is worth
       (phase 53). `docs/spec/17-runtime.md:41-42` lists, among the defined
       aborts, "**A `range` step of zero** — a literal `0` step is a compile
@@ -4542,7 +4542,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
   - Verify: `sh scripts/spec_check.sh` plus the two doc gates. **Not**
     `make test` — no `.ty` and no compiler source is involved.
 
-- [ ] **Phase 57** — **three cleanup entries that phase 52 made dead.** Filed,
+- [x] **Phase 57** — **three cleanup entries that phase 52 made dead.** Filed,
       not absorbed, because phase 52's scope was `src/tychoc.c`'s build path.
   - `Makefile:314`'s `clean` still does `rm -f … tycho.c tychofmt.c
     tycho-lsp.c`. Those three were the sibling C left by `make tycho`,
@@ -5399,7 +5399,7 @@ fixture directory moved and no Appendix E path changed — the one file added,
 
 ## Phases discovered by batch 9
 
-- [ ] **Phase 58** — **two lanes now exist that `make ci` has never swept.**
+- [x] **Phase 58** — **two lanes now exist that `make ci` has never swept.**
       Batch 9 added `make -s fetch` to `scripts/ci.sh`'s step `[3/13]` and
       created a `make rtparity` target that is in no aggregate lane at all. The
       fetch line was verified by running the exact command it runs, and
@@ -5416,7 +5416,7 @@ fixture directory moved and no Appendix E path changed — the one file added,
     the `Makefile` comment on `rtparity` that currently points here is updated.
   - Verify: `make ci` once. This is the deliberate closing sweep, not discovery.
 
-- [ ] **Phase 59** — **Appendix E's §5.2.6 note is still written as if `tychoc0`
+- [x] **Phase 59** — **Appendix E's §5.2.6 note is still written as if `tychoc0`
       ran.** `docs/spec/appendix-e-conformance.md:322-345` argues that a `tests/`
       fixture for the `bytes` operators "would be a program `tychoc` accepts and
       the frozen `tychoc0` refuses", cites what `scripts/frontparity.sh` "would
@@ -5443,7 +5443,7 @@ fixture directory moved and no Appendix E path changed — the one file added,
   - Verify: `sh scripts/spec_check.sh`, `python3 scripts/check_citations.py`,
     `sh scripts/check_links.sh`. Markdown only — do **not** run `make test`.
 
-- [ ] **Phase 60** — **the second `parallel for` refusal is asserted by
+- [x] **Phase 60** — **the second `parallel for` refusal is asserted by
       nothing.** Phase 48 pinned the three-clause message; the neighbouring arm
       at `src/tychoc.c:3411` — "parallel for over a collection or channel must
       name a variable (bind it first)", reached by `parallel for x in <expr>` —
@@ -5549,7 +5549,7 @@ mapped.
 
 The `plan.md` set has the trap worth naming. `plan.md:3341` reads
 "``docs/spec/16-builtins.md:332`` cited `die`'s codegen at :8791-8792" (de-backticked: it means the compiler, not the chapter) and
-the next line's "two siblings at ``:20`` and ``:86``" means the *chapter*, not
+the next line's "two siblings at ``docs/spec/16-builtins.md:20`` and ``docs/spec/16-builtins.md:86``" means the *chapter*, not
 the compiler. Making the first ref explicit re-binds the siblings to
 `src/tychoc.c`, in bounds and wrong. Both had to move, in opposite directions.
 
@@ -5713,7 +5713,7 @@ and per `CLAUDE.md`'s gate ladder those cannot affect a compiled artifact.
 
 ## Phases discovered by batch 10
 
-- [ ] **Phase 61** — **64 fences in `docs/` still carry no language tag**, so
+- [x] **Phase 61** — **64 fences in `docs/` still carry no language tag**, so
       `make docs-fences` cannot see them: **56 in `docs/internals/`, 4 in
       `docs/rfc/`, 4 in `docs/`**. This is the residue of phase 43, which tagged
       the reader-facing tree (`docs/reference/`, `docs/guides/`,
@@ -5734,7 +5734,7 @@ and per `CLAUDE.md`'s gate ladder those cannot affect a compiled artifact.
     `make docs-fences` is green over the enlarged set.
   - Verify: `make docs-fences`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 62** — **the fence gate classifies an `extern fn`-only fence as
+- [x] **Phase 62** — **the fence gate classifies an `extern fn`-only fence as
       FRAGMENT, and three of them would pass if it did not.** `scripts/docs_fences.sh`
       decides FRAGMENT with `$0 ~ /^[ \t]*fn[ \t]/`, which an `extern fn getpid()
       -> int` line does not match, so `docs/guides/ffi.md:34`, `docs/reference/ffi.md:12`
@@ -5753,7 +5753,7 @@ and per `CLAUDE.md`'s gate ladder those cannot affect a compiled artifact.
     reddening on a broken `extern` fence and going green on restore.
   - Verify: `make docs-fences`.
 
-- [ ] **Phase 63** — **a mis-inherited bare `:N` that lands *inside* the
+- [x] **Phase 63** — **a mis-inherited bare `:N` that lands *inside* the
       document it wrongly binds to is still invisible**, and phase 44 proved the
       mis-inheritance is common rather than theoretical: 52 of its 77 failures
       were that bug, caught only because a compiler line number is far outside a
@@ -5771,3 +5771,371 @@ and per `CLAUDE.md`'s gate ladder those cannot affect a compiled artifact.
     of two.
   - Verify: `python3 scripts/check_citations.py`, plus the count of what the
     chosen rule reddens, taken before the change lands.
+
+## Batch 11 evidence — phases 57, 59, 56, 60, 62, 63, 61, 53, 58: the final cleanup
+
+Nine phases, run cheapest first, each on its own targeted gate. `make ci` ran
+once, at the end, as phase 58's deliberate closing sweep. Everything below was
+run; nothing is reasoned about.
+
+### Phase 57 — the entries are not dead, and running the build is what showed it
+
+The phase's premise was that phase 52 made three `Makefile` `rm -f` arguments and
+five `.gitignore` entries unreachable. Half true. Two facts, both measured:
+
+- **`make tycho tychofmt tycho-lsp server` now leaves no `.c` at all.** All four
+  built, `git status --short` came back empty, and `ls` found none of
+  `tycho.c`, `tychofmt.c`, `tycho-lsp.c`, `tycho-httpd.c`, `server/main.c`. A
+  plain `./tychoc server/main.ty` still leaves the `server/main` **binary**, so
+  that entry was never in question.
+- **`--emit-c -o <base>` still writes and KEEPS `<base>.c`.** Run verbatim:
+  `./tychoc tools/tycho.ty --shim tools/tycho_shim.c --emit-c -o tycho` printed
+  `wrote tycho.c`, the file appeared at the repo root, and `git status --short`
+  stayed empty — i.e. the `.gitignore` entry caught it. `src/tychoc.c:12740-12742`
+  is the early return that skips the `remove(c_path)` at `src/tychoc.c:12771`,
+  and `c_path` is `base + ".c"` (`src/tychoc.c:12693`), so the root-level names
+  are exactly what a contributor debugging the toolchain produces
+  (`docs/guides/debugging.md:37` is that workflow).
+
+So the phase's own instruction decided it: "an entry that still catches a real
+artifact stays." Every entry stays; what was wrong was the **comment** on each,
+which attributed the file to `make tycho` / `make server`. Those now name the
+route that still produces it, with the date and the verification. `Makefile`'s
+`clean` keeps its three `.c` arguments for the same reason — `clean` is where an
+`--emit-c` leftover belongs — with a comment saying they are no longer produced
+by the `make` target above them.
+
+**The phase entry's own citation had drifted:** it named `Makefile:314` for
+`clean`; `clean` was at `Makefile:327` on this tree before this batch's edits.
+
+### Phase 59 — Appendix E stops asserting a retired compiler
+
+`docs/spec/appendix-e-conformance.md`'s §5.2.6 note argued a live prohibition out
+of two lanes retired on 2026-07-29. Rewritten in two parts: a present-tense
+paragraph saying what covers the clause **today** (`corelib/test/io`'s four
+cases, the §5.2.6 example under `scripts/spec_check.sh`, `server/main.ty`'s
+`log_safe`) and that **no corelib package is blocked** — all 37 may use a `bytes`
+operator; then the whole freeze argument in the past tense, dated, keeping the
+13-blocked enumeration as the historical measurement it was.
+
+**The decision the phase asked for, written down: §5.2.6 does not get a `tests/`
+fixture.** The block expired, but E.1's convention is that nothing moves merely
+because it now could, and the three lanes above already assert every operator in
+the clause. That is why `make test` did not move for this phase.
+
+**A sibling note was in scope and had the same defect.** The §29.12 / §29.12.1
+note (the "third time this mechanism bites") still read `no corelib package can
+use either form` in the present tense. Same treatment. The other two of the
+"three notes above it" — §3.9.4 and §14.3.1/§6.2(7) — already carried dated
+`Closed`/`Amended` paragraphs and needed nothing.
+
+### Phase 56 — the spec no longer contradicts itself about a zero step
+
+`docs/spec/17-runtime.md`'s §30.2 abort list carried "A `range` step of zero — a
+literal `0` step is a compile error; a step that evaluates to `0` at run time
+aborts (§10)", cross-referencing the very section that refutes it. The bullet is
+deleted and a dated `> Removed` note under the list records what it said and why
+it went, pointing at §14.4.
+
+Checked while there, as the entry asked: **Appendix E's abort rows have no
+matching entry** — `grep -n "step\b" docs/spec/appendix-e-conformance.md` returns
+only the §14.4 loop-shapes row and an unrelated "CI step 17", so there was
+nothing to repair there. A tree-wide grep for `zero-step` / `step of zero` /
+`step is zero` over `docs/` leaves only dated internal audits (past tense by
+construction) and `docs/reference/basics.md:145`, which already says `0..<N` "has
+no zero-step case at all" — consistent with §14.4.
+
+### Phase 60 — the second `parallel for` refusal is now pinned
+
+The line was re-derived, not trusted: `grep -n "must name a variable"
+src/tychoc.c` puts it at `src/tychoc.c:3411`, where the entry predicted it.
+`tests/diag/parfor_expr_source.ty` reaches it with `parallel for v in build():`
+and its golden locks the message byte-for-byte:
+
+    tests/diag/parfor_expr_source.ty:22: error: parallel for over a collection or channel must name a variable (bind it first)
+        22 |     parallel for v in build():
+
+**Shown reddening, as the Done-when required.** One word flipped at
+`src/tychoc.c:3411` (`variable` -> `symbol`), rebuilt, and the golden diverged on
+exactly that word; source restored, rebuilt, `diff` clean again. `make test`
+went 551 -> **552**, the number the entry predicted.
+
+### Phase 62 — the fence gate counts `extern fn`, and one doc bug fell out
+
+`scripts/docs_fences.sh` decided FRAGMENT with a bare `fn` test. Widened to
+`/^[ \t]*(extern[ \t]+)?fn[ \t]/`, plus a second test for the
+`extern "lib" fn` form the anchored one cannot reach — the library name sits
+between the two keywords, which the phase entry did not mention and which is why
+six fences moved rather than three.
+
+Measured, before and after: 39 CHECKed -> 45, with **3 failures**, each read
+rather than swept:
+
+- `docs/guides/ffi.md:47` — `'sqrt' is already defined`. **A doc bug, and it is
+  fixed, not marked.** The surface-syntax catalogue told the reader to write
+  `extern fn sqrt(x: float) -> float`; `sqrt` is a builtin, so that exact line
+  does not compile. It is now `hypot` (also libm, not a builtin — verified by
+  compiling it), and the prose below says you cannot re-declare a builtin, with
+  the date and what the line used to be.
+- `docs/guides/ffi.md:109` — loose statements at top level under a whole
+  `extern`. A genuine fragment; `fence-skip` naming that.
+- `docs/internals/typed-handles-design.md:41` — `unknown type 'Db'`: the design
+  sketch names `Db` before its `handle` block. `fence-skip` naming that.
+
+Final: 43 CHECKed, 0 failures — 45 once phase 61 added its two `tycho` fences.
+**Shown reddening and going green**, as required: mistyping `float` as `flooat`
+in the widened-in catalogue gives `docs-fences: FAIL docs/guides/ffi.md:47 --
+does not compile ... unknown type 'flooat'`; restoring returns it to 0 failures.
+
+### Phase 63 — a `docs/` path is inherited only along its own line
+
+**Option (a) was counted before anything shipped, and the count produced a third
+option that beat it.** Forbidding an inherited `docs/` path outright reddens
+**45** refs. Restricting inheritance to the **same line** reddens **16**. The 29
+in the difference are exactly the continuation form the phase warned option (a)
+would cost — a path and its sibling range inside one table cell in `docs/rfc/`
+and `docs/spec/appendix-h-differences.md`. The failure mode needs *distance*:
+nobody loses track of the subject halfway along a line. So the rule shipped is
+(a) narrowed to preserve precisely what (a) would have destroyed, and
+`scripts/check_citations.py`'s header carries both numbers so the choice stays
+re-checkable.
+
+**Negative control, run after the repair:** appending two lines to
+`docs/rfc/value-lifetime-regions.md` that name `docs/spec/16-builtins.md:10` on
+one line and write the bare continuation form (colon, then 20) on the next — the exact batch-10 scenario, and a
+number well inside the chapter — fails with `a bare ref inheriting the docs/ path
+docs/spec/16-builtins.md from line 469`. Removed; gate green.
+
+**The 16 repairs found two live defects the bounds check could never see.**
+
+- `docs/internals/spec-plan.md` at 585-589 claimed the W3C EBNF dialect is
+  declared at `docs/spec/00-conventions.md:131` with the form table at
+  `docs/spec/00-conventions.md:133-142`. Line 131 is in §1.5 Versioning.
+  `Both use a W3C-style EBNF:` is at `docs/spec/00-conventions.md:154`, the table
+  runs `docs/spec/00-conventions.md:156-168`, and the `ebnf` fence language is
+  fixed at `docs/spec/00-conventions.md:193`, not 170. All three repointed:
+  spelling the path on a citation already known to be wrong would have cemented
+  it.
+- Making that ref explicit **exposed three more**. `docs/internals/spec-plan.md`
+  at 600 and 602 cite §9.5 as `docs/spec/07-memory-model.md:64-81`, and had been
+  `docs/spec/07-memory-model.md:69-70` and `docs/spec/07-memory-model.md:70-71`,
+  and had been inheriting `00-conventions.md` — the sentence names
+  `docs/spec/07-memory-model.md` **without a line number**, so it never set the
+  binding. They now name `docs/spec/07-memory-model.md` outright. This is the
+  bug the phase exists for, caught by the phase's own rule within a minute of it
+  landing.
+
+The remaining thirteen were spelled with the path the gate already resolved them
+against, which changes no meaning. Three anchored refs to the `ARCHIVED` tuple in
+`scripts/check_citations.py` had to move from 282 to 316 because this phase's
+docstring insertion shifted the file — the hazard the brief names, caught by the
+gate itself.
+
+### Phase 61 — every fence in `docs/` now carries a tag
+
+64 bare fences, each opened and read: 56 in `docs/internals/`, 4 in `docs/rfc/`,
+4 in `docs/` — the counts the gate's docstring predicted. **Nothing was
+automated and no language was guessed.** The rule, now also in
+`scripts/docs_fences.sh`'s header:
+
+- **`text`** (59 of the 64) for anything in a dated design record or an archived
+  plan, for command output and transcripts, commit lists, symbol/line tables,
+  and deliberately-broken illustrations. Tagging a historical snippet `tycho`
+  would opt syntax-as-it-was into a gate that checks today's grammar — the
+  failure phase 43 named, and the one this phase had to avoid at 29 fences in
+  `docs/internals/plan-option-result-DONE.md` alone.
+- **`sh`** for the two that are shell command lines:
+  `docs/internals/integer-overflow.md` at 39 and `docs/thesis.md` at 236.
+- **`tycho`** for only three: `docs/from-c-to-arenas.md` at 62 and 75, and
+  `docs/internals/value-semantics-limits.md` at 56. Each was **confirmed by the
+  gate compiling it**, not by inspection — two became CHECKed (both via the
+  no-main retry), which is why CHECK went 43 -> 45 and the retry count 10 -> 12.
+
+Verified zero remain: a fence-toggle scan over `git ls-files 'docs/*.md'` reports
+252 fences and the tag histogram `tycho 122, text 73, ebnf 23, c 13, sh 10,
+output 9, python 2` — **no bare fence**. Of the 122 `tycho`: 45 CHECK, 53
+FRAGMENT, 19 MARKED, 5 FROZEN. `make docs-fences`: 0 failures.
+
+### Phase 53 — `r_step` is deleted, and the spec sentence that blocked it is amended
+
+Three blockers were on record. Phase 17 closed in batch 10. The citation-shift
+blocker was **neutralised rather than accepted**: every deletion was padded with
+a comment of exactly the length it removed, so `src/tychoc.c` is **12774 lines
+before and 12774 after**, and not one bare `src/tychoc.c:N` citation moved. That
+is why this phase reddened no citation of its own.
+
+The third blocker was the spec, and this batch had authority to settle it.
+`docs/spec/10-statements.md`'s §14.4 Provenance block asserted the field
+normatively — "The step codegen and its zero-step guards still exist but are
+unreachable" — citing the `Stmt` declaration. A normative sentence describing
+dead code is a spec defect, not a reason to keep the code. The block now says
+what is true (`Stmt` carries `r_start` and `r_stop` only, `src/tychoc.c:1555-1561`;
+every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`, `src/tychoc.c:10885-10889`)
+and an `Amended 2026-07-30` paragraph records the old sentence, its window of
+truth (2026-07-29 to 2026-07-30) and exactly what went. The zero-step **trade**
+paragraph at `docs/spec/10-statements.md:115-121` is untouched, as the entry
+required. `sh scripts/spec_check.sh` — which the entry's own Verify list had
+omitted until batch 8 added it — is green.
+
+**What the emitted C lost, measured on one fixture holding all three shapes**
+(foreach over an array, foreach over a map's `keys`, `0..<N`, and `parallel for`):
+
+    before:  _step 12 occurrences · "range step is zero" 4 · "_stepN > 0 ? ..." 4
+    after:   _step  0 occurrences · "range step is zero" 0 · "_stepN > 0 ? ..." 0
+    loop header now: for (tycho_int h__fi0 = 0LL; h__fi0 < _stop1; h__fi0 += 1) {
+
+**Behaviour unchanged, shown by running, not by diffing C:** the same program
+prints `arr=7 / map=3 / dotlt=10 / par=40` before and after — `diff` of the two
+outputs is empty. `make test` **552** (unchanged from phase 60), `make conc`
+**38 passed, 0 failed**.
+
+**One deviation from the Done-when, stated rather than hidden.** It asked for
+`grep -n r_step src/tychoc.c` to be empty. Six mentions remain and every one is a
+comment recording the removal — the field declaration's history note, the deleted
+`parallel for` refusal, the deleted literal-zero-step refusal quoted verbatim,
+and three one-line notes where a scan or clone call used to be. Erasing the name
+would satisfy the letter and destroy the one string a future reader would grep
+for. The field and every use of it are gone; that is the criterion that mattered.
+
+### Phase 58 — the closing sweep, and the lane that paid for itself on the way in
+
+**`rtparity` joins `make ci` as step `[2d/13]`.** It is a `tests/` lane, not a
+corelib dogfood, so it is a sub-lane of step 2 rather than a new number — the
+convention the entry names. It costs ~1s (one `--emit-c`, no `cc`), so there was
+no argument for keeping it out. The `Makefile` comment that pointed at this phase
+now records the decision.
+
+**It reddened immediately, and it was right.** Run before wiring it in:
+
+    rtparity: FAIL - diagnostic "tycho: range step is zero\n" is in the oracle but NOT emitted.
+
+Phase 53 had just deleted that abort. `make test` (552), `make conc` (38) and the
+ASan lanes were all green over the same tree — **this lane was the only gate that
+saw it**. The oracle was out of date, not the codegen, and
+`tests/rtparity/run.py` now records the removal with its date and reason rather
+than dropping the line silently. After: `diagnostics 27/27 as recorded (ok)`.
+
+Two other things the sweep had never covered are in this run: `make fetch` in
+step `[3/13]` (batch 9) and the `docs-fences` step `[12b/13]` whose
+triple-backtick defect batch 6 fixed. Batch 6's closing run predates both.
+
+`sh -n scripts/ci.sh` parses. The observed sweep result is in the Status section
+below.
+
+## Phases discovered by batch 11
+
+- [ ] **Phase 64** — **§E.3's Tier 2 paragraph still describes a two-compiler
+      oracle that no longer runs.** Found by phase 59 while sweeping Appendix E's
+      E.2.1 notes for retired-`tychoc0` language; filed rather than absorbed
+      because phase 59's scope was that notes section, and this is a different
+      one.
+  - `docs/spec/appendix-e-conformance.md` §E.3 Tier 2 says `scripts/spec_examples.sh`
+    "builds it with **both** the reference `tychoc` and the self-hosted `tychoc0`,
+    runs each, and asserts both produce stdout equal to the `output` block", and
+    calls it "the two-compiler oracle of E.1 applied to the spec's own examples:
+    a divergence between the compilers ... is a defect that blocks the build".
+  - The script itself says otherwise, in its own header: `scripts/spec_examples.sh:14-15`
+    records that through 2026-07-26 each example was also run through the
+    self-hosted `tychoc0`, that the compiler is frozen and **no gate builds it**,
+    so that leg is gone. `sh scripts/spec_check.sh` prints `(tychoc)` on every
+    example, one compiler.
+  - Same class as phase 59, same cure: say what runs now, keep the two-compiler
+    history in the past tense with its date. Check the parenthetical about
+    "building `tychoc0` from source each..." that trails the paragraph while
+    there — it is part of the same claim.
+  - Done when: no sentence in §E.3 asserts a live `tychoc0` leg.
+  - Verify: `sh scripts/spec_check.sh` plus the two doc gates. **Not**
+    `make test` — Markdown only.
+
+- [ ] **Phase 65** — **two `docs/internals/spec-plan.md` citations into Appendix E
+      are drifted, and the sentence around them is self-describing about it.**
+      Found by phase 63 while repairing the sixteen cross-line inheritances; the
+      repair made the binding explicit, which is all phase 63 owed, but did not
+      re-derive the numbers.
+  - `docs/internals/spec-plan.md` at 607-608 now reads
+    `docs/spec/appendix-e-conformance.md:188` twice and says of it "`:188` is a
+    fixture row (§17.3 today, the §24.2 row when the drift was first noticed)".
+    Line 188 of that file is today the **§15.2 parameter-passing-modes** row, so
+    the sentence has drifted a third time since it was written to record a drift.
+  - This is the residual the bounds check cannot see and phase 63's rule does not
+    address either: an explicit, in-bounds, wrong single-line ref. The general
+    cure on record for it is the anchored form (`path:N@token`), which is what
+    `FRICTION.md` recommends and what `scripts/check_citations.py` already
+    enforces inside `> Provenance:` blocks.
+  - Decide whether the sentence still earns its place at all: it is a note about
+    a citation that used to be wrong, inside a resolved bullet, and rewriting it
+    to name the clause rather than a line number would end the cycle.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+    **Not** `make test`.
+
+### Phase 58 — what the sweep found, and the observed exit codes
+
+**Two full sweeps, and the first one is the finding.** It is recorded here rather
+than quietly re-run, because a sweep that reddens is the sweep doing its job.
+
+    run 1:  17m49s (1069s)  CI_EXIT=2   failed at [9b/13] make editors-check
+    run 2:  18m06s (1086s)  CI_EXIT=0   CI GREEN -- tree is good
+
+**Run 1, `[9b/13]`:** `STALE: editors/zed/README.md claims 832 committed .ty
+files, tree has 837. Fix the README to say 837.` The count is a `find` over the
+working tree (`scripts/editors_check.sh:57-59`), and at HEAD 06118f7 the tree
+held **836** tracked `.ty` files against the README's 832 — so it was **already
+stale by four before this batch**, and phase 60's new fixture made it five. The
+last full sweep was batch 6's; nothing between then and now ran this lane. That
+is precisely the gap phase 58 was filed to close.
+
+Fixed by editing the number, which is what the gate's own message and the
+README's "Edit the number only" instruction ask for. `make editors-check` alone
+then returns `ok README says 837 committed .ty files, and so does the tree` and
+`editors-check: ok`.
+
+**Per `CLAUDE.md`, `make ci` was not used as the debugging loop.** The failing
+step's own gate was re-run, and the five lanes run 1 never reached were then run
+individually before spending a second sweep: `sh bench/guard.sh` (ok, tycho at
+23% of C on `maptree`, elision live), `make recursion` (all green),
+`sh scripts/spec_check.sh` (9 runnable examples, all pass), `make docs-fences`
+(45 compiled, 0 failures), `make check-links` (links ok, citations ok). Only then
+was run 2 spent, to confirm what was already believed.
+
+**Run 2 reached every lane**, in order: `[1] [2] [2b] [2c] [2d] [3] [3b] [4] [5]
+[6] [7] [8] [9] [9b] [10] [11] [12] [12b] [13]` — nineteen, including the new
+`[2d/13] make rtparity`, the `make fetch` line inside `[3/13]` and the
+`[12b/13] make docs-fences` step, the three lanes `make ci` had never swept.
+
+## Status — CLEANUP COMPLETE
+
+Batch 11 closed nine phases: **53, 56, 57, 58, 59, 60, 61, 62, 63**. With them,
+every phase in this plan is closed except one decision that belongs to the user.
+
+**Commits in this batch**
+
+    chore: batch 11 — the final cleanup and the closing sweep
+
+One commit, deliberately: the nine phases are cleanup with a single closing
+sweep over all of them, and splitting them would have meant nine sweeps or eight
+unverified commits.
+
+**Counts at close**
+
+    make test        552   (551 at batch 9; +1 = tests/diag/parfor_expr_source)
+    make conc         38
+    make ci          exit 0, 18m06s, all 19 lanes
+    src/tychoc.c   12774 lines, unchanged by phase 53's deletion (padded)
+    docs/ fences     252, zero untagged (122 tycho: 45 CHECK, 53 FRAGMENT, 19 MARKED, 5 FROZEN)
+    citations        ok (159 anchored, 2605 bare, 127 source->doc, 168+12 source->source)
+    unchecked phases   3
+
+**What remains open**
+
+- **Phase 51 — `char` element types.** Untouched by this batch on instruction: it
+  is a language-design decision for the user, not a cleanup.
+- **Phase 64 — §E.3's Tier 2 two-compiler claim** (filed by this batch, from
+  phase 59). Markdown only.
+- **Phase 65 — two drifted Appendix E citations in `docs/internals/spec-plan.md`**
+  (filed by this batch, from phase 63). Markdown only.
+
+Both new phases are documentation and neither blocks anything. Nothing in the
+tree is left in a half-finished state: every gate this batch could redden was run
+and is green, and the one deviation from a Done-when (phase 53's `grep` criterion,
+six surviving history comments) is stated in its evidence rather than papered
+over.

@@ -62,7 +62,7 @@ at `compiler/tychoc0.ty:3029`. Its `ECall` arm is at `:3146`. For a call whose
 name is a **generic template**, none of the builtin special-cases match, so it
 falls through to the final line:
 
-```
+```text
 compiler/tychoc0.ty:3187   return resolve_nt(dc, ctx, sig_ret(dc, with_line(ctx, _el), name))
 ```
 
@@ -114,7 +114,7 @@ string. That string then poisons two downstream sites in the mono pass:
 `type_of` **already** does the correct substitution for one shape: a generic
 UFCS *method* call, in the `ECallV` arm at `compiler/tychoc0.ty:3115`–`:3122`:
 
-```
+```text
 msi := dc.sigmap.get(mn, -1)
 if msi >= 0 and len(dc.sigs[msi].ptypes) >= 1 and ty_is_generic(dc.sigs[msi].ret):
     rbt := type_of(efield_base(callee), names, types, dc, ctx)   # the receiver's concrete type
@@ -138,7 +138,7 @@ the template's Sig*. Note it works off `dc.sigs` (the Sig table), not off the
 call to its concrete instance during resolution**, in place, before anything
 reads the result type. In `resolve_expr`'s `E_CALL` arm:
 
-```
+```text
 src/tychoc.c:3913   { Proc *gt = generic_find(e->sval);
                       if (gt && !e->qual && !e->lhs) instantiate_generic(gt, e); ... }
 ```
@@ -179,7 +179,7 @@ has a Sig (the parser registers every proc's Sig; `func_is_generic` templates
 are partitioned only in the mono *driver* at `:9572`, not removed from `dc`).
 So `type_of`'s `ECall` arm can, just before the `:3187` fallthrough, do:
 
-```
+```text
 # (proposed, in type_of ECall arm, before the sig_ret fallthrough)
 si := dc.sigmap.get(name, -1)
 if si >= 0 and ty_is_generic(dc.sigs[si].ret):
@@ -254,7 +254,7 @@ fn(int) -> int, which does not fit the parameter pattern", from `:4914`).
 Fix: add a function-type arm to `match_type`, recursing into each param and the
 return, mirroring the existing array/map arms:
 
-```
+```text
 # proposed, in match_type, before the final `return pat == concrete`
 if (IS_FUNC(pat) && IS_FUNC(concrete)) {
     if (func_n(pat) != func_n(concrete)) return 0;
@@ -296,7 +296,7 @@ time (the intern function ends at `src/tychoc.c:838`). A template's
 `T_TYPARAM`. At codegen, the `FnC` typedef loop emits **every** entry with no
 guard:
 
-```
+```text
 src/tychoc.c:7693   for (int i = 0; i < g_nfunctypes; i++) {
 src/tychoc.c:7694       FuncTy *f = &g_functypes[i];
 src/tychoc.c:7695       fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
@@ -316,7 +316,7 @@ composites are skipped from emission: enums skip at `src/tychoc.c:7681`
 gated by `has_typaram` (see e.g. `src/tychoc.c:1347`, `:1416`, `:1446`). The
 function-type loop is the one composite that **forgot the guard**. Fix:
 
-```
+```text
 src/tychoc.c:7694 (proposed)   FuncTy *f = &g_functypes[i];
                                if (has_typaram(FUNC_OF(i))) continue;   /* a fn($T)->$T template type emits no C; its instances' fn types do */
 ```

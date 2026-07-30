@@ -18,7 +18,7 @@ instances and enumerates the **population**.
 `tychoc` **interns** types. Every composite type is built through a find-or-create
 function, so one check inside a constructor covers every spelling of that restriction:
 
-```
+```text
 chan_of      src/tychoc.c:610      arrc_sized_b :668     opt_of :751    res_of :774
 tup_of       :837                  mapc_of      :1004    funcc_of :1027
 ```

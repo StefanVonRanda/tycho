@@ -59,7 +59,7 @@ Tycho removes escape analysis by removing the thing it analyzes: **there is no r
 type.** You cannot store or return a pointer into another value's memory, and assignment
 copies:
 
-```
+```tycho
 b := a        # b is an independent copy, not an alias
 ```
 
@@ -72,7 +72,7 @@ There's no third way, because there are no references to smuggle one out. So the
 can see every value's lifetime from the syntax alone. Here's the C function from Step 1,
 in Tycho:
 
-```
+```tycho
 fn greet(name: string) -> string:
     return "hello " + name
 ```

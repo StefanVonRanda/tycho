@@ -59,6 +59,16 @@ make -s ilp32
 step "[2c/13] make asan-self  (the COMPILER built with ASan+UBSan, compiling the whole corpus)"
 make -s asan-self
 
+# rtparity joined the sweep on 2026-07-30 (plan.md phase 58). It was created by
+# batch 9 and sat in NO aggregate lane, so nothing ran it. It is a tests/ lane, not
+# a corelib dogfood, hence 2d rather than a new number; and it costs ~1s (one
+# --emit-c, no cc), so there is no argument for keeping it out. It earns its place
+# immediately: phase 53's deletion of the step codegen removed the
+# "tycho: range step is zero" trap text, and this lane was the ONLY gate in the
+# tree that noticed -- make test, make conc and asan-self were all green over it.
+step "[2d/13] make rtparity  (the emitted runtime surface -- env knobs, tycho: traps, arena-stats rows -- vs the oracle)"
+make -s rtparity
+
 step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch dogfoods vs goldens)"
 make -s corelib
 make -s corelib-examples

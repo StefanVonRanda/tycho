@@ -36,7 +36,7 @@ bad shifts, …) active.
 
 The same emitted C for `tests/int_overflow.ty`:
 
-```
+```sh
 cc -O2 -fwrapv  io.c -o w  &&  ./w   # -> "wrapped"
 cc -O2          io.c -o n  &&  ./n   # -> "no-wrap"   (optimizer folded x+1 < x)
 ```

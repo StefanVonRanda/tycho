@@ -2154,7 +2154,7 @@ section below is the earlier stop at phase 6, kept as written because the
 reasoning still holds for phase 9 and the reader should see that the chain was
 stopped, reconsidered, and restarted rather than run straight through.
 
-```
+```text
 30058a2  phase 1   tests/postfreeze/, a fixture lane outside the freeze
 b895e66  phase 2   backtick raw string literals
 d572181  phase 3   tychofmt, LSP and editor grammars learn raw strings
@@ -2199,7 +2199,7 @@ under the scope-lock rule that says work found outside a phase is appended, neve
 silently absorbed. Six ran. **Phases 7, 8 and 9 are left unchecked by the user's
 explicit decision**, not by oversight and not because they failed.
 
-```
+```text
 30058a2  phase 1  tests/postfreeze/, a fixture lane outside the freeze
 b895e66  phase 2  backtick raw string literals
 d572181  phase 3  tychofmt, LSP and editor grammars learn raw strings

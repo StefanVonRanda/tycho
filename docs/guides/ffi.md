@@ -46,7 +46,7 @@ optionally prefixed with the library to link:
 
 ```tycho
 extern fn getpid() -> int                                # libc (already linked)
-extern fn sqrt(x: float) -> float                        # libm (already linked)
+extern fn hypot(x: float, y: float) -> float             # libm (already linked)
 extern "z" fn crc32(crc: int, buf: string, n: int) -> int    # links -lz
 extern "SDL2" fn SDL_Init(flags: int) -> int                 # links -lSDL2
 extern fn sx_col_text(stmt: ptr, i: int) -> string       # C string in, Tycho string out
@@ -55,6 +55,13 @@ extern fn sx_col_text(stmt: ptr, i: int) -> string       # C string in, Tycho st
 The symbol name is never mangled, even inside a package — a C symbol is global —
 so an `extern` can be declared and called from any package. A bare `extern fn`
 (no `"Lib"`) assumes the symbol is already linked; libc and libm always are.
+
+You cannot re-declare a symbol the language already provides: this catalogue
+showed `extern fn sqrt(x: float) -> float` until 2026-07-30, and that exact line
+does not compile — `sqrt` is a builtin, so it fails with `'sqrt' is already
+defined`. It became visible when `make docs-fences` learned to count an
+`extern fn` as a declaration (plan.md phase 62); before that the fence was filed
+as a fragment and compiled by nothing.
 
 ## Type mapping
 
@@ -106,6 +113,7 @@ write their real result through a pointer out-parameter — `int sqlite3_open(co
 char *path, sqlite3 **db)`. Declare the out-parameter `inout` and the transpiler passes
 the address of your local automatically; no hand-written shim:
 
+<!-- fence-skip: the extern declaration is whole, but the two lines under it are loose statements shown at top level; a real program needs them inside an fn -->
 ```tycho
 extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
 

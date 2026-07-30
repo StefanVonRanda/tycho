@@ -1552,13 +1552,13 @@ struct Stmt {
     Type     annot;        /* explicit annotation when typed_decl */
     Expr    *expr;         /* value / condition / return / S_INDEXSET rhs / match scrutinee */
     Expr    *target;       /* S_INDEXSET lvalue (an E_INDEX) */
-    Expr    *r_start, *r_stop, *r_step;  /* S_FORRANGE; r_step NULL means 1. HISTORY:
-                                          * r_step is ALWAYS NULL since 2026-07-29 --
-                                          * `range(a,b,step)` was its only producer and
-                                          * it is gone; `0..<N` and the foreach/parfor
-                                          * desugarings all step by 1. The step codegen
-                                          * and its zero-step guards are now unreachable
-                                          * (kept, not deleted -- see plan.md phase 30). */
+    Expr    *r_start, *r_stop;            /* S_FORRANGE bounds; the loop steps by 1.
+                                          * HISTORY: an `r_step` field sat beside these
+                                          * until 2026-07-30. `range(a,b,step)` was its
+                                          * only producer and went on 2026-07-29, so it
+                                          * had been ALWAYS NULL since; `0..<N` and the
+                                          * foreach/parfor desugarings all step by 1. It
+                                          * went with its codegen -- plan.md phase 53. */
     char    *names[8]; int nnames;       /* S_MDECL targets: `a, b := f()` */
     Type     mtypes[8];                  /* S_MDECL resolved element types */
     Stmt   **body; int nbody;
@@ -3369,7 +3369,7 @@ static Stmt *parse_stmt(Parser *ps) {
                     Stmt *s = new_stmt(S_FORRANGE, t->line);
                     s->name = var->text;
                     Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
-                    s->r_start = zero; s->r_stop = parse_expr(ps); s->r_step = NULL;
+                    s->r_start = zero; s->r_stop = parse_expr(ps);
                     eat(ps, TK_COLON, "':' before the block");
                     eat(ps, TK_NEWLINE, "newline");
                     s->body = parse_block(ps, &s->nbody);
@@ -3411,7 +3411,7 @@ static Stmt *parse_stmt(Parser *ps) {
                     die_at(t->line, "parallel for over a collection or channel must name a variable (bind it first)");
                 Stmt *fe = new_stmt(S_FORRANGE, t->line);
                 fe->foreach = 1; fe->name = var->text;
-                fe->r_start = coll; fe->r_stop = NULL; fe->r_step = NULL;
+                fe->r_start = coll; fe->r_stop = NULL;
                 fe->body = ubody; fe->nbody = nbody;
                 return fe;
             }
@@ -3430,7 +3430,7 @@ static Stmt *parse_stmt(Parser *ps) {
             Expr *cref2 = new_expr(E_IDENT, t->line); cref2->sval = cn; cref2->pkg = g_cur_pkg_prefix;
             Expr *lenc = new_expr(E_CALL, t->line); lenc->sval = "len"; lenc->pkg = g_cur_pkg_prefix;
             lenc->args = (Expr **)xmalloc(sizeof(Expr *)); lenc->args[0] = cref2; lenc->nargs = 1;
-            fr->r_start = zero; fr->r_stop = lenc; fr->r_step = NULL;
+            fr->r_start = zero; fr->r_stop = lenc;
             Stmt **fbody = (Stmt **)xmalloc((size_t)(nbody + 1) * sizeof(Stmt *));
             fbody[0] = elem;
             for (int k = 0; k < nbody; k++) fbody[k + 1] = ubody[k];
@@ -6560,7 +6560,7 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
             pf_scan_body(s->body, s->nbody, loopdepth + 1);
             return;
         case S_FORRANGE: {   /* incl. a nested parallel for: walk it like a loop; it lifts itself later */
-            pf_scan_expr(s->r_start); pf_scan_expr(s->r_stop); pf_scan_expr(s->r_step);
+            pf_scan_expr(s->r_start); pf_scan_expr(s->r_stop);
             int save = g_pf_nloc;
             pf_add_local(s->name);
             pf_scan_body(s->body, s->nbody, loopdepth + 1);
@@ -6625,7 +6625,7 @@ static void resolve_parfor(Stmt *s) {
              *       for true: select { recv(coll, x): BODY ; closed: break } */
             Expr *z = new_expr(E_INT, s->line); z->ival = 0;
             Expr *nc = new_expr(E_CALL, s->line); nc->sval = "ncpu"; nc->pkg = "";
-            s->name = "__pw"; s->r_start = z; s->r_stop = nc; s->r_step = NULL;
+            s->name = "__pw"; s->r_start = z; s->r_stop = nc;
             Stmt *sel = new_stmt(S_SELECT, s->line);
             sel->arms = (MatchArm *)xmalloc(2 * sizeof(MatchArm));
             sel->sel_ch = (Expr **)xmalloc(2 * sizeof(Expr *));
@@ -6652,7 +6652,7 @@ static void resolve_parfor(Stmt *s) {
             Expr *z = new_expr(E_INT, s->line); z->ival = 0;
             Expr *lc = new_expr(E_CALL, s->line); lc->sval = "len"; lc->pkg = "";
             lc->args = (Expr **)xmalloc(sizeof(Expr *)); lc->args[0] = coll; lc->nargs = 1;
-            s->name = iv; s->r_start = z; s->r_stop = lc; s->r_step = NULL;
+            s->name = iv; s->r_start = z; s->r_stop = lc;
             Expr *iref = new_expr(E_IDENT, s->line); iref->sval = iv; iref->pkg = "";
             Expr *c2 = new_expr(E_IDENT, s->line); c2->sval = coll->sval; c2->pkg = coll->pkg;
             Expr *idx = new_expr(E_INDEX, s->line); idx->lhs = c2; idx->rhs = iref;
@@ -6665,9 +6665,9 @@ static void resolve_parfor(Stmt *s) {
             die_at(s->line, "parallel for expects an array, string, or channel");
         }
     }
-    /* unreachable since 2026-07-29: r_step is always NULL (`0..<N` has no step
-     * syntax and `range()` is gone). Kept as a fail-closed assertion. */
-    if (s->r_step) die_at(s->line, "parallel for does not support a range step");
+    /* HISTORY: a fail-closed `if (s->r_step) die_at(s->line, "parallel for does not
+     * support a range step")` stood here until 2026-07-30, unreachable since `range()`
+     * went on 2026-07-29. It was deleted with the field -- plan.md phase 53. */
     if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
         die_at(s->line, "parallel for needs an int range");
     if (g_nparfor >= 64) die_at(s->line, "too many parallel for loops (max 64)");
@@ -6740,7 +6740,7 @@ static void resolve_parfor(Stmt *s) {
     loop->name = s->name;
     Expr *lo = new_expr(E_IDENT, s->line); lo->sval = "__plo";
     Expr *hi = new_expr(E_IDENT, s->line); hi->sval = "__phi";
-    loop->r_start = lo; loop->r_stop = hi; loop->r_step = NULL;
+    loop->r_start = lo; loop->r_stop = hi;
     loop->body = s->body; loop->nbody = s->nbody;
     pr->body[pf->nacc] = loop;
     Stmt *rst = new_stmt(S_RETURN, s->line);
@@ -6852,7 +6852,7 @@ static void wl_scan_body(Stmt **body, int n, const char *muts[], int *nm, int *e
         wl_scan_expr(s->target, muts, nm, exit);
         wl_scan_expr(s->r_start, muts, nm, exit);
         wl_scan_expr(s->r_stop, muts, nm, exit);
-        wl_scan_expr(s->r_step, muts, nm, exit);
+        /* no r_step to scan: every S_FORRANGE steps by 1 (plan.md phase 53). */
         wl_scan_body(s->body, s->nbody, muts, nm, exit);
         wl_scan_body(s->els, s->nels, muts, nm, exit);
         for (int a = 0; a < s->narms; a++) wl_scan_body(s->arms[a].body, s->arms[a].nbody, muts, nm, exit);
@@ -7304,17 +7304,17 @@ static void resolve_stmt(Stmt *s, Type ret) {
         case S_FORRANGE: {
             if (s->parallel) { resolve_parfor(s); break; }   /* CC-3: body resolves inside the lifted chunk proc */
             if (resolve_expr(s->r_start) != T_INT ||
-                resolve_expr(s->r_stop)  != T_INT ||
-                (s->r_step && resolve_expr(s->r_step) != T_INT))
+                resolve_expr(s->r_stop)  != T_INT)
                 die_at(s->line, "a counting `for` needs int bounds");
-            /* HISTORY: the literal-zero-step refusal below is UNREACHABLE since
-             * 2026-07-29 -- `range(a,b,step)` was the only way to write a step and
-             * it is gone, so r_step is always NULL (see the Stmt field's note). The
-             * guarantee it enforced does not survive into the three-clause form: a
-             * post clause is arbitrary code, so `for i := 0; i < n; i += 0:` cannot
-             * be diagnosed. plan.md's Pre-flight records that as a deliberate loss. */
-            if (s->r_step && s->r_step->kind == E_INT && s->r_step->ival == 0)
-                die_at(s->line, "loop step is zero (the loop would never terminate)");
+            /* HISTORY: a literal-zero-step refusal --
+             *   if (s->r_step && s->r_step->kind == E_INT && s->r_step->ival == 0)
+             *       die_at(s->line, "loop step is zero (the loop would never terminate)");
+             * -- stood here until 2026-07-30, UNREACHABLE since 2026-07-29 because
+             * `range(a,b,step)` was the only way to write a step and it is gone. The
+             * guarantee does not survive into the three-clause form either: a post
+             * clause is arbitrary code, so `for i := 0; i < n; i += 0:` cannot be
+             * diagnosed. docs/spec/10-statements.md records that deliberate loss;
+             * the field and this check went together in plan.md phase 53. */
             int m = vars_mark();
             vars_push(s->name, T_INT, 1);   /* loop variable is int, scoped to the loop */
             resolve_block(s->body, s->nbody, ret);
@@ -7684,7 +7684,7 @@ static void chan_scan_stmt(ProcVec *prog, Stmt *s, const char *nm, ChanUse *u) {
     chan_scan_expr(prog, s->target, nm, u);
     chan_scan_expr(prog, s->r_start, nm, u);
     chan_scan_expr(prog, s->r_stop, nm, u);
-    chan_scan_expr(prog, s->r_step, nm, u);
+    /* no r_step: every S_FORRANGE steps by 1 (plan.md phase 53). */
     if (s->kind == S_SELECT) {
         int mine = 0, closed_arm = 0, dflt = 0;
         for (int a = 0; a < s->narms; a++) {
@@ -7959,8 +7959,8 @@ static int stmt_unsafe(Stmt *s, const char *iv, const char *arr) {
         default: break;
     }
     if (expr_passes_arr(s->expr, arr) || expr_passes_arr(s->target, arr)) return 1;
-    if (expr_passes_arr(s->r_start, arr) || expr_passes_arr(s->r_stop, arr) ||
-        expr_passes_arr(s->r_step, arr)) return 1;
+    if (expr_passes_arr(s->r_start, arr) || expr_passes_arr(s->r_stop, arr))
+        return 1;
     if (stmts_unsafe(s->body, s->nbody, iv, arr)) return 1;
     if (stmts_unsafe(s->els,  s->nels,  iv, arr)) return 1;
     for (int a = 0; a < s->narms; a++) {
@@ -8188,7 +8188,7 @@ static int count_reads_b(Stmt **body, int n, const char *nm) {
     for (int i = 0; i < n; i++) {
         Stmt *s = body[i];
         c += count_reads_e(s->expr, nm) + count_reads_e(s->target, nm);
-        c += count_reads_e(s->r_start, nm) + count_reads_e(s->r_stop, nm) + count_reads_e(s->r_step, nm);
+        c += count_reads_e(s->r_start, nm) + count_reads_e(s->r_stop, nm);
         c += count_reads_b(s->body, s->nbody, nm) + count_reads_b(s->els, s->nels, nm);
         for (int a = 0; a < s->narms; a++) c += count_reads_b(s->arms[a].body, s->arms[a].nbody, nm);
         if (s->ctrl) c += count_reads_b(&s->ctrl, 1, nm);   /* value if/match decl: tails read variables too (move-on-last-use correctness) */
@@ -8226,7 +8226,7 @@ static int body_pushcount(Stmt **body, int n, const char *nm) {
     for (int i = 0; i < n; i++) {
         Stmt *s = body[i];
         c += expr_pushcount(s->expr, nm) + expr_pushcount(s->target, nm);
-        c += expr_pushcount(s->r_start, nm) + expr_pushcount(s->r_stop, nm) + expr_pushcount(s->r_step, nm);
+        c += expr_pushcount(s->r_start, nm) + expr_pushcount(s->r_stop, nm);
         c += body_pushcount(s->body, s->nbody, nm) + body_pushcount(s->els, s->nels, nm);
         for (int a = 0; a < s->narms; a++) c += body_pushcount(s->arms[a].body, s->arms[a].nbody, nm);
         if (s->ctrl) c += body_pushcount(&s->ctrl, 1, nm);   /* value if/match decl */
@@ -8387,8 +8387,8 @@ static int block_mutates(Stmt **body, int n, const char *nm) {
             if (r && !strcmp(r, nm)) return 1;
         }
         if (expr_mutates(s->expr, nm) || expr_mutates(s->target, nm)) return 1;
-        if (expr_mutates(s->r_start, nm) || expr_mutates(s->r_stop, nm)
-            || expr_mutates(s->r_step, nm)) return 1;
+        if (expr_mutates(s->r_start, nm) || expr_mutates(s->r_stop, nm))
+            return 1;
         if (block_mutates(s->body, s->nbody, nm)) return 1;
         if (block_mutates(s->els, s->nels, nm)) return 1;
         for (int a = 0; a < s->narms; a++)
@@ -10877,16 +10877,16 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             int id = g_blk++;
             char *start = gen_expr(s->r_start, scope);
             char *stop  = gen_expr(s->r_stop,  scope);
-            char *step  = s->r_step ? gen_expr(s->r_step, scope) : sfmt("1L");
+            /* no `step` local: the loop always advances by 1 (plan.md phase 53). */
             char *ss = sfmt("&_scr%d", id);
             indent(o, ind); fprintf(o, "{\n");
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, NULL);   /* bounds eval once, pre-loop */
-            indent(o, ind + 1); fprintf(o, "tycho_int _stop%d = %s, _step%d = %s;\n", id, stop, id, step);
-            indent(o, ind + 1); fprintf(o, "if (_step%d == 0) { fprintf(stderr, \"tycho: range step is zero\\n\"); exit(1); }\n", id);
+            indent(o, ind + 1); fprintf(o, "tycho_int _stop%d = %s;\n", id, stop);
+            /* `_stepN`, its `tycho: range step is zero` abort and the `_stepN > 0 ? ... : ...`
+             * direction ternary went with the field on 2026-07-30 (plan.md phase 53). */
             indent(o, ind + 1);
-            fprintf(o, "for (tycho_int h_%s = %s; _step%d > 0 ? h_%s < _stop%d : h_%s > _stop%d; h_%s += _step%d) {\n",
-                    s->name, start, id, s->name, id, s->name, id, s->name, id);
+            fprintf(o, "for (tycho_int h_%s = %s; h_%s < _stop%d; h_%s += 1) {\n", s->name, start, s->name, id, s->name);
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
             int m = cv_mark();
             cv_push(s->name, ss);   /* loop var is an int value; owner is irrelevant but tracked */
@@ -10899,7 +10899,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * never passes A whole to a call (see stmt_unsafe). */
             int elide_pushed = 0;
             if (elision_on() && s->r_start->kind == E_INT && s->r_start->ival == 0 &&
-                s->r_step == NULL && s->r_stop->kind == E_CALL && s->r_stop->sval &&
+                s->r_stop->kind == E_CALL && s->r_stop->sval &&
                 !strcmp(s->r_stop->sval, "len") && s->r_stop->nargs == 1 &&
                 s->r_stop->args[0]->kind == E_IDENT && g_nelide < 64 &&
                 !IS_BOUNDED(s->r_stop->args[0]->type) &&   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
@@ -11317,7 +11317,7 @@ static Stmt *clone_stmt(Stmt *s, Type *binds) {
     c->target  = clone_expr(s->target, binds);
     c->r_start = clone_expr(s->r_start, binds);
     c->r_stop  = clone_expr(s->r_stop, binds);
-    c->r_step  = clone_expr(s->r_step, binds);
+    /* no r_step to clone: every S_FORRANGE steps by 1 (plan.md phase 53). */
     c->body = clone_block(s->body, s->nbody, binds);
     c->els  = clone_block(s->els, s->nels, binds);
     if (s->typed_decl && has_typaram(s->annot))   /* `x : $T = ...` annotation */

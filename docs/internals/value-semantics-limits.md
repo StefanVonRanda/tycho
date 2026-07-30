@@ -53,7 +53,7 @@ Go's (~66 ms). The residual gap below is value-vs-pointer storage and is structu
 make children indices into it, so an "edge" is an 8-byte `int`, sharing is just two indices
 pointing at the same slot, and the whole pool is one arena-backed array:
 
-```
+```tycho
 struct TrieNode:
     kids: [int: int]           # next-byte -> node INDEX (not a Trie by value)
     word: bool
@@ -125,7 +125,7 @@ the ~2.5 MB input string tycho/C hold to the end while Go's GC drops it (Go's lo
 **Idiom — scope the transient in an inner function/block** so its arena reclaims before the
 long-lived work continues:
 
-```
+```text
 fn load() -> Doc:
     raw := read_huge_input()       # the transient
     return parse(raw)              # `raw`'s arena is reclaimed when load() returns

@@ -10,7 +10,7 @@ cannot do in Tycho's arena model; the findings refine the research note.
 
 Syntax mirrors `inout` (convention after the colon): `x: sink T`.
 
-```
+```text
 fn scale2(xs: sink [int]) -> int:   # xs is OWNED and MUTABLE (a borrow is read-only)
     s := 0
     for i := 0; i < len(xs); i += 1:
@@ -86,7 +86,7 @@ semantics actually require independence.
 — is now a **compile error** in both compilers, so the move is a checked guarantee rather than
 a best-effort optimization. You keep a value by handing the sink an explicit copy:
 
-```
+```text
 b := [5]
 keep := b            // explicit copy; b is read again below, so this copies
 x := dbl(keep)       // keep is dead -> adopted; b untouched

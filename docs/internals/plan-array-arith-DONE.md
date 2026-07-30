@@ -945,7 +945,7 @@ mismatch on `[N]T` is refused at compile time, and every gate is green.
 
 All four phases done. `new_ideas.md` item 3 is shipped.
 
-```
+```text
 0180e69  the plan itself
 70fb00f  phase 1  element-wise arithmetic on arrays
 15c2235  phase 2  scalar broadcast for array arithmetic

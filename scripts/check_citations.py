@@ -159,7 +159,41 @@ drifted.  So the widened bounds check is doing double duty: it is the only thing
 that can see a mis-inherited continuation ref, and it sees it as an
 out-of-bounds read into a file two orders of magnitude smaller than the compiler.
 The residual blind spot is the bare form's usual one -- a mis-inherited `:N` that
-happens to land inside the document -- and it is not fixed here.
+happens to land inside the document -- and it is not fixed here.  It is fixed by
+the next rule.
+
+A `docs/` PATH IS INHERITED ONLY ALONG ITS OWN LINE (added 2026-07-30, phase 63)
+-------------------------------------------------------------------------------
+The bounds check above catches a mis-inherited `:N` only when the number is far
+outside the inheriting document -- which it is when the author meant
+`src/tychoc.c` (13k lines) and the paragraph last named a 386-line chapter.  When
+the number happens to land INSIDE the chapter, nothing sees it: a
+`docs/spec/16-builtins.md` paragraph writing `:20` and meaning `src/tychoc.c:20`
+passes every check in this file.  That is not theoretical -- 52 of phase 44's 77
+failures were this same mis-inheritance, visible only because the numbers were
+large, and one surviving pair had to be repaired by hand in `plan.md` during
+batch 10 because the gate could not.
+
+So: a BARE `:N` whose inherited path is under `docs/` is accepted only when that
+path was named ON THE SAME LINE.  Cross-line inheritance of a `docs/` path is a
+hard failure telling the author to write the path.
+
+WHY THAT SHAPE, AND NOT "REQUIRE A PATH ON EVERY DOC REF".  Both were counted
+before either was shipped, on the tree at plan.md phase 63.  Forbidding inherited
+`docs/` paths outright reddens 45 refs; restricting inheritance to the same line
+reddens 16.  The 29 refs in the difference are the continuation form the tables
+in `docs/rfc/` and `docs/spec/appendix-h-differences.md` are written in --
+`docs/thesis.md:14-17`, `:39-53` inside one cell -- where the path is two
+characters away and cannot be mistaken for anything else.  Those are the cases
+the broad rule would have cost for no gain, because the failure mode needs
+DISTANCE: an author does not lose track of the subject halfway along a line.
+
+Sources other than `docs/` keep unrestricted inheritance.  For them the bounds
+check already does this job, since every one of them is far larger than any line
+number a doc sentence would produce.
+
+ARCHIVED PLANS ARE EXEMPT, same reason as everywhere else in this file: the fix
+is an edit to a frozen record.
 
 THE SECOND DIRECTION: SOURCE -> DOC (added 2026-07-26)
 -----------------------------------------------------
@@ -210,7 +244,7 @@ ANCHORED SOURCE -> SOURCE (added 2026-07-30, plan.md phase 13)
 The wrong-line class needs an expected token, so SRCCITE now accepts an optional
 `@token` suffix and content-checks the cited lines when one is present:
 
-    Makefile:267@SKIPPED           as cited from scripts/asan_self.sh
+    Makefile:270@SKIPPED           as cited from scripts/asan_self.sh
     src/tychoc.c:3366@i_dotlt      as cited from fuzz/run_parforparity.py
 
 TWO DIFFERENCES FROM THE MARKDOWN ANCHOR, both forced by the medium.  (1) The
@@ -299,6 +333,7 @@ def main():
     fails, n_bare, n_anchored, n_prov, n_frozen_doc = [], 0, 0, 0, 0
     for md in mds:
         cur = None
+        cur_ln = 0          # the line `cur` was named on (see the docs/ rule)
         frozen = md.startswith(ARCHIVED[0]) and md.endswith(ARCHIVED[1])
         prov = False
         for ln, line in enumerate(open(os.path.join(ROOT, md), errors="replace"), 1):
@@ -318,6 +353,7 @@ def main():
             for m in CITE.finditer(line):
                 if m.group(1):
                     cur = m.group(1)
+                    cur_ln = ln
                     # AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (see the header).
                     if cur.startswith("/"):
                         if not frozen:
@@ -363,6 +399,19 @@ def main():
                 # declared rather than silent.
                 if frozen and cur.startswith("docs/"):
                     n_frozen_doc += 1
+                    continue
+                # A `docs/` PATH IS INHERITED ONLY ALONG ITS OWN LINE (phase 63).
+                # See the header for why this is narrower than "always write the
+                # path", and for the 45-vs-16 count that decided it.
+                if (m.group(1) is None and cur.startswith("docs/")
+                        and cur_ln != ln):
+                    fails.append(
+                        "%s:%d  `%s` -> a bare ref inheriting the `docs/` path "
+                        "`%s` from line %d. A number that lands inside a document "
+                        "is checked by nothing, so a `docs/` path carries only "
+                        "along the line that names it. Write it: `%s%s`"
+                        % (md, ln, m.group(0).strip("`"), cur, cur_ln,
+                           cur, m.group(0).strip("`")))
                     continue
                 a = int(m.group(2))
                 b = int(m.group(3)) if m.group(3) else a

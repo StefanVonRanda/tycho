@@ -233,7 +233,7 @@ disappear* — and the domain is large and real.
 
 The figures above are measured on the committed compiler. To reproduce:
 
-```
+```sh
 make                                    # build ./tychoc
 ./tychoc examples/accumulate_big.ty     # in-place append, large N
 ./tychoc examples/memo.ty               # inout memoized fib(40)

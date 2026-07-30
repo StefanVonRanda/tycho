@@ -145,7 +145,7 @@ returns the same `Result`, and it is a HARD COMPILE ERROR where it does not.**
 
 Not read off the spec. Compiled:
 
-```
+```text
 probe1.ty:14: error: or_return requires the enclosing function to return a Result, but it returns int
     14 |     b := probenet.read(fd, 10) or_return
 ```
@@ -262,7 +262,7 @@ ambiguity rather than remove it.
 
 ##### Verify — commands run, real output
 
-```
+```text
 $ ./tychoc server/main.ty -o …/tycho-httpd
 built …/tycho-httpd
 $ ./tychoc corelib/test/net/main.ty   … | diff corelib/test/net.out -      → net golden OK
@@ -279,7 +279,7 @@ constraint).
 
 The rewritten server, served live on `127.0.0.1:18099`, `--workers 4`, hit with curl:
 
-```
+```text
 GET /            200 2659 text/html; charset=utf-8
 GET /style.css   200 1726 text/css; charset=utf-8
 HEAD /           200 0
@@ -378,7 +378,7 @@ deleted, its five call sites now `result.unwrap_or(...)` inline), and
 **A NEW compiler limitation was measured, and it taxes every call site by one line.** A
 qualified name written anywhere in a *generic* call's argument list does not resolve:
 
-```
+```text
 result.unwrap_or(net.port_of(fd), -1)      error: package 'net' has no symbol 'net__port_of'
 result.err_or(r, net.Failed)               error: unknown variable 'net'
 result.unwrap_or(r, httpd.bad_request())   error: package 'httpd' has no symbol 'httpd__bad_request'
@@ -456,7 +456,7 @@ when it cannot.
 **malformed vs EOF vs timeout, proven in a golden** (`corelib/test/httpd.out`, four new
 lines; each of these was `method == ""` before this phase):
 
-```
+```text
 bad_why        = Malformed      # parse_request on "garbage\r\n\r\n"
 garbage_why    = Malformed      # a complete head off a real socket: this one deserves 400
 hangup_why     = Closed         # peer connected and closed without a byte
@@ -467,7 +467,7 @@ timeout_why    = Timeout        # 200 ms SO_RCVTIMEO expired with the peer silen
 **The empty-file / missing / directory split, proven in a golden**
 (`corelib/test/io.out`, one line became four):
 
-```
+```text
 read_bytes len=5 why=Ok        read_missing len=0 why=NotFound
 read_empty  len=0 why=Ok       read_dir     len=0 why=IsDir
 ```
@@ -479,7 +479,7 @@ read_empty  len=0 why=Ok       read_dir     len=0 why=IsDir
 follows it now answers `Err(io.IsDir)`, and `serve_conn` turns that into a `404`. Both
 binaries, same document root containing an empty `emptydir/`:
 
-```
+```text
 $ ./tychoc <git archive HEAD>/server/main.ty ...   # pre-phase-2 binary
 HEAD-of-repo  GET /emptydir -> 200 0 bytes         # log: w1 GET /emptydir 200 0 0.226ms
 $ ./tychoc server/main.ty ...                      # this phase
@@ -498,7 +498,7 @@ program was compiled and run directly with `./tychoc`, exactly as Phase 1 did.
 A compile sweep over every program in the tree that imports `core:io`, `core:net`,
 `core:httpd` or `core:result` — 13 entry points, all green:
 
-```
+```text
 ok corelib/test/{httpd,io,net,result}/main.ty
 ok examples/corelib/{httpd,io,net,result}/main.ty
 ok examples/{fetch,site,weblog,webserver}/main.ty
@@ -507,7 +507,7 @@ ok server/main.ty
 
 Goldens (run, then `cmp` against the recorded file):
 
-```
+```text
 CHANGED  corelib/test/io.out          1 line -> 4   (the three-way split above)
 CHANGED  corelib/test/httpd.out       +4 lines, 1 changed (the four causes above)
 CHANGED  examples/corelib/httpd.out   +1 line  (garbage= true)
@@ -521,7 +521,7 @@ same     examples/webserver/expected.out
 The live server, `127.0.0.1:18099`, `--workers 4`, document root a copy of `server/www`
 with an added empty directory:
 
-```
+```text
 GET /            200 2659 text/html; charset=utf-8
 GET /style.css   200 1726 text/css; charset=utf-8
 HEAD /           200 0
@@ -620,7 +620,7 @@ The tuple cost +3 corelib lines over `inout` and saved 1 line per call site, and
 surfaced a real compiler limitation (recorded in `FRICTION.md`): a tuple literal will not
 infer a `Result` element —
 
-```
+```text
 httpd.ty:7: error: tuple element 1 needs a concrete value
      7 |         return (Err(A), "partial")
 ```
@@ -639,7 +639,7 @@ did not regress** — measured on the wire below, reason phrase included.
 four directory shapes, document root with `about/` and `img/` populated and `emptydir/`
 empty:
 
-```
+```text
 GET /about       -> 301 Moved Permanently   Location: /about/
 GET /about/      -> 200 OK
 GET /img         -> 301 Moved Permanently   Location: /img/
@@ -661,7 +661,7 @@ into `server/main.ty`'s `resolve()` where the next reader will hit it.
 document root a copy of `server/www` plus an empty `emptydir/`. Driven by raw sockets
 (`python3`, no HTTP client) so the hostile cases are exact.
 
-```
+```text
 == normal traffic ==
 GET /                 200 OK   text/html; charset=utf-8   2659 bytes
 GET /style.css        200 OK   text/css; charset=utf-8    1726 bytes
@@ -682,7 +682,7 @@ Content-Length: 0x10         -> HTTP/1.1 400 Bad Request                      (s
 
 **The distinction this phase exists for, with the log lines that prove it:**
 
-```
+```text
 (a) connect, send ZERO bytes, hang up          -> Err(httpd.Closed)
     response: none            server log lines added: 0     <-- silent, as required
 (b) partial head, then stall past --idle-ms    -> Err(httpd.Timeout), raw non-empty
@@ -694,7 +694,7 @@ Content-Length: 0x10         -> HTTP/1.1 400 Bad Request                      (s
 The access log, four hostile lines out of 65, showing the causes are separated on stderr
 and the log FORMAT is unchanged (`w<id> <method> <target> <status> <bytes> <ms>`):
 
-```
+```text
 w4 - GARBAGE. 400 631 0.049ms
 w1 - GET / HTTP/1.1. 400 631 0.045ms          # bad Content-Length
 w2 - GET /toobig HTTP/1.1. 431 680 0.046ms    # TooLarge -> 431, reason phrase intact
@@ -718,7 +718,7 @@ The one case Phase 2's evidence flagged as "the new information is not acted on 
 peer that sends half a request line and hangs up. Both binaries, same document root,
 `git archive HEAD | tar -x` for the BEFORE:
 
-```
+```text
 BEFORE (git HEAD = eefc609, phase 2):
   response: HTTP/1.1 400 Bad Request
   log lines added: 1     w1 - GET /partial HTTP/1.1. 400 631 0.089ms
@@ -760,7 +760,7 @@ program was compiled and run directly with `./tychoc`, as Phases 1 and 2 did.
 13 entry points, every program in the tree importing `core:io`, `core:net`, `core:httpd` or
 `core:result` — all green:
 
-```
+```text
 ok corelib/test/{httpd,io,net,result}/main.ty
 ok examples/corelib/{httpd,io,net,result}/main.ty
 ok examples/{fetch,site,weblog,webserver}/main.ty
@@ -773,7 +773,7 @@ golden)`).
 
 9 goldens, run then `cmp`:
 
-```
+```text
 same corelib/test/{httpd,io,net,result}.out
 same examples/corelib/{httpd,io,net,result}.out
 same examples/webserver/expected.out
@@ -914,7 +914,7 @@ the question, and this is it.
 whole item is about — and the *old* test on the same path, side by side, so the golden
 records the wrong answer next to the right one (`corelib/test/io.out`, 3 new lines):
 
-```
+```text
 mkdir_rc=0 isdir_tmp=dir isdir_empty=dir
 isdir_file=file isdir_missing=NotFound
 list_empty=0 old_test_says_dir=0        <- `len(io.list(p)) > 0` says an EMPTY DIR is a file
@@ -972,7 +972,7 @@ document root for both: a copy of `server/www` plus an empty `emptydir/`.
 
 Access log, the new line and the ones that must not have moved:
 
-```
+```text
 w1 GET /emptydir 301 56 0.145ms      <- was: 404 621
 w3 GET /about    301 56 0.145ms
 w2 GET /img      301 56 0.121ms
@@ -986,7 +986,7 @@ program was compiled and run directly with `./tychoc`, as Phases 1–3 did.
 13 entry points — every program importing `core:io`, `core:net`, `core:httpd` or
 `core:result` — all green:
 
-```
+```text
 ok corelib/test/{httpd,io,net,result}/main.ty
 ok examples/corelib/{httpd,io,net,result}/main.ty
 ok examples/{fetch,site,weblog,webserver}/main.ty
@@ -995,7 +995,7 @@ ok server/main.ty
 
 9 goldens, run then compared:
 
-```
+```text
 CHANGED corelib/test/io.out    +3 lines (the is_dir block above) -- justified: new capability
 same    corelib/test/{httpd,net,result}.out
 same    examples/corelib/{httpd,io,net,result}.out
@@ -1005,7 +1005,7 @@ ok      examples/webserver  (sh examples/webserver/run.sh -> "webserver: ok (tyc
 Live server, `127.0.0.1:18099`, `--workers 4`, `--idle-ms 800`, driven by raw sockets
 (`python3`) so the hostile cases are exact. **The full Phase 3 matrix, unchanged:**
 
-```
+```text
 GET /            200 OK  text/html; charset=utf-8  2659      GET /style.css 200 text/css 1726
 GET /data.json   200 OK  application/json           294       GET /nope.html 404 Not Found
 HEAD /           200 OK  Content-Length=2659, body=0 bytes    POST /         405, Allow: GET, HEAD
@@ -1100,7 +1100,7 @@ earns a `Result` only when it is *ambiguous*, and this is the clearest case in t
 `os.system("rm -rf … && mkdir -p …")` line is deleted. All five outcomes are exercised, and
 the golden records them (`corelib/test/io.out`, +3 net lines):
 
-```
+```text
 mkdir=did again=already onfile=Exists noparent=NotFound
 wrote_inner=1 rm_nonempty=Failed rm_file=did
 rm_dir=did rm_again=already left=0
@@ -1127,7 +1127,7 @@ judgement call about someone else's directory. What changed is that it now tells
 BEFORE — one message for three unrelated causes, measured against a binary built from
 `HEAD` (`4fa192d`):
 
-```
+```text
   server/www                   -> 0 warning(s):
   /tmp/ph5_emptyroot           -> tycho-httpd: warning: /tmp/ph5_emptyroot is empty or not a directory
   server/main.ty               -> tycho-httpd: warning: server/main.ty is empty or not a directory
@@ -1136,7 +1136,7 @@ BEFORE — one message for three unrelated causes, measured against a binary bui
 
 AFTER — the four required cases plus the unreadable branch, real stderr:
 
-```
+```text
 --- (a) normal dir  --root server/www
 tycho-httpd: serving server/www on http://127.0.0.1:43935/  workers=1 idle=5000ms
 --- (b) EMPTY dir   --root /tmp/ph5_emptyroot
@@ -1167,7 +1167,7 @@ was recorded by running the test binary, not by the harness.
 13 entry points — every program importing `core:io`, `core:net`, `core:httpd` or
 `core:result` — all green:
 
-```
+```text
 ok corelib/test/{httpd,io,net,result}/main.ty
 ok examples/corelib/{httpd,io,net,result}/main.ty
 ok examples/{fetch,site,weblog,webserver}/main.ty
@@ -1176,7 +1176,7 @@ ok server/main.ty
 
 9 goldens, run then compared:
 
-```
+```text
 CHANGED corelib/test/io.out  +4/-1 (+3 net) -- justified: make_dir/remove are new capability,
                              and the replaced line was the os.system exit code (`mkdir_rc=0`)
 same    corelib/test/{httpd,net,result}.out
@@ -1187,7 +1187,7 @@ ok      examples/webserver  (sh examples/webserver/run.sh -> "webserver: ok (tyc
 Live server, `127.0.0.1:18099`, `--workers 4 --idle-ms 800`, Phase 3/4's own driver scripts
 re-run unchanged against a Phase-5 binary. **The full matrix, byte-identical to Phase 4:**
 
-```
+```text
 GET /            200 OK  text/html; charset=utf-8  2659     GET /style.css 200 text/css 1726
 GET /data.json   200 OK  application/json           294      GET /nope.html 404  (621)
 HEAD /           200 OK  Content-Length=2659, body=0 bytes   POST /   405, Allow: GET, HEAD

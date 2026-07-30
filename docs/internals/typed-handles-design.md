@@ -38,6 +38,7 @@ destructor that runs at scope exit.
 
 A struct/enum-style declaration naming the C destructor symbol:
 
+<!-- fence-skip: design sketch: the externs name `Db` before its `handle` block, which the compiler does not accept (unknown type 'Db'); docs/guides/ffi.md shows the working order -->
 ```tycho
 extern "sqlite3" fn sqlite3_open(path: string) -> Db        # opener -> owned handle
 extern "sqlite3" fn sqlite3_exec(db: Db, sql: string) -> int  # borrow: takes Db, does not free
