@@ -8,6 +8,21 @@ The program these notes came from is `server/` — `tycho-httpd`, ~440 lines,
 serving `server/www` to a real browser. Everything below was hit while writing
 it, not imagined about it.
 
+> **How to read the plan references in this file (added 2026-07-30).** Every
+> "`plan.md` phase N" below — **51 of them** — was written while that plan was the
+> live `plan.md`. Both plans have since been archived and `plan.md` is now an
+> unrelated one, so those references resolve against the wrong document if taken
+> literally. They mean:
+>
+> - "**`plan.md` phase N**" → `docs/internals/plan-friction-DONE.md`, the ten-phase
+>   plan that worked this file as a list (head `309c393`).
+> - "**`Option`/`Result` phase N**" and "**that plan's phase N**" →
+>   `docs/internals/plan-option-result-DONE.md` (5 phases, head `8aac642`).
+>
+> One line here makes 51 claims true; rewriting all 51 in place would not make
+> them truer, and the same drift will recur at the next archive. Recorded in the
+> open list below as part of the citation item.
+
 ## The headline
 
 **The language has a good answer for fallible calls and the standard library
@@ -71,6 +86,12 @@ language forced that — `or_return` was sitting right there.
 > code lines. The plan's Goal ("the two known wrong answers fixed") is met — and the
 > half that needed a syscall cost 3% of the lines the half that needed a type did.
 >
+> **Recount, 2026-07-30.** "1 of the corelib's 386 functions" is the 2026-07-26 figure.
+> At `afa67da` the corelib is **406** package functions, **1** returning an `Option` and
+> **15** returning a `Result` — so the headline's *ratio* has moved even though its
+> subject (only `io.read_line` returns an `Option`) has not. See the verdict's
+> 2026-07-30 postscript for what that fifteenfold `Result` growth did and did not buy.
+>
 > **Correction from `plan.md` phase 5.** "Exactly where it started" was true for four
 > phases and is no longer: phase 5 replaced the startup `--root` check's one wrong
 > message with four accurate ones and `server/main.ty` ended at **380** code lines,
@@ -87,6 +108,14 @@ below were written** — 89 content checks (does that function / flag / document
 diagnostic exist at HEAD and say what the note claims?) and 8 live runs of the code.
 
 **No stale CLOSED was found.** Two stale *OPENs* were, and they are named below.
+
+> **Overtaken, 2026-07-30 (head `afa67da`).** The counts in this section are the
+> 2026-07-26 figures and are kept as the record of that day. Roughly 60 commits have
+> landed since — raw strings, element-wise array arithmetic, Odin-style loops with
+> `range()` deleted, a `char` type, and the **retirement of the `tychoc0` freeze
+> lanes** — and the freeze retirement alone closes two items below and invalidates
+> the stated *reason* for several "deliberately kept" ones. The current open list is
+> the dated section that follows this one; this table is not it.
 
 ### The count
 
@@ -179,32 +208,163 @@ file, a missing path and an unreadable one alike) with four accurate ones. `Resu
 made the distinctions *available*; **spending them costs one branch per cause**, and
 nothing about the error model makes accuracy free at the call site.
 
-### The real remaining debt — the 10 open items, with what is known about each
+### The real remaining debt, re-scored 2026-07-30 against `afa67da` — 10 open items
 
-1. `:211` **the `send` collision** — small, but needs the shadowable-builtins decision
-   above, and landing it would newly reject any program defining `send`/`recv`/`close`.
-2. `:315` **`spawn f(x)` as a bare statement** — the message never states the rule. One
-   line of diagnostic text; open only because nobody has spent it.
-3. `:316` **`parallel for` silently runs `min(N, ncpu)` iterations** — a runtime
-   property (`runtime/tycho_rt.c:843-852`) with no static `N` to warn about. Uncosted.
-4. `:317` **no direct spelling for N workers** — affine, unstorable task handles. An
-   array of handles is a type-system change, not an item-sized fix. Uncosted.
-5. `:322` **`ends_with` needs `core:strings`** — a corelib layering decision, not lines.
-6. `:223` **`corelib/test/image` is skipped without libpng** — environmental; its golden
-   asserts nothing on this machine. Not closable in-tree.
-7. `:335` **`net_shim.c` does not compile standalone under `-std=c11`** — a missing
-   `_POSIX_C_SOURCE`/`_DEFAULT_SOURCE`; ~1 line, left on scope twice now.
-8. `:337` **`docs/bootstrap.md` is not linked from `docs/README.md`** — one link, plus
-   the real question behind it: no gate checks that a document is *reachable*.
-9. `:339` **two in-tree comments still say the language has no nested patterns** —
-   found by this re-score; ~4 lines, and one of the two files is outside the freeze.
-10. `:340` **this file's own `path:line` citations drift silently** — found by this
-    re-score; the fix is a mechanical pass to anchored `path:line@token` form, after
-    which the citation gate polices them.
+Every item below was **re-verified against the tree at `afa67da`** before it was
+scored: the compiler was run by hand on the shape the item describes, or the cited
+source was opened, or the gate/shim was invoked directly. **All ten reproduce.**
+Nothing on the previous list turned out to be already closed — but four of them are
+*bigger* or *cheaper* than the previous list said, and every citation on the list has
+been re-derived, because the old ones had drifted.
 
-Items 3, 4 and 5 are the honest core of what is left: two concurrency items that want
-a type-system answer and one that wants a layering decision. Everything else on the
-list is a line or a link.
+Two items that were **not** on the numbered list did close, both by the same event —
+the `tychoc0` freeze lanes were retired 2026-07-29 — and both are struck through in
+place below (the six non-gated `tychoc0` runners, and "new language syntax can no
+longer be given a `tests/` fixture").
+
+The old list addressed its items by bare `:N` line numbers into this file. Those are
+gone: a bare `:N` binds to the previously named path (`CLAUDE.md`, "Citations"), so
+they were never self-references at all, and they went stale on every edit. Items are
+named by their section instead.
+
+Ordered so the top of the list is what to pick up first.
+
+1. **Two shims do not compile under `-std=c11`** (*Found by phase 1's gate sweep*) —
+   **the cheapest thing on this list, and it is now two files, not one.**
+   `cc -std=c11 -c corelib/net/net_shim.c` gives **4 errors** (`corelib/net/net_shim.c:84`
+   storage size of `hints`, `corelib/net/net_shim.c:88` implicit `getaddrinfo`,
+   `corelib/net/net_shim.c:89` invalid use of undefined `struct addrinfo`,
+   `corelib/net/net_shim.c:90` implicit `freeaddrinfo`), and **`corelib/tls/tls_shim.c`
+   has the same defect with 9 errors** from `corelib/tls/tls_shim.c:38` — which the
+   original item did not know, because it found the first one through
+   `scripts/frontparity.sh` and that gate no longer runs. Re-measured here by invoking
+   `cc` directly on all 11 shims: those two fail, seven pass, and `corelib/image/image_shim.c`'s
+   single "error" is only a missing `png.h` (environmental, item 6). **The fix is already
+   in the tree four times** — an `#ifndef`/`#define` pair with a one-line reason at
+   `corelib/io/io_shim.c:10-11`, `corelib/os/os_shim.c:9-10`,
+   `corelib/datetime/datetime_shim.c:10-11` and `corelib/time/time_shim.c:22-23` — so this
+   is **3 lines copied into each of 2 files**, with a known-good pattern to copy. Left on
+   scope three times now.
+2. **`spawn f(x)` as a bare statement** (*Earlier phases*) — reproduced verbatim at HEAD:
+   `spawn work(1)` gives `error: a statement must be a declaration, assignment, or call --
+   a bare expression has no effect` (`src/tychoc.c:3575`), which still never states the
+   real rule — a task handle must be *bound* so the compiler can hang the implicit join on
+   it. **One line of diagnostic text at a known line.** Open only because nobody has spent
+   it.
+3. **`docs/bootstrap.md` is not reachable from `docs/README.md`** (*Found by phase 1's gate
+   sweep*) — verified: `grep bootstrap docs/README.md` is empty. Sharper than the old
+   entry: the index deliberately points at *directories* (`docs/reference/`, `docs/guides/`,
+   `docs/spec/`, `docs/internals/`, `docs/rfc/`), so almost every unlisted file is covered
+   by its directory — and `docs/bootstrap.md` is **the only top-level `docs/*.md` no index
+   entry reaches**, the other five (`docs/architecture.md`, `docs/from-c-to-arenas.md`,
+   `docs/thesis.md`, `docs/tutorial.md`, `docs/README.md` itself) all being named. **One
+   link**, plus the real question behind it: `scripts/check_links.sh` checks that links
+   *resolve*, not that documents are *reachable*, so an orphan is invisible to every gate.
+   Three files under `docs/internals/` are additionally mentioned by no Markdown at all.
+4. **The `send` collision** (*Phase 7*) — reproduced at HEAD, and this re-score found the
+   fix's exact shape. `fn send(a: int, b: int) -> int` still compiles silently and dies at
+   the *call* with `error: send(ch, v) takes a channel, got int`, while `fn die(s: string)
+   -> int` is rejected at the *definition*. **The reason is now pinned:** the definition-time
+   duplicate check is `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
+   (`src/tychoc.c:7842`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
+   as real entries (`src/tychoc.c:4521-4522`, in `register_builtins`,
+   `src/tychoc.c:4508`) but **holds no entry for `send`, `recv` or `close` at all**; those
+   three are recognised ad hoc during resolution (`src/tychoc.c:5609`,
+   `src/tychoc.c:5618`, `src/tychoc.c:5624`). So it is not a table that omits three rows,
+   it is three builtins that were never in the table. **The code is ~1 line** at
+   `src/tychoc.c:7842`; the open part is the decision — which builtin names are
+   shadowable — because landing it newly rejects any program defining `send`/`recv`/`close`.
+5. **Stale in-tree comments asserting constraints that the freeze retirement killed**
+   (*phase 10, widened here*) — the old entry named two files; there are **six sites**, and
+   they now carry two *different* false claims:
+   - "the language has no nested patterns" — `corelib/net/net.ty:20`,
+     `examples/corelib/httpd/main.ty:55`, and (new here) `corelib/result/result.ty:29-31`,
+     which goes further and tells the reader "nothing in `corelib/` may use one".
+   - "this package is compiled by the FROZEN `tychoc0`, so it must not use X" —
+     `corelib/httpd/httpd.ty:100-109` (why `crlf()` must stay),
+     `corelib/httpd/httpd.ty:281-289` (why `out` must stay), `tools/lsp.ty:259`
+     (why `"" + '\r' + '\n'` must stay). **The freeze lanes were retired 2026-07-29**, so
+     every one of these states a live constraint that no longer exists — each run.sh header
+     in the tree has already been corrected to the past tense, and these six were missed.
+   `corelib/test/io/main.ty:44` and `corelib/test/result/main.ty:128` show the corrected
+   form. **~15 lines of comment across 6 files**, and worth doing before someone reads one
+   of them as a reason not to write the obvious thing.
+6. **`ends_with` needs `core:strings`** (*Earlier phases*) — still true: `ends_with` lives
+   at `corelib/strings/strings.ty:37` and `core:httpd` still hand-rolls its own
+   `has_ext` (`corelib/httpd/httpd.ty:387`) rather than import the package for one
+   predicate. **Not lines — a corelib layering decision** about whether a leaf package may
+   depend on `core:strings`. Note the precedent that has since landed: `core:io` *dropped*
+   a dependency (`core:path`) when a syscall made it unnecessary, so the tree's current
+   direction is fewer inter-package edges, not more.
+7. **`parallel for` caps concurrency at `min(N, ncpu)` and nothing warns** (*Earlier
+   phases*) — **reproduced live at HEAD**, not merely re-read. Four iterations of an equal
+   fixed workload: `TYCHO_THREADS=4` → **222 ms**, `TYCHO_THREADS=2` → **433 ms**,
+   `TYCHO_THREADS=1` → **853 ms**. All N iterations *do* run (the reduction total is
+   identical at every width); what is capped is how many run *at once*, so an iteration
+   chunked behind one that never returns never starts. Three things the old entry did not
+   know:
+   - The behaviour is now **specified**, which it was not: "the iteration space is split
+     into chunks; the reference implementation uses `ncpu()` chunks and MAY expose an
+     override (`TYCHO_THREADS`)" (`docs/spec/13-concurrency.md:78-82`).
+   - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
+     (`src/tychoc.c:4519`, lowering at `src/tychoc.c:9129`), so a program can at least
+     ask. Measured on this box: `ncpu()` → 16.
+   - There is an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:10040`, inside `gen_parfor`,
+     `src/tychoc.c:10026`) — which `docs/spec/13-concurrency.md` does not mention, so on a
+     box with more than 64 CPUs the spec's "uses `ncpu()` chunks" is false. **That half is
+     a ~1-line spec fix and should be split out and taken;** the warning half remains
+     uncosted, because `N` is a runtime expression (`docs/spec/13-concurrency.md:86`) and
+     there is nothing static to warn about. Runtime detail at
+     `runtime/tycho_rt.c:843-852` (`tycho_ncpu`).
+8. **No direct spelling for N workers** (*Earlier phases*) — reproduced: `hs := [spawn
+   work(1), spawn work(2)]` is refused with `tychoc: a task handle cannot be stored in a
+   container or aggregate -- wait(t) first` (`src/tychoc.c:639`, `task_container_err`,
+   fail-closed at the type-intern choke points so a task cannot escape and be waited twice
+   or never). `server/main.ty:497-503` still pays the recursive fan-out — worker k spawns
+   worker k+1 into a frame-local, then runs its own accept loop. **An array of handles is a
+   type-system change, not an item-sized fix. Uncosted, and still the honest core of what
+   is left**, together with item 7.
+9. **`corelib/test/image` is skipped without libpng** (*Phase 7 of `plan.md`,
+   non-blocking*) — confirmed environmental and confirmed *live*: `corelib/image/deps`
+   names `libpng`, `pkg-config --exists libpng` fails on this machine, and
+   `corelib/run.sh:39` prints `skip <name> (missing dependency: ...)` and continues. Its
+   golden therefore asserts nothing here. **Not closable in-tree** — it is a property of
+   the machine, and the skip is the deliberate design that keeps `make ci` green on
+   platforms without the lib. Listed so nobody re-derives it a third time.
+10. **This file's own coordinates drift silently, and no gate can see it** (*phase 10*) —
+    still open, and **re-measured here rather than restated.** Fifteen `path:line`
+    citations were opened at HEAD and checked against what this file says is there:
+    **11 of the 15 no longer point at their subject.** All eleven are into
+    `src/tychoc.c` — the `\r` escape set, the literal-intern emit site, the
+    adjacent-literal join, `is_place`, the `exit` builtin registration, `copy_into`'s
+    `T_BYTES` case, `instantiate_generic`, the zero-cost reinterpret, `detect_package`,
+    the `bytes` representation and the channel-handle type syntax — because every compiler
+    phase shifts everything below it, and `src/tychoc.c` is now 754 KB. The four that
+    survived are all into files that barely moved (`corelib/httpd/httpd.ty:336`,
+    `corelib/httpd/httpd.ty:352`, `server/main.ty:564`, `runtime/tycho_rt.c:557`) — which
+    is the shape of the problem: **the citations that matter most are the ones most likely
+    to be wrong.** `scripts/check_citations.py` cannot catch it by construction; it
+    verifies anchored `path:line@token` refs against the token and only bounds-checks bare
+    ones, and every bare ref into a 12k-line file stays in bounds forever. This file has
+    ~85 `path:line` citations and **4 anchor markers**. The fix is a mechanical pass to
+    anchored form, after which the gate polices them. **The same defect in a second
+    dimension was found by this re-score and repaired rather than listed:** 51 "`plan.md`
+    phase N" references pointed at a `plan.md` that is now an unrelated plan — fixed with
+    one definitional note at the top of this file, because rewriting 51 references would
+    have gone stale again at the next archive. That asymmetry is the lesson: **a coordinate
+    that names a moving target should be replaced by one that names a stable one, not
+    repointed.**
+
+**What moved and what did not.** Items 1, 2, 3 and 5 are lines and links with the work
+already identified — roughly a day between them, and item 1 has a known-good pattern to
+copy four times over. Items 7 and 8 are the concurrency pair and are still the honest
+core: one wants a type-system answer, the other wants a warning there is nothing static
+to warn from. Item 6 wants a decision, not lines. Items 9 and 10 are properties of the
+environment and of the file itself. **The list did not shrink, and that is the finding —
+sixty commits of real language work went past this list without touching it**, because
+every one of them was driven by `new_ideas.md` and by the loop and array plans instead.
+A list nothing is pulling from does not get shorter on its own.
 
 ## Phase 7 — writing the server
 
@@ -310,6 +470,23 @@ cannot yet make *failure* pleasant — still holds; what changed is that the rea
 is ergonomics (`unwrap_or`, nested patterns, `map_err`, inference) rather than the
 absence of `Option` and `Result` from the type system.
 
+**Postscript, 2026-07-30 (head `afa67da`).** Two numbers in the verdict above have
+moved and the sentence they support has been overtaken by its own follow-through.
+Re-counted at HEAD by `grep '^fn '` over the package sources (not `corelib/test/`):
+the corelib is **406** functions, not 386; **1** still returns an `Option`
+(`io.read_line`); **15** now return a `Result`. So "uses them once in 386 functions"
+is no longer the state of the tree — it is the state the file was written in, and the
+`Result` surface has grown fifteenfold since. More to the point: all four ergonomic
+gaps this postscript named as the *real* reason failure is unpleasant —
+`unwrap_or`, nested patterns, `map_err`, tuple inference — **have since landed**, each
+with its measurement in the CLOSED notes above. **The verdict's diagnosis was acted on
+and, unlike its predecessor, it held**: the four fixes cost 4, 116, 4 and 11 compiler
+or library lines respectively, and none of them made the application longer. What this
+file can now say with three data points instead of two is narrower and more useful than
+either verdict: **converting a library to `Result` is charged at every call site; fixing
+the ergonomics of `Result` is refunded at every call site.** The open list is no longer
+about the error model at all.
+
 ## Earlier phases
 
 - **Phase 1** — `spawn f(x)` as a bare statement is rejected with `a statement must be a declaration, assignment, or call -- a bare expression has no effect`, which never says the real rule: a task handle must be bound so the compiler can hang the implicit join on it.
@@ -322,7 +499,7 @@ absence of `Option` and `Result` from the type system.
 - **Phase 3** — no `ends_with` without importing `core:strings`, and a corelib package taking a dependency for one predicate is worse than the six-line `has_ext` helper it needs, so the helper gets rewritten per package.
 - **Phase 4** — `core:net` had no way to bound a blocking read; `time.sleep_ms` cannot help because it cannot interrupt a `recv` already in progress. The idle timeout required a new shim call (`SO_RCVTIMEO`), which means "do not let a peer pin this worker" was not expressible in Tycho corelib until this commit.
 - **Phase 4** — a socket read timeout is indistinguishable from EOF at the Tycho level (both yield empty `bytes`); fine for a server, but a client that needs to retry a timeout while giving up on an EOF cannot tell them apart.
-- **Phase 0** — six non-gated runners still build tychoc0 and compare against it (`examples/fetch`, `examples/sqlite`, `examples/webserver`, `examples/weblog`, `bench/run.sh`, `tools/prof/profile.sh`); none is in `make ci`, so none can redden, but each will drift as tychoc0 does.
+- ~~**Phase 0** — six non-gated runners still build tychoc0 and compare against it (`examples/fetch`, `examples/sqlite`, `examples/webserver`, `examples/weblog`, `bench/run.sh`, `tools/prof/profile.sh`); none is in `make ci`, so none can redden, but each will drift as tychoc0 does.~~ **CLOSED, the Odin-loops plan's phase 1 (`1b93727`, 2026-07-29) — by retiring the legs, not by gating them.** A breaking loop-syntax change means the frozen `compiler/tychoc0.ty` can no longer parse the corpus, so every `tychoc0` leg in every runner was removed rather than fixed. Verified at HEAD: no `run.sh` in the tree builds `tychoc0`, and each header now records the retirement in the past tense — `examples/webserver/run.sh:36` ends `webserver: ok (tychoc == golden; the tychoc0 leg was retired 2026-07-29)`. **The item's worry is answered by deletion, and the cost is recorded in `CLAUDE.md`, "Two gates that used to be here": nothing replaces them, so a change that silently narrows what `src/tychoc.c` accepts no longer has a second implementation to disagree with it.** The item was right that the runners would drift; what it could not know is that the drift would be settled by removing the comparison rather than by protecting it.
 - **Phase 0** — the harness scripts of the removed gates are still on disk unreferenced (`compiler/run.sh`, `compiler/fixpoint.sh`, `compiler/pkg-split.sh`, `scripts/frontparity.sh`, `tests/rtparity/`, `fuzz/run_pkg.py`, `fuzz/run_typeparity.py`, `run_parforparity.py`, `run_eqparity.py`, `run_unaryparity.py`); kept deliberately so the method behind the recorded self-hosting result stays readable.
 - **Phase 0** — the 15 `tests/diag/*.h0err` tychoc0-diagnostic goldens are now orphaned; kept because three archived internals docs cite them.
 - **Phase 0** — prepending a 50-line banner to `compiler/tychoc0.ty` invalidated every `:N` self-citation in its own comments (the citation gate only checks docs→source, not source→source), so the file now carries a "+50" correction note instead.
@@ -331,11 +508,11 @@ absence of `Option` and `Result` from the type system.
 ## Found by `plan.md` phase 1's gate sweep, out of its scope
 
 - ~~**`plan.md` phase 1** — `scripts/tools_check.sh`'s `bytes-rehome` lane has been **silently vacuous since `eefc609`** and is red at HEAD. Its inline fixture writes `d := io.read_bytes(p)` then `len(d)`, which stopped compiling when that commit gave `read_bytes` a `Result` return (`error: len(...) takes an array, a string, bytes, a map, or a soa`), and `scripts/tools_check.sh:273` discards the compile's exit status — so the lane guarding a real use-after-free (`copy_into` missing `T_BYTES`) reports its own breakage as `grep: .../brh/main.c: No such file or directory`. A gate that throws away an exit code cannot tell "the invariant broke" from "my fixture no longer compiles", and it chose the scarier of the two messages. Left unfixed on scope; `plan.md` phase 1b.~~ **CLOSED, `plan.md` phase 1b.** 10 lines of shell, no compiler change: the fixture is now `d := result.unwrap_or(io.read_bytes(p), to_bytes(""))` — the one-liner that phase 1 made spellable, so the un-rotting is the first *use* of that fix outside its own regression test — and the compile is an `if !` with its stderr captured, with a third branch that says `bytes-rehome FIXTURE STALE: it no longer compiles, so this lane asserts NOTHING`. Both halves were reddened deliberately and restored: dropping `case T_BYTES` from `copy_into` (`src/tychoc.c:8551`) gives `bytes field NOT re-homed -- copy_into missing T_BYTES (dangling UAF!)`, and re-injecting the stale spelling gives the STALE line with the real compiler error indented under it. **The general lesson, and it is not about `bytes`: a gate is two claims — "the invariant holds" and "I am still able to ask" — and discarding an exit status silently merges them.** This one spent three commits reporting a missing file, which reads like a broken script rather than a broken guard, so it was believed and skipped. Any lane whose fixture is a program must fail on the fixture failing to build, distinctly from the assertion failing; a green gate that cannot articulate what it checked is worth less than no gate, because it is trusted.
-- **`plan.md` phase 2** — **new language syntax can no longer be given a `tests/` fixture.** `compiler/fixpoint.sh` and `scripts/frontparity.sh` both feed every `tests/*.ty`, `tests/pkg/*/main.ty`, `examples/*.ty` and `tools/*.ty` to the frozen `tychoc0`, so a fixture exercising anything `tychoc0`'s frontend does not know reddens two runners at a compiler that must not be edited. Phase 2's `\r` escape and adjacent-literal join are therefore covered by `corelib/test/` and `server/` (golden-validated, but not by `tests/run.sh`) and the gap is written into `docs/spec/appendix-e-conformance.md`. Not a defect in either runner — a consequence of the freeze, and the first time it has cost a fixture rather than a gate. Whoever un-freezes or retires `tychoc0` should re-home those fixtures into `tests/`.
-- **`plan.md` phase 5** — `corelib/net/net_shim.c` does not compile standalone under `-std=c11`: `getaddrinfo` and `struct addrinfo` are hidden by strict ISO mode without `_POSIX_C_SOURCE`/`_DEFAULT_SOURCE` (`resolve4`, `scripts/frontparity.sh`, 4 errors). Pre-existing, not phase 5's — a `git archive HEAD` copy fails identically — and invisible in practice because `tychoc` invokes plain `cc` (`src/tychoc.c:12403`), whose default is `gnu17`. It means a shim's portability claim cannot be checked with the same flags the repo checks `src/tychoc.c` with. Left unfixed on scope.
-- **`plan.md` phase 2** — the same freeze is why `httpd.crlf()` and `tools/lsp.ty:256`'s `"" + '\r' + '\n'` survive the item that made them unnecessary: `core:httpd` is imported by `examples/webserver/main.ty`, which `examples/webserver/run.sh:20-27` builds with `tychoc0` and requires to match byte for byte. **A frozen compiler in a comparison gate freezes the source it reads, not just itself** — the corelib is now, in effect, written in the intersection of two languages, and nothing in the tree said so before this line.
+- ~~**`plan.md` phase 2** — **new language syntax can no longer be given a `tests/` fixture.** `compiler/fixpoint.sh` and `scripts/frontparity.sh` both feed every `tests/*.ty`, `tests/pkg/*/main.ty`, `examples/*.ty` and `tools/*.ty` to the frozen `tychoc0`, so a fixture exercising anything `tychoc0`'s frontend does not know reddens two runners at a compiler that must not be edited. Phase 2's `\r` escape and adjacent-literal join are therefore covered by `corelib/test/` and `server/` (golden-validated, but not by `tests/run.sh`) and the gap is written into `docs/spec/appendix-e-conformance.md`. Not a defect in either runner — a consequence of the freeze, and the first time it has cost a fixture rather than a gate. Whoever un-freezes or retires `tychoc0` should re-home those fixtures into `tests/`.~~ **CLOSED, the Odin-loops plan's phases 1 and 2 (`1b93727`, `f7da4b1`) — and the entry's own last sentence is what happened.** The freeze lanes were retired, and the interim `tests/postfreeze/` lane built to hold new-syntax fixtures was **folded back into `tests/`** in the next phase; `tests/postfreeze/` no longer exists. New syntax now gets an ordinary `tests/` fixture again: `tests/nested_pattern.ty` and `tests/result_tuple.ty` are the two this file's own items were denied, and `corelib/test/result/main.ty:15-28` records where they came home from. **The lesson the entry named is the one that held: the constraint was never a defect in a runner, so it could only be closed by changing what the runners are for.**
+- **`plan.md` phase 5** — `corelib/net/net_shim.c` does not compile standalone under `-std=c11`: `getaddrinfo` and `struct addrinfo` are hidden by strict ISO mode without `_POSIX_C_SOURCE`/`_DEFAULT_SOURCE` (`resolve4`, `scripts/frontparity.sh`, 4 errors). Pre-existing, not phase 5's — a `git archive HEAD` copy fails identically — and invisible in practice because `tychoc` invokes plain `cc` (`src/tychoc.c:12403`), whose default is `gnu17`. It means a shim's portability claim cannot be checked with the same flags the repo checks `src/tychoc.c` with. Left unfixed on scope. **Postscript, 2026-07-30 — still open, and it is TWO shims, not one.** Re-measured by running `cc -std=c11 -c` over all 11 shims directly, since `scripts/frontparity.sh` (the route that found it) is no longer a gate: `corelib/net/net_shim.c` fails with the same 4 errors, and **`corelib/tls/tls_shim.c` fails with 9 of the same kind** from `corelib/tls/tls_shim.c:38` — the identical `getaddrinfo`/`struct addrinfo` cause, never noticed because `core:tls` was not in the failing run. Seven shims pass; `corelib/image/image_shim.c` fails only on a missing `png.h`, which is item 9's environmental skip and not this. **And the fix is already in the tree four times**, as an `#ifndef`/`#define` pair with its reason on the line: `corelib/io/io_shim.c:10-11`, `corelib/os/os_shim.c:9-10`, `corelib/datetime/datetime_shim.c:10-11`, `corelib/time/time_shim.c:22-23`. So "~1 line" was right per file and wrong about the file count, and the thing that kept it open — that no gate compiles a shim standalone — is now the *only* thing keeping it open. Open list item 1.
+- **`plan.md` phase 2** — the same freeze is why `httpd.crlf()` and `tools/lsp.ty:256`'s `"" + '\r' + '\n'` survive the item that made them unnecessary: `core:httpd` is imported by `examples/webserver/main.ty`, which `examples/webserver/run.sh:20-27` builds with `tychoc0` and requires to match byte for byte. **A frozen compiler in a comparison gate freezes the source it reads, not just itself** — the corelib is now, in effect, written in the intersection of two languages, and nothing in the tree said so before this line. **Postscript, 2026-07-30: the reason expired and the workarounds did not.** The freeze lanes were retired 2026-07-29, so the corelib is written in one language again — but `httpd.crlf()` is still defined (`corelib/httpd/httpd.ty:110`) with **4 call sites in its own package**, `tools/lsp.ty:260` still returns `"" + '\r' + '\n'`, and both still carry present-tense comments explaining that the frozen compiler forbids the literal. They survive now only because nobody swept them. **That is the generalisation this entry was missing: a workaround outlives its reason by default, because nothing goes red when the reason dies.** Folded into the open list as item 5 (the comments) — the code itself is a smaller, separate sweep.
 - **`plan.md` phase 8** — `docs/bootstrap.md` (written in that phase) is **not linked from `docs/README.md`**; `scripts/check_links.sh` checks that links resolve, not that documents are reachable, so an orphan document is invisible to every gate. Left unfixed on scope; a docs-index pass should list it.
 - **`plan.md` phase 1** — a 17-line growth in `src/tychoc.c` staled **11 anchored `path:line@token` citations** into it, across `docs/spec/15-program.md` and two internals docs. This is the citation gate working exactly as designed (it named every one, with the line the token actually moved to), and it is the argument for a compiler phase running `make check-links` even when it changed no Markdown: the docs cite the compiler by line, so *every* patch to `src/tychoc.c` is a documentation change.
-- **`plan.md` phase 10** — **two in-tree comments still assert that the language has no nested patterns**, three phases after `plan.md` phase 3 added them: `corelib/net/net.ty:20-21` ("Tycho has no nested patterns -- `Err(net.Timeout)` does not parse -- so `==` is the only way") and `examples/corelib/httpd/main.ty:54-55` ("`Err(httpd.Malformed)` cannot be a match arm (Tycho has no nested patterns)"). Phase 3's evidence lists the files it swept — `httpd.ty`, `result.ty`, `io.ty`, `docs/guides/corelib.md` — and `core:net` was not among them. `corelib/test/io/main.ty:43` gets it right ("`compiler/tychoc0.ty`, whose grammar still has no nested pattern"), which is the distinction both stale comments miss: the *language* has them, the *frozen compiler that reads the corelib* does not. `examples/corelib/httpd` is one of the two files phase 8 excluded from `frontparity` **because** it is outside the freeze, so there the comment is not just mis-attributed — the nested arm would compile. Left unfixed on scope.
-- **`plan.md` phase 10** — **this file's own `path:line` citations drift silently, and no gate can see it.** 30 of the 71 spot-checked in the CLOSED notes no longer point at what they name; the worst are into `src/tychoc.c`, where every compiler phase shifts everything below it — the literal-interning emit site cited by the `\r` item as `src/tychoc.c:8671` is now `src/tychoc.c:9455`, `copy_into`'s `T_BYTES` case cited by phase 1b as `src/tychoc.c:8217` is now `src/tychoc.c:8551`, and `instantiate_generic` cited by the qualified-name item as `src/tychoc.c:6895` is now `src/tychoc.c:7482`. Every closure is still *true*; the coordinates are not — and the three `as` values above are now the pre-repair record, `plan.md` phase 6 having repointed this file's live citations to today's lines. `scripts/check_citations.py` cannot catch it by construction: it verifies the 22 **anchored** `path:line@token` citations against the token and only bounds-checks the 1646 **bare** ones, and every citation in this file is bare. The fix is a mechanical pass to anchored form, after which the gate polices them — and the reason it matters is that this file is the place a future reader goes to find out why something is the way it is. Left unfixed on scope.
+- **`plan.md` phase 10** — **two in-tree comments still assert that the language has no nested patterns**, three phases after `plan.md` phase 3 added them: `corelib/net/net.ty:20-21` ("Tycho has no nested patterns -- `Err(net.Timeout)` does not parse -- so `==` is the only way") and `examples/corelib/httpd/main.ty:54-55` ("`Err(httpd.Malformed)` cannot be a match arm (Tycho has no nested patterns)"). Phase 3's evidence lists the files it swept — `httpd.ty`, `result.ty`, `io.ty`, `docs/guides/corelib.md` — and `core:net` was not among them. `corelib/test/io/main.ty:43` gets it right ("`compiler/tychoc0.ty`, whose grammar still has no nested pattern"), which is the distinction both stale comments miss: the *language* has them, the *frozen compiler that reads the corelib* does not. `examples/corelib/httpd` is one of the two files phase 8 excluded from `frontparity` **because** it is outside the freeze, so there the comment is not just mis-attributed — the nested arm would compile. Left unfixed on scope. **Postscript, 2026-07-30 — still open, now three files, and the distinction this entry drew has itself expired.** Both named comments survive verbatim (`corelib/net/net.ty:20`, `examples/corelib/httpd/main.ty:55`) and a **third** was found here: `corelib/result/result.ty:29-31`, which does not merely mis-attribute but instructs — "this package is compiled by the frozen `compiler/tychoc0.ty` … so nothing in `corelib/` may use one". Since the freeze lanes were retired 2026-07-29 that sentence is false in *both* halves, so the careful language/frozen-compiler distinction `corelib/test/io/main.ty:43` was praised for is no longer a distinction at all — there is one compiler, and it has nested patterns. This entry's original grep missed nothing; the two comments simply wrap the phrase across a line break, which is why a later search for `no nested patterns` finds neither. Widened and re-costed as open list item 5, which folds in three more sites of the same shape (`corelib/httpd/httpd.ty:100-109`, `corelib/httpd/httpd.ty:281-289`, `tools/lsp.ty:259`).
+- **`plan.md` phase 10** — **this file's own `path:line` citations drift silently, and no gate can see it.** 30 of the 71 spot-checked in the CLOSED notes no longer point at what they name; the worst are into `src/tychoc.c`, where every compiler phase shifts everything below it — the literal-interning emit site cited by the `\r` item as `src/tychoc.c:8671` is now `src/tychoc.c:9455`, `copy_into`'s `T_BYTES` case cited by phase 1b as `src/tychoc.c:8217` is now `src/tychoc.c:8551`, and `instantiate_generic` cited by the qualified-name item as `src/tychoc.c:6895` is now `src/tychoc.c:7482`. Every closure is still *true*; the coordinates are not — and the three `as` values above are now the pre-repair record, `plan.md` phase 6 having repointed this file's live citations to today's lines. `scripts/check_citations.py` cannot catch it by construction: it verifies the 22 **anchored** `path:line@token` citations against the token and only bounds-checks the 1646 **bare** ones, and every citation in this file is bare. The fix is a mechanical pass to anchored form, after which the gate polices them — and the reason it matters is that this file is the place a future reader goes to find out why something is the way it is. Left unfixed on scope. **Postscript, 2026-07-30 — re-measured, and the repair phase 6 performed has already been undone by sixty commits.** Fifteen citations opened and checked at `afa67da`: **11 are wrong again**, every one of them into `src/tychoc.c`, and the four that survived are all into files that barely moved. So the repair-in-place strategy has now been tried once and measured to last about four days of active work on the compiler. The gate's blind spot is unchanged and structural — bounds-checking a bare ref into a 12k-line file can never fail. **A second dimension of the same defect was found here and repaired a different way:** 51 "`plan.md` phase N" references in this file now name an unrelated plan, because both plans they meant were archived; that was fixed with one definitional note at the top rather than 51 rewrites, on the reasoning that a rewrite would go stale at the next archive and a definition will not. **The two together make the case: repointing is not the fix, re-anchoring is** — and where a stable name exists, use it instead of a coordinate. Open list item 10.
 - **`plan.md` phase 17 — the bare `src/tychoc.c:N` citation population, retired here by decision rather than swept.** Re-derived at `b5c8406`: **1457** refs name `src/tychoc.c` — 660 inside the frozen `docs/internals/plan-*-DONE.md` archives, 797 live. Of the whole population **139 are anchored `path:N@token` and every one of them is correct** (checked by re-running the anchor test over all of them: 0 mismatches), so the anchored half is not the problem and a sweep would not move it. The other **1318 are bare**, which the gate checks for bounds only — and bounds is exactly the property a drifted citation keeps, because `src/tychoc.c` is 12774 lines and almost any stale number is still *inside* it. **Two classes were considered for repointing and both were deliberately refused.** (1) The **127 refs in dated design records** — 90 in non-archived `docs/internals/*.md`, 37 in `docs/rfc/*.md`, led by `generics-stage2-body-cloning.md` (52), `generics-gap-fixes-plan.md` (44) and `ffi-threading-design-review.md` (26). A study that dates itself in its own filename is a photograph of the tree on that day; repointing its citations yields a document whose prose is dated and whose coordinates are current, and nothing tells the reader the two halves disagree. A stale ref in a dated record is legible; a fresh one is a lie the reader cannot detect. (2) The refs inside `plan.md`'s **completed-phase evidence blocks** — renumbering these makes a phase claim it verified something it never looked at, which is the same rule phase 4 settled for the archives. **What would actually fix the bare population is not a sweep but a conversion**: each ref re-read against the line it names and rewritten anchored, after which the gate polices it forever. That is 1318 hand-verified citations. Batch 10's phase-44 work is a 42-ref instance of exactly that job and it took a batch. Recorded, not actioned — and note this is the same defect as the entry above it, counted across the whole tree instead of this file.
