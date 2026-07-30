@@ -409,15 +409,23 @@ The gate exists (`scripts/spec_check.sh`, CI step 17) and grows in tiers:
   grammar; (b) every fixture cited in the E.2 coverage matrix is asserted to
   exist, so a renamed or removed fixture breaks the build instead of leaving a
   dangling citation.
-- **Tier 2 — example execution on both compilers (landed).**
+- **Tier 2 — example execution on the reference compiler (landed).**
   `scripts/spec_examples.sh` extracts every runnable example — a ` ```tycho `
   block immediately followed by a ` ```output ` block
   ([§2.3](00-conventions.md#23-examples-and-code-fences)) — and builds it with
-  **both** the reference `tychoc` and the self-hosted `tychoc0`, runs each, and
-  asserts both produce stdout equal to the `output` block. This is the
-  two-compiler oracle of E.1 applied to the spec's own examples: a divergence
-  between the compilers, or between either compiler and the shown output, is a
-  defect that blocks the build. Most spec code blocks are illustrative fragments
-  or grammar and are correctly skipped; new complete programs added with an
-  `output` block are gated automatically. (Building `tychoc0` from source each
-  run is why this check dominates `make spec-check`'s wall time.)
+  the reference `tychoc`, runs it, and asserts its stdout equals the `output`
+  block. `tychoc` is the reference implementation
+  ([§1.3](00-conventions.md#13-conformance)), so a spec example is conformant
+  iff `tychoc` produces the documented output: a divergence between the compiler
+  and the shown output is a defect that blocks the build. Every example the gate
+  runs is reported `(tychoc)` — one compiler, one leg. Most spec code blocks are
+  illustrative fragments or grammar and are correctly skipped; new complete
+  programs added with an `output` block are gated automatically.
+  (**Historical, through 2026-07-26:** each example was also built with the
+  self-hosted `tychoc0` and run, and both outputs had to agree — the
+  two-compiler oracle of E.1 applied to the spec's own examples, with a
+  divergence *between the compilers* likewise blocking the build. Building
+  `tychoc0` from source each run was then what dominated `make spec-check`'s
+  wall time. That leg was cut when `tychoc0` was frozen; as of 2026-07-29
+  nothing builds it at all — see the historical note in E.1, and
+  `scripts/spec_examples.sh:13-16`, which records the same.)
