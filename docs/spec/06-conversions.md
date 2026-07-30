@@ -43,6 +43,7 @@ consulted (so a newtype over the listed base is accepted).
 | `to_bool(x)` | a `bool`-newtype | `bool` | newtype unwrap |
 | `to_under(x)` | any newtype | its underlying type | generic newtype unwrap, zero-cost |
 | `to_ptr(n)` | `int` | `ptr` | FFI sentinel pointer; never dereferenced |
+| `to_char(n)` | `int` | `char` | the byte value as a `char`; a value outside `0..255` **aborts** ([§29.4](16-builtins.md#294-conversions)) — the same conversion as `chr(n)`, differing only in whether the byte comes back as a `char` or a one-byte `string`. The yielded type has no keyword ([§5.2.4](03-types.md#524-char)), so it is only ever inferred |
 
 Each takes exactly one argument. `str` is the conversion used by f-string
 interpolation ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals)):

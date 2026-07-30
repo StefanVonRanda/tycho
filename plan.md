@@ -4407,7 +4407,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
 
 ## Phases discovered by batch 6
 
-- [ ] **Phase 51** — **`char` is a real element type with no way to write its
+- [x] **Phase 51** — **`char` is a real element type with no way to write its
       name, no conversion into it, and no hex escape — and that is a language
       change, not cleanup.** Split out of phase 16, which batch 6 closed as
       "needs its own plan" after re-verifying all four symptoms against the
@@ -4438,6 +4438,134 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
   - Done when: each of the three has a decision recorded (implemented or
     declined with a reason), and §12/§16 match the tree.
   - Verify: `make test`, `sh scripts/spec_check.sh`.
+
+  > **Evidence (batch 12).** Two of the three implemented, one declined and
+  > filed. `src/tychoc.c` stayed at **12774 lines** across all four edits, by the
+  > batch-7/batch-11 discipline — measured first: 1373 bare and 55 anchored
+  > `src/tychoc.c:N` citations sit above the lexer edit point, so a single
+  > inserted line would have rotted 1373 refs that `scripts/check_citations.py`
+  > only bounds-checks. The gate's clean run below is the proof it held.
+  >
+  > **Fixtures first, as the brief required, and they earned it.** The narrow
+  > operator rule is `elem_arith_ok`'s char arm, `src/tychoc.c:1029@et == T_CHAR`.
+  > It could not be annotated, but it *is* reachable by inference: an array
+  > literal of `char_at` calls infers `[char]` without the type ever being
+  > written. Measured at HEAD, before any compiler change:
+  >
+  >     [char] + [char], [char] - [char]   compile and run
+  >     [char] * [char]   error: `*` is not defined element-wise on [char], because `*` is not defined on char
+  >     [char] / [char]   same shape
+  >     [char] % [char]   same shape -- but from src/tychoc.c:1025@TK_PERCENT, NOT the char arm
+  >
+  > That last line is why `%` got its own fixture: deleting the char arm at
+  > `src/tychoc.c:1029` would leave `tests/reject/char_elem_mod.ty` green and the
+  > other two red, so the three are not redundant. Four fixtures
+  > (`tests/char_elem_ops.ty` plus the three rejects) now pin a rule that
+  > previously had no element-wise witness at all — the pre-existing
+  > `tests/reject/char_int_*.ty` exercise the *scalar* char arm at
+  > `src/tychoc.c:6232-6234`, a different site.
+  >
+  > **Decision 1 — the type name: DECLINED, and the fork filed as phase 67.**
+  > Not a judgement call. The absence is **normative published text in four
+  > places**, all re-read: `docs/spec/03-types.md:75` ("arises by inference;
+  > there is no `char` type keyword"), `docs/spec/02-grammar.md:175` ("There is
+  > no `char` or `void` type spelling"), `docs/spec/01-lexical.md:116`, and
+  > `docs/spec/01-lexical.md:373` (the tree-sitter grammar is called *wrong* for
+  > listing `char` as a type keyword). It is also pinned by a fixture that
+  > predates this phase: `tests/reject/char_as_type.ty`, whose comment states the
+  > rule outright. Adding the name would falsify four sentences and turn a green
+  > reject red. The brief's own framing — that `[]char` beside `bytes` is a
+  > genuine design fork belonging to the user — is the second reason, and the
+  > two parse sites re-derived (`src/tychoc.c:2141` for a named-type position,
+  > `src/tychoc.c:2159` for the keyword switch) are recorded in phase 67 so the
+  > work is one edit if the user says yes.
+  >
+  > **Decision 2 — `to_char`: IMPLEMENTED, aborting out of range.** The brief
+  > asked for the established answer rather than a fourth. There are four
+  > candidates in tree and they split cleanly two-and-two:
+  >
+  >     chr(n)            int -> one-byte string   ABORTS outside 0..255
+  >     to_int(float)     float -> int             ABORTS (runtime/tycho_rt.c:185-187)
+  >     to_u8 .. to_i64   numeric -> fixed width   TOTAL, wraps
+  >     char +/- int      arithmetic on a byte     wraps to a byte
+  >
+  > The abort side wins on a stated rule, not a majority: `runtime/tycho_rt.c:1180-1182`
+  > says of `chr` "A value outside 0..255 is a program error and aborts cleanly
+  > (like a bad index), rather than silently masking to a byte." That is the same
+  > domain (`0..255`) and the same direction as `to_char`. The wrapping pair are a
+  > different category — `to_u8` is documented as a **total reinterpretation**
+  > (`docs/spec/06-conversions.md:40`), and `char ± int` is arithmetic, whose
+  > wrap is separately normative at `docs/spec/03-types.md:76-77`.
+  >
+  > Implementation reuses `tycho_chr` rather than adding a runtime function, on
+  > purpose: `to_char` therefore emits **no new `tycho:` trap text**, so the
+  > rtparity oracle (CI step `[2d/13]`) sees nothing new, and the abort is
+  > byte-identical to the one `tests/abort/chr_oob.ty` already pins. Two limits
+  > were accepted rather than fixed, and both are written into
+  > `docs/spec/16-builtins.md` rather than left for a reader to discover: the
+  > abort message names `chr` even when the call was `to_char`, and `to_char` is
+  > **not** added to `is_ufcs_builtin` — that list carries a "Kept byte-identical
+  > with tychoc0.ty's is_ufcs_builtin" invariant at `src/tychoc.c:4869`, and
+  > `compiler/tychoc0.ty` can no longer be built since the frontparity retirement,
+  > so the invariant cannot be re-established once broken. `to_char(n)` is the
+  > spelling; `n.to_char()` is not.
+  >
+  > **Decision 3 — `\xNN`: IMPLEMENTED in char literals, DECLINED in strings.**
+  > The brief's warning was correct and `docs/spec/01-lexical.md` §3.9.4 states it
+  > verbatim: joining is defined on the literals' **escaped source text** and is
+  > sound only because every escape is exactly two characters, so a greedy `\x`
+  > absorbs a hex digit across a join — `"\x4" "1"` would mean one byte where the
+  > author wrote two. The same paragraph is the recorded reason `\0` was kept out.
+  > That reason is about **representation, not hex**, which is exactly why it does
+  > not transfer to a char literal: `src/tychoc.c:452-477` decodes the escape to a
+  > byte in `ival` at lex time, and it never reaches a C string literal. `\0` was
+  > already legal in a char literal and illegal in a string for that same
+  > asymmetry, so `\xNN` joins an existing precedent rather than creating one.
+  > Fixed at **exactly two** hex digits — `'\x4'` is an error, not a short read —
+  > because a variable-width `\x` is the C behaviour being avoided. Verified:
+  >
+  >     '\x41' == 'A'         true      '\x0a' == '\n'     true (and '\x0A')
+  >     to_int('\x00')        0         to_int('\xFF')     255
+  >     '\x4'                 error: \x takes exactly two hex digits (e.g. '\x41')
+  >     '\xZ1'                same
+  >     "\x41"                error: unsupported escape \x (use \n \t \r \\ \")   <- decision 3's decline, still red
+  >     to_char(300)          tycho: chr(300) out of byte range 0..255
+  >
+  > **Spec brought level with the tree.** §12's `char` row
+  > (`docs/spec/12-aggregates.md:258`) already matched the compiler but had no
+  > witness; it now names all four fixtures and explains why `%`'s is separate.
+  > §16 gained the `to_char` row and its out-of-range reasoning; §5.2.4 gained
+  > `to_char` and a plain statement that the missing keyword is what makes the
+  > narrow operator set hard to test; §3.9.3 and Appendix A gained the `\xNN`
+  > grammar (both edited — `spec_check.sh` compares them); §3.9.4's "the reason
+  > `\0` and `\xNN` are not in the escape set" now says *this* escape set and
+  > points at the char-literal exception; Appendix E gained three rows.
+  >
+  > **Gates, run one per command in the foreground. `make ci` NOT run** (no CI
+  > step added or altered — `to_char` deliberately introduces no new runtime trap,
+  > and no `editors/` or `tools/` file enumerates builtin names, so
+  > `editors-check` and `tools_check.sh` are untouched by construction):
+  >
+  >     make test                        -> passed: 560   failed: 0   all green
+  >     sh scripts/spec_check.sh         -> Appendix A grammar matches §3/§4 (ok)
+  >                                         all Appendix E fixture citations resolve (ok)
+  >                                         9 runnable example(s), all pass
+  >     python3 scripts/check_citations.py -> ok (165 anchored contain the token they name,
+  >                                         2616 bare in bounds, 129 source->doc citations
+  >                                         resolve, 171 source->source in bounds,
+  >                                         12 source->source anchored)
+  >     sh scripts/check_links.sh        -> ok (134 markdown files, no dead relative links)
+  >
+  > **560 = 552 + 8**, every unit accounted for: 3 positives
+  > (`tests/char_elem_ops.ty`, `tests/char_to_char.ty`,
+  > `tests/char_hex_escape.ty`) and 5 rejects (`tests/reject/char_elem_mul.ty`,
+  > `char_elem_div.ty`, `char_elem_mod.ty`, `hex_escape_in_string.ty`,
+  > `hex_escape_one_digit.ty`). No existing count moved.
+  >
+  > **What is NOT verified.** `make ci`, `sh scripts/asan_self.sh`,
+  > `sh scripts/tools_check.sh` and `make editors-check` were not run — out of
+  > this phase's stated gate budget. The reasoning above for why none of them can
+  > redden is a source argument, not a measurement.
 
 - [x] **Phase 52** — **the default build leaves `<base>.c` beside the source
       too.** Found by batch 6 while closing phase 25, which named only
@@ -6293,3 +6421,52 @@ conclusion is that it needs a separate plan.
   by exactly one, the drifting number being removed rather than repointed;
   `link check: ok (134 markdown files)`; `spec-check` all three legs green, 9
   runnable examples pass. No compiled gate run: Markdown only.
+
+## Phases discovered by batch 12
+
+- [ ] **Phase 67** — **the question phase 51 could not answer for the user: does
+      `[]char` exist, and if so what is it for beside `bytes`?** Phase 51 declined
+      to make `char` spellable and this is why. The decline was on evidence, not
+      taste: the absence of a `char` type keyword is asserted normatively in
+      `docs/spec/03-types.md:75`, `docs/spec/02-grammar.md:175`,
+      `docs/spec/01-lexical.md:116` and again at `docs/spec/01-lexical.md:373`
+      (which calls the tree-sitter grammar **wrong** for listing `char` as a type
+      keyword), and it is pinned by `tests/reject/char_as_type.ty`. Four published
+      sentences and a green fixture are not something an agent should overturn on
+      its own initiative.
+  - **The actual question, stated so it can be answered yes or no:** if `char`
+    becomes writable, `[]char` becomes writable with it, and the tree then has
+    **two spellings of a byte sequence with different operator sets** —
+    `bytes`, which already has `len`, indexing, slicing and concatenation
+    (`docs/spec/03-types.md:128`, and batch 7's phase 7 added the rest), and
+    `[]char`, which would get the element-wise arithmetic table instead
+    (`docs/spec/12-aggregates.md:258`: `+` and `-` only). Neither can be
+    converted to the other today. Three answers are coherent:
+    1. **No** — keep `char` inference-only. Costs nothing, changes nothing, and
+       is what the spec currently says. This is the status quo and needs no work.
+    2. **Yes, scalar only** — `char` becomes a type keyword usable in a parameter,
+       a return and a field, but `[]char` and `[N]char` stay refused explicitly,
+       with a diagnostic naming `bytes` as the byte-sequence type. Keeps one
+       spelling for a byte sequence.
+    3. **Yes, fully** — `[]char` is a first-class array and the overlap with
+       `bytes` is accepted, with §12/§16 documenting when to reach for which.
+  - **The work if the answer is 2 or 3 is small and already located.** Two parse
+    sites reject `char`, re-derived at batch 12 and both still current: a named
+    type position falls through to `src/tychoc.c:2141@unknown type` (`char` is
+    lexed as an identifier, so there is no `TK_KW_CHAR` — that is why the two
+    sites differ), and the keyword switch's `src/tychoc.c:2159@expected a type`
+    is where a `TK_KW_CHAR` case would land. `T_CHAR` already has a C
+    representation (`src/tychoc.c:1361`), a diagnostic spelling
+    (`src/tychoc.c:7435`) and a full operator story; only the *name* is missing.
+  - **Whichever answer, it is a spec change first.** The four sentences above and
+    `tests/reject/char_as_type.ty` must be rewritten or deleted in the same
+    commit as the parser change, or the tree ships a spec that contradicts its
+    compiler. Answer 1 means editing nothing.
+  - Done when: the user has answered, and either the tree is unchanged with the
+    answer recorded here, or the parse sites, the four spec sentences and the
+    fixture have all moved together.
+  - Verify (answers 2 and 3 only): `make test`, `sh scripts/spec_check.sh`,
+    `python3 scripts/check_citations.py`, and — because a new type keyword
+    changes what every `.ty` file in the tree may contain — `make editors-check`
+    and `sh scripts/tools_check.sh`, sequenced per `CLAUDE.md`'s "tooling before
+    corpus".

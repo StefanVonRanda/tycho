@@ -104,6 +104,7 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_bool(x)` | A `bool`-newtype → `bool` (unwrap). | magic |
 | `to_under(x)` | Any newtype → its underlying type (generic zero-cost unwrap). | magic |
 | `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`); a value outside `0..255` **aborts**. | Sig |
+| `to_char(n)` | `int -> char`: the byte value `n` (`0`–`255`) as a [`char`](03-types.md#524-char); a value outside `0..255` **aborts**, with `chr`'s message — it is the same conversion, differing only in whether the byte comes back as a `char` or as a one-byte `string`. | Sig |
 | `to_ptr(n)` | `int -> ptr`: an opaque FFI sentinel pointer, never dereferenced ([§24](14-ffi.md)). | Sig |
 | `to_u8`…`to_i64`, `to_f32` | numeric `-> ` the named fixed-width type ([§5.2.7](03-types.md#527-fixed-width-integers-u8u16u32u64-i8i16i32i64)); narrow/reinterpret, total. | Sig |
 | `is_null(p)` | `ptr -> bool`: test an opaque FFI pointer for `NULL` ([§24](14-ffi.md)). | Sig |
@@ -113,10 +114,25 @@ The base-specific `to_int`/`to_float`/`to_str`/`to_bool` and the generic
 [§5.4](03-types.md#54-newtypes)). `str(char)` yields the char's one-byte glyph
 string ([§5.2.4](03-types.md#524-char)).
 
-> Provenance: conversion magic `src/tychoc.c:5650-5706`; `chr` `Sig` `:4520@.name="chr"`,
+`to_char` is the **only** way into `char` from an `int`, and its result type
+cannot be written down — `char` has no type keyword ([§5.2.4](03-types.md#524-char)),
+so `to_char`, like `char_at`, is reached through inference alone. Its
+out-of-range answer is an **abort**, not a wrap, following `chr` and
+`to_int(float)`: those are conversions with a *domain*, and a value outside it is
+a program error. The `to_u8`…`to_i64` family wraps instead, but those are
+documented as **total** reinterpretations — a different category, not a
+counter-example. Two limits are deliberate and recorded here rather than fixed:
+the abort message names `chr` even when the call was `to_char` (one runtime trap
+serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is the
+only spelling — `n.to_char()` is not.
+
+> Provenance: conversion magic `src/tychoc.c:5650-5706`; `chr` and `to_char` `Sig`
+> `:4520@.name="to_char"`, their shared codegen `:9190-9192`;
 > `is_null`/`to_ptr` `Sig` `:4531-4532`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1057-1061` /
-> `sized_conv_target` `:1046-1056`, resolved inline at `:5666-5672`.
+> `sized_conv_target` `:1046-1056`, resolved inline at `:5666-5672`. The abort
+> both share is `runtime/tycho_rt.c:1184@out of byte range`. Conformance:
+> `tests/char_to_char.ty`, `tests/abort/chr_oob.ty`.
 
 ## 29.5 Strings
 

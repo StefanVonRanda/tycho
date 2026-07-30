@@ -240,15 +240,32 @@ Two disambiguation rules are normative:
 
 ```ebnf
 CharLit ::= "'" ( CharEscape | (any byte except "'", "\", newline) ) "'"
-CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" )
+CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" ) | "\x" HexDigit HexDigit
+HexDigit ::= "0".."9" | "a".."f" | "A".."F"
 ```
 
 A character literal is delimited by single quotes and denotes exactly **one
 byte** (a value `0`–`255`) of type `char`. The supported escapes are `\n`, `\t`,
-`\r`, `\0`, `\\`, and `\'`. An empty literal (`''`), an unterminated literal, or
-one holding more than one byte is a lexical error.
+`\r`, `\0`, `\\`, `\'`, and `\xNN`. An empty literal (`''`), an unterminated
+literal, or one holding more than one byte is a lexical error.
 
-> Provenance: `src/tychoc.c:450-473`.
+`\xNN` takes **exactly two** hex digits, in either case: `'\x41'` is `'A'` and
+`'\x0a'` is `'\n'`. The fixed width is normative and is not C's greedy `\x`;
+`'\x4'` is a lexical error rather than a short read. Together with `\0` it makes
+every one of the 256 byte values writable as a literal.
+
+**`\xNN` is a character-literal escape only** — a string literal still rejects it
+([§3.9.4](#394-string-literals)), and for a reason that is about representation
+rather than about hex. A character literal is decoded to its byte at lex time and
+never reaches a C string literal, whereas a string literal's text is carried as
+*escaped source* into codegen, where the adjacent-piece join is sound only while
+every escape is exactly two characters. `\0` has the same asymmetry, and for the
+same reason.
+
+> Provenance: `src/tychoc.c:452-477`; the `\x` arm `:464@case 'x'`; the escape
+> table `:462-463@case '0'`; the fixed-width refusal `:466@two hex digits`.
+> Conformance: `tests/char_hex_escape.ty`, `tests/reject/hex_escape_one_digit.ty`,
+> `tests/reject/hex_escape_in_string.ty`.
 
 ### 3.9.4 String literals
 
@@ -290,9 +307,12 @@ there is no backslash line-continuation. An **f-string never joins**
 already sugar for a `+` chain, so `f"a" "b"` and `"a" f"b"` are each a syntax
 error, as they were before joining existed. Joining is defined on the literals'
 *escaped source text*, which is sound only because every escape is exactly two
-characters — the reason `\0` and `\xNN` are not in the escape set (a greedy C-style
-`\x` would absorb a hex digit across a join, and a `\0` would truncate the
-interned literal, whose length comes from `strlen`).
+characters — the reason `\0` and `\xNN` are not in **this** escape set (a greedy
+C-style `\x` would absorb a hex digit across a join, so `"\x4" "1"` would mean one
+byte where the author wrote two, and a `\0` would truncate the interned literal,
+whose length comes from `strlen`). Both are legal in a *character* literal
+([§3.9.3](#393-character-literals)), which is decoded to a byte at lex time and so
+has no such exposure; the asymmetry is deliberate and normative.
 
 **Raw pieces.** A piece delimited by backticks — `` `…` `` — is a *raw* string
 piece. **No escape is interpreted inside it:** a backslash is a backslash, so

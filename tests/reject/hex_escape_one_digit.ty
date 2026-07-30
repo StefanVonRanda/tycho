@@ -1,0 +1,6 @@
+# `'\xNN'` takes EXACTLY two hex digits. One digit is a lexical error rather
+# than a short read, because a variable-width `\x` is precisely the C behaviour
+# the fixed form was chosen to avoid (docs/spec/01-lexical.md §3.9.3).
+fn main():
+    c := '\x4'
+    println(str(c))

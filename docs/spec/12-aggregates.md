@@ -262,6 +262,16 @@ scalar arithmetic and gets none here. `& | ^ << >>` are **not** element-wise —
 they are not arithmetic — so an array operand reaches the bitwise and shift rules
 of §13.2 and is refused there in their existing wording, unchanged.
 
+The `char` row is the one this table cannot demonstrate by annotation: `char` has
+no type keyword ([§5.2.4](03-types.md#524-char)), so a `[char]` is only ever
+reached by **inference** — an array literal of `char_at` calls, or of character
+literals. Its conformance witnesses are written that way: `tests/char_elem_ops.ty`
+for `+` and `-`, and `tests/reject/char_elem_mul.ty`,
+`tests/reject/char_elem_div.ty`, `tests/reject/char_elem_mod.ty` for the three
+operators the row excludes. `%` leaves by a different gate from `*` and `/`
+(`src/tychoc.c:1025@TK_PERCENT` rather than the `char` arm at
+`:1029@et == T_CHAR`), which is why it has a fixture of its own.
+
 **Both array kinds, and their two different mismatch rules.** For a `[N]T` the
 length is static, so both operands MUST have the same `N` and a mismatch is a
 **compile error** — the same requirement `==` already makes to compare two fixed

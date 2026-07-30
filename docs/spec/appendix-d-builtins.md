@@ -10,6 +10,7 @@ alphabetical locator only.
 | `channel` | concurrency | §29 / [§23](13-concurrency.md#231-channels) |
 | `char_at` | string | §29 / [§5.2.5](03-types.md#525-string) |
 | `chr` | conversion | §29 |
+| `to_char` | conversion | §29 / [§5.2.4](03-types.md#524-char) |
 | `clock` | time | §29 |
 | `close` | concurrency / handle | §29 / [§25](14-ffi.md#25-typed-handles) |
 | `die` | termination | §29 / [§14.8](10-statements.md#148-die-and-termination) |

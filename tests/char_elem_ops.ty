@@ -1,0 +1,34 @@
+# The `char` arm of the element-wise arithmetic table (src/tychoc.c:1029): `+`
+# and `-` are defined element-wise on a `[char]`, and `* / %` are not.
+#
+# This is the least directly testable rule in the resolver, because `char` has no
+# type keyword (docs/spec/03-types.md:75) so no annotation can name `[char]`.
+# It is reachable anyway through INFERENCE: `char_at(s, i)` (src/tychoc.c:4526)
+# yields a `char`, so an array literal of `char_at` calls infers `[char]` without
+# the type ever being written. That is the whole trick this fixture exists to
+# record -- before it, the only witnesses for the narrow rule were the SCALAR
+# rejects (tests/reject/char_int_mul.ty and friends), which exercise the char
+# arm at src/tychoc.c:6232-6234, not the element-wise one.
+#
+# The refusing half is tests/reject/char_elem_mul.ty, char_elem_div.ty and
+# char_elem_mod.ty -- one per operator the rule excludes.
+fn main():
+    lo := "abc"
+    sp := "   "
+    a  := [char_at(lo, 0), char_at(lo, 1), char_at(lo, 2)]   # ['a','b','c']
+    sh := [char_at(sp, 0), char_at(sp, 1), char_at(sp, 2)]   # three 0x20 bytes
+
+    # element-wise `-` on [char]: subtract the case bit, three chars at a time
+    up := a - sh
+    println(str(up[0] == 'A') + "," + str(up[1] == 'B') + "," + str(up[2] == 'C'))
+
+    # element-wise `+` on [char]: and back again
+    back := up + sh
+    println(str(back[0] == 'a') + "," + str(back[1] == 'b') + "," + str(back[2] == 'c'))
+
+    # the result really is a [char], not a widened [int]: it appends to a string
+    # as a glyph (docs/spec/09-expressions.md:36), which only a char does
+    s := ""
+    for i := 0; i < 3; i += 1:
+        s = s + up[i]
+    println(s)

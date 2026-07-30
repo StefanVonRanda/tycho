@@ -1,0 +1,8 @@
+# `/` is not defined element-wise on [char] -- the char arm of the element-wise
+# table (src/tychoc.c:1029) admits `+` and `-` only. Companion to
+# tests/reject/char_elem_mul.ty and tests/reject/char_elem_mod.ty.
+fn main():
+    s := "ABC"
+    a := [char_at(s, 0), char_at(s, 1)]
+    b := a / a
+    println(str(b[0]))
