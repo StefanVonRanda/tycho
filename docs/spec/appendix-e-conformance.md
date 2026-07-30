@@ -45,10 +45,24 @@ drawn from:
 > below that explains a fixture's *location* by "the frozen compiler would refuse
 > it" — the `corelib/test/` and `examples/corelib/` carve-outs, the `\r` and
 > adjacent-literal and nested-pattern constraints — describes a constraint **that
-> no longer binds**. the postfreeze lane (deleted 2026-07-29) was the first to go: it was folded back
-> into `tests/` and `tests/abort/` on 2026-07-29 and no longer exists. The
-> remaining fixtures have not been relocated yet; that is tracked as its own
-> phase. The clauses they back are normative either way.
+> no longer binds**. The postfreeze lane (deleted 2026-07-29) was the first to go:
+> it was folded back into `tests/` and `tests/abort/` on 2026-07-29 and no longer
+> exists.
+>
+> **2026-07-30 — the placement convention, settled.** The two remaining
+> freeze-displaced clauses now have `tests/` fixtures of their own:
+> `tests/crlf_adjacent` for §3.9.4's `\r` and adjacent-literal join, and
+> `tests/result_tuple` for §6.2(7)'s `Ok`/`Err` in a tuple literal. Note what did
+> **not** happen: nothing was *moved*. `corelib/test/csv`, `corelib/test/httpd`,
+> `corelib/test/result` and `server/main.ty` keep their coverage, because their
+> placement was over-determined — each is the lane for its own package and would
+> belong there with or without a freeze. What the freeze actually cost was the
+> `tests/` witness, not the corelib one, and that is what has been restored. The
+> convention from here is therefore the plain one, with no carve-out: **a clause
+> gets a `tests/` fixture; a package's own lane covers the package.** A rationale
+> below that still explains a *location* by the frozen compiler is history, kept
+> because it is why the gap existed, and each is marked. The clauses they back are
+> normative either way.
 
 ## E.2 The coverage matrix
 
@@ -70,7 +84,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §3.9.2 | float literals (exp / leading-dot forms) | `tests/float_exp`, `tests/float_dot`, `reject/float_exp_bad` |
 | §3.9.3 | character literals | `tests/char_basic`, `tests/char_byte` |
 | §3.9.4 | string literals; escapes; interior NUL | `tests/multiline_literals`, `tests/string_nul`, `reject/string_escape` |
-| §3.9.4 | `\r` escape; adjacent-literal join (multi-line string) | `corelib/test/csv`, `corelib/test/httpd` (`\r`), `server/main.ty`'s `error_body`/`usage` (join) — see the note below |
+| §3.9.4 | `\r` escape; adjacent-literal join (multi-line string) | `tests/crlf_adjacent`, plus `corelib/test/csv`, `corelib/test/httpd` (`\r`) and `server/main.ty`'s `error_body`/`usage` (join) |
 | §3.9.5 | f-string escape rule | `tests/reject/fstring_escape` |
 
 ### §5 Types
@@ -96,7 +110,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 |---|---|---|
 | §6.3 | `:=` / typed-decl synthesis | `tests/inference`, `reject/result_bare_decl` |
 | §6.4 | pending (ungrounded) types rejected | `tests/reject/infer_bare_empty`, `reject/infer_use_before_ground` |
-| §6.2(7) | a tuple literal is checked element-wise (a `Result` element grounds) | `corelib/test/result` (`outcome`) — no `tests/` fixture, see the note below |
+| §6.2(7) | a tuple literal is checked element-wise (a `Result` element grounds) | `tests/result_tuple`, `corelib/test/result` (`outcome`) |
 | §6.5 | branch unification for value `if`/`match` | `tests/if_expr`, `tests/match_expr`, `reject/if_expr_type_mismatch` |
 
 ### §7 Generics
@@ -136,7 +150,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
 | §12.2 | `const` (literal/folded); reassign/nonliteral rejected | `tests/const_toplevel`, `tests/const_expr`, `reject/const_reassign`, `reject/const_expr_divzero`, `reject/const_expr_localref` |
-| §12.2 | `const` folds `+` over two string literals | no `tests/` fixture — see the note below |
+| §12.2 | `const` folds `+` over two string literals | `tests/crlf_adjacent` (`GREET`) |
 | §12.3 | scope & shadowing rules | `tests/shadow_string`, `tests/shadow_call`, `reject/param_shadow`, `reject/dup_local` |
 | §12.4 | compound assignment | `tests/compound_assign`, `tests/compound_index_eval` |
 | §12.5 | name resolution; unknown name rejected | `tests/reject/unknown_var`, `reject/unknown_type`, `reject/unknown_fn_stmt` |
@@ -255,6 +269,15 @@ are flagged here so the gap is explicit rather than hidden:
   `tests/` would therefore redden two runners at a file that must not be edited
   (see E.1's `tychoc0` freeze). The same constraint is why `core:httpd` keeps
   `crlf()` instead of writing the literal.
+  **Closed 2026-07-30, and this clause is no longer flagged.** Both lanes were
+  retired on 2026-07-29 and nothing builds `tychoc0`, so the paragraph above is
+  history — kept because it is why the gap existed for as long as it did.
+  `tests/crlf_adjacent` now covers all three under the main golden loop: `\r` as
+  byte 13 (`term_bytes = 13,10,13,10`, and the CR/LF counts over a joined header
+  block), the adjacent join including a raw piece beside a cooked one, and
+  §12.2's `+` fold (`GREET`). The corelib and `server/` witnesses stay where they
+  are — they cover these bytes as a side effect of being their packages' lanes.
+  `core:httpd` keeping `crlf()` is now a style choice, not a constraint.
 - **§14.3.1 nested patterns and §6.2(7)'s tuple-element checking** — same
   mechanism, same conclusion: both are covered by `corelib/test/result`, which
   `corelib/run.sh` golden-validates and no runner feeds to the frozen `tychoc0`,
@@ -271,8 +294,12 @@ are flagged here so the gap is explicit rather than hidden:
   directory was protecting against: a `tychoc0` built on 2026-07-29 reported
   `parse: line 34: unexpected token` on the fixture (line 34 was the
   `Err(TooBig(n))` arm; the payload-free `Err(NotFound)` before it does not redden
-  it, because that grammar reads the name as a payload binding). §6.2(7) is unchanged by this and
-  keeps `corelib/test/result` as its only witness. Measured,
+  it, because that grammar reads the name as a payload binding).
+  **Amended again 2026-07-30, and this clause is no longer flagged:** §6.2(7) has
+  caught up — `tests/result_tuple` builds `Ok`/`Err` directly in a tuple literal
+  in a `return`, at a call site, with a payload-carrying `Err` variant and with a
+  heap `[int]` `Ok` payload. `corelib/test/result` keeps its `outcome` copy; it is
+  the `core:result` lane and exercises the combinators over it. Measured,
   not assumed: rewriting `httpd.read_request_capped` to `return (Err(why), buf)`
   makes `examples/webserver/run.sh` report `returning
   (Result(,httpd__ReqErr),str) but this function returns

@@ -70,15 +70,33 @@ else
     if grep -qiE 'runtime error|Sanitizer|ERROR: ' "$T/san.err"; then echo "FAIL: sanitizer report"; sed 's/^/      /' "$T/san.err"; fail=1; fi
 fi
 
-# PRE-EXISTING FAILURE, uncovered once the link above was fixed: expected.out
-# records a cache filename (`tycho_fetch_<hash>.json`) whose hash is derived from
-# the URL, and URL embeds $PWD -- so the golden is only reproducible in the
-# directory it was recorded in. On this box it wants e3de3da05e1cd879 and gets
-# 5124059f6a7ee320. Not caused by the tychoc0 retirement (the lane never reached
-# this comparison before, it died at the link step); not fixed here either,
-# because making the cache key path-independent is a core:http change. Tracked as
-# its own phase in plan.md. `make ci` does not run this lane (see Makefile).
-if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  fetch"; fi
+# THE GOLDEN IS BODY-DERIVED, NOT PATH-DERIVED. An earlier note here claimed the
+# `tycho_fetch_<hash>.json` cache name hashed the URL, and that the URL embeds
+# $PWD, so the golden could only reproduce in the directory it was recorded in.
+# That was wrong, and it mattered: it is why the real cause went unfixed. The
+# hash is `sha256.hex(body)` (examples/fetch/main.ty:45) sliced to 16 hex
+# (examples/fetch/main.ty:65) -- the response BODY, never the URL -- and the only
+# other URL-derived field is `path.base(url)` (examples/fetch/main.ty:46), a
+# basename. Nothing in the output depends on $PWD; running the same binary
+# against a copy of the fixture under an unrelated absolute path prints
+# byte-identical output.
+#
+# The actual fault was a STALE GOLDEN. `39d75be` (Hier -> Tycho) rewrote
+# fixture.json's body ("name": "hier" -> "tycho", 152 -> 153 bytes, hash
+# e3de3da05e1cd879 -> 5124059f6a7ee320) and textually renamed the `hier_fetch_`
+# prefix inside expected.out, but never re-recorded the `bytes`, `sha256` or the
+# hash embedded in the cache name -- so the golden describes the pre-rename body.
+# That commit's own message claims the dogfood digest goldens were re-recorded;
+# this one was not, and no lane runs it, so nothing said so. Re-recorded 2026-07-30.
+# `make ci` still does not run this lane (see Makefile) -- tracked in plan.md.
+#
+# RECORD is fail-closed: a golden is never written from a run that already
+# failed, or the first red build would overwrite the assertion with its own
+# broken output.
+if [ "$RECORD" = 1 ]; then
+    if [ "$fail" -ne 0 ]; then echo "FAIL: refusing to RECORD from a failed run"; exit 1; fi
+    cp "$T/c.out" "$golden"; echo "rec  fetch"
+fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden -- run RECORD=1"; fail=1; fi
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
