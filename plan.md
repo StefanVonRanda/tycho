@@ -71,7 +71,7 @@ and **both are the point**:
 
 ## Phases
 
-- [ ] **Phase 1 — the pool, on a toy workload**
+- [x] **Phase 1 — the pool, on a toy workload**
   - Scope: a new `tools/prunner/` (or similar — pick and say why) containing a
     Tycho program that takes a list of work items, fans them out over a bounded
     channel with `parallel for` + `select`/`recv` as `tests/conc/workers.ty:18-24`
@@ -85,6 +85,117 @@ and **both are the point**:
   - Done when: the toy pool runs K commands, returns K results with no losses
     across 10 runs, and the measured speedup is reported with the machine's ncpu.
   - Verify: run it; the 10-run no-loss check; the timing comparison. Not `make ci`.
+
+  **Evidence (2026-07-30).** New file: `tools/prunner/main.ty`. Built with
+  `./tychoc tools/prunner/main.ty -o <tmp>/prunner`; no Makefile target, no gate
+  wiring — phase 4 owns that.
+
+  **Directory: `tools/prunner/`, and it had to be a directory.** `tools/` holds
+  the Tycho-written tooling, but its three programs (`tools/tychofmt.ty`,
+  `tools/lsp.ty`, `tools/tycho.ty`) sit flat in it. This program must
+  `import "core:os"`, so it must carry a `package` header, and a `package` header
+  is exactly what switches tychoc into the directory scan — `src/tychoc.c:7757`
+  says the scan "is entered only when the entry file declares a `package`
+  header". A `package main` file dropped straight into `tools/` therefore
+  compiles all three siblings with it and dies on a duplicate `main`. Observed
+  the same mechanism first-hand while probing: a probe file in a scratch
+  directory was compiled together with an unrelated stray `a.ty` and reported
+  that file's syntax error under the name of a file I had not asked for. The
+  diagnostic at `src/tychoc.c:7779` exists for precisely this and its advice is
+  `mkdir`. `tools/prof/` is the existing subdirectory precedent.
+
+  **`core:os` call: `os.system`, not `os.run`.** `corelib/os/os.ty:32` inherits
+  the child's stdout/stderr and returns only the exit code; `corelib/os/os.ty:36`
+  adds a `popen(3)` pipe plus a captured string per job. This phase needs the
+  code and nothing else, `true`/`false` are silent, and interleaved capture is a
+  phase-2 problem — that is where a fixture's output has to be compared and
+  ordering starts to matter.
+
+  **No losses — 10 consecutive runs, K=243** (the fixture count, so the number is
+  the one phase 2 will face). The check is not a count: every result carries its
+  job index, and `tally` asserts index *i* arrived exactly once for every *i*, so
+  a lost job and a duplicated job are distinguishable. All ten runs identical:
+
+      run1   mode=pool n=243 results=243 unique=243 missing=0 dupes=0 ok=162 fail=81 wall_ms=19 maxconc=16 ncpu=16 NOLOSS
+      run2   ... wall_ms=18 maxconc=16 ncpu=16 NOLOSS
+      run3   ... wall_ms=18   run4 ... 17   run5 ... 18   run6 ... 18
+      run7   ... wall_ms=18   run8 ... 17   run9 ... 17   run10 ... 19
+      # every run: results=243 unique=243 missing=0 dupes=0 ok=162 fail=81 NOLOSS
+
+  **Timing, sequential vs pool. ncpu = 16** (`nproc`, and `ncpu()` agrees).
+
+      A: 243 trivial cmds   seq wall_ms=266  maxconc=1   |  pool wall_ms=18   maxconc=16   -> 14.8x
+      B: 64 cmds x 50ms     seq wall_ms=3453 maxconc=1   |  pool wall_ms=212  maxconc=16   -> 16.3x
+
+  **Observed worker count: 16 = ncpu**, and it is measured, not inferred. Each
+  result carries the monotonic `clock()` interval it occupied; `max_overlap`
+  counts intervals live at each interval's start (for intervals the maximum is
+  always attained at some start), so `maxconc` is the peak simultaneous
+  commands. Case B is the honest one: 64 items at 50ms over 16 workers is four
+  rounds = 200ms ideal, observed 212ms. Nothing is starved.
+
+  **The `min(N, ncpu)` / 64-chunk assumption: checked, and it holds.** The clamp
+  is `src/tychoc.c:10040`. It cannot bite at ncpu=16, so it was forced with
+  `TYCHO_THREADS`, K=200 at 50ms:
+
+      TYCHO_THREADS=32    maxconc=32  ncpu=32   wall_ms=371  NOLOSS
+      TYCHO_THREADS=64    maxconc=64  ncpu=64   wall_ms=217  NOLOSS
+      TYCHO_THREADS=100   maxconc=64  ncpu=100  wall_ms=218  NOLOSS
+
+  The cap is real and exactly 64, but it **limits width, it does not starve**:
+  200 items still came back 200, unique, at every setting. The Pre-flight's
+  "risk if wrong" — the cap interacting with the channel drain to starve workers
+  — did not happen. Note the third row: `ncpu()` reported 100 while the fan-out
+  was 64. See Phase 7.
+
+  **Running notes: what writing concurrent Tycho was actually like.** Raw
+  material for phase 3; phase 3 decides what earns a `FRICTION.md` entry.
+
+  - *The pool compiled first try, and that was the surprise.* The whole program —
+    two channels, a spawned producer, a spawned collector, a `parallel for` with
+    `select`/`recv`, `os.system` inside the body — built with no errors and no
+    warnings on the first `./tychoc`. Expectation going in, set by `FRICTION.md`,
+    was a fight.
+  - *The one real design constraint was not the affine channel.* It was
+    `docs/spec/13-concurrency.md:100`: the only outer-scope write a `parallel for`
+    body may perform is a `+`/`*` reduction on `int`/`float`. So results cannot be
+    `push`-ed anywhere from the body — `tests/conc/reject/parfor_push.ty` says
+    "parallel for cannot mutate captured variable 'xs' in place". A worker pool
+    whose results are per-item and not a scalar sum therefore **must** route them
+    out through a second channel. That is the shape of `run_pool`, and it was not
+    a choice.
+  - *`docs/spec/13-concurrency.md:127` cost less than the Pre-flight expected.*
+    The channel-cannot-escape rule forces the pool to be a scope rather than an
+    object, but `run_pool(cmds) -> [Res]` still reads as an ordinary function:
+    the channels are interior, the array of results comes out. Nothing had to be
+    contorted. The friction would start if two different call sites wanted to
+    share one pool.
+  - *A spawned task returning a heap array works and is the piece that makes this
+    tractable.* `collect(ch, n) -> [Res]` runs concurrently with the workers and
+    is `wait`-ed for its array. Without it, the results channel would have to be
+    sized to the whole job count — an unbounded buffer inside the thing whose
+    entire point is boundedness.
+  - *A struct passes through a channel cleanly.* `channel(Res, 16)` carrying
+    `{idx, code, t0, t1}` needed no string encoding and no parsing back. This was
+    probed before it was relied on, expecting `int` only.
+  - *The best diagnostic of the phase came from a warning, not an error.* An early
+    probe with a write-only results channel got: "nothing ever receives from
+    channel 'res', so a send parks once its buffer fills" — naming the variable
+    and the consequence. That is the deadlock, caught at compile time.
+  - *The worst diagnostic came from the directory scan* — see the directory
+    choice above. A stray sibling's error, reported against a file that had no
+    such line. `src/tychoc.c:7779` improves the duplicate-`main` case but not the
+    syntax-error case, which still names only the sibling's path.
+  - *Measuring concurrency needed no language support and there is no worker
+    identity.* Nothing exposes which chunk an iteration ran in, so "how many
+    workers actually ran" is not directly askable. Timestamping each item and
+    computing max interval overlap answers it exactly and cost nine lines. Worth
+    noting as a non-problem before someone proposes a thread-id builtin.
+  - *`ncpu()` is the only knob and `TYCHO_THREADS` is the only override.* There is
+    no way to ask for "8 workers here, 32 there" from inside the language; a
+    program that wants a narrower pool than ncpu has to be launched with the
+    environment variable set. For a fixture runner that will eventually want
+    `-j`, that is the next thing to hurt.
 
 - [ ] **Phase 2 — the real corpus, byte-identical report**
   - Scope: teach the program the actual fixture workload — compile each `.ty`,
@@ -144,6 +255,19 @@ and **both are the point**:
   the wrong plan.** `plan.md` rotates on archive, so cited phase numbers run to 63
   while the live plan starts again at 1. The citation gate cannot see them: there
   is no line number to check. `server/main.ty` alone has 13.
+
+- [ ] **Phase 7 — `ncpu()` reports a width the fan-out will not use.**
+  `docs/spec/16-builtins.md:251` defines `ncpu()` as "The `parallel for` fan-out
+  width (online CPUs; overridable by `TYCHO_THREADS`)". Phase 1 measured
+  `TYCHO_THREADS=100`: `ncpu()` returned 100 and the peak simultaneous
+  iterations were 64, because `src/tychoc.c:10040` clamps the chunk count to 64.
+  So the builtin's stated meaning is false above 64 — a program that sizes a
+  buffer or a work split from `ncpu()` over-provisions silently. This is
+  **distinct from** the `min(N, ncpu)` item already in "Out of scope": that one
+  is about the chunk count versus the spec's fan-out prose, this one is about
+  `ncpu()`'s own definition. Fix is one of: document the cap on the builtin,
+  make `ncpu()` return the clamped value, or lift the 64 (`HTask *_pts[64]` at
+  `src/tychoc.c:10041` is why it is 64). Deciding which is the work.
 
 ## Out of scope
 
