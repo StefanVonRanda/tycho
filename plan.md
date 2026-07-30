@@ -537,7 +537,7 @@ and **both are the point**:
     sugar is `tests/conc/parfor_chan.ty:16` and the guide does not name it. **This
     is what happened, not a hypothetical:** this plan's recon read
     `tests/conc/workers.ty` and copied the manual idiom into
-    `tools/prunner/main.ty:355-360`. Verified the sugar takes a `send` body with a
+    `tools/prunner/main.ty:406-411`. Verified the sugar takes a `send` body with a
     scratch program (200 sent, 200 received), so it would have removed the
     `0..<n` sizing, the `select` scaffolding and the `sent != n` invariant.
     Nothing in the language was in the way; one wrong pointer was. Phase 10.
@@ -591,7 +591,7 @@ and **both are the point**:
     synthetic 50 ms sleeps; the corpus ran at `ncpu()` = 16.
   - **No nested parallelism** — no `parallel for` inside a spawned task.
 
-- [ ] **Phase 4 — does it replace `tests/run.sh`?**
+- [x] **Phase 4 — does it replace `tests/run.sh`?**
   - Scope: a decision, with the evidence from phases 2 and 3, and its
     implementation if the answer is yes: wiring into the `Makefile` and
     `scripts/ci.sh`, or a recorded decision not to.
@@ -604,6 +604,261 @@ and **both are the point**:
   - Done when: the decision is written with its reasoning, and if it ships, the
     lane is in `make ci` and green.
   - Verify: if it ships, `make ci` once, observed. If it does not, the two doc gates.
+
+  **Evidence (2026-07-31, from head `7a6d547`).** Changed: `tools/prunner/main.ty`
+  (phase 9 closed, header rewritten), `Makefile` (a `build/prunner` rule, a
+  `prunner` alias, a `test-fast` lane; `test` untouched), `CLAUDE.md` (the gate
+  table row and the section that says when to reach for which), three citation
+  line numbers my `Makefile` insertion shifted, and this file. **`scripts/ci.sh`
+  is deliberately unchanged**, so `make ci` was NOT run — see the decision.
+
+  ### THE DECISION: it supplements. `make test` stays `tests/run.sh`.
+
+  It ships as `make test-fast`, an advisory lane. It does **not** replace the
+  sequential runner, and it is **not** in `scripts/ci.sh`. The agreement evidence
+  is not the reason — that evidence held up and was re-earned at this phase after
+  the code changed. The reason is a property of what the program *is*, and it is
+  the Pre-flight's own worst case arriving from a direction phases 1-3 never
+  looked at:
+
+  **prunner is compiled by the compiler it tests, so the judge is inside the
+  blast radius of the thing being judged.** Every verdict in the report comes out
+  of `judge()` (`tools/prunner/main.ty:362`), which is Tycho, built by `./tychoc`
+  from `src/tychoc.c`. A tychoc regression in string comparison, in `os.run`'s
+  exit code (`corelib/os/os.ty:36`), or in the `parallel for` fan-out does not
+  make the lane red — it lands inside the judge and can turn all 560 verdicts
+  green at once. `tests/run.sh` cannot fail that way: it scores with `cmp -s`,
+  `grep -q` and `test -s` (`tests/run.sh:87`, `tests/run.sh:205`,
+  `tests/run.sh:164`), programs that no change in this repo can break. "A gate
+  that is fast and occasionally wrong is worse than the slow one it replaces" is
+  the phase's own bar, and *silently green because the compiler broke* is the
+  worst instance of it.
+
+  This is the mistake `ROADMAP.md` already records the tree making once. The
+  `tychoc0` differential was retired on 2026-07-29 and `CLAUDE.md` says of it:
+  "**Nothing replaces them**: a change that silently narrows what `src/tychoc.c`
+  accepts no longer has a second implementation to disagree with it." Deleting
+  `tests/run.sh` would remove the second implementation of *the test harness* for
+  the same kind of convenience. `tests/run.sh` is kept runnable, kept as
+  `make test`, and kept as the definition of green.
+
+  Three smaller findings point the same way and are recorded so the decision can
+  be revisited on evidence rather than taste:
+
+  - **A prunner FAIL is less useful than a run.sh FAIL.** The parenthesised reason
+    is verbatim, but the six-space log/diff dump is not reproduced (phase 2 scope).
+  - **A hung fixture is worse under the pool.** `tests/run.sh` prints incrementally,
+    so a hang leaves the corpus prefix on screen and names where it stopped.
+    prunner prints nothing until every job is in (probe D below).
+  - **There is still no `-j`.** Width is `ncpu()` or a `TYCHO_THREADS` set on the
+    launch. A CI lane that must not saturate a shared runner cannot say so.
+
+  ### 1. The mid-run degradation test — the thing that had never been tested
+
+  Phase 3 named this the open unknown: "What happens to the other fifteen chunks
+  when one aborts is **unknown from this evidence**." Four probes, real output.
+
+  **Probe A — a runtime abort inside one `parallel for` iteration.** A 100-job
+  reduction of `run_pool`'s exact shape (bounded jobs channel, spawned producer,
+  spawned collector, `select`/`recv` body, results out through a second channel),
+  where job 40 indexes a 3-element array at 40 — computed from the job value, so
+  it cannot be folded:
+
+      $ ./tychoc <scratch>/deg/main.ty -o <scratch>/deg/probeA
+      built <scratch>/deg/probeA
+      $ timeout 30 <scratch>/deg/probeA
+      tycho: index 40 out of bounds (len 3)
+      PROBE_A rc=1
+      # "REACHED THE END: sent=… got=…" never printed
+
+  **One dead chunk kills the whole process.** No report, no summary, exit 1, the
+  `tycho:` message on stderr. The parallel runner degrades exactly the way the
+  Pre-flight says the sequential one does — "a sequential runner that dies takes
+  the report with it" — and there is no path where a dead worker leaves a tidy
+  green summary behind. This is the answer the phase was asked for, and it is the
+  good answer.
+
+  **Probe B — SIGKILL the real `build/prunner` 15 s into a 62 s run:**
+
+      rc=137  stdout_lines=0  stderr_bytes=0
+
+  Nothing at all is printed, because nothing is printed before every result is in.
+  `make` sees 137 and stops. Loud by absence.
+
+  **Probe C — destroy the runner's scratch root mid-run** (`TMPDIR` pointed at a
+  directory that was wiped and `chmod 500`-ed 15 s in, while the real corpus ran):
+
+      rc=1  stdout_lines=564  stderr_bytes=510
+      ok_lines=543   fail_lines=17
+      passed: 543   failed: 17
+      failed: calc char_elem_ops char_hex_escape char_ops char_to_char clock …
+      FAIL  calc  (native vs sanitizer output differ)
+      FAIL  char_elem_ops  (sanitizer cc)
+      FAIL  char_hex_escape  (native exit 2)
+      no_result=0   duplicate=0
+      stats mode=pool jobs=560 results=560 missing=0 wall_ms=62343 maxconc=16 ncpu=16 NOLOSS
+      # stderr: sh: 1: cannot create …/char_hex_escape/nout: Directory nonexistent
+
+  The damage surfaces as **17 loud FAILs and exit 1**, never as a green report.
+  The accounting survived the fault intact (`results=560 missing=0`), which is the
+  design working: the fault destroyed the *work*, not the *bookkeeping*, so no job
+  was lost — each one ran and returned a failing verdict. 17 rather than 400
+  because the wipe raced the run: jobs whose private directory was destroyed
+  mid-use failed, later jobs re-created theirs.
+
+  **Probe D — one job that never finishes** (`os.system("sleep 3600")` in job 40
+  of 100, same pool shape):
+
+      $ timeout 12 <scratch>/degd/probeD
+      PROBE_D rc=124 (still hung at 12s, nothing printed)
+
+  `collect` waits for exactly n results (`tools/prunner/main.ty:390`), so one
+  hung job hangs the runner forever with **no output at all**. `tests/run.sh`
+  hangs too — neither has a per-job timeout — but it prints incrementally, so it
+  at least names the fixture it stopped on. This is the one axis where the
+  parallel runner degrades *worse* than the sequential one, and it is a second
+  reason the sequential one stays.
+
+  ### 2. Phase 9 — closed here, as the prerequisite it was declared to be
+
+  `tools/prunner/main.ty` no longer compares any two byte sequences through a
+  Tycho string. Every comparison now shells out to the instrument `tests/run.sh`
+  uses at the corresponding line, over the file the child wrote:
+
+      run.sh                                    prunner (now)
+      tests/run.sh:84   grep -qiE …             os.run("grep -qiE …")     sanitizer_report
+      tests/run.sh:87   cmp -s nout sout        os.run("cmp -s …")        native vs sanitizer
+      tests/run.sh:104  cmp -s nout $g          os.run("cmp -s …")        output vs golden
+      tests/run.sh:164  [ ! -s rj.log ]         os.run("test -s …")       reject diagnostic
+      tests/run.sh:205  grep -q 'tycho:'        os.run("grep -q …")       abort message
+      tests/run.sh:230  cmp -s dg.log $g        os.run("cmp -s …")        diag vs golden
+      tests/run.sh:259  grep -q 'warning:'      os.run("grep -q …")       warning present
+      tests/run.sh:268  cmp -s wn.err $g        os.run("cmp -s …")        warning vs golden
+
+  The hazard was wider than phase 9 recorded. `io.read` stopping at a NUL was the
+  half that got written down; the other half is that **`os.run`'s capture is a
+  `string` too** — `osx_run_out(r) -> string` at `corelib/os/os.ty:28` — so the
+  reject lane's emptiness test and the diag lane's golden comparison were reading
+  through the same funnel, not only the golden reads. Redirecting each child's
+  scored stream to a file and comparing the file closes both halves at once, and
+  it needed no `core:os` change and no `io.read_bytes`. The failure direction that
+  mattered was the bad one: a truncated output equal to a truncated golden scores
+  `ok`, and a sanitizer report printed after a NUL would have been invisible.
+  Cost: 3-4 extra `popen` per fixture, and it is not measurable next to the two
+  `cc` invocations — 61867 ms before, 62044 ms after.
+
+  ### 3. Phase 8 — not a blocker, and here is why it is not
+
+  Phase 8 (a `tests/reject/` fixture with a `package` header is scored against
+  the whole directory) is inherited *identically* by both runners: prunner
+  transcribes `tests/run.sh:162-168`'s assertion, so both score such a fixture
+  `ok` for the same wrong reason. Replacing or supplementing changes nothing about
+  it, and shipping does not make it worse. **It should still be fixed, and fixed
+  in `tests/run.sh` first** — that is where the assertion lives, and prunner
+  should follow the oracle rather than lead it.
+
+  ### 4. What shipped
+
+      Makefile:118-134   build/prunner: tools/prunner/main.ty tychoc | build
+                         prunner: build/prunner
+                         test-fast: build/prunner   ->  @./build/prunner
+      CLAUDE.md          gate-table row + "make test-fast is the fast lane;
+                         make test is still the answer"
+
+  `make test` is byte-for-byte the rule it was (`Makefile:115-116`), so every
+  existing caller — `scripts/ci.sh:37`, `.githooks/pre-push`, anyone typing it —
+  gets exactly what it got before. `build/` is already gitignored
+  (`.gitignore:73`), so no artifact is committed. There is no new CI step, which
+  is why `make ci` was not run.
+
+  ### 5. Verification, real output
+
+      $ make prunner
+      built build/prunner                       # first try, again — three of three
+
+      $ make test-fast                          # the shipped lane
+      rc=0  wall=63s  lines=563
+      passed: 560   failed: 0
+      all green
+
+      $ make test                               # THE gate, unchanged
+      rc=0  wall=473s (7m53s)  lines=563
+      passed: 560   failed: 0
+      all green
+
+      $ cmp seq.txt p1.rep && echo BYTE-IDENTICAL
+      BYTE-IDENTICAL (unsorted, post-phase-9)
+      $ grep -cE '^(ok|FAIL)' seq.txt p1.rep
+      560   560
+      # 473 s -> 62 s = 7.63x. `--stats`: jobs=560 results=560 missing=0
+      # maxconc=16 ncpu=16 NOLOSS, errbytes=0.
+
+      $ sh scripts/tools_check.sh               # a .ty file changed: tychofmt + LSP
+      tools-check: ok                           (8 s)
+
+      $ python3 scripts/check_citations.py
+      citation check: ok (168 anchored contain the token they name, 2705 bare in
+      bounds, 140 source->doc citations resolve, 233 source->source in bounds,
+      12 source->source anchored)
+
+      $ sh scripts/check_links.sh
+      link check: ok (135 markdown files, no dead relative links)
+
+  The citation gate first came back with four stale refs — `Makefile:286@SKIPPED`
+  in `scripts/asan_self.sh:11`, `scripts/asan_self.sh:72`,
+  `scripts/check_citations.py:247` and `scripts/editors_check.sh:29`, all shifted
+  to 304 by the 18 lines this phase inserted above them. Repointed; that is the
+  gate doing its job on the phase's own change.
+
+  ### 6. A red gate this phase did not cause and did not fix — see Phase 13
+
+  `make editors-check` (`make ci` step `[9b]`) **is red at HEAD and was red before
+  this phase**: `editors/zed/README.md:14` claims 845 committed `.ty` files and
+  the tree has 846. The 846th is `tools/prunner/main.ty`, added by **this plan's
+  phase 1** (commit `1340548`), which never updated the count. It is one line, it
+  is outside this phase's scope lock, and `plan.md`'s own rule is that
+  out-of-scope work is filed rather than absorbed. Filed as Phase 13. **`make ci`
+  cannot go green until it is done**, which is a second reason this phase did not
+  run `make ci`: it would have burned nineteen minutes to rediscover a fact
+  `make editors-check` reported in three seconds.
+
+## Status — PLAN COMPLETE
+
+Four phases, four commits:
+
+    1340548  feat(tools): phase 1 — a bounded worker pool over a channel
+    9e7a090  feat(tools): phase 2 — the pool runs the real fixture corpus
+    7a6d547  docs: phase 3 — what writing a real concurrent Tycho program taught
+    (this)   feat(tooling): phase 4 — prunner supplements tests/run.sh as make test-fast
+
+**What shipped.** `tools/prunner/main.ty`, a 500-line Tycho program that runs the
+whole 560-fixture corpus over a bounded worker pool in 62 s against
+`tests/run.sh`'s 473 s (**7.63x**), producing a report byte-identical to it,
+unsorted, with per-job loss and duplication detectable by construction. It is
+wired as `make test-fast` and `make prunner`. **`make test` is unchanged and
+remains the gate**; `scripts/ci.sh` is untouched.
+
+**Both halves of the Goal were met.** The fast lane exists (1); and the exercise
+produced a real concurrent Tycho program whose findings are in phase 3 and in
+`FRICTION.md` — including one `FRICTION.md` item **disproved** in its stated
+premise (2).
+
+**What remains open**, in the order it matters:
+
+- **Phase 13 — `make ci` is red.** One stale number in `editors/zed/README.md`,
+  caused by this plan's phase 1. Nothing else in this plan can be confirmed by a
+  full sweep until it is fixed. Do this first.
+- **Phase 8** — the `tests/reject/` package-header hole. Both runners inherit it;
+  fix `tests/run.sh` first, then follow in prunner.
+- **Phases 10, 11, 12** — the documentation and corelib items phase 3 earned.
+- **Phase 7** — `ncpu()`'s definition above the 64-chunk cap.
+- **Phases 5, 6** — carried forward from the previous plan, untouched here.
+- **Not filed as a phase, but the next real question:** `scripts/asan_self.sh` is
+  561 sequential compiles and is the bigger half of `make ci`'s ~19 minutes. It
+  was out of scope until the pattern was proven. It is proven now — and the same
+  self-hosting objection does **not** apply with the same force there, because
+  that lane's verdict is "did the ASan-built compiler survive", not a golden
+  comparison. Worth its own plan.
 
 ## Carried forward
 
@@ -662,7 +917,7 @@ and **both are the point**:
   fixture.** Two parts, same subject, found by phase 3.
   - *Normative half.* `send` on a captured channel from inside a `parallel for`
     body is what routes per-item results out — it is what
-    `tools/prunner/main.ty:355-360` does and what
+    `tools/prunner/main.ty:406-411` does and what
     `docs/spec/13-concurrency.md:100` forces by permitting no other outer-scope
     write. Within §22 (`docs/spec/13-concurrency.md:76-121`) the only mention of a
     channel is that it may be the foreach source
@@ -710,6 +965,22 @@ and **both are the point**:
   says "valued", or add a `supplied(c, name)` that scans both and leave the two
   primitives alone. Whichever way it goes, `docs/guides/corelib.md` and the
   `corelib/test/cli` golden are the surface that moves. Verify: `make corelib`.
+
+- [ ] **Phase 13 — `make ci` is red on a stale count this plan created.**
+  `make editors-check` (`make ci` step `[9b]`) fails: `editors/zed/README.md:14`
+  says "845 committed `.ty` files", `git ls-files '*.ty' | wc -l` says 846. The
+  extra file is `tools/prunner/main.ty`, added by phase 1 (commit `1340548`); the
+  README was last touched by an unrelated commit (`31b2018`) and has been stale
+  ever since. Observed at phase 4, `make editors-check` in 3 s:
+  `STALE: editors/zed/README.md claims 845 committed .ty files, tree has 846.` /
+  `editors-check: FAIL`. Every other sub-lane in that script passed, including the
+  zed grammar over all 846 files. **Work:** change 845 to 846, then check whether
+  any sibling doc carries the same number (`grep -rn '845' editors/`), and decide
+  whether a count that goes stale on every added fixture belongs in prose at all —
+  `scripts/editors_check.sh:57-58` computes the real number, so the README could
+  cite the script instead of restating it. Filed rather than fixed because it is
+  outside phase 4's scope lock. **Verify:** `make editors-check` (3 s), then the
+  two doc gates. Not `make test`; nothing compiled moves.
 
 ## Out of scope
 

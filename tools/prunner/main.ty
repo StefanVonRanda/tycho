@@ -6,15 +6,27 @@
 # over sequential. Phase 2 -- this file -- replaces the toy workload with the
 # real one: compile each fixture, run it, compare it against its golden.
 #
-# Build (there is no Makefile target yet; wiring is phase 4's decision):
-#     ./tychoc tools/prunner/main.ty -o /tmp/prunner
-# Run from the repo root (every path below is repo-relative, exactly as
-# `tests/run.sh` is, and `tests/run.sh:31` cd's to the repo root for the same
-# reason):
-#     ./prunner                 # pool, the default
-#     ./prunner --mode=seq      # the same jobs one at a time -- the baseline
-#     ./prunner --mode=both     # both, for the timing comparison
-#     ./prunner --stats         # add the one-line loss/concurrency summary
+# Build and run, from the repo root:
+#     make test-fast            # builds build/prunner and runs it -- the whole lane
+#     make prunner              # build only
+# Or by hand (every path below is repo-relative, exactly as `tests/run.sh` is,
+# and `tests/run.sh:31` cd's to the repo root for the same reason):
+#     ./build/prunner                 # pool, the default
+#     ./build/prunner --mode=seq      # the same jobs one at a time -- the baseline
+#     ./build/prunner --mode=both     # both, for the timing comparison
+#     ./build/prunner --stats         # add the one-line loss/concurrency summary
+#
+# ---------------------------------------------------------------------------
+# THIS IS THE FAST LANE, NOT THE AUTHORITY. `make test` still runs
+# `tests/run.sh`, and phase 4 of `plan.md` decided that deliberately rather than
+# for lack of agreement: this program is compiled BY THE COMPILER IT TESTS, so a
+# tychoc regression in string comparison, in `os.run`'s exit code, or in the
+# `parallel for` fan-out lands inside the judge and can turn every verdict green
+# at once. `tests/run.sh` scores with `cmp`, `grep` and `test` -- programs no
+# change in this repo can break. Reach for this lane while iterating; let
+# `make test` be what says the tree is green, and diff the two when they
+# disagree (`--mode=seq` re-runs the same jobs one at a time in this program,
+# which separates "the pool did it" from "the judge did it").
 #
 # ---------------------------------------------------------------------------
 # LANES COVERED, AND WHY THESE.
@@ -47,16 +59,18 @@
 # HOW CAPTURED OUTPUT STAYS ATTRIBUTED TO ITS JOB.
 #
 # Phase 1 could use `os.system` (`corelib/os/os.ty:32`) because it wanted an
-# exit code and nothing else. This phase must compare a fixture's stdout against
-# a golden, so it needs `os.run` (`corelib/os/os.ty:36`), which pipes the child
-# through `popen(3)` and hands back `Output{code, out}`. Three things keep that
-# capture straight, and none of them is a lock:
+# exit code and nothing else. This one has to keep each fixture's stdout and
+# stderr apart from fifteen others', so it uses `os.run`
+# (`corelib/os/os.ty:36`), which pipes the child through `popen(3)` and hands
+# back `Output{code, out}`. Three things keep that straight, and none of them is
+# a lock:
 #
 #   1. `os.run` is SYNCHRONOUS INSIDE THE WORKER. The pipe is opened, drained and
 #      closed inside one `parallel for` iteration, so a captured string is only
 #      ever touched by the iteration that produced it. There is no shared stdout
 #      to interleave on -- that is exactly what `os.system` had and why phase 1
-#      could not have done this.
+#      could not have done this. (The capture is used for the child's EXIT CODE;
+#      what gets compared is always a file -- see "COMPARISON IS BYTE-EXACT".)
 #   2. EVERY child's stderr is redirected explicitly (`2>&1` when the merge is
 #      what `tests/run.sh` compares, `2>$d/serr` when it is scored separately).
 #      An unredirected stderr is inherited from the parent -- `corelib/os/os.ty:11`
@@ -76,6 +90,36 @@
 # array from the body. It is `send`-ed into a second channel carrying its own
 # index, and `scatter` below puts it back at that index. Attribution is
 # therefore by construction, not by arrival order.
+#
+# ---------------------------------------------------------------------------
+# COMPARISON IS BYTE-EXACT, AND IT IS THE ORACLE'S OWN INSTRUMENT.
+#
+# Every verdict below that compares two byte sequences shells out to the exact
+# tool `tests/run.sh` uses at the corresponding line -- `cmp -s`, `grep -q`,
+# `test -s` -- over a FILE the child wrote, never over a string this program
+# read back. That is not stylistic. `os.run` hands its capture back as a
+# `string` (`corelib/os/os.ty:36`, via the `osx_run_out(r) -> string` extern at
+# `corelib/os/os.ty:28`), and `io.read` returns a string too, so both stop at the
+# first NUL byte. A golden or a diagnostic containing a NUL would therefore have
+# been compared on its PREFIX ONLY, and the failure direction is the bad one: a
+# truncated output equal to a truncated golden scores `ok`. No golden in the tree
+# contains a NUL today, so the string form agreed with `tests/run.sh` on this
+# corpus -- but "agrees on today's data" is not the property a gate needs, and
+# this was `plan.md`'s phase 9. Comparison now cannot disagree with the oracle,
+# because it is the oracle's comparison.
+#
+# ---------------------------------------------------------------------------
+# WHAT HAPPENS WHEN A JOB DIES MID-RUN.
+#
+# Measured, not assumed (`plan.md` phase 4). A runtime abort inside one
+# `parallel for` iteration terminates the WHOLE PROCESS: the `tycho:` message
+# goes to stderr, the exit status is 1, and no report is printed at all. The
+# other fifteen chunks do not carry on and no summary is emitted -- so the
+# parallel runner degrades the same way the sequential one does, by taking the
+# report down with it. There is no path on which a dead worker leaves a tidy
+# green summary behind. The report-level defences below (`NO RESULT`,
+# `DUPLICATE RESULT`) cover the other direction: a result that is lost or
+# doubled in the channel while the process stays alive.
 #
 # ---------------------------------------------------------------------------
 # WHY THE REPORT IS BYTE-IDENTICAL ACROSS RUNS.
@@ -204,16 +248,15 @@ fn build_jobs() -> [Job]:
 # `tests/run.sh`. The reason strings are verbatim so a FAIL line is diffable
 # against the sequential runner's.
 
-# tests/run.sh:84 greps the sanitizer's stderr case-insensitively for four
-# patterns; lowercasing once and testing three is the same set, because
-# 'addresssanitizer' contains 'sanitizer'.
-fn sanitizer_report(serr: string) -> bool:
-    s := strings.to_lower(serr)
-    if strings.contains(s, "runtime error"):
-        return true
-    if strings.contains(s, "sanitizer"):
-        return true
-    return strings.contains(s, "error: ")
+# tests/run.sh:84's own grep, verbatim, over the same file. This used to read the
+# file with `io.read` and match in Tycho; it does not any more, and the reason is
+# the general one written up under "COMPARISON IS BYTE-EXACT" above -- `io.read`
+# returns a string and stops at the first NUL, so a sanitizer report printed
+# after one would have gone unnoticed HERE, in the direction that turns a real
+# failure into a PASS.
+fn sanitizer_report(f: string) -> bool:
+    return os.run("grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' " +
+                  f + " 2>/dev/null").code == 0
 
 # tests/run.sh:63-110, minus RECORD mode.
 fn judge_pos(j: Job, d: string) -> Verdict:
@@ -232,23 +275,26 @@ fn judge_pos(j: Job, d: string) -> Verdict:
                "-fwrapv -std=c11 -o " + san + " " + c + " -lm 2>" + d + "/log")
     if r.code != 0:
         return Verdict(0, "sanitizer cc")
-    # stdout is the thing being scored, so it is captured; stderr is discarded
+    # stdout is the thing being scored, so it goes to a FILE rather than through
+    # the capture pipe (see "COMPARISON IS BYTE-EXACT"); stderr is discarded
     # exactly as tests/run.sh:78 discards it.
-    nr := os.run(nat + " <" + j.stdin + " 2>/dev/null")
+    nr := os.run(nat + " <" + j.stdin + " >" + d + "/nout 2>/dev/null")
     if nr.code != 0:
         return Verdict(0, "native exit " + str(nr.code))
     # ASAN_OPTIONS is exported once at tests/run.sh:50; here it rides on the
     # command, because the pool has no process-global environment to set.
-    sr := os.run("ASAN_OPTIONS=detect_leaks=1 " + san + " <" + j.stdin + " 2>" + d + "/serr")
+    sr := os.run("ASAN_OPTIONS=detect_leaks=1 " + san + " <" + j.stdin + " >" + d +
+                 "/sout 2>" + d + "/serr")
     if sr.code != 0:
         return Verdict(0, "sanitizer exit " + str(sr.code))
-    if sanitizer_report(io.read(d + "/serr")):
+    if sanitizer_report(d + "/serr"):
         return Verdict(0, "sanitizer report")
-    if nr.out != sr.out:
+    # tests/run.sh:87 and tests/run.sh:104 -- both are `cmp -s`, and so are these.
+    if os.run("cmp -s " + d + "/nout " + d + "/sout").code != 0:
         return Verdict(0, "native vs sanitizer output differ")
     if not io.exists(j.golden):
         return Verdict(0, "no golden — run 'make test-update'")
-    if io.read(j.golden) != nr.out:
+    if os.run("cmp -s " + d + "/nout " + j.golden).code != 0:
         return Verdict(0, "output != golden (" + j.golden + ")")
     return Verdict(1, "")
 
@@ -256,10 +302,13 @@ fn judge_pos(j: Job, d: string) -> Verdict:
 # diagnostic must be non-empty -- `2>&1` into the captured pipe is the same
 # merge tests/run.sh:162 makes into a file.
 fn judge_reject(j: Job, d: string, what: string) -> Verdict:
-    r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/rj 2>&1")
+    r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/rj >" + d + "/rj.log 2>&1")
     if r.code == 0:
         return Verdict(0, "tychoc ACCEPTED an invalid " + what)
-    if r.out == "":
+    # tests/run.sh:164's `[ ! -s ]`, not a string test on a captured pipe: a
+    # diagnostic whose first byte is a NUL is a non-empty FILE and an empty
+    # STRING, and it is the file that is the truth.
+    if os.run("test -s " + d + "/rj.log").code != 0:
         return Verdict(0, "tychoc rejected but with no diagnostic")
     return Verdict(1, "")
 
@@ -274,18 +323,20 @@ fn judge_abort(j: Job, d: string) -> Verdict:
     x := os.run(d + "/ab.bin </dev/null >/dev/null 2>" + d + "/ab.err")
     if x.code == 0:
         return Verdict(0, "runtime abort did not fire (exit 0)")
-    if not strings.contains(io.read(d + "/ab.err"), "tycho:"):
+    # tests/run.sh:205's `grep -q 'tycho:'`, over the file rather than a read of it.
+    if os.run("grep -q 'tycho:' " + d + "/ab.err 2>/dev/null").code != 0:
         return Verdict(0, "died (exit " + str(x.code) + ") but without a 'tycho:' message")
     return Verdict(1, "")
 
 # tests/run.sh:218-236, minus RECORD mode.
 fn judge_diag(j: Job, d: string) -> Verdict:
-    r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/dg 2>&1")
+    r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/dg >" + d + "/dg.log 2>&1")
     if r.code == 0:
         return Verdict(0, "compiler ACCEPTED an invalid program")
     if not io.exists(j.golden):
         return Verdict(0, "no golden — run 'make test-update'")
-    if io.read(j.golden) != r.out:
+    # tests/run.sh:230 -- `cmp -s` of the merged log against the golden.
+    if os.run("cmp -s " + d + "/dg.log " + j.golden).code != 0:
         return Verdict(0, "diagnostic != golden (" + j.golden + ")")
     return Verdict(1, "")
 
@@ -295,14 +346,14 @@ fn judge_diag(j: Job, d: string) -> Verdict:
 fn judge_warn(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/wn >" + d + "/wn.out 2>" +
                 d + "/wn.err")
-    err := io.read(d + "/wn.err")
     if r.code != 0:
         return Verdict(0, "compiler REJECTED a valid program")
-    if not strings.contains(err, "warning:"):
+    # tests/run.sh:259 then tests/run.sh:268 -- `grep -q`, then `cmp -s`.
+    if os.run("grep -q 'warning:' " + d + "/wn.err 2>/dev/null").code != 0:
         return Verdict(0, "no warning emitted (the lint this fixture locks stopped firing)")
     if not io.exists(j.golden):
         return Verdict(0, "no golden — run 'make test-update'")
-    if io.read(j.golden) != err:
+    if os.run("cmp -s " + d + "/wn.err " + j.golden).code != 0:
         return Verdict(0, "warning != golden (" + j.golden + ")")
     return Verdict(1, "")
 

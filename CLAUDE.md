@@ -14,7 +14,8 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `make server-check` | ~4s | `server/main.ty`, `server/www/`, `server/run.sh`, and the `core:net` accept/recv/send path |
 | `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
 | `sh scripts/asan_self.sh` | minutes | `src/tychoc.c` under ASan/UBSan over the whole corpus |
-| `make test` | minutes | compiler or runtime behaviour, any fixture or golden |
+| `make test-fast` | ~1 min | the same 560 fixtures as `make test`, over a worker pool — **advisory, see below** |
+| `make test` | **~8 min** (473 s, measured 2026-07-31) | compiler or runtime behaviour, any fixture or golden |
 | `make ci` | **~19 min** | a new CI step, or a release |
 
 ### The rule
@@ -28,6 +29,26 @@ cheapest gate that can actually redden for your change.** Running a broader one
   phase adds a CI step. Not per phase. Not "to confirm". Once.
 - If you are unsure which gate covers your change, that is a question to ask,
   not a reason to run the expensive one.
+
+### `make test-fast` is the fast lane; `make test` is still the answer
+
+`make test-fast` runs the identical 560 fixtures through `tools/prunner/main.ty`,
+a Tycho program with a bounded worker pool: **473 s → 62 s, 7.6x**, and its report
+is byte-identical to `tests/run.sh`'s over the whole corpus, unsorted (`plan.md`
+phase 2, re-verified at phase 4). Both were measured on a 16-core box; width is
+`ncpu()`, narrowable only by launching with `TYCHO_THREADS=N`.
+
+Use it to iterate. **Do not use it as the gate**, and do not put it in
+`scripts/ci.sh`. prunner is compiled by the compiler it tests, so one tychoc
+regression — string comparison, `os.run`'s exit code, the `parallel for` fan-out —
+lands inside the judge and can turn all 560 verdicts green at once. `tests/run.sh`
+scores with `cmp`, `grep` and `test`, which no change in this repo can break, and
+it is the only independent implementation left after the `tychoc0` differential
+was retired (see "Two gates that used to be here"). When the two disagree,
+`tests/run.sh` is right by definition; `./build/prunner --mode=seq` re-runs the
+same jobs one at a time, which separates "the pool did it" from "the judge did
+it". A FAIL from prunner prints the same parenthesised reason but not the log
+dump — re-run `make test` for that.
 
 ### `make ci` is confirmation, not discovery — never debug with it
 
