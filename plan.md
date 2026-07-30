@@ -6498,3 +6498,38 @@ conclusion is that it needs a separate plan.
 
   Phase 51's other two decisions stand and are unaffected: `to_char` exists and
   aborts out of range, and `\xNN` works in char literals.
+
+## Status — ALL PHASES CLOSED, 2026-07-30
+
+**67 phases filed, 67 closed. `make ci` green, `CI_EXIT=0` observed.**
+
+The closing sweep reddened once before it passed, and the failure is worth
+recording because it was caused by the brief, not by the work. Phase 51 added
+`\xNN` to char literals; its gates were scoped to `make test` and
+`sh scripts/spec_check.sh` and it was told not to sweep, so nothing it could run
+would have shown that the editor grammars did not know the new escape. Three
+fixtures newly failed the zed corpus parse.
+
+`CLAUDE.md`'s "sequence tooling before corpus" rule was written earlier the same
+day, out of the phase 6/8 reordering, and then not applied when scoping phase 51.
+The rule was right; applying it is the part that has to happen every time.
+
+Fixed at `31b2018`: both grammars learned the escape, `tests/reject/hex_escape_one_digit.ty`
+joined the known-bad set as the lexical reject it is, and the zed README's corpus
+count went 837 → 845 — caught by the gate batch 3 built for exactly that, which
+has now fired on three separate occasions.
+
+**What the day shipped**, beyond the cleanup: backtick raw strings; element-wise
+array arithmetic with scalar broadcast; three-clause `for`, bare `for:` and
+`parallel for i in 0..<N:`; `range()` deleted across 566 sites; the `tychoc0`
+freeze lanes retired; bounds-check elision restored for the three-clause form;
+`to_char` and char-literal `\xNN`.
+
+**Three deliberate losses, all recorded rather than discovered later:** continuous
+proof that `tychoc0` accepts what `tychoc` accepts, the zero-step guarantee that
+died with `range()`, and — until phase 27 restored it — bounds-check elision.
+
+**Two things closed by decision rather than by work**, which is why the count
+reached zero: phase 17's remaining ~1300 bare citations were retired into
+`FRICTION.md` with the reason and the only real cure, and phase 67 declined the
+`char` type name on four normative spec sentences and a green reject fixture.
