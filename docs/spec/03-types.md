@@ -13,9 +13,9 @@ provide the widths and behavior stated here even where its backend's native
 types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
-> Provenance: scalar tags `src/tychoc.c:536-557`; C lowering `c_type`
-> `:1307-1347`; equality/ordering `:5875-5908`; newtype decl `parse_typedecl`
-> `:3935-3954`.
+> Provenance: scalar tags `src/tychoc.c:538-559`; C lowering `c_type`
+> `:1343-1383`; equality/ordering `:6045-6078`; newtype decl `parse_typedecl`
+> `:4105-4124`.
 
 ## 5.1 The type-identity model
 
@@ -200,8 +200,8 @@ bounds-checked (out-of-bounds aborts). Element types `void` and `bool` are
 (a `[bool]` is rejected at type-parse); a `bool` array is expressed through
 other means where needed.
 
-> Note: confirmed in source (dynamic `[T]` `src/tychoc.c:1688-1689`, fixed `[N]T`
-> `:1671-1673`); detailed in
+> Note: confirmed in source (dynamic `[T]` `src/tychoc.c:2033-2034`, fixed `[N]T`
+> `:2016-2018`); detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
 
 ### 5.3.2 Fixed-size arrays `[N]T`
@@ -296,7 +296,7 @@ as a top-level key type.
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 `k in m`, `delete m[k]`, `m.get`) are specified in §18.
 
-> Provenance: `map_of` `src/tychoc.c:1242-1271`; `key_hashable` `:1194-1208`.
+> Provenance: `map_of` `src/tychoc.c:1278-1307`; `key_hashable` `:1230-1244`.
 
 ### 5.3.6 Enums, `Option`, `Result`
 
@@ -374,16 +374,16 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 
 > Provenance: the `bounded` branch of `parse_type_inner`,
 > `src/tychoc.c:1903-1920@"bounded"` (capacity `:1866-1875`, element
-> restriction `:1877-1878`); its twin
+> restriction `:1931-1932`); its twin
 > `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
 > deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
 > with the unresolved-name guard at `:11908-11912@[b#`. The affine-element
 > rejection is a type-intern choke point in `src/tychoc.c`
 > (`arrc_sized_b` `src/tychoc.c:736-748@arrc_sized_b`, messages `:636@task_container_err` and `:676@chan_container_err`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
-> Rejections: slice `src/tychoc.c:4996-4997`, `pop` `:5647-5648`, `reserve`
+> Rejections: slice `src/tychoc.c:5166-5167`, `pop` `:5817-5818`, `reserve`
 > `:5839@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
-> `:11197-11200`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
+> `:11698-11701`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
 > `tests/reject/bounded_nonconst_cap.ty`,
@@ -394,8 +394,8 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > a return type) and `tests/fixarr_aggregate.ty` for the `[N]T` twin. The
 > inline element is emitted inside the by-value containment DFS — `[N]T` and
 > `bounded[N]T` are ordered with the struct/tuple/Option bodies rather than with
-> the pointer-shaped arrays (`src/tychoc.c:10598-10688`, with `inline_arrc`/
-> `needs_body_first` at `:10590-10596`; tychoc0's `comp_dep_types`
+> the pointer-shaped arrays (`src/tychoc.c:11099-11189`, with `inline_arrc`/
+> `needs_body_first` at `:11091-11097`; tychoc0's `comp_dep_types`
 > `compiler/tychoc0.ty:10241-10268` and `emit_comp_body` `:10278-10302`) — which is what makes an aggregate element compile; the
 > infinite-type rejection falls out of the same DFS
 > (`tests/reject/inline_arr_self_elem.ty`).
@@ -424,7 +424,7 @@ Unwrapping to the underlying value uses the base-specific `to_int`/`to_float`/
 `to_str`/`to_bool` or the generic `to_under` (§8). A newtype over `int` or
 `string` is a valid map key carrying its wrapped identity (§5.3.5).
 
-> Provenance: underlying restriction `src/tychoc.c:3947-3949`; its twin
+> Provenance: underlying restriction `src/tychoc.c:4117-4119`; its twin
 > `newtype_under_ok` `compiler/tychoc0.ty:3126-3139`, called from
 > `parse_newtype` `:3141-3154`. Fixtures: `tests/reject/newtype_under_option.ty`
 > and its eleven siblings (`_result`, `_enum`, `_soa`, `_newtype`, `_ptr`,
@@ -458,5 +458,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:5875-5908` (equality/ordering resolver); function-
+> Provenance: `src/tychoc.c:6045-6078` (equality/ordering resolver); function-
 > value identity equality `:8765@identity equality`.

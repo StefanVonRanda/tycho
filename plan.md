@@ -157,10 +157,13 @@ tree rather than only here:
    path — which is why every golden held and why no gate caught it. Open as
    phase 27, and phase 10 confirmed `bench-guard` still cannot see it.
 
-**24 unchecked phases remain** in "Carried forward", none blocking. Two of them
+**20 unchecked phases remain** in "Carried forward", none blocking. Two of them
 are this plan's own follow-ups (27 bounds-check elision, 30 the dead `r_step`)
-and are ordered: 27 before 30. Note also that phase 28's box is unticked while
-its own last bullet says "Closed by phase 7" — filed as phase 38.
+and are ordered: 27 before 30. The count was 24 until batch 2 closed 18, 38 and
+41 and ticked phase 28, whose own last bullet had said "Closed by phase 7" while
+its box stayed unticked — the malformed record phase 38 repaired. **Phase 17 is
+deliberately still open**: batch 2 swept the live normative documents and left
+the design records; its entry says exactly what remains.
 
 ## Phases
 
@@ -2154,9 +2157,32 @@ request (`fc921d7`, `7a04e53`).
       `docs/guides/corelib.md` by `68e5b39`); a dead backticked path in prose.
 - [ ] **Phase 16** — `char` has arithmetic but no spellable type name, no
       `to_char`, and no `\xNN` escape.
-- [ ] **Phase 17** — ~344 bare `src/tychoc.c:N` refs shifted by the last plan and
-      were deliberately not swept; same class as the dropped phase 9.
-- [ ] **Phase 18** — `docs/internals/spec-plan.md:605` cites
+- [ ] **Phase 17** — **PARTIAL after batch 2.** The population is not ~344: a
+      re-derivation against the repaired gate found **568 live** bare
+      `src/tychoc.c:N` refs (plus 621 more inside the frozen
+      `docs/internals/plan-*-DONE.md` archives, which stay untouched). Batch 2
+      swept the **227** in `docs/spec/*.md` and `FRICTION.md` — the set phases 6
+      and 11 established as the live, repointable one — reading every citation
+      against the line it names. **What remains, and why it was not done:**
+  - **167 refs in `docs/internals/*.md` (non-archived) and `docs/rfc/*.md`** —
+    `generics-stage2-body-cloning.md` (52), `generics-gap-fixes-plan.md` (44),
+    `ffi-threading-design-review.md` (26), `frontend-restriction-audit-2026-07-25.md`
+    (14), `value-lifetime-regions.md` (9) and nine smaller files. Every prior
+    repointing phase (`782af20` phase 6, `1b772c6` phase 11) touched
+    `docs/spec/*`, `FRICTION.md` and `plan.md` and **never** these — they are
+    dated design studies and audits, records of the tree as it was, and the
+    archive rule's reasoning applies to them even though the gate's `ARCHIVED`
+    prefix does not. Repointing them is a decision to make explicitly, not a
+    side effect of a sweep.
+  - **38 refs inside `plan.md`'s own completed-phase evidence blocks** (phases 3,
+    4, 5, 6, 7, 10, 27). Same reason, more sharply: an evidence block records what
+    a phase verified *at its commit*. Renumbering it makes the record claim
+    something the phase never checked. Only three sit in still-open entries
+    (phases 26 and 30) and the Status paragraph.
+  - Done when: someone decides, in writing, whether design records get repointed
+    or annotated-and-frozen, then applies that decision to the 167 — and repairs
+    the three live-entry refs in `plan.md` either way.
+- [x] **Phase 18** — `docs/internals/spec-plan.md:605` cites
       `appendix-e-conformance.md:188` for a §9.5 claim; that line is the §24.2 row.
 - [ ] **Phase 20** — `examples/fetch/run.sh` is red, and was red **before** this
       plan started. Two independent pre-existing faults, both found by phase 1 and
@@ -2446,7 +2472,7 @@ request (`fc921d7`, `7a04e53`).
   - **Not done, deliberately:** phase 30's three unreachable `r_step` guards are
     untouched, and no `.ty` outside `tests/` was rewritten.
 
-- [ ] **Phase 28** — **three `range()`-only fixtures were deleted in phase 6 and
+- [x] **Phase 28** — **three `range()`-only fixtures were deleted in phase 6 and
       their guarantees are untested until phase 7 removes the feature.**
       `tests/reject/range_step_zero_lit.ty` (literal `0` step refused at compile
       time), `tests/abort/range_step_zero.ty` (runtime `0` step aborts rather
@@ -2460,6 +2486,15 @@ request (`fc921d7`, `7a04e53`).
     phase 7's evidence that they were retired early on purpose. Restoring them is
     cheap (`git show 6ca63ca^:<path>`) and would make phase 7's own deletion of
     `range()` provably complete rather than merely believed.
+  - The permanent half is already owned elsewhere: the zero-step guarantee has no
+    successor in either new form and **phase 9** must state that in the spec as a
+    deliberate trade. This phase is only about the fixtures.
+  - Done when: `plan.md` records which of the two options was taken and why, and
+    if restored, `make test` and `make conc` return to 543 and 38 until phase 7
+    moves them again.
+  - **Closed by phase 7**: the option taken was *retire early on purpose*.
+    Nothing was restored; the per-fixture reasoning and the two replacement
+    fixtures are in phase 7's evidence.
 
 - [ ] **Phase 29** — **the LSP's semantic-token classifier is missing three
       keywords the other two grammars have, and `parallel for i in 0..<N:` is
@@ -2481,15 +2516,6 @@ request (`fc921d7`, `7a04e53`).
   - Done when: the three grammars agree on the keyword set, or the divergence is
     written down as deliberate. Verify: `sh scripts/tools_check.sh` (the
     `semtok=` leg) and `make editors-check`.
-  - The permanent half is already owned elsewhere: the zero-step guarantee has no
-    successor in either new form and **phase 9** must state that in the spec as a
-    deliberate trade. This phase is only about the fixtures.
-  - Done when: `plan.md` records which of the two options was taken and why, and
-    if restored, `make test` and `make conc` return to 543 and 38 until phase 7
-    moves them again.
-  - **Closed by phase 7**: the option taken was *retire early on purpose*.
-    Nothing was restored; the per-fixture reasoning and the two replacement
-    fixtures are in phase 7's evidence.
 
 - [ ] **Phase 30** — **`Stmt.r_step` is dead and its three guards are
       unreachable.** Found by phase 7. `range(a, b, step)` was the only producer
@@ -2759,7 +2785,7 @@ request (`fc921d7`, `7a04e53`).
   - Both runners' headers now record that they are outside `make ci` and must be
     run by hand, so the next syntax change does not repeat this silently.
 
-- [ ] **Phase 38** — **`plan.md`'s own record is malformed around phases 28-29,
+- [x] **Phase 38** — **`plan.md`'s own record is malformed around phases 28-29,
       and one closed phase reads as open.** Found by phase 10 while counting the
       carried-forward list. Phase 28's closing bullets — "The permanent half is
       already owned elsewhere…", "Done when: `plan.md` records which of the two
@@ -2829,7 +2855,7 @@ request (`fc921d7`, `7a04e53`).
     `tests/bounds_noelide.ty` stay useful: they assert the emitted C, not wall
     time, so they document the decision either way.
 
-- [ ] **Phase 41** — **two bare source→source citations are drifted, and the
+- [x] **Phase 41** — **two bare source→source citations are drifted, and the
       anchored form batch 1 added is what would have caught them.** Found by
       batch 1 while looking for citations correct enough to anchor; NOT repaired
       there, because verifying and repointing the other 121 bare source→source
@@ -2848,6 +2874,28 @@ request (`fc921d7`, `7a04e53`).
     `@token`, ranges stay bare, and the anchored/bare split in `--stats` is
     recorded here so the next reader knows what was audited.
   - Verify: `python3 scripts/check_citations.py --stats`.
+
+- [ ] **Phase 42** — **§16.7 says `[bool]` MUST be rejected and the compiler
+      accepts it.** Found by batch 2 while repointing the two citations that
+      §16.7 hangs on — a behaviour divergence, not a line-number one, which is
+      why it is filed rather than fixed under a citations scope lock.
+  - `docs/spec/12-aggregates.md:196-199` states "`void` and `bool` MUST be
+    rejected as a bracket-array element type… both `[bool]` and `[3]bool` are
+    diagnosed at type-parse", and `docs/spec/03-types.md:203-204` repeats it.
+  - The **fixed-size** half is true: the `[N]T` site tests
+    `felem == T_VOID || felem == T_BOOL`. The **dynamic** half is not: the `[T]`
+    site tests `elem == T_VOID` alone, and its own diagnostic lists `bool` as a
+    permitted element — the two messages in the same function now disagree about
+    whether `bool` is legal in an array.
+  - So either `[bool]` was deliberately allowed and §16.7 plus the fixed-size
+    site are stale, or the dynamic site lost its `T_BOOL` test in a refactor and
+    is a real hole. The `[N]bool` comment blames tychoc0's missing fixarr-bool
+    codegen, which the freeze retirement makes moot — that is evidence for the
+    first reading, but it is a guess until someone checks.
+  - Done when: a `.ty` fixture pins whichever answer is chosen, the two spec
+    sites agree with it, and the two compiler sites agree with each other.
+  - Verify: `make test` (this one does reach a compiled artifact), plus the two
+    doc gates.
 
 ## Batch 1 evidence — phases 13, 23, 34, the citation gate's three blind spots
 
@@ -3016,6 +3064,216 @@ The source→source total is unchanged at 133; ten moved from the bare column to
 the anchored one. `source→doc` rose by one because the new docstring names
 `docs/bootstrap.md:106`. Batch 2 owns the ~344 bare `src/tychoc.c:N` refs inside
 the 2098, and phase 41 owns the 123 bare source→source refs.
+
+## Batch 2 evidence — phases 18, 38, 41, and phase 17 partially
+
+### The population, re-derived rather than inherited
+
+Phase 17 said "~344". Re-running the gate's own Markdown walk (same `CITE`
+regex, same paragraph-scoped inheritance of a bare `:N`, same absolute-path
+clearing) over every tracked `*.md` gives:
+
+| bucket | count |
+|---|---|
+| every bare citation the gate resolves | 2107 |
+| …of them into `src/tychoc.c` | 1189 |
+| …**live** (outside the frozen archives) | **568** |
+| …frozen, in `docs/internals/plan-*-DONE.md` | 621 |
+
+So the real live population is **568**, 65% larger than the phase estimated, and
+"~344" was probably a count of one document set rather than the class. The 621
+archived refs were **left alone**, on the rule phase 4 settled and batch 1
+re-affirmed: they are true accounts of the tree as it stood, and renumbering them
+falsifies the record. `check_citations.py` encodes the same exemption.
+
+### How each citation was checked
+
+Not by arithmetic. For every one of the 568, the citation's authoring commit was
+recovered with `git blame --line-porcelain -w`, the cited lines were read **as
+they were at that commit**, and compared against the same lines today:
+
+| result | count |
+|---|---|
+| cited text unchanged since written | 140 |
+| cited text changed — drifted | 428 |
+| …with a single exact relocation of the whole cited block | 340 |
+| …ambiguous (block occurs more than once) | 34 |
+| …block no longer exists verbatim | 54 |
+
+The 428 were then read individually — prose claim on the left, the text the
+author was pointing at on the right — and only repointed where the two agreed.
+That is the load-bearing step: the relocation is exact evidence of *where the
+author's referent went*, never evidence that the author was right.
+
+**Two earlier findings were reproduced, and they are why the arithmetic alone is
+not enough.** A blame-and-shift pass would have scored both of these green:
+
+- `docs/spec/16-builtins.md:145` cited `char_at`'s codegen at `:8641-8648`;
+  that block's referent was a **`sink`-parameter diagnostic**, and had been since
+  the line was written at `3f68a00`. Repointed to `:9000-9007`, the real
+  `char_at` codegen, not to where the wrong block moved.
+- `docs/spec/16-builtins.md:332` cited `die`'s codegen at `:8791-8792`, which was
+  a comment about `tycho_streq` group-stripping. Repointed to `:9150-9151`. Its
+  two siblings at `:20` and `:86` cited the *same* numbers and were genuinely
+  right when written, so they moved with the drift instead — the same numbers
+  needed two different repairs.
+
+**The "unchanged since written" bucket is not safe either**, which was the
+sharpest finding. `docs/spec/12-aggregates.md:15` cites `reserve` at
+`:5657-5683` and `:8693-8700`; those are `to_int` and a `sink` diagnostic. The
+line was last written **today** (`fc921d7`, phase 27) — phase 27 shifted
+`src/tychoc.c` by 170 lines, repaired the **anchored** refs on that line, and
+left the bare ones pointing 170 lines short. That is phase 17's premise
+demonstrated on a single line: `` `:11797@pop from an empty array` `` green,
+`` `:5657-5683` `` silently 170 off. The same pattern was found and repaired on
+`16-builtins.md:85`, `:116`, `:143`, `:145`, `:218`, `:243` and
+`12-aggregates.md:18`.
+
+### What was repaired
+
+**227 citations across 17 files**, all in the live normative set:
+
+| file | refs repaired |
+|---|---|
+| `FRICTION.md` | 42 |
+| `docs/spec/16-builtins.md` | 43 |
+| `docs/spec/15-program.md` | 40 |
+| `docs/spec/12-aggregates.md` | 30 |
+| `docs/spec/02-grammar.md` | 19 |
+| `docs/spec/03-types.md` | 16 |
+| the other 11 spec chapters | 37 |
+
+194 were exact relocations applied by an offset-safe rewriter (right-to-left
+within each line, so several citations on one line cannot corrupt each other);
+33 were resolved by hand — wide ranges whose function had grown (`lex`
+`:211-530`, `parse_stmt` `:3108-3578`, `resolve_expr_inner` `:4885-6257`,
+`merge_pkg` `:12372-12436`, `register_builtins` `:4506-4538`), ambiguous blocks
+disambiguated against the authoring commit's surrounding lines, and the
+wrong-when-written set above.
+
+### Where a mechanism was annotated instead of repointed
+
+`docs/spec/12-aggregates.md:503` claimed `keys(m)`'s insertion order came from
+"an insertion-ordered link chain" and cited two lines of the map codegen. That
+chain — a `nxt` field threaded through the slot table — **does not exist
+anywhere in the compiler any more**; `keys` now walks the append-ordered entries
+array and filters on `elive`. Repointing those two refs at whatever now sits at
+those numbers would have preserved a false claim behind a true-looking line
+number. The refs were retired, the prose was corrected to the mechanism that is
+actually there, and the disappearance is recorded in place. Same instinct as
+phase 41's second ref below.
+
+### Phase 18 — the confirmed-stale doc→doc ref
+
+`docs/internals/spec-plan.md:605` cited `appendix-e-conformance.md:188` for the
+claim that §9.5 is evidenced by the whole differential suite. Read: `:188` is
+`| §17.3 | recursion only through a container | ... |`, a fixture row (it was the
+§24.2 row when the drift was first noticed — the appendix has moved again since).
+The flagged-clause list that actually carries §9.5 is `:235-241`. Repointed
+there. Reading the target also caught a second staleness in the same sentence:
+it cited `make fixpoint` as evidence, and `make fixpoint` was retired with the
+`tychoc0` freeze — which the target paragraph itself now says. Both fixed; the
+old spelling and why it was wrong are written into the line.
+
+### Phase 41 — two drifted source→source refs, now anchored
+
+- `scripts/asan_self.sh:38` said the generic bind vector is xmalloc'd at
+  `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`. The
+  real site is `src/tychoc.c:7560@binds` (`gi.binds = (Type *)xmalloc(...)`),
+  ~690 lines away and in bounds the whole time. Now **anchored**, so the next
+  shift reddens the gate instead of rotting.
+- `tests/rtparity/run.py:67` cited `src/tychoc.c:10343` for the inline
+  `tycho: range step is zero` trap; that line is a bare `}`. The trap survived
+  the removal of `range()` — it is at `:10843` — so this one *is* repointable,
+  and is now `src/tychoc.c:10843@_step`. Its sibling `compiler/tychoc0.ty:9513`
+  was read and is correct.
+
+The anchor token is `[A-Za-z0-9_]+` on the source side, so `@binds` is the
+spellable form of `gi.binds` — the `.` would terminate the token.
+
+### Phase 38 — the malformed record, diagnosed before it was edited
+
+Read, not assumed. Three bullets — "The permanent half is already owned
+elsewhere…", "Done when: `plan.md` records which of the two options was taken…"
+and "**Closed by phase 7**: the option taken was *retire early on purpose*" —
+were physically under the **phase 29** entry while being about phase 28's three
+deleted `range()` fixtures. The mis-parenting made phase 29 read as a fixtures
+phase when it is about the LSP's `sem_is_keyword` set, and it stranded phase 28's
+closure notice where nobody counting boxes would find it. Consequences repaired:
+
+1. the three bullets moved under phase 28, after its own "Decide, and record…"
+   bullet, so the entry now reads decision → constraint → outcome;
+2. phase 28's box ticked, because its own last bullet says it was closed by
+   phase 7 and phase 7's evidence carries the per-fixture reasoning;
+3. phase 29 now ends at its `tools_check.sh` / `make editors-check` line and is
+   unambiguously the LSP keyword-set phase;
+4. the "Status — PLAN COMPLETE" count corrected from 24 to 20, with the arithmetic
+   named (18, 38, 41 closed here, 28 ticked here) so the next reader can audit it.
+
+**Note for batch 5**, which lists phase 28: it is now ticked and needs no work.
+
+### What was deliberately left, and why
+
+| left alone | count | reason |
+|---|---|---|
+| `docs/internals/plan-*-DONE.md` | 621 | frozen records; the rule phase 4 settled |
+| `docs/internals/*` (live) + `docs/rfc/*` | 167 | dated design studies; **no** prior repointing phase has ever touched them |
+| `plan.md` completed-phase evidence blocks | 38 | an evidence block records what a phase verified at its commit |
+| unrelocatable single-line refs in `FRICTION.md` | 7 | their cited text is `}` or `Type b = base_of(rt);` — no distinctive content to track, all in-bounds, all inside struck-through resolved entries |
+
+The middle row is the reason phase 17 stays open rather than being ticked with a
+footnote. 621 + 167 + 38 + 7 = 833 refs untouched, against 227 repaired.
+
+### Gate output — the real runs
+
+```
+$ python3 scripts/check_citations.py --stats
+citation check: 150 anchored (content-checked, 85 of them the mandatory
+`> Provenance:` single-line refs), 2112 bare (bounds only), 103 source->doc
+(existence), 121 source->source (bounds), 12 source->source anchored
+(content-checked)
+citation check: ok (150 anchored contain the token they name, 2112 bare in bounds,
+103 source->doc citations resolve, 121 source->source in bounds,
+12 source->source anchored)
+
+$ sh scripts/check_links.sh
+link check: ok (134 markdown files, no dead relative links)
+
+$ sh scripts/spec_check.sh
+spec-check: Appendix A grammar matches §3/§4 (ok)
+spec-check: all Appendix E fixture citations resolve (ok)
+spec-examples: 9 runnable example(s), all pass
+```
+
+| metric | batch 1 (`fd361e9`) | before this block | after batch 2 |
+|---|---|---|---|
+| md anchored (content-checked) | 148 | 148 | 150 |
+| …of them mandatory `> Provenance:` | 85 | 85 | 85 |
+| md bare (bounds only) | 2106 | 2106 | 2112 |
+| source→doc (existence) | 103 | 103 | 103 |
+| source→source **bare** (bounds) | 123 | 121 | 121 |
+| source→source **anchored** (content) | 10 | 12 | 12 |
+
+Read the columns in that order and the numbers say three separate things.
+
+The **source→source** move is phase 41 and nothing else: two bare refs left the
+bare column and arrived in the anchored one, so the total holds at 133.
+
+The **md** columns did not move at all for the sweep itself — 227 citations were
+repointed, and repointing changes a number inside a citation without creating or
+destroying one. That is the honest reading of "2106 → 2106" in the middle column,
+measured after every repair and before this write-up existed.
+
+They then rise by **+2 anchored and +6 bare because of this evidence block**,
+which quotes the refs it repaired. The gate does not exempt fenced code, so the
+quoted forms are live citations and are checked like any other — which is the
+intended behaviour, not an accounting nuisance: batch 1's own commit reddened on
+a citation written as a counter-example inside prose.
+
+`make test` and `make ci` were **not** run, per `CLAUDE.md`'s gate ladder:
+every edit is a Markdown line or a comment, and none can reach a compiled
+artifact. `sh -n scripts/asan_self.sh` and `python3 -c "import ast; ast.parse(open('tests/rtparity/run.py').read())"`
+were run on the two source files edited.
 
 ## Out of scope
 
