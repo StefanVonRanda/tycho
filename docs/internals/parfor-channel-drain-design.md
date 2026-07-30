@@ -19,7 +19,7 @@ adds `parallel for x in ch:` as the sanctioned sugar for that pattern.
 
 ## Surface
 
-```
+```text
 parallel for x in ch:        # ch : Channel(T), x : T
     <body>                   # runs once per item; reductions (n = n + e) allowed
 ```

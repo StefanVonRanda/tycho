@@ -119,7 +119,7 @@ Multi-file under `docs/spec/`, mirroring the reference's one-topic-per-page
 structure (a single 400-page file is unreviewable). Files are numbered so the
 reading order is the normative order.
 
-```
+```text
 docs/spec/
   README.md            # spec map + status (the index)
   00-conventions.md    # Ch 1–2: scope, conformance, versioning, notation
@@ -582,11 +582,11 @@ changes an observable behavior claim.
 
 - ~~Exact EBNF dialect punctuation (W3C `::=` chosen; confirm on first grammar
   review).~~ **RESOLVED (2026-07-23), already in spec:** the W3C `::=` dialect is
-  declared normatively in `docs/spec/00-conventions.md:131` ("Both use a W3C-style
-  EBNF:") with the form table at `:133-142` (`A ::= …`, `"x"`, `UPPER`, `A B`,
+  declared normatively in `docs/spec/00-conventions.md:154` ("Both use a W3C-style
+  EBNF:") with the form table at `docs/spec/00-conventions.md:156-168` (`A ::= …`, `"x"`, `UPPER`, `A B`,
   `A | B`, `A?`, `A*`, `A+`), restated at `docs/spec/appendix-a-grammar.md:21` and
   `docs/spec/README.md:42`, and the `ebnf` fence language is fixed at
-  `00-conventions.md:170`. Used consistently: 154 `::=` productions across the five
+  `docs/spec/00-conventions.md:193`. Used consistently: 154 `::=` productions across the five
   grammar-bearing files (appendix-a 76, 02-grammar 65, 01-lexical 9, 05-generics 3,
   03-types 1) and **zero** non-`::=` production lines inside any ```ebnf fence.
   No competing dialect — searched all of `docs/` and root `README.md` for
@@ -597,15 +597,15 @@ changes an observable behavior claim.
   transparent by fiat" (recommended) or with their static preconditions spelled
   out normatively.~~ **RESOLVED (2026-07-23), already in spec:** by fiat (the
   recommended option). `docs/spec/07-memory-model.md` §9.5
-  (`:64-81`) states it outright — `:69-70` "Every such optimization is
+  (`docs/spec/07-memory-model.md:64-81`) states it outright — `docs/spec/07-memory-model.md:69-70` "Every such optimization is
   **observationally transparent**: it MUST NOT change any observed value, program
-  output, or accept/reject decision", with `:70-71` limiting the licence to *when*
+  output, or accept/reject decision", with `docs/spec/07-memory-model.md:70-71` limiting the licence to *when*
   and *whether* storage is allocated or freed. No static preconditions are spelled
   out normatively. Cross-referenced by `docs/spec/appendix-g-glossary.md:29-31`
   and `docs/spec/appendix-e-conformance.md:235-241` (§9.5 is evidenced by the
   whole differential suite — every fixture built native *and* under ASan/UBSan
-  plus `make fuzz` — not by one fixture). This used to read `:188` and cite
-  `make fixpoint` alongside the suite: `:188` is a fixture row (§17.3 today, the
+  plus `make fuzz` — not by one fixture). This used to read `docs/spec/appendix-e-conformance.md:188` and cite
+  `make fixpoint` alongside the suite: `docs/spec/appendix-e-conformance.md:188` is a fixture row (§17.3 today, the
   §24.2 row when the drift was first noticed), never the flagged-clause list, and
   `make fixpoint` was retired with the `tychoc0` freeze, which E.1 and the target
   paragraph both now record.

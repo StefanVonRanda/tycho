@@ -139,7 +139,10 @@ conc: tychoc
 # runtime against the one frozen tychoc0 emitted; that leg is gone. Its docstring
 # advertised `make rtparity` from the day it was written and no such target
 # existed, so nothing in the tree ran it. Under a second (~1s: one --emit-c, no
-# cc), not in `make ci` yet -- see plan.md phase 58.
+# cc). In `make ci` as step [2d/13] since 2026-07-30 (plan.md phase 58) -- a
+# tests/ lane, so a sub-lane of step 2 rather than a new number. It paid for
+# itself on the way in: it was the only gate that saw phase 53 remove the
+# "tycho: range step is zero" trap from the emitted C.
 rtparity: tychoc
 	@python3 tests/rtparity/run.py
 
@@ -324,6 +327,12 @@ hooks:
 	@git config core.hooksPath .githooks
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs make ci N=0 + fuzz-quick)"
 
+# The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
+# `make tycho-lsp` -- plan.md phase 52 made the plain build remove its own
+# intermediate (src/tychoc.c:12771). They stay because `--emit-c -o <base>` still
+# writes and KEEPS `<base>.c` (src/tychoc.c:12740-12742), which is how you debug the
+# toolchain itself, and `clean` is where that leftover belongs. Same rationale as the
+# matching .gitignore block; verified 2026-07-30, see plan.md phase 57.
 clean:
 	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c build/tycho_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c

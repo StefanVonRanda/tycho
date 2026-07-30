@@ -309,48 +309,62 @@ are flagged here so the gap is explicit rather than hidden:
   type" as a checking context: for §6.2(7) the **implementation**, not the
   specification, was the thing out of conformance.
 - **§29.12's `exit` and §29.12.1's divergence rule** — third time this mechanism
-  bites, same conclusion. `exit` is a **new builtin** and divergence is a **new
-  acceptance**, so a `tests/` fixture for either would be a program the live
-  compiler accepts and the frozen `tychoc0` refuses — which is exactly what
-  `scripts/frontparity.sh` reports as a divergence, and `compiler/fixpoint.sh`
-  as a build failure. The witness is `server/main.ty`, which no runner feeds to
-  `tychoc0`: it calls `exit(0)` for `--help` (status verified with `echo $?`) and
-  binds `srv := match net.listen(...)` with `Err(e): die(...)` as the failure arm.
-  For the same reason **no corelib package can use either form** while
-  `examples/webserver/run.sh` asserts `tychoc == tychoc0 == golden` over
-  `core:httpd`, `core:net` and `core:io`.
-- **§5.2.6's `bytes` operators** — **fourth** time this mechanism bites, same
-  conclusion. All three are **new acceptances**, so a `tests/` fixture would be a
-  program `tychoc` accepts and the frozen `tychoc0` refuses. Measured, not assumed:
-  `println(str(b[2]))` on a `bytes` gives `line 3: str(x) can't stringify a yte`
-  from a `tychoc0` built at this commit, which `scripts/frontparity.sh` would
-  report as a divergence and `compiler/fixpoint.sh` as a build failure. The
-  covering fixtures are therefore `corelib/test/io` (golden-validated by
-  `corelib/run.sh`, whose `tychoc0` leg was cut on 2026-07-26) and the §5.2.6
-  specification example, which `scripts/spec_check.sh` compiles and runs. The
-  application witness is `server/main.ty`'s `log_safe`, which no runner feeds to
-  `tychoc0`. Unlike the three notes above, the blocked set was **enumerated** this
-  time rather than assumed: closing the import graph from every file a `tychoc0`
-  runner compiles (`examples/*.ty`, `tools/*.ty`, `tests/*.ty`,
-  `tests/pkg/*/main.ty`, `compiler/tychoc0.ty`, plus the four per-example runners
-  at `examples/webserver/run.sh:24`, `examples/weblog/run.sh:24`,
-  `examples/fetch/run.sh:35` and `examples/sqlite/run.sh:31`) reaches **13** corelib
-  packages — `cli`, `datetime`, `http`, `httpd`, `io`, `json`, `markdown`, `net`,
-  `path`, `result`, `sha256`, `sort`, `strings` — which may **not** use a `bytes`
-  operator. The other **24**, including `base64`, `compress`, `crypto`, `hash`,
-  `hex`, `image`, `md5`, `raster` and `tls` — the packages that would most want
-  them — are outside every `tychoc0` runner and are free to adopt them. Note that
-  `core:cli` is in the blocked set via `examples/weblog/run.sh:24`. **Since
-  2026-07-26 that is checkable rather than argued:** `scripts/frontparity.sh` fed
-  `examples/*.ty` and never `examples/<dir>/main.ty`, so the 13-blocked set ran
-  through packages no runner in `scripts/` could see; it now also feeds the four
-  per-example entry points those runners use, and the enumeration above is what it
-  enforces. Measured both ways on one tree: giving `corelib/cli/cli.ty` a `\r`
-  escape leaves the old script at `agreed: 288  diverged: 0` and makes the current
-  one report `FAIL examples/weblog/main.ty ... lex: unsupported string escape`.
-  `server/` and `examples/corelib/{result,httpd}` are deliberately **excluded**
-  from that lane — they are the witnesses written outside the freeze, so including
-  them would redden it at intended state.
+  bit, same conclusion at the time. The witness is `server/main.ty`, which calls
+  `exit(0)` for `--help` (status verified with `echo $?`) and binds
+  `srv := match net.listen(...)` with `Err(e): die(...)` as the failure arm.
+  **Historical, and no longer a live constraint:** `exit` was a **new builtin** and
+  divergence a **new acceptance**, so through 2026-07-29 a `tests/` fixture for
+  either would have been a program the live compiler accepted and the frozen
+  `tychoc0` refused — `scripts/frontparity.sh` reported that as a divergence and
+  `compiler/fixpoint.sh` as a build failure, and for the same reason **no corelib
+  package could use either form** while `examples/webserver/run.sh` asserted
+  `tychoc == tychoc0 == golden` over `core:httpd`, `core:net` and `core:io`. Both
+  lanes were retired on 2026-07-29 (see E.1) and that prohibition went with them;
+  the clause stays flagged only because `server/main.ty` remains its sole witness,
+  which is a fixture decision, not a freeze one.
+- **§5.2.6's `bytes` operators** — **fourth** time this mechanism bit, same
+  conclusion at the time. **Closed 2026-07-30, and this clause is no longer
+  flagged for a freeze reason** — see the historical paragraph below for what the
+  reason was. What covers the clause today: `corelib/test/io` (`byte_index`,
+  `byte_slice`, `byte_cat`, `byte_rebuild`), golden-validated by `corelib/run.sh`;
+  the §5.2.6 specification example, which `scripts/spec_check.sh` compiles and
+  runs; and `server/main.ty`'s `log_safe` as the application witness. **No corelib
+  package is blocked from a `bytes` operator any more** — all 37 may use one.
+  **The decision on a `tests/` fixture, taken 2026-07-30: §5.2.6 does not get one.**
+  The block that kept it out expired, but E.1's convention is that a fixture does
+  not move merely because it now could, and the three lanes above already assert
+  every operator in the clause. Recorded so the next reader does not re-open it.
+
+  *Historical, 2026-07-25 to 2026-07-29 — kept because it is why the gap existed
+  for as long as it did, and because the enumeration below was a real measurement.*
+  All three operators were **new acceptances**, so a `tests/` fixture would have
+  been a program `tychoc` accepted and the frozen `tychoc0` refused. Measured, not
+  assumed: `println(str(b[2]))` on a `bytes` gave `line 3: str(x) can't stringify a
+  yte` from a `tychoc0` built at that commit, which `scripts/frontparity.sh` then
+  reported as a divergence and `compiler/fixpoint.sh` as a build failure. Unlike
+  the three notes above, the blocked set was **enumerated** rather than assumed:
+  closing the import graph from every file a `tychoc0` runner compiled
+  (`examples/*.ty`, `tools/*.ty`, `tests/*.ty`, `tests/pkg/*/main.ty`,
+  `compiler/tychoc0.ty`, plus the four per-example runners at
+  `examples/webserver/run.sh:24`, `examples/weblog/run.sh:24`,
+  `examples/fetch/run.sh:35` and `examples/sqlite/run.sh:31`) reached **13**
+  corelib packages — `cli`, `datetime`, `http`, `httpd`, `io`, `json`, `markdown`,
+  `net`, `path`, `result`, `sha256`, `sort`, `strings` — which could **not** use a
+  `bytes` operator. The other **24**, including `base64`, `compress`, `crypto`,
+  `hash`, `hex`, `image`, `md5`, `raster` and `tls` — the packages that would most
+  want them — sat outside every `tychoc0` runner and were free to adopt them.
+  `core:cli` was in the blocked set via `examples/weblog/run.sh:24`. From
+  2026-07-26 that was checkable rather than argued: `scripts/frontparity.sh` had
+  fed `examples/*.ty` and never `examples/<dir>/main.ty`, so the 13-blocked set ran
+  through packages no runner in `scripts/` could see; it was then made to feed the
+  four per-example entry points too, and the enumeration above is what it enforced.
+  Measured both ways on one tree: giving `corelib/cli/cli.ty` a `\r` escape left
+  the old script at `agreed: 288  diverged: 0` and made the current one report
+  `FAIL examples/weblog/main.ty ... lex: unsupported string escape`. `server/` and
+  `examples/corelib/{result,httpd}` were deliberately **excluded** from that lane —
+  they are the witnesses written outside the freeze, so including them would have
+  reddened it at intended state. Both lanes were retired on 2026-07-29 (see E.1);
+  nothing builds `tychoc0`, so none of the constraints in this paragraph is live.
 - **§16.8 element-wise arithmetic on arrays** — **fifth** time the freeze
   mechanism bites, and the first time it costs nothing, because the door opened
   for §14.3.1 was already there. Every §16.8 program is a **new acceptance**:

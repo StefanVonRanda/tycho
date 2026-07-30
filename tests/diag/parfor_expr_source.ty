@@ -1,0 +1,24 @@
+# The SECOND `parallel for` refusal, locked byte-for-byte as
+# tests/diag/parfor_expr_source.err. Sibling of tests/diag/dotlt_sequential.ty,
+# which pins the three-clause message one arm over: this one is the
+# foreach-of-an-expression arm, reached when the source of a
+# `parallel for x in EXPR` is not an identifier. It was asserted by nothing
+# before this fixture -- `grep -rn "must name a variable" tests docs src` found it
+# only in src/tychoc.c and a prose mention in docs/guides/concurrency.md:102, and
+# a tests/reject/ case would have accepted any nonzero exit with any message.
+# What the message has to keep saying is the FIX ("bind it first"), because the
+# refusal is not about the expression being wrong -- both an array and a channel
+# source are scalar handles, so the parser needs a name it can re-read rather than
+# an eval-once temp a channel cannot safely be aliased into. Refused at
+# src/tychoc.c:3411.
+fn build() -> [int]:
+    a := []int
+    push(a, 1)
+    push(a, 2)
+    return a
+
+fn main():
+    total := 0
+    parallel for v in build():
+        total += v
+    print(str(total))

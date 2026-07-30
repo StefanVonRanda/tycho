@@ -185,7 +185,7 @@ the interaction with `spawn` and channels, and the C lowering.
 
 **Surface.** A region is created, allocations are directed into it, and it is dropped:
 
-```
+```text
 r := region()
 n := Node("root") in r          # n's storage is allocated in r, not in _scope
 m := Node("leaf") in r
@@ -235,12 +235,12 @@ incidentally but at the load-bearing joint. Reject.
 storage happens to be its own arena, and whose contents are reachable only by copy.
 Two spellings, same semantics:
 
-```
+```text
 struct Server:
     conns: owned [Conn]         # this container allocates into its own arena
 ```
 
-```
+```text
 r := region(Conn)               # a generic Region(T)
 h := insert(r, Conn(fd, buf))   # h: Handle -- a pooled index, pointer-free
 c := get(r, h)                  # deep copy OUT, exactly as today
@@ -394,7 +394,7 @@ One useful negative check: none of the three is reachable as an *implementation*
 detail. §10.1 explicitly says the arena mechanism "is an implementation realization and
 is not observable beyond the guarantees in §10.3"
 (`docs/spec/07-memory-model.md:93-99`), and §9.5 lets an implementation reuse buffers
-freely so long as nothing observable changes (`:64-74`). A compiler could therefore
+freely so long as nothing observable changes (`docs/spec/07-memory-model.md:64-74`). A compiler could therefore
 give a container a private sub-arena *today*, with no spec change at all, as long as it
 is invisible. What it could not do is let the programmer name it. Every design in §4
 fails to fit inside the freeze for the same reason: the surface, not the mechanism.

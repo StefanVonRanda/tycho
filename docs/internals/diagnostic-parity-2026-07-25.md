@@ -467,7 +467,7 @@ Rationale, in the order it matters:
 compilers agree on accept/reject for every reject fixture) is asserted by `tests/run.sh`, in
 `make test`, in `scripts/ci.sh` step [2/19]:
 
-```
+```text
 tests/run.sh:148   "$TYCHOC" compiler/tychoc0.ty -o "$TMP/h0" … || { echo "could not build tychoc0 for reject checks"; exit 2; }
 tests/run.sh:150   for hi in tests/reject/*.ty; do
 tests/run.sh:155       if "$TYCHOC" "$hi" --emit-c -o "$TMP/rj" …; then

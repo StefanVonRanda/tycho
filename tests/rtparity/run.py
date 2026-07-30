@@ -130,9 +130,15 @@ EXPECT_MSG_RUNTIME = {
 EXPECT_MSG_CODEGEN = {
     r"tycho: non-exhaustive match\n",     # src/tychoc.c:10021, :10734
     r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:11743 (the [4] is surface.ty's Inline.slots)
-    r"tycho: range step is zero\n",       # src/tychoc.c:10886
     r"tycho: slice [%",                   # src/tychoc.c:9647, :9666
 }
+# REMOVED 2026-07-30 (plan.md phase 53): r"tycho: range step is zero\n".
+# The oracle was out of date, not the codegen. `range(a, b, step)` went on
+# 2026-07-29 and left the step machinery unreachable; phase 53 deleted the `Stmt`
+# field, the step codegen, this abort and the direction ternary. No construct can
+# reach the trap, so nothing emits it. This lane FOUND that -- it was the only
+# gate in the tree that noticed the trap text disappear, which is the argument for
+# wiring it into `make ci` (step [2d/13], same phase).
 EXPECT_MSG = EXPECT_MSG_RUNTIME | EXPECT_MSG_CODEGEN
 
 # --- Extraction --------------------------------------------------------------

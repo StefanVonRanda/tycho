@@ -37,7 +37,7 @@ purpose: the oracle is the other implementation, not a recorded file.
 
 **Stages 2 and 3 — the self-emission chain.** With `H = compiler/tychoc0.ty`:
 
-```
+```text
 A = tychoc(H)      the C compiler builds the Tycho compiler       -> exe A
 B = cc(A(H))       A compiles H; the emitted C is cc'd            -> exe B
 C = cc(B(H))       B compiles H; the emitted C is cc'd            -> exe C

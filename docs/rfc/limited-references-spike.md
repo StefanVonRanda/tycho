@@ -107,7 +107,7 @@ If we want to *act on* item #1, the tractable slice is **user-defined yielding s
 generalizing the built-in `&m[k]` so a library can expose a zero-copy view into part of a
 value:
 
-```
+```text
 # hypothetical surface — NOT implemented
 subscript edge(g: Graph, i: int) -> inout Node:
     yield &g.nodes[i]          # a scoped, exclusive projection into the pool

@@ -30,21 +30,32 @@ gmon.out
 # -o compiler/tychoc0`). The emitted C there is already covered by /compiler/*.c.
 /compiler/tychoc0
 
-# The compiled `tycho` daily-driver CLI + its intermediate C (built by `make tycho`)
+# The five `.c` entries below are NOT produced by their `make` target any more.
+# plan.md phase 52 made the plain build `remove()` its own intermediate
+# (src/tychoc.c:12771), so `make tycho`, `make tychofmt`, `make tycho-lsp` and
+# `make server` now leave only a binary. They are kept because they still catch a
+# real artifact by the OTHER route: `--emit-c -o <base>` writes `<base>.c` and
+# deliberately keeps it (src/tychoc.c:12740-12742), which is the documented way to
+# debug the toolchain itself (docs/guides/debugging.md:37). Verified 2026-07-30 by
+# running `./tychoc tools/tycho.ty --shim tools/tycho_shim.c --emit-c -o tycho`:
+# `tycho.c` appeared at the root and `git status --short` stayed empty.
+
+# The compiled `tycho` daily-driver CLI (`make tycho`) + its `--emit-c -o tycho` C
 /tycho
 /tycho.c
 
-# The compiled `tychofmt` formatter + its intermediate C (built by `make tychofmt`)
+# The compiled `tychofmt` formatter (`make tychofmt`) + its `--emit-c -o tychofmt` C
 /tychofmt
 /tychofmt.c
 
-# The compiled `tycho-lsp` language server + its intermediate C (`make tycho-lsp`)
+# The compiled `tycho-lsp` language server (`make tycho-lsp`) + its `--emit-c` C
 /tycho-lsp
 /tycho-lsp.c
 
 # The compiled static web server (built by `make server` from server/main.ty).
 # server/main.ty and server/www/ ARE tracked; the binary is not. Also catch the
-# form built next to its source.
+# form built next to its source: a plain `./tychoc server/main.ty` still leaves
+# the `server/main` BINARY (verified 2026-07-30), only its `.c` is now removed.
 /tycho-httpd
 /tycho-httpd.c
 /server/tycho-httpd

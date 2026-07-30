@@ -18,7 +18,7 @@
 #   FROZEN     docs/internals/plan-*-DONE.md. Archived verification evidence;
 #              its snippets record syntax as it was at the time and must not be
 #              dragged forward. Same exemption, same reason, as ARCHIVED in
-#              scripts/check_citations.py:282@ARCHIVED.
+#              scripts/check_citations.py:316@ARCHIVED.
 #   FRAGMENT   a fence containing no `fn` declaration at all. The spec is
 #              written mostly in fragments (a type, an expression, three lines of
 #              a body) and wrapping them in a synthetic `main` would typecheck a
@@ -32,19 +32,26 @@
 #              earlier. The reason is printed on every run, so the skip list is
 #              visible rather than a quiet exclusion that grows.
 #
-# THE POPULATION, as of 2026-07-30 (plan.md phase 43 tagged the reader-facing
-# tree): 252 fences in docs/, of which 119 are ```tycho -- 39 CHECKed (6 of them
-# via the no-main retry), 58 FRAGMENT, 17 MARKED, 5 FROZEN. It was 40 tycho
-# fences and 10 CHECKed before that pass. Tagging is what opts a fence in, so
-# the number grows by review, never by a heuristic guessing at a language.
+# THE POPULATION, as of 2026-07-30 (phase 43 tagged the reader-facing tree,
+# phase 61 the last 64, phase 62 taught it `extern fn`): 252 fences in docs/, of
+# which 122 are ```tycho -- 45 CHECKed (12 of them via the no-main retry),
+# 53 FRAGMENT, 19 MARKED, 5 FROZEN. It was 40 tycho fences and 10 CHECKed before
+# phase 43. Tagging is what opts a fence in, so the number grows by review,
+# never by a heuristic guessing at a language.
+#
+# EVERY FENCE IN docs/ NOW CARRIES A TAG (plan.md phase 61, 2026-07-30). The 64
+# that did not -- 56 in docs/internals/, 4 in docs/rfc/, 4 in docs/ -- were read
+# one at a time and tagged `text` (73 total), `sh`, or `tycho`. Only three became
+# `tycho`, and the rule that produced that number is the one to keep: a fence in a
+# DATED design record or an archived plan documents syntax as it was, so tagging
+# it `tycho` would opt a historical snippet into a gate that checks today's
+# grammar. `text` is the honest tag for those, and for command output, commit
+# lists, symbol tables and deliberately-broken illustrations. `tycho` went only to
+# snippets still meant to be current, and each was confirmed by this gate
+# compiling it, not by inspection.
 #
 # WHAT IT DOES NOT CHECK -- read this before trusting it:
 #
-#   * 64 fences in docs/ still open with a BARE ``` and no language tag: 56 in
-#     docs/internals/, 4 in docs/rfc/, 4 in docs/. Some are shell, C, or emitted
-#     output; some are Tycho. Nothing here can tell them apart, so none is
-#     checked. docs/reference/, docs/guides/, docs/tutorial.md and docs/spec/
-#     carry a tag on every fence.
 #   * The MARKED and FRAGMENT sets are not compiled. A fragment can still be
 #     wrong; this gate only proves that what claims to be a whole program is one.
 #   * Nothing is RUN. Output correctness for the 9 runnable spec examples is
@@ -100,7 +107,13 @@ git ls-files 'docs/*.md' | while read -r f; do
           mode=0; mark=""; next
       }
       mode==1 {
-          if ($0 ~ /^[ \t]*fn[ \t]/) hasfn=1
+          # `extern fn NAME(...)` is a declaration too -- the bare /fn[ \t]/ test
+          # missed it and filed three compilable FFI fences as FRAGMENT
+          # "no fn declaration" (plan.md phase 62).
+          if ($0 ~ /^[ \t]*(extern[ \t]+)?fn[ \t]/) hasfn=1
+          # `extern "lib" fn NAME(...)` -- the library name sits between the two
+          # keywords, so the anchored form above cannot reach it.
+          if ($0 ~ /^[ \t]*extern[ \t]+"[^"]*"[ \t]+fn[ \t]/) hasfn=1
           buf = buf $0 "\n"
           next
       }

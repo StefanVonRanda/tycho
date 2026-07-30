@@ -38,8 +38,6 @@ A conforming implementation MUST abort on each of the following:
   not abort.
 - **A negative shift count** (`<<`, `>>`). A count `≥` the operand's bit width
   does *not* abort — it is defined as `0` (§30.1, §13.2).
-- **A `range` step of zero** — a literal `0` step is a compile error; a step that
-  evaluates to `0` at run time aborts (§10).
 - **`chr(n)` with `n` outside `0..255`** — the byte value is out of range (§16).
 - **`to_int(f)` of a `NaN` or out-of-range `float`/`f32`** (§8.5). The sized
   integer conversions are total (no abort).
@@ -57,6 +55,16 @@ A conforming implementation MUST abort on each of the following:
   ceiling; a thread-creation failure.
 - **Out of memory.**
 - **`die(msg)`** — the explicit user abort ([§14.8](10-statements.md#148-die-and-termination)).
+
+> **Removed 2026-07-30: "a `range` step of zero".** This list carried a bullet
+> reading "a literal `0` step is a compile error; a step that evaluates to `0` at
+> run time aborts (§10)". `range(a, b, step)` was itself removed on 2026-07-29 and
+> [§14.4](10-statements.md#144-loops) records the loss of that guarantee as a
+> deliberate trade: `for i := 0; i < n; i += 0:` is an infinite loop the
+> implementation does not diagnose, at compile time or at run time. The bullet was
+> therefore a normative promise contradicted by another normative section of this
+> same document, and by the compiler. No implementation owes a zero-step
+> diagnostic.
 
 ## 30.3 Conditions that clamp
 
