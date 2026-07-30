@@ -224,9 +224,16 @@ fetch: tychoc
 	@sh examples/fetch/run.sh
 
 # server: build tycho-httpd, the static web server in server/. A BUILD target
-# only -- it is deliberately NOT in `make ci` and asserts nothing, because the
-# thing it produces is a long-running network daemon, not a fixture with a
-# golden. Run it and point a browser at it; see server/README.md.
+# only: it asserts nothing and is not in `make ci`. The gate is `server-check`
+# below, which IS in `make ci` (step [3c/13]) since 2026-07-30. Until then this
+# comment claimed the daemon was ungateable in principle -- "a long-running
+# network daemon, not a fixture with a golden" -- and that was wrong twice over:
+# the daemon shape is exactly what makes it gateable. It binds `--port 0` and
+# prints the bound port in a startup banner (server/main.ty:610-614), so a runner
+# gets readiness and the port from one line with no `sleep` and no fixed port to
+# collide on, and a `trap` kills it on every exit path. What is unassertable is
+# wall-clock (the concurrency and TCP_NODELAY numbers), not behaviour. Run this
+# target and point a browser at it; see server/README.md.
 server: tychoc
 	@./tychoc server/main.ty -o tycho-httpd
 	@echo "built ./tycho-httpd -- try: ./tycho-httpd --root server/www --port 8080"
@@ -235,7 +242,8 @@ server: tychoc
 # reads the bound port out of its stderr banner, talks HTTP to it over raw
 # sockets (status codes, binary bodies, traversal, keep-alive, the abuse suite),
 # checks the access log and the exit status, and kills it on every exit path.
-# ~4s. Skips without python3. See server/run.sh.
+# ~4s. Skips without python3. IN `make ci` since 2026-07-30, step [3c/13],
+# immediately after `entrypoints`. See server/run.sh.
 server-check: tychoc
 	@sh server/run.sh
 

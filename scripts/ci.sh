@@ -84,14 +84,32 @@ make -s fetch
 
 # Step 3 above builds corelib, corelib-examples, site, raytrace, mandelbrot and
 # fetch -- and NOTHING else in the tree with an entry point. The remaining
-# examples with their own runner (webserver, weblog, sqlite) and `server/` are
-# outside this file, so
+# examples with their own runner (webserver, weblog, sqlite) were outside this
+# file, so
 # examples/webserver/main.ty once sat uncompilable for a whole phase with no gate
 # red. This lane is compile-only (`--emit-c`: no cc, no link, no libcurl/sqlite3)
 # and costs milliseconds, so closing that hole is not a reason to run `make ci`
 # less often. It does NOT assert freeze parity -- see scripts/entrypoints.sh.
 step "[3b/13] make entrypoints  (every entry point in the tree still compiles)"
 make -s entrypoints
+
+# server-check joined the sweep on 2026-07-30 (plan.md phase 2). server/main.ty is
+# the largest program in the tree and until plan.md phase 1 NOTHING ran it: `make
+# server` builds it and asserts nothing. It sits here, immediately after 3b,
+# because 3b compiles server/main.ty for milliseconds -- so a server that does not
+# build reddens there, with a compile error, instead of surfacing here as
+# `FAIL readiness: no startup banner on stderr within 10s`; and it is placed ahead
+# of the minute-scale fuzz/tools lanes because at ~4s it is cheap and it is the
+# only lane covering core:net's accept/recv/send path end to end. Numbered 3c, not
+# 14: 2b/2c/2d/3b are the existing convention for a sub-lane, and the /13
+# denominator counts the numbered steps. It is a runner, not a compile check, so
+# it is a sub-lane of 3b rather than a sixth dogfood inside step 3 -- everything in
+# step 3 compares stdout to a recorded golden, and this one talks HTTP to a live
+# daemon and asserts the answers. It self-skips with a SKIP line if python3 is
+# absent (server/run.sh), and kills the daemon on every exit path including
+# failure, so it cannot leave a bound port behind in the middle of a sweep.
+step "[3c/13] make server-check  (tycho-httpd started for real: status codes, binary bodies, traversal, keep-alive, abuse suite, access log, SIGTERM)"
+make -s server-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc

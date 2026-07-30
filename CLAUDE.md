@@ -11,6 +11,7 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `python3 scripts/check_citations.py` | <1s | any `path:line` written in Markdown, comments, or evidence blocks |
 | `sh scripts/check_links.sh` | <1s | relative Markdown links |
 | `sh scripts/spec_check.sh` | ~6s | runnable examples in `docs/spec/`, Appendix A vs §3/§4, **and every backticked `tests/…` path in Appendix E resolving to a real file** — so any commit that moves or deletes a fixture directory must run this, not just the two doc gates |
+| `make server-check` | ~4s | `server/main.ty`, `server/www/`, `server/run.sh`, and the `core:net` accept/recv/send path |
 | `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
 | `sh scripts/asan_self.sh` | minutes | `src/tychoc.c` under ASan/UBSan over the whole corpus |
 | `make test` | minutes | compiler or runtime behaviour, any fixture or golden |
@@ -47,6 +48,7 @@ end, to confirm what you already believe.
 | `[2] make test`, `[2b] ilp32`, `[2c] asan-self` | `make test` (`sh scripts/asan_self.sh` for the ASan-specific case) |
 | `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` / `make fetch` |
 | `[3b] entrypoints` | `sh scripts/entrypoints.sh` |
+| `[3c] server-check` | `make server-check` (~4s; it starts tycho-httpd for real — a red here is a behaviour change in `server/main.ty` or `core:net`, not a build break, which `[3b]` would have caught first) |
 | `[4] conc` | `make conc` |
 | `[5] ffi` | `make ffi` |
 | `[6]/[7] fuzz` | `python3 fuzz/run.py <small N>` |
