@@ -3497,8 +3497,11 @@ edits the `Makefile`: the citation gate does catch this, but only if you run it.
 
 ## Phases discovered by batch 3
 
-- [ ] **Phase 41** — **~155 fences in `docs/` carry no language tag, so nothing
+- [ ] **Phase 43** — **~155 fences in `docs/` carry no language tag, so nothing
       can check them.** Found by batch 3 while building `scripts/docs_fences.sh`.
+      (Filed as "41" by batch 3, renumbered — 41 and 42 were already taken by
+      batch 2's filings. Batches file phases without seeing each other's work, so
+      collisions are a property of the process, not a mistake by either.)
       The gate keys off ```` ```tycho ````, of which there are 40. The bare
       ```` ``` ```` population is **48 in `docs/reference/`, 33 in
       `docs/guides/`, 56 in `docs/internals/`, 14 in `docs/`, 4 in `docs/rfc/`**
@@ -3517,8 +3520,9 @@ edits the `Makefile`: the citation gate does catch this, but only if you run it.
     language tag, and `make docs-fences` is green over the enlarged set.
   - Verify: `make docs-fences`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 42** — **doc→doc `path:N` citations are checked by nothing, and
+- [ ] **Phase 44** — **doc→doc `path:N` citations are checked by nothing, and
       there are 103 stale ones.** Found by batch 3 while fixing phase 15.
+      (Filed as "42" by batch 3, renumbered for the same reason as phase 43.)
       `SRC_PREFIX` (`scripts/check_citations.py:224-225`) lists `src/`,
       `compiler/`, `runtime/`, `corelib/`, `tests/`, `scripts/`, `tools/`,
       `examples/` — **not `docs/`** — so a ref whose path starts `docs/` is
