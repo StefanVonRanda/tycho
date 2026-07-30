@@ -217,7 +217,10 @@ const MAX_REQUEST = 1048576
 # Once Content-Length is known the read is clamped to the remaining bytes, so a
 # well-behaved client's NEXT request is not swallowed. A client that pipelines
 # (sends request 2 before reading response 1) can still have bytes consumed
-# inside the pre-header 4 KiB read; pipelining is not supported.
+# inside the pre-header 4 KiB read; pipelining is not supported. This wrapper
+# DROPS those bytes -- it returns only the Result. Exactly what they are and where
+# they go is the SURPLUS BYTES block on read_request_capped below; a caller that
+# cares must call that function instead of this one.
 fn read_request(fd: int) -> Result(Request, ReqErr):
     got, raw := read_request_capped(fd, MAX_REQUEST)
     return got
@@ -239,6 +242,34 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
 # ""` to initialize and no new type on this package's surface. The cost is inside
 # this function: a tuple literal will not infer a Result element ("error: tuple
 # element 1 needs a concrete value"), so the outcome is built in a typed local.
+#
+# SURPLUS BYTES -- the contract, written down here because it is not what a reader
+# would assume and nothing else in this package said it. This function reads at most
+# ONE request, but NOT at most one request's worth of BYTES: until the head
+# terminator is found it reads in 4096-byte gulps (`want := 4096` below), so a
+# single net.read can pull in the start of -- or the whole of -- a FOLLOWING
+# request. The `need`-based clamp below only narrows a read once `need` is known,
+# and `need` is only known after the head has already arrived. Those surplus bytes are off
+# the socket for good; this function will never hand them back a second time and a
+# later call reads only what arrives AFTER them. They end up in two places:
+#
+#   * the returned string, the 2nd tuple element. It is "every byte this call took
+#     off the socket", NOT "this request's bytes" -- the difference matters to
+#     anything that measures with it rather than merely logging its first line.
+#   * the returned Request's `body`, because parse_request splits at the FIRST
+#     terminator and gives it everything after that. Measured: two GETs in one
+#     buffer parse to path=/style.css with a 37-byte body that is verbatim the
+#     second request, and no Content-Length header. That absence is the only tell:
+#     a non-empty body with no Content-Length and no Transfer-Encoding is surplus,
+#     never a body this function was asked to read.
+#
+# Observed end to end (plan.md phase 7), two pipelined GETs in one send() to
+# server/main.ty: the first is answered, the second is consumed and discarded, and
+# the connection then sits idle until the keep-alive deadline closes it quietly --
+# 1.005s under --idle-ms 1000. Nothing is corrupted and the access log carries one
+# correct line for the request that was served; the second request simply never
+# happened. Pipelining is listed as deliberately not implemented in
+# server/README.md, and this is what that costs the client that tries it anyway.
 fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     buf := ""
     need := -1                                  # total expected bytes once known

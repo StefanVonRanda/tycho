@@ -757,7 +757,7 @@ and — if `FRICTION.md` item 8 is to be pushed — a worker-pool program that i
 
 ## Phases filed after the plan closed
 
-- [ ] **Phase 7 — `read_request_capped` discards bytes it has already taken off
+- [x] **Phase 7 — `read_request_capped` discards bytes it has already taken off
   the socket**
   - Found by phase 4 while costing pipelining; a correctness finding, not a
     recommendation, so it is filed rather than absorbed.
@@ -787,3 +787,68 @@ and — if `FRICTION.md` item 8 is to be pushed — a worker-pool program that i
   - Scope: `corelib/httpd/httpd.ty` and, if the close is added, `server/main.ty`
     plus an assertion in `server/run.sh`. Verify: `make server-check` (~4s), plus
     `make test` if `corelib/httpd/httpd.ty` behaviour changes. Not `make ci`.
+
+  **Evidence (2026-07-30).** Comment-only change to `corelib/httpd/httpd.ty`. No
+  behaviour changed, so `server/main.ty` and `server/run.sh` are untouched and
+  `server-check` stays at 52 assertions.
+
+  *Outcome 1: it reproduces exactly as the entry describes.* Server built from
+  `server/main.ty`, started `--port 0 --workers 1 --idle-ms 1000`, banner polled
+  for readiness as `server/run.sh` does. One `sendall` of 73 bytes:
+
+      b'GET /style.css HTTP/1.1\r\nHost: t\r\n\r\nGET /index.html HTTP/1.1\r\nHost: t\r\n\r\n'
+
+      ready on port 41407
+      elapsed until peer close/eof: 1.013s   peer closed=True   bytes=1917
+      responses seen: 1
+      HTTP/1.1 200 OK
+      Content-Type: text/css; charset=utf-8
+      Cache-Control: no-cache
+      Connection: keep-alive
+      Content-Length: 1726
+      ... (the 1726 bytes of style.css)
+
+  The second GET is answered by nothing. The connection does not hang without
+  bound and it does not close early: it idles for **1.005–1.013s** across two
+  runs, i.e. exactly the `--idle-ms 1000` keep-alive deadline, and is then closed
+  quietly — the `Err(Timeout)` arm at `server/main.ty:399-403` with `len(raw) == 0`,
+  so no 408. The access log holds **one** line and it is correct:
+
+      w1 127.0.0.1 GET /style.css 200 1726 0.137ms
+
+  So: no corruption, no hang, no mis-attributed bytes. The consequence in the
+  entry is right as written.
+
+  *Where the surplus goes — measured, not read.* `corelib/httpd/httpd.ty:151-156`
+  splits at the FIRST terminator, so the surplus is handed to the parsed request's
+  `body`. A throwaway program calling `httpd.parse_request` on the same two-GET
+  buffer printed:
+
+      path        = /style.css
+      body len    = 37
+      body        = GET /index.html HTTP/1.1\r\nHost: t\r\n\r\n
+      content-len = []
+
+  37 bytes is the second request verbatim, and no `Content-Length` accompanies it.
+  That absence is the only way a caller can tell surplus from a real body, and it
+  was not written down anywhere before this phase.
+
+  *Resolution: document the contract, no behaviour change.* The observed behaviour
+  is not worse than the entry describes, which is the condition the brief set for
+  reaching past the cheap fix. Adding the close in `server/main.ty` would change
+  the `Connection:` header of a served response and need a 53rd assertion in
+  `server/run.sh` — both outside this phase's named scope — to save a client one
+  idle period while doing something `server/README.md:116-121` lists as
+  deliberately not implemented. It would not make pipelining work. So the defect
+  fixed here is the stated one: the contract was nowhere. A `SURPLUS BYTES` block
+  now sits on `read_request_capped` in `corelib/httpd/httpd.ty` naming both places
+  the bytes land (the 2nd tuple element and `Request.body`), the `Content-Length`
+  tell, the fact that they never come back, and the wire behaviour with its
+  measured 1.005s. The note on the `read_request` wrapper in the same file was
+  tightened to say it DROPS them and to point at that block.
+
+  *Gates.* `make -s server-check` → `MAKE_SERVER_CHECK_EXIT=0`, `server: OK`,
+  `grep -c "^  ok "` = **52** (unchanged). `make test` → `passed: 560 failed: 0`,
+  `all green`. `make -s corelib` → `corelib: all green (tychoc matches goldens)`.
+  `python3 scripts/check_citations.py` → green. `make ci` not run: this phase adds
+  no CI step and changes no compiled behaviour.
