@@ -210,8 +210,8 @@ may appear inside any array indirectly (e.g. a `struct` field of a `[Struct]`
 element).
 
 > Provenance: dynamic `[T]` admits `bool` because it tests `void` alone —
-> `src/tychoc.c:2035@elem`, and its diagnostic lists `bool` as permitted at
-> `src/tychoc.c:2036@bool`. The fixed forms test both:
+> `src/tychoc.c:2035@elem`, and its diagnostic now states that as the whole rule
+> instead of an allow-list (`src/tychoc.c:2036@void`; plan.md phase 54). The fixed forms test both:
 > `src/tychoc.c:1999-2000` (`[$N]T`) and `src/tychoc.c:2018-2019` (`[N]T`);
 > `bounded[N]T` at `src/tychoc.c:1933-1934`. Pinned both ways by
 > `tests/bool_array.ty` (accepts, with a golden) and

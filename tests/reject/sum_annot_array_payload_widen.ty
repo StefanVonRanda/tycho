@@ -1,7 +1,21 @@
-# A non-scalar payload is compared structurally: `[1]` synthesizes `[int]`, which is
-# NOT `[u32]` -- there is no element-literal adaptation inside an array (only a bare
-# `[]` and a top-level scalar literal adapt). `Option([u32])` cannot hold an `[int]`.
-# Both compilers must reject. (Locks check_sum_leaf's non-literal payload comparison.)
+# A non-scalar payload is compared STRUCTURALLY: an `[int]` VALUE is not an
+# `[u32]`, so `Option([u32])` cannot hold it and nothing widens on the way in.
+# Both compilers must reject. (Locks check_sum_leaf's non-literal payload
+# comparison.)
+#
+# HISTORY, and read this before "simplifying" the payload back to a literal: it
+# used to be `Some([1])`, under a comment claiming "there is no element-literal
+# adaptation inside an array (only a bare `[]` and a top-level scalar literal
+# adapt)". That rule was never true of the compiler -- the FIXED and BOUNDED
+# destinations have pushed their element type into each element since 1.6
+# (src/tychoc.c:6283, src/tychoc.c:6295), so `a: [3]u32 = [1, 2, 3]` has always
+# compiled. Only the dynamic `[u32]` was left out; plan.md phase 55 closed that
+# gap and docs/spec/06-conversions.md:27 now states the rule. `Some([1])`
+# therefore compiles today, so pinning it here was pinning an accident. What
+# this fixture is FOR -- a value that already has a type is not re-typed by an
+# annotation -- is untouched by that change, and is what it tests now.
+#   error: declared type Option([u32]) but value is Some([int])
 fn main():
-    x : Option([u32]) = Some([1])
+    xs := [1]
+    x : Option([u32]) = Some(xs)
     println("unreachable")

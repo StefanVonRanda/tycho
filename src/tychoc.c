@@ -2032,8 +2032,8 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)
-            die_at(t->line, "array elements must be int, float, bool, string, a struct, or an array");
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2161) sits after a die_at */
+            die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Option")) {   /* Option(T) */
@@ -2349,8 +2349,8 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)
-                die_at(t->line, "array elements must be int, float, bool, string, a struct, or an array");
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2035): parse_type never yields T_VOID */
+                die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
         }
@@ -5106,8 +5106,8 @@ static Type resolve_expr_inner(Expr *e) {
                 return e->type = (Type)e->ival;
             }
             Type elem = resolve_expr(e->args[0]);
-            if (elem == T_VOID)
-                die_at(e->line, "array elements must be int, float, bool, string, a struct, an array, or an Option");
+            if (elem == T_VOID)   /* REACHABLE, unlike the two parse sites: the first element is a call to a procedure with no return type (tests/reject/arr_elem_void.ty) */
+                die_at(e->line, "an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)");
             if (elem == T_NONE)   /* the first element fixes the type, so it can't be a bare None */
                 die_at(e->line, "cannot infer the array's element type from None — put a Some(...) first");
             for (int i = 1; i < e->nargs; i++)
@@ -6277,11 +6277,11 @@ static Type resolve_exp(Expr *e, Type want) {
         else if (is_map(want)) { e->ival = want; e->op = TK_COLON; }
         /* else fall through: resolve_expr reports the no-context error */
     }
-    /* [e0, ..., eN-1] coerces to a fixed array `[N]T` (1.6) when the destination type is
-     * fixed, the count matches, and each element fits T. Otherwise a bracket literal stays
-     * a dynamic `[T]`. */
-    if (e->kind == E_ARRLIT && e->nargs > 0 && e->op != TK_COLON && IS_FIXARR(want)) {
-        int64_t n = fixarr_size(want);
+    /* [e0, ..., eN-1] checked against an ARRAY destination: fixed `[N]T` (1.6, count must match) or dynamic `[T]` (any count). Each
+     * element is checked AGAINST T, so literal adaptation reaches the elements -- `a: [u32] = [1, 2]`, which used to die "declared type
+     * [u32] but value is [int]" while the fixed form compiled (plan.md phase 55). Bounded is the branch below; a `[$N]T`/`[$T]` template destination stays out (those resolve after substitution); with no destination a bracket literal still synthesizes a dynamic `[T]`. */
+    if (e->kind == E_ARRLIT && e->nargs > 0 && e->op != TK_COLON && is_array(want) && !IS_BOUNDED(want) && !IS_SIZEPARAM_ARR(want) && !has_typaram(want)) {
+        int64_t n = IS_FIXARR(want) ? fixarr_size(want) : e->nargs;   /* a dynamic [T] accepts any count */
         if (e->nargs != n)
             die_at(e->line, "a fixed-size array of length %lld needs %lld elements, got %d", (long long)n, (long long)n, e->nargs);
         Type el = arr_elem(want);
@@ -12756,7 +12756,19 @@ int main(int argc, char **argv) {
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */
     char *cmd = sfmt("%s %s -fwrapv%s -pthread -o %s %s%s -lm%s%s %s", cc, optdbg, march, base, c_path, shims, links, extra, pkgdeps);
     int rc = system(cmd);
-    if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }
+    if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }   /* the .c SURVIVES a cc failure on purpose: it is the evidence the printed command refers to */
+    /* The generated C is an INTERMEDIATE, not an artifact. It used to be left beside the
+     * source on every plain build (`tychoc tests/for3.ty` -> an untracked `tests/for3.c`),
+     * which no .gitignore rule can safely cover: 31 directories hold both .ty sources and
+     * hand-written, tracked .c files, and 27 of those .c files share a basename with the
+     * sibling .ty (all of bench/, the hand-written C ports README:29 builds against), so a
+     * by-pattern ignore would hide a real file. Removing it here is the same fix `--emit-c`
+     * with no -o got in plan.md phase 25; this is phase 52. To KEEP the C, ask for it:
+     * `--emit-c -o name` (docs/guides/debugging.md:37 is the workflow that does).
+     * Note the pre-existing hazard this does NOT introduce: a plain build of `bench/json/json.ty`
+     * already OVERWROTE the hand-written `bench/json/json.c` before it got here. Nothing in
+     * the tree does that -- every in-tree build passes -o or --emit-c -o. */
+    remove(c_path);
     printf("built %s\n", base);
     return 0;
 }

@@ -1,0 +1,18 @@
+# An array element cannot be void. This is the ONLY element type an array
+# refuses -- the diagnostic used to be an allow-list ("int, float, bool, string,
+# a struct, an array, or an Option") that named neither what works nor what does
+# not: `[bytes]`, `[(int, int)]` and `[[string: int]]` all compile and none of
+# them appears in that list. plan.md phase 54.
+#
+# This is the one of the three void guards a program can actually reach. The two
+# in the type parser (src/tychoc.c:2035, src/tychoc.c:2352) are defensive: no
+# spelling of a type yields T_VOID, because parse_type_inner's only
+# `return T_VOID` (src/tychoc.c:2161) sits after a die_at.
+#
+#   error: an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
+fn nothing():
+    println("no return type, so this call has no value")
+
+fn main():
+    xs := [nothing()]
+    println(str(len(xs)))
