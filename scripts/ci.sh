@@ -101,7 +101,7 @@ step "[9/13] make tools-check  (formatter idempotence + semantic preservation + 
 sh scripts/tools_check.sh
 
 # Step 9 sweeps every .ty in the tree EXCEPT ./editors/*, which it excludes by
-# name (scripts/tools_check.sh:25), and no other step here mentions the directory
+# name (scripts/tools_check.sh:25@editors), and no other step here mentions the directory
 # -- so the two editor grammars were the one shipped artifact no gate ever
 # parsed. editors/zed/grammars/tycho/src/parser.c is GENERATED from grammar.js;
 # this lane regenerates it into a temp dir and cmp's, then parses the whole
