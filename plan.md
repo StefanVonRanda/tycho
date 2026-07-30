@@ -6024,7 +6024,7 @@ below.
 
 ## Phases discovered by batch 11
 
-- [ ] **Phase 64** — **§E.3's Tier 2 paragraph still describes a two-compiler
+- [x] **Phase 64** — **§E.3's Tier 2 paragraph still describes a two-compiler
       oracle that no longer runs.** Found by phase 59 while sweeping Appendix E's
       E.2.1 notes for retired-`tychoc0` language; filed rather than absorbed
       because phase 59's scope was that notes section, and this is a different
@@ -6047,7 +6047,7 @@ below.
   - Verify: `sh scripts/spec_check.sh` plus the two doc gates. **Not**
     `make test` — Markdown only.
 
-- [ ] **Phase 65** — **two `docs/internals/spec-plan.md` citations into Appendix E
+- [x] **Phase 65** — **two `docs/internals/spec-plan.md` citations into Appendix E
       are drifted, and the sentence around them is self-describing about it.**
       Found by phase 63 while repairing the sixteen cross-line inheritances; the
       repair made the binding explicit, which is all phase 63 owed, but did not
@@ -6139,3 +6139,136 @@ tree is left in a half-finished state: every gate this batch could redden was ru
 and is green, and the one deviation from a Done-when (phase 53's `grep` criterion,
 six surviving history comments) is stated in its evidence rather than papered
 over.
+
+## Batch 12 — phases 64 and 65 (2026-07-30)
+
+Markdown only. Per `CLAUDE.md`'s gate budget, no compiled gate was run: nothing
+in this batch can reach a compiled artifact, and batch 11's sweep
+(`CI_EXIT=0`, `make test` 552) stands.
+
+### Phase 64 — §E.3 Tier 2 no longer claims a live `tychoc0` leg
+
+**What was true.** `scripts/spec_examples.sh` records the retirement in its own
+header at `scripts/spec_examples.sh:13-16` — "Until 2026-07-26 each example was
+also run through the self-hosted tychoc0; that compiler is frozen (see
+compiler/tychoc0.ty) and no gate builds it, so that leg is gone". Batch 11's
+brief cited `scripts/spec_examples.sh:14-15`; the sentence now begins mid-line 13
+and ends mid-line 16, so the range was re-derived rather than copied. `git log`
+on that script confirms the cut: commit `4bb97e7` ("freeze tychoc0, cut it from
+every gate"). Two `tychoc0` mentions survive in the script and both are inside
+that historical sentence.
+
+**What §E.3 claimed.** The Tier 2 bullet said the gate builds each example with
+"**both** the reference `tychoc` and the self-hosted `tychoc0`, runs each, and
+asserts both produce stdout equal to the `output` block", called it "the
+two-compiler oracle of E.1 applied to the spec's own examples", and closed with
+a parenthetical blaming `make spec-check`'s wall time on "Building `tychoc0`
+from source each run" — the same claim in three places, all present tense.
+
+**The fix** (`docs/spec/appendix-e-conformance.md:412-431`): the bullet is now
+titled "example execution on the reference compiler", states the single-compiler
+rule against `docs/spec/00-conventions.md` §1.3, and notes that every example
+the gate runs is reported `(tychoc)`. The two-compiler oracle and the wall-time
+parenthetical are kept, moved into one **Historical, through 2026-07-26**
+parenthetical in the past tense, pointing at E.1's note and at
+`scripts/spec_examples.sh:13-16`. Same shape as phase 59's cure. No sentence in
+§E.3 now asserts a live `tychoc0` leg — Done-when met.
+
+### Phase 65 — the drifted `:188` pair, and the frozen-vs-live call
+
+**The determination: `docs/internals/spec-plan.md` is LIVE, so it was
+repointed.** Reasoned rather than reflexed, because batch 10's principle cuts
+the other way for dated records — a *fresh* citation inside a record frozen at a
+date is a lie the reader cannot detect, where a stale one announces itself. Four
+facts decided it:
+
+1. It is not in the frozen family. The frozen records are
+   `docs/internals/plan-*-DONE.md`; this file is not named that way and is not
+   one of them.
+2. Its own header (`docs/internals/spec-plan.md:1-11`) calls it "the working
+   plan for writing the spec", and its status line has been updated *after* its
+   2026-07-12 date ("last item cleared 2026-07-20").
+3. Its history is a history of maintenance, not of freezing: `eaf0064` corrected
+   a stale punch-list tally, `2e6e698` (batch 2) swept its drifted citations,
+   `a24242e` (batch 3) repaired references to things that no longer exist, and
+   `6ea4c35`'s phase 63 made its bare-`:N` bindings explicit.
+4. The bullet in question already carries corrections dated after its own
+   `RESOLVED (2026-07-23)` — the `make fixpoint` retirement note. A frozen
+   record would not have accreted those.
+
+So a repoint here is not an undetectable fresh fact in a sealed record; it is
+what this file has done every time it drifted.
+
+**What was wrong.** `docs/internals/spec-plan.md` at 607-608 cited
+`docs/spec/appendix-e-conformance.md:188` twice while *describing* that
+citation's own drift: "(§17.3 today, the §24.2 row when the drift was first
+noticed)". Verified against the file: line 188 of
+`docs/spec/appendix-e-conformance.md` is today
+`| §15.2 | parameter passing modes | ...` — a third drift, exactly as filed.
+
+**The fix.** Rather than repoint to a fourth line number and re-arm the cycle,
+the sentence now names the clause: it says the old citation pointed into E.2's
+per-clause fixture-coverage matrix, never E.2.1's flagged-clause list, and
+records the three drifts (§24.2 → §17.3 → §15.2) in prose with no line number to
+go stale. This is phase 65's own preferred option and matches `FRICTION.md`'s
+anchored-citation reasoning: a citation that must survive edits should name
+something stable. The sentence keeps its place because it explains why the
+neighbouring `make fixpoint` citation is gone, which is still load-bearing.
+
+### Verification — three gates, foreground, real output
+
+    $ python3 scripts/check_citations.py
+    citation check: ok (159 anchored contain the token they name, 2605 bare in bounds,
+    128 source->doc citations resolve, 169 source->source in bounds, 12 source->source anchored)
+
+    $ sh scripts/check_links.sh
+    link check: ok (134 markdown files, no dead relative links)
+
+    $ sh scripts/spec_check.sh
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: ok docs/spec/03-types.md:142 (tychoc)
+    spec-examples: ok docs/spec/03-types.md:233 (tychoc)
+    spec-examples: ok docs/spec/12-aggregates.md:47 (tychoc)
+    spec-examples: ok docs/spec/12-aggregates.md:235 (tychoc)
+    spec-examples: ok docs/spec/12-aggregates.md:350 (tychoc)
+    spec-examples: ok docs/spec/12-aggregates.md:540 (tychoc)
+    spec-examples: ok docs/spec/12-aggregates.md:685 (tychoc)
+    spec-examples: ok docs/spec/12-aggregates.md:763 (tychoc)
+    spec-examples: ok docs/spec/15-program.md:40 (tychoc)
+    spec-examples: 9 runnable example(s), all pass
+
+Nine examples, every one tagged `(tychoc)` and nothing else — the observation
+that backs the rewritten §E.3 sentence. Citation counts moved by one in two
+buckets (127→128 source->doc, 168→169 source->source) because the new
+`scripts/spec_examples.sh:13-16` reference in Appendix E is a doc-to-source
+citation the gate now resolves.
+
+## Phase discovered by batch 12
+
+- [ ] **Phase 66** — **a third drifted Appendix E citation, in the same
+      `docs/internals/spec-plan.md` bullet phase 65 repaired.** Filed rather
+      than absorbed: phase 65's scope was the `:188` pair named in its brief,
+      and this is a different citation on a different line.
+  - `docs/internals/spec-plan.md:605` cites
+    `docs/spec/appendix-e-conformance.md:235-241` as the place where §9.5 is
+    evidenced by the whole differential suite. That range lands on E.2's
+    fixture rows for §29.5 through §30.1 (`| §29.5 | string builtins | …`
+    onward) — ordinary coverage-matrix rows, not the flagged-clause list.
+  - The flagged-clause bullet it means is
+    `docs/spec/appendix-e-conformance.md:250-256`: "**§5.1 identity, §9.4
+    uniqueness, §9.5 transparent optimizations, §10.4 soundness** — properties
+    of the model exercised by the whole corpus rather than by one fixture",
+    including the ASan/UBSan-vs-native agreement and `make fuzz`, and closing
+    with the note that `eqparity`/`typeparity`/`make fixpoint` went with the
+    `tychoc0` freeze.
+  - Same residual class as phase 65: explicit, in-bounds, wrong — invisible to
+    the bounds check. Prefer the same cure phase 65 used (name the clause,
+    E.2.1's flagged-clause list) over repointing to a range that will drift
+    again; the range form cannot be anchored, which is exactly why it rots.
+  - Done when: no citation in that bullet resolves to a row it does not mean.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+    **Not** `make test`, **not** `make ci` — Markdown only.
+
+Phase 51 was not started: it is the user's language-design decision and its own
+conclusion is that it needs a separate plan.

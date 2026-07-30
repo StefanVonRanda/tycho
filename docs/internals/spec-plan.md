@@ -604,11 +604,15 @@ changes an observable behavior claim.
   out normatively. Cross-referenced by `docs/spec/appendix-g-glossary.md:29-31`
   and `docs/spec/appendix-e-conformance.md:235-241` (§9.5 is evidenced by the
   whole differential suite — every fixture built native *and* under ASan/UBSan
-  plus `make fuzz` — not by one fixture). This used to read `docs/spec/appendix-e-conformance.md:188` and cite
-  `make fixpoint` alongside the suite: `docs/spec/appendix-e-conformance.md:188` is a fixture row (§17.3 today, the
-  §24.2 row when the drift was first noticed), never the flagged-clause list, and
-  `make fixpoint` was retired with the `tychoc0` freeze, which E.1 and the target
-  paragraph both now record.
+  plus `make fuzz` — not by one fixture). This used to point into E.2's
+  per-clause **fixture-coverage matrix** and to cite `make fixpoint` alongside
+  the suite: that row was an ordinary fixture row, never E.2.1's flagged-clause
+  list, and `make fixpoint` was retired with the `tychoc0` freeze, which E.1 and
+  the target paragraph both now record. The old line number is deliberately not
+  repeated here — it has drifted three times since it was first written down
+  (the §24.2 row when the drift was noticed, the §17.3 row when it was recorded,
+  the §15.2 parameter-passing-modes row today), and naming the clause instead of
+  the line is what ends that cycle.
 - ~~`int`-width conformance (punch-list 16): require 64-bit lowering vs. scope to
   LP64. Recommend require-64-bit.~~ **RESOLVED (2026-07-23):** require 64-bit
   (option a) — normative in `docs/spec/03-types.md` §5.2.1. **Codegen follow-up
