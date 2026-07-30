@@ -17,13 +17,31 @@
 # See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
 #
 # WHAT IS LOST: a second independent implementation of the type rules to check
-# tychoc against. There is no `expect` table here -- the tychoc0 verdict WAS the
-# oracle -- so what remains is strictly weaker: an exhaustive fail-closed sweep
-# asserting tychoc never CRASHES on any (type, form) x operator x (type, form)
-# case, and that every program it accepts emits C that compiles. A silent change
-# to a type RULE now passes this lane. Adding an `expect` table (as
-# run_eqparity.py and run_unaryparity.py carry) would restore an oracle; that is
-# left undone rather than pretended.
+# tychoc against. Between 2026-07-29 and 2026-07-30 there was no `expect` table
+# here either -- the tychoc0 verdict WAS the oracle -- so what remained was
+# strictly weaker: a fail-closed sweep asserting tychoc never CRASHES and that
+# every accept emits compilable C. A silent change to a type RULE passed it.
+#
+# WHAT REPLACED IT (plan.md phase 22, 2026-07-30): the `expect` oracle below, in
+# the style run_eqparity.py / run_unaryparity.py / run_parforparity.py carry. Like
+# run_eqparity.py's (`accept iff the two operands have the same nominal type`) it
+# is a written-down RULE rather than 4608 enumerated rows -- a table that large
+# could only have been machine-recorded from the compiler, which is not an oracle
+# at all, just a photograph. The rule is derived from the SPEC:
+#   - arithmetic / string concat / char byte-domain  docs/spec/09-expressions.md:24-40
+#   - element-wise arithmetic is not in this matrix  docs/spec/09-expressions.md:51-63
+#   - comparison and ordering                        docs/spec/03-types.md:436-457
+#   - bitwise and shift                              docs/spec/09-expressions.md:83-92
+#   - literal adaptation                             docs/spec/06-conversions.md:11-27
+# and it was then RECONCILED against the resolver arm by arm; each clause below
+# cites the line it encodes. Reconciliation found the spec and `src/tychoc.c`
+# disagreeing in one place -- mixed-width shifts -- recorded at the shift clause
+# and filed as its own plan.md phase rather than silently encoded either way.
+#
+# What this does and does not buy: a changed type rule now reddens this lane, and
+# a fail-OPEN in tychoc alone is caught. A fail-open that the rule below shares --
+# because the rule was reconciled against the same compiler -- is not. That is the
+# residue of losing tychoc0 and no single-implementation oracle can remove it.
 #
 # This is DETERMINISTIC and EXHAUSTIVE over the scalar binary-operator matrix --
 # every (type, form) x operator x (type, form) -- not random sampling. `c := L op R`
@@ -64,6 +82,69 @@ PRELUDE = ('fn main():\n'
            '    vi := 7\n    vf := 2.5\n    vc := \'A\'\n    vs := "x"\n    vb := true\n'
            '    vu := to_u32(7)\n    vw := to_u64(7)\n    vg := to_f32(2.5)\n')
 
+# ---- the `expect` oracle ------------------------------------------------------
+# Only `7` and `2.5` are ADAPTABLE literal forms. `to_u32(7)` and friends are
+# CALLS -- a typed value, not a literal token -- so they never adapt
+# (docs/spec/06-conversions.md:13-16), and `'A'`/`"x"`/`true` do not adapt either
+# (docs/spec/06-conversions.md:24).
+SIZED   = {"u32", "u64"}                  # is_sized_int() over this matrix's types
+INTEGER = {"int"} | SIZED
+ORDERED = {"int", "char", "float", "string", "f32"} | SIZED   # bool is deliberately absent
+
+def is_lit(t, form):
+    return t in ("int", "float") and form == OPERANDS[t][0]
+
+def adapt(lt, ll, rt, rl):
+    """Sized-numeric literal adaptation, in the resolver's own order
+    (`src/tychoc.c:6035-6044`): an int literal takes the other side's u32/u64;
+    an int OR float literal takes the other side's f32. Value-directional --
+    a typed variable never changes width."""
+    if ll and lt == "int" and rt in SIZED: lt = rt
+    if rl and rt == "int" and lt in SIZED: rt = lt
+    if rt == "f32" and ll: lt = "f32"
+    if lt == "f32" and rl: rt = "f32"
+    return lt, rt
+
+def expect(lt, lform, op, rt, rform):
+    """What tychoc SHOULD say for `c := L op R`. Each clause names the resolver
+    arm it encodes, so a rule change shows up here as a citation that no longer
+    reads the way the code does."""
+    ll, rl = is_lit(lt, lform), is_lit(rt, rform)
+    if op in ("and", "or"):                       # `src/tychoc.c:6019` -- bool operands, no adaptation
+        return "accept" if lt == "bool" and rt == "bool" else "reject"
+    lt, rt = adapt(lt, ll, rt, rl)
+    if op in ("==", "!="):                        # `src/tychoc.c:6050` -- structural, but the types must be EQUAL.
+        # Note the deliberate asymmetry with ordering below: there is no
+        # int-literal-to-float adaptation on the equality path, so `2.5 == 7` is a
+        # type error while `2.5 < 7` is not (`src/tychoc.c:6061-6068` explains why).
+        return "accept" if lt == rt else "reject"
+    if op in ("<", ">", "<=", ">="):              # `src/tychoc.c:6065-6072`
+        if lt == "float" and rt == "int" and rl: rt = "float"
+        elif rt == "float" and lt == "int" and ll: lt = "float"
+        return "accept" if lt == rt and lt in ORDERED else "reject"
+    if op == "+" and lt == "string":              # `src/tychoc.c:6079` -- string + string|char, ONE-directional
+        return "accept" if rt in ("string", "char") else "reject"
+    if op in ("<<", ">>"):                        # `src/tychoc.c:6101-6107`
+        # MIXED WIDTHS ARE ACCEPTED HERE and the result takes the LEFT operand's
+        # width, because a shift COUNT has no reason to share the shifted value's
+        # type. docs/spec/09-expressions.md:83 says instead that bitwise AND shift
+        # "Operands MUST be the same integer type", which is true of `& | ^`
+        # (`src/tychoc.c:6211`) and false of `<< >>`. The compiler is the sane one;
+        # the spec sentence is the defect. Filed as a plan.md phase; this oracle
+        # encodes the implemented rule and says so rather than reddening on it.
+        return "accept" if lt in INTEGER and rt in INTEGER else "reject"
+    if op in ("%", "&", "|", "^"):                # `src/tychoc.c:6211` -- two MATCHING integers
+        return "accept" if lt in INTEGER and lt == rt else "reject"
+    # arithmetic `+ - * /`
+    if lt == rt and lt in ({"int", "float", "f32"} | SIZED):   # `src/tychoc.c:6221-6233`
+        return "accept"
+    if op in ("+", "-") and (lt == "char" or rt == "char") \
+       and lt in ("char", "int") and rt in ("char", "int"):    # `src/tychoc.c:6229-6232` -- char±int, int±char, char±char
+        return "accept"
+    if lt == "float" and rt == "int" and rl: return "accept"   # `src/tychoc.c:6238`
+    if rt == "float" and lt == "int" and ll: return "accept"   # `src/tychoc.c:6242`
+    return "reject"
+
 def forms(t):
     lit, var = OPERANDS[t]
     return [lit, var]
@@ -97,7 +178,7 @@ def main():
     tmp = tempfile.mkdtemp()
     try:
         src = os.path.join(tmp, "p.ty")
-        total = 0
+        total = 0; accepts = 0
         fails = []   # (label, kind, detail, program)
         for lt in TYPES:
             for lform in forms(lt):
@@ -108,12 +189,17 @@ def main():
                             prog = program(lform, op, rform)
                             with open(src, "w") as f:
                                 f.write(prog)
-                            label = "%s %s %s" % (lform, op, rform)
+                            label = "%s %s %s   (%s %s %s)" % (lform, op, rform, lt, op, rt)
+                            want = expect(lt, lform, op, rt, rform)
                             hv, hc = tychoc_verdict(src, os.path.join(tmp, "hc"))
                             if hv == "CRASH":
                                 fails.append((label, "tychoc CRASH", "", prog)); continue
+                            if hv != want:
+                                fails.append((label, "ORACLE DIVERGENCE",
+                                              "tychoc=%s expected=%s" % (hv, want), prog)); continue
                             if hv == "accept" and not c_compiles(hc):
                                 fails.append((label, "tychoc accepted, emitted C does not compile", "", prog)); continue
+                            accepts += (want == "accept")
         if fails:
             print("TYPE-PARITY FAIL: %d/%d cases bad\n" % (len(fails), total))
             for i, (label, kind, detail, prog) in enumerate(fails):
@@ -123,9 +209,11 @@ def main():
                     f.write("# %s -- %s %s\n%s" % (kind, label, detail, prog))
             print("\nfindings saved in fuzz/findings/typeparity_*.ty")
             sys.exit(1)
-        print("type-parity: %d/%d scalar binop cases OK (tychoc fails closed; every accept "
-              "emits compilable C).\n             NOTE: the tychoc0 differential was retired "
-              "2026-07-29 -- see this file's header." % (total, total))
+        print("type-parity: %d/%d scalar binop cases match the `expect` oracle "
+              "(%d accept / %d reject;\n             every accept emits compilable C, no crash on any case)."
+              "\n             NOTE: the tychoc0 differential was retired 2026-07-29 and the oracle "
+              "\n             above replaced it 2026-07-30 -- see this file's header."
+              % (total, total, accepts, total - accepts))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

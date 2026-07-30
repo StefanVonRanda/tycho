@@ -1,0 +1,78 @@
+# Two forms the concurrency suite never reached (plan.md phases 19 and 36):
+# the bare `for:` loop and element-wise array arithmetic. Measured 2026-07-30,
+# before this file: 0 of the 11 tests/conc fixtures contained either.
+#
+# They belong here and not only in tests/ because the concurrency lane is the
+# only one that builds every fixture under TSan and runs the same program on a
+# task's stack rather than main's:
+#   - a bare `for:` inside a SPAWNED call exercises the loop arena on a task
+#     arena, and `break`/`return` out of it must free that arena, not main's;
+#   - element-wise arithmetic allocates a FRESH array per operation, so doing it
+#     inside a task (and inside a `parallel for` chunk, which deep-copies its
+#     captures) is where a shared-buffer mistake would show as a data race
+#     rather than as a wrong number.
+#
+# Every value below is interleaving-independent: the tasks compute pure
+# functions of their arguments, and the `parallel for` body is a `+=` reduction
+# into a variable read nowhere else in the chunk.
+
+# A bare `for:` left by `break`, run on a task's stack.
+fn accum(n: int) -> int:
+    i := 0
+    t := 0
+    for:
+        i = i + 1
+        if i > n:
+            break
+        t = t + i
+    return t
+
+# A bare `for:` left by `return` -- the return path must free the loop arena.
+fn first_over(k: int, lim: int) -> int:
+    n := 0
+    for:
+        n = n + k
+        if n > lim:
+            return n
+    return 0
+
+# Element-wise `*` and a broadcast, both producing fresh arrays inside a task.
+fn scaled(xs: [int], k: int) -> [int]:
+    return xs * k
+
+fn squared(xs: [int]) -> [int]:
+    return xs * xs
+
+fn main():
+    t1 := spawn accum(5)
+    t2 := spawn first_over(7, 20)
+    xs := [1, 2, 3]
+    t3 := spawn scaled(xs, 3)
+    t4 := spawn squared(xs)
+    push(xs, 4)                       # the tasks hold deep copies; this must not reach them
+
+    println("accum=" + str(wait(t1)))          # 15
+    println("over=" + str(t2.wait()))          # 21
+    ys := wait(t3)
+    println("scaled=" + str(ys))               # [3, 6, 9]
+    zs := t4.wait()
+    println("squared=" + str(zs))              # [1, 4, 9]
+    println("xs=" + str(xs))                   # [1, 2, 3, 4]
+
+    # element-wise arithmetic feeding a parallel-for reduction: `zs` is read
+    # (deep-copied per chunk), `p` is a pure `+=` reduction.
+    p := 0
+    parallel for i in 0..<3:
+        p += zs[i]
+    println("par=" + str(p))                   # 14
+
+    # a bare `for:` in main, driving a spawn per iteration
+    n := 0
+    tot := 0
+    for:
+        n = n + 1
+        h := spawn accum(n)
+        tot = tot + wait(h)
+        if n >= 3:
+            break
+    println("tot=" + str(tot))                 # 1 + 3 + 6 = 10
