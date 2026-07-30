@@ -28,6 +28,41 @@ cheapest gate that can actually redden for your change.** Running a broader one
 - If you are unsure which gate covers your change, that is a question to ask,
   not a reason to run the expensive one.
 
+### `make ci` is confirmation, not discovery — never debug with it
+
+The expensive failure mode is not running `make ci` too often for no reason. It
+is running it as a **feedback loop**: sweep, hit a red, fix it, sweep again, hit
+the next red, fix it, sweep again. Each iteration costs nineteen minutes to learn
+one thing that the individual gate would have reported in seconds. Observed on
+this repo: four sweeps, seventy-six minutes, failing at `[4/13]`, then `[9b/13]`,
+then `[12/13]` — three facts that `make conc`, `make editors-check` and
+`scripts/spec_check.sh` together would have produced in under two minutes.
+
+When `make ci` reddens, **do not re-run `make ci`.** Read which step failed, run
+that step's own gate, fix, re-run *that gate*. Spend the full sweep once, at the
+end, to confirm what you already believe.
+
+| `make ci` step | run this instead while fixing |
+|---|---|
+| `[2] make test`, `[2b] ilp32`, `[2c] asan-self` | `make test` (`sh scripts/asan_self.sh` for the ASan-specific case) |
+| `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` |
+| `[3b] entrypoints` | `sh scripts/entrypoints.sh` |
+| `[4] conc` | `make conc` |
+| `[5] ffi` | `make ffi` |
+| `[6]/[7] fuzz` | `python3 fuzz/run.py <small N>` |
+| `[9] tools-check` | `sh scripts/tools_check.sh` |
+| `[9b] editors-check` | `make editors-check` |
+| `[10] bench-guard` | `sh bench/guard.sh` |
+| `[11] recursion` | `make recursion` |
+| `[12] spec-check` | `sh scripts/spec_check.sh` |
+| `[12b] docs-fences` | `make docs-fences` |
+| doc gates | `python3 scripts/check_citations.py`, `sh scripts/check_links.sh` |
+
+And if the *same* step reddens twice, stop patching and read the source that
+governs it. Three different steps reddening in a row means the change is touching
+more than its scope claims — say so and narrow it, rather than grinding the suite
+until it goes quiet.
+
 ### Two gates that used to be here
 
 `sh scripts/frontparity.sh` and `sh compiler/fixpoint.sh` were **retired on
