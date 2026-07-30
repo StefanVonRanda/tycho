@@ -2113,6 +2113,31 @@ its own last bullet says "Closed by phase 7" — filed as phase 38.
 
 Unclosed discoveries from the two previous plans; none blocking.
 
+## Cleanup batches — how the remaining 24 phases are being run, 2026-07-30
+
+The user asked for all remaining phases to be completed. Run one at a time they
+are two dozen background agents for what is, in several cases, the same fact
+recorded against different files. They are therefore grouped into **six batches**,
+each independently verifiable and each committing once. Every constituent phase
+keeps its own entry and its own checkbox below; a batch ticks the boxes it closes.
+
+**Order matters in one place:** the citation-gate work (batch 1) runs before the
+citation sweep (batch 2), so the sweep lands against a gate that can see the class
+of drift it is repairing. Doing it the other way round is how phases 4, 6, 10 and
+11 each re-created work the previous one had done.
+
+| batch | phases | subject |
+|---|---|---|
+| 1 | 13, 23, 34 | **the citation gate's three blind spots** — no anchored form for source→source, an absolute path silently unchecked, a pathless `> Provenance:` block exempt from the anchor rule |
+| 2 | 17, 18, 38 | **the citation sweep** — ~344 bare `src/tychoc.c:N` refs, one confirmed wrong doc→doc ref, and `plan.md`'s own malformed record around phases 28-29 |
+| 3 | 12, 15, 32, 33, 35 | **documents pointing at things that no longer exist** — the hand-typed zed corpus count, dead `docs/corelib.md`, `range` still a zed builtin, ungated `tycho` fences in `docs/`, two surviving `range(len(A))` sites |
+| 4 | 19, 22, 36 | **coverage the generators cannot reach** — element-wise arithmetic, bare `for:`, and `run_typeparity.py`'s lost oracle |
+| 5 | 20, 21, 26, 28 | **fixtures and their gates** — `examples/fetch/run.sh` red since before this plan, fixture placement now the freeze is gone, the `parallel for` diagnostic, the three retired `range()` fixtures |
+| 6 | 16, 25, 29, 30, 39, 40 | **small compiler and tooling items** — `char` has no type name, `--emit-c` strays a file, the LSP misses three keywords, dead `r_step`, the `parallel for` capture hole, and recording the `-O3` elision finding |
+
+Phases 27 and 37 were completed individually before this batching, at the user's
+request (`fc921d7`, `7a04e53`).
+
 - [ ] **Phase 12** — `editors/zed/README.md`'s corpus count is hand-typed and
       unguarded; `scripts/editors_check.sh` already computes it.
 - [ ] **Phase 13** — an anchored form for source→source citations; phase 8 of the
