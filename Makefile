@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check check-links server wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -75,6 +75,14 @@ entrypoints: tychoc
 # byte-identical to the defining chapters §3/§4. See scripts/spec_check.sh.
 spec-check:
 	@sh scripts/spec_check.sh
+
+# Front-end pass over the ```tycho fences in docs/. spec_examples.sh only builds
+# a fence PAIRED with an ```output block (9 in the whole spec); everything else
+# was unparsed prose, which is how a snippet using a digit separator the language
+# does not have sat in docs/guides/ for months. Skips are named, not silent --
+# see the header of scripts/docs_fences.sh for exactly what is NOT covered.
+docs-fences: tychoc
+	@sh scripts/docs_fences.sh
 
 # Doc hygiene: every relative Markdown link points at a file that exists, and
 # every `path:N` provenance citation still resolves (bounds for a bare citation,

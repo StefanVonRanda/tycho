@@ -46,7 +46,10 @@ module.exports = grammar({
 
     builtin: ($) =>
       choice(
-        "print", "println", "str", "len", "push", "pop", "range", "split",
+        // `range` was a builtin until 2026-07-29 and is NOT one now (the
+        // counting `for x in range(n):` form was deleted from the language);
+        // highlighting it as one paints a name the compiler refuses.
+        "print", "println", "str", "len", "push", "pop", "split",
         "substr", "find", "read_file", "write_file", "read_all", "list_dir",
         "args", "getenv", "input", "chr", "die", "is_null", "sqrt", "pow",
         "floor", "fabs", "map_get", "map_set", "reserve",

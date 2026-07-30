@@ -10,11 +10,16 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `tycho-lsp`) for
   and drives highlighting; it does **not** model block nesting (tycho is
   indentation-significant; full structure would need a C external scanner). The
   generated parser (`src/parser.c`, ABI 15) is committed, so no tree-sitter CLI
-  is needed to build it. **Verified 2026-07-29: `tree-sitter parse -q` over all
-  813 committed `.ty` files (excluding `editors/`, `node_modules/` and
+  is needed to build it. **`tree-sitter parse -q` over
+  829 committed `.ty` files (excluding `node_modules/` and
   `fuzz/findings/`) reports exactly ONE `ERROR` node — including `$T` generics and
   backtick raw literals. That one is `tests/reject/rawstring_unterminated.ty`,
-  which is a reject fixture and is *supposed* not to parse.** To regenerate after editing
+  which is a reject fixture and is *supposed* not to parse.**
+  That count is **not hand-maintained**: `scripts/editors_check.sh` recomputes it
+  and fails if this line disagrees, because it was wrong by 351 files (it read
+  "462") for hundreds of commits before anyone re-measured. Edit the number only
+  by running `make editors-check` and copying what it reports.
+  To regenerate after editing
   `grammar.js`: `npx tree-sitter-cli@0.25 generate --abi 15` in this directory
   (ABI 15 matches the committed parser; the keyword set tracks the language, e.g.
   `inout`, and `$T` type parameters lex as a `typaram` token).

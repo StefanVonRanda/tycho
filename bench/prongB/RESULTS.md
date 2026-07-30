@@ -166,9 +166,8 @@ under C's 58 MB here), no time cost on either. make test 84/0 + fixpoint B≡C +
 fuzz green.
 See the scaling study at the end.
 
-² array-pipeline `tychoc` was **132 ms** until **bounds-check elision**: inside
-`for i in range(len(A)):` the access `A[i]` is provably in `[0, len(A))` — the C
-loop caches `_stop = len(A)` once at entry, `len` is an un-redefinable builtin,
+² array-pipeline `tychoc` was **132 ms** until **bounds-check elision**: the
+access `A[i]` is provably in `[0, len(A))`, `len` is an un-redefinable builtin,
 Tycho has no in-place array shrink, and the compiler verifies the loop body never
 reassigns/shadows `A` or `i` and never passes `A` whole to a call — so the
 per-element check is emitted as a raw `A.data[i]`. **132 → 47 ms (~2.8×)**, same
@@ -176,10 +175,23 @@ output, now ~2× C (was ~6×) and faster than Go. Provably-safe range narrowing,
 NOT a blanket "trust the index": when `A` is reassigned or passed to a possibly-
 inout callee the check stays and an out-of-range index still aborts (verified by
 the 600-seed differential+ASan fuzz, which generates exactly this loop shape, and
-by OOB-abort regression cases). Disable with `TYCHOC_NO_BOUNDS_ELISION=1`. The
-idiomatic `range(len(xs))` source form is what enables it (a bare `range(n)` bound
-can't be proven equal to `len`); `tychoc0`'s array index is unchecked, so it was
-already at this speed.
+by OOB-abort regression cases). Disable with `TYCHOC_NO_BOUNDS_ELISION=1`.
+`tychoc0`'s array index is unchecked, so it was already at this speed.
+
+**Which spelling these numbers were measured with.** The 132 → 47 ms above was
+measured on `for i in range(len(A)):`, the counting loop form, whose elision
+cached `_stop = len(A)` once before the loop and leaned on the body never
+shrinking `A`. **That form no longer exists** — it was deleted from the language
+on 2026-07-29, and for one day the surviving three-clause spelling had no
+elision arm at all, so 223 sequential sites fell back to the checked accessor.
+Phase 27 restored it: `for i := 0; i < len(A); i += 1:` elides today
+(`src/tychoc.c:7955-8005`), for a slightly *stronger* reason — the condition is
+emitted into the C `while` header and so is re-evaluated every iteration rather
+than cached. **The 47 ms was not re-measured on the three-clause form**, and at
+`-O3` gcc folds the check away by itself, so a wall-time re-run would not
+separate the two anyway; `bench/guard.sh` therefore asserts the emitted C
+directly instead. Treat the ~2.8× as a dated figure for a deleted syntax, not as
+a current claim about the three-clause loop.
 
 ³ iter-transform was the arena's deliberate **worst case** (see "Where the model
 loses"): a loop-carried value reassigned each step (`a = step(a)`), so every dead

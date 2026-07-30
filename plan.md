@@ -2141,8 +2141,10 @@ of drift it is repairing. Doing it the other way round is how phases 4, 6, 10 an
 Phases 27 and 37 were completed individually before this batching, at the user's
 request (`fc921d7`, `7a04e53`).
 
-- [ ] **Phase 12** — `editors/zed/README.md`'s corpus count is hand-typed and
+- [x] **Phase 12** — `editors/zed/README.md`'s corpus count is hand-typed and
       unguarded; `scripts/editors_check.sh` already computes it.
+      **CLOSED by batch 3** — the count was 813 in the README and 829 in the
+      tree; a README lane now recomputes it and fails on disagreement.
 - [x] **Phase 13** — an anchored form for source→source citations; phase 8 of the
       first plan proved its bounds check catches none of the wrong-line class.
       **CLOSED by batch 1** — evidence under "Batch 1 evidence" below.
@@ -2153,8 +2155,14 @@ request (`fc921d7`, `7a04e53`).
       and anchors and wrote the reason for the escape into the block. The
       *general* gate hardening (make the anchor rule fire on a pathless
       Provenance block) was **not** done and is filed as phase 34.
-- [ ] **Phase 15** — `docs/corelib.md` does not exist (moved to
+- [x] **Phase 15** — `docs/corelib.md` does not exist (moved to
       `docs/guides/corelib.md` by `68e5b39`); a dead backticked path in prose.
+      **CLOSED by batch 3, and it was not one reference but 31.** 26 in
+      `docs/spec/18-library.md`, 3 in `docs/spec/appendix-h-differences.md`, 2 in
+      `docs/internals/spec-plan.md`; 5 more in frozen `-DONE.md` archives, left
+      alone. **17 of the 25 ranged ones had also drifted in line number**, so a
+      path-only rewrite would have manufactured 17 false citations — see the
+      batch 3 evidence for how each was re-derived.
 - [ ] **Phase 16** — `char` has arithmetic but no spellable type name, no
       `to_char`, and no `\xNN` escape.
 - [ ] **Phase 17** — **PARTIAL after batch 2.** The population is not ~344: a
@@ -2569,7 +2577,11 @@ request (`fc921d7`, `7a04e53`).
   - Verify: `sh scripts/spec_check.sh`, `sh scripts/check_links.sh`, `python3
     scripts/check_citations.py`.
 
-- [ ] **Phase 32** — **the zed grammar still lists `range` as a builtin.**
+- [x] **Phase 32** — **the zed grammar still lists `range` as a builtin.**
+      **CLOSED by batch 3 — and zed was NOT alone.** The VS Code grammar spelled
+      it in a regex alternation
+      (`editors/vscode/syntaxes/tycho.tmLanguage.json:47`), exactly the form the
+      entry below predicted phase 7's quoted-string grep would miss.
       Found by phase 7. `editors/zed/grammars/tycho/grammar.js:49` has `range`
       in the builtin-highlight list, and the generated
       `editors/zed/grammars/tycho/src/grammar.json`,
@@ -2609,6 +2621,38 @@ request (`fc921d7`, `7a04e53`).
   - Done when: a gate parses the fences it can and names the ones it skipped, and
     `docs/guides/arrays-structs.md`'s snippet is covered by it.
   - Verify: the new gate, plus `sh scripts/spec_check.sh`.
+  - **BATCH 3 BUILT THE GATE. The box stays unchecked because the coverage is
+    partial, and the honest number is small.** `scripts/docs_fences.sh` +
+    `make docs-fences` now runs `tychoc --emit-c` over the ```` ```tycho ````
+    fences in tracked `docs/*.md` and is a step in `scripts/ci.sh`. The
+    `arrays-structs.md` snippet is covered (its fence was **bare** ```` ``` ````,
+    not tagged `tycho` — retagging it is what opted it in) and the gate reddens
+    on the original `1_000_000` with `error: expected ';' after the condition`.
+  - **What is checked: 10 fences.** Of the 40 ```` ```tycho ```` fences in
+    `docs/`: 10 CHECKed, 19 FRAGMENT (no `fn` at all), 6 MARKED
+    `<!-- fence-skip: … -->` with a printed reason, 5 FROZEN (in
+    `docs/internals/plan-*-DONE.md`, the same exemption as
+    `scripts/check_citations.py:258@ARCHIVED`).
+  - **What remains unchecked, precisely:**
+    1. **~155 fences opened with a bare ```` ``` ```` and no language tag**, of
+       which an unknown subset is Tycho. `docs/reference/` has **48** and
+       `docs/guides/` **33** — and `docs/reference/` and `docs/tutorial.md`
+       contain **zero** `tycho`-tagged fences, so the original claim above that
+       they are "never parsed by anything" is right while the implied reason is
+       wrong: they are not untagged-and-skipped, they are untagged entirely.
+       Nothing can distinguish shell from C from Tycho in them. Tagging one
+       `tycho` opts it in; that is the intended growth path, one reviewed fence
+       at a time, and it is filed as **phase 41**.
+    2. **The 19 FRAGMENT and 6 MARKED fences are not compiled at all.** A
+       fragment can still be wrong. The gate proves only that what claims to be a
+       whole program is one.
+    3. **Nothing is run.** Output correctness stays `scripts/spec_examples.sh`'s
+       9 pairs.
+    4. The 3 MARKED fences in `docs/internals/generics-stage2-body-cloning.md`
+       document programs the compiler **must reject**. They are skipped, not
+       asserted-red — a negative lane would be strictly better and is not built.
+  - Close this box when (1) is resolved, or re-scope it to say the bare-fence
+    population is permanently out of reach and close it then.
 
 - [x] **Phase 34** — **the pathless-`> Provenance:` gate hole is still open in
       the tool, only closed in the one file phase 14 named.** Phase 9 repaired
@@ -2628,7 +2672,15 @@ request (`fc921d7`, `7a04e53`).
     swept for the class, and `python3 scripts/check_citations.py` is green.
   - Verify: `python3 scripts/check_citations.py`.
 
-- [ ] **Phase 35** — **two `for i in range(len(A)):` sites survive outside
+- [x] **Phase 35** — **two `for i in range(len(A)):` sites survive outside
+      phase 31's scope.** **CLOSED by batch 3 — only one of the two was still
+      open.** Phase 27 had already rewritten `tests/bounds_elision.ty:5` to the
+      three-clause form when it restored elision; the file's only remaining
+      mention (`tests/bounds_elision.ty:11`) is HISTORY prose recording the old
+      spelling, which is true and stays. So no `.ty` file changed and `make test`
+      was not required. `bench/prongB/RESULTS.md` was the real work.
+      *(original entry follows)*
+- **Phase 35 (original)** — **two `for i in range(len(A)):` sites survive outside
       phase 31's scope, and they cannot simply be respelled.** Found by phase 9.
       `bench/prongB/RESULTS.md:170` (footnote ²) and `tests/bounds_elision.ty:5`
       both describe the bounds-check-elision recogniser in terms of the deleted
@@ -3284,3 +3336,207 @@ were run on the two source files edited.
   lanes that check it; it does not bring it back into the language's evolution.
   That was offered and not chosen.
 - **`for x in xs:` and `for C:`.** Both stay exactly as they are.
+
+---
+
+## Batch 3 evidence — documents pointing at things that no longer exist
+
+Phases 12, 15, 32 and 35 closed; **phase 33 built its gate but stays open**, see
+its entry for the exact remaining scope. HEAD at start: `2e6e698`.
+
+### What each phase actually needed
+
+**Phase 12 — the zed corpus count.** The README read 813; the tree has **829**
+(`git ls-files '*.ty' | wc -l` and `scripts/editors_check.sh`'s `find` agree, and
+`editors/` itself holds zero `.ty` files, so the README's old "excluding
+`editors/`" was describing an exclusion the script never made — dropped).
+`scripts/editors_check.sh` already computed the number as `nfiles` but only for
+its own corpus lane. The `find` moved **above** the tree-sitter availability
+check so the README lane runs offline, and the CORPUS lane now reuses the same
+file list — deliberately, so the number the README is checked against is the
+number the parser actually ran on.
+
+**Phase 15 — `docs/corelib.md`.** Not "a dead backticked path" but **31 live
+refs**, and the interesting part is that the line numbers had drifted too.
+`68e5b39` was a pure rename (`git diff --numstat`: `1 1 docs/{ => guides}/corelib.md`),
+but 10 later commits edited `docs/guides/corelib.md`. Spot-check that caught it:
+`docs/spec/18-library.md`'s `io` section cited `docs/corelib.md:204-210`, and
+line 204-210 of the current `docs/guides/corelib.md` is the **`hash`** package,
+not `io`. Repair method: parse the `- **\`pkg\`**` bullets
+in `docs/guides/corelib.md` into per-package line extents, parse
+`docs/spec/18-library.md`'s `### 32.N \`pkg\`` headings into a section map, and
+retarget each citation to its own package's current extent. 25 ranged citations
+rewritten; **8 were unchanged (math…sort), 17 had moved.** Old range in
+`docs/corelib.md` → new range in `docs/guides/corelib.md`, for three of the
+seventeen: `rand` 96-101 → 108-113, `io` 204-210 → 266-297, `crypto` 192-203 →
+232-243. A path-only `sed` would have left all 17 pointing at the wrong package
+while *looking* repaired.
+
+**Phase 32 — `range` as a builtin.** The entry's own warning paid off:
+`editors/vscode/syntaxes/tycho.tmLanguage.json:47` spelled `range` inside a regex
+alternation, which is exactly what phase 7's grep for the quoted string could not
+see. Both grammars fixed; `editors/zed/grammars/tycho/src/` regenerated with
+`npx tree-sitter-cli@0.25 generate --abi 15` (not hand-edited), leaving zero
+`anon_sym_range` in the generated tree.
+
+**Phase 35 — the two `range(len(A))` sites.** Only **one** was still open. Phase
+27 had already rewritten `tests/bounds_elision.ty:5` when it restored elision;
+that file's surviving mention at `tests/bounds_elision.ty:11` is HISTORY prose
+about the old spelling and is true. `bench/prongB/RESULTS.md` footnote ² was
+rewritten: the 132 → 47 ms is now labelled as measured on the deleted counting
+form, with the current three-clause behaviour stated from source
+(`src/tychoc.c:7955-8005`: the condition goes into the C `while` header and is
+re-evaluated per iteration rather than cached, a *stronger* basis than
+`S_FORRANGE`'s cached `_stop`) and the note that **47 ms was never re-measured**
+on the three-clause form — at `-O3` gcc folds the check anyway, which is why
+`bench/guard.sh` asserts emitted C instead (`bench/guard.sh:58-62`).
+**No `.ty` file changed, so `make test` was correctly not run.**
+
+### Phase 33 — the scope decision, and why
+
+The population is smaller than the entry assumed: **40** ```` ```tycho ````
+fences in all of tracked `docs/`, not a majority of the documentation.
+`docs/reference/` and `docs/tutorial.md` have **zero**. Measured before deciding.
+
+A "declares an `fn` ⇒ must compile" rule was tried and **rejected**: it reddens
+on six legitimate fences — `docs/spec/12-aggregates.md:408` shows a function
+beside its call-site binding (Tycho has no top-level statements, so the pair is
+not a program), `docs/guides/ffi.md:152` is an `extern` block against a real
+`libsqlite3`, and three in `docs/internals/generics-stage2-body-cloning.md`
+document programs the compiler **must reject**, one containing a literal `...`.
+That is precisely the "red on prose, then disabled" failure the entry warned of.
+
+Settled design: **opt-out with a named reason**, `<!-- fence-skip: … -->`, and
+the reason is printed on every run so the skip list cannot grow quietly. Frozen
+`docs/internals/plan-*-DONE.md` fences are exempt on the same grounds as
+`scripts/check_citations.py:258@ARCHIVED`. Fences with no `fn` are classed
+FRAGMENT rather than wrapped in a synthetic `main`, because wrapping would
+typecheck a program the document does not contain.
+
+**Result: 10 CHECK, 19 FRAGMENT, 6 MARKED, 5 FROZEN.** Ten is small and it is
+the honest number. The value is that a *new* `tycho` fence is checked by
+default. The `arrays-structs.md` snippet was covered only after **retagging its
+fence** — it was opened with a bare ```` ``` ````, so even a perfect tycho-fence
+gate would have missed it. That is why the remaining bare-fence population is
+filed as phase 41 rather than waved at.
+
+### Break proofs — both directions
+
+**Phase 33 gate**, reverting `docs/guides/arrays-structs.md` to the original bug:
+
+```
+--- BROKEN RUN ---
+docs-fences: FAIL docs/guides/arrays-structs.md:104 -- does not compile
+      <fence>:3: error: expected ';' after the condition
+           3 |     for i := 0; i < 1_000_000; i += 1:   # no digit separators
+             |                      ^
+exit=1
+--- RESTORED RUN ---
+docs-fences: 10 fence(s) compiled, 30 skipped (reasons above), 0 failure(s)
+exit=0
+```
+
+**Phase 12 README lane**, README set back to the historical wrong value:
+
+```
+>>> editors: zed README corpus count
+    STALE: editors/zed/README.md claims 462 committed .ty files, tree has 829.
+    Fix the README to say 829.
+editors-check: FAIL
+```
+
+restored:
+
+```
+>>> editors: zed README corpus count
+    ok  README says 829 committed .ty files, and so does the tree
+```
+
+### Gate output
+
+```
+$ make editors-check
+    ok  editors/vscode/syntaxes/tycho.tmLanguage.json
+    ok  editors/vscode/language-configuration.json
+>>> editors: zed README corpus count
+    ok  README says 829 committed .ty files, and so does the tree
+>>> editors: zed grammar regenerated with npx --yes tree-sitter-cli@0.25 (tree-sitter 0.25.10)
+    src/ matches grammar.js byte for byte (parser.c, grammar.json, node-types.json, tree_sitter/)
+>>> editors: zed grammar over the corpus (829 .ty files)
+    829 files parsed; the only failure is the enumerated known-bad set (tests/reject/rawstring_unterminated.ty )
+editors-check: ok
+
+$ sh scripts/docs_fences.sh
+docs-fences: 10 fence(s) compiled, 30 skipped (reasons above), 0 failure(s)
+
+$ python3 scripts/check_citations.py
+citation check: ok (150 anchored contain the token they name, 2113 bare in bounds,
+103 source->doc citations resolve, 121 source->source in bounds, 12 source->source anchored)
+
+$ sh scripts/check_links.sh
+link check: ok (134 markdown files, no dead relative links)
+
+$ sh scripts/spec_check.sh
+spec-examples: 9 runnable example(s), all pass
+```
+
+`make test` not run: no `.ty` file changed (`git status --short` confirmed).
+`make ci` not run, per the batch instruction — **so the new `[12b/13]` step added
+to `scripts/ci.sh` has not been exercised inside a full `ci` run.** It is one
+line, `make -s docs-fences`, and the target was verified standalone above; the
+residual risk is a step-ordering or numbering surprise, not a gate failure.
+
+**Self-inflicted breakage, caught and repaired.** Adding the `docs-fences` target
+to the `Makefile` shifted the `ilp32` ASan line from 245 to 253, reddening four
+`Makefile:245@SKIPPED` citations in `scripts/asan_self.sh`,
+`scripts/check_citations.py` and `scripts/editors_check.sh`. All four retargeted
+to `Makefile:253@SKIPPED` and re-verified. Worth noting for the next phase that
+edits the `Makefile`: the citation gate does catch this, but only if you run it.
+
+---
+
+## Phases discovered by batch 3
+
+- [ ] **Phase 41** — **~155 fences in `docs/` carry no language tag, so nothing
+      can check them.** Found by batch 3 while building `scripts/docs_fences.sh`.
+      The gate keys off ```` ```tycho ````, of which there are 40. The bare
+      ```` ``` ```` population is **48 in `docs/reference/`, 33 in
+      `docs/guides/`, 56 in `docs/internals/`, 14 in `docs/`, 4 in `docs/rfc/`**
+      — a mix of shell, C, emitted output and Tycho that no heuristic can safely
+      separate. `docs/reference/` and `docs/tutorial.md` contain **zero** tagged
+      Tycho fences, so the reader-facing reference is entirely uncovered.
+  - The work is a human pass per file: tag the Tycho ones `tycho`, tag the others
+    `sh`/`c`/`text`, and let `make docs-fences` sort out which then compile.
+    Expect some to fail — that is the point, and it is how
+    `docs/guides/arrays-structs.md`'s `1_000_000` would have surfaced years
+    earlier.
+  - Do NOT automate the tagging by guessing the language. A fence mistagged
+    `tycho` makes the gate red on prose and the gate gets disabled, which is the
+    failure mode phase 33 was written to avoid.
+  - Done when: every fence in `docs/reference/` and `docs/guides/` carries a
+    language tag, and `make docs-fences` is green over the enlarged set.
+  - Verify: `make docs-fences`, `sh scripts/check_links.sh`.
+
+- [ ] **Phase 42** — **doc→doc `path:N` citations are checked by nothing, and
+      there are 103 stale ones.** Found by batch 3 while fixing phase 15.
+      `SRC_PREFIX` (`scripts/check_citations.py:224-225`) lists `src/`,
+      `compiler/`, `runtime/`, `corelib/`, `tests/`, `scripts/`, `tools/`,
+      `examples/` — **not `docs/`** — so a ref whose path starts `docs/` is
+      `continue`d at `scripts/check_citations.py:328-329` before any bounds or
+      anchor check runs. That is why 31 refs to a file deleted eight months ago
+      sat green, and it is the *general* form of the hole phase 15 only patched
+      by hand.
+  - **Measured, not estimated.** Adding `"docs/"` to `SRC_PREFIX` and running the
+    gate yields **103 failures: 51 `NO SUCH FILE` and 52 `OUT OF BOUNDS`**. Batch
+    3 deliberately did **not** ship this — it is a sweep the size of batch 2, not
+    a line in a batch about dead references, and shipping the widened gate
+    without the sweep would leave the tree red.
+  - Note the population is concentrated in `plan.md`'s own bare `:N` refs
+    inheriting a doc path from the previous sentence, which is the exact class
+    `scripts/check_citations.py:211-213` documents as deliberately not carried
+    across paragraphs. Read that comment before deciding the fix shape; the
+    answer may be to require an explicit path in `docs/`-targeted refs rather
+    than to widen the bounds check.
+  - Done when: `docs/`-targeted citations are checked, the 103 are resolved, and
+    `python3 scripts/check_citations.py` is green.
+  - Verify: `python3 scripts/check_citations.py`.
