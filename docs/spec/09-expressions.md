@@ -80,9 +80,21 @@ determined by the left (`a and b` evaluates `b` only when `a` is `true`; `a or
 b` evaluates `b` only when `a` is `false`). Precedence, tightest first among the
 logical group: `not`, then `and`, then `or`, all looser than any comparison.
 
-**Bitwise and shift** (`& | ^ ~ << >>`). Operands MUST be the same integer type.
-`>>` is an **arithmetic** (sign-preserving) shift on signed `int` and a **logical**
-shift on `u32`/`u64`. Per the Go-style precedence (§4.5) `& << >>` bind at the
+**Bitwise** (`& | ^ ~`). Operands MUST be the same integer type.
+
+**Shift** (`<< >>`). Both operands MUST be integers, but they **need not match in
+width**: the shifted value and the shift **count** are typed independently, and
+the result takes the **left** operand's type. So `x << n` is well-typed for a
+`u32` `x` and an `int` `n`, and yields `u32`. `>>` is an **arithmetic**
+(sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
+
+> Provenance: the shift arm accepts any two integers and returns the left type —
+> `src/tychoc.c:6103-6109`, result at `src/tychoc.c:6109@lt`. The bitwise arm is
+> the one that requires a match: `src/tychoc.c:6214@rt`. Exhaustively pinned by
+> `fuzz/run_typeparity.py`, whose shift clause encodes this rule over the full
+> operand matrix.
+
+Per the Go-style precedence (§4.5) `& << >>` bind at the
 multiplicative level and `| ^` at the additive level, so every bitwise operator
 binds tighter than a comparison: `a & b == c` is `(a & b) == c`. A shift **count**
 outside `0 .. width−1` is **defined**, not inherited from C: a count **≥ the

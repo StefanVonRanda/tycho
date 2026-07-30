@@ -197,6 +197,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §16.2 | indexing & bounds; OOB aborts | `tests/abort/index_oob`, `tests/bounds_elision` |
 | §16.4 | growth `push`; in-place append; alias guard | `tests/push_fusion`, `tests/append_alias`, `reject/push_scalar` |
 | §16.6 | slices | `tests/slices`, `tests/string_slice`, `reject/slice_inout_alias` |
+| §16.7 | element-type restriction: `void` rejected everywhere; `bool` legal as a dynamic element, rejected in the inline fixed forms | `tests/bool_array`, `tests/cond_stmt_expr`, `reject/fixarr_elem_bool`, `reject/bounded_elem_bool` |
 | §16.8 | element-wise arithmetic; broadcast (order kept, literal adapts); fresh result; `[N]T` mismatch rejected, `[T]` mismatch aborts | `tests/array_arith`, `tests/array_bcast`, `tests/array_arith_fresh`, `tests/array_bcast_fresh`, `tests/abort/array_arith_len`, `reject/array_arith_fixlen`, `tests/diag/array_arith_fixlen`, `tests/diag/array_bcast_widen` — post-freeze, see the note below |
 | §17.1 | struct construction & fields | `tests/named_fields`, `tests/recursive_structs` |
 | §17.3 | recursion only through a container | `tests/recursive_structs`, `tests/recursive_enum_array` |

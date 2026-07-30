@@ -195,13 +195,15 @@ indexing, mutation, and place semantics are specified in Part VI (§16–§19) a
 `[T]` is a **growable, value-semantic array** of elements of type `T`; `T` may
 be any type. Two array types are the same iff their element types are the same.
 An empty array literal requires an element type (`[]int`). Indexing is
-bounds-checked (out-of-bounds aborts). Element types `void` and `bool` are
-**not** permitted directly as a bracket-array element type in a type position
-(a `[bool]` is rejected at type-parse); a `bool` array is expressed through
-other means where needed.
+bounds-checked (out-of-bounds aborts). `void` is **not** permitted as a
+bracket-array element type in a type position. `bool` **is** permitted as a
+dynamic element — `[bool]` is a supported array type — and is rejected only in
+the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
+bool codegen.
 
-> Note: confirmed in source (dynamic `[T]` `src/tychoc.c:2033-2034`, fixed `[N]T`
-> `:2016-2018`); detailed in
+> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2035@elem`); the
+> fixed forms test both (`src/tychoc.c:2018-2019`), as does `bounded[N]T`
+> (`src/tychoc.c:1933-1934`). Detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
 
 ### 5.3.2 Fixed-size arrays `[N]T`

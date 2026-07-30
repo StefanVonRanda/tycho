@@ -3101,7 +3101,7 @@ request (`fc921d7`, `7a04e53`).
     recorded here so the next reader knows what was audited.
   - Verify: `python3 scripts/check_citations.py --stats`.
 
-- [ ] **Phase 42** — **§16.7 says `[bool]` MUST be rejected and the compiler
+- [x] **Phase 42** — **§16.7 says `[bool]` MUST be rejected and the compiler
       accepts it.** Found by batch 2 while repointing the two citations that
       §16.7 hangs on — a behaviour divergence, not a line-number one, which is
       why it is filed rather than fixed under a citations scope lock.
@@ -3922,7 +3922,7 @@ have compiled the new fixture under ASan and TSan. `make ci` was not run.
 
 ## Phases discovered by batch 4
 
-- [ ] **Phase 45** — **`docs/spec/09-expressions.md:83` states a shift rule the
+- [x] **Phase 45** — **`docs/spec/09-expressions.md:83` states a shift rule the
       compiler does not implement, and the direction is fail-*open* relative to
       the spec.** The sentence is "**Bitwise and shift** (`& | ^ ~ << >>`).
       Operands MUST be the same integer type." That is exactly right for `& | ^`
@@ -4357,6 +4357,36 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
     exactly what phase 17 is still open on.
   - Verify: `make test`, `make conc`, `python3 scripts/check_citations.py`.
 
+- [ ] **Phase 54** — **the three DYNAMIC array element diagnostics are
+      allow-lists that name neither what works nor what does not.** Found by
+      batch 7 while fixing the same defect at the fixed-size sites; the dynamic
+      sites were out of that phase's scope and are filed rather than absorbed.
+  - `src/tychoc.c:2036` and `src/tychoc.c:2353` both say "array elements must be
+    int, float, bool, string, a struct, or an array"; `src/tychoc.c:5110` says
+    the same plus "or an Option". All three guard a test of `elem == T_VOID`
+    alone, so the list is decorative — it describes neither the check above it
+    nor the language.
+  - **Measured, not assumed.** `[bytes]`, `[(int,int)]` and `[[string: int]]`
+    all compile today and none is named by the message. This is the identical
+    defect `tests/reject/bounded_elem_bool.ty` was written to complain about,
+    and which batch 7 fixed at `src/tychoc.c:1999-2000` and `:2018-2019`.
+  - Done when: the three messages name the real rule (only `void` is refused),
+    and a `tests/reject/` fixture pins one of them.
+  - Verify: `make test`, plus the two doc gates.
+
+- [ ] **Phase 55** — **literal adaptation does not reach array-literal
+      elements.** `a: [u32] = [1, 2]` is rejected with "declared type `[u32]`
+      but value is `[int]`", while `[u32]` is a perfectly legal type — the same
+      array built with `a := []u32` then `push(a, 1)` compiles. Found by batch 7
+      while checking which element types the dynamic sites accept.
+  - `docs/spec/06-conversions.md:11-27` describes literal adaptation for
+    scalars; whether it is meant to distribute over an array literal is not
+    stated either way, so this is a spec question before it is a compiler one.
+  - Done when: the spec says which it is, and whichever answer is chosen is
+    pinned by a fixture — an accepting one under `tests/`, or a
+    `tests/reject/` case whose diagnostic explains the `push` workaround.
+  - Verify: `make test`, `sh scripts/spec_check.sh`, plus the two doc gates.
+
 ## Batch 6 evidence
 
 Six phases: 16, 25, 29, 30, 39, 40. Three are code, three are recorded
@@ -4581,3 +4611,149 @@ targeted gate would have reported, because the point of failure was the sweep
 itself. It also cost four 19-minute runs, three of them discovering one failure
 each; the cheaper path was to run each step's own gate after each fix and keep
 `make ci` for confirmation. Both halves of that lesson belong in the record.
+
+## Batch 7 evidence — phases 42 and 45, the two spec/compiler divergences
+
+Ran 2026-07-30 against `6a5348b`. Both phases asked which side was wrong. **In
+both cases it was the spec**, and in both cases the corpus — not preference —
+settled it. The compiler's accept/reject behaviour is unchanged by this batch;
+the only `src/tychoc.c` edit is diagnostic wording, and it is net-zero in lines
+on purpose (see below).
+
+### Phase 42 — `[bool]` is legal, and always was
+
+**The spec was wrong, and the phase's own framing of the compiler was too.**
+
+The phase offered two readings and called the second a guess. The corpus answers
+it outright: `tests/bool_array.ty` is a committed fixture *with a golden* whose
+header records the decision in so many words — tychoc used to reject bool arrays
+while tychoc0 accepted them, and "tychoc now accepts dynamic bool arrays
+(matching tychoc0 + Go/Swift/Odin). Fixed-size `[N]bool` stays rejected on both."
+It exercises nine forms: literal, `push`, index-write, iteration, `str`, `==`, a
+`struct` field, a map value, and nesting. `tests/cond_stmt_expr.ty:23` carries a
+second `[bool]` field. So `[bool]` was **deliberately allowed**, two committed
+programs depend on it, and §16.7 documented an intention nobody implemented — a
+spec defect by the batch's own definition.
+
+Confirmed by running the compiler rather than reading it:
+
+```
+ACCEPT  [bool]   (inferred `:= [true, false]` and annotated `a: [bool]`)
+REJECT  [3]bool  -> error: array elements must be int, float, string, a struct, or an array
+```
+
+**The phase's claim that "the two messages now disagree" does not survive
+contact.** They do not share a rule, so they cannot disagree: `src/tychoc.c:2036`
+(dynamic) lists `bool` because a dynamic `[bool]` *is* legal, and
+`src/tychoc.c:2000` / `:2019` (fixed) omit it because `[N]bool` is not. Each was
+correct for its own site. What *was* wrong at the fixed sites is the shape of the
+message — an allow-list, when `bool` and `void` are the only element types those
+sites refuse. Measured: `[2]bytes`, `[2](int,int)`, `[2]u32`, `[2][int]` and
+`[2]string` all compile, and the old message named none of the first three. This
+is the identical complaint `tests/reject/bounded_elem_bool.ty` was written to
+make, and which the bounded site already fixed at `src/tychoc.c:1934`. Both fixed
+sites now read:
+
+    a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal
+
+Nothing asserted the old text: it survives only in `compiler/tychoc0.ty:1861`,
+`:1876` and `:1888`, which is frozen and built by no gate since the 2026-07-29
+retirement.
+
+**The edit is deliberately net-zero in line count** (4 insertions, 4 deletions).
+A first draft added a six-line explanatory comment, which pushed every line past
+`src/tychoc.c:2000` down by six and would have invalidated the anchored citations
+at the shift arm along with an unknown slice of the ~344 bare refs phase 17 is
+still open on. The rationale moved into `tests/reject/fixarr_elem_bool.ty`'s
+header and §16.7 instead, where it costs nothing. This is the same hazard phase
+53 records for `r_step`.
+
+Spec repairs, both now carrying `> Provenance:` blocks citing the implementing
+lines: `docs/spec/12-aggregates.md` §16.7 gained a per-form table (`void`
+rejected everywhere; `bool` accepted dynamic, rejected in `[N]T`, `[$N]T`,
+`bounded[N]T`) and a note recording that the old sentence was never implemented;
+`docs/spec/03-types.md` §5.3.1 was rewritten to match. The stale
+`src/tychoc.c:2033-2034` / `:2016-2018` refs are gone, along with the two
+orphaned bare refs in §16.7's old note (four-digit line numbers in the 1600s,
+left over from a much older tree) that bound to whatever path was named last. `docs/spec/appendix-e-conformance.md` gained a §16.7 row — there was none,
+so Appendix E never inherited the wrong claim.
+
+New fixture `tests/reject/fixarr_elem_bool.ty` pins the fixed-size half; the
+accept half was already pinned by `tests/bool_array.ty`. That is the +1 in the
+test count.
+
+### Phase 45 — the shift rule, exactly as the phase predicted
+
+**The spec was wrong**, and the evidence is that no version of tycho ever
+implemented the sentence. `docs/spec/09-expressions.md:83` lumped shift in with
+bitwise and required "the same integer type". That is true of `& | ^` —
+`src/tychoc.c:6214` tests `lt != rt` — and false of `<< >>`, whose arm at
+`src/tychoc.c:6103-6109` accepts any two integers and returns the *left* type
+(`src/tychoc.c:6109@lt`). Verified by running it: a `u32` shifted by an `int`
+compiles today. Tightening the compiler to match the spec would break `x << n`
+for every `n: int`, which is why this is a spec repair.
+
+The sentence is now split into a **Bitwise** rule (operands must match) at
+`docs/spec/09-expressions.md:83` and a **Shift** rule at
+`docs/spec/09-expressions.md:85-89` stating that widths need not match and the
+result takes the left operand's type, with a `> Provenance:` block. One drafting
+error was caught and fixed before the gates: the following §4.5 precedence
+sentence was initially absorbed into the `>` block, silently turning a normative
+paragraph into part of a citation aside.
+
+`fuzz/run_typeparity.py` was updated on both ends — the header's derivation list
+now cites the two rules separately, and the shift clause no longer describes a
+spec defect. Its comment previously ended "the spec sentence is the defect. Filed
+as a plan.md phase"; it now records that the disagreement was resolved in the
+compiler's favour and that spec and oracle agree. The encoded rule did not
+change, which is why the lane still reports 4608/4608.
+
+### Gates — all five, foreground, real output
+
+```
+$ make test
+passed: 548   failed: 0
+all green
+```
+
+547 at batch 5 → **548**, accounted for exactly: `reject_fixarr_elem_bool`, the
+one new fixture. No other count moved.
+
+```
+$ python3 fuzz/run_typeparity.py
+type-parity: 4608/4608 scalar binop cases match the `expect` oracle (640 accept / 3968 reject;
+             every accept emits compilable C, no crash on any case).
+
+$ sh scripts/spec_check.sh
+spec-check: Appendix A grammar matches §3/§4 (ok)
+spec-check: all Appendix E fixture citations resolve (ok)
+spec-examples: 9 runnable example(s), all pass
+
+$ python3 scripts/check_citations.py
+citation check: ok (157 anchored contain the token they name, 2194 bare in bounds,
+119 source->doc citations resolve, 154 source->source in bounds, 12 source->source anchored)
+
+$ sh scripts/check_links.sh
+link check: ok (134 markdown files, no dead relative links)
+```
+
+`make ci` was **not** run and is not needed here: the change set is one
+diagnostic string, one new reject fixture, and four Markdown files. `make test`
+covers the first two and the three doc/spec gates cover the rest. Per CLAUDE.md
+it is confirmation, not discovery, and this batch had nothing left to confirm.
+
+### What a future reader should not have to re-derive
+
+- **`[bool]` is legal and `[N]bool` is not, and that is intentional.** The split
+  is a codegen limit on the inline fixed forms, not a type-system principle.
+  Anyone "fixing the inconsistency" by rejecting `[bool]` breaks
+  `tests/bool_array.ty` and `tests/cond_stmt_expr.ty`.
+- **`[N]bool` could probably be allowed now.** The comment blaming tychoc0's
+  missing fixarr-bool codegen is moot post-retirement, as phase 42 noted. It was
+  *not* done here: it is real codegen work, not a wording change, and nothing in
+  the corpus asks for it. Left deliberately, not overlooked.
+- **Unverified:** whether any *downstream* consumer of the two changed fixed-size
+  diagnostics matches on their old text. Searched `tests/`, `docs/`, `*.py`,
+  `*.sh` and `*.out` — the only hits are in the frozen `compiler/tychoc0.ty`. If
+  something outside those trees greps for that string, it would break, and I did
+  not search outside the repo.
