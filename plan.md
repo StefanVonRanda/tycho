@@ -6424,7 +6424,7 @@ conclusion is that it needs a separate plan.
 
 ## Phases discovered by batch 12
 
-- [ ] **Phase 67** — **the question phase 51 could not answer for the user: does
+- [x] **Phase 67** — **the question phase 51 could not answer for the user: does
       `[]char` exist, and if so what is it for beside `bytes`?** Phase 51 declined
       to make `char` spellable and this is why. The decline was on evidence, not
       taste: the absence of a `char` type keyword is asserted normatively in
@@ -6470,3 +6470,31 @@ conclusion is that it needs a separate plan.
     changes what every `.ty` file in the tree may contain — `make editors-check`
     and `sh scripts/tools_check.sh`, sequenced per `CLAUDE.md`'s "tooling before
     corpus".
+
+  ### Decision — phase 67, DECLINED by the user, 2026-07-30
+
+  **`char` does not become a writable type name.** It stays produced (`char_at`,
+  `to_char`) and inferred, never written. Asked and answered directly rather than
+  delegated, because phase 51 established this was a language decision and not a
+  gap to be filled.
+
+  What the decision preserves, all of which adding the name would have cost:
+
+  - Four normative sentences stay true — `docs/spec/03-types.md:75`,
+    `docs/spec/02-grammar.md:175`, `docs/spec/01-lexical.md:116` and `:373` each
+    state the absence as a rule, not as an omission.
+  - `tests/reject/char_as_type.ty` stays green. It is a pre-existing fixture
+    asserting the refusal; naming the type would have inverted a passing test,
+    which is the clearest possible signal that the absence was designed.
+  - `bytes` remains the single spelling for a byte sequence. The `[]char` fork —
+    two spellings with different operator sets, and a §12/§16 answer for how they
+    convert — never has to be answered because it never arises.
+
+  What it costs, stated plainly: `char` is still the one element type whose
+  operator set is narrower than `int`'s *and* which cannot appear in a type
+  annotation. That rule is now pinned by the eight fixtures phase 51 added
+  through inference, so it is tested — but it is tested indirectly, and a reader
+  cannot write the type to explore it. That is the accepted trade.
+
+  Phase 51's other two decisions stand and are unaffected: `to_char` exists and
+  aborts out of range, and `\xNN` works in char literals.
