@@ -197,7 +197,7 @@ and **both are the point**:
     environment variable set. For a fixture runner that will eventually want
     `-j`, that is the next thing to hurt.
 
-- [ ] **Phase 2 — the real corpus, byte-identical report**
+- [x] **Phase 2 — the real corpus, byte-identical report**
   - Scope: teach the program the actual fixture workload — compile each `.ty`,
     run it, compare against its golden — mirroring what `tests/run.sh` does.
     Read that script properly first; it handles `tests/*.in` stdin, the
@@ -214,6 +214,203 @@ and **both are the point**:
     byte-identical to each other.
   - Verify: the agreement check against `sh tests/run.sh`, the three-run identity
     check, and `make test` still green (you have not modified it yet).
+
+  **Evidence (2026-07-30/31).** `tools/prunner/main.ty` rewritten from the phase 1
+  toy workload to the real one. Nothing outside `tools/prunner/` was touched;
+  `tests/run.sh` is the oracle and stays untouched by construction. Built with
+  `./tychoc tools/prunner/main.ty -o <tmp>/prunner`, run from the repo root.
+
+  **Lanes covered: all seven loops, all 560 fixtures.** The scope decision went
+  the other way from the brief's suggestion, deliberately. The Pre-flight's
+  invariant is "the count is the invariant"; a partial scope makes that a
+  comparison of 516 against a 560 that has to be *filtered first*, and the filter
+  is then the thing nobody checks. Covering everything makes the agreement proof
+  a straight `diff` of two whole reports with no preprocessing at all — which is
+  what it turned out to be, byte for byte.
+
+      pos        examples/*.ty + tests/*.ty        tests/run.sh:113-118   251
+      pos        tests/pkg/<name>/main.ty          tests/run.sh:124-133    15
+      reject     tests/reject/*.ty                 tests/run.sh:158-169   249
+      rejectpkg  tests/reject/pkg/<name>/main.ty   tests/run.sh:175-187     1
+      abort      tests/abort/*.ty                  tests/run.sh:194-211    17
+      diag       tests/diag/*.ty                   tests/run.sh:218-236    21
+      warn       tests/warn/*.ty                   tests/run.sh:251-274     6
+                                                                  total   560
+
+  **Deliberately excluded, and these are behaviours, not lanes:** `RECORD=1`
+  golden re-recording (`tests/run.sh:95-99`, `:225`, `:263`) — goldens are
+  `make test-update`'s job and a parallel runner has no business writing them;
+  `TYCHO_NO_ASAN` and `$CC` (`cc` is hardcoded); the ILP32 lane, which is a
+  different Makefile target; and the six-space-indented dump of the failing
+  log/diff that `tests/run.sh:71` and friends print under a FAIL. The dump is
+  unbounded output from a worker and would need its own ordering discipline; the
+  *parenthesised reason* is reproduced verbatim, and `--mode=seq` re-runs the
+  same job serially when someone wants the log.
+
+  **How captured output stays attributed to its job.** Phase 1 used `os.system`
+  (`corelib/os/os.ty:32`) because an exit code was all it needed. Comparing a
+  fixture's stdout against a golden needs `os.run` (`corelib/os/os.ty:36`), and
+  the attribution rests on three things, none of them a lock:
+
+  1. *`os.run` is synchronous inside the worker.* The `popen(3)` pipe is opened,
+     drained and closed inside one `parallel for` iteration, so a captured string
+     is only ever touched by the iteration that produced it. There is no shared
+     stdout to interleave on — which is precisely what `os.system` had, and why
+     phase 1 could not have done this.
+  2. *Every child's stderr is redirected explicitly* — `2>&1` where `tests/run.sh`
+     compares the merge, `2>$d/serr` where it is scored separately.
+     `corelib/os/os.ty:11` says an unredirected stderr is inherited from the
+     parent, and inherited stderr from 16 concurrent children **is** the
+     interleaving problem. Nothing but the report reaches the terminal:
+     `errbytes=0` on all three runs below.
+  3. *Each job owns a private temp directory `<tmp>/<name>`.* This is the one
+     place `tests/run.sh` could not be transcribed literally. It shares a single
+     `$TMP` with **fixed** filenames reused by every fixture in a lane —
+     `$TMP/rj` and `$TMP/rj.log` at `tests/run.sh:162`, `$TMP/ab.c` at
+     `tests/run.sh:197`. That is safe only because it is sequential; run it
+     concurrently and two rejects race on one log. Fixture names are unique
+     across lanes (the `reject_`/`abort_`/`diag_`/`warn_`/`pkg_` prefixes are
+     what make them so), so the name is the directory.
+
+  The verdict then leaves the worker the only way `docs/spec/13-concurrency.md:100`
+  permits — `send`-ed into a second channel carrying its corpus index — and
+  `scatter` puts it back at that index. Attribution is by construction, not by
+  arrival order. An index that never arrives keeps `idx = -1` and prints
+  `FAIL <name> (NO RESULT — the runner lost this job)`; a second result for an
+  index already filled is rewritten to `FAIL … (DUPLICATE RESULT)`. The
+  Pre-flight's worst case cannot be silent.
+
+  **1. Per-fixture agreement — and it is stronger than per-fixture.**
+
+      $ sh tests/run.sh > seq.txt 2>&1              # rc=0, 563 lines, 473754 ms
+      $ ./prunner        > p1.txt  2>&1             # rc=0, 563 lines,  61978 ms
+      $ grep -cE '^(ok|FAIL) ' seq.txt p1.txt
+      seq_results=560  pool_results=560
+      $ LC_ALL=C sort seq.txt > seq.sorted; LC_ALL=C sort p1.txt > pool.sorted
+      $ diff -u seq.sorted pool.sorted && echo AGREE
+      AGREE                       # no output from diff; all 560 verdicts identical
+      $ cmp seq.txt p1.txt
+      UNSORTED ALSO BYTE-IDENTICAL to tests/run.sh
+
+  The last line was not designed for and is the strongest form of the result: the
+  parallel runner's whole report — every `ok <name>` line, in order, plus the
+  `-----` rule, `passed: 560   failed: 0` and `all green` — is byte-identical to
+  the sequential one with no sorting, no filtering and no massaging. `sort.asc`
+  over `io.list` happens to reproduce the shell's glob order on this corpus.
+  (The sorted comparison stays the recorded verdict: shell glob order is
+  `LC_COLLATE`-dependent and the corpus is ASCII-only today, so equality of the
+  raw orders is a happy fact about the data, not a guarantee.)
+
+  **2. Byte-identity across three consecutive runs.**
+
+      run1 rc=0 wall_ms=61978 lines=563 errbytes=0
+      run2 rc=0 wall_ms=62108 lines=563 errbytes=0
+      run3 rc=0 wall_ms=62412 lines=563 errbytes=0
+      a648fbddcbe68e67203a5f6f19520f7129c2399414721790a09fcec3d1723178  p1.txt
+      a648fbddcbe68e67203a5f6f19520f7129c2399414721790a09fcec3d1723178  p2.txt
+      a648fbddcbe68e67203a5f6f19520f7129c2399414721790a09fcec3d1723178  p3.txt
+      $ cmp p1.txt p2.txt && cmp p2.txt p3.txt && echo BYTE-IDENTICAL x3
+      BYTE-IDENTICAL x3
+
+  Nothing in the default report carries a timing, a pid, or a temp path. The
+  timings live behind `--stats`, which is opt-in for exactly that reason.
+
+  **3. Timing — the same 560 jobs, same program, one command.** `./prunner
+  --mode=both --stats`:
+
+      stats mode=seq  jobs=560 results=560 missing=0 wall_ms=471695 maxconc=1  ncpu=16 NOLOSS
+      stats mode=pool jobs=560 results=560 missing=0 wall_ms=61867  maxconc=16 ncpu=16 NOLOSS
+
+  **7.62x**, and `sh tests/run.sh` at 473754 ms agrees with the seq lane to
+  within 0.4% — so the speedup is the pool's, not Tycho-versus-shell. `maxconc`
+  is measured, not inferred (phase 1's interval-overlap method): 16 = ncpu.
+  Wall-clock over the corpus: **7 m 54 s -> 1 m 02 s.**
+
+  **4. `make test` — 560, unchanged.** `tests/run.sh` was not modified and this
+  proves it: `passed: 560   failed: 0 / all green`.
+
+  **5. `python3 scripts/check_citations.py` — clean.**
+
+  **Extra: it fails loudly, and that was worth checking.** The Pre-flight's worst
+  case is a green report over lost work, so the FAIL path was exercised on a
+  *copy* of the corpus (`cp -a examples tests`, repo untouched) with
+  `tests/hello.out` overwritten with junk:
+
+      rc=1
+      FAIL  hello  (output != golden (tests/hello.out))
+      FAIL  diag_corelib_call_hint  (diagnostic != golden (tests/diag/corelib_call_hint.err))
+      passed: 558   failed: 2
+      failed: hello diag_corelib_call_hint
+
+  Reason text matches `tests/run.sh:105` verbatim, the `failed:` list is
+  populated, and the process exits 1. The second FAIL is an artefact of the copy,
+  not a bug: the scratch tree has no `corelib/`, and that diagnostic's golden
+  names corelib symbols. Diagnosed rather than assumed.
+
+  **Running notes, continued from phase 1. What writing the real thing was like.**
+
+  - *It compiled first try again, and by now that is the finding.* ~370 lines
+    this time — seven lane judges, `os.run`, `io.read`/`io.list`/`io.exists`,
+    two channels, a `parallel for`, `sort.asc`, tuple-free structs — built with
+    no errors and no warnings on the first `./tychoc`. Two of two. `FRICTION.md`'s
+    picture of concurrent Tycho as a fight is not what either phase found.
+  - *A struct carrying strings passes through a channel exactly like one carrying
+    ints.* Phase 1 probed `{idx, code, t0, t1}` half-expecting `int`-only. This
+    phase sends `Res{idx, ok, name, reason, t0, t1}` — two heap strings per
+    message, 560 messages, no encoding, no parsing back, no aliasing surprise.
+    This is the single thing that made the phase tractable; a channel restricted
+    to scalars would have forced a side table keyed by index and every
+    attribution bug that implies.
+  - *The affine-channel rule (`docs/spec/13-concurrency.md:127`) still cost
+    nothing, and now there is a second data point.* `run_pool(js, tmp) -> [Res]`
+    reads as an ordinary function at 560 real jobs just as it did at 243 toy
+    ones. The rule that *did* shape the code is again
+    `docs/spec/13-concurrency.md:100` — no outer-scope write but a `+`/`*`
+    reduction — and this time it paid for itself: being *forced* to route results
+    through a channel with an explicit index is exactly what makes a lost job
+    detectable. The restriction produced the safety property.
+  - *Three small language papercuts, all of them my own assumption:*
+    `map(r => r.idx, rs)` is not the lambda syntax (`error: expected ')'`), so
+    the index permutation became a scatter loop — which is better code anyway.
+    A bare `--stats` lands in `Cli.flags`, not `Cli.keys`, so `cli.has` silently
+    returns false and `cli.flag` is the right call (`corelib/cli/cli.ty:160-171`);
+    the failure was a missing line of output, with no diagnostic — the one thing
+    here that failed *quietly*. And a multi-line `if A or B or\n C:` with no open
+    paren does not continue; extracting `sanitizer_report` fixed it and reads
+    better. None of these is concurrency.
+  - *The directory-scan trap from phase 1 reappeared, from the other side, and it
+    is a genuinely nasty one.* To test the reject lane's FAIL path I replaced
+    `tests/reject/dup_fn.ty` (in the scratch copy) with a *valid* program — and
+    the runner still scored it `ok`. Not a runner bug: the replacement declared
+    `package main`, which is what switches tychoc into the directory scan
+    (`src/tychoc.c:7757`), so it compiled the whole of `tests/reject/` with it and
+    died on **a sibling's** unrelated syntax error, at
+    `tests/reject/fstring_escape.ty:8`. Confirmed directly. Phase 1 called this
+    the worst diagnostic of that phase; here it means the entire `tests/reject/`
+    lane is only nominally per-file — any fixture there with a `package` header
+    is scored against the whole directory. Worth a look independently of this
+    plan (Phase 8 below).
+  - *`io.read` truncating at the first NUL is a real hazard that this corpus does
+    not expose.* `tests/run.sh` compares with `cmp -s`, which is byte-exact;
+    `io.read` returns a string and stops at a NUL, so a golden containing one
+    could compare equal to a truncated output. Verified there is no NUL byte in
+    any golden (`grep -rlP '\x00' tests/*.out tests/pkg/*.out examples/` → empty),
+    so the two agree today. `io.read_bytes` is the correct instrument and is a
+    change worth making before this becomes a gate — Phase 9 below.
+  - *There is still no `-j`.* Width is `ncpu()` or `TYCHO_THREADS`, process-wide.
+    A test runner wants `-j 4` for a laptop and `-j 32` for CI, and the language
+    cannot express it: `parallel for` takes no width. This was phase 1's "next
+    thing to hurt" and it is now the concrete blocker on shipping this as a
+    configurable gate.
+  - *Sequential-mode reuse was free and is the debugging story.* `judge()` is
+    called identically by `run_seq` and by the `parallel for` body — the pool is
+    the only difference between the two modes, so "does this fail under the pool
+    but not serially?" is one flag away. That fell out of the results-through-a-
+    channel shape rather than being designed.
+  - *The 64-chunk cap (`src/tychoc.c:10040`) never came near.* 560 jobs, ncpu 16,
+    `min(N, ncpu)` = 16 chunks. Phase 1 forced the cap with `TYCHO_THREADS` and
+    found it limits width without starving; at real scale it is simply not in
+    the picture, which retires it as a concern for this workload.
 
 - [ ] **Phase 3 — what writing it actually taught**
   - Scope: a written account appended to this plan, and any `FRICTION.md` entries
@@ -268,6 +465,33 @@ and **both are the point**:
   `ncpu()`'s own definition. Fix is one of: document the cap on the builtin,
   make `ncpu()` return the clamped value, or lift the 64 (`HTask *_pts[64]` at
   `src/tychoc.c:10041` is why it is 64). Deciding which is the work.
+
+- [ ] **Phase 8 — the `tests/reject/` lane is not per-file for any fixture with a
+  `package` header.** Found while exercising phase 2's FAIL path. A `package`
+  header switches tychoc into the whole-directory scan (`src/tychoc.c:7757`), so
+  `./tychoc tests/reject/<x>.ty` compiles *every* sibling in `tests/reject/` and
+  can be refused because of a different file entirely — observed: a deliberately
+  VALID program placed at `tests/reject/dup_fn.ty` was still rejected, and the
+  diagnostic named `tests/reject/fstring_escape.ty:8`. The lane's assertion is
+  only "nonzero exit plus a non-empty diagnostic" (`tests/run.sh:162-168`), so
+  such a fixture scores `ok` while proving nothing about itself, and would keep
+  scoring `ok` if its own defect were fixed. Work: count how many of the 249
+  fixtures carry a `package` header, decide whether the lane should assert the
+  diagnostic *names the fixture's own path*, and whether those fixtures belong in
+  per-fixture directories like `tests/reject/pkg/` already is. Affects
+  `tests/run.sh` and `tools/prunner/main.ty` equally — both inherit it.
+
+- [ ] **Phase 9 — `tools/prunner/main.ty` compares goldens with `io.read`, which
+  stops at the first NUL byte.** `tests/run.sh` uses `cmp -s`, which is
+  byte-exact. Verified no golden contains a NUL today
+  (`grep -rlP '\x00' tests/*.out tests/pkg/*.out examples/` is empty), so the two
+  agree — but a future fixture that prints a NUL would be compared on its prefix
+  only, in the *fast* runner, silently. `corelib/io/io.ty` provides `read_bytes`
+  returning `Result(bytes, IoErr)`; `os.run`'s captured stdout is a `string`
+  though (`corelib/os/os.ty:36`), so closing this properly means either a
+  bytes-returning capture in `core:os` or writing the child's stdout to a file
+  and comparing bytes. Blocks nothing today; must be settled before phase 4
+  makes this a gate.
 
 ## Out of scope
 
