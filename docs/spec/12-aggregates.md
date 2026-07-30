@@ -193,18 +193,37 @@ only the static type of the result differs.
 
 ### 16.7 Element-type restriction
 
-`void` and `bool` MUST be rejected as a bracket-array element type in a **type
-position** — both `[bool]` and `[3]bool` are diagnosed at type-parse
-(`src/tychoc.c:2033-2034` for the dynamic form, `:2016-2018` for the fixed-size
-form). This applies only to the direct element of a bracket type; a `bool` may
-appear inside an array indirectly (e.g. a `struct` field of a `[Struct]`
+`void` MUST be rejected as a bracket-array element type in every form. `bool` is
+rejected only in the **inline fixed-capacity** forms — `[N]T`, `[$N]T` and
+`bounded[N]T` — which have no bool codegen. A **dynamic** `[bool]` is legal and
+fully supported: literal, `push`, index-write, iteration, `str`, `==`, as a
+`struct` field, as a map value, and nested.
+
+| element form | `void` | `bool` |
+|---|---|---|
+| dynamic `[T]` | rejected | **accepted** |
+| fixed `[N]T`, `[$N]T` | rejected | rejected |
+| `bounded[N]T` | rejected | rejected |
+
+The restriction applies only to the direct element of a bracket type; a `bool`
+may appear inside any array indirectly (e.g. a `struct` field of a `[Struct]`
 element).
 
-> Note: this restriction is confirmed in source (dynamic `[T]` `:1688-1689`,
-> fixed `[N]T` `:1671-1673`); the reference page `docs/reference/arrays-slices.md`
-> gives only positive array examples and does not state it — an
-> under-documentation gap, not a contradiction. See also
-> [§5.3.1](03-types.md#531-arrays-t).
+> Provenance: dynamic `[T]` admits `bool` because it tests `void` alone —
+> `src/tychoc.c:2035@elem`, and its diagnostic lists `bool` as permitted at
+> `src/tychoc.c:2036@bool`. The fixed forms test both:
+> `src/tychoc.c:1999-2000` (`[$N]T`) and `src/tychoc.c:2018-2019` (`[N]T`);
+> `bounded[N]T` at `src/tychoc.c:1933-1934`. Pinned both ways by
+> `tests/bool_array.ty` (accepts, with a golden) and
+> `tests/reject/fixarr_elem_bool.ty` / `tests/reject/bounded_elem_bool.ty`.
+
+> Note: this section previously stated that `bool` MUST be rejected in **every**
+> bracket form, including `[bool]`. That was never implemented — `tests/bool_array.ty`
+> has exercised dynamic bool arrays since the drift hunt, and `tests/cond_stmt_expr.ty`
+> carries a `[bool]` field — so the sentence was a spec defect, corrected here.
+> The reference page `docs/reference/arrays-slices.md` gives only positive array
+> examples and does not state the restriction — an under-documentation gap, not a
+> contradiction. See also [§5.3.1](03-types.md#531-arrays-t).
 
 ### 16.8 Element-wise arithmetic
 

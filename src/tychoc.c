@@ -1996,8 +1996,8 @@ static Type parse_type_inner(Parser *ps) {
             int64_t enc = sizeparam_enc(snm->text);
             eat(ps, TK_RBRACKET, "']'");
             Type felem = parse_type(ps);
-            if (felem == T_VOID || felem == T_BOOL)   /* fixed-size [N]bool stays rejected on both compilers (tychoc0 has no fixarr-bool codegen) */
-                die_at(t->line, "array elements must be int, float, string, a struct, or an array");
+            if (felem == T_VOID || felem == T_BOOL)   /* mirror bounded: no fixed-array bool codegen. Dynamic [bool] IS legal (tests/bool_array.ty) */
+                die_at(t->line, "a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal");
             return arrc_sized(felem, enc);
         }
         int size_is_int   = at(ps, TK_INT) && peek(ps, 1)->kind == TK_RBRACKET;
@@ -2015,8 +2015,8 @@ static Type parse_type_inner(Parser *ps) {
             if (fixn <= 0) die_at(t->line, "a fixed-size array length must be positive");
             eat(ps, TK_RBRACKET, "']'");
             Type felem = parse_type(ps);
-            if (felem == T_VOID || felem == T_BOOL)   /* fixed-size [N]bool stays rejected on both compilers (tychoc0 has no fixarr-bool codegen) */
-                die_at(t->line, "array elements must be int, float, string, a struct, or an array");
+            if (felem == T_VOID || felem == T_BOOL)   /* same rule and same wording as the [$N]T site above */
+                die_at(t->line, "a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal");
             return fixarr_of(felem, fixn);
         }
         Type elem = parse_type(ps);

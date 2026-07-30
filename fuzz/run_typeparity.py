@@ -31,12 +31,15 @@
 #   - arithmetic / string concat / char byte-domain  docs/spec/09-expressions.md:24-40
 #   - element-wise arithmetic is not in this matrix  docs/spec/09-expressions.md:51-63
 #   - comparison and ordering                        docs/spec/03-types.md:436-457
-#   - bitwise and shift                              docs/spec/09-expressions.md:83-92
+#   - bitwise (operands must match)                  docs/spec/09-expressions.md:83
+#   - shift (widths need NOT match)                  docs/spec/09-expressions.md:85-104
 #   - literal adaptation                             docs/spec/06-conversions.md:11-27
 # and it was then RECONCILED against the resolver arm by arm; each clause below
 # cites the line it encodes. Reconciliation found the spec and `src/tychoc.c`
-# disagreeing in one place -- mixed-width shifts -- recorded at the shift clause
-# and filed as its own plan.md phase rather than silently encoded either way.
+# disagreeing in one place -- mixed-width shifts -- which was resolved in the
+# COMPILER's favour: the spec sentence had lumped shift in with bitwise and
+# demanded matching operands, which no version of tychoc ever implemented. The
+# spec now states the shift rule separately and this oracle agrees with it.
 #
 # What this does and does not buy: a changed type rule now reddens this lane, and
 # a fail-OPEN in tychoc alone is caught. A fail-open that the rule below shares --
@@ -127,11 +130,10 @@ def expect(lt, lform, op, rt, rform):
     if op in ("<<", ">>"):                        # `src/tychoc.c:6101-6107`
         # MIXED WIDTHS ARE ACCEPTED HERE and the result takes the LEFT operand's
         # width, because a shift COUNT has no reason to share the shifted value's
-        # type. docs/spec/09-expressions.md:83 says instead that bitwise AND shift
-        # "Operands MUST be the same integer type", which is true of `& | ^`
-        # (`src/tychoc.c:6211`) and false of `<< >>`. The compiler is the sane one;
-        # the spec sentence is the defect. Filed as a plan.md phase; this oracle
-        # encodes the implemented rule and says so rather than reddening on it.
+        # type. docs/spec/09-expressions.md:85-89 now states exactly this, split
+        # out from the bitwise rule at docs/spec/09-expressions.md:83, which does
+        # require matching operands and is enforced at `src/tychoc.c:6214`.
+        # Spec and compiler agree here; nothing is filed against this clause.
         return "accept" if lt in INTEGER and rt in INTEGER else "reject"
     if op in ("%", "&", "|", "^"):                # `src/tychoc.c:6211` -- two MATCHING integers
         return "accept" if lt in INTEGER and lt == rt else "reject"

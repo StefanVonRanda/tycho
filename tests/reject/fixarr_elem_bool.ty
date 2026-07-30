@@ -1,0 +1,11 @@
+# [N]bool has no inline fixed-array bool codegen (mirrors bounded[N]bool, see
+# reject/bounded_elem_bool). A DYNAMIC [bool] is legal and is pinned the other
+# way by tests/bool_array.ty -- the two halves are a deliberate split, not a
+# hole, and §16.7 said otherwise until this fixture was added.
+# The diagnostic must name the real rule -- bool and void are the ONLY element
+# types a fixed-size array refuses -- not an allow-list, which would leave out
+# bytes/tuple/map/u32, all of which work as [N]T elements:
+#   error: a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal
+fn main():
+    a: [3]bool = [true, false, true]
+    println(str(a[0]))
