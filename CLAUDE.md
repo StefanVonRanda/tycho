@@ -62,9 +62,17 @@ say so rather than changing anything in the repo.
 gates them. Two things that bite every time:
 
 - A **bare** `:N` binds to the **previously named path in the same document**.
-  Write full paths in evidence blocks, or the gate resolves your citation
-  against whatever file you happened to mention last. Four separate phases have
-  reddened the gate on their own write-ups this way.
+  Name the path in evidence blocks, or the gate resolves your citation against
+  whatever file you happened to mention last. Four separate phases have reddened
+  the gate on their own write-ups this way.
+- **Repo-relative, never absolute.** `src/tychoc.c:402` — never that same path
+  with the checkout's absolute prefix in front of it. (Spelling the absolute form
+  here would itself redden the gate, which is the point.) An earlier version of this file
+  said "write full paths", which is satisfied by an absolute path — and an
+  absolute path used to be skipped by the gate entirely, so it looked careful
+  while being checked by nothing. 187 such refs accumulated before anyone
+  noticed. Absolute paths are now a hard failure with a message naming the
+  relative form; the wording here is the reason they existed.
 - Inside a `> Provenance:` block, a **single-line** ref must be anchored
   `path:N@token`; a **range** stays bare, deliberately — a range has no single
   subject token and forcing one produces a false anchor. Do not "fix" the
