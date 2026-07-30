@@ -22,8 +22,18 @@
 #
 # THAT CONSTRAINT NO LONGER BINDS. Both lanes were retired on 2026-07-29 and
 # nothing builds tychoc0 any more (see the header of compiler/fixpoint.sh,
-# ROADMAP.md and docs/architecture.md), so these fixtures could now live in
-# tests/. They have not been moved yet -- that is tracked as its own phase.
+# ROADMAP.md and docs/architecture.md).
+#
+# SETTLED 2026-07-30, and nothing here moved. Both constructs now have their own
+# tests/ fixture -- tests/nested_pattern.ty and tests/result_tuple.ty -- scored by
+# the main golden loop (native + ASan + byte-identical + golden), which is the
+# discipline the freeze had been costing them. This file is NOT that fixture's
+# duplicate and is not going anywhere: it is the core:result lane, and it is the
+# only place the two constructs are exercised THROUGH the combinators and across
+# a package boundary (io.IoErr). Its placement was over-determined all along --
+# the freeze was one reason among several, and it was never the load-bearing one.
+# See docs/spec/appendix-e-conformance.md §E.1's 2026-07-30 note for the
+# convention this settles on.
 package main
 import "core:result"
 import "core:io"
@@ -112,8 +122,15 @@ fn io_why(p: string) -> string:
 #
 # `return (Err(Worse), "partial")` was rejected with "tuple element 1 needs a
 # concrete value" -- E_TUPLE only ever synthesized, and Ok/Err synthesize to a
-# partial type that context has to ground. It is why httpd.read_request_capped
-# still builds its outcome in a typed local (it is compiled by frozen tychoc0).
+# partial type that context has to ground.
+#
+# The old note here said httpd.read_request_capped still builds its outcome in a
+# typed local "because it is compiled by frozen tychoc0". That reason expired on
+# 2026-07-29 when the tychoc0 lanes were retired; the function's real constraint
+# is the one measured in appendix-e-conformance.md §E.2.1 -- rewriting it to
+# `return (Err(why), buf)` still fails, because the Ok payload type cannot be
+# grounded from a partially-inferred Request. tests/result_tuple.ty is this
+# construct's tests/ fixture as of 2026-07-30.
 fn outcome(ok: bool) -> (Result(int, Local), string):
     if ok:
         return (Ok(3), "full")

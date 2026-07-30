@@ -2192,7 +2192,7 @@ request (`fc921d7`, `7a04e53`).
     the three live-entry refs in `plan.md` either way.
 - [x] **Phase 18** — `docs/internals/spec-plan.md:605` cites
       `appendix-e-conformance.md:188` for a §9.5 claim; that line is the §24.2 row.
-- [ ] **Phase 20** — `examples/fetch/run.sh` is red, and was red **before** this
+- [x] **Phase 20** — `examples/fetch/run.sh` is red, and was red **before** this
       plan started. Two independent pre-existing faults, both found by phase 1 and
       neither caused by it. (a) `SHIM` named `corelib/http/http_shim.c` alone while
       `examples/fetch/main.ty` also imports `core:io`, so the link failed with
@@ -2208,8 +2208,11 @@ request (`fc921d7`, `7a04e53`).
       stayed red unnoticed. Note this is the exact blind spot
       `scripts/entrypoints.sh` was created for — that gate proves entry points
       *compile*, not that their runners *pass*.
+      **CLOSED by batch 5 — but (b) above is WRONG and that is the finding.** The
+      hash is body-derived, not path-derived; the real fault was a stale golden.
+      Golden re-recorded, runner green. Details in the batch 5 evidence.
 
-- [ ] **Phase 21** — the freeze no longer constrains where fixtures live, and
+- [x] **Phase 21** — the freeze no longer constrains where fixtures live, and
       several files still say it does. `corelib/test/result/main.ty`,
       `examples/corelib/httpd/main.ty` and the `§E.2` rationales in
       `docs/spec/appendix-e-conformance.md` place fixtures outside `tests/`
@@ -2218,6 +2221,10 @@ request (`fc921d7`, `7a04e53`).
       building `tychoc0` that constraint is void and those fixtures can come home.
       Phase 1 annotated the claims in place rather than moving anything; phase 2
       already folds `tests/postfreeze/` back and is the natural place to widen.
+      **CLOSED by batch 5.** The fold-back closed only part of it. Nothing was
+      *moved* — the answer is that the placements were over-determined and the
+      freeze cost the `tests/` witness, not the corelib one. Two new fixtures
+      restore it. Details in the batch 5 evidence.
 
 - [x] **Phase 22** — `fuzz/run_typeparity.py` lost its oracle, not just its second
       opinion. Unlike `run_eqparity.py` / `run_unaryparity.py` / `run_parforparity.py`,
@@ -2282,7 +2289,7 @@ request (`fc921d7`, `7a04e53`).
       both small: default `--emit-c` with no `-o` to stdout, or add the emitted
       sibling to `.gitignore` by pattern. Not urgent, not this plan's subject.
 
-- [ ] **Phase 26** — **the `parallel for` gate diagnostic will be wrong the
+- [x] **Phase 26** — **the `parallel for` gate diagnostic will be wrong the
       moment phase 7 lands.** Found by phase 5, left alone because rewriting it
       now would make it wrong in the other direction. `src/tychoc.c:3235` refuses
       a `parallel` applied to anything that is not an `S_FORRANGE` with
@@ -2294,6 +2301,9 @@ request (`fc921d7`, `7a04e53`).
       `for x in collection` loops only"*. One line; do it inside phase 7 rather
       than as its own commit, and note `docs/spec/13-concurrency.md:78` says the
       same thing in prose (that half is phase 9's).
+      **TICKED by batch 5 — nothing remained; both halves had already landed and
+      only the box was open.** Verified by blame, not by assumption. Details in
+      the batch 5 evidence.
 
 - [x] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for
@@ -3799,3 +3809,327 @@ have compiled the new fixture under ASan and TSan. `make ci` was not run.
   - Done when: the lane has a written-down oracle or is honestly retired, decided
     the way phase 22 was — with the option not taken written down.
   - Verify: `python3 tests/rtparity/run.py`, then `make test`.
+
+## Batch 5 evidence — phases 20, 21, 26, fixtures and the gates watching them
+
+Ran at `0412395`. Phase 28 was already closed by batch 2 and was left alone.
+
+### Phase 20 — the diagnosis in the phase entry was wrong, and that is the finding
+
+The entry says the golden's cache-name hash "derives from the URL, and the URL
+embeds `$PWD`, so the golden is only reproducible in the directory it was
+recorded in", and concludes that fixing it "is a `core:http` change". Every part
+of that is false, and believing it is why the lane stayed red: it made a
+one-command repair look like a corelib redesign.
+
+Read the program instead of the comment. The hash is the **response body's**:
+
+- `examples/fetch/main.ty:45` — `sha := sha256.hex(body)`
+- `examples/fetch/main.ty:65` — `cachepath := "/tmp/tycho_fetch_" + sha[0:16] + ext`
+
+The only other URL-derived output field is `examples/fetch/main.ty:46`'s
+`path.base(url)`, a basename. Nothing in the output can depend on `$PWD`.
+
+**Measured, not assumed.** One binary, two unrelated absolute paths:
+
+    $ ./tychoc examples/fetch/main.ty -o $T/fetchbin
+    $ $T/fetchbin "file://$PWD/examples/fetch/fixture.json" $T/a.cache
+    source : fixture.json
+    bytes  : 153
+    sha256 : 5124059f6a7ee320f20ca58672982b9852d1b25c98e0de8ec8324a5cc00741f3
+    $ $T/fetchbin "file:///tmp/tmp.9b1WwT3uTi/some/deep/other/place/fixture.json" $T/b.cache
+    source : fixture.json
+    bytes  : 153
+    sha256 : 5124059f6a7ee320f20ca58672982b9852d1b25c98e0de8ec8324a5cc00741f3
+
+Byte-identical. The output is path-independent already.
+
+**The actual fault: a stale golden, and the commit that staled it is named.**
+`39d75be` (the Hier -> Tycho rename) edited the fixture body and did not
+re-record the golden:
+
+    $ git show 39d75be^:examples/fetch/fixture.json | sha256sum
+    e3de3da05e1cd879055580125a2ec0898b5d3fa457886359560022741f7f4b2b  -   (152 bytes, "name": "hier")
+    $ sha256sum examples/fetch/fixture.json
+    5124059f6a7ee320f20ca58672982b9852d1b25c98e0de8ec8324a5cc00741f3      (153 bytes, "name": "tycho")
+
+    $ git show 39d75be -- examples/fetch/expected.out
+    -cached : hier_fetch_e3de3da05e1cd879.json
+    +cached : tycho_fetch_e3de3da05e1cd879.json
+
+That diff is the whole story: the rename rewrote the *prefix* `hier_fetch_` and
+left the *hash* untouched, along with `bytes  : 152` and the `sha256` line — all
+three describing a body that no longer exists. `e3de3da05e1cd879` is exactly the
+pre-rename fixture's hash and `5124059f6a7ee320` is exactly the post-rename
+one, which is why the "wants X, gets Y" pair in the phase entry looked like a
+machine-dependence and was not. `39d75be`'s own message claims the dogfood digest
+goldens were re-recorded; this one was not, and no lane runs it, so nothing said
+so for as long as the commit has been in the tree.
+
+**Decision: re-record. Not "make the hash path-independent" (it already is), not
+"drop the assertion".** The assertion is the only thing in the tree that checks
+`core:http` + `json` + `sha256` + `io` + `path` composing end to end, and it costs
+one command to restore. The two rejected options were rejected for stated
+reasons: there is no path-dependence to remove, and dropping a golden because it
+was left stale rewards the neglect.
+
+Real output, before and after:
+
+    $ sh examples/fetch/run.sh          # before
+    FAIL: output != golden
+          3,4c3,4
+          < bytes  : 152
+          < sha256 : e3de3da05e1cd879055580125a2ec0898b5d3fa457886359560022741f7f4b2b
+          ---
+          > bytes  : 153
+          > sha256 : 5124059f6a7ee320f20ca58672982b9852d1b25c98e0de8ec8324a5cc00741f3
+          6c6
+          < cached : tycho_fetch_e3de3da05e1cd879.json
+          ---
+          > cached : tycho_fetch_5124059f6a7ee320.json
+    fetch: FAIL
+
+    $ RECORD=1 sh examples/fetch/run.sh
+    rec  fetch
+    fetch: green (http+json+sha256+io+path compose; tychoc+ASan; real libcurl via file://; the tychoc0 leg was retired 2026-07-29)
+
+    $ sh examples/fetch/run.sh          # after
+    fetch: green (http+json+sha256+io+path compose; tychoc+ASan; real libcurl via file://; the tychoc0 leg was retired 2026-07-29)
+
+No network was needed or used: the runner GETs `file://` (a libcurl protocol), so
+the whole lane is offline and deterministic. The ASan/UBSan leg ran and was
+silent throughout — it was never the failing part.
+
+**The restored golden catches something.** One byte of the fixture changed:
+
+    $ sed -i 's/"stars": 9/"stars": 10/' examples/fetch/fixture.json
+    $ sh examples/fetch/run.sh
+    FAIL: output != golden
+          < bytes  : 153 / > bytes  : 154
+          < sha256 : 5124059f6a7ee320... / > sha256 : 8299412e5c77f2e1...
+          < cached : tycho_fetch_5124059f6a7ee320.json
+          > cached : tycho_fetch_8299412e5c77f2e1.json
+    fetch: FAIL
+
+Fixture restored afterwards; `git status --short examples/fetch/` shows it clean.
+
+**One repair beyond the golden, because the record path was fail-open.** `RECORD=1`
+copied the run's output over the golden unconditionally — including from a run
+whose compile had already failed, which would have written an empty file over the
+only assertion. It is now guarded. Demonstrated on the guard's real path (a
+compile failure, not a golden mismatch — a golden mismatch is what RECORD exists
+for and must still record):
+
+    $ printf '\nfn ((( broken\n' >> examples/fetch/main.ty   # 82 lines -> 84
+    $ RECORD=1 sh examples/fetch/run.sh
+    FAIL: tychoc compile
+          error: expected a procedure name, at the appended line 84
+    $ grep '^bytes' examples/fetch/expected.out
+    bytes  : 152          <- unchanged; the pre-guard code would have emptied it
+
+The wrong `$PWD` explanation was also removed from `examples/fetch/run.sh` and
+replaced with the measured one, since it is the comment a future reader will
+believe.
+
+**Not fixed, and filed rather than absorbed:** the lane is still in no Makefile
+target. That is phase 47.
+
+### Phase 21 — settled by deciding that nothing moves, plus two fixtures that come home
+
+Checked before doing work, as instructed. The fold-back had closed **part** of
+it: `tests/postfreeze/` is gone, its goldens are covered by `.gitignore:94`'s
+`!/tests/*.out`, and `tests/nested_pattern` is home. It had **not** closed the
+phase — `docs/spec/appendix-e-conformance.md` said so itself, in the note the
+fold-back left behind: "The remaining fixtures have not been relocated yet; that
+is tracked as its own phase." This is that phase.
+
+**The decision, which is that "come home" was the wrong frame.** Two clauses were
+still flagged as having no `tests/` fixture *for freeze reasons* — §3.9.4's `\r`
+and adjacent-literal join (with §12.2's string fold), and §6.2(7)'s `Ok`/`Err` in
+a tuple literal. Their witnesses are `corelib/test/csv`, `corelib/test/httpd`,
+`corelib/test/result` and `server/main.ty`. Relocating any of those would be
+wrong and the phase entry's "those fixtures can come home" quietly assumes it:
+each is **the lane for its own package**, and would sit exactly where it sits
+with or without a freeze. Their placement was over-determined, and the freeze was
+never the load-bearing reason.
+
+What the freeze actually cost was the **`tests/` witness** — the main golden loop's
+native + ASan + byte-identical + golden discipline, which none of those four
+runners applies. So nothing was moved and two fixtures were written, following
+the precedent `tests/nested_pattern` already set when it came back:
+
+- `tests/crlf_adjacent.ty` — `\r` as byte 13 (`term_bytes = 13,10,13,10`), CR/LF
+  counts over a joined multi-line header block, `"ab" "cd" == "ab" + "cd"`, a raw
+  piece joined to a cooked one (proving no escape is interpreted inside it:
+  `...,114,97,119,92,114,92,110`), and §12.2's `const GREET = "hel" + "lo"` fold.
+- `tests/result_tuple.ty` — `Ok`/`Err` built directly in a tuple literal in a
+  `return`, at a call site, with a payload-carrying `Err` variant, and with a heap
+  `[int]` `Ok` payload.
+
+The convention this settles on is written into
+`docs/spec/appendix-e-conformance.md` §E.1 as a dated note: a clause gets a
+`tests/` fixture; a package's own lane covers the package; no carve-out. The three
+E.2 matrix rows now cite the new fixtures, and the two E.2.1 entries are amended
+to say they are no longer flagged, keeping the old rationale as history because it
+is why the gap lasted. The two source files that still asserted a live constraint —
+`corelib/test/result/main.ty` and `corelib/test/httpd/main.ty` — now say the
+constraint is dead and that they stay for their own reasons. Both still compile.
+
+**The gate that watches this is `sh scripts/spec_check.sh`,** per `CLAUDE.md`'s
+gate table: Appendix E's backticked `tests/…` paths must resolve. It passes, and
+it is demonstrably looking at the new citations rather than ignoring them:
+
+    $ sed -i 's|`tests/result_tuple`|`tests/result_tuplo`|' docs/spec/appendix-e-conformance.md
+    $ sh scripts/spec_check.sh
+    spec-check: FAIL — Appendix E cites fixtures that do not exist:
+        tests/result_tuplo
+    $ # restored
+    $ sh scripts/spec_check.sh
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 9 runnable example(s), all pass
+
+### Phase 26 — nothing remained; the box was open, the work was not
+
+Both halves had landed. Established by blame rather than by reading the phase
+text:
+
+    $ git blame -L 3241,3241 src/tychoc.c
+    3f68a00  feat(compiler)!: phase 7 — delete the range() counting form
+    $ git blame -L 78,78 docs/spec/13-concurrency.md
+    a4f2991  docs: phase 9 — spec the Odin-style loop forms and the removal of range()
+
+`src/tychoc.c:3241` now reads ``parallel supports `for i in 0..<N` and `for x in
+collection` loops only`` — the wording phase 26 specified, verbatim, including the
+`0..<N` spelling phase 5 added and without the `range(...)` spelling phase 7
+deleted. The second aspect the entry flags is the prose, and it is the half the
+entry assigns to phase 9: `docs/spec/13-concurrency.md:78` opens §22 with "applies
+to a **counting** or a **foreach** loop" and the counting spelling is given as
+`parallel for i in 0..<N:`; `range(a, b, step)` survives in that section only as
+"the form this replaced". Nothing was redone.
+
+One thing the phase did **not** cover and that this batch did not widen into: no
+`tests/diag/` fixture asserts that message text, so the wording is correct today
+and unguarded tomorrow. Filed as phase 48.
+
+### Gates
+
+    $ sh examples/fetch/run.sh
+    fetch: green (http+json+sha256+io+path compose; tychoc+ASan; real libcurl via file://; the tychoc0 leg was retired 2026-07-29)
+
+    $ sh scripts/spec_check.sh
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 9 runnable example(s), all pass
+
+    $ make test
+    passed: 547   failed: 0
+    all green
+
+    $ python3 scripts/check_citations.py
+    citation check: ok (152 anchored contain the token they name, 2128 bare in bounds,
+    116 source->doc citations resolve, 138 source->source in bounds, 12 source->source anchored)
+
+    $ sh scripts/check_links.sh
+    link check: ok (134 markdown files, no dead relative links)
+
+`make ci` was deliberately not run; batch 6 closes with the full sweep.
+
+**`make test`'s 547 includes the two new fixtures, and their goldens bite.** A
+green count alone would not prove either, so both goldens were corrupted by one
+value and the suite re-run:
+
+    $ sed -i 's/ok:3/ok:4/' tests/result_tuple.out
+    $ sed -i 's/13,10,13,10/13,10,13,11/' tests/crlf_adjacent.out
+    $ make test
+    FAIL  crlf_adjacent  (output != golden (tests/crlf_adjacent.out))
+    FAIL  result_tuple  (output != golden (tests/result_tuple.out))
+    passed: 545   failed: 2
+    failed: crlf_adjacent result_tuple
+
+545 + 2 = 547, so the two fixtures are inside the count and are scored by name.
+Goldens restored; the green run above is the post-restore state.
+
+The two `corelib/test/*/main.ty` edits are comment-only and so cannot move a
+`make corelib` golden, but a comment can still break a parse, so both were
+compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
+
+## Phases discovered by batch 5
+
+- [ ] **Phase 47** — **`examples/fetch/run.sh` is in no Makefile target, which is
+      the reason phase 20 existed at all.** The golden was stale from `39d75be`
+      onward and nothing said so, through an entire prior plan and five batches of
+      this one. `scripts/entrypoints.sh` proves the entry point *compiles*; it
+      does not run the runner. Three of the four sibling example runners are wired
+      in and this one is not.
+  - Scope: `Makefile` and, if the target is one `scripts/ci.sh` already calls,
+    that file. Nothing in `examples/fetch/` — it is green and was repaired by
+    batch 5.
+  - Decide which target: the lane needs `libcurl` and self-skips without it
+    (`fetch: SKIP (libcurl not installed)`), so it is safe to add unconditionally,
+    but note it builds under ASan/UBSan and costs real seconds — `make ci` may be
+    the honest home rather than `make test`.
+  - **Do this in or after batch 6, never before it.** Batch 6 closes with the
+    full `make ci` sweep and batch 3 added a `[12b/13]` step that has never been
+    exercised in a full run; adding a second unexercised step to the same sweep
+    would make a failure ambiguous between the two.
+  - Done when: a named `make` target runs `examples/fetch/run.sh`, and a
+    deliberately corrupted `examples/fetch/expected.out` is shown reddening that
+    target — not just the runner, which batch 5 already demonstrated.
+  - Verify: the new target, then `make ci` once.
+
+- [ ] **Phase 48** — **the `parallel for` diagnostic's wording is asserted by
+      nothing.** Batch 5 confirmed `src/tychoc.c:3241` carries the text phase 26
+      specified, but confirmed it by reading the source, which is exactly the
+      check that does not survive the next edit. `tests/reject/*.ty` asserts only
+      a nonzero exit and a non-empty diagnostic (`tests/run.sh` says so in the
+      reject loop's header comment), so a message that silently degrades to
+      something useless still passes. `tests/diag/` is the lane that goldens
+      diagnostic *text* — `diag_range_removed` and `diag_dotlt_sequential` already
+      live there — and it has no `parallel` fixture at all.
+  - Scope: one `tests/diag/` fixture and its golden. No `src/tychoc.c` change —
+    the message is already correct.
+  - The program to reject is `parallel for i := 0; i < 3; i += 1:`, the
+    three-clause form, which is the shape phase 26 named as the user-facing case.
+    Check the foreach-of-an-expression refusal too if it lands in the same arm.
+  - Done when: the fixture exists, `make test` scores it, and flipping one word of
+    the message in `src/tychoc.c` is shown reddening it.
+  - Verify: `make test`.
+
+- [ ] **Phase 49** — **25 `corelib/test/*/main.ty` headers still claim "the C
+      compiler and tychoc0 must agree".** No lane has built `tychoc0` since
+      2026-07-29 and `corelib/run.sh:6` already records the retirement in its own
+      header, so every per-test header beneath it now advertises a differential
+      guarantee the tree does not provide. This is the same class batch 3 swept
+      for documents, one directory it did not reach. Counted, not estimated:
+      `grep -rl 'tychoc0 must agree' corelib/test/*/main.ty | wc -l` gives 25.
+  - Scope: the header comment of each matching `corelib/test/*/main.ty`. Comments
+    only — no program text, so no golden can move.
+  - Say what the lane actually asserts now (golden-validated by `corelib/run.sh`)
+    rather than deleting the sentence, and keep the loss visible the way
+    `corelib/run.sh`'s own header does.
+  - Done when: no `corelib/test/*/main.ty` asserts a live `tychoc0` comparison,
+    and each edited file still compiles.
+  - Verify: `make corelib`, then `python3 scripts/check_citations.py`.
+
+- [ ] **Phase 50** — **`corelib/test/io/main.ty` still explains two fixtures'
+      *location* by the dead freeze.** `corelib/test/io/main.ty:43` says the
+      nested-pattern arm is written there because "no runner feeds corelib/test/
+      to the frozen compiler/tychoc0.ty", and `corelib/test/io/main.ty:148` says
+      the interior-NUL `bytes` fixture "CANNOT live in tests/ -- frozen tychoc0
+      rejects `b[i]`". Batch 5 closed exactly this class for
+      `corelib/test/result/main.ty` and `corelib/test/httpd/main.ty` but did not
+      widen to `corelib/test/io/main.ty`, because the NUL case is a clause
+      (§3.9.4's interior NUL) that neither batch 5 fixture covers and it needs its
+      own decision, not a comment edit bolted onto someone else's phase.
+  - Scope: `corelib/test/io/main.ty`'s two comments, and — if the decision goes
+    that way — one `tests/` fixture plus its golden and the matching Appendix E
+    row. `tests/string_nul` already exists; check first whether it covers the
+    `b[i]` / slice-length / concat properties the comment enumerates, in which
+    case the work is only to correct the comment and cite it.
+  - Apply batch 5's convention from `docs/spec/appendix-e-conformance.md` §E.1:
+    a clause gets a `tests/` fixture, a package's own lane covers the package,
+    and nothing moves merely because it now could.
+  - Done when: neither comment asserts a live constraint, and §3.9.4's interior
+    NUL either has a `tests/` witness or a written reason it does not.
+  - Verify: `sh scripts/spec_check.sh`, then `make test`.

@@ -1,0 +1,76 @@
+# §3.9.4: the `\r` escape and the adjacent-literal join, plus §12.2's const
+# string fold. This fixture exists in tests/ because it finally CAN.
+#
+# Until 2026-07-29 these three had no `tests/` witness and Appendix E said so
+# outright: `compiler/fixpoint.sh` and `scripts/frontparity.sh` fed every
+# `tests/*.ty` to the frozen `compiler/tychoc0.ty`, whose lexer rejects `\r`
+# (`compiler/tychoc0.ty:195`) and has no adjacent-literal join, so a fixture here
+# would have been a program `tychoc` compiles and `tychoc0` refuses -- reddening
+# two runners at a file nobody was allowed to edit. The coverage was pushed out
+# to `corelib/test/csv`, `corelib/test/httpd` and `server/main.ty`'s `error_body`,
+# which reach no frozen compiler. Both lanes were retired on 2026-07-29 (see
+# CLAUDE.md, ROADMAP.md, docs/architecture.md) and nothing builds `tychoc0` any
+# more, so the constraint is void and the constructs come home to the main golden
+# loop -- native + ASan + byte-identical + golden, which none of the three
+# out-of-tree witnesses applied to them.
+#
+# The corelib witnesses stay where they are: they are the core:csv and core:httpd
+# lanes and cover these bytes incidentally. This fixture covers them on purpose.
+
+# §12.2: a const string is folded at compile time; the join happens at parse
+# time, so this is one literal by the time the fold sees it.
+const TERM = "\r\n" "\r\n"
+
+# §12.2 proper: `const` folds `+` over two string literals at compile time. The
+# join above is a parse-time concatenation of adjacent pieces; this is the fold.
+const GREET = "hel" + "lo"
+
+# The multi-line string form. Adjacent pieces join left to right at parse time
+# (§3.9.4); the implicit line-join inside `(`...`)` (§3.2) suppresses the
+# newlines between them, so this is a single literal with no run-time concat.
+fn head(status: int) -> string:
+    return ("HTTP/1.1 " + str(status) + " OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Connection: close\r\n")
+
+# A raw piece joins with a cooked one, and interprets no escape inside itself.
+fn mixed() -> string:
+    return ("cooked\r\n" `raw\r\n`)
+
+fn bytes_of(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        if i > 0:
+            out = out + ","
+        out = out + str(s[i])
+    return out
+
+fn main():
+    # \r is byte 13 and \n is byte 10 -- four bytes, not the two characters
+    # `\` `r` a naive lexer would leave behind.
+    println("term_len   = " + str(len(TERM)))
+    println("term_bytes = " + bytes_of(TERM))
+    println("fold       = " + GREET + " " + str(len(GREET)))
+
+    h := head(200)
+    println("head_len   = " + str(len(h)))
+    # every line of the header block ends CRLF: count the 13s and the 10s
+    cr := 0
+    lf := 0
+    for i := 0; i < len(h); i += 1:
+        if h[i] == 13:
+            cr += 1
+        if h[i] == 10:
+            lf += 1
+    println("head_cr    = " + str(cr))
+    println("head_lf    = " + str(lf))
+
+    # "ab" "cd" is "abcd" -- one literal, equal to the concatenation
+    joined := "ab" "cd"
+    println("join_eq    = " + str(joined == "ab" + "cd"))
+    println("join       = " + joined)
+
+    m := mixed()
+    println("mixed_len  = " + str(len(m)))
+    println("mixed_cr   = " + str(m[6]))
+    println("mixed_raw  = " + bytes_of(m))

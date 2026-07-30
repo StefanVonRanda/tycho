@@ -1,0 +1,11 @@
+term_len   = 4
+term_bytes = 13,10,13,10
+fold       = hello 5
+head_len   = 62
+head_cr    = 3
+head_lf    = 3
+join_eq    = true
+join       = abcd
+mixed_len  = 15
+mixed_cr   = 13
+mixed_raw  = 99,111,111,107,101,100,13,10,114,97,119,92,114,92,110

@@ -34,9 +34,12 @@ fn rq(r: Result(httpd.Request, httpd.ReqErr)) -> httpd.Request:
 #
 # One arm per cause, since plan.md phase 3. This function was `is_ok` + `err_or`
 # plus four `e == httpd.X` comparisons, because `Err(httpd.Timeout)` did not parse.
-# It can be written this way HERE and not in corelib/httpd itself: no runner feeds
-# corelib/test/ to the frozen compiler/tychoc0.ty, whose grammar still has no
-# nested pattern.
+# The old note here said this could be written HERE and not in corelib/httpd
+# itself because no runner fed corelib/test/ to the frozen compiler/tychoc0.ty.
+# That constraint died with the tychoc0 lanes on 2026-07-29 and nothing builds
+# tychoc0 now, so nested patterns are writable anywhere -- tests/nested_pattern.ty
+# is the construct's own fixture under the main golden loop. This arm stays here
+# because it is the core:httpd lane, not because anything forbids it elsewhere.
 fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
     match r:
         Ok(req): return "Ok"

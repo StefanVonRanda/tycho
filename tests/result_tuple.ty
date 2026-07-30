@@ -1,0 +1,77 @@
+# §6.2(7): an `Ok(...)`/`Err(...)` written directly as a TUPLE-LITERAL element.
+#
+# `Ok`/`Err` synthesize to a partial type that context has to ground, and until
+# `FRICTION.md:159` was fixed, `return (Err(Worse), "partial")` was refused with
+# "tuple element 1 needs a concrete value" -- E_TUPLE only ever synthesized. The
+# fix grounds the element from the declared return type.
+#
+# This fixture exists in tests/ because it finally CAN. Its only witness was
+# `corelib/test/result`, and Appendix E §E.2.1 recorded the reason as mechanical
+# rather than taste: `tests/*.ty` and `tests/pkg/*/main.ty` were fed to the frozen
+# `compiler/tychoc0.ty`, whose grammar has no such form, so a fixture here would
+# have reddened `compiler/fixpoint.sh` and `scripts/frontparity.sh` by
+# construction. `corelib/test/` is golden-validated by `corelib/run.sh` and
+# reached no frozen compiler, so that is where it had to live. Both lanes were
+# retired on 2026-07-29 and nothing builds `tychoc0` any more, so the clause gets
+# a fixture under the main golden loop -- native + ASan + byte-identical +
+# golden. `corelib/test/result` keeps its copy: it is the core:result lane and
+# exercises the combinators over it.
+
+enum Local:
+    Nope
+    Worse
+    Sized(int, string)
+
+# The construct under test: both arms build the Result inline, in the tuple
+# literal, with no typed local to ground it.
+fn outcome(ok: bool) -> (Result(int, Local), string):
+    if ok:
+        return (Ok(3), "full")
+    return (Err(Worse), "partial")
+
+# A payload-carrying Err variant in the same position, and a heap Ok payload --
+# the grounding must reach through the variant's own arguments too.
+fn sized(n: int) -> (Result([int], Local), string):
+    if n < 0:
+        return (Err(Sized(n, "negative")), "rejected")
+    xs := []int
+    for i := 0; i < n; i += 1:
+        push(xs, i * i)
+    return (Ok(xs), "built")
+
+fn show(r: Result(int, Local)) -> string:
+    match r:
+        Ok(v):
+            return "ok:" + str(v)
+        Err(Nope):
+            return "err:nope"
+        Err(Worse):
+            return "err:worse"
+        Err(Sized(n, why)):
+            return "err:sized:" + str(n) + ":" + why
+
+fn main():
+    r1, s1 := outcome(true)
+    r2, s2 := outcome(false)
+    println("ok_arm    = " + show(r1) + " / " + s1)
+    println("err_arm   = " + show(r2) + " / " + s2)
+
+    # a tuple literal built at a call site rather than in a return
+    pair := outcome(true)
+    println("call_site = " + show(pair.0) + " / " + pair.1)
+
+    b1, w1 := sized(4)
+    match b1:
+        Ok(xs):
+            println("heap_ok   = len=" + str(len(xs)) + " last=" + str(xs[3]) + " / " + w1)
+        Err(e):
+            println("heap_ok   = unexpected err / " + w1)
+
+    b2, w2 := sized(-2)
+    match b2:
+        Ok(xs):
+            println("heap_err  = unexpected ok len=" + str(len(xs)) + " / " + w2)
+        Err(Sized(n, why)):
+            println("heap_err  = sized:" + str(n) + ":" + why + " / " + w2)
+        Err(e):
+            println("heap_err  = other / " + w2)
