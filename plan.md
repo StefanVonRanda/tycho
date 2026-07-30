@@ -307,7 +307,7 @@ the last program still in it, and it is the biggest.
   (`scripts/check_citations.py:109-122`) explains why. Verified before filing,
   not after.
 
-- [ ] **Phase 3 — `server/README.md` describes the program as it is**
+- [x] **Phase 3 — `server/README.md` describes the program as it is**
   - Scope: `server/README.md` only.
   - The two false limitations under "Deliberately not implemented" go, replaced
     by what the program actually does now, with provenance. Where the limitation
@@ -323,6 +323,63 @@ the last program still in it, and it is the biggest.
     resolve.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
     Markdown only — not `make test`, not `make ci`.
+
+  **Evidence (2026-07-30).** One file changed: `server/README.md`.
+  `server/main.ty`, `server/run.sh`, `scripts/ci.sh` and `Makefile` untouched.
+  Gates: citations `ok (168 anchored, 2544 bare in bounds, 138 source->doc, 191
+  source->source in bounds, 12 source->source anchored)` — the bare count is
+  2523 -> 2544, i.e. the 21 new `path:line` refs this rewrite added and no stale
+  one; links `ok (134 markdown files)`.
+
+  *How the empty-directory answer was settled: by running it, not by reading it.*
+  Started the HEAD binary on a `mktemp -d` copy of `server/www` with an added
+  empty `emptydir/`, `--port 0 --workers 4 --idle-ms 2000`, read the bound port
+  out of the banner, and drove raw sockets at it. Observed:
+  `GET /emptydir` -> `HTTP/1.1 301 Moved Permanently`, `Location: /emptydir/`;
+  `GET /emptydir/` -> `HTTP/1.1 404 Not Found`. So the README's claim was false
+  in the way that matters — the redirect it said was withheld is **issued** —
+  and the surviving `404` is a different and correct answer (no `index.html`
+  behind the slash form), not a residue of the old bug. Source agrees after the
+  fact: `server/main.ty:301` matches `io.is_dir`, `:307` returns the 301 for the
+  no-slash case and `:306` the 404 for the slash form. Fix dated from the commit
+  itself, not from prose: `git log -S` puts `io.is_dir` and its adoption in
+  `resolve()` both in `4fa192d`, **2026-07-26**.
+
+  *The second false claim, read rather than assumed.* `corelib/net/net_shim.c:204`
+  is `netx_peer_addr` (`getpeername` + `inet_ntop`, `__thread` buffer),
+  `corelib/net/net.ty:143` is `fn peer_addr(fd: int) -> Result(string, NetErr)`,
+  and `server/main.ty:368` calls it once per connection. The same live run
+  printed `w1 127.0.0.1 GET //etc/passwd 403 629 0.054ms` — worker, **peer**,
+  method, target, status, bytes, duration. Dated `7b76fcd`, **2026-07-26**.
+
+  *Per-section verdict — all eight checked.*
+
+  | § | verdict |
+  |---|---|
+  | header block | **corrected.** Asset list omitted `img/dot.png` and the font licence. Everything else held under measurement: `logo.png` is 480x270 (IHDR), `favicon.ico` is a 32x32 ICO whose payload starts `\x89PNG`, `quicksand-regular.ttf` is 95440 B with sfnt tag `00010000`, `app.js:8` really does `fetch("/data.json")`, `about/index.html` is the subdirectory index. |
+  | Usage | **checked, accurate.** Byte-for-byte against `usage()` (`server/main.ty:508-518`): every flag, every default. `--port 8080` / `--port=8080` both work via `cli.parse_spec` (`:536`); `--port 0` prints the bound port, observed in the live banner above. |
+  | What it does | **corrected, one row.** `Logging` listed "worker, method, target, ..." and omitted the client address — the same stale fact as the second false limitation, in a second place. Now names the peer field, gives a real line, and records the ` write-failed` tail (`server/main.ty:342-352`). The other six rows checked and accurate: 405 + `Allow: GET, HEAD` (`:437-440`, `:211-212`); `bytes` end to end; `ctype_for` (`:158-169`) and `application/octet-stream` never `text/plain` (`corelib/httpd/httpd.ty:428`); index resolution (`:269-271`, `:307`); keep-alive with `MAX_REQS = 1024` (`:70`) and HTTP/1.0 defaulting closed (`corelib/httpd/httpd.ty:309-311`); `SO_RCVTIMEO` (`server/main.ty:488` -> `corelib/net/net_shim.c:307`); the status set and the silent-close-on-`Closed` rule (`server/main.ty:390-393`). |
+  | Concurrency | **corrected, two things.** The code block still matches `server/main.ty:499-504` exactly and the affine-handle reasoning holds. But "`plan.md` phase 1 measured the alternatives" pointed at *this* plan's phase 1, which is `server/run.sh` — the measurements are Phase 1 of `docs/internals/plan-webserver-DONE.md`. Repointed, and the throughput table labelled a **recorded measurement of 2026-07-26** (`docs/internals/plan-webserver-DONE.md:814-816`) with an explicit note that `make server-check` asserts no wall-clock. |
+  | Path traversal | **corrected, one real error.** Steps 1-6 match `resolve()` (`server/main.ty:254-309`) in content *and* order. But the vector list put `/%00` among things answered `403`, and it is **`400`** — control-byte rejection at `server/main.ty:265-267` fires before `safe_join` can refuse anything. Confirmed live: the six traversal vectors returned `403`, `/%00` returned `400`. Split the list in two and wrote down why the split exists. |
+  | Deliberately not implemented | **rewritten.** The eight excluded features are accurate. The two "known rough edges" were both false; replaced with dated fixed-then history per the tree convention, plus a new bullet for the shutdown gap phase 1 found. |
+  | Two fixes into `core:net` | **checked, accurate; provenance added.** `MSG_NOSIGNAL` at `corelib/net/net_shim.c:41-53` and `:151-152`, `TCP_NODELAY` at `:154-155`, both real, both unreachable from Tycho. The 100-disconnect claim is `FRICTION.md:432`; the 620x figures are `docs/internals/plan-webserver-DONE.md:855`. Both labelled recorded measurements. Retitled "Two **socket** fixes" — with `getpeername` now documented above as a third `core:net` addition this program forced, a bare "Two fixes this program forced into `core:net`" had become false by arithmetic. |
+  | Verifying it | **rewritten, as briefed.** Opened with `make server-check` and the `[3c/13]` lane (`Makefile:247-248`, `scripts/ci.sh:111`), kept the old false sentence as dated history because the *principle* it stated was the worse error, and kept the curl transcript verbatim under a `By hand` subhead — it is still correct. Added one line the transcript needed: it backgrounds a server with no `trap`, which is exactly how phase 1 left a stray `tycho-httpd` bound. |
+
+  *This write-up reddened the gate on its first pass, which is worth recording.*
+  Three `STALE`, all in the evidence block above, none in `server/README.md`:
+  `:488` and `:390-393` meant `server/main.ty` but followed a line naming
+  `corelib/net/net_shim.c`, so they bound to that and went out of bounds; and
+  `:814-816` after a `docs/` path was refused outright, because the gate does not
+  let a `docs/` path carry past the line that names it — a number landing inside
+  a prose document is checked by nothing. All three spelled out in full and the
+  gate is green. `CLAUDE.md` says four separate phases have reddened on their own
+  write-ups this way; this is the fifth, in the phase whose entire subject was
+  unverified claims.
+
+  *One claim deliberately not made.* The README never asserted a clean-shutdown
+  behaviour, so there was nothing to retract there; the new bullet states the
+  absence instead, which is a claim the tree can check against
+  `server/main.ty:617`.
 
 - [ ] **Phase 4 — with a gate in place, what is worth building next**
   - Scope: a written recommendation appended to this plan. **No implementation.**
@@ -370,6 +427,45 @@ the last program still in it, and it is the biggest.
     `server/run.sh` — that would redden the day it is fixed.
   - Verify: whichever way it goes, `make server-check` (~4s) plus `make test` if
     corelib changes. Not `make ci`.
+
+- [ ] **Phase 6 — 110 references to "`plan.md` phase N" point at the wrong plan**
+  - Found by phase 3. Two of them were in `server/README.md` and were fixed there
+    because they were in scope; the other 108 are not, so they are filed.
+  - **The defect.** `plan.md` is a *rotating* file: when a plan closes it is
+    archived to `docs/internals/plan-<name>-DONE.md` and a new plan takes the
+    name. Every comment that says "plan.md phase 4" was true when written and
+    silently retargets the day the plan rotates. It is now pointing at whatever
+    phase 4 of the *current* plan happens to be about.
+  - **Measured at HEAD**, excluding `docs/internals/plan-*-DONE.md` (which
+    `scripts/check_citations.py:316` exempts as frozen evidence, and where the
+    refs are internally consistent): **110 references across 42 files.** The
+    citation gate cannot see any of them — it checks `path:line`, and
+    "plan.md phase 4" carries no line number, so this is an unverifiable
+    reference by construction, the same class as the bare `:246` phase 1 found.
+  - **It is already wrong, not merely fragile.** The live `plan.md` has 5 phases.
+    The cited phase numbers run to **63**. The refs belong to at least four
+    different archived plans — `plan-webserver-DONE.md`, `plan-option-result-DONE.md`,
+    `plan-friction-DONE.md`, `plan-loops-cleanup-DONE.md` — all spelled `plan.md`.
+    Worst concentrations: `server/main.ty` **13**, `corelib/test/io/main.ty` 7,
+    `corelib/io/io.ty` 6, `corelib/httpd/httpd.ty` 6, `corelib/result/result.ty` 4,
+    `FRICTION.md` 4, `Makefile` 3.
+  - Phase 3 resolved the two it owned by reading the target: "phase 1 measured
+    the concurrency alternatives" is Phase 1 of `docs/internals/plan-webserver-DONE.md`,
+    and "Phase 7" is that same file's Phase 7 at `docs/internals/plan-webserver-DONE.md:748`
+    and `docs/internals/plan-webserver-DONE.md:814-816`. The other 108 each need the same treatment — `git log -S` on
+    the thing being described, then the archived plan it lands in. **This is not
+    mechanical**; a blind rewrite would invent provenance, which is worse than a
+    stale pointer because it reads as verified.
+  - Worth deciding as part of it: whether `scripts/check_citations.py` should
+    reject the bare "plan.md phase N" spelling outright and require the archived
+    filename, so this cannot re-accumulate. That is the only thing that stops the
+    next rotation from re-breaking whatever this phase fixes.
+  - **Note:** `server/README.md`'s one *surviving* `plan.md` reference — "Filed
+    as phase 5 of `plan.md`", the shutdown gap — is correct at HEAD and points at
+    this plan deliberately. It will need rewriting to the archived name when this
+    plan closes, which is the same defect seen from the other end.
+  - Scope: comments and prose only; no behaviour. Verify: the two doc gates,
+    plus `make test` only if a `.ty` comment edit is somehow not a comment edit.
 
 ## Out of scope
 
