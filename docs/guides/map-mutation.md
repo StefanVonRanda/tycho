@@ -14,7 +14,7 @@ the whole value every time. For a `[string: [int]]` inverted index that's O(n)
 per append, quadratic over a build. Instead, `m[k]` names the value's storage
 slot directly, so the mutation happens *in place*:
 
-```
+```tycho
 push(idx[term], doc)                  # grow the value array in its own slot
 ```
 
@@ -28,7 +28,7 @@ distinction is deliberate.
 **As a place** (the target of a write, compound, or projection) it resolves to
 the value's slot in the map and mutates it in place:
 
-```
+```tycho
 m[k] = v             # plain store of a (heap-copied) value
 m[k] += 1            # compound op on the slot
 push(m[k], v)        # grow an array-valued slot
@@ -47,7 +47,7 @@ returns the value's zero on a missing key and **never inserts** — no
 hidden write lurking in a read. That's what makes the counter idiom read
 naturally:
 
-```
+```tycho
 cnt := []string: int
 for w in words:
     cnt[w] = cnt[w] + 1     # read cnt[w] (0 if absent), store back
@@ -78,7 +78,7 @@ property is what makes it sound:
 A key expression that has side effects is evaluated exactly once per statement,
 even for a compound op that reads and writes the same slot:
 
-```
+```tycho
 m[next_key()] += 1     # next_key() runs once, not twice
 ```
 

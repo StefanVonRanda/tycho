@@ -14,7 +14,7 @@
 2. Builds with `-O0 -g` (unoptimized + DWARF) instead of the default `-O3`, so
    stepping is faithful and locals aren't optimized away.
 
-```
+```sh
 tychoc program.ty -g -o program
 ```
 
@@ -23,7 +23,7 @@ Then debug the binary as if it were hand-written C, but stepping lands on
 
 **Linux (gdb)** — DWARF is embedded in the executable directly:
 
-```
+```sh
 gdb ./program
 (gdb) break program.ty:7      # break on a Tycho source line
 (gdb) run
@@ -33,7 +33,7 @@ gdb ./program
 **macOS (lldb)** — the toolchain leaves DWARF in the intermediate objects, and
 a one-step compile+link discards them, so generate a `.dSYM` first:
 
-```
+```sh
 tychoc program.ty -g --emit-c -o program      # keep the .c
 cc -O0 -g -fwrapv -pthread program.c -o program -lm
 dsymutil program                               # writes program.dSYM
@@ -66,7 +66,7 @@ in a debugger:
 Set the env var on any Tycho binary (built by either compiler — no rebuild, no
 flag) and a residency summary prints to stderr at exit:
 
-```
+```text
 $ TYCHO_ARENA_STATS=1 ./tychoc0 < compiler/tychoc0.ty > /dev/null
 
 [tycho arena stats]

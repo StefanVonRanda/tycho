@@ -11,7 +11,7 @@ Both are values, deep-copied on every bind, so two never share storage.
 
 ## Structs
 
-```
+```tycho
 struct Point:
     x: int
     y: int
@@ -39,7 +39,7 @@ Structs are values, and the copy is **deep**: a field that owns heap bytes (a `s
 array, at any nesting depth) is duplicated too, so copying a struct copies its whole tree and
 two struct variables never share storage.
 
-```
+```tycho
 struct Person:
     name: string
     tags: [string]
@@ -61,7 +61,7 @@ true exactly when `b` is an independent copy of `a`. A struct may be a "method" 
 A tuple `(T1, ..., Tn)` (2–8 elements) is an anonymous product — the way a function returns
 more than one thing. `return a, b` builds one, and you **destructure** it at the call:
 
-```
+```tycho
 fn divmod(a: int, b: int) -> (int, int):
     q := a / b
     return q, a - q * b           # builds the tuple (q, remainder)

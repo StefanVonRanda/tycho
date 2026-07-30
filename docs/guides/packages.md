@@ -26,7 +26,7 @@ is the longer design note.
 
 ## Surface syntax
 
-```
+```ebnf
 file         := package_decl? import_decl* top_def*
 package_decl := "package" IDENT NEWLINE          # first non-comment line
 import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
@@ -45,7 +45,7 @@ import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
 
 ## Example
 
-```
+```text
 proj/
   main.ty            # package main
   geom/
@@ -55,7 +55,8 @@ proj/
 
 `geom/point.ty`
 
-```
+<!-- fence-skip: one file of a multi-file package; needs the sibling files to build -->
+```tycho
 package geom
 struct Point:
     x: int
@@ -66,7 +67,8 @@ fn add(a: Point, b: Point) -> Point:
 
 `main.ty`
 
-```
+<!-- fence-skip: one file of a multi-file package; needs the sibling files to build -->
+```tycho
 package main
 import "geom"
 fn main():

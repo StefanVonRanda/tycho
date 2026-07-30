@@ -16,7 +16,7 @@ classes or trait bounds; the small `where` predicate set is the only way to cons
 A function parameterized by `$T` (introduce the parameter with `$` once; refer to it as `T`
 after):
 
-```
+```tycho
 fn id(x: $T) -> T:
     return x
 
@@ -30,7 +30,7 @@ A `where` clause constrains the parameter to a fixed, transpiler-known predicate
 `numeric(T)`, `comparable(T)`, `has_str(T)` — so an operation the body relies on is checked at
 the call:
 
-```
+```tycho
 fn maxv(a: $T, b: $T) -> T where comparable(T):
     if a > b:
         return a
@@ -39,7 +39,7 @@ fn maxv(a: $T, b: $T) -> T where comparable(T):
 
 ## Generic structs and enums
 
-```
+```tycho
 struct Box($T):
     v: $T
 

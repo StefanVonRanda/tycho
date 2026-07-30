@@ -9,7 +9,7 @@
 `extern fn` declares a C function Tycho can call. It's bodyless, bound to a direct C symbol,
 and can optionally name the library to link.
 
-```
+```tycho
 extern fn getpid() -> int                            # libc
 extern "m" fn cos(x: float) -> float                 # links -lm
 extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, Tycho string out

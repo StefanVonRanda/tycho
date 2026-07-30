@@ -9,7 +9,8 @@ A package is a directory of `.ty` files sharing one namespace. You name it with 
 declaration, pull it in with `import`, and use its qualified `pkg.symbol` names — for
 functions, types, and enum variants. An alias renames the prefix.
 
-```
+<!-- fence-skip: one file of a multi-file package; needs the sibling files to build -->
+```tycho
 package main
 import g "geom"          # alias; plain `import "geom"` uses the package name
 

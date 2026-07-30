@@ -8,7 +8,7 @@ This assumes you can already build the compiler; if not, see
 [Trying it](../README.md#trying-it) in the README (it's `git clone` + `make`). Every
 snippet below is real, runnable Tycho. Save one to `f.ty` and run it with:
 
-```
+```sh
 $ ./tychoc f.ty && ./f
 ```
 
@@ -16,7 +16,7 @@ $ ./tychoc f.ty && ./f
 
 ## 1. Hello
 
-```
+```tycho
 fn greet(name: string) -> string:
     return "hello " + name
 
@@ -34,7 +34,7 @@ Python-style.
 
 Every binding is an independent value. `:=` infers the type; `x : T = …` names it.
 
-```
+```tycho
 fn main():
     a := [1, 2, 3]
     b := a            # b is a full, independent copy of a
@@ -47,7 +47,7 @@ Hold that thought — it's the whole trick, and section 9 explains what it buys 
 
 ## 3. Control flow
 
-```
+```tycho
 fn main():
     for i := 0; i < 5; i += 1:    # 0, 1, 2, 3, 4
         if i % 2 == 0:
@@ -66,7 +66,7 @@ fn main():
 
 Arrays are `[T]`; maps are `[K: V]`. `push` appends; `m.get(key, default)` reads safely.
 
-```
+```tycho
 fn main():
     names := ["Ada", "Bo", "Cy"]
     push(names, "Di")
@@ -80,7 +80,7 @@ fn main():
 
 ## 5. Structs
 
-```
+```tycho
 struct Student:
     name: string
     score: int
@@ -98,7 +98,7 @@ its scope ends.
 An `enum` is a tagged union; `match` is exhaustive — every variant needs an arm, checked
 at compile time.
 
-```
+```tycho
 enum Grade:
     A
     B
@@ -116,7 +116,7 @@ fn grade_name(g: Grade) -> string:
 `Option(T)` is the built-in enum for "a value or nothing" — variants `Some(x)` and `None`
 — so there is no null:
 
-```
+```tycho
 fn first_even(xs: [int]) -> Option(int):
     for x in xs:
         if x % 2 == 0:
@@ -134,7 +134,7 @@ fn main():
 Here's a small program that uses all of the above — it grades a list of students and
 tallies how many got each letter. Save it as `grades.ty` and run it.
 
-```
+```tycho
 enum Grade:
     A
     B
@@ -185,7 +185,7 @@ fn main():
 
 Running it:
 
-```
+```text
 Ada: A
 Bo: C
 Cy: B

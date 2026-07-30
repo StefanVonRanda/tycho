@@ -29,7 +29,7 @@ exclusive borrow for the duration of a call and cannot be stored.
 
 ## 2. Types & syntax
 
-```
+```tycho
 # arrays — homogeneous, growable
 xs := [1, 2, 3]          # [int] inferred
 ys := []string           # empty; element type required when empty
@@ -80,7 +80,7 @@ companion feature, not part of this spec, but the model assumes it exists.
 
 ## 4. Arena mechanics, worked
 
-```
+```tycho
 fn read_lines() -> [string]:
     lines := []string
     line := input()
@@ -182,9 +182,10 @@ transpiler already runs for its built-in parametric types:
   and no exceptions.
 - `[K: V]` — hash map; keys are `string`, `int`, a newtype over either, a fieldless enum, or any hashable composite (struct/tuple/array).
 
-```
+```tycho
 fn first(xs: [$T]) -> Option(T):        # generic function
-    if len(xs) > 0: return Some(xs[0])
+    if len(xs) > 0:
+        return Some(xs[0])
     return None
 
 struct Box($T):                          # generic struct
