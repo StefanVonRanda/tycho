@@ -120,3 +120,30 @@ verified and committed on its own, evidence appended under the phase rather
 than pasted into chat. Work discovered outside a phase's scope is appended to
 `plan.md` as a new unchecked phase — never silently absorbed into the phase
 that found it.
+
+### Writing a phase's brief
+
+Whoever writes a phase — in `plan.md` or in the instructions handed to an agent —
+sets that phase's gate cost. Most of the waste recorded in this file was
+introduced there, not by the agent that obeyed it.
+
+- **Name the specific gates the phase's own changes can redden, and say what NOT
+  to run.** A brief that lists `make ci` as "the verification" invites it as the
+  debugging loop. A phase editing only Markdown should be told, in words, not to
+  run `make test`.
+- **`make ci` belongs in a brief only when the phase adds or changes a CI step,
+  or when it is the deliberate closing sweep of a finished chain.** Nowhere else.
+- **State the expected count, not just the gate.** "`make test`, which was 541 at
+  the previous phase" catches a silent loss that a bare "make test passes" does
+  not. Several phases here caught real regressions purely because a number moved.
+- **Sequence tooling before corpus.** A change to the language that rewrites many
+  `.ty` files must teach `tools/` and `editors/` the new syntax *first* —
+  `scripts/editors_check.sh` parses every file in the tree and compares against a
+  known-bad set, so a corpus rewrite ahead of the grammar reddens it by
+  construction. This cost a full sweep and a plan reordering on 2026-07-29.
+- **Do not assert facts the phase should verify.** Briefs in this repo have
+  confidently mis-stated where a token was lexed, which of two files was already
+  fixed, how a golden's hash was computed, and how many call sites existed. Every
+  one was caught by an agent reading the source. Write the claim as something to
+  check, and it will be checked; write it as fact, and time is spent disproving
+  it.
