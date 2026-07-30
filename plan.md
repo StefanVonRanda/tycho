@@ -2219,7 +2219,7 @@ request (`fc921d7`, `7a04e53`).
       Phase 1 annotated the claims in place rather than moving anything; phase 2
       already folds `tests/postfreeze/` back and is the natural place to widen.
 
-- [ ] **Phase 22** — `fuzz/run_typeparity.py` lost its oracle, not just its second
+- [x] **Phase 22** — `fuzz/run_typeparity.py` lost its oracle, not just its second
       opinion. Unlike `run_eqparity.py` / `run_unaryparity.py` / `run_parforparity.py`,
       which carry a written-down `expect` table, its only assertion *was* `tychoc ==
       tychoc0`. What survives is an exhaustive fail-closed sweep (no crash; every
@@ -2229,6 +2229,11 @@ request (`fc921d7`, `7a04e53`).
       `tests/rtparity/run.py` could become a single-runtime lane asserting the C
       emitted for `tests/rtparity/surface.ty` still contains each expected
       `getenv()` name, trap text and stats row against a recorded list.
+      **CLOSED by batch 4** — the `expect` oracle was chosen over retirement and
+      over a property check; 4608/4608 cases now match it, 640 accept / 3968
+      reject. Justification and the negative control are in the batch 4 evidence.
+      The `tests/rtparity/run.py` half of this entry was **not** done and is
+      filed as phase 46.
 
 - [x] **Phase 23** — **an absolute path in a citation is silently unchecked.**
       Found by phase 2. `scripts/check_citations.py:226`
@@ -2290,10 +2295,13 @@ request (`fc921d7`, `7a04e53`).
       than as its own commit, and note `docs/spec/13-concurrency.md:78` says the
       same thing in prose (that half is phase 9's).
 
-- [ ] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
+- [x] **Phase 19** — no fuzz lane and no concurrency lane reaches element-wise
       array arithmetic (0/177 and 0/11); `fuzz/gen.py` has no generator for
       binary arithmetic over typed operands. **Phase 10 of this plan will hit the
       same wall for loops.**
+      **CLOSED by batch 4.** Re-measured against the current `fuzz/gen.py` first:
+      still **0 of 200** generated programs and **0 of 12** `tests/conc` fixtures.
+      Now 67/200 and 1/13. Numbers and commands in the batch 4 evidence.
 
 - [x] **Phase 27** — **bounds-check elision does not reach the three-clause
       form, and phase 6 silently turned it off tree-wide.** Elision is gated on
@@ -2696,7 +2704,7 @@ request (`fc921d7`, `7a04e53`).
     `RESULTS.md` says which form the recorded numbers were measured with.
   - Verify: `make test` (the fixture), `python3 scripts/check_citations.py`.
 
-- [ ] **Phase 36** — **nothing generates the bare `for:` form, and it lives in a
+- [x] **Phase 36** — **nothing generates the bare `for:` form, and it lives in a
       single fixture.** Found by phase 10's coverage sweep. All 5 non-comment
       occurrences of `^\s*for:\s*$` in the whole tree are in **one file**,
       `tests/for_bare.ty`; `fuzz/gen.py` emits it in **0 of 200** seeds, no
@@ -2715,6 +2723,11 @@ request (`fc921d7`, `7a04e53`).
   - Done when: a non-zero number of the 200 CI seeds contain `for:`, measured the
     way phase 10 measured it, and `make fuzz N=200` stays at skip=0.
   - Verify: `python3 fuzz/run.py 60`, then `make test`, then `make conc`.
+  - **CLOSED by batch 4** — 69/200 seeds contain a bare `for:` (was 0/200),
+    `python3 fuzz/run.py 200` is `ok=200 skip=0 timeout=0 FAIL=0`, and
+    `tests/conc/bare_for_arrarith.ty` is the second fixture in the tree to use
+    the form. The termination argument for a *generated* `for:` is in the batch 4
+    evidence and in the `bare_loop` comment in `fuzz/gen.py`.
 
 - [x] **Phase 37** — **two hand-run fuzz lanes still emit `range()` and are dead
       on arrival.** Found by phase 10 while fixing `fuzz/gen.py`.
@@ -3544,3 +3557,245 @@ edits the `Makefile`: the citation gate does catch this, but only if you run it.
   - Done when: `docs/`-targeted citations are checked, the 103 are resolved, and
     `python3 scripts/check_citations.py` is green.
   - Verify: `python3 scripts/check_citations.py`.
+
+## Batch 4 evidence — phases 19, 22, 36, coverage the generators cannot reach
+
+Three lanes that were green while never touching what they exist to exercise.
+Nothing below is asserted from reading the generator; every fraction is a corpus
+that was emitted, then counted.
+
+### How the fractions were measured
+
+A grep for element-wise array arithmetic cannot be a grep for a marker the
+generator writes — that measures the marker, not the coverage. The count is
+therefore taken by a **grammar-shaped** detector (kept in the run's scratch dir,
+not the repo) that flags a program iff an arithmetic operator has a **whole
+array** on one side: an array-typed local used un-indexed, or an array literal.
+It answers the same way before and after the generator change, which is what
+makes the before/after pair mean anything.
+
+Two things had to be got right before the number was trustworthy:
+
+- **It was validated on known answers first.** `tests/array_arith.ty` and
+  `tests/array_bcast.ty` → 2/2. `tests/fixed_array.ty`, `tests/option_arrays.ty`,
+  `tests/float_arrays.ty`, `tests/for_bare.ty` (arrays, no array arithmetic) →
+  0/4.
+- **Its first version scored the baseline 200/200 and was wrong.** A whole-file
+  scan matched `mkarr`'s `r := []int` against `fz_join`'s `r = r + "x"` — two
+  different functions, same name. Scoping the scan to `fn main():` onward (where
+  `fuzz/gen.py` puts every generated statement — `gen_block` is called only from
+  `generate`) drops it to 0/200. A detector that says "already covered" is the
+  one failure mode that would have made this whole batch a no-op, so it is
+  recorded rather than quietly fixed. The same limitation is why the hand-written
+  `tests/conc` fixtures were counted whole-file and then checked one by one.
+
+Commands:
+
+```
+for i in $(seq 1 200); do python3 fuzz/gen.py $i > $D/p$i.ty; done
+python3 detect.py --main-only $D                 # generated corpus
+python3 detect.py tests/conc                     # hand-written fixtures
+grep -lE '^[[:space:]]*for:[[:space:]]*$' $D/*.ty | wc -l
+```
+
+### The numbers
+
+| construct | before (`74a6eeb`) | after | how |
+|---|---|---|---|
+| element-wise array arithmetic, 200 fuzz seeds | **0/200** | **67/200** | detector, `--main-only` |
+| element-wise array arithmetic, `tests/conc` | **0/12** | **1/13** | detector, whole-file, then per file |
+| bare `for:`, 200 fuzz seeds | **0/200** | **69/200** | detector **and** plain `grep -lE '^[[:space:]]*for:[[:space:]]*$'`, same answer |
+| bare `for:`, `tests/conc` | **0/12** | **1/13** | same grep |
+| three-clause `for` (already covered) | 200/200 | 200/200 | unchanged |
+| `0..<N` (already covered) | 33/200 | 29/200 | unchanged mechanism; the two new kinds shift the per-seed draw |
+
+Phase 19's recorded 0/177 and phase 36's 0/200 were **re-measured, not
+inherited** — `fuzz/gen.py` had been edited by a later phase since those numbers
+were taken. Both still held at `74a6eeb`; the array count is 0/200 here only
+because this run used 200 seeds where phase 19 used 177.
+
+### Phase 19 — what the generator now emits
+
+`fuzz/gen.py:680` (`arr_arith`, registered at `fuzz/gen.py:401`) has three
+variants: growable `[int]` over all five operators, growable `[float]` over the
+four it has, and fixed `[3]int` — both array kinds, per
+`docs/spec/12-aggregates.md:246-253`. Each variant also emits a broadcast with
+the scalar on the **left** (`20 - a`), because `-`, `/` and `%` are not
+commutative and an implementation that normalised `s OP a` into `a OP s` would
+still typecheck and still return an array of the right length
+(`docs/spec/12-aggregates.md:263-266`). Results fold into `acc` **by index**, so a
+wrong element changes the number rather than merely compiling.
+
+Three hazards, closed by construction rather than by low probability:
+
+- a `[T]` length mismatch **aborts** at runtime, so both operands are literals
+  written with the same literal length — no length is ever derived from another;
+- `/` and `%` by zero abort, so every divisor array element and every broadcast
+  divisor is drawn from `1..9`;
+- elements stay in `1..9`, so a product is ≤ 81 and the checksum cannot overflow
+  into a UBSan report.
+
+The fixed `[3]int` locals are deliberately **not** put in `env`: a `[N]T` is not a
+`[T]`, and the kinds that pick array variables (`push`/`pop`/`slice`/`vscheck`)
+would emit a growable-only operation on one and the program would be rejected —
+a skip, i.e. a silent loss of the seed.
+
+### Phase 36 — how a generated `for:` is made to terminate
+
+An unterminated generated loop does not fail loudly: `fuzz/run.py`'s
+`RUN_TIMEOUT` fires on **both** builds, which is the "timeout" verdict, not a
+FAIL. So termination is proved, not hoped for. `fuzz/gen.py:736` (`bare_loop`)
+gives all three variants the same five properties:
+
+1. the counter is a **fresh** name, initialised to `0` on the line before `for:`;
+2. it is incremented **unconditionally as the first statement of the body**, so
+   no `continue` can skip the increment;
+3. the `break` test is the next statement, against a small **literal** bound;
+4. the body is **fixed** — `gen_block` is never called inside a `bare_loop`, so
+   no generated statement can be interleaved that writes the counter;
+5. the counter is added to `self.loop_vars`, so the `compound` and `inout_str`
+   kinds — which pick a write target out of the environment — cannot take it
+   either. That is the same guarantee `loop_vars` already gives the three-clause
+   counter (`fuzz/gen.py:37-41`).
+
+Property 4 is the load-bearing one: the three-clause counter is safe because the
+header owns the increment, and a bare `for:` has no header. The observed result
+is `timeout=0` over 200 seeds with 69 of them containing the form.
+
+### Phase 22 — the decision, and why it was not one of the other two
+
+The three options were an `expect` oracle, a property check needing no second
+implementation, or honest retirement.
+
+**Retirement was wrong** because the lane still does real work: over the 4608
+cases it proves tychoc never crashes and that every accept emits compilable C.
+That half was never the tychoc0 half.
+
+**A property check was wrong** because there is no property here to check. The
+sweep's subject is a *decision table* — accept or reject per (type, form) ×
+operator × (type, form) — and the only property such a table has is "it says what
+the rules say", which is an oracle by another name.
+
+**The `expect` oracle was chosen**, in the shape the three sibling runners use.
+Note what "table" has to mean at this arity: `fuzz/run_eqparity.py:138` is a
+one-line **rule** (`accept iff the two operands have the same nominal type`), not
+an enumerated table, and 4608 enumerated rows could only have been machine-
+recorded off the compiler — a photograph, not an oracle. So `expect` at
+`fuzz/run_typeparity.py:108` is a rule, derived from the spec:
+
+- arithmetic, string concat, the `char` byte domain — `docs/spec/09-expressions.md:24-40`
+- comparison and ordering — `docs/spec/03-types.md:436-457`
+- bitwise and shift — `docs/spec/09-expressions.md:83-92`
+- literal adaptation — `docs/spec/06-conversions.md:11-27`
+
+and then **reconciled arm by arm against the resolver**, each clause citing the
+line it encodes. The reconciliation ran the rule against all 4608 cases and
+started at **18 disagreement classes / 48 cases**. Every one was read in
+`src/tychoc.c` before the rule moved:
+
+- **`2.5 == 7` is a type error but `2.5 < 7` is not.** Not a bug and not an
+  accident: `src/tychoc.c:6050` demands `lt == rt` on the equality path, while
+  ordering carries its own int-literal-to-float adaptation at
+  `src/tychoc.c:6065-6068` and says why in the comment above it. The oracle
+  encodes the asymmetry and names it.
+- **`int ± char` is accepted, not only `char ± int`.** `src/tychoc.c:6227-6232`
+  is symmetric — "char±int, int±char, char±char". `docs/spec/09-expressions.md:32`
+  names only `char ± int`; under-documentation, not divergence.
+- **Mixed-width shifts are accepted.** `src/tychoc.c:6101-6107` takes any integer
+  value shifted by any integer count and gives the result the **left** operand's
+  width. `docs/spec/09-expressions.md:83` says bitwise **and** shift "Operands
+  MUST be the same integer type", which is true of `& | ^`
+  (`src/tychoc.c:6211`) and false of `<< >>`. The compiler is the sane one — a
+  shift count has no reason to share the shifted value's type — so the oracle
+  encodes the implemented rule, says so at the clause, and the spec sentence is
+  filed as phase 45 rather than being quietly encoded either way.
+
+**What this does not buy, stated because the whole batch is about false
+confidence:** the rule was reconciled against the compiler it gates, so a
+fail-open the two now share is invisible to it. A *changed* rule reddens; a rule
+that was always wrong does not. That is the residue of losing tychoc0 and no
+single-implementation oracle removes it. The file's header says this in the same
+words.
+
+**Negative control — the oracle bites.** Deleting one clause (`if False and` on
+the char arm) in a copy run out of a scratch tree:
+
+```
+TYPE-PARITY FAIL: 24/4608 cases bad
+  [ORACLE DIVERGENCE]  7 + 'A'   (int + char)   tychoc=accept expected=reject
+  [ORACLE DIVERGENCE]  vi + vc   (int + char)   tychoc=accept expected=reject
+  ... 24 total, rc=1
+```
+
+Before this change the same perturbation was undetectable, because the lane
+asserted nothing at all about accept/reject.
+
+### Gate output — the real runs
+
+```
+$ python3 fuzz/run.py 200
+fuzz: 200 seeds x 2 builds (native -O2, ASan/UBSan -O1), 14 workers
+... 200/200  ok=200 skip=0 timeout=0 FAIL=0
+DONE: ok=200 skip=0 timeout=0 FAIL=0  (findings in fuzz/findings/)
+
+$ python3 fuzz/run_typeparity.py
+type-parity: 4608/4608 scalar binop cases match the `expect` oracle (640 accept / 3968 reject;
+             every accept emits compilable C, no crash on any case).
+
+$ make test
+passed: 545   failed: 0
+all green
+
+$ make conc
+conc: passed 38   failed 0
+
+$ python3 scripts/check_citations.py
+citation check: ok (152 anchored contain the token they name, 2121 bare in bounds,
+115 source->doc citations resolve, 135 source->source in bounds, 12 source->source anchored)
+```
+
+`make conc` is outside the batch's stated verify list and was run anyway: this
+batch adds `tests/conc/bare_for_arrarith.ty`, and `make test` does not run
+`tests/conc` (`Makefile:115-116` vs `Makefile:132-133`), so nothing else would
+have compiled the new fixture under ASan and TSan. `make ci` was not run.
+
+## Phases discovered by batch 4
+
+- [ ] **Phase 45** — **`docs/spec/09-expressions.md:83` states a shift rule the
+      compiler does not implement, and the direction is fail-*open* relative to
+      the spec.** The sentence is "**Bitwise and shift** (`& | ^ ~ << >>`).
+      Operands MUST be the same integer type." That is exactly right for `& | ^`
+      — `src/tychoc.c:6211` requires `lt == rt` — and wrong for `<<` and `>>`,
+      which `src/tychoc.c:6101-6107` accepts over any two integer types, giving
+      the result the left operand's width. Found by batch 4 while deriving the
+      `fuzz/run_typeparity.py` oracle from the spec: the derived rule and the
+      compiler disagreed on 16 cases, all of them mixed-width shifts.
+  - The compiler's behaviour is the defensible one (a shift *count* is not the
+    shifted *value*; Go requires only that the count be an integer), so this is a
+    spec repair, not a compiler repair. Do not "fix" it in `src/tychoc.c` — that
+    would break `x << n` for every `n: int` against a `u32` `x`.
+  - Scope: split the sentence in `docs/spec/09-expressions.md:83` into the
+    bitwise rule and the shift rule, and check `docs/spec/appendix-e-conformance.md`
+    for a §13.2 row that inherits the wrong claim. `fuzz/run_typeparity.py`'s
+    shift clause carries a comment pointing here and should be updated to point
+    at the repaired sentence.
+  - Done when: the spec states the implemented shift rule, and
+    `python3 fuzz/run_typeparity.py` still reports 4608/4608 with its shift
+    comment no longer describing a spec defect.
+  - Verify: `sh scripts/spec_check.sh`, then `python3 scripts/check_citations.py`.
+
+- [ ] **Phase 46** — **`tests/rtparity/run.py` is the other half of phase 22 and
+      was not done.** Phase 22's entry proposed, beside the `expect` table,
+      turning `tests/rtparity/run.py` into a single-runtime lane asserting the C
+      emitted for `tests/rtparity/surface.ty` still contains each expected
+      `getenv()` name, trap text and stats row against a recorded list. Batch 4
+      closed the `fuzz/run_typeparity.py` half only — the two share a motive but
+      not a file, a mechanism, or a verification, and folding an unexamined
+      second runner into a batch about generator blind spots would have been the
+      scope creep this plan keeps filing phases to avoid.
+  - Read `tests/rtparity/run.py` first and re-derive what it asserts **today**;
+    phase 22's description of it was written before the batch and was not checked
+    by batch 4.
+  - Done when: the lane has a written-down oracle or is honestly retired, decided
+    the way phase 22 was — with the option not taken written down.
+  - Verify: `python3 tests/rtparity/run.py`, then `make test`.

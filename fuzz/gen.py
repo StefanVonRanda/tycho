@@ -394,6 +394,11 @@ class Gen:
         # sum-payload inference/lift surface (2026-07): bare [] (and array) payloads of
         # Some/Ok/Err grounded from the annotation, then bound in a match arm + mutated.
         kinds += ["sum_empty_payload"]
+        # element-wise array arithmetic (docs/spec/12-aggregates.md:209-270) and the
+        # bare `for:` loop. Both SHIPPED WITH NO GENERATOR: measured 2026-07-30 over
+        # 200 seeds, 0 programs contained an element-wise use site and 0 contained a
+        # bare `for:` (plan.md phases 19 and 36).
+        kinds += ["arr_arith", "arr_arith", "bare_loop", "bare_loop"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
         if self.fenum:
@@ -671,6 +676,121 @@ class Gen:
                 self.emit(ind+4, "acc = acc + 2")
                 self.emit(ind+1, "None:")
                 self.emit(ind+2, "acc = acc + 3")
+            return
+        if k == "arr_arith":           # element-wise array arithmetic + scalar broadcast.
+            # `a OP b` builds a FRESH array of `a[i] OP b[i]`; `a OP s` / `s OP a`
+            # broadcast the scalar and KEEP the operand order. Three things make this
+            # safe to generate unattended:
+            #   1. NO LENGTH MISMATCH. A `[T]` mismatch aborts at runtime, so both
+            #      operands are literals written here with the same literal length --
+            #      the generator never derives one length from another.
+            #   2. NO DIVISION BY ZERO. Every element of a divisor array, and every
+            #      broadcast divisor, is drawn from 1..9; the runtime abort for `/`
+            #      and `%` by zero is therefore unreachable, not merely unlikely.
+            #   3. BOUNDED. Elements stay in 1..9, so a product is <= 81 and the
+            #      checksum can't overflow (UBSan would flag that) -- the same
+            #      convention `sized_use` and the int `mul` choice already use.
+            # Results fold into acc by INDEX, so a wrong element (an off-by-one in the
+            # element loop, a broadcast that silently reordered `s - a` into `a - s`)
+            # changes the number rather than merely compiling.
+            n = lambda: str(self.r.randint(1, 9))
+            r = self.r.random()
+            if r < 0.4:                                     # growable [int]: all five operators
+                a = self.fresh("aw"); b = self.fresh("bw"); c = self.fresh("cw")
+                self.emit(ind, a + " := [" + n() + ", " + n() + ", " + n() + "]")
+                self.emit(ind, b + " := [" + n() + ", " + n() + ", " + n() + "]")   # every elem >= 1: / and % are safe
+                self.emit(ind, c + " := " + a + " " + self.r.choice(["*", "+", "-"]) + " " + b)
+                self.emit(ind, "acc = acc + " + c + "[0] + " + c + "[1] + " + c + "[2] + len(" + c + ")")
+                d = self.fresh("dw"); e = self.fresh("ew")
+                self.emit(ind, d + " := " + a + " " + self.r.choice(["*", "+", "/", "%"]) + " " + n())   # broadcast, array on the LEFT
+                self.emit(ind, e + " := 20 - " + a)                                  # broadcast, scalar on the LEFT: order kept
+                self.emit(ind, "acc = acc + " + d + "[1] + " + e + "[0] + " + e + "[2]")
+                f = self.fresh("fw")
+                self.emit(ind, f + " := " + a + " / " + b)                           # element-wise /, divisor elems >= 1
+                self.emit(ind, "acc = acc + " + f + "[0]")
+                env[a] = "[int]"; env[b] = "[int]"; env[c] = "[int]"; env[f] = "[int]"
+            elif r < 0.7:                                   # growable [float]: + - * / (no %), literal adaptation
+                a = self.fresh("xw"); b = self.fresh("yw"); c = self.fresh("zw")
+                fl = lambda: str(self.r.randint(1, 4)) + ".5"
+                self.emit(ind, a + " := [" + fl() + ", " + fl() + "]")
+                self.emit(ind, b + " := [" + fl() + ", " + fl() + "]")               # .5 values: never zero
+                self.emit(ind, c + " := " + a + " " + self.r.choice(["*", "+", "-", "/"]) + " " + b)
+                self.emit(ind, "acc = acc + to_int(" + c + "[0]) + to_int(" + c + "[1])")
+                d = self.fresh("tw"); e = self.fresh("vw")
+                self.emit(ind, d + " := " + a + " * " + n())                         # INT literal adapts to the float element
+                self.emit(ind, e + " := 9.5 - " + a)                                 # scalar on the left, order kept
+                self.emit(ind, "acc = acc + to_int(" + d + "[0]) + to_int(" + e + "[1])")
+                env[a] = "[float]"; env[b] = "[float]"; env[c] = "[float]"
+            else:                                           # fixed [3]int: the compile-time-length kind
+                # Deliberately NOT put in env: a `[3]int` is not a `[T]` and the kinds
+                # that pick array vars (push / pop / slice / vscheck) would emit a
+                # growable-only operation on it and the program would be rejected.
+                a = self.fresh("pw"); b = self.fresh("qw"); c = self.fresh("rw"); d = self.fresh("sw")
+                self.emit(ind, a + " : [3]int = [" + n() + ", " + n() + ", " + n() + "]")
+                self.emit(ind, b + " : [3]int = [" + n() + ", " + n() + ", " + n() + "]")
+                self.emit(ind, c + " := " + a + " " + self.r.choice(["*", "+", "-", "%"]) + " " + b)
+                self.emit(ind, "acc = acc + " + c + "[0] + " + c + "[1] + " + c + "[2]")
+                self.emit(ind, d + " := " + n() + " * " + a)                         # broadcast onto a fixed array
+                self.emit(ind, "acc = acc + " + d + "[2]")
+            return
+        if k == "bare_loop":           # the bare `for:` form -- an unconditional loop left
+            # by `break` (or `return`, which only tests/for_bare.ty reaches).
+            #
+            # TERMINATION IS BY CONSTRUCTION, not by luck. A generated infinite loop
+            # would hang the lane (run.py's RUN_TIMEOUT would report it as a timeout on
+            # BOTH builds, i.e. a silent-ish loss of a seed), so each variant below:
+            #   - counts with a FRESH name, initialised to 0 on the line before the loop;
+            #   - increments it UNCONDITIONALLY as the FIRST statement of the body, so
+            #     no `continue` can skip the increment;
+            #   - tests the break immediately after the increment;
+            #   - has a FIXED body -- gen_block is never called inside one -- so no
+            #     generated statement can be interleaved that writes the counter; and
+            #   - registers the counter in self.loop_vars, so the `compound` and
+            #     `inout_str` kinds (which pick a target from the env) cannot write it
+            #     either. That is the same guarantee loop_vars already gives the
+            #     three-clause counter.
+            # The bound is a small literal, so the loop runs a fixed few iterations.
+            r = self.r.random()
+            i = self.fresh("bn"); self.loop_vars.add(i)
+            lim = self.r.randint(2, 5)
+            if r < 0.4:                                     # break only
+                self.emit(ind, i + " := 0")
+                self.emit(ind, "for:")
+                self.emit(ind+1, i + " = " + i + " + 1")
+                self.emit(ind+1, "if " + i + " >= " + str(lim) + ":")
+                self.emit(ind+2, "break")
+                self.emit(ind+1, "acc = acc + " + i)
+                self.emit(ind, "acc = acc + " + i)
+            elif r < 0.7:                                   # break + continue (the jump lands back at the top)
+                s = self.fresh("bs")
+                self.emit(ind, i + " := 0")
+                self.emit(ind, s + " := 0")
+                self.emit(ind, "for:")
+                self.emit(ind+1, i + " = " + i + " + 1")
+                self.emit(ind+1, "if " + i + " > " + str(lim) + ":")
+                self.emit(ind+2, "break")
+                self.emit(ind+1, "if " + i + " % 2 == 1:")
+                self.emit(ind+2, "continue")
+                self.emit(ind+1, s + " = " + s + " + " + i)
+                self.emit(ind, "acc = acc + " + s + " + " + i)
+            else:                                           # heap built per iteration + a nested bare loop:
+                j = self.fresh("bm"); self.loop_vars.add(j)  # the loop-iteration arena must free on the jump
+                t = self.fresh("bt"); ls = self.fresh("bl")
+                self.emit(ind, i + " := 0")
+                self.emit(ind, t + " := 0")
+                self.emit(ind, "for:")
+                self.emit(ind+1, i + " = " + i + " + 1")
+                self.emit(ind+1, ls + " := mkarr(" + str(self.r.randint(1, 3)) + ")")
+                self.emit(ind+1, t + " = " + t + " + len(" + ls + ")")
+                self.emit(ind+1, j + " := 0")
+                self.emit(ind+1, "for:")
+                self.emit(ind+2, j + " = " + j + " + 1")
+                self.emit(ind+2, "if " + j + " >= 2:")
+                self.emit(ind+3, "break")
+                self.emit(ind+1, t + " = " + t + " + " + j)
+                self.emit(ind+1, "if " + i + " >= " + str(lim) + ":")
+                self.emit(ind+2, "break")
+                self.emit(ind, "acc = acc + " + t + " + " + i)
             return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
