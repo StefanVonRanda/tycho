@@ -79,7 +79,7 @@ the last program still in it, and it is the biggest.
 
 ## Phases
 
-- [ ] **Phase 1 — `server/run.sh`: start it, talk to it, tear it down**
+- [x] **Phase 1 — `server/run.sh`: start it, talk to it, tear it down**
   - Scope: new `server/run.sh`, a `server-check` target in `Makefile`, and
     whatever fixture files under `server/www/` the assertions need. **Not** the
     CI wiring (phase 2), **not** `server/README.md` (phase 3).
@@ -101,6 +101,121 @@ the last program still in it, and it is the biggest.
     requires.
   - Verify: `sh server/run.sh`, then `make server-check`, then the ten-run loop,
     then the break proofs. **Not `make ci`** — that is phase 2.
+
+  **Evidence (2026-07-30).** New `server/run.sh` (52 assertions), new
+  `server-check` target at `Makefile:226-233` plus its name in `.PHONY`
+  (`Makefile:16`). `server/main.ty` untouched. ~4.1s per run.
+
+  `sh server/run.sh` → `EXIT=0`, `server: OK`, 52 `ok` lines, 0 `FAIL`.
+  `make -s server-check` → `MAKE_SERVER_CHECK_EXIT=0`, 52 `ok`, `server: OK`.
+
+  *Readiness, which was the Pre-flight's one unverified assumption.* No `sleep`
+  is used to decide the server is up. The runner starts it with `--port 0`
+  (`server/main.ty:513`), redirects stderr to a file, and polls that file every
+  20 ms for up to 10 s for the banner `server/main.ty:610-614` prints after
+  `net.listen` at `server/main.ty:604` and `net.port_of` at `server/main.ty:608`.
+  The regex is anchored on the whole line, so the same match yields readiness,
+  the bound port, and the root/workers/idle values, which are then asserted
+  against what was asked for. Measured: the banner appears in 0–2 ms and the
+  first connect always succeeds. The assumption that a connect between
+  `net.listen` (`:604`, i.e. `server/main.ty:604`) and the first `accept` in
+  `worker()` (`server/main.ty:616`) is queued rather than refused held in
+  **10/10** runs.
+
+  *Teardown.* `trap cleanup EXIT INT TERM`, where `cleanup` kills the server,
+  reaps it, and removes the temp dir. Proved on three paths, each checked with
+  `pgrep -a tycho-httpd` afterwards: success (`exit=0`, no stray), failure (a
+  wrong-`--root` copy, `exit=1`, no stray), and interrupt (`SIGINT` 2 s into a
+  run, no stray). `/tmp/tmp.*` count 345 before and 345 after. This is not
+  hypothetical: an early hand probe of mine that had no trap *did* leave a
+  `tycho-httpd` bound and running, and it had to be killed by hand — exactly the
+  poisoning the trap exists to prevent.
+
+  *Client: raw sockets via python3, not curl.* Three assertions cannot be
+  written with curl — the 20 KiB-header 431, the deliberately unfinished head
+  behind the 408, and bytes that are not HTTP at all behind the 400 — so having
+  paid for a raw client, everything uses it and there is one failure vocabulary.
+  It also removes the need for curl's `--path-as-is` in the traversal case: a
+  raw socket has no normalizer to switch off. Skips with a `SKIP` line and
+  exit 0 if `python3` is absent, as `examples/fetch/run.sh:32` does for libcurl.
+
+  *Covered (52).* Banner/port/root/workers/idle · 200 for `/img/logo.png`
+  (status, `Content-Type: image/png`, `Content-Length`, `Cache-Control`, and the
+  body **byte-identical** to the 7883-byte file on disk) · 200 for `/` serving
+  `index.html` verbatim · `text/css` for `/style.css` · HEAD (200, full
+  `Content-Length`, zero-byte body) · 301 `/about` → `/about/` and the 200
+  behind it · 301 `/emptydir` → `/emptydir/` then 404 for `/emptydir/`, a
+  directory git cannot store so the runner makes it · 403 for two traversals and
+  for a hidden segment, plus a check that the 403 body does not contain the file
+  · 404 · 405 for POST and DELETE with `Allow: GET, HEAD` · 400 four ways
+  (binary junk, absolute-form target, `%00` in the path, and the
+  `Content-Length: -5` smuggling primitive refused at `server/main.ty:426-436`)
+  · 431 against `MAX_HEAD` (`server/main.ty:69`) · 408 with the elapsed time
+  bounded around `--idle-ms` · keep-alive, 3 requests on one fd with all 3
+  bodies compared to disk · survival of 50 hostile mid-response disconnects (the
+  `SIGPIPE` case; `MSG_NOSIGNAL` at `corelib/net/net_shim.c:41-53`) · 8
+  concurrent connections all answered · the access log showing **all four**
+  workers and a peer address on every line (`net.peer_addr`,
+  `server/main.ty:342-352`) and at least one line for each of
+  200/301/400/403/404/405/408/431 · `SIGTERM` → shell wait status 143 · `--help`
+  exit 0, `--bogus` exit 1 naming the option, `--port 70000` exit 1.
+
+  *Not covered, and why.* (a) The concurrency **measurements** from the earlier
+  phase 7 (222/433/853 ms for 4/2/1 threads) — wall-clock on a shared box is the
+  flake this runner exists to avoid; what is asserted instead is the structural
+  fact that all four workers take traffic. (b) The `TCP_NODELAY` 620×
+  measurement, same reason. (c) The "stopped after N requests" line — see the
+  finding below; it cannot be reached. (d) HTTPS/HTTP2 etc. are not implemented,
+  so there is nothing to assert.
+
+  *Deliberate-break proofs — 13 classes, each observed red then restored.* The
+  shipped `server/run.sh` was never edited for these; each break was a scratch
+  copy with one perturbation, so "restore" is "discard the copy". Every one
+  exited 1 and named the failure:
+
+  | # | break | what reddened |
+  |---|---|---|
+  | 1 | server cannot start (`--workers 999`) | `FAIL readiness: no startup banner on stderr within 10s` (+13 more) |
+  | 2 | one byte appended to the served `logo.png` | `FAIL 200 /img/logo.png body == file on disk`, both `Content-Length` checks |
+  | 3 | wrong document root | 22 FAILs, from the banner check through every status |
+  | 4 | `--quiet` | all 12 access-log assertions |
+  | 5 | `--workers 1` | `got 'w1 ', want 'w1 w2 w3 w4 '` |
+  | 6 | `--idle-ms 1` | `FAIL 408 fired near the idle timeout` |
+  | 7 | keep-alive fd not reused | `got: [True, 'connection not reused for style.css', 'BrokenPipeError on data.json']` |
+  | 8 | `SIGKILL` instead of `SIGTERM` | `FAIL SIGTERM: wait status 137, want 143` |
+  | 9 | `--bogus` expected to exit 0 | `FAIL --bogus: exit 1` |
+  | 10 | 431 header shrunk to 8 KiB (under `MAX_HEAD`) | `got HTTP/1.1 200 OK, want 431`; also `no line with status 431` |
+  | 11 | traversal target swapped for a file inside the root | `got HTTP/1.1 200 OK, want 403 Forbidden` |
+  | 12 | the 408's head completed | `got HTTP/1.1 200 OK, want 408`; `0ms, want 400..3000ms` |
+  | 13 | the 400's junk replaced with a valid request | `got HTTP/1.1 200 OK, want 400 Bad Request` |
+
+  Break 6 is the one that earned its keep: `--idle-ms 1` reddened the 408 timing
+  but **not** the keep-alive assertion, because the original read loop spun on
+  `recv() == b""` instead of failing. That was fixed (`pump()` treats a closed
+  peer as a failure) and break 7 then reddened with a message naming which of
+  the three requests lost the connection. An assertion that cannot fail is not
+  an assertion, and that one could not.
+
+  *Flakiness.* Ten consecutive runs of the final file: **10 green, 0 red, 52 ok
+  per run**, 41 s total, no stray process afterwards. (An earlier ten-run loop
+  was also 10/10, but on the pre-`pump()` file, so it is the second loop that
+  counts.)
+
+  *Collateral, and it reddened a gate.* Inserting the `server-check` target
+  pushed every later `Makefile` line down by 8, and four anchored citations
+  pointed at the old numbers: `python3 scripts/check_citations.py` failed with
+  four `STALE  ... Makefile:270@SKIPPED -> ... it appears at :278`. Repointed to
+  `:278` in `scripts/asan_self.sh:11`, `scripts/asan_self.sh:72`,
+  `scripts/editors_check.sh:29` and `scripts/check_citations.py:247` (the last
+  is that gate's own worked example). Gates after the fix: citations `ok (0
+  stale)`, links `ok (134 markdown files)`.
+
+  While there: the bare `,:246` beside the first of those was **already wrong at
+  `230653e`** — line 246 of `Makefile` was blank there, and a bare `:N` binds to
+  the previously named path, so it resolved to nothing. The gate never caught it
+  because an unanchored ref is unverifiable. It meant the `TYCHO_NO_ASAN=1`
+  recipe line, now `Makefile:279`, and was corrected to `,:279` in the same
+  edit rather than left beside a number that had just been proved wrong.
 
 - [ ] **Phase 2 — wire `server-check` into `make ci`**
   - Scope: `scripts/ci.sh` and the `Makefile` comment at `:226-229` that
@@ -153,6 +268,33 @@ the last program still in it, and it is the biggest.
   - Done when: a recommendation is written with its reasoning, naming what it
     would cost and what it would prove.
   - Verify: the two doc gates.
+
+- [ ] **Phase 5 — the shutdown line at `server/main.ty:617` is unreachable**
+  - Found by phase 1, outside its scope (which forbade touching `server/main.ty`),
+    so it is filed rather than fixed.
+  - `server/main.ty:616-617` runs the worker pool and then prints
+    `tycho-httpd: stopped after N requests`. **That line never executes.**
+    Nothing in `server/main.ty` installs a `SIGTERM` or `SIGINT` handler —
+    grepped for `signal|sigaction|SIGTERM|SIGINT|SIGPIPE` across
+    `server/main.ty`, `corelib/net/net.ty` and `corelib/net/net_shim.c`, and the
+    only signal anywhere in reach is `SIGPIPE`, suppressed per-send with
+    `MSG_NOSIGNAL` (`corelib/net/net_shim.c:41-53`). The default disposition
+    therefore terminates the process where it stands, the accept loops never
+    wind down, and the count is never printed. Observed: `server/run.sh` asserted
+    the line and failed; `kill -TERM` gives wait status 143 and a log whose last
+    entry is a request line.
+  - The accept loop *does* have a wind-down path — `accept_loop` sets
+    `running = false` on `Err(e)` from `net.accept` (`server/main.ty:494`) —
+    so the machinery to return a count exists and only the signal that would
+    trigger it is missing.
+  - Two honest resolutions, and the choice is a language question, not a server
+    one: expose signal handling from `core:net` (or a new corelib module) so the
+    program can close the listener and let `worker()` return, which is the
+    feature the tree does not have; or delete the line and say in a comment that
+    a static server has no graceful shutdown. **Do not** assert its absence in
+    `server/run.sh` — that would redden the day it is fixed.
+  - Verify: whichever way it goes, `make server-check` (~4s) plus `make test` if
+    corelib changes. Not `make ci`.
 
 ## Out of scope
 

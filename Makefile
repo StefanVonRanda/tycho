@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -230,6 +230,14 @@ fetch: tychoc
 server: tychoc
 	@./tychoc server/main.ty -o tycho-httpd
 	@echo "built ./tycho-httpd -- try: ./tycho-httpd --root server/www --port 8080"
+
+# server-check: the gate `server` above is not. Starts tycho-httpd on --port 0,
+# reads the bound port out of its stderr banner, talks HTTP to it over raw
+# sockets (status codes, binary bodies, traversal, keep-alive, the abuse suite),
+# checks the access log and the exit status, and kills it on every exit path.
+# ~4s. Skips without python3. See server/run.sh.
+server-check: tychoc
+	@sh server/run.sh
 
 # site: a static-site generator dogfood composing eight corelib modules
 # (io+path+json+csv+strings+sort+datetime+sha256) -- no FFI, no external deps, so
