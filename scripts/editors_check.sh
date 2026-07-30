@@ -113,11 +113,14 @@ fi
 # fixtures in tests/reject/, but they are overwhelmingly SEMANTIC rejects (type
 # mismatches, affine violations, arity errors) whose syntax is perfectly
 # well-formed and which a highlighting grammar must parse. Exactly one reject
-# fixture is a LEXICAL one, and it is the only file in the tree the grammar is
-# allowed to fail on. Both directions are asserted: a NEW error is a regression,
-# and a known-bad file that starts parsing means the grammar grew a hole (it
-# would be accepting an unterminated raw string).
+# fixtures are LEXICAL ones, and they are the only files in the tree the grammar
+# is allowed to fail on. Both directions are asserted: a NEW error is a
+# regression, and a known-bad file that starts parsing means the grammar grew a
+# hole (it would be accepting an unterminated raw string, or a `\xNN` escape with
+# fewer than two hex digits).
+# Kept in sorted order: the comparison below is a sorted diff.
 cat > "$TMP/want" <<'EOF'
+tests/reject/hex_escape_one_digit.ty
 tests/reject/rawstring_unterminated.ty
 EOF
 

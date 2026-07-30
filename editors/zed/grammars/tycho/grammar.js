@@ -80,7 +80,12 @@ module.exports = grammar({
 
     fstring: ($) => token(seq('f"', repeat(choice(/[^"\\]/, /\\./)), '"')),
 
-    char: ($) => token(seq("'", choice(/[^'\\]/, /\\./), "'")),
+    // `\xNN` is exactly two hex digits and is listed FIRST so it wins over the
+    // one-character `/\\./` alternative. It is a CHAR-literal escape only — a
+    // string literal must not accept it, because adjacent string pieces join on
+    // their escaped source text and `"\x4" "1"` would join into `\x41`
+    // (docs/spec/01-lexical.md §3.9.4). Added 2026-07-30 with the compiler support.
+    char: ($) => token(seq("'", choice(/\\x[0-9a-fA-F]{2}/, /[^'\\]/, /\\./), "'")),
 
     // `..<` is the half-open counting range of `parallel for i in 0..<N:`
     // (src/tychoc.c:482). It is listed even though `.` `.` `<` would already
