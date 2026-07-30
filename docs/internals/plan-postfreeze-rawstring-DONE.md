@@ -1646,23 +1646,23 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     | `docs/spec/03-types.md:382` | `src/tychoc.c:567` | `src/tychoc.c:636@task_container_err` | `static void task_container_err(void) {` |
     | `docs/spec/03-types.md:382` | `src/tychoc.c:607` | `src/tychoc.c:676@chan_container_err` | `static void chan_container_err(void) {` |
     | `docs/spec/03-types.md:385` | `src/tychoc.c:5418` | `src/tychoc.c:5839@reserve does not apply to a bounded` | that `die_at` |
-    | `docs/spec/03-types.md:462` | `src/tychoc.c:7115` | `src/tychoc.c:8714@identity equality` | the `IS_FUNC(t)` arm of the equality emitter |
+    | `docs/spec/03-types.md:462` | `src/tychoc.c:7115` | `src/tychoc.c:8765@identity equality` | the `IS_FUNC(t)` arm of the equality emitter |
     | `docs/spec/10-statements.md:8` | `src/tychoc.c:2338` | `src/tychoc.c:2730@parse_if` | `static Stmt *parse_if(Parser *ps, int line) {` |
     | `docs/spec/10-statements.md:9` | `src/tychoc.c:2409` | `src/tychoc.c:2836@parse_match` | `static Stmt *parse_match(Parser *ps, int line, int value) {` |
-    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9641` | `src/tychoc.c:11736@pop from an empty array` | the emitted array-`pop` abort |
-    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9960` | `src/tychoc.c:11902@pop from an empty array` | the emitted SOA-`pop` abort |
+    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9641` | `src/tychoc.c:11797@pop from an empty array` | the emitted array-`pop` abort |
+    | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9960` | `src/tychoc.c:11963@pop from an empty array` | the emitted SOA-`pop` abort |
     | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1613` | `src/tychoc.c:1958@a tuple has at most 8 elements` | the arity cap |
     | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1617` | `src/tychoc.c:1962@a tuple type needs at least two elements` | the arity floor |
-    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9918` | `src/tychoc.c:11871@m.elive[e]` | the emitted `keys()` walk |
-    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9931` | `src/tychoc.c:11826@m->ecount++` | the append that *defines* the order |
+    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9918` | `src/tychoc.c:11932@m.elive[e]` | the emitted `keys()` walk |
+    | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9931` | `src/tychoc.c:11887@m->ecount++` | the append that *defines* the order |
     | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:509` | `runtime/tycho_rt.c:751@c->seq, c->pos + 1, memory_order_release` | the publish in `tycho_chan_send_commit` |
     | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:521` | `runtime/tycho_rt.c:763@memory_order_acquire) - (pos + 1)` | the acquire load in the recv claim |
     | `docs/spec/14-ffi.md:9` | `runtime/tycho_rt.c:1026` | `runtime/tycho_rt.c:1284@tycho_arr_int_from_c` | that boundary copy routine |
-    | `docs/spec/16-builtins.md:85` | `src/tychoc.c:8283` | `src/tychoc.c:9020@tycho_eprint` | the `eprint` emit |
+    | `docs/spec/16-builtins.md:85` | `src/tychoc.c:8283` | `src/tychoc.c:9071@tycho_eprint` | the `eprint` emit |
     | `docs/spec/16-builtins.md:116` | `src/tychoc.c:4152` | `src/tychoc.c:4518@.name="chr"` | the `chr` `Sig` |
     | `docs/spec/16-builtins.md:143` | `src/tychoc.c:4158` | `src/tychoc.c:4525@.name="split"` | the `split` `Sig` |
     | `docs/spec/16-builtins.md:145` | `src/tychoc.c:4157` | `src/tychoc.c:4524@.name="char_at"` | the `char_at` `Sig` |
-    | `docs/spec/16-builtins.md:146` | `src/tychoc.c:8686` | `src/tychoc.c:9523@tycho_str_get` | the `E_INDEX` `s[i]` emit |
+    | `docs/spec/16-builtins.md:146` | `src/tychoc.c:8686` | `src/tychoc.c:9574@tycho_str_get` | the `E_INDEX` `s[i]` emit |
     | `docs/spec/16-builtins.md:148` | `compiler/tychoc0.ty:6698` | `compiler/tychoc0.ty:6770@hi_sidx` | tychoc0's `s[i]` emit |
     | `docs/spec/16-builtins.md:218` | `src/tychoc.c:6819` | `src/tychoc.c:7459@"defaultable"` | the `defaultable` predicate |
     | `docs/spec/16-builtins.md:243` | `src/tychoc.c:4151` | `src/tychoc.c:4517@.name="ncpu"` | the `ncpu` `Sig` |
@@ -1893,10 +1893,10 @@ full run is ever wanted, `make ci N=0` is the cheap form.
 
     **A second misaligned ANCHORED range the phase did not name, found by the
     same test.** `docs/spec/15-program.md:21` cited
-    `src/tychoc.c:12449-12553@int main(` for the driver. `int main(` is at
+    `src/tychoc.c:12500-12604@int main(` for the driver. `int main(` is at
     `src/tychoc.c:12098` and the file ends at `:12202`, so the range was **82
     lines early at both ends** and its first 82 lines are `find_file`/argument
-    plumbing. Repaired to `src/tychoc.c:12489-12593@int main(`. Also
+    plumbing. Repaired to `src/tychoc.c:12540-12644@int main(`. Also
     `docs/spec/15-program.md:22`'s `src/tychoc.c:3811-3881@parse_extern_fn`
     included the function's opening line as its **last** line; the function is
     `src/tychoc.c:3707-3777`. And `docs/spec/03-types.md:376`'s

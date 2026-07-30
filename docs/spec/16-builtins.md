@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4340-4344`,`:4349-4350`,`:4359-4360`; `eprint` codegen `:9020@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4340-4344`,`:4349-4350`,`:4359-4360`; `eprint` codegen `:9071@tycho_eprint`; `die` codegen
 > `:8791-8792`.
 
 ## 29.4 Conversions
@@ -143,7 +143,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4352-4353`, `split` `:4525@.name="split"`;
 > `len` magic
 > `:5538-5544`; `char_at` `Sig` `src/tychoc.c:4524@.name="char_at"`, codegen `:8641-8648`
-> (`tycho_str_get`, the same call `s[i]` emits at `:9523@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:9574@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 

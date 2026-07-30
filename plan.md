@@ -2234,7 +2234,7 @@ Unclosed discoveries from the two previous plans; none blocking.
       binary arithmetic over typed operands. **Phase 10 of this plan will hit the
       same wall for loops.**
 
-- [ ] **Phase 27** — **bounds-check elision does not reach the three-clause
+- [x] **Phase 27** — **bounds-check elision does not reach the three-clause
       form, and phase 6 silently turned it off tree-wide.** Elision is gated on
       `S_FORRANGE`'s `r_start`/`r_stop`/`r_step` fields at
       `src/tychoc.c:10791-10801`; `S_FOR3` has no equivalent arm, so
@@ -2264,6 +2264,160 @@ Unclosed discoveries from the two previous plans; none blocking.
     `bench/guard.sh`** — phase 6 established that neither `binary_trees` nor
     `maptree` contains one, so the guard cannot currently observe this class of
     regression at all.
+  - **DONE 2026-07-30.** Restored, and the shape is proved part by part rather
+    than pattern-matched. The recogniser is `for3_elidable_arr`,
+    `src/tychoc.c:7955-8005`, called from the `S_FOR3` codegen arm at
+    `src/tychoc.c:10764`; it pushes onto the same `g_elide` table `S_FORRANGE`
+    uses at `src/tychoc.c:10857-10866`, so `index_in_range`
+    (`src/tychoc.c:8008`) and the three accessor sites it gates
+    (`src/tychoc.c:9575`, `src/tychoc.c:9906`, `src/tychoc.c:10405`) were not
+    touched at all.
+  - **How each shape condition is established**, against the AST as it really is
+    (`S_FOR3` stores init in `els[0]` and the post clause as the LAST element of
+    `body` — the note at `src/tychoc.c:1563-1573`):
+    - **init is a literal `0`** — `els[0]` must be `S_DECL` with `expr->kind ==
+      E_INT && ival == 0`. `init->ctrl` is rejected too, so a value-`if`/`match`
+      decl (whose `expr` is NULL) cannot reach the `E_INT` test.
+    - **condition is `i < len(IDENT)`, `<` strictly** — `s->expr` must be
+      `E_BINOP` with `op == TK_LT` (the token, `src/tychoc.c:118`), `lhs` an
+      `E_IDENT` naming the init variable, `rhs` an `E_CALL` to `len` with exactly
+      one `E_IDENT` argument. `TK_LE` is a different token and simply does not
+      match, which is what makes a `<=` bound fall through.
+    - **post is `i += 1` exactly** — `body[nbody-1]` must be `S_ASSIGN` to the
+      same name with `expr` an `E_BINOP` `TK_PLUS` over (`E_IDENT` i, `E_INT` 1).
+      That is the exact node the parser builds for `i += 1`
+      (`src/tychoc.c:3552-3557`), so `i += 2` fails on `ival != 1` and `i -= 1`
+      fails on the operator.
+    - **the body passes `stmts_unsafe`** — reused verbatim
+      (`src/tychoc.c:8003`), not reimplemented, and run over
+      `s->body, s->nbody - 1`. Dropping the last element is required, not a
+      convenience: the post clause is `S_ASSIGN` to the index, so including it
+      would make `stmt_unsafe` (`src/tychoc.c:7921`) report unsafe on every
+      loop and the arm would be dead code that never fires.
+    - **bounded arrays never elide** — `IS_BOUNDED` (`src/tychoc.c:755`) is
+      checked on the `len()` argument's type, the same guard `S_FORRANGE` carries
+      at `src/tychoc.c:10862`, because a bounded array stores in `.v` and the
+      elision emits `.data[i]`.
+  - **Why this is sound, and it is a different argument from `S_FORRANGE`'s.**
+    `S_FORRANGE` caches `_stop = len(A)` once before the loop
+    (`src/tychoc.c:10842`) and leans on the body never shrinking `A`. `S_FOR3`
+    emits the condition into the C `while` header (`src/tychoc.c:10755`), so
+    `i < len(A)` is re-evaluated every iteration and holds at the top of each
+    body by construction — a strictly stronger position. Confirmed in the
+    emitted C: `while (h_i < ((h_a).len))`, a direct field read, not a cached
+    `_stopN`.
+  - **Before / after, `tests/bounds_elision.ty` line 30's loop.** "Before" is a
+    compiler built from `git show HEAD:src/tychoc.c` (HEAD = `7a04e53`), same
+    flags, both `--emit-c`; both hit the same emitted line 2462:
+
+    ```
+    before  h_s = (h_s + tycho_arr_int_get(h_a, h_i));
+    after   h_s = (h_s + (h_a).data[h_i]);
+    ```
+
+    Across the whole fixture: **0 → 5** elided accesses (the read loop, the
+    in-place write `a[i] = a[i] + 1` which is two, the read under `if`, and both
+    halves of the nested `a[i] * b[j]` cross), and the only surviving
+    `tycho_arr_int_get` in the file is its own runtime definition at emitted line
+    1324 — no call site left in `main`. `TYCHOC_NO_BOUNDS_ELISION=1`
+    (`src/tychoc.c:7901`) puts all five back to the checked accessor: measured,
+    `grep -c '(h_a).data\[h_i\]'` → `0`.
+  - **The non-elidable fixture.** `tests/bounds_noelide.ty` (+
+    `tests/bounds_noelide.out`) holds six three-clause loops, one per way of
+    missing the shape: a body that reassigns the array, a `<=` bound, a step of
+    2, a bound that is a variable rather than `len()`, a body that passes the
+    array whole to a call, and an init of `1`. Emitted C: **0** `.data[h_i]`,
+    **6** `tycho_arr_int_get(h_` — one per loop. Golden
+    `r=90 s=90 t=40 u=90 v=190 w=90`, hand-computed before it was recorded.
+  - **And one of them reddens at RUNTIME, not only in the emitted text.**
+    `tests/abort/for3_le_bound.ty` runs a `<=` loop that indexes `a[len(a)]`. On
+    the checked path it dies as it must — `tycho: index 4 out of bounds (len 4)`,
+    exit 1. If `for3_elidable_arr` ever accepted `<=` it would emit
+    `(h_a).data[h_i]`, read one past the end and exit 0, and `tests/run.sh`'s
+    abort lane fails on "runtime abort did not fire (exit 0)". That is the one
+    assertion here that does not depend on anybody re-reading generated C.
+  - **How many of the 223 sites elide again: 236 of the 245 that carry the shape
+    today.** Measured, not estimated, and by two independent counts that agree.
+    (a) Textually, `git grep -E 'for (\w+) := 0; \1 < len\(\w+\); \1 \+= 1:' --
+    '*.ty'` finds **245** sites in **110** files — more than phase 6's 223
+    because later phases in this plan added loops of the same shape. (b) By the
+    compiler itself: a throwaway build of `src/tychoc.c` with one `fprintf` on
+    the `for3_elidable_arr` result, run over every `git ls-files '*.ty'` entry
+    with `TYCHO_CORELIB` set, reports **236 elided sites in 108 files**. The
+    intersection of the two lists is: **236 elide**, **8 are rejected** and **1**
+    is in a proc no entry point instantiates (`corelib/sort/sort.ty:11`). All
+    eight rejections are correct and conservative — five are bounded arrays
+    (`tests/bounded_const_cap.ty:15`, `tests/bounded_elems.ty:29`, `:35`, `:41`,
+    `:43`, the `IS_BOUNDED` guard) and three pass the indexed value's own
+    container to a call (`corelib/strings/strings.ty:99`,
+    `examples/site/main.ty:112` via `csv.get(rows, i, 0)`, `tools/lsp.ty:318`
+    via `substr(s, i, i + 1)`).
+  - **`bench/guard.sh` gained the elision workload, and its assertion is
+    structural because wall time provably cannot carry it.**
+    `bench/prongB/arr_pipeline.ty` is the one `prongB` program that contains the
+    elidable shape — its two scan loops, `bench/prongB/arr_pipeline.ty:16` and
+    `bench/prongB/arr_pipeline.ty:20`, confirmed by the instrumented compiler,
+    against zero in `binary_trees` and `maptree`. The new block
+    (`bench/guard.sh:41-71`) emits its C and requires `>= 2` raw `.data[h_i]` and
+    **0** `tycho_arr_int_get(h_`.
+  - **The measurement that forced that choice, and it is the finding of this
+    phase.** At `-O3` — the level `bench/guard.sh:29` builds with and the level
+    `tychoc` itself hands to `cc` (`src/tychoc.c:12695`) — gcc folds the
+    per-element check away on its own, because the three-clause form puts
+    `h_i < ((h_xs).len)` in the `while` header and the accessor's own
+    `i >= xs.len` test is then known false. Best-of-3, same program, elision on
+    vs `TYCHOC_NO_BOUNDS_ELISION=1`:
+
+    ```
+    arr_pipeline  -O3   29 vs 30 ms | 46 vs 46 ms | 47 vs 45 ms   (C moved 24->35ms
+                                                                   across the same runs)
+    scan micro    -O3  207 vs 208 ms   (1.00x — 1.6e9 accesses in 207ms is ~0.4
+                                        cycles each: both forms vectorised)
+    scan micro    -O2  2358 vs 2684 ms (1.14x)
+    scan micro    -O1  2517 vs 4740 ms (1.88x)
+    ```
+
+    A nested-loop shape (`cross`, 2000x2000x60) and an `inout [int]` parameter
+    shape were tried as well, looking for a case gcc could not fold: 51 vs 52 ms
+    and 105 vs 105 ms. So a ratio gate on this workload would be noise dressed as
+    a guard — the run-to-run spread on `arr_pipeline` (120%–191% of C) is larger
+    than the entire effect being gated. The emitted C separates cleanly instead:
+    **2 raw / 0 checked** with elision on, **0 raw / 2 checked** with it off.
+    Proved the gate actually fires, not just that it passes:
+    `TYCHOC_NO_BOUNDS_ELISION=1 sh bench/guard.sh` → `FAIL arr_pipeline 0 raw
+    .data[i], 2 checked calls`, `bench-guard: FAILED`, exit **1**.
+  - **Gates, all foreground, one command each.**
+    - `make test` → `passed: 545   failed: 0` (543 at HEAD; +2 is
+      `bounds_noelide` and `abort_for3_le_bound`).
+    - `sh bench/guard.sh` → `ok binary_trees tycho=270ms C=727ms (37% of C, gate
+      <60%)`, `ok maptree tycho=123ms C=498ms (24% of C, gate <60%)`, `ok
+      arr_pipeline 2 raw .data[i], 0 checked calls`, `bench-guard: ok`.
+    - `sh scripts/asan_self.sh` → `compiled: 561   failed: 0`, all green.
+    - `python3 scripts/check_citations.py` → ok (144 anchored, 2050 bare in
+      bounds, 102 source→doc, 131 source→source).
+  - **On the ASan lane, honestly:** `scripts/asan_self.sh` sanitises *tychoc's
+    own execution* while it compiles the corpus, so it cannot see a wrong
+    elision, which would be an overread in the *emitted* program. So the emitted
+    programs were also built `-fsanitize=address,undefined
+    -fno-sanitize-recover=all` and run — `tests/bounds_elision.ty`,
+    `tests/bounds_noelide.ty`, `bench/prongB/arr_pipeline.ty`, all exit 0 with
+    empty stderr. Note the limit of even that: arrays live inside an arena block,
+    so ASan would not flag a few-element overrun *within* the arena. The load
+    bearing proofs of no-wrong-elision are the shape argument above,
+    `tests/abort/for3_le_bound.ty`, and 545 unchanged goldens — not ASan.
+  - **Repaired in passing, because this phase caused it:** inserting 51 lines at
+    `src/tychoc.c:7955` and 10 more inside the `S_FOR3` arm shifted every
+    anchored citation below those points. `python3 scripts/check_citations.py`
+    was green at `7a04e53` and went to **25 stale**; all 25 were re-anchored
+    (+51 above the `S_FOR3` arm, +61 below it) across
+    `docs/internals/plan-postfreeze-rawstring-DONE.md`, `docs/spec/01-lexical.md`,
+    `docs/spec/03-types.md`, `docs/spec/10-statements.md`,
+    `docs/spec/12-aggregates.md`, `docs/spec/15-program.md` and
+    `docs/spec/16-builtins.md`, plus one range in `docs/spec/10-statements.md:129`
+    that named the `goto _post<id>` emit. This is phase 17's class arriving on
+    schedule; the blanket sweep it asks for was NOT done here.
+  - **Not done, deliberately:** phase 30's three unreachable `r_step` guards are
+    untouched, and no `.ty` outside `tests/` was rewritten.
 
 - [ ] **Phase 28** — **three `range()`-only fixtures were deleted in phase 6 and
       their guarantees are untested until phase 7 removes the feature.**
@@ -2622,6 +2776,31 @@ Unclosed discoveries from the two previous plans; none blocking.
     `indexset_capture` gets, and `fuzz/run_parforparity.py` still reports 25/25.
   - Verify: `python3 fuzz/run_parforparity.py`, plus read the diagnostic by hand —
     the runner cannot tell these two rejections apart, which is how this hid.
+
+- [ ] **Phase 40** — **at `-O3` gcc already folds the three-clause form's bounds
+      check, so the compiler-side elision restored in phase 27 buys ~0 on the
+      level `tychoc` actually ships.** Measured in phase 27, not supposed:
+      `src/tychoc.c:12695` hands `cc` `-O3`, and at `-O3` a scan loop runs
+      207ms elided vs 208ms checked (1.00x); the same program is 1.14x at `-O2`
+      and 1.88x at `-O1`. The cause is structural rather than a compiler
+      accident: `S_FOR3` emits `h_i < ((h_xs).len)` into the C `while` header
+      (`src/tychoc.c:10755`), which is the exact fact `tycho_arr_int_get`'s own
+      `i >= xs.len` test needs, so VRP kills it. Four shapes were tried looking
+      for one gcc could not fold — flat scan, in-place write, nested cross
+      product, `inout [int]` parameter — and none separated.
+  - So: does `for3_elidable_arr` (`src/tychoc.c:7955-8005`) earn its risk? It is
+    ~50 lines whose failure mode is a memory-safety bug, buying a difference no
+    shipped build can measure. The honest options are (a) keep it for `-O0`/`-O1`
+    debug builds and say so in its header, (b) delete it and let gcc do the job,
+    documenting that the three-clause form is *why* that became possible — the
+    old `S_FORRANGE` spelling cached `_stop` (`src/tychoc.c:10842`) and broke the
+    link to `len`, which is exactly why the elision was written in the first
+    place. Do NOT decide this from the numbers above alone: they are one machine,
+    one gcc. Re-measure on a second toolchain (clang, and a non-x86 target if one
+    is reachable) before removing anything.
+  - Note whichever way it goes, `bench/guard.sh:41-71` and
+    `tests/bounds_noelide.ty` stay useful: they assert the emitted C, not wall
+    time, so they document the decision either way.
 
 ## Out of scope
 
