@@ -1,0 +1,191 @@
+# prunner -- a bounded worker pool over a channel, in Tycho.
+#
+# Phase 1 of the parallel-fixture-runner plan: the pool, on a toy workload. A
+# work item here is a shell command; the result is its exit code plus the
+# monotonic interval it occupied. No fixture logic -- that is phase 2.
+#
+# Build (there is no Makefile target yet; wiring is phase 4's decision):
+#     ./tychoc tools/prunner/main.ty -o /tmp/prunner
+#
+# Usage (options take their value with `=`, the schema-free `core:cli` form):
+#     prunner --mode=both --jobs=64 --sleep=0.05
+#     --mode   seq | pool | both        (default pool)
+#     --jobs   number of work items     (default 64)
+#     --sleep  seconds each command sleeps before exiting; "" for none
+#
+# It prints one greppable line per mode:
+#     mode=pool n=64 results=64 unique=64 missing=0 dupes=0 ok=.. fail=.. \
+#       wall_ms=.. maxconc=.. ncpu=.. NOLOSS
+#
+# THE SHAPE, and why it is this one. `docs/spec/13-concurrency.md:127` says a
+# `Channel(T)` cannot be returned, stored in a container, or captured, so a pool
+# cannot be a reusable object that hands out channels: the channel is created
+# and consumed in one scope. `run_pool` below is that scope. The fan-out follows
+# `tests/conc/workers.ty:18-24` exactly -- a bounded `channel` for backpressure,
+# a `spawn`ed producer, and a `parallel for` whose body `select`s a `recv` from
+# the shared queue -- because that idiom is already tested and stores no task
+# handles.
+#
+# WHY THE RESULTS LEAVE BY A SECOND CHANNEL. `docs/spec/13-concurrency.md:100`
+# permits exactly one kind of outer-scope write from a `parallel for` body: a
+# `+`/`*` reduction on an `int` or `float`. `push(xs, i)` is a compile error --
+# "parallel for cannot mutate captured variable 'xs' in place", the fixture is
+# `tests/conc/reject/parfor_push.ty` -- so per-item results
+# cannot be accumulated into an array in the body. They are `send`-ed into a
+# second channel instead, drained concurrently by a `spawn`ed collector, which
+# keeps memory bounded: a results channel sized to hold every result would park
+# no sender, but it would also be the unbounded buffer the pool exists to avoid.
+#
+# WHY `os.system` AND NOT `os.run`. `corelib/os/os.ty:32` inherits the child's
+# stdout/stderr and returns just the exit code; `corelib/os/os.ty:36` adds a
+# `popen(3)` pipe and a captured string per job. This phase needs the code and
+# nothing else, and interleaved capture is a phase-2 problem (a fixture's output
+# has to be compared, and that is where ordering starts to matter).
+package main
+import "core:os"
+import "core:cli"
+import "core:strings"
+
+# One completed work item. t0/t1 are monotonic `clock()` nanoseconds, kept so the
+# achieved concurrency can be MEASURED rather than inferred from wall-clock.
+struct Res:
+    idx: int
+    code: int
+    t0: int
+    t1: int
+
+# The toy workload: `true` and `false` alternating 2:1, optionally slowed by a
+# `sleep` so that overlap is observable above process-spawn noise.
+fn build_cmds(n: int, sleep: string) -> [string]:
+    out := []string
+    for i := 0; i < n; i += 1:
+        base := "true"
+        if i % 3 == 2:
+            base = "false"
+        if sleep == "":
+            push(out, base)
+        else:
+            push(out, "sleep " + sleep + "; " + base)
+    return out
+
+# The producer: streams job indices into the bounded channel. `send` blocks when
+# the ring is full, which is the backpressure.
+fn produce(ch: Channel(int), n: int) -> int:
+    for i := 0; i < n; i += 1:
+        send(ch, i)
+    return n
+
+# The collector: drains exactly n results while the workers are still running,
+# so the results channel never needs to be as large as the job count.
+fn collect(ch: Channel(Res), n: int) -> [Res]:
+    acc := []Res
+    for i := 0; i < n; i += 1:
+        select:
+            recv(ch, r):
+                push(acc, r)
+    return acc
+
+# The pool. Both channels live and die in this one scope (see the header).
+fn run_pool(cmds: [string]) -> [Res]:
+    n := len(cmds)
+    jobs := channel(int, 16)
+    res := channel(Res, 16)
+    pr := spawn produce(jobs, n)
+    cl := spawn collect(res, n)
+    # K = min(n, ncpu()) chunk tasks, each pulling one job per iteration; n
+    # iterations total, and a channel delivers each value exactly once, so every
+    # command runs exactly once however the chunks interleave.
+    parallel for i in 0..<n:
+        select:
+            recv(jobs, x):
+                t0 := clock()
+                code := os.system(cmds[x])
+                send(res, Res(x, code, t0, clock()))
+    sent := wait(pr)
+    out := wait(cl)
+    close(jobs)
+    close(res)
+    if sent != n:
+        println("BUG: producer sent " + str(sent) + " of " + str(n))
+    return out
+
+# The same list, one at a time -- the baseline the pool is measured against.
+fn run_seq(cmds: [string]) -> [Res]:
+    out := []Res
+    for i := 0; i < len(cmds); i += 1:
+        t0 := clock()
+        code := os.system(cmds[i])
+        push(out, Res(i, code, t0, clock()))
+    return out
+
+# Peak simultaneous work items. Every result carries the half-open interval it
+# occupied; for intervals, the maximum overlap is always attained at some
+# interval's start, so counting the intervals live at each t0 and taking the
+# max is exact. O(n^2), which is nothing at these sizes.
+fn max_overlap(rs: [Res]) -> int:
+    best := 0
+    for i := 0; i < len(rs); i += 1:
+        c := 0
+        for j := 0; j < len(rs); j += 1:
+            if rs[j].t0 <= rs[i].t0 and rs[i].t0 < rs[j].t1:
+                c = c + 1
+        if c > best:
+            best = c
+    return best
+# THE INVARIANT. The failure this whole design is afraid of is a runner that
+# reports green having quietly dropped work, so the check is not "did we get n
+# results" but "did we get result idx exactly once, for every idx". A count
+# alone cannot tell a lost job from a duplicated one.
+fn tally(rs: [Res], n: int) -> [int]:
+    seen := []int
+    for i := 0; i < n; i += 1:
+        push(seen, 0)
+    for i := 0; i < len(rs); i += 1:
+        k := rs[i].idx
+        if k >= 0 and k < n:
+            seen[k] = seen[k] + 1
+    return seen
+
+fn report(mode: string, rs: [Res], n: int, ns: int):
+    seen := tally(rs, n)
+    missing := 0
+    dupes := 0
+    for i := 0; i < n; i += 1:
+        if seen[i] == 0:
+            missing = missing + 1
+        if seen[i] > 1:
+            dupes = dupes + seen[i] - 1
+    uniq := n - missing
+    ok := 0
+    fail := 0
+    for i := 0; i < len(rs); i += 1:
+        if rs[i].code == 0:
+            ok = ok + 1
+        else:
+            fail = fail + 1
+    verdict := "NOLOSS"
+    if missing != 0 or dupes != 0 or len(rs) != n:
+        verdict = "LOSS"
+    println("mode=" + mode + " n=" + str(n) + " results=" + str(len(rs)) +
+            " unique=" + str(uniq) + " missing=" + str(missing) +
+            " dupes=" + str(dupes) + " ok=" + str(ok) + " fail=" + str(fail) +
+            " wall_ms=" + str(ns / 1000000) + " maxconc=" + str(max_overlap(rs)) +
+            " ncpu=" + str(ncpu()) + " " + verdict)
+
+fn main():
+    c := cli.parse(cli.argv())
+    n := strings.parse_int(cli.get(c, "jobs", "64"))
+    sleep := cli.get(c, "sleep", "")
+    mode := cli.get(c, "mode", "pool")
+    if n < 1:
+        println("--jobs must be >= 1")
+        return
+    cmds := build_cmds(n, sleep)
+    if mode == "seq" or mode == "both":
+        t := clock()
+        rs := run_seq(cmds)
+        report("seq", rs, n, clock() - t)
+    if mode == "pool" or mode == "both":
+        t := clock()
+        rs := run_pool(cmds)
+        report("pool", rs, n, clock() - t)
