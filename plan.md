@@ -966,7 +966,7 @@ premise (2).
   primitives alone. Whichever way it goes, `docs/guides/corelib.md` and the
   `corelib/test/cli` golden are the surface that moves. Verify: `make corelib`.
 
-- [ ] **Phase 13 — `make ci` is red on a stale count this plan created.**
+- [x] **Phase 13 — `make ci` is red on a stale count this plan created.**
   `make editors-check` (`make ci` step `[9b]`) fails: `editors/zed/README.md:14`
   says "845 committed `.ty` files", `git ls-files '*.ty' | wc -l` says 846. The
   extra file is `tools/prunner/main.ty`, added by phase 1 (commit `1340548`); the
@@ -992,3 +992,22 @@ premise (2).
 - **`scripts/asan_self.sh`.** The same parallelisation would help it and it is a
   bigger win; it is deliberately not in scope until the fixture runner proves the
   pattern.
+
+  ### Evidence — phase 13, 2026-07-31
+
+  One line. `editors/zed/README.md:14` said 845; the tree has 846. The 846th file
+  is `tools/prunner/main.ty`, added by this plan's own phase 1 (`1340548`) — so
+  the plan reddened a gate by writing a program, and phase 4 found it while
+  deciding not to run `make ci`.
+
+  Fixed by hand, then re-run: `846 files parsed; the only failure is the
+  enumerated known-bad set (tests/reject/hex_escape_one_digit.ty
+  tests/reject/rawstring_unterminated.ty)`, `editors-check: ok`.
+
+  **This is the third time this lane has fired on a hand-typed number**, and each
+  time it fired correctly — 462→813, 837→845, 845→846. It is the gate working
+  exactly as designed: a number a human must remember to update is a decaying
+  claim, and the check is what converts the decay into a red build instead of a
+  quiet lie. Worth noting that every one of the three was caused by ordinary work
+  adding or moving a `.ty` file, which is precisely the case a human would never
+  think to check.
