@@ -2457,7 +2457,7 @@ Unclosed discoveries from the two previous plans; none blocking.
     way phase 10 measured it, and `make fuzz N=200` stays at skip=0.
   - Verify: `python3 fuzz/run.py 60`, then `make test`, then `make conc`.
 
-- [ ] **Phase 37** — **two hand-run fuzz lanes still emit `range()` and are dead
+- [x] **Phase 37** — **two hand-run fuzz lanes still emit `range()` and are dead
       on arrival.** Found by phase 10 while fixing `fuzz/gen.py`.
       `fuzz/run_parforparity.py` embeds **28** `parallel for i in range(...)`
       programs and `fuzz/run_pkg.py` one `for j in range(n):` helper; both were
@@ -2484,6 +2484,99 @@ Unclosed discoveries from the two previous plans; none blocking.
     the current compiler accepts, or says in its header that it is retired.
   - Verify: run each touched runner directly; `grep -rn 'in range(' fuzz/*.py`
     shows only Python's own `range`.
+  - **DONE 2026-07-30.** Site counts re-derived, not taken from this entry: the
+    phase text said 28 `parallel for i in range(...)` programs in
+    `fuzz/run_parforparity.py`; the real figure is **25** parallel-for headers
+    (16 in `REJECT`, 9 in `ACCEPT`) plus **2** sequential `range()` loops
+    (`for j in range(10):` nested inside the `nested_break` fixture, and
+    `for i in range(n):` in the `feed` helper of `select_recv`) — **27** emitted
+    `range()` headers total. `fuzz/run_pkg.py` had the one predicted helper,
+    `for j in range(n):` inside `k_array_ret`.
+  - **The lanes were dead, and each was dead in its own way — the before-state:**
+    - `python3 fuzz/run_parforparity.py` → `PARFOR-PARITY FAIL: 9/25 cases
+      diverge`, every one an `ORACLE DIVERGENCE  tychoc=reject expected=accept`
+      (`reduction_add`, `reduction_mul`, `two_accumulators`, `capture_read`,
+      `range_compound_int`, `nested_break`, `local_indexset`,
+      `pass_local_as_mut`, `select_recv`). The 9 accept baselines failed loudly.
+      **The 16 reject fixtures reported PASS and were worthless**: they were
+      rejected at parse for saying `range()`, never reaching the soundness gate
+      each exists to test. A lane that is 64% vacuous while printing 16 green
+      rejections is worse than one that is simply red.
+    - `python3 fuzz/run_pkg.py 20` → `DONE: ok=10 skip=10 FAIL=0`. `classify`
+      (`fuzz/run_pkg.py:88`) returns `"skip"` on any non-zero tychoc exit, so a
+      program that no longer parses was *counted as skipped* and the runner still
+      exited 0. Half of every run was discarded behind a green `FAIL=0`.
+  - **After:**
+    - `python3 fuzz/run_parforparity.py` → `parfor-parity: 25/25 parallel-for gate
+      cases match the oracle (accept/reject + emitted C).`
+    - `python3 fuzz/run_pkg.py 200` → `DONE: ok=200 skip=0 FAIL=0` (was
+      `ok=10 skip=10` at n=20). **`skip` went to zero**, which is the number that
+      actually moved.
+  - **25/25 is not sufficient evidence and was not treated as such.** The runner
+    only compares accept-vs-reject, so a fixture rejected by a stray parse error
+    scores identical to one that trips its gate — exactly the failure mode this
+    phase existed to clean up. Every `REJECT` fixture was therefore re-run by hand
+    and its *diagnostic* read. 14 of 16 name their own gate (`return cannot cross
+    a parallel for`, `parallel for cannot mutate captured variable 'xs' in place`,
+    `reduction accumulator 'acc' may only be updated, not read, inside parallel
+    for`, `parallel for needs an int range`, …). Two did not; see below.
+  - **The non-unit-step program (`parallel for i in range(0, 10, 2)`, the
+    `range_step` fixture) — DELETED, and replaced.** `0..<N` has no step syntax at
+    all, so the gate it tested is now unreachable *by construction*:
+    `src/tychoc.c:6645`'s `die_at(... "parallel for does not support a range
+    step")` sits under a comment at `src/tychoc.c:6643` calling itself
+    "unreachable since 2026-07-29 … kept as a fail-closed assertion". No source
+    text can reach it, so no fixture can test it. The other option — folding the
+    stride into the body as `0..<5` with `i * 2` — was **rejected**: it converts a
+    gate fixture into a second accept baseline that duplicates `reduction_add` and
+    asserts nothing about a gate. In its place is `range_nonzero_start`
+    (`parallel for i in 1..<10:`), which tests the constraint that actually took
+    the step gate's job — the literal-`0` lower bound enforced at
+    `src/tychoc.c:3364-3365`. Verified to reject with ``` `parallel for` counts
+    from zero: write `0..<N` -- a literal `0` … ```.
+  - **The two non-zero-start ACCEPT fixtures (`range(1, 8)`, twice) — offset
+    folded into the body, not renumbered.** `reduction_mul` and
+    `two_accumulators` became `0..<7` with `prod * (i + 1)` / `s + (i + 1)`,
+    `p * (i + 1)`. Renumbering to `0..<8` was rejected on oracle grounds: a
+    product over a zero-based space is 0, and **0 is also what a reduction that
+    silently drains a private chunk copy produces**, so `0..<8` would make the
+    fixture pass for the wrong reason. Folding keeps the answer 5040 and keeps the
+    fixture discriminating. `range_compound_int` kept its compound bound as
+    `0..<m + 2` (that fixture is about a compound *expression* as the stop, and
+    `src/tychoc.c:3370` `parse_expr`s the stop, so the coverage survives intact).
+  - **Found and fixed in-scope: `multiassign_capture` was never valid Tycho.** Its
+    body `a, b = b, a` died at `error: expected newline` — a *parse* error, not
+    its gate. The RHS of a multi-assign must be a single tuple-valued expression
+    (`src/tychoc.c:7054`, `src/tychoc.c:7057`), and `b, a` is not one. The fixture
+    has therefore been asserting nothing since it was written; the `range()`
+    breakage merely hid it behind an earlier death. Respelled through a
+    tuple-returning `swap`, it now rejects with `parallel for cannot assign to
+    captured variable 'a'` — the gate it is named for.
+  - **Gate as worded ("`grep -rn 'in range(' fuzz/` must return nothing") is not
+    achievable and was not forced.** Every surviving hit is one of: Python's own
+    `range` iterating seeds or generator counts (`fuzz/run.py:131`,
+    `fuzz/run_leak.py:108`, `fuzz/run_reject.py:117`, `fuzz/run_pkg.py:75`,
+    `fuzz/run_pkg.py:112`, `fuzz/gen.py`, `fuzz/gen_malformed.py`), or English
+    prose in the *other* retired runners' headers recording the removal
+    (`fuzz/run_typeparity.py:15`, `fuzz/run_eqparity.py:10`,
+    `fuzz/run_unaryparity.py:23`, `fuzz/minimize.py:18`) — all out of this
+    phase's scope. Rewriting Python's `range()` to satisfy a grep would be
+    vandalism. This entry's own weaker wording (only Python's `range` remains) is
+    the contract that was met. The substantive check was run instead: both
+    modules were imported and **every string of Tycho they emit** was scanned —
+    125 programs (25 parfor fixtures + 100 package files from 50 seeds),
+    **0 containing `range`**, 25 `parallel for` headers still present.
+  - `python3 scripts/check_citations.py` → `citation check: ok (144 anchored
+    contain the token they name, 2043 bare in bounds, 102 source->doc citations
+    resolve, 125 source->source in bounds)`.
+  - **Checked, as asked: neither runner has phase 10's `fresh("i")` defect.**
+    `fuzz/run_parforparity.py` is a fixed table of hand-written programs with
+    literal `i`/`j` counters and no name generator at all;
+    `fuzz/run_pkg.py`'s names are a fixed prefix plus a loop index
+    (`Pt{i}`, `w{i}`, `gid{i}` — `fuzz/run_pkg.py:36`ff), which can never produce
+    a bare `i8`/`i16`/`i32`/`i64`. Nothing to fix.
+  - Both runners' headers now record that they are outside `make ci` and must be
+    run by hand, so the next syntax change does not repeat this silently.
 
 - [ ] **Phase 38** — **`plan.md`'s own record is malformed around phases 28-29,
       and one closed phase reads as open.** Found by phase 10 while counting the
@@ -2501,6 +2594,34 @@ Unclosed discoveries from the two previous plans; none blocking.
     reads as the LSP keyword-set phase it is, and the "Status — PLAN COMPLETE"
     unchecked count is corrected to match.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+- [ ] **Phase 39** — **`parallel for` refuses an in-place mutation of a captured
+      array through the wrong diagnostic.** Found by phase 37 while reading the
+      actual rejection message of every `fuzz/run_parforparity.py` fixture rather
+      than trusting its accept/reject verdict.
+  - `indexset_capture` (`xs[0] = i`) and `fieldset_capture` (`p.x = i`) both get
+    the dedicated gate: `parallel for cannot mutate captured variable 'xs' in
+    place`. `push_capture` (`push(xs, i)`) — the same soundness violation, a
+    captured array mutated inside a chunk — instead gets `cannot mutate parameter
+    'xs' (it is borrowed read-only; copy it with `y := xs` first)`. That is the
+    generic borrow rule catching it downstream, on the lifted chunk proc's
+    parameter, after the parallel-for scan let it through.
+  - It is not a soundness hole today — the program *is* rejected, fail-closed,
+    and `fuzz/run_parforparity.py` scores it correct because that runner only
+    compares accept-vs-reject. It is a diagnostic-quality and coverage bug: the
+    message tells the user to copy an array they never wrote as a parameter, and
+    the parfor capture gate has an untested hole that only the borrow checker is
+    currently closing. Remove the borrow rule and the fixture likely goes green
+    the wrong way.
+  - Out of scope for phase 37, whose scope lock named `fuzz/run_parforparity.py`
+    and `fuzz/run_pkg.py` and explicitly excluded `src/tychoc.c`. The fix belongs
+    in the parallel-for capture scan (`pf_scan_body`, around
+    `src/tychoc.c:6650`), not in the fixture.
+  - Done when: `push(xs, i)` inside a `parallel for` over a captured `xs` is
+    refused by the parallel-for capture gate with the same wording
+    `indexset_capture` gets, and `fuzz/run_parforparity.py` still reports 25/25.
+  - Verify: `python3 fuzz/run_parforparity.py`, plus read the diagnostic by hand —
+    the runner cannot tell these two rejections apart, which is how this hid.
 
 ## Out of scope
 
