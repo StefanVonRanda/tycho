@@ -111,8 +111,8 @@ Any other write to an outer-scope variable from a `parallel for` body is a
 **compile error** — there is nothing to race on.
 
 > Provenance: `0..<N` parsed at `src/tychoc.c:3351-3376`; parallel-only refusal
-> `src/tychoc.c:3361@par_here`; literal-zero refusal `src/tychoc.c:3364@ival != 0`;
-> any other loop shape under `parallel` refused at `src/tychoc.c:3240@S_FORRANGE`
+> `src/tychoc.c:3363@par_here`; literal-zero refusal `src/tychoc.c:3366@ival != 0`;
+> any other loop shape under `parallel` refused at `src/tychoc.c:3242@S_FORRANGE`
 > (it is the only node the chunker accepts). Chunk fan-out `K = ncpu()`
 > `src/tychoc.c:9995-10006`; each chunk is a real OS thread,
 > `runtime/tycho_rt.c:577@pthread_create`.

@@ -2163,8 +2163,38 @@ request (`fc921d7`, `7a04e53`).
       alone. **17 of the 25 ranged ones had also drifted in line number**, so a
       path-only rewrite would have manufactured 17 false citations — see the
       batch 3 evidence for how each was re-derived.
-- [ ] **Phase 16** — `char` has arithmetic but no spellable type name, no
+- [x] **Phase 16** — `char` has arithmetic but no spellable type name, no
       `to_char`, and no `\xNN` escape.
+      **CLOSED by batch 6 as "this needs its own plan", not as a fix.** All four
+      claims re-verified against the built compiler (commands and output in the
+      batch 6 evidence); the scope decision is that they are three separate
+      *language* changes, not cleanup:
+  - **A spellable type name** is a parser change with two distinct failure sites,
+    not one: in a parameter or return position `fn f(c: char)` dies
+    `unknown type 'char'` (`src/tychoc.c:2141`), while in an element position
+    `cs: []char` dies with the *element* list instead —
+    `expected a type (int, float, bool, string, [int], or a struct)`. Adding the
+    name means adding `char` to both, and then deciding what `[]char` *is*: the
+    tree already has `bytes` for a byte sequence, and `T_CHAR` is `tycho_int` in
+    C (`src/tychoc.c:1361`), so `[]char` and `bytes` would overlap. That is a
+    language design question with a spec section attached (§12, §16), not a
+    line to add to a switch.
+  - **`to_char`** is a new builtin (`unknown procedure 'to_char'`): a `Sig` row
+    beside `char_at` (`src/tychoc.c:4526`), a codegen case, its own bounds
+    contract for an out-of-range int, spec text and fixtures.
+  - **`\xNN`** is a lexer change in two literal forms — the char escape table
+    (`src/tychoc.c:464`, which today rejects it with
+    *"unsupported char escape (use \n \t \r \0 \\ \'"*) and the string one
+    (`src/tychoc.c:384`) — plus a decision about what `\xNN` means above 0x7F in
+    a string that claims to be UTF-8.
+  - **Why it is not this batch's:** every other batch-6 item is a fix or a
+    recorded decision inside existing behaviour. This one *adds language*, and
+    the cleanup batches were explicitly scoped to the leftovers of the
+    loop-syntax plan. Filed as **phase 51** below with what a real plan for it
+    would have to settle. The testability complaint that motivated the phase
+    stands and is recorded there: `char` is the one element type whose narrower
+    operator set (`+`/`-` only, `src/tychoc.c:1029`) is also the hardest to
+    write a fixture for.
 - [ ] **Phase 17** — **PARTIAL after batch 2.** The population is not ~344: a
       re-derivation against the repaired gate found **568 live** bare
       `src/tychoc.c:N` refs (plus 621 more inside the frozen
@@ -2288,6 +2318,35 @@ request (`fc921d7`, `7a04e53`).
       `.ty` is untracked and a `git add -A` would commit it. Two candidate fixes,
       both small: default `--emit-c` with no `-o` to stdout, or add the emitted
       sibling to `.gitignore` by pattern. Not urgent, not this plan's subject.
+      **CLOSED by batch 6 — the default output path, not the ignore rule.**
+      The `.gitignore` route was checked and rejected on evidence: **31
+      directories hold both `.ty` sources and hand-written, tracked `.c` shims**
+      (`corelib/http`, `corelib/image`, `bench/*`, `examples/life`, `tests/ffi`,
+      `tools`, …), so any by-pattern ignore broad enough to catch the strays
+      would also silently swallow a newly added shim — a worse failure than the
+      one it fixes, and one no gate would catch. `--emit-c` with no `-o` now
+      writes the C to **stdout** (`src/tychoc.c:12708`), which is what the
+      phase's own repro (`> /tmp/x.c`) already expected; `-o` behaviour is byte
+      for byte unchanged, and the `wrote <path>` status line survives only on
+      the `-o` path. `README.md:190` and `:220` say so.
+      **One in-tree caller did NOT pass `-o`, and the gate found it — this is
+      the interesting part.** The claim "every caller passes `-o`" was written
+      from a `grep` and was **wrong**: the bytes-rehome lane in
+      `scripts/tools_check.sh:283` emitted with no `-o` and grepped the sibling
+      `$TMP/brh/main.c`. With the C going to stdout and the lane's `>/dev/null`
+      swallowing it, `sh scripts/tools_check.sh` failed with exactly the message
+      its own header (`scripts/tools_check.sh:275`) predicts for a rotted
+      fixture: `grep: .../brh/main.c: No such file or directory` →
+      *"bytes field NOT re-homed -- copy_into missing T_BYTES (dangling UAF!)"*.
+      That lane was written to fail loudly rather than silently assert nothing,
+      and it did. Fixed by giving it an explicit `-o`; re-run green. Everything
+      else — the six `fuzz/run*.py` runners, `scripts/entrypoints.sh:63`,
+      `bench/guard.sh:28` and `:63`, and the `examples/sqlite`,
+      `examples/fetch`, `examples/site` sanitizer legs — was already explicit.
+      **Out of scope, filed as phase 52:** the *default* (non-`--emit-c`) build
+      leaves `<base>.c` beside the source too (`src/tychoc.c:12757` hands it to
+      `cc` and nothing removes it) — same stray-file class, different flag, and
+      phase 25 named only `--emit-c`.
 
 - [x] **Phase 26** — **the `parallel for` gate diagnostic will be wrong the
       moment phase 7 lands.** Found by phase 5, left alone because rewriting it
@@ -2522,7 +2581,7 @@ request (`fc921d7`, `7a04e53`).
     Nothing was restored; the per-fixture reasoning and the two replacement
     fixtures are in phase 7's evidence.
 
-- [ ] **Phase 29** — **the LSP's semantic-token classifier is missing three
+- [x] **Phase 29** — **the LSP's semantic-token classifier is missing three
       keywords the other two grammars have, and `parallel for i in 0..<N:` is
       where it shows.** Found by phase 8 while decoding the token array: in
       `parallel for j in 0..<n:` the LSP classifies `parallel` as **variable**
@@ -2542,8 +2601,17 @@ request (`fc921d7`, `7a04e53`).
   - Done when: the three grammars agree on the keyword set, or the divergence is
     written down as deliberate. Verify: `sh scripts/tools_check.sh` (the
     `semtok=` leg) and `make editors-check`.
+  - **CLOSED by batch 6 — the three were added, and the "check both directions"
+    caveat was checked and cleared.** `sem_is_keyword` (`tools/lsp.ty:1175`) now
+    lists `parallel`, `select` and `or_return`. The other direction found **no**
+    drift: `handle` is a hard lexer token (`src/tychoc.c:187`), and `const`,
+    `sink`, `where` and `soa` are soft keywords — `TK_IDENT` compared by text in
+    the parser (`src/tychoc.c:3116`, `:3661`, `:3695`, `:1911`) — which is a
+    lexer implementation detail, not evidence they stopped being keywords, and
+    both editor grammars highlight them. So nothing was removed. The reason is
+    written into the function's header so the next reader does not re-derive it.
 
-- [ ] **Phase 30** — **`Stmt.r_step` is dead and its three guards are
+- [x] **Phase 30** — **`Stmt.r_step` is dead and its three guards are
       unreachable.** Found by phase 7. `range(a, b, step)` was the only producer
       of a non-NULL `r_step`; with it deleted, all five surviving `S_FORRANGE`
       producers write NULL (the table in phase 7's evidence). So the step
@@ -2565,6 +2633,43 @@ request (`fc921d7`, `7a04e53`).
     hold at their current counts.
   - Verify: `make test`, then `make conc`, then `python3
     scripts/check_citations.py` (deletions here shift `src/tychoc.c` anchors).
+  - **CLOSED by batch 6 as "the guards stay, annotated" — and the stated blocker
+    was wrong, so here is the real one.** Batch 6 re-checked phase 7's reasoning
+    against what phase 27 actually built, as its brief required:
+  - **Phase 7's blocker does not hold.** It said phase 27's elision recogniser
+    is specified against `s->r_step == NULL`. Phase 27's recogniser is
+    `for3_elidable_arr` (`src/tychoc.c:8023-8048`) and it **never mentions
+    `r_step`** — it matches S_FOR3's init/cond/post triple, which has no step
+    field at all. The recogniser that *does* test `s->r_step == NULL` is the
+    older **S_FORRANGE** one (`src/tychoc.c:10902`), and `git blame` puts it in
+    the pre-plan commit *"hierc bounds-check elision for monotone loop indices"*,
+    not in phase 27. So "must not land before phase 27" was never the reason;
+    phase 27 landing changes nothing about this phase.
+  - **The real blocker is this phase's own "Done when", which is unsatisfiable.**
+    It requires that every foreach loop and `parallel for` "still emit the same
+    C as before". They cannot: `r_step` is not only an AST field, it is *emitted
+    C text*. A two-element foreach emits
+    `tycho_int _stop1 = ((h__fc0).len), _step1 = 1L;`, then
+    `if (_step1 == 0) { ... "tycho: range step is zero" ... }`, then
+    `for (... ; _step1 > 0 ? h__fi0 < _stop1 : h__fi0 > _stop1; h__fi0 += _step1)`
+    (`src/tychoc.c:10885-10889`; the emitted text is in the batch 6 evidence).
+    Any honest deletion removes all three lines from **every** S_FORRANGE loop in
+    the corpus. The binary is unchanged — gcc folds a constant `1L` — but the C
+    is not, so the acceptance test as written fails by construction. A phase
+    cannot be verified against a criterion it must violate.
+  - **And the cost is real.** `src/tychoc.c` carries **485 live `path:N`
+    citations at lines ≥ 1553** (plus 515 in the frozen archives). A deletion
+    spread from the field declaration to the codegen shifts essentially all of
+    them; only the anchored subset reddens the gate, so the rest would rot
+    silently — which is exactly the population phase 17 is still open on.
+  - **Decision: the guards stay, and they stay annotated.** They are already
+    marked unreachable at `src/tychoc.c:1555-1559`, `:6668-6670` and
+    `:7310-7316`, which is what a reader needs. The deletion is worth doing, but
+    as its own commit with a **corrected** Done-when — "the emitted C loses the
+    `_stopN`/`_stepN` pair and the zero-step abort, every fixture's *behaviour*
+    is unchanged, `make test` and `make conc` hold at their counts" — and after
+    phase 17 settles what happens to the bare `src/tychoc.c:N` population. Filed
+    that way as **phase 53**.
 
 - [x] **Phase 31** — **CLOSED, folded into phase 9** (all 23 sites rewritten and
       every rewritten loop compiled and run; the archives and dated review
@@ -2877,7 +2982,7 @@ request (`fc921d7`, `7a04e53`).
     unchecked count is corrected to match.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 39** — **`parallel for` refuses an in-place mutation of a captured
+- [x] **Phase 39** — **`parallel for` refuses an in-place mutation of a captured
       array through the wrong diagnostic.** Found by phase 37 while reading the
       actual rejection message of every `fuzz/run_parforparity.py` fixture rather
       than trusting its accept/reject verdict.
@@ -2904,8 +3009,29 @@ request (`fc921d7`, `7a04e53`).
     `indexset_capture` gets, and `fuzz/run_parforparity.py` still reports 25/25.
   - Verify: `python3 fuzz/run_parforparity.py`, plus read the diagnostic by hand —
     the runner cannot tell these two rejections apart, which is how this hid.
+  - **CLOSED by batch 6 — the hole was closed, not argued away.** `pf_scan_expr`
+    (`src/tychoc.c:6456-6466`) now recognises an in-place mutating builtin
+    applied to a captured root and issues the same message its S_INDEXSET /
+    S_FIELDSET sibling does (`src/tychoc.c:6549`). `push`/`pop` is the pair the
+    tree already treats as mutating argument 0 — the while-loop mutation scan
+    uses exactly that test (`src/tychoc.c:6830`), so the gate now agrees with an
+    analysis that already existed rather than inventing a second list. The root
+    is walked through `.f`/`[i]`/`.0` the same way S_INDEXSET walks its target,
+    so `push(p.xs, i)` is caught too.
+  - **Why close it rather than lean on the borrow checker:** the borrow rule is
+    in another pass, on a *different* program (the lifted chunk proc), and its
+    message names a parameter the user never wrote. Leaving it as the only
+    thing standing meant this gate's coverage depended on a rule nobody would
+    think to preserve — the phase's own "remove the borrow rule and the fixture
+    goes green the wrong way".
+  - Verified by hand, both messages read (output in the batch 6 evidence): the
+    `push_capture` and `indexset_capture` fixture bodies now produce the
+    identical `parallel for cannot mutate captured variable 'xs' in place`, and
+    a **chunk-local** `push(ys, i)` where `ys` is declared inside the loop still
+    compiles — the gate keys on `pf_local`, so it did not become a blanket ban
+    on `push` in a parallel body.
 
-- [ ] **Phase 40** — **at `-O3` gcc already folds the three-clause form's bounds
+- [x] **Phase 40** — **at `-O3` gcc already folds the three-clause form's bounds
       check, so the compiler-side elision restored in phase 27 buys ~0 on the
       level `tychoc` actually ships.** Measured in phase 27, not supposed:
       `src/tychoc.c:12695` hands `cc` `-O3`, and at `-O3` a scan loop runs
@@ -2929,6 +3055,31 @@ request (`fc921d7`, `7a04e53`).
   - Note whichever way it goes, `bench/guard.sh:41-71` and
     `tests/bounds_noelide.ty` stay useful: they assert the emitted C, not wall
     time, so they document the decision either way.
+  - **CLOSED by batch 6 — recorded in `for3_elidable_arr`'s own header, and
+    option (a) taken.** Where the finding goes was the actual question, and half
+    of it was already answered: `bench/guard.sh:49-62` **already** carries the
+    measurement (the -O2 1.14x / -O1 1.88x pair, the VRP explanation, and the
+    counted `.data[h_i]` vs `tycho_arr_int_get(h_` assertion). That is the right
+    home for the reader asking *"why does this lane assert C text instead of a
+    ratio?"* — and phase 27 put it there when it wrote the lane.
+  - **The reader it did not serve is the one standing in front of the risk.**
+    Someone editing `for3_elidable_arr` is looking at ~50 lines whose failure
+    mode is a memory-safety bug; nothing at that site said what they buy. The
+    finding now leads that function's header (`src/tychoc.c:8006-8022`), with
+    the numbers, the four shapes that failed to separate, the pointer to
+    `bench/guard.sh:49-62`, and the historical note that the old `S_FORRANGE`
+    spelling cached `_stop` (`src/tychoc.c:10885`) and broke the `len` link —
+    which is why the elision had to be hand-written at all. Not the spec: this
+    is a codegen implementation trade-off with no observable language semantics,
+    and the spec describes the language. Not a new `docs/internals/` file
+    either: a file nobody opens is where a finding goes to die, and this one has
+    exactly two audiences, both already in code that exists.
+  - **Option (a), keep it, and the header says why:** it is the only thing that
+    elides at `-O0`/`-O1`, which is what `tychoc -g` builds
+    (`src/tychoc.c:12754`) and what a debugger actually steps. Option (b),
+    deletion, stays open and is explicitly gated on re-measuring with a second
+    toolchain, as this phase required — that instruction is now in the header
+    rather than only in `plan.md`, so it survives this plan.
 
 - [x] **Phase 41** — **two bare source→source citations are drifted, and the
       anchored form batch 1 added is what would have caught them.** Found by
@@ -2938,7 +3089,7 @@ request (`fc921d7`, `7a04e53`).
       added the grammar.
   - `scripts/asan_self.sh:38` says the generic bind vector is xmalloc'd at
     `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`,
-    an unrelated function. The real site is `src/tychoc.c:7560@gi.binds` — off
+    an unrelated function. The real site is `src/tychoc.c:7585@gi.binds` — off
     by ~690 lines, in bounds the whole time, and therefore green.
   - `tests/rtparity/run.py:67` cites `src/tychoc.c:10343` as "the loop codegen".
     That line is a bare closing brace.
@@ -2996,8 +3147,8 @@ source→source refs carried an `@`, so the grammar change alone could not redde
 anything. It was adopted on **8 sites verified by reading the target line**, all
 in shell and Python comments — `Makefile:245@SKIPPED` from `scripts/asan_self.sh`
 (twice), `scripts/editors_check.sh` (once) ; `scripts/tools_check.sh:25@editors`
-from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6643@r_step`
-and `src/tychoc.c:3364@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
+from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6668@r_step`
+and `src/tychoc.c:3366@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
 `.ty` file was touched on purpose: a `.ty` edit is `make test` and
 `scripts/tools_check.sh` territory, and this batch's gate budget is the two doc
 gates. Sites whose target line did **not** support the claim were left bare and
@@ -3254,13 +3405,13 @@ old spelling and why it was wrong are written into the line.
 
 - `scripts/asan_self.sh:38` said the generic bind vector is xmalloc'd at
   `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`. The
-  real site is `src/tychoc.c:7560@binds` (`gi.binds = (Type *)xmalloc(...)`),
+  real site is `src/tychoc.c:7585@binds` (`gi.binds = (Type *)xmalloc(...)`),
   ~690 lines away and in bounds the whole time. Now **anchored**, so the next
   shift reddens the gate instead of rotting.
 - `tests/rtparity/run.py:67` cited `src/tychoc.c:10343` for the inline
   `tycho: range step is zero` trap; that line is a bare `}`. The trap survived
   the removal of `range()` — it is at `:10843` — so this one *is* repointable,
-  and is now `src/tychoc.c:10843@_step`. Its sibling `compiler/tychoc0.ty:9513`
+  and is now `src/tychoc.c:10886@_step`. Its sibling `compiler/tychoc0.ty:9513`
   was read and is correct.
 
 The anchor token is `[A-Za-z0-9_]+` on the source side, so `@binds` is the
@@ -4133,3 +4284,300 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
   - Done when: neither comment asserts a live constraint, and §3.9.4's interior
     NUL either has a `tests/` witness or a written reason it does not.
   - Verify: `sh scripts/spec_check.sh`, then `make test`.
+
+## Phases discovered by batch 6
+
+- [ ] **Phase 51** — **`char` is a real element type with no way to write its
+      name, no conversion into it, and no hex escape — and that is a language
+      change, not cleanup.** Split out of phase 16, which batch 6 closed as
+      "needs its own plan" after re-verifying all four symptoms against the
+      built compiler. The compiler has `T_CHAR` (`src/tychoc.c:548`), a builtin
+      that produces one (`char_at`, `src/tychoc.c:4526`), a deliberately
+      narrower operator set (`+` and `-` only, `src/tychoc.c:1029`), a C
+      representation (`tycho_int`, `src/tychoc.c:1361`) and a diagnostic
+      spelling (`src/tychoc.c:7435` returns the string `"char"`). What it has
+      no way to do is let a user *write* the type.
+  - **Three independent decisions, in dependency order:**
+    1. **The type name.** Two parse sites reject it differently: a parameter or
+       return position gives `unknown type 'char'` (`src/tychoc.c:2141`), an
+       element position gives `expected a type (int, float, bool, string,
+       [int], or a struct)`. Adding the name to both immediately raises what
+       `[]char` *means* next to the existing `bytes` — two spellings of a byte
+       sequence, with different operator sets. That is a §12 / §16 question.
+    2. **`to_char`** (`unknown procedure 'to_char'`): a `Sig` row, a codegen
+       case, and a decision on out-of-range ints — abort like the bounds
+       accessors, wrap to a byte, or return a `Result`.
+    3. **`\xNN`** in both literal forms — the char escape table
+       (`src/tychoc.c:464`) and the string one (`src/tychoc.c:384`) — plus what
+       `\xNN` above 0x7F means in a string the tree treats as UTF-8.
+  - **Why it matters beyond ergonomics:** `char` is the one element type whose
+    operator set is narrower than `int`'s, and it is also the only one that
+    cannot appear in a fixture's type annotations. The narrow rule at
+    `src/tychoc.c:1029` is therefore the least directly testable rule in the
+    resolver. Any plan here should add the fixtures *first*.
+  - Done when: each of the three has a decision recorded (implemented or
+    declined with a reason), and §12/§16 match the tree.
+  - Verify: `make test`, `sh scripts/spec_check.sh`.
+
+- [ ] **Phase 52** — **the default build leaves `<base>.c` beside the source
+      too.** Found by batch 6 while closing phase 25, which named only
+      `--emit-c`. `./tychoc tests/for3.ty` writes `tests/for3.c`, hands it to
+      `cc` (`src/tychoc.c:12757`) and never removes it, so the plain compile
+      path strays the same untracked artifact `--emit-c` used to — and phase
+      25's finding that no by-pattern `.gitignore` rule is safe (31 directories
+      hold both `.ty` sources and tracked `.c` shims) applies here unchanged.
+  - Not the same fix: stdout is not available to this path, which needs the C
+    on disk for `cc`. The options are a temp file removed on success, or
+    keeping it and saying so.
+  - **Weigh it against `-g`:** `docs/guides/debugging.md:37` tells users to run
+    `--emit-c -o program` precisely to *keep* the `.c` for a debugger, so the
+    emitted file is a documented artifact for at least one workflow. Deleting
+    it unconditionally would break that instruction.
+  - Done when: the default path either does not leave a file in the source
+    tree, or its doing so is documented as intended and the `.gitignore`
+    situation is stated.
+  - Verify: `make test`, then `git status --short` after a plain build.
+
+- [ ] **Phase 53** — **delete `Stmt.r_step`, with a Done-when that is actually
+      satisfiable.** Replaces phase 30, which batch 6 closed as "the guards
+      stay" after finding its acceptance criterion self-contradictory: it
+      demanded the emitted C be unchanged, but the step machinery *is* emitted
+      C (`src/tychoc.c:10885-10889`), so no honest deletion can satisfy it.
+  - Corrected Done when: `grep -n r_step src/tychoc.c` is empty; every
+    `S_FORRANGE` loop's emitted C loses the `_stopN`/`_stepN` pair, the
+    `tycho: range step is zero` abort and the `_stepN > 0 ? ... : ...` ternary,
+    keeping only `h_i < _stopN` and `h_i += 1`; **behaviour** is unchanged on a
+    fixture of each shape (foreach over an array, foreach over a map,
+    `parallel for`), shown by running them, not by diffing C; and `make test`
+    and `make conc` hold at their counts.
+  - **Order: after phase 17.** The deletion shifts essentially every one of the
+    485 live `src/tychoc.c:N` citations at lines ≥ 1553. The anchored subset
+    reddens `scripts/check_citations.py` and can be repaired mechanically; the
+    bare majority would rot silently, and what happens to that population is
+    exactly what phase 17 is still open on.
+  - Verify: `make test`, `make conc`, `python3 scripts/check_citations.py`.
+
+## Batch 6 evidence
+
+Six phases: 16, 25, 29, 30, 39, 40. Three are code, three are recorded
+decisions. Every claim below was run, not reasoned about.
+
+### The three code changes
+
+**Phase 29 — the LSP's three missing keywords.** `tools/lsp.ty:1175`'s
+`sem_is_keyword` gained `parallel`, `select` and `or_return`. The phase's
+"check both directions first" caveat was checked: `handle` is a hard lexer
+token (`src/tychoc.c:187`) and `const`/`sink`/`where`/`soa` are soft ones —
+`TK_IDENT` compared by text in the parser (`src/tychoc.c:3116`, `:3661`,
+`:3695`, `:1911`) — so the list had drifted in one direction only and nothing
+was removed. `sh scripts/tools_check.sh` reports `semtok=True`.
+
+**Phase 39 — the parfor capture hole.** `pf_scan_expr`
+(`src/tychoc.c:6456-6466`). Read by hand, because the fuzz runner compares only
+accept-vs-reject and cannot tell these two rejections apart:
+
+    $ ./tychoc pc.ty --emit-c -o pc          # push(xs, i), xs captured
+    pc.ty:4: error: parallel for cannot mutate captured variable 'xs' in place
+         4 |         push(xs, i)
+    $ ./tychoc ic.ty --emit-c -o ic          # xs[0] = i, the sibling
+    ic.ty:4: error: parallel for cannot mutate captured variable 'xs' in place
+         4 |         xs[0] = i
+
+Identical wording, which is the phase's "Done when". The gate is not a blanket
+ban — a chunk-local `push` still compiles:
+
+    $ ./tychoc local.ty --emit-c -o lo       # ys := [1] declared INSIDE the loop
+    wrote lo.c   (rc=0)
+
+**Phase 25 — `--emit-c` with no `-o`.** Now stdout (`src/tychoc.c:12708`):
+
+    $ rm -f tests/for3.c
+    $ ./tychoc --emit-c tests/for3.ty > x.c
+    emit-c-no-o rc=0
+    stray tests/for3.c exists: NO
+    captured C lines: 2595   first line: /* Tycho runtime - embedded verbatim ...
+    stderr: (empty)
+    $ ./tychoc --emit-c tests/for3.ty -o withO   # -o path unchanged
+    with -o rc=0 wrote: YES
+
+### The three decisions
+
+**Phase 16 — `char`: reduced to "this needs its own plan" (phase 51).** All
+four symptoms re-verified against the built compiler:
+
+    fn f(c: char) -> char:        -> error: unknown type 'char'
+    cs: []char = []               -> error: expected a type (int, float, bool, string, [int], or a struct)
+    print(to_char(65))            -> error: unknown procedure 'to_char'
+    c := '\x41'                   -> error: unsupported char escape (use \n \t \r \0 \\ \')
+
+Note the first two differ: two parse sites reject the name in two different
+ways, so "add `char` to the type parser" is two edits and a `[]char`-vs-`bytes`
+design question. Three separate language additions, one of which has a spec
+section attached. Not cleanup.
+
+**Phase 30 — `r_step` stays, and phase 7's stated blocker was wrong.** Phase 7
+deferred this because "phase 27's elision recogniser is specified against
+`s->r_step == NULL`". Phase 27's recogniser is `for3_elidable_arr`
+(`src/tychoc.c:8023-8048`) and contains no mention of `r_step` — it matches
+S_FOR3's init/cond/post triple, which has no step. The recogniser that *does*
+test it is the older S_FORRANGE one (`src/tychoc.c:10902`); `git blame` dates it
+to the pre-plan commit *"hierc bounds-check elision for monotone loop indices
+(array-pipeline 132->47ms ~2.8x)"*. The real blocker is that the phase's own
+"Done when" cannot be met — `r_step` is emitted C, not just an AST field:
+
+    $ ./tychoc --emit-c r2.ty | grep -n '_step\|_stop'     # for x in xs:
+    2447:        tycho_int _stop1 = ((h__fc0).len), _step1 = 1L;
+    2448:        if (_step1 == 0) { fprintf(stderr, "tycho: range step is zero\n"); exit(1); }
+    2449:        for (tycho_int h__fi0 = 0LL; _step1 > 0 ? h__fi0 < _stop1 : h__fi0 > _stop1; h__fi0 += _step1) {
+
+Every foreach loop in the corpus emits those three lines. "Still emit the same
+C as before" is unsatisfiable by any honest deletion. Refiled as phase 53 with a
+behaviour-based criterion and an ordering constraint after phase 17 — measured:
+**485 live `src/tychoc.c:N` citations sit at lines ≥ 1553** (plus 515 in the
+frozen archives) and would all shift.
+
+**Phase 40 — recorded in `for3_elidable_arr`'s header
+(`src/tychoc.c:8006-8022`), option (a).** Half the recording already existed:
+`bench/guard.sh:49-62` carries the measurement for the reader asking why that
+lane asserts C text instead of a ratio. The reader it did not serve is the one
+editing ~50 lines whose failure mode is a memory-safety bug. Not the spec (a
+codegen trade-off with no observable language semantics); not a new
+`docs/internals/` file (nobody opens it). Option (a) — keep it, because it is
+the only thing that elides at `-O0`/`-O1`, which is what `tychoc -g` builds
+(`src/tychoc.c:12754`). Option (b) stays open and gated on a second toolchain,
+and that instruction now lives in the header rather than only here.
+
+### What the sweep found — three failures no targeted gate had seen
+
+This is the part worth reading. `make ci` ran four times; the first three were
+red, and none of the three was a mistake in the six phases' own logic.
+
+**1. `make conc`, 13 of 38 fixtures — `FAIL <name> (tychoc)`.**
+`tests/conc/run.sh:41` emitted with **no `-o`** and then did
+`mv "${f%.ty}.c" "$c"`: it created `tests/conc/<name>.c` *inside the tree* on
+every run and moved it out again — the exact stray-artifact behaviour phase 25
+removed. With the C going to stdout, its `>/dev/null` swallowed it. Fixed by
+giving it `-o`; the `mv` is gone with it. `make conc: passed 38 failed 0`, and
+`ls tests/conc/*.c` is empty afterwards.
+
+**2. `sh scripts/tools_check.sh` — the bytes-rehome lane.** Same cause,
+`scripts/tools_check.sh:283`. It failed loudly with the message its own header
+(`:275`) predicts for a rotted fixture — `grep: .../brh/main.c: No such file or
+directory` → *"bytes field NOT re-homed -- copy_into missing T_BYTES (dangling
+UAF!)"* — which is the lane working as designed. Fixed with `-o`; re-run
+`tools-check: ok`.
+
+Together these two correct the claim written into phase 25's first draft: "every
+in-tree caller passes `-o`" was **false**, drawn from a truncated grep. An
+exhaustive re-scan of every `--emit-c` *invocation* (as opposed to prose
+mention) in `*.sh`, `*.py` and `*.ty` now shows all of them explicit.
+
+**3. `scripts/ci.sh:124` — a shell syntax error in the `[12b/13]` step, which
+had never been reached.** Batch 3 added the step with a triple backtick inside a
+double-quoted string; to `/bin/sh` that is backquote command substitution, and
+dash aborted the whole suite with `scripts/ci.sh: 133: Syntax error: EOF in
+backquote substitution` — after 17 minutes of green steps. Batches 4 and 5
+deliberately deferred `make ci` to this batch, so this was the first time the
+line was parsed. Rewritten without backticks; `sh -n` and `dash -n` both clean.
+
+**4. `editors/zed/README.md:14` — corpus count 829, tree 832.** The lane batch 3
+added (phase 12) works; nothing had run it since three `.ty` fixtures landed —
+`tests/crlf_adjacent.ty`, `tests/result_tuple.ty` (batch 5) and
+`tests/conc/bare_for_arrarith.ty` (batch 4). Count corrected;
+`make editors-check: ok`.
+
+### Citation repair
+
+Adding ~55 lines to `src/tychoc.c` shifted **130 anchored citations** across 17
+files. They were repaired mechanically, not by hand-guessing: a
+`difflib.SequenceMatcher` map from `git show HEAD:src/tychoc.c` to the new file
+(12694 of 12703 old lines map 1:1; the 9 unmapped are the lines actually
+edited), applied only to the refs `scripts/check_citations.py` itself flagged,
+each verified by re-running the gate. The **bare** `src/tychoc.c:N` population
+shifted too and is *not* repaired here — that is phase 17's open decision, and
+the same call phase 27 made. The map is reproducible from this commit's diff.
+
+Three of the 17 are `docs/internals/` records, two of them frozen `-DONE.md`
+archives, which looks like it violates the leave-archives-alone rule. It does
+not: that rule exempts archives from the *mandatory-anchor* and absolute-path
+rules, not from anchor **staleness** — an anchored ref in an archive is still
+checked, so an archive with anchored refs into `src/tychoc.c` must move with it
+or the gate reddens. Precedent is exact: phase 27 (`fc921d7`) changed 18 lines
+of `docs/internals/plan-postfreeze-rawstring-DONE.md` alongside its own
+`src/tychoc.c` edit, for this reason. Only the line numbers move; no archive
+prose was touched.
+
+### Gate output
+
+    $ make test
+    passed: 547   failed: 0
+    all green
+
+    $ sh scripts/tools_check.sh
+    832 files checked  (compilable=393)  idempotence-fails=0  semantic-fails=0
+    semtok=True
+    bytes field re-homed on struct return
+    tools-check: ok
+
+    $ python3 scripts/check_citations.py
+    citation check: ok (152 anchored contain the token they name, 2176 bare in bounds,
+    117 source->doc citations resolve, 154 source->source in bounds, 12 source->source anchored)
+
+    $ make conc
+    conc: passed 38   failed 0
+
+    $ make editors-check
+    ok  README says 832 committed .ty files, and so does the tree
+    832 files parsed; the only failure is the enumerated known-bad set
+    editors-check: ok
+
+    $ make docs-fences
+    docs-fences: 10 fence(s) compiled, 30 skipped (reasons above), 0 failure(s)
+
+    $ make check-links
+    link check: ok (134 markdown files, no dead relative links)
+
+    $ make ci        # the closing sweep, 4th run, all 13 steps
+    >>> [13/13] make check-links  (every relative Markdown link resolves ...)
+    ================================================================
+     CI GREEN -- tree is good
+    ================================================================
+    CI_EXIT=0
+
+`CI_EXIT=0` is the observed status of the run, captured by the wrapper, not
+derived from the banner.
+
+## Status — ALL SIX BATCHES COMPLETE, PLAN NOT
+
+Six batch commits: `fd361e9` (1), `2e6e698` + `46eddaa` (2), `a24242e` +
+`74a6eeb` (3), `0412395` (4), `c61dd45` (5), and this one (6).
+
+**Batch 6 closed all six of its phases: 16, 25, 29, 30, 39, 40.** Three by
+patch (25, 29, 39), three by recorded decision (16 → its own plan; 30 → the
+guards stay, with phase 7's stated blocker disproved; 40 → recorded at the
+risk, option (a) taken). Phases 16 and 30 are ticked as *closed decisions*, and
+their successors — 51 and 53 — carry the work forward with criteria that can
+actually be met.
+
+**15 phases remain unchecked.** None is batch work; each was deliberately left
+open by the batch that found it:
+
+- **17** — the citation-population decision (167 refs in dated design records,
+  38 in frozen evidence blocks). Blocks phase 53. The oldest open question here
+  and the one most worth answering: batch 6 shifted the bare population again.
+- **33, 42, 43, 44, 45, 46** — filed by batches 3 and 4 (ungated fences beyond
+  the whole-program set, untagged fences, doc→doc citations, a spec/compiler
+  disagreement on shifts, `tests/rtparity/run.py`'s lost oracle).
+- **47, 48, 49, 50** — filed by batch 5. **47 is now unblocked**: it was held
+  for after batch 6's sweep specifically so a `make ci` failure could not be
+  ambiguous between two unexercised steps, and the sweep is done.
+- **51, 52, 53** — filed by batch 6 (the `char` language plan, the default
+  build's stray `.c`, the corrected `r_step` deletion).
+
+**The sweep earned its place.** It was billed as possibly ceremonial. It found a
+CI step that could never have run, two gates silently depending on a behaviour
+phase 25 removed, and a corpus count three fixtures stale — none of which any
+targeted gate would have reported, because the point of failure was the sweep
+itself. It also cost four 19-minute runs, three of them discovering one failure
+each; the cheaper path was to run each step's own gate after each fix and keep
+`make ci` for confirmation. Both halves of that lesson belong in the record.

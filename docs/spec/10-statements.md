@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3108-3578` (`parse_if` `:2730@parse_if`,
-> `parse_match` `:2836@parse_match`, `for` `:3245-3446`, `select` `:3189-3225`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3108-3578` (`parse_if` `:2732@parse_if`,
+> `parse_match` `:2838@parse_match`, `for` `:3245-3446`, `select` `:3189-3225`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -122,13 +122,13 @@ the implementation **does not diagnose it**, at compile time or at run time.
 bought is a single loop form that says its own direction and amount in the
 source instead of inferring them from the sign of a step expression.
 
-> Provenance: bare `for:` `src/tychoc.c:3253@TK_COLON`; the three-clause header
+> Provenance: bare `for:` `src/tychoc.c:3255@TK_COLON`; the three-clause header
 > scan and its five required-clause refusals `src/tychoc.c:3279-3328`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:3310@parse_stmt`; loop scoping and
+> parsed by `parse_stmt` itself `src/tychoc.c:3312@parse_stmt`; loop scoping and
 > the post clause resolved outside the body block `src/tychoc.c:7248-7253`;
 > `continue` emitted as `goto _post<id>` `src/tychoc.c:10712-10715` with the
-> label at `src/tychoc.c:10771@_post%d`; the `range()` refusal
-> `src/tychoc.c:3387@was removed: write`. The step codegen and its zero-step
+> label at `src/tychoc.c:10814@_post%d`; the `range()` refusal
+> `src/tychoc.c:3389@was removed: write`. The step codegen and its zero-step
 > guards still exist but are unreachable: every remaining `S_FORRANGE` producer
 > writes a NULL step (`src/tychoc.c:1553-1559`).
 

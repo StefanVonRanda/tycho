@@ -7,7 +7,9 @@
  * Usage:
  *   tychoc file.ty [-o name] [--emit-c] [--cc <compiler>]
  *     default: writes <base>.c and compiles it to <base> with `cc`.
- *     --emit-c: only write the C file, do not compile.
+ *     --emit-c: only write the C, do not compile. With -o it writes <name>.c;
+ *               with no -o it writes the C to STDOUT rather than dropping a
+ *               sibling .c beside the source.
  *
  * The language is deliberately tiny (see README). One proc named `main`
  * is the entry point.
@@ -6439,6 +6441,29 @@ static void pf_scan_expr(Expr *e) {
         if (root && root->kind == E_IDENT && !pf_local(root->sval))
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
+    /* An in-place mutating builtin applied to a CAPTURED collection is the same
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6549),
+     * and it must get the same message. `push`/`pop` are the pair the tree
+     * already treats as mutating their first argument -- the while-loop mutation
+     * scan uses exactly this test (src/tychoc.c:6830). Before this, `push(xs, i)`
+     * inside a `parallel for` over a captured `xs` fell through the parfor scan
+     * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
+     * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
+     * read-only...)`, telling the user to copy an array they never wrote as a
+     * parameter, and leaving this gate's coverage resting on a rule in another
+     * pass. Fail-closed either way -- the program was already rejected -- so this
+     * changes the diagnostic, not the accept/reject verdict. plan.md phase 39. */
+    if (e->kind == E_CALL && e->sval && e->nargs >= 1 &&
+        (!strcmp(e->sval, "push") || !strcmp(e->sval, "pop"))) {
+        Expr *root = e->args[0];
+        while (root && (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX))
+            root = root->lhs;
+        if (root && root->kind == E_IDENT && !pf_local(root->sval)) {
+            Type vt;
+            if (vars_find(root->sval, &vt))
+                die_at(e->line, "parallel for cannot mutate captured variable '%s' in place", root->sval);
+        }
+    }
     if (e->kind == E_IDENT) {
         Type vt;
         if (!pf_local(e->sval) && vars_find(e->sval, &vt)) {
@@ -7958,7 +7983,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10704), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10798), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -7975,8 +8000,26 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * a post that assigns anything but i all keep `tycho_arr_*_get`. The body guard
  * is the SAME `stmts_unsafe` S_FORRANGE uses, run over the body WITHOUT its
  * last element: the post clause lives there (see the `els`/`body` note at
- * src/tychoc.c:1563) and assigns i, so including it would report unsafe every
- * time. Returns the array's name, or NULL when the shape is not certain. */
+ * src/tychoc.c:1565) and assigns i, so including it would report unsafe every
+ * time. Returns the array's name, or NULL when the shape is not certain.
+ *
+ * WHAT THIS BUYS, MEASURED -- read before "improving" it. At -O3, the level
+ * tychoc itself hands to cc, this function buys ~NOTHING: gcc already folds the
+ * accessor's `i >= xs.len` test, because the three-clause form emits `h_i <
+ * ((h_xs).len)` into the C `while` header and that is the exact fact VRP needs.
+ * Best-of-3 on a scan loop, elided vs checked: -O3 207 vs 208 ms (1.00x), -O2
+ * 1.14x, -O1 1.88x. Four shapes were tried looking for one gcc could not fold
+ * (flat scan, in-place write, nested cross product, `inout [int]` parameter);
+ * none separated. bench/guard.sh:49-62 carries the second measurement and is why
+ * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
+ * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
+ * which is what `tychoc -g` builds (src/tychoc.c:12754) and what a debugger step
+ * actually runs. Deleting it is a live option (plan.md phase 40 option (b)) but
+ * NOT on these numbers alone -- they are one machine and one gcc, and the
+ * measurement must be repeated on a second toolchain first. Note the historical
+ * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
+ * cached `_stop` before the loop (src/tychoc.c:10885) and broke the link to
+ * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
     Stmt *init = s->els[0], *post = s->body[s->nbody - 1];
@@ -7992,7 +8035,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3552-3557) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3554-3559) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -12635,7 +12678,8 @@ int main(int argc, char **argv) {
     }
     if (!input) {
         fprintf(stderr, "usage: tychoc file.ty [-o name] [--emit-c] [-g] [--bundle] [--native] [--cc <compiler>]\n"
-                        "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n");
+                        "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n"
+                        "  --emit-c with -o writes <name>.c; with no -o it writes the C to stdout.\n");
         return 1;
     }
     g_srcname = input;
@@ -12647,6 +12691,21 @@ int main(int argc, char **argv) {
 
     char *base   = out ? xstrndup(out, strlen(out)) : strip_ext(input);
     char *c_path = sfmt("%s.c", base);
+    /* `--emit-c` with no `-o` writes the C to STDOUT. HISTORY: it used to write
+     * the sibling `<src>.c` and print `wrote <path>` on stdout, so the obvious
+     * `tychoc x.ty --emit-c > out.c` captured the status line and left an
+     * untracked x.c in the tree. The .gitignore route was considered and
+     * rejected: its emitted-C rules are a hand-listed set of specific paths
+     * (the compiler dir, tychoc0.c, tychofmt.c, ...), and 31 directories hold
+     * BOTH .ty sources and hand-written .c shims (the corelib, bench and tools
+     * dirs, tests/ffi), so a by-pattern ignore would hide a newly added shim --
+     * a worse failure than the one it fixes. See plan.md phase 25. All but one
+     * in-tree caller already passed -o (the fuzz runners,
+     * scripts/entrypoints.sh:63, bench/guard.sh:28, the three examples
+     * sanitizer legs); the exception was the bytes-rehome lane in
+     * scripts/tools_check.sh:283, which greps the sibling file, and it was
+     * given an explicit -o here. */
+    int c_to_stdout = emit_c_only && !out;
 
     char *src = read_file(input);
     TokVec toks = lex(src);
@@ -12673,13 +12732,13 @@ int main(int argc, char **argv) {
 
     if (want_symbols) { emit_symbols(&prog); return 0; }   /* LSP index; no codegen */
 
-    FILE *o = fopen(c_path, "wb");
+    FILE *o = c_to_stdout ? stdout : fopen(c_path, "wb");
     if (!o) { fprintf(stderr, "tychoc: cannot write %s\n", c_path); return 1; }
     gen_program(o, &prog);
-    fclose(o);
+    if (c_to_stdout) fflush(o); else fclose(o);
 
     if (emit_c_only) {
-        printf("wrote %s\n", c_path);
+        if (!c_to_stdout) printf("wrote %s\n", c_path);
         return 0;
     }
 
