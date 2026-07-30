@@ -11,7 +11,7 @@ a later static rule rejects (for example, a value `if` without an `else`, §4.4)
 Such forms are flagged here and constrained in the semantic chapters. A program
 is valid only if it parses **and** satisfies every static-semantic rule.
 
-> Provenance: parser entry `src/tychoc.c:4202-4227` (`parse_program`); the
+> Provenance: parser entry `src/tychoc.c:4372-4397` (`parse_program`); the
 > per-construct functions are cited at each section.
 
 ## 4.1 Program and top-level declarations
@@ -44,7 +44,7 @@ constants); its rules are given in §8 and §13. Package resolution,
 visibility, and merging are specified in §28.
 
 > Provenance: `parse_package_decl` `src/tychoc.c:4137@parse_package_decl`, `parse_import_decl` `:4144@parse_import_decl`, `parse_const`
-> (`src/tychoc.c:4183-4200`).
+> (`src/tychoc.c:4353-4370`).
 
 ### 4.1.1 Functions
 
@@ -78,8 +78,8 @@ predicate is rejected) — this is the deliberate anti-traits stance (§7). The 
 set (up to 16 types). A `where` clause requires a generic function; at most 8
 constraints are allowed.
 
-> Provenance: `parse_fn`, `src/tychoc.c:3457-3567` (params `:3480-3505`,
-> variadic-last `:3507-3509`, `where` `:3521-3559`).
+> Provenance: `parse_fn`, `src/tychoc.c:3627-3737` (params `:3650-3675`,
+> variadic-last `:3677-3679`, `where` `:3691-3729`).
 
 ### 4.1.2 Structs, enums, newtypes, handles
 
@@ -102,7 +102,7 @@ only via a container (e.g. `[Node]`), never as a direct by-value self-field
 (§17).
 
 > Provenance: `parse_struct`/`parse_enum`/`parse_handle`/`parse_typedecl`,
-> `src/tychoc.c:3789-3954`.
+> `src/tychoc.c:3959-4124`.
 
 ### 4.1.3 Extern functions and subscripts
 
@@ -124,8 +124,8 @@ rooted in one of its parameters. Its rules — the place must be rooted in a
 parameter, each parameter used at most once — are given in §18.
 `Place` is defined in §4.4.
 
-> Provenance: `parse_extern_fn` (`src/tychoc.c:3707-3777`), `parse_subscript`
-> (`:3587-3639`).
+> Provenance: `parse_extern_fn` (`src/tychoc.c:3877-3947`), `parse_subscript`
+> (`:3757-3809`).
 
 ## 4.2 Types
 
@@ -174,7 +174,7 @@ Notes (constrained further in §5–§7):
   is a recursive self-reference.
 - There is no `char` or `void` type spelling (§3.6).
 
-> Provenance: `parse_type_inner`, `src/tychoc.c:1842-2106`.
+> Provenance: `parse_type_inner`, `src/tychoc.c:1896-2160`.
 
 ## 4.3 Blocks and statements
 
@@ -223,8 +223,8 @@ ExprStmt       ::= Call NEWLINE
   index, field, or `or_return` expression is rejected as having no effect.
 - `ConstExpr` and `ValueCtrl` are defined in §4.1 and §4.3.2.
 
-> Provenance: `parse_stmt`, `src/tychoc.c:3054-3408`; `ExprStmt` restriction
-> `:3396-3403`; compound-assign hoist `:3016-3052`.
+> Provenance: `parse_stmt`, `src/tychoc.c:3108-3578`; `ExprStmt` restriction
+> `:3566-3573`; compound-assign hoist `:3070-3106`.
 
 ### 4.3.2 Compound statements
 
@@ -371,8 +371,8 @@ operation is a call `(...)`. A `Subscript` (§4.1.3) parameter is likewise plain
   **statement-level** (§4.3.1); they are **not** expression operators and never
   appear inside `Expr`.
 
-> Provenance: precedence chain `src/tychoc.c:2586-2654`; postfix `:2460-2549`;
-> `parse_primary` `:2183-2457`; unary `:2557-2563`.
+> Provenance: precedence chain `src/tychoc.c:2640-2708`; postfix `:2514-2603`;
+> `parse_primary` `:2237-2511`; unary `:2611-2617`.
 
 ## 4.5 Operator precedence and associativity
 
@@ -400,4 +400,4 @@ argument and place sub-expression evaluation, is pinned in §13 —
 the grammar fixes only associativity, not side-effect order.
 
 > Provenance: `parse_mul`/`parse_add`/`parse_cmp`/`parse_not`/`parse_and`/
-> `parse_expr`, `src/tychoc.c:2586-2654`; postfix/unary `:2460-2563`.
+> `parse_expr`, `src/tychoc.c:2640-2708`; postfix/unary `:2514-2617`.

@@ -5,8 +5,8 @@ in [§4.4–§4.5](02-grammar.md#44-expressions); this chapter defines the meani
 of each operator, the **evaluation order**, and the expression-valued control
 forms.
 
-> Provenance: binary-op resolver `src/tychoc.c:5828-5984`; short-circuit
-> lowering `:8951-8973`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
+> Provenance: binary-op resolver `src/tychoc.c:5998-6254`; short-circuit
+> lowering `:9310-9332`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
 > closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
 > "probed" were resolved by running both compilers (spec-plan.md §6a).
 
@@ -62,8 +62,8 @@ their two length-mismatch rules differ; the whole rule — the kinds, the
 mismatches, and literal adaptation of a broadcast scalar — is
 [§16.8](12-aggregates.md#168-element-wise-arithmetic).
 
-> Provenance: array ⊕ array arm `src/tychoc.c:5987-6017`; broadcast arm
-> `src/tychoc.c:6046-6072`; the per-element-type operator set
+> Provenance: array ⊕ array arm `src/tychoc.c:6123-6153`; broadcast arm
+> `src/tychoc.c:6182-6208`; the per-element-type operator set
 > `src/tychoc.c:1022@elem_arith_ok`; the arms an array operand still falls
 > through to — shift `src/tychoc.c:6105@shift operators require integer operands`,
 > modulo/bitwise `src/tychoc.c:6213@modulo / bitwise operators`.

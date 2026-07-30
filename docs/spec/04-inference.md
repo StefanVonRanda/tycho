@@ -10,7 +10,7 @@ deliberate design property, not a limitation to be lifted
 non-goal).
 
 > Provenance: synthesis `resolve_expr`, checking `resolve_exp(e, want)`
-> (`src/tychoc.c:4715-5987`, `:5994-6103`); declaration handling `:6681-6756`.
+> (`src/tychoc.c:4885-6257`, `:6264-6373`); declaration handling `:6961-7036`.
 
 ## 6.1 Synthesis and checking
 
@@ -91,9 +91,9 @@ precedent — Go, Swift, and Odin all reject a bare `nil`/`None` declaration out
 / `None` pending convenience, so Tycho keeps it and documents the `Result` limit
 instead.)
 
-> Provenance: pending deferral `src/tychoc.c:6721-6733`, grounding `pend_ground`
-> `:4657-4684`; rejection of ungrounded `None` / immediate rejection of bare
-> `Ok`/`Err` `:6741-6746`.
+> Provenance: pending deferral `src/tychoc.c:7001-7013`, grounding `pend_ground`
+> `:4827-4854`; rejection of ungrounded `None` / immediate rejection of bare
+> `Ok`/`Err` `:7021-7026`.
 
 ## 6.5 Branch unification for value `if` / `match`
 

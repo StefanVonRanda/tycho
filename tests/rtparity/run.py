@@ -64,7 +64,7 @@ Both sides are measured the SAME way: compile tests/rtparity/surface.ty with
 each compiler and read the emitted C. That is deliberately wider than diffing
 runtime/tycho_rt.c against tychoc0's string literals, because some traps are not
 in the runtime file at all -- `tycho: range step is zero` is emitted inline by
-the loop codegen (src/tychoc.c:10343, compiler/tychoc0.ty:9513) -- and comparing
+the loop codegen (src/tychoc.c:10843@_step, compiler/tychoc0.ty:9513) -- and comparing
 generated C against generated C catches those too.
 
 Because both compilers emit per-type helpers and traps ON DEMAND, the probe

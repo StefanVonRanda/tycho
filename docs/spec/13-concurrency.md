@@ -114,7 +114,7 @@ Any other write to an outer-scope variable from a `parallel for` body is a
 > `src/tychoc.c:3361@par_here`; literal-zero refusal `src/tychoc.c:3364@ival != 0`;
 > any other loop shape under `parallel` refused at `src/tychoc.c:3240@S_FORRANGE`
 > (it is the only node the chunker accepts). Chunk fan-out `K = ncpu()`
-> `src/tychoc.c:9944-9955`; each chunk is a real OS thread,
+> `src/tychoc.c:9995-10006`; each chunk is a real OS thread,
 > `runtime/tycho_rt.c:577@pthread_create`.
 
 ## 23. Channels and `select`
