@@ -1,6 +1,7 @@
-# corelib test: exercises core:base64; the C compiler and tychoc0 must agree, and
-# the output is locked to corelib/test/base64.out (corelib/run.sh).
-# Binary cases are checked via lengths + re-encode equality (never printed raw).
+# corelib test: exercises core:base64; the output is locked to corelib/test/base64.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29. Binary cases are checked via lengths + re-encode equality (never printed
+# raw).
 package main
 import "core:base64"
 

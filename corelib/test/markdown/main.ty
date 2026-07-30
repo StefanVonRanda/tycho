@@ -1,6 +1,6 @@
-# corelib test: exercises core:markdown. The C compiler and tychoc0 must agree,
-# and the output is locked to corelib/test/markdown.out (corelib/run.sh). Pure
-# Tycho -- no filesystem, deterministic.
+# corelib test: exercises core:markdown. The output is locked to
+# corelib/test/markdown.out (corelib/run.sh). The tychoc0 cross-check this line used
+# to claim was retired 2026-07-29. Pure Tycho -- no filesystem, deterministic.
 package main
 import "core:markdown"
 

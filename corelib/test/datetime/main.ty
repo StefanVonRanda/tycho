@@ -1,7 +1,7 @@
-# corelib test: exercises core:datetime; the C compiler and tychoc0 must agree,
-# and the output is locked to corelib/test/datetime.out (corelib/run.sh).
-# Fixed timestamps keep the output deterministic; now_utc() (non-deterministic)
-# is checked only for in-range fields.
+# corelib test: exercises core:datetime; the output is locked to
+# corelib/test/datetime.out (corelib/run.sh). The tychoc0 cross-check this line used
+# to claim was retired 2026-07-29. Fixed timestamps keep the output deterministic;
+# now_utc() (non-deterministic) is checked only for in-range fields.
 package main
 import "core:datetime"
 

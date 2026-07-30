@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -132,6 +132,17 @@ asan-self: $(EMBED)
 conc: tychoc
 	@sh tests/conc/run.sh
 
+# Runtime-surface lane: compile tests/rtparity/surface.ty and check the emitted C
+# still contains every env knob, "tycho: ..." trap text and arena-stats row the
+# oracle in tests/rtparity/run.py records -- both directions, so a lost trap and
+# an unrecorded new one both fail. Until 2026-07-29 this compared tychoc's
+# runtime against the one frozen tychoc0 emitted; that leg is gone. Its docstring
+# advertised `make rtparity` from the day it was written and no such target
+# existed, so nothing in the tree ran it. Under a second (~1s: one --emit-c, no
+# cc), not in `make ci` yet -- see plan.md phase 58.
+rtparity: tychoc
+	@python3 tests/rtparity/run.py
+
 # Re-record the expected-output goldens (tests/*.out) from current output.
 # Opt-in only: a normal `make test` never writes them, so a regression cannot
 # silently rebake itself into the expected files. Review `git diff tests/`.
@@ -200,9 +211,12 @@ corelib-examples: tychoc
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
-# whole pipeline is deterministic + offline). Skips without libcurl. Standalone
-# (not in `make ci`, like examples/sqlite); the http module is covered in ci via
-# corelib-examples. See examples/fetch/run.sh.
+# whole pipeline is deterministic + offline). Skips without libcurl.
+# IN `make ci` since 2026-07-30 (step [3/13], beside site/raytrace/mandelbrot).
+# It was standalone before that, and this comment said so as if it were a
+# decision: nothing ran it, so its golden sat stale from 39d75be through an
+# entire prior plan and five batches of this one before batch 5 re-recorded it.
+# See examples/fetch/run.sh.
 fetch: tychoc
 	@sh examples/fetch/run.sh
 

@@ -1,8 +1,9 @@
 # corelib test: core:compress. The exact compressed bytes/length are zlib-version
 # and platform dependent (gzip header, compression tuning), so the checks are all
 # boolean invariants -- round-trip identity, "compresses", binary-safety, empty and
-# corrupt handling -- which are deterministic everywhere. tychoc and tychoc0 must
-# agree and the output is locked to corelib/test/compress.out (corelib/run.sh).
+# corrupt handling -- which are deterministic everywhere. The output is locked to
+# corelib/test/compress.out (corelib/run.sh). The tychoc0 cross-check this line used
+# to claim was retired 2026-07-29.
 package main
 import "core:compress"
 

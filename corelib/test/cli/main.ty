@@ -1,5 +1,6 @@
-# corelib test: exercises core:cli; tychoc and tychoc0 must agree and the output
-# is locked to corelib/test/cli.out (corelib/run.sh).
+# corelib test: exercises core:cli; the output is locked to corelib/test/cli.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29.
 package main
 import "core:cli"
 

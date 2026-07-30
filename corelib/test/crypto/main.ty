@@ -1,8 +1,9 @@
 # core:crypto regression. Every printed line is "<name>=1" iff the primitive is
 # correct. Expected values are independent known-answer vectors (Python
 # hashlib/hmac for SHA/HMAC/PBKDF2; the `cryptography` library for AEAD, Ed25519,
-# X25519) -- so a green golden proves the OpenSSL binding is correct, and the
-# tychoc-vs-tychoc0 diff proves the two compilers agree on the FFI. Secrets are
+# X25519) -- so a green golden proves the OpenSSL binding is correct. The
+# tychoc-vs-tychoc0 diff that also proved the two compilers agreed on the FFI was
+# retired 2026-07-29. Secrets are
 # opaque key handles; this test also exercises key import/export/len/free.
 package main
 

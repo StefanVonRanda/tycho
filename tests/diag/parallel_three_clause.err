@@ -1,0 +1,2 @@
+tests/diag/parallel_three_clause.ty:13: error: parallel supports `for i in 0..<N` and `for x in collection` loops only
+    13 |     parallel for i := 0; i < 3; i += 1:

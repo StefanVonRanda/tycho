@@ -1,5 +1,7 @@
-# corelib test: exercises core:strings; C compiler and tychoc0 must agree (corelib/run.sh).
-# (f-string holes avoid nested string literals — the lexer would stop at the inner quote.)
+# corelib test: exercises core:strings; the output is locked to
+# corelib/test/strings.out (corelib/run.sh). The tychoc0 cross-check this line used to
+# claim was retired 2026-07-29. (f-string holes avoid nested string literals — the
+# lexer would stop at the inner quote.)
 package main
 import "core:strings"
 

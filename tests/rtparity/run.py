@@ -1,87 +1,61 @@
 #!/usr/bin/env python3
-"""Runtime-parity lane -- RETIRED 2026-07-29. This lane no longer runs.
+"""Runtime-surface lane -- one compiler, a written-down oracle (since 2026-07-30).
 
-WHY IT IS RETIRED, FIRST
-------------------------
-This lane compared TWO runtimes, and one of them is gone. tychoc embeds
-runtime/tycho_rt.c verbatim into every file it emits; the self-hosted
-compiler/tychoc0.ty wrote its OWN runtime out as C string literals. tychoc0 is
-FROZEN, and the breaking loop-syntax change of 2026-07-29 (three-clause `for`
-and bare `for:` replace `for i in range(...)`, `range` deleted) means it can no
-longer parse the corpus, so no lane builds it. There is no second runtime left
-to compare against, and unlike the fuzz parity lanes there is no written-down
-oracle here that could stand in for it -- the whole method was
-implementation-vs-implementation. See compiler/fixpoint.sh's header, ROADMAP.md
-and docs/architecture.md.
+WHAT THIS ASSERTS NOW
+---------------------
+Compile tests/rtparity/surface.ty with tychoc, read the emitted C, and check the
+three USER-OBSERVABLE runtime surfaces against the EXPECT sets below:
 
-WHAT IS LOST -- and this one has a named victim
------------------------------------------------
-The drift class this lane existed to catch is now uncaught. TYCHO_ARENA_STATS
-existed in runtime/tycho_rt.c and was silently a no-op in every binary tychoc0
-built, for as long as it took someone to notice by hand (fixed in 2b24ca6). That
-survived because a runtime feature which is merely *absent* changes no output on
-the happy path, so every output-comparing lane stays green. With only one runtime
-in the tree the specific two-runtime drift cannot recur -- but the general shape
-does: nothing now asserts that runtime/tycho_rt.c actually WIRES UP the env knobs,
-abort diagnostics and arena-stats rows it defines. A knob that stops being read is
-still invisible to every gate. Replacing this with a single-runtime lane -- assert
-the emitted C of tests/rtparity/surface.ty still contains each expected getenv()
-name, trap text and stats row against a recorded list -- would recover most of the
-value and is deliberately left undone rather than pretended.
+  1. env knobs   -- the literal getenv("...") names a compiled program reads.
+  2. diagnostics -- the "tycho: ..." abort/trap texts a compiled program can
+                    print. A missing text == a missing check.
+  3. stats rows  -- the row labels of the TYCHO_ARENA_STATS summary. The knob can
+                    be present while the report it drives is half-empty.
 
-WHAT IT DID, WHILE IT RAN
--------------------------
-The two runtimes were maintained by hand, independently, and until this lane
-existed NOTHING compared them.
+Both directions fail: an expected item that stopped being emitted, and an
+emitted item nobody wrote down. The second half is what keeps the list honest --
+a new trap must be added here with a reason, it cannot drift in unremarked.
 
-That is not hypothetical. TYCHO_ARENA_STATS existed in runtime/tycho_rt.c and
-was silently a no-op in every binary tychoc0 built, for as long as it took
-someone to notice by hand (fixed in 2b24ca6). `make fixpoint` cannot see this
-class of bug: it compares tychoc0 against ITSELF byte-for-byte and against
-tychoc only BEHAVIOURALLY, on programs that never trip a trap or read an env
-knob (compiler/fixpoint.sh:29-43). A runtime feature that is merely *absent*
-changes no output on the happy path, so every existing lane stays green.
+WHY AN ORACLE, AND WHY NOT THE OTHER TWO OPTIONS
+------------------------------------------------
+Until 2026-07-29 this lane compared TWO runtimes: tychoc embeds
+runtime/tycho_rt.c verbatim into every file it emits, while the self-hosted
+compiler/tychoc0.ty wrote its OWN runtime out as C string literals, and nothing
+else in the tree compared them. tychoc0 is FROZEN and the breaking loop-syntax
+change of 2026-07-29 means it can no longer parse the corpus, so no lane builds
+it. The second implementation is gone.
 
-WHAT IS COMPARED, AND WHY THAT KEY
-----------------------------------
-The two runtimes are deliberately NOT textually identical -- `HBlock` vs `ABlk`,
-`block_get` vs `blk_get`, `tycho_str_concat` vs `sc`, `stats_dump` vs `st_dump`.
-Comparing identifiers would therefore need a ~150-entry spelling map that says
-nothing about behaviour and rots on every rename.
+  * RETIREMENT was rejected. Unlike the two-runtime *spelling* comparison, the
+    drift class this lane exists to catch is single-implementation: "the runtime
+    DEFINES a knob / trap / stats row, and the emitted program does not actually
+    WIRE IT UP". That is exactly the TYCHO_ARENA_STATS bug (present in
+    runtime/tycho_rt.c, a silent no-op in every binary tychoc0 built, found by
+    hand, fixed in 2b24ca6) and it needs no second compiler to detect.
+  * A PURE PROPERTY CHECK was rejected as the whole answer, because at this
+    arity the strongest available property is nearly vacuous: tychoc embeds
+    runtime/tycho_rt.c verbatim (asserted below as `rt_subset`), so every
+    runtime-defined surface item reaches the emitted C by construction, and
+    deleting a getenv from the runtime moves BOTH sides together. The property
+    is kept -- it is the guard for a future tychoc that emits only the parts of
+    the runtime a program uses -- but on its own it would catch nothing today.
+  * THE EXPECT ORACLE was chosen, in the shape phase 22 gave
+    fuzz/run_typeparity.py. Note what "table" has to mean here: 36 items, each
+    one a user-facing contract, each hand-checkable -- unlike typeparity's 4608
+    rows, an enumerated list at this size is a golden, not a photograph, and it
+    is the same mechanism tests/diag/*.err uses for diagnostic text.
 
-So the key is the part of a runtime a USER can observe, which both sides must
-spell identically because it is the contract:
-
-  1. env knobs   -- the set of literal getenv("...") names a compiled program
-                    reads. This is exactly the TYCHO_ARENA_STATS drift.
-  2. diagnostics -- the set of "tycho: ..." abort/trap texts a compiled program
-                    can print. A missing text == a missing check.
-  3. stats rows  -- the row labels of the TYCHO_ARENA_STATS summary. The env var
-                    can be present on both sides while the report it drives is
-                    half-empty; that is the deeper half of the same drift.
-
-Both sides are measured the SAME way: compile tests/rtparity/surface.ty with
-each compiler and read the emitted C. That is deliberately wider than diffing
-runtime/tycho_rt.c against tychoc0's string literals, because some traps are not
-in the runtime file at all -- `tycho: range step is zero` is emitted inline by
-the loop codegen (src/tychoc.c:10886@_step, compiler/tychoc0.ty:9513) -- and comparing
-generated C against generated C catches those too.
-
-Because both compilers emit per-type helpers and traps ON DEMAND, the probe
-program has to be broad -- see the header of surface.ty.
-
-FAILING CLOSED
---------------
-Two things keep this from decaying into a gate that cannot fail:
-  * a floor count on the reference side. If extraction silently stops working
-    (an --emit-c format change, a moved runtime) both sets go empty, and an
-    empty set trivially matches an empty set. Below the floor, the lane fails.
-  * no stale allowlist entries. An allowlisted difference that has since been
-    closed is reported as a failure demanding its removal, so the allowlist can
-    only ever shrink by hand.
+WHAT IT STILL DOES NOT BUY
+--------------------------
+The EXPECT sets were recorded off the compiler they gate, so a trap that has
+ALWAYS been wrong, or a knob that has ALWAYS been read into nothing, is
+invisible here -- this lane sees a surface item vanish, not a surface item that
+never worked. Testing that a knob has EFFECT is tests/ and tests/conc/'s job.
+That residue is what losing tychoc0 cost and no single-implementation lane
+removes it. See ROADMAP.md and docs/architecture.md.
 
 Usage:  python3 tests/rtparity/run.py        (or `make rtparity`)
-Exit 0 = the two runtimes agree; nonzero = drift (names the missing symbol).
+Exit 0 = the emitted runtime surface matches the oracle; nonzero = drift, naming
+the symbol.
 """
 
 import os
@@ -93,48 +67,97 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROBE = os.path.join(ROOT, "tests", "rtparity", "surface.ty")
+RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 
-# --- Intentional differences (allowlist) ------------------------------------
-# tychoc0 is a SUBSET compiler: it compiles the language tychoc does, but its
-# hand-written runtime skips hardening tycho_rt.c performs. Every entry below is
-# a REAL, known gap -- tychoc traps, tychoc0 does not -- listed one by one and
-# never as a pattern, so that
-#   * a NEW divergence fails this lane instead of hiding under a category, and
-#   * closing one in tychoc0 makes this lane demand the entry be deleted.
-# Nothing here is a spelling difference; the comparison keys above were chosen
-# so that spelling differences cannot reach this list.
-ALLOW_MSG_TYCHOC_ONLY = set()    # every tychoc0 runtime gap on this lane is now closed
-ALLOW_MSG_TYCHOC0_ONLY = set()   # tychoc0 has never had a trap tychoc lacks
-ALLOW_ENV_TYCHOC_ONLY = set()    # the env surface is identical and must stay so
-ALLOW_ENV_TYCHOC0_ONLY = set()
-ALLOW_ROW_TYCHOC_ONLY = set()    # the arena-stats report is identical, row for row
-ALLOW_ROW_TYCHOC0_ONLY = set()
+# --- The oracle ---------------------------------------------------------------
+# Every entry is a surface a compiled Tycho program exposes to its user. Recorded
+# by hand off the emitted C and read one by one; an entry disappearing is a
+# capability disappearing, an entry appearing unlisted is a capability nobody
+# wrote down.
+
+# runtime/tycho_rt.c:342, :567, :848 -- the only literal getenv() names in the
+# runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
+# a user program's own env reads cannot land here.
+EXPECT_ENV = {
+    "TYCHO_ARENA_STATS",
+    "TYCHO_MAX_TASKS",
+    "TYCHO_THREADS",
+}
+
+# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:302-310).
+EXPECT_ROWS = {
+    "arenas",
+    "block reuse",
+    "bump-alloc",
+    "peak live",
+    "OS reserved",
+}
+
+# Traps that live in the runtime itself. Truncated entries (`tycho: chr(%`) are
+# not typos: those diagnostics are a run of adjacent C literals with a PRId64
+# macro between them, so the extractor sees the text up to the first splice.
+EXPECT_MSG_RUNTIME = {
+    r"tycho: [int:float] map exceeds 2^31 entries\n",
+    r"tycho: [int:int] map exceeds 2^31 entries\n",
+    r"tycho: [string:float] map exceeds 2^31 entries\n",
+    r"tycho: [string:int] map exceeds 2^31 entries\n",
+    r"tycho: channel already closed\n",
+    r"tycho: channel capacity must be >= 1\n",
+    r"tycho: chr(%",
+    r"tycho: division by zero\n",
+    r"tycho: division overflow\n",
+    r"tycho: element-wise arithmetic on arrays of different lengths ",
+    r"tycho: float-to-int conversion out of range\n",
+    r"tycho: index %",
+    r"tycho: modulo by zero\n",
+    r"tycho: negative shift count\n",
+    r"tycho: out of memory\n",
+    r"tycho: pop from an empty array\n",
+    r"tycho: reserve capacity %",
+    r"tycho: send on a closed channel\n",
+    r"tycho: spawn failed (cannot create thread)\n",
+    r"tycho: split with an empty separator\n",
+    r"tycho: string index %",
+    r"tycho: string length %",
+    r"tycho: task already waited\n",
+    r"tycho: too many concurrent tasks (max %",
+}
+
+# Traps that are NOT in the runtime file: src/tychoc.c writes them inline, ON
+# DEMAND, so each one is present only because surface.ty contains the construct
+# that triggers it. These are the entries the lane earns its keep on -- a codegen
+# arm that stops emitting its guard reddens here and nowhere else.
+EXPECT_MSG_CODEGEN = {
+    r"tycho: non-exhaustive match\n",     # src/tychoc.c:10021, :10734
+    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:11743 (the [4] is surface.ty's Inline.slots)
+    r"tycho: range step is zero\n",       # src/tychoc.c:10886
+    r"tycho: slice [%",                   # src/tychoc.c:9647, :9666
+}
+EXPECT_MSG = EXPECT_MSG_RUNTIME | EXPECT_MSG_CODEGEN
 
 # --- Extraction --------------------------------------------------------------
-# Literal getenv("NAME"). The wrapper both runtimes expose to Tycho code takes a
-# runtime string (getenv(name)), so a user program's own env reads never land
-# here -- only the knobs the runtime itself honours.
 RE_ENV = re.compile(r'getenv\("([A-Za-z_][A-Za-z0-9_]*)"\)')
-# Abort/trap texts. Every runtime diagnostic is prefixed "tycho: " by convention.
 RE_MSG = re.compile(r'"(tycho: [^"]*)"')
-# Arena-stats rows: `  <label>:` at the start of a report line. tychoc's copy is
-# a run of adjacent C literals (label after an opening quote), tychoc0's is one
-# long literal (label after an embedded \n) -- match either lead-in.
+# Arena-stats rows: `  <label>:` at the start of a report line, after an opening
+# quote or an embedded \n.
 RE_ROW = re.compile(r'(?:\\n|")  ([A-Za-z][A-Za-z0-9 -]{2,}):')
 
 # Anti-vacuity floors. If extraction ever stops working (an --emit-c format
-# change, a moved runtime) both sets go empty and empty==empty passes happily.
-# The floor is on the REFERENCE side only -- tychoc embeds tycho_rt.c whole, so
-# its counts move only when the runtime itself does. Holding tychoc0 to a floor
-# too would make every genuine one-symbol gap ALSO print "extraction is broken",
-# which is exactly the wrong diagnosis. tychoc0 is instead required to be
-# non-empty: nothing extracted at all can only mean the probe never ran.
+# change, a moved runtime) every set goes empty, and the missing/extra diff would
+# then report thirty-six separate "missing" lines rather than the one true fact:
+# the extractor is broken. The floor says that instead.
 FLOOR = {"env knob": 3, "diagnostic": 25, "arena-stats row": 5}
+
+SURFACES = (
+    ("env knob", RE_ENV, EXPECT_ENV),
+    ("diagnostic", RE_MSG, EXPECT_MSG),
+    ("arena-stats row", RE_ROW, EXPECT_ROWS),
+)
 
 
 def err(msg):
-    """Report to stderr, but keep it ordered against the stdout 'ok' lines --
-    two independently buffered streams otherwise print the verdict before the
+    """Report to stderr, ordered against the stdout 'ok' lines -- two
+    independently buffered streams otherwise print the verdict before the
     findings it summarises."""
     sys.stdout.flush()
     print(msg, file=sys.stderr, flush=True)
@@ -146,91 +169,89 @@ def die(msg):
 
 
 def emitted_c(tmp):
-    """Compile the probe with both compilers; return (tychoc C, tychoc0 C)."""
-    tychoc = os.path.join(ROOT, "tychoc")
+    """Compile the probe with tychoc; return the emitted C."""
+    tychoc = os.environ.get("TYCHOC", os.path.join(ROOT, "tychoc"))
     if not os.access(tychoc, os.X_OK):
-        die("no ./tychoc -- run 'make' first")
+        die("no %s -- run 'make' first" % tychoc)
 
     out_c = os.path.join(tmp, "surface_tychoc")
     r = subprocess.run([tychoc, PROBE, "--emit-c", "-o", out_c],
                        capture_output=True, text=True)
     if r.returncode != 0:
         die("tychoc could not compile the probe:\n" + r.stdout + r.stderr)
-
-    # The second half of this function built a tychoc0 from compiler/tychoc0.ty and
-    # fed it the same probe, so the two emitted C files could be compared. Removed
-    # 2026-07-29: no lane builds tychoc0. main() returns before reaching here.
-    die("the tychoc0 side of this lane was removed on 2026-07-29")
-
     with open(out_c + ".c", encoding="utf-8", errors="replace") as f:
-        return f.read(), r.stdout
+        return f.read()
 
 
-def compare(kind, pat, c_src, h0_src, allow_c, allow_h0):
-    """Diff one surface between the two emitted files. Returns a failure count."""
-    c = set(pat.findall(c_src))
-    h0 = set(pat.findall(h0_src))
+def check(kind, pat, expect, c_src):
+    """Compare one surface of the emitted C against the oracle. Returns fails."""
+    got = set(pat.findall(c_src))
+
+    if len(got) < FLOOR[kind]:
+        err("rtparity: FAIL - only %d %s(s) extracted from the emitted C "
+            "(expected >= %d).\n"
+            "          That is broken extraction, not drift -- read the regex "
+            "before the oracle." % (len(got), kind, FLOOR[kind]))
+        return 1
+
     fails = 0
+    for sym in sorted(expect - got):
+        err('rtparity: FAIL - %s "%s" is in the oracle but NOT emitted. A runtime '
+            'capability\n          disappeared, or the construct in '
+            'tests/rtparity/surface.ty that pulls it in did.' % (kind, sym))
+        fails += 1
+    for sym in sorted(got - expect):
+        err('rtparity: FAIL - %s "%s" is emitted but NOT in the oracle. Add it to '
+            'tests/rtparity/run.py\n          with a reason -- new user-visible '
+            'surface is a deliberate act, not a diff.' % (kind, sym))
+        fails += 1
 
-    floor = FLOOR[kind]
-    for who, s, lo in (("tychoc", c, floor), ("tychoc0", h0, 1)):
-        if len(s) < lo:
-            err("rtparity: FAIL - only %d %s(s) extracted from %s's output (expected >= %d).\n"
-                "          That is broken extraction, not drift -- an empty set would "
-                "match vacuously." % (len(s), kind, who, lo))
-            fails += 1
-
-    for missing_from, present_in, diff, allow in (
-            ("tychoc0", "tychoc", c - h0, allow_c),
-            ("tychoc", "tychoc0", h0 - c, allow_h0)):
-        for sym in sorted(diff - allow):
-            err('rtparity: FAIL - %s "%s" is emitted by %s but MISSING from %s.'
-                % (kind, sym, present_in, missing_from))
-            fails += 1
-        for stale in sorted(allow - diff):
-            err('rtparity: FAIL - stale allowlist entry: %s "%s" is no longer a '
-                'difference. Delete it from tests/rtparity/run.py.' % (kind, stale))
-            fails += 1
-
-    shared = len(c & h0)
-    allowed = len((c - h0) & allow_c) + len((h0 - c) & allow_h0)
     if fails == 0:
-        print("rtparity: %-16s %2d shared, %d allowlisted difference(s) (ok)"
-              % (kind + "s", shared, allowed), flush=True)
+        print("rtparity: %-16s %2d/%2d as recorded (ok)"
+              % (kind + "s", len(got), len(expect)), flush=True)
+    return fails
+
+
+def rt_subset(c_src):
+    """The property leg, needing no recorded list: everything the runtime file
+    DEFINES must reach the emitted program. Trivially true while tychoc embeds
+    runtime/tycho_rt.c verbatim -- and the only thing that would notice a future
+    tychoc that emits the runtime piecewise."""
+    with open(RUNTIME, encoding="utf-8", errors="replace") as f:
+        rt = f.read()
+    fails = 0
+    for kind, pat, _ in SURFACES:
+        missing = sorted(set(pat.findall(rt)) - set(pat.findall(c_src)))
+        for sym in missing:
+            err('rtparity: FAIL - %s "%s" is defined in runtime/tycho_rt.c but does '
+                'not reach\n          the emitted C. The runtime is no longer '
+                'embedded whole.' % (kind, sym))
+            fails += 1
+    if fails == 0:
+        print("rtparity: runtime file  every defined surface reaches the emitted C (ok)",
+              flush=True)
     return fails
 
 
 def main():
-    print("rtparity: RETIRED 2026-07-29 -- this lane no longer runs.\n"
-          "          It compared tychoc's runtime against the one the frozen tychoc0\n"
-          "          emitted; no lane builds tychoc0 any more, so there is no second\n"
-          "          runtime to compare against. See this file's docstring for what\n"
-          "          is now uncaught, plus ROADMAP.md and docs/architecture.md.",
-          flush=True)
-    return 0
-
     tmp = tempfile.mkdtemp(prefix="rtparity.")
     try:
-        c_src, h0_src = emitted_c(tmp)
+        c_src = emitted_c(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    fails = 0
-    fails += compare("env knob", RE_ENV, c_src, h0_src,
-                     ALLOW_ENV_TYCHOC_ONLY, ALLOW_ENV_TYCHOC0_ONLY)
-    fails += compare("diagnostic", RE_MSG, c_src, h0_src,
-                     ALLOW_MSG_TYCHOC_ONLY, ALLOW_MSG_TYCHOC0_ONLY)
-    fails += compare("arena-stats row", RE_ROW, c_src, h0_src,
-                     ALLOW_ROW_TYCHOC_ONLY, ALLOW_ROW_TYCHOC0_ONLY)
+    fails = sum(check(kind, pat, expect, c_src) for kind, pat, expect in SURFACES)
+    fails += rt_subset(c_src)
 
     if fails:
-        err("\nrtparity: FAIL - %d runtime difference(s). runtime/tycho_rt.c and the "
-            "runtime\n          compiler/tychoc0.ty emits have drifted; port the change "
-            "to the other\n          side, or -- if the difference is intended -- add it "
-            "to the allowlist in\n          tests/rtparity/run.py WITH a reason." % fails)
+        err("\nrtparity: FAIL - %d runtime-surface difference(s) against the oracle "
+            "in\n          tests/rtparity/run.py. Either the emitted runtime lost "
+            "something, or\n          the oracle is out of date -- decide which, and "
+            "say so where you fix it." % fails)
         return 1
-    print("rtparity: the two runtimes agree on env knobs, diagnostics and arena stats",
-          flush=True)
+    print("rtparity: emitted runtime surface matches the oracle "
+          "(%d env knobs, %d diagnostics, %d stats rows)"
+          % (len(EXPECT_ENV), len(EXPECT_MSG), len(EXPECT_ROWS)), flush=True)
     return 0
 
 

@@ -1,6 +1,6 @@
-# corelib test: exercises core:sha256; the C compiler and tychoc0 must agree, and
-# the output is locked to corelib/test/sha256.out (corelib/run.sh).
-# Checked against published FIPS 180-4 / NIST vectors.
+# corelib test: exercises core:sha256; the output is locked to corelib/test/sha256.out
+# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
+# 2026-07-29. Checked against published FIPS 180-4 / NIST vectors.
 package main
 import "core:sha256"
 
