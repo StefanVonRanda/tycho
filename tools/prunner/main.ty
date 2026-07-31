@@ -17,12 +17,12 @@
 #     ./build/prunner --stats         # add the one-line loss/concurrency summary
 #
 # ---------------------------------------------------------------------------
-# THIS IS THE FAST LANE, NOT THE AUTHORITY. `make test` still runs
-# `tests/run.sh`, and phase 4 of `plan.md` decided that deliberately rather than
-# for lack of agreement: this program is compiled BY THE COMPILER IT TESTS, so a
-# tychoc regression in string comparison, in `os.run`'s exit code, or in the
-# `parallel for` fan-out lands inside the judge and can turn every verdict green
-# at once. `tests/run.sh` scores with `cmp`, `grep` and `test` -- programs no
+# THIS IS THE FAST LANE, NOT THE AUTHORITY. `make test` still runs `tests/run.sh`,
+# and phase 4 of `docs/internals/plan-prunner-DONE.md` decided that deliberately
+# rather than for lack of agreement: this program is compiled BY THE COMPILER IT
+# TESTS, so a tychoc regression in string comparison, in `os.run`'s exit code, or
+# in the `parallel for` fan-out lands inside the judge and can turn every verdict
+# green at once. `tests/run.sh` scores with `cmp`, `grep` and `test` -- programs no
 # change in this repo can break. Reach for this lane while iterating; let
 # `make test` be what says the tree is green, and diff the two when they
 # disagree (`--mode=seq` re-runs the same jobs one at a time in this program,

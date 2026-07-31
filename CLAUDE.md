@@ -196,9 +196,14 @@ number and `scripts/check_citations.py` had nothing to check.
 line number involved: outside the live plan and the frozen
 `docs/internals/plan-*-DONE.md` set, carrying one is a hard failure naming the
 archived document you should write instead. It matches optional backticks,
-singular and plural, any case, and a reference that wraps onto a continuation
-line — four separate surveys of this class each under-counted it by missing one
-of those. `compiler/tychoc0.ty` is exempt because it is frozen and unfixable.
+singular and plural, any case, a reference that wraps onto a continuation
+line, and **both word orders** — the file first, or the phase and its number
+first with the file after them. Five separate surveys of this class each
+under-counted it by missing one of those; the reversed order was the fifth, and
+it was found because the gate's own docstring contained one and passed. What is
+still NOT matched, and is filed rather than shipped: a possessive joining the
+two ("the plan's phase N"). `compiler/tychoc0.ty` is exempt because it is frozen
+and unfixable.
 
 **The rule, in two halves:**
 

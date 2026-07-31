@@ -9,9 +9,9 @@
 #     for i := 0; ; i += 1:     the condition clause is required -- write `for:` for an infinite loop
 #     for i := 0; i < 3; :      the post clause is required -- write `for cond:` for a loop that advances in its body
 #
-# This fixture carries the first. (The reject lane asserts a loud refusal, not
-# the message text -- the message is asserted by this comment and by the
-# evidence block under phase 4 in plan.md.)
+# This fixture carries the first. (The reject lane asserts a loud refusal,
+# not the message text -- the message is asserted by this comment and by
+# the evidence under phase 4 of docs/internals/plan-loops-cleanup-DONE.md.)
 fn main():
     i := 0
     for ; i < 3; i += 1:

@@ -530,7 +530,7 @@ sweeping the reachable bare refs, and the three drift phases 21, 23 and 25.
   Corrected here as a side effect of rewriting the paragraph. Filed as phase 32
   with the enumeration below, because the population is not one line.
 
-- [ ] **Phase 32 — the plan-ref gate matches one word order, and 11 live refs use
+- [x] **Phase 32 — the plan-ref gate matches one word order, and 11 live refs use
       the other.** Phase 1 shipped a predicate for `plan.md phase N` in three
       spellings (plain, backticked, plural) and case-insensitively. It does not
       match the **reversed** form `phase N of plan.md`, which is equally stale
@@ -559,3 +559,205 @@ sweeping the reachable bare refs, and the three drift phases 21, 23 and 25.
   - Cost: an hour, most of it attribution rather than editing. Extend the
     predicate first, then let it name the population, then repair — the order
     phase 1 used.
+
+### Phase 32 evidence — 2026-07-31
+
+#### Part 1 — the re-derived population is 12, and the phase entry's own list was 12
+
+The entry's title says 11; the refs it enumerates are 12. Re-derived
+independently before the predicate was written, over `git ls-files` minus
+`plan.md`, `compiler/tychoc0.ty` and the frozen `docs/internals/plan-*-DONE.md`
+set, matching whole-file text so a wrapped ref could not hide:
+
+```
+$ python3 - <<'PY'   # SEP = r'[\s>#*/-]*'
+  re.compile(r'\bphases?\s+\d+' + SEP + r'(?:of|in|from|within)' + SEP +
+             r'`?plan\.md`?', re.I)
+PY
+FRICTION.md:360  'Phase 7 of `plan.md`'          tests/bounds_elision.ty:11
+FRICTION.md:554  'Phase 6 of `plan.md`'          tests/range_negative_step.ty:6
+FRICTION.md:555  'Phase 7 of `plan.md`'          tests/reject/for3_empty_clause.ty:14
+FRICTION.md:556  'Phase 7 of `plan.md`'          bench/guard.sh:45
+server/README.md:45  'phase 15 of `plan.md`'     tools/prunner/main.ty:21
+src/tychoc.c:11379   'Phase 4 in plan.md'        docs/internals/int64-migration-audit.md:3
+```
+
+**Exactly the 12 the entry lists — no more, no fewer.** Four candidate patterns
+were measured as deltas over that baseline so the choice of predicate was made
+on counts rather than taste, and the three the entry asked about are all **zero**
+in this tree: "of the plan" / "of the live plan" with no filename (0), a phase
+named without the word by bare number, `#`, "step" or "item" (0), and a
+punctuation-tolerant separator (0 new). Requiring a connecting word and making
+it optional both found **the same 12**, which is why the shipped pattern takes
+the looser form for free.
+
+**One spelling the survey did find and this phase did NOT ship:** a possessive
+joining the two ("<the live plan>'s phase N"). It is a third spelling, not the
+second word order, and it is filed as phase 33 below with its measured
+population rather than absorbed here.
+
+#### Part 2 — attribution: 12/12, and two that `git blame` alone gets WRONG
+
+Phase 1's method, reused: the commit that *adds* `plan-X-DONE.md` is the instant
+X stopped being live, so the twelve windows tile with no gap; `git blame -C -M`
+on the citing line lands in exactly one; the cited number must be a phase the
+mapped document declares. **12/12 mapped to a window and 12/12 cited a declared
+phase.**
+
+Corroboration was then run against the declared phase's *title and evidence*,
+not just its existence — and this is where two refs came apart:
+
+| ref | blame window | corroborated attribution |
+|---|---|---|
+| `FRICTION.md:360` | loops-cleanup (phase 7 = "delete the counting form and the `range` builtin") | **friction phase 7** — the libpng/`corelib/test/image` item, verbatim in friction phase 7's own evidence |
+| `FRICTION.md:555` | signals (line last touched by batch C, the sweep that rewrote *other* refs on it) | **friction phase 7** — the `frontparity` reach item, in friction phase 7's evidence |
+
+`git blame` gives the last commit to touch a LINE, not the commit that wrote the
+CITATION. For both of these a later, unrelated edit re-dated the line, and the
+window it produced offers a phase 7 that is demonstrably about different work.
+Content decided; the window was overruled with the reason written down. **This is
+the "confidently wrong plan name is worse than an ambiguous one" hazard, met in
+practice** — a blame-only pass would have shipped two wrong document names.
+
+The other ten corroborated on the first pass, blame subject agreeing with the
+cited phase's title:
+
+```
+tests/reject/for3_empty_clause.ty:14  -> plan-loops-cleanup phase 4  "three-clause `for` and bare `for:`"
+tests/bounds_elision.ty:11            -> plan-loops-cleanup phase 6  "rewrite all 549 `range()` sites"
+tests/range_negative_step.ty:6        -> plan-loops-cleanup phase 6   (same rewrite, descending sites)
+bench/guard.sh:45                     -> plan-loops-cleanup phase 6   (the 223 sites that lost elision)
+FRICTION.md:554                       -> plan-friction phase 6       "`core:cli` and `args()`"
+FRICTION.md:556                       -> plan-friction phase 7       "`bytes` gets operators"
+src/tychoc.c:11379                    -> plan-front-door phase 4     "emitted C is warning-clean"
+docs/internals/int64-migration-audit.md:3 -> plan-int64 phase 1      "audit every `long` site"
+tools/prunner/main.ty:21              -> plan-prunner phase 4        "does it replace `tests/run.sh`?"
+server/README.md:45                   -> plan-signals phase 15        (filed by its phase 3, same subject)
+```
+
+**Nothing was left unattributed.** Had one resisted, it would have been left with
+the reason stated rather than given a likely-looking plan name.
+
+#### Part 3 — the predicate, and the line-count discipline the repair needed
+
+`PLANREF_REV` in `scripts/check_citations.py` mirrors `PLANREF`: same optional
+backticks, same `re.I`, same separator class (so it survives the same hard wrap
+onto a comment-led continuation line), plus the two things the direction forces —
+an OPTIONAL connecting word, and a number list, because in the plural spelling
+the number adjacent to the filename is not the one the word introduces. Matches
+from the two orders are merged by position and an overlapping one dropped, so a
+sentence satisfying both is one failure, not two.
+
+`scripts/check_citations.py` stays subject to its own rule: the new docstring
+section describes the reversed shape without spelling it, and the failure message
+was already order-neutral.
+
+**The gate named the population before any ref was touched** — the ordering phase
+1 proved: 12 STALE lines, byte-identical to the re-derivation above, plus **3
+collateral failures the phase caused itself.** Inserting the docstring section
+moved `ARCHIVED` from `scripts/check_citations.py:435` to `:474`, breaking three
+anchored refs (`docs/internals/plan-loops-cleanup-DONE.md:2784` and `:3639`,
+`scripts/docs_fences.sh:21`). Repointed 435 -> 474. The two in a frozen archive
+were repaired deliberately: an ANCHORED ref is not exempt there, which is the
+"mostly" phase 31 restored to the header.
+
+**Every repair is a comment, and every file kept its exact line count.** The
+second half is load-bearing and was enforced mechanically: `src/tychoc.c` and the
+`tests/` fixtures are cited by line from elsewhere in the tree, so a +1 shift
+would have traded this repair for a fresh crop of stale citations. Each block was
+re-flowed to the same number of lines at the narrowest width that fits, with the
+write asserting the file's total line count was unchanged (`src/tychoc.c` 12775,
+`tests/bounds_elision.ty` 54, `tests/range_negative_step.ty` 23,
+`tests/reject/for3_empty_clause.ty` 19, `tools/prunner/main.ty` 539,
+`bench/guard.sh` 75, `FRICTION.md` 790,
+`docs/internals/int64-migration-audit.md` 281).
+
+**No line of code was touched**, checked rather than asserted:
+
+```
+$ git diff -U0 -- src/tychoc.c bench/guard.sh tests/ tools/prunner/main.ty \
+  | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-]\s*(#|\*|/\*)'
+(no output -- every changed line is a comment)
+```
+
+`CLAUDE.md`'s description of the gate's coverage was one clause out of date the
+moment the predicate widened, so it now says "both word orders", names the
+possessive as the known gap, and corrects "four surveys" to five.
+
+#### Planted-violation proof — both directions, BOTH ORDERS
+
+12 spellings appended to `server/README.md`, a file outside the allowed set.
+5 forward (phase 1's, proving no regression) and 7 reversed:
+
+```
+$ python3 scripts/check_citations.py
+STALE  server/README.md:293  'plan.md phase 3'
+STALE  server/README.md:294  '`plan.md` phase 3'
+STALE  server/README.md:295  '`plan.md` phases 1'
+STALE  server/README.md:296  'plan.md Phase 3'
+STALE  server/README.md:297  '`plan.md`\n   phase 3'
+STALE  server/README.md:301  'phase 3 of plan.md'
+STALE  server/README.md:302  'phase 3 of `plan.md`'
+STALE  server/README.md:303  'Phase 3 in plan.md'
+STALE  server/README.md:304  'phases 1 and 2 of plan.md'
+STALE  server/README.md:305  'phase 3 within `plan.md`'
+STALE  server/README.md:306  'phase 3 of\n   plan.md'
+STALE  server/README.md:308  'phase 3 plan.md'
+citation check: FAILED (12 stale citation(s) above)
+EXIT=1
+```
+
+All 12 caught, each naming the archived form to write instead; nothing else
+reddened, so the merge does not double-report. Plant removed:
+
+```
+$ python3 scripts/check_citations.py
+citation check: ok (201 anchored contain the token they name and each names one
+line, 2802 bare in bounds (1800 frozen record, 17 live-plan evidence, 196 exempt
+`> Provenance:` range, 789 reachable prose), 273 source->doc citations resolve,
+247 source->source in bounds, 16 source->source anchored)
+EXIT=0
+
+$ sh scripts/check_links.sh
+link check: ok (137 markdown files, no dead relative links)
+EXIT=0
+```
+
+`source->doc` rose 248 -> 273: the repairs turned 12 unchecked plan references
+into citations the second direction now checks for existence, which is the
+secondary win — the repaired form is not merely correct, it is *gated*.
+
+- [ ] **Phase 33 — the possessive spelling, the third one the gate cannot see.**
+      Phase 32 closed the second word order and measured, but deliberately did
+      not ship, a third spelling: a possessive joining the filename to the phase
+      ("<the live plan>'s phase N"). It is not a word order, its refs need their
+      own attribution, and one of its shapes names no file at all. Measured at
+      phase 32's tree, outside the exempt files — **12 refs in four shapes**:
+
+      possessive naming the file (7)
+        corelib/signal/signal.ty:66, corelib/signal/signal_shim.c:34,
+        corelib/test/signal/main.ty:23, tools/prunner/main.ty:108,
+        tests/reject/dotlt_sequential.ty:5, FRICTION.md:334, :462
+      possessive naming NO file — "the plan's phase N" (3)
+        FRICTION.md:197, :675, :684
+      reversed with words in between (1)
+        tests/bounds_noelide.ty:9  ("phase 27's evidence in <the live plan>")
+      the filename without its extension (1)
+        docs/internals/frontend-restriction-audit-2026-07-25.md:265
+
+  - **The 3 that name no file need a decision this phase had no measurement to
+    make.** "The plan's phase N" may legitimately mean an archived plan the
+    surrounding sentence already named, so a pattern for it keys on a common
+    English word rather than on a path, and could redden prose that is correct.
+    Count the false-positive rate before shipping that half; the other 9 are the
+    same defect as phase 32's and are unambiguous.
+  - Note `FRICTION.md:334` and `:462` put words between the two parts
+    ("<the live plan>'s carried-forward phase 7"), so the separator class both
+    current patterns use cannot reach them — this is a pattern *shape* change,
+    not another alternation.
+  - Same order as phases 1 and 32: extend the predicate, let the gate name the
+    population, then attribute with `git blame -C -M` **corroborated against the
+    mapped phase's own evidence** — phase 32 found 2 of 12 where blame alone
+    named the wrong document, because a later commit had re-dated the line.
+  - Verify: `python3 scripts/check_citations.py`, the planted-violation proof
+    both directions, `sh scripts/check_links.sh`.
