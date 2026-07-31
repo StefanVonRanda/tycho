@@ -77,6 +77,18 @@ recorded observation, so no rule below asks for that.  An ANCHORED ref is not
 exempt and never was: it promised a token sits on that line, and a promise that
 has stopped holding misinforms rather than merely dates.  Behaviour unchanged.
 
+THIS COLLIDES WITH THE RECORD-LINE RULE IN `CLAUDE.md`, AND THE COLLISION IS NOW
+SETTLED THERE (phase 39).  That rule says every number in a before/after row or a
+repair log is data and must be left alone; this one says an anchor in a frozen
+file is still checked.  A record row carrying an anchored ref is both.  The
+resolution: a record protects its NUMBERS, which quote a past observation, and
+not its ANCHORS, which claim something about the tree you are reading now.  So
+the repair is always DROP THE ANCHOR AND KEEP THE NUMBER -- never repoint the
+number to make an anchor match, which is the falsification the record rule
+exists to prevent.  No code changed for this: the gate already behaved that way,
+and it was the prose that disagreed with itself.  41 anchored refs sit on record
+lines tree-wide and none fails today.
+
 WHAT THIS DOES **NOT** CATCH -- stated plainly so the coverage is not read wider
 than it is:
   * A BARE citation that drifts onto a different-but-existing line.  That is the
@@ -279,6 +291,61 @@ rule in this file refuses to touch.  It loses no coverage: 751 frozen refs now
 land in that skip, 524 of which were in it already, and all 227 of the rest name
 paths that were outside SRC_PREFIX until this same change.
 
+A HOST AND A PORT IS NOT A PATH AND A LINE (added 2026-07-31, phase 35)
+-----------------------------------------------------------------------
+The widening above turned up a span that was never a citation and that this
+grammar could not tell from one: a TCP port written in backticks after a colon.
+CITE's path group wants a dot and a trailing component, and `127.0.0.1:18099`
+gives it both, so the gate reads it as line 18099 of a file named `127.0.0.1`.
+
+THE DISCRIMINATOR IS THE LEFT-HAND SIDE, and the two obvious alternatives were
+counted first and rejected with their numbers:
+
+  * BY DIGIT COUNT -- "four or five digits after a colon is a port".  1799
+    citations in this tree resolve, in bounds, to a line number of four or five
+    digits: 1333 into `src/tychoc.c`, 415 into `compiler/tychoc0.ty`, 38 into
+    `runtime/tycho_rt.c`.  A four-digit line is utterly ordinary in a 13k-line
+    compiler, so this rule would stop checking 1799 real citations to catch 16
+    fake ones.  Rejected outright.
+  * BY THE SURROUNDING PROSE -- "digits after a colon in port-shaped prose".
+    Measured over the tree with a keyword scan (port, bind, listen, socket,
+    host, address, curl, http): 33 hits, of which 32 are genuine compiler
+    citations sitting on lines that merely contain one of those words -- a
+    paragraph about `net.listen` cites `src/tychoc.c` like any other.  A
+    heuristic with a 97% false-positive rate is not a grammar.  Rejected.
+
+WHAT SHIPS: a path whose every dot-separated component is ALL DIGITS is a host,
+not a file.  That is checkable without reading a word of the prose, it is exact
+rather than probabilistic, and it cannot collide with a real path, because the
+component after the last dot is the extension and NO TRACKED FILE IN THIS TREE
+HAS AN ALL-DIGIT ONE (verified over `git ls-files`: zero).  16 spans match, all
+of them the same test address, 1 in `FRICTION.md` and 15 in frozen archives.
+
+THE FIX IS THE `cur` ASSIGNMENT, NOT THE SKIP, and this is the part worth
+reading.  The span was ALREADY ignored as a citation -- `127.0.0.1` starts with
+no SRC_PREFIX entry -- so nothing was being checked wrongly.  What it did was
+OVERWRITE the paragraph's inherited path, so the next genuine bare `:N` on that
+line inherited a hostname and fell into the fail-open skip: no file, no bounds,
+no anchor.  Exactly one ref is in that state today (`FRICTION.md`'s reference to
+`block_ends_in_return`, which means `src/tychoc.c` and inherited `127.0.0.1`
+instead), and it is checked from this commit on.  So the port was not a false
+citation the gate scored -- it was a false citation that BLINDED THE GATE TO A
+TRUE ONE, which is the same shape as every other bug in this file's history.
+
+MAKING IT A FAILURE WAS AVAILABLE AND WAS NOT TAKEN.  15 of the 16 are inside
+`docs/internals/plan-*-DONE.md`, where a failure demands an edit to a frozen
+record -- what the ARCHIVED rule forbids everywhere else here.  A span that is
+not a citation should be not-a-citation, silently, the way an ordinary English
+sentence is.
+
+THE RESIDUAL, STATED RATHER THAN PAPERED OVER.  A BARE `:8080` with no host in
+front of it is still indistinguishable from a line number, because it IS a line
+number as far as any grammar can tell; the only thing that separates them is
+prose, which the count above disqualified.  Such a ref is dangerous only when
+its paragraph names a file long enough for the port to land in bounds, and the
+tree has ZERO of those today -- the one that existed was reworded when the
+widening reddened it.  It is filed as a known limit, not fixed by guessing.
+
 THE SECOND DIRECTION: SOURCE -> DOC (added 2026-07-26)
 -----------------------------------------------------
 Everything above walks Markdown and checks what it cites in the source.  The
@@ -433,23 +500,27 @@ THE BARE-REFERENCE POLICY, AND WHY IT IS NOT "ANCHOR EVERYTHING"
 ----------------------------------------------------------------
 (added 2026-07-31.)  The `ok` line reports thousands of bare refs against a few
 hundred anchored ones, and that ratio has twice been read as a backlog.  It is
-not one, and the split below is printed on every green run so it stops being
-read as one.  Counted on the tree at dd3c019: 2802 bare Markdown refs, of which
+not one, and the split is printed on every green run so it stops being read as
+one.  The bare total divides into four buckets, in this order:
 
-    1800  are in the frozen `docs/internals/plan-*-DONE.md` set, where EVERY
-          rule in this file already refuses to demand an edit;
-      17  are in the live plan's own evidence blocks, which are a record of
-          what a ref said at a past moment, not a claim about today;
-     196  are `> Provenance:` RANGES, exempt by the settled rule above -- and
-          the count that matters about that context is the other one: ZERO of
-          its single-line refs are bare, so the one construct where anchoring
-          is mandatory is already at 100%.  There is no second construct in
-          the tree that marks a ref as load-bearing, so "require anchors in
-          named contexts" has nothing left to name;
-     789  are reachable narrative prose.
+    the frozen `docs/internals/plan-*-DONE.md` set, where EVERY rule in this
+          file already refuses to demand an edit -- by far the largest share;
+    the live plan's own evidence blocks, which are a record of what a ref said
+          at a past moment, not a claim about today;
+    `> Provenance:` RANGES, exempt by the settled rule above -- and the count
+          that matters about that context is the other one: ZERO of its
+          single-line refs are bare, so the one construct where anchoring is
+          mandatory is already at 100%.  There is no second construct in the
+          tree that marks a ref as load-bearing, so "require anchors in named
+          contexts" has nothing left to name;
+    reachable narrative prose -- the only bucket a policy could act on.
 
-Requiring anchors on those 789 is the hand sweep this repo has now declined
-three times, with measurements each time (FRICTION.md: 11 of 15 spot-checked
+THE FOUR TOTALS ARE NOT WRITTEN HERE ON PURPOSE; `--stats` prints them, and see
+"A FIGURE THIS GATE PRINTS DOES NOT BELONG IN PROSE" below for why a number that
+a command produces must not also be typed into a paragraph.
+
+Requiring anchors on the reachable bucket is the hand sweep this repo has now
+declined three times, with measurements each time (FRICTION.md: 11 of 15 spot-checked
 refs drifting again four days after a repair pass, one reference repointed
 four times).  So: BARE REFS STAY BARE.  What ships instead is a rule that makes
 each EXISTING anchor worth more, plus a published number for how much an anchor
@@ -486,21 +557,56 @@ ANCHOR STRENGTH IS MEASURED, NOT ENFORCED (added 2026-07-31)
 ------------------------------------------------------------
 A token unique in its range can still be common in the FILE, and then a drift
 just re-matches somewhere else -- the failure `--stats` now quantifies instead
-of assuming away.  Of the non-frozen Markdown anchors, 36 name a token that
-recurs within +-25 lines of the cited range (the observed drift scale: an
-earlier plan found anchored ranges 9 and 82 lines off), and 82 name one that
-recurs somewhere in the file; source->source is 8 and 10 of 16.  Both numbers
-are printed, because the window is a choice and hiding the wider figure behind
-it would be the same overstatement this section exists to fix.
+of assuming away.  For the non-frozen Markdown anchors it prints two figures: how
+many name a token recurring within +-WEAK_WINDOW lines of the cited range (the
+observed drift scale -- an earlier plan found anchored ranges 9 and 82 lines
+off), and how many name one recurring anywhere in the file.  The source->source
+pair is printed beside them.  BOTH are printed, because the window is a choice
+and hiding the wider figure behind it would be the same overstatement this
+section exists to fix.  The values are not repeated here; see the next section.
 
-WHY NOT ENFORCE IT.  17 of the 97 mandatory single-line `> Provenance:` anchors
-are weak in that window (20 counting the anchored ranges beside them) -- four
-separate refs anchor `@parse_value_ctrl` to four different lines of the same
-function, each matching all four.  Enforcing would demand 17 invented
-replacement tokens chosen by whoever cleared the red, which is how false anchors
-get manufactured.  A sixth of the strongest citations in this tree being weaker
-than they look is a fact worth knowing and a bad thing to fix under gate
-pressure.
+WHY NOT ENFORCE IT.  A substantial share of the MANDATORY single-line
+`> Provenance:` anchors are weak in that window -- `--stats` breaks that subset
+out separately for exactly this reason -- and four separate refs anchor
+`@parse_value_ctrl` to four different lines of the same function, each matching
+all four.  Enforcing would demand an invented replacement token for every one of
+them, chosen by whoever happened to be clearing the red, which is how false
+anchors get manufactured.  The strongest citations in this tree being weaker than
+they look is a fact worth knowing and a bad thing to fix under gate pressure.
+
+A FIGURE THIS GATE PRINTS DOES NOT BELONG IN PROSE (added 2026-07-31, phase 38)
+-------------------------------------------------------------------------------
+Every count `--stats` emits was, until this change, ALSO typed into a paragraph
+-- here and in `CLAUDE.md` -- where nothing checks it and every phase that adds
+a citation invalidates it.  That is the same defect as a stale `path:N`, in the
+one file whose whole purpose is to catch stale numbers, and it had already bitten
+four times over the bare-ref corpus count.
+
+THE EVIDENCE IS THIS SECTION'S OWN HISTORY.  The weak-anchor pair read 33 / 77
+when it was written, 36 / 82 after the next phase measured it, and 39 / 86 three
+commits later -- the figure went stale INSIDE ONE DAY, in the commit whose
+subject was updating it, because the plan's own evidence blocks add anchors.
+`CLAUDE.md` meanwhile still carried 32 / 76, which was already wrong when it was
+typed.  The source->source pair here read "8 and 10 of 16" against a gate
+printing 7 and 9 of 15, and was wrong before any of that started.  Three
+documents, three different answers, one command that knew.
+
+THE RULE, AND ITS EXACT BOUNDARY:
+
+  * A figure `--stats` PRINTS is never written into prose.  Name the command and
+    what the number means; let the reader run it.  It cannot go stale, and a
+    disagreement between two documents becomes impossible rather than merely
+    unlikely.
+  * A ONE-TIME MEASUREMENT THAT DECIDED A RULE STAYS, and stays with its date or
+    its commit -- "45 refs versus 16, counted before either was shipped", "1 of
+    216 anchors", "271 record lines across 9 of 13 files", the 1799 and the 16
+    above.  Those are not live figures that drifted; they are the evidence for a
+    choice, they are true of the tree they were taken on, and deleting them would
+    destroy the reasoning.  Being about a past tree is what makes them safe.
+
+The test is one question: CAN A COMMAND PRODUCE THIS NUMBER TODAY?  Yes -- then
+prose must not, and must say which command.  No -- then it is a record, and the
+record-line rule in `CLAUDE.md` already says to leave it alone.
 
 A CITATION TO A DEFINITION IS A SYMBOL, NOT A LINE (added 2026-07-31)
 ---------------------------------------------------------------------
@@ -610,6 +716,14 @@ SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)
 # Files whose OWN source->source citations are not policed (see the header).
 SRC_SKIP_CITER = ("compiler/tychoc0.ty",)
 SRC_SKIP_SUFFIX = (".err", ".out")
+
+# A HOST AND A PORT IS NOT A PATH AND A LINE (added 2026-07-31, phase 35).
+# CITE's path group requires a dot and a trailing component, and a dotted-decimal
+# address satisfies it: `127.0.0.1:18099` parses as the file `127.0.0.1` at line
+# 18099. The discriminator is that EVERY dot-separated component is all digits --
+# a filename cannot be, because an extension is what follows the last dot and no
+# tracked file in this tree has an all-digit one (verified: zero). See the header.
+HOSTPORT = re.compile(r'^\d+(?:\.\d+)+$')
 
 CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
                   r'(?:@([^`]+))?`')   # the anchor token MAY contain spaces
@@ -744,6 +858,14 @@ def main():
                         % (where, sym, sp))
             for m in CITE.finditer(line):
                 if m.group(1):
+                    # A HOST AND A PORT IS NOT A CITATION (see the header). It is
+                    # skipped WITHOUT touching `cur`, which is the whole of the
+                    # bug: the span itself was already ignored for want of a
+                    # SRC_PREFIX, but it OVERWROTE the paragraph's real path, so
+                    # the next genuine bare `:N` inherited a hostname and fell
+                    # into the fail-open skip. One such ref exists today.
+                    if HOSTPORT.match(m.group(1)):
+                        continue
                     cur = m.group(1)
                     cur_ln = ln
                     # AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (see the header).

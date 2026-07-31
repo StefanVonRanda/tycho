@@ -164,26 +164,44 @@ gates them. Two things that bite every time:
 
 The gate's green line reports thousands of bare refs against a couple of hundred
 anchored ones, and that ratio has twice been mistaken for work to do. It is
-split on that line now so it cannot be again. Of 2802 bare refs: **1800** are in
-the frozen `docs/internals/plan-*-DONE.md` set, where every rule in the gate
-already refuses to demand an edit; **17** are in the live plan's own evidence;
-**196** are the deliberately-exempt `> Provenance:` ranges; **789** are
-reachable narrative prose.
+split on that line now so it cannot be again, into four buckets: the frozen
+`docs/internals/plan-*-DONE.md` set, where every rule in the gate already
+refuses to demand an edit; the live plan's own evidence; the deliberately-exempt
+`> Provenance:` ranges; and reachable narrative prose. Only the last is a bucket
+any policy could act on, and it is much the smaller half.
 
-**Those 789 stay bare.** Requiring anchors on them is the hand sweep this repo
-has declined three times with measurements each time (`FRICTION.md`: 11 of 15
-spot-checked refs drifting again four days after a repair pass). And the one
-construct where anchoring is mandatory is already at 100% — zero of its
+**The reachable ones stay bare.** Requiring anchors on them is the hand sweep
+this repo has declined three times with measurements each time (`FRICTION.md`:
+11 of 15 spot-checked refs drifting again four days after a repair pass). And
+the one construct where anchoring is mandatory is already at 100% — zero of its
 single-line refs are bare — so there is no second context left to name.
 
-**Anchoring more is not anchoring better**, and the gate now measures the
+**Anchoring more is not anchoring better**, and the gate measures the
 difference: `python3 scripts/check_citations.py --stats` prints how many anchors
-name a token that recurs within ±25 lines of their range (32) or anywhere in the
-file (76). Those anchors survive a drift by accident. 17 of the 97 mandatory
-`> Provenance:` anchors are in that state — four of them anchor
-`@parse_value_ctrl` to four different lines of the same function. This is
-**counted, never failed on**: clearing it under gate pressure means inventing 17
-replacement tokens, which is how false anchors get made.
+name a token that recurs within ±25 lines of their range, and how many name one
+recurring anywhere in the file. Those anchors survive a drift by accident, and
+a share of the *mandatory* `> Provenance:` anchors are among them — four of them
+anchor `@parse_value_ctrl` to four different lines of the same function. This is
+**counted, never failed on**: clearing it under gate pressure means inventing a
+replacement token per red, which is how false anchors get made.
+
+### Never copy a figure the gate prints into prose
+
+Run `--stats`; do not quote it. Every count on that line changes when any phase
+adds a citation, so a number typed into a paragraph is stale by the next commit
+and nothing checks it — the same defect as a stale `path:N`, in the documentation
+about stale `path:N`s. This file and the gate's docstring between them carried
+four such figures, and the weak-anchor pair went stale **inside one day**, in the
+commit whose subject was updating it.
+
+The boundary is one question: **can a command produce this number today?**
+
+- **Yes** → name the command, not the number.
+- **No** → it is a one-time measurement that decided something, and it *stays*,
+  with its date or its commit. "271 record lines across 9 of 13 files", "45 refs
+  versus 16", "11 of 15 spot-checked refs drifting" are evidence for choices,
+  true of the tree they were taken on. Deleting those destroys the reasoning;
+  being about a past tree is exactly what makes them safe to write down.
 
 **There is no ratchet and no budget on the bare count, on purpose.** Pressure to
 shrink it would eventually point someone at a before/after record block, whose
@@ -204,6 +222,35 @@ and both are recognisable without reading the prose around them:
 **If a line has either shape, leave every number in it alone.** That includes
 numbers that are provably wrong today; being wrong is what they record.
 
+#### A record protects its numbers, not its anchors
+
+This rule and the anchor rule used to contradict each other, and the
+contradiction was live for hours before anything hit it. The rule above says
+leave *every number* in a record line alone. The anchor rule says an anchored
+ref is never exempt, in a frozen archive or anywhere, because it promised a
+token. A before/after table row carrying `` `:1841@tok` `` satisfies both
+descriptions and they demand opposite things.
+
+**The record rule gave way, and here is the seam it gave way along.** A record
+line records *what a ref said*. The number is that record — it is a quotation of
+a past observation, and the past cannot be edited. An anchor is not a quotation:
+`@token` is a claim that the token is in those lines **in the tree you are
+reading now**. It was never part of what the record recorded; it is a live
+promise that someone bolted onto a dead number. A live promise inside a frozen
+record is still a live promise, so the anchor rule wins on the anchor, and the
+record rule keeps everything it was actually written to protect.
+
+**So the repair is always: drop the anchor, keep the number.** Never repoint the
+number to make an anchor match — that is the falsification the record rule
+exists to prevent. Never leave a failing anchor in place either. A bare number on
+a record line is honest: it says "this is what it said then", which is true.
+
+**Measured before this was written:** 41 anchored refs sit on record lines across
+the tree, 40 of them reaching the gate's content check, and **zero fail it
+today** — the two that did were repaired this way, by dropping their anchors, in
+`docs/internals/plan-signals-DONE.md`'s six-row table. So this is a rule for
+whoever meets the 41st, not a sweep. Nothing needs doing now.
+
 **No marker is inserted, and the count is why.** The question was whether to tag
 these blocks explicitly. Counted over the twelve archived plans plus the live
 one: **271 record lines across 9 of 13 files** — 120 in
@@ -215,10 +262,18 @@ and 268 of them are in frozen records the tag would be editing. The shape
 already marks them; a tag would only restate it 271 times, at the cost of
 touching every archive to say so.
 
-**What the gate does about it: nothing, deliberately.** No rule counts, budgets
-or ratchets record lines, so nothing ever creates pressure to sweep one. That is
-phase 2's defence and it is the load-bearing one; the rule above exists so that a
-human who goes looking anyway can tell what they are holding.
+**No rule *targets* record lines** — none counts, budgets or ratchets them, so
+nothing pushes anyone to sweep one. That is the load-bearing defence, and the
+rule above exists so that a human who goes looking anyway can tell what they are
+holding.
+
+This used to be stated more widely, as "what the gate does about it: nothing,
+deliberately", and that was **disproved**. Widening `SRC_PREFIX` put gate
+pressure on a frozen before/after table without any rule being aimed at record
+lines: the widening made a previously-skipped path reachable, and the ordinary
+anchor content check then fired inside a record. A rule does not have to be about
+record lines to redden one. Expect that again on the next widening, and reach for
+"drop the anchor, keep the number" when it happens.
 
 **The one case that needs a tag is the opposite shape** — see
 `docs/internals/plan-signals-DONE.md`'s `[SUPERSEDED]` note. There the number
