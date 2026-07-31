@@ -1159,7 +1159,7 @@ violation proof and restored with `git checkout` before anything else ran.
     run against that same planted tree, printed its ordinary green line and
     `exit 0`. All four plants were invisible to it. Plants reverted; green again.
 
-- [ ] **Phase 35 — a backticked port number is read as a citation.** Found by
+- [x] **Phase 35 — a backticked port number is read as a citation.** Found by
       phase 34: widening `SRC_PREFIX` to `server/` turned one such span in
       `docs/internals/plan-friction-DONE.md` into a hard failure, because the
       paragraph had named a source file and the grammar bound the port to it as
@@ -1216,7 +1216,7 @@ violation proof and restored with `git checkout` before anything else ran.
     then police exactly one live ref. Decide whether that is worth a rule.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 38 — the anchor-strength figures in `CLAUDE.md` are stale, and one
+- [x] **Phase 38 — the anchor-strength figures in `CLAUDE.md` are stale, and one
       pair in the gate's docstring was stale before phase 34 touched it.**
       `CLAUDE.md` states 32 anchors weak within ±25 lines and 76 recurring
       anywhere in the file; the tree now says 36 and 82, because phase 34
@@ -1232,7 +1232,7 @@ violation proof and restored with `git checkout` before anything else ran.
     carry the numbers at all, or should name the command that produces them.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 39 — the anchor check and the record-line rule disagree about a
+- [x] **Phase 39 — the anchor check and the record-line rule disagree about a
       frozen before/after table.** Phase 34 hit this directly: two cells of a
       six-row table in `docs/internals/plan-signals-DONE.md` carried anchored
       refs whose tokens had drifted. `CLAUDE.md` says a table row with two or
@@ -1253,4 +1253,250 @@ violation proof and restored with `git checkout` before anything else ran.
   - Count first, as ever: how many anchored refs across the 271 known record
     lines would the content check fire on today? If the answer is two this is a
     documentation fix; if it is forty it is a rule.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+  ### Phases 35, 38 and 39 evidence — 2026-07-31
+
+  All three were inconsistencies today's own work introduced. One is a gate
+  change (35) with a planted-violation proof both directions; two are prose
+  changes (38, 39) where the gate was already right and the documentation
+  disagreed with itself. `python3 scripts/check_citations.py` and
+  `sh scripts/check_links.sh` are green; no other gate was run, and none of the
+  three can redden one.
+
+  **Phase 35 — the discriminator is the left-hand side, not the digit count and
+  not the prose.** Both alternatives the entry named were counted first and both
+  are unusable, which is the honest difficulty it asked to have stated:
+
+  | candidate rule | population it would catch | population it would blind |
+  |---|---|---|
+  | four or five digits after a colon is a port | 16 | **1799** genuine in-bounds citations — 1333 into `src/tychoc.c`, 415 into `compiler/tychoc0.ty`, 38 into `runtime/tycho_rt.c` |
+  | digits after a colon in port-shaped prose | 16 | 32 of 33 keyword hits are genuine compiler citations on lines merely containing *bind*, *socket*, *host* — a 97% false-positive rate |
+  | **every dot-separated component is all digits** | **16** | **0** |
+
+  A four-digit line number is perfectly ordinary in a 12775-line compiler, so a
+  digit-count rule stops checking 1799 real citations to catch 16 fake ones. The
+  shipped rule reads the left-hand side instead: `127.0.0.1:18099` is a host and
+  a port because *every* dot-separated component is numeric, which a filename
+  cannot be — the component after the last dot is the extension, and **zero**
+  tracked files in this tree have an all-digit one (checked over `git ls-files`).
+  It is `scripts/check_citations.py@HOSTPORT`, six lines including the reason.
+
+  **What was actually broken was the `cur` assignment, not the skip — and that
+  is the finding.** The span was *already* ignored as a citation, since
+  `127.0.0.1` starts with no `SRC_PREFIX` entry, so nothing was ever checked
+  wrongly. What it did was overwrite the paragraph's inherited path, so the next
+  genuine bare ref on that line inherited a hostname and fell into the fail-open
+  skip — no file, no bounds, no anchor. Exactly one ref tree-wide was in that
+  state: `FRICTION.md`'s reference to `block_ends_in_return`, which means
+  `src/tychoc.c` and was inheriting the test address instead. So the port was
+  never a false citation the gate scored; it was a false citation that **blinded
+  the gate to a true one**. The green line moved 3086 → 3087 bare and 817 → 818
+  reachable prose, which is that single ref and nothing else.
+
+  Of the 16 spans, 1 is in `FRICTION.md` and 15 are in the frozen
+  `docs/internals/plan-*-DONE.md` set — which is why this is a silent skip and
+  not a failure. Making it a failure would demand edits to fifteen frozen
+  records, the thing the `ARCHIVED` rule forbids everywhere else.
+
+  **Planted-violation proof, both directions.** The transcript below is
+  reproduced with its **backticks stripped**, deliberately: the plant's refs are
+  bogus by construction, and `CITE` matches only inside a backtick span, so
+  quoting this verbatim would make four live out-of-bounds citations out of the
+  evidence for a citation gate. See the note under it — this cost a red.
+
+      plant, two lines in a live document:
+        Probing <bt>server/main.ty:10<bt> on <bt>127.0.0.1:18099<bt>
+        showed the loop at <bt>:999999<bt>.
+        A plain out-of-bounds ref must still redden: <bt>src/tychoc.c:999999<bt>.
+
+      --- A) the gate as it stood at 37a027f, against the planted tree
+      STALE  _plant.md:5  src/tychoc.c(colon)999999 -> src/tychoc.c has 12775
+             lines: OUT OF BOUNDS
+      citation check: FAILED (1 stale citation(s) above)
+
+      --- B) the gate as it stands now, same planted tree
+      STALE  _plant.md:3  (colon)999999 -> server/main.ty has 754 lines:
+             OUT OF BOUNDS
+      STALE  _plant.md:5  src/tychoc.c(colon)999999 -> src/tychoc.c has 12775
+             lines: OUT OF BOUNDS
+      citation check: FAILED (2 stale citation(s) above)
+
+  The control is line 5 and it matters as much as line 3: it reddens in **both**
+  runs, which proves the new rule did not buy its catch by loosening anything —
+  an ordinary out-of-bounds citation is still caught, and only the span behind
+  the host changed status. Plant reverted; both gates green again.
+
+  **This evidence block reddened the gate on its first write — the ninth phase
+  to do so, and the first to do it by quoting a planted violation.** The eight
+  before it wrote a stale ref by accident. This one pasted a transcript whose
+  refs were *designed* to be out of bounds, into a document the gate scans, and
+  four of them became live citations the instant the file was saved. The lesson
+  generalises past this plan: **a gate's own evidence is inside the gate's
+  corpus**, so a transcript of a deliberate failure has to be defanged before it
+  is written down — strip the backticks, as here, or describe the shape instead
+  of quoting it, which is the discipline the gate's docstring already follows for
+  the absolute-path and rotating-plan forms it must not spell. Caught by running
+  the gate after appending, which is the only reason it is a paragraph and not a
+  broken commit.
+
+  **The first plant was wrong and the correction is worth recording**: it wrote
+  a bare backticked `` `server/main.ty` `` and assumed that set the inherited
+  path. It does not — `cur` is assigned only from a `CITE` match, which requires
+  a colon and digits, so nothing was inherited and the plant proved nothing. Read
+  the loop, not the intent.
+
+  **The residual is stated rather than papered over.** A bare `:8080` with no
+  host in front of it is still indistinguishable from a line number, because as
+  far as any grammar can tell it *is* one; only prose separates them, and the
+  count above disqualified prose. It is dangerous only when its paragraph names a
+  file long enough for the port to land in bounds, and the tree has **zero** of
+  those today — the one that existed was reworded when phase 34's widening
+  reddened it. Filed as a known limit, not fixed by guessing (RULE 7).
+
+  **Phase 38 — the figures were removed from prose, not updated.** Verified
+  first, because the entry asked for it rather than asserting it. Running each
+  gate against its own tree:
+
+  | figure | `46cbb35` | `CLAUDE.md` said | docstring said | tree at `37a027f` |
+  |---|---|---|---|---|
+  | markdown weak within ±25 / anywhere | 33 / 77 | 32 / 76 | 36 / 82 | **39 / 86** |
+  | source→source weak | 7 / 9 of 15 | — | 8 and 10 of 16 | **7 / 9 of 15** |
+
+  Both of the entry's claims hold. `CLAUDE.md`'s pair was stale, and was in fact
+  *already* stale at `46cbb35`. The docstring's source→source pair was wrong
+  before phase 34 touched it — the gate printed 7 and 9 of 15 there, so it did
+  not drift under phase 34 and was not phase 34's to repair.
+
+  **The decisive fact is the one nobody predicted:** phase 34's *freshly updated*
+  36 / 82 was stale three commits later, at 39 / 86. The figure went stale
+  **inside one day, in the commit whose subject was updating it**, because the
+  plan's own evidence blocks add anchors — so every phase that writes evidence
+  invalidates the number describing the evidence. Updating these four figures
+  would have been the fifth time this pattern reddened something, and the fix
+  would have been stale before the next phase committed.
+
+  So they are gone from prose in both files, replaced by the command that knows.
+  The rule is written once, in `CLAUDE.md`'s "Never copy a figure the gate prints
+  into prose", with the gate's docstring carrying the same section and the test
+  that draws the boundary: **can a command produce this number today?** Yes → name
+  the command. No → it is a one-time measurement that decided something, and it
+  *stays*, with its date or its commit. "271 record lines across 9 of 13 files",
+  "45 refs versus 16", "11 of 15 spot-checked refs drifting", and the 1799 and
+  the 16 in this very block are evidence for choices and true of the tree they
+  were taken on. Being about a *past* tree is exactly what makes a number safe to
+  write down; being about the present tree is what makes it rot.
+
+  Four live figures removed, zero one-time measurements removed. The argument
+  each paragraph was making — that the bare total is mostly unreachable, that
+  weak anchors are counted and never enforced — is unchanged and now cannot go
+  stale.
+
+  **Phase 39 — the record rule gave way, along a seam.** Count first, as the
+  entry demanded: **41** anchored refs sit on record lines tree-wide, **40** of
+  them reach the gate's content check, and **zero fail it today**. By the entry's
+  own test ("if the answer is two this is a documentation fix; if it is forty it
+  is a rule") the answer is a documentation fix — the gate needed no code change,
+  and got none. `git diff --stat` on the gate shows the record-line work as
+  docstring only.
+
+  **Which rule gave way: the record-shape rule, and only over anchors.** The two
+  rules are:
+
+  - phase 29's — a table row with two or more ref-bearing cells and a delta
+    column is a **record**, and every number in it must be left alone, including
+    numbers that are provably wrong, because being wrong is what they record;
+  - phase 31's — an anchored ref is **never** exempt, in a frozen file or
+    anywhere, because it promised a token.
+
+  The seam is that **a record line records what a ref *said*, and the number is
+  that record — but the anchor is not.** The number is a quotation of a past
+  observation and the past cannot be edited. `@token` is a claim about the tree
+  you are reading *now*; it was never part of what was recorded, it is a live
+  promise bolted onto a dead number. A live promise inside a frozen record is
+  still a live promise. So phase 31 wins on the anchor, phase 29 keeps every
+  number — which is everything it was actually written to protect — and the
+  general repair is **drop the anchor, keep the number**. Never repoint the
+  number to make an anchor match: that is precisely the falsification phase 29
+  exists to prevent, and it is the wrong repair that was available here.
+
+  That is also exactly what phase 34 did to the two cells in
+  `docs/internals/plan-signals-DONE.md`'s six-row table. It was a sound repair
+  for two cells and not a policy; it is now the policy, and it generalises
+  because it was right for the reason above rather than by luck.
+
+  **`CLAUDE.md`'s "what the gate does about it: nothing, deliberately" is
+  narrowed, because phase 34 disproved it as written.** Widening `SRC_PREFIX` put
+  gate pressure on a frozen record table with no rule aimed at record lines: the
+  widening made a previously-skipped path reachable and the ordinary anchor check
+  then fired inside a record. The claim now reads "no rule *targets* record
+  lines", with the disproof recorded beside it and the expectation stated — the
+  next widening will do this again, and the answer when it does is the sentence
+  above.
+
+## Status — PLAN COMPLETE
+
+**This supersedes the earlier "Status — PLAN COMPLETE" above**, which was
+written when the plan had two phases and was correct then; the plan was reopened
+eleven times after it. That section is left exactly as it stands, because it is a
+record of what was true at its commit and repairing it would falsify it — the
+same rule this plan spent phases 29 and 39 settling. Read this one as current.
+
+**What shipped across the plan.** The Goal was that the citation gate could not
+see whole classes of what it claimed to check. Every class named has been closed
+or retired with a measurement:
+
+| class | outcome |
+|---|---|
+| a rotating-plan phase reference, in either word order | hard failure outside the live plan and the frozen set |
+| an absolute path | hard failure naming the repo-relative form |
+| a pathless `> Provenance:` ref | hard failure |
+| a document path inherited across lines | hard failure |
+| an ambiguous anchor | hard failure in both anchored directions |
+| `SRC_PREFIX` covering nine trees out of the tree | widened; 522 refs newly reachable, 7 red |
+| a citation to a definition | `path@SYMBOL`, no line number, survives insertion |
+| a host and a port read as a path and a line | not a citation, and no longer poisons its paragraph |
+| the bare-ref total read as a backlog | split on the green line into what a policy can and cannot reach |
+| anchor strength | measured and published, never enforced |
+| a before/after record line | recognisable by shape; protects its numbers, not its anchors |
+| a figure the gate prints, retyped into prose | removed from prose in both files; the command is named instead |
+
+**What remains open**, all of it filed with its count rather than left implicit:
+
+- **A bare `:PORT` with no host before it** — indistinguishable from a line
+  number by any grammar. Zero in the tree today. Phase 35's stated residual.
+- **470 refs naming a bare basename with no directory** — retired to
+  `FRICTION.md`; no prefix list can resolve what the author never wrote.
+- **The possessive rotating-plan spelling** ("the plan's phase N") — retired to
+  `FRICTION.md`, 8 refs.
+- **Line refs into the rotating live plan** — 25, retired to `FRICTION.md`; the
+  number cannot be repaired because the document it named no longer exists.
+- **The bare form's permanent blind spot** — a bare ref that drifts onto a
+  different-but-existing line still passes. No line-checker can see it, and the
+  three sweeps that would have found them were each declined with measurements.
+- **Phase 40 below**, filed by this run.
+
+## Filed by phases 35/38/39
+
+- [ ] **Phase 40 — the record-line census counted plans, not shapes, and misses
+      at least 57 record lines outside them.** `CLAUDE.md` states "271 record
+      lines across 9 of 13 files", counted over "the twelve archived plans plus
+      the live one". Detecting the same two shapes over **every** tracked
+      Markdown file finds 344. The difference is not in the plans: it is
+      `docs/internals/frontend-restriction-audit-2026-07-25.md` (32),
+      `FRICTION.md` (16) and `docs/internals/int64-migration-audit.md` (9) —
+      files that are not plans and were never enumerated.
+  - The census agrees exactly with this run's detector on all three files it
+    named — 120, 95 and 33 — so the detector is not the disagreement; the file
+    *list* is. The census asked "which plans have record lines" when the rule it
+    was justifying asks "which lines have the record shape".
+  - **This matters more than the 73**, because `FRICTION.md` is *live*, not
+    frozen. The record rule's whole purpose is to stop someone "repairing" a
+    number that is data, and the one place a person actually edits by hand is
+    the file the census never looked at. The 268-of-271 "they are all frozen
+    anyway" argument for not tagging them does not hold over the wider set.
+  - Recount over all tracked Markdown, decide whether the no-marker decision
+    survives the true population, and correct the figure in `CLAUDE.md` — noting
+    that the figure itself is a dated one-time measurement under phase 38's
+    rule, so it is repaired by re-dating, not by deleting.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
