@@ -324,15 +324,49 @@ sys.exit(1 if fails else 0)
 PY
 [ $? -eq 0 ] || fail=1
 
-# ---- shutdown: SIGTERM, and the status the shell sees -----------------------
+# ---- shutdown case 1 of 2: SIGTERM is a CLEAN shutdown ----------------------
+# This block asserted wait status 143 until plan.md phase 3 -- that is, it
+# asserted the server was KILLED, that server/main.ty's last line was
+# unreachable, and that the accept loops never wound down. server/main.ty now
+# arms core:signal with the listening fd before it prints the banner, so SIGTERM
+# calls shutdown(fd, SHUT_RDWR) under all four accept loops at once and the
+# process leaves through its own bottom.
+#
+# WHY EXIT 0 IS THE ALL-WORKERS-EXITED ASSERTION and not merely a tidier status:
+# worker() (server/main.ty:499-504) spawns peer k+1, runs accept loop k itself,
+# and returns `n + wait(peer)`; main() CALLS worker() rather than spawning it. So
+# everything below the fan-out -- the stopped line included -- is reachable only
+# after every spawned peer has been joined. One loop still blocked in accept(2)
+# means wait() never returns, which means no line and no exit. Paired with the
+# "every worker served (w1..w4)" assertion below, which proves all four loops
+# were live and serving, exit 0 IS "all four were released".
+#
+# The watchdog is what stops a regression HANGING this gate instead of failing
+# it: on a hang the server is SIGKILLed after 10s and the status comes back 137.
+( sleep 10; kill -KILL "$SRV" 2>/dev/null ) &
+WD=$!
 kill -TERM "$SRV" 2>/dev/null
 wait "$SRV" 2>/dev/null
 rc=$?
+kill "$WD" 2>/dev/null
+wait "$WD" 2>/dev/null
 SRV=""
-if [ "$rc" -eq 143 ]; then
-    echo "  ok   SIGTERM: wait status 143 (128+SIGTERM)"
+if [ "$rc" -eq 0 ]; then
+    echo "  ok   SIGTERM: exit status 0 (clean; every accept loop returned and was joined)"
+elif [ "$rc" -eq 137 ]; then
+    echo "  FAIL SIGTERM: watchdog SIGKILL after 10s -- a worker never left accept()"; fail=1
 else
-    echo "  FAIL SIGTERM: wait status $rc, want 143"; fail=1
+    echo "  FAIL SIGTERM: wait status $rc, want 0 (143 = the pre-phase-3 behaviour)"; fail=1
+fi
+
+# The line at the bottom of server/main.ty's main(). Until phase 3 it was
+# unreachable, and this file carried a paragraph of comment where this assertion
+# belongs.
+stopped=$(grep '^tycho-httpd: stopped after [0-9][0-9]* requests$' "$T/srv.err")
+if [ -n "$stopped" ]; then
+    echo "  ok   SIGTERM: $stopped"
+else
+    echo "  FAIL SIGTERM: no 'stopped after N requests' line on stderr"; fail=1
 fi
 
 # ---- the access log, now that the server has stopped writing to it ----------
@@ -352,20 +386,77 @@ for code in 200 301 400 403 404 405 408 431; do
     if [ "$n" -gt 0 ]; then echo "  ok   access log: $n line(s) with status $code"
     else echo "  FAIL access log: no line with status $code"; fail=1; fi
 done
-# NOT asserted, and this is a finding rather than an omission: server/main.ty:617
-# prints "tycho-httpd: stopped after N requests" after worker() returns, and that
-# line is UNREACHABLE. Nothing in server/main.ty installs a SIGTERM or SIGINT
-# handler (grepped: the only signal mentioned anywhere in the program or in
-# corelib/net is SIGPIPE, and that is suppressed per-send with MSG_NOSIGNAL at
-# corelib/net/net_shim.c:41-53). The default disposition therefore terminates the
-# process where it stands, so the accept loops never wind down and the line never
-# prints. Asserting its ABSENCE would be a gate that reddens the day someone
-# fixes it, so what is asserted is only that the log ends in request lines --
-# i.e. the process died serving, not mid-banner.
-if [ -s "$T/srv.err" ] && tail -n 1 "$T/srv.err" | grep -q '^w[0-9]'; then
-    echo "  ok   access log: last line is a request line (died serving)"
+# The served count is the sum every accept loop returned, so it is the second
+# reading on the same fact as exit 0: a loop that never returned contributes
+# nothing, and its requests would go missing from the total. One access log line
+# per request (server/main.ty:342-352), so the two numbers must agree.
+n_served=$(printf '%s\n' "$stopped" | sed -n 's/^tycho-httpd: stopped after \([0-9]*\) requests$/\1/p')
+n_logged=$(grep -c '^w[0-9]' "$T/srv.err")
+chk "SIGTERM: served count == access log lines" "$n_logged" "${n_served:-none}"
+
+# The log used to end in a request line, because the process died serving. It now
+# ends in the shutdown line, and that ordering matters: it says the count was
+# printed AFTER the last request was logged, not from some half-wound-down state.
+if [ -s "$T/srv.err" ] && tail -n 1 "$T/srv.err" | grep -q '^tycho-httpd: stopped after'; then
+    echo "  ok   access log: last line is the shutdown line (stopped after serving)"
 else
     echo "  FAIL access log: unexpected last line: $(tail -n 1 "$T/srv.err")"; fail=1
+fi
+
+# A second server, started the same way and polled for the same banner. Used by
+# both remaining cases; there is only one process to kill per case, and the first
+# one is already gone.
+respawn() {  # respawn <errfile>; sets SRV
+    "$T/tycho-httpd" --root "$T/www" --host 127.0.0.1 --port 0 \
+                     --workers 4 --idle-ms 500 >/dev/null 2>"$1" &
+    SRV=$!
+    i=0
+    while [ "$i" -lt 500 ]; do                   # the banner, not a fixed sleep
+        grep -q '^tycho-httpd: serving ' "$1" 2>/dev/null && return 0
+        i=$((i + 1)); sleep 0.02
+    done
+    echo "  FAIL readiness: respawned server printed no banner within 10s"; fail=1
+}
+
+# ---- shutdown case 2 of 3: SIGINT, the other signal core:signal installs -----
+# corelib/signal/signal_shim.c arms SIGTERM and SIGINT with the same handler, and
+# core:signal's own fixture can only exercise SIGTERM -- glibc's system(3) sets
+# SIGINT to SIG_IGN in the caller for the duration of the call, so the fixture's
+# `kill -INT $PPID` would be swallowed by system() rather than by anything under
+# test. This is where the second half of that pair gets its only real exercise:
+# an operator's Ctrl-C must wind the server down exactly as SIGTERM does.
+respawn "$T/int.err"
+kill -INT "$SRV" 2>/dev/null
+wait "$SRV" 2>/dev/null
+rc=$?
+SRV=""
+if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/int.err"; then
+    echo "  ok   SIGINT: exit status 0 and the stopped line (same handler as SIGTERM)"
+else
+    echo "  FAIL SIGINT: wait status $rc, want 0 with a stopped line"; fail=1
+    sed 's/^/      /' "$T/int.err"
+fi
+
+# ---- shutdown case 3 of 3: SIGKILL is still abrupt, and still tested ---------
+# Not deleted, just no longer the same case. SIGKILL cannot be caught, so no
+# handler runs, nothing winds down, and the stopped line is never printed. That
+# is correct behaviour, and it is the CONTROL for case 1: it shows the clean exit
+# above comes from the handler core:signal installed and not from something the
+# process would have done on the way out of any signal at all.
+respawn "$T/kill.err"
+kill -KILL "$SRV" 2>/dev/null
+wait "$SRV" 2>/dev/null
+rc=$?
+SRV=""
+if [ "$rc" -eq 137 ]; then
+    echo "  ok   SIGKILL: wait status 137 (128+SIGKILL), uncatchable by design"
+else
+    echo "  FAIL SIGKILL: wait status $rc, want 137"; fail=1
+fi
+if grep -q '^tycho-httpd: stopped after' "$T/kill.err"; then
+    echo "  FAIL SIGKILL: printed the stopped line -- no handler can have run"; fail=1
+else
+    echo "  ok   SIGKILL: no stopped line, nothing wound down (the control for case 1)"
 fi
 
 # ---- the command line -------------------------------------------------------

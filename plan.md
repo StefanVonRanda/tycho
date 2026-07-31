@@ -431,7 +431,7 @@ asserting the kill.
   140 source->doc citations resolve, 233 source->source in bounds, 12 source->source anchored)
   ```
 
-- [ ] **Phase 3 — the server shuts down cleanly, and the gate proves it**
+- [x] **Phase 3 — the server shuts down cleanly, and the gate proves it**
   - Scope: `server/main.ty` and `server/run.sh`.
   - The server change should be small — the wind-down path already exists at
     `server/main.ty:493-494` and the count already returns at `:617`.
@@ -448,6 +448,198 @@ asserting the kill.
     phase 1 of the previous plan established still holds.
   - Verify: `make -s server-check`, the 10-run loop, and an explicit
     all-workers-exited check with its output.
+
+  ### Evidence — phase 3
+
+  Two files changed: `server/main.ty` (one import, one guarded call, a comment)
+  and `server/run.sh` (the gate). `corelib/signal/` and `docs/` untouched.
+
+  #### The server change: one call, and the argument for its position
+
+  `import "core:signal"` at `server/main.ty:61`, and the arm itself at
+  `server/main.ty:635-637` — `if not signal.on_shutdown(srv)`, warning on stderr
+  and continuing, because a server that could not arm its handler is still a
+  working server and `on_shutdown` already fails closed to the old behaviour.
+
+  No new control flow, exactly as the phase brief predicted. The chain is
+  entirely pre-existing: handler → `shutdown(srv, SHUT_RDWR)` → every blocked
+  `net.accept` returns `Err` → `accept_loop`'s `Err` arm at
+  `server/main.ty:493-494` sets `running = false` → `worker` unwinds through
+  `wait(peer)` → the stopped line, now at `server/main.ty:646`.
+
+  **Why there and nowhere else**, the three constraints written at the site:
+
+  - **After `net.listen`** (`server/main.ty:605-607`) — `on_shutdown` takes the
+    listening fd; before that call there is no fd to register.
+  - **Before the fan-out** (`server/main.ty:645`). Phase 1's correction to the
+    thread model is the whole reason this needs saying: `main` *calls*
+    `worker(cfg, srv, 1, cfg.workers)` rather than spawning it, and `worker`
+    (`server/main.ty:499-504`) spawns peer k+1 then runs accept loop k itself. So
+    main **is** accept loop 1 and does not return from that call until the entire
+    pool has wound down. Everything below it is shutdown code; there is no later
+    point in `main` that runs at startup.
+  - **Before the banner** (`server/main.ty:639-643`), which is the readiness
+    signal `server/run.sh` polls for. Arming after it leaves a window where a
+    reader has been told "serving" while SIGTERM still has its default
+    disposition — a rare, confusing gate flake, bought for nothing.
+
+  One call arms the whole pool: the handler is per-process, not per-thread, and
+  it acts on the shared listener. Which thread the kernel picks does not matter,
+  which is precisely why phase 1 chose `shutdown()` over `close()`.
+
+  #### The gate: three kill cases where there was one
+
+  `server/run.sh` asserted wait status 143 — the absence of clean shutdown. It
+  now asserts three separate things, and the SIGKILL case is kept rather than
+  replaced because it is the control.
+
+  | case | signal | asserts |
+  |---|---|---|
+  | 1 | SIGTERM | exit status **0** (not 143, not the watchdog's 137); the `stopped after N requests` line present; **N equals the access-log line count**; the log's last line is the shutdown line, not a request line |
+  | 2 | SIGINT | exit status 0 **and** the stopped line — the same handler, on the signal `core:signal`'s own fixture provably cannot test |
+  | 3 | SIGKILL | wait status **137**, and **no** stopped line: uncatchable, so nothing winds down |
+
+  Case 3 earns its place as case 1's control. Without it, "exit 0 and a line" is
+  consistent with the process having done that on the way out of any signal at
+  all; with it, the clean exit is demonstrably the handler's doing.
+
+  Case 2 is here because phase 2's evidence promised it and nothing else can
+  keep the promise: glibc's `system(3)` sets SIGINT to `SIG_IGN` in the caller
+  for the duration of the call, so `corelib/test/signal/main.ty`'s
+  `kill -INT $PPID` would be swallowed by `system` rather than by anything under
+  test. SIGTERM and SIGINT are installed together at
+  `corelib/signal/signal_shim.c:109-110`; this gate is the only exercise the
+  second one gets.
+
+  A 10 s watchdog SIGKILLs case 1's server. That is not belt-and-braces: without
+  it a regression that leaves one loop blocked would **hang** this gate rather
+  than redden it, and a hung gate is the failure mode hardest to attribute.
+
+  #### The Worst case, proved four ways
+
+  Scratch script, `--workers 4`, its real output:
+
+  ```
+  server pid=2452586 pgid=2452586  (own session; pgid == pid means the group is the server alone)
+  bound port=37409
+  requests answered 200: 8/8
+  --- workers that served, from the access log ---
+  w1 w2 w3 w4
+  --- threads in the process before SIGTERM (/proc/2452586/task) ---
+  2452586 2452590 2452591 2452592
+  task count: 4
+  === RESULTS ===
+  exit status: 0            (want 0; 143 = old behaviour, 137 = watchdog SIGKILL i.e. hang)
+  shutdown wall: 1 ms   (phase 1 measured 4/4 release in C at 552 ms)
+  stopped line: tycho-httpd: stopped after 8 requests
+  last stderr line: tycho-httpd: stopped after 8 requests
+  --- process group 2452586 after shutdown (ps -o pid,stat,comm -g) ---
+      PID STAT COMMAND
+  (ps reports no such process group)
+  processes left in group: 0
+  /proc/2452586 exists: no
+  ```
+
+  The four readings, and why each one is needed:
+
+  1. **Four loops really were blocked.** Eight sockets connected before any of
+     them speaks; a worker is inside `serve_conn` until its connection closes, so
+     with four accept loops all four must take one. `w1 w2 w3 w4` in the access
+     log, and `/proc/<pid>/task` shows exactly 4 threads. Without this the rest
+     proves nothing about N=4.
+  2. **Exit status 0 *is* the all-exited assertion.** `worker` returns
+     `n + wait(peer)` (`server/main.ty:499-504`) and `main` calls it directly, so
+     the stopped line is reachable only after every spawned peer is joined. One
+     loop still in `accept(2)` means `wait()` never returns — no line, no exit,
+     and the watchdog's 137 instead. This is the reading the naive stdout grep
+     misses: the line is printed by the main thread, so grepping for it alone
+     cannot distinguish 4/4 from 1/4. Exit 0 can.
+  3. **Nothing is left.** `pgid == pid` because the server is launched into its
+     own session; the group is then the server alone and `ps -o pid= -g` is
+     empty, `/proc/<pid>` gone.
+  4. **1 ms.** Measured from `kill` to `wait` returning.
+
+  **A first attempt at reading 3 was wrong and is recorded rather than quietly
+  fixed.** It used `set -m` to put the server in its own process group; under a
+  shell with no controlling tty that prints `can't access tty; job control turned
+  off` and *proceeds*, so the server inherited the harness shell's group and the
+  check reported `processes left in group: 6` — the harness's own `zsh`, `sh`,
+  `sleep`, `sed` and `grep`. A check that counts its own observer is worse than
+  no check. The shipped form calls `setsid(2)` through a `python3` that
+  immediately `execv`s, so `$!` still names the server and the group contains it
+  alone.
+
+  #### Timing, against phase 1's 0.552 s
+
+  Not slower — and the two numbers measure different spans, so the comparison is
+  spelled out rather than rounded off. Phase 1's 0.552 s is the C probe's
+  **whole wall-to-exit**, including its setup; its actual release finding was
+  "all three released in the same millisecond". The 1 ms here is `kill(2)` to
+  `wait(2)` returning, i.e. the shutdown itself. They agree: release is immediate
+  in both, and Tycho adds nothing measurable over the C probe.
+
+  One case is materially slower, it was found by measurement after the guess that
+  produced it turned out wrong, and it is **bounded, not a hang**:
+
+  ```
+  0 idle keep-alive clients (all 4 loops in accept): rc=0  shutdown=1 ms     [1 stopped line]
+  1 idle keep-alive client  (1 loop in serve_conn): rc=0  shutdown=1 ms     [1 stopped line]
+  4 idle keep-alive clients (ALL 4 in serve_conn): rc=0  shutdown=5141 ms  [1 stopped line]
+  ```
+
+  With `--idle-ms 5000` and every worker parked in `serve_conn` on an idle
+  keep-alive connection, shutdown takes one idle timeout. The 1-client row is the
+  instructive one: it was expected to be slow and is not, because phase 1's
+  settled fact 2 has SIGTERM delivered to the main thread, main is accept loop 1,
+  and it was the loop holding that connection — `EINTR` released it directly.
+  With four held connections the other three get no such rescue and wait out
+  `SO_RCVTIMEO`. Still exit 0, still the line, every time. Filed as **phase 15**.
+
+  #### Gates — real output
+
+  `make -s server-check`: green. Assertion count **52 → 57** (+5: SIGTERM exit 0,
+  the stopped line, count-equals-log-lines, SIGINT, and SIGKILL's two, less the
+  one 143 assertion removed).
+
+  ```
+    ok   SIGTERM: exit status 0 (clean; every accept loop returned and was joined)
+    ok   SIGTERM: tycho-httpd: stopped after 84 requests
+    ok   SIGTERM: served count == access log lines
+    ok   access log: last line is the shutdown line (stopped after serving)
+    ok   SIGINT: exit status 0 and the stopped line (same handler as SIGTERM)
+    ok   SIGKILL: wait status 137 (128+SIGKILL), uncatchable by design
+    ok   SIGKILL: no stopped line, nothing wound down (the control for case 1)
+  server: OK
+  ```
+
+  Ten consecutive runs of the final file — the assertions changed *and* the
+  program under test changed, so the previous plan's 10/10 does not carry:
+
+  ```
+  run 1: rc=0 ok=57 fail=0  server: OK
+  run 2: rc=0 ok=57 fail=0  server: OK
+  run 3: rc=0 ok=57 fail=0  server: OK
+  run 4: rc=0 ok=57 fail=0  server: OK
+  run 5: rc=0 ok=57 fail=0  server: OK
+  run 6: rc=0 ok=57 fail=0  server: OK
+  run 7: rc=0 ok=57 fail=0  server: OK
+  run 8: rc=0 ok=57 fail=0  server: OK
+  run 9: rc=0 ok=57 fail=0  server: OK
+  run 10: rc=0 ok=57 fail=0  server: OK
+  GREEN: 10/10
+  ```
+
+  `make test` — 560, undisturbed:
+
+  ```
+  passed: 560   failed: 0
+  all green
+  ```
+
+  Honest ordering note: `make test` ran against `server/main.ty` in its final
+  state but against the gate *before* the SIGINT case was added. It cannot move —
+  no fixture under `tests/` builds `server/run.sh` or the server — and
+  `make -s server-check` plus the 10-run loop above are both the final file.
 
 - [ ] **Phase 4 — spec and docs**
   - Scope: `docs/spec/` for the new surface, `server/README.md` for the shutdown
@@ -485,6 +677,27 @@ Unclosed discoveries from the previous plan; none blocking.
       `EINVAL` reaches the wind-down arm, which is the same collapse working *in
       our favour*. Fixing it means carrying errno across the shim boundary, which
       is a wider change than this plan.
+
+- [ ] **Phase 15** — filed by phase 3, measured not guessed. Shutdown is clean but
+      its **latency is bounded by `--idle-ms`, not by the signal**, when workers
+      are busy. `accept_loop` (`server/main.ty:477-495`) can only notice a
+      shutdown between accepts; a worker inside `serve_conn`
+      (`server/main.ty:364-473`) stays in its keep-alive loop until `alive` goes
+      false, and for an idle client that means waiting out `SO_RCVTIMEO` and
+      taking the `Err(httpd.Timeout)` arm at `server/main.ty:400-401`. Measured
+      with `--workers 4 --idle-ms 5000`: 0 or 1 held keep-alive clients → 1 ms;
+      **4 held clients → 5141 ms**. (The 1-client case is fast only by luck of
+      routing — phase 1's settled fact 2 delivers SIGTERM to the main thread,
+      which is accept loop 1, so `EINTR` released the one busy loop directly.)
+      Exit is still 0 with the served-count line in every case, so this is slow,
+      not hung, and `MAX_REQS` plus the idle timeout bound it. The fix already
+      has its API: `signal.shutdown_requested()`
+      (`corelib/signal/signal.ty:64-65`) exists for exactly this and **has no
+      caller in the tree** — testing it in `serve_conn`'s loop condition and in
+      `accept_loop`'s would cut a busy shutdown to one in-flight request. Left
+      out of phase 3 deliberately: it changes the serving path, which is a wider
+      blast radius than installing a handler, and the gate would need a held-open
+      client to prove it.
 
 - [ ] **Phase 10, 11, 12** — filed by the previous plan's phase 3 from the
       concurrency write-up: spec §22 never describes `send` from a `parallel for`
