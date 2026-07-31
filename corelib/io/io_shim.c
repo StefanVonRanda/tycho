@@ -15,6 +15,8 @@
 #include <stdint.h>
 #include <errno.h>
 #include <sys/stat.h>            /* stat(2) + S_ISDIR -- iox_stat_kind */
+#include <fcntl.h>               /* open(2) + O_RDONLY -- iox_read_at */
+#include <unistd.h>              /* pread(2) + close(2) -- iox_read_at */
 /* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
  * emitted program; this shim is a separate translation unit, so it defines the
  * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
@@ -123,6 +125,94 @@ void iox_read_file(const char *path, tycho_int *status,
     fclose(f);
     *out = buf;
     *outlen = (tycho_int)len;
+    *status = TY_RF_OK;
+}
+
+/* Read AT MOST `n` bytes of `path` starting at absolute byte offset `off`, in the
+ * same *status code space and the same out-param shape iox_read_file uses above:
+ *
+ *      TY_RF_OK   (1)  the read was performed; *out holds *outlen bytes, and
+ *                      *outlen may be LESS than n (see BOUNDS below) or 0
+ *      TY_RF_MISS (0)  no such path
+ *      TY_RF_DIR  (2)  the path names a directory
+ *      TY_RF_ERR  (3)  it is there and could not be read -- permissions, a
+ *                      non-regular file, or a REJECTED ARGUMENT (see NEGATIVE)
+ *
+ * pread(2), NOT lseek+read. pread reads at an absolute offset without touching
+ * the file description's own offset, so this needs no open-file handle threaded
+ * through Tycho and no seek/read pair that a second caller could interleave with.
+ * The fd is opened and closed inside one call; nothing is shared, so nothing races.
+ *
+ * BOUNDS -- the three cases are three different answers, on purpose:
+ *
+ *   OFFSET PAST EOF -> TY_RF_OK with *outlen == 0. This is pread(2)'s own answer
+ *     and it is not an error: there genuinely are no bytes there. It is also not
+ *     the ambiguous empty that iox_read_file was fixed for -- there, empty could
+ *     mean an empty file OR a missing one OR a directory, and the caller had no
+ *     way to tell. Here the caller CHOSE the offset, so "0 bytes at offset 900 of
+ *     a 26-byte file" is a complete answer to the question it asked.
+ *
+ *   LENGTH RUNNING PAST EOF -> a SHORT read: TY_RF_OK with *outlen < n. The buffer
+ *     is not padded and the shortfall is not an error. *outlen is how the caller
+ *     learns how much it got, which is why no third out-param is needed.
+ *
+ *   NEGATIVE off OR n -> TY_RF_ERR, rejected HERE, before open(2) and before any
+ *     cast. This is the one that has to be a guard rather than a consequence: a
+ *     negative tycho_int cast to a 32-bit off_t is implementation-defined, and on
+ *     any width the value must never reach pread(2) where a sign-extended offset
+ *     would be a wild read. Fail closed, ahead of the syscall.
+ *
+ * THE ALLOCATION IS BOUNDED BY THE FILE, NOT BY n. fstat gives the size, so the
+ * buffer is min(n, size - off) -- never n. This is the boundary where untrusted
+ * input meets malloc: a `Range:` header naming a terabyte allocates only what the
+ * file actually holds beyond `off`. No arbitrary cap is imposed on top, and that
+ * is deliberate -- a cap is a policy number with no principled value, and clamping
+ * to the file already removes the attack, since an attacker cannot make the
+ * allocation exceed the file they could have fetched whole anyway.
+ *
+ * The clamp also makes the off_t cast safe: after it, off < size, and size came
+ * from an off_t, so `off` provably fits back into one.
+ *
+ * REGULAR FILES ONLY. A directory is TY_RF_DIR (matching iox_read_file); a fifo,
+ * socket or device is TY_RF_ERR, because st_size is meaningless for them and
+ * pread(2) fails ESPIPE on anything unseekable -- "the byte at offset N" is not a
+ * question those objects have an answer to. */
+void iox_read_at(const char *path, tycho_int off, tycho_int n, tycho_int *status,
+                 unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = TY_RF_ERR;
+    if (off < 0 || n < 0) return;                    /* fail closed, before open(2) */
+    errno = 0;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) { *status = ty_rf_errno(); return; }
+    struct stat st;
+    if (fstat(fd, &st) != 0) { *status = ty_rf_errno(); close(fd); return; }
+    if (S_ISDIR(st.st_mode)) { *status = TY_RF_DIR; close(fd); return; }
+    if (!S_ISREG(st.st_mode)) { close(fd); return; }  /* fifo/socket/device: TY_RF_ERR */
+    tycho_int size = (tycho_int)st.st_size;
+    if (off >= size) { *status = TY_RF_OK; close(fd); return; }   /* past EOF: 0 bytes, Ok */
+    tycho_int avail = size - off;
+    tycho_int want = n < avail ? n : avail;           /* bounded by the FILE, not by n */
+    if (want == 0) { *status = TY_RF_OK; close(fd); return; }     /* n == 0: Ok, empty */
+    unsigned char *buf = malloc((size_t)want);
+    if (!buf) { close(fd); return; }                  /* fail closed: *out stays NULL */
+    tycho_int got = 0;
+    while (got < want) {
+        ssize_t r = pread(fd, buf + got, (size_t)(want - got), (off_t)(off + got));
+        if (r < 0) {
+            if (errno == EINTR) continue;             /* a signal, not a failure */
+            *status = ty_rf_errno();
+            free(buf);
+            close(fd);
+            return;
+        }
+        if (r == 0) break;      /* the file shrank under us -- a short read, still Ok */
+        got += (tycho_int)r;
+    }
+    close(fd);
+    *out = buf;
+    *outlen = got;
     *status = TY_RF_OK;
 }
 

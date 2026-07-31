@@ -83,6 +83,13 @@ extern fn iox_close_lines(r: ptr)
 # two out-params the `bytes` return uses -- see the block comment on iox_read_file
 # in io_shim.c.
 extern fn iox_read_file(path: string, status: inout int) -> bytes
+# pread(2) at an absolute offset -- the SAME FFI shape as iox_read_file, because it
+# has the same halves to place: a `bytes` payload cannot be an `inout` (the
+# compiler rejects it in as many words -- src/tychoc.c@ffi_scalar_type is the
+# predicate and its message names bytes explicitly), so the
+# payload takes the return and the status takes the `inout`. The mirror of
+# iox_stat_mtime below, where the payload is a scalar and the two swap slots.
+extern fn iox_read_at(path: string, off: int, n: int, status: inout int) -> bytes
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int
@@ -112,6 +119,51 @@ const FS_EXISTS = 4
 fn read_bytes(p: string) -> Result(bytes, IoErr):
     st := 0
     b := iox_read_file(p, &st)
+    if st == RF_OK:
+        return Ok(b)
+    if st == RF_MISS:
+        return Err(NotFound)
+    if st == RF_DIR:
+        return Err(IsDir)
+    return Err(Failed)
+
+# Read AT MOST `n` bytes of `p` starting at absolute byte offset `off` -- pread(2),
+# so no file position is disturbed and no handle is threaded through the caller.
+# The point is that serving 1 KB of a 1 GB file no longer allocates 1 GB: before
+# this, an offset read was expressible only as `read_bytes(p)[a:b]`, which reads
+# the whole file first.
+#
+#   Ok(b)           the read happened; len(b) may be LESS than n, or 0
+#   Err(NotFound)   nothing is there
+#   Err(IsDir)      the path names a directory
+#   Err(Failed)     it is there and could not be read, OR an argument was refused
+#
+# THE THREE BOUNDARIES, which are three different answers and not variations:
+#
+#   off PAST EOF is Ok with len(b) == 0, not an Err. That is pread(2)'s answer and
+#   it is a complete one: the caller chose the offset, so an empty result here says
+#   "there are no bytes there", unlike read_bytes' empty, which used to mean an
+#   empty file OR a missing one OR a directory with no way to tell.
+#
+#   n RUNNING PAST EOF is a SHORT READ: Ok, with len(b) short of n and no padding.
+#   `len(b)` is how the caller learns how much it got -- which is why this returns
+#   a plain `bytes` and needs no separate count.
+#
+#   A NEGATIVE off OR n is Err(Failed), refused in the shim before open(2) so it
+#   can never be sign-extended into a wild pread offset. Both are unreachable from
+#   correct code -- a caller parsing a `Range:` header only ever produces digits --
+#   so neither gets an IoErr variant of its own. Err(Failed) is the fail-closed
+#   answer to "you asked for something that is not a read".
+#
+# n == 0 is Ok(empty): asking for nothing succeeds at giving nothing.
+#
+# THE ALLOCATION IS BOUNDED BY THE FILE, NOT BY n, and that is the property that
+# makes this safe to hand a number off the wire. The shim fstats and allocates
+# min(n, size - off), so `read_at(p, 0, 1000000000000)` on a 26-byte file allocates
+# 26 bytes. See iox_read_at in io_shim.c for why no additional cap is imposed.
+fn read_at(p: string, off: int, n: int) -> Result(bytes, IoErr):
+    st := 0
+    b := iox_read_at(p, off, n, &st)
     if st == RF_OK:
         return Ok(b)
     if st == RF_MISS:
