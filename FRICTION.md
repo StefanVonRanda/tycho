@@ -787,3 +787,45 @@ than retired: `docs/reference/` asserting an `ncpu()` behaviour the spec had jus
 corrected, and a gate comment claiming one known-bad fixture where its own
 heredoc lists two. Those were false statements about behaviour. A stale line
 number misdirects; a false claim misinforms.
+
+## Retired citation phases, second set — 2026-07-31
+
+Three more phases from the citation-gate work are retired here rather than done.
+Unlike the first set, two of these are not *expensive* — they are **unresolvable
+as posed**, and saying so is worth more than leaving them open to look thorough.
+
+**A basename with no directory cannot be resolved by anything.** 470 refs across
+40 distinct names (`05-generics.md` 67, `03-types.md` 65, `tychoc0.ty` 51,
+`02-grammar.md` 33, and 36 more) name a file with no path. No prefix list fixes
+this, because the author never said which directory they meant, and several of
+those names exist in more than one place. Resolving them means reading each
+citing sentence and inferring intent — which is not a gate, it is an editing
+project, and a wrong inference produces a confident citation to the wrong file.
+The gate skips them, and skipping is the correct behaviour.
+
+**A line reference into the live plan names a document that no longer exists.**
+`plan.md` is renumbered from line 1 every time a plan is archived, so 25 such
+refs — 11 already out of bounds — point at content that has moved to an archive
+under a different name. The number cannot be repaired: repairing it would mean
+guessing which archive, and it would go stale again next phase, because the live
+plan grows every phase. Bounds-checking `plan.md` would be a permanent
+unclearable red. This is the same rotation problem the plan-ref gate solves for
+*prose* references, and the line-numbered form has no equivalent fix.
+
+**The third spelling, and why the chase stops.** A possessive form joining the
+filename to a phase number — 12 refs in four shapes — is invisible to a gate that
+now matches two word orders in three spellings each. One of its shapes names no
+file at all, so catching it means keying a pattern on a common English word and
+accepting false positives. The refs are genuinely stale; the *pattern* is the
+part that stops here. A fourth spelling exists and nobody has found it, which is
+the argument: matching English prose is not a mechanism that converges. What
+prevents new ones is the archiving discipline in `CLAUDE.md` — the commit that
+archives a plan rewrites the references it created — and that is enforcement at
+the point of creation rather than detection after the fact.
+
+**What was fixed instead**, so the split is legible: phases 35, 38 and 39, all
+inconsistencies the same day's work introduced — a false-positive class created
+by widening the gate's reach, figures in `CLAUDE.md` left stale by a phase that
+updated only its own copy, and a genuine contradiction between the anchor check
+and the record-line rule. Cleaning up after yourself is different from chasing a
+population.
