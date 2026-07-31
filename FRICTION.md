@@ -598,7 +598,7 @@ no Tycho spelling, and both therefore earned a `corelib/net/net_shim.c` fix
 rather than a line in this file. Recording them here because *the reason they
 were unreachable* is the ergonomic finding.
 
-- **`SIGPIPE` killed the whole server.** Nothing in `corelib/`, `runtime/` or `src/` mentioned SIGPIPE. One client that sent a partial request and closed without reading terminated the process — every worker, every in-flight connection — measured as `poll()` = `-13`. A Tycho program cannot fix this: signal disposition is process-wide with no Tycho surface, and `netx_write` loops `send()` internally, so even a single logical `net.write` can issue several syscalls. Fixed with `MSG_NOSIGNAL` / `SO_NOSIGPIPE`; the server now survives 100 consecutive hostile disconnects.
+- **`SIGPIPE` killed the whole server.** Nothing in `corelib/`, `runtime/` or `src/` mentioned SIGPIPE. One client that sent a partial request and closed without reading terminated the process — every worker, every in-flight connection — measured as `poll()` = `-13`. A Tycho program cannot fix this: signal disposition is process-wide with no Tycho surface, and `netx_write` loops `send()` internally, so even a single logical `net.write` can issue several syscalls. Fixed with `MSG_NOSIGNAL` / `SO_NOSIGPIPE`; the server now survives 100 consecutive hostile disconnects. **RE-SCORED 2026-07-31 — the general claim inside this entry has stopped being true, and the entry's conclusion is unchanged by that.** Tycho does have a signal surface now: `core:signal` (`docs/spec/18-library.md` §32.27) installs a `SIGTERM`/`SIGINT` handler whose only action is `shutdown(fd, SHUT_RDWR)` on a listening socket. It is two functions wide and **cannot set a disposition** — there is no `signal.on(sig, handler)` and no way to spell `SIG_IGN` — so `SIGPIPE` remains unreachable from Tycho and `MSG_NOSIGNAL` in the shim is still the only fix for it. What changed is the *precision* of the complaint: "signal disposition is process-wide with no Tycho surface" is now "no Tycho surface for signal **disposition**", which is the narrower and more useful statement of the gap.
 - **Nagle cost 620× on every small response.** `httpd.write_response` deliberately sends head and body as two writes so the body is never copied — a Phase 2 optimization. With Nagle on, that second small segment waits for the peer's delayed ACK. Measured, same server, same bytes: **43.73 ms/req (23 req/s) with two writes vs 0.07 ms/req (14,465 req/s) with one.** `TCP_NODELAY` fixes it and no Tycho program can set it. The lesson is sharper than the bug: a corelib change that saved one `memcpy` cost three orders of magnitude, and nothing in the language or library could have surfaced that to the person who wrote it.
 
 ## What was good
@@ -685,3 +685,67 @@ about the error model at all.
 - **`plan.md` phase 10** — **two in-tree comments still assert that the language has no nested patterns**, three phases after `plan.md` phase 3 added them: `corelib/net/net.ty:20-21` ("Tycho has no nested patterns -- `Err(net.Timeout)` does not parse -- so `==` is the only way") and `examples/corelib/httpd/main.ty:54-55` ("`Err(httpd.Malformed)` cannot be a match arm (Tycho has no nested patterns)"). Phase 3's evidence lists the files it swept — `httpd.ty`, `result.ty`, `io.ty`, `docs/guides/corelib.md` — and `core:net` was not among them. `corelib/test/io/main.ty:43` gets it right ("`compiler/tychoc0.ty`, whose grammar still has no nested pattern"), which is the distinction both stale comments miss: the *language* has them, the *frozen compiler that reads the corelib* does not. `examples/corelib/httpd` is one of the two files phase 8 excluded from `frontparity` **because** it is outside the freeze, so there the comment is not just mis-attributed — the nested arm would compile. Left unfixed on scope. **Postscript, 2026-07-30 — still open, now three files, and the distinction this entry drew has itself expired.** Both named comments survive verbatim (`corelib/net/net.ty:20`, `examples/corelib/httpd/main.ty:55`) and a **third** was found here: `corelib/result/result.ty:29-31`, which does not merely mis-attribute but instructs — "this package is compiled by the frozen `compiler/tychoc0.ty` … so nothing in `corelib/` may use one". Since the freeze lanes were retired 2026-07-29 that sentence is false in *both* halves, so the careful language/frozen-compiler distinction `corelib/test/io/main.ty:43` was praised for is no longer a distinction at all — there is one compiler, and it has nested patterns. This entry's original grep missed nothing; the two comments simply wrap the phrase across a line break, which is why a later search for `no nested patterns` finds neither. Widened and re-costed as open list item 5, which folds in three more sites of the same shape (`corelib/httpd/httpd.ty:100-109`, `corelib/httpd/httpd.ty:281-289`, `tools/lsp.ty:259`).
 - **`plan.md` phase 10** — **this file's own `path:line` citations drift silently, and no gate can see it.** 30 of the 71 spot-checked in the CLOSED notes no longer point at what they name; the worst are into `src/tychoc.c`, where every compiler phase shifts everything below it — the literal-interning emit site cited by the `\r` item as `src/tychoc.c:8671` is now `src/tychoc.c:9455`, `copy_into`'s `T_BYTES` case cited by phase 1b as `src/tychoc.c:8217` is now `src/tychoc.c:8551`, and `instantiate_generic` cited by the qualified-name item as `src/tychoc.c:6895` is now `src/tychoc.c:7482`. Every closure is still *true*; the coordinates are not — and the three `as` values above are now the pre-repair record, `plan.md` phase 6 having repointed this file's live citations to today's lines. `scripts/check_citations.py` cannot catch it by construction: it verifies the 22 **anchored** `path:line@token` citations against the token and only bounds-checks the 1646 **bare** ones, and every citation in this file is bare. The fix is a mechanical pass to anchored form, after which the gate polices them — and the reason it matters is that this file is the place a future reader goes to find out why something is the way it is. Left unfixed on scope. **Postscript, 2026-07-30 — re-measured, and the repair phase 6 performed has already been undone by sixty commits.** Fifteen citations opened and checked at `afa67da`: **11 are wrong again**, every one of them into `src/tychoc.c`, and the four that survived are all into files that barely moved. So the repair-in-place strategy has now been tried once and measured to last about four days of active work on the compiler. The gate's blind spot is unchanged and structural — bounds-checking a bare ref into a 12k-line file can never fail. **A second dimension of the same defect was found here and repaired a different way:** 51 "`plan.md` phase N" references in this file now name an unrelated plan, because both plans they meant were archived; that was fixed with one definitional note at the top rather than 51 rewrites, on the reasoning that a rewrite would go stale at the next archive and a definition will not. **The two together make the case: repointing is not the fix, re-anchoring is** — and where a stable name exists, use it instead of a coordinate. Open list item 10.
 - **`plan.md` phase 17 — the bare `src/tychoc.c:N` citation population, retired here by decision rather than swept.** Re-derived at `b5c8406`: **1457** refs name `src/tychoc.c` — 660 inside the frozen `docs/internals/plan-*-DONE.md` archives, 797 live. Of the whole population **139 are anchored `path:N@token` and every one of them is correct** (checked by re-running the anchor test over all of them: 0 mismatches), so the anchored half is not the problem and a sweep would not move it. The other **1318 are bare**, which the gate checks for bounds only — and bounds is exactly the property a drifted citation keeps, because `src/tychoc.c` is 12774 lines and almost any stale number is still *inside* it. **Two classes were considered for repointing and both were deliberately refused.** (1) The **127 refs in dated design records** — 90 in non-archived `docs/internals/*.md`, 37 in `docs/rfc/*.md`, led by `generics-stage2-body-cloning.md` (52), `generics-gap-fixes-plan.md` (44) and `ffi-threading-design-review.md` (26). A study that dates itself in its own filename is a photograph of the tree on that day; repointing its citations yields a document whose prose is dated and whose coordinates are current, and nothing tells the reader the two halves disagree. A stale ref in a dated record is legible; a fresh one is a lie the reader cannot detect. (2) The refs inside `plan.md`'s **completed-phase evidence blocks** — renumbering these makes a phase claim it verified something it never looked at, which is the same rule phase 4 settled for the archives. **What would actually fix the bare population is not a sweep but a conversion**: each ref re-read against the line it names and rewritten anchored, after which the gate polices it forever. That is 1318 hand-verified citations. Batch 10's phase-44 work is a 42-ref instance of exactly that job and it took a batch. Recorded, not actioned — and note this is the same defect as the entry above it, counted across the whole tree instead of this file.
+
+## The signal plan, 2026-07-31 (head `5428fa1`) — closed for one case, narrowed for the rest
+
+`server/main.ty:646` prints `tycho-httpd: stopped after N requests` and was
+**unreachable**. Nothing in the tree installed a `SIGTERM` or `SIGINT` handler, because
+Tycho had no signal surface at all, and `server/run.sh` asserted wait status **143** — it
+asserted the *absence* of clean shutdown and called that a passing gate. `core:signal`
+closes that. The honest score is that it closes the **shutdown case**, not signal
+handling, and the difference is deliberate rather than unfinished.
+
+- **CLOSED — a Tycho program can shut down cleanly on `SIGTERM`/`SIGINT`.**
+  `signal.on_shutdown(fd)` (`corelib/signal/signal.ty:60@on_shutdown`) installs one
+  handler for both signals whose only action is `shutdown(fd, SHUT_RDWR)` on the
+  listening socket. **One call arms an entire worker pool**
+  (`server/main.ty:635@on_shutdown`) because the handler is per-process and acts on the
+  shared listener, so which thread the kernel delivers to never matters. **No new control
+  flow was needed anywhere**: every thread blocked in `accept` gets `Err`, the wind-down
+  arm that already existed (`server/main.ty:494-495`) retires each loop, and the count
+  line prints. Measured at `--workers 4`, four connections held so all four loops were
+  provably busy: exit status **0**, the line, `/proc/<pid>` gone, shutdown in **1 ms**.
+  The gate now asserts the clean exit it used to assert the absence of, plus `SIGINT`,
+  plus `SIGKILL` as the control — 52 assertions to 57.
+- **STILL OPEN, narrowed — there is no general handler, and "narrow" is the design and
+  not the backlog.** `signal.on(sig, handler)` was refused, with the reason written into
+  the package header (`corelib/signal/signal.ty:19-31`): calling a Tycho function from
+  handler context is a *language* feature, because every Tycho value lives in a
+  bump-allocated arena that is not re-entrant and channel operations park behind a mutex
+  (`runtime/tycho_rt.c:657@mu`) — a handler that interrupts the allocator or the lock
+  holder and then allocates or touches a channel deadlocks or corrupts the process it was
+  invoked to shut down. **What a general version would need, so the next person costs it
+  rather than rediscovers it:** (1) an async-signal-safe hand-off out of handler context —
+  a self-pipe or `signalfd` read by a dedicated thread — so the callback runs on an
+  ordinary stack; (2) the handler itself still held to a `sig_atomic_t` store, unchanged
+  from what ships; (3) a `pthread_sigmask` policy, since `pthread_create` is called with a
+  NULL attribute and there is no mask anywhere in the tree, so "an arbitrary worker runs
+  your callback" is not a contract anyone can code against; (4) the re-entrancy clause in
+  the spec. None of it is needed to shut a server down, and the tree has exactly one
+  caller.
+- **NEW, measured — clean shutdown is not *prompt* shutdown, and `--idle-ms` is what
+  bounds it.** A worker can only notice a shutdown between requests: one parked in
+  `serve_conn` on an idle keep-alive connection waits out `SO_RCVTIMEO` first. At
+  `--workers 4 --idle-ms 5000`, 0 or 1 held connections shut down in **1 ms** and four
+  held connections take **5141 ms** — exit 0 with the line in every case, so bounded and
+  correct rather than hung. The 1-connection case is fast only by luck of routing: this
+  kernel delivered `SIGTERM` to the main thread, which is accept loop 1, which was the
+  busy one, so `EINTR` released it directly. The fix already has its API and no caller —
+  `signal.shutdown_requested()` (`corelib/signal/signal.ty:64@shutdown_requested`) exists
+  for exactly this. Filed as `plan.md` phase 15.
+- **NEW, small — the mechanism that works is a Linux behaviour, not a POSIX guarantee.**
+  `shutdown()` waking a thread blocked in `accept(2)` on a *listening* socket is not
+  specified, and backlogged connections are dropped rather than drained. It was chosen by
+  measurement over three alternatives, not by preference: `close(fd)` released 1 loop of 4
+  and then handed the descriptor number back out to a later `open()` while three threads
+  were still blocked on it, and a `poll`-before-`accept` gate hung 2 of 4 under live
+  traffic (a thundering herd past the readiness check). Recorded in
+  `docs/spec/18-library.md` §32.27 as a property a second implementation must
+  re-establish rather than assume.
+- **What went right, and it is the same shape as the concurrency re-score above: the
+  language and the build were not in the way.** A new corelib package needs **zero**
+  build wiring — `corelib/run.sh` globs `corelib/test/*/main.ty` and picks the shim up by
+  path, and `tychoc` discovers `corelib/<pkg>/<pkg>_shim.c` the same way — so there is no
+  registry to join, and `make -s corelib` scored the new package on its first run. The
+  whole surface is 65 lines of Tycho over 126 of C, and the only thing that cost real
+  effort was the *measurement* that picked the mechanism.

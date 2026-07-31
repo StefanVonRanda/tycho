@@ -32,6 +32,18 @@ usage: tycho-httpd [options]
 Both `--port 8080` and `--port=8080` work. `--port 0` binds an ephemeral port
 and prints the one it got, which is what the test scripts use.
 
+`--idle-ms` bounds two things rather than one, and the second is easy to miss.
+It is how long a silent keep-alive peer may pin a worker — and, because a worker
+can only notice a shutdown *between* requests, it is also the worst-case time a
+`SIGTERM` takes. Measured at `--workers 4 --idle-ms 5000`: with no connection
+held, or one, shutdown completes in **1 ms**; with all four workers parked on
+idle keep-alive connections it takes **5141 ms**, one full idle timeout. Exit
+status is 0 and the stopped line prints in every case, so a busy shutdown is
+slow, not hung — but a large `--idle-ms` is a proportionally slow `SIGTERM`.
+`signal.shutdown_requested()` (`corelib/signal/signal.ty:64@shutdown_requested`)
+exists to cut that to one in-flight request and has no caller in the tree yet;
+filed as phase 15 of `plan.md`.
+
 ## What it does
 
 | | |
@@ -42,8 +54,9 @@ and prints the one it got, which is what the test scripts use.
 | **Index resolution** | `/` and `/dir/` append `index.html`. `/dir` (no slash) gets a `301` to `/dir/`, so relative links on the page resolve correctly. |
 | **Keep-alive** | HTTP/1.1 default-on, `Connection: close` honoured, HTTP/1.0 defaults to close. Up to 1024 requests per connection. |
 | **Idle timeout** | `SO_RCVTIMEO` on each accepted socket, so a silent peer cannot pin a worker. |
+| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:646`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
 | **Statuses** | 200, 301, 400, 403, 404, 405, 408, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
-| **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:342-352`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
+| **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:343-353`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
 
 ## Concurrency
 
@@ -120,11 +133,13 @@ requests (`ETag`/`If-Modified-Since`), virtual hosts, directory listings, and
 request pipelining. None of them is load-bearing for "serve a directory of files
 to a browser", and each would have been scope the plan did not ask for.
 
-### Two rough edges that were here, and are not any more
+### Three rough edges that were here, and are not any more
 
-Both were real limitations of the *corelib*, not of this program, and both were
-closed on **2026-07-26**. The history is kept rather than deleted: what was hard
-is worth as much as what is true now, and each of these is why a syscall exists.
+The first two were real limitations of the *corelib*, not of this program, and
+both were closed on **2026-07-26**; the third was a gap in the language itself
+and closed on **2026-07-31**. The history is kept rather than deleted: what was
+hard is worth as much as what is true now, and each of these is why a syscall
+exists.
 
 - **An empty directory used to be answered `404`** instead of the `301` to
   `<path>/` a real directory gets. `resolve()` could not ask "is this a
@@ -134,8 +149,8 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   the missing question, not the missing answer.
   **Fixed 2026-07-26** (`4fa192d`, `docs/internals/plan-option-result-DONE.md`
   phase 4) by adding `fn is_dir(p: string) -> Result(bool, IoErr)` over a real
-  `stat(2)` (`corelib/io/io.ty:133`), which `resolve()` matches on at
-  `server/main.ty:301`. One `stat(2)` now answers all three tails: `Ok(true)`
+  `stat(2)` (`corelib/io/io.ty:133@is_dir`), which `resolve()` matches on at
+  `server/main.ty:302@is_dir`. One `stat(2)` now answers all three tails: `Ok(true)`
   with no trailing slash is the `301`, `Ok(false)` is a file to serve, and
   `Err(_)` is a `404` that fails closed.
   **Measured live at HEAD**, against a document root holding an empty
@@ -150,28 +165,48 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   **Fixed 2026-07-26** (`7b76fcd`, `docs/internals/plan-friction-DONE.md` phase
   5): `netx_peer_addr` is `getpeername` + `inet_ntop`
   (`corelib/net/net_shim.c:204`), surfaced as
-  `fn peer_addr(fd: int) -> Result(string, NetErr)` (`corelib/net/net.ty:143`)
-  and used at `server/main.ty:368` — asked **once per connection**, not once per
+  `fn peer_addr(fd: int) -> Result(string, NetErr)`
+  (`corelib/net/net.ty:143@peer_addr`) and used at
+  `server/main.ty:369@peer_addr` — asked **once per connection**, not once per
   request, because the peer of an accepted fd cannot change. It is `-` when the
   fd could not be asked, which is honest rather than blank. `make server-check`
   asserts a peer address on every log line, so this cannot silently regress.
 
-One rough edge that is still here:
+And a third, closed on **2026-07-31**:
 
-- **There is no graceful shutdown.** Nothing installs a `SIGTERM` or `SIGINT`
-  handler, so the default disposition terminates the process where it stands and
-  the `tycho-httpd: stopped after N requests` line at `server/main.ty:617` never
-  prints. `kill -TERM` gives wait status 143 and a log whose last entry is a
-  request line. The accept loop already *has* a wind-down path — `accept_loop`
-  sets `running = false` on `Err(e)` from `net.accept` (`server/main.ty:494`) —
-  so what is missing is the signal that would trigger it, which is a language
-  gap and not a server one. Filed as phase 5 of `plan.md`.
+- **There used to be no graceful shutdown.** Nothing installed a `SIGTERM` or
+  `SIGINT` handler, so the default disposition terminated the process where it
+  stood: `kill -TERM` gave wait status 143, the `tycho-httpd: stopped after N
+  requests` line never printed, and the access log's last entry was a request.
+  The accept loop already *had* its wind-down path — `accept_loop` sets
+  `running = false` on an `Err` from `net.accept` (`server/main.ty:494-495`) —
+  so what was missing was the signal that triggers it, and that was a language
+  gap rather than a server one.
+  **Fixed 2026-07-31** by `core:signal` (`docs/spec/18-library.md` §32.27), a
+  two-function package whose handler's only action is
+  `shutdown(srv, SHUT_RDWR)` on the listening socket. **One call arms the whole
+  pool** (`server/main.ty:635@on_shutdown`) — the handler is per-process and
+  acts on the shared listener, so which thread the kernel delivers to does not
+  matter, which is exactly why `core:signal` shuts the descriptor down instead
+  of closing it. Its position is forced three ways: after `net.listen`, because
+  before that there is no descriptor to register; before the fan-out, because
+  `worker` does not *return* until the whole pool has wound down; and before the
+  readiness banner, so no reader is told "serving" while `SIGTERM` still has its
+  default disposition. **No new control flow was added** — every blocked
+  `accept` returns `Err`, every loop retires, every spawned peer is joined, and
+  `server/main.ty:646` prints the count that was always unreachable. It fails
+  closed: a handler that cannot be installed warns on stderr and the server runs
+  on with the old behaviour.
 
 ## Two socket fixes this program forced into `core:net`
 
 Both were found by running the server, both are C-level socket properties that
-**no Tycho program can set** — signal disposition is process-wide and Nagle is a
-`setsockopt` — and both are in `corelib/net/net_shim.c`. (`getpeername` was a
+**no Tycho program can set** — `SIGPIPE`'s disposition is process-wide and Nagle
+is a `setsockopt` — and both are in `corelib/net/net_shim.c`. That first reason
+is now narrower than it was, and it still holds: `core:signal` gave Tycho a
+signal surface on 2026-07-31, but a deliberately narrow one that arms
+`SIGTERM`/`SIGINT` for shutdown and cannot set any other signal's disposition, so
+`MSG_NOSIGNAL` is still the only fix for this. (`getpeername` was a
 third `core:net` addition this program forced, and `io.is_dir` a fourth in
 `core:io`; those two are above, under the rough edges they closed.)
 
@@ -179,7 +214,7 @@ third `core:net` addition this program forced, and `io.is_dir` a fourth in
   `corelib/net/net_shim.c:151-152`). Before this, one client that sent a partial request and closed
   without reading killed the entire server — `SIGPIPE`, signal 13, every worker
   and every in-flight connection gone. The server now survives 100 consecutive
-  hostile disconnects and logs them as `write-failed` (`FRICTION.md:432`);
+  hostile disconnects and logs them as `write-failed` (`FRICTION.md:601`);
   `make server-check` re-runs a 50-disconnect version of that on every CI sweep.
 - **`TCP_NODELAY`** (`corelib/net/net_shim.c:154-155`).
   `httpd.write_response` sends the head and the body as two writes, on purpose,
@@ -198,7 +233,20 @@ make server-check      # ~4s, the gate
 ```
 
 `server/run.sh` starts the real binary, talks HTTP to it over raw sockets,
-asserts what it answers, and kills it on every exit path. `make server-check`
+asserts what it answers, and kills it on every exit path — and **how it dies is
+three assertions now, where it used to be one.** That one asserted wait status
+143: the *absence* of clean shutdown. Today `SIGTERM` must give exit status
+**0**, the `stopped after N requests` line, an `N` equal to the access-log line
+count, and a log whose last entry is the shutdown line rather than a request;
+`SIGINT` must give the same exit 0 and the same line, being the same handler on
+the one signal `corelib/test/signal` cannot itself test (glibc's `system(3)`
+ignores `SIGINT` in the caller for the duration of the call, and that fixture
+kills through `os.system`); and `SIGKILL` must give wait status **137** with
+**no** stopped line, which is the control — without it, "exit 0 and a line"
+would be consistent with the process having printed that on the way out of any
+signal at all. 57 assertions in total. A 10 s watchdog `SIGKILL`s the `SIGTERM`
+case, so a regression that leaves one accept loop blocked reddens this gate
+instead of hanging it. `make server-check`
 runs it (`Makefile:247-248`), and it has been in `make ci` as step **`[3c/13]`**
 since 2026-07-30 (`scripts/ci.sh:111`), immediately after `[3b] entrypoints` —
 so a server that does not *build* reddens there with a compile error rather than
@@ -209,7 +257,7 @@ Until 2026-07-30 this section said there was no `make` gate for the server,
 "because it is a long-running network daemon, not a fixture with a golden".
 Both halves were wrong, and the second was wrong as a *principle*: the daemon
 shape is exactly what makes it gateable. `--port 0` plus the startup banner
-(`server/main.ty:610-614`) hands a runner readiness **and** the bound port on
+(`server/main.ty:639-643`) hands a runner readiness **and** the bound port on
 one line, so there is no `sleep` and no fixed port to collide on, and a `trap`
 covers teardown. What is genuinely unassertable is wall-clock — the concurrency
 table and the `TCP_NODELAY` figures, both above — not behaviour.

@@ -641,7 +641,7 @@ asserting the kill.
   no fixture under `tests/` builds `server/run.sh` or the server — and
   `make -s server-check` plus the 10-run loop above are both the final file.
 
-- [ ] **Phase 4 — spec and docs**
+- [x] **Phase 4 — spec and docs**
   - Scope: `docs/spec/` for the new surface, `server/README.md` for the shutdown
     behaviour, and `FRICTION.md` — the "signal handling is absent" observation
     becomes either closed or narrowed.
@@ -650,6 +650,211 @@ asserting the kill.
     doc gates are green.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`,
     `sh scripts/spec_check.sh`.
+
+  ### Evidence — phase 4
+
+  Three files: `docs/spec/18-library.md` (new §32.27), `server/README.md` and
+  `FRICTION.md`. No source file was touched — `corelib/signal/`, `server/main.ty`
+  and `server/run.sh` are byte-identical to phase 3.
+
+  #### The spec: §32.27, and where the safety contract went
+
+  Checked before writing rather than assumed: §32's per-package headings really
+  are the enumeration (`docs/spec/18-library.md:86` opens the section,
+  `docs/spec/18-library.md:263` is `net`, and `docs/spec/18-library.md:285` is
+  `decimal`, the last core-tier entry), and the *newer* entries —
+  `net`, `bignum`, `decimal`, `compress`, `image`, `tls` — close with
+  **`Source <path>`** rather than the `docs/guides/corelib.md:N` pointer the older
+  ones use. §32.27 follows the newer form, which is also the honest one: the guide
+  has no `core:signal` entry to point at (verified — `grep -n signal
+  docs/guides/corelib.md` returns exactly one hit, `128+signal` at
+  `docs/guides/corelib.md:301`, in `os.run`'s exit-code description). Filed as
+  phase 16.
+
+  The catalog paragraph matches the neighbours in length and shape. The
+  safety contract does not fit that shape, so it is a `####` subsection —
+  a depth the spec already uses once, at `docs/spec/00-conventions.md:43`, for
+  exactly this purpose (a note that qualifies the section above it). Nothing was
+  added to `docs/spec/appendix-e-conformance.md`: its E.2 matrix is keyed by
+  normative *clause*, has no §31–33 block at all, and its one sentence about the
+  library chapters (`docs/spec/appendix-e-conformance.md:401-402`) scopes itself
+  to the `deps` tier, which `core:signal` is not.
+
+  **What was made normative**, i.e. the sentences a second implementation is bound
+  by rather than informed of:
+
+  - `on_shutdown` **MUST** fail closed — a descriptor it cannot register or a
+    handler it cannot install leaves the default disposition in place, never a
+    half-armed state.
+  - An implementation **MUST NOT** run Tycho code in handler context, with the
+    reason attached to two verified facts rather than to taste: values live in a
+    bump-allocated non-re-entrant arena (§31.1), and channel operations park behind
+    a mutex — `runtime/tycho_rt.c:657` is `pthread_mutex_t mu`, taken at
+    `runtime/tycho_rt.c:693`.
+  - The handler's **five** actions, each named with its justification, anchored one
+    per line into the shim (`corelib/signal/signal_shim.c:81@sigx_flag`,
+    `:82@sigx_fd`, `:83@shutdown`) so the citation gate re-checks the mapping on
+    every future edit to that file.
+  - Both load-bearing orderings **MUST** be preserved: the descriptor registered
+    before the first `sigaction` (`corelib/signal/signal_shim.c:103@sigx_fd`), and
+    `sa_flags = 0` (`corelib/signal/signal_shim.c:108@sa_flags`).
+  - **The `SA_RESTART` clause is the one worth having.** Phase 1 measured it as a
+    contrast (0/4 woken with `SA_RESTART`, 1/4 without) and the tempting way to
+    write that up is "so we do not set it". What the spec says instead is what a
+    *program* can rely on: an interrupted `accept` **MUST** be observable as a
+    failed one rather than as a silently restarted call. That is a statement about
+    the language surface, not about a flag, and it is the half a reimplementer
+    would otherwise have to guess. The measured numbers stayed out of the spec —
+    they are evidence for the rule, not the rule.
+  - The non-portability is spelled out as an obligation: `shutdown()` waking a
+    thread blocked in `accept` on a *listening* socket is Linux behaviour, backlog
+    connections are dropped rather than drained, and another platform **MUST**
+    re-establish the released-every-thread property rather than assume it —
+    with `close(fd)`'s two observed failures named so it is not retried as the
+    obvious substitute.
+
+  #### `server/README.md`: the shutdown story was wrong in four places, not one
+
+  Read whole rather than appended to, as the brief required, and the stale surface
+  was wider than the one paragraph:
+
+  1. **"One rough edge that is still here — there is no graceful shutdown"** (the
+     whole block) is now the third entry in the section above it, which meant
+     re-titling that section ("Two rough edges" → "Three") and splitting its
+     "both were closed on 2026-07-26" opener, since the third closed on a different
+     date and was a *language* gap rather than a corelib one. The replacement keeps
+     the old behaviour in the past tense — 143, no line, a log ending on a request —
+     because that section's stated purpose is that the history is worth as much as
+     the current truth.
+  2. **The "What it does" table had no shutdown row.** It has one now: exit 0 and
+     the count line for `SIGTERM`/`SIGINT`, `SIGKILL` still uncatchable.
+  3. **"Two socket fixes this program forced into `core:net`"** opened by asserting
+     that neither property is settable from Tycho *because* "signal disposition is
+     process-wide". Half of that reason has expired. Corrected in place rather than
+     deleted: the conclusion still holds — `core:signal` cannot set a disposition,
+     so `MSG_NOSIGNAL` is still the only fix for `SIGPIPE` — and the sentence now
+     says so instead of resting on a premise that stopped being true.
+  4. **"Verifying it"** described the gate as killing the server "on every exit
+     path", which was accurate when the kill was teardown and is not now that it is
+     three assertions. It names all three cases, says why `SIGKILL` is the control
+     rather than redundancy, and gives the 57.
+
+  **The `--idle-ms` measurement went into Usage, under the flag itself**, not into
+  the shutdown section — a reader choosing that number is looking at the flag list,
+  and the finding *is* about the flag: it bounds the worst-case `SIGTERM`, not only
+  how long a silent peer may pin a worker. 1 ms at 0 or 1 held connections, 5141 ms
+  at four, exit 0 and the line in every case, with the phase 15 pointer and the
+  reason the 1-connection case is fast (routing luck, not design).
+
+  **Six citations repaired while in there, all of them staled by this plan.**
+  Phase 3's `import "core:signal"` at `server/main.ty:61` shifted every line below
+  it by one: `:342-352` → `:343-353` (the log line), `:301` → `:302` (`is_dir`),
+  `:368` → `:369` (`peer_addr`), `:494` → `:494-495` (the wind-down arm, which the
+  old single-line ref no longer covered), `:617` → `:646` (the stopped line) and
+  `:610-614` → `:639-643` (the banner). Three were re-anchored `@token` while being
+  fixed, so the next shift reddens the gate instead of drifting silently. Also
+  `FRICTION.md:432` → `:601`, which had been stale since before this plan. The
+  same +1 hit seven comments in `server/run.sh`; that file is outside this phase's
+  scope, so it is filed as phase 17 rather than swept here.
+
+  #### `FRICTION.md`: the item the brief named does not exist, and the real one is a
+  narrowing
+
+  **Checked before scoring: there is no "signal handling is absent from the
+  language" entry.** `grep -in signal FRICTION.md` returned exactly **one** line
+  before this phase — `FRICTION.md:601`, the `SIGPIPE` item — and no entry anywhere
+  in the file asks for `SIGTERM` handling or graceful shutdown. So there was
+  nothing to strike through, and inventing an entry in order to close it would have
+  been the worst available outcome in a file whose whole value is that it was
+  written before the fix. What the tree actually had was the *plan's* Goal, not a
+  friction item.
+
+  Scored as **two** things, following the file's own conventions:
+
+  - **A re-score in place on `FRICTION.md:601`**, not a strike-through. That entry
+    is about `SIGPIPE`, its fix (`MSG_NOSIGNAL`) shipped long ago, and its
+    conclusion is untouched — but the *general* claim it rests on, "signal
+    disposition is process-wide with no Tycho surface", has become false in its
+    first half. The note says what is now true, that `core:signal` cannot set a
+    disposition, and that the useful restatement is "no Tycho surface for signal
+    **disposition**". A strike-through would have claimed this phase closed a
+    `SIGPIPE` item it did not touch.
+  - **A new dated section**, matching how the file already records a plan's
+    outcome. It scores the shutdown case **CLOSED** with the measurement, the
+    general handler **STILL OPEN, narrowed** with the four things a wide version
+    needs (carried from `corelib/signal/signal.ty:19-31` so the list has one home
+    and not two), the `--idle-ms` latency as **NEW, measured**, the Linux-only
+    mechanism as **NEW, small**, and the zero-build-wiring finding under what went
+    right. "Closed for the shutdown case, narrowed to: no general handler" is the
+    verdict the brief predicted, and it survived contact with the file.
+
+  Append-only plus one in-place line edit, deliberately: seven `FRICTION.md:N`
+  citations live in `src/tychoc.c`, `corelib/`, `tests/` and `server/README.md`,
+  every one of them at `:432` or below, so nothing above line 601 moved and none of
+  them drifted.
+
+  #### Gates — real output
+
+  Markdown-only change, so the three doc gates and nothing else (`CLAUDE.md`'s
+  budget table: `make test` cannot observe a change that reaches no compiled
+  artifact). No `.ty` file was added, so `scripts/spec_examples.sh`'s corpus is
+  unchanged at 9.
+
+  ```
+  $ python3 scripts/check_citations.py
+  citation check: ok (186 anchored contain the token they name, 2741 bare in bounds,
+  140 source->doc citations resolve, 233 source->source in bounds, 12 source->source anchored)
+
+  $ sh scripts/check_links.sh
+  link check: ok (136 markdown files, no dead relative links)
+
+  $ sh scripts/spec_check.sh
+  spec-check: Appendix A grammar matches §3/§4 (ok)
+  spec-check: all Appendix E fixture citations resolve (ok)
+  spec-examples: ok docs/spec/03-types.md:155 (tychoc)
+  ...
+  spec-examples: 9 runnable example(s), all pass
+  ```
+
+  The anchored population moved **168 → 186** across the three files and this
+  evidence block. Preferring the anchored form was the point: a bare ref into
+  `corelib/signal/signal_shim.c` would have stayed green while the handler drifted
+  under it, and the spec's five-action table is worth nothing if it names the wrong
+  five lines.
+
+  **The gate caught this write-up before it caught anything else, which is the
+  note worth leaving.** The first run of `check_citations.py` after the plan edit
+  came back `FAILED (2 stale citation(s))`: `plan.md:664`'s `` `:263` `` and
+  `` `:285` `` were bare continuations of a `docs/spec/18-library.md` named on the
+  *previous* line, and a `docs/` path does not carry across lines — precisely the
+  trap `CLAUDE.md`'s Citations section says has reddened four separate phases on
+  their own evidence. Fixed by spelling both paths in full; it is the fifth.
+
+## Status — PLAN COMPLETE
+
+Four phases, four commits:
+
+| phase | commit | what shipped |
+|---|---|---|
+| 1 | `b4a41a8` | the mechanism settled by C probe: `shutdown(listen_fd, SHUT_RDWR)` from the handler, 4/4 loops released, with the three rejections recorded as observations |
+| 2 | `1f177e9` | `corelib/signal/` — `signal.ty` over a pure-libc `signal_shim.c`, fixture `corelib/test/signal` and its golden |
+| 3 | `5428fa1` | `server/main.ty` arms it in one call; `server/run.sh` asserts clean exit on `SIGTERM` and `SIGINT` with `SIGKILL` as the control, 52 → 57 assertions |
+| 4 | *this commit* | `docs/spec/18-library.md` §32.27 with the async-signal-safety contract, `server/README.md`'s shutdown story, `FRICTION.md` re-scored |
+
+**What shipped.** `server/main.ty:646` — `tycho-httpd: stopped after N requests`,
+unreachable when this plan opened — now prints on `SIGTERM` and on `SIGINT`, with
+exit status 0, every worker joined and nothing left in the process group. The
+surface is two functions (`signal.on_shutdown(fd)`, `signal.shutdown_requested()`)
+over 126 lines of C, needed **zero** build wiring, and the gate that used to assert
+wait status 143 — the absence of clean shutdown — now asserts its presence.
+
+**What remains open**, all of it filed, none of it blocking: phases 6–12 and 14–17
+below. The two this plan created are **phase 15** (shutdown latency is bounded by
+`--idle-ms`, measured at 5141 ms with four held keep-alive connections — the API to
+fix it exists and has no caller) and **phase 14** (`accept_loop` cannot tell a
+transient `accept` failure from a closed listener, because `netx_accept` collapses
+every errno to `-1`; pre-existing, found while proving `EINVAL` reaches the
+wind-down arm). Phases 16 and 17 are this phase's own out-of-scope findings.
 
 ## Carried forward
 
@@ -698,6 +903,37 @@ Unclosed discoveries from the previous plan; none blocking.
       out of phase 3 deliberately: it changes the serving path, which is a wider
       blast radius than installing a handler, and the gate would need a held-open
       client to prove it.
+
+- [ ] **Phase 16** — filed by phase 4. `core:signal` is **absent from
+      `docs/guides/corelib.md`**, the non-normative companion the spec's older
+      §32 entries cite by line. Verified rather than assumed: `grep -n signal
+      docs/guides/corelib.md` returns exactly one hit, `128+signal` at
+      `docs/guides/corelib.md:301`, inside `os.run`'s exit-code description — no
+      package entry. The guide's `## Packages` list
+      (`docs/guides/corelib.md:54-393`) and its C-shim section
+      (`docs/guides/corelib.md:393-410`, which names `regex` as the libc-only
+      example) both stop short of it. §32.27 was therefore written to close on
+      `Source corelib/signal/signal.ty`, the form the newer entries (`net`,
+      `bignum`, `decimal`, `compress`, `image`, `tls`) already use, so the spec
+      does not cite a paragraph that does not exist. Not blocking: the guide is
+      non-normative and the package's own header is the fullest description in
+      the tree. Two paragraphs, plus a line in the C-shim section noting that
+      `signal` is the third libc-only shim after `os` and `net`.
+
+- [ ] **Phase 17** — filed by phase 4, and caused by this plan. Phase 3's
+      `import "core:signal"` at `server/main.ty:61` shifted every line below it by
+      one, staling bare citations into that file. `server/README.md`'s six were
+      repaired in phase 4 (three of them re-anchored `@token` so the next shift
+      reddens the gate); **seven comments in `server/run.sh` were not**, because
+      that file is outside phase 4's scope: `server/run.sh:10` (`:604-614`),
+      `:13` (`:513`), `:20` (`:616`), `:211` (`:426-436`), `:336` (`:499-504`),
+      `:374` and `:392` (both `:342-352`). Each is a source→source citation, which
+      `scripts/check_citations.py` checks for **bounds only**, so all seven are
+      green while pointing one line high — the exact silent-drift class the gate's
+      own docstring calls out. The repair is mechanical (+1, then re-anchor the
+      single-line ones); the reason it is a phase and not a footnote is that
+      `server/run.sh` is the server gate and a comment that misnames a line is how
+      the next reader mis-attributes a failure.
 
 - [ ] **Phase 10, 11, 12** — filed by the previous plan's phase 3 from the
       concurrency write-up: spec §22 never describes `send` from a `parallel for`
