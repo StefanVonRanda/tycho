@@ -292,25 +292,25 @@ asserting the kill.
 
   | line | statement | why it is safe |
   |---|---|---|
-  | `corelib/signal/signal_shim.c:146@clobber` | `int saved = errno;` | reads a thread-local `int`; no call. Saved because `shutdown()` may set `errno` and the interrupted thread is entitled to its own value |
-  | `corelib/signal/signal_shim.c:148@sigx_flag` | `sigx_flag = 1;` | store to a `volatile sig_atomic_t` — the one object type POSIX permits a handler to write while the rest of the program reads it |
-  | `corelib/signal/signal_shim.c:149@sigx_fd` | `int fd = (int)sigx_fd;` | load from a `volatile sig_atomic_t`, same guarantee. Not a TLS read: phase 1's `__thread` histogram was instrumentation and is deliberately not shipped |
-  | `corelib/signal/signal_shim.c:150@SHUT_RDWR` | `shutdown(fd, SHUT_RDWR)` | **on the POSIX async-signal-safe list.** A bare syscall: allocates nothing, takes no userspace lock the interrupted thread could already hold |
-  | `corelib/signal/signal_shim.c:155@saved` | `errno = saved;` | store to a thread-local `int` |
+  | `corelib/signal/signal_shim.c:149@clobber` | `int saved = errno;` | reads a thread-local `int`; no call. Saved because `shutdown()` may set `errno` and the interrupted thread is entitled to its own value |
+  | `corelib/signal/signal_shim.c:151@sigx_flag` | `sigx_flag = 1;` | store to a `volatile sig_atomic_t` — the one object type POSIX permits a handler to write while the rest of the program reads it |
+  | `corelib/signal/signal_shim.c:152@sigx_fd` | `int fd = (int)sigx_fd;` | load from a `volatile sig_atomic_t`, same guarantee. Not a TLS read: phase 1's `__thread` histogram was instrumentation and is deliberately not shipped |
+  | `corelib/signal/signal_shim.c:153@SHUT_RDWR` | `shutdown(fd, SHUT_RDWR)` | **on the POSIX async-signal-safe list.** A bare syscall: allocates nothing, takes no userspace lock the interrupted thread could already hold |
+  | `corelib/signal/signal_shim.c:158@saved` | `errno = saved;` | store to a thread-local `int` |
 
   No `malloc`, no stdio, no `pthread_*`, no arena touch — so there is no lock for
   the handler to deadlock the interrupted thread against, which was the stated
   constraint rather than a formality. `sigemptyset`/`sigaction`/`memset`
-  (`corelib/signal/signal_shim.c:201-207`) run in `sigx_on_shutdown`, ordinary
+  (`corelib/signal/signal_shim.c:204-210`) run in `sigx_on_shutdown`, ordinary
   code, not in handler context.
 
   Two orderings that are load-bearing and are commented at the site:
 
-  - The fd is stored (`corelib/signal/signal_shim.c:200@sigx_fd`) **before** the first
+  - The fd is stored (`corelib/signal/signal_shim.c:203@sigx_fd`) **before** the first
     `sigaction`, so no signal can find a handler installed and a stale or absent
     descriptor. `-1` means "registered nothing", and the handler then only sets
     the flag.
-  - `sa.sa_flags = 0` (`corelib/signal/signal_shim.c:205@sa_flags`) — **no `SA_RESTART`**,
+  - `sa.sa_flags = 0` (`corelib/signal/signal_shim.c:208@sa_flags`) — **no `SA_RESTART`**,
     per phase 1's settled fact 1: with `SA_RESTART` the receiving thread's
     `accept` is restarted and it does not wake at all. `shutdown` releases the
     other loops either way; the extra `EINTR` is free and gets the receiver out
@@ -692,12 +692,12 @@ asserting the kill.
     a mutex — `runtime/tycho_rt.c:657` is `pthread_mutex_t mu`, taken at
     `runtime/tycho_rt.c:693`.
   - The handler's **five** actions, each named with its justification, anchored one
-    per line into the shim (`corelib/signal/signal_shim.c:148@sigx_flag`,
-    `:149@sigx_fd`, `:150@shutdown`) so the citation gate re-checks the mapping on
+    per line into the shim (`corelib/signal/signal_shim.c:151@sigx_flag`,
+    `:152@sigx_fd`, `:153@shutdown`) so the citation gate re-checks the mapping on
     every future edit to that file.
   - Both load-bearing orderings **MUST** be preserved: the descriptor registered
-    before the first `sigaction` (`corelib/signal/signal_shim.c:200@sigx_fd`), and
-    `sa_flags = 0` (`corelib/signal/signal_shim.c:205@sa_flags`).
+    before the first `sigaction` (`corelib/signal/signal_shim.c:203@sigx_fd`), and
+    `sa_flags = 0` (`corelib/signal/signal_shim.c:208@sa_flags`).
   - **The `SA_RESTART` clause is the one worth having.** Phase 1 measured it as a
     contrast (0/4 woken with `SA_RESTART`, 1/4 without) and the tempting way to
     write that up is "so we do not set it". What the spec says instead is what a
@@ -2041,7 +2041,7 @@ edit that moves them reddens the gate instead of drifting silently.
       `docs/internals/plan-signals-DONE.md:296` read
       "`corelib/signal/signal_shim.c:81` | `sigx_flag = 1;`" while line 81 of
       that file had become the middle of a comment — the statement it names is
-      at `corelib/signal/signal_shim.c:148@sigx_flag`. The same was true of
+      at `corelib/signal/signal_shim.c:151@sigx_flag`. The same was true of
       `docs/internals/plan-signals-DONE.md:290`'s handler span, and of a long
       tail of `server/main.ty:N` refs in this file's phase 1-3 evidence.
       **All 38 were repaired by phase 1 of the plan that followed this one**, as

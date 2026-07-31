@@ -48,7 +48,7 @@ first has a decided, documented policy — not 2793 hand repairs.
 - **Verified — freezing did not make the stale refs right.**
   `docs/internals/plan-signals-DONE.md` was archived carrying refs that were
   already wrong when it froze: its `corelib/signal/signal_shim.c:81` names the
-  middle of a comment (the statement is at `:148@sigx_flag`), and the `:77-85`
+  middle of a comment (the statement is at `:151@sigx_flag`), and the `:77-85`
   handler span and a tail of `server/main.ty:N` refs moved the same way. The
   frozen-record rule protects citations that were **true when written**; these
   were false at the moment of freezing, which is a different thing and phase 1
@@ -118,7 +118,7 @@ prose, which is the population phase 27 described. The three it named came out
 exactly as it predicted:
 
 ```
-doc:296  `corelib/signal/signal_shim.c:81`      -> `corelib/signal/signal_shim.c:148@sigx_flag`
+doc:296  `corelib/signal/signal_shim.c:81`      -> `corelib/signal/signal_shim.c:151@sigx_flag`
 doc:290  `corelib/signal/signal_shim.c:77-85`   -> `corelib/signal/signal_shim.c:144-156`
 doc:617… `server/main.ty:617` (x5 sites)        -> `server/main.ty:753`
 ```

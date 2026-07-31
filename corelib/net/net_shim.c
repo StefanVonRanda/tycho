@@ -13,6 +13,9 @@
  *     tycho_bytes_from_c copies it into the caller's arena and frees it.
  *     Length-carried, so interior NUL bytes survive intact (unlike a `string`).
  */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE          /* glibc: expose getaddrinfo + struct addrinfo */
+#endif
 #ifndef _WIN32
 #include <sys/types.h>
 #include <sys/socket.h>

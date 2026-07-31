@@ -59,7 +59,7 @@ cannot, the four current failures fixed, and five friction items closed.
 
 ## Phases
 
-- [ ] **Phase 1 — the shim gate, and the four failures it names**
+- [x] **Phase 1 — the shim gate, and the four failures it names**
   - Scope: a new gate script, its `Makefile` target, its `scripts/ci.sh` step,
     `CLAUDE.md`'s gate table, and the shims the gate names.
   - **Read how the corelib build compiles a shim first** and settle the
@@ -79,6 +79,86 @@ cannot, the four current failures fixed, and five friction items closed.
     exit code.
   - Verify: the gate standalone, the break proof both directions, then `make ci`
     once, waited on in-turn, exit status **observed**.
+
+  **Evidence.**
+
+  Gate is `scripts/shim_check.sh`, `make shim-check`, `scripts/ci.sh` step
+  `[3d/13]`, row added to `CLAUDE.md`'s two tables. Fixed by copying
+  `corelib/io/io_shim.c`'s `_DEFAULT_SOURCE` pattern:
+  `corelib/net/net_shim.c`, `corelib/signal/signal_shim.c`,
+  `corelib/tls/tls_shim.c` — three `#ifndef`/`#define`/`#endif` blocks, not nine
+  `#define` lines, and **three shims, not four**.
+
+  **The flag question the Pre-flight flagged, settled.** The real build never
+  compiles a shim alone: `src/tychoc.c@add_shim` appends it to the generated `.c`
+  on one command, `cc -O3 -fwrapv -pthread -o <out> <gen.c> <shims...> -lm …
+  <pkgdeps>`. Three deliberate divergences, each recorded in the script's header:
+  `-std=c11` **added** (the build passes no `-std`, so cc's default gnu dialect
+  leaves `__STRICT_ANSI__` undefined and glibc turns `_DEFAULT_SOURCE` on by
+  itself — that is exactly why the defect is invisible); `-fsyntax-only`
+  replacing `-O3 -fwrapv -o`; and `-Iruntime` **dropped**, because
+  `grep '#include "' corelib/*/*_shim.c` is empty — no shim includes a project
+  header, so the flag tests nothing and would undercut the isolation being
+  tested. The pkg-config cflags from `<dir>/deps` are **kept**, and a shim whose
+  package is absent is skipped, matching `corelib/run.sh:39`.
+
+  **Two things the brief got wrong, both found by measuring.**
+
+  1. **`corelib/image/image_shim.c` is not a defect and needs no macro.** Its one
+     "error" is `png.h: No such file or directory` — and `pkg-config --exists
+     libpng` fails on this box. It is FRICTION item 9, the libpng property of
+     this machine that this plan puts out of scope, reaching the Pre-flight
+     through a command that omitted the build's own `--cflags`. The population of
+     real macro defects is three, which is what `FRICTION.md` said before the
+     Pre-flight "corrected" it to four. The gate skips it rather than counting it:
+     `skip corelib/image/image_shim.c (missing dependency: libpng)`.
+
+  2. **`-pthread` silently disarmed the gate, and this is the finding worth
+     keeping.** The first version kept `-pthread` for build fidelity. It reported
+     `11 ok, 1 skipped, 0 failed` — with the `signal` fix reverted. `-pthread`
+     defines `_REENTRANT`, and glibc's system `<features.h>` (the guard block
+     comment "compatibility synonyms for _POSIX_C_SOURCE=199506L", lines 332-343
+     of that header as installed here) raises `_POSIX_C_SOURCE` to `199506L`,
+     handing back the declarations `-std=c11` had just withheld.
+     Measured on the unfixed shim: `cc -std=c11 -fsyntax-only` → 3 errors,
+     `cc -std=c11 -pthread -fsyntax-only` → 0. So the Pre-flight's "worst case"
+     — a gate green because it is not really compiling anything — was **built,
+     and caught only because the break proof was mandatory**. A gate seen only
+     green would have shipped it. `-pthread` is now dropped and the reason is in
+     the script header, because it is the one flag that decides whether this gate
+     exists.
+
+  **Verification, each one command, foreground.**
+
+  - Gate standalone: `sh scripts/shim_check.sh` → `11 ok, 1 skipped, 0 failed`,
+    `EXIT=0`. `make -s shim-check` → same, `MAKE_EXIT=0`.
+  - Break proof, red: `git stash push corelib/signal/signal_shim.c` then the
+    gate → `FAIL corelib/signal/signal_shim.c` printing its three errors
+    (`storage size of 'sa' isn't known`, implicit `sigemptyset`, implicit
+    `sigaction`), `shim-check: 10 ok, 1 skipped, 1 failed`, `EXIT=1`.
+  - Break proof, green: `git stash pop` then the gate → `11 ok, 1 skipped, 0
+    failed`, `EXIT=0`.
+  - Doc gates after the citation fallout below: `citation check: ok`,
+    `link check: ok`.
+  - `make ci`: run once, last, **observed `CI_EXIT=0`**. `make test` held at
+    `passed: 560   failed: 0`, and the new lane reported inside the sweep:
+    `>>> [3d/13] make shim-check` → `11 ok, 1 skipped, 0 failed`. One caveat
+    recorded rather than hidden: the sweep was launched before a late
+    **comment-only** reword of `scripts/shim_check.sh`'s header (an absolute
+    system path in a comment, which `check_citations.py` rejects in Markdown).
+    The `cc` invocation and the skip logic were untouched, and the gate was
+    re-run green after the edit.
+
+  **Citation fallout, in scope and repaired.** The three-line macro block shifted
+  `corelib/signal/signal_shim.c` by +3 and the `Makefile` target shifted
+  `SKIPPED` by +9, staling 24 anchored refs across six files. These are live
+  pointers, deliberately anchored so "the citation gate re-checks the mapping on
+  every future edit to that file"
+  (`docs/internals/plan-signals-DONE.md:696-697`) — not record lines, so the
+  repair is to repoint, not to drop anchors. Each target line was asserted to
+  contain its anchor token before rewriting. Also repointed the bare range
+  `corelib/signal/signal_shim.c:204-210`, which the gate cannot check and would
+  have silently gone stale.
 
 - [ ] **Phase 2 — the five cheap friction items**
   - Scope: `docs/spec/14-ffi.md`, `src/tychoc.c` (one diagnostic string),
@@ -111,6 +191,26 @@ cannot, the four current failures fixed, and five friction items closed.
     `FRICTION.md` is struck through per its convention.
   - Verify: `make test` for the diagnostic change, then the three doc gates. Not
     `make ci` — phase 1 owns the sweep.
+
+- [ ] **Phase 3 — the shim gate's blind spot: a skipped shim is never compiled
+      at all** *(filed by phase 1, out of its scope)*
+  - `make shim-check` skips a shim whose `deps` package is absent, which is the
+    right call for `make ci` staying green on a host without the library — it is
+    `corelib/run.sh:39`'s own rule. But the consequence is that on this box
+    `corelib/image/image_shim.c` is compiled by **nothing**: `make corelib` skips
+    its module for the same missing libpng, and now so does the shim gate. A real
+    defect in it — the feature-test-macro class this plan exists to catch, or any
+    other — is invisible here and would surface only on a host with libpng.
+  - That is not a phase-1 bug; the skip is correct and the alternative (failing
+    on a missing optional dependency) is worse. The open question is whether the
+    tree wants a way to know which shims went uncompiled, e.g. the gate's summary
+    line naming the skipped set as a warning rather than a quiet `skip`, or a CI
+    lane on a host with the optional dependencies installed.
+  - Related and cheaper: the citation gate cannot check a **bare range** into a
+    source file, so `corelib/signal/signal_shim.c:204-210` and its kind go stale
+    silently. Phase 1 repointed that one by hand only because it happened to be
+    reading the file. Worth knowing whether that class is large before deciding
+    it needs anything.
 
 ## Out of scope
 
