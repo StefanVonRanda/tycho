@@ -420,6 +420,58 @@ get manufactured.  A sixth of the strongest citations in this tree being weaker
 than they look is a fact worth knowing and a bad thing to fix under gate
 pressure.
 
+A CITATION TO A DEFINITION IS A SYMBOL, NOT A LINE (added 2026-07-31)
+---------------------------------------------------------------------
+Every form above needs a line number, and for a citation that names a REGION
+that is right: a loop, a table, a function body has no name of its own, so an
+address is the only way to point at it.  A citation that names a DEFINITION is
+different.  It means "the place where this symbol is bound", and the line number
+is an accident of how much prose sits above it.  The constant named at the foot
+of this docstring was repointed THREE TIMES across two phases -- twice in one of
+them -- and not one of those repairs carried information: the constant never
+changed, paragraphs above it grew.  Each repair also had to reach into two frozen
+archives, because the number they recorded had gone stale for a reason that had
+nothing to do with what they observed.
+
+    `corelib/signal/signal.ty@shutdown_requested`     no number, no drift
+
+THE CHECK IS EXISTENCE OF THE TOKEN IN THE NAMED FILE.  That is weaker than an
+anchored line ref and is stated plainly rather than dressed up: a symbol
+mentioned at forty call sites is confirmed by any one of them, so this form
+proves the symbol is still SPELLED that way in that file, not that its
+definition is still there.  What it buys is that the only two events which can
+falsify it -- a rename and a deletion -- are exactly the two events that make
+the citation wrong, while the event that used to falsify the line form -- an
+insertion anywhere above -- can no longer touch it.
+
+WHY UNIQUENESS IS NOT REQUIRED, unlike the ambiguous-anchor rule above.  There
+the token's job was to identify ONE LINE inside a cited range, so a token on
+three lines identified none.  Here the token IS the subject: a symbol occurring
+at its definition and at every use is normal, and demanding uniqueness would
+reject every symbol that is actually called anywhere.  Different job, different
+rule.
+
+THE POPULATION WAS COUNTED BEFORE THE FORM WAS WRITTEN, over the whole tree,
+using this file's own grammar: 37 of 218 anchored refs cite a single line that
+BINDS their token (a `fn`/`static`/`#define`/assignment head), of which 22 are
+in live files and 15 in frozen archives.  So it is not a mechanism for three
+refs.  It is also NOT a sweep: the form ships, three refs move to it, and the
+remaining 19 live ones are filed rather than converted, because converting a
+correct citation by hand is the drift-inducing pass this repo has declined three
+times (see THE BARE-REFERENCE POLICY above).  A definition ref is right to write
+in the new form and not wrong in the old one.
+
+THE THREE THAT MOVED are this rule's own motivating case, and they moved for a
+reason beyond tidiness: this section's own text pushed the constant down the
+file, which would have staled all three a FOURTH time in the commit that
+explains why they should not need repairing.  Two of them are in a frozen
+`plan-*-DONE.md`, edited here on the settled ground in this file's header -- an
+ANCHORED ref in an archive was never exempt -- and with the additional fact that
+their numbers were not the observation those archives recorded: `git log` shows
+both had already been mechanically renumbered by three later phases, so what was
+repaired was residue, not evidence.  Removing the number ends that cycle instead
+of extending it.
+
 EXCLUDED BY NAME, WITH THE REASON:
   * `compiler/tychoc0.ty` -- the FROZEN bootstrap compiler.  Its self-citations
     are known to be off by -50 (recorded at docs/bootstrap.md:106) and the file
@@ -469,6 +521,19 @@ CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
                                        # (`@'main' must be`): a banned-space version
                                        # silently matched nothing and scored those
                                        # citations as unchecked. Fail closed.
+
+# A CITATION TO A DEFINITION (see the header): `path@SYMBOL`, with NO number.
+# The absence of the colon is what separates it from CITE above, so the two
+# grammars cannot both match the same span. The symbol is a bare identifier --
+# no spaces, unlike the line-anchor token, because a phrase is not a definition
+# and the anchored form already covers phrases.
+SYMCITE = re.compile(r'`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)@([A-Za-z0-9_]+)`')
+
+# The same form in a source file (no backticks to delimit it), filtered against
+# the tracked set exactly as SRCCITE is, so an email address or a stray `a.b@c`
+# in some quoted output cannot fire.
+SYMCITE_SRC = re.compile(r'\b((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)'
+                         r'|Makefile)@([A-Za-z0-9_]+)')
 
 # Frozen verification evidence: never demand an anchor here (see the header).
 ARCHIVED = ("docs/internals/plan-", "-DONE.md")
@@ -540,6 +605,7 @@ def main():
     # backlog. Buckets are mutually exclusive, in this order.
     n_bare_frozen, n_bare_plan, n_bare_prov = 0, 0, 0
     n_weak, n_weak_file, n_weak_prov = 0, 0, 0
+    n_sym, n_sym_src = 0, 0     # `path@SYMBOL` refs (see the header)
     for md in mds:
         cur = None
         cur_ln = 0          # the line `cur` was named on (see the docs/ rule)
@@ -559,6 +625,28 @@ def main():
                 prov = True
             elif not stripped.startswith(">"):
                 prov = False
+            # A CITATION TO A DEFINITION: `path@SYMBOL` (see the header). It
+            # names no line, so it is checked for one thing only -- the token is
+            # still spelled that way in that file -- and it deliberately does
+            # NOT set `cur`: a form whose whole point is to carry no line number
+            # must not become the silent subject of a following bare `:N`.
+            for m in SYMCITE.finditer(line):
+                sp, sym = m.group(1), m.group(2)
+                if not sp.startswith(SRC_PREFIX):
+                    continue
+                n_sym += 1
+                ssrc = lines_of(sp)
+                where = "%s:%d  `%s`" % (md, ln, m.group(0).strip("`"))
+                if ssrc is None:
+                    fails.append("%s -> %s: NO SUCH FILE" % (where, sp))
+                elif not any(sym in l for l in ssrc):
+                    fails.append(
+                        "%s -> '%s' does not appear anywhere in %s. A symbol "
+                        "citation survives insertions but not a RENAME or a "
+                        "DELETION, which is the whole of what it promises: "
+                        "either the definition moved to another file, or the "
+                        "name changed and this citation is now about nothing."
+                        % (where, sym, sp))
             for m in CITE.finditer(line):
                 if m.group(1):
                     cur = m.group(1)
@@ -699,6 +787,22 @@ def main():
         cites_src = not (sf in SRC_SKIP_CITER or sf.endswith(SRC_SKIP_SUFFIX))
         for ln, line in enumerate(text, 1):
             if cites_src:
+                # `path@SYMBOL` from a source file (see the header). Same single
+                # promise as the Markdown form; `tracked` does the filtering
+                # that backticks do there.
+                for m in SYMCITE_SRC.finditer(line):
+                    sp, sym = m.group(1), m.group(2)
+                    if sp.endswith(".md") or sp not in tracked:
+                        continue
+                    n_sym_src += 1
+                    ssrc = lines_of(sp)
+                    if ssrc is not None and not any(sym in l for l in ssrc):
+                        fails.append(
+                            "%s:%d  `%s` -> '%s' does not appear anywhere in "
+                            "%s. A symbol citation survives insertions but not "
+                            "a RENAME or a DELETION, which is the whole of what "
+                            "it promises."
+                            % (sf, ln, m.group(0), sym, sp))
                 for m in SRCCITE.finditer(line):
                     tgt = m.group(1)
                     if tgt.endswith(".md") or tgt not in tracked:
@@ -803,9 +907,10 @@ def main():
               "%d source->doc (existence), %d source->source (bounds), "
               "%d source->source anchored (content-checked), "
               "%d doc->doc skipped as frozen archive, "
-              "%d rotating-plan phase reference(s) outside the allowed files"
+              "%d rotating-plan phase reference(s) outside the allowed files, "
+              "%d `path@SYMBOL` definition refs (%d of them from source)"
               % (n_anchored, n_prov, n_bare, n_doc, n_src, n_src_anch,
-                 n_frozen_doc, n_planref))
+                 n_frozen_doc, n_planref, n_sym + n_sym_src, n_sym_src))
         # THE BARE-REFERENCE POLICY and ANCHOR STRENGTH (see the header). Both
         # are reported, neither is enforced; the weak counts are of the
         # non-frozen anchors, since a frozen one cannot be repaired anyway.
@@ -830,9 +935,10 @@ def main():
           "names one line, %d bare in bounds (%d frozen record, %d live-plan "
           "evidence, %d exempt `> Provenance:` range, %d reachable prose), "
           "%d source->doc citations resolve, "
-          "%d source->source in bounds, %d source->source anchored)"
+          "%d source->source in bounds, %d source->source anchored, "
+          "%d `path@SYMBOL` definition refs name a symbol still in their file)"
           % (n_anchored, n_bare, n_bare_frozen, n_bare_plan, n_bare_prov,
-             reachable, n_doc, n_src, n_src_anch))
+             reachable, n_doc, n_src, n_src_anch, n_sym + n_sym_src))
     return 0
 
 

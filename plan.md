@@ -400,7 +400,7 @@ and `make ci` were not run.** Every edit is Markdown, a Python doc gate, or a
 `#` comment line in `scripts/docs_fences.sh`; no compiled artifact and no
 fixture is reachable from this diff.
 
-- [ ] **Phase 30 — a citation to a definition should not be a line number**
+- [x] **Phase 30 — a citation to a definition should not be a line number**
   - Scope: `scripts/check_citations.py`, and the refs a symbol form would replace.
   - Three refs cite the `ARCHIVED` constant in `scripts/check_citations.py` by
     line. That line moved twice during phase 2 alone and once during phase 1 —
@@ -429,7 +429,7 @@ fixture is reachable from this diff.
     documentation in the same motion without saying which one moved.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 28 — the 6 refs phase 1 refused to repair, and why refusing was right**
+- [x] **Phase 28 — the 6 refs phase 1 refused to repair, and why refusing was right**
   - Scope: `docs/internals/plan-signals-DONE.md` only.
   - Six refs spell `server/main.ty:493-494` (plus a `:494` and a `:494-495` in
     one before/after line) and claim it "sets `running = false` in the `Err` arm
@@ -445,7 +445,7 @@ fixture is reachable from this diff.
     **Decide that before touching a line number.**
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 29 — decide what a before/after record block is, so nobody "repairs" one**
+- [x] **Phase 29 — decide what a before/after record block is, so nobody "repairs" one**
   - Scope: `docs/internals/plan-signals-DONE.md`, `CLAUDE.md`'s Citations section.
   - Phase 1 deliberately left three regions alone: the phase-4 repair log
     (`docs/internals/plan-signals-DONE.md:751-754` and `:941-943`) and batch D's
@@ -761,3 +761,232 @@ secondary win — the repaired form is not merely correct, it is *gated*.
     named the wrong document, because a later commit had re-dated the line.
   - Verify: `python3 scripts/check_citations.py`, the planted-violation proof
     both directions, `sh scripts/check_links.sh`.
+
+### Phases 28–30 evidence — 2026-07-31
+
+Three decisions, one shipped mechanism. Every count below was produced with the
+gate's own grammar (`scripts/check_citations.py@CITE` / `@SRCCITE` imported, not
+re-implemented), so the populations are the ones the gate actually sees.
+
+#### Phase 28 — the annotation form, and why annotation was the right verb
+
+**Decided: these are claims about superseded behaviour, not citations to repair.**
+Verified before deciding — `server/main.ty:490-496` today is inside an
+`io.read_bytes` / status-200 comment with no `running` anywhere near it, and
+`server/main.ty:520` opens the comment block headed "WHY THE ERR ARM IS NOT
+`running = false`". Batch A deleted the construct; there is no line to relocate
+to, and the nearest true statement asserts the opposite rule.
+
+**The form, applied to all six** (`docs/internals/plan-signals-DONE.md` lines 34,
+144, 166, 379, 437, 880):
+
+```
+`server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint]
+```
+
+plus one appended note at the foot of that file defining the tag, naming what
+deleted the construct, and pointing at the replacement reasoning by its **grep-
+able heading** rather than by a number. Chosen so that:
+
+- **It is line-neutral.** Six same-line insertions and one appended section;
+  nothing above moves. Confirmed no ref anywhere in the tree cites
+  `docs/internals/plan-signals-DONE.md` by line, so nothing could have broken.
+- **A sweep cannot miss it.** The tag sits adjacent to the number a sweeper
+  greps for, not in a header they would never reach.
+- **The gate does not parse it as a citation.** `[SUPERSEDED: …]` is not a
+  backticked `path:N` span and not a `](…)` link. Proof: the bare/anchored
+  counts are unchanged by the six tags, and `check_links.sh` stays at 137 files.
+
+**Correction made mid-phase, recorded because the first draft was wrong.** The
+note originally claimed the six refs were "bounds-checked". They are not checked
+**at all** — `server/` is absent from `SRC_PREFIX`, so a Markdown citation into
+the server is skipped before existence, bounds or anchors are considered. The
+note was rewritten to say so, and the finding is filed as phase 34 below.
+
+#### Phase 29 — no marker, and the number is the reason
+
+**Counted first, as the entry demanded — and the entry's own estimate was off by
+two orders of magnitude.** It assumed "three blocks". Over the twelve archived
+plans plus the live one, matching the two structural shapes that carry
+record-meaning (two refs joined by an arrow; a table row with ≥2 ref-bearing
+cells):
+
+```
+$ python3 - <<'PY'   # REF = the gate's CITE span; ARROW = -> | → | => | ➔
+  for each `git ls-files 'docs/internals/plan-*-DONE.md' plan.md`:
+      lines with >= 2 REF matches, that are a table row with >= 2 ref cells,
+      or that carry an ARROW
+PY
+SHAPE 1 -- repair-log arrow lines:            some
+SHAPE 2 -- before/after table rows:           the rest
+TOTAL record lines: 271, across 9 of 13 archived-plus-live plan files
+  120  docs/internals/plan-postfreeze-rawstring-DONE.md
+   95  docs/internals/plan-front-door-DONE.md
+   33  docs/internals/plan-signals-DONE.md
+   10  docs/internals/plan-loops-cleanup-DONE.md
+    5  docs/internals/plan-friction-DONE.md
+    3  plan.md
+    2  docs/internals/plan-int64-DONE.md
+    2  docs/internals/plan-webserver-gate-DONE.md
+    1  docs/internals/plan-array-arith-DONE.md
+```
+
+**Decision: no marker is inserted.** 271 lines, **268 of them frozen**. Tagging
+them is precisely the hand sweep this repo has declined three times, and it would
+edit 8 archives in order to say "do not edit these archives". The live exposure
+is **3 lines**, and those rotate into an archive at the next plan boundary.
+
+**What ships instead** (`CLAUDE.md`, "A record line is not a citation —
+recognise it by shape"): the recognition phase 1 performed by reading each region
+is written down as the two shapes above, so it is a stated predicate rather than
+one careful agent's judgement. Phase 2's no-incentive defence stands as the
+load-bearing guarantee — nothing counts, budgets or ratchets these lines, so no
+pressure to sweep is ever created. The written rule is for the human who goes
+looking anyway.
+
+**Why this does not contradict phase 28.** The two shapes above are
+**self-identifying**: a reader seeing `before | after | delta` knows they hold
+data. Phase 28's six refs are the opposite — a number that is a *pointer*,
+embedded in ordinary running prose ("`…:493-494` sets `running = false`"), where
+nothing about the shape warns anyone. **A tag is worth it exactly when the shape
+does not already say "record".** That is the rule both decisions come from.
+
+#### Phase 30 — counted at 37, so it shipped
+
+**The count, with the command that produced it:**
+
+```
+$ python3 <scratch>/count30.py     # imports check_citations, reuses CITE/SRCCITE
+                                   # and its path-resolution; "definition" = a
+                                   # single-line ref whose cited line BINDS the
+                                   # token (fn/static/#define/assignment head)
+ANCHORED REFS NAMING A DEFINITION (candidates for a `path@SYMBOL` form)
+markdown -> src : 36 of 202 anchored
+source -> source: 1 of 16 anchored
+TOTAL definition-shaped anchored refs: 37 of 218
+```
+
+Split by whether they can be moved: **22 live, 15 frozen.** So the answer to
+"a mechanism for three refs?" is no — it is 17% of every anchored citation in the
+tree, and the test the entry set is passed.
+
+**Shipped:** `` `path@SYMBOL` `` with no number, in both Markdown (`SYMCITE`,
+backticked) and source (`SYMCITE_SRC`, filtered against the tracked set). The
+absence of the colon is what keeps it disjoint from `CITE`. Checked by locating
+the token in the named file. Uniqueness is **not** required and the docstring
+says why at length: a symbol occurs at its definition and every call site, so the
+ambiguous-anchor rule does not transpose. The weakness is stated in the docstring
+rather than hidden — it proves the symbol is still spelled that way, not that the
+definition survives.
+
+**Three refs migrated, nineteen deliberately not.** The three are this rule's own
+motivating case:
+
+```
+docs/internals/plan-loops-cleanup-DONE.md:2784, :3639   (frozen)
+scripts/docs_fences.sh:21                                (live)
+```
+
+They had to move: this phase's own docstring section pushed `ARCHIVED` from line
+474 to 539, which would have staled all three a **fourth** time in the very
+commit explaining why they should not need repairing. Editing the two frozen ones
+is settled ground — phase 31 established that an ANCHORED ref in an archive was
+never exempt — with the extra fact that `git log` shows both were already
+mechanically renumbered by three post-freeze phases (`dd3c019`, `de1fcc1`,
+`2ed2cbf`), so what was repaired was residue, not the observation. Removing the
+number ends the cycle instead of extending it. The other 19 live refs are **not**
+converted: a correct citation rewritten by hand is the drift-inducing pass this
+repo declines.
+
+**Line-neutrality result, stated because the brief warned about it:** `ARCHIVED`
+moved 65 lines and **zero repairs were needed**, because the only three refs that
+named it no longer carry a number. That is the mechanism demonstrating itself.
+
+**Planted-violation proof, both directions.** Renaming the symbol in its own
+file, then restoring:
+
+```
+$ python3 -c "...replace('shutdown_requested','shutdown_asked')..."  # corelib/signal/signal.ty
+$ python3 scripts/check_citations.py
+STALE  scripts/check_citations.py:436  `corelib/signal/signal.ty@shutdown_requested`
+       -> 'shutdown_requested' does not appear anywhere in corelib/signal/signal.ty.
+       A symbol citation survives insertions but not a RENAME or a DELETION,
+       which is the whole of what it promises.
+citation check: FAILED (3 stale citation(s) above)
+
+$ git checkout -- corelib/signal/signal.ty
+$ python3 scripts/check_citations.py
+citation check: ok (...)
+```
+
+The other two failures in that run are the **old** line-anchored refs to the same
+symbol (`FRICTION.md:738`, `server/README.md:43`) — which is the contrast the
+form is for: both catch a rename, only the symbol form survives an insertion.
+
+#### One ref lost false coverage, and that is an improvement
+
+Measured, not assumed: dumping the bare population before and after showed the
+bare total move 2807 → 2806, a single line —
+
+```
+- docs/internals/plan-loops-cleanup-DONE.md:2825  `:43` -> scripts/check_citations.py
+```
+
+That `:43` reads "(`docs/spec/12-aggregates.md` vs `docs/spec/15-program.md`,
+both at `:43`)". It always meant **line 43 of those two spec documents**; it was
+inheriting `scripts/check_citations.py` from the anchored ref 41 lines above,
+and passed only because that file is longer than 43 lines. Removing the number
+from the ref above stopped the mis-inheritance, so the ref is now correctly
+skipped instead of wrongly checked. Left as-is: it is bare, in a frozen record,
+and writing a real path there would make it a live claim about today's spec.
+
+#### Gates run, and the ones deliberately not run
+
+```
+$ python3 scripts/check_citations.py
+citation check: ok (199 anchored contain the token they name and each names one line,
+2806 bare in bounds (1799 frozen record, 22 live-plan evidence, 196 exempt
+`> Provenance:` range, 789 reachable prose), 273 source->doc citations resolve,
+247 source->source in bounds, 15 source->source anchored, 5 `path@SYMBOL`
+definition refs name a symbol still in their file)
+
+$ sh scripts/check_links.sh
+link check: ok (137 markdown files, no dead relative links)
+```
+
+Baseline at `2ed2cbf` for comparison: 201 anchored, 2807 bare (1800 frozen), 16
+source→source anchored, no symbol clause. The deltas are exactly the three
+migrated refs (−2 markdown anchored, −1 source anchored, +5 symbol including the
+two new documentation examples) and the one false-coverage bare ref above.
+
+**`make test`, `make test-fast`, `make ci` and `sh scripts/spec_check.sh` were
+not run.** Every edit is Markdown, a Python doc gate, or a `#` comment line in
+`scripts/docs_fences.sh`. No compiled artifact and no fixture is reachable from
+this diff; `corelib/signal/signal.ty` was modified only inside the planted-
+violation proof and restored with `git checkout` before anything else ran.
+
+- [ ] **Phase 34 — 751 Markdown citations are outside `SRC_PREFIX` and checked by
+      nothing.** Found while writing phase 28's note, which first claimed the six
+      superseded refs were bounds-checked. They are not checked at all.
+      `SRC_PREFIX` is `("docs/", "src/", "compiler/", "runtime/", "corelib/",
+      "tests/", "scripts/", "tools/", "examples/")`. A Markdown `path:N` naming
+      anything else hits the fail-open skip: no existence, no bounds, no anchor.
+      Measured over `git ls-files '*.md'` with the gate's own `CITE`:
+
+      server/      179        fuzz/         31        bench/     24
+      FRICTION.md  178        plan.md       20        (others)
+      total markdown refs skipped for being outside SRC_PREFIX: 751
+
+  - **This is the same bug as phase 44's**, which added `docs/` to `SRC_PREFIX`
+    and immediately reddened 77 refs — 25 naming a file that no longer existed.
+    `server/` is already in `DOC_SCAN_PREFIX`, so the gate scans the server for
+    citations *out* while ignoring every citation *in*.
+  - **Do not widen the prefix without counting the blast radius first**, in the
+    order phase 44 used: add one tree, measure the reds, attribute them, then
+    decide. `FRICTION.md` and `plan.md` are single files rather than trees and
+    may want the `Makefile` treatment in `DOC_SCAN_PREFIX` instead.
+  - Expect real failures, not noise: `server/main.ty` alone has been rewritten
+    twice since most of those 179 refs were written, and phase 28 has just shown
+    that six of them describe a construct that no longer exists.
+  - Verify: `python3 scripts/check_citations.py`, the planted-violation proof,
+    `sh scripts/check_links.sh`.

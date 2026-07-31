@@ -141,6 +141,24 @@ gates them. Two things that bite every time:
   itself and the check still passes. That is a hard failure. Fix it by anchoring
   a token that occurs once, by tightening the range to its construct, or by
   dropping the anchor — a bare range is honest, a false anchor is not.
+- **Citing a definition? Write `` `path@SYMBOL` ``, with no line number.** A
+  region needs an address; a definition has a name, and its line number is only
+  a record of how much prose sits above it. `` `corelib/signal/signal.ty@shutdown_requested` ``
+  is checked by finding the token in that file, so it survives every insertion
+  and still reddens on a rename or a deletion — the only two events that make it
+  wrong. The `ARCHIVED` constant's refs were repointed three times across two
+  phases before this existed, and not one repair carried information.
+  - **The check is deliberately weak, and knowing that is the point:** it proves
+    the symbol is still spelled that way *somewhere* in that file, not that the
+    definition is still there. Uniqueness is **not** required, unlike a line
+    anchor — a symbol appears at its definition and at every call site, and
+    demanding one occurrence would reject every symbol anyone actually calls.
+  - **Use it for a definition, not for a region.** Pointing at a loop body or a
+    table still wants `` `path:N-M` ``; there is no name to use.
+  - **Converting correct old-form refs is not work.** 22 live refs would qualify
+    (37 counting frozen archives, of 218 anchored). They are not wrong and there
+    is no sweep to do — write the new form for new definition citations, and
+    convert an old one when it next breaks.
 
 ### The bare-ref count is not a backlog
 
@@ -170,9 +188,43 @@ replacement tokens, which is how false anchors get made.
 **There is no ratchet and no budget on the bare count, on purpose.** Pressure to
 shrink it would eventually point someone at a before/after record block, whose
 line numbers are *data* — `"was 846, now 848"` is right precisely because it is
-stale, and "repairing" it destroys the evidence. Nothing in the tree marks those
-blocks yet. Until something does, treat a bare ref inside an evidence or
-before/after block as a record, not a citation, and leave it alone.
+stale, and "repairing" it destroys the evidence.
+
+### A record line is not a citation — recognise it by shape
+
+A **record line** states what a ref *said at a past moment*. Repairing one does
+not fix a stale pointer, it falsifies evidence, and the loss is irreversible
+because the old number exists nowhere else. Two shapes carry that meaning here,
+and both are recognisable without reading the prose around them:
+
+- **A repair log** — two refs joined by an arrow: `` `:494` `` → `` `:494-495` ``.
+- **A before/after table row** — a table row with **two or more ref-bearing
+  cells**, usually with a delta column beside them.
+
+**If a line has either shape, leave every number in it alone.** That includes
+numbers that are provably wrong today; being wrong is what they record.
+
+**No marker is inserted, and the count is why.** The question was whether to tag
+these blocks explicitly. Counted over the twelve archived plans plus the live
+one: **271 record lines across 9 of 13 files** — 120 in
+`docs/internals/plan-postfreeze-rawstring-DONE.md`, 95 in
+`docs/internals/plan-front-door-DONE.md`, 33 in
+`docs/internals/plan-signals-DONE.md`, and only **3** in the live `plan.md`.
+Tagging 271 lines *is itself the hand sweep this repo has declined three times*,
+and 268 of them are in frozen records the tag would be editing. The shape
+already marks them; a tag would only restate it 271 times, at the cost of
+touching every archive to say so.
+
+**What the gate does about it: nothing, deliberately.** No rule counts, budgets
+or ratchets record lines, so nothing ever creates pressure to sweep one. That is
+phase 2's defence and it is the load-bearing one; the rule above exists so that a
+human who goes looking anyway can tell what they are holding.
+
+**The one case that needs a tag is the opposite shape** — see
+`docs/internals/plan-signals-DONE.md`'s `[SUPERSEDED]` note. There the number
+was a *pointer*, not data, and the line reads as ordinary live prose, so nothing
+about its shape warns you. A tag is worth it exactly when the shape does not
+already say "record".
 
 ## Plans
 
