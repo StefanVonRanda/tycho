@@ -753,3 +753,37 @@ handling, and the difference is deliberate rather than unfinished.
   registry to join, and `make -s corelib` scored the new package on its first run. The
   whole surface is 65 lines of Tycho over 126 of C, and the only thing that cost real
   effort was the *measurement* that picked the mechanism.
+
+## Retired citation drift — three phases closed by decision, 2026-07-31
+
+Phases 21, 23 and 25 of `docs/internals/plan-signals-DONE.md` are **stale
+`path:line` pointers, not wrong claims**, and they are retired here rather than
+swept. Recorded so the next reader knows they exist and why nobody fixed them:
+
+- **20 citations across four spec/guide files**, shifted by the batch that added
+  §22.1 and the `ncpu()` correction. The shift bands are mechanical and were
+  written down at the time (`docs/guides/concurrency.md` old ≥105 → +13;
+  `docs/spec/13-concurrency.md` old 83..112 → +8, and so on).
+- **`src/tychoc.c:3339`** points at `gen_parfor` 98 lines short of where it is.
+- **The package-mode comment above `dup_other_file`** cites two sites and both
+  are wrong — one lands in array-copy codegen, the other in an enum comment.
+
+**Why retired.** Every one is bounds-valid, so `scripts/check_citations.py`
+passes it; and every one will be re-staled by the next commit that inserts lines
+above it. This tree has now measured that twice: a repointing pass found 11 of 15
+spot-checked citations had drifted **again** four days after the previous
+repair, and a later phase found a reference that had been repointed four times
+(§24.2 → §17.3 → §15.2 → E.2 rows), each fix setting up the next.
+
+**What actually closes this class**, and it is not a sweep: the anchored
+`path:N@token` form, which reddens the gate when its target moves instead of
+rotting silently. 2850 bare refs are bounds-checked and unverified against 192
+anchored ones that are. Converting the load-bearing ones is real work with a
+real payoff; repointing numbers by hand is a treadmill, and this file is where
+this repo records the difference.
+
+Distinguish these from the two filed alongside them that were **fixed** rather
+than retired: `docs/reference/` asserting an `ncpu()` behaviour the spec had just
+corrected, and a gate comment claiming one known-bad fixture where its own
+heredoc lists two. Those were false statements about behaviour. A stale line
+number misdirects; a false claim misinforms.

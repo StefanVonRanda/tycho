@@ -112,7 +112,7 @@ fi
 # This is deliberately NOT "one ERROR per tests/reject/ fixture". There are 239
 # fixtures in tests/reject/, but they are overwhelmingly SEMANTIC rejects (type
 # mismatches, affine violations, arity errors) whose syntax is perfectly
-# well-formed and which a highlighting grammar must parse. Exactly one reject
+# well-formed and which a highlighting grammar must parse. Exactly two reject
 # fixtures are LEXICAL ones, and they are the only files in the tree the grammar
 # is allowed to fail on. Both directions are asserted: a NEW error is a
 # regression, and a known-bad file that starts parsing means the grammar grew a

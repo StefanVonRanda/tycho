@@ -1374,7 +1374,7 @@ calls `iter.map` twice and is scored by `make corelib-examples`, not by any of
 the five gates above. Rather than spend the whole lane, that one program was
 compiled and `cmp`ed against `examples/corelib/iter.out` directly: identical.
 
-- [ ] **Phase 21** — filed by batch B, and caused by it. Batch B's insertions
+- [x] **Phase 21** — filed by batch B, and caused by it. Batch B's insertions
       moved line numbers in four spec/guide files, and **exactly 20 citations
       from OUTSIDE batch B's scope now point at the wrong lines**. None of them
       redden `scripts/check_citations.py`, because a bare range is only
@@ -1423,7 +1423,7 @@ compiled and `cmp`ed against `examples/corelib/iter.out` directly: identical.
       against the text they quote. Not `make test` — `tools/prunner/main.ty`'s
       two are inside comments, so no compiled artifact can move.
 
-- [ ] **Phase 22** — filed by batch B, out of scope and pre-existing.
+- [x] **Phase 22** — filed by batch B, out of scope and pre-existing.
       `docs/reference/builtins.md:75` carries the **same false `ncpu()`
       claim** batch B just corrected in the spec — "`parallel for` fan-out
       width (online CPUs; `TYCHO_THREADS` overrides)", the same assertion in
@@ -1436,7 +1436,7 @@ compiled and `cmp`ed against `examples/corelib/iter.out` directly: identical.
       only because batch B's scope lock names `docs/spec/` and `docs/guides/`.
       Two sentences. Verify: the two doc gates.
 
-- [ ] **Phase 23** — filed by batch B, a stale source→source comment.
+- [x] **Phase 23** — filed by batch B, a stale source→source comment.
       `src/tychoc.c:3339` tells the reader the chunker is at
       "gen_parfor, `src/tychoc.c:9932`"; `gen_parfor` is at
       `src/tychoc.c:10030-10069`, so the pointer is 98 lines short and lands in
@@ -1671,7 +1671,7 @@ no compiled behaviour changed, which is why `make ci` was not run.
       end state for the references, not to add a gate. Verify:
       `python3 scripts/check_citations.py`.
 
-- [ ] **Phase 25** — filed by batch C, out of scope and pre-existing. The
+- [x] **Phase 25** — filed by batch C, out of scope and pre-existing. The
       package-mode comment above `dup_other_file` cites two sites and **both are
       wrong**. `src/tychoc.c:7751` says the directory scan sorts at
       "`scan_pkg_files` qsorts, `:11759`" — `src/tychoc.c:11759` is a
@@ -1851,7 +1851,7 @@ phase 18 is about.
 it appears (the gate table and the `make ci` step table), per batch A's measured
 7.0s. The two tables disagreeing is how a corrected number half-rots.
 
-- [ ] **Phase 26** — filed by batch D, out of scope and pre-existing. The CORPUS
+- [x] **Phase 26** — filed by batch D, out of scope and pre-existing. The CORPUS
       lane's own comment miscounts the set it guards: `scripts/editors_check.sh:115`
       reads "Exactly one reject fixtures are LEXICAL ones" while the heredoc
       immediately below it (`scripts/editors_check.sh:122-125`) enumerates **two**
