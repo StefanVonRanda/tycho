@@ -965,7 +965,7 @@ not run.** Every edit is Markdown, a Python doc gate, or a `#` comment line in
 this diff; `corelib/signal/signal.ty` was modified only inside the planted-
 violation proof and restored with `git checkout` before anything else ran.
 
-- [ ] **Phase 34 — 751 Markdown citations are outside `SRC_PREFIX` and checked by
+- [x] **Phase 34 — 751 Markdown citations are outside `SRC_PREFIX` and checked by
       nothing.** Found while writing phase 28's note, which first claimed the six
       superseded refs were bounds-checked. They are not checked at all.
       `SRC_PREFIX` is `("docs/", "src/", "compiler/", "runtime/", "corelib/",
@@ -990,3 +990,267 @@ violation proof and restored with `git checkout` before anything else ran.
     that six of them describe a construct that no longer exists.
   - Verify: `python3 scripts/check_citations.py`, the planted-violation proof,
     `sh scripts/check_links.sh`.
+
+  - **EVIDENCE (2026-07-31).** Gates green: `python3 scripts/check_citations.py`
+    and `sh scripts/check_links.sh` (137 markdown files, no dead relative links).
+    `sh scripts/spec_check.sh` not run — nothing under `docs/spec/` was touched.
+
+  - **1. THE ENUMERATION.** Re-derived with the gate's own `CITE` and its own
+    paragraph / absolute-path / inheritance handling over `git ls-files '*.md'`.
+    The phase entry's 751 was measured earlier and counted only part of it: the
+    true figure at this commit is **1023** refs resolving to a path outside
+    `SRC_PREFIX`. Every tracked top-level entry, with the refs each attracted:
+
+    | top-level | tracked files | in `SRC_PREFIX`? | in `DOC_SCAN_PREFIX`? | md refs skipped |
+    |---|---|---|---|---|
+    | `docs/` | 94 | yes | no | 0 |
+    | `tests/` | 932 | yes | yes | 0 |
+    | `examples/` | 156 | yes | yes | 0 |
+    | `corelib/` | 134 | yes | yes | 0 |
+    | `compiler/` | 56 | yes | yes | 0 |
+    | `scripts/` | 14 | yes | yes | 0 |
+    | `tools/` | 9 | yes | yes | 0 |
+    | `src/` | 1 | yes | yes | 0 |
+    | `runtime/` | 1 | yes | yes | 0 |
+    | `server/` | 14 | **no** | yes | **231** |
+    | `bench/` | 165 | **no** | yes | **25** |
+    | `fuzz/` | 14 | **no** | yes | **32** |
+    | `editors/` | 20 | **no** | yes | **12** |
+    | `.githooks/` | 1 | **no** | yes | 0 |
+    | `.github/` | 4 | **no** | no | 0 |
+    | `branding/` | 4 | **no** | no | 0 |
+    | `Makefile` | 1 | **no** | yes | 0 |
+    | `FRICTION.md` | 1 | **no** | no | **204** |
+    | `plan.md` | 1 | **no** | no | **25** |
+    | `README.md` | 1 | **no** | no | **12** |
+    | `ROADMAP.md` | 1 | **no** | no | **5** |
+    | `CLAUDE.md` | 1 | **no** | no | 1 |
+    | `CONTRIBUTING.md` `LICENSE` `RELEASE_NOTES.md` `SECURITY.md` `.gitignore` | 5 | **no** | no | 0 |
+
+    The phase entry named four trees; **nine** places have a non-zero population,
+    and the remaining **475** skipped refs name no top-level entry at all (class
+    D below). Two of the entry's four counts were low (`server/` 179 → 231,
+    `FRICTION.md` 178 → 204) and two were near (`fuzz/` 31 → 32, `bench/`
+    24 → 25).
+
+  - **2. WHAT WENT IN, AND WHAT DID NOT.** Two groups in, three out, each with
+    its reason; the full argument is in the `SRC_PREFIX WAS THE HOLE` section of
+    `scripts/check_citations.py`.
+    - **In, source trees:** `server/`, `bench/`, `fuzz/`, `editors/`,
+      `.githooks/` — every tree `DOC_SCAN_PREFIX` already trusts as source. The
+      asymmetry *was* the bug: the gate read `server/` for citations **out**
+      while ignoring all 231 citations **in**. `.githooks/` has 0 refs and is in
+      anyway, because the set is the argument, not the count.
+    - **In, top-level documents:** `FRICTION.md` (204), `README.md` (12),
+      `ROADMAP.md` (5), `CLAUDE.md` (1), plus `CONTRIBUTING.md`,
+      `RELEASE_NOTES.md` and `SECURITY.md` for the same reason. These take the
+      `Makefile` treatment the phase entry suggested — a prefix entry that is a
+      whole filename. `docs/` was already in, so doc→doc was already policy;
+      these are the documents that policy had missed for living at the root.
+    - **Out — `plan.md` (25 refs, 11 of them already out of bounds).** It
+      rotates: when a plan is archived the next starts at line 1, so a line ref
+      into it from an archived record names a document that no longer exists in
+      any form. The number is not repairable — what it pointed at is gone — and
+      it would go stale again every phase, because the live plan grows every
+      phase. That is a permanent red nobody can clear. Filed as phase 37.
+    - **Out — `.github/`, `branding/`.** 0 refs, and absent from
+      `DOC_SCAN_PREFIX` too, so adding them would make this gate treat as source
+      something the other direction does not: an inconsistency with nothing
+      behind it.
+    - **Out — `Makefile`, `LICENSE`, every extension-less file.** *Unreachable,
+      not excluded*: `CITE`'s path group requires a dot and an extension, so the
+      Markdown pass cannot produce such a path whatever the list says. Adding
+      one would have been dead code. (The source→source pass names `Makefile`
+      explicitly for exactly this reason.)
+    - **Carried with it, and required by it:** the frozen doc→doc skip and the
+      same-line inheritance rule both keyed on the target starting with `docs/`.
+      Both arguments were always about the target being a *small document*, not
+      about where it lives, and `FRICTION.md` at 790 lines has that property.
+      Widening `SRC_PREFIX` without widening them would have demanded edits to
+      three frozen records for the bare-ref class every rule in the file refuses
+      to touch. **No coverage is lost:** 751 frozen refs now land in that skip,
+      524 were in it already, and all 227 of the rest name paths that were
+      outside `SRC_PREFIX` until the same change.
+
+  - **3. THE BLAST RADIUS, MEASURED ONE TREE AT A TIME** (the order phase 44 of
+    `docs/internals/plan-loops-cleanup-DONE.md` used), baseline 0 failures:
+
+        server/ +7   FRICTION.md +2   plan.md +11   README.md +1
+        fuzz/ +0     bench/ +0        editors/ +0   .githooks/ +0
+        .github/ +0  branding/ +0     ROADMAP.md +0 CLAUDE.md +0
+        Makefile +0  CONTRIBUTING.md / RELEASE_NOTES.md / SECURITY.md +0
+        all candidates together: +21
+
+    With `plan.md` dropped and the two rules generalised to "any document", the
+    +2, +11 and +1 vanish — every one of them was a bare continuation ref in a
+    frozen archive, the class the frozen skip exists for. **Final: 7 failures.**
+
+  - **4. THE CLASSIFICATION.** Four classes, not three. Counts per class:
+    - **A — a ref that DRIFTED (6).** All six anchored into `server/main.ty`,
+      which has been rewritten twice under them. Repaired by re-deriving the
+      construct, not by shifting the number:
+      - `server/README.md:153` — `server/main.ty:302` →
+        `server/main.ty:313@is_dir` (the `match io.is_dir(fsp)` in `resolve()`)
+      - `server/README.md:170` — `server/main.ty:369` →
+        `server/main.ty:380@peer_addr` (the once-per-connection read in `serve_conn`)
+      - `server/README.md:188` — `server/main.ty:635` →
+        `server/main.ty:742@on_shutdown` (the `signal.on_shutdown(srv)` call)
+      - `FRICTION.md:706` — `server/main.ty:635` →
+        `server/main.ty:742@on_shutdown` (same call, same repair)
+      - `docs/internals/plan-signals-DONE.md:1795` and
+        `docs/internals/plan-signals-DONE.md:1796` — **anchor dropped, number
+        kept.** These two are cells of a `| comment | as-found | re-derived |
+        drift |` table: four ref-bearing cells and a delta column, which is
+        `CLAUDE.md`'s **before/after table row** shape exactly, so every number
+        in them is *data*. Repointing 588 would have falsified the `+75` beside
+        it. The four sibling rows in that table are already bare, so dropping
+        the anchors makes it consistent and is the docstring's own third option
+        ("drop the anchor and leave the range bare"). Phase 31 settled that an
+        anchored ref in an archive is not exempt; it did not settle what to do
+        when the archive is a record table. Tension filed as phase 39.
+    - **B — a ref that was ALWAYS WRONG (0).** None found.
+    - **C — a bare continuation ref that INHERITED the wrong path (0
+      surviving).** All three the naive widening produced were in frozen
+      archives and are covered by the generalised skip. **This is the phase's
+      most useful negative result**: the `docs/` widening found 52 of this class
+      and 25 dead paths; this one found *one* mis-inheritance and *zero* dead
+      paths across 522 newly-reachable refs. The difference is that `docs/` was
+      widened over documents that had been **renamed** under their citations,
+      and these trees have not been. So the widening buys almost no repair work
+      today and the whole population a gate tomorrow.
+    - **D — NOT A CITATION AT ALL (1 exposed, ~487 latent).** The one surviving
+      red, in `docs/internals/plan-friction-DONE.md`, was a **TCP port number**
+      written in backticks after a colon, in a sentence about that port being
+      occupied; the paragraph had named `server/main.ty` earlier, so the grammar
+      bound it there and read 8080 as a line. Repaired by moving the word "port"
+      outside the backticks — this changes no recorded number and falsifies no
+      observation, which is what makes it a legitimate edit to a frozen record.
+      17 more of the same shape sit behind a dotted host that no prefix covers.
+      Filed as phase 35. The larger latent set is the 470 refs over 40 names
+      carrying **no directory at all** — filed as phase 36.
+
+  - **5. BEFORE / AFTER, same tree, gate at `46cbb35` vs. now.**
+
+        BEFORE  199 anchored, 2806 bare (1799 frozen, 22 plan, 196 prov, 789 prose)
+                524 doc->doc skipped as frozen archive
+        AFTER   223 anchored, 3076 bare (2019 frozen, 44 plan, 196 prov, 817 prose)
+                751 doc->doc skipped as frozen archive
+
+    **+294 refs are now actually checked** (24 anchored, 270 bare), and 228 more
+    frozen doc→doc refs are declared-and-skipped rather than silently skipped.
+    Refs skipped for being outside `SRC_PREFIX` fell **1023 → 501**. The
+    anchor-strength figures moved with the new anchors (33/77 → 36/82) and the
+    docstring's copy was updated; `CLAUDE.md`'s copy was not — filed as phase 38.
+
+  - **6. THE PLANTED-VIOLATION PROOF.** Four refs appended to `FRICTION.md`, one
+    per newly-covered kind — a new tree past EOF, a new tree with a wrong
+    anchor, a new tree naming a dead file, and a top-level document past EOF.
+    **Transcribed with the backticks removed**, because reproducing them intact
+    would make this evidence block four live failing citations:
+
+        STALE  FRICTION.md:791  server/main.ty:99999 -> server/main.ty has 754 lines: OUT OF BOUNDS
+        STALE  FRICTION.md:793  fuzz/run.py:1@no_such_token_here -> lines 1-1 of fuzz/run.py do NOT contain 'no_such_token_here' (token absent from the whole file)
+        STALE  FRICTION.md:795  bench/no_such_file.sh:3 -> bench/no_such_file.sh: NO SUCH FILE
+        STALE  FRICTION.md:797  FRICTION.md:99999 -> FRICTION.md has 798 lines: OUT OF BOUNDS
+        citation check: FAILED (4 stale citation(s) above)
+        --- exit=1
+
+    **The control that makes it a proof:** the gate as it stood at `46cbb35`,
+    run against that same planted tree, printed its ordinary green line and
+    `exit 0`. All four plants were invisible to it. Plants reverted; green again.
+
+- [ ] **Phase 35 — a backticked port number is read as a citation.** Found by
+      phase 34: widening `SRC_PREFIX` to `server/` turned one such span in
+      `docs/internals/plan-friction-DONE.md` into a hard failure, because the
+      paragraph had named a source file and the grammar bound the port to it as
+      a line number. It was repaired by rewording, but the class is general and
+      rewording does not scale to a frozen record that must not be reworded.
+  - The shape is narrow and countable: a colon, then four or five digits, inside
+    a backtick span, in prose about a port or an address. 17 more sit in the
+    tree behind a dotted host, invisible today only because no prefix covers a
+    hostname — and a hostname that is not a path is the same false positive
+    wearing a different hat.
+  - The danger is the silent one, not the loud one: a port bound to a paragraph
+    naming a 13k-line compiler is **in bounds**, so it passes, and it is then
+    counted as a checked citation on the green line. Count that population
+    before choosing between "digits after a colon in port-shaped prose are not a
+    citation" and "a bare continuation ref must not follow the word port".
+  - Verify: `python3 scripts/check_citations.py`, the planted-violation proof,
+    `sh scripts/check_links.sh`.
+
+- [ ] **Phase 36 — 470 refs name a bare basename with no directory.** After
+      phase 34 widened `SRC_PREFIX`, 501 Markdown refs are still skipped, and
+      **470 of them over 40 distinct names** carry no directory at all:
+      `05-generics.md` (67), `03-types.md` (65), `tychoc0.ty` (51),
+      `02-grammar.md` (33), `frontparity.sh` (31), `fixpoint.sh` (24) and 34
+      more names behind them. No prefix list can ever resolve these, because the
+      author never said which directory they meant.
+  - Most are guessable — `05-generics.md` is almost certainly the file of that
+    name under `docs/spec/` — and *guessing is exactly what RULE 7 forbids*. So
+    the choice looks like one between resolving 470 refs by hand (the sweep this
+    repo has declined three times in other forms) and failing them closed, which
+    would redden hundreds of frozen archives at once.
+  - A third option worth costing first: resolve only where the basename matches
+    **exactly one** tracked file, fail where it matches several, skip where it
+    matches none. Count all three buckets before deciding — a basename that
+    resolves uniquely is not a guess.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+- [ ] **Phase 37 — 25 line references into the rotating live plan, 11 already
+      out of bounds.** Phase 34 measured these and deliberately left the live
+      plan out of `SRC_PREFIX`: it is renumbered from line 1 every time a plan
+      is archived, so a line reference into it from an archived record names a
+      document that no longer exists in any form. The number cannot be repaired,
+      and it would go stale again every phase, because the live plan grows every
+      phase. Bounds-checking it would be a permanent unclearable red.
+  - But leaving it out means 25 refs are checked by nothing, which is the defect
+    phase 34 existed to close, declined in one place for a stated reason. That
+    is a decision to make on purpose rather than a hole to leave open.
+  - The fourth direction already forbids the *pointer* form outright — a phase
+    reference into the rotating plan is a hard failure naming the archived
+    document to write instead. The obvious shape is to treat the line form the
+    same way: such a reference from any file other than the live plan is a
+    failure telling the author to name the archived document. Count by citer
+    first — 24 of the 25 are in frozen archives, where a failure cannot be
+    cleared, so the rule likely needs the same `ARCHIVED` exemption and would
+    then police exactly one live ref. Decide whether that is worth a rule.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+- [ ] **Phase 38 — the anchor-strength figures in `CLAUDE.md` are stale, and one
+      pair in the gate's docstring was stale before phase 34 touched it.**
+      `CLAUDE.md` states 32 anchors weak within ±25 lines and 76 recurring
+      anywhere in the file; the tree now says 36 and 82, because phase 34
+      brought new anchors into scope. Phase 34 updated the docstring's copy and
+      left `CLAUDE.md`'s, being out of its scope.
+  - Separately, the docstring's source→source pair "8 and 10 of 16" was
+    **already wrong at `46cbb35`** — the gate printed 7 and 9 of 15 there, so it
+    did not drift under phase 34 and was not phase 34's to repair. Two files now
+    disagree with the gate and with each other about the same measurement.
+  - The real question is not the four numbers: it is that a measured figure is
+    duplicated into prose in two files with nothing checking either, while
+    `--stats` prints all of them on demand. Consider whether the prose should
+    carry the numbers at all, or should name the command that produces them.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+- [ ] **Phase 39 — the anchor check and the record-line rule disagree about a
+      frozen before/after table.** Phase 34 hit this directly: two cells of a
+      six-row table in `docs/internals/plan-signals-DONE.md` carried anchored
+      refs whose tokens had drifted. `CLAUDE.md` says a table row with two or
+      more ref-bearing cells and a delta column is a **record**, and that every
+      number in it must be left alone — including numbers that are provably
+      wrong, because being wrong is what they record. Phase 31 says an anchored
+      ref in a frozen archive is **not** exempt from the content check. Both
+      rules are settled, and on that table they say opposite things.
+  - Phase 34 disposed of it by dropping the two anchors and keeping the numbers,
+    which satisfies both readings and matches the four sibling rows. That is a
+    sound repair for two cells and not a policy.
+  - `CLAUDE.md` also claims "**what the gate does about it: nothing,
+    deliberately** — no rule counts, budgets or ratchets record lines, so
+    nothing ever creates pressure to sweep one". Phase 34 disproves that as
+    written: widening a prefix put gate pressure on a record table without any
+    rule being aimed at record lines. Either the claim narrows to "no rule
+    *targets* them", or the anchor check learns the shape.
+  - Count first, as ever: how many anchored refs across the 271 known record
+    lines would the content check fire on today? If the answer is two this is a
+    documentation fix; if it is forty it is a rule.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.

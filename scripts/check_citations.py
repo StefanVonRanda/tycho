@@ -99,7 +99,13 @@ FAIL-OPEN CASES (deliberate, RULE 7): a bare `:N` whose paragraph names no path
 is skipped rather than guessed at -- EXCEPT inside a `> Provenance:` block, see
 below -- and a RELATIVE path outside the trees listed in
 SRC_PREFIX is ignored (a bare Markdown *link* is check_links.sh's job; `docs/`
-joined SRC_PREFIX on 2026-07-30, see the doc->doc section below).
+joined SRC_PREFIX on 2026-07-30, see the doc->doc section below, and the rest of
+the tree joined it on 2026-07-31 -- read "SRC_PREFIX WAS THE HOLE" before
+treating this skip as a small one).  It is STILL a large skip -- 501 refs, of
+which 470 over 40 distinct names carry NO DIRECTORY at all (`05-generics.md`,
+`tychoc0.ty`, `frontparity.sh`), which no prefix list can resolve because the
+author never said which directory they meant.  Two of those 40 names are not
+files: a dotted host before a port reads as a path with an extension.
 
 AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (added 2026-07-30, docs/internals/plan-loops-cleanup-DONE.md phase 23)
 -----------------------------------------------------------------------------
@@ -176,9 +182,12 @@ failures were this same mis-inheritance, visible only because the numbers were
 large, and one surviving pair had to be repaired by hand in `plan.md` during
 batch 10 because the gate could not.
 
-So: a BARE `:N` whose inherited path is under `docs/` is accepted only when that
-path was named ON THE SAME LINE.  Cross-line inheritance of a `docs/` path is a
-hard failure telling the author to write the path.
+So: a BARE `:N` whose inherited path is a DOCUMENT is accepted only when that
+path was named ON THE SAME LINE.  Cross-line inheritance of a document path is a
+hard failure telling the author to write the path.  (Keyed on `docs/` when it
+shipped; widened on 2026-07-31 to any `.md` target, because the argument is
+about the target being small enough for a stray number to land inside it, and
+`FRICTION.md` at 790 lines has that property just as much as a spec chapter.)
 
 WHY THAT SHAPE, AND NOT "REQUIRE A PATH ON EVERY DOC REF".  Both were counted
 before either was shipped, on the tree at docs/internals/plan-loops-cleanup-DONE.md phase 63.  Forbidding inherited
@@ -196,6 +205,79 @@ number a doc sentence would produce.
 
 ARCHIVED PLANS ARE EXEMPT FROM THIS RULE: the fix would be an edit to a frozen
 record.  They are NOT exempt from the anchor content check -- header, "mostly".
+
+SRC_PREFIX WAS THE HOLE, NOT A SETTING (widened 2026-07-31)
+-----------------------------------------------------------
+Every rule above runs only if the cited path starts with an entry of SRC_PREFIX.
+That list had nine entries and the tree has more than nine places worth citing,
+so the FAIL-OPEN skip was silently doing most of the work: 1023 Markdown refs
+resolved to a path the gate then declined to look at -- no existence, no bounds,
+no anchor -- and 522 of them named something this list could simply have held.
+`server/` was the worst of it at 231, and `server/` has been in
+DOC_SCAN_PREFIX the whole time, so the gate was reading the web server for
+citations OUT while ignoring every citation IN.
+
+WHAT WENT IN, AND THE PRINCIPLE.  A tree of real source that citations point at
+belongs; a prefix list that matches everything is not a decision.  Two groups:
+
+  * the source trees DOC_SCAN_PREFIX already trusts as source and this list did
+    not -- `server/` (231 refs), `fuzz/` (32), `bench/` (25), `editors/` (12),
+    `.githooks/` (0).  Asymmetry between the two directions was the bug; the
+    zero-ref trees are in because the set is the argument, not the count.
+  * the top-level DOCUMENTS -- `FRICTION.md` (204 refs), `README.md` (12),
+    `ROADMAP.md` (5), `CLAUDE.md` (1), and `CONTRIBUTING.md`, `RELEASE_NOTES.md`
+    and `SECURITY.md` for the same set-not-count reason.  These get the
+    `Makefile` treatment: a prefix entry that is a whole filename.  `docs/` was
+    already in, so doc->doc was already policy; these are the documents that
+    policy had missed for living at the root.
+
+WHAT STAYED OUT, WITH THE REASON -- these are decisions, not oversights:
+
+  * `plan.md` -- 25 refs, 11 of them ALREADY out of bounds.  It is the rotating
+    plan: when one completes it is archived and the next starts at line 1, so a
+    line reference into it from an archived record names a document that no
+    longer exists in any form.  The number cannot be repaired, because what it
+    pointed at is gone -- and it would need repairing again every time the live
+    plan grows, which is every phase.  This is the same rot the fourth direction
+    below forbids outright; a bounds check on it would be a permanent red that
+    nobody is able to clear.  Filed with its count rather than folded in.
+  * `.github/`, `branding/` -- 0 refs, and not in DOC_SCAN_PREFIX either, so
+    adding them would make this gate treat as source something the other
+    direction does not.  An inconsistency with nothing behind it.
+  * `Makefile`, `LICENSE` and every other extension-less file -- UNREACHABLE,
+    not excluded.  CITE's path group requires a dot and an extension, so the
+    Markdown pass cannot produce such a path whatever this list says.  (The
+    SOURCE -> SOURCE pass names `Makefile` explicitly for exactly this reason.)
+
+WHAT IT REDDENED: 7, and the shape matters more than the number.  Six were
+ANCHORED refs into `server/main.ty`, which has been rewritten twice under them
+-- three in `server/README.md`, one in `FRICTION.md`, two inside a frozen
+archive.  The seventh was the artefact this widening was expected to produce and
+did: a bare continuation ref that had inherited a `server/` path from its
+paragraph while meaning nothing of the kind.  It was a TCP PORT NUMBER written
+in backticks after a colon, in prose about a port already being occupied.  That
+is a fourth class beside "always wrong", "drifted" and "inherited the wrong
+path": a span that was never a citation and that this grammar cannot tell from
+one.  Ports are the specific shape (a colon, then four or five digits, in
+backticks); it is filed rather than fixed here, because the grammar change is
+not this widening's to make.
+
+WHAT DID **NOT** APPEAR, AND IT IS THE INTERESTING PART.  The `docs/` widening
+found 52 mis-inherited continuation refs and 25 dead paths.  This one found one
+mis-inheritance and zero dead paths across 522 newly-reachable refs.  The
+difference is that `docs/` was widened over a set of documents that had been
+RENAMED under their citations, and these trees have not been.  So the widening
+buys almost no repair work today and buys the whole population a gate tomorrow,
+which is the honest reading of a 7-red blast radius over 522 refs.
+
+THE FROZEN DOC->DOC SKIP AND THE SAME-LINE INHERITANCE RULE MOVED WITH IT, from
+"the target is under `docs/`" to "the target is a document".  Both arguments were
+always about the target being a small document rather than about where it lives,
+and the prefix was standing in for that.  Not widening them alongside SRC_PREFIX
+would have demanded edits to three frozen records for the bare-`:N` class every
+rule in this file refuses to touch.  It loses no coverage: 751 frozen refs now
+land in that skip, 524 of which were in it already, and all 227 of the rest name
+paths that were outside SRC_PREFIX until this same change.
 
 THE SECOND DIRECTION: SOURCE -> DOC (added 2026-07-26)
 -----------------------------------------------------
@@ -404,9 +486,9 @@ ANCHOR STRENGTH IS MEASURED, NOT ENFORCED (added 2026-07-31)
 ------------------------------------------------------------
 A token unique in its range can still be common in the FILE, and then a drift
 just re-matches somewhere else -- the failure `--stats` now quantifies instead
-of assuming away.  Of the non-frozen Markdown anchors, 32 name a token that
+of assuming away.  Of the non-frozen Markdown anchors, 36 name a token that
 recurs within +-25 lines of the cited range (the observed drift scale: an
-earlier plan found anchored ranges 9 and 82 lines off), and 76 name one that
+earlier plan found anchored ranges 9 and 82 lines off), and 82 name one that
 recurs somewhere in the file; source->source is 8 and 10 of 16.  Both numbers
 are printed, because the window is a choice and hiding the wider figure behind
 it would be the same overstatement this section exists to fix.
@@ -489,13 +571,26 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# WHAT A MARKDOWN CITATION IS ALLOWED TO NAME (see "SRC_PREFIX WAS THE HOLE"
+# in the header). Every tracked source tree, plus the repository's own top-level
+# documents. `plan.md` is EXCLUDED ON PURPOSE and the reason is in the header.
 SRC_PREFIX = ("docs/", "src/", "compiler/", "runtime/", "corelib/", "tests/",
-              "scripts/", "tools/", "examples/")
+              "scripts/", "tools/", "examples/",
+              # added 2026-07-31: source trees the gate already trusts as source
+              # in the SOURCE -> DOC direction, but ignored in this one.
+              "server/", "bench/", "fuzz/", "editors/", ".githooks/",
+              # added 2026-07-31: the top-level documents. Permanent, stable
+              # files that this tree cites as heavily as it cites a source tree
+              # (`FRICTION.md` alone carried 204 unchecked refs).
+              "FRICTION.md", "README.md", "ROADMAP.md", "CLAUDE.md",
+              "CONTRIBUTING.md", "RELEASE_NOTES.md", "SECURITY.md")
 
-# Source trees scanned for the SOURCE -> DOC direction. Deliberately WIDER than
-# SRC_PREFIX (which governs the md -> src direction and must not move): a comment
-# in `bench/` or `fuzz/` can name a missing document just as easily. `Makefile` is
-# named because it is a file, not a tree -- it carried one of these citations too.
+# Source trees scanned for the SOURCE -> DOC direction. It used to say here that
+# it was deliberately wider than SRC_PREFIX, "which must not move"; SRC_PREFIX
+# has now moved and covers every tree named below, so the two differ only in that
+# this one adds `Makefile` and SRC_PREFIX adds `docs/` and the top-level
+# documents. `Makefile` is named because it is a file, not a tree -- it carried
+# one of these citations too.
 DOC_SCAN_PREFIX = ("src/", "compiler/", "runtime/", "corelib/", "tests/",
                    "scripts/", "tools/", "examples/", "bench/", "fuzz/",
                    "server/", "editors/", ".githooks/", "Makefile")
@@ -684,7 +779,8 @@ def main():
                     continue
                 if not cur.startswith(SRC_PREFIX):
                     continue
-                # DOC -> DOC INSIDE A FROZEN ARCHIVE (added 2026-07-30, phase 44).
+                # DOC -> DOC INSIDE A FROZEN ARCHIVE (added 2026-07-30,
+                # docs/internals/plan-loops-cleanup-DONE.md phase 44).
                 # Widening SRC_PREFIX to `docs/` reddened 35 refs in the
                 # `plan-*-DONE.md` set, and every one of them is a BARE `:N` that
                 # inherited a `docs/` path from its sentence while meaning
@@ -694,16 +790,33 @@ def main():
                 # skipped for the same reason the anchor and absolute-path rules
                 # skip them. Counted separately in --stats so the hole is
                 # declared rather than silent.
-                if frozen and cur.startswith("docs/"):
+                #
+                # KEYED ON "IS A DOCUMENT", NOT ON `docs/` (widened 2026-07-31
+                # with SRC_PREFIX). The argument above is about the TARGET being
+                # a document -- small, so a mis-inherited compiler line number
+                # lands outside it -- and `FRICTION.md` and `server/README.md`
+                # are documents that happen not to live under `docs/`. Keying on
+                # the prefix was a proxy for that and stopped being one the
+                # moment SRC_PREFIX grew. This LOSES NO EXISTING COVERAGE: of
+                # the 751 frozen refs it now covers, the 524 under `docs/` were
+                # already skipped and every one of the other 227 names a path
+                # that was outside SRC_PREFIX until this same change, so none of
+                # them was being checked a moment ago either.
+                if frozen and cur.endswith(".md"):
                     n_frozen_doc += 1
                     continue
-                # A `docs/` PATH IS INHERITED ONLY ALONG ITS OWN LINE (phase 63).
-                # See the header for why this is narrower than "always write the
-                # path", and for the 45-vs-16 count that decided it.
-                if (m.group(1) is None and cur.startswith("docs/")
+                # A DOCUMENT PATH IS INHERITED ONLY ALONG ITS OWN LINE
+                # (docs/internals/plan-loops-cleanup-DONE.md phase 63). See the
+                # header for why this is narrower than "always write the path",
+                # and for the 45-vs-16 count that decided it. Widened from
+                # `docs/` to any `.md` target on 2026-07-31 for the reason given
+                # at the frozen skip above: the rule is about the target being a
+                # SMALL document, and `FRICTION.md` (790 lines) has exactly the
+                # property -- a mis-inherited `:N` can land inside it.
+                if (m.group(1) is None and cur.endswith(".md")
                         and cur_ln != ln):
                     fails.append(
-                        "%s:%d  `%s` -> a bare ref inheriting the `docs/` path "
+                        "%s:%d  `%s` -> a bare ref inheriting the document path "
                         "`%s` from line %d. A number that lands inside a document "
                         "is checked by nothing, so a `docs/` path carries only "
                         "along the line that names it. Write it: `%s%s`"

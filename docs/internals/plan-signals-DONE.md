@@ -1792,8 +1792,8 @@ shifted:
 | comment | as-found | re-derived | drift |
 |---|---|---|---|
 | `server/run.sh:10` | `server/main.ty:604-614` | `server/main.ty:679-683` bind + `net.port_of`, **and** `server/main.ty:713-717` banner | split |
-| `server/run.sh:13` | `server/main.ty:513` | `server/main.ty:588@pick` | +75 |
-| `server/run.sh:20` | `server/main.ty:616` | `server/main.ty:719@worker` | +103 |
+| `server/run.sh:13` | `server/main.ty:513` | `server/main.ty:588` | +75 |
+| `server/run.sh:20` | `server/main.ty:616` | `server/main.ty:719` | +103 |
 | `server/run.sh:211` | `server/main.ty:426-436` | `server/main.ty:463-473` | +37 |
 | `server/run.sh:336` | `server/main.ty:499-504` | `server/main.ty:574-579` | +75 |
 | `server/run.sh:374` | `server/main.ty:342-352` | `server/main.ty:354-364` | +12 |

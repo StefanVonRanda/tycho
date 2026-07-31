@@ -150,7 +150,7 @@ exists.
   **Fixed 2026-07-26** (`4fa192d`, `docs/internals/plan-option-result-DONE.md`
   phase 4) by adding `fn is_dir(p: string) -> Result(bool, IoErr)` over a real
   `stat(2)` (`corelib/io/io.ty:133@is_dir`), which `resolve()` matches on at
-  `server/main.ty:302@is_dir`. One `stat(2)` now answers all three tails: `Ok(true)`
+  `server/main.ty:313@is_dir`. One `stat(2)` now answers all three tails: `Ok(true)`
   with no trailing slash is the `301`, `Ok(false)` is a file to serve, and
   `Err(_)` is a `404` that fails closed.
   **Measured live at HEAD**, against a document root holding an empty
@@ -167,7 +167,7 @@ exists.
   (`corelib/net/net_shim.c:204`), surfaced as
   `fn peer_addr(fd: int) -> Result(string, NetErr)`
   (`corelib/net/net.ty:143@peer_addr`) and used at
-  `server/main.ty:369@peer_addr` — asked **once per connection**, not once per
+  `server/main.ty:380@peer_addr` — asked **once per connection**, not once per
   request, because the peer of an accepted fd cannot change. It is `-` when the
   fd could not be asked, which is honest rather than blank. `make server-check`
   asserts a peer address on every log line, so this cannot silently regress.
@@ -185,7 +185,7 @@ And a third, closed on **2026-07-31**:
   **Fixed 2026-07-31** by `core:signal` (`docs/spec/18-library.md` §32.27), a
   two-function package whose handler's only action is
   `shutdown(srv, SHUT_RDWR)` on the listening socket. **One call arms the whole
-  pool** (`server/main.ty:635@on_shutdown`) — the handler is per-process and
+  pool** (`server/main.ty:742@on_shutdown`) — the handler is per-process and
   acts on the shared listener, so which thread the kernel delivers to does not
   matter, which is exactly why `core:signal` shuts the descriptor down instead
   of closing it. Its position is forced three ways: after `net.listen`, because

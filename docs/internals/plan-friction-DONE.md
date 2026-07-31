@@ -1622,7 +1622,7 @@ is a completed phase under this plan's Goal, and it is not a failure.
   - **bare `--`** — HEAD rejected the POSIX end-of-options marker because `opt_name("--")`
     returned `"--"` and fell through to the unknown arm; an accident, not a decision.
     Proven directly with a free port, since case 27's exit stayed `1` only because
-    `:8080` is occupied on this host:
+    port `8080` is occupied on this host:
 
   ```
   httpd_before --port 0 --   -> exit=1  tycho-httpd: unknown option: --

@@ -703,7 +703,7 @@ handling, and the difference is deliberate rather than unfinished.
   `signal.on_shutdown(fd)` (`corelib/signal/signal.ty:84@on_shutdown`) installs one
   handler for both signals whose only action is `shutdown(fd, SHUT_RDWR)` on the
   listening socket. **One call arms an entire worker pool**
-  (`server/main.ty:635@on_shutdown`) because the handler is per-process and acts on the
+  (`server/main.ty:742@on_shutdown`) because the handler is per-process and acts on the
   shared listener, so which thread the kernel delivers to never matters. **No new control
   flow was needed anywhere**: every thread blocked in `accept` gets `Err`, the wind-down
   arm that already existed (`server/main.ty:494-495`) retires each loop, and the count
