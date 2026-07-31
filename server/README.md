@@ -149,7 +149,7 @@ exists.
   the missing question, not the missing answer.
   **Fixed 2026-07-26** (`4fa192d`, `docs/internals/plan-option-result-DONE.md`
   phase 4) by adding `fn is_dir(p: string) -> Result(bool, IoErr)` over a real
-  `stat(2)` (`corelib/io/io.ty:133@is_dir`), which `resolve()` matches on at
+  `stat(2)` (`corelib/io/io.ty@is_dir`), which `resolve()` matches on at
   `server/main.ty:313@is_dir`. One `stat(2)` now answers all three tails: `Ok(true)`
   with no trailing slash is the `301`, `Ok(false)` is a file to serve, and
   `Err(_)` is a `404` that fails closed.

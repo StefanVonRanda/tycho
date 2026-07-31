@@ -78,6 +78,16 @@ fn fswhy(r: Result(bool, io.IoErr)) -> string:
         Err(io.Exists): return "Exists"
         _: return "Failed"
 
+# mtime's Result(int, IoErr). No IsDir arm is REACHED -- a directory is Ok here,
+# the same shape is_dir has -- but the arm is written so the golden would move if
+# that ever changed silently.
+fn mwhy(r: Result(int, io.IoErr)) -> string:
+    match r:
+        Ok(secs): return "Ok"
+        Err(io.NotFound): return "NotFound"
+        Err(io.IsDir): return "IsDir"
+        _: return "Failed"
+
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
     out := ""
     for i := 0; i < len(xs); i += 1:
@@ -240,3 +250,29 @@ fn main():
     emk := b2i(io.exists("Makefile"))
     lge := b2i(len(io.list("corelib/test/io")) >= 1)
     println(f"exists_mk={emk} list_ge1={lge}")
+
+    # mtime: the stat(2) field iox_stat_kind was fetching and discarding until
+    # 2026-07-31. NOTHING HERE CAN ASSERT AN EXACT EPOCH -- the file is written by
+    # this run, so the value is different every time and a golden cannot hold it.
+    # What the golden holds instead is the four properties that ARE stable:
+    #
+    #   ok         the call succeeds on a file this run just wrote
+    #   sane       the value is a real timestamp, not 0 and not a status code
+    #              leaking through the return -- 1600000000 is 2020-09-13, so any
+    #              machine whose clock is roughly right passes and a 0/2/3 fails
+    #   notfuture  it is <= now(), the same clock, so an mtime from the future
+    #              (a bad cast, a nanosecond field read as seconds) fails
+    #   grew       a REWRITE is >= the first reading, which is what proves the
+    #              value tracks the file rather than being a constant. `>=` not
+    #              `>`: both writes land inside one second on any fast machine,
+    #              and st_mtime is truncated to seconds.
+    mt1 := io.mtime(tmp)
+    s1 := result.unwrap_or(mt1, 0)
+    ww := io.write(tmp, "touched")
+    s2 := result.unwrap_or(io.mtime(tmp), 0)
+    println(f"mtime={mwhy(mt1)} sane={b2i(s1 > 1600000000)} notfuture={b2i(s1 <= now())} grew={b2i(ww and s2 >= s1)}")
+    # the error path, and the deliberate non-error: a directory is Ok, because a
+    # directory HAS a modification time and stat(2) reports it.
+    mtmiss := io.mtime("/tmp/tycho_corelib_io_absent.xyz")
+    mtdir := io.mtime("/tmp")
+    println(f"mtime_missing={mwhy(mtmiss)} mtime_dir={mwhy(mtdir)}")

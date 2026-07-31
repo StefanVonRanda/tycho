@@ -153,6 +153,47 @@ tycho_int iox_stat_kind(const char *path) {
     return S_ISDIR(st.st_mode) ? TY_RF_DIR : TY_RF_OK;
 }
 
+/* The MODIFICATION TIME of `path`, in whole seconds since the UNIX epoch,
+ * written through *mtime. The return is the same status code space as
+ * iox_stat_kind, minus the kind distinction:
+ *
+ *      TY_RF_OK   (1)  stat succeeded; *mtime holds the epoch seconds
+ *      TY_RF_MISS (0)  no such path (ENOENT/ENOTDIR)
+ *      TY_RF_ERR  (3)  it is there and cannot be stat'ed (EACCES, ELOOP, ...)
+ *
+ * WHY AN OUT-PARAM, AND WHY NOT JUST EXTEND iox_stat_kind. iox_stat_kind above
+ * returns a plain scalar because the kind and the failure share one code space.
+ * An mtime cannot join that space: it is an ordinary integer, so a file last
+ * modified at epoch second 2 would be indistinguishable from TY_RF_DIR. So the
+ * payload and the status have to occupy different slots -- the same separation
+ * iox_read_file makes, with each half in whichever slot can hold it. There the
+ * payload is `bytes`, which must be the return, so the status took the `inout`;
+ * here the payload is a scalar, so it takes the `inout` and the status keeps the
+ * return and its shared code space intact.
+ *
+ * A SIBLING, NOT AN EXTRA OUT-PARAM ON iox_stat_kind. Folding mtime into
+ * iox_stat_kind would fetch both from one stat(2), but its three callers --
+ * io.is_dir, io.exists and iox_make_dir below, which calls it from C -- would
+ * each have to pass an mtime they discard, to spare a syscall for a caller that
+ * did not ask. The cost of the split is one extra stat(2) for a caller that
+ * wants both; a conditional GET that answers 304 wants only this one, and never
+ * opens the file at all.
+ *
+ * WHOLE SECONDS ON PURPOSE. st_mtime is st_mtim.tv_sec on any POSIX.1-2008
+ * system and the classic field everywhere else, so this needs no feature macro
+ * and no macOS st_mtimespec spelling. The sub-second half (st_mtim.tv_nsec) is
+ * deliberately dropped: HTTP-date is whole seconds, datetime.from_unix takes
+ * whole seconds, and a second out-param nothing can consume is precision spent
+ * on no one. A caller that needs nanoseconds adds a second `inout` here. */
+tycho_int iox_stat_mtime(const char *path, tycho_int *mtime) {
+    struct stat st;
+    *mtime = 0;
+    errno = 0;
+    if (stat(path, &st) != 0) return ty_rf_errno();   /* ENOENT/ENOTDIR -> MISS */
+    *mtime = (tycho_int)st.st_mtime;
+    return TY_RF_OK;
+}
+
 /* One code the read/stat space has no use for: the path is occupied by something
  * that is NOT a directory, so make_dir cannot have what it asked for. TY_RF_OK
  * cannot carry it -- OK already means "I did it" below. */
