@@ -1,0 +1,8 @@
+armed_bad=false
+requested_before=false
+listen_ok=true
+armed=true
+accept_before=true
+kill_code=0
+requested_after=true
+accept_after=Failed

@@ -1,0 +1,67 @@
+# corelib test: core:signal, in one process, with no sleeps and no timing
+# assumptions -- the output is locked to corelib/test/signal.out (corelib/run.sh).
+#
+# WHY THIS IS DETERMINISTIC, which is the only interesting thing about a signal
+# test. The signal is sent by `kill -TERM $PPID` from the shell that os.system
+# forks, so its target is THIS process. kill(2) makes the signal pending before it
+# returns; this process is meanwhile blocked in waitpid(2) inside system(3), and
+# the kernel runs a pending, unblocked signal's handler before returning to user
+# space. So the handler has run by the time os.system returns -- there is no race
+# to lose and nothing to sleep on.
+#
+# SIGTERM AND NOT SIGINT, on purpose: glibc's system(3) sets SIGINT to SIG_IGN in
+# the CALLER for the duration of the call and restores it afterwards, so a
+# `kill -INT $PPID` issued through os.system would be swallowed by system(3)
+# rather than by anything in core:signal. The handler is installed for both
+# (signal_shim.c), and SIGINT is exercised for real by the server gate.
+#
+# The single-threaded shape is the narrow case: what it proves is that the
+# handler is installed, that it fires, and that it releases the listener --
+# accept() on a socket that has been shutdown() fails, which is the Err arm a
+# server's accept loop already winds down on. That all N accept loops are
+# released, not just one, is a property of shutdown() rather than of this API and
+# is measured in plan.md's phase 1 evidence.
+
+package main
+import "core:net"
+import "core:os"
+import "core:result"
+import "core:signal"
+
+fn why(e: net.NetErr) -> string:
+    if e == net.Eof:
+        return "Eof"
+    if e == net.Timeout:
+        return "Timeout"
+    return "Failed"
+
+fn main():
+    # Fail closed: a descriptor that cannot be a listener installs nothing.
+    println("armed_bad=" + str(signal.on_shutdown(-1)))
+    println("requested_before=" + str(signal.shutdown_requested()))
+
+    srv := result.unwrap_or(net.listen("127.0.0.1", 0), -1)   # ephemeral port
+    println("listen_ok=" + str(srv >= 0))
+    println("armed=" + str(signal.on_shutdown(srv)))
+
+    # The listener still works while nothing has been signalled: connect from this
+    # same thread completes the handshake into the backlog, so accept returns.
+    port := result.unwrap_or(net.port_of(srv), -1)
+    cli := result.unwrap_or(net.connect("127.0.0.1", port), -1)
+    conn := result.unwrap_or(net.accept(srv), -1)
+    println("accept_before=" + str(conn >= 0))
+    net.close_fd(conn)
+    net.close_fd(cli)
+
+    # Signal this process. See the header for why the handler has run by the time
+    # this call returns.
+    code := os.system("kill -TERM $PPID")
+    println("kill_code=" + str(code))
+    println("requested_after=" + str(signal.shutdown_requested()))
+
+    # The listener has been shut down from handler context: accept fails instead
+    # of blocking, which is the wind-down arm a server accept loop already has.
+    match net.accept(srv):
+        Ok(c): println("accept_after=unexpected-connection")
+        Err(e): println("accept_after=" + why(e))
+    net.close_fd(srv)
