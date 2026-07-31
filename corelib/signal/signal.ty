@@ -15,6 +15,28 @@
 #                             Has such a signal arrived? Reads the flag the
 #                             handler set. For a loop that wants to stop for a
 #                             reason other than a failed accept.
+#   signal.register_conn(slot, fd) -> bool
+#                             Publish an ACCEPTED connection fd so the handler
+#                             shuts that down too. `slot` is the caller's worker
+#                             id, 0..255. false if the slot or fd is out of range
+#                             -- fail closed, and the connection then behaves
+#                             exactly as it did before: released by its own
+#                             SO_RCVTIMEO rather than by the signal.
+#   signal.retire_conn(slot)  Clear a slot. CALL IT BEFORE close(fd), never
+#                             after: a slot still holding a closed fd names a
+#                             number the kernel may have handed back out.
+#
+# WHY THE CONNECTION HALF EXISTS. Shutting down the listener releases accept(2)
+# and nothing else. A worker already blocked in recv(2) on an accepted connection
+# waits out its full SO_RCVTIMEO -- measured on tycho-httpd at 4878 ms with
+# --idle-ms 5000 and four idle keep-alive clients, all of it one idle timeout,
+# against 1 ms with the registry in place (5 runs of 5).
+# The registry is a fixed 256-slot array of `volatile sig_atomic_t`, one slot per
+# worker, so registering and retiring need no lock: each slot has exactly one
+# writer and the handler is a reader. A mutex is not async-signal-safe and taking
+# one in handler context deadlocks against the interrupted thread; the design
+# avoids needing mutual exclusion rather than trying to make it safe. The full
+# argument, statement by statement, is in signal_shim.c.
 #
 # THE WIDTH IS THE DESIGN. There is deliberately no `signal.on(sig, handler)`.
 # Calling a Tycho function from handler context is a language feature, not a
@@ -54,6 +76,8 @@ package signal
 # wrapper (the same reason core:net uses `netx_`).
 extern fn sigx_on_shutdown(fd: int) -> int
 extern fn sigx_requested() -> int
+extern fn sigx_conn_register(slot: int, fd: int) -> int
+extern fn sigx_conn_retire(slot: int)
 
 # Arm SIGTERM/SIGINT to shut down the listening socket `fd`. false if the handler
 # could not be installed.
@@ -63,3 +87,13 @@ fn on_shutdown(fd: int) -> bool:
 # Has SIGTERM or SIGINT been received since on_shutdown?
 fn shutdown_requested() -> bool:
     return sigx_requested() == 1
+
+# Publish an accepted connection fd in `slot` (the caller's worker id, 0..255) so
+# the handler shuts it down as well as the listener. false = refused, and that
+# connection keeps its pre-registry behaviour.
+fn register_conn(slot: int, fd: int) -> bool:
+    return sigx_conn_register(slot, fd) == 1
+
+# Clear `slot`. BEFORE close(fd), never after -- see the header.
+fn retire_conn(slot: int):
+    sigx_conn_retire(slot)

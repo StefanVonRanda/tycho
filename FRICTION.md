@@ -700,7 +700,7 @@ closes that. The honest score is that it closes the **shutdown case**, not signa
 handling, and the difference is deliberate rather than unfinished.
 
 - **CLOSED — a Tycho program can shut down cleanly on `SIGTERM`/`SIGINT`.**
-  `signal.on_shutdown(fd)` (`corelib/signal/signal.ty:60@on_shutdown`) installs one
+  `signal.on_shutdown(fd)` (`corelib/signal/signal.ty:84@on_shutdown`) installs one
   handler for both signals whose only action is `shutdown(fd, SHUT_RDWR)` on the
   listening socket. **One call arms an entire worker pool**
   (`server/main.ty:635@on_shutdown`) because the handler is per-process and acts on the
@@ -735,7 +735,7 @@ handling, and the difference is deliberate rather than unfinished.
   correct rather than hung. The 1-connection case is fast only by luck of routing: this
   kernel delivered `SIGTERM` to the main thread, which is accept loop 1, which was the
   busy one, so `EINTR` released it directly. The fix already has its API and no caller —
-  `signal.shutdown_requested()` (`corelib/signal/signal.ty:64@shutdown_requested`) exists
+  `signal.shutdown_requested()` (`corelib/signal/signal.ty:88@shutdown_requested`) exists
   for exactly this. Filed as `plan.md` phase 15.
 - **NEW, small — the mechanism that works is a Linux behaviour, not a POSIX guarantee.**
   `shutdown()` waking a thread blocked in `accept(2)` on a *listening* socket is not
