@@ -229,7 +229,7 @@ asserting the kill.
   all four loops regardless of which one ran the handler, which is exactly why it
   was chosen over anything that has to be delivered to the right thread.
 
-- [ ] **Phase 2 — the corelib surface**
+- [x] **Phase 2 — the corelib surface**
   - Scope: the chosen mechanism as a shim plus a `.ty` surface. Follow
     `corelib/net/net_shim.c` and `corelib/os/os.ty` for conventions — a header
     comment stating what the package is for, the shim pure libc, no external
@@ -246,6 +246,190 @@ asserting the kill.
   - Done when: a Tycho fixture in `tests/` (or `corelib/test/`, whichever matches
     the convention — check) demonstrates the surface working, with a golden.
   - Verify: `make test`, then `make -s corelib`. Not `make ci`.
+
+  ### Evidence — phase 2
+
+  New package `corelib/signal/` — `signal.ty` over a pure-libc `signal_shim.c`,
+  no `deps` file — plus the fixture `corelib/test/signal/main.ty` and its golden
+  `corelib/test/signal.out`. Nothing else in the tree changed; `server/main.ty`,
+  `server/run.sh` and `docs/spec/` were not touched.
+
+  #### The width: narrow, two functions, and no Tycho code in handler context
+
+      signal.on_shutdown(fd) -> bool          install SIGTERM+SIGINT -> shutdown(fd)
+      signal.shutdown_requested() -> bool     read the flag the handler set
+
+  `signal.on(sig, handler)` was rejected, and the reason is not "smaller is
+  nicer". A Tycho function called from a handler has to be re-entrant against two
+  things this tree really has: the arena allocator, in which every Tycho value
+  lives and which is not re-entrant, and the scheduler's mutex-guarded queues — a
+  handler that interrupts the lock holder and then touches a queue deadlocks the
+  process, which is the same class of failure as the Worst case in the Pre-flight
+  but harder to see. It is also not the *narrow* option's problem to solve which
+  thread receives the signal: phase 1 measured `pthread_create` with a NULL
+  attribute and no `pthread_sigmask` (`runtime/tycho_rt.c:577`), so delivery is to
+  an arbitrary thread, and a Tycho-level handler would inherit that.
+
+  Recorded so the question is not pretended away — a future wide version needs,
+  at minimum: (1) a signal-safe hand-off out of handler context, self-pipe or
+  `signalfd`, read by a dedicated thread, so the Tycho callback runs on an
+  ordinary stack rather than inside the handler; (2) a rule keeping the handler
+  itself at a `sig_atomic_t` store, unchanged from what ships here; (3) a
+  `pthread_sigmask` policy, since "an arbitrary worker runs your callback" is not
+  a contract anyone can code against; (4) a spec section for the re-entrancy
+  contract. None of that is needed to reach `server/main.ty:617`, and the tree has
+  exactly one caller. The header of `corelib/signal/signal.ty` carries the same
+  list so the next reader does not have to find this file.
+
+  Two functions rather than one: `on_shutdown` is what phase 3 needs, and
+  `shutdown_requested` is what makes the fixture able to prove the handler *ran*
+  rather than only that `accept` later failed. It costs one `sig_atomic_t`.
+
+  #### The handler, statement by statement, against the POSIX safe list
+
+  `corelib/signal/signal_shim.c:77-85`. `man 7 signal-safety` on this system is
+  the list being cited.
+
+  | line | statement | why it is safe |
+  |---|---|---|
+  | `corelib/signal/signal_shim.c:79` | `int saved = errno;` | reads a thread-local `int`; no call. Saved because `shutdown()` may set `errno` and the interrupted thread is entitled to its own value |
+  | `corelib/signal/signal_shim.c:81` | `sigx_flag = 1;` | store to a `volatile sig_atomic_t` — the one object type POSIX permits a handler to write while the rest of the program reads it |
+  | `corelib/signal/signal_shim.c:82` | `int fd = (int)sigx_fd;` | load from a `volatile sig_atomic_t`, same guarantee. Not a TLS read: phase 1's `__thread` histogram was instrumentation and is deliberately not shipped |
+  | `corelib/signal/signal_shim.c:83` | `shutdown(fd, SHUT_RDWR)` | **on the POSIX async-signal-safe list.** A bare syscall: allocates nothing, takes no userspace lock the interrupted thread could already hold |
+  | `corelib/signal/signal_shim.c:84` | `errno = saved;` | store to a thread-local `int` |
+
+  No `malloc`, no stdio, no `pthread_*`, no arena touch — so there is no lock for
+  the handler to deadlock the interrupted thread against, which was the stated
+  constraint rather than a formality. `sigemptyset`/`sigaction`/`memset`
+  (`corelib/signal/signal_shim.c:104-110`) run in `sigx_on_shutdown`, ordinary
+  code, not in handler context.
+
+  Two orderings that are load-bearing and are commented at the site:
+
+  - The fd is stored (`corelib/signal/signal_shim.c:103`) **before** the first
+    `sigaction`, so no signal can find a handler installed and a stale or absent
+    descriptor. `-1` means "registered nothing", and the handler then only sets
+    the flag.
+  - `sa.sa_flags = 0` (`corelib/signal/signal_shim.c:108`) — **no `SA_RESTART`**,
+    per phase 1's settled fact 1: with `SA_RESTART` the receiving thread's
+    `accept` is restarted and it does not wake at all. `shutdown` releases the
+    other loops either way; the extra `EINTR` is free and gets the receiver out
+    marginally earlier.
+
+  Fail-closed, matching `core:net`: `sigx_on_shutdown` returns 0 on a negative or
+  `> INT_MAX` fd and on a failed `sigaction`, so a caller that ignores the result
+  keeps the default disposition — dying on SIGTERM, today's behaviour — never a
+  half-armed one.
+
+  #### Where it lives, and what it had to be wired into: nothing
+
+  Checked rather than assumed. `corelib/run.sh:21-32` discovers tests by globbing
+  `corelib/test/*/main.ty`, greps the fixture's own `import` lines for `core:X`,
+  and picks up `corelib/$mod/${mod}_shim.c` and `corelib/$mod/deps` by path.
+  `tychoc` auto-discovers the shim the same way. So **there is no list of corelib
+  packages in the build or the compiler that a new one must join** — verified by
+  `grep -rln 'core:net' src scripts Makefile tools editors docs/spec`, which
+  matches only `src/tychoc.c:10534` (a comment), `scripts/entrypoints.sh:7` and
+  `scripts/ci.sh:103` (both comments), and `docs/spec/appendix-e-conformance.md`.
+  The one real enumeration is `docs/spec/18-library.md`, whose §32 lists the
+  core-tier packages one heading each — `net` is §32.24 at
+  `docs/spec/18-library.md:263`, the last core-tier entry is `decimal` at
+  `docs/spec/18-library.md:285`. `signal` has no section there yet; adding one is
+  **phase 4's** scope and was deliberately left alone. Note for phase 4: the
+  headings are the enumeration, and `docs/spec/appendix-e-conformance.md` is the
+  other file that names `core:X` packages.
+
+  `core:signal` therefore lands with zero build changes: `make -s corelib` picked
+  it up on the first run. The extern prefix is `sigx_`, for `core:net`'s reason at
+  `corelib/net/net.ty:91-92` — `signal` and `sigaction` are libc symbols and a
+  bare name would bind to the kernel wrapper.
+
+  Incidental: `extern fn sigx_requested() -> int`
+  (`corelib/signal/signal.ty:56`) is the first **zero-argument** extern in
+  `corelib/` — `grep -rn "extern fn [a-zA-Z_]*()" corelib tests docs/spec ffi`
+  returns nothing else. It compiles and runs. The form is documented at
+  `docs/reference/ffi.md:13` (`extern fn getpid() -> int`), so this is a first
+  use of a specified feature, not an unspecified one — no phase filed.
+
+  #### The fixture, and why a golden is achievable here
+
+  `corelib/test/signal/main.ty`, golden `corelib/test/signal.out`. It lives in
+  `corelib/test/` and not `tests/`: every corelib package has exactly one
+  `corelib/test/<name>/` directory, that is the convention, and it keeps
+  `make test` at 560 rather than inflating the corpus with a package-surface test.
+
+  The awkward part of a signal test is timing, and it is avoidable here. The
+  fixture sends `kill -TERM $PPID` through `os.system`, so the target is its own
+  process. `kill(2)` makes the signal pending before it returns; the fixture is
+  meanwhile blocked in `waitpid(2)` inside `system(3)`; the kernel runs a pending
+  unblocked signal's handler before returning to user space. **The handler has
+  therefore run by the time `os.system` returns** — no sleep, no poll, no race to
+  lose. Single-threaded, so there is no second thread to be delivered to.
+
+  SIGTERM and not SIGINT, deliberately: glibc's `system(3)` sets SIGINT to
+  `SIG_IGN` in the caller for the duration of the call, so a `kill -INT` issued
+  this way would be swallowed by `system` rather than by anything in
+  `core:signal`. Both signals are installed
+  (`corelib/signal/signal_shim.c:109-110`); SIGINT gets its real exercise in
+  phase 3's server gate.
+
+  What the fixture proves, and what it does not. It proves the handler installs,
+  fails closed on a bad fd, actually fires, and leaves the listener in a state
+  where `accept` returns `Err` instead of blocking — which is exactly the arm
+  `server/main.ty:493-494` already winds down on. It does **not** prove all N
+  accept loops are released; that is a property of `shutdown()` rather than of
+  this API, it is measured at N=4 in phase 1's table, and phase 3 must still prove
+  it end to end in the server as the Pre-flight requires.
+
+  Stability: the built fixture was run 20 times and compared with `cmp` against
+  the golden — **20/20 byte-identical**, no `DIFF` line printed.
+
+  ```
+  armed_bad=false
+  requested_before=false
+  listen_ok=true
+  armed=true
+  accept_before=true
+  kill_code=0
+  requested_after=true
+  accept_after=Failed
+  ```
+
+  #### Gates — real output
+
+  `make test` — 560 before this phase, 560 after. **Accounted for: this phase adds
+  no `tests/` fixture at all.** The one test it adds is `corelib/test/signal`,
+  which `corelib/run.sh` scores, not `tests/run.sh`; a corpus fixture would have
+  been the wrong home for a package-surface test and would have moved this number.
+
+  ```
+  passed: 560   failed: 0
+  all green
+  ```
+
+  `make -s corelib` — 38 ok, 1 skip (`image`, missing libpng, pre-existing), and
+  the new line:
+
+  ```
+  ok   sha256
+  ok   signal
+  ok   sort
+  ...
+  corelib: all green (tychoc matches goldens)
+  ```
+
+  Ordering note, so this is not overstated: `make test` ran once, before a later
+  comment-only edit to `signal_shim.c`'s header. That edit cannot move it — no
+  fixture under `tests/` imports `core:signal`, so `tests/run.sh` never compiles
+  the file. `make -s corelib`, which does compile it, was re-run afterwards and is
+  the output above.
+
+  `python3 scripts/check_citations.py`:
+
+  ```
+  citation check: ok (168 anchored contain the token they name, 2706 bare in bounds,
+  140 source->doc citations resolve, 233 source->source in bounds, 12 source->source anchored)
+  ```
 
 - [ ] **Phase 3 — the server shuts down cleanly, and the gate proves it**
   - Scope: `server/main.ty` and `server/run.sh`.

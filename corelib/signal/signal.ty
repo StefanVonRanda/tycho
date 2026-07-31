@@ -1,0 +1,65 @@
+# core:signal -- clean shutdown on SIGTERM/SIGINT, and nothing else. A thin,
+# turnkey FFI over sigaction(2) and shutdown(2); the companion signal_shim.c is
+# pure libc, so there is nothing external to install and nothing to link (the same
+# self-contained model as core:os and core:net). Import with `import "core:signal"`.
+#
+#   signal.on_shutdown(fd) -> bool
+#                             Install a SIGTERM and SIGINT handler whose ONLY
+#                             action is shutdown(fd, SHUT_RDWR) on the listening
+#                             socket `fd`. Every thread blocked in net.accept(fd)
+#                             is released with Err(Failed) and the program winds
+#                             down through the path it already has. Returns false
+#                             if the handler could not be installed -- fail closed,
+#                             the default disposition (die on SIGTERM) stays.
+#   signal.shutdown_requested() -> bool
+#                             Has such a signal arrived? Reads the flag the
+#                             handler set. For a loop that wants to stop for a
+#                             reason other than a failed accept.
+#
+# THE WIDTH IS THE DESIGN. There is deliberately no `signal.on(sig, handler)`.
+# Calling a Tycho function from handler context is a language feature, not a
+# library one, and it would need answers this package does not have: what a
+# handler may allocate (the arena allocator is not re-entrant and every Tycho
+# value lives in it), what it may do to a task (the scheduler's queues are
+# mutex-guarded, and a handler that interrupts the lock holder deadlocks the
+# process), and what happens when the signal lands on an arbitrary worker thread
+# rather than main -- process-directed signals go to whichever thread the kernel
+# picks. Adding it later means: a signal-safe way to hand the signal number to
+# ordinary code (a self-pipe or signalfd read by a dedicated thread), a rule that
+# the handler itself still touches nothing but a sig_atomic_t, and a spec section
+# for the re-entrancy contract. None of that is needed to shut a server down, and
+# the tree has exactly one caller.
+#
+# So this package runs NO Tycho code in handler context. The handler is three
+# statements of C -- a store to a sig_atomic_t, a load from one, and shutdown(),
+# each on the POSIX async-signal-safe list; see the header of signal_shim.c for
+# the per-call argument.
+#
+# WHAT IT COSTS. `shutdown` on a LISTENING socket waking a blocked accept() is a
+# Linux behaviour, not a POSIX guarantee, and connections still sitting in the
+# backlog are dropped rather than drained. It was chosen over the alternatives by
+# measurement, not preference: with four accept loops on one listener it released
+# 4/4 in the same millisecond, where close(fd) released 1/4 and handed the fd
+# number back out to a later open() while three threads were still blocked on it.
+# The table is in plan.md's phase 1 evidence.
+#
+# ORDER MATTERS: call on_shutdown AFTER net.listen, with the listening fd, and
+# BEFORE the accept loops start. The fd is registered before the handler is, so a
+# signal arriving mid-install can never act on a descriptor that is not there yet.
+package signal
+
+# ---- shim externs (libc sigaction/shutdown; defined in signal_shim.c) ----
+# The `sigx_` prefix keeps these off the real libc names -- `signal` and
+# `sigaction` are libc symbols -- so each binds to the shim, not to the kernel
+# wrapper (the same reason core:net uses `netx_`).
+extern fn sigx_on_shutdown(fd: int) -> int
+extern fn sigx_requested() -> int
+
+# Arm SIGTERM/SIGINT to shut down the listening socket `fd`. false if the handler
+# could not be installed.
+fn on_shutdown(fd: int) -> bool:
+    return sigx_on_shutdown(fd) == 1
+
+# Has SIGTERM or SIGINT been received since on_shutdown?
+fn shutdown_requested() -> bool:
+    return sigx_requested() == 1
