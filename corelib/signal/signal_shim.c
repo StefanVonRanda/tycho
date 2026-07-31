@@ -92,7 +92,7 @@ static volatile sig_atomic_t sigx_flag = 0;
  *     writer and one reader on a single `volatile sig_atomic_t`, which is
  *     precisely the object POSIX defines as safe for exactly this -- the reader
  *     observes the old value or the new one, never a torn one.
- *   * 256 slots because server/main.ty:672@workers rejects `--workers` outside
+ *   * 256 slots because server/main.ty@workers rejects `--workers` outside
  *     1..256, and a worker's accept loop holds at most one connection at a time
  *     (server/main.ty:557-591: accept, serve, retire, close, in one sequential
  *     body). One slot per worker is therefore sufficient, not merely convenient.
