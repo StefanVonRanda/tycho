@@ -100,8 +100,21 @@ reductions are deterministic. The producer must `close(ch)` when done or the
 workers park waiting for more. It desugars to a `parallel for` over `0..<ncpu()`
 whose body is `for true: select { recv(ch, x): … ; closed: break }`, so
 the same fail-closed gates apply and the source must name a variable. `ncpu()`
-(the fan-out width, overridable with `TYCHO_THREADS`) is also callable directly.
-Worked example: `tests/conc/workers.ty`.
+(online CPUs, overridable with `TYCHO_THREADS`) is also callable directly — but
+it is the *requested* width, not always the width used: the chunk count is
+`min(ncpu(), N)` and the compiler caps it at 64, so `TYCHO_THREADS=100` makes
+`ncpu()` report 100 while 64 chunks run.
+
+Worked example of the sugar: `tests/conc/parfor_chan.ty` — its `parallel for x
+in jobs:` at `tests/conc/parfor_chan.ty:16` is this construct and nothing else.
+`tests/conc/workers.ty` is the *manual* form the sugar replaces (its own header
+says so at `tests/conc/workers.ty:2`); read it to see what the sugar saves, not
+as the way to write this.
+
+A `parallel for` body may also `send` on a captured channel — that is how a
+per-item result gets out of a loop whose only permitted outer write is a
+reduction. The capture is a scalar handle, so every chunk sends into the one
+queue; `send` blocks on a full channel, which is the loop's backpressure.
 
 ## Channels — the one shared object
 

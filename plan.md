@@ -863,8 +863,9 @@ Unclosed discoveries from the previous plan; none blocking.
 - [ ] **Phase 6** — 110 references to "`plan.md` phase N" across 42 files point at
       the wrong plan; `plan.md` rotates on archive and the citation gate cannot
       see them (no line number). `server/main.ty` alone has 13.
-- [ ] **Phase 7** — `ncpu()`'s spec definition (`docs/spec/16-builtins.md:251`,
+- [x] **Phase 7** — `ncpu()`'s spec definition (`docs/spec/16-builtins.md:251`,
       "the `parallel for` fan-out width") is false above 64, measured.
+      *(batch B: definition corrected and the 64 cap written down — see below)*
 - [ ] **Phase 8** — every `tests/reject/` fixture carrying a `package` header is
       scored against the whole directory; affects `tests/run.sh` equally.
 - [x] **Phase 9** — *(closed by the previous plan's phase 4; kept for the record)*
@@ -935,11 +936,15 @@ Unclosed discoveries from the previous plan; none blocking.
       `server/run.sh` is the server gate and a comment that misnames a line is how
       the next reader mis-attributes a failure.
 
-- [ ] **Phase 10, 11, 12** — filed by the previous plan's phase 3 from the
+- [x] **Phase 10, 11, 12** — filed by the previous plan's phase 3 from the
       concurrency write-up: spec §22 never describes `send` from a `parallel for`
       body, `docs/guides/concurrency.md:104` points at a fixture that contradicts
       it, and `corelib/iter/iter.ty:8`'s `map` is `[$T] -> [$T]` so it cannot
       change element type.
+      *(batch B: §22.1 added, the guide re-pointed at `tests/conc/parfor_chan.ty`,
+      `map` widened to `[$T] -> [$U]` with a fixture. The three line numbers above
+      are the AS-FOUND ones and no longer resolve to the quoted text — batch B
+      moved all three; see the evidence block below for where each went.)*
 
 ## Out of scope
 
@@ -1152,3 +1157,279 @@ wrong by 3 s.
       written `) >/dev/null 2>&1 &`, which costs nothing and removes the orphan's
       grip; `server/run.sh:346` was left alone only because it is not batch A's
       scope. One redirect closes it.
+
+### Batch B evidence — phases 7, 10, 11 and 12, 2026-07-31
+
+Six files: `docs/spec/16-builtins.md`, `docs/spec/13-concurrency.md`,
+`docs/spec/appendix-f-impl-defined.md`, `docs/spec/18-library.md`,
+`docs/guides/concurrency.md`, `docs/guides/corelib.md`, plus the one code change
+in `corelib/iter/iter.ty` with its fixture. Every claim below was produced by
+compiling a program, not by reading a document — which is how three of the four
+items were found in the first place.
+
+#### Phase 7 — `ncpu()` is not the fan-out width, and the cap was written nowhere
+
+**What the compiler does.** A scratch program printing `ncpu()` and running a
+`parallel for i in 0..<1000` reduction, transpiled and run:
+
+    $ ./p7                       ncpu=16    sum=499500
+    $ TYCHO_THREADS=100 ./p7     ncpu=100   sum=499500
+
+and the emitted C for that same statement, three consecutive lines:
+
+    tycho_int _pk = tycho_ncpu();
+    if (_pk > _phi - _plo) _pk = _phi - _plo;
+    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;
+
+So `ncpu()` returned **100** while the fan-out was **64**. The generator lines
+are `src/tychoc.c:10038`, `src/tychoc.c:10039` and `src/tychoc.c:10040`; the
+value `ncpu()` returns is `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first,
+else `sysconf(_SC_NPROCESSORS_ONLN)`). The reason the number is 64 and not
+something else is one line further on: `src/tychoc.c:10041` emits a fixed
+`HTask *_pts[64]` chunk-handle array.
+
+**The cap was undocumented — verified, not assumed.** `grep -n '64'` over
+`docs/spec/13-concurrency.md` and `docs/spec/16-builtins.md` returned only
+unrelated hits (`to_i64`, `base64`, provenance line numbers), and the same
+search over `docs/guides/concurrency.md` and `docs/reference/concurrency.md`
+returned nothing at all. The clamp existed in `src/tychoc.c` and in no document
+in the tree.
+
+**Decision: correct the definition AND document the cap. Neither of the other
+two options was available to this batch, and one of them is wrong anyway.**
+
+- *Make `ncpu()` return the clamped value* — a `src/tychoc.c` change, outside
+  batch B's scope, and **wrong on the merits**: `ncpu()` also answers "how many
+  CPUs does this box have", which is what `tools/prunner/main.ty` and every
+  hand-rolled `spawn` pool want. Clamping it to a `parallel for` implementation
+  limit would make the builtin lie in the other direction.
+- *Lift the 64* — also `src/tychoc.c`, and not free: `src/tychoc.c:10041` is a
+  fixed-size array in emitted C, so lifting it means a heap allocation and a
+  free path per `parallel for` site. A real proposal, not a docs fix.
+- *Say what is true* — chosen. `docs/spec/16-builtins.md:251` now defines
+  `ncpu()` as online CPUs / `TYCHO_THREADS`, states that this is the
+  **requested** width and not necessarily the achieved one, and says a program
+  sizing anything from `ncpu()` MUST NOT assume that many chunks run.
+  `docs/spec/13-concurrency.md:81-84` states the chunk count as `min(ncpu(), N)`
+  with an implementation-MAY upper bound, reference = 64.
+  `docs/spec/appendix-f-impl-defined.md:46` — which already listed the worker
+  count as implementation-defined — now also requires the bound to be documented.
+
+#### Phase 10 — §22 said the opposite of what the compiler does
+
+**What the compiler does, part 1: a captured channel is not copied.** A scratch
+program with 200 `send`s from a `parallel for` body into one channel drained by
+a spawned task:
+
+    parallel for i in 0..<200:
+        send(out, i * i)
+    ...
+    total=2646700
+
+2646700 is exactly `sum(i*i, i=0..199)`, so all 200 items crossed **one** queue.
+The emitted C shows why, verbatim: the channel capture is `_sa->a2 = h_out;` —
+the raw handle, with no `copy_into` wrapper, unlike every heap capture.
+`src/tychoc.c:10051` copies a capture only `if (type_is_heap(ct))`, and
+`type_is_heap` (`src/tychoc.c:1318-1340`) has no channel arm, so it returns 0
+for `Channel(T)`.
+
+**What the compiler does, part 2: `recv` works too, plainly.** A second program
+with a bare `match recv(jobs):` in a `parallel for` body over 64 produced items
+printed `s=2016 n=64` — `sum(0..63)`, every item taken exactly once. So the
+construct is not select-only; the guide's worked idiom just happened to use
+`select`.
+
+**What the document said.** `docs/spec/13-concurrency.md:81-82` (as found):
+"Each chunk's captured values are deep-copied into it." Read as written, that
+gives every chunk a private queue and makes both programs above impossible. The
+correct rule existed only in the non-normative guide
+(`docs/guides/concurrency.md:154-155` as found, now
+`docs/guides/concurrency.md:168`).
+
+**Decision: carve the exception into the normative sentence, and promote the
+guide's rule to a numbered subsection.** The deep-copy sentence at
+`docs/spec/13-concurrency.md:86-90` now states the `Channel(T)` exception and
+says an implementation MUST NOT deep-copy a captured channel — phrased as a
+requirement rather than a description, because a second implementation reading
+only the spec is exactly the reader who got this wrong. New
+`docs/spec/13-concurrency.md:121@### 22.1` covers `send` from the body (not an
+outer-scope write, not subject to the reduction rule), `recv` from the body
+(exactly-one-chunk, hence deterministic integer reductions), the `parallel for x
+in ch:` equivalence including the producer's obligation to `close`, and that
+§22's fail-closed exits are unchanged inside such a body.
+
+**A stale provenance range was fixed on the way past.** §22's provenance cited
+the fan-out as `src/tychoc.c:9995-10006`; `gen_parfor` is at
+`src/tychoc.c:10030-10069` and the fan-out is `src/tychoc.c:10038-10039`. The
+old range passed the gate because a bare range is only bounds-checked. It now
+cites the three lines it means, anchored where a single line is named.
+
+#### Phase 11 — the guide pointed at the desugaring, and said so itself
+
+`docs/guides/concurrency.md:104` (as found) closed the bounded-fan-out section
+with "Worked example: `tests/conc/workers.ty`". `tests/conc/workers.ty:2` says
+of itself that it is "the pattern `parallel for x in ch:` sugars over" — the
+manual form, written with `select`/`recv` and a `0..<100` the reader has to size
+by hand. The fixture that actually demonstrates the sugar is
+`tests/conc/parfor_chan.ty`, whose `parallel for x in jobs:` is at
+`tests/conc/parfor_chan.ty:16`; the guide never named it. This is not
+hypothetical damage: the previous plan's phase 1 read `workers.ty` and copied
+the manual idiom into `tools/prunner/main.ty`.
+
+**A correct worked example does exist** — checked, not assumed. Both fixtures
+are live in `tests/conc/` and both are scored by `make test` (560/0 below).
+`docs/guides/concurrency.md:108-112` now names `tests/conc/parfor_chan.ty` as
+the worked example of the sugar and demotes `tests/conc/workers.ty` to "the
+manual form the sugar replaces — read it to see what the sugar saves", citing
+the fixture's own header line so the next reader cannot repeat the mistake. The
+same section also gained the `send`-from-the-body paragraph (phase 10's guide
+half) and phase 7's correction to the `ncpu()` parenthetical, which previously
+called it "the fan-out width" in the same words the spec did.
+
+#### Phase 12 — a FIX, not a limitation: the second type variable already works
+
+**The unknown named by the original entry was "whether inference reaches a
+function-typed `fn($T) -> $U` parameter". It does.** Tested before touching the
+library, with a standalone program that does not import `core:iter` at all:
+
+    fn map2(xs: [$T], f: fn($T) -> $U) -> [$U]: ...
+    ys := map2([1, 2, 3], to_str)      # to_str: fn(int) -> string
+    println(ys[0] + ys[2])             # printed: 13
+
+It compiled and ran first time. So this was never a compiler item, and the
+earlier note that it *might* be one is now answered: the blocker was one type
+variable in one signature in `corelib/iter/iter.ty`, nothing more.
+
+**Decision: widen it.** `corelib/iter/iter.ty:14` is now
+`fn map(xs: [$T], f: fn($T) -> $U) -> [$U]`. Same-type calls are unaffected —
+inference binds `$U` to `$T` — and that is proven rather than argued: the seven
+pre-existing lines of `corelib/test/iter.out` are byte-identical and
+`examples/corelib/iter.out` `cmp`s clean untouched. The change is a pure append
+of three lines to the golden.
+
+**The fixture is deliberately three cases, in `corelib/test/iter/main.ty`.** A
+named fn (`itos`, `int -> string`), a closure to a different scalar
+(`int -> float`), and the reverse direction (`string -> int`) — so a regression
+to one type variable cannot pass any of them, and the "named fn" case is the one
+the original report measured failing:
+
+    i2s=1,2,3,4,5
+    i2f=0.5,1.0,1.5,2.0,2.5
+    s2i=2,0,2,0
+
+`filter`, `reduce`, `count` and `any` were left alone: `filter`'s predicate is
+already `fn($T) -> int` and the others are genuinely type-preserving.
+`docs/spec/18-library.md:137-141` and `docs/guides/corelib.md:89-90` now say
+which of the five may change element type and which may not.
+
+**`docs/guides/corelib.md` was edited to keep its line count exactly the
+same** (1 line replaced by 1 line, `git diff --numstat` = `1 1`). This was
+deliberate: ~30 refs in `docs/spec/18-library.md` and two in
+`docs/spec/appendix-h-differences.md` cite that file by line range, and a
+three-line insertion would have silently invalidated every one below the
+insertion point while still passing the gate, since bare ranges are
+bounds-checked only.
+
+#### Gate output — all five, foreground, one per command
+
+    $ python3 scripts/check_citations.py
+    citation check: ok (190 anchored contain the token they name, 2752 bare in
+    bounds, 140 source->doc citations resolve, 240 source->source in bounds,
+    12 source->source anchored)
+
+    $ sh scripts/check_links.sh
+    link check: ok (136 markdown files, no dead relative links)
+
+    $ sh scripts/spec_check.sh
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 9 runnable example(s), all pass
+
+    $ make -s corelib
+    corelib: all green (tychoc matches goldens)
+
+    $ make test
+    passed: 560   failed: 0
+    all green
+
+560 as expected — no fixture gained or lost. `make test` and `make -s corelib`
+were run because `corelib/iter/` changed; the three doc gates cover everything
+else. `make ci` was **not** run: the user runs the closing sweep after the
+batches.
+
+**One cheap extra check, outside the five.** `examples/corelib/iter/main.ty`
+calls `iter.map` twice and is scored by `make corelib-examples`, not by any of
+the five gates above. Rather than spend the whole lane, that one program was
+compiled and `cmp`ed against `examples/corelib/iter.out` directly: identical.
+
+- [ ] **Phase 21** — filed by batch B, and caused by it. Batch B's insertions
+      moved line numbers in four spec/guide files, and **exactly 20 citations
+      from OUTSIDE batch B's scope now point at the wrong lines**. None of them
+      redden `scripts/check_citations.py`, because a bare range is only
+      bounds-checked — which is precisely why this needs a phase rather than
+      being left to the gate. The shift bands are mechanical:
+      `docs/guides/concurrency.md` old ≥105 → **+13**;
+      `docs/spec/13-concurrency.md` old 83..112 → **+8**, old 113..115 →
+      **+36**, old ≥119 → **+41**; `docs/spec/16-builtins.md` old ≥261 →
+      **+3**; `docs/spec/18-library.md` old ≥139 → **+3**. The 20 were
+      enumerated by script, not estimated, and this is the whole list — citing
+      file, then the ref it carries and the delta to add:
+
+      | citing site | ref as written | + |
+      |---|---|---|
+      | `FRICTION.md:317` | `docs/spec/13-concurrency.md:86` | 8 |
+      | `FRICTION.md:342` | `docs/spec/13-concurrency.md:91-92` | 8 |
+      | `FRICTION.md:423` | `docs/spec/13-concurrency.md:100` | 8 |
+      | `FRICTION.md:425` | `docs/spec/13-concurrency.md:110-111` | 8 |
+      | `FRICTION.md:433` | `docs/spec/13-concurrency.md:127` | 41 |
+      | `FRICTION.md:449` | `docs/spec/13-concurrency.md:91-92` | 8 |
+      | `FRICTION.md:455` | `docs/guides/concurrency.md:154-155` | 13 |
+      | `FRICTION.md:520` | `docs/spec/13-concurrency.md:165-167` | 41 |
+      | `docs/rfc/ffi-threading-design-review.md:62` | `docs/guides/concurrency.md:137-139` | 13 |
+      | `docs/rfc/ffi-threading-design-review.md:64` | `docs/guides/concurrency.md:141` | 13 |
+      | `docs/rfc/ffi-threading-design-review.md:268` | `docs/guides/concurrency.md:137-139` | 13 |
+      | `docs/rfc/ffi-threading-design-review.md:273` | `docs/guides/concurrency.md:114-117` | 13 |
+      | `docs/rfc/ffi-threading-design-review.md:277` | `docs/guides/concurrency.md:122-132` | 13 |
+      | `docs/rfc/ffi-threading-design-review.md:319` | `docs/guides/concurrency.md:141` | 13 |
+      | `plan.md:336` | `docs/spec/18-library.md:263` | 3 |
+      | `plan.md:337` | `docs/spec/18-library.md:285` | 3 |
+      | `plan.md:664` | `docs/spec/18-library.md:263` | 3 |
+      | `plan.md:664` | `docs/spec/18-library.md:285` | 3 |
+      | `tools/prunner/main.ty:87` | `docs/spec/13-concurrency.md:100` | 8 |
+      | `tools/prunner/main.ty:378` | `docs/spec/13-concurrency.md:127` | 41 |
+
+      Two notes the next agent should not have to re-derive.
+      `tests/diag/parfor_expr_source.ty:7` cites
+      `docs/guides/concurrency.md:102`, which is **below** the insertion point
+      and is still correct — checked, not skipped. And the four `plan.md` rows
+      **feed phase 16**: it adds a `core:signal` section to
+      `docs/spec/18-library.md` at exactly the coordinates those rows name, so
+      fixing them before phase 16 runs is worth more than fixing them after.
+      Not absorbed into batch B because `FRICTION.md`, `docs/rfc/`,
+      `tools/` and `tests/` are all outside its scope lock. Verify:
+      `python3 scripts/check_citations.py` plus a spot-read of three moved refs
+      against the text they quote. Not `make test` — `tools/prunner/main.ty`'s
+      two are inside comments, so no compiled artifact can move.
+
+- [ ] **Phase 22** — filed by batch B, out of scope and pre-existing.
+      `docs/reference/builtins.md:75` carries the **same false `ncpu()`
+      claim** batch B just corrected in the spec — "`parallel for` fan-out
+      width (online CPUs; `TYCHO_THREADS` overrides)", the same assertion in
+      slightly different words — and
+      `docs/reference/concurrency.md:55` has "K = ncpu() chunk tasks
+      (TYCHO_THREADS overrides)" in a code comment with no mention of the 64
+      cap. `docs/reference/` is hand-written, not generated from
+      `docs/spec/` (checked: no `docs/reference` target in `Makefile` or
+      `scripts/`), so the correction does not propagate on its own. Left alone
+      only because batch B's scope lock names `docs/spec/` and `docs/guides/`.
+      Two sentences. Verify: the two doc gates.
+
+- [ ] **Phase 23** — filed by batch B, a stale source→source comment.
+      `src/tychoc.c:3339` tells the reader the chunker is at
+      "gen_parfor, `src/tychoc.c:9932`"; `gen_parfor` is at
+      `src/tychoc.c:10030-10069`, so the pointer is 98 lines short and lands in
+      unrelated codegen. It is bounds-valid, so the citation gate's
+      source→source lane passes it. Same class as batch D's phase 17 (stale
+      source→source comments in `server/run.sh`) but in a different file, so it
+      is filed separately rather than folded in. One number. Verify:
+      `python3 scripts/check_citations.py`.

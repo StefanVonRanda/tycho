@@ -78,8 +78,16 @@ expressible in the language.
 `parallel for` applies to a **counting** or a **foreach** loop
 ([§14.4](10-statements.md#144-loops)) and runs its iterations across worker
 threads. The iteration space is split into chunks; the reference implementation
-uses `ncpu()` chunks and MAY expose an override (`TYCHO_THREADS`). Each chunk's
-captured values are deep-copied into it.
+uses `min(ncpu(), N)` chunks, MAY expose an override (`TYCHO_THREADS`), and MAY
+impose a fixed upper bound on the chunk count — the reference bounds it at **64**,
+so above 64 the fan-out is narrower than `ncpu()` reports
+([§29.9](16-builtins.md#299-concurrency)).
+
+Each chunk's captured values are deep-copied into it, **with one exception: a
+`Channel(T)` capture is a scalar handle and is passed by value.** Every chunk
+therefore shares the one queue rather than receiving a private copy of it. This
+is not a detail of the reference implementation — it is what makes a worker pool
+expressible at all, and an implementation MUST NOT deep-copy a captured channel.
 
 The counting spelling is `parallel for i in 0..<N:`, and this is the **only**
 context in which `0..<N` is legal — a sequential `for i in 0..<N:` is a compile
@@ -110,12 +118,45 @@ chunk results are folded at an **in-order join**. Therefore:
 Any other write to an outer-scope variable from a `parallel for` body is a
 **compile error** — there is nothing to race on.
 
+### 22.1 Channels in a `parallel for` body
+
+The reduction accumulator is the only way a `parallel for` body may *write* an
+outer variable, so it is not a way to route a per-item result out of the loop.
+A **channel** is. A `parallel for` body MAY `send` on, and MAY `recv` from, a
+channel captured from the enclosing scope — directly or through a `select`
+([§23.2](#232-select)) — and MUST be able to do so, because the capture is the
+shared handle of the paragraph above rather than a per-chunk copy:
+
+- `send(ch, v)` from the body is how a per-item result leaves the loop; it is
+  not an outer-scope write and is not subject to the reduction rule. Every
+  chunk sends into the same queue, and the channel's capacity is the
+  loop's backpressure.
+- `recv(ch)` from the body takes the next item from the same queue. Each item
+  is taken by **exactly one** chunk (§23.1's MPMC guarantee), so a reduction
+  folded from received items is deterministic for integer `+`/`*` regardless of
+  how the chunks interleave.
+
+`parallel for x in ch:` (§22's foreach spelling over a `Channel`) is defined in
+terms of exactly this: it is equivalent to a `parallel for` over `0..<ncpu()`
+whose body loops on `recv(ch)` and stops when the channel is closed **and**
+drained. The producer MUST `close(ch)`; without it the chunks never finish and
+the statement never joins.
+
+The fail-closed rules of §22 are unchanged inside such a body: `break`,
+`return` and `or_return` at the parallel-loop level are still compile errors, so
+an early exit can never cross a chunk boundary.
+
 > Provenance: `0..<N` parsed at `src/tychoc.c:3351-3376`; parallel-only refusal
 > `src/tychoc.c:3363@par_here`; literal-zero refusal `src/tychoc.c:3366@ival != 0`;
 > any other loop shape under `parallel` refused at `src/tychoc.c:3242@S_FORRANGE`
-> (it is the only node the chunker accepts). Chunk fan-out `K = ncpu()`
-> `src/tychoc.c:9995-10006`; each chunk is a real OS thread,
-> `runtime/tycho_rt.c:577@pthread_create`.
+> (it is the only node the chunker accepts). Chunk fan-out `K = min(ncpu(), N)`
+> `src/tychoc.c:10038-10039`, capped at 64 by `src/tychoc.c:10040@_pk > 64`
+> (the chunk-handle array `src/tychoc.c:10041@_pts[64]` is the reason for the
+> number); each chunk is a real OS thread,
+> `runtime/tycho_rt.c:577@pthread_create`. A capture is deep-copied only when
+> `src/tychoc.c:10051@type_is_heap(ct)` holds, and `type_is_heap`
+> (`src/tychoc.c:1318-1340`) has no channel arm, so a `Channel(T)` capture is
+> passed by value — one queue shared by every chunk.
 
 ## 23. Channels and `select`
 

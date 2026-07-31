@@ -88,7 +88,7 @@ element type instead of a family of per-type siblings.
   `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len`/`range`
   are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.)
 - **`iter`** — generic higher-order helpers over any `[T]`, each taking a `fn`/closure:
-  `map`, `filter`, `reduce`, `count`, `any`. (Predicates return an int used as a bool.)
+  `map` (two type variables — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, the only one that may change element type, so `iter.map(nums, to_str)` is a `[string]`), `filter`, `reduce`, `count`, `any`. (Predicates return an int used as a bool.)
 - **`sort`** — `argsort(keys)` / `argsort_desc(keys)`: return the index permutation that
   orders the keys — generic over any comparable key type (int/float/string/char). The way
   to order data by a derived value: keep it in parallel arrays, argsort one, and walk every

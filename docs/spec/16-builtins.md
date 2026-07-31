@@ -248,7 +248,7 @@ builtins below are their only consumers.
 | `send(ch, v)` | `(Channel(T), T) -> void` | magic | Deep-copy `v` into the channel; blocks when full; aborts if the channel is closed. |
 | `recv(ch)` | `Channel(T) -> Option(T)` | magic | Blocking receive (deep-copied out); `None` means the channel is closed **and** drained. |
 | `close(ch)` | `Channel(T) -> void` | magic | Close a channel: receivers drain then see `None`. Also `close(h)` on a **handle** variable ([§25](14-ffi.md)): run its destructor early and suppress the scope-exit free. |
-| `ncpu()` | `-> int` | Sig | The `parallel for` fan-out width (online CPUs; overridable by `TYCHO_THREADS`). |
+| `ncpu()` | `-> int` | Sig | The number of online CPUs, or the value of `TYCHO_THREADS` when that variable is set to an integer ≥ 1. This is the *requested* worker count, **not** the width a `parallel for` will actually use: the chunk count is `min(ncpu(), N)` and an implementation MAY cap it further — the reference caps it at 64 ([§22](13-concurrency.md#22-parallel-for)). A program that sizes a buffer or a work split from `ncpu()` MUST NOT assume that many chunks run. |
 
 `send`, `recv`, and `close` also have method-sugar forms on a channel-typed local
 (`ch.send(v)`, `ch.recv()`, `ch.close()`), rewritten to the free-call forms; `wait`
@@ -257,7 +257,10 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 
 > Provenance: `wait` `src/tychoc.c:5588-5595`; `channel` `:5596-5606`; `send`
 > `:5607-5615`; `recv` `:5616-5621`; `close` `:5622-5632`; `ncpu` `Sig` `:4519@.name="ncpu"`;
-> task/channel method sugar `:5233-5247`.
+> task/channel method sugar `:5233-5247`. `ncpu()`'s value is
+> `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
+> `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
+> 64 is `src/tychoc.c:10040@_pk > 64`.
 
 ## 29.10 Filesystem and time
 

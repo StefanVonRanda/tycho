@@ -43,7 +43,7 @@ value semantics of a program.
 |---|---|
 | **Textual rendering of `NaN`/`inf` by `str`** (e.g. `-nan` vs `nan`). The float *values* are IEEE-754 and fully defined; only their string form varies. | [§30.5](17-runtime.md#305-unspecified-behavior) |
 | **The concurrent-task ceiling** (default 1024) and whether it is overridable at run time. | [§21](13-concurrency.md#21-spawn-task-wait) |
-| **The `parallel for` worker count** (default: one per CPU) and whether it is overridable. | [§22](13-concurrency.md#22-parallel-for) |
+| **The `parallel for` worker count** (default: one per CPU), whether it is overridable, and **any fixed upper bound on it** (the reference caps the chunk count at 64, so `ncpu()` above 64 is not the width used). | [§22](13-concurrency.md#22-parallel-for) |
 | **Diagnostic message text** for all errors and aborts (this specification constrains the *presence* of an error/abort, never its wording). | [§1.1](00-conventions.md#11-scope) |
 
 ## F.3 Explicitly *not* implementation-defined
