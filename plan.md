@@ -79,7 +79,7 @@ first has a decided, documented policy — not 2793 hand repairs.
   - Verify: `python3 scripts/check_citations.py`, then the planted-violation
     proof both directions, then `sh scripts/check_links.sh`.
 
-- [ ] **Phase 2 — decide the bare-ref policy, and implement the decision**
+- [x] **Phase 2 — decide the bare-ref policy, and implement the decision**
   - Scope: `scripts/check_citations.py`, `CLAUDE.md`'s Citations section, and
     whatever refs the chosen policy forces.
   - **Count before deciding.** Break the 2793 down by context — how many are in
@@ -237,6 +237,198 @@ outside the two docs is a comment — `#` lines in `Makefile`, `scripts/ci.sh`,
 so no citation into one shifted, and the flat reject lane scores on exit status
 plus a non-empty diagnostic rather than on golden text.
 
+### Phase 2 evidence — 2026-07-31
+
+#### The breakdown, which decided everything below
+
+Counted by walking the gate's own parser (imported, not re-implemented, so the
+totals reconcile with `--stats`): same `CITE` regex, same paragraph-scoped
+inheritance, same skips. 2802 bare Markdown refs.
+
+| bucket | bare | note |
+|---|---|---|
+| frozen `docs/internals/plan-*-DONE.md` | **1800** | every rule in the gate already refuses to demand an edit here |
+| live plan evidence blocks | 17 | a record of what a ref said, not a claim about today |
+| `> Provenance:` ranges | 196 | exempt by the settled rule, correctly |
+| reachable narrative prose | **789** | the only population a policy could act on |
+
+By shape: 1579 single-line, 1223 ranges. By path form: 1901 spell the path, 901
+inherit it. By file class outside the frozen set: `docs/spec` 299,
+`docs/internals` live 257, other Markdown 219, `docs/rfc` 196, other `docs/` 14.
+Concentration is extreme — `docs/internals/plan-front-door-DONE.md` alone holds
+593, and `FRICTION.md` 209. Source comments are a separate, already-separate
+population: 247 bare source→source refs, half of them in `tools/` and `tests/`.
+
+**The number that decided the policy is 0.** Inside `> Provenance:` blocks —
+the one context in this tree where anchoring is mandatory — **zero** single-line
+refs are bare. All 196 bare provenance refs are ranges, which the rule exempts on
+purpose. The mandatory context is at 100%, so "require anchors in named
+contexts" has no second context left to name: it would have to invent one and
+then sweep the 789 into it. **"Convert all 2793"** was never the real number
+either; two thirds of it is frozen record that no rule here may touch.
+
+Commands: `/tmp/.../breakdown.py`, `ambig.py` and `prov.py` (scratchpad, not
+committed) — each imports `scripts/check_citations.py` and re-walks with the
+same guards, bucketing instead of failing.
+
+#### The decision: strengthen the anchors that exist, do not spread them
+
+Three candidate ambiguity predicates were measured before one was chosen, over
+all 216 anchors (200 Markdown, 16 source→source):
+
+| predicate | Markdown hits | source→source | verdict |
+|---|---|---|---|
+| token on >1 **line inside the range** | **1** of 200 | 0 of 16 | **ships as a hard failure** |
+| token recurs within ±25 lines | 54 (31 non-frozen) | 8 | counted, never failed on |
+| token recurs anywhere in the file | 122 (76 non-frozen) | 10 | counted, never failed on |
+
+So: **an ambiguous anchor is now a failure** in both anchored directions. A
+token on more than one line of the cited range names none of them — the region
+can drift inside itself and the check still passes, which reads as verified
+while verifying nothing. Population was 1, in `docs/spec/03-types.md`'s
+`bounded`-capacity Provenance block: the ref read compiler/tychoc0.ty:11908-11912
+anchored to "[b#" (spelled here **without backticks on purpose** — backticked it
+is a live citation, and this record of a repaired ref would redden the very rule
+it documents), and it opened three comment lines above the guard it meant.
+Repaired to `compiler/tychoc0.ty:11912-11913@[b#`, the `if`/`die_at` pair — the anchor
+became unique **and** the citation more precise, which is the repair this rule
+is meant to produce.
+
+**Anchor strength is measured, not enforced.** The other two predicates are
+printed by `--stats` and were not made failures, because the counts say
+enforcing manufactures exactly the hazard the pre-flight names: 17 of the 97
+mandatory single-line `> Provenance:` anchors are weak in the ±25 window — four
+separate refs anchor `@parse_value_ctrl` to four different lines of the same
+function, each matching all four; `@elem` occurs 324 times in `src/tychoc.c`.
+Clearing that red means inventing 17 replacement tokens chosen by whoever is
+clearing it. **More anchoring is not automatically more truth** — now with a
+number instead of a warning.
+
+**The green line now splits the bare total** into the four buckets above. That
+total is what this plan's own Goal read as a backlog, and it was read that way
+off this line. Splitting it there rather than only under `--stats` is a
+deliberate departure from phase 1's keep-the-`ok`-line-comparable discipline,
+noted in the docstring: the undivided number is the defect.
+
+#### The two hazards
+
+**False anchors:** addressed head-on — the ambiguity rule is the strongest form
+the counts supported, and the two weaker forms were rejected *with* their counts
+rather than on taste. The gate now claims only what it checks: the `ok` line
+reads "anchored contain the token they name **and each names one line**".
+
+**Record blocks:** the policy ships **no ratchet, no budget, no shrink target**,
+and says so in both `CLAUDE.md` and the docstring. Pressure on the bare count is
+the mechanism that would eventually point someone at a before/after block whose
+line numbers are data. Two of the four buckets on the green line — frozen record
+and live-plan evidence, 1817 refs — are labelled as unreachable *on the line
+itself*, so the number a reader is left with is 789 and no instruction to move
+it. `CLAUDE.md` states the rule with no mechanism, deferring the mechanism to
+the phase already filed for it.
+
+#### Planted-violation proof, both directions
+
+Planted in `server/README.md` (Markdown pass) and `scripts/docs_fences.sh`
+(source→source pass): an ambiguous anchor and, over the **identical range**, a
+control anchored to a token unique in it.
+
+Transcript below with the planted refs' **backticks replaced by quotes**: spelled
+verbatim they are live citations and this block would redden the rule it is
+recording. Nothing else is altered.
+
+```
+$ python3 scripts/check_citations.py
+STALE  server/README.md:292  'src/tychoc.c:1-40@source' -> AMBIGUOUS ANCHOR: 'source' is on 5 lines of src/tychoc.c (:3, :4, :12, :35, ...), so it names none of them and a drift inside the range still passes. Anchor a token that occurs once, tighten the range to its construct, or drop the anchor -- a range with no single subject token is honestly bare.
+STALE  scripts/docs_fences.sh:162  'src/tychoc.c:1-40@source' -> AMBIGUOUS ANCHOR: 'source' is on 5 lines of src/tychoc.c (:3, :4, :12, :35, ...) [...]
+citation check: FAILED (2 stale citation(s) above)
+EXIT=1
+```
+
+Exactly two failures: one per direction. **Both `@Pipeline` controls passed
+silently** over the same range — the rule rejects ambiguity, not anchoring. A
+third arm planted the same ambiguous anchor in a frozen archive
+(`docs/internals/plan-int64-DONE.md`): the failure count stayed at 2, confirming
+the frozen exemption. All plants removed, `git diff --stat` clean, and:
+
+```
+$ python3 scripts/check_citations.py
+citation check: ok (200 anchored contain the token they name and each names one line, 2802 bare in bounds (1800 frozen record, 17 live-plan evidence, 196 exempt `> Provenance:` range, 789 reachable prose), 266 source->doc citations resolve, 247 source->source in bounds, 16 source->source anchored)
+EXIT=0
+
+$ sh scripts/check_links.sh
+link check: ok (137 markdown files, no dead relative links)
+EXIT=0
+
+$ sh scripts/spec_check.sh
+spec-examples: 9 runnable example(s), all pass
+EXIT=0
+```
+
+#### The gate reddened on this phase's own edits, three times
+
+Inserting the docstring moved the `ARCHIVED` constant from `:362` to `:434`;
+three refs named the old line and **all three were anchored, so all three
+reddened immediately** — two in a frozen archive, one in `scripts/docs_fences.sh`.
+Repointed. A later docstring edit moved it one line further and reddened the
+same three again. That is phase 1's recorded consequence reproducing twice
+inside one phase, and it is the asymmetry this plan is about, seen from the
+inside: an anchored ref to a moving line is *noisy*; a bare one is *silent*. The
+noise is the feature. Filed as phase 30, because the right fix is not more
+repointing.
+
+**And a third time, on this very evidence block** — three AMBIGUOUS ANCHOR
+failures in `plan.md` itself the moment it was written: the record of the
+repaired ref, and the two planted refs inside the quoted transcript. All three
+are *records of citations*, not citations, and nothing in the tree distinguishes
+those two things — which is precisely the hazard phase 29 is filed for, met
+in practice within an hour of the policy that was designed around it. The fix
+used here is the cheapest one available: **drop the backticks**, since the gate
+only reads backticked spans in Markdown, and say in the prose that they were
+dropped and why. That is a convention, not a mechanism. Sixth phase in this repo
+to redden on its own write-up.
+
+Also caught in passing and fixed before shipping: the new failure message
+printed a count of 5 beside a list of 4 line numbers, silently truncated. A list
+that reads as complete while being partial is the same overstatement this whole
+phase is about, so it now elides explicitly (`where_at`).
+
+#### Gates run, and the ones deliberately not run
+
+`python3 scripts/check_citations.py`, `sh scripts/check_links.sh`,
+`sh scripts/spec_check.sh` — all green, per the brief's budget. **`make test`
+and `make ci` were not run.** Every edit is Markdown, a Python doc gate, or a
+`#` comment line in `scripts/docs_fences.sh`; no compiled artifact and no
+fixture is reachable from this diff.
+
+- [ ] **Phase 30 — a citation to a definition should not be a line number**
+  - Scope: `scripts/check_citations.py`, and the refs a symbol form would replace.
+  - Three refs cite the `ARCHIVED` constant in `scripts/check_citations.py` by
+    line. That line moved twice during phase 2 alone and once during phase 1 —
+    not because the constant changed, but because prose above it grew. Every one
+    of those repairs was mechanical and none carried information.
+  - The refs want to name a **symbol**, not a line: a `path@SYMBOL` form with no
+    number, checked by locating the token, would be stable under insertion above
+    it and would still redden if the symbol were renamed or deleted.
+  - **Count first**, as ever: how many anchored refs in the tree point at a
+    definition line rather than into a region? A mechanism for three is not
+    worth building — phase 29's own test, applied here.
+  - Verify: `python3 scripts/check_citations.py`, the planted-violation proof,
+    `sh scripts/check_links.sh`.
+
+- [ ] **Phase 31 — frozen archives are not as exempt as the docstring says**
+  - Scope: `scripts/check_citations.py`'s docstring, or its `frozen` guard.
+  - The file states repeatedly that a frozen `docs/internals/plan-*-DONE.md` is
+    never asked for an edit. That is true of the mandatory-anchor rule, the
+    absolute-path rule, the `docs/`-inheritance rule and the new ambiguity rule
+    — but **not** of the anchor content check, which policed two frozen refs in
+    `docs/internals/plan-loops-cleanup-DONE.md` in this phase and six in phase 1.
+  - So the real rule is "a frozen record is never asked to change, unless it
+    anchored a ref that has since drifted" — which is defensible, and is not
+    what any of the four "ARCHIVED PLANS ARE EXEMPT" paragraphs say.
+  - Decide which is right and make the file say it. Do not change behaviour and
+    documentation in the same motion without saying which one moved.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
 - [ ] **Phase 28 — the 6 refs phase 1 refused to repair, and why refusing was right**
   - Scope: `docs/internals/plan-signals-DONE.md` only.
   - Six refs spell `server/main.ty:493-494` (plus a `:494` and a `:494-495` in
@@ -269,6 +461,44 @@ plus a non-empty diagnostic rather than on golden text.
     archived plans before choosing** — a mechanism for three blocks is not worth
     building.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+## Status — PLAN COMPLETE
+
+Both phases done, each verified and committed on its own.
+
+| phase | commit | what shipped |
+|---|---|---|
+| 1 | `dd3c019` | the fourth direction: a rotating-plan phase reference outside the live plan and the frozen set is a hard failure. 38 already-false refs in the outgoing archive repaired first, 20 live refs repointed (18 found against a predicted 5 — the sweep that took the original count was case-sensitive). |
+| 2 | this commit | the bare-ref policy, decided from a full breakdown: bare stays bare, an **ambiguous anchor** is a hard failure in both anchored directions, anchor **strength** is measured and published, and the green line splits the bare total into what a policy can and cannot reach. |
+
+**The Goal's two blind spots are closed as stated.** The second is now an exact
+predicate with a planted-violation proof. The first has a decided, documented
+policy and 1 repair — not 2793.
+
+**What the numbers say now**, and it is a different claim than before: 201
+anchored refs each contain the token they name **and each names exactly one
+line**; 2802 bare refs are in bounds, of which 789 are the only ones any policy
+could act on. The gate's own honesty about the bare form is unchanged and
+deliberate — a bare ref that drifts onto a different-but-existing line still
+passes, and no line-checker can see it.
+
+**Open, filed, not closed here:**
+
+- **Phase 28** — the 6 refs phase 1 refused to repair on RULE 7 grounds. The
+  construct was deleted, not moved, so there is no line to relocate to. Decide
+  whether they are citations or claims about superseded behaviour.
+- **Phase 29** — what a before/after record block *is*, so nobody "repairs" one.
+  Phase 2 hit this from the inside (see its evidence) and worked around it with
+  a convention; the mechanism question is still open.
+- **Phase 30** — a citation to a definition should not be a line number. The
+  `ARCHIVED` constant's refs were repointed three times across two phases, none
+  of the repairs carrying information.
+- **Phase 31** — frozen archives are not as exempt as the docstring claims; the
+  anchor content check polices them and four "ARCHIVED PLANS ARE EXEMPT"
+  paragraphs say otherwise.
+
+Retired by decision rather than swept, with measurements in `FRICTION.md`:
+sweeping the reachable bare refs, and the three drift phases 21, 23 and 25.
 
 ## Out of scope
 

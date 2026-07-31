@@ -136,6 +136,43 @@ gates them. Two things that bite every time:
   `path:N@token`; a **range** stays bare, deliberately — a range has no single
   subject token and forcing one produces a false anchor. Do not "fix" the
   exemption.
+- **An anchor must name one line.** If the token appears on more than one line
+  of the cited range it identifies none of them: the region can drift inside
+  itself and the check still passes. That is a hard failure. Fix it by anchoring
+  a token that occurs once, by tightening the range to its construct, or by
+  dropping the anchor — a bare range is honest, a false anchor is not.
+
+### The bare-ref count is not a backlog
+
+The gate's green line reports thousands of bare refs against a couple of hundred
+anchored ones, and that ratio has twice been mistaken for work to do. It is
+split on that line now so it cannot be again. Of 2802 bare refs: **1800** are in
+the frozen `docs/internals/plan-*-DONE.md` set, where every rule in the gate
+already refuses to demand an edit; **17** are in the live plan's own evidence;
+**196** are the deliberately-exempt `> Provenance:` ranges; **789** are
+reachable narrative prose.
+
+**Those 789 stay bare.** Requiring anchors on them is the hand sweep this repo
+has declined three times with measurements each time (`FRICTION.md`: 11 of 15
+spot-checked refs drifting again four days after a repair pass). And the one
+construct where anchoring is mandatory is already at 100% — zero of its
+single-line refs are bare — so there is no second context left to name.
+
+**Anchoring more is not anchoring better**, and the gate now measures the
+difference: `python3 scripts/check_citations.py --stats` prints how many anchors
+name a token that recurs within ±25 lines of their range (32) or anywhere in the
+file (76). Those anchors survive a drift by accident. 17 of the 97 mandatory
+`> Provenance:` anchors are in that state — four of them anchor
+`@parse_value_ctrl` to four different lines of the same function. This is
+**counted, never failed on**: clearing it under gate pressure means inventing 17
+replacement tokens, which is how false anchors get made.
+
+**There is no ratchet and no budget on the bare count, on purpose.** Pressure to
+shrink it would eventually point someone at a before/after record block, whose
+line numbers are *data* — `"was 846, now 848"` is right precisely because it is
+stale, and "repairing" it destroys the evidence. Nothing in the tree marks those
+blocks yet. Until something does, treat a bare ref inside an evidence or
+before/after block as a record, not a citation, and leave it alone.
 
 ## Plans
 
