@@ -58,6 +58,7 @@ import "core:result"
 import "core:path"
 import "core:url"
 import "core:strings"
+import "core:signal"
 import "core:time"
 import "core:datetime"
 
@@ -606,6 +607,34 @@ fn main():
         Err(e): die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
     # -1 in the banner if unknowable.
     bound := result.unwrap_or(net.port_of(srv), -1)
+
+    # SIGTERM/SIGINT -> shutdown(srv, SHUT_RDWR) -> every accept loop's next
+    # net.accept returns Err -> accept_loop's Err arm (:493-494) sets
+    # running = false -> worker() unwinds through wait(peer) -> the stopped line
+    # at the bottom of this function. No new control flow: the wind-down arm was
+    # already there and was simply unreachable, because nothing ever made accept
+    # fail.
+    #
+    # HERE, and not elsewhere, for three reasons:
+    #   * AFTER net.listen, because on_shutdown takes the listening fd. Before it
+    #     there is no fd to register.
+    #   * BEFORE the fan-out at the bottom of main. `worker(cfg, srv, 1, ...)` is
+    #     a direct call, not a spawn -- worker k spawns k+1 and then runs accept
+    #     loop k itself -- so main IS accept loop 1 and never returns here until
+    #     the whole pool has wound down. Anything after that call is shutdown
+    #     code, not startup code.
+    #   * BEFORE the banner, which is the readiness signal server/run.sh polls
+    #     for. Arming afterwards leaves a window in which a reader has been told
+    #     "serving" while SIGTERM still has its default disposition, i.e. kills
+    #     the process where it stands -- a race the gate would hit rarely and
+    #     confusingly.
+    # One arm for the whole pool: the handler is per-process, not per-thread, and
+    # it acts on the shared listener, so which thread the kernel picks does not
+    # matter. That property is why core:signal chose shutdown() over close() --
+    # plan.md phase 1.
+    if not signal.on_shutdown(srv):
+        eprint("tycho-httpd: warning: SIGTERM handler not installed;"
+               + " shutdown will not be clean\n")
 
     banner := "tycho-httpd: serving " + cfg.root
     banner += " on http://" + cfg.host + ":" + str(bound) + "/"
