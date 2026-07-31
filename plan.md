@@ -182,7 +182,7 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   and it says in as many words that converting correct old-form refs is not work.
   The note under phase 3 below is the whole of the mitigation.
 
-- [ ] **Phase 2 — `Last-Modified` and `If-Modified-Since`**
+- [x] **Phase 2 — `Last-Modified` and `If-Modified-Since`**
   - Scope: `corelib/httpd/httpd.ty` for the header handling, `server/main.ty`,
     and `server/run.sh`.
   - **Check the date format question from Pre-flight first** and report what
@@ -197,6 +197,207 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
     carries `Last-Modified`.
   - Verify: `make -s server-check` with the new assertions, each proven to FAIL
     on the pre-change binary; then the 10-run loop; then `make test`.
+
+  **Evidence (2026-07-31).**
+
+  *The Pre-flight question, answered before anything was built: `corelib/datetime/`
+  cannot produce or read an IMF-fixdate, and it did not need to.* The package
+  formats ISO-8601 (`corelib/datetime/datetime.ty@format_iso`) and parses
+  ISO-8601 and the Common Log Format (`corelib/datetime/datetime.ty@parse_clf`);
+  `grep -n "^fn " corelib/datetime/datetime.ty` lists no RFC 1123 / RFC 7231
+  entry point in either direction. **But the risk the Pre-flight named — "the
+  feature needs a formatter written from scratch" — did not materialise, because
+  every PIECE is there and already tested:** `weekday_name` gives `Sun`..`Sat`,
+  `month_name` gives `Jan`..`Dec`, `month_num` is its inverse, `pad2`/`pad4` do
+  the zero padding, `from_unix` supplies the civil fields *including the weekday*,
+  and `to_unix` goes back. So the phase was the size it was costed at.
+
+  *And the server already had half of it.* `server/main.ty@http_date` existed and
+  emitted exactly this format for the `Date` header — its comment called it "RFC
+  1123", which is the same production RFC 7231 renamed IMF-fixdate. The phase
+  brief did not know that and neither did the Pre-flight; it was found by reading
+  the file. So the formatter was not written, it was **generalised**: `http_date()`
+  became `http_date_at(secs)` plus a one-line `http_date()` calling it with
+  `now()`. Two callers, one format, no second spelling to drift.
+
+  *Where the two new functions live, and why not in `corelib/datetime/`.* Both
+  are in `server/main.ty`. `corelib/datetime/` is out of this phase's scope, but
+  scope is not the only reason: IMF-fixdate is an HTTP wire format, not a
+  calendar fact, and `core:datetime`'s header states its two parser dialects
+  deliberately. Adding a third belongs to whoever specs it (phase 5's territory),
+  not to a server phase that needs it working today.
+
+  *What `parse_http_date` accepts, and the one thing it delegates.* IMF-fixdate
+  only — 29 characters, fixed positions. It validates the punctuation and the
+  literal `GMT` itself, then **rearranges the fixed fields into the CLF shape
+  `dd/Mon/yyyy:HH:MM:SS` and hands them to `datetime.parse_clf`**, which already
+  does the digit scanning, the month name, and the range checks (13th month, 31st
+  of February, hour 24) with a fail-closed sentinel. A second copy of that logic
+  was the alternative and it would have been the copy that rots.
+
+  RFC 7231 §7.1.1.1's two obsolete forms — rfc850 and asctime — are **not**
+  parsed, deliberately. They fall out as `-1`, which means `200`, which is the
+  safe direction: the cost is one needless full response for a client that sends
+  one, never a stale `304`. Every client that sends us an `If-Modified-Since` is
+  echoing back the `Last-Modified` we wrote, which is an IMF-fixdate by
+  construction. Both forms are asserted in the gate as `200`-with-body, so this
+  is a pinned decision rather than an omission.
+
+  *The date math, checked against an independent implementation before it was
+  wired to anything.* A throwaway program carrying copies of both functions,
+  compiled with `./tychoc`:
+
+  ```
+  fmt   Sun, 06 Nov 1994 08:49:37 GMT     <- python: email.utils.formatdate(784111777, usegmt=True)
+  parse 784111777                          <- python: calendar.timegm(parsedate(...))
+  roundtrip 4000/4000                      <- parse(format(s)) == s over ~12 years of s
+  bad-len -1  bad-punct -1  bad-month -1  bad-day -1  bad-hour -1  garbage -1  empty -1
+  ```
+
+  Both directions agree byte-for-byte with python's, which is the point: a
+  formatter checked only against its own parser proves nothing.
+
+  *The comparison rule as implemented.* In `server/main.ty@serve_conn`:
+  `if lm >= 0 and ims >= 0 and lm <= ims:` → `304`. Three separate ways to not
+  know the answer all fall through to `200`: `io.mtime` failed (`lm < 0`, and no
+  `Last-Modified` is sent either — a header we cannot fill is worse than none);
+  no or unparseable `If-Modified-Since` (`ims < 0`); or the file is newer.
+  **`<=` and not `<` is load-bearing** — equal means the client holds exactly this
+  version — and the equality case is asserted, because `<` is a silent
+  one-character regression that a suite testing only "conditional GET → 304"
+  would never catch. mtime is whole seconds (`corelib/io/io.ty@mtime`, phase 1)
+  and so is an IMF-fixdate, so the two compare with no rounding on either side.
+
+  *Phase 1's cost claim, confirmed rather than assumed.* The `304` arm builds its
+  response and never calls `io.read_bytes`, so the hot conditional path is one
+  `stat(2)` and no file read — cheaper than the serve it replaces.
+
+  *The HEAD/304 interaction, which is a real interaction and not a formality.*
+  Both suppress the body and they are **not the same suppression**.
+  `server/main.ty@emit`'s HEAD arm suppresses the body while *keeping* the
+  `Content-Length` a GET would have reported — that is the whole point of HEAD,
+  and the explicit header is what stops `render_head` recomputing `0` from the
+  emptied body. A `304` has no representation to describe at all. Run the HEAD
+  arm on a `304` and it stamps `Content-Length: 0`, which is precisely the value
+  RFC 7230 §3.3.2 forbids there: the only length a `304` may carry is the one the
+  `200` would have sent, and this server deliberately never learns it. So the arm
+  is guarded `if head_only and not httpd.bodyless(out.status)`. A bodyless
+  response already has an empty body, so nothing is lost by skipping it.
+
+  *The corelib half: `corelib/httpd/httpd.ty@bodyless`.* `304` was missing from
+  `corelib/httpd/httpd.ty@reason_phrase` and rendered as the placeholder
+  `"Status"`; it is in the table now. The larger change is that
+  `corelib/httpd/httpd.ty@render_head` no longer *synthesises* `Content-Length`
+  or `Content-Type` for a bodyless status (1xx, 204, 304 — RFC 7230 §3.3.3 rule
+  1). This is not the same question as "is the body empty": a `404` with an empty
+  body still describes a body of zero bytes and `Content-Length: 0` is the right
+  thing to say about it. An explicit header set by a caller is still emitted
+  verbatim in every case — the rule governs only what gets invented. 1xx is
+  included for completeness; nothing in the package generates one.
+
+  *The four required cases, and 25 more.* `server/run.sh` went **61 → 90
+  assertions**. The document root is a copy, so the runner pins one file's mtime
+  with `os.utime` to a fixed epoch — which turns `Last-Modified` from "some
+  plausible string" into an exact comparison against a date python formatted
+  independently. The four the brief named: current timestamp → `304` with no
+  body; **older timestamp → `200` with the body**; unparseable → `200`;
+  `Last-Modified` on the plain `200` (asserted on two different files).
+
+  *Pre-change failure, and where the honest answer differs from the brief's.*
+  **10 of the 29 fail on the pre-change binary** — built by `git worktree add`
+  at `74fd4c7` with the new `server/run.sh` copied in. The other 19 **cannot**,
+  and that is structural rather than a gap: a server with no conditional-GET
+  support trivially satisfies "serve `200` with the body". The negative
+  assertions exist to catch a server that is wrongly *permissive*, which the
+  absent implementation is not. So they were proven against three mutants of the
+  finished code instead — the same worktree, one `sed` each:
+
+  | variant | the bug it embodies | reddens |
+  |---|---|---|
+  | pre-change `74fd4c7` | feature absent | 10 of 29 |
+  | A: `if header(...) != ""` | `304` whenever the header is present | 14 of 29 |
+  | B: `lm < ims` | off-by-one on "not newer" | 6 of 29 |
+  | C: `lm >= 0 and (ims < 0 or lm <= ims)` | fail **open**: unevaluable counts as satisfied | 16 of 29 |
+
+  **28 of the 29 redden under at least one variant.** Mutant C also breaks 12
+  *pre-existing* assertions, which is its own finding: failing open turns the
+  whole server into a `304` machine, and the suite says so loudly.
+
+  The 29th, `HEAD 304 no body`, is **not falsifiable by any variant I could
+  construct** — HEAD suppresses the body on its own, so no mutation of the
+  conditional logic can redden it. It is kept and **labelled in `server/run.sh`
+  as a control**, because from the pass line a control and a proof look identical.
+  The 304-has-no-body *claim* is carried by the GET form, which reddens on the
+  pre-change binary and on mutants A and B.
+
+  *Gates, all foreground, one command each.*
+
+  ```
+  $ make -s server-check
+  server: OK                      (90 ok, 0 FAIL; was 61)
+
+  $ for i in $(seq 1 10); do make -s server-check; done
+  run 1..10: server: OK  ok=90 FAIL=0        (10/10, no flake)
+
+  $ make test
+  passed: 560   failed: 0
+
+  $ python3 scripts/check_citations.py
+  citation check: ok
+  ```
+
+  560 before, 560 after — expected: no fixture was added, and `make test` is here
+  to prove the corelib change broke no compiler or golden behaviour.
+
+  *The out-of-scope touch this phase caused, at 16x phase 1's scale.* Phase 1
+  grew `corelib/io/io.ty` and broke **one** line-numbered ref. This phase grew
+  `server/main.ty` by ~110 lines and broke **32**, across `FRICTION.md`,
+  `server/README.md`, `corelib/signal/signal_shim.c`, `server/run.sh`,
+  `server/main.ty` itself, and two frozen archives. Every one of the 32 targets
+  `server/main.ty`; the gate was green at `74fd4c7`, so all 32 are this phase's
+  drift and none is pre-existing.
+
+  This is repaired here rather than deferred, on phase 1's precedent — leaving it
+  would hand phase 3 a red gate it did not cause — and CLAUDE.md authorises both
+  halves in as many words: "convert an old one when it next breaks", and, for an
+  anchor inside a frozen record, "the anchor rule wins on the anchor". **Two
+  different repairs, chosen per line by shape, applied line-targeted and never by
+  blanket `sed`** (three of the files carry the same ref text on both kinds of
+  line):
+
+  - **8 refs → drop the anchor, keep the number.** Five are repair-log lines
+    (`old` → `new`, two refs joined by an arrow) in
+    `docs/internals/plan-citation-gate-DONE.md`; three are frozen prose that
+    states outright that its numbers are a past record ("the line numbers here
+    are the post-batch-E ones"). The number is data and moving it would falsify
+    evidence; the anchor was a live promise bolted onto a dead number.
+  - **24 refs → the `path@SYMBOL` form, line number dropped.** These are live
+    pointers at named constructs. One was a **bare** `:753`, anchored on
+    `stopped` — with no path of its own, so it bound to whatever path that
+    document named last. Naming the path is strictly better and the binding was
+    invisible. (That ref is written here with **its anchor dropped**, for the
+    reason phase 1 records one line further down: quoted whole, it is a live
+    bare citation inside this evidence block, and it would resolve against
+    whichever file this paragraph mentioned last — passing or failing for
+    reasons that have nothing to do with the repair being described.)
+
+  *And two the gate could not have caught.* `server/run.sh`'s own header cited
+  `server/main.ty:712-716` and `:746-750` as bare **ranges** for the bind and the
+  banner. Bare ranges are not content-checked, so both were silently pointing at
+  `usage()` text after my insertions and the gate stayed green. Repointed to
+  `812-816` and `846-850`, verified by reading both. A bare range is the one form
+  where being wrong costs nothing at the gate and everything to a reader — and it
+  caught me twice in this phase: correcting `server/main.ty`'s own header (which
+  still listed conditional requests under "NOT IMPLEMENTED", false as of this
+  commit) shifted the file another 7 lines *after* the first repoint, and the
+  gate stayed green through it. The `path@SYMBOL` refs needed no second visit.
+
+  **No sweep was performed and none is recommended.** Only broken refs were
+  touched. The remaining line-numbered refs into `server/main.ty` are correct
+  today, and CLAUDE.md says converting correct old-form refs is not work — but
+  note that **phase 4 grows `server/main.ty` again** for `Range`, so expect this
+  same class of break, and repair it the same two ways rather than repointing
+  numbers.
 
 - [ ] **Phase 3 — `io.read_at` through the shim**
   - Scope: `corelib/io/io_shim.c`, `corelib/io/io.ty`, and a fixture.

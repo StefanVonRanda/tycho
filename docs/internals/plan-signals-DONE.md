@@ -7,7 +7,7 @@ seven still-open phases are carried forward at the bottom of this file.
 
 ## Goal
 
-`server/main.ty:753@stopped` prints `"tycho-httpd: stopped after N requests"` and is
+`server/main.ty@stopped` prints `"tycho-httpd: stopped after N requests"` and is
 **unreachable**. Nothing installs a SIGTERM or SIGINT handler, because Tycho has
 no signal surface at all. `make server-check` currently asserts the server dies
 with wait status 143 — that is, it asserts the *absence* of clean shutdown.
@@ -33,7 +33,7 @@ asserting the kill.
 - **Verified — the wind-down is already `Err`-driven and already written.**
   `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint] sets `running = false` in the `Err` arm of accept,
   commented "listener closed: wind down". The served count returns at
-  `server/main.ty:753@stopped`. **No new control flow is needed in the server** — the
+  `server/main.ty@stopped`. **No new control flow is needed in the server** — the
   path exists and nothing reaches it.
 - **Verified — EINTR already propagates.** `corelib/net/net_shim.c:162-167` is a
   bare `accept()` with **no EINTR retry loop**: on interrupt it returns -1, which
@@ -100,8 +100,8 @@ asserting the kill.
 
   **The Pre-flight's model of the server's shape was wrong in one load-bearing
   way, and the first probe run reproduced the wrong shape.** The Pre-flight says
-  N workers are pthreads. In fact `server/main.ty:752@total` calls `worker(...)`
-  *directly*, and `worker` at `server/main.ty:607@remaining` spawns worker k+1 and then
+  N workers are pthreads. In fact `server/main.ty@total` calls `worker(...)`
+  *directly*, and `worker` at `server/main.ty@remaining` spawns worker k+1 and then
   runs its own `accept_loop`. So with `--workers 4` the process has **the main
   thread running accept loop 1 plus three spawned threads** — not four spawned
   threads with an idle main. This changes the answer to both settled facts
@@ -116,7 +116,7 @@ asserting the kill.
   when a loop hangs; SIGTERM is blocked in that thread alone so the scaffolding
   cannot become a candidate receiver and perturb the measurement. Hangs are
   detected with `pthread_timedjoin_np` and a 3 s deadline — the server's main
-  thread really does join its peers (`server/main.ty:611@wait`), so a loop that never
+  thread really does join its peers (`server/main.ty@wait`), so a loop that never
   returns is a process that never exits.
 
   #### Mechanism × outcome, N=4, faithful shape, handler without `SA_RESTART`
@@ -238,7 +238,7 @@ asserting the kill.
     `signal.shutdown_requested() -> bool` is very different from a general
     `signal.on(SIGTERM, handler)`; the narrow one is what the server needs and
     the wide one is a language feature with re-entrancy rules. Justify the
-    choice; the smallest thing that makes `server/main.ty:753@stopped` reachable is the
+    choice; the smallest thing that makes `server/main.ty@stopped` reachable is the
     default answer.
   - Async-signal-safety is a real constraint, not a formality: whatever the
     handler does must be on the POSIX safe list. Say what it does and why that is
@@ -277,7 +277,7 @@ asserting the kill.
   itself at a `sig_atomic_t` store, unchanged from what ships here; (3) a
   `pthread_sigmask` policy, since "an arbitrary worker runs your callback" is not
   a contract anyone can code against; (4) a spec section for the re-entrancy
-  contract. None of that is needed to reach `server/main.ty:753@stopped`, and the tree has
+  contract. None of that is needed to reach `server/main.ty@stopped`, and the tree has
   exactly one caller. The header of `corelib/signal/signal.ty` carries the same
   list so the next reader does not have to find this file.
 
@@ -434,7 +434,7 @@ asserting the kill.
 - [x] **Phase 3 — the server shuts down cleanly, and the gate proves it**
   - Scope: `server/main.ty` and `server/run.sh`.
   - The server change should be small — the wind-down path already exists at
-    `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint] and the count already returns at `:753@stopped`.
+    `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint] and the count already returns at `server/main.ty@stopped`.
   - **`server/run.sh` currently asserts wait status 143**, i.e. that the server
     is killed. That assertion must change to assert clean exit and the printed
     count. Do not delete the abrupt-kill case — SIGKILL should still be tested,
@@ -465,13 +465,13 @@ asserting the kill.
   entirely pre-existing: handler → `shutdown(srv, SHUT_RDWR)` → every blocked
   `net.accept` returns `Err` → `accept_loop`'s `Err` arm at
   `server/main.ty:591-592` sets `running = false` → `worker` unwinds through
-  `wait(peer)` → the stopped line, now at `server/main.ty:753@stopped`.
+  `wait(peer)` → the stopped line, now at `server/main.ty@stopped`.
 
   **Why there and nowhere else**, the three constraints written at the site:
 
   - **After `net.listen`** (`server/main.ty:712-714`) — `on_shutdown` takes the
     listening fd; before that call there is no fd to register.
-  - **Before the fan-out** (`server/main.ty:752@total`). Phase 1's correction to the
+  - **Before the fan-out** (`server/main.ty@total`). Phase 1's correction to the
     thread model is the whole reason this needs saying: `main` *calls*
     `worker(cfg, srv, 1, cfg.workers)` rather than spawning it, and `worker`
     (`server/main.ty:606-611`) spawns peer k+1 then runs accept loop k itself. So
@@ -841,7 +841,7 @@ Four phases, four commits:
 | 3 | `5428fa1` | `server/main.ty` arms it in one call; `server/run.sh` asserts clean exit on `SIGTERM` and `SIGINT` with `SIGKILL` as the control, 52 → 57 assertions |
 | 4 | *this commit* | `docs/spec/18-library.md` §32.27 with the async-signal-safety contract, `server/README.md`'s shutdown story, `FRICTION.md` re-scored |
 
-**What shipped.** `server/main.ty:753@stopped` — `tycho-httpd: stopped after N requests`,
+**What shipped.** `server/main.ty@stopped` — `tycho-httpd: stopped after N requests`,
 unreachable when this plan opened — now prints on `SIGTERM` and on `SIGINT`, with
 exit status 0, every worker joined and nothing left in the process group. The
 surface is two functions (`signal.on_shutdown(fd)`, `signal.shutdown_requested()`)
@@ -883,7 +883,7 @@ Unclosed discoveries from the previous plan; none blocking.
       `ENFILE`, `ECONNABORTED`, `EPROTO`, all of which POSIX says to retry —
       therefore **retires that worker permanently and silently**, and the server
       keeps running with fewer accept loops than it reports in its banner
-      (`server/main.ty:748@banner`). Under fd exhaustion the workers would drain one at
+      (`server/main.ty@banner`). Under fd exhaustion the workers would drain one at
       a time until the process quietly stops serving. This is pre-existing and
       not caused by the signal work; phase 1 found it while establishing that
       `EINVAL` reaches the wind-down arm, which is the same collapse working *in
@@ -1032,14 +1032,14 @@ That bit already had an API and no caller. `signal.shutdown_requested()`
 `shutdown(fd)` — so an accept released by the shutdown, or interrupted by
 `EINTR` on the way to it, observes the flag already true. The discriminator is
 exact for the case that matters, and it costs no FFI surface, no `NetErr`
-variant and no spec text. `server/main.ty:593@shutdown_requested` is the whole decision.
+variant and no spec text. `server/main.ty@shutdown_requested` is the whole decision.
 
 The residual risk is honest and is insured rather than ignored: the flag is a
 `volatile sig_atomic_t` read from a thread other than the one the handler ran
 on, which is not by itself a cross-thread ordering guarantee. If a worker ever
 read a stale 0 it retries, the next accept on a shut-down listener fails at once
 (phase 1 measured `EINVAL` there), and the flag is re-read every time round —
-so the retry cap at `server/main.ty:597@MAX_ACCEPT_FAILS` guarantees the wind-down even if the
+so the retry cap at `server/main.ty@MAX_ACCEPT_FAILS` guarantees the wind-down even if the
 fast path were missed. Cap and backoff are `server/main.ty:82-83`: 100 failures
 20 ms apart, i.e. two seconds of unbroken failure before a loop retires, and it
 retires *loudly* now. Sustained fd exhaustion past two seconds still drains the
@@ -1047,7 +1047,7 @@ pool; that is a bound, not a fix, and it is stated rather than papered over.
 
 #### Where the phase 15 check went, and why there
 
-`server/main.ty:411@shutdown_requested` — `serve_conn`'s loop condition, and nowhere else in that
+`server/main.ty@shutdown_requested` — `serve_conn`'s loop condition, and nowhere else in that
 function. It is the one point where nothing is in flight: the previous response
 is written and logged, the next blocking read has not started. Testing there
 means a worker never *commits* to another `read_request_capped` once shutdown is
@@ -1142,7 +1142,7 @@ wrong by 3 s.
 - [x] **Phase 19** — filed by batch A, measured. Shutdown latency for a worker
       **already parked in a blocking read** is still one `SO_RCVTIMEO`: 4733 ms
       with `--idle-ms 5000`, unchanged by phase 15, because
-      `server/main.ty:411@shutdown_requested`'s check cannot run until `read_request_capped`
+      `server/main.ty@shutdown_requested`'s check cannot run until `read_request_capped`
       returns and nothing wakes a `recv` on a connection fd — the handler shuts
       down the *listener* only (`corelib/signal/signal.ty:38-43`). Two ways out,
       neither small enough for batch A. (a) Let the handler shut down accepted
@@ -1527,7 +1527,7 @@ about 34 columns per site and the citing lines were not reflowed.
 **What was deliberately NOT rewritten.**
 
 - **5 refs that mean the live `plan.md`** and are therefore correct today:
-  `FRICTION.md:739`, `server/main.ty:741@plan-signals-DONE`, and `server/run.sh`
+  `FRICTION.md:739`, `server/main.ty:741`, and `server/run.sh`
   at lines 328, 479 and 602 (batch C recorded the last three as 468 and 591 and
   `server/main.ty:708`; batch E moved them, and the line numbers here are the
   post-batch-E ones). Batch E then wrote a **sixth**, `server/run.sh:650`, after
@@ -2023,7 +2023,7 @@ the tree pointed into the three edited files by line number. `check_citations.py
 failed on all 15. Re-pointing them is not scope creep, it is the change's own
 cleanup: `FRICTION.md` (2), `server/README.md` (1), `docs/spec/18-library.md`
 (5), `plan.md`'s own phase 2 evidence (5), plus two in `server/run.sh`'s header
-(`server/main.ty:621@pick`, `server/main.ty:752@worker`) and the readiness spans
+(`server/main.ty:621`, `server/main.ty:752`) and the readiness spans
 above them. Nothing but the line numbers changed in any of them. The two refs
 this batch itself wrote into `server/main.ty` and `corelib/signal/signal_shim.c`
 were switched to the **anchored** `path:N@token` form on purpose, so the next

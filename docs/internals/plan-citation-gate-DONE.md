@@ -120,7 +120,7 @@ exactly as it predicted:
 ```
 doc:296  `corelib/signal/signal_shim.c:81`      -> `corelib/signal/signal_shim.c:148@sigx_flag`
 doc:290  `corelib/signal/signal_shim.c:77-85`   -> `corelib/signal/signal_shim.c:144-156`
-doc:617… `server/main.ty:617` (x5 sites)        -> `server/main.ty:753@stopped`
+doc:617… `server/main.ty:617` (x5 sites)        -> `server/main.ty:753`
 ```
 
 **8 single-line repairs gained an anchor**, chosen as the rarest identifier on
@@ -1090,13 +1090,13 @@ violation proof and restored with `git checkout` before anything else ran.
       which has been rewritten twice under them. Repaired by re-deriving the
       construct, not by shifting the number:
       - `server/README.md:153` — `server/main.ty:302` →
-        `server/main.ty:313@is_dir` (the `match io.is_dir(fsp)` in `resolve()`)
+        `server/main.ty:313` (the `match io.is_dir(fsp)` in `resolve()`)
       - `server/README.md:170` — `server/main.ty:369` →
-        `server/main.ty:380@peer_addr` (the once-per-connection read in `serve_conn`)
+        `server/main.ty:380` (the once-per-connection read in `serve_conn`)
       - `server/README.md:188` — `server/main.ty:635` →
-        `server/main.ty:742@on_shutdown` (the `signal.on_shutdown(srv)` call)
+        `server/main.ty:742` (the `signal.on_shutdown(srv)` call)
       - `FRICTION.md:706` — `server/main.ty:635` →
-        `server/main.ty:742@on_shutdown` (same call, same repair)
+        `server/main.ty:742` (same call, same repair)
       - `docs/internals/plan-signals-DONE.md:1795` and
         `docs/internals/plan-signals-DONE.md:1796` — **anchor dropped, number
         kept.** These two are cells of a `| comment | as-found | re-derived |

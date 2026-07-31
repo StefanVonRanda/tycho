@@ -7,17 +7,17 @@
 # So the pattern is different and this header says what it is, because nothing
 # else in the tree does it.
 #
-#   readiness   server/main.ty:712-716 binds and asks the kernel for the real
-#               port (net.port_of); server/main.ty:746-750 prints a banner ON STDERR:
+#   readiness   server/main.ty:812-816 binds and asks the kernel for the real
+#               port (net.port_of); server/main.ty:846-850 prints a banner ON STDERR:
 #                 tycho-httpd: serving <root> on http://<host>:<port>/ workers=N idle=Nms
-#               We start with `--port 0` -- documented at server/main.ty:621@pick as
+#               We start with `--port 0` -- documented at server/main.ty@pick as
 #               "0 = pick free" -- redirect stderr to a file, and poll that file
 #               for the banner. One signal gives BOTH "it is listening" and
 #               "which port", so the runner never picks a number that might be
 #               taken and never sleeps a fixed interval hoping. A `sleep 1` is the
 #               classic flake here and there is deliberately none in this file.
 #               The banner is printed after net.listen() and before worker()
-#               starts accepting (server/main.ty:752@worker), so a connect in that window
+#               starts accepting (server/main.ty@worker), so a connect in that window
 #               is queued by the kernel rather than refused -- the socket is
 #               already listening. That is the assumption this runner rests on and
 #               it was proved by running the whole file ten times in a row.
@@ -70,7 +70,7 @@ SRV=$!
 
 # ---- the conversation -------------------------------------------------------
 python3 - "$T/srv.err" "$T/www" server/www <<'PY'
-import os, re, select, socket, sys, threading, time
+import email.utils, os, re, select, socket, sys, threading, time
 
 errlog, root, repo_www = sys.argv[1], sys.argv[2], sys.argv[3]
 fails = []
@@ -169,6 +169,83 @@ r = get(b"/img/logo.png", method=b"HEAD")
 eq("HEAD /img/logo.png status",         status(r), "HTTP/1.1 200 OK")
 eq("HEAD /img/logo.png Content-Length", header(r, "Content-Length"), str(len(disk)))
 eq("HEAD /img/logo.png body is empty",  split(r)[1], b"")
+
+# ---- conditional GET: Last-Modified / If-Modified-Since ---------------------
+# The document root is a COPY, so the runner OWNS these mtimes and can pin one to
+# a fixed epoch. That is what turns Last-Modified from "some plausible string"
+# into an exact byte comparison against a date python formatted independently --
+# a formatter that agrees with itself proves nothing.
+#
+# A 304 is the server telling a client "what you hold is current", so being wrong
+# in the permissive direction means a browser keeps a file that changed, silently,
+# for as long as it caches. A suite that only checks "conditional GET -> 304" is
+# passed by a server that answers 304 unconditionally, which is exactly the bug
+# that matters. The older-stamp and unparseable-header cases below are the
+# negative half, and they are the reason this section is longer than the feature.
+MT = 1416470400                        # Thu, 20 Nov 2014 08:00:00 GMT, fixed
+os.utime(os.path.join(root, "style.css"), (MT, MT))
+LM = email.utils.formatdate(MT, usegmt=True)
+css = open(os.path.join(repo_www, "style.css"), "rb").read()
+
+def ims(v, method=b"GET"):
+    return get(b"/style.css", method=method, extra=b"If-Modified-Since: " + v + b"\r\n")
+
+r = get(b"/style.css")
+eq("200 /style.css Last-Modified is the file's mtime", header(r, "Last-Modified"), LM)
+eq("200 /style.css unconditional body", split(r)[1], css)
+eq("200 /img/logo.png carries Last-Modified too",
+   header(get(b"/img/logo.png"), "Last-Modified") is not None, True)
+
+# Equal instants: the client holds exactly this version. "not newer" INCLUDES
+# equal, and this is the assertion that pins `<=` against `<`.
+r = ims(LM.encode())
+eq("304 If-Modified-Since == mtime status",  status(r), "HTTP/1.1 304 Not Modified")
+eq("304 If-Modified-Since == mtime no body", split(r)[1], b"")
+# RFC 7230 3.3.2: the only Content-Length a 304 may carry is the one the 200
+# would have sent, and this server answers 304 without opening the file, so it
+# sends none. `Content-Length: 0` -- what the generic path would have invented --
+# is the single value that rule forbids.
+eq("304 sends no Content-Length",            header(r, "Content-Length"), None)
+eq("304 sends no Content-Type",              header(r, "Content-Type"), None)
+eq("304 still carries Last-Modified",        header(r, "Last-Modified"), LM)
+
+eq("304 If-Modified-Since a day newer than mtime",
+   status(ims(email.utils.formatdate(MT + 86400, usegmt=True).encode())),
+   "HTTP/1.1 304 Not Modified")
+
+# THE NEGATIVE CASE. One second older than the file: the client is stale and must
+# be sent the bytes. A server hard-wired to 304 fails here and nowhere else.
+r = ims(email.utils.formatdate(MT - 1, usegmt=True).encode())
+eq("200 If-Modified-Since 1s older than mtime status", status(r), "HTTP/1.1 200 OK")
+eq("200 If-Modified-Since 1s older than mtime body",   split(r)[1], css)
+
+# An unparseable header is not a WEAKER condition, it is NO condition: 200 with
+# the whole body, every time. The two obsolete RFC 7231 date forms land here by
+# design -- not parsing them costs a needless 200, which is the safe direction.
+for label, v in [("garbage",          b"not-a-date"),
+                 ("rfc850 obsolete",  b"Sunday, 06-Nov-94 08:49:37 GMT"),
+                 ("asctime obsolete", b"Thu Nov 20 08:00:00 2014"),
+                 ("non-GMT zone",     b"Thu, 20 Nov 2014 08:00:00 UTC"),
+                 ("impossible date",  b"Thu, 31 Feb 2014 08:00:00 GMT"),
+                 ("hour 24",          b"Thu, 20 Nov 2014 24:00:00 GMT"),
+                 ("empty value",      b"")]:
+    rr = ims(v)
+    eq("200 unparseable If-Modified-Since (%s) status" % label, status(rr), "HTTP/1.1 200 OK")
+    eq("200 unparseable If-Modified-Since (%s) body"   % label, split(rr)[1], css)
+
+# HEAD and 304 both suppress a body and they are NOT the same suppression: HEAD
+# keeps the Content-Length a GET would have reported, a 304 has no length to
+# report at all. Both meet on one request here.
+r = ims(LM.encode(), method=b"HEAD")
+eq("HEAD 304 status",            status(r), "HTTP/1.1 304 Not Modified")
+# A CONTROL, not a proof, and it is labelled because the difference is invisible
+# from the pass line: HEAD suppresses the body on its own, so no mutation of the
+# conditional logic can redden this one. The 304-has-no-body CLAIM is carried by
+# the GET form above, which reddens on the pre-change binary and on two mutants.
+eq("HEAD 304 no body",           split(r)[1], b"")
+eq("HEAD 304 no Content-Length", header(r, "Content-Length"), None)
+eq("HEAD 200 still reports the file's Content-Length",
+   header(get(b"/style.css", method=b"HEAD"), "Content-Length"), str(len(css)))
 
 # ---- 301: a directory without the slash -------------------------------------
 r = get(b"/about")

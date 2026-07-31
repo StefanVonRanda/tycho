@@ -47,8 +47,15 @@ package main
 #     theirs with core:result's `unwrap_or` -- which replaced the hand-written
 #     `nwrote` helper this file used to carry (docs/internals/plan-option-result-DONE.md phases 1 and 2).
 #
-# NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression,
-# conditional requests, pipelining, virtual hosts. See README.md.
+# CONDITIONAL REQUESTS, 2026-07-31. A GET carrying If-Modified-Since is answered
+# 304 when the file's mtime is not newer than the client's timestamp, and every
+# 200 for a file carries Last-Modified. The comparison fails closed in the one
+# direction that matters -- an absent, unparseable or unanswerable condition is a
+# 200, never a 304 -- because a wrong 304 is a client holding a changed file for
+# as long as it caches. See serve_conn's 200 arm and parse_http_date.
+#
+# NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression, ETag,
+# pipelining, virtual hosts. See README.md.
 
 import "core:cli"
 import "core:httpd"
@@ -110,14 +117,59 @@ fn is_digits(s: string) -> bool:
             return false
     return true
 
-# RFC 1123 date, the format an HTTP Date header wants:
+# RFC 7231 IMF-fixdate, the format Date, Last-Modified and If-Modified-Since
+# all want. Exactly 29 characters, fixed field positions, English names:
 #   Sun, 26 Jul 2026 08:49:37 GMT
-fn http_date() -> string:
-    dt := datetime.now_utc()
+#   0123456789...                29
+#
+# core:datetime has no IMF-fixdate of its own -- it formats ISO-8601 and parses
+# ISO-8601 and CLF -- but it has every PIECE: weekday_name/month_name give the
+# English abbreviations, pad2/pad4 the zero padding, from_unix the fields, and
+# month_num the inverse. So the format lives here, in the one package that wants
+# it, rather than a date library being written from scratch.
+fn http_date_at(secs: int) -> string:
+    dt := datetime.from_unix(secs)
     out := datetime.weekday_name(dt.weekday) + ", " + datetime.pad2(dt.day)
     out += " " + datetime.month_name(dt.month) + " " + datetime.pad4(dt.year)
     out += " " + datetime.pad2(dt.hour) + ":" + datetime.pad2(dt.minute)
     return out + ":" + datetime.pad2(dt.second) + " GMT"
+
+fn http_date() -> string:
+    return http_date_at(now())
+
+# Parse an IMF-fixdate to UNIX seconds, or -1 if it is not one. FAIL-CLOSED, and
+# the failure direction is the whole point: -1 means the caller serves 200. A
+# wrong parse that reads TOO EARLY costs a needless 200; one that reads too LATE
+# hands a client a 304 for a file that changed. So every doubt returns -1.
+#
+# Only IMF-fixdate is accepted. RFC 7231 7.1.1.1 lists two obsolete forms an
+# HTTP/1.1 recipient must also accept -- rfc850 ("Sunday, 06-Nov-94 08:49:37
+# GMT") and asctime ("Sun Nov  6 08:49:37 1994"). They are NOT parsed here, and
+# what that costs is exactly one needless 200 for a client that sends one: they
+# fall out as -1, which is the safe direction. Every client that gets an
+# If-Modified-Since from us is echoing back the Last-Modified we wrote, which is
+# an IMF-fixdate by construction.
+#
+# The field scan is delegated: rearranging the fixed positions into the CLF shape
+# `dd/Mon/yyyy:HH:MM:SS` lets datetime.parse_clf do the digits, the month name,
+# and the range checks (it rejects a 13th month, a 31st of February, hour 24)
+# rather than a second copy of that logic living here. What stays here is what
+# CLF cannot see: the punctuation that makes this an IMF-fixdate and not
+# something else, and the literal GMT.
+fn parse_http_date(s: string) -> int:
+    if len(s) != 29:
+        return -1
+    if s[3] != 44 or s[4] != 32 or s[7] != 32 or s[11] != 32:    # ',' ' ' ' ' ' '
+        return -1
+    if s[16] != 32 or s[25] != 32:                               # ' ' ' '
+        return -1
+    if s[26:29] != "GMT":                                        # UTC only, by spec
+        return -1
+    clf := s[5:7] + "/" + s[8:11] + "/" + s[12:16] + ":" + s[17:25]
+    dt := datetime.parse_clf(clf)
+    if not datetime.ok(dt):
+        return -1
+    return datetime.to_unix(dt)                                  # GMT, so no offset
 
 # Microseconds as "1.234ms", for the log line.
 fn fmt_ms(us: int) -> string:
@@ -330,10 +382,17 @@ fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> Result(int
     out := httpd.with_connection(r, keep)
     out = httpd.with_header(out, "Server", VERSION)
     out = httpd.with_header(out, "Date", http_date())
-    if head_only:
-        # HEAD: the headers a GET would have produced, and no body at all.
-        # Setting Content-Length explicitly stops render_head recomputing it
-        # from the now-empty body.
+    # TWO THINGS SUPPRESS A BODY HERE AND THEY ARE NOT THE SAME THING, which is
+    # why the guard is not redundant. HEAD suppresses the body while KEEPING the
+    # Content-Length a GET would have reported -- that is the entire point of
+    # HEAD, and the explicit header is what stops render_head recomputing it from
+    # the now-empty body. A 304 suppresses the body AND the length, because there
+    # is no representation being described (httpd.bodyless, and RFC 7230 3.3.2:
+    # the only Content-Length a 304 may carry is the 200's, which the 304 path
+    # deliberately never learns -- it does not open the file). Run the HEAD arm on
+    # a 304 and it stamps `Content-Length: 0`, the one value that rule forbids.
+    # A bodyless response has an empty body already, so there is nothing to strip.
+    if head_only and not httpd.bodyless(out.status):
         out = httpd.with_header(out, "Content-Length", str(len(out.body)))
         out = httpd.with_body(out, to_bytes(""))
     return httpd.write_response(conn, out)
@@ -488,20 +547,61 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                     st := rt.status
                     r := error_response(st)
                     if st == 200:
-                        # io.read_bytes is a Result now, so the read has an answer
-                        # for a file that vanished (or turned out to be a
-                        # directory) between resolve() and here. The empty `bytes`
-                        # it used to return was served as a 0-byte 200 --
-                        # indistinguishable from a real empty file, and wrong for
-                        # both.
-                        match io.read_bytes(rt.file):
-                            Ok(body):
-                                r = httpd.response(200, body)
-                                r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
-                                r = httpd.with_header(r, "Cache-Control", "no-cache")
+                        # THE CONDITIONAL GET, and the direction of every doubt.
+                        # A 304 is this server telling a client "what you already
+                        # have is current", so a wrong 304 is a browser holding a
+                        # changed file for as long as it caches. Three separate
+                        # ways to not know the answer all fall through to 200:
+                        #
+                        #   lm < 0    io.mtime failed. No Last-Modified is sent
+                        #             (a header we cannot fill is worse than none)
+                        #             and no 304 is possible, since the comparison
+                        #             has nothing to compare.
+                        #   ims < 0   no If-Modified-Since, or one that is not an
+                        #             IMF-fixdate. parse_http_date fails closed;
+                        #             an unparseable header is not a weaker
+                        #             condition, it is no condition.
+                        #   lm > ims  the file is NEWER than what the client holds.
+                        #
+                        # `lm <= ims` and not `lm < ims` is the load-bearing
+                        # comparison: equal means the client holds exactly this
+                        # version. mtime is whole seconds (corelib/io/io.ty@mtime)
+                        # and so is an IMF-fixdate, so the two are directly
+                        # comparable with no rounding on either side.
+                        lm := -1
+                        match io.mtime(rt.file):
+                            Ok(secs):
+                                lm = secs
                             Err(e):
-                                st = 404
-                                r = error_response(404)
+                                lm = -1
+                        ims := -1
+                        if httpd.header(req, "if-modified-since") != "":
+                            ims = parse_http_date(httpd.header(req, "if-modified-since"))
+                        if lm >= 0 and ims >= 0 and lm <= ims:
+                            # The file is never opened on this path -- one stat(2)
+                            # and no read -- so the hot 304 is CHEAPER than the
+                            # serve it replaces, not an extra cost on top of it.
+                            st = 304
+                            r = httpd.response(304, to_bytes(""))
+                            r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                            r = httpd.with_header(r, "Cache-Control", "no-cache")
+                        else:
+                            # io.read_bytes is a Result now, so the read has an answer
+                            # for a file that vanished (or turned out to be a
+                            # directory) between resolve() and here. The empty `bytes`
+                            # it used to return was served as a 0-byte 200 --
+                            # indistinguishable from a real empty file, and wrong for
+                            # both.
+                            match io.read_bytes(rt.file):
+                                Ok(body):
+                                    r = httpd.response(200, body)
+                                    r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                                    r = httpd.with_header(r, "Cache-Control", "no-cache")
+                                    if lm >= 0:
+                                        r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                                Err(e):
+                                    st = 404
+                                    r = error_response(404)
                     elif st == 301:
                         r = redirect_response(rt.location)
                     nb := len(r.body)
@@ -567,7 +667,7 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
                 #
                 # The slot is wid-1 because worker ids run 1..cfg.workers and the
                 # registry is indexed from 0; cfg.workers is pinned to 1..256 at
-                # server/main.ty:672@workers, which is exactly the table's width. One
+                # server/main.ty@workers, which is exactly the table's width. One
                 # slot per worker needs NO LOCK: this body is sequential, so
                 # worker wid holds at most one connection at a time and is the
                 # only writer of its own slot. A mutex here would be a handler
