@@ -11363,20 +11363,20 @@ static char *mapc_kparam(Type k) {        /* the key function parameter (READ-on
     if (!mapkey_composite(k)) return sfmt("const char *k");
     return sfmt("%sk", c_type(k));
 }
-/* The key parameter of a function that STORES the key into an ekeys[] slot
- * (_append only). mapc_kparam is `const char *` for string keys -- correct for
- * the read-only fns (find/get/has/del/put all only hash, compare, or copy it),
- * but a lie for _append, whose contract is ownership transfer: its two callers
- * (_put and _slotptr) hand it the freshly arena-owned copy from mapc_kcopy, and
- * it stores that pointer into m->ekeys[e], a `char *` slot (mapc_kslot). Passing
- * an owned pointer through a `const char *` parameter is what made the store
- * discard the qualifier (-Wdiscarded-qualifiers). The slot is NOT made const:
- * c_type(T_STRING) is "char *" (:1223) and every string container in the system
- * -- TychoArrStr.data, the runtime's own TychoMapSI.ekeys -- is `char **`;
- * tycho_map_si_append, the hand-written twin this family mirrors, likewise takes
- * `char *k`. So the owning param is exactly the slot type, which is also the
- * invariant tychoc0 states directly (`kpar := kslot + " k"`, tychoc0.ty:10475).
- * Nothing writes THROUGH the slot -- see the trace under Phase 4 in plan.md. */
+/* The key parameter of a function that STORES the key into an ekeys[] slot (_append
+ * only). mapc_kparam is `const char *` for string keys -- correct for the read-only
+ * fns (find/get/has/del/put all only hash, compare, or copy it), but a lie for
+ * _append, whose contract is ownership transfer: its two callers (_put and
+ * _slotptr) hand it the freshly arena-owned copy from mapc_kcopy, and it stores
+ * that pointer into m->ekeys[e], a `char *` slot (mapc_kslot). Passing an owned
+ * pointer through a `const char *` parameter is what made the store discard the
+ * qualifier (-Wdiscarded-qualifiers). The slot is NOT made const: c_type(T_STRING)
+ * is "char *" (:1223) and every string container in the system -- TychoArrStr.data,
+ * the runtime's own TychoMapSI.ekeys -- is `char **`; tycho_map_si_append, the
+ * hand-written twin this family mirrors, likewise takes `char *k`. So the owning
+ * param is exactly the slot type, which is also the invariant tychoc0 states
+ * directly (`kpar := kslot + " k"`, tychoc0.ty:10475). Nothing writes THROUGH the
+ * slot -- trace under docs/internals/plan-front-door-DONE.md phase 4. */
 static char *mapc_kparam_own(Type k) {
     return sfmt("%sk", mapc_kslot(k));
 }

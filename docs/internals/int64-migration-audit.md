@@ -1,9 +1,9 @@
 # `int` → `tycho_int` (int64_t) codegen migration — `long`-site audit
 
-Phase 1 of `plan.md`. **Docs/probe only — no source changed.** This is the
-classified inventory the later phases edit against. Every line number below was
-re-verified against the working tree (RULE 3); where `plan.md`'s grep snapshot
-had drifted, the corrected line is given.
+`docs/internals/plan-int64-DONE.md` phase 1. **Docs/probe only — no source
+changed.** This is the classified inventory the later phases edit against.
+Every line number below was re-verified against the working tree (RULE 3);
+where `plan.md`'s grep snapshot had drifted, the corrected line is given.
 
 Legend:
 - **INT-SEMANTIC** — a `long` carrying a Tycho `int`/`char`/`bool` value, an

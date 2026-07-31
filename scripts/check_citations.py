@@ -293,6 +293,45 @@ the pattern here is deliberately loose: optional backticks on either side,
 break plus a comment leader, because four of the 172 wrapped across two lines and
 were invisible to every line-based sweep that had been run until then.
 
+BOTH WORD ORDERS (added 2026-07-31)
+-----------------------------------
+The pattern above reads in ONE DIRECTION ONLY: the filename, then the word
+"phase", then a number.  The MIRROR IMAGE -- the word and its number first and
+the filename after it, with or without a connecting preposition -- is the same
+citation making the same claim about the same rotating document, and it was
+matched by NOTHING.  It was found the way this class always is: THIS DOCSTRING
+CONTAINED ONE, and the gate that forbids the class read straight over its own
+text and passed.  12 live refs were in that blind spot -- `FRICTION.md` (4),
+three `tests/` fixtures, `src/tychoc.c`, `bench/guard.sh`, `server/README.md`,
+`tools/prunner/main.ty` and `docs/internals/int64-migration-audit.md` -- and
+every one of them was already stale.
+
+THE REVERSED PATTERN IS A MIRROR, NOT A SECOND POLICY: same optional backticks,
+same case-insensitivity, same separator class, so it survives the same hard
+wrap onto a comment-led continuation line.  Two things the direction forces.
+(1) A CONNECTING WORD (`of`, `in`, `from`, `within`) is PERMITTED BUT NOT
+REQUIRED -- both variants were measured against the whole tree before either was
+shipped and both found the same 12, so the looser one costs nothing today and is
+the one that mirrors the forward pattern's shape.  (2) A NUMBER LIST is
+tolerated, because in the plural spelling the number the word introduces is not
+the number adjacent to the filename, and the forward pattern's way of coping
+(match the first number and stop) does not transpose.
+
+Matches from the two orders are merged by position and an overlapping one is
+dropped, so a sentence that satisfies both is reported once rather than twice.
+
+MEASURED AND DELIBERATELY NOT ADDED, recorded so the next survey of this class
+does not have to re-derive them:
+  * a phase named with NO filename at all ("of the plan", "of the live plan",
+    "the current plan") -- 0 in the tree, and a pattern for it would key on a
+    common English word rather than on a path;
+  * a phase named WITHOUT THE WORD, by bare number, `#`, "step" or "item" -- 0;
+  * a POSSESSIVE joining the two ("<the live plan>'s phase N", and the variant
+    with words in between) -- PRESENT, 8 refs, and filed as its own phase rather
+    than folded in here.  It is a third SPELLING, not the second word order, its
+    refs need their own attribution, and one of its shapes ("the plan's phase N",
+    no filename) needs a decision this phase has no measurement to make.
+
 EXEMPT, WITH THE REASON -- the same shape as ARCHIVED and SRC_SKIP_CITER below:
   * the live plan -- inside it, a reference to its own phase is what the file is
     numbered by, and it is correct by definition.
@@ -438,8 +477,16 @@ ARCHIVED = ("docs/internals/plan-", "-DONE.md")
 # Optional backticks, singular or plural, any case, and a separator class that
 # survives a hard wrap onto a comment-led continuation line.
 LIVE_PLAN = "plan.md"
-PLANREF = re.compile(r'`?' + LIVE_PLAN.replace(".", r"\.") +
-                     r'`?[\s>#*/-]*\bphases?\s+\d+', re.I)
+_PLAN = r'`?' + LIVE_PLAN.replace(".", r"\.") + r'`?'
+_SEP = r'[\s>#*/-]*'
+PLANREF = re.compile(_PLAN + _SEP + r'\bphases?\s+\d+', re.I)
+
+# THE SAME REFERENCE IN THE OTHER WORD ORDER (see the header). A mirror of the
+# above, plus the two things the direction forces: an OPTIONAL connecting word,
+# and a number list, since in the plural spelling the number adjacent to the
+# filename is not the one the word introduces.
+PLANREF_REV = re.compile(r'\bphases?\s+\d+(?:\s*(?:,|and|&|\+|to)\s*\d+)*' +
+                         _SEP + r'(?:of|in|from|within)?' + _SEP + _PLAN, re.I)
 
 # Exempt from PLANREF, each for the reason spelled out in the header. ARCHIVED
 # covers the frozen plans; these two are named individually.
@@ -723,7 +770,19 @@ def main():
             body = open(os.path.join(ROOT, f), errors="replace").read()
         except (IsADirectoryError, OSError):
             continue
-        for m in PLANREF.finditer(body):
+        # BOTH WORD ORDERS (see the header). Merged by position, and a match
+        # that overlaps one already reported is dropped: a sentence naming the
+        # plan on both sides of its phase number is ONE stale citation, and
+        # printing it twice would overstate the population it belongs to.
+        found, last_end = [], -1
+        for m in sorted(list(PLANREF.finditer(body)) +
+                        list(PLANREF_REV.finditer(body)),
+                        key=lambda m: (m.start(), -m.end())):
+            if m.start() < last_end:
+                continue
+            found.append(m)
+            last_end = m.end()
+        for m in found:
             n_planref += 1
             ln = body.count("\n", 0, m.start()) + 1
             fails.append(

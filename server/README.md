@@ -42,7 +42,7 @@ status is 0 and the stopped line prints in every case, so a busy shutdown is
 slow, not hung — but a large `--idle-ms` is a proportionally slow `SIGTERM`.
 `signal.shutdown_requested()` (`corelib/signal/signal.ty:88@shutdown_requested`)
 exists to cut that to one in-flight request and has no caller in the tree yet;
-filed as phase 15 of `plan.md`.
+filed as phase 15 of `docs/internals/plan-signals-DONE.md`.
 
 ## What it does
 

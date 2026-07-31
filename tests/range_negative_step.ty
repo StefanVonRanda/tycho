@@ -1,12 +1,12 @@
 # A descending three-clause loop must count down: `i > stop` with a decreasing
 # post clause, and it must run zero times when start == stop.
 #
-# HISTORY: this was `range()`-with-a-negative-step until 2026-07-29. The
-# original regression it caught was tychoc0 hardcoding `i < stop`, so
-# range(3, 0, -1) never ran. Phase 6 of plan.md rewrote the three descending
-# sites to `for i := a; i > b; i -= s:` — the same iteration sequences and the
-# SAME golden, which is what makes the rewrite checkable. Note the direction is
-# now spelled by the author in the condition rather than inferred from the sign
+# HISTORY: this was `range()`-with-a-negative-step until 2026-07-29. The original
+# regression it caught was tychoc0 hardcoding `i < stop`, so range(3, 0, -1) never
+# ran. Phase 6 of docs/internals/plan-loops-cleanup-DONE.md rewrote the three
+# descending sites to `for i := a; i > b; i -= s:` — the same iteration sequences
+# and the SAME golden, which is what makes the rewrite checkable. Note the direction
+# is now spelled by the author in the condition rather than inferred from the sign
 # of a step, so the class of bug this file was written for cannot recur here;
 # what it guards now is that the author-written descending form works.
 fn main():
