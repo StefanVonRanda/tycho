@@ -727,7 +727,7 @@ EXIT=0
 into citations the second direction now checks for existence, which is the
 secondary win — the repaired form is not merely correct, it is *gated*.
 
-- [ ] **Phase 33 — the possessive spelling, the third one the gate cannot see.**
+- [x] **Phase 33 — the possessive spelling, the third one the gate cannot see.**
       Phase 32 closed the second word order and measured, but deliberately did
       not ship, a third spelling: a possessive joining the filename to the phase
       ("<the live plan>'s phase N"). It is not a word order, its refs need their
@@ -1178,7 +1178,7 @@ violation proof and restored with `git checkout` before anything else ran.
   - Verify: `python3 scripts/check_citations.py`, the planted-violation proof,
     `sh scripts/check_links.sh`.
 
-- [ ] **Phase 36 — 470 refs name a bare basename with no directory.** After
+- [x] **Phase 36 — 470 refs name a bare basename with no directory.** After
       phase 34 widened `SRC_PREFIX`, 501 Markdown refs are still skipped, and
       **470 of them over 40 distinct names** carry no directory at all:
       `05-generics.md` (67), `03-types.md` (65), `tychoc0.ty` (51),
@@ -1196,7 +1196,7 @@ violation proof and restored with `git checkout` before anything else ran.
     resolves uniquely is not a guess.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
-- [ ] **Phase 37 — 25 line references into the rotating live plan, 11 already
+- [x] **Phase 37 — 25 line references into the rotating live plan, 11 already
       out of bounds.** Phase 34 measured these and deliberately left the live
       plan out of `SRC_PREFIX`: it is renumbered from line 1 every time a plan
       is archived, so a line reference into it from an archived record names a
