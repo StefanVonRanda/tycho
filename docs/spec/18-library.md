@@ -243,10 +243,51 @@ password hash — use a KDF). Bit-exact against NIST vectors. `docs/guides/corel
 
 ### 32.21 `io`
 
-Filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins (pure
-Tycho; composes `core:strings` and `core:path`): `read(p)`, `write(p, s)`,
-`append(p, s)`, `read_lines(p)`/`write_lines(p, lines)`, `list(p)`, `exists(p)`.
-Nothing aborts; the error model mirrors the builtins. `docs/guides/corelib.md:266-297`.
+Filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins
+(composes `core:strings` for line splitting): `read(p)`, `write(p, s)`,
+`append(p, s)`, `read_lines(p)`/`write_lines(p, lines)`, `list(p)`, `exists(p)`;
+`read_bytes(p) -> Result(bytes, IoErr)` for a whole file as raw bytes; and the
+bounded-memory streaming reader `open_lines`/`read_line`/`close_lines` plus
+`fold_lines`. The helper core is pure Tycho, but the package carries a
+**libc-only shim** (`io_shim.c`; no `deps`) for everything the builtins do not
+reach: the streaming reader is a `getline` loop in it, `exists(p)`, `is_dir(p)`,
+`make_dir(p)` and `remove(p)` are `stat(2)`, `mkdir(2)` and `remove(3)`, and so
+are the three below. Core tier. Nothing aborts; a call returns
+`Result(T, IoErr)` wherever a sentinel would be ambiguous and mirrors the
+builtins' sentinels elsewhere. `docs/guides/corelib.md:267-298`; shim
+`corelib/io/io_shim.c`.
+
+`mtime(p) -> Result(int, IoErr)` is when `p` was last modified, in whole seconds
+on the same clock `now()` reads. `size(p) -> Result(int, IoErr)` is how many
+bytes `p` holds, without reading them. `read_at(p, off, n) -> Result(bytes,
+IoErr)` reads at most `n` bytes starting at byte offset `off`, over `pread(2)`,
+which disturbs no file offset. Five semantics are normative for the three:
+
+- **A directory is `Ok` for `mtime` and `Err(IsDir)` for `size`.** The asymmetry
+  is deliberate and is not an inconsistency: a directory HAS a modification time
+  and `stat(2)` reports the real one, so refusing it would discard an answer the
+  kernel already supplied; a directory's `st_size` is the size of its own on-disk
+  entry structure (4096 on ext4, filesystem-dependent elsewhere) and no read can
+  ever produce that many bytes, so reporting it would answer a different
+  question. `IsDir` is likewise absent from `is_dir`, where being a directory is
+  the answer rather than a failure to give one.
+- **`size` succeeds on exactly the paths `read_at` can read.** Regular file →
+  both `Ok`; directory → both `Err(IsDir)`; a fifo, socket, device or anything
+  else unseekable → both `Err(Failed)`. `size(p)` is the length `read_bytes(p)`
+  would return, on every path, or neither call answers.
+- **`Ok(0)` from `size` is a success and is never the failure value.** An empty
+  file has a length and that length is zero; the status does not travel in the
+  payload, so a failure is an `Err` and cannot present as a small number.
+- **`read_at`'s allocation is bounded by the FILE, not by `n`.** It allocates
+  `min(n, size - off)`, so `read_at(p, 0, 10^12)` on a 26-byte file allocates 26
+  bytes, and no further cap is imposed. That bound, not a policy limit, is what
+  makes `n` safe to take from untrusted input such as a `Range` header.
+- **A read starting at or past EOF is `Ok` with zero bytes, not an error.** The
+  caller chose the offset, so "no bytes there" is a complete answer to the
+  question asked. An `n` running past EOF is a short `Ok` with no padding —
+  `len(b)` is the count, which is why no separate out-parameter exists — and
+  `n == 0` is `Ok` with zero bytes. A negative `off` or `n` is `Err(Failed)`,
+  refused before `open(2)` so it can never be sign-extended into a wild read.
 
 ### 32.22 `os`
 
