@@ -415,7 +415,7 @@ fixture is reachable from this diff.
   - Verify: `python3 scripts/check_citations.py`, the planted-violation proof,
     `sh scripts/check_links.sh`.
 
-- [ ] **Phase 31 — frozen archives are not as exempt as the docstring says**
+- [x] **Phase 31 — frozen archives are not as exempt as the docstring says**
   - Scope: `scripts/check_citations.py`'s docstring, or its `frozen` guard.
   - The file states repeatedly that a frozen `docs/internals/plan-*-DONE.md` is
     never asked for an edit. That is true of the mandatory-anchor rule, the
@@ -505,3 +505,57 @@ sweeping the reachable bare refs, and the three drift phases 21, 23 and 25.
 - **Sweeping the 2793 bare refs.** Retired to `FRICTION.md` on 2026-07-31 with
   the measurements that justify it; this plan changes the *gate*, not the refs.
 - **The three retired drift phases** (21, 23, 25). Same decision.
+
+  ### Phase 31 evidence — 2026-07-31
+
+  **The documentation moved; behaviour did not.** Stated first because the phase
+  required saying which one moved. `git diff --numstat` is `10 10` — line-neutral
+  on purpose, since `scripts/check_citations.py` is cited by line from four
+  archived plans (`:109-122`, `:211-215`, `:247`, `:362`) and an insertion would
+  have staled them while the gate stayed green.
+
+  **The real rule, now written where the overclaim was:** a frozen record is
+  never asked to renumber a BARE ref, because that would falsify a recorded
+  observation. An ANCHORED ref is different and was never exempt — it promised a
+  token sits on that line, and a promise that has stopped holding misinforms
+  rather than merely dates. Three paragraphs corrected: the header's blanket
+  "this gate must never demand an edit there", and two that said the exemption
+  held "as everywhere else in this file".
+
+  **Found while editing, and it is the more interesting result.** The header's
+  own first line read "on the rule phase 4 of plan.md settled" — a rotating-plan
+  reference of exactly the kind phase 1 gated an hour earlier, sitting inside the
+  gate that forbids them, passing. The predicate matches `plan.md phase N`; this
+  is `phase N of plan.md`, the same reference with the words the other way round.
+  Corrected here as a side effect of rewriting the paragraph. Filed as phase 32
+  with the enumeration below, because the population is not one line.
+
+- [ ] **Phase 32 — the plan-ref gate matches one word order, and 11 live refs use
+      the other.** Phase 1 shipped a predicate for `plan.md phase N` in three
+      spellings (plain, backticked, plural) and case-insensitively. It does not
+      match the **reversed** form `phase N of plan.md`, which is equally stale
+      and equally invisible. Measured outside the frozen archives:
+
+      FRICTION.md:360, :554, :555, :556        (4)
+      tests/range_negative_step.ty:6
+      tests/bounds_elision.ty:11
+      tests/reject/for3_empty_clause.ty:14
+      bench/guard.sh:45
+      server/README.md:45
+      tools/prunner/main.ty:21
+      docs/internals/int64-migration-audit.md:3
+      src/tychoc.c:11379
+
+  - Every one names a phase number against a `plan.md` that has since rotated, so
+    every one resolves against the wrong document today — the exact defect phase 1
+    measured at 172 refs and fixed for one word order.
+  - **Not a five-minute fix.** Phase 1 established that attributing each ref to
+    the plan it meant needs `git blame` on the citing line plus verification that
+    the cited phase is one that document declares; it found 38 false refs where 3
+    were predicted, and its own predecessor's sweep had missed 12 through
+    case-sensitivity. Assume the same care is required.
+  - Two of the listed sites are `tests/` fixtures and one is `src/tychoc.c`, so
+    the repair touches source comments as well as prose.
+  - Cost: an hour, most of it attribution rather than editing. Extend the
+    predicate first, then let it name the population, then repair — the order
+    phase 1 used.

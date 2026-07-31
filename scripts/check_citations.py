@@ -70,12 +70,12 @@ mix is correct, not an oversight.  The converse is a useful signal: if a
 single-line ref has no distinctive token to anchor to, the citation probably
 wanted to be a range.
 
-ARCHIVED PLANS ARE EXCLUDED, on the rule phase 4 of plan.md settled: the
-`docs/internals/plan-*-DONE.md` set is frozen verification evidence, line numbers
-recorded as they stood when the work was done.  Renumbering them would falsify
-the record rather than repair it, so this gate must never demand an edit there.
-(At the time the rule landed those files carried zero `> Provenance:` lines, so
-the exclusion is a guard against a future one, not a way to pass today.)
+ARCHIVED PLANS ARE MOSTLY EXCLUDED -- read the "mostly", it is load-bearing and
+was overstated here until 2026-07-31.  The `docs/internals/plan-*-DONE.md` set is
+frozen verification evidence; renumbering a BARE ref there would falsify a
+recorded observation, so no rule below asks for that.  An ANCHORED ref is not
+exempt and never was: it promised a token sits on that line, and a promise that
+has stopped holding misinforms rather than merely dates.  Behaviour unchanged.
 
 WHAT THIS DOES **NOT** CATCH -- stated plainly so the coverage is not read wider
 than it is:
@@ -194,8 +194,8 @@ Sources other than `docs/` keep unrestricted inheritance.  For them the bounds
 check already does this job, since every one of them is far larger than any line
 number a doc sentence would produce.
 
-ARCHIVED PLANS ARE EXEMPT, same reason as everywhere else in this file: the fix
-is an edit to a frozen record.
+ARCHIVED PLANS ARE EXEMPT FROM THIS RULE: the fix would be an edit to a frozen
+record.  They are NOT exempt from the anchor content check -- header, "mostly".
 
 THE SECOND DIRECTION: SOURCE -> DOC (added 2026-07-26)
 -----------------------------------------------------
@@ -358,8 +358,8 @@ THE POPULATION WAS COUNTED BEFORE THE RULE WAS WRITTEN: 1 of 216 anchors, in
 `docs/spec/03-types.md`'s `bounded`-capacity Provenance block, whose range
 opened three comment lines above the guard it meant.  Tightening it to the
 `if`/`die_at` pair made the anchor unique AND the citation more precise, which
-is the repair this rule is meant to produce.  Frozen archives are exempt, as
-everywhere else in this file.
+is the repair this rule is meant to produce.  Frozen archives are exempt from
+THIS rule, but not from the anchor content check -- see the header's "mostly".
 
 ANCHOR STRENGTH IS MEASURED, NOT ENFORCED (added 2026-07-31)
 ------------------------------------------------------------
