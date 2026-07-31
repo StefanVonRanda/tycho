@@ -736,7 +736,7 @@ handling, and the difference is deliberate rather than unfinished.
   kernel delivered `SIGTERM` to the main thread, which is accept loop 1, which was the
   busy one, so `EINTR` released it directly. The fix already has its API and no caller —
   `signal.shutdown_requested()` (`corelib/signal/signal.ty:88@shutdown_requested`) exists
-  for exactly this. Filed as `plan.md` phase 15.
+  for exactly this. Filed as `docs/internals/plan-signals-DONE.md` phase 15.
 - **NEW, small — the mechanism that works is a Linux behaviour, not a POSIX guarantee.**
   `shutdown()` waking a thread blocked in `accept(2)` on a *listening* socket is not
   specified, and backlogged connections are dropped rather than drained. It was chosen by

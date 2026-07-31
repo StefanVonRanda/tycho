@@ -284,7 +284,7 @@ the last program still in it, and it is the biggest.
   `TYCHO_NO_ASAN=1` recipe line) to `,:287`, verified by reading
   `Makefile:286-287` rather than by arithmetic. Nothing cited a `scripts/ci.sh`
   line below the insert: the refs that exist are in `docs/internals/plan-*-DONE.md`,
-  which `scripts/check_citations.py:316` exempts by name as frozen evidence — so
+  which `scripts/check_citations.py:362` exempts by name as frozen evidence — so
   the insert moved no live anchor. Gates after the repair: citations `ok (168
   anchored, 2523 bare in bounds, 138 source->doc, 191 source->source in bounds,
   12 source->source anchored)` — the source→source count is one higher than
@@ -302,7 +302,7 @@ the last program still in it, and it is the biggest.
   ~4s measured in phase 1, so `make ci` is not measurably longer for it.
 
   *No out-of-scope discovery to file.* The absolute-path citations in the
-  archived plans looked like one until checked: `scripts/check_citations.py:316`
+  archived plans looked like one until checked: `scripts/check_citations.py:362`
   exempts `docs/internals/plan-*-DONE.md` deliberately, and the file's own header
   (`scripts/check_citations.py:109-122`) explains why. Verified before filing,
   not after.
@@ -671,7 +671,7 @@ the last program still in it, and it is the biggest.
     silently retargets the day the plan rotates. It is now pointing at whatever
     phase 4 of the *current* plan happens to be about.
   - **Measured at HEAD**, excluding `docs/internals/plan-*-DONE.md` (which
-    `scripts/check_citations.py:316` exempts as frozen evidence, and where the
+    `scripts/check_citations.py:362` exempts as frozen evidence, and where the
     refs are internally consistent): **110 references across 42 files.** The
     citation gate cannot see any of them — it checks `path:line`, and
     "plan.md phase 4" carries no line number, so this is an unverifiable

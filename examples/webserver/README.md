@@ -47,8 +47,8 @@ Composes `core:httpd`, `core:net`, `core:io`, `core:strings`, `core:sort`, and
   over the socket** — the string-model `0x00` limit is sidestepped by keeping the body
   as `bytes` and writing it via `net.write`. ~~The write stays in this package (`net`
   directly) rather than a cross-package `httpd` helper; a `httpd.write_bytes` is a
-  reasonable follow-up now that the bytes-lifetime bug is gone.~~ **Done (plan.md
-  Phase 2):** `httpd.Response.body` is now `bytes`, so the hand-rolled `write_asset`
+  reasonable follow-up now that the bytes-lifetime bug is gone.~~ **Done (`docs/internals/plan-webserver-DONE.md`
+  phase 2):** `httpd.Response.body` is now `bytes`, so the hand-rolled `write_asset`
   header writer this example carried is gone — assets go through the ordinary
   `httpd.response` / `httpd.write_response` path. The MIME table this example
   hand-rolled is now `httpd.content_type` (Phase 3), and the accept loop keeps the

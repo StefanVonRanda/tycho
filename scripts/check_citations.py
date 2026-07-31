@@ -7,7 +7,8 @@
 WHY THIS EXISTS.  The docs cite implementation lines as `src/tychoc.c:7206-7207`.
 Every edit to a cited file shifts a share of those numbers, and the failure is
 silent: the cited line still exists and still contains plausible-looking code, so
-nothing looks wrong until a human reads it.  plan.md Phases 34, 35, 40 and 43 each
+nothing looks wrong until a human reads it.  docs/internals/plan-front-door-DONE.md
+phases 34, 35, 40 and 43 each
 repaired a batch, and three of the four found their *replacement* lines were wrong
 too.  This gate turns that class from "audit again next time" into green/red.
 
@@ -79,7 +80,8 @@ the exclusion is a guard against a future one, not a way to pass today.)
 WHAT THIS DOES **NOT** CATCH -- stated plainly so the coverage is not read wider
 than it is:
   * A BARE citation that drifts onto a different-but-existing line.  That is the
-    exact `15-program.md` failure mode (plan.md Phase 43): the lines still held
+    exact `15-program.md` failure mode (docs/internals/plan-front-door-DONE.md
+    phase 43): the lines still held
     plausible C, just for a different rule.  A bare citation carries no expected
     content, so nothing can check it -- only the ANCHORED form catches this.
     Anchoring is OPT-IN and adoption is partial; `--stats` prints the split, and
@@ -262,6 +264,50 @@ ref means first verifying it, which is a citation sweep and belongs to a sweep
 phase, not to the phase that added the grammar.  A green run means "no anchored
 source citation has drifted", never "every source citation is right".
 
+THE FOURTH DIRECTION: A ROTATING-PLAN REFERENCE (added 2026-07-31, docs/internals/plan-signals-DONE.md phase 24)
+---------------------------------------------------------------
+Every pass above needs a line number to have something to check.  A reference to
+a phase of the repo's live plan document -- the file named at the top of this
+paragraph's sibling, `<the live plan>` followed by the word "phase" and a number
+-- carries none, so all three passes are blind to it BY CONSTRUCTION.  It is
+still a citation, and it rots harder than a line number does: when a plan
+completes it is archived to `docs/internals/plan-<name>-DONE.md` and the next
+one starts numbering again at 1, so the reference does not merely drift a few
+lines, it silently re-binds to a DIFFERENT DOCUMENT at a phase number belonging
+to unrelated work.  167 of them over 43 files accumulated before anyone counted.
+
+THE PREDICATE, EXACTLY.  Outside the live plan itself and the frozen
+`docs/internals/plan-*-DONE.md` set, no tracked file may carry one.  There is no
+third case: such a reference is either about the plan that is live right now --
+in which case the commit that archives that plan must rewrite it, and this gate
+is what makes that step non-optional -- or it is already stale.
+
+THREE SPELLINGS, AND WHY THE COUNT KEEPS BEING WRONG.  The first survey of this
+class matched only the unbackticked singular and reported 110 refs.  The real
+figure was 172: it had missed the BACKTICKED form (66 of them) and the PLURAL
+one, "phases 1 and 2" (5 more).  A second sweep then missed a fourth variation,
+capitalisation, and left 16 refs behind in `Makefile`, `scripts/ci.sh`,
+`scripts/asan_self.sh`, five `tests/reject/` fixtures and three documents.  So
+the pattern here is deliberately loose: optional backticks on either side,
+`phase` or `phases`, case-insensitive, and a separator class that permits a line
+break plus a comment leader, because four of the 172 wrapped across two lines and
+were invisible to every line-based sweep that had been run until then.
+
+EXEMPT, WITH THE REASON -- the same shape as ARCHIVED and SRC_SKIP_CITER below:
+  * the live plan -- inside it, a reference to its own phase is what the file is
+    numbered by, and it is correct by definition.
+  * `docs/internals/plan-*-DONE.md` -- frozen records, and inside one of them the
+    reference self-refers unambiguously.  Editing them is what the ARCHIVED rule
+    forbids everywhere else in this file.
+  * `compiler/tychoc0.ty` -- the FROZEN bootstrap compiler, exactly the reason it
+    is in SRC_SKIP_CITER: the file cannot be edited, so policing it would produce
+    a red nobody is allowed to clear.
+
+THIS FILE IS NOT EXEMPT, and that is on purpose.  It is scanned like any other,
+so neither the pattern above nor the failure message below may spell the form
+they forbid -- the same discipline the absolute-path rule already follows, and
+the reason its docstring describes that form instead of quoting it.
+
 EXCLUDED BY NAME, WITH THE REASON:
   * `compiler/tychoc0.ty` -- the FROZEN bootstrap compiler.  Its self-citations
     are known to be off by -50 (recorded at docs/bootstrap.md:106) and the file
@@ -314,6 +360,17 @@ CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
 
 # Frozen verification evidence: never demand an anchor here (see the header).
 ARCHIVED = ("docs/internals/plan-", "-DONE.md")
+
+# THE FOURTH DIRECTION (see the header): a phase reference into the live plan.
+# Optional backticks, singular or plural, any case, and a separator class that
+# survives a hard wrap onto a comment-led continuation line.
+LIVE_PLAN = "plan.md"
+PLANREF = re.compile(r'`?' + LIVE_PLAN.replace(".", r"\.") +
+                     r'`?[\s>#*/-]*\bphases?\s+\d+', re.I)
+
+# Exempt from PLANREF, each for the reason spelled out in the header. ARCHIVED
+# covers the frozen plans; these two are named individually.
+PLANREF_SKIP = (LIVE_PLAN, "compiler/tychoc0.ty")
 
 _cache = {}
 
@@ -502,14 +559,42 @@ def main():
                     if a < 1 or b < a or b > len(dl):
                         fails.append("%s -> %s has %d lines: OUT OF BOUNDS"
                                      % (where, doc, len(dl)))
+    # --- the fourth direction: A ROTATING-PLAN REFERENCE (see the header) ----
+    # Whole-file text, not a line loop: four of these are known to have wrapped
+    # across two lines, and a line-based sweep is exactly what missed them.
+    n_planref = 0
+    for f in srcs:
+        if f in PLANREF_SKIP:
+            continue
+        if f.startswith(ARCHIVED[0]) and f.endswith(ARCHIVED[1]):
+            continue
+        try:
+            body = open(os.path.join(ROOT, f), errors="replace").read()
+        except (IsADirectoryError, OSError):
+            continue
+        for m in PLANREF.finditer(body):
+            n_planref += 1
+            ln = body.count("\n", 0, m.start()) + 1
+            fails.append(
+                "%s:%d  %r -> a phase reference into the rotating plan, which "
+                "carries no line number and so is checked by nothing else here. "
+                "The live plan is renumbered from 1 every time one is archived, "
+                "so this names a different document's work today. Name the "
+                "archived plan: `docs/internals/plan-<name>-DONE.md` phase %s. "
+                "(`git log --diff-filter=A -- docs/internals/` gives the "
+                "rotation boundaries; `git blame` on this line dates it into "
+                "exactly one window; then check the phase number is one that "
+                "document declares.)"
+                % (f, ln, m.group(0), re.search(r'\d+', m.group(0)).group(0)))
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the mandatory "
               "`> Provenance:` single-line refs), %d bare (bounds only), "
               "%d source->doc (existence), %d source->source (bounds), "
               "%d source->source anchored (content-checked), "
-              "%d doc->doc skipped as frozen archive"
+              "%d doc->doc skipped as frozen archive, "
+              "%d rotating-plan phase reference(s) outside the allowed files"
               % (n_anchored, n_prov, n_bare, n_doc, n_src, n_src_anch,
-                 n_frozen_doc))
+                 n_frozen_doc, n_planref))
     if fails:
         for f in fails:
             print("STALE  " + f)

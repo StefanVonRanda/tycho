@@ -325,7 +325,7 @@ PY
 [ $? -eq 0 ] || fail=1
 
 # ---- shutdown case 1 of 2: SIGTERM is a CLEAN shutdown ----------------------
-# This block asserted wait status 143 until plan.md phase 3 -- that is, it
+# This block asserted wait status 143 until docs/internals/plan-signals-DONE.md phase 3 -- that is, it
 # asserted the server was KILLED, that server/main.ty's last line was
 # unreachable, and that the accept loops never wound down. server/main.ty now
 # arms core:signal with the listening fd before it prints the banner, so SIGTERM
@@ -476,7 +476,7 @@ port_of() {
 }
 
 # ---- case 4: a TRANSIENT accept failure must not retire a worker ------------
-# plan.md phase 14. Until batch A, accept_loop's Err arm was an unconditional
+# docs/internals/plan-signals-DONE.md phase 14. Until batch A, accept_loop's Err arm was an unconditional
 # `running = false`, so ONE EMFILE retired that accept loop for the life of the
 # process -- and with every loop retired the server left through its own bottom
 # with no signal at all, printing the stopped line and exiting 0 while the
@@ -599,7 +599,7 @@ else
 fi
 
 # ---- case 5: shutdown must not wait out a BUSY keep-alive connection --------
-# plan.md phase 15. serve_conn's keep-alive loop now tests
+# docs/internals/plan-signals-DONE.md phase 15. serve_conn's keep-alive loop now tests
 # signal.shutdown_requested() in its loop condition, so a worker stops between
 # requests instead of serving its peer until MAX_REQS. Measured on the four-client
 # drip below: 102215 ms before, 8 ms after. The 10s watchdog is therefore not a
@@ -647,7 +647,7 @@ else
 fi
 
 # ---- case 6: shutdown must not wait out a PARKED keep-alive connection ------
-# plan.md phase 19, and the other half of case 5. Case 5 covers a worker that
+# docs/internals/plan-signals-DONE.md phase 19, and the other half of case 5. Case 5 covers a worker that
 # REACHES serve_conn's loop condition between requests; this one covers a worker
 # already blocked INSIDE read_request_capped when the signal lands, which cannot
 # reach that condition at all. Shutting down the listener wakes accept(2) and

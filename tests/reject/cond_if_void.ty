@@ -1,5 +1,5 @@
 # §14.2 (docs/spec/10-statements.md:26): a void call produces no value, so it
-# cannot be a condition. Found by plan.md Phase 7's void sweep, fixed in 15.
+# cannot be a condition. Found by docs/internals/plan-front-door-DONE.md phase 7's void sweep, fixed in 15.
 fn nop():
     return
 

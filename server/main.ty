@@ -738,7 +738,7 @@ fn main():
     # One arm for the whole pool: the handler is per-process, not per-thread, and
     # it acts on the shared listener, so which thread the kernel picks does not
     # matter. That property is why core:signal chose shutdown() over close() --
-    # plan.md phase 1.
+    # docs/internals/plan-signals-DONE.md phase 1.
     if not signal.on_shutdown(srv):
         eprint("tycho-httpd: warning: SIGTERM handler not installed;"
                + " shutdown will not be clean\n")

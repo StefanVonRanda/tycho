@@ -1,6 +1,6 @@
 # §14.2 (docs/spec/10-statements.md:26): "Each condition MUST be `bool`."
 # Tycho has no truthiness -- an int is not a condition. tychoc0 used to accept
-# this and emit legal C that RAN on C's truthiness (plan.md Phase 15).
+# this and emit legal C that RAN on C's truthiness (docs/internals/plan-front-door-DONE.md phase 15).
 fn main():
     if 1:
         println("y")

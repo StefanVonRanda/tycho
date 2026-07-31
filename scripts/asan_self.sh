@@ -14,7 +14,7 @@
 #
 # That gap is how a stack-buffer-overflow WRITE in the compiler — 4 bytes past a
 # 1024-byte frame object in parse_type_inner, reachable from a VALID program —
-# survived 16 phases of plan.md and a full 1.0 freeze (plan.md Phase 37). It was
+# survived 16 phases of plan.md and a full 1.0 freeze (docs/internals/plan-front-door-DONE.md phase 37). It was
 # found by hand, not by a gate.
 #
 # WHAT THIS LANE DOES
@@ -36,7 +36,7 @@
 # tychoc never frees, by design. It is a single-pass, one-shot compiler that leaks
 # every AST node it allocates: `xmalloc` of every Expr/Stmt/Proc, every `sfmt`
 # string, every generic bind vector (`gi.binds`, src/tychoc.c:7585@binds, xmalloc'd and
-# never freed — the pattern predates plan.md Phase 37, which followed it). Process
+# never freed — the pattern predates docs/internals/plan-front-door-DONE.md phase 37, which followed it). Process
 # exit is the deallocator. With detect_leaks=1 every single fixture would report
 # hundreds of "leaks" that are the intended allocation discipline, and a real
 # overrun would be one line in that flood. So leak detection is OFF here and stays
