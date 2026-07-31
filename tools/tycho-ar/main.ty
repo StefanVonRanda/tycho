@@ -128,6 +128,91 @@
 # safe would have failed the same test from the other side.
 #
 # ===========================================================================
+# CHUNKED HASHING, AND WHY THE HASHER LIVES HERE
+# ===========================================================================
+#
+# A file's contents are hashed CHUNK bytes at a time through `io.read_at`, never
+# read whole to be hashed. What that costs and what it buys is worth stating
+# exactly, because the obvious summary -- "the archiver no longer holds a whole
+# file" -- is FALSE and this phase does not make it true.
+#
+# WHY THE STREAMING SHA-256 IS IN THIS FILE AND NOT CALLED FROM `core:sha256`.
+# `core:sha256` exposes exactly two entry points over a message, `digest(msg)`
+# and `hex(msg)`, and both take the WHOLE message as one `string`. There is no
+# init/update/final anywhere in the corelib -- verified by grepping
+# `corelib/sha256`, `corelib/md5`, `corelib/crypto` and `corelib/hash` for
+# sha256_init/update/final, EVP_DigestUpdate and `fn init`/`fn update`/`fn final`:
+# zero hits. `core:crypto`'s `cx_sha256_hex` is one-shot too, and wants its
+# message HEX-ENCODED, which would double the buffer this is trying to bound.
+#
+# AND THE ONE-SHOT SHAPE IS NOT AN OVERSIGHT -- the language makes it the natural
+# one. A streaming digest is a mutable state threaded through many calls, and a
+# Tycho parameter is BORROWED READ-ONLY: `fn bump(a: [int]): a[0] = 1` is
+# `error: cannot mutate parameter 'a' (it is borrowed read-only; copy it with
+# `y := a` first)`, and that suggested copy is a real copy -- `c := a` then
+# `c[0] = 999` leaves `a[0]` alone. So an `update(state, chunk)` either returns a
+# fresh state per 64-byte block or takes `inout`. `inout` is the answer, it works
+# on `[u32]` and on `bytes`, and it forwards (`sha_feed` hands its own `&H`
+# straight to `sha_block`) -- but it has to be reached for deliberately, and a
+# one-shot function needs none of it. `core:sha256` never having grown a
+# streaming form is the language's default showing through the library.
+#
+# THE PIECES WERE ALL REACHABLE, which is why this is ~60 lines and not a second
+# SHA-256. `sha256.k_table`, `h_init`, `ch`, `maj`, `bigsig0/1`, `smallsig0/1`,
+# `pow2` and `hex2` are all callable from here: a Tycho package has NO private
+# top-level functions, so every helper `core:sha256` wrote for itself is public
+# API whether it meant it or not. Not one constant is duplicated below -- the
+# round table and the initial state come from `core:sha256` itself, so a fix
+# there is a fix here. The only thing written here is the block loop and the
+# padding, i.e. the part `digest` inlined into a single function because it had
+# to.
+#
+# WHAT CHUNKING ACTUALLY CHANGED. `sha256.digest` expands its whole message into
+# `buf := []int`, ONE MACHINE INT PER BYTE, before it processes a single block --
+# so hashing an n-byte file allocated 8n bytes of int array on top of the n bytes
+# of file. That expansion was the dominant term in this program's peak memory and
+# it is GONE: `sha_block` indexes the `bytes` value directly, the only `[int]` is
+# the 8-word state, and the largest live buffer in the hash path is one CHUNK.
+#
+# WHAT IT DID NOT CHANGE, said plainly so the win is not read as bigger than it
+# is. `c` STILL HOLDS EACH FILE WHOLE, because `compress.compress` is
+# `bytes -> bytes`: a one-shot with no streaming counterpart, exactly like
+# `sha256.hex` was. The payload has to be materialised for the compressor no
+# matter how the digest is computed, so PEAK MEMORY FOR `c` IS STILL O(file
+# size) and chunked hashing did not fix it. It removed the 8x multiplier on top,
+# not the file itself. Bounding that last term needs a streaming deflate, which
+# is a `core:compress` change and not this program's to make.
+#
+# SO THE FILE IS READ TWICE -- once whole for the compressor, once in chunks for
+# the digest -- and that is a deliberate trade rather than an oversight. Folding
+# the two into one pass means growing a `bytes` by `+` per chunk, and `bytes +
+# bytes` allocates and copies both sides, so accumulating a file in n/CHUNK
+# pieces is quadratic. Two linear passes over a page-cache-warm file beat one
+# quadratic one, and neither would be needed if the compressor could be fed
+# incrementally.
+#
+# THE LOOP'S TERMINATION CONDITION IS DEFENDED, NOT ASSUMED, because both of the
+# primitives involved answer out-of-range requests by shrugging rather than by
+# failing. `io.read_at` CLAMPS ITS ALLOCATION TO THE FILE and returns `Ok` with
+# ZERO BYTES for an offset at or past EOF (`corelib/io/io.ty@read_at`) -- an
+# error condition that is not an `Err` -- and a `bytes` slice CLAMPS too, so
+# neither a short read nor an over-long slice announces itself. A loop that
+# simply asked for CHUNK bytes until it got fewer would therefore spin forever on
+# a file that stopped yielding, or silently hash a prefix. Instead: the bound is
+# `size`, taken from the same read the compressor is fed; each request is for
+# `min(CHUNK, size - off)`, so a conforming read can never overshoot; a read
+# returning 0 before `off == size` is FATAL rather than a loop exit, because at
+# that point the file has changed under us and a digest over a prefix is exactly
+# the silent corruption this program exists not to commit; and every iteration
+# advances `off` by at least one byte or dies. The loop runs at most `size`
+# times by construction.
+#
+# ONE THING IT STILL CANNOT DO: read the file atomically. `core:io` is
+# path-based with no file handles, so the compressor's read and the digest's
+# reads are separate `open(2)`s and a writer racing between them is detectable
+# (the checks above) but not preventable.
+#
+# ===========================================================================
 # WHY `t` PRINTS NOTHING BUT MEMBER LINES
 # ===========================================================================
 #
@@ -242,6 +327,13 @@ const MAGIC   = "TYAR1\n"
 const MFOOTER = "\nTYAR-M\n"
 const TRAILER = "TYAR-END\n"
 
+# The read granularity for hashing. A MULTIPLE OF 64 on purpose: SHA-256's block
+# is 64 bytes, so a chunk this size is a whole number of blocks and the carry
+# between chunks is empty for every read but the last. Correctness does not
+# depend on that -- `sha_feed` carries a partial block either way -- but it means
+# the common path never copies.
+const CHUNK = 65536
+
 # One regular file, as the archive will record it. Built entirely before
 # anything is written, so a read failure aborts before a partial archive lands.
 struct Member:
@@ -251,6 +343,142 @@ struct Member:
     sha:   string    # sha256 of the original contents, hex
     csha:  string    # sha256 of the gzip payload, hex
     data:  bytes     # the gzip payload
+
+# ---------------------------------------------------------------------------
+# CHUNKED SHA-256 -- see CHUNKED HASHING above for why it is here at all
+# ---------------------------------------------------------------------------
+
+# Fold ONE 64-byte block, `src[base .. base+64)`, into the running state `H`.
+# The caller guarantees those 64 bytes exist; this indexes `src` directly rather
+# than copying it into an `[int]`, which is the whole point.
+fn sha_block(H: inout [u32], K: [u32], src: bytes, base: int):
+    W := []u32
+    t := 0
+    for t < 16:
+        q := base + t * 4
+        push(W, (to_u32(src[q]) << 24) | (to_u32(src[q + 1]) << 16) | (to_u32(src[q + 2]) << 8) | to_u32(src[q + 3]))
+        t = t + 1
+    for t < 64:
+        push(W, sha256.smallsig1(W[t - 2]) + W[t - 7] + sha256.smallsig0(W[t - 15]) + W[t - 16])
+        t = t + 1
+    a := H[0]
+    b := H[1]
+    c := H[2]
+    d := H[3]
+    e := H[4]
+    f := H[5]
+    g := H[6]
+    h := H[7]
+    i := 0
+    for i < 64:
+        t1 := h + sha256.bigsig1(e) + sha256.ch(e, f, g) + K[i] + W[i]
+        t2 := sha256.bigsig0(a) + sha256.maj(a, b, c)
+        h = g
+        g = f
+        f = e
+        e = d + t1
+        d = c
+        c = b
+        b = a
+        a = t1 + t2
+        i = i + 1
+    H[0] = H[0] + a
+    H[1] = H[1] + b
+    H[2] = H[2] + c
+    H[3] = H[3] + d
+    H[4] = H[4] + e
+    H[5] = H[5] + f
+    H[6] = H[6] + g
+    H[7] = H[7] + h
+
+# Absorb `src`, leaving whatever did not fill a block in `pending` (always < 64
+# bytes). `inout` on both, because a Tycho parameter is borrowed read-only and a
+# streaming state has to be mutated by the callee -- see CHUNKED HASHING above.
+fn sha_feed(H: inout [u32], pending: inout bytes, K: [u32], src: bytes):
+    # Only concatenate when there really is a carry: `bytes + bytes` copies both
+    # sides, and with CHUNK a multiple of 64 this branch is not taken mid-file.
+    work := src
+    if len(pending) > 0:
+        work = pending + src
+    nb := len(work) / 64
+    for k := 0; k < nb; k += 1:
+        sha_block(&H, K, work, k * 64)
+    pending = work[nb * 64:len(work)]
+
+# Pad per FIPS 180-4 and emit the 64-char hex digest. `total` is the number of
+# message bytes fed, which the caller knows and the state does not carry.
+# The padding is built as a `string` because `chr(n)` is the only way to make a
+# byte from a number, and a Tycho string holds a 0x00 like any other byte.
+fn sha_finish(H: inout [u32], K: [u32], pending: bytes, total: int) -> string:
+    tail := to_str(pending) + chr(128)
+    zeros := (56 - (len(tail) % 64) + 64) % 64
+    for i := 0; i < zeros; i += 1:
+        tail = tail + chr(0)
+    bitlen := total * 8
+    sh := 56
+    for i := 0; i < 8; i += 1:
+        tail = tail + chr((bitlen / sha256.pow2(sh)) % 256)
+        sh = sh - 8
+    tb := to_bytes(tail)
+    nb := len(tb) / 64
+    for k := 0; k < nb; k += 1:
+        sha_block(&H, K, tb, k * 64)
+    out := ""
+    for vi := 0; vi < 8; vi += 1:
+        v := H[vi]
+        out = out + sha256.hex2(to_int((v >> 24) & 255)) + sha256.hex2(to_int((v >> 16) & 255))
+        out = out + sha256.hex2(to_int((v >> 8) & 255)) + sha256.hex2(to_int(v & 255))
+    return out
+
+# sha256 of a value already in memory, a block at a time. Replaces
+# `sha256.hex(to_str(b))` at every call site: same digest, without expanding the
+# message into one `int` per byte first. Note that the bytes/string seam is gone
+# from the hash path entirely -- it existed only because `core:sha256`'s one-shot
+# entry point insists on a `string`.
+fn sha_bytes(b: bytes) -> string:
+    K := sha256.k_table()
+    H := sha256.h_init()
+    pending := to_bytes("")
+    sha_feed(&H, &pending, K, b)
+    return sha_finish(&H, K, pending, len(b))
+
+# sha256 of a FILE, read CHUNK bytes at a time. `size` is the authoritative
+# length -- the caller passes the length of the buffer it compressed, so the
+# digest and the payload provably describe the same byte count. See CHUNKED
+# HASHING above for why the termination condition looks like this: `io.read_at`
+# answers an at-or-past-EOF offset with `Ok` and zero bytes rather than an error,
+# so "got nothing" cannot be a loop exit.
+fn sha_file(abs: string, size: int) -> string:
+    K := sha256.k_table()
+    H := sha256.h_init()
+    pending := to_bytes("")
+    off := 0
+    for off < size:
+        want := size - off
+        if want > CHUNK:
+            want = CHUNK
+        chunk := to_bytes("")
+        match io.read_at(abs, off, want):
+            Ok(b):
+                chunk = b
+            Err(e):
+                die("tycho-ar: cannot read " + abs + " at offset " + str(off))
+        n := len(chunk)
+        # ZERO PROGRESS IS FATAL, not a break. We are inside `off < size`, so
+        # there are bytes left to hash and the file no longer has them: it was
+        # truncated between the compressor's read and this one. Hashing the
+        # prefix and calling it the file is the corruption this program exists
+        # not to commit.
+        if n == 0:
+            die("tycho-ar: " + abs + ": read 0 bytes at offset " + str(off) + " of " + str(size) + " (file changed under us)")
+        # Cannot happen -- the request was clamped to `size - off` -- but a read
+        # that returns more than it was asked for would walk `off` past `size`
+        # and hash the wrong span, so it is checked rather than trusted.
+        if n > want:
+            die("tycho-ar: " + abs + ": read " + str(n) + " bytes at offset " + str(off) + ", asked for " + str(want))
+        sha_feed(&H, &pending, K, chunk)
+        off = off + n
+    return sha_finish(&H, K, pending, size)
 
 # Every regular file under `root`, as paths relative to `root`, in `readdir`
 # order -- the caller sorts. Iterative rather than recursive because the
@@ -301,15 +529,22 @@ fn member_of(root: string, rel: string) -> Member:
             mt = t
         Err(e):
             die("tycho-ar: cannot stat " + abs)
-    # THE bytes/string SEAM. `io.read_bytes` yields `bytes`; `sha256.hex` takes
-    # `string`. `to_str` is a zero-cost reinterpret of the same length-headered
-    # buffer (docs/spec/06-conversions.md), and the string runtime is header-driven
-    # rather than NUL-driven, so a binary file with interior NULs hashes correctly.
-    # It costs one call and no copy. Measured, not assumed: all eight fixture
-    # digests -- including a file with interior NULs and 100 KB of /dev/urandom --
-    # match `sha256sum` exactly.
+    # THE bytes/string SEAM IS GONE FROM THE HASH PATH. It existed because
+    # `sha256.hex` takes a `string` while `io.read_bytes` yields `bytes`, so
+    # every file was hashed as `sha256.hex(to_str(raw))`. `sha_file`/`sha_bytes`
+    # take `bytes`, so no crossing happens at all -- the seam was an artefact of
+    # the corelib's one-shot entry point, not of the data. (The crossing was
+    # never lossy: `to_str` is a zero-cost reinterpret of the same
+    # length-headered buffer, docs/spec/06-conversions.md, and all eight fixture
+    # digests -- interior NULs and 100 KB of /dev/urandom included -- matched
+    # `sha256sum` exactly. It is simply no longer needed.)
+    #
+    # `len(raw)` is passed as the length to hash so the digest covers exactly the
+    # byte count that was compressed. The contents are re-read in chunks rather
+    # than hashed out of `raw`; see CHUNKED HASHING above for why both reads
+    # exist and what bounds the loop.
     packed := compress.compress(raw)
-    return Member(rel, len(raw), mt, sha256.hex(to_str(raw)), sha256.hex(to_str(packed)), packed)
+    return Member(rel, len(raw), mt, sha_file(abs, len(raw)), sha_bytes(packed), packed)
 
 fn encode_member(m: Member) -> bytes:
     # Written as three statements, not one expression over three lines: an
@@ -471,7 +706,7 @@ fn parse(archive: string, data: bytes) -> [Entry]:
             die("tycho-ar: " + archive + ": " + who + ": payload is " + str(len(payload)) + " bytes, header says " + str(clen))
         if to_str(data[de:de + len(MFOOTER)]) != MFOOTER:
             die("tycho-ar: " + archive + ": " + who + ": member footer missing (clen is wrong, or the payload was cut)")
-        if sha256.hex(to_str(payload)) != f[6]:
+        if sha_bytes(payload) != f[6]:
             die("tycho-ar: " + archive + ": " + who + " (" + rel + "): payload digest mismatch (csha)")
         push(out, Entry(rel, size, mtime, clen, f[5], f[6], ds))
         p = de + len(MFOOTER)
@@ -575,7 +810,7 @@ fn cmd_x(archive: string, dest: string):
         # a damaged member from a zero-byte file. Length first, digest second.
         if len(raw) != e.size:
             die("tycho-ar: " + archive + ": " + e.rel + ": inflated to " + str(len(raw)) + " bytes, header says " + str(e.size) + " (corrupt payload)")
-        if sha256.hex(to_str(raw)) != e.sha:
+        if sha_bytes(raw) != e.sha:
             die("tycho-ar: " + archive + ": " + e.rel + ": content digest mismatch (sha)")
         mkdir_p(path.dir(targets[i]))
         # `io.write` takes a `string`; `tycho_write_file` is length-header-driven
