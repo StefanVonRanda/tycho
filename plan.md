@@ -868,7 +868,7 @@ Unclosed discoveries from the previous plan; none blocking.
 - [ ] **Phase 8** — every `tests/reject/` fixture carrying a `package` header is
       scored against the whole directory; affects `tests/run.sh` equally.
 - [x] **Phase 9** — *(closed by the previous plan's phase 4; kept for the record)*
-- [ ] **Phase 14** — filed by phase 1. `accept_loop` treats *every* `Err` from
+- [x] **Phase 14** — filed by phase 1. `accept_loop` treats *every* `Err` from
       `net.accept` as "listener closed" and sets `running = false`
       (`server/main.ty:493-494`), because `netx_accept`
       (`corelib/net/net_shim.c:162-167`) collapses every failure to `-1` and the
@@ -883,7 +883,7 @@ Unclosed discoveries from the previous plan; none blocking.
       our favour*. Fixing it means carrying errno across the shim boundary, which
       is a wider change than this plan.
 
-- [ ] **Phase 15** — filed by phase 3, measured not guessed. Shutdown is clean but
+- [x] **Phase 15** — filed by phase 3, measured not guessed. Shutdown is clean but
       its **latency is bounded by `--idle-ms`, not by the signal**, when workers
       are busy. `accept_loop` (`server/main.ty:477-495`) can only notice a
       shutdown between accepts; a worker inside `serve_conn`
@@ -995,3 +995,160 @@ entry and checkbox; a batch ticks what it closes.
 **Order is deliberate.** A first because it is real behaviour and the rest is
 description; D last because phase 18 is a gate *design* decision and the tree
 should be otherwise settled before a gate changes shape.
+
+### Batch A evidence — phases 14 and 15, 2026-07-31
+
+Two files: `server/main.ty` and `server/run.sh`. `corelib/net/` was **not**
+touched, and the next paragraph is why.
+
+#### The errno-surface decision: none, and the reason is not thrift
+
+Phase 14's entry says fixing it "means carrying errno across the shim". It does
+not. The obvious change — an `inout status` on `netx_accept` the way
+`netx_read` already has one (`corelib/net/net.ty:102`), new `NetErr` variants,
+a spec entry for each — was rejected because **the server does not need to know
+which error it got.** It needs one bit: is this the shutdown, or is it not?
+
+That bit already had an API and no caller. `signal.shutdown_requested()`
+(`corelib/signal/signal.ty:64-65`) reads the flag the handler sets, and
+`corelib/signal/signal_shim.c:81-83` sets that flag **before** it calls
+`shutdown(fd)` — so an accept released by the shutdown, or interrupted by
+`EINTR` on the way to it, observes the flag already true. The discriminator is
+exact for the case that matters, and it costs no FFI surface, no `NetErr`
+variant and no spec text. `server/main.ty:559` is the whole decision.
+
+The residual risk is honest and is insured rather than ignored: the flag is a
+`volatile sig_atomic_t` read from a thread other than the one the handler ran
+on, which is not by itself a cross-thread ordering guarantee. If a worker ever
+read a stale 0 it retries, the next accept on a shut-down listener fails at once
+(phase 1 measured `EINVAL` there), and the flag is re-read every time round —
+so the retry cap at `server/main.ty:563` guarantees the wind-down even if the
+fast path were missed. Cap and backoff are `server/main.ty:82-83`: 100 failures
+20 ms apart, i.e. two seconds of unbroken failure before a loop retires, and it
+retires *loudly* now. Sustained fd exhaustion past two seconds still drains the
+pool; that is a bound, not a fix, and it is stated rather than papered over.
+
+#### Where the phase 15 check went, and why there
+
+`server/main.ty:405` — `serve_conn`'s loop condition, and nowhere else in that
+function. It is the one point where nothing is in flight: the previous response
+is written and logged, the next blocking read has not started. Testing there
+means a worker never *commits* to another `read_request_capped` once shutdown is
+under way, which is the entire cost, because that read blocks for up to
+`cfg.idle_ms` and the loop cannot be re-entered until it returns. Deeper would
+abandon a request mid-answer; shallower (`accept_loop` only, which also tests it
+now) never sees a kept-alive connection at all.
+
+#### Both measurements
+
+Phase 15, same method as phase 3 — `kill(2)` to `wait(2)` returning, `--workers 4
+--idle-ms 5000`:
+
+```
+                                              before      after
+0 idle keep-alive clients                       1 ms       1 ms
+4 idle keep-alive clients (phase 3's case)   4924 ms    4733-4901 ms   UNCHANGED
+4 BUSY keep-alive clients (100ms drip)     102215 ms       6-8 ms
+```
+
+**The parked-idle row did not move, and the entry's headline claim was
+incomplete.** A worker already blocked in `read_request_capped` when the signal
+lands stays blocked until `SO_RCVTIMEO` expires: nothing wakes a `recv` on a
+*connection* fd, because the handler shuts down the *listener*
+(`corelib/signal/signal.ty:38-43`). The loop condition cannot run until that read
+returns, so no test of it can help this case. Filed as phase 19 below rather than
+claimed. Phase 3's 5141 ms reproduced here at 4924 ms on the unpatched binary.
+
+What the check did find is a worse case than the one it was filed for: a client
+that keeps its connection *busy* held the worker for **102215 ms** — `MAX_REQS`
+requests served at the client's own pace, because nothing told the loop to stop.
+That is 102 s of shutdown latency hiding behind the 5 s that was reported, and it
+is now 6-8 ms.
+
+Phase 14, against the unpatched and patched binaries, 3 runs each. A transient
+`EMFILE` window is induced with `prlimit(2)` on the live process and then lifted:
+
+```
+unpatched:  process alive after the window = False   serves a 200 = no
+            exit status without any signal = 0       "stopped after N requests"
+patched:    process alive after the window = True    serves a 200 = yes
+            then SIGTERM: rc=0, shutdown = 1 ms
+```
+
+Unpatched, the whole pool retires on a transient error and the server walks out
+of its own bottom **with no signal sent and nothing reported** — which is exactly
+the silent drain the entry predicted. Patched, it survives and a real shutdown
+still works, which is the half a retry loop can quietly cost.
+
+**A storm of connections cannot induce this and it is worth recording why.** With
+four accept loops the server never holds more than four connections at once, so
+its own fd budget is never what runs out; the first attempt at this measurement
+used 80 sockets and proved nothing. Nor is lowering the limit under four *parked*
+accept loops enough: `__sys_accept4` reserves the descriptor with
+`get_unused_fd_flags()` and only then blocks in `do_accept()`, so those four calls
+have already passed the rlimit check and complete normally — measured, they
+install fds 4..7 over a soft limit of 4. `EMFILE` is reached only when a loop
+enters `accept(2)` *afresh*, one idle timeout later. That is why the gate case
+runs at `--idle-ms 200` with a 0.8 s window, and why a 400 ms window against
+`--idle-ms 500` reddens for neither binary.
+
+#### Gates — real output
+
+`server/run.sh` grew **three** assertions, 57 → 60, and each was proved against
+the unpatched binary first: without `server/main.ty`'s change, `transient-accept`
+and `after EMFILE` and `SIGTERM under load` all FAIL, twice out of two.
+
+```
+  ok   transient accept failure (EMFILE, window lifted): server still serving
+  ok   after EMFILE: SIGTERM still exits 0 with the stopped line (retry did not eat the shutdown)
+  ok   SIGTERM under 4 busy keep-alive clients: exit 0 well inside the 10s watchdog
+server: OK
+```
+
+- `make -s server-check`: **server: OK**, 60 assertions.
+- 10-run loop: **10/10 OK**, 60 assertions every run.
+- `make test`: **passed: 560   failed: 0** — unchanged, as it must be; nothing
+  outside `server/` moved.
+- `python3 scripts/check_citations.py`: ok (186 anchored, 2743 bare in bounds,
+  140 source→doc, 240 source→source in bounds, 12 source→source anchored).
+
+`make ci` was deliberately **not** run: per `CLAUDE.md` it is the closing sweep,
+not a per-batch confirmation.
+
+**Gate cost.** `sh server/run.sh` went 4.2 s → 7.0 s. The two new cases are
+sleep-bound and cannot be made much cheaper: one has to outlast an idle timeout
+to reach `accept(2)` at all, the other has to let four workers pick up a
+connection before the signal. Recorded rather than hidden, because
+`CLAUDE.md`'s gate table quotes `make server-check` at ~4s and that number is now
+wrong by 3 s.
+
+- [ ] **Phase 19** — filed by batch A, measured. Shutdown latency for a worker
+      **already parked in a blocking read** is still one `SO_RCVTIMEO`: 4733 ms
+      with `--idle-ms 5000`, unchanged by phase 15, because
+      `server/main.ty:405`'s check cannot run until `read_request_capped`
+      returns and nothing wakes a `recv` on a connection fd — the handler shuts
+      down the *listener* only (`corelib/signal/signal.ty:38-43`). Two ways out,
+      neither small enough for batch A. (a) Let the handler shut down accepted
+      connection fds too, which means an async-signal-safe fd table in
+      `corelib/signal/signal_shim.c` and a way for `serve_conn` to register and
+      retire each fd. (b) Slice the read: arm `min(idle_ms, poll)` and re-check
+      the flag per slice, keeping a cumulative idle budget. (b) was prototyped
+      on paper and rejected for now — `read_request_capped` returns its partial
+      `raw` and cannot be resumed, so a head split across two slices would be
+      re-parsed from the second slice, and a slice timeout with bytes in `raw`
+      turns into a 408 after the *slice* rather than after the idle timeout,
+      which `server/run.sh:262`'s "408 fired near the idle timeout" assertion
+      pins at 400..3000 ms. Bounded and exit-0 either way, so this is still slow,
+      not hung.
+
+- [ ] **Phase 20** — filed by batch A, out of scope and pre-existing. The
+      watchdog at `server/run.sh:346` is `( sleep 10; kill -KILL ... ) &`, and
+      `kill "$WD"` reaps the subshell but not the `sleep` it is blocked in. The
+      orphan keeps the stdout this script inherited, so a caller that *captures*
+      output — `out=$(sh server/run.sh)`, which is how a CI step collecting a log
+      would do it — blocks until the sleep expires rather than until the script
+      exits. Measured: 4.4 s per run direct, 34.5 s per run captured when a 30 s
+      watchdog was briefly in the file. Batch A's own three watchdogs are already
+      written `) >/dev/null 2>&1 &`, which costs nothing and removes the orphan's
+      grip; `server/run.sh:346` was left alone only because it is not batch A's
+      scope. One redirect closes it.

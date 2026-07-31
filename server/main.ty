@@ -70,6 +70,17 @@ const DEF_IDLE_MS = 5000
 const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
+# How long one accept loop keeps trying after a FAILED accept before it gives up
+# and retires. See accept_loop's Err arm: 100 * 20ms = two seconds of unbroken
+# failure. Sized against the two things it has to separate. A transient burst --
+# EMFILE, ENFILE, ECONNABORTED, EPROTO, all of which POSIX says to retry -- is
+# survived whole as long as it clears inside that window; measured, a 400ms
+# externally-induced EMFILE window used to retire every worker and now retires
+# none. A listener that is permanently broken WITHOUT a shutdown signal (nothing
+# in this program does that today) still terminates the loop, so the pool can
+# never spin forever and wait() can never block forever.
+const MAX_ACCEPT_FAILS = 100
+const ACCEPT_BACKOFF_MS = 20   # between retries, so a hard failure is not a hot loop
 
 struct Config:
     root: string
@@ -367,7 +378,31 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     # Asked ONCE per connection, not once per request: the peer of an accepted fd
     # cannot change, and keep-alive would otherwise repeat the syscall per request.
     peer := result.unwrap_or(net.peer_addr(conn), "-")
-    for alive and served < MAX_REQS:
+    # THE SHUTDOWN CHECK GOES IN THE LOOP CONDITION, and nowhere else in here.
+    # This is the one point in serve_conn where nothing is in flight: the previous
+    # response has been written and logged, and the next blocking read has not
+    # started. Testing the flag here means a worker never COMMITS to another
+    # read_request_capped once shutdown is under way -- which is the whole cost,
+    # because that read blocks for up to cfg.idle_ms and the loop cannot be
+    # re-entered until it returns. Testing it any deeper would abandon a request
+    # mid-answer; testing it any shallower (in accept_loop only, which also tests
+    # it) never sees a kept-alive connection at all.
+    #
+    # What it does NOT fix, measured rather than assumed: a worker ALREADY blocked
+    # in that read when the signal lands. It stays blocked until SO_RCVTIMEO
+    # expires, because nothing wakes a recv on a connection fd -- the handler
+    # shuts down the LISTENER (corelib/signal/signal.ty:38-43). So the parked-idle
+    # case is unchanged at one idle timeout (4924 ms before, 4733-4901 ms after)
+    # and is filed as phase 19. The busy case, where the loop is actually reached
+    # between requests, went from 102215 ms to 6-8 ms -- and that 102 s, not the
+    # 5 s, was the real worst case here: it is MAX_REQS requests served at the
+    # client's own pace, because nothing was telling the loop to stop.
+    #
+    # A connection accepted but not yet spoken on is dropped here without an
+    # answer. That is the same bargain core:signal already documents for the
+    # backlog, and the same thing the idle-expiry arm at server/main.ty:431-435
+    # does for a keep-alive connection whose peer went quiet.
+    for alive and served < MAX_REQS and not signal.shutdown_requested():
         # ONE corelib call does the read, the cap and the parse. `raw` is the second
         # tuple element, for the two jobs the Result cannot do: name a request that
         # would not parse in the access log, and answer "did this peer even start
@@ -475,9 +510,37 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
 
 # ---- the worker pool -------------------------------------------------------
 
+# WHY THE ERR ARM IS NOT `running = false`, AND WHY THAT NEEDED NO ERRNO.
+#
+# Until this plan's batch A it was: any Err at all retired the loop. Correct for
+# the one failure that actually happens here -- the shutdown handler releasing the
+# listener -- and wrong for every other one, because net.accept collapses every
+# errno to Err(Failed) (corelib/net/net.ty:121-125 over
+# corelib/net/net_shim.c:162-167, which returns -1 and nothing else). A single
+# transient EMFILE therefore retired that worker permanently and silently, and the
+# server kept advertising a worker count it no longer had.
+#
+# The obvious fix is to carry errno across the shim -- an `inout status` on
+# netx_accept the way netx_read already has one (corelib/net/net.ty:102), plus
+# NetErr variants, plus the spec entry for them. That is NOT what this does,
+# because the server does not need to know WHICH error it got. It needs to know
+# one bit: is this the shutdown, or is it not? That bit already has an API.
+# signal.shutdown_requested() (corelib/signal/signal.ty:64-65) reads the flag the
+# handler sets, and corelib/signal/signal_shim.c:81-83 sets that flag BEFORE it calls
+# shutdown(fd) -- so any accept released by the shutdown, or interrupted by EINTR
+# on the way to it, observes the flag already true. The discriminator is exact for
+# the case that matters and costs no FFI surface at all.
+#
+# The flag is a `volatile sig_atomic_t` read from a thread other than the one the
+# handler ran on, which is not by itself a cross-thread ordering guarantee. That
+# is what the retry cap underneath is really insuring: if a worker ever did read a
+# stale 0, it retries, the next accept on a shut-down listener fails at once
+# (phase 1 measured EINVAL there), and the flag is re-read every time round. The
+# wind-down is guaranteed by the cap even if the fast path were ever missed.
 fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
     served := 0
     running := true
+    fails := 0                             # CONSECUTIVE failures; any Ok clears it
     for running:
         # `if conn < 0` became `Err(e)`. accept_loop returns the served count, not
         # a Result, so `or_return` is NOT available here (the compiler rejects it:
@@ -486,13 +549,23 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
         # branches the sentinel test cost -- with the fd unreachable on failure.
         match net.accept(srv):
             Ok(conn):
+                fails = 0
                 armed := net.set_read_timeout_ms(conn, cfg.idle_ms)
                 if not armed and not cfg.quiet:
                     eprint("w" + str(wid) + " warn: idle timeout not armed\n")
                 served += serve_conn(cfg, conn, wid)
                 net.close_fd(conn)
             Err(e):
-                running = false                    # listener closed: wind down
+                if signal.shutdown_requested():
+                    running = false                # the listener was shut down
+                else:
+                    fails += 1
+                    if fails >= MAX_ACCEPT_FAILS:
+                        running = false            # not transient: give this one up
+                        if not cfg.quiet:
+                            eprint("w" + str(wid) + " warn: accept failed " + str(fails) + " times, retiring this loop\n")
+                    else:
+                        time.sleep_ms(ACCEPT_BACKOFF_MS)
     return served
 
 # Worker k spawns worker k+1 into a frame-local, then runs its own accept loop;
