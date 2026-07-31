@@ -1,7 +1,7 @@
 package main
 import "lib"
 
-# Regression, plan.md phase 1 / FRICTION.md:148 -- a package-qualified name
+# Regression, docs/internals/plan-friction-DONE.md phase 1 / FRICTION.md:148 -- a package-qualified name
 # written ANYWHERE in a GENERIC call's argument list did not resolve:
 #
 #   unwrap_or(lib.port_of(fd), -1)   -> error: package 'lib' has no symbol 'lib__port_of'

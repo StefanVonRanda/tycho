@@ -39,7 +39,7 @@
 # phase 43. Tagging is what opts a fence in, so the number grows by review,
 # never by a heuristic guessing at a language.
 #
-# EVERY FENCE IN docs/ NOW CARRIES A TAG (plan.md phase 61, 2026-07-30). The 64
+# EVERY FENCE IN docs/ NOW CARRIES A TAG (docs/internals/plan-loops-cleanup-DONE.md phase 61, 2026-07-30). The 64
 # that did not -- 56 in docs/internals/, 4 in docs/rfc/, 4 in docs/ -- were read
 # one at a time and tagged `text` (73 total), `sh`, or `tycho`. Only three became
 # `tycho`, and the rule that produced that number is the one to keep: a fence in a
@@ -109,7 +109,7 @@ git ls-files 'docs/*.md' | while read -r f; do
       mode==1 {
           # `extern fn NAME(...)` is a declaration too -- the bare /fn[ \t]/ test
           # missed it and filed three compilable FFI fences as FRAGMENT
-          # "no fn declaration" (plan.md phase 62).
+          # "no fn declaration" (docs/internals/plan-loops-cleanup-DONE.md phase 62).
           if ($0 ~ /^[ \t]*(extern[ \t]+)?fn[ \t]/) hasfn=1
           # `extern "lib" fn NAME(...)` -- the library name sits between the two
           # keywords, so the anchored form above cannot reach it.

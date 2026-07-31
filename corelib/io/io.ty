@@ -6,7 +6,7 @@
 # This is the first corelib module to COMPOSE other core modules: it imports
 # core:strings (line splitting). It also imported core:path, for the dir/base pair
 # the old list-the-parent `exists` needed; the stat(2)-backed `exists` needs
-# neither, so that dependency is gone (2026-07-26, plan.md phase 5).
+# neither, so that dependency is gone (2026-07-26, docs/internals/plan-friction-DONE.md phase 5).
 #
 # For large inputs it also provides a BOUNDED-MEMORY streaming line reader
 # (open_lines / read_line / close_lines, and a fold_lines convenience) over a
@@ -17,7 +17,7 @@
 # Ok(empty), a missing path is Err(NotFound) and a directory is Err(IsDir). Until
 # 2026-07-26 all three were the same empty `bytes`, which is how a static file
 # server ends up answering a 0-byte 200 for a path it cannot serve (FRICTION.md,
-# phase 7; plan.md phase 2).
+# phase 7; docs/internals/plan-option-result-DONE.md phase 2).
 #
 # The rest of the module still matches the builtins' sentinels, deliberately:
 # `read` is "" for a missing/unreadable file (indistinguishable from an empty
@@ -26,7 +26,7 @@
 # meaning each on the write side. `list`'s ambiguity (an empty directory vs a
 # non-directory) was never a return-type problem: it is a missing stat(2), and
 # since 2026-07-26 the stat is here -- ask `is_dir(p)`, not `len(list(p)) > 0`
-# (plan.md phase 4). `make_dir` / `remove` (2026-07-26, plan.md phase 5) also
+# (docs/internals/plan-option-result-DONE.md phase 4). `make_dir` / `remove` (2026-07-26, docs/internals/plan-option-result-DONE.md phase 5) also
 # return a `Result`, for the same reason `read_bytes` does: their failures are
 # ambiguous. Nothing here aborts.
 package io
@@ -34,7 +34,7 @@ import "core:strings"
 
 # Why a file could not be read. Every variant is payload-free, so both spellings
 # work on it: `==` for a caller who wants a one-line test, and a nested pattern
-# (`Err(io.IsDir):`, since plan.md phase 3) for one already writing a `match`.
+# (`Err(io.IsDir):`, since docs/internals/plan-friction-DONE.md phase 3) for one already writing a `match`.
 # Payload-free is KEPT: giving a variant a payload would break every `==` call site
 # in the tree, and nothing here needs to say "how much".
 enum IoErr:
@@ -128,7 +128,7 @@ fn read_bytes(p: string) -> Result(bytes, IoErr):
 # This replaces the only directory test the corelib used to offer,
 # `len(io.list(p)) > 0`, which reports an EMPTY DIRECTORY AS A FILE. That was a
 # documented wrong answer in a real server (a redirect withheld for
-# /emptydir; FRICTION.md phase 7, plan.md phase 4) and it was never fixable by a
+# /emptydir; FRICTION.md phase 7, docs/internals/plan-option-result-DONE.md phase 4) and it was never fixable by a
 # return type -- stat(2) is the missing question, not the missing answer.
 fn is_dir(p: string) -> Result(bool, IoErr):
     k := iox_stat_kind(p)
@@ -241,7 +241,7 @@ fn list(p: string) -> [string]:
 # under a directory whose entries it could not enumerate), and it answered a
 # question the kernel answers directly. The rewrite is a straight swap of means,
 # not of meaning -- `corelib/test/io.out` records the same four answers before and
-# after (FRICTION.md, plan.md phase 4's follow-on).
+# after (FRICTION.md, docs/internals/plan-friction-DONE.md phase 4's follow-on).
 #
 # FAILS CLOSED, deliberately: `false` means "stat could not say yes", which folds
 # an unstattable path (no search permission on a parent, a symlink loop) in with a

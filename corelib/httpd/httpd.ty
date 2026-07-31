@@ -44,14 +44,14 @@ import "core:result"
 
 # Why a request could not be produced. Every variant is payload-free, so both
 # spellings work on it: `==` for a one-line test, and a nested pattern
-# (`Err(httpd.Timeout):`, since plan.md phase 3) for a caller already writing a
+# (`Err(httpd.Timeout):`, since docs/internals/plan-friction-DONE.md phase 3) for a caller already writing a
 # `match` -- which is how server/main.ty acts on all five causes. Payload-free is
 # KEPT: a payload would break every `==` call site in the tree.
 #
 # These four were ONE value -- a Request whose `method` is "" -- until 2026-07-26.
 # A server that must answer 400 to garbage while hanging up silently on a
 # disconnect needs Malformed apart from Closed, and one that wants to answer 408
-# needs Timeout apart from both (FRICTION.md, phase 7; plan.md phase 2).
+# needs Timeout apart from both (FRICTION.md, phase 7; docs/internals/plan-option-result-DONE.md phase 2).
 enum ReqErr:
     Malformed          # bytes arrived, but they are not a valid request head
     Closed             # the peer hung up before a complete request arrived
@@ -98,7 +98,7 @@ fn trim(s: string) -> string:
 
 # CR-LF, the HTTP line terminator.
 #
-# `"\r\n"` IS a string literal since plan.md phase 2, so this function is no longer
+# `"\r\n"` IS a string literal since docs/internals/plan-friction-DONE.md phase 2, so this function is no longer
 # forced -- it is KEPT DELIBERATELY, and this package must keep using it. `core:httpd`
 # is compiled by the FROZEN self-hosted `tychoc0` (`examples/webserver/run.sh` imports
 # this package and asserts `tychoc == tychoc0 == golden`), and tychoc0's lexer rejects
@@ -226,7 +226,7 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
     return got
 
 # read_request, plus the two things a real server needs and a Result alone cannot
-# carry (plan.md phase 3):
+# carry (docs/internals/plan-option-result-DONE.md phase 3):
 #
 #   `cap`         the byte budget for one request. Reaching it with no header
 #                 terminator is Err(TooLarge) -- the 431 decision, which used to
@@ -237,7 +237,7 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
 #                 name it with is its first line.
 #
 # A TUPLE rather than an `inout` out-param or a returned struct: measured against
-# both (plan.md phase 3), it is the only one of the three where the caller writes
+# both (docs/internals/plan-option-result-DONE.md phase 3), it is the only one of the three where the caller writes
 # ONE line -- `got, raw := read_request_capped(fd, cap)` -- with no dummy `raw :=
 # ""` to initialize and no new type on this package's surface. The cost is inside
 # this function: a tuple literal will not infer a Result element ("error: tuple
@@ -263,7 +263,7 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
 #     a non-empty body with no Content-Length and no Transfer-Encoding is surplus,
 #     never a body this function was asked to read.
 #
-# Observed end to end (plan.md phase 7), two pipelined GETs in one send() to
+# Observed end to end (docs/internals/plan-webserver-gate-DONE.md phase 7), two pipelined GETs in one send() to
 # server/main.ty: the first is answered, the second is consumed and discarded, and
 # the connection then sits idle until the keep-alive deadline closes it quietly --
 # 1.005s under --idle-ms 1000. Nothing is corrupted and the access log carries one
@@ -310,7 +310,7 @@ fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     # reached. `buf` goes back either way -- Ok or Err.
     #
     # `out` IS KEPT DELIBERATELY, and no longer because the compiler needs it: as of
-    # plan.md phase 3 a tuple literal DOES infer a Result element, so
+    # docs/internals/plan-friction-DONE.md phase 3 a tuple literal DOES infer a Result element, so
     # `return (Err(why), buf)` compiles under src/tychoc.c. It does not compile under
     # the FROZEN compiler/tychoc0.ty, which examples/webserver/run.sh feeds this
     # package (it asserts tychoc == tychoc0 == golden) and which reports

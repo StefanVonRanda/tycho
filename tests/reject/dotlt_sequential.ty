@@ -19,7 +19,7 @@
 # postfix-field site.
 #
 # This lane asserts only that the refusal is loud: nonzero exit plus a non-empty
-# diagnostic (tests/run.sh:158-169). The EXACT text is locked byte-for-byte by
+# diagnostic (tests/run.sh:170-185). The EXACT text is locked byte-for-byte by
 # the golden at tests/diag/dotlt_sequential.err.
 fn main():
     for i in 0..<3:

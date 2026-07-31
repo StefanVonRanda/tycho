@@ -1,6 +1,6 @@
 # corelib test: exercises core:result -- the Result/Option collapses that every
 # caller was hand-writing as a four-line `match` before this package existed
-# (plan.md phase 2). Pure computation, no filesystem and no socket, so the run is
+# (docs/internals/plan-option-result-DONE.md phase 2). Pure computation, no filesystem and no socket, so the run is
 # hermetic. Output locked to corelib/test/result.out (corelib/run.sh).
 #
 # The point of each assertion:
@@ -8,7 +8,7 @@
 #     instantiate from the same four lines
 #   * they work over an error type declared in ANOTHER package (io.IoErr) as well
 #     as one declared locally
-#   * err_or + `==` is one way a caller asks WHICH failure; since plan.md phase 3
+#   * err_or + `==` is one way a caller asks WHICH failure; since docs/internals/plan-friction-DONE.md phase 3
 #     a NESTED PATTERN (`Err(io.NotFound):`) is the other, and the last third of
 #     this file is its regression -- see `why`, `sized` and `outcome` below
 #
@@ -72,7 +72,7 @@ fn mkopt(ok: bool) -> Option(string):
         return Some("here")
     return None
 
-# ---- map_err: or_return across TWO error types (plan.md phase 9) ------------
+# ---- map_err: or_return across TWO error types (docs/internals/plan-friction-DONE.md phase 9) ------------
 # The regression for the one thing `or_return` could not do. `two_types` owns
 # Result(int, io.IoErr); `mk` fails with a Local, declared in this file. Before
 # map_err there was no conversion between error enums, so a function touching two
@@ -84,7 +84,7 @@ fn two_types(ok: bool) -> Result(int, io.IoErr):
     n := result.map_err(mk(ok), io.Failed) or_return
     return Ok(n * 3)
 
-# ---- nested patterns (plan.md phase 3 / FRICTION.md:139) -------------------
+# ---- nested patterns (docs/internals/plan-friction-DONE.md phase 3 / FRICTION.md:139) -------------------
 #
 # Before 2026-07-26 none of the three arms below could be written:
 #   Err(Worse)     PARSED -- as a binding named `Worse`, so it matched EVERY Err.
@@ -157,7 +157,7 @@ fn main():
 
     # ---- an error type from ANOTHER package: io.IoErr over bytes ----
     # Both defaults are written inline as qualified names -- the resolution bug
-    # that forced them into locals is fixed (plan.md phase 1).
+    # that forced them into locals is fixed (docs/internals/plan-friction-DONE.md phase 1).
     miss := io.read_bytes("/tmp/tycho_corelib_result_absent.xyz")
     println("io_is_err = " + str(b(result.is_err(miss))))
     println("io_why    = " + str(b(result.err_or(miss, io.Failed) == io.NotFound)))

@@ -19,7 +19,7 @@ fn round_trip(nl: string) -> Result(int, net.NetErr):
     # read_request returns Result(Request, httpd.ReqErr) -- a DIFFERENT error type
     # from this function's Result(_, net.NetErr), so `or_return` cannot carry it on
     # its own. result.map_err re-labels the error and then `or_return` DOES carry it
-    # (plan.md phase 9), so a request that never arrived ends this function instead
+    # (docs/internals/plan-friction-DONE.md phase 9), so a request that never arrived ends this function instead
     # of continuing with a dummy Request nobody sent -- which is what the old
     # `result.unwrap_or(httpd.read_request(conn_in), httpd.bad_request())` did.
     served := result.map_err(httpd.read_request(conn_in), net.Failed) or_return
@@ -37,7 +37,7 @@ fn round_trip(nl: string) -> Result(int, net.NetErr):
     return Ok(asked + answered)
 
 fn main():
-    nl := "\r\n"                        # a literal since plan.md phase 2
+    nl := "\r\n"                        # a literal since docs/internals/plan-friction-DONE.md phase 2
 
     # --- parse a request (no socket needed) ---
     raw := "GET /hello?name=ada HTTP/1.1" + nl + "Host: localhost" + nl + "Accept: text/plain" + nl + nl

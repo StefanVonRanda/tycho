@@ -155,10 +155,26 @@ done
 # 2026-07-26 this lane also built the self-hosted tychoc0 and asserted it refused
 # them too; tychoc0 is frozen (see compiler/tychoc0.ty) and no gate builds it, so
 # that half is gone. The tychoc assertions below are unchanged.
+#
+# A FLAT fixture here must NOT declare a `package` header. detect_package
+# (src/tychoc.c:12316-12322) turns the entry file's leading `package <name>` into
+# a whole-DIRECTORY compile (src/tychoc.c:12713), so such a fixture would be
+# scored against all 249 of its siblings: it would be "refused" for the FIRST
+# error in sort order rather than for its own defect, and this lane -- which
+# asserts only "nonzero exit + non-empty diagnostic" -- cannot tell the two
+# apart. A deliberately VALID program dropped in here was measured scoring `ok`
+# on a sibling's error. Checked, not assumed: 0 of the 249 flat fixtures declare
+# one today, so this guard is enforcement of the existing arrangement rather
+# than a repair, and it moves no count. The package-mode reject case belongs in
+# the tests/reject/pkg/<name>/ lane below, which gives it its own directory.
 for hi in tests/reject/*.ty; do
     [ -e "$hi" ] || continue
     base="$(basename "$hi" .ty)"
     name="reject_$base"
+    if grep -q '^package [A-Za-z_]' "$hi"; then
+        note "$name" "declares a package header -- it would be compiled against every sibling in tests/reject/; move it to tests/reject/pkg/<name>/"
+        fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
     if "$TYCHOC" "$hi" --emit-c -o "$TMP/rj" >"$TMP/rj.log" 2>&1; then
         note "$name" "tychoc ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"
     elif [ ! -s "$TMP/rj.log" ]; then

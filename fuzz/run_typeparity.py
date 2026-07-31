@@ -22,7 +22,7 @@
 # strictly weaker: a fail-closed sweep asserting tychoc never CRASHES and that
 # every accept emits compilable C. A silent change to a type RULE passed it.
 #
-# WHAT REPLACED IT (plan.md phase 22, 2026-07-30): the `expect` oracle below, in
+# WHAT REPLACED IT (docs/internals/plan-loops-cleanup-DONE.md phase 22, 2026-07-30): the `expect` oracle below, in
 # the style run_eqparity.py / run_unaryparity.py / run_parforparity.py carry. Like
 # run_eqparity.py's (`accept iff the two operands have the same nominal type`) it
 # is a written-down RULE rather than 4608 enumerated rows -- a table that large

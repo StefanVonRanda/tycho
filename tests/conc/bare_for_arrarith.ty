@@ -1,4 +1,4 @@
-# Two forms the concurrency suite never reached (plan.md phases 19 and 36):
+# Two forms the concurrency suite never reached (docs/internals/plan-loops-cleanup-DONE.md phases 19 and 36):
 # the bare `for:` loop and element-wise array arithmetic. Measured 2026-07-30,
 # before this file: 0 of the 11 tests/conc fixtures contained either.
 #

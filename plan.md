@@ -860,14 +860,20 @@ wind-down arm). Phases 16 and 17 are this phase's own out-of-scope findings.
 
 Unclosed discoveries from the previous plan; none blocking.
 
-- [ ] **Phase 6** — 110 references to "`plan.md` phase N" across 42 files point at
+- [x] **Phase 6** — 110 references to "`plan.md` phase N" across 42 files point at
       the wrong plan; `plan.md` rotates on archive and the citation gate cannot
       see them (no line number). `server/main.ty` alone has 13.
+      *(batch C: 167 refs over 43 files, not 110 over 42 — the count missed the
+      backticked spelling. Each rewritten to name the plan it meant; the rule
+      written into `CLAUDE.md` — see below)*
 - [x] **Phase 7** — `ncpu()`'s spec definition (`docs/spec/16-builtins.md:251`,
       "the `parallel for` fan-out width") is false above 64, measured.
       *(batch B: definition corrected and the 64 cap written down — see below)*
-- [ ] **Phase 8** — every `tests/reject/` fixture carrying a `package` header is
+- [x] **Phase 8** — every `tests/reject/` fixture carrying a `package` header is
       scored against the whole directory; affects `tests/run.sh` equally.
+      *(batch C: measured — **0 of 249** carry one, so nothing is passing for the
+      wrong reason today. The arrangement that prevents it is now enforced in
+      both runners rather than merely described — see below)*
 - [x] **Phase 9** — *(closed by the previous plan's phase 4; kept for the record)*
 - [x] **Phase 14** — filed by phase 1. `accept_loop` treats *every* `Err` from
       `net.accept` as "listener closed" and sets `running = false`
@@ -1432,4 +1438,246 @@ compiled and `cmp`ed against `examples/corelib/iter.out` directly: identical.
       source→source lane passes it. Same class as batch D's phase 17 (stale
       source→source comments in `server/run.sh`) but in a different file, so it
       is filed separately rather than folded in. One number. Verify:
+      `python3 scripts/check_citations.py`.
+
+### Batch C evidence — phases 6 and 8, 2026-07-31
+
+Two structural items. Neither is a line-of-code bug; both are about how
+something is arranged, and in both cases the honest first step was to **count**,
+because the plan's own numbers were wrong in phase 6's case and phase 8's
+premise turned out not to hold at all.
+
+#### Phase 6 — the decision: name the archived document, not a convention
+
+The item offered two end states. **Option (a) was taken**: every reference is
+rewritten in place to name the archived plan it actually meant. The reasoning is
+four measurements, not a preference.
+
+**1. The population is bigger than recorded, and heterogeneous.** The item says
+110 refs over 42 files. The real figure is **172 refs over 44 files**: the
+original count matched `plan.md phase N` and missed the backticked spelling
+`` `plan.md` phase N `` (66 of them) and the plural `` `plan.md` phases 1 and 2 ``
+(5 more, found only because a stale line number in this very evidence block
+forced a re-check). More important than the size is
+the shape — those 167 refs mean **eight different plan documents**:
+
+| refs | document |
+|---:|---|
+| 72 | `docs/internals/plan-loops-cleanup-DONE.md` |
+| 52 | `docs/internals/plan-friction-DONE.md` |
+| 27 | `docs/internals/plan-option-result-DONE.md` |
+| 9 | `docs/internals/plan-prunner-DONE.md` |
+| 5 | `plan.md` (this plan — correct as written, left alone) |
+| 3 | `docs/internals/plan-postfreeze-rawstring-DONE.md` |
+| 3 | `docs/internals/plan-webserver-gate-DONE.md` |
+| 1 | `docs/internals/plan-webserver-DONE.md` |
+
+**12 of the 44 files are heterogeneous** — their own references mean two to six
+different plans. `src/tychoc.c` spans 2, `server/main.ty` 4, `FRICTION.md` 6.
+This is what decides the question: a convention stated once cannot resolve a
+reference whose meaning depends on which commit wrote it, so option (b) would
+have left every reader running `git blame` on every citation.
+
+**2. This repo already tried option (b), and it did not hold.** `FRICTION.md`
+carried a key added 2026-07-30 asserting that all of its "`plan.md` phase N"
+refs meant `docs/internals/plan-friction-DONE.md`, and arguing "one line here
+makes 51 claims true; rewriting all 51 in place would not make them truer."
+Measured, its 53 such refs span six plans, and they are interleaved *line by
+line* — `FRICTION.md` line 545 is friction, 546 and 547 are loops-cleanup, 548
+is option-result — because successive plans re-scored the same list. That is the
+exact shape a single key cannot describe. The key has been replaced with a
+record of what it claimed and what the measurement found.
+
+**3. Attribution is derivable and checkable, not guessed.** The item warns that
+a confidently wrong plan name is worse than an ambiguous one, and that an
+earlier phase made that mistake. The method used here has an independent check
+built into it:
+
+- **Rotation boundaries** come from `git log --diff-filter=A --format=%at --`
+  over each `docs/internals/plan-*-DONE.md`. The commit that *adds*
+  `plan-X-DONE.md` is the instant X stopped being live, and it is the same
+  commit that opens X+1, so the windows tile with no gap and no overlap.
+- **`git blame --line-porcelain`** on the citing line puts it in exactly one
+  window.
+- **The check:** the phase number cited must be a phase the mapped document
+  actually declares. **167 of 167 passed; 0 unverifiable**, and the 5 plural refs were
+  attributed and checked one at a time. A misdated line
+  would have to land in a window whose plan happens to declare the same phase
+  number to survive this, and the plans differ sharply in length (option-result
+  declares 5 phases, friction 10, loops-cleanup 67).
+- **A second, independent corroboration:** for 98 of the 167, the blame commit's
+  *own subject* names a phase number ("feat(corelib): phase 6 — core:cli learns
+  --flag VALUE"), and in **98 of 98** that number is declared by the document the
+  window mapped to — e.g. that commit maps to `plan-friction-DONE.md`, whose
+  phase 6 is "core:cli and args()". **Zero contradictions.** The other 69 have
+  subjects with no phase number ("chore: batch 11 …") and rest on the window
+  alone.
+
+**4. The spelling is the house style, not a new one.** `server/README.md:165`
+already writes `` `docs/internals/plan-friction-DONE.md` phase 5 ``. The full
+repo-relative path was chosen over a stem shorthand for that reason; it costs
+about 34 columns per site and the citing lines were not reflowed.
+
+**What was deliberately NOT rewritten.**
+
+- **5 refs that mean the live `plan.md`** and are therefore correct today:
+  `FRICTION.md:739`, `server/main.ty:708`, and `server/run.sh` at lines 328, 468
+  and 591. These are the ones the next archive must sweep, which is why the rule
+  below has an archiving half.
+- **4 refs inside `docs/internals/plan-*-DONE.md`** (3 in
+  `plan-webserver-gate-DONE.md`, 1 in `plan-friction-DONE.md`). Those files are
+  frozen records — `scripts/check_citations.py` states the rule that they must
+  never be edited — and inside one of them "`plan.md` phase N" self-refers
+  unambiguously anyway.
+
+**Recurrence is the actual defect, so it is addressed directly.** Rewriting 167
+references (158 same-line, 4 that wrapped across two lines, 5 plural) fixes today; it does not stop the next plan from creating a fresh
+batch. `CLAUDE.md` gained a "`plan.md` rotates, so never leave "`plan.md` phase
+N" behind" section under "Plans", stating both halves: cite the archived name
+when the plan is already archived, and **the commit that archives a plan
+rewrites the references that plan created**, using the boundary/blame/check
+method above. It also records why no gate catches this —
+`scripts/check_citations.py` only recognises refs of the form `path:N`, and a
+plan reference has no line number.
+
+Four cross-line references (the path at end of line, "phase N" wrapping onto the
+next) were invisible to the line-based rewrite and were repaired by hand:
+`examples/corelib/result/main.ty`, `server/main.ty`, `tools/lsp.ty` and
+`CLAUDE.md`'s own `make test-fast` paragraph.
+
+#### Phase 8 — the premise does not hold, and the reason is worth keeping
+
+The item says reject fixtures with a `package` header "may be passing for the
+wrong reason". Measured first, as instructed:
+
+```
+flat tests/reject/*.ty fixtures:        249
+of those, declaring a package header:  0
+therefore scored against a sibling:     0
+package-mode reject cases, isolated:    1 (tests/reject/pkg/privacy_cross/ )
+any occurrence of the word package:     0
+```
+
+**Zero.** Not one flat reject fixture declares a `package` header, so not one is
+being scored against a sibling's error, and the earlier phase's observation was
+a deliberate probe rather than a fixture in the tree. The mechanism is real and
+was re-derived rather than taken from the item: `detect_package`
+(`src/tychoc.c:12316-12322`) returns the leading `package <name>` of the entry
+file's token stream, and `src/tychoc.c:12713` branches on it into
+`compile_package` — a whole-directory merge. The line the item names has moved: `src/tychoc.c:7757` is now a
+line of the comment block above `dup_other_file`, not the scan trigger.
+
+The reason the count is zero is that the arrangement is already right: the one
+package-mode reject case lives in its own directory, `tests/reject/pkg/`, run by
+a separate lane, and `tests/run.sh:186-190` already says why. **What was missing
+was enforcement.** Nothing stopped the next author dropping a `package`-headed
+fixture into the flat directory, where it would compile all 249 siblings, be
+refused for whichever sibling errors first in sort order, and be scored `ok` by
+a lane that asserts only "nonzero exit plus a non-empty diagnostic".
+
+**The fix** is a guard in the flat reject lane in both runners —
+`tests/run.sh:170-177` and `tools/prunner/main.ty`'s `judge` — with the same
+`grep -q '^package [A-Za-z_]'` predicate and a byte-identical FAIL reason, so
+the two reports stay identical as `CLAUDE.md` requires. It is fail-closed
+(RULE 7): a fixture it cannot clear is failed, not compiled. It was chosen over
+"assert the diagnostic names the fixture's own file" because the directory scan
+is the *only* route to a wrong-reason refusal — a single-file compile has no
+sibling to be refused for — so guarding the header is exactly the defect and
+nothing wider.
+
+**The guard was proven to fire, not assumed to.** A deliberately valid program
+carrying a `package` header was dropped into `tests/reject/` and the real lane
+body run over the directory:
+
+```
+FAIL  reject_zz_guard_probe  (declares a package header -- it would be compiled against every sibling in tests/reject/; move it to tests/reject/pkg/<name>/)
+pass=249 fail=1 fails= reject_zz_guard_probe
+```
+
+249 real fixtures pass, the probe fails, and the probe was removed. **The count
+does not move: 560 before, 560 after**, because the guard adds no test name — it
+is an extra branch inside the existing per-fixture scoring.
+
+Inserting the guard shifted `tests/run.sh` by 12 lines at the loop header and 16
+below it, invalidating every citation into the file. **41 refs in 6 live files**
+were repaired (`tools/prunner/main.ty` 34, `scripts/asan_self.sh` 2,
+`tests/diag/range_removed.ty` 2, and one each in three `tests/reject/`
+fixtures), and each was re-checked against the construct it names rather than
+bumped blindly — the naive uniform +16 was wrong for the four refs to the loop
+header and was corrected to +12. The archived plans and the two dated audit
+documents under `docs/internals/` were left alone: **0 of their refs cite a line
+at or past the insertion point**, so nothing there went stale.
+
+#### Gates
+
+Markdown, comments and two shell/Tycho runners, plus `src/tychoc.c` comments and
+`.ty` fixture comments — so `make test` is the right gate and `make ci` was not
+run.
+
+```
+$ python3 scripts/check_citations.py
+citation check: ok (191 anchored contain the token they name, 2812 bare in bounds, 245 source->doc citations resolve, 245 source->source in bounds, 12 source->source anchored)
+
+$ sh scripts/check_links.sh
+link check: ok (136 markdown files, no dead relative links)
+
+$ make test
+passed: 560   failed: 0
+all green
+
+$ make test-fast        # tools/prunner/main.ty was edited, so it must still build and agree
+passed: 560   failed: 0
+all green
+```
+
+Two comment edits (the plural references) landed in `server/main.ty` and
+`tests/conc/bare_for_arrarith.ty` after `make test` had run, and neither file is
+covered by it, so their own gates were run rather than assumed:
+
+```
+$ make server-check
+server: OK
+
+$ make conc
+conc: passed 38   failed 0
+```
+
+560 before, 560 after, both lanes. Every unit of change is accounted for: the
+phase 8 guard adds a branch, not a test name, and no fixture trips it. Every
+edit in this batch is a comment, a Markdown paragraph, or the reject-lane guard;
+no compiled behaviour changed, which is why `make ci` was not run.
+
+- [ ] **Phase 24** — filed by batch C. **Nothing mechanical prevents the phase 6
+      defect from recurring.** 167 references rotted invisibly because
+      `scripts/check_citations.py` recognises only refs of the form `path:N`, and
+      "`plan.md` phase N" has no line number, so the gate skips it entirely. The
+      cure batch C shipped is a written rule in `CLAUDE.md`'s "Plans" section,
+      which is worth having but is enforced by nobody. A gate is cheap and the
+      predicate is exact: **outside `plan.md` itself and the frozen
+      `docs/internals/plan-*-DONE.md`, no file may contain "`plan.md` phase N"**
+      — it is either a live-plan reference that the archiving commit must sweep,
+      or it is already stale. Today the tree holds 5 such refs (`FRICTION.md`,
+      `server/main.ty`, `server/run.sh` ×3), all legitimately about this plan, so
+      the gate cannot be turned on as a hard failure until this plan is archived
+      and they are rewritten — which is precisely the archiving discipline it
+      would enforce. Sequence it that way: land the check, let the archive commit
+      be its first customer. Out of scope for batch C, which was told to pick an
+      end state for the references, not to add a gate. Verify:
+      `python3 scripts/check_citations.py`.
+
+- [ ] **Phase 25** — filed by batch C, out of scope and pre-existing. The
+      package-mode comment above `dup_other_file` cites two sites and **both are
+      wrong**. `src/tychoc.c:7751` says the directory scan sorts at
+      "`scan_pkg_files` qsorts, `:11759`" — `src/tychoc.c:11759` is a
+      `fprintf` of `"    TychoArrC%d r = src;\n"` inside array-copy codegen;
+      `scan_pkg_files` is at `src/tychoc.c:12371`. `src/tychoc.c:7759` says the
+      scan "is entered only when the entry file declares a `package` header
+      (`:12069-12071`)" — `src/tychoc.c:12069` is a comment line inside enum
+      copy/eq body generation; the header is detected by `detect_package` at
+      `src/tychoc.c:12316-12322` and acted on at `src/tychoc.c:12713`. Both are
+      bounds-valid, so the citation gate's source→source lane passes them — the
+      documented blind spot. Found while re-deriving the scan trigger for phase
+      8; the comment's *prose* is correct and only its two numbers are stale.
+      Same class as phase 17 and batch B's phase 23 but a different file, so
+      filed separately. Two numbers plus one range. Verify:
       `python3 scripts/check_citations.py`.

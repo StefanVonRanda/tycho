@@ -1,6 +1,6 @@
 # `range` is not a name the compiler knows. The counting form
 # `for i in range(a, b, step):` and the `range` builtin were deleted on
-# 2026-07-29 (plan.md phase 7); the three-clause `for` replaces it, and
+# 2026-07-29 (docs/internals/plan-loops-cleanup-DONE.md phase 7); the three-clause `for` replaces it, and
 # `parallel for i in 0..<N:` replaces it inside a `parallel for`.
 #
 # `range` was never a procedure -- it was recognised only by lexeme inside a
@@ -8,7 +8,7 @@
 # branch. This fixture asserts the header form is refused. `x := range(3)` has
 # always said "unknown procedure 'range'" and still does.
 #
-# This lane (tests/run.sh:158-169) asserts only a nonzero exit and a non-empty
+# This lane (tests/run.sh:170-185) asserts only a nonzero exit and a non-empty
 # diagnostic. The exact message -- which must name the three-clause form as the
 # replacement -- is locked byte-for-byte by tests/diag/range_removed.err.
 #

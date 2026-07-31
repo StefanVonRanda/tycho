@@ -1,5 +1,5 @@
 # An unknown string escape -- here `\ ` (backslash-space) -- is invalid: only
-# \n \t \r \\ \" are valid string escapes (`\r` was added by plan.md phase 2;
+# \n \t \r \\ \" are valid string escapes (`\r` was added by docs/internals/plan-friction-DONE.md phase 2;
 # tychoc0 stops at \n \t \\ \" and this fixture is chosen to be rejected by
 # both). tychoc rejected this at lex time, but
 # tychoc0 silently ACCEPTED it (fail-open: it skipped the escaped byte without

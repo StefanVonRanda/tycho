@@ -7,7 +7,7 @@
 # (src/tychoc.c:444, "unterminated raw string literal"). Expected diagnostic:
 #     tests/reject/rawstring_unterminated.ty:13: error: unterminated raw string literal
 # The frozen tychoc0 has no backtick token at all, which is why no tychoc0 lane
-# globs tests/reject/ (tests/run.sh:167).
+# globs tests/reject/ (tests/run.sh:183).
 
 fn main():
     s := `this literal never closes

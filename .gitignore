@@ -31,7 +31,7 @@ gmon.out
 /compiler/tychoc0
 
 # The five `.c` entries below are NOT produced by their `make` target any more.
-# plan.md phase 52 made the plain build `remove()` its own intermediate
+# docs/internals/plan-loops-cleanup-DONE.md phase 52 made the plain build `remove()` its own intermediate
 # (src/tychoc.c:12771), so `make tycho`, `make tychofmt`, `make tycho-lsp` and
 # `make server` now leave only a binary. They are kept because they still catch a
 # real artifact by the OTHER route: `--emit-c -o <base>` writes `<base>.c` and

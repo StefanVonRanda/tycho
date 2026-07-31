@@ -20,7 +20,7 @@
 # See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
 #
 # `k_array_ret` below was left emitting the deleted `range()` by that change and
-# only rewritten 2026-07-30 (plan.md phase 37). It failed SILENTLY: `classify`
+# only rewritten 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 37). It failed SILENTLY: `classify`
 # returns "skip" whenever tychoc exits non-zero, so a program that no longer parses
 # is counted as skipped, not FAILED, and the runner still printed a green
 # `FAIL=0`. Half of every run was being thrown away. This lane is not in `make ci`,
