@@ -54,8 +54,18 @@ package main
 # 200, never a 304 -- because a wrong 304 is a client holding a changed file for
 # as long as it caches. See serve_conn's 200 arm and parse_http_date.
 #
-# NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression, ETag,
-# pipelining, virtual hosts. See README.md.
+# BYTE RANGES, 2026-07-31. A GET or HEAD carrying `Range: bytes=A-B`, `bytes=A-`
+# or `bytes=-N` is answered 206 with that slice, a Content-Range naming it, and a
+# Content-Length of the SLICE. The file is never read whole to serve part of it:
+# io.size gives the length and io.read_at pread(2)s the slice. A range that
+# cannot be satisfied is 416 with `Content-Range: bytes */LEN`; a range this
+# server does not understand -- bad syntax, or the multipart form -- is ignored
+# and answered 200 with the whole file, which is what RFC 7233 2.1 requires.
+# A conditional that resolves to 304 OUTRANKS a range: see serve_conn's 200 arm,
+# where the range work is inside the else of the 304 test.
+#
+# NOT IMPLEMENTED, deliberately: TLS, HTTP/2, multipart ranges, compression,
+# ETag, pipelining, virtual hosts. See README.md.
 
 import "core:cli"
 import "core:httpd"
@@ -103,6 +113,30 @@ struct Route:
     status: int
     file: string
     location: string
+
+# What a Range header resolved to against a known file length. THREE outcomes,
+# not two, and conflating any pair of them is a wire-visible bug:
+#
+#   NONE   there is no usable range here -- no header, syntax this server does
+#          not accept, or the multipart form. RFC 7233 2.1: "an origin server
+#          MUST ignore a Range header field that contains a range unit it does
+#          not understand", and an invalid byte-range-set is likewise ignored.
+#          So this is a 200 with the WHOLE file, never an error.
+#   OK     a satisfiable range. `start`..`end` are absolute byte offsets into
+#          the file and BOTH ARE INCLUSIVE -- that is HTTP's convention, not
+#          C's, so the length is end - start + 1 and the classic off-by-one is
+#          reading end - start bytes.
+#   UNSAT  syntactically fine, but no byte of it exists (first-byte-pos at or
+#          past EOF, or a zero-length suffix). 416, with `Content-Range:
+#          bytes */LEN`.
+const RANGE_NONE  = 0
+const RANGE_OK    = 1
+const RANGE_UNSAT = 2
+
+struct Rng:
+    kind: int
+    start: int
+    end: int
 
 # ---- small helpers ---------------------------------------------------------
 
@@ -170,6 +204,109 @@ fn parse_http_date(s: string) -> int:
     if not datetime.ok(dt):
         return -1
     return datetime.to_unix(dt)                                  # GMT, so no offset
+
+# ---- Range ------------------------------------------------------------------
+
+# `s` starts with `p`, comparing ASCII case-insensitively. `p` must be lowercase.
+# Needed because a range UNIT is a token (RFC 7233 2.2) and tokens are compared
+# case-insensitively -- `Range: BYTES=0-9` is the same request as `bytes=0-9`.
+# httpd.header already folds the header NAME; this folds the value's first word.
+fn ci_prefix(s: string, p: string) -> bool:
+    if len(s) < len(p):
+        return false
+    for i := 0; i < len(p); i += 1:
+        c := s[i]
+        if c >= 65 and c <= 90:                # 'A'..'Z' -> lowercase
+            c = c + 32
+        if c != p[i]:
+            return false
+    return true
+
+# A byte-position out of a Range header: a run of DIGITS ONLY, or -1 for "that
+# is not a position". No sign, no whitespace, no 0x -- RFC 7233's grammar is
+# 1*DIGIT and nothing else, and every non-digit here means the whole header is
+# ignored, which is a 200. Leading zeros are legal and parse normally.
+#
+# The length guard is the reason this is not a bare strings.parse_int. A range
+# header is attacker-controlled and `bytes=0-99999999999999999999999999` costs
+# nothing to send; past ~19 digits the value does not fit an int and what
+# parse_int does with it is not something this file should depend on. 16+ digits
+# is instead reported as HUGE_POS, which is larger than any file this program
+# can open and therefore lands in exactly the arm the true value would have:
+# clamped to the end of the file as a last-byte-pos, past EOF (416) as a
+# first-byte-pos, and "the whole file" as a suffix length.
+const HUGE_POS = 1000000000000000        # 1e15, > any real file, < 2^63
+
+fn parse_pos(s: string) -> int:
+    if not is_digits(s):
+        return -1
+    if len(s) > 15:
+        return HUGE_POS
+    return strings.parse_int(s)
+
+# Resolve a Range header value against a known file length. `flen` must be the
+# real length (io.size); pass -1 when it is unknown and every range becomes
+# RANGE_NONE, because a range cannot be checked -- let alone clamped -- without
+# it. Returning NONE there is the fail-safe direction: the client gets the whole
+# file, which is always a correct answer to a range request.
+#
+# The three forms, and the fourth this server refuses:
+#
+#   bytes=A-B   both ends, both INCLUSIVE. B is clamped to the last byte, so
+#               `bytes=0-999999` on a 500-byte file is 206 of all 500 bytes and
+#               NOT a 416 -- the range overlaps the file, so it is satisfiable.
+#               B < A is not a range at all: RFC 7233 2.1 calls that byte-range-
+#               spec invalid, and an invalid one makes the whole header ignored.
+#   bytes=A-    open-ended: A to the last byte.
+#   bytes=-N    SUFFIX: the last N bytes, so it is the only form whose START
+#               depends on the length. N larger than the file is the whole file
+#               (RFC 7233 2.1 says so outright). N == 0 asks for nothing and is
+#               unsatisfiable, which is a 416 rather than an empty 206.
+#   A,B         multipart. Out of scope by decision -- a multipart/byteranges
+#               body is a second serialization format, not a bigger parser --
+#               and answered 200 with the whole file, which is what the RFC
+#               permits and what the README records.
+fn parse_range(v: string, flen: int) -> Rng:
+    if flen < 0:
+        return Rng(RANGE_NONE, 0, 0)           # no length: cannot resolve one
+    if not ci_prefix(v, "bytes="):
+        return Rng(RANGE_NONE, 0, 0)           # absent, or a unit we do not know
+    spec := v[6:len(v)]
+    if find(spec, ",") >= 0:
+        return Rng(RANGE_NONE, 0, 0)           # multipart, out of scope
+    d := find(spec, "-")
+    if d < 0:
+        return Rng(RANGE_NONE, 0, 0)
+    lhs := spec[0:d]
+    rhs := spec[d + 1:len(spec)]
+    if len(lhs) == 0:
+        n := parse_pos(rhs)
+        if n < 0:
+            return Rng(RANGE_NONE, 0, 0)       # "bytes=-" and "bytes=-x"
+        if n == 0 or flen == 0:
+            return Rng(RANGE_UNSAT, 0, 0)      # nothing to give
+        s := flen - n
+        if s < 0:
+            s = 0                              # a suffix longer than the file
+        return Rng(RANGE_OK, s, flen - 1)
+    a := parse_pos(lhs)
+    if a < 0:
+        return Rng(RANGE_NONE, 0, 0)
+    if len(rhs) == 0:
+        if a >= flen:
+            return Rng(RANGE_UNSAT, 0, 0)      # also catches flen == 0
+        return Rng(RANGE_OK, a, flen - 1)
+    b := parse_pos(rhs)
+    if b < 0:
+        return Rng(RANGE_NONE, 0, 0)
+    if b < a:
+        return Rng(RANGE_NONE, 0, 0)           # invalid spec -> ignore the header
+    if a >= flen:
+        return Rng(RANGE_UNSAT, 0, 0)
+    e := b
+    if e > flen - 1:
+        e = flen - 1                           # clamp, do NOT reject
+    return Rng(RANGE_OK, a, e)
 
 # Microseconds as "1.234ms", for the log line.
 fn fmt_ms(us: int) -> string:
@@ -245,6 +382,8 @@ fn explain(status: int) -> string:
         return "This server is read-only. Use GET or HEAD."
     if status == 408:
         return "The request was not completed before the idle timeout expired."
+    if status == 416:
+        return "The requested byte range lies outside this file."
     if status == 431:
         return "The request headers exceeded this server's limit."
     return "The server could not complete the request."
@@ -392,6 +531,16 @@ fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> Result(int
     # deliberately never learns -- it does not open the file). Run the HEAD arm on
     # a 304 and it stamps `Content-Length: 0`, the one value that rule forbids.
     # A bodyless response has an empty body already, so there is nothing to strip.
+    #
+    # A HEAD CARRYING A RANGE is the third case and it needs NO third rule, which
+    # is the point of stating it here. 206 is not bodyless, so this arm runs and
+    # reports len(out.body) -- and out.body is the SLICE, because the 206 was
+    # built with the slice as its body. So a HEAD with `Range: bytes=0-99` gets
+    # 206, the Content-Range of the slice, `Content-Length: 100` and no bytes:
+    # exactly the head its GET would have produced, which is what HEAD means.
+    # The alternative -- skipping the pread on HEAD and setting the length by
+    # arithmetic -- would be a second, unexercised way to compute the number this
+    # server's whole Range feature turns on.
     if head_only and not httpd.bodyless(out.status):
         out = httpd.with_header(out, "Content-Length", str(len(out.body)))
         out = httpd.with_body(out, to_bytes(""))
@@ -586,22 +735,108 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                             r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
                             r = httpd.with_header(r, "Cache-Control", "no-cache")
                         else:
-                            # io.read_bytes is a Result now, so the read has an answer
-                            # for a file that vanished (or turned out to be a
-                            # directory) between resolve() and here. The empty `bytes`
-                            # it used to return was served as a 0-byte 200 --
-                            # indistinguishable from a real empty file, and wrong for
-                            # both.
-                            match io.read_bytes(rt.file):
-                                Ok(body):
-                                    r = httpd.response(200, body)
-                                    r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
-                                    r = httpd.with_header(r, "Cache-Control", "no-cache")
-                                    if lm >= 0:
-                                        r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                            # THE RANGE, and it is DELIBERATELY INSIDE THIS ELSE.
+                            # RFC 7232 6 orders the two: a conditional that
+                            # resolves to 304 is evaluated BEFORE Range, and a
+                            # 304 wins -- the client is being told "what you
+                            # hold is current", which answers a request for part
+                            # of it as completely as a request for all of it.
+                            # Sending 206 there would hand back bytes the client
+                            # already has AND drop the 304's promise. Nesting is
+                            # what enforces the order; a flat `elif` chain on
+                            # (ims, range) would let the two race on edit.
+                            #
+                            # The length comes from io.size -- ONE stat(2), no
+                            # read. This is the whole reason phase 6 exists: all
+                            # three forms and the 416 need LEN before they know
+                            # what to read, and `len(io.read_bytes(p))` would
+                            # allocate the file to serve a kilobyte of it.
+                            flen := -1
+                            match io.size(rt.file):
+                                Ok(sz):
+                                    flen = sz
                                 Err(e):
-                                    st = 404
-                                    r = error_response(404)
+                                    flen = -1
+                            rg := parse_range(httpd.header(req, "range"), flen)
+                            if rg.kind == RANGE_UNSAT:
+                                # No byte of the requested range exists. The
+                                # unsatisfied-range form of Content-Range names
+                                # the length and nothing else, which is how the
+                                # client learns what it should have asked for.
+                                st = 416
+                                r = error_response(416)
+                                r = httpd.with_header(r, "Content-Range", "bytes */" + str(flen))
+                                if lm >= 0:
+                                    r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                            elif rg.kind == RANGE_OK:
+                                # end is INCLUSIVE, so the count is +1. Reading
+                                # end - start is the off-by-one this comment
+                                # exists to prevent, and it is one byte short of
+                                # the Content-Range this same arm advertises.
+                                match io.read_at(rt.file, rg.start, rg.end - rg.start + 1):
+                                    Ok(part):
+                                        if len(part) == 0:
+                                            # The file shrank between io.size and
+                                            # the pread. Not reachable from a
+                                            # correct client, but the honest
+                                            # answer is the one for "no such
+                                            # bytes", not a 206 describing an
+                                            # empty slice.
+                                            st = 416
+                                            r = error_response(416)
+                                            r = httpd.with_header(r, "Content-Range", "bytes */" + str(flen))
+                                        else:
+                                            # Content-Range reports what was
+                                            # ACTUALLY read, not what was asked
+                                            # for: a short read (the same shrink
+                                            # race, partway) must not be
+                                            # described as the full slice, or the
+                                            # client stitches a hole into the file
+                                            # it is reassembling.
+                                            st = 206
+                                            last := rg.start + len(part) - 1
+                                            r = httpd.response(206, part)
+                                            r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                                            r = httpd.with_header(r, "Cache-Control", "no-cache")
+                                            r = httpd.with_header(r, "Accept-Ranges", "bytes")
+                                            r = httpd.with_header(r, "Content-Range",
+                                                                  "bytes " + str(rg.start) + "-" + str(last)
+                                                                  + "/" + str(flen))
+                                            if lm >= 0:
+                                                r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                                    Err(e):
+                                        st = 404
+                                        r = error_response(404)
+                            else:
+                                # io.read_bytes is a Result now, so the read has an answer
+                                # for a file that vanished (or turned out to be a
+                                # directory) between resolve() and here. The empty `bytes`
+                                # it used to return was served as a 0-byte 200 --
+                                # indistinguishable from a real empty file, and wrong for
+                                # both.
+                                match io.read_bytes(rt.file):
+                                    Ok(body):
+                                        r = httpd.response(200, body)
+                                        r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                                        r = httpd.with_header(r, "Cache-Control", "no-cache")
+                                        # ADVERTISED, and only on the two responses
+                                        # that describe this file's bytes. RFC 7233
+                                        # 2.3 says a server that supports ranges
+                                        # SHOULD send it, and the point is that a
+                                        # resuming client can see it WITHOUT
+                                        # spending a probe request to find out --
+                                        # which is the only way to learn otherwise.
+                                        # Not on 304: RFC 7232 4.1 lists what a 304
+                                        # should carry and this is not on it, and a
+                                        # 304 describes no representation. Not on an
+                                        # error page either -- the ranges of a
+                                        # generated 404 body are of no use to anyone.
+                                        r = httpd.with_header(r, "Accept-Ranges", "bytes")
+                                        if lm >= 0:
+                                            r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                                    Err(e):
+                                        st = 404
+                                        r = error_response(404)
                     elif st == 301:
                         r = redirect_response(rt.location)
                     nb := len(r.body)

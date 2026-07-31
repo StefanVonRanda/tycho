@@ -533,7 +533,7 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   The new `src/tychoc.c@ffi_scalar_type` ref above was written in the `path@SYMBOL`
   form from the start, so it cannot drift when `src/tychoc.c` next moves.
 
-- [ ] **Phase 4 — `Range` and `206`**
+- [x] **Phase 4 — `Range` and `206`**
   - Scope: `corelib/httpd/httpd.ty`, `server/main.ty`, `server/run.sh`.
   - `Range: bytes=A-B`, `bytes=A-` and `bytes=-N` (suffix) are the three forms
     worth supporting. A syntactically invalid range is `200` with the whole file;
@@ -545,6 +545,199 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
     against a slice of the file on disk, not by length alone — plus the `416` and
     the invalid-range-is-200 cases.
   - Verify: `make -s server-check`, the 10-run loop, `make test`.
+
+  **Evidence (2026-07-31).**
+
+  *Where the parse lives, and the three-valued answer that is the whole design.*
+  `server/main.ty@parse_range` takes the header value **and the file length** and
+  returns `server/main.ty@Rng` — `kind`, `start`, `end`. **Three outcomes, not
+  two**, and every pairwise conflation of them is a wire-visible bug:
+  `RANGE_NONE` is "there is no usable range here", which is a **200 with the
+  whole file**; `RANGE_OK` is a satisfiable slice; `RANGE_UNSAT` is a **416**.
+  The length is a parameter rather than something the caller applies afterwards
+  because satisfiability is not a property of the header — `bytes=-64` has no
+  start until the length is known, and `bytes=900-` is a 206 on a 1 KB file and
+  a 416 on a 500-byte one. Splitting "parse" from "resolve" would mean two
+  functions that are each wrong alone.
+
+  *The parse rules, in the order they are applied.*
+
+  | input | answer | why |
+  |---|---|---|
+  | length unknown (`io.size` failed) | NONE → 200 | a range cannot be checked, let alone clamped, without it |
+  | not `bytes=` (absent, or `items=0-9`) | NONE → 200 | RFC 7233 §2.1: ignore a unit you do not understand |
+  | `bytes=0-99,200-299` | NONE → 200 | multipart, out of scope by decision |
+  | `bytes=A-B`, `B >= A`, `A < LEN` | OK, `A`..`min(B, LEN-1)` | **inclusive at BOTH ends**; B past EOF is CLAMPED, not refused |
+  | `bytes=A-B`, `B < A` | NONE → 200 | RFC 7233 §2.1 calls the spec invalid, so the header is ignored |
+  | `bytes=A-`, `A < LEN` | OK, `A`..`LEN-1` | open-ended |
+  | `bytes=A-` / `bytes=A-B`, `A >= LEN` | UNSAT → 416 | first-byte-pos at or past EOF |
+  | `bytes=-N`, `0 < N`, `LEN > 0` | OK, `max(0, LEN-N)`..`LEN-1` | suffix; `N > LEN` is the whole file, per RFC 7233 §2.1 |
+  | `bytes=-0` | UNSAT → 416 | asks for nothing; an empty 206 would be a lie |
+  | any range, `LEN == 0` | UNSAT → 416 | `Content-Range: bytes */0` |
+  | non-digits anywhere (`bytes=abc`, `bytes= 0-9`, `bytes=0x10-`, `bytes=1-2-3`) | NONE → 200 | the grammar is `1*DIGIT` and nothing else |
+
+  The unit is compared case-insensitively (`server/main.ty@ci_prefix`) because a
+  range unit is a **token** (RFC 7233 §2.2). `server/main.ty@parse_pos` reports a
+  digit run longer than 15 characters as `HUGE_POS` (1e15) rather than handing it
+  to `strings.parse_int`: a Range header is attacker-controlled,
+  `bytes=0-99999999999999999999999999` costs nothing to send, and past ~19 digits
+  the value does not fit an int. `HUGE_POS` is larger than any file this program
+  can open, so it lands in **exactly the arm the true value would have** — 416 as
+  a first-byte-pos, clamped as a last-byte-pos. Both are asserted.
+
+  *Bytes are never read to learn a length, which is what phases 3 and 6 bought.*
+  The serve path is `io.size` (one `stat(2)`) then `io.read_at` (one `pread(2)`)
+  — **never `read_bytes`**. A 416 opens nothing at all. Phase 6's brief asked
+  which way this phase would go and this is it, unchanged from what phase 6
+  predicted.
+
+  *The off-by-one, named in the code and pinned by its own assertion.*
+  `bytes=A-B` is **inclusive at both ends**, so the count is `end - start + 1`.
+  The suite asserts `bytes=0-0` is **one** byte with body `disk[0:1]`, which is
+  the case that separates the two: a server computing `end - start` sends 99
+  plausible-looking bytes for `bytes=0-99` and **zero** here.
+
+  *Content-Range reports what was READ, not what was asked for.* `last` is
+  computed from `len(part)` after the pread, not from `rg.end`. The `io.size`
+  → `io.read_at` window is racy in one direction (the file shrinks), and a short
+  read described as the full slice makes a client reassembling a download stitch
+  a hole into it. A read that comes back **empty** becomes a 416 rather than an
+  empty 206 — by then no byte of the requested range exists, which is what 416
+  means.
+
+  ***Interaction 1 — `Range` + `If-Modified-Since`: the 304 wins, and nesting is
+  what enforces it.*** RFC 7232 §6 orders the two, evaluating the conditional
+  before `Range`. The range work is **inside the `else` of the 304 test** in
+  `server/main.ty@serve_conn`, not in a flat `elif` chain over `(ims, range)` —
+  a flat chain leaves the order as a property of statement sequence that the next
+  edit can silently invert, where nesting makes it structural. A 206 there would
+  hand back bytes the client already holds **and** drop the 304's promise that
+  what it holds is current. Four assertions pin it (304 status, no body, no
+  `Content-Range`, no `Accept-Ranges`), and two more pin the converse — the same
+  request with a stamp one second older is a **206**, so the ordering is not
+  implemented as "a Range suppresses ranges whenever a conditional is present".
+  Falsified by mutant D.
+
+  ***Interaction 2 — `Range` + `HEAD`: a third bodyless case that needs no third
+  rule, which is the finding.*** Phase 2 found HEAD and 304 suppress bodies for
+  different reasons and split them with `if head_only and not
+  httpd.bodyless(out.status)`. A 206 is **not** bodyless, so it takes the HEAD
+  arm, and that arm reports `len(out.body)` — which is the **slice**, because the
+  206 is built with the slice as its body. So `HEAD` + `Range: bytes=0-99` gets
+  206, the same `Content-Range`, `Content-Length: 100` and no bytes: exactly the
+  head its GET would have produced. **The guard holds unchanged and no code was
+  added for this case.** The alternative considered and rejected — skip the
+  `pread` on HEAD and set the length by arithmetic — would be a second,
+  never-exercised way to compute the one number this whole feature turns on.
+
+  *`Accept-Ranges: bytes` is sent, on exactly two responses.* **200 for a file
+  and 206.** RFC 7233 §2.3 says a server supporting ranges SHOULD send it, and
+  the reason it is worth the 22 bytes is that it is the only way a resuming
+  client learns the answer **without spending a probe request** to find out.
+  **Not on 304** — RFC 7232 §4.1 lists what a 304 should carry and this is not on
+  it, and a 304 describes no representation. **Not on an error page**, whose
+  generated body has no ranges anyone wants. Both absences are asserted, so this
+  is a pinned decision and not an oversight.
+
+  *The corelib half.* `corelib/httpd/httpd.ty@reason_phrase` gained **206
+  Partial Content** and **416 Range Not Satisfiable** — RFC 7233 §4.4's spelling,
+  not RFC 2616's longer "Requested Range Not Satisfiable". Without them both
+  rendered as the placeholder `"Status"`, the same defect phase 2 fixed for 304.
+  `corelib/httpd/httpd.ty@bodyless` is **unchanged and correct**: neither 206 nor
+  416 is bodyless, and both describe a real body.
+
+  *The assertions assert BYTES.* `server/run.sh` went **90 → 173 assertions**,
+  83 new. Every 206 case compares the body against the same slice taken from the
+  file on disk with python's own slicing — `Content-Length: 100` is satisfied by
+  a server returning the **wrong** hundred bytes, and three of the mutants below
+  do exactly that. `img/logo.png` is the subject because it is **binary**: a
+  wrong offset into a text file still looks like text. One new fixture, a
+  zero-length `empty.txt` in the copied document root, for the case a repo of
+  real assets cannot carry — every range over a 0-byte file is unsatisfiable and
+  `bytes */0` is the only thing a 416 can say about it.
+
+  *Pre-change failure, and the mutants for what it structurally cannot reach.*
+  **45 of the 83 new assertions fail on the pre-change binary** (`de3fccb`, a
+  `git worktree`, the new `server/run.sh` and the current `./tychoc` copied in;
+  the run scores 128 ok / 45 FAIL against 173 / 0 here). The rest cannot, for
+  phase 2's structural reason: a server that ignores `Range` trivially satisfies
+  "200 with the whole body". So seven mutants of the **finished** code, each one
+  edit, each verified green in that worktree before mutation:
+
+  | variant | the bug it embodies | reddens |
+  |---|---|---|
+  | pre-change `de3fccb` | feature absent | 45 of 83 |
+  | A: `rg.end - rg.start` | off-by-one on the inclusive end | 24 |
+  | B: suffix returns `(0, n-1)` | `bytes=-N` read from the FRONT | 3 |
+  | C: explicit `Content-Length: str(flen)` on the 206 | length describes the FILE, not the slice | 5 |
+  | D: 304 also requires no `Range` header | `Range` outranks the conditional | 4 |
+  | E: `Accept-Ranges` in `emit` | advertised on every response, 304 included | 3 |
+  | F: `RANGE_NONE` → `RANGE_UNSAT` after the unit check | an unusable range REJECTED, not ignored | 20 |
+  | G: 206 arm drops `Content-Type` | a 206 that does not say what it is | 1 |
+
+  **77 of the 83 redden under at least one variant.** Mutant B reddening only 3
+  is not weakness: those three are `bytes=-64`'s `Content-Range`, its body
+  against `disk[-64:]`, and its body **not** equal to `disk[0:64]` — the last
+  written precisely so that reading the suffix from the wrong end cannot pass by
+  looking plausible.
+
+  **The six that no variant can falsify are labelled as controls in
+  `server/run.sh`**, on phase 2's precedent that a control and a proof look
+  identical from the pass line:
+
+  - **`200 unusable Range (no unit)` and `(unknown unit)`**, both halves of each.
+    A header whose unit this server does not recognise leaves `parse_range` at
+    the **same** `return RANGE_NONE` as a request with no `Range` at all — they
+    are one input, so no mutant can separate them from an ordinary 200. This is
+    also why mutant F is applied only *after* the unit check: mutating that
+    return turns every plain GET in the suite into a 416.
+  - **`HEAD 206 no body`** — HEAD suppresses a body on its own, exactly phase 2's
+    `HEAD 304 no body`. What it does prove is that the 206 did not slip past the
+    HEAD arm, which its `Content-Length` assertion cannot say alone.
+  - **`200 the 0-byte file itself`** — a control on the fixture, so that the two
+    416s over `empty.txt` are read against a file that is served correctly
+    without a range.
+
+  *Gates, all foreground, one command each.*
+
+  ```
+  $ make -s server-check
+  server: OK                                  (173 ok, 0 FAIL; was 90)
+
+  $ for i in $(seq 1 10); do make -s server-check; done
+  run 1..10: server: OK  ok=173 FAIL=0        (10/10, no flake)
+
+  $ make test
+  passed: 560   failed: 0
+  all green
+
+  $ python3 scripts/check_citations.py
+  citation check: ok
+  ```
+
+  560 before, 560 after — expected, for the reason phases 1, 3 and 6 recorded:
+  nothing was added under `tests/`, and this gate is here to prove the
+  `corelib/httpd/` change broke no compiler or golden behaviour.
+
+  *Citation drift: the anchored refs held, and the BARE ones are the finding.*
+  Phase 2 grew `server/main.ty` by ~110 lines and broke **32** refs; this phase
+  grew it by ~200 and `python3 scripts/check_citations.py` was **green on the
+  first run**. That is phase 2's `path@SYMBOL` conversion paying off exactly as
+  it predicted, and it is also **not the whole story** — phase 2 wrote down that
+  a bare **range** is never content-checked, so it rots silently. Two such ranges
+  were phase 2's own repair, verified by reading at that commit:
+  `server/run.sh`'s header cited `server/main.ty:812-816` for the bind and
+  `server/main.ty:846-850` for the banner. My insertions moved both. (Both
+  numbers are reproduced whole, which phases 1–3 could not do with theirs. The
+  difference is the anchor: theirs carried one, and an anchor is a live promise
+  about *today's* tree that would have reddened this block. These two are bare
+  ranges — bounds-checked and nothing else — so quoting them asserts nothing
+  about the current file, which is the same property that let them rot in the
+  first place. They are a record of what the header said at `de3fccb`, so they
+  stay.) Repaired the prescribed way — not repointed — to
+  `server/main.ty@port_of` and `server/main.ty@banner`, which survive the next
+  insertion by construction. **No sweep**; only the refs this phase broke were
+  touched.
 
 - [ ] **Phase 5 — spec, README, and the sweep**
   - Scope: `docs/spec/` for the two new `core:io` calls,
@@ -728,6 +921,52 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   of three. Whoever writes phase 5's instructions should say "three", and
   `corelib/io/io.ty@size` is the one that is easy to miss because it arrived after
   the sentence was written.
+
+- [ ] **Phase 7 — the bare ranges into `server/main.ty` that were ALREADY wrong
+  before this plan started**
+  - Found by phase 4 while repairing its own two, and **not absorbed by it**:
+    phase 4's scope was three files, these reach six, and none of them is drift
+    phase 4 caused. Recorded here rather than swept, which is what CLAUDE.md
+    prescribes.
+  - **This is not the hand sweep CLAUDE.md has declined three times.** That
+    refusal is about converting refs that are *correct*. Every ref below was
+    verified **wrong at `de3fccb`**, before this plan touched `server/main.ty`,
+    by reading the cited line out of that commit — `git show de3fccb:server/main.ty`
+    piped through `sed -n '<N>p'`, one ref at a time. Not one of them names what
+    its prose says it names; they are all somewhere inside an unrelated comment
+    block. So this is a set of **live pointers that are already false**, and the
+    gate is structurally unable to say so.
+  - **Why the gate is green over them, which is the reusable finding.** All are
+    bare **ranges** or bare single refs with no `@token`. `scripts/check_citations.py`
+    bounds-checks those and nothing more, so a ref stays green as long as the
+    file is long enough — and `server/main.ty` only ever gets longer. Phase 2
+    wrote this down after being caught by it twice in one phase; phase 4 was
+    caught by the same two refs a third time. **The third occurrence is what
+    makes this worth a phase.**
+  - Verified stale (the cited line, in that commit, is not what the prose
+    claims): `server/README.md:57` and `server/README.md:197` for the stopped
+    line, `server/README.md:59` for `log_req`, `server/README.md:182` for the
+    accept-loop `Err` arm, `server/README.md:260` for the banner, `Makefile:250`
+    for the banner, `corelib/signal/signal_shim.c:97` for the accept/serve/
+    retire/close sequence, `server/run.sh` at three places for `log_req`,
+    `worker` and the `bad_len` refusal, `server/main.ty:617` for its own
+    idle-expiry arm, and `FRICTION.md` at five places. **Count them again before
+    starting** — the list above is what one grep found on 2026-07-31 and phase 5
+    may move `server/README.md` under its own feet.
+  - Repair by **naming the construct**, not by repointing: `server/main.ty@stopped`,
+    `@log_req`, `@worker` and so on. A repointed number is wrong again the next
+    time anyone adds a paragraph, which is precisely the history above.
+  - **`FRICTION.md`'s five are the exception and must be left alone** unless read
+    individually: that file is edited by hand, several of its entries are
+    struck-through closed records quoting line counts as *evidence for a
+    decision*, and CLAUDE.md protects those numbers explicitly.
+  - Scope: whichever of the files above still hold a stale ref. Not
+    `scripts/check_citations.py` — making bare ranges content-checkable is a
+    different, larger question and would redden the whole tree at once.
+  - Verify: `python3 scripts/check_citations.py` (<1s) and
+    `sh scripts/check_links.sh`. **Not `make test`, not `make ci`** — comments and
+    Markdown cannot affect a compiled artifact. `make -s server-check` only if
+    `server/run.sh` is touched.
 
 ## Out of scope
 

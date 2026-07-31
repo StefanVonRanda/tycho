@@ -7,8 +7,8 @@
 # So the pattern is different and this header says what it is, because nothing
 # else in the tree does it.
 #
-#   readiness   server/main.ty:812-816 binds and asks the kernel for the real
-#               port (net.port_of); server/main.ty:846-850 prints a banner ON STDERR:
+#   readiness   server/main.ty@port_of binds and asks the kernel for the real
+#               port (net.port_of); server/main.ty@banner prints it ON STDERR:
 #                 tycho-httpd: serving <root> on http://<host>:<port>/ workers=N idle=Nms
 #               We start with `--port 0` -- documented at server/main.ty@pick as
 #               "0 = pick free" -- redirect stderr to a file, and poll that file
@@ -63,6 +63,11 @@ fi
 cp -R server/www "$T/www" || exit 2
 mkdir -p "$T/www/emptydir" "$T/www/.hidden"
 : > "$T/www/.hidden/secret.txt"
+# A zero-length file, for the one Range case a repo of real assets cannot carry:
+# EVERY range over a 0-byte file is unsatisfiable, and `Content-Range: bytes */0`
+# is the only thing a 416 can say about it. git stores the file happily enough,
+# but it belongs beside emptydir -- both exist to make an empty thing testable.
+: > "$T/www/empty.txt"
 
 "$T/tycho-httpd" --root "$T/www" --host 127.0.0.1 --port 0 \
                  --workers 4 --idle-ms 500 >/dev/null 2>"$T/srv.err" &
@@ -246,6 +251,188 @@ eq("HEAD 304 no body",           split(r)[1], b"")
 eq("HEAD 304 no Content-Length", header(r, "Content-Length"), None)
 eq("HEAD 200 still reports the file's Content-Length",
    header(get(b"/style.css", method=b"HEAD"), "Content-Length"), str(len(css)))
+
+# ---- Range: the three forms, the 416, and the two interactions --------------
+# EVERY CASE HERE COMPARES BYTES, never a length on its own. `Content-Length:
+# 100` is satisfied by a server returning the WRONG hundred bytes -- an
+# off-by-one on the inclusive end, a suffix read from the front, a slice taken
+# from the wrong file -- and each of those is a real mutant of this feature. So
+# the body is compared against the same slice sliced out of the file on disk,
+# and the length assertions are there only to catch a Content-Length that
+# describes the whole file while the body is the slice (or the reverse).
+#
+# logo.png, because it is BINARY: a wrong offset into a text file still looks
+# like text, and a diff of two HTML fragments is easy to squint past.
+RN = len(disk)                        # img/logo.png, read at the top of this file
+
+def rng(v, target=b"/img/logo.png", method=b"GET", extra=b""):
+    return get(target, method=method, extra=b"Range: " + v + b"\r\n" + extra)
+
+# --- form 1: bytes=A-B, inclusive at BOTH ends.
+r = rng(b"bytes=0-99")
+eq("206 bytes=0-99 status",           status(r), "HTTP/1.1 206 Partial Content")
+eq("206 bytes=0-99 Content-Range",    header(r, "Content-Range"), "bytes 0-99/%d" % RN)
+eq("206 bytes=0-99 Content-Length is the SLICE not the file",
+   header(r, "Content-Length"), "100")
+eq("206 bytes=0-99 body == disk[0:100]", split(r)[1], disk[0:100])
+eq("206 bytes=0-99 Content-Type is still the file's", header(r, "Content-Type"), "image/png")
+eq("206 bytes=0-99 Accept-Ranges",    header(r, "Accept-Ranges"), "bytes")
+
+# THE OFF-BY-ONE, pinned on its own. `bytes=0-0` is ONE byte, because A-B is
+# inclusive at both ends. A server computing end - start sends zero bytes here
+# and 99 in the case above -- and the case above would still show a plausible
+# body, where this one cannot.
+r = rng(b"bytes=0-0")
+eq("206 bytes=0-0 is ONE byte (inclusive end)", header(r, "Content-Length"), "1")
+eq("206 bytes=0-0 body == disk[0:1]",           split(r)[1], disk[0:1])
+eq("206 bytes=0-0 Content-Range",               header(r, "Content-Range"), "bytes 0-0/%d" % RN)
+
+# An INTERIOR slice: neither end is a boundary of the file, so a server that
+# ignores `start` and serves from 0 fails here and passes bytes=0-99.
+r = rng(b"bytes=1000-1099")
+eq("206 bytes=1000-1099 body == disk[1000:1100]", split(r)[1], disk[1000:1100])
+eq("206 bytes=1000-1099 Content-Range", header(r, "Content-Range"), "bytes 1000-1099/%d" % RN)
+
+# B past EOF is CLAMPED, not refused: the range overlaps the file, so it is
+# satisfiable, and the Content-Range reports what was actually sent.
+r = rng(b"bytes=%d-999999" % (RN - 10))
+eq("206 bytes=A-B with B past EOF clamps", split(r)[1], disk[RN - 10:])
+eq("206 clamped Content-Range names the real end",
+   header(r, "Content-Range"), "bytes %d-%d/%d" % (RN - 10, RN - 1, RN))
+
+# The whole file, asked for as a range, is a 206 and not a 200.
+r = rng(b"bytes=0-%d" % (RN - 1))
+eq("206 bytes=0-LAST status", status(r), "HTTP/1.1 206 Partial Content")
+eq("206 bytes=0-LAST body == whole file", split(r)[1], disk)
+
+# --- form 2: bytes=A-, open-ended.
+r = rng(b"bytes=%d-" % (RN - 50))
+eq("206 bytes=A- status",         status(r), "HTTP/1.1 206 Partial Content")
+eq("206 bytes=A- Content-Length", header(r, "Content-Length"), "50")
+eq("206 bytes=A- Content-Range",  header(r, "Content-Range"),
+   "bytes %d-%d/%d" % (RN - 50, RN - 1, RN))
+eq("206 bytes=A- body == disk[-50:]", split(r)[1], disk[RN - 50:])
+eq("206 bytes=0- is the whole file, as a 206", split(rng(b"bytes=0-"))[1], disk)
+
+# --- form 3: bytes=-N, the LAST N bytes. The only form whose START depends on
+# the length, and the one a naive implementation reads from the FRONT.
+r = rng(b"bytes=-64")
+eq("206 bytes=-64 status",         status(r), "HTTP/1.1 206 Partial Content")
+eq("206 bytes=-64 Content-Length", header(r, "Content-Length"), "64")
+eq("206 bytes=-64 Content-Range",  header(r, "Content-Range"),
+   "bytes %d-%d/%d" % (RN - 64, RN - 1, RN))
+eq("206 bytes=-64 body == the LAST 64 bytes", split(r)[1], disk[RN - 64:])
+# ...and it is NOT the first 64, which is the whole point of the case above.
+eq("206 bytes=-64 body != the FIRST 64 bytes", split(r)[1] == disk[0:64], False)
+# A suffix longer than the file is the whole file (RFC 7233 2.1), not a 416.
+r = rng(b"bytes=-999999")
+eq("206 bytes=-N with N > length is the whole file", split(r)[1], disk)
+eq("206 bytes=-N oversize Content-Range", header(r, "Content-Range"), "bytes 0-%d/%d" % (RN - 1, RN))
+
+# --- 416: syntactically fine, but no such bytes.
+for label, v in [("first-byte-pos == length", b"bytes=%d-" % RN),
+                 ("first-byte-pos past EOF",  b"bytes=999999-1000000"),
+                 ("zero-length suffix",       b"bytes=-0")]:
+    r = rng(v)
+    eq("416 %s status" % label, status(r), "HTTP/1.1 416 Range Not Satisfiable")
+    eq("416 %s Content-Range is bytes */LEN" % label,
+       header(r, "Content-Range"), "bytes */%d" % RN)
+    eq("416 %s body is not the file" % label, split(r)[1] == disk, False)
+
+# A 0-byte file: every range over it is unsatisfiable, and */0 is all a 416 can
+# say. The empty file also proves the plain path still works on it.
+eq("416 any range over a 0-byte file", status(rng(b"bytes=0-", target=b"/empty.txt")),
+   "HTTP/1.1 416 Range Not Satisfiable")
+eq("416 over a 0-byte file says bytes */0",
+   header(rng(b"bytes=0-", target=b"/empty.txt"), "Content-Range"), "bytes */0")
+# A CONTROL: no mutation of the range code can redden this, and a server with no
+# Range support passes it. It is here so that the two 416s above are read against
+# a file that IS served correctly without one -- otherwise "416 on empty.txt"
+# would also pass for a server that cannot serve empty.txt at all.
+eq("200 the 0-byte file itself", header(get(b"/empty.txt"), "Content-Length"), "0")
+
+# --- an unusable Range is IGNORED: 200, whole file, never an error. RFC 7233
+# 2.1. That includes the multipart form, which this server does not implement
+# and answers with everything rather than with a 416 or a 400.
+#
+# The first two are CONTROLS and the rest are proofs, which is not visible from
+# the pass line. A header whose unit this server does not recognise is, by
+# construction, the same input as NO Range header -- both leave parse_range at
+# the same `return RANGE_NONE` -- so no mutant can separate them from an
+# ordinary 200. The other ten reach the byte-range grammar and redden under a
+# server that REJECTS what it cannot parse instead of ignoring it, which is the
+# usual misreading of RFC 7233 2.1 and the bug these ten exist to catch.
+for label, v in [("no unit",           b"0-99"),
+                 ("unknown unit",      b"items=0-99"),
+                 ("empty spec",        b"bytes="),
+                 ("no digits",         b"bytes=abc"),
+                 ("bare dash",         b"bytes=-"),
+                 ("no dash",           b"bytes=99"),
+                 ("last < first",      b"bytes=99-0"),
+                 ("negative first",    b"bytes=-5-9"),
+                 ("trailing garbage",  b"bytes=1-2-3"),
+                 ("leading space",     b"bytes= 0-99"),
+                 ("hex",               b"bytes=0x10-0x20"),
+                 ("MULTIPART",         b"bytes=0-99,200-299")]:
+    r = rng(v)
+    eq("200 unusable Range (%s) status" % label, status(r), "HTTP/1.1 200 OK")
+    eq("200 unusable Range (%s) whole body" % label, split(r)[1], disk)
+
+# The range unit is a token, so its case is not significant.
+eq("206 BYTES=0-9 (unit is case-insensitive)",
+   status(rng(b"BYTES=0-9")), "HTTP/1.1 206 Partial Content")
+
+# A digit run too long to be a position is not a parse failure with a wild
+# value in it -- it lands in the arm the true number would have.
+eq("416 first-byte-pos of 26 digits (past any EOF)",
+   status(rng(b"bytes=99999999999999999999999999-")), "HTTP/1.1 416 Range Not Satisfiable")
+eq("206 last-byte-pos of 26 digits clamps to the file",
+   split(rng(b"bytes=0-99999999999999999999999999"))[1], disk)
+
+# --- INTERACTION 1: Range + If-Modified-Since. RFC 7232 6 evaluates the
+# conditional FIRST and a 304 wins -- the client is being told "what you hold is
+# current", which answers a request for part of it as fully as one for all of it.
+# A 206 here would hand back bytes the client already has and drop the 304.
+# style.css is the file with the pinned mtime, so LM is exact.
+r = get(b"/style.css", extra=b"If-Modified-Since: " + LM.encode() + b"\r\nRange: bytes=0-9\r\n")
+eq("304 outranks Range (conditional first) status", status(r), "HTTP/1.1 304 Not Modified")
+eq("304 outranks Range: no body",          split(r)[1], b"")
+eq("304 outranks Range: no Content-Range", header(r, "Content-Range"), None)
+eq("304 outranks Range: no Accept-Ranges", header(r, "Accept-Ranges"), None)
+# ...and when the conditional does NOT fire, the range still does. Same request,
+# a stamp one second older than the file.
+r = get(b"/style.css",
+        extra=b"If-Modified-Since: " + email.utils.formatdate(MT - 1, usegmt=True).encode()
+              + b"\r\nRange: bytes=0-9\r\n")
+eq("206 when the conditional does not fire", status(r), "HTTP/1.1 206 Partial Content")
+eq("206 with a stale If-Modified-Since serves the slice", split(r)[1], css[0:10])
+
+# --- INTERACTION 2: Range + HEAD. The head its GET would have produced: 206,
+# the same Content-Range, a Content-Length of the SLICE, and no bytes. This is a
+# third body-suppressing case beside HEAD-on-200 and 304, and it needs no third
+# rule in emit() -- 206 is not bodyless, so the HEAD arm reports the slice's
+# length exactly as it reports the file's on a 200.
+r = rng(b"bytes=0-99", method=b"HEAD")
+eq("HEAD 206 status",           status(r), "HTTP/1.1 206 Partial Content")
+eq("HEAD 206 Content-Range",    header(r, "Content-Range"), "bytes 0-99/%d" % RN)
+eq("HEAD 206 Content-Length is the slice", header(r, "Content-Length"), "100")
+# A CONTROL, labelled for the reason "HEAD 304 no body" above is: HEAD suppresses
+# a body on its own, so no mutation of the RANGE logic can redden this one. The
+# claim it looks like it carries -- that a 206 is a slice and not the file -- is
+# carried by the GET forms above, which redden on the pre-change binary and on
+# three mutants. What this line DOES prove is that the 206 did not slip past the
+# HEAD arm, which the Content-Length assertion beside it cannot say alone.
+eq("HEAD 206 no body",          split(r)[1], b"")
+eq("HEAD 416 status", status(rng(b"bytes=999999-", method=b"HEAD")),
+   "HTTP/1.1 416 Range Not Satisfiable")
+eq("HEAD 416 Content-Range", header(rng(b"bytes=999999-", method=b"HEAD"), "Content-Range"),
+   "bytes */%d" % RN)
+
+# Accept-Ranges is advertised on the two responses that describe this file's
+# bytes and on neither of the two that do not.
+eq("200 advertises Accept-Ranges", header(get(b"/style.css"), "Accept-Ranges"), "bytes")
+eq("304 does not advertise Accept-Ranges", header(ims(LM.encode()), "Accept-Ranges"), None)
+eq("404 does not advertise Accept-Ranges", header(get(b"/nope.txt"), "Accept-Ranges"), None)
 
 # ---- 301: a directory without the slash -------------------------------------
 r = get(b"/about")
@@ -469,7 +656,7 @@ chk "access log: every worker served (w1..w4)" "w1 w2 w3 w4 " "$workers"
 peers=$(sed -n 's/^w[0-9][0-9]* \([^ ]*\) .*/\1/p' "$T/srv.err" | sort -u | tr '\n' ' ')
 chk "access log: peer address on every line (net.peer_addr)" "127.0.0.1 " "$peers"
 
-for code in 200 301 400 403 404 405 408 431; do
+for code in 200 206 301 400 403 404 405 408 416 431; do
     n=$(grep -c " $code [0-9][0-9]* [0-9.]*ms" "$T/srv.err")
     if [ "$n" -gt 0 ]; then echo "  ok   access log: $n line(s) with status $code"
     else echo "  FAIL access log: no line with status $code"; fail=1; fi
