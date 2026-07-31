@@ -86,6 +86,11 @@ extern fn iox_read_file(path: string, status: inout int) -> bytes
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int
+# stat(2) again, for the field iox_stat_kind fetches and throws away. The status
+# keeps the return -- an epoch second cannot share a code space with 0..3 -- and
+# the payload takes the `inout`, the mirror of iox_read_file, where the `bytes`
+# payload must be the return so the status takes the `inout` instead.
+extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
 # mkdir(2) / remove(3), one entry each, in the same code space (plus FS_EXISTS).
 extern fn iox_make_dir(path: string) -> int
 extern fn iox_remove(path: string) -> int
@@ -136,6 +141,39 @@ fn is_dir(p: string) -> Result(bool, IoErr):
         return Ok(true)
     if k == RF_OK:
         return Ok(false)
+    if k == RF_MISS:
+        return Err(NotFound)
+    return Err(Failed)
+
+# When `p` was last modified, in whole seconds since the UNIX epoch -- the same
+# clock `now()` reads, so `now() - mtime(p)` is an age in seconds and
+# `datetime.from_unix` turns the value into a date directly.
+#
+#   Ok(secs)        stat(2) answered
+#   Err(NotFound)   nothing is there
+#   Err(Failed)     it is there and could not be stat'ed (no search permission on
+#                   a parent, a symlink loop, ...)
+#
+# Note which variant is ABSENT, for the same reason it is absent from is_dir: a
+# DIRECTORY IS Ok HERE, not Err(IsDir). A directory has a modification time and
+# stat(2) reports it; refusing to pass it up would be this module throwing away a
+# field the kernel already filled in, which is the exact defect this call exists
+# to fix. Err(IsDir) belongs to read_bytes, where the request really is
+# impossible to satisfy.
+#
+# WHOLE SECONDS. stat(2) carries nanoseconds on Linux and this drops them, on
+# purpose: an HTTP-date is whole seconds, `now()` is whole seconds, and there is
+# no caller in the tree that could use the rest. See iox_stat_mtime in
+# io_shim.c for the note on adding it if one appears.
+#
+# This is one stat(2) per call and it does NOT share the one is_dir/exists makes.
+# A caller doing both pays two; a conditional GET that answers 304 pays exactly
+# this one and never opens the file.
+fn mtime(p: string) -> Result(int, IoErr):
+    secs := 0
+    k := iox_stat_mtime(p, &secs)
+    if k == RF_OK:
+        return Ok(secs)
     if k == RF_MISS:
         return Err(NotFound)
     return Err(Failed)
