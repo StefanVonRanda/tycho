@@ -130,6 +130,11 @@ gmon.out
 .koka/
 # concurrency suite goldens (tests/conc/<name>.out) are tracked too
 !/tests/conc/*.out
+# the tycho-ar archiver's listing golden (tools/tycho-ar/expected.out) is tracked
+# too -- it is a recorded assertion, not a build artifact. Without this line the
+# broad `*.out` rule above swallows it silently and `make ar-check` fails on a
+# fresh clone with "no golden".
+!/tools/tycho-ar/*.out
 
 # Claude Code session state (locks, worktrees) — never publish
 /.claude/

@@ -26,7 +26,7 @@
 #
 # The two grammar lanes need the tree-sitter CLI, which is fetched with npx. When
 # it is unavailable (offline, no npx, nothing cached) they SKIP rather than fail
-# -- same call as Makefile:313@SKIPPED's "ASan lane SKIPPED for ilp32": a gate that
+# -- same call as Makefile:335@SKIPPED's "ASan lane SKIPPED for ilp32": a gate that
 # hard-fails without network access would be worse than no gate. The JSON lane
 # needs only python3, which scripts/ci.sh already depends on, so it always runs.
 # Override the CLI with e.g. TYCHO_TREE_SITTER='tree-sitter' if you have 0.25

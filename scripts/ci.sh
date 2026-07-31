@@ -121,6 +121,24 @@ make -s server-check
 step "[3d/13] make shim-check  (every corelib <pkg>_shim.c compiles standalone under -std=c11)"
 make -s shim-check
 
+# A sub-lane of 3 because it is a dogfood compared against a recorded golden,
+# which is what every leg of step 3 is. Numbered 3e, not 14: 2b/2c/2d/3b/3c/3d
+# are the existing convention for a sub-lane and the /13 denominator counts the
+# numbered steps. It sits here rather than beside tools-check at [9] because its
+# subject is a PROGRAM composing core:compress + sha256 + io + path + cli + sort
+# + strings, not the tooling's own quality -- and because it costs ~2s where 9
+# costs a minute.
+#
+# It closes a real hole rather than adding redundancy, and the hole is narrower
+# than "nothing covered it": step [9] tools-check sweeps every .ty in the tree and
+# runs `--emit-c` over each for its semantic-preservation leg, so tycho-ar failing
+# to COMPILE already reddened there. What no lane did was RUN it -- [3b]
+# entrypoints globs examples/*/ plus server/main.ty and never looks under tools/.
+# So before this step the archiver could stop being deterministic, stop round
+# tripping, or start extracting through `../`, and `make ci` stayed green.
+step "[3e/13] make ar-check  (tycho-ar: create twice byte-identical, t vs golden, diff -r round trip, damage and path traversal refused)"
+make -s ar-check
+
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
 

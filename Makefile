@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check ar-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -238,6 +238,28 @@ corelib-examples: tychoc
 # See scripts/shim_check.sh for why the flags differ from the build's.
 shim-check:
 	@sh scripts/shim_check.sh
+
+# ar-check: the gate for tycho-ar, the deterministic archiver in
+# tools/tycho-ar/. A batch program, so it gates with a golden the way the
+# examples/ dogfoods do rather than with a daemon harness the way server-check
+# does: build it, run it over a fixture the runner writes itself, and compare
+# `t`'s listing against a recorded golden. On top of the golden it asserts the
+# four properties an archiver cannot be trusted without -- create-twice
+# byte-identical, `diff -r` round trip empty, damage refused (flipped payload,
+# forged payload digest, sheared trailer), and a member path that escapes the
+# destination refused before the first write.
+#
+# It is the only lane that RUNS tycho-ar. Its compilation was already covered --
+# scripts/tools_check.sh sweeps every .ty in the tree and does `--emit-c` on each
+# for the formatter's semantic-preservation leg, so a syntax error there reddens
+# step [9] -- but scripts/entrypoints.sh globs examples/*/ plus server/main.ty and
+# never looks under tools/, and nothing anywhere executed the binary. So the
+# archiver could have stopped being deterministic, stopped round-tripping, or
+# started extracting through `../` with every gate green. ~2.4s, measured
+# 2026-07-31. In `make ci` as step [3e/13].
+# See tools/tycho-ar/run.sh.
+ar-check: tychoc
+	@sh tools/tycho-ar/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
