@@ -37,6 +37,12 @@ fn reinterp_ret(cs: [int]) -> string:
 fn nb(r: Result(bytes, io.IoErr)) -> int:
     return len(result.unwrap_or(r, to_bytes("")))
 
+# The same collapse, but keeping the CONTENT. read_at's fixture below writes the
+# file it reads, so its slices can be compared as letters rather than counted --
+# a wrong offset then prints the wrong letter instead of the right length.
+fn sl(r: Result(bytes, io.IoErr)) -> string:
+    return to_str(result.unwrap_or(r, to_bytes("")))
+
 # WHICH outcome, as a stable string. One arm per cause, since docs/internals/plan-friction-DONE.md phase 3;
 # this was `is_ok` + `err_or` plus three `e == io.X` comparisons, because
 # `Err(io.IsDir)` did not parse as a match arm. The old note here said this could
@@ -276,3 +282,50 @@ fn main():
     mtmiss := io.mtime("/tmp/tycho_corelib_io_absent.xyz")
     mtdir := io.mtime("/tmp")
     println(f"mtime_missing={mwhy(mtmiss)} mtime_dir={mwhy(mtdir)}")
+
+    # ---- read_at: pread(2) at an absolute offset -------------------------------
+    # Unlike mtime above, this CAN be asserted exactly: the fixture writes the file
+    # it reads, so every case below compares LETTERS, not just a length. 26 bytes,
+    # byte i == 'A'+i, so an off-by-one offset prints the wrong letter rather than
+    # the right count -- which a length-only assertion would pass.
+    alpha := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    rf := "/tmp/tycho_corelib_io_range.dat"
+    wrf := io.write(rf, alpha)
+    mid := io.read_at(rf, 5, 5)                  # FGHIJ -- an ordinary interior slice
+    whole := io.read_at(rf, 0, 26)               # the whole file, through the offset path
+    println(f"read_at=[{sl(mid)}] why={why(mid)} whole={b2i(wrf and sl(whole) == alpha)}")
+
+    # BOUNDARY 1 -- an offset PAST EOF is Ok with zero bytes, not an error. That is
+    # pread(2)'s own answer, and it is a complete one: the caller chose the offset,
+    # so this empty is not the ambiguous empty read_bytes was fixed for. Asserted at
+    # EOF exactly (26, the first offset with nothing at it) and far past it.
+    at_eof := io.read_at(rf, 26, 5)
+    past := io.read_at(rf, 1000, 5)
+    println(f"at_eof len={nb(at_eof)} why={why(at_eof)} past len={nb(past)} why={why(past)}")
+
+    # BOUNDARY 2 -- a length running PAST EOF is a SHORT READ: Ok, unpadded, and
+    # len() is how the caller learns how much it got. The letters matter here: the
+    # six returned must be the LAST six, not the first six.
+    short := io.read_at(rf, 20, 100)
+    println(f"short=[{sl(short)}] len={nb(short)} why={why(short)}")
+
+    # BOUNDARY 3 -- a NEGATIVE offset is Err(Failed) and never reaches pread(2); it
+    # is refused in the shim ahead of open(2), so no off_t width can sign-extend it
+    # into a wild read. A negative LENGTH is refused the same way. Neither gets its
+    # own IoErr variant: both are unreachable from correct code.
+    negoff := io.read_at(rf, -1, 5)
+    negn := io.read_at(rf, 0, -1)
+    println(f"negoff={why(negoff)} len={nb(negoff)} negn={why(negn)} len={nb(negn)}")
+
+    # A zero length is Ok(empty). And the case that matters once the length comes
+    # off the wire: a length far larger than the file allocates the FILE's remaining
+    # bytes, not the asked-for count. Without the clamp in iox_read_at this line is
+    # a one-terabyte malloc; with it, it reads 26 bytes and prints them.
+    zero := io.read_at(rf, 0, 0)
+    huge := io.read_at(rf, 0, 1000000000000)
+    println(f"zerolen len={nb(zero)} why={why(zero)} huge=[{sl(huge)}] why={why(huge)}")
+
+    # the two non-file paths, answering exactly as read_bytes does for the same two
+    ramiss := io.read_at("/tmp/tycho_corelib_io_absent.xyz", 0, 4)
+    radir := io.read_at("/tmp", 0, 4)
+    println(f"read_at_missing={why(ramiss)} read_at_dir={why(radir)}")

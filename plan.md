@@ -34,7 +34,7 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   `corelib/`, `src/tychoc.c` and `runtime/` returns nothing outside
   `corelib/test/`.
 - **Verified — the syscall is already being made and the field discarded.**
-  `corelib/io/io_shim.c:149@iox_stat_kind` calls `stat(2)` into a local
+  `corelib/io/io_shim.c@iox_stat_kind` calls `stat(2)` into a local
   `struct stat st` and returns `S_ISDIR(st.st_mode) ? TY_RF_DIR : TY_RF_OK`.
   `st.st_mtim` is in that struct, unused. The comment above it explains the
   return-code space it shares with `iox_read_file`, which is the constraint any
@@ -399,7 +399,7 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   same class of break, and repair it the same two ways rather than repointing
   numbers.
 
-- [ ] **Phase 3 — `io.read_at` through the shim**
+- [x] **Phase 3 — `io.read_at` through the shim**
   - Scope: `corelib/io/io_shim.c`, `corelib/io/io.ty`, and a fixture.
   - `pread(2)` is the call — it does not disturb a file offset and needs no
     `lseek`. Bounds are the interesting part: a read starting past EOF, a length
@@ -413,6 +413,125 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
     the same definitions again. Repair a break by dropping the line number and
     keeping the symbol — not by repointing the number.
   - Verify: `make test`, then `make -s corelib`.
+
+  **Evidence (2026-07-31).**
+
+  *The FFI shape, and the precedent fitted exactly.* `corelib/io/io_shim.c@iox_read_at`
+  is `(path, off, n, status, out, outlen)` — the payload in the `bytes` return, the
+  status in an `inout int`. This is `corelib/io/io_shim.c@iox_read_file`'s case and
+  not `corelib/io/io_shim.c@iox_stat_mtime`'s, for the reason phase 1 recorded: the
+  assignment is decided by which half *can* occupy the return, and a `bytes` payload
+  has no choice. Verified in the compiler rather than assumed —
+  `src/tychoc.c@ffi_scalar_type` is the predicate, and it rejects a `bytes` `inout`
+  with a message naming `bytes` outright. So the status took the `inout`. **No third
+  pattern was invented and none was needed.**
+
+  *No separate count out-param.* A short read is reported by `len(b)`. The one
+  temptation here was a `got` out-param beside the payload; it would have been a
+  second spelling of something `bytes` already carries.
+
+  *The parameter order was read, not guessed.* An `inout` lowers to a `tycho_int*`
+  **in its declared position**, with the `bytes` return's two out-params appended
+  after — which is why `(path, off, n, status)` on the Tycho side is
+  `(path, off, n, status, out, outlen)` in C. Confirmed against `iox_read_file`'s
+  two declarations side by side before writing the C.
+
+  *The three boundaries, each a different answer.*
+
+  | case | answer | why |
+  |---|---|---|
+  | `off` past EOF | `Ok`, `len == 0` | pread(2)'s own answer, and complete |
+  | `n` past EOF | `Ok`, short, unpadded | `len(b)` is the count |
+  | `off` or `n` negative | `Err(Failed)` | refused before `open(2)` |
+
+  **Past EOF is `Ok(empty)`, not an `Err`, and this is the decision worth
+  defending** — it looks like the ambiguous-empty defect this whole plan exists to
+  remove. It is not the same shape. `read_bytes`' empty was ambiguous because *three
+  different world states* produced one value with no way to tell them apart. Here
+  the caller **chose the offset**, so "zero bytes at offset 900" is a complete
+  answer to the question actually asked, and the caller already holds the input that
+  disambiguates it. Inventing an `Err` would also mean `read_at` disagreeing with
+  pread(2) for no gain.
+
+  **A negative offset is refused in the shim, ahead of `open(2)`** — not in Tycho
+  and not by letting pread(2) return EINVAL. It has to be a guard rather than a
+  consequence: a negative `tycho_int` cast to a 32-bit `off_t` is
+  implementation-defined, and the value must never reach pread(2) at all, where a
+  sign-extended offset is a wild read. Negative `n` is refused in the same line.
+  Both are `Err(Failed)` and **neither got a new `IoErr` variant** — they are
+  unreachable from correct code (a `Range:` parser only ever produces digits), and
+  adding a variant would change a public enum whose payload-free shape `io.ty`'s
+  header pins deliberately.
+
+  *Zero length is `Ok(empty)`: asking for nothing succeeds at giving nothing.*
+
+  *The untrusted-length decision — clamp to the file, impose no cap.* The
+  allocation is `min(n, size - off)` from an `fstat` on the already-open fd,
+  **never `n`**. So a `Range:` header naming a terabyte allocates what the file
+  holds beyond `off`. I considered a fixed cap on top and **rejected it**: a cap is
+  a policy number with no principled value, it would make `read_at` unable to read a
+  large file a caller legitimately wants, and it adds nothing here — an attacker
+  cannot drive the allocation above the size of a file they could already have
+  fetched whole with `read_bytes`. The clamp removes the attack; a cap would only
+  add a knob. The clamp is also what makes the `off_t` cast provably safe: after it,
+  `off < size`, and `size` came from an `off_t`.
+
+  The fstat/pread window is racy and is safe in both directions by construction: a
+  file that shrank yields a short read (already legal), one that grew yields less
+  than `n` (also already legal). `EINTR` retries; a `pread` returning 0 breaks to a
+  short read rather than spinning.
+
+  *Regular files only.* A directory is `Err(IsDir)`, matching `read_bytes`. A fifo,
+  socket or device is `Err(Failed)` — `st_size` is meaningless for them and pread(2)
+  fails ESPIPE on anything unseekable, so "the byte at offset N" is a question they
+  have no answer to.
+
+  *The fixture asserts letters, not lengths.* `corelib/test/io/main.ty` writes a
+  26-byte file where byte i is `'A'+i`, so a wrong offset prints the wrong letters
+  instead of the right count — which is the failure a length-only assertion passes.
+  `corelib/test/io.out` gained six lines covering an interior slice (`FGHIJ`), the
+  whole file through the offset path, all three boundaries, zero length, the
+  terabyte-length clamp (asserted by its *contents*, so an absent clamp is a 1 TB
+  malloc rather than a quiet pass), and the missing/directory paths. The golden
+  matched on the first run.
+
+  *Gates, all foreground, one command each.*
+
+  ```
+  $ make -s corelib
+  ok   io
+  corelib: all green (tychoc matches goldens)
+
+  $ python3 scripts/check_citations.py
+  citation check: ok
+
+  $ make test
+  passed: 560   failed: 0
+  all green
+  ```
+
+  560 before, 560 after — expected for the same reason phase 1 recorded: this
+  extends an existing `corelib/test/` lane rather than adding a `tests/` fixture, so
+  the gate proves the compiler still handles the FFI shape without its count moving.
+
+  *The drift this phase caused, repaired here.* Inserting `iox_read_at` above
+  `iox_stat_kind` moved it from line 149 to 239 and reddened one ref — in this
+  file's own Pre-flight, exactly the class phase 3's brief predicted:
+
+  ```
+  STALE  plan.md:37  `corelib/io/io_shim.c:149` -> lines 149-149 of
+         corelib/io/io_shim.c do NOT contain 'iox_stat_kind'
+  ```
+
+  Quoted above with **the anchor dropped from the stale ref**, on phase 1 and 2's
+  precedent: reproduced whole it is a live citation inside this evidence block and
+  the gate would redden on the report of the failure it had just fixed. The line is
+  live narrative prose — not a repair log, not a before/after row — so the
+  prescribed repair applied unchanged: drop the number, keep the symbol,
+  `corelib/io/io_shim.c@iox_stat_kind`. One token, gate green again.
+
+  The new `src/tychoc.c@ffi_scalar_type` ref above was written in the `path@SYMBOL`
+  form from the start, so it cannot drift when `src/tychoc.c` next moves.
 
 - [ ] **Phase 4 — `Range` and `206`**
   - Scope: `corelib/httpd/httpd.ty`, `server/main.ty`, `server/run.sh`.
@@ -436,6 +555,38 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   - Done when: both calls are specified with provenance, the README describes
     what the server now does, and `make ci` is green with the exit code observed.
   - Verify: the three doc gates, then `make ci` once, waited on in-turn.
+
+- [ ] **Phase 6 — `io.size`, and it must land BEFORE phase 4**
+  - Found by phase 3, not absorbed by it: phase 3's scope was `read_at`, and adding
+    a second public call to spare a later phase a discovery is the silent absorption
+    `CLAUDE.md` forbids. Recorded here instead, with the ordering it needs.
+  - **Phase 4 cannot be written without a file length that does not read the file.**
+    All three of its named cases need one: `416` must emit
+    `Content-Range: bytes */LEN`; a suffix range `bytes=-N` needs LEN to compute its
+    start; `bytes=A-` needs LEN for the end of `Content-Range: bytes A-END/LEN`.
+  - **Verified absent, not assumed.** `grep -rn "st_size\|fn size\|file_size"` over
+    `corelib/` and `src/tychoc.c` returns only `corelib/raster/raster.ty`'s BMP
+    header field and the `st_size` phase 3 just added *inside*
+    `corelib/io/io_shim.c@iox_read_at`, which is local to that function and reaches
+    no caller. There is no size builtin. So today the only way to get a file's
+    length is `len(io.read_bytes(p))` — reading the whole file to learn how big it
+    is, which is precisely the defect phase 3 exists to remove. A `Range` server
+    built on that would allocate the 1 GB phase 3 just stopped allocating.
+  - Scope: `corelib/io/io_shim.c`, `corelib/io/io.ty`, and the same fixture.
+  - The shape is already settled by phase 1 — a scalar payload, so `io.size` is
+    `Result(int, IoErr)` and mirrors `corelib/io/io.ty@mtime` exactly, down to
+    reusing `stat(2)`. Whether it is a third `stat` sibling or an extra `inout` on
+    `iox_stat_mtime` is the one open question; phase 1's reasoning for keeping
+    `mtime` separate from `iox_stat_kind` applies and probably settles it.
+  - Note the honest alternative before building: phase 4 could call
+    `io.read_at(p, off, n)` and infer a short read from `len`, which covers
+    `bytes=A-B` without any new call. It does **not** cover `416` or `bytes=-N`,
+    which need the length up front. Say which way phase 4 went.
+  - Done when: a fixture reads the size of a file it just wrote, matches it against
+    `len(io.read_bytes(p))` for the same file, and pins the missing-file `Err`.
+  - Verify: `make test`, then `make -s corelib`, then
+    `python3 scripts/check_citations.py` — expect drift into `corelib/io/io.ty`
+    again and repair it by dropping the number, not repointing it.
 
 ## Out of scope
 
