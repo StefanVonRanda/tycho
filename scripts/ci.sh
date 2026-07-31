@@ -111,6 +111,16 @@ make -s entrypoints
 step "[3c/13] make server-check  (tycho-httpd started for real: status codes, binary bodies, traversal, keep-alive, abuse suite, access log, SIGTERM)"
 make -s server-check
 
+# A sub-lane of 3 because its subject is the corelib shims, but note it is NOT a
+# stricter rerun of step 3: the real build appends a shim to the generated .c on
+# one cc line with no -std flag, so a shim missing a feature-test macro compiles
+# there and `make corelib` stays green. The two lanes are independent -- this one
+# can redden while every dogfood above passes, which is the whole reason it is
+# here. Runs in well under a second; shims whose `deps` package is absent are
+# skipped, same rule as corelib/run.sh:39.
+step "[3d/13] make shim-check  (every corelib <pkg>_shim.c compiles standalone under -std=c11)"
+make -s shim-check
+
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
 

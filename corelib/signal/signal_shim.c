@@ -39,6 +39,9 @@
  * acceptable for a shutdown path. This tree is POSIX-only in practice and Linux
  * tested; Windows is out of scope, so the whole file is guarded like core:net's.
  */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE          /* glibc: expose sigaction + sigemptyset */
+#endif
 #ifndef _WIN32
 #include <signal.h>
 #include <string.h>             /* memset -- struct sigaction, outside the handler */

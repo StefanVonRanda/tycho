@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -229,6 +229,15 @@ corelib: tychoc
 # tests, with the same deps-skip. See examples/corelib/run.sh.
 corelib-examples: tychoc
 	@sh examples/corelib/run.sh
+
+# shim-check: every corelib <pkg>_shim.c must compile ON ITS OWN under -std=c11.
+# The real build never compiles one alone -- tychoc appends it to the generated .c
+# on a single cc line with no -std flag -- so a shim that relies on a header some
+# earlier source pulled in, or on the default dialect's implicit _DEFAULT_SOURCE,
+# is invisible to every other gate. Needs no tychoc: it is cc over 12 files, <1s.
+# See scripts/shim_check.sh for why the flags differ from the build's.
+shim-check:
+	@sh scripts/shim_check.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the

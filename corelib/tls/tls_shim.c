@@ -11,6 +11,9 @@
  *
  * OpenSSL 1.1.0+ self-initializes, so there is no explicit library init here.
  */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE          /* glibc: expose getaddrinfo + struct addrinfo */
+#endif
 #include <openssl/ssl.h>
 #include <sys/types.h>
 #include <sys/socket.h>

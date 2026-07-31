@@ -11,6 +11,7 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `python3 scripts/check_citations.py` | <1s | any `path:line` written in Markdown, comments, or evidence blocks |
 | `sh scripts/check_links.sh` | <1s | relative Markdown links |
 | `sh scripts/spec_check.sh` | ~6s | runnable examples in `docs/spec/`, Appendix A vs §3/§4, **and every backticked `tests/…` path in Appendix E resolving to a real file** — so any commit that moves or deletes a fixture directory must run this, not just the two doc gates |
+| `make shim-check` | <1s | any corelib `<pkg>_shim.c` — compiles each one standalone under `-std=c11`. **`make corelib` cannot redden for this**: the real build appends a shim to the generated `.c` on one `cc` line with no `-std`, so a missing feature-test macro compiles there and only here |
 | `make server-check` | ~7s | `server/main.ty`, `server/www/`, `server/run.sh`, and the `core:net` accept/recv/send path |
 | `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
 | `sh scripts/asan_self.sh` | minutes | `src/tychoc.c` under ASan/UBSan over the whole corpus |
@@ -71,6 +72,7 @@ end, to confirm what you already believe.
 | `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` / `make fetch` |
 | `[3b] entrypoints` | `sh scripts/entrypoints.sh` |
 | `[3c] server-check` | `make server-check` (~7s; it starts tycho-httpd for real — a red here is a behaviour change in `server/main.ty` or `core:net`, not a build break, which `[3b]` would have caught first) |
+| `[3d] shim-check` | `make shim-check` |
 | `[4] conc` | `make conc` |
 | `[5] ffi` | `make ffi` |
 | `[6]/[7] fuzz` | `python3 fuzz/run.py <small N>` |

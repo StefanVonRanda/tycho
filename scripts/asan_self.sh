@@ -8,7 +8,7 @@
 #   tests/run.sh:74-75   builds the EMITTED C of each fixture with
 #                        -fsanitize=address,undefined -fno-sanitize-recover=all
 #   Makefile:103-106     documents that lane
-#   Makefile:304@SKIPPED,:305  disable it for -m32 (32-bit ASan is absent under multilib)
+#   Makefile:313@SKIPPED,:305  disable it for -m32 (32-bit ASan is absent under multilib)
 # Nothing anywhere builds src/tychoc.c with -fsanitize. So the reference
 # compiler's own memory safety was unmeasured by every gate, in either direction.
 #
@@ -69,7 +69,7 @@
 # NOT: corelib/ and examples/corelib/ (their harnesses have per-module dependency
 #      skips this lane deliberately does not replicate); the fuzz corpora
 #      (generated, not committed); -m32 (no 32-bit ASan runtime under multilib,
-#      same reason Makefile:304@SKIPPED skips it); and the emitted programs' own runtime
+#      same reason Makefile:313@SKIPPED skips it); and the emitted programs' own runtime
 #      behaviour (tests/run.sh owns that).
 #
 # HISTORY: from 2026-07-29 the IN list and the glob below also named
