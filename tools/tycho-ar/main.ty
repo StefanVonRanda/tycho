@@ -1,0 +1,282 @@
+# tycho-ar -- a deterministic archiver, in Tycho.
+#
+# Walks a directory, and for every regular file records its relative path, its
+# size, its mtime and the sha256 of its contents; gzips the contents; and writes
+# one archive file. Only `c` (create) is implemented so far; `t` (list) and `x`
+# (extract) are the next step, and the format below was designed for their sake
+# rather than for the writer's.
+#
+# Build and run, from the repo root:
+#     ./tychoc tools/tycho-ar/main.ty -o build/tycho-ar
+#     ./build/tycho-ar c out.tar-ish some/dir
+#
+# WHY THIS IS A DIRECTORY AND NOT A FLAT `tools/tycho-ar.ty`. A program that
+# imports `core:*` needs a `package` header, and a `package` header makes tychoc
+# compile the whole containing directory as one unit -- so a flat file in
+# `tools/` would pull `tools/lsp.ty`, `tools/tychofmt.ty` and `tools/tycho.ty`
+# into this program. `tools/prunner/` is a directory for exactly that reason and
+# this follows it. (Confirmed: `Makefile:128` builds prunner from
+# `tools/prunner/main.ty`, a lone file in its own directory.)
+#
+# ===========================================================================
+# THE FORMAT
+# ===========================================================================
+#
+# Everything is written little-endian-free: all numbers are ASCII decimal, all
+# structural markers are ASCII literals, and the only binary spans are the file
+# payloads, each preceded by its own byte count. That is deliberate -- a format
+# whose framing is text can be eyeballed with `head -c`, and its corruption
+# cases can be produced by hand for the phase 2 gate.
+#
+#     archive := magic member* trailer
+#
+#     magic   := "TYAR1\n"
+#
+#     member  := "F " size " " mtime " " clen " " plen " " sha " " csha "\n"
+#                path                          -- exactly plen bytes, raw
+#                "\n"
+#                payload                       -- exactly clen bytes, gzip
+#                "\nTYAR-M\n"                  -- the member footer, 8 bytes
+#
+#     trailer := "TYAR-DIR " count "\nTYAR-END\n"
+#
+#       size   the ORIGINAL byte length of the file, ASCII decimal
+#       mtime  st_mtime as a Unix epoch second, ASCII decimal (see MTIME below)
+#       clen   the byte length of the gzip payload, ASCII decimal
+#       plen   the byte length of `path`, ASCII decimal
+#       sha    sha256 of the ORIGINAL contents, 64 lowercase hex chars
+#       csha   sha256 of the GZIP PAYLOAD, 64 lowercase hex chars
+#       path   the file's path relative to the walked root, raw bytes
+#       count  the number of members, ASCII decimal
+#
+# FINDING THE MEMBER BOUNDARY WITHOUT TRUSTING `clen`. This is the property the
+# format is built around, because a reader that can only believe the length
+# field is a reader that cannot tell a truncated archive from a short one. There
+# are three independent checks and a truncation has to defeat all three:
+#
+#   1. THE MEMBER FOOTER. After skipping `clen` payload bytes the next 8 bytes
+#      must be exactly "\nTYAR-M\n". A `clen` that is wrong -- because the field
+#      was damaged, or because the archive was cut short -- lands the cursor
+#      somewhere else, and the odds that arbitrary bytes spell the footer are
+#      nil. This is what makes `clen` a HINT that gets confirmed rather than a
+#      promise that gets believed.
+#   2. `csha` OVER THE PAYLOAD. A payload whose length is right but whose bytes
+#      were flipped passes check 1 and fails here. Checked before decompression,
+#      so a reader never hands damaged input to zlib in the first place.
+#   3. `size` AND `sha` OVER THE INFLATED BYTES. This is the check that keeps a
+#      corrupt member distinguishable from an empty one. `compress.decompress`
+#      FAILS CLOSED TO EMPTY BYTES on damaged input
+#      (`corelib/compress/compress_shim.c@zx_decompress`), and an empty result is
+#      indistinguishable from a legitimately empty member unless something
+#      outside the payload says how long the answer should be. `size` says. A
+#      zero-byte file is `size 0` carrying the sha256 of the empty string
+#      (e3b0c442…); a member that inflated to nothing because it was corrupt has
+#      a `size` that does not match, and must be rejected rather than extracted
+#      as an empty file. Silently turning a damaged member into an empty file is
+#      the worst thing an archiver can do, and this field is what makes it
+#      detectable.
+#
+# And the trailer's `count` catches the one thing per-member checks cannot: a
+# whole member sheared off the end. Nine members plus a trailer saying ten is a
+# truncation that every individual member survived.
+#
+# `plen` is why the path is length-prefixed rather than newline-terminated. A
+# POSIX filename may contain any byte but '/' and NUL -- including '\n'. A
+# newline-terminated path would silently split such a name into a short path
+# plus garbage, and the two paths that differ only by where the reader guessed
+# the break would collide. Length-prefixed, a path containing a newline is
+# stored and read back exactly.
+#
+# ===========================================================================
+# DETERMINISM, AND THE THREE THINGS THAT COULD HAVE BROKEN IT
+# ===========================================================================
+#
+# The property: archiving the same tree twice produces two byte-identical files.
+# Three sources of nondeterminism had to be settled for that to hold.
+#
+#   ENTRY ORDER. `io.list` is `readdir(3)` (`runtime/tycho_rt.c@tycho_list_dir`),
+#   which returns entries in whatever order the filesystem hands back -- hash
+#   order on ext4, so it varies with inode numbers and is NOT stable across two
+#   trees with the same contents. Every path is collected first and the whole
+#   list is sorted with `sort.asc` before a single byte is written. String
+#   comparison is `memcmp` over the length header
+#   (`runtime/tycho_rt.c@tycho_str_cmp`), so the order is unsigned-byte
+#   lexicographic and does not depend on locale.
+#
+#   THE GZIP HEADER'S MTIME FIELD. RFC 1952 puts a 4-byte modification time in
+#   every gzip header, and a compressor that fills it in makes every archive
+#   differ from the last. zlib's `deflateInit2` writes zero there unless the
+#   caller supplies a `gz_header`, and `corelib/compress/compress_shim.c@zx_compress`
+#   supplies none -- so the payloads are byte-stable. This was checked rather
+#   than assumed; it is the one place where determinism depended on a default in
+#   a library three layers down.
+#
+#   MTIME IN THE MEMBER HEADER, which is stored, and here is the decision.
+#   `io.mtime` returns the real st_mtime. Storing it means an archive of the SAME
+#   tree is byte-identical across runs -- mtimes do not move when nothing writes
+#   -- but an archive of a COPIED tree is not, because `cp` gives the copy new
+#   mtimes. The alternative, storing a constant zero, would make copies match at
+#   the cost of an archiver that cannot restore what it was handed.
+#
+#   The mtime is stored. An archiver's job is to give back the tree it was given,
+#   and mtime is part of that tree; dropping it to make an unrelated pair of
+#   directories compare equal is trading a property the tool is for against a
+#   property nothing asked for. And the weaker guarantee is the honest one: two
+#   runs over one tree are identical, which is exactly what the gate asserts,
+#   and content equality between two different trees is a question about the
+#   `sha` fields, which a reader can ask directly.
+#
+# ===========================================================================
+# WHAT THIS FORMAT DOES NOT STORE, said plainly so no one infers it
+# ===========================================================================
+#
+#   * PERMISSION BITS. An extracted file gets the umask default. A restored
+#     executable is not executable.
+#   * EMPTY DIRECTORIES. Only regular files are members, so a directory with no
+#     files under it does not survive a round trip.
+#   * SYMLINKS, as links. `io.is_dir` is `stat(2)`, which follows them, so a
+#     symlink to a file is archived as an ordinary file holding a copy of the
+#     target's bytes, and a symlink to a directory is walked into. A symlink
+#     cycle would therefore not terminate. Nothing here calls `lstat(2)`,
+#     because the corelib does not expose one.
+#   * HARD LINKS, as links. Two names for one inode become two members.
+#
+# Each of those is a real archiver feature and each needs a corelib call that
+# does not exist today. They are named here rather than discovered later.
+
+package main
+
+import "core:cli"
+import "core:compress"
+import "core:io"
+import "core:path"
+import "core:sha256"
+import "core:sort"
+
+const MAGIC   = "TYAR1\n"
+const MFOOTER = "\nTYAR-M\n"
+
+# One regular file, as the archive will record it. Built entirely before
+# anything is written, so a read failure aborts before a partial archive lands.
+struct Member:
+    rel:   string    # path relative to the walked root
+    size:  int       # original byte length
+    mtime: int       # Unix epoch seconds
+    sha:   string    # sha256 of the original contents, hex
+    csha:  string    # sha256 of the gzip payload, hex
+    data:  bytes     # the gzip payload
+
+# Every regular file under `root`, as paths relative to `root`, in `readdir`
+# order -- the caller sorts. Iterative rather than recursive because the
+# directory queue IS the recursion, and a queue can be read.
+fn walk(root: string) -> [string]:
+    out := []string
+    dirs := []string
+    push(dirs, "")            # "" is the root itself
+    i := 0
+    for i < len(dirs):
+        rel := dirs[i]
+        i = i + 1
+        abs := root
+        if rel != "":
+            abs = path.join(root, rel)
+        names := io.list(abs)
+        for j := 0; j < len(names); j += 1:
+            child_rel := names[j]
+            if rel != "":
+                child_rel = rel + "/" + names[j]
+            child_abs := path.join(root, child_rel)
+            isdir := false
+            match io.is_dir(child_abs):
+                Ok(b):
+                    isdir = b
+                Err(e):
+                    die("tycho-ar: cannot stat " + child_abs)
+            if isdir:
+                push(dirs, child_rel)
+            else:
+                push(out, child_rel)
+    return out
+
+# Read, hash and compress one file into a Member. Aborts on an unreadable file
+# rather than recording a member it could not read -- an archiver that stores a
+# guess is worse than one that stops.
+fn member_of(root: string, rel: string) -> Member:
+    abs := path.join(root, rel)
+    raw := to_bytes("")
+    match io.read_bytes(abs):
+        Ok(b):
+            raw = b
+        Err(e):
+            die("tycho-ar: cannot read " + abs)
+    mt := 0
+    match io.mtime(abs):
+        Ok(t):
+            mt = t
+        Err(e):
+            die("tycho-ar: cannot stat " + abs)
+    # THE bytes/string SEAM. `io.read_bytes` yields `bytes`; `sha256.hex` takes
+    # `string`. `to_str` is a zero-cost reinterpret of the same length-headered
+    # buffer (docs/spec/06-conversions.md), and the string runtime is header-driven
+    # rather than NUL-driven, so a binary file with interior NULs hashes correctly.
+    # It costs one call and no copy. Measured, not assumed: all eight fixture
+    # digests -- including a file with interior NULs and 100 KB of /dev/urandom --
+    # match `sha256sum` exactly.
+    packed := compress.compress(raw)
+    return Member(rel, len(raw), mt, sha256.hex(to_str(raw)), sha256.hex(to_str(packed)), packed)
+
+fn encode_member(m: Member) -> bytes:
+    # Written as three statements, not one expression over three lines: an
+    # expression here cannot be continued onto the next line even with a trailing
+    # `+`, and the diagnostic is "error: expected an expression" pointing at the
+    # column after the operator.
+    head := "F " + str(m.size) + " " + str(m.mtime) + " " + str(len(m.data))
+    head = head + " " + str(len(m.rel)) + " " + m.sha + " " + m.csha + "\n"
+    head = head + m.rel + "\n"
+    return to_bytes(head) + m.data + to_bytes(MFOOTER)
+
+fn create(archive: string, root: string):
+    isdir := false
+    match io.is_dir(root):
+        Ok(b):
+            isdir = b
+        Err(e):
+            die("tycho-ar: no such directory: " + root)
+    if not isdir:
+        die("tycho-ar: not a directory: " + root)
+
+    # SORTED BEFORE ANYTHING IS WRITTEN. This one line is the determinism
+    # guarantee; see THE FORMAT above for why `readdir` order cannot be trusted.
+    files := sort.asc(walk(root))
+
+    out := to_bytes(MAGIC)
+    for i := 0; i < len(files); i += 1:
+        out = out + encode_member(member_of(root, files[i]))
+    out = out + to_bytes("TYAR-DIR " + str(len(files)) + "\nTYAR-END\n")
+
+    # `io.write` takes a `string`, and `tycho_write_file`
+    # (`runtime/tycho_rt.c@tycho_write_file`) fwrites the header length to a "wb"
+    # handle -- so this writes the payload bytes verbatim, NULs and all.
+    if not io.write(archive, to_str(out)):
+        die("tycho-ar: cannot write " + archive)
+    println("tycho-ar: " + archive + ": " + str(len(files)) + " files, " + str(len(out)) + " bytes")
+
+fn usage():
+    println("usage: tycho-ar c <archive> <dir>")
+    println("")
+    println("  c   create <archive> from every regular file under <dir>")
+    println("")
+    println("Entries are stored in sorted path order, so archiving one tree")
+    println("twice produces two byte-identical files. See the format comment")
+    println("at the top of tools/tycho-ar/main.ty.")
+
+fn main():
+    av := cli.argv()
+    if len(av) == 0 or av[0] == "-h" or av[0] == "--help":
+        usage()
+        exit(0)
+    if av[0] != "c":
+        die("tycho-ar: unknown command: " + av[0] + " (try --help)")
+    if len(av) != 3:
+        die("tycho-ar: c takes exactly <archive> and <dir> (try --help)")
+    create(av[1], av[2])

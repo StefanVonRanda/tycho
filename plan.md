@@ -69,7 +69,7 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
 
 ## Phases
 
-- [ ] **Phase 1 — the format, and `c` (create)**
+- [x] **Phase 1 — the format, and `c` (create)**
   - Scope: a new program directory; no existing file changes.
   - Walk a directory, and for each regular file record path, size, mtime and
     `sha256`; gzip the contents; write one archive. **Entry order must be
@@ -81,6 +81,95 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
   - Done when: creating twice over the same tree gives `cmp`-identical archives,
     and the header/member layout is documented in the source.
   - Verify: build it, create twice, `cmp`. Not `make ci`.
+
+  **Done.** `tools/tycho-ar/main.ty`, one new file, nothing existing touched.
+  The format is documented in its header comment; the `tools/prunner/`
+  directory-not-flat-file reasoning was re-checked against `Makefile:128` and
+  still holds.
+
+  ```
+  $ ./tychoc tools/tycho-ar/main.ty -o build/tycho-ar
+  built build/tycho-ar
+  $ ./build/tycho-ar c c1.tyar tree && ./build/tycho-ar c c2.tyar tree
+  tycho-ar: c1.tyar: 9 files, 101822 bytes
+  tycho-ar: c2.tyar: 9 files, 101822 bytes
+  $ cmp c1.tyar c2.tyar && echo CMP-IDENTICAL
+  CMP-IDENTICAL
+  $ python3 scripts/check_citations.py
+  citation check: ok
+  ```
+
+  Fixture tree: nested dirs, an empty file, a dotfile, a file with a space in
+  its name, a file with a **newline** in its name, 6 binary bytes with interior
+  NULs, and 100 KB of `/dev/urandom`. An independent Python reader parsed the
+  archive and confirmed, per member: the `\nTYAR-M\n` footer sits exactly where
+  `clen` predicts, `csha` matches the payload, the payload inflates, `size` and
+  `sha` match the inflated bytes, the inflated bytes equal the file on disk, and
+  `mtime` equals `st_mtime`. All 9 members, plus the trailer count.
+
+  **All eight fixture digests match `sha256sum` byte for byte**, including the
+  interior-NUL file and the 100 KB random one.
+
+  **mtime is stored** (real `st_mtime`). Two runs over one tree are identical —
+  which is what the gate asserts — and a copied tree deliberately is not: an
+  archiver exists to give back the tree it was handed, and dropping mtime to
+  make two unrelated directories compare equal trades the tool's purpose for a
+  property nothing asked for. Content equality across trees is a question about
+  the `sha` fields, which a reader can ask directly.
+
+  **Notes for phase 4 — what the writing surfaced.**
+
+  1. **No expression line continuation.** `x := a + b +` then a continuation
+     line is `error: expected an expression`, caret at the column after the
+     trailing `+`. Every header build in this program has that shape, so one
+     two-line expression became three statements. It is the only thing in this
+     phase that changed the code rather than the comments.
+  2. **The `bytes`/`string` seam cost one call and no copy — the Pre-flight's
+     prediction was half wrong.** `sha256.hex(to_str(raw))` is the whole
+     crossing; `to_str` is a zero-cost reinterpret of the same length-headered
+     buffer (`docs/spec/06-conversions.md`) and the digests prove it is
+     lossless. **But the real cost is not conversion, it is that the wrong
+     choice compiles silently.** Nothing at the type level distinguishes "this
+     `string` is text" from "this `string` is raw bytes", so a caller who reaches
+     for `io.read` instead of `io.read_bytes` gets a digest over a NUL-truncated
+     prefix, with no diagnostic and no wrong-looking output. The split buys FFI
+     shape, not a guard rail.
+  3. **`io.read_bytes` has no counterpart.** Writing bytes is
+     `io.write(p, to_str(b))`. It is correct — `tycho_write_file` fwrites the
+     length header to a `"wb"` handle
+     (`runtime/tycho_rt.c@tycho_write_file`) — but a caller has to go read the
+     runtime to know that, because the signature says `string`. An
+     `io.write_bytes` would make the read/write pair symmetric and the safety
+     legible. Reported, not patched; carried forward below.
+  4. **No stderr without exiting.** The builtins are `println`, `die` (stderr
+     then exit 1) and `exit(n)`; there is no `eprintln`. A warning that does not
+     terminate — the exact shape `server/main.ty` uses for an empty document
+     root — can only go to stdout. Harmless here, where stdout is one summary
+     line, and a real problem for `t`, which writes its listing to stdout and
+     would interleave any diagnostic with the data. Carried forward below.
+  5. **gzip determinism held on an unstated default.** RFC 1952 puts an MTIME
+     field in every gzip header; a compressor that fills it in would have made
+     every archive differ from the last. zlib writes zero there unless the caller
+     supplies a `gz_header`, and
+     `corelib/compress/compress_shim.c@zx_compress` supplies none. Nothing in
+     `docs/spec/18-library.md`'s `core:compress` entry says the output is
+     byte-deterministic, so this program depends on a property that is true but
+     undocumented. Verified by reading the shim, not by assuming.
+  6. **`readdir` order is the nondeterminism, confirmed at the source.**
+     `runtime/tycho_rt.c@tycho_list_dir` returns entries in filesystem order.
+     `sort.asc` over `[string]` fixes it, and because string comparison is
+     `memcmp` over the length header (`runtime/tycho_rt.c@tycho_str_cmp`) the
+     order is unsigned-byte lexicographic and locale-free — which is what a
+     format needs, and which a locale-aware comparison would have quietly
+     broken.
+  7. **`push` has no inverse.** No `pop`, so the directory walk is a queue with a
+     cursor rather than a stack. Not a defect — the queue reads better — but it
+     was a choice made by the corelib, not by the program.
+  8. **What the format cannot store, because the corelib cannot ask:**
+     permission bits, empty directories, symlinks-as-links (`io.is_dir` is
+     `stat(2)`, which follows them; there is no `lstat`), and hard links. Each is
+     a real archiver feature blocked on a missing call. Named in the source
+     header so nothing infers otherwise.
 
 - [ ] **Phase 2 — `t` (list) and `x` (extract), and the round trip**
   - Scope: the same program.
@@ -136,6 +225,17 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
       fails"; a compile probe shows it builds clean. Disproved, not yet corrected.
 - [ ] **Phase 8** — `README.md:223` documents `make bootstrap` and `make
       fixpoint`; neither target exists in the `Makefile`.
+
+- [ ] **Phase 9** — `io.read_bytes` has no counterpart: writing bytes is
+      `io.write(p, to_str(b))`, correct only because `tycho_write_file` is
+      length-header-driven, which the `string` signature does not say. Found by
+      phase 1; a corelib change, so not absorbed into it. Phase 4 decides whether
+      this is a `FRICTION.md` entry or an `io.write_bytes`.
+
+- [ ] **Phase 10** — there is no `eprintln`: `die` is the only route to stderr
+      and it exits. A non-fatal warning is inexpressible, so it lands on stdout
+      alongside a tool's actual output. Bites `t` in phase 2. Same disposition
+      question as phase 9.
 
 ## Out of scope
 
