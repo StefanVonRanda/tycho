@@ -388,15 +388,21 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     # mid-answer; testing it any shallower (in accept_loop only, which also tests
     # it) never sees a kept-alive connection at all.
     #
-    # What it does NOT fix, measured rather than assumed: a worker ALREADY blocked
-    # in that read when the signal lands. It stays blocked until SO_RCVTIMEO
-    # expires, because nothing wakes a recv on a connection fd -- the handler
-    # shuts down the LISTENER (corelib/signal/signal.ty:38-43). So the parked-idle
-    # case is unchanged at one idle timeout (4924 ms before, 4733-4901 ms after)
-    # and is filed as phase 19. The busy case, where the loop is actually reached
-    # between requests, went from 102215 ms to 6-8 ms -- and that 102 s, not the
-    # 5 s, was the real worst case here: it is MAX_REQS requests served at the
+    # The busy case, where the loop is actually reached between requests, went
+    # from 102215 ms to 6-8 ms -- and that 102 s, not the 5 s that was reported,
+    # was the real worst case here: it is MAX_REQS requests served at the
     # client's own pace, because nothing was telling the loop to stop.
+    #
+    # What this check ALONE does not fix, and what does. A worker ALREADY blocked
+    # in that read when the signal lands cannot reach this condition at all; it
+    # stays in recv until SO_RCVTIMEO expires, because shutting down the LISTENER
+    # wakes accept(2) and nothing else. That cost one full idle timeout -- 4878 ms
+    # measured at --idle-ms 5000 with four parked clients. It is fixed on the
+    # other side, by registering each accepted fd so the handler shuts those down
+    # too (accept_loop below, and corelib/signal/signal.ty's register_conn):
+    # 4878 ms -> 1 ms, 5 runs out of 5. The two halves are complementary, not
+    # alternatives -- the registry releases a parked read, this condition stops
+    # the loop from starting another one.
     #
     # A connection accepted but not yet spoken on is dropped here without an
     # answer. That is the same bargain core:signal already documents for the
@@ -551,10 +557,37 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
         match net.accept(srv):
             Ok(conn):
                 fails = 0
+                # REGISTER FIRST, RETIRE BEFORE CLOSE. The signal handler shuts
+                # down the listener, which releases accept(2) but does nothing
+                # for a worker already parked in recv(2) on an accepted
+                # connection -- that one waits out its whole SO_RCVTIMEO
+                # (measured: 4733 ms at --idle-ms 5000). Publishing the fd lets
+                # the handler shutdown() it too, which is what turns the
+                # parked-idle case from one idle timeout into milliseconds.
+                #
+                # The slot is wid-1 because worker ids run 1..cfg.workers and the
+                # registry is indexed from 0; cfg.workers is pinned to 1..256 at
+                # server/main.ty:672@workers, which is exactly the table's width. One
+                # slot per worker needs NO LOCK: this body is sequential, so
+                # worker wid holds at most one connection at a time and is the
+                # only writer of its own slot. A mutex here would be a handler
+                # deadlock waiting to happen -- it is not async-signal-safe.
+                #
+                # A refusal is ignored on purpose: register_conn fails closed, and
+                # an unregistered connection behaves exactly as it did before this
+                # existed. Nothing to report and nothing to abort.
+                slot := wid - 1
+                reg := signal.register_conn(slot, conn)
+                if not reg and not cfg.quiet:
+                    eprint("w" + str(wid) + " warn: connection not registered for shutdown\n")
                 armed := net.set_read_timeout_ms(conn, cfg.idle_ms)
                 if not armed and not cfg.quiet:
                     eprint("w" + str(wid) + " warn: idle timeout not armed\n")
                 served += serve_conn(cfg, conn, wid)
+                # BEFORE close_fd, not after. A slot still naming a closed fd is a
+                # number the kernel can hand back out to the next accept, and the
+                # handler would then shutdown() a stranger's connection.
+                signal.retire_conn(slot)
                 net.close_fd(conn)
             Err(e):
                 if signal.shutdown_requested():

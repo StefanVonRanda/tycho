@@ -7,17 +7,17 @@
 # So the pattern is different and this header says what it is, because nothing
 # else in the tree does it.
 #
-#   readiness   server/main.ty:679-683 binds and asks the kernel for the real
-#               port (net.port_of); server/main.ty:713-717 prints a banner ON STDERR:
+#   readiness   server/main.ty:712-716 binds and asks the kernel for the real
+#               port (net.port_of); server/main.ty:746-750 prints a banner ON STDERR:
 #                 tycho-httpd: serving <root> on http://<host>:<port>/ workers=N idle=Nms
-#               We start with `--port 0` -- documented at server/main.ty:588@pick as
+#               We start with `--port 0` -- documented at server/main.ty:621@pick as
 #               "0 = pick free" -- redirect stderr to a file, and poll that file
 #               for the banner. One signal gives BOTH "it is listening" and
 #               "which port", so the runner never picks a number that might be
 #               taken and never sleeps a fixed interval hoping. A `sleep 1` is the
 #               classic flake here and there is deliberately none in this file.
 #               The banner is printed after net.listen() and before worker()
-#               starts accepting (server/main.ty:719@worker), so a connect in that window
+#               starts accepting (server/main.ty:752@worker), so a connect in that window
 #               is queued by the kernel rather than refused -- the socket is
 #               already listening. That is the assumption this runner rests on and
 #               it was proved by running the whole file ten times in a row.
@@ -343,7 +343,18 @@ PY
 #
 # The watchdog is what stops a regression HANGING this gate instead of failing
 # it: on a hang the server is SIGKILLed after 10s and the status comes back 137.
-( sleep 10; kill -KILL "$SRV" 2>/dev/null ) &
+#
+# THE REDIRECT IS LOAD-BEARING, not tidiness. `kill "$WD"` below reaps the
+# subshell but NOT the `sleep` it is blocked in, and the orphaned sleep inherits
+# this script's stdout. A caller that CAPTURES output -- `out=$(sh server/run.sh)`,
+# which is how a CI step collecting a log does it -- holds the pipe open until
+# every writer closes it, so `$(...)` blocks on the orphan rather than on the
+# script. Measured on this file, before the redirect: 7089 ms direct, 14280 ms
+# captured -- the 7.2 s gap is the remainder of a 10 s sleep armed part-way in.
+# The other three watchdogs (server/run.sh:512, server/run.sh:586,
+# server/run.sh:632) were written this way from the start; this one was the
+# outlier.
+( sleep 10; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
 WD=$!
 kill -TERM "$SRV" 2>/dev/null
 wait "$SRV" 2>/dev/null
@@ -633,6 +644,65 @@ if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/busy.err";
 else
     echo "  FAIL SIGTERM under load: wait status $rc, want 0 (137 = it served the clients instead)"; fail=1
     tail -n 3 "$T/busy.err" | sed 's/^/      /'
+fi
+
+# ---- case 6: shutdown must not wait out a PARKED keep-alive connection ------
+# plan.md phase 19, and the other half of case 5. Case 5 covers a worker that
+# REACHES serve_conn's loop condition between requests; this one covers a worker
+# already blocked INSIDE read_request_capped when the signal lands, which cannot
+# reach that condition at all. Shutting down the listener wakes accept(2) and
+# nothing else, so before phase 19 such a worker sat out its full SO_RCVTIMEO:
+# measured 4878 ms at --idle-ms 5000, four parked clients. server/main.ty now
+# registers each accepted fd with core:signal (server/run.sh's sibling assertion
+# is corelib/signal/signal.ty's register_conn) so the handler shuts those down
+# too: 4878 ms -> 1 ms, 5 runs of 5.
+#
+# THE WATCHDOG IS THE ASSERTION, and the numbers are chosen so it cannot be a
+# coin flip: --idle-ms 8000 against a 3s watchdog. The pre-phase-19 behaviour
+# cannot finish in under 8 s by any path, so it comes back 137; the fixed one
+# finishes in about a millisecond. Nothing lands near the boundary. Proved by
+# running this block against the unpatched tree: FAIL, twice out of two.
+respawn "$T/parked.err" 8000
+# Four connections that each complete ONE request, read the answer, and then go
+# quiet -- which is precisely what leaves all four workers parked in the next
+# read. The ready-file is written after they are, so the signal below never
+# races the setup.
+rm -f "$T/parked.ready"
+python3 - "$(port_of "$T/parked.err")" "$T/parked.ready" >"$T/parked.out" 2>&1 <<'PY' &
+import socket, sys, time
+port, ready = int(sys.argv[1]), sys.argv[2]
+cs = []
+for _ in range(4):
+    s = socket.create_connection(("127.0.0.1", port), 3.0)
+    s.settimeout(3.0)
+    s.sendall(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n")
+    s.recv(65536)          # the answer -- the worker is now back at the top of its loop
+    cs.append(s)
+time.sleep(0.2)            # ...and now inside the next read_request_capped
+open(ready, "w").close()
+time.sleep(60)             # hold them open; the shell kills this
+PY
+PARK=$!
+i=0
+while [ "$i" -lt 250 ]; do
+    [ -f "$T/parked.ready" ] && break
+    i=$((i + 1)); sleep 0.02
+done
+( sleep 3; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+WD=$!
+kill -TERM "$SRV" 2>/dev/null
+wait "$SRV" 2>/dev/null
+rc=$?
+kill "$WD" 2>/dev/null
+wait "$WD" 2>/dev/null
+kill "$PARK" 2>/dev/null
+wait "$PARK" 2>/dev/null
+SRV=""
+if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/parked.err"; then
+    echo "  ok   SIGTERM with 4 parked keep-alive readers: exit 0 well inside the 3s watchdog (idle is 8s)"
+else
+    echo "  FAIL SIGTERM with parked readers: wait status $rc, want 0 (137 = it waited out SO_RCVTIMEO)"; fail=1
+    tail -n 3 "$T/parked.err" | sed 's/^/      /'
 fi
 
 # ---- the command line -------------------------------------------------------

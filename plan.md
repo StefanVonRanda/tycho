@@ -692,12 +692,12 @@ asserting the kill.
     a mutex — `runtime/tycho_rt.c:657` is `pthread_mutex_t mu`, taken at
     `runtime/tycho_rt.c:693`.
   - The handler's **five** actions, each named with its justification, anchored one
-    per line into the shim (`corelib/signal/signal_shim.c:81@sigx_flag`,
-    `:82@sigx_fd`, `:83@shutdown`) so the citation gate re-checks the mapping on
+    per line into the shim (`corelib/signal/signal_shim.c:148@sigx_flag`,
+    `:149@sigx_fd`, `:150@shutdown`) so the citation gate re-checks the mapping on
     every future edit to that file.
   - Both load-bearing orderings **MUST** be preserved: the descriptor registered
-    before the first `sigaction` (`corelib/signal/signal_shim.c:103@sigx_fd`), and
-    `sa_flags = 0` (`corelib/signal/signal_shim.c:108@sa_flags`).
+    before the first `sigaction` (`corelib/signal/signal_shim.c:200@sigx_fd`), and
+    `sa_flags = 0` (`corelib/signal/signal_shim.c:205@sa_flags`).
   - **The `SA_RESTART` clause is the one worth having.** Phase 1 measured it as a
     contrast (0/4 woken with `SA_RESTART`, 1/4 without) and the tempting way to
     write that up is "so we do not set it". What the spec says instead is what a
@@ -1139,7 +1139,7 @@ connection before the signal. Recorded rather than hidden, because
 `CLAUDE.md`'s gate table quotes `make server-check` at ~4s and that number is now
 wrong by 3 s.
 
-- [ ] **Phase 19** — filed by batch A, measured. Shutdown latency for a worker
+- [x] **Phase 19** — filed by batch A, measured. Shutdown latency for a worker
       **already parked in a blocking read** is still one `SO_RCVTIMEO`: 4733 ms
       with `--idle-ms 5000`, unchanged by phase 15, because
       `server/main.ty:405`'s check cannot run until `read_request_capped`
@@ -1158,7 +1158,7 @@ wrong by 3 s.
       pins at 400..3000 ms. Bounded and exit-0 either way, so this is still slow,
       not hung.
 
-- [ ] **Phase 20** — filed by batch A, out of scope and pre-existing. The
+- [x] **Phase 20** — filed by batch A, out of scope and pre-existing. The
       watchdog at `server/run.sh:346` is `( sleep 10; kill -KILL ... ) &`, and
       `kill "$WD"` reaps the subshell but not the `sleep` it is blocked in. The
       orphan keeps the stdout this script inherited, so a caller that *captures*
@@ -1863,3 +1863,189 @@ it appears (the gate table and the `make ci` step table), per batch A's measured
       rewriting the README lane in the same file, and deliberately not absorbed
       into phase 18, which owned the count claim and not the corpus lane. Verify:
       `make editors-check`.
+
+### Batch E evidence — phases 19 and 20, 2026-07-31
+
+Three files carry the change: `corelib/signal/signal_shim.c` (the registry),
+`corelib/signal/signal.ty` (its two-call surface), `server/main.ty` (register and
+retire), `server/run.sh` (the redirect, and one new assertion). Every number
+below came from running something.
+
+#### Phase 20 first, because it makes every other timing in this batch honest
+
+`server/run.sh:357` was `( sleep 10; kill -KILL ... ) &`. `kill "$WD"` reaps the
+subshell; the `sleep` it is blocked in survives, and it holds the stdout this
+script inherited. `$(...)` does not wait for the script, it waits for the write
+end of the pipe to close everywhere — so a caller capturing the log waits out the
+orphan.
+
+Both directions, same box, same binary:
+
+```
+                       direct     captured
+before the redirect    7089 ms    14280 ms
+after  the redirect    7141 ms     7100 ms
+```
+
+The 7.2 s gap is the remainder of a 10 s watchdog armed part-way through the run;
+batch A measured the same effect as 34.5 s when a 30 s watchdog was briefly in
+the file. `) >/dev/null 2>&1 &` closes it, which is how the other three watchdogs
+(`server/run.sh:512`, `server/run.sh:586`, `server/run.sh:632`) were already
+written. Final numbers with phase 19's extra case in the file: **7338 ms direct,
+7361 ms captured** — captured and direct now agree, which is the whole point.
+
+#### Phase 19 — route (a), and why (b) stayed rejected
+
+(b) was re-read, not re-litigated, and the entry's reasoning holds:
+`read_request_capped` hands back a partial `raw` with no way to resume it, so a
+head split across two slices is re-parsed from the second, and a slice timeout
+holding bytes answers 408 after the *slice* — which `server/run.sh:262` pins at
+400..3000 ms. Nothing found to contradict that, so route (a) it is.
+
+**The registry.** `corelib/signal/signal_shim.c:117-118`: a fixed
+`static volatile sig_atomic_t sigx_conns[256]`, one slot per worker, `0` meaning
+empty and any other value meaning `fd + 1`. The safety argument, statement by
+statement:
+
+1. **The handler writes nothing but `sigx_flag`.** It only *reads* the slots
+   (`corelib/signal/signal_shim.c:151-154`). So no handler-side store to a slot
+   exists to be interleaved with anything.
+2. **Each slot has exactly one writer.** Slot `i` is written only by worker `i`,
+   from ordinary context. Workers never touch each other's slots, so the program
+   contains no write/write pair on a slot and there is nothing to serialise —
+   which is why there is **no lock**, rather than a lock chosen carelessly. A
+   mutex is not on the `man 7 signal-safety` list and a handler blocking on one
+   the interrupted thread already holds deadlocks the process; the design removes
+   the need for mutual exclusion instead of trying to make taking it safe.
+3. **The one concurrent pair is single-writer/single-reader on a
+   `volatile sig_atomic_t`** — precisely the object POSIX defines for a handler
+   to share with the rest of the program. The reader observes the old value or
+   the new one, never a torn one.
+4. **`fd + 1`, not `fd`**, so the whole table is already correct at static
+   zero-initialisation: there is no init pass for a signal to race with during
+   arming, and `0` — a legal descriptor — is not confusable with "empty".
+5. **Every range check is outside the handler**
+   (`corelib/signal/signal_shim.c:169-170` and `corelib/signal/signal_shim.c:180`).
+   The handler does no validation, so
+   its body stays loads, branches and `shutdown()`.
+6. **The handler's loop is bounded and branch-only**: 256 loads, each into a
+   local *before* it is tested, so the value range-checked is the value passed to
+   `shutdown()` and no slot is read twice.
+7. **The listener still goes first**, then the connections, and `sigx_flag`
+   before both — so any thread woken by either `shutdown()` finds the flag set.
+
+**The retire path, which matters as much as registering.** `server/main.ty:590`
+calls `signal.retire_conn(slot)` **before** `net.close_fd(conn)` at
+`server/main.ty:591`, never after. Reversed, a handler reading the still-live
+slot would target a number the kernel has already handed back out. In the order
+shipped, a stale read requires the handler to observe a value the owning thread
+overwrote strictly earlier, and even then `shutdown()` on the wrong number is
+benign: closed → `EBADF`, reused by another connection → that connection is being
+shut down anyway, reused by a regular file → `ENOTSOCK`. `shutdown()` closes
+nothing, frees nothing and discards no written data. That is the same property
+that made it the right call over `close()` for the listener in phase 1, and it is
+what makes this race benign rather than merely unlikely.
+
+**Sizing is derived, not picked.** `server/main.ty:672` rejects `--workers`
+outside 1..256, and an accept loop holds at most one connection at a time
+(`server/main.ty:557-591` is one sequential body: accept, register, serve, retire,
+close). One slot per worker is therefore sufficient. `slot = wid - 1` because
+worker ids run 1..N and the table is indexed from 0. `register_conn` **fails
+closed**: an out-of-range slot or fd is refused, and a refused connection keeps
+exactly the pre-phase-19 behaviour — one `SO_RCVTIMEO` — rather than putting a
+wrong descriptor in the table.
+
+#### The measurement, and the three things that must not regress
+
+Method as phases 3 and 15 used it: `kill(2)` to `wait(2)` returning,
+`--workers 4 --idle-ms 5000`. "before" is a binary built from a clean worktree at
+`61a66b0`, so both columns are this box on this day:
+
+```
+                                       before      after
+0 idle clients (phase 3)                 1 ms       1 ms   rc=0, stopped line
+4 PARKED idle clients (phase 19)      4878 ms       1 ms   rc=0, w1..w4 all served
+4 BUSY clients, 100ms drip (phase 15)    5 ms       1 ms   rc=0, stopped line
+```
+
+`4878 ms` reproduces batch A's 4733-4901 ms band on the unpatched tree, so the
+baseline is the same phenomenon. The parked case was repeated: **1 ms, 5 runs out
+of 5.** Phase 3's clean-shutdown invariants held in every run — exit 0, the
+`stopped after N requests` line, and `w1,w2,w3,w4` all present in the access log,
+which is the "all workers released" assertion.
+
+#### The new assertion, proved against the unpatched tree first
+
+`server/run.sh` case 6, 60 → **61 assertions**: four clients each complete one
+request, read the answer and go quiet, which parks all four workers inside the
+next read; then SIGTERM under a **3 s** watchdog with `--idle-ms 8000`. The
+numbers are chosen so it cannot be a coin flip — the old behaviour cannot finish
+under 8 s by any path and comes back 137; the new one takes about a millisecond.
+Copied into a worktree at `61a66b0` and run there:
+
+```
+  FAIL SIGTERM with parked readers: wait status 137, want 0 (137 = it waited out SO_RCVTIMEO)
+server: FAIL
+```
+
+twice out of two, and only that assertion. On the patched tree:
+
+```
+  ok   SIGTERM with 4 parked keep-alive readers: exit 0 well inside the 3s watchdog (idle is 8s)
+server: OK
+```
+
+#### Gates — real output
+
+- `make -s server-check`: **server: OK**, **61** assertions (was 60).
+- 10-run loop: **10/10 OK, 61 every run** — run twice, before and after the
+  comment-only edits, 10/10 both times.
+- `make test`: **passed: 560   failed: 0** — unchanged.
+- `make corelib`: **all green (tychoc matches goldens)**. Run because
+  `corelib/signal/` changed and `corelib/test/signal/main.ty` compiles the shim;
+  `make test` does not cover that package.
+- `python3 scripts/check_citations.py`: **ok** (191 anchored, 2844 bare in bounds,
+  248 source→doc, 247 source→source in bounds, 16 source→source anchored).
+- `sh scripts/check_links.sh`: ok. `sh scripts/spec_check.sh`: 9 runnable
+  examples, all pass. Both run because `docs/spec/18-library.md` was touched.
+- `make ci` deliberately **not** run: per `CLAUDE.md` it is the closing sweep.
+
+**Gate cost.** `sh server/run.sh` 7.0 s → 7.3 s. The new case is one respawn plus
+a 0.2 s settle; its watchdog only costs 3 s when it *fails*.
+
+#### Four files outside the stated scope were edited, and why
+
+Inserting comment blocks moved lines, and 15 **anchored** citations elsewhere in
+the tree pointed into the three edited files by line number. `check_citations.py`
+failed on all 15. Re-pointing them is not scope creep, it is the change's own
+cleanup: `FRICTION.md` (2), `server/README.md` (1), `docs/spec/18-library.md`
+(5), `plan.md`'s own phase 2 evidence (5), plus two in `server/run.sh`'s header
+(`server/main.ty:621@pick`, `server/main.ty:752@worker`) and the readiness spans
+above them. Nothing but the line numbers changed in any of them. The two refs
+this batch itself wrote into `server/main.ty` and `corelib/signal/signal_shim.c`
+were switched to the **anchored** `path:N@token` form on purpose, so the next
+edit that moves them reddens the gate instead of drifting silently.
+
+- [ ] **Phase 27** — filed by batch E, out of scope and pre-existing, and it is
+      the *other half* of the citation problem `CLAUDE.md` already documents.
+      `scripts/check_citations.py` verifies an **anchored** ref
+      (`path:N@token`) against the token it names, but a **bare** `path:N` is only
+      **bounds-checked** — it passes as long as the file has that many lines.
+      2848 refs are in that category, and they drift silently. Batch E's own
+      edits moved lines in `corelib/signal/signal_shim.c` and `server/main.ty`
+      and the gate caught **15 anchored** refs while catching **none** of the
+      bare ones that describe the same code. Concretely, in this file:
+      `plan.md:296` reads "`corelib/signal/signal_shim.c:81` | `sigx_flag = 1;`"
+      and line 81 of that file is now the middle of a comment — the statement it
+      names is at `corelib/signal/signal_shim.c:148@sigx_flag`. The same is true
+      of `plan.md:290`'s `corelib/signal/signal_shim.c:77-85` handler span, and
+      of a long tail of `server/main.ty:N` refs in this file's phase 1-3
+      evidence. Two candidate treatments and they are not equivalent: (i) leave
+      historical evidence blocks alone as frozen records and say so in
+      `CLAUDE.md` — cheap, but it means a live `plan.md` contains refs that
+      resolve to the wrong lines until it is archived; (ii) teach the gate to
+      require an anchor for **source→doc single-line** refs the way it already
+      does inside `> Provenance:` blocks, which would redden ~2848 refs at once
+      and needs a migration rather than a phase. **Do not start (ii) without
+      counting the real blast radius first.** Verify either way:
+      `python3 scripts/check_citations.py`.

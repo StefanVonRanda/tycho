@@ -40,7 +40,7 @@ held, or one, shutdown completes in **1 ms**; with all four workers parked on
 idle keep-alive connections it takes **5141 ms**, one full idle timeout. Exit
 status is 0 and the stopped line prints in every case, so a busy shutdown is
 slow, not hung — but a large `--idle-ms` is a proportionally slow `SIGTERM`.
-`signal.shutdown_requested()` (`corelib/signal/signal.ty:64@shutdown_requested`)
+`signal.shutdown_requested()` (`corelib/signal/signal.ty:88@shutdown_requested`)
 exists to cut that to one in-flight request and has no caller in the tree yet;
 filed as phase 15 of `plan.md`.
 
