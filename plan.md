@@ -556,7 +556,7 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
     what the server now does, and `make ci` is green with the exit code observed.
   - Verify: the three doc gates, then `make ci` once, waited on in-turn.
 
-- [ ] **Phase 6 — `io.size`, and it must land BEFORE phase 4**
+- [x] **Phase 6 — `io.size`, and it must land BEFORE phase 4**
   - Found by phase 3, not absorbed by it: phase 3's scope was `read_at`, and adding
     a second public call to spare a later phase a discovery is the silent absorption
     `CLAUDE.md` forbids. Recorded here instead, with the ordering it needs.
@@ -587,6 +587,147 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   - Verify: `make test`, then `make -s corelib`, then
     `python3 scripts/check_citations.py` — expect drift into `corelib/io/io.ty`
     again and repair it by dropping the number, not repointing it.
+
+  **Evidence (2026-07-31).**
+
+  *A third `stat(2)` sibling, and the caller count that decided it.*
+  `corelib/io/io_shim.c@iox_stat_size` is `(const char *path, tycho_int *size)`
+  returning the status — `corelib/io/io_shim.c@iox_stat_mtime`'s shape exactly, for
+  phase 1's reason: a scalar payload cannot share the 0..3 code space (a 2-byte file
+  would be indistinguishable from `TY_RF_DIR`) and a scalar *can* be an `inout`, so
+  the payload takes the `inout` and the status keeps the return. **No new FFI
+  pattern was invented; this is the second use of the one phase 1 proved.**
+
+  Phase 1 settled sibling-versus-fold by counting callers who would pay for a value
+  they discard, and the same count decides this — **it just lands differently, and
+  the honest reading is that the count alone does not settle it here.**
+  `iox_stat_kind` has **three** callers (`corelib/io/io.ty@is_dir`,
+  `corelib/io/io.ty@exists`, and `corelib/io/io_shim.c@iox_make_dir`, which calls it
+  from C). `iox_stat_mtime` has **one** (`corelib/io/io.ty@mtime`) — verified by
+  grep, not assumed. So folding a size into it costs one discard, not three, and on
+  phase 1's arithmetic that is a much weaker objection.
+
+  What settles it is that the fold **creates a second discard immediately**:
+  `io.size` would then call `iox_stat_mtime` and throw away the mtime, so *both*
+  public calls would be discarding half of a merged fetch, and the merged function
+  could no longer be called `iox_stat_mtime` — a rename of a shim phase 1 shipped
+  four commits ago. Two discards and a rename to save one `stat(2)` for a caller
+  that wants a size *and a date together*, and no such caller exists or is coming: a
+  `Range` request wants a size and a **slice**.
+
+  *And it is not shared with `corelib/io/io_shim.c@iox_read_at`'s `fstat` either,
+  which is the case phase 1 did not have.* The phase brief is right that phase 4
+  will often want both the size and a slice of the same file, so this was the real
+  candidate. It does not work, and the reason is **ordering, not cost**: that
+  `fstat` runs on an fd opened, read and closed inside one call, and all three
+  cases needing a length need it *before* they know what to read — a `416` emits
+  `Content-Range: bytes */LEN` and reads **nothing at all**, `bytes=-N` needs LEN to
+  compute its start, and `bytes=A-` needs LEN to name its end. A size handed back
+  out of `read_at` arrives after the decision that needed it. So the cost of the
+  split is one extra `stat(2)` on the path that then also reads, and **zero** on the
+  `416` path, which stats once and opens nothing.
+
+  *Which way phase 4 goes, since the brief asked this phase to say.* The alternative
+  it named — call `io.read_at` and infer a short read from `len` — covers
+  `bytes=A-B` and nothing else, which is the half phase 4 already had. `io.size`
+  now exists, so phase 4 takes the length up front for all three forms and the
+  `416`, and `io.read_at` for the slice. Two calls, one `stat` and one `pread`,
+  and the file is never read to learn its length.
+
+  *The directory decision, which deliberately DIFFERS from `mtime`'s and is the
+  case where phase 1's reasoning does not carry.* `corelib/io/io.ty@size` returns
+  **`Err(IsDir)`** for a directory. Phase 1 returned `Ok(secs)` for a directory's
+  mtime on the grounds that erroring would discard a field the kernel had already
+  supplied — and that argument is sound *there*, because a directory's `st_mtim`
+  **is** the modification time being asked for. A directory's `st_size` is not the
+  byte length being asked for: it is the size of the directory's own on-disk entry
+  structure (4096 on ext4, filesystem-dependent elsewhere, 0 on some), and no read
+  can ever produce that many bytes. So this is not withholding an answer, it is
+  declining to report a number that is not one — and the caller who would be misled
+  is precisely the one this call exists for, which would answer a `416` with
+  `Content-Range: bytes */4096` for a path holding no bytes at all.
+
+  The rule that keeps the two calls honest with each other, and the one I would
+  defend if only one line survived: **`io.size` succeeds on exactly the paths
+  `io.read_at` can read.** Regular file → both `Ok`; directory → both `Err(IsDir)`;
+  fifo, socket or device → both `Err(Failed)`, since `st_size` is meaningless for
+  them and pread(2) fails `ESPIPE` on anything unseekable. `size(p)` is the length
+  `read_bytes(p)` would return, on every path, or neither answers. A size no read
+  could produce is worse than no size.
+
+  *Zero length: `Ok(0)`, and 0 is structurally not the failure value.* This is the
+  case the brief singled out and it needs no special handling — it is **bought by
+  the FFI shape**, which is worth stating because it is the payoff for the split
+  above. The status rides the shim's *return*, so a failure arrives as an `Err` and
+  can never present as a small number; `0` is reachable only through `TY_RF_OK`.
+  Contrast the defect this whole plan exists to remove, where `len(read_bytes(p))`
+  gave `0` for an empty file, a missing file **and** a directory. The golden prints
+  the pair rather than the number alone (`size_empty=Ok n=0`) so that an `Err`
+  collapsing through `unwrap_or` would read `Failed n=-1`, and a status leaking into
+  the payload would read `Ok n=1`. Only `Ok n=0` passes. A static server meets this
+  file for real and owes it a `200` with `Content-Length: 0`, not a `500`.
+
+  *The fixture, and why it is the inverse of phase 3's.* Phase 3 asserted letters so
+  a wrong offset prints wrong letters instead of a right count. Here the **number is
+  the assertion**, so the length has to be unambiguous *in the source* rather than a
+  property of the machine: `corelib/test/io/main.ty` reuses the 26-byte alphabet
+  file phase 3 writes, so `26` is a fact of the fixture. It is **also** cross-checked
+  against `len(read_bytes)` on the same file — the read-the-whole-thing route this
+  call replaces — so a size disagreeing with the bytes actually present fails even
+  if the literal `26` were itself wrong. Both must hold. `corelib/test/io.out` gained
+  three lines; `mwhy` was reused unchanged, and its `IsDir` arm — written by phase 1
+  as an unreached guard against a silent change — **is now a reached arm.**
+
+  ```
+  size=Ok n=26 is26=1 agrees=1
+  size_empty=Ok n=0 wrote=1 readlen=0
+  size_missing=NotFound size_dir=IsDir
+  ```
+
+  The golden matched on the first run: the diff against the recorded file was
+  exactly these three added lines and no others, checked before recording.
+
+  *Gates, all three foreground, one command each.*
+
+  ```
+  $ make -s corelib
+  ok   io
+  corelib: all green (tychoc matches goldens)
+
+  $ python3 scripts/check_citations.py
+  citation check: ok
+
+  $ make test
+  passed: 560   failed: 0
+  all green
+  ```
+
+  560 before, 560 after — expected for the reason phases 1 and 3 both recorded: this
+  extends an existing `corelib/test/` lane rather than adding a `tests/` fixture, so
+  the gate proves the compiler still handles the FFI shape without its count moving.
+
+  *No citation drift, and that is a result rather than luck.* Phase 1 broke one ref
+  by growing `corelib/io/io.ty`; phase 3 broke one by moving `iox_stat_kind` 90 lines
+  down `corelib/io/io_shim.c`. This phase inserted into **both** files and moved
+  `iox_make_dir` and `iox_remove` further still, and the gate was green on the first
+  run with nothing to repair. The reason is that the refs those phases repaired were
+  converted to `path@SYMBOL`, which survives insertion by construction — the
+  mitigation CLAUDE.md prescribes, paying off on the third consecutive phase to grow
+  these files. Every citation written above is in that form for the same reason, so
+  phase 4 can grow these files again without reddening this block.
+
+  **Hand-off to phase 5, and no phase 7 was added.** The only discovery outside
+  `corelib/io/` is that **phase 5's scope line now under-counts: it says "the two new
+  `core:io` calls" and there are three** — `io.mtime`, `io.read_at` and `io.size`.
+  That is a wrong number in a brief, not new work: phase 5 already owns documenting
+  whatever `core:io` gained, and filing a phase 7 to say "phase 5 should also
+  document the third one" would be a phase whose whole content is a correction to
+  another phase's word. Phase 1 set this precedent when its only discovery was drift
+  it had itself caused. **The residual risk is real and named rather than papered
+  over:** a phase 5 agent that reads its own brief and not this block documents two
+  of three. Whoever writes phase 5's instructions should say "three", and
+  `corelib/io/io.ty@size` is the one that is easy to miss because it arrived after
+  the sentence was written.
 
 ## Out of scope
 
