@@ -1239,8 +1239,15 @@ and **phase 8** (the same class in `docs/spec/18-library.md`, found by phase 5).
 Neither blocks anything; both are pointers that are already false and that no
 gate can see.
 
-**One observation this phase cannot explain and did not cause.** An untracked
-`new_ideas.md` was present in the working tree at the start of this phase's
-session and is absent now. This phase ran no `rm`, `git clean` or `git checkout`,
-and `grep -n "git clean\|rm -rf\|distclean" scripts/ci.sh Makefile` returns
-nothing, so `make ci` did not remove it either. Recorded rather than guessed at.
+**One observation this phase could not explain — since answered.** An untracked
+`new_ideas.md` was present at the start of this phase's session and absent at the
+end. This phase was right that it did not cause it, and right to record the
+question rather than guess: it was deleted on the user's instruction in `afa67da`,
+`git log --diff-filter=D -- new_ideas.md`, several plans earlier. The file had
+held four language ideas, all four of which are now shipped or resolved — and
+every one of them originated as friction this same web server surfaced, which is
+why it could be deleted rather than carried.
+
+The phase could not have known: the deletion predates its session and left no
+trace in the working tree it inspected. Noting the answer here so the record does
+not carry an open question that has one.
