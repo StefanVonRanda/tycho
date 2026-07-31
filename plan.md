@@ -950,3 +950,30 @@ Unclosed discoveries from the previous plan; none blocking.
 - **`make test-fast`'s hung-job blind spot**, recorded in the previous plan: a
   hung fixture gives `rc=124` with nothing printed. Unrelated to signals in the
   server, though the same mechanism might eventually help it.
+
+- [ ] **Phase 18 — the zed README's corpus count has now reddened `make ci` four
+      times, and the fix is always the same two keystrokes.**
+  - Firings: 462→813 (2026-07-29), 837→845, 845→846, 846→848 (2026-07-31, this
+    plan's phase 2 adding `corelib/signal/signal.ty` and
+    `corelib/test/signal/main.ty`). The lane is **correct every time** — that is
+    not the problem.
+  - Every firing had the same cause: ordinary work added a `.ty` file. Nobody
+    adding a corelib package thinks to update a number in an editor plugin's
+    README, and nobody ever will. `scripts/editors_check.sh:17-21` already says
+    this in its own words — "a number a human must remember to update is not a
+    verified claim, it is a decaying one" — and then requires exactly such a
+    number.
+  - **The claim's value does not depend on N.** What a reader wants to know is
+    "the grammar was verified over the whole tracked corpus", which is true at
+    813 and at 848. The number adds precision nobody needs and a maintenance
+    obligation everybody forgets.
+  - Two honest fixes, and the second is probably right:
+    1. Have the script **rewrite** the README line when it disagrees, rather than
+       failing. Turns a red build into a diff — but a gate that edits the tree it
+       checks is a new precedent in this repo and worth thinking about.
+    2. Change the claim to name **no number**, and have the gate assert the
+       sentence exists and that the corpus parsed. Needs a matching change to
+       `scripts/editors_check.sh:70-81`, which currently errors with
+       `NO COUNT FOUND` and instructs the reader not to reword it.
+  - Not done here: this is a gate design decision, not a count fix, and this
+    plan's phase 4 was documentation-only. Cost either way: under an hour.
