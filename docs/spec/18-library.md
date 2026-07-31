@@ -292,6 +292,86 @@ scale-preserving); `rescale(a, newscale)` (truncates toward zero); `to_str`.
 Division is deferred (needs a target scale + rounding policy). Source
 `corelib/decimal/decimal.ty`.
 
+### 32.27 `signal`
+
+Clean shutdown on `SIGTERM`/`SIGINT` — and deliberately nothing else — via a
+**libc-only shim** (`signal_shim.c` over `sigaction(2)` and `shutdown(2)`; no
+`deps`, the same self-contained model as `core:os` and `core:net`). Core tier.
+`on_shutdown(fd) -> bool` installs one handler for both signals whose only effect
+is `shutdown(fd, SHUT_RDWR)` on the listening socket `fd`, so every thread blocked
+in `accept` on it (§32.24) is released and the program winds down through the
+failure path it already has; `shutdown_requested() -> bool` reports whether such a
+signal has arrived since. `on_shutdown` **MUST** fail closed: on a descriptor it
+cannot register or a handler it cannot install it returns `false` and leaves the
+default disposition in place (the process dies on `SIGTERM`), never a half-armed
+state. Source `corelib/signal/signal.ty`, `corelib/signal/signal_shim.c`.
+
+**The narrowness is normative, not an omission.** There is no
+`signal.on(sig, handler)`, and an implementation **MUST NOT** run Tycho code in
+handler context. Every Tycho value lives in a bump-allocated arena (§31.1,
+[§9](07-memory-model.md)) whose allocator is not re-entrant, and channel
+operations park behind a mutex (`runtime/tycho_rt.c:657@mu`,
+`runtime/tycho_rt.c:693@pthread_mutex_lock`); a handler that interrupts the
+allocator or a lock holder and then allocates or touches a channel corrupts or
+deadlocks the process it was invoked to shut down. A wider surface is therefore a
+language feature rather than a library one, and would need at minimum: an
+async-signal-safe hand-off out of handler context (a self-pipe or `signalfd` read
+by a dedicated thread) so the Tycho callback runs on an ordinary stack; a rule
+holding the handler itself to a `sig_atomic_t` store; a `pthread_sigmask` policy,
+because a process-directed signal is delivered to an arbitrary thread and
+"whichever worker the kernel picked runs your callback" is not a contract a
+program can be written against ([§23](13-concurrency.md)); and a re-entrancy
+clause in this chapter.
+
+#### The handler's async-signal-safety contract
+
+The installed handler performs **exactly five actions**
+(`corelib/signal/signal_shim.c:77-85`), and every one is either an access to a
+`volatile sig_atomic_t` — the one object type POSIX permits a handler to write
+while the rest of the program reads it — or a call POSIX lists as
+async-signal-safe:
+
+1. save `errno` into an automatic `int`, because `shutdown()` may clobber it and
+   the interrupted thread is entitled to find its own value;
+2. store `1` to the flag `shutdown_requested` reads
+   (`corelib/signal/signal_shim.c:81@sigx_flag`);
+3. load the registered descriptor (`corelib/signal/signal_shim.c:82@sigx_fd`);
+4. if that descriptor is non-negative, call `shutdown(fd, SHUT_RDWR)`
+   (`corelib/signal/signal_shim.c:83@shutdown`) — a bare syscall that allocates
+   nothing and takes no userspace lock the interrupted thread could already hold;
+5. restore `errno`.
+
+No `malloc`, no stdio, no `pthread_*`, no arena access, so the handler holds no
+lock the interrupted thread can deadlock against. `memset`, `sigemptyset` and
+`sigaction` (`corelib/signal/signal_shim.c:104-110`) run inside `on_shutdown`,
+which is ordinary code. Two orderings are load-bearing and an implementation
+**MUST** preserve both:
+
+- **The descriptor is registered before the first `sigaction`**
+  (`corelib/signal/signal_shim.c:103@sigx_fd`), so a signal arriving mid-install
+  can never find a handler in place and a stale or absent descriptor to act on. An
+  unregistered descriptor **MUST** leave the handler setting only the flag.
+- **The handler is installed with `sa_flags = 0`**
+  (`corelib/signal/signal_shim.c:108@sa_flags`), that is, **without
+  `SA_RESTART`**. This is observable, so it is normative: with `sa_flags = 0` the
+  thread that receives the signal finds its `accept` interrupted and `net.accept`
+  reports `Err` (§32.24), which is the wind-down path a program is entitled to
+  observe; under `SA_RESTART` the kernel restarts that `accept` and the receiving
+  thread does not wake at all. Correctness does not rest on this — the `shutdown()`
+  releases every blocked thread whichever one ran the handler, which is why that
+  mechanism was chosen over closing the descriptor — but a program **MUST** be able
+  to see an interrupted `accept` as a failed one rather than as a silently
+  restarted call.
+
+**What it costs, recorded because it is not portable.** `shutdown()` waking a
+thread blocked in `accept` on a *listening* socket is a Linux behaviour, not a
+POSIX guarantee, and connections still sitting in the backlog are dropped rather
+than drained. An implementation on another platform **MUST** re-establish the
+released-every-thread property rather than assume it; closing the descriptor is
+not a substitute, since a thread already blocked in `accept` is not woken by the
+close and the descriptor number can be handed back out while it is still blocked
+on it.
+
 ## 33. Extended-tier packages
 
 Each package below declares a `corelib/<pkg>/deps` manifest naming a pkg-config
