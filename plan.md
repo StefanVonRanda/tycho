@@ -339,7 +339,7 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
       is the point — the first draft would have shipped a made-up gap into
       `FRICTION.md`, which is the one file here where that is expensive.
 
-- [ ] **Phase 3 — chunked hashing through `io.read_at`**
+- [x] **Phase 3 — chunked hashing through `io.read_at`**
   - Scope: the same program.
   - Today the tool reads each file whole. `io.read_at` landed this morning with
     a fixture and **no caller**; chunked hashing is what it was built for.
@@ -349,6 +349,138 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
   - Done when: hashing is chunked, digests match phase 1's byte for byte on a
     file larger than one chunk, and the archive is unchanged.
   - Verify: the digest comparison, then create-twice `cmp` still holds.
+
+  **Done.** `tools/tycho-ar/main.ty` only. Built first try.
+
+  **The phase could not be done the way it was written, and the reason is the
+  finding.** "Make hashing chunked" assumes a streaming digest exists to feed.
+  It does not: `core:sha256` exposes `digest(msg)` and `hex(msg)`, both taking
+  the whole message as one `string`, and there is **no init/update/final
+  anywhere in the corelib** — `corelib/sha256`, `corelib/md5`, `corelib/crypto`
+  and `corelib/hash` grepped together for `sha256_(init|update|final)`,
+  `EVP_DigestUpdate` and `fn (init|update|final)` return **zero hits**.
+  `core:crypto`'s `cx_sha256_hex` is one-shot too and wants its message
+  hex-encoded, which would double the buffer this phase exists to bound. So the
+  streaming SHA-256 is ~60 lines in `tools/tycho-ar/main.ty@sha_block`,
+  `@sha_feed`, `@sha_finish`, `@sha_bytes`, `@sha_file`.
+
+  **It is 60 lines and not a second SHA-256 because a Tycho package has no
+  private top-level functions.** `sha256.k_table`, `h_init`, `ch`, `maj`,
+  `bigsig0/1`, `smallsig0/1`, `pow2` and `hex2` are all callable from an
+  importing program — probed, all returned. Not one constant is duplicated: the
+  round table and the initial state come from `core:sha256` itself, so only the
+  block loop and the padding are new.
+
+  **Digest equality, three ways, on 14 files at every boundary that matters** —
+  sizes 0, 1, 55, 56, 63, 64, 65, 119, 120, **65535, 65536, 65537**, 131072,
+  200000 (`CHUNK` is 65536, so those three straddle it; 55/56/63/64/65/119/120
+  straddle the 64-byte block and the padding overflow):
+
+  ```
+  $ ./tychoc tools/tycho-ar/main.ty -o build/tycho-ar
+  built build/tycho-ar
+  # chunked   = ./build/tycho-ar t b.tyar        (the shipped binary)
+  # wholefile = sha256.hex(to_str(io.read_bytes(p)))  -- phase 1's expression, verbatim
+  # sha256sum = coreutils
+  --- rows: 14 / 14 / 14
+  chunked == whole-file : IDENTICAL
+  chunked == sha256sum  : IDENTICAL
+  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  btree/f0.bin
+  0eaab25e98457cedf4878beb342b45c80eca0e76296eb5cb00a0b3d63674969a  btree/f65536.bin
+  ce376b3478186365a24c2408739e80b5394b08a81781be8477662b43e0ded5b1  btree/f65537.bin
+  ```
+
+  **The archive bytes did not move**, checked against the *actual* phase-1/2
+  binary rather than against a remembered number: `git show HEAD:tools/tycho-ar/main.ty`
+  built to a separate binary and run over the same tree (phase 1's fixture shape
+  plus a 200 KB multi-chunk file, 9 files):
+
+  ```
+  $ ./old/ar-old c old.tyar tree        # HEAD 196e22f's source
+  tycho-ar: old.tyar: 9 files, 304296 bytes
+  $ ./build/tycho-ar c new1.tyar tree && ./build/tycho-ar c new2.tyar tree
+  tycho-ar: new1.tyar: 9 files, 304296 bytes
+  phase-1 archive == phase-3 archive : CMP-IDENTICAL
+  create-twice still deterministic   : CMP-IDENTICAL
+  $ ./build/tycho-ar x new1.tyar out && diff -r tree out
+  round trip: diff -r EMPTY
+  ```
+
+  `parse` and `cmd_x` were moved onto the same hasher (`sha_bytes`), so phase 2's
+  corruption check was re-run: a byte flipped at the archive midpoint gives
+  `member 7 (sub/multichunk.rand): payload digest mismatch (csha)`, exit 1.
+  `python3 scripts/check_citations.py` → `citation check: ok`.
+
+  **What chunking bought, and what it did not** — stated as the brief asked,
+  because the natural summary is wrong. `sha256.digest` expands its whole message
+  into `buf := []int`, **one machine int per byte**, before processing a block:
+  hashing an n-byte file allocated ~8n bytes of int array on top of the n bytes
+  of file. That term is gone — `sha_block` indexes the `bytes` value directly and
+  the largest live buffer in the hash path is one 64 KiB chunk. **But `c` still
+  holds each file whole**, because `compress.compress` is `bytes -> bytes`, a
+  one-shot with no streaming counterpart, exactly as `sha256.hex` was. Peak
+  memory for `c` is still O(file size); chunking removed the 8x multiplier on
+  top, not the file. Bounding the last term needs a streaming deflate, which is
+  a `core:compress` change.
+
+  **So the file is read twice**, once whole for the compressor and once in chunks
+  for the digest. Deliberate: folding them into one pass means growing a `bytes`
+  by `+` per chunk, and `bytes + bytes` allocates and copies both sides, so
+  accumulating in n/CHUNK pieces is quadratic. Two linear passes beat one
+  quadratic one. Neither would be needed if the compressor could be fed
+  incrementally.
+
+  **The termination condition, defended.** Both primitives answer out-of-range
+  requests by shrugging: `io.read_at` clamps its allocation to the file and
+  returns `Ok` with zero bytes at or past EOF (`corelib/io/io.ty@read_at`), and a
+  `bytes` slice clamps (`docs/spec/03-types.md:139`). A loop asking for `CHUNK`
+  until it got less would spin or hash a prefix. Instead the bound is `size` —
+  the same length the compressor was fed — each request is `min(CHUNK, size -
+  off)` so a conforming read cannot overshoot, a read returning 0 before
+  `off == size` is **fatal** rather than a loop exit, and every iteration
+  advances `off` by at least one byte or dies. At most `size` iterations by
+  construction.
+
+  **Notes for phase 4 — what phase 3 surfaced.**
+
+  14. **No incremental digest anywhere in the corelib**, verified across all four
+      hashing packages. Every SHA-256 in this tree hashes a message the caller
+      already holds entire, so nothing that hashes a large file can do it in
+      bounded memory without writing its own. Filed as phase 14 below.
+  15. **A Tycho parameter is borrowed read-only, and that is *why* the corelib's
+      digest is one-shot.** `fn bump(a: [int]): a[0] = 1` is `error: cannot
+      mutate parameter 'a' (it is borrowed read-only; copy it with `y := a`
+      first)`, and the suggested copy is a genuine copy — `c := a; c[0] = 999`
+      leaves `a[0]` alone, so arrays are value semantics, not references. A
+      streaming state therefore cannot be threaded through calls by default.
+      `inout` is the answer and it works well (on `[u32]`, on `bytes`, and it
+      forwards — `sha_feed` hands its own `&H` to `sha_block`), but it has to be
+      reached for deliberately, and a one-shot function needs none of it. This is
+      the language's default showing through the library: `core:sha256`'s shape
+      is what the borrow rule makes natural, not an oversight. **The most useful
+      thing this phase learned**, and it reframes note 14 from "a missing
+      function" to "a missing habit".
+  16. **A package has no private top-level functions.** Every `fn` in
+      `corelib/sha256/sha256.ty` is callable as `sha256.<name>` from an importing
+      program — `k_table`, `h_init`, `ch`, `maj`, `pow2`, `hex2` all probed and
+      returned. That is what made this phase cheap: no constant is duplicated.
+      It is also a real hazard, and both halves are worth `FRICTION.md`: a
+      corelib author has no way to mark a helper internal, so every helper is
+      API, and any rename is a breaking change to callers the author never knew
+      existed. Verified by compiling a program that calls all of them.
+  17. **`chr(n)` is the only way to make a byte from a number**, so SHA-256's
+      padding is built as a `string` and converted, not assembled as `bytes`.
+      There is no `bytes` builder from integers — `to_bytes` takes a `string`.
+      Harmless here (the padding is at most 120 bytes, built once per file) and
+      it would not be if a hot loop had to emit bytes. Pairs with phase 1's
+      note 3: `bytes` is a fine type to *receive* and an awkward one to
+      *construct*.
+  18. **`core:io` is path-based with no file handles**, so the compressor's read
+      and the digest's reads are separate `open(2)`s over the same path. A writer
+      racing between them is **detectable** — the zero-progress and
+      `n > want` checks above — but not preventable. An archiver cannot read a
+      file atomically with this interface. Different in kind from phases 11/12
+      (a missing call): this is the shape of the whole package.
 
 - [ ] **Phase 4 — the gate, and what the program surfaced**
   - Scope: a runner, its `Makefile` target, a `scripts/ci.sh` step,
@@ -414,6 +546,45 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
       any parser with a length field, which phase 2 discovered by having to write
       its own strict version. There is no strict or `Result`-returning
       counterpart in `core:strings`. Found by phase 2; a corelib change.
+
+- [ ] **Phase 14** — no incremental digest anywhere in the corelib.
+      `core:sha256` is `digest(msg)` / `hex(msg)` over a whole `string`;
+      `corelib/sha256`, `corelib/md5`, `corelib/crypto` and `corelib/hash`
+      grepped together for `sha256_(init|update|final)`, `EVP_DigestUpdate` and
+      `fn (init|update|final)` return zero hits, and `core:crypto`'s
+      `cx_sha256_hex` is one-shot over hex. So hashing a large file in bounded
+      memory means writing your own, as `tools/tycho-ar/main.ty@sha_feed` does.
+      Compounded by `sha256.digest` expanding its message to one machine int per
+      byte before it starts. Found by phase 3; a corelib change.
+
+- [ ] **Phase 15** — the reason phase 14 exists: a Tycho parameter is borrowed
+      read-only (`cannot mutate parameter 'a' (it is borrowed read-only...)`) and
+      `y := a` is a copy, so a streaming state cannot be threaded through calls
+      without `inout`. A one-shot digest is what the language makes natural.
+      Not a defect — `inout` works on `[u32]` and `bytes` and forwards — but it
+      is a language default steering library shape, which is exactly what
+      `FRICTION.md` is for. Found by phase 3; a `FRICTION.md` entry, not a code
+      change.
+
+- [ ] **Phase 16** — a package cannot mark a top-level function internal. Every
+      `fn` in `corelib/sha256/sha256.ty` is reachable as `sha256.<name>` from an
+      importing program (`k_table`, `h_init`, `ch`, `maj`, `pow2`, `hex2` all
+      probed). This made phase 3 cheap and means every corelib helper is public
+      API by accident: any rename breaks callers the author never knew about.
+      Found by phase 3; a language question, so not absorbed.
+
+- [ ] **Phase 17** — `chr(n)` is the only route from a number to a byte; there is
+      no `bytes` builder from integers, only `to_bytes(string)`. Phase 3's
+      SHA-256 padding is built as a `string` and converted. Harmless at 120 bytes
+      per file, and it would not be in a hot loop. Pairs with phase 9.
+
+- [ ] **Phase 18** — `core:io` is path-based with no file handles, so a program
+      that reads one file twice (`tycho-ar` compresses from one read and hashes
+      from another) does two `open(2)`s and cannot read atomically. Phase 3
+      detects a racing writer — a zero-length read before the expected length is
+      fatal — but cannot prevent one. Unlike phases 11/12 this is the shape of
+      the package rather than one missing call, so it is a `FRICTION.md` entry
+      before it is a proposal.
 
 ## Out of scope
 
