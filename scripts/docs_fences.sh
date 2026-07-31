@@ -18,7 +18,7 @@
 #   FROZEN     docs/internals/plan-*-DONE.md. Archived verification evidence;
 #              its snippets record syntax as it was at the time and must not be
 #              dragged forward. Same exemption, same reason, as ARCHIVED in
-#              scripts/check_citations.py:362@ARCHIVED.
+#              scripts/check_citations.py:435@ARCHIVED.
 #   FRAGMENT   a fence containing no `fn` declaration at all. The spec is
 #              written mostly in fragments (a type, an expression, three lines of
 #              a body) and wrapping them in a synthetic `main` would typecheck a

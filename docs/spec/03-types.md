@@ -392,7 +392,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > restriction `:1931-1932`); its twin
 > `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
 > deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
-> with the unresolved-name guard at `:11908-11912@[b#`. The affine-element
+> with the unresolved-name guard at `:11912-11913@[b#`. The affine-element
 > rejection is a type-intern choke point in `src/tychoc.c`
 > (`arrc_sized_b` `src/tychoc.c:736-748@arrc_sized_b`, messages `:638@task_container_err` and `:678@chan_container_err`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.

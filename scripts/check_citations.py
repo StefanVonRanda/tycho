@@ -308,6 +308,79 @@ so neither the pattern above nor the failure message below may spell the form
 they forbid -- the same discipline the absolute-path rule already follows, and
 the reason its docstring describes that form instead of quoting it.
 
+THE BARE-REFERENCE POLICY, AND WHY IT IS NOT "ANCHOR EVERYTHING"
+----------------------------------------------------------------
+(added 2026-07-31.)  The `ok` line reports thousands of bare refs against a few
+hundred anchored ones, and that ratio has twice been read as a backlog.  It is
+not one, and the split below is printed on every green run so it stops being
+read as one.  Counted on the tree at dd3c019: 2802 bare Markdown refs, of which
+
+    1800  are in the frozen `docs/internals/plan-*-DONE.md` set, where EVERY
+          rule in this file already refuses to demand an edit;
+      17  are in the live plan's own evidence blocks, which are a record of
+          what a ref said at a past moment, not a claim about today;
+     196  are `> Provenance:` RANGES, exempt by the settled rule above -- and
+          the count that matters about that context is the other one: ZERO of
+          its single-line refs are bare, so the one construct where anchoring
+          is mandatory is already at 100%.  There is no second construct in
+          the tree that marks a ref as load-bearing, so "require anchors in
+          named contexts" has nothing left to name;
+     789  are reachable narrative prose.
+
+Requiring anchors on those 789 is the hand sweep this repo has now declined
+three times, with measurements each time (FRICTION.md: 11 of 15 spot-checked
+refs drifting again four days after a repair pass, one reference repointed
+four times).  So: BARE REFS STAY BARE.  What ships instead is a rule that makes
+each EXISTING anchor worth more, plus a published number for how much an anchor
+is actually worth.
+
+NO RATCHET, NO BUDGET, NO SHRINK TARGET -- DELIBERATELY.  A gate that pushed
+the bare count downwards would eventually push someone at a before/after
+record block, whose line numbers are DATA: "was 846, now 848" is correct
+precisely because it is stale, and "repairing" it destroys the evidence it
+records.  Nothing in the tree marks those blocks yet (that is a filed, separate
+question), so the safe policy is one that asks nobody to sweep.  The only
+number here that must go down is the ambiguous-anchor count.
+
+AN AMBIGUOUS ANCHOR IS A FAILURE (added 2026-07-31)
+---------------------------------------------------
+An anchor's whole value is that it names expected CONTENT.  If the token sits
+on more than one LINE inside the cited range, it names no line: the region can
+drift internally, or the citation can be repointed at the wrong half of its own
+range, and the check still passes.  Such an anchor reads as verified while
+verifying nothing, which is strictly worse than the honest bare range -- the
+same argument that keeps ranges exempt from the mandatory rule, applied to the
+anchors that do exist.  It is now a hard failure telling the author to anchor a
+token that occurs once, or to tighten the range to its construct, or to drop
+the anchor and leave the range bare.
+
+THE POPULATION WAS COUNTED BEFORE THE RULE WAS WRITTEN: 1 of 216 anchors, in
+`docs/spec/03-types.md`'s `bounded`-capacity Provenance block, whose range
+opened three comment lines above the guard it meant.  Tightening it to the
+`if`/`die_at` pair made the anchor unique AND the citation more precise, which
+is the repair this rule is meant to produce.  Frozen archives are exempt, as
+everywhere else in this file.
+
+ANCHOR STRENGTH IS MEASURED, NOT ENFORCED (added 2026-07-31)
+------------------------------------------------------------
+A token unique in its range can still be common in the FILE, and then a drift
+just re-matches somewhere else -- the failure `--stats` now quantifies instead
+of assuming away.  Of the non-frozen Markdown anchors, 32 name a token that
+recurs within +-25 lines of the cited range (the observed drift scale: an
+earlier plan found anchored ranges 9 and 82 lines off), and 76 name one that
+recurs somewhere in the file; source->source is 8 and 10 of 16.  Both numbers
+are printed, because the window is a choice and hiding the wider figure behind
+it would be the same overstatement this section exists to fix.
+
+WHY NOT ENFORCE IT.  17 of the 97 mandatory single-line `> Provenance:` anchors
+are weak in that window (20 counting the anchored ranges beside them) -- four
+separate refs anchor `@parse_value_ctrl` to four different lines of the same
+function, each matching all four.  Enforcing would demand 17 invented
+replacement tokens chosen by whoever cleared the red, which is how false anchors
+get manufactured.  A sixth of the strongest citations in this tree being weaker
+than they look is a fact worth knowing and a bad thing to fix under gate
+pressure.
+
 EXCLUDED BY NAME, WITH THE REASON:
   * `compiler/tychoc0.ty` -- the FROZEN bootstrap compiler.  Its self-citations
     are known to be off by -50 (recorded at docs/bootstrap.md:106) and the file
@@ -372,7 +445,34 @@ PLANREF = re.compile(r'`?' + LIVE_PLAN.replace(".", r"\.") +
 # covers the frozen plans; these two are named individually.
 PLANREF_SKIP = (LIVE_PLAN, "compiler/tychoc0.ty")
 
+# The drift window the weak-anchor COUNT (never a failure) is reported over.
+# 25 is the observed scale, not a bound: an earlier plan found anchored ranges 9
+# and 82 lines off. The "anywhere in the file" figure is printed beside it so the
+# choice of window cannot flatter the total.
+WEAK_WINDOW = 25
+
 _cache = {}
+
+
+def anchored_lines(src, a, b, tok):
+    """-> the line numbers in [a,b] that literally contain `tok`."""
+    return [i for i in range(a, b + 1) if tok in src[i - 1]]
+
+
+def where_at(on):
+    """-> ':3, :4, :12, :35, ...' -- ELIDED, NOT SILENTLY TRUNCATED. A list of
+    four printed beside a count of five reads as the whole set, which is the
+    same kind of overstatement this file's counts exist to avoid."""
+    return ", ".join(":%d" % i for i in on[:4]) + (", ..." if len(on) > 4 else "")
+
+
+def recurs(src, a, b, tok):
+    """-> (within WEAK_WINDOW of the range, anywhere in the file) outside [a,b].
+
+    A token that reappears near the citation is one a drift can re-match by
+    accident; this is COUNTED, never failed on (see the header)."""
+    out = [i for i, l in enumerate(src, 1) if tok in l and not (a <= i <= b)]
+    return (any(a - WEAK_WINDOW <= i <= b + WEAK_WINDOW for i in out), bool(out))
 
 
 def lines_of(path):
@@ -388,6 +488,11 @@ def main():
     mds = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
                          capture_output=True, text=True, check=True).stdout.split()
     fails, n_bare, n_anchored, n_prov, n_frozen_doc = [], 0, 0, 0, 0
+    # THE BARE-REFERENCE POLICY (see the header): the bare total is split into
+    # the buckets a policy could and could not act on, so it stops reading as a
+    # backlog. Buckets are mutually exclusive, in this order.
+    n_bare_frozen, n_bare_plan, n_bare_prov = 0, 0, 0
+    n_weak, n_weak_file, n_weak_prov = 0, 0, 0
     for md in mds:
         cur = None
         cur_ln = 0          # the line `cur` was named on (see the docs/ rule)
@@ -484,6 +589,12 @@ def main():
                     continue
                 if anchor is None:
                     n_bare += 1
+                    if frozen:
+                        n_bare_frozen += 1
+                    elif md == LIVE_PLAN:
+                        n_bare_plan += 1
+                    elif prov:
+                        n_bare_prov += 1
                     # THE ONE MANDATORY ANCHOR (see the header). A single-line ref
                     # inside a `> Provenance:` block must carry `@token`; a RANGE
                     # must not be forced to, so it is deliberately not checked here.
@@ -497,18 +608,39 @@ def main():
                 n_anchored += 1
                 if prov and b == a and not frozen:
                     n_prov += 1
-                if not any(anchor in src[i - 1] for i in range(a, b + 1)):
+                on = anchored_lines(src, a, b, anchor)
+                if not on:
                     hit = [i for i, l in enumerate(src, 1) if anchor in l][:3]
                     fails.append(
                         "%s -> lines %d-%d of %s do NOT contain '%s'%s"
                         % (where, a, b, cur, anchor,
                            ("; it appears at :" + ", :".join(map(str, hit)))
                            if hit else " (token absent from the whole file)"))
+                    continue
+                # AN AMBIGUOUS ANCHOR IS A FAILURE (see the header): a token on
+                # more than one line of the range names no line, so the range can
+                # drift inside itself and still pass.
+                if len(on) > 1 and not frozen:
+                    fails.append(
+                        "%s -> AMBIGUOUS ANCHOR: '%s' is on %d lines of %s (%s), "
+                        "so it names none of them and a drift inside the range "
+                        "still passes. Anchor a token that occurs once, tighten "
+                        "the range to its construct, or drop the anchor -- a "
+                        "range with no single subject token is honestly bare."
+                        % (where, anchor, len(on), cur, where_at(on)))
+                    continue
+                if not frozen:
+                    near, anywhere = recurs(src, a, b, anchor)
+                    n_weak += near
+                    n_weak_file += anywhere
+                    if near and prov:
+                        n_weak_prov += 1
     # --- the second direction: SOURCE -> DOC (see the header) ----------------
     srcs = subprocess.run(["git", "ls-files"], cwd=ROOT,
                           capture_output=True, text=True, check=True).stdout.split()
     tracked = set(srcs)
     n_doc, n_src, n_src_anch = 0, 0, 0
+    n_src_weak, n_src_weak_file = 0, 0
     for sf in srcs:
         if sf.endswith(".md") or not sf.startswith(DOC_SCAN_PREFIX):
             continue
@@ -538,13 +670,32 @@ def main():
                     # ANCHORED source -> source (opt-in, see the header): the
                     # cited lines must literally contain the token.
                     n_src_anch += 1
-                    if not any(m.group(4) in sl[i - 1] for i in range(a, b + 1)):
+                    on = anchored_lines(sl, a, b, m.group(4))
+                    if not on:
                         hit = [i for i, l in enumerate(sl, 1) if m.group(4) in l][:3]
                         fails.append(
                             "%s:%d  `%s` -> lines %d-%d of %s do NOT contain '%s'%s"
                             % (sf, ln, m.group(0), a, b, tgt, m.group(4),
                                ("; it appears at :" + ", :".join(map(str, hit)))
                                if hit else " (token absent from the whole file)"))
+                        continue
+                    # AN AMBIGUOUS ANCHOR IS A FAILURE, same rule as the Markdown
+                    # pass. No frozen exemption is needed here: SRC_SKIP_CITER
+                    # already removes the one file that cannot be edited.
+                    if len(on) > 1:
+                        fails.append(
+                            "%s:%d  `%s` -> AMBIGUOUS ANCHOR: '%s' is on %d lines "
+                            "of %s (%s), so it names none of them and a drift "
+                            "inside the range still passes. Anchor a token that "
+                            "occurs once, tighten the range to its construct, or "
+                            "drop the anchor -- a range with no single subject "
+                            "token is honestly bare."
+                            % (sf, ln, m.group(0), m.group(4), len(on), tgt,
+                               where_at(on)))
+                        continue
+                    near, anywhere = recurs(sl, a, b, m.group(4))
+                    n_src_weak += near
+                    n_src_weak_file += anywhere
             for m in DOCCITE.finditer(line):
                 doc = m.group(1)
                 n_doc += 1
@@ -586,6 +737,7 @@ def main():
                 "exactly one window; then check the phase number is one that "
                 "document declares.)"
                 % (f, ln, m.group(0), re.search(r'\d+', m.group(0)).group(0)))
+    reachable = n_bare - n_bare_frozen - n_bare_plan - n_bare_prov
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the mandatory "
               "`> Provenance:` single-line refs), %d bare (bounds only), "
@@ -595,15 +747,33 @@ def main():
               "%d rotating-plan phase reference(s) outside the allowed files"
               % (n_anchored, n_prov, n_bare, n_doc, n_src, n_src_anch,
                  n_frozen_doc, n_planref))
+        # THE BARE-REFERENCE POLICY and ANCHOR STRENGTH (see the header). Both
+        # are reported, neither is enforced; the weak counts are of the
+        # non-frozen anchors, since a frozen one cannot be repaired anyway.
+        print("bare refs by what a policy could reach: %d frozen record, "
+              "%d live-plan evidence, %d exempt `> Provenance:` range, "
+              "%d reachable prose" % (n_bare_frozen, n_bare_plan, n_bare_prov,
+                                      reachable))
+        print("anchor strength (counted, never failed on): markdown %d weak "
+              "within +-%d lines / %d recurring anywhere in the file, of which "
+              "%d are `> Provenance:` refs; source->source %d / %d"
+              % (n_weak, WEAK_WINDOW, n_weak_file, n_weak_prov,
+                 n_src_weak, n_src_weak_file))
     if fails:
         for f in fails:
             print("STALE  " + f)
         print("citation check: FAILED (%d stale citation(s) above)" % len(fails))
         return 1
-    print("citation check: ok (%d anchored contain the token they name, "
-          "%d bare in bounds, %d source->doc citations resolve, "
+    # The bare clause carries its split on the GREEN line, not only under
+    # --stats: the undivided total is the number that has twice been mistaken
+    # for a backlog, and the mistake was made from this line.
+    print("citation check: ok (%d anchored contain the token they name and each "
+          "names one line, %d bare in bounds (%d frozen record, %d live-plan "
+          "evidence, %d exempt `> Provenance:` range, %d reachable prose), "
+          "%d source->doc citations resolve, "
           "%d source->source in bounds, %d source->source anchored)"
-          % (n_anchored, n_bare, n_doc, n_src, n_src_anch))
+          % (n_anchored, n_bare, n_bare_frozen, n_bare_plan, n_bare_prov,
+             reachable, n_doc, n_src, n_src_anch))
     return 0
 
 
