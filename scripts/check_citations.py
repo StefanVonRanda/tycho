@@ -99,7 +99,7 @@ below -- and a RELATIVE path outside the trees listed in
 SRC_PREFIX is ignored (a bare Markdown *link* is check_links.sh's job; `docs/`
 joined SRC_PREFIX on 2026-07-30, see the doc->doc section below).
 
-AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (added 2026-07-30, plan.md phase 23)
+AN ABSOLUTE PATH IS A FAILURE, NOT A SKIP (added 2026-07-30, docs/internals/plan-loops-cleanup-DONE.md phase 23)
 -----------------------------------------------------------------------------
 `/home/igzo/github/tycho/src/tychoc.c:402` does not start with any SRC_PREFIX
 entry, so until this rule it fell into the skip above and was checked by
@@ -125,7 +125,7 @@ tree live in them, and roughly forty of those name the deleted
 not be edited, and would redden the gate permanently.  They were unchecked
 before this rule and they are unchecked after it; nothing regressed.
 
-A PATHLESS `> Provenance:` REF IS A FAILURE (added 2026-07-30, plan.md phase 34)
+A PATHLESS `> Provenance:` REF IS A FAILURE (added 2026-07-30, docs/internals/plan-loops-cleanup-DONE.md phase 34)
 -------------------------------------------------------------------------------
 The mandatory-anchor rule below keys off a resolved path: a ref whose paragraph
 names none is `continue`d before that rule can run.  So a `> Provenance:` block
@@ -138,7 +138,7 @@ gate.  Such a ref is now a hard failure telling the author to write the path.
 The fix is NOT to carry `cur` across paragraph breaks -- see the comment at the
 top of the Markdown loop for why that was deliberately removed.
 
-DOC -> DOC IS CHECKED TOO (added 2026-07-30, plan.md phase 44)
+DOC -> DOC IS CHECKED TOO (added 2026-07-30, docs/internals/plan-loops-cleanup-DONE.md phase 44)
 --------------------------------------------------------------
 `docs/` was absent from SRC_PREFIX until this change, so a citation from one
 document INTO another -- `docs/spec/18-library.md` naming lines 204-210 of the
@@ -179,7 +179,7 @@ path was named ON THE SAME LINE.  Cross-line inheritance of a `docs/` path is a
 hard failure telling the author to write the path.
 
 WHY THAT SHAPE, AND NOT "REQUIRE A PATH ON EVERY DOC REF".  Both were counted
-before either was shipped, on the tree at plan.md phase 63.  Forbidding inherited
+before either was shipped, on the tree at docs/internals/plan-loops-cleanup-DONE.md phase 63.  Forbidding inherited
 `docs/` paths outright reddens 45 refs; restricting inheritance to the same line
 reddens 16.  The 29 refs in the difference are the continuation form the tables
 in `docs/rfc/` and `docs/spec/appendix-h-differences.md` are written in --
@@ -219,7 +219,7 @@ WHAT THE SECOND DIRECTION DOES **NOT** CATCH:
     deliberately left alone, because the archived internals docs quote paths
     that were true when they were written and are a record, not a claim.
 
-THE THIRD DIRECTION: SOURCE -> SOURCE (added 2026-07-29, plan.md phase 8)
+THE THIRD DIRECTION: SOURCE -> SOURCE (added 2026-07-29, docs/internals/plan-postfreeze-rawstring-DONE.md phase 8)
 -------------------------------------------------------------------------
 The runners cite each other as heavily as the docs cite the compiler:
 `scripts/frontparity.sh` names lines of `tests/run.sh`, `tests/rtparity/run.py`
@@ -239,7 +239,7 @@ would have caught none of them.  Its value is the other half: a citation that
 points past EOF, or at a file that has been renamed or deleted, reddens instead
 of rotting.
 
-ANCHORED SOURCE -> SOURCE (added 2026-07-30, plan.md phase 13)
+ANCHORED SOURCE -> SOURCE (added 2026-07-30, docs/internals/plan-loops-cleanup-DONE.md phase 13)
 -------------------------------------------------------------
 The wrong-line class needs an expected token, so SRCCITE now accepts an optional
 `@token` suffix and content-checks the cited lines when one is present:

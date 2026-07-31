@@ -39,11 +39,11 @@
 #
 #   pos        examples/*.ty and tests/*.ty        (tests/run.sh:113-118)  251
 #   pos        tests/pkg/<name>/main.ty            (tests/run.sh:124-133)   15
-#   reject     tests/reject/*.ty                   (tests/run.sh:158-169)  249
-#   rejectpkg  tests/reject/pkg/<name>/main.ty     (tests/run.sh:175-187)    1
-#   abort      tests/abort/*.ty                    (tests/run.sh:194-211)   17
-#   diag       tests/diag/*.ty                     (tests/run.sh:218-236)   21
-#   warn       tests/warn/*.ty                     (tests/run.sh:251-274)    6
+#   reject     tests/reject/*.ty                   (tests/run.sh:170-185)  249
+#   rejectpkg  tests/reject/pkg/<name>/main.ty     (tests/run.sh:191-203)    1
+#   abort      tests/abort/*.ty                    (tests/run.sh:210-227)   17
+#   diag       tests/diag/*.ty                     (tests/run.sh:234-252)   21
+#   warn       tests/warn/*.ty                     (tests/run.sh:267-290)    6
 #                                                                   total  560
 #
 # What is deliberately NOT reproduced: RECORD=1 (goldens are recorded by
@@ -79,7 +79,7 @@
 #   3. EACH JOB OWNS A PRIVATE TEMP DIRECTORY, `<tmp>/<name>`. `tests/run.sh` can
 #      share one $TMP because it is sequential, and it does: `$TMP/rj`,
 #      `$TMP/rj.log`, `$TMP/ab.c` are FIXED names reused by every fixture in
-#      those lanes (`tests/run.sh:162`, `:197`). Run that concurrently and two
+#      those lanes (`tests/run.sh:178`, `:197`). Run that concurrently and two
 #      rejects race on one log. Fixture names are unique across lanes (the
 #      `reject_`/`abort_`/`diag_`/`warn_`/`pkg_` prefixes are what make them so),
 #      so the name is the directory and no two jobs can collide.
@@ -111,7 +111,7 @@
 # ---------------------------------------------------------------------------
 # WHAT HAPPENS WHEN A JOB DIES MID-RUN.
 #
-# Measured, not assumed (`plan.md` phase 4). A runtime abort inside one
+# Measured, not assumed (`docs/internals/plan-prunner-DONE.md` phase 4). A runtime abort inside one
 # `parallel for` iteration terminates the WHOLE PROCESS: the `tycho:` message
 # goes to stderr, the exit status is 1, and no report is printed at all. The
 # other fifteen chunks do not carry on and no summary is emitted -- so the
@@ -211,30 +211,30 @@ fn build_jobs() -> [Job]:
         d := pk[i]
         push(js, Job("pos", "pkg_" + d, "tests/pkg/" + d + "/main.ty",
                      "tests/pkg/" + d + ".out", stdin_for("tests/pkg/" + d + ".in")))
-    # tests/run.sh:158-169 -- invalid programs the compiler must refuse.
+    # tests/run.sh:170-185 -- invalid programs the compiler must refuse.
     rj := ty_files("tests/reject")
     for i := 0; i < len(rj); i += 1:
         b := strings.strip_suffix(rj[i], ".ty")
         push(js, Job("reject", "reject_" + b, "tests/reject/" + rj[i], "", ""))
-    # tests/run.sh:175-187 -- package-level rejects. run.sh `continue`s past a
+    # tests/run.sh:191-203 -- package-level rejects. run.sh `continue`s past a
     # directory with no main.ty rather than scoring it, so this skips too.
     rp := subdirs("tests/reject/pkg")
     for i := 0; i < len(rp); i += 1:
         e := "tests/reject/pkg/" + rp[i] + "/main.ty"
         if io.exists(e):
             push(js, Job("rejectpkg", "rejectpkg_" + rp[i], e, "", ""))
-    # tests/run.sh:194-211 -- valid programs whose RUN must die cleanly.
+    # tests/run.sh:210-227 -- valid programs whose RUN must die cleanly.
     ab := ty_files("tests/abort")
     for i := 0; i < len(ab); i += 1:
         b := strings.strip_suffix(ab[i], ".ty")
         push(js, Job("abort", "abort_" + b, "tests/abort/" + ab[i], "", ""))
-    # tests/run.sh:218-236 -- exact compiler stderr locked as <name>.err.
+    # tests/run.sh:234-252 -- exact compiler stderr locked as <name>.err.
     dg := ty_files("tests/diag")
     for i := 0; i < len(dg); i += 1:
         b := strings.strip_suffix(dg[i], ".ty")
         push(js, Job("diag", "diag_" + b, "tests/diag/" + dg[i],
                      "tests/diag/" + b + ".err", ""))
-    # tests/run.sh:251-274 -- valid programs whose exact WARNING text is locked.
+    # tests/run.sh:267-290 -- valid programs whose exact WARNING text is locked.
     # Compile only, never run: a deadlock fixture hangs by construction.
     wn := ty_files("tests/warn")
     for i := 0; i < len(wn); i += 1:
@@ -298,21 +298,21 @@ fn judge_pos(j: Job, d: string) -> Verdict:
         return Verdict(0, "output != golden (" + j.golden + ")")
     return Verdict(1, "")
 
-# tests/run.sh:158-187. A silent refusal is as bad as an acceptance, so the
+# tests/run.sh:170-203. A silent refusal is as bad as an acceptance, so the
 # diagnostic must be non-empty -- `2>&1` into the captured pipe is the same
-# merge tests/run.sh:162 makes into a file.
+# merge tests/run.sh:178 makes into a file.
 fn judge_reject(j: Job, d: string, what: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/rj >" + d + "/rj.log 2>&1")
     if r.code == 0:
         return Verdict(0, "tychoc ACCEPTED an invalid " + what)
-    # tests/run.sh:164's `[ ! -s ]`, not a string test on a captured pipe: a
+    # tests/run.sh:180's `[ ! -s ]`, not a string test on a captured pipe: a
     # diagnostic whose first byte is a NUL is a non-empty FILE and an empty
     # STRING, and it is the file that is the truth.
     if os.run("test -s " + d + "/rj.log").code != 0:
         return Verdict(0, "tychoc rejected but with no diagnostic")
     return Verdict(1, "")
 
-# tests/run.sh:194-211. Builds, then must die nonzero naming itself.
+# tests/run.sh:210-227. Builds, then must die nonzero naming itself.
 fn judge_abort(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/ab >" + d + "/ab.log 2>&1")
     if r.code == 0:
@@ -323,24 +323,24 @@ fn judge_abort(j: Job, d: string) -> Verdict:
     x := os.run(d + "/ab.bin </dev/null >/dev/null 2>" + d + "/ab.err")
     if x.code == 0:
         return Verdict(0, "runtime abort did not fire (exit 0)")
-    # tests/run.sh:205's `grep -q 'tycho:'`, over the file rather than a read of it.
+    # tests/run.sh:221's `grep -q 'tycho:'`, over the file rather than a read of it.
     if os.run("grep -q 'tycho:' " + d + "/ab.err 2>/dev/null").code != 0:
         return Verdict(0, "died (exit " + str(x.code) + ") but without a 'tycho:' message")
     return Verdict(1, "")
 
-# tests/run.sh:218-236, minus RECORD mode.
+# tests/run.sh:234-252, minus RECORD mode.
 fn judge_diag(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/dg >" + d + "/dg.log 2>&1")
     if r.code == 0:
         return Verdict(0, "compiler ACCEPTED an invalid program")
     if not io.exists(j.golden):
         return Verdict(0, "no golden — run 'make test-update'")
-    # tests/run.sh:230 -- `cmp -s` of the merged log against the golden.
+    # tests/run.sh:246 -- `cmp -s` of the merged log against the golden.
     if os.run("cmp -s " + d + "/dg.log " + j.golden).code != 0:
         return Verdict(0, "diagnostic != golden (" + j.golden + ")")
     return Verdict(1, "")
 
-# tests/run.sh:251-274, minus RECORD mode. Only stderr is scored: the
+# tests/run.sh:267-290, minus RECORD mode. Only stderr is scored: the
 # "wrote <path>" line goes to stdout and would bake a temp path into the golden,
 # so stdout goes to a file and is never looked at.
 fn judge_warn(j: Job, d: string) -> Verdict:
@@ -348,7 +348,7 @@ fn judge_warn(j: Job, d: string) -> Verdict:
                 d + "/wn.err")
     if r.code != 0:
         return Verdict(0, "compiler REJECTED a valid program")
-    # tests/run.sh:259 then tests/run.sh:268 -- `grep -q`, then `cmp -s`.
+    # tests/run.sh:275 then tests/run.sh:284 -- `grep -q`, then `cmp -s`.
     if os.run("grep -q 'warning:' " + d + "/wn.err 2>/dev/null").code != 0:
         return Verdict(0, "no warning emitted (the lint this fixture locks stopped firing)")
     if not io.exists(j.golden):
@@ -363,6 +363,14 @@ fn judge(j: Job, tmp: string) -> Verdict:
     d := tmp + "/" + j.name
     _ := io.make_dir(d)
     if j.kind == "reject":
+        # tests/run.sh:174-177. A FLAT reject fixture must not declare a
+        # `package` header: detect_package (src/tychoc.c:12316-12322) would turn
+        # the compile into a whole-DIRECTORY one (src/tychoc.c:12713) and the
+        # fixture would be "refused" for a sibling's error rather than its own,
+        # which neither runner's reject lane can distinguish. Same `grep -q` and
+        # the same FAIL reason as run.sh, so the two reports stay byte-identical.
+        if os.run("grep -q '^package [A-Za-z_]' " + j.entry).code == 0:
+            return Verdict(0, "declares a package header -- it would be compiled against every sibling in tests/reject/; move it to tests/reject/pkg/<name>/")
         return judge_reject(j, d, "program")
     if j.kind == "rejectpkg":
         return judge_reject(j, d, "package program")

@@ -34,8 +34,9 @@ cheapest gate that can actually redden for your change.** Running a broader one
 
 `make test-fast` runs the identical 560 fixtures through `tools/prunner/main.ty`,
 a Tycho program with a bounded worker pool: **473 s → 62 s, 7.6x**, and its report
-is byte-identical to `tests/run.sh`'s over the whole corpus, unsorted (`plan.md`
-phase 2, re-verified at phase 4). Both were measured on a 16-core box; width is
+is byte-identical to `tests/run.sh`'s over the whole corpus, unsorted
+(`docs/internals/plan-prunner-DONE.md` phases 2 and 4). Both were measured on a
+16-core box; width is
 `ncpu()`, narrowable only by launching with `TYCHO_THREADS=N`.
 
 Use it to iterate. **Do not use it as the gate**, and do not put it in
@@ -143,6 +144,33 @@ verified and committed on its own, evidence appended under the phase rather
 than pasted into chat. Work discovered outside a phase's scope is appended to
 `plan.md` as a new unchecked phase — never silently absorbed into the phase
 that found it.
+
+### `plan.md` rotates, so never leave "`plan.md` phase N" behind
+
+When a plan completes it is archived to `docs/internals/plan-<name>-DONE.md` and
+a new `plan.md` starts numbering again at 1. A comment written as "`plan.md`
+phase 7" therefore stops meaning anything the moment the plan it was written
+under is archived: it now resolves against a different document, at a phase
+number that belongs to unrelated work. Nothing catches this —
+`scripts/check_citations.py` only checks refs of the form `path:N`, and a plan
+reference has no line number, so the gate cannot see it. 167 such references
+across 43 files accumulated before anyone counted them.
+
+**The rule, in two halves:**
+
+- **Writing:** cite the archived document by name — ``
+  `docs/internals/plan-friction-DONE.md` phase 5 `` — whenever the plan you mean
+  is already archived. Bare "`plan.md` phase N" is only ever correct for the
+  plan that is live *right now*.
+- **Archiving:** the commit that archives a plan rewrites the references that
+  plan created. `git log --diff-filter=A -- docs/internals/plan-*-DONE.md` gives
+  the rotation boundaries (the commit that *adds* `plan-X-DONE.md` is the moment
+  X stopped being live); `git blame` on a citing line dates it into exactly one
+  window. Check the result rather than trusting it: the phase number cited must
+  be a phase that document actually declares.
+
+`docs/internals/plan-*-DONE.md` are exempt in both directions — they are frozen
+records, and inside one of them "`plan.md` phase N" self-refers unambiguously.
 
 ### Writing a phase's brief
 

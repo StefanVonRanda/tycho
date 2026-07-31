@@ -28,7 +28,7 @@ fn main():
     png := image.encode(img)
     println("encoded_ok=" + str(b2i(len(png) > 0)))                              # 1
     # PNG signature: 0x89 'P' 'N' 'G' (137 80 78 71). Indexed on the `bytes`
-    # directly since plan.md phase 7 -- this used to need `sig := to_str(png)`
+    # directly since docs/internals/plan-friction-DONE.md phase 7 -- this used to need `sig := to_str(png)`
     # and index the string view, because `bytes` had no `[i]`. The golden is
     # unchanged by the switch, which is the proof the two reads are the same read.
     println("is_png=" + str(b2i(len(png) >= 8 and png[0] == 137 and png[1] == 80 and png[2] == 78 and png[3] == 71)))   # 1

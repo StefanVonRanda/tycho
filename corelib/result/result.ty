@@ -5,7 +5,7 @@
 # returns a compatible Result (`docs/spec/10-statements.md:75`). A `main()`, a
 # request handler returning a Response, or any function that owns a real return
 # type cannot use it, and before this package the only remaining tool was a
-# three-line `match` -- written once per call site. plan.md phase 1 measured that
+# three-line `match` -- written once per call site. docs/internals/plan-option-result-DONE.md phase 1 measured that
 # duplication as the single largest cost of adopting Result at all:
 # server/main.ty had one copy, corelib/test/net and corelib/test/httpd had two
 # more, and each was the same four lines.
@@ -18,7 +18,7 @@
 #           Ok(n): return n
 #           Err(e): return -1
 #
-# WHY `==` AND NOT A PATTERN. As of 2026-07-26 (plan.md phase 3) Tycho DOES have
+# WHY `==` AND NOT A PATTERN. As of 2026-07-26 (docs/internals/plan-friction-DONE.md phase 3) Tycho DOES have
 # nested patterns, so `Err(net.Timeout):` is a legal match arm and is the clearer
 # spelling when the caller is already writing a `match`. `err_or` + `==` stays the
 # idiom for the caller who is NOT -- a one-line test inside an `if`, with no arm
@@ -30,7 +30,7 @@
 # the frozen compiler/tychoc0.ty (examples/webserver/run.sh), whose grammar has no
 # nested pattern, so nothing in `corelib/` may use one.
 #
-# HISTORICAL CAVEAT, FIXED 2026-07-26 (plan.md phase 1). A qualified name written
+# HISTORICAL CAVEAT, FIXED 2026-07-26 (docs/internals/plan-friction-DONE.md phase 1). A qualified name written
 # anywhere in a generic call's argument list used to fail to resolve, so every
 # call site in this tree bound the value to a local first:
 #
@@ -100,7 +100,7 @@ fn err_or(r: Result($T, $E), fallback: $E) -> $E:
 #   req := result.map_err(httpd.read_request(fd), net.Failed) or_return
 #
 # WHY A VALUE AND NOT A FUNCTION. Rust's map_err takes a closure; the function-value
-# form does compile here (measured, plan.md phase 9: `fn map_err(r: Result($T, $E),
+# form does compile here (measured, docs/internals/plan-friction-DONE.md phase 9: `fn map_err(r: Result($T, $E),
 # f: fn($E) -> $F) -> Result($T, $F)` with `Err(e): return Err(f(e))` builds and
 # runs), and it was still not the one adopted. The caller who needs it has ONE
 # target variant in mind, so the function form would cost every call site a named

@@ -12,7 +12,7 @@ package main
 # k spawns worker k+1 into a frame-local before entering its own loop. That is
 # not a stylistic choice. A task handle in Tycho is affine -- it cannot be stored
 # in an array, a struct, or any aggregate -- so the only place to keep N live
-# handles is N stack frames. See plan.md, phase 1, for the measurements that
+# handles is N stack frames. See docs/internals/plan-webserver-DONE.md, phase 1, for the measurements that
 # settled this (8 workers, 8 concurrent 500ms clients, 509ms wall).
 #
 # REQUEST READING. One call: `got, raw := httpd.read_request_capped(conn, MAX_HEAD)`.
@@ -22,7 +22,7 @@ package main
 # answer 400 to garbage while hanging up silently on a disconnect could not use
 # it. The corelib says which failure it was now (httpd.ReqErr), and takes the
 # byte cap as a parameter and hands the raw buffer back, so the reimplementation
-# is gone (plan.md phase 3; FRICTION.md phase 7).
+# is gone (docs/internals/plan-option-result-DONE.md phase 3; FRICTION.md phase 7).
 #
 # ERROR MODEL, 2026-07-26. core:net's fallible TCP calls, httpd.parse_request /
 # read_request and io.read_bytes all return Result(T, E) instead of a negative
@@ -39,13 +39,13 @@ package main
 #   * resolve() asks io.is_dir, a real stat(2), instead of `len(io.list(p)) > 0`,
 #     so a directory redirects to its slash form whether or not it holds an
 #     index -- and only a directory does. That one was never an error-model
-#     problem: it was a missing syscall (plan.md phase 4).
+#     problem: it was a missing syscall (docs/internals/plan-option-result-DONE.md phase 4).
 #   * httpd.write_response's `-1` is gone; emit is a tail call onto it and so
 #     spends zero lines on plumbing.
 #   * `or_return` only short-circuits out of a function that returns a matching
 #     Result, so the functions here that return a Response or a count collapse
 #     theirs with core:result's `unwrap_or` -- which replaced the hand-written
-#     `nwrote` helper this file used to carry (plan.md phases 1 and 2).
+#     `nwrote` helper this file used to carry (docs/internals/plan-option-result-DONE.md phases 1 and 2).
 #
 # NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression,
 # conditional requests, pipelining, virtual hosts. See README.md.
@@ -229,7 +229,7 @@ fn error_response(status: int) -> httpd.Response:
 # placeholder "Status" and the only way to set the phrase was to build the struct
 # positionally -- a private phrased_response() reimplementing the corelib's own
 # constructor, plus a named wrapper per status. Both codes are in the table since
-# 2026-07-26 (plan.md phase 5) and httpd.response_reason() exists for the ones that
+# 2026-07-26 (docs/internals/plan-friction-DONE.md phase 5) and httpd.response_reason() exists for the ones that
 # are not, so error_response(431) and error_response(408) are the whole of it.
 fn redirect_response(location: string) -> httpd.Response:
     body := to_bytes("<!doctype html><meta charset=\"utf-8\"><title>301</title>\n")
@@ -288,7 +288,7 @@ fn resolve(root: string, target: string) -> Route:
         return Route(403, "", "")                  # absolute, or escapes root
     # A target with NO trailing slash that names a directory redirects to the slash
     # form, and "is this a directory" is finally asked of the KERNEL: io.is_dir is a
-    # real stat(2) (plan.md phase 4). Only this branch can be one -- the dir_form
+    # real stat(2) (docs/internals/plan-option-result-DONE.md phase 4). Only this branch can be one -- the dir_form
     # path has index.html appended, so fsp is a file path there. The old test was
     # `len(io.list(fsp)) > 0`, which calls an EMPTY directory a file, so /emptydir
     # answered 404 where 301 -> /emptydir/ is correct: a directory's CONTENTS
@@ -297,7 +297,7 @@ fn resolve(root: string, target: string) -> Route:
     # ONE stat(2) now answers all three tails. This used to be io.is_dir followed by
     # io.exists on the SAME path -- two calls, one question, and the second was the
     # expensive one (it listed the whole parent). io.exists is stat-backed as of
-    # plan.md phase 5, which is what made the pair visibly redundant rather than
+    # docs/internals/plan-friction-DONE.md phase 5, which is what made the pair visibly redundant rather than
     # merely ugly, so the pair collapses into the one Result that already carried
     # every answer:
     #   Ok(true)   a directory. With no trailing slash that is a 301 to the slash
@@ -308,7 +308,7 @@ fn resolve(root: string, target: string) -> Route:
     #   Ok(false)  it is there and is not a directory: serve it.
     #   Err(_)     nothing there, or there and unstattable -- 404 both ways, fail
     #              closed. Includes /dir/ with no index.html.
-    # (A literal nested pattern -- `Ok(true)` -- is not legal; plan.md phase 3 refused
+    # (A literal nested pattern -- `Ok(true)` -- is not legal; docs/internals/plan-friction-DONE.md phase 3 refused
     # non-enum nested patterns with the cost written down. So the bool is bound.)
     match io.is_dir(fsp):
         Ok(isdir):
@@ -345,7 +345,7 @@ fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> Result(int
 # `peer` is the client address, from net.peer_addr (getpeername) -- the field every
 # real access log leads with, and one that no Tycho program could obtain before
 # 2026-07-26: core:net wrapped getsockname and nothing else (FRICTION.md phase 7,
-# plan.md phase 5). It is `-` when the fd could not be asked, which is honest
+# docs/internals/plan-friction-DONE.md phase 5). It is `-` when the fd could not be asked, which is honest
 # rather than blank: an unaskable fd is a connection that has already gone.
 #
 # `wrote` is what write_response returned. It is < 0 when the peer vanished
@@ -411,8 +411,9 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
         got, raw := httpd.read_request_capped(conn, MAX_HEAD)
         sw := time.start()
         match got:
-            # The five causes, ACTED ON rather than collapsed, and since plan.md
-            # phase 3 each one is its OWN ARM. This used to be `Err(e)` followed by
+            # The five causes, ACTED ON rather than collapsed, and since
+            # docs/internals/plan-friction-DONE.md phase 3 each one is its OWN
+            # ARM. This used to be `Err(e)` followed by
             # five `e == httpd.X` comparisons and an `answer` bool, because there
             # were no nested patterns; the causes are the same, the two-step is not.
             # (What phases 1-3 were for: the old local read loop could only say
@@ -596,7 +597,7 @@ fn as_uint(s: string, what: string) -> int:
         die("tycho-httpd: " + what + " wants a non-negative integer, got: " + s + "\n")
     return strings.parse_int(s)
 
-# Until plan.md phase 6 the 45 lines below were a hand-rolled parser -- opt_name,
+# Until docs/internals/plan-friction-DONE.md phase 6 the 45 lines below were a hand-rolled parser -- opt_name,
 # opt_inline, wants_value and a stepping loop -- because core:cli could only read
 # an `=`-attached value and this server's interface is documented as accepting
 # both spellings (usage(), last line). cli.parse_spec now carries the schema, so
@@ -612,7 +613,7 @@ fn parse_args(av: [string]) -> Config:
     # --help wins over a bad flag beside it. The old loop was argv-ordered, so
     # `--bogus --help` exited 1 and `--help --bogus` exited 0; there is no order
     # information in a parsed Cli, and of the two invariants "--help always
-    # answers" is the one worth keeping. `exit(0)` is plan.md phase 4: before it,
+    # answers" is the one worth keeping. `exit(0)` is docs/internals/plan-friction-DONE.md phase 4: before it,
     # die() was the only exit and always exited 1, so an answered --help had to
     # be threaded back to main as a `help: bool` field on Config.
     if cli.flag(c, "help") or cli.flag(c, "h"):
@@ -643,7 +644,7 @@ fn parse_args(av: [string]) -> Config:
                   port, workers, idle, cli.flag(c, "quiet") or cli.flag(c, "q"))
 
 fn main():
-    # cli.argv() is args() with the program path dropped (plan.md phase 6).
+    # cli.argv() is args() with the program path dropped (docs/internals/plan-friction-DONE.md phase 6).
     # This was a four-line copy loop, and the identical loop was in
     # examples/weblog/main.ty, because args() includes argv[0] and cli.parse
     # does not want it.
@@ -670,7 +671,7 @@ fn main():
         Err(e):
             eprint("tycho-httpd: warning: " + cfg.root + " cannot be read\n")
 
-    # The value-match form, which is what a Result is for. Until plan.md phase 4
+    # The value-match form, which is what a Result is for. Until docs/internals/plan-friction-DONE.md phase 4
     # this needed a dummy `srv := 0` and a statement match, because die() is typed
     # void and was not modelled as DIVERGING -- so the failure arm was rejected with
     # "a value if/match branch must produce a value, not void", and the Result

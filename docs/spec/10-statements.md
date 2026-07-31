@@ -133,7 +133,7 @@ source instead of inferring them from the sign of a step expression.
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
 > (`src/tychoc.c:10885-10889`).
 >
-> **Amended 2026-07-30 (plan.md phase 53).** This note previously read "The step
+> **Amended 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 53).** This note previously read "The step
 > codegen and its zero-step guards still exist but are unreachable: every
 > remaining `S_FORRANGE` producer writes a NULL step", citing the `Stmt` field
 > `r_step`. That was true from 2026-07-29, when `range(a, b, step)` — the field's

@@ -4,9 +4,9 @@
 # `parallel for i in 0..<N:` for a parallel one. Same discipline as
 # tests/diag/dotlt_sequential.ty, which locks the mirror-image refusal.
 #
-# The reject lane cannot assert this: tests/run.sh:158-169 checks only that the
+# The reject lane cannot assert this: tests/run.sh:170-185 checks only that the
 # exit is nonzero and stderr non-empty. This lane cmps stderr against
-# tests/diag/range_removed.err (tests/run.sh:218-236).
+# tests/diag/range_removed.err (tests/run.sh:234-252).
 
 fn main():
     for idx in range(0, 10, 2):

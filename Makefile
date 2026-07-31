@@ -117,14 +117,14 @@ test: tychoc
 
 # The same 560 fixtures over a bounded worker pool, in Tycho: tools/prunner/main.ty.
 # 7 m 54 s -> 1 m 02 s on a 16-core box, and its report is byte-identical to
-# `tests/run.sh`'s over the whole corpus (plan.md phase 2).
+# `tests/run.sh`'s over the whole corpus (docs/internals/plan-prunner-DONE.md phase 2).
 #
 # ADVISORY, NOT AUTHORITATIVE, and `test` above is deliberately still the shell
 # script. prunner is compiled by the compiler it tests, so a tychoc regression
 # can land inside its judge and turn every verdict green at once; run.sh scores
 # with cmp/grep/test, which nothing in this repo can break. Use `test-fast` while
 # iterating, `test` to believe the answer. When they disagree, run.sh is right.
-# Width is ncpu(); TYCHO_THREADS=N narrows it (there is no -j -- plan.md phase 3).
+# Width is ncpu(); TYCHO_THREADS=N narrows it (there is no -j -- docs/internals/plan-prunner-DONE.md phase 3).
 build/prunner: tools/prunner/main.ty tychoc | build
 	@./tychoc tools/prunner/main.ty -o build/prunner
 
@@ -157,7 +157,7 @@ conc: tychoc
 # runtime against the one frozen tychoc0 emitted; that leg is gone. Its docstring
 # advertised `make rtparity` from the day it was written and no such target
 # existed, so nothing in the tree ran it. Under a second (~1s: one --emit-c, no
-# cc). In `make ci` as step [2d/13] since 2026-07-30 (plan.md phase 58) -- a
+# cc). In `make ci` as step [2d/13] since 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 58) -- a
 # tests/ lane, so a sub-lane of step 2 rather than a new number. It paid for
 # itself on the way in: it was the only gate that saw phase 53 remove the
 # "tycho: range step is zero" trap from the emitted C.
@@ -362,11 +362,11 @@ hooks:
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs make ci N=0 + fuzz-quick)"
 
 # The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
-# `make tycho-lsp` -- plan.md phase 52 made the plain build remove its own
+# `make tycho-lsp` -- docs/internals/plan-loops-cleanup-DONE.md phase 52 made the plain build remove its own
 # intermediate (src/tychoc.c:12771). They stay because `--emit-c -o <base>` still
 # writes and KEEPS `<base>.c` (src/tychoc.c:12740-12742), which is how you debug the
 # toolchain itself, and `clean` is where that leftover belongs. Same rationale as the
-# matching .gitignore block; verified 2026-07-30, see plan.md phase 57.
+# matching .gitignore block; verified 2026-07-30, see docs/internals/plan-loops-cleanup-DONE.md phase 57.
 clean:
 	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c build/tycho_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c

@@ -59,7 +59,7 @@ make -s ilp32
 step "[2c/13] make asan-self  (the COMPILER built with ASan+UBSan, compiling the whole corpus)"
 make -s asan-self
 
-# rtparity joined the sweep on 2026-07-30 (plan.md phase 58). It was created by
+# rtparity joined the sweep on 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 58). It was created by
 # batch 9 and sat in NO aggregate lane, so nothing ran it. It is a tests/ lane, not
 # a corelib dogfood, hence 2d rather than a new number; and it costs ~1s (one
 # --emit-c, no cc), so there is no argument for keeping it out. It earns its place
@@ -93,8 +93,8 @@ make -s fetch
 step "[3b/13] make entrypoints  (every entry point in the tree still compiles)"
 make -s entrypoints
 
-# server-check joined the sweep on 2026-07-30 (plan.md phase 2). server/main.ty is
-# the largest program in the tree and until plan.md phase 1 NOTHING ran it: `make
+# server-check joined the sweep on 2026-07-30 (docs/internals/plan-webserver-gate-DONE.md phase 2). server/main.ty is
+# the largest program in the tree and until docs/internals/plan-webserver-gate-DONE.md phase 1 NOTHING ran it: `make
 # server` builds it and asserts nothing. It sits here, immediately after 3b,
 # because 3b compiles server/main.ty for milliseconds -- so a server that does not
 # build reddens there, with a compile error, instead of surfacing here as

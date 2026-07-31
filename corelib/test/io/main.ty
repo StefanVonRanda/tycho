@@ -12,14 +12,14 @@ import "core:result"
 # No core:os here any more. Until 2026-07-26 this test imported it to run
 # os.system("rm -rf ... && mkdir -p ..."), because the corelib could not make a
 # directory -- a corelib test shelling out to /bin/sh to set up a syscall test.
-# io.make_dir / io.remove replaced it (plan.md phase 5).
+# io.make_dir / io.remove replaced it (docs/internals/plan-option-result-DONE.md phase 5).
 
 fn b2i(b: bool) -> int:
     if b:
         return 1
     return 0
 
-# REGRESSION (plan.md phase 7): a returned string that ALIASES a scope-owned
+# REGRESSION (docs/internals/plan-friction-DONE.md phase 7): a returned string that ALIASES a scope-owned
 # `bytes` must be re-homed into the caller's arena. `to_str` is a zero-cost
 # reinterpret, so `out` here IS `b`'s buffer -- but the compiler reported the
 # initializer as a call (a "fresh value"), skipped the copy, and freed the scope
@@ -37,7 +37,7 @@ fn reinterp_ret(cs: [int]) -> string:
 fn nb(r: Result(bytes, io.IoErr)) -> int:
     return len(result.unwrap_or(r, to_bytes("")))
 
-# WHICH outcome, as a stable string. One arm per cause, since plan.md phase 3;
+# WHICH outcome, as a stable string. One arm per cause, since docs/internals/plan-friction-DONE.md phase 3;
 # this was `is_ok` + `err_or` plus three `e == io.X` comparisons, because
 # `Err(io.IsDir)` did not parse as a match arm. The old note here said this could
 # be written HERE and not in corelib/io itself because no runner fed corelib/test/
@@ -146,7 +146,7 @@ fn main():
     println(f"read_missing len={nb(rbmiss)} why={why(rbmiss)}")
     println(f"read_dir len={nb(rbdir)} why={why(rbdir)}")
 
-    # The `bytes` operators (plan.md phase 7), on the buffer io.read_bytes just
+    # The `bytes` operators (docs/internals/plan-friction-DONE.md phase 7), on the buffer io.read_bytes just
     # handed back -- 5 bytes, with an interior 0x00 at index 2. This is the one
     # property that would break if any of the three went through NUL-terminated
     # code: b[2] would abort or read past, len(b[1:4]) would be 1, and a concat
@@ -159,7 +159,7 @@ fn main():
     # already has its own tests/ witnesses for the string side (tests/string_nul,
     # tests/strbytes); §5.2.6's `bytes` operators are witnessed by this lane, the
     # §5.2.6 spec example and server/main.ty's log_safe, per the Appendix E row --
-    # whose surrounding note is still written as if tychoc0 ran (plan.md phase 58).
+    # whose surrounding note is still written as if tychoc0 ran (docs/internals/plan-loops-cleanup-DONE.md phase 58).
     bb := result.unwrap_or(rb, to_bytes(""))
     b0 := bb[0]
     bnul := bb[2]                        # the interior NUL, read as 0
@@ -189,7 +189,7 @@ fn main():
     # is_dir: the stat(2) the corelib went without until 2026-07-26. The EMPTY
     # directory is the whole point -- `len(io.list(p)) > 0`, the only directory
     # test that existed before, calls it a FILE, which is the wrong answer a real
-    # server shipped (plan.md phase 4). Ok(true) and Ok(false) are both successes;
+    # server shipped (docs/internals/plan-option-result-DONE.md phase 4). Ok(true) and Ok(false) are both successes;
     # only "nothing there" is an Err.
     #
     # The empty directory is now made with io.make_dir -- no os.system, no /bin/sh.
@@ -230,7 +230,7 @@ fn main():
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")
     println(f"missing=[{miss}] len={len(miss)}")
 
-    # exists, one stat(2) since plan.md phase 5 (it was list_dir membership; these
+    # exists, one stat(2) since docs/internals/plan-friction-DONE.md phase 5 (it was list_dir membership; these
     # four answers are unchanged by the swap, which is what the golden proves).
     # Repo-relative paths; string-literal args bound to locals first -- f-string
     # holes can't hold a string literal.

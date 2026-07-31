@@ -139,7 +139,7 @@ void iox_read_file(const char *path, tycho_int *status,
  * This is the syscall that was missing, and its absence was a documented wrong
  * answer for a whole plan: with only list_dir, "is this a directory" had to be
  * asked as `len(io.list(p)) > 0`, which calls an EMPTY directory a file
- * (FRICTION.md, phase 7; plan.md phase 4). No Result and no error enum can
+ * (FRICTION.md, phase 7; docs/internals/plan-option-result-DONE.md phase 4). No Result and no error enum can
  * express a question the OS was never asked -- so we ask it.
  *
  * stat(2), not lstat(2), on purpose: a symlink to a directory IS a directory for
@@ -174,7 +174,7 @@ tycho_int iox_stat_kind(const char *path) {
  * move iox_stat_kind is, one layer up. Until this function existed there was no
  * way to make a directory from Tycho at all, so corelib/test/io built one with
  * os.system("mkdir -p"), i.e. a corelib test shelling out to /bin/sh to set up a
- * syscall test (plan.md phase 5). */
+ * syscall test (docs/internals/plan-option-result-DONE.md phase 5). */
 tycho_int iox_make_dir(const char *path) {
     errno = 0;
     if (mkdir(path, 0777) == 0) return TY_RF_OK;

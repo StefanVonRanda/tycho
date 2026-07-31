@@ -27,7 +27,7 @@
 # See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
 #
 # The PROGRAMS BELOW were left in the deleted syntax by that change and only
-# rewritten 2026-07-30 (plan.md phase 37). Until then every one of them was
+# rewritten 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 37). Until then every one of them was
 # rejected at parse: the nine accept baselines failed loudly, but the sixteen
 # reject fixtures still "passed" -- rejected for saying `range()`, not for tripping
 # the gate each one exists to test. This lane is not in `make ci`, so nothing said
