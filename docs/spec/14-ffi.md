@@ -108,18 +108,65 @@ Rules that follow from §24.1 and are not optional:
   `Err(Timeout)` / `Err(Failed)`; `io.read_bytes` does the same over
   `iox_read_file`'s codes.
 
+**The mirror arrangement, and why there are exactly two.** The shape above puts
+the payload in the return and the classification in the `inout`. That assignment
+is **forced, not preferred** — and the constraint that forces it only exists for
+one kind of payload:
+
+- **A `bytes` or array payload cannot be an `inout` at all.** The crossable
+  `inout` set is int/char/float/bool/ptr (the rule above), and the compiler
+  rejects the rest by name — `src/tychoc.c@ffi_scalar_type` is the predicate and
+  its diagnostic spells out "string/bytes/handle/composite have no trivial
+  out-param ABI". So a `bytes` payload has only the return available, and the
+  classification takes the `inout` because nothing else is left. That is
+  §24.1.1's case.
+- **A scalar payload can occupy either slot**, so nothing above decides it and a
+  second constraint does: the two halves must not share one integer's code space.
+  An epoch second, a file size or a byte count can take *any* value, including
+  every value the status codes use, so returning both as one integer is the
+  `-1`-means-error conflation this section exists to avoid. The classification
+  therefore keeps the return — where its code space is its own — and the payload
+  takes the `inout`:
+
+```tycho
+# corelib/io/io.ty: the same 0..3 codes, with `mtime` as the payload
+extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
+```
+
+The C ABI for the mirror is the ordinary one, because a scalar return needs no
+out-params: written parameters in written order, the `inout` lowering to a `T*`,
+the classification as the C function's own return value. No reordering surprise —
+that only arises when a `bytes` return appends its two out-params.
+
+```c
+tycho_int iox_stat_mtime(const char *path, tycho_int *mtime);
+```
+
+So the two arrangements are one rule seen from both sides: **the classification
+and the payload never share a slot, and which slot each takes is settled by what
+can cross as an `inout` — never by taste.** Every other rule above (numeric
+classification, set it first on every path, the payload valid on failure paths,
+the Tycho wrapper being what builds the `Result`) applies unchanged to both.
+
 **When NOT to use it.** If the classification and the failure share one integer
 and there is no separate payload, return the code directly and skip the out-param:
 `extern fn iox_stat_kind(path: string) -> int` is the same four codes as
 `iox_read_file`'s with no `inout`, because the *kind* is the whole answer.
 
-> Provenance: the shape is used twice — `netx_read` (`corelib/net/net_shim.c:236-290`,
-> declared `corelib/net/net.ty:99-102`) and `iox_read_file`
-> (`corelib/io/io_shim.c:59-127`, declared `corelib/io/io.ty:81-85`). The ordering
-> rule is `gen_extern_proto` (`src/tychoc.c:10920-10949`): written params first,
-> the return's out-params appended. Written down here because it was reproduced
-> verbatim from one shim into the other with this section listing neither it nor
-> `-> Result(T, E)` (FRICTION.md).
+> Provenance: five uses in the tree — three of the first arrangement and two of the
+> mirror. Payload-in-the-return: `netx_read` (`corelib/net/net_shim.c@netx_read`,
+> declared `corelib/net/net.ty@netx_read`), `iox_read_file`
+> (`corelib/io/io_shim.c@iox_read_file`) and `iox_read_at`
+> (`corelib/io/io_shim.c@iox_read_at`), both declared in `corelib/io/io.ty`.
+> Payload-in-the-`inout`: `corelib/io/io_shim.c@iox_stat_mtime` and
+> `corelib/io/io_shim.c@iox_stat_size`. The ordering rule is
+> `src/tychoc.c@gen_extern_proto`: written params first, the return's out-params
+> appended. The `inout` restriction that forces the split is
+> `src/tychoc.c@ffi_scalar_type`. Written down here because §24.1.1's own shape had
+> been reproduced verbatim from one shim into the other with no spec to copy, and
+> the mirror was doing it again — three cross-referencing comment blocks in
+> `corelib/io/io.ty` deriving by hand what this section now states (FRICTION.md
+> item 11).
 
 ### 24.2 Linking
 

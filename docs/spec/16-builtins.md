@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9114@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9121@tycho_eprint`; `die` codegen
 > `:9150-9151`.
 
 ## 29.4 Conversions
@@ -127,7 +127,7 @@ serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is t
 only spelling — `n.to_char()` is not.
 
 > Provenance: conversion magic `src/tychoc.c:5650-5706`; `chr` and `to_char` `Sig`
-> `:4520@.name="to_char"`, their shared codegen `:9190-9192`;
+> `:4527@.name="to_char"`, their shared codegen `:9190-9192`;
 > `is_null`/`to_ptr` `Sig` `:4531-4532`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1057-1061` /
 > `sized_conv_target` `:1046-1056`, resolved inline at `:5666-5672`. The abort
@@ -156,10 +156,10 @@ literally the same bounds-checked call — so neither is faster or safer than th
 other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 [§5.2.5](03-types.md#525-string) for why the wart exists.
 
-> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4527@.name="split"`;
+> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4534@.name="split"`;
 > `len` magic
-> `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4526@.name="char_at"`, codegen `:9000-9007`
-> (`tycho_str_get`, the same call `s[i]` emits at `:9617@tycho_str_get`), tychoc0
+> `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4533@.name="char_at"`, codegen `:9000-9007`
+> (`tycho_str_get`, the same call `s[i]` emits at `:9624@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -231,7 +231,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7484@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7491@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -256,11 +256,11 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 `ncpu` is the sole `Sig` builtin here.
 
 > Provenance: `wait` `src/tychoc.c:5588-5595`; `channel` `:5596-5606`; `send`
-> `:5607-5615`; `recv` `:5616-5621`; `close` `:5622-5632`; `ncpu` `Sig` `:4519@.name="ncpu"`;
+> `:5607-5615`; `recv` `:5616-5621`; `close` `:5622-5632`; `ncpu` `Sig` `:4526@.name="ncpu"`;
 > task/channel method sugar `:5233-5247`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10040@_pk > 64`.
+> 64 is `src/tychoc.c:10047@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -348,10 +348,10 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:4521@.name="die"`, codegen `:9150-9151`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:4528@.name="die"`, codegen `:9150-9151`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:4506-4538` or the
-> `resolve_expr` magic block (`case E_CALL:` `:5217@case E_CALL:`, running
-> through `reserve` at `:5829@"reserve"`).
+> `resolve_expr` magic block (`case E_CALL:` `:5224@case E_CALL:`, running
+> through `reserve` at `:5836@"reserve"`).

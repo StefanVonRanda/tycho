@@ -156,7 +156,23 @@ fn get(c: Cli, key: string, dflt: string) -> string:
             out = c.vals[i]
     return out
 
-# Was option `key` (a `--key=value`) supplied at all?
+# Was OPTION `key` -- a `--key=value` -- supplied at all?
+#
+# READ THE WORD "OPTION". This scans `c.keys` only, so a BARE `--key` is NOT here:
+# it landed in `c.flags` (see the bucket table in this file's header) and `flag(c,
+# key)` is the predicate for it. `has(c, "stats")` on a command line of `--stats`
+# returns FALSE, and nothing can diagnose that -- both spellings compile, both
+# return `bool`, and the only symptom is a branch that silently does not run.
+#
+# The name was kept rather than narrowed to `has_value` (FRICTION.md item 12,
+# closed 2026-07-31 as working-as-intended). A rename moves the guess rather than
+# removing it: the caller asking "did the user supply --stats?" would still have to
+# pick between `has_value` and `flag`, and `has` is already the name in
+# docs/guides/corelib.md. The fix for the trap is this paragraph, not a new symbol.
+# If you want ONE call that answers "supplied in any spelling", write
+# `cli.has(c, k) || cli.flag(c, k)` at the call site -- deliberately not a corelib
+# function, because a caller that cannot say which of the two it means usually has
+# a schema question (`parse_spec`) rather than a lookup question.
 fn has(c: Cli, key: string) -> bool:
     for i := 0; i < len(c.keys); i += 1:
         if c.keys[i] == key:

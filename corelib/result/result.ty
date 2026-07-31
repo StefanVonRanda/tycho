@@ -26,9 +26,12 @@
 #
 #   if result.err_or(net.read(fd, 4096), net.Timeout) == net.Timeout:
 #
-# It also keeps working where a nested pattern cannot: this package is compiled by
-# the frozen compiler/tychoc0.ty (examples/webserver/run.sh), whose grammar has no
-# nested pattern, so nothing in `corelib/` may use one.
+# The old note here added that a nested pattern was unusable inside `corelib/`
+# anyway, because this package is compiled by the frozen compiler/tychoc0.ty
+# (examples/webserver/run.sh), whose grammar has none. That constraint died with the
+# tychoc0 lanes on 2026-07-29 -- run.sh's own header records the retirement, and
+# nothing builds tychoc0 now -- so a nested pattern is writable anywhere, `corelib/`
+# included. `err_or` stays for the reason above it, not for that one.
 #
 # HISTORICAL CAVEAT, FIXED 2026-07-26 (docs/internals/plan-friction-DONE.md phase 1). A qualified name written
 # anywhere in a generic call's argument list used to fail to resolve, so every

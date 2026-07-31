@@ -84,19 +84,18 @@ extern fn iox_close_lines(r: ptr)
 # in io_shim.c.
 extern fn iox_read_file(path: string, status: inout int) -> bytes
 # pread(2) at an absolute offset -- the SAME FFI shape as iox_read_file, because it
-# has the same halves to place: a `bytes` payload cannot be an `inout` (the
-# compiler rejects it in as many words -- src/tychoc.c@ffi_scalar_type is the
-# predicate and its message names bytes explicitly), so the
-# payload takes the return and the status takes the `inout`. The mirror of
-# iox_stat_mtime below, where the payload is a scalar and the two swap slots.
+# has the same halves to place. The rule that decides which half takes which slot
+# is docs/spec/14-ffi.md §24.1.1, which states both arrangements: this is its
+# `bytes`-payload case (a `bytes` payload cannot be an `inout`, so it takes the
+# return), and iox_stat_mtime below is its mirror.
 extern fn iox_read_at(path: string, off: int, n: int, status: inout int) -> bytes
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int
-# stat(2) again, for the field iox_stat_kind fetches and throws away. The status
-# keeps the return -- an epoch second cannot share a code space with 0..3 -- and
-# the payload takes the `inout`, the mirror of iox_read_file, where the `bytes`
-# payload must be the return so the status takes the `inout` instead.
+# stat(2) again, for the field iox_stat_kind fetches and throws away. This is the
+# MIRROR arrangement of docs/spec/14-ffi.md §24.1.1: the payload is a scalar, so it
+# can cross as an `inout`, and the status keeps the return rather than sharing one
+# integer's code space with an epoch second.
 extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
 # stat(2) a third time, for st_size. Same shape as iox_stat_mtime -- a scalar
 # payload in the `inout`, the status in the return -- but NOT the same directory

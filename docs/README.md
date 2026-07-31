@@ -26,11 +26,16 @@ is why:
   a conformance suite. For implementers and edge-case reasoning.
 - **[`architecture.md`](architecture.md)** — how the project is built, what each
   verification gate proves, what's shipped, and the decided non-goals.
+- **[`bootstrap.md`](bootstrap.md)** — how Tycho self-hosted: the bootstrap stages,
+  which script ran each one, and why the frozen `compiler/tychoc0.ty` is no longer
+  built by any gate. History, not a build instruction.
 - **[`internals/`](internals/)** and **[`rfc/`](rfc/)** — historical design records and
   resolved proposals. Not user documentation; kept for contributors and provenance.
 
 ## Contributing
 
-See **[CONTRIBUTING.md](../CONTRIBUTING.md)** for the build, the local `make ci` gate, and
-the parity rule: every language feature must work in *both* compilers, or the fixpoint
-goes red.
+See **[CONTRIBUTING.md](../CONTRIBUTING.md)** for the build and the local `make ci` gate.
+Until 2026-07-26 this paragraph also named a parity rule — every feature had to work in
+*both* compilers or `make fixpoint` went red. `compiler/tychoc0.ty` is frozen and those
+lanes were retired on 2026-07-29; [`bootstrap.md`](bootstrap.md) records what they proved
+and what their loss costs.

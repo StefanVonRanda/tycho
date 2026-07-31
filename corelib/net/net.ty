@@ -17,9 +17,10 @@
 #
 #   NetErr has NO payload-carrying variant on purpose: a payload-less enum can be
 #   compared with `==`, so a caller that cares about one cause writes
-#   `if e == net.Timeout` instead of a second nested `match`. Tycho has no nested
-#   patterns -- `Err(net.Timeout)` does not parse -- so `==` is the only way to
-#   keep a single-cause test to one line.
+#   `if e == net.Timeout` instead of a second nested `match`. Tycho HAS had nested
+#   patterns since 2026-07-26, so `Err(net.Timeout):` is a legal match arm and is
+#   the clearer spelling for a caller already writing a `match`; `==` is what keeps
+#   a single-cause test to one line for a caller who is not.
 #
 #   -- TCP --
 #   net.listen(host, port) -> Result(int, NetErr)
