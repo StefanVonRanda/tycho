@@ -911,7 +911,7 @@ Unclosed discoveries from the previous plan; none blocking.
       blast radius than installing a handler, and the gate would need a held-open
       client to prove it.
 
-- [ ] **Phase 16** — filed by phase 4. `core:signal` is **absent from
+- [x] **Phase 16** — filed by phase 4. `core:signal` is **absent from
       `docs/guides/corelib.md`**, the non-normative companion the spec's older
       §32 entries cite by line. Verified rather than assumed: `grep -n signal
       docs/guides/corelib.md` returns exactly one hit, `128+signal` at
@@ -926,8 +926,14 @@ Unclosed discoveries from the previous plan; none blocking.
       non-normative and the package's own header is the fullest description in
       the tree. Two paragraphs, plus a line in the C-shim section noting that
       `signal` is the third libc-only shim after `os` and `net`.
+      *(batch D: done. The two `docs/guides/corelib.md` ranges above are the
+      AS-FOUND ones — the entry was appended at the END of the `## Packages`
+      list, so that list is now `docs/guides/corelib.md:54-416` and the C-shim
+      section `docs/guides/corelib.md:416-433`. The "third libc-only shim after
+      `os` and `net`" framing is FALSE and was not written: there are seven.
+      See the evidence block below.)*
 
-- [ ] **Phase 17** — filed by phase 4, and caused by this plan. Phase 3's
+- [x] **Phase 17** — filed by phase 4, and caused by this plan. Phase 3's
       `import "core:signal"` at `server/main.ty:61` shifted every line below it by
       one, staling bare citations into that file. `server/README.md`'s six were
       repaired in phase 4 (three of them re-anchored `@token` so the next shift
@@ -962,7 +968,7 @@ Unclosed discoveries from the previous plan; none blocking.
   hung fixture gives `rc=124` with nothing printed. Unrelated to signals in the
   server, though the same mechanism might eventually help it.
 
-- [ ] **Phase 18 — the zed README's corpus count has now reddened `make ci` four
+- [x] **Phase 18 — the zed README's corpus count has now reddened `make ci` four
       times, and the fix is always the same two keystrokes.**
   - Firings: 462→813 (2026-07-29), 837→845, 845→846, 846→848 (2026-07-31, this
     plan's phase 2 adding `corelib/signal/signal.ty` and
@@ -1681,3 +1687,179 @@ no compiled behaviour changed, which is why `make ci` was not run.
       Same class as phase 17 and batch B's phase 23 but a different file, so
       filed separately. Two numbers plus one range. Verify:
       `python3 scripts/check_citations.py`.
+
+### Batch D evidence — phases 16, 17 and 18, 2026-07-31
+
+Five files: `docs/guides/corelib.md`, `docs/spec/appendix-h-differences.md`,
+`server/run.sh`, `editors/zed/README.md`, `scripts/editors_check.sh`, plus the
+`CLAUDE.md` timing correction batch A filed. No compiled behaviour changed, so
+`make test` was not run; `make ci` was left for the closing sweep.
+
+#### Phase 18 — the decision, and the tree-editing-gate question asked plainly
+
+**Option 2 was taken: the number is gone from the claim, and the gate asserts the
+claim is present.** The count lane is replaced by a phrase check; the CORPUS lane
+that actually proves the grammar parses the tree is untouched.
+
+The first option — have the script rewrite `editors/zed/README.md` when it
+disagrees — was rejected, and the precedent question is worth answering rather
+than dodging, because on cost alone it is the tempting one (it never fails, and
+nobody ever retypes a number again). Two reasons it is wrong *here*:
+
+1. **A gate that repairs its own subject asserts nothing.** The README's number
+   would become, by construction, whatever the script just computed. There is no
+   tree in which the claim is false, so the check has no discriminating power —
+   it is a code generator wearing a gate's clothes. The four firings are cited as
+   evidence the lane works; they are equally evidence that the *only* thing it
+   ever caught was its own maintenance burden. It never once caught a wrong claim
+   about the grammar.
+2. **It would make `make ci` mutate tracked files.** `scripts/editors_check.sh`
+   is step `[9b]`. A developer running the suite would get a dirty working tree
+   as a side effect of *checking*; on a clean CI checkout the rewrite is computed,
+   written, and thrown away with the container, so the claim is "kept true" by an
+   edit nobody reads or reviews. Nothing else in `scripts/ci.sh` writes to a
+   tracked file, and this is not the change that should introduce it.
+
+**What was deliberately NOT weakened.** The thing that matters is that the
+grammar still parses the corpus, and that lane is byte-for-byte unchanged: the
+two-directional sorted diff at `scripts/editors_check.sh:110-137` still fails on
+a newly-failing file *and* on a known-bad file that starts parsing. Only the
+hand-typed integer is gone. Proven below by breaking it.
+
+**A second defect surfaced while rewriting the sentence, and nothing gated it.**
+The README claimed the corpus "reports exactly ONE `ERROR` node ... That one is
+`tests/reject/rawstring_unterminated.ty`". The known-bad set has been **two**
+files since the raw-string work — the gate's own list at
+`scripts/editors_check.sh:122-125` names `tests/reject/hex_escape_one_digit.ty`
+too, and `make editors-check` prints both. So the old lane was policing the one
+number in that sentence that did not matter while the substantive claim beside it
+was wrong. The rewritten sentence names both files.
+
+#### Phase 18 — break proof, both directions
+
+The claim lane, reworded so the gated phrase is absent (`every tracked` →
+`all the tracked source files`), restored immediately after:
+
+    >>> editors: zed README corpus claim
+        CLAIM MISSING from editors/zed/README.md -- expected the phrase
+        "every tracked `.ty` file". Reword it and this lane must be updated in step.
+
+The lane that matters, with an unparseable fixture dropped into the corpus
+(`tests/reject/zz_batchd_breakproof.ty`, an unterminated raw string), removed
+immediately after:
+
+    >>> editors: zed README corpus claim
+        ok  claim present; tree has 849 .ty files (reported, not asserted)
+    >>> editors: zed grammar over the corpus (849 .ty files)
+        CORPUS PARSE MISMATCH ('<' expected to fail but parsed, '>' newly failing):
+          2a3
+          > tests/reject/zz_batchd_breakproof.ty
+    editors-check: FAIL
+    make: *** [Makefile:64: editors-check] Error 1
+
+Both halves of the design are visible in that one run: **the corpus lane still
+reddens** on a grammar failure, and **the claim lane stayed green at 849** — the
+850th `.ty` file will not redden `make ci`, which was the entire point.
+
+Green after restoring both:
+
+    >>> editors: zed README corpus claim
+        ok  claim present; tree has 848 .ty files (reported, not asserted)
+        src/ matches grammar.js byte for byte (parser.c, grammar.json, node-types.json, tree_sitter/)
+    >>> editors: zed grammar over the corpus (848 .ty files)
+        848 files parsed; the only failure is the enumerated known-bad set (tests/reject/hex_escape_one_digit.ty tests/reject/rawstring_unterminated.ty )
+    editors-check: ok
+
+`scripts/editors_check.sh` is **the same 140 lines before and after**, on purpose:
+nine refs cite it by line (`scripts/editors_check.sh:24`, `:29`, `:57-58`,
+`:57-59`, `:76-85`, `:78-85`, `:86-88`, `:92`, `:97`, across four archived
+`plan-*-DONE.md` records). The header
+entry was rewritten in 5 lines and the lane in 21 — the counts they replaced — so
+not one of those refs moved. Repairing frozen records is worse than not moving
+them.
+
+#### Phase 17 — the refs were re-derived, and "+1" was wrong for all seven
+
+The phase entry predicted a uniform `+1` from phase 3's `import "core:signal"`.
+Every one of the seven is wrong by more than that, because phases 3, 14 and 15
+also rewrote `net.listen` into a `match` and inserted the ~28-line signal-arming
+block into `main()`. Each was re-derived by reading the current construct, not
+shifted:
+
+| comment | as-found | re-derived | drift |
+|---|---|---|---|
+| `server/run.sh:10` | `server/main.ty:604-614` | `server/main.ty:679-683` bind + `net.port_of`, **and** `server/main.ty:713-717` banner | split |
+| `server/run.sh:13` | `server/main.ty:513` | `server/main.ty:588@pick` | +75 |
+| `server/run.sh:20` | `server/main.ty:616` | `server/main.ty:719@worker` | +103 |
+| `server/run.sh:211` | `server/main.ty:426-436` | `server/main.ty:463-473` | +37 |
+| `server/run.sh:336` | `server/main.ty:499-504` | `server/main.ty:574-579` | +75 |
+| `server/run.sh:374` | `server/main.ty:342-352` | `server/main.ty:354-364` | +12 |
+| `server/run.sh:392` | `server/main.ty:342-352` | `server/main.ty:354-364` | +12 |
+
+`server/run.sh:10` is the one a uniform shift could not have fixed at all: the as-found
+`604-614` was a single span covering bind → banner, and the signal-arming block
+now sits **inside** it, so the honest repair is two tight ranges rather than one
+39-line range that is mostly an unrelated comment.
+
+The two single-line refs are now **anchored** (`@pick`, `@worker`), so the next
+shift reddens the gate instead of rotting silently — the same treatment phase 4
+gave three of `server/README.md`'s six. Ranges stay bare, per `CLAUDE.md`. The
+source→source anchored count moved 12 → 14. `server/run.sh` is **666 lines before
+and after**: `plan.md`'s phases 19 and 20 cite `server/run.sh:262` and `:346`, and
+both still resolve.
+
+#### Phase 16 — the entry, and where the shift was paid
+
+The `signal` bullet was appended at the **end** of the `## Packages` list
+(`docs/guides/corelib.md:392-414`), which is the placement that disturbs the
+fewest citations: of the ~30 refs into that file, **only three end past line 391**
+and therefore moved. Checked mechanically rather than by eye — every ref in the
+tree was extracted and its end line compared against the insertion point:
+
+- `docs/spec/appendix-h-differences.md:27` (row H7, compress/image/tls):
+  `412-449` → **`435-472`**, repaired.
+- `plan.md:920` `54-393` and `plan.md:921` `393-410` — the phase 16 entry's own
+  AS-FOUND refs. Left as found and annotated in place with the new numbers
+  (`:54-416`, `:416-433`), following the precedent batch B set for phases 10-12:
+  a filing record says what was found, and rewriting it silently would erase the
+  defect it exists to describe.
+
+Everything else into that file ends at or below `:353` and did not move.
+
+**The phase's own premise was wrong and was not copied.** It asked for a line
+saying `signal` is "the third libc-only shim after `os` and `net`". Enumerated
+instead of assumed — every `corelib/*/` with a `<name>_shim.c` and no `deps`
+manifest — there are **seven**: `datetime`, `io`, `net`, `os`, `regex`, `signal`,
+`time`. `corelib/signal/signal.ty:3-4` only ever claimed "the same self-contained
+model as core:os and core:net", which is a model, not a ranking. The guide now
+says `core:regex`, `core:os`, `core:net` and `core:signal` are "among" the
+libc-only shims, which is true and does not decay into a count — the same lesson
+phase 18 is about.
+
+#### Gates
+
+    citation check: ok (191 anchored contain the token they name, 2826 bare in bounds,
+      248 source->doc citations resolve, 244 source->source in bounds,
+      14 source->source anchored)
+    link check: ok (136 markdown files, no dead relative links)
+    spec-check: Appendix A grammar matches §3/§4 (ok)
+    spec-check: all Appendix E fixture citations resolve (ok)
+    spec-examples: 9 runnable example(s), all pass          [exit 0]
+    editors-check: ok
+
+`CLAUDE.md`'s `make server-check` cost corrected `~4s` → `~7s` in **both** places
+it appears (the gate table and the `make ci` step table), per batch A's measured
+7.0s. The two tables disagreeing is how a corrected number half-rots.
+
+- [ ] **Phase 26** — filed by batch D, out of scope and pre-existing. The CORPUS
+      lane's own comment miscounts the set it guards: `scripts/editors_check.sh:115`
+      reads "Exactly one reject fixtures are LEXICAL ones" while the heredoc
+      immediately below it (`scripts/editors_check.sh:122-125`) enumerates **two**
+      — `tests/reject/hex_escape_one_digit.ty` and
+      `tests/reject/rawstring_unterminated.ty` — and `make editors-check` prints
+      both. The number is wrong and the agreement ("one ... are") is broken, which
+      together suggest the line was edited from a one-file set and not finished.
+      Nothing gates a comment, so it is invisible; it is one word. Found while
+      rewriting the README lane in the same file, and deliberately not absorbed
+      into phase 18, which owned the count claim and not the corpus lane. Verify:
+      `make editors-check`.

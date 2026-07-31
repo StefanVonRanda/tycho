@@ -7,17 +7,17 @@
 # So the pattern is different and this header says what it is, because nothing
 # else in the tree does it.
 #
-#   readiness   server/main.ty:604-614 binds, asks the kernel for the port it
-#               actually got (net.port_of) and prints a banner ON STDERR:
+#   readiness   server/main.ty:679-683 binds and asks the kernel for the real
+#               port (net.port_of); server/main.ty:713-717 prints a banner ON STDERR:
 #                 tycho-httpd: serving <root> on http://<host>:<port>/ workers=N idle=Nms
-#               We start with `--port 0` -- documented at server/main.ty:513 as
+#               We start with `--port 0` -- documented at server/main.ty:588@pick as
 #               "0 = pick free" -- redirect stderr to a file, and poll that file
 #               for the banner. One signal gives BOTH "it is listening" and
 #               "which port", so the runner never picks a number that might be
 #               taken and never sleeps a fixed interval hoping. A `sleep 1` is the
 #               classic flake here and there is deliberately none in this file.
 #               The banner is printed after net.listen() and before worker()
-#               starts accepting (server/main.ty:616), so a connect in that window
+#               starts accepting (server/main.ty:719@worker), so a connect in that window
 #               is queued by the kernel rather than refused -- the socket is
 #               already listening. That is the assumption this runner rests on and
 #               it was proved by running the whole file ten times in a row.
@@ -208,7 +208,7 @@ eq("400 absolute-form target",
 eq("400 %00 control byte in path",
    status(exchange(b"GET /a%00b HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 400 Bad Request")
 # A Content-Length that is not a plain decimal is a smuggling primitive, refused
-# rather than parsed leniently (server/main.ty:426-436).
+# rather than parsed leniently (server/main.ty:463-473).
 eq("400 Content-Length: -5 (smuggling)",
    status(exchange(b"GET / HTTP/1.1\r\nHost: t\r\nContent-Length: -5\r\n\r\n")),
    "HTTP/1.1 400 Bad Request")
@@ -333,7 +333,7 @@ PY
 # process leaves through its own bottom.
 #
 # WHY EXIT 0 IS THE ALL-WORKERS-EXITED ASSERTION and not merely a tidier status:
-# worker() (server/main.ty:499-504) spawns peer k+1, runs accept loop k itself,
+# worker() (server/main.ty:574-579) spawns peer k+1, runs accept loop k itself,
 # and returns `n + wait(peer)`; main() CALLS worker() rather than spawning it. So
 # everything below the fan-out -- the stopped line included -- is reachable only
 # after every spawned peer has been joined. One loop still blocked in accept(2)
@@ -371,7 +371,7 @@ fi
 
 # ---- the access log, now that the server has stopped writing to it ----------
 # One line per request on stderr: worker, client, method, target, status, bytes,
-# duration (server/main.ty:342-352).
+# duration (server/main.ty:354-364).
 chk() {  # chk <name> <expected-count-test> <actual>
     if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$3', want '$2'"; fail=1; fi
 }
@@ -389,7 +389,7 @@ done
 # The served count is the sum every accept loop returned, so it is the second
 # reading on the same fact as exit 0: a loop that never returned contributes
 # nothing, and its requests would go missing from the total. One access log line
-# per request (server/main.ty:342-352), so the two numbers must agree.
+# per request (server/main.ty:354-364), so the two numbers must agree.
 n_served=$(printf '%s\n' "$stopped" | sed -n 's/^tycho-httpd: stopped after \([0-9]*\) requests$/\1/p')
 n_logged=$(grep -c '^w[0-9]' "$T/srv.err")
 chk "SIGTERM: served count == access log lines" "$n_logged" "${n_served:-none}"

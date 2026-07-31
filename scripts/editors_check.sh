@@ -14,11 +14,11 @@
 #   JSON       editors/vscode/syntaxes/tycho.tmLanguage.json and
 #              editors/vscode/language-configuration.json must be parseable JSON.
 #              A typo in either silently disables highlighting in VS Code.
-#   README     the "N committed `.ty` files" claim in editors/zed/README.md must
-#              equal the corpus size this script computes. Added 2026-07-30: the
-#              462 -> 813 repair below was itself hand-typed, so it drifted again
-#              (to 829) within a day. A number a human must remember to update is
-#              not a verified claim, it is a decaying one.
+#   README     editors/zed/README.md's corpus claim must be present and name NO
+#              file count. It used to state N, checked against the tree; that
+#              number reddened `make ci` four times in three days, every firing
+#              correct and every one caused by ordinary work adding a `.ty` file.
+#              A number a human must remember to update is a decaying claim.
 #   GENERATED  `tree-sitter generate --abi 15` into a temp dir must reproduce the
 #              committed editors/zed/grammars/tycho/src/ byte for byte.
 #   CORPUS     the generated parser must parse every tracked .ty file, with
@@ -58,26 +58,26 @@ find "$PWD" -name '*.ty' -not -path '*/.git/*' -not -path '*/node_modules/*' \
      -not -path "$PWD/fuzz/findings/*" | sort > "$TMP/files"
 nfiles=$(wc -l < "$TMP/files" | tr -d ' ')
 
-# ------------------------------------------------------------- README corpus N
-# editors/zed/README.md states how many .ty files the grammar was verified over.
-# It was hand-typed and read "462" while the truth was 813 -- a claim nothing
-# checked, in the one file a reader consults to decide whether to trust the
-# grammar. Runs BEFORE the tree-sitter availability check on purpose: it needs
-# only `find`, so it must not be skipped offline along with the grammar lanes.
-echo ">>> editors: zed README corpus count"
-rn=$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) committed `\.ty` files.*/\1/p' \
-     editors/zed/README.md | head -1)
-if [ -z "$rn" ]; then
-    echo "    NO COUNT FOUND in editors/zed/README.md -- expected a phrase of the"
-    echo "    form 'N committed \`.ty\` files'. The corpus claim is now gated; do not"
-    echo "    delete or reword it. The tree currently has $nfiles."
-    fail=1
-elif [ "$rn" != "$nfiles" ]; then
-    echo "    STALE: editors/zed/README.md claims $rn committed .ty files, tree has $nfiles."
-    echo "    Fix the README to say $nfiles."
-    fail=1
+# --------------------------------------------------------- README corpus claim
+# The claim a reader consults to decide whether to trust the grammar. It used to
+# carry a FILE COUNT that this lane compared against the tree: correct all four
+# times it fired, and all four times the fix was retyping a number that ordinary
+# work had moved. The value never depended on N -- "verified over the whole
+# tracked corpus" is as true at 848 as at 813 -- so the number is gone and this
+# lane gates what can actually be false: the claim is still there. REJECTED,
+# having the script REWRITE the README instead: a gate that repairs its own
+# subject asserts nothing, and it would make `make ci` mutate tracked files
+# (dirty locally, silently discarded on a clean checkout). Whether the grammar
+# really parses the corpus is untouched -- the CORPUS lane at the bottom still
+# enforces it both ways. Runs BEFORE the tree-sitter check: grep only, never skipped.
+echo ">>> editors: zed README corpus claim"
+claim='every tracked `.ty` file'
+if grep -qF "$claim" editors/zed/README.md; then
+    echo "    ok  claim present; tree has $nfiles .ty files (reported, not asserted)"
 else
-    echo "    ok  README says $rn committed .ty files, and so does the tree"
+    echo "    CLAIM MISSING from editors/zed/README.md -- expected the phrase"
+    echo "    \"$claim\". Reword it and this lane must be updated in step."
+    fail=1
 fi
 
 # ---------------------------------------------------------------- tree-sitter

@@ -389,6 +389,29 @@ element type instead of a family of per-type siblings.
   malformed / truncated / wrong-format input (check `width > 0`). Assembling the binary
   output is what the `to_bytes([int])` builtin enables — pure Tycho otherwise can't build a
   `bytes` with an interior `0x00` (a black or transparent pixel is `0x00` components).
+- **`signal`** — **clean shutdown on SIGTERM/SIGINT, and nothing else**: a libc-only shim over
+  `sigaction(2)` and `shutdown(2)`, with nothing to install and nothing to link.
+  `on_shutdown(fd) -> bool` installs one handler for both signals whose **only** action is
+  `shutdown(fd, SHUT_RDWR)` on the listening socket, so every thread blocked in
+  `net.accept(fd)` is released with `Err(Failed)` and the program winds down through the path
+  it already has instead of a new one. It **fails closed**: `false` means the handler was not
+  installed and the default disposition (die on SIGTERM) still stands.
+  `shutdown_requested() -> bool` reads the flag the handler set, for a loop that wants to stop
+  for a reason other than a failed accept. **Order matters** — call `on_shutdown` *after*
+  `net.listen`, with the listening fd, and *before* the accept loops start; the fd is
+  registered before the handler is, so a signal arriving mid-install can never act on a
+  descriptor that is not there yet. `server/main.ty` is the tree's only caller.
+  **The width is the design.** There is deliberately no `signal.on(sig, handler)`: calling a
+  Tycho function from handler context is a language feature, not a library one, and it needs
+  answers this package does not have — what a handler may allocate (the arena is not
+  re-entrant), what it may do to a task (the scheduler's queues are mutex-guarded), and which
+  thread it lands on (process-directed signals go to whichever one the kernel picks). So **no
+  Tycho code runs in handler context**: the handler is three statements of C, each on the
+  POSIX async-signal-safe list. What it costs — `shutdown` on a *listening* socket waking a
+  blocked `accept()` is a **Linux behaviour, not a POSIX guarantee**, and connections still in
+  the backlog are dropped rather than drained; it was chosen by measurement, releasing 4/4
+  blocked accept loops in the same millisecond where `close(fd)` released 1/4 and handed the
+  fd number back out to a later `open()`. Normative text: `docs/spec/18-library.md` §32.27.
 
 ## C-shim (FFI-backed) modules
 
@@ -430,8 +453,8 @@ plus three more:
   build. When present, it passes the same `--cflags --libs` on the tychoc0 link paths.
 
 This keeps the test suite libc-only and portable while still allowing library-backed modules.
-A libc-only shim (`core:regex`) needs no `deps`; a library with no `.pc` file can still use
-`extern "Lib" fn` for a bare `-lLib`.
+A libc-only shim needs no `deps` — `core:regex`, `core:os`, `core:net` and `core:signal`
+among them; a library with no `.pc` file can still use `extern "Lib" fn` for a bare `-lLib`.
 
 ## Testing
 
