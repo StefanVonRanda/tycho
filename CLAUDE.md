@@ -149,12 +149,19 @@ that found it.
 
 When a plan completes it is archived to `docs/internals/plan-<name>-DONE.md` and
 a new `plan.md` starts numbering again at 1. A comment written as "`plan.md`
-phase 7" therefore stops meaning anything the moment the plan it was written
+phase N" therefore stops meaning anything the moment the plan it was written
 under is archived: it now resolves against a different document, at a phase
-number that belongs to unrelated work. Nothing catches this —
-`scripts/check_citations.py` only checks refs of the form `path:N`, and a plan
-reference has no line number, so the gate cannot see it. 167 such references
-across 43 files accumulated before anyone counted them.
+number that belongs to unrelated work. 167 such references across 43 files
+accumulated before anyone counted them, because the reference carries no line
+number and `scripts/check_citations.py` had nothing to check.
+
+**`scripts/check_citations.py` now gates this**, as a fourth direction with no
+line number involved: outside the live plan and the frozen
+`docs/internals/plan-*-DONE.md` set, carrying one is a hard failure naming the
+archived document you should write instead. It matches optional backticks,
+singular and plural, any case, and a reference that wraps onto a continuation
+line — four separate surveys of this class each under-counted it by missing one
+of those. `compiler/tychoc0.ty` is exempt because it is frozen and unfixable.
 
 **The rule, in two halves:**
 

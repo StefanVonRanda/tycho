@@ -1,5 +1,5 @@
 # 03-types.md:334-338 / src/tychoc.c:3719-3721: a newtype MUST NOT wrap an Option.
-# Accepted by tychoc0 before plan.md Phase 27, and the emitted C compiled and RAN.
+# Accepted by tychoc0 before docs/internals/plan-front-door-DONE.md phase 27, and the emitted C compiled and RAN.
 type A = Option(int)
 
 fn main():

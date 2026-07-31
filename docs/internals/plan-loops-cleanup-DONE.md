@@ -2781,7 +2781,7 @@ request (`fc921d7`, `7a04e53`).
     `docs/`: 10 CHECKed, 19 FRAGMENT (no `fn` at all), 6 MARKED
     `<!-- fence-skip: … -->` with a printed reason, 5 FROZEN (in
     `docs/internals/plan-*-DONE.md`, the same exemption as
-    `scripts/check_citations.py:316@ARCHIVED`).
+    `scripts/check_citations.py:362@ARCHIVED`).
   - **What remains unchecked, precisely:**
     1. **~155 fences opened with a bare ```` ``` ```` and no language tag**, of
        which an unknown subset is Tycho. `docs/reference/` has **48** and
@@ -3636,7 +3636,7 @@ That is precisely the "red on prose, then disabled" failure the entry warned of.
 Settled design: **opt-out with a named reason**, `<!-- fence-skip: … -->`, and
 the reason is printed on every run so the skip list cannot grow quietly. Frozen
 `docs/internals/plan-*-DONE.md` fences are exempt on the same grounds as
-`scripts/check_citations.py:316@ARCHIVED`. Fences with no `fn` are classed
+`scripts/check_citations.py:362@ARCHIVED`. Fences with no `fn` are classed
 FRAGMENT rather than wrapped in a synthetic `main`, because wrapping would
 typecheck a program the document does not contain.
 

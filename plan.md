@@ -63,7 +63,7 @@ first has a decided, documented policy — not 2793 hand repairs.
 
 ## Phases
 
-- [ ] **Phase 1 — repair the outgoing plan's already-false refs, then gate "`plan.md` phase N"**
+- [x] **Phase 1 — repair the outgoing plan's already-false refs, then gate "`plan.md` phase N"**
   - Scope: `docs/internals/plan-signals-DONE.md` (the one-time exception above),
     the 5 live "`plan.md` phase N" refs batch C left, and
     `scripts/check_citations.py`.
@@ -98,6 +98,177 @@ first has a decided, documented policy — not 2793 hand repairs.
     both directions on a planted violation.
   - Verify: `python3 scripts/check_citations.py`, the planted-violation proof,
     `sh scripts/check_links.sh`, `sh scripts/spec_check.sh`.
+
+### Phase 1 evidence — 2026-07-31
+
+#### Part 1 — the archived plan carried 38 false refs, not 3
+
+The three named in its phase 27 entry were the visible end of the tail. Method,
+because a line-delta bump is what produced several of the wrong repairs this
+repo has already recorded: for every one of the **290 citations** in
+`docs/internals/plan-signals-DONE.md`, `git blame -C -M` on the *citing* line
+gives the commit that wrote it; `git show <commit>:<path>` gives the file **as
+the author saw it**; the cited text is then located in today's file by **content
+identity**, not by arithmetic. 125 of the 290 point into the three files batch E
+moved (`server/main.ty` 70, `server/run.sh` 31, `corelib/signal/signal_shim.c`
+24); of those, 36 still resolve correctly and the rest do not.
+
+**38 were repaired** — every stale ref in the phase 1-3 and batch A/B evidence
+prose, which is the population phase 27 described. The three it named came out
+exactly as it predicted:
+
+```
+doc:296  `corelib/signal/signal_shim.c:81`      -> `corelib/signal/signal_shim.c:148@sigx_flag`
+doc:290  `corelib/signal/signal_shim.c:77-85`   -> `corelib/signal/signal_shim.c:144-156`
+doc:617… `server/main.ty:617` (x5 sites)        -> `server/main.ty:753@stopped`
+```
+
+**8 single-line repairs gained an anchor**, chosen as the rarest identifier on
+the repaired line, so the next edit that moves them reddens the gate instead of
+drifting: `@sigx_flag`, `@sigx_fd`, `@SHUT_RDWR`, `@saved`, `@clobber`,
+`@sa_flags`, `@shutdown_requested`, `@MAX_ACCEPT_FAILS`. Ranges were left bare,
+per the standing rule that a range has no single subject token.
+
+Two range endpoints the automated relocation got wrong were caught by reading
+the construct and fixed by hand: the handler span ends at the closing brace
+`corelib/signal/signal_shim.c:156`, not at the inner `}` of the new slot loop,
+and `serve_conn` is `server/main.ty:375-516`, not the span-preserving guess.
+**More anchoring is not automatically more truth** — this is the same hazard the
+pre-flight names, met in practice.
+
+#### Part 2 — 18 live refs, not 5, and the reason the count was low
+
+Re-derived as instructed. Batch C's 5 became **6**: `FRICTION.md:739`,
+`server/main.ty:741`, `server/run.sh:328`, `:479`, `:602`, and `server/run.sh:650`,
+which batch E wrote *after* batch C took its count. All six meant the plan
+archived at `23adb1d` and now name `docs/internals/plan-signals-DONE.md`.
+
+**The other 12 are a discovery, and they explain the "three spellings" warning.**
+Batch C's sweep was case-sensitive: it matched `phase` and missed `Phase`. Left
+behind, all capitalised — `Makefile:139`, `scripts/ci.sh:50`,
+`scripts/asan_self.sh:17` and `:39`, five `tests/reject/*.ty` fixtures,
+`docs/internals/frontend-restriction-audit-2026-07-25.md:358`,
+`docs/internals/int64-migration-audit.md:280`, and
+`examples/webserver/README.md:50-51`, which is *both* capitalised and wrapped
+across two lines. Two more sat in `scripts/check_citations.py`'s own docstring.
+Sweeping them was not in the phase's stated scope; it became unavoidable, because
+a gate that cannot go green is not a gate. It is recorded here rather than
+absorbed silently.
+
+**Attribution was checked, not guessed**, by batch C's own method: the commit
+that *adds* `plan-X-DONE.md` is the instant X stopped being live, so the windows
+tile; `git blame` puts each citing line in exactly one; and the phase number
+cited must be one the mapped document declares. **20 of 20 passed.** Eleven map
+to `plan-front-door-DONE.md`, one each to `plan-int64-DONE.md` and
+`plan-webserver-DONE.md`, six to `plan-signals-DONE.md`.
+
+#### Part 3 — the gate
+
+Predicate, in `scripts/check_citations.py` as a fourth direction: outside
+`plan.md` and the frozen `docs/internals/plan-*-DONE.md` set, no tracked file may
+carry a phase reference into the rotating plan. Exemptions follow the existing
+`ARCHIVED` / `SRC_SKIP_CITER` shape rather than a second mechanism —
+`PLANREF_SKIP` names the live plan and `compiler/tychoc0.ty`, the latter for the
+reason it is already skipped as a citer: it is frozen and an unfixable red.
+
+The pattern is deliberately loose because **four separate surveys of this class
+each under-counted it**: optional backticks, `phase` or `phases`, `re.I` for the
+case variation batch C missed, and a separator class permitting a newline plus a
+comment leader. It matches whole-file text, not lines, because a line loop is
+precisely what hid the wrapped ones.
+
+**`check_citations.py` is NOT exempt from its own rule**, so neither the pattern
+nor the failure message spells the form it forbids — the same discipline the
+absolute-path rule follows. The message says what to do (name the archived plan,
+with the boundary/blame/check recipe), not merely that something is wrong.
+
+#### Planted-violation proof, both directions
+
+Five spellings appended to `server/README.md`, a file outside the allowed set:
+
+```
+$ python3 scripts/check_citations.py
+STALE  server/README.md:292  'plan.md phase 3' -> a phase reference into the rotating plan, ... Name the archived plan: `docs/internals/plan-<name>-DONE.md` phase 3. (`git log --diff-filter=A -- docs/internals/` gives the rotation boundaries; ...)
+STALE  server/README.md:293  '`plan.md` phase 3' -> ...
+STALE  server/README.md:294  '`plan.md` phases 1' -> ...
+STALE  server/README.md:295  'plan.md Phase 3' -> ...
+STALE  server/README.md:296  '`plan.md`\nphase 3' -> ...
+citation check: FAILED (5 stale citation(s) above)
+EXIT=1
+```
+
+All five caught, each naming the archived form to write instead. Plant removed
+(`git diff --stat -- server/README.md` empty), and:
+
+```
+$ python3 scripts/check_citations.py
+citation check: ok (199 anchored contain the token they name, 2787 bare in bounds, 265 source->doc citations resolve, 247 source->source in bounds, 16 source->source anchored)
+EXIT=0
+
+$ sh scripts/check_links.sh
+link check: ok (137 markdown files, no dead relative links)
+EXIT=0
+```
+
+Anchored 191 → **199** (the 8 new anchors); bare 2793 → 2787; source→doc 248 →
+**265**, the rewrites having introduced 17 new `docs/internals/plan-*-DONE.md`
+mentions from source files, each now existence-checked. The new pass reports its
+own count under `--stats` only, so the `ok` line stays comparable with the
+archived evidence that quotes it. Writing *this* evidence block then took the
+totals to **200 anchored / 2802 bare**, which is the tree's final state — and
+one of its own refs reddened the gate first, a bare `:1794-1811` inheriting a
+`docs/` path from the line above. It was caught, not by review, but by phase
+63's same-line rule. Fifth phase in this repo to redden on its own write-up.
+
+#### One consequence worth recording
+
+Inserting the docstring section moved `ARCHIVED` from `scripts/check_citations.py:316`
+to `:362`. Six refs named the old line; **three were anchored and reddened the
+gate immediately**, three were bare and would have rotted silently. All six were
+re-pointed. That is the phase-2 asymmetry reproducing itself inside phase 1.
+
+#### Gates run, and the one deliberately not run
+
+`python3 scripts/check_citations.py` and `sh scripts/check_links.sh`, per the
+brief and `CLAUDE.md`'s gate budget. **`make test` was not run**: every edit
+outside the two docs is a comment — `#` lines in `Makefile`, `scripts/ci.sh`,
+`scripts/asan_self.sh`, `server/main.ty`, `server/run.sh` and five
+`tests/reject/*.ty` fixtures. No line was added or removed in any source file,
+so no citation into one shifted, and the flat reject lane scores on exit status
+plus a non-empty diagnostic rather than on golden text.
+
+- [ ] **Phase 28 — the 6 refs phase 1 refused to repair, and why refusing was right**
+  - Scope: `docs/internals/plan-signals-DONE.md` only.
+  - Six refs spell `server/main.ty:493-494` (plus a `:494` and a `:494-495` in
+    one before/after line) and claim it "sets `running = false` in the `Err` arm
+    of accept". The construct did not move — batch A **deleted** it, deliberately,
+    and `server/main.ty:520` is a comment block headed "WHY THE ERR ARM IS NOT
+    `running = false`" explaining the decision. So there is no line to relocate
+    to: the nearest true statement is `server/main.ty:594`, and pointing there
+    would make a frozen record assert something about today's code that batch A
+    specifically disproved.
+  - Phase 1 failed closed (RULE 7): a wrong write is worse than a skipped one.
+  - The real question is which of two things these are — a citation to repair, or
+    a claim about superseded behaviour that should be marked as such and left.
+    **Decide that before touching a line number.**
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+- [ ] **Phase 29 — decide what a before/after record block is, so nobody "repairs" one**
+  - Scope: `docs/internals/plan-signals-DONE.md`, `CLAUDE.md`'s Citations section.
+  - Phase 1 deliberately left three regions alone: the phase-4 repair log
+    (`docs/internals/plan-signals-DONE.md:751-754` and `:941-943`) and batch D's
+    before/after table (`docs/internals/plan-signals-DONE.md:1794-1811`). Their
+    line numbers are **data** — a record
+    of what a ref said at a past moment — and repairing them would falsify the
+    record, which is the exact thing the frozen-record rule exists to prevent.
+  - But nothing in the tree marks them as data, and phase 1 told them apart only
+    by reading each one. The next sweep will not be so careful, and a sweep that
+    "fixes" a before/after column destroys evidence irreversibly.
+  - Options: a convention the gate can see, a marker in the block, or a written
+    rule with no mechanism. **Count how many such blocks exist across all twelve
+    archived plans before choosing** — a mechanism for three blocks is not worth
+    building.
+  - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
 
 ## Out of scope
 

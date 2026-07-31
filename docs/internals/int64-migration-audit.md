@@ -277,4 +277,4 @@ and no `*.c` under `compiler/` exists (only `tychoc0.ty`). **Phase 5 is a
 documented no-op unless `make bootstrap` regenerates from source** — recorded so
 Phase 5 does not invent work.
 
-## 8. ILP32 toolchain probe — see the DONE block appended to `plan.md` Phase 1.
+## 8. ILP32 toolchain probe — see the DONE block appended to `docs/internals/plan-int64-DONE.md` phase 1.

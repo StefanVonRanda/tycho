@@ -136,7 +136,7 @@ test-fast: build/prunner
 # The COMPILER's own memory safety. Every other sanitizer lane here (including
 # `test` above) sanitizes the C tychoc EMITS; nothing built src/tychoc.c itself
 # with -fsanitize, so tychoc's own execution was unmeasured by every gate -- which
-# is how the parse_type_inner stack-buffer-overflow of plan.md Phase 37 survived a
+# is how the parse_type_inner stack-buffer-overflow of docs/internals/plan-front-door-DONE.md phase 37 survived a
 # full 1.0 freeze. This lane builds src/tychoc.c with ASan+UBSan and COMPILES the
 # whole fixture corpus with it (--emit-c; the emitted programs are not run -- that
 # is `test`'s job). Leak detection is deliberately off: tychoc never frees by

@@ -47,7 +47,7 @@ make -s ilp32
 # Both lanes above sanitize/rebuild the C tychoc EMITS. Neither -- nor anything
 # else in this file before 2026-07-25 -- ever built src/tychoc.c itself with
 # -fsanitize, so the compiler's OWN memory safety was unmeasured by every gate.
-# That is how plan.md Phase 37's stack-buffer-overflow WRITE in parse_type_inner,
+# That is how docs/internals/plan-front-door-DONE.md phase 37's stack-buffer-overflow WRITE in parse_type_inner,
 # reachable from a valid program, survived 16 phases and a full 1.0 freeze. This
 # lane builds the compiler under ASan+UBSan and compiles the whole corpus with it.
 # tests/generic_many_typaram_names.ty is the in-corpus fixture that makes it
