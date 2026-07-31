@@ -1210,3 +1210,288 @@ by widening the gate's reach, figures in `CLAUDE.md` left stale by a phase that
 updated only its own copy, and a genuine contradiction between the anchor check
 and the record-line rule. Cleaning up after yourself is different from chasing a
 population.
+
+## Re-scored against a batch, data-shaped program, 2026-07-31 (head `bb6c43d`)
+
+Everything above this line came from two programs of the same shape as each other:
+`server/` is socket-shaped and `tools/prunner/main.ty` is concurrency-shaped, and
+both spend their time moving messages rather than transforming data. **Neither one
+imports `core:sha256` or `core:compress`** — `grep -n 'core:sha256\|core:compress'
+server/main.ty tools/prunner/main.ty` returns nothing — and prunner never crosses
+`bytes` and `string` at all (zero hits for `to_bytes`, `to_str` and `read_bytes`).
+`server/main.ty` does cross it, seven times, but every one is `to_bytes` on a
+string literal or an error page on its way to a socket: it hands bytes along, it
+never hashes them, inflates them or parses a length field out of them. So every
+judgement in this file about hashing, about compression, and about what the
+byte/text split costs a caller who is *working* on the bytes was written by
+programs that did none of those things.
+
+`tools/tycho-ar/main.ty` does. 854 lines: it walks a directory, hashes every file,
+gzips it, writes one archive, and reverses that byte for byte. It is gated by
+`make ar-check` (`tools/tycho-ar/run.sh`) on create-twice byte-identity, a `t`
+listing against a recorded golden, a `diff -r` round trip, and four kinds of
+refusal. Below is what writing it surfaced, **ranked**, worst first. The last
+group is the entries that got smaller as they were written down, and they are
+labelled as such rather than padded.
+
+### 1. The one-shot digest is what the language makes natural — this is a language default steering library shape
+
+**The whole corelib hashes messages the caller already holds entire**, and it is
+not an oversight. `core:sha256` is `digest(msg)` and `hex(msg)`, both over one
+`string`; `corelib/sha256`, `corelib/md5`, `corelib/crypto` and `corelib/hash`
+grepped together for `sha256_(init|update|final)`, `EVP_DigestUpdate` and
+`fn (init|update|final)` return **zero hits**; and `core:crypto`'s `cx_sha256_hex`
+is one-shot too, over a message the caller must hex-encode first.
+`compress.compress` (`corelib/compress/compress.ty@compress`) is `bytes -> bytes`
+with the same shape.
+
+**The reason is one compiler diagnostic.** `fn bump(a: [int]): a[0] = 1` is
+`error: cannot mutate parameter 'a' (it is borrowed read-only; copy it with
+`y := a` first)`, and the suggested copy is a genuine copy — `c := a; c[0] = 999`
+leaves `a[0]` alone, so a container parameter is a value, not a reference. **A
+streaming state therefore cannot be threaded through calls by default.** `update`
+is not a function you can casually write; it is a function you must first decide
+to spell `inout`. A one-shot `digest(msg)` needs that decision from nobody, so
+that is the interface that gets written.
+
+`inout` is a complete answer and it works well — on `[u32]`, on `bytes`, and it
+forwards (`tools/tycho-ar/main.ty@sha_feed` hands its own `&H` to
+`@sha_block`). Nothing here is broken. What is true is that **the default steers
+the library**, and a whole family of interfaces went one-shot because of it.
+
+**What it cost, measured.** Hashing a file in bounded memory meant writing
+SHA-256: ~60 lines across `tools/tycho-ar/main.ty@sha_block`, `@sha_feed`,
+`@sha_finish`, `@sha_bytes` and `@sha_file`. Digests match `sha256sum` on 14 sizes
+straddling the 64-byte block, the padding overflow and the 64 KiB chunk. And the
+saving is real but partial: `sha256.digest` expands its message into `buf := []int`
+— **one machine int per byte** — so hashing an n-byte file allocated ~8n bytes of
+int array on top of the n bytes of file, and that term is now gone. But `c` still
+holds each file whole, because the compressor is one-shot in exactly the same way.
+**Peak memory for `c` is still O(file size); chunking removed the 8x multiplier on
+top of the file, not the file.**
+
+**Cost to fix:** an `inout`-threaded `init`/`update`/`final` beside `digest` in
+`core:sha256` is ~80 lines of Tycho and no language change — the block loop and
+the padding already exist in this tree, written twice now. Bounding the last term
+needs a streaming deflate, which is a `core:compress` interface plus a shim change
+and is the larger job. **This ranks first because it is not a missing function; it
+is a missing habit**, and it will reproduce in the next package anyone writes.
+
+### 2. The wrong `string` compiles silently, and there is no wrong-looking output
+
+**The predicted friction did not materialise, and the real one is worse.** This
+file's existing entry on the split says a `string` is fully byte-safe and that the
+`bytes`/`string` boundary buys "type-level intent and FFI shape, not binary
+safety"; the plan predicted that crossing it per file would be the seam this
+program hit first. It was not. The crossing is `sha256.hex(to_str(raw))` — one
+call, no copy, `to_str` a reinterpret of the same length-headered buffer
+(`docs/spec/06-conversions.md`) — and eight fixture digests including a file with
+interior NULs match `sha256sum` byte for byte. **Half of a prediction in this file
+was wrong again, and it is the half that sounded expensive.**
+
+What is expensive is that **nothing at the type level distinguishes "this `string`
+is text" from "this `string` is raw bytes".** `io.read` and `io.read_bytes` are one
+keystroke apart, both plausible at the call site, and reaching for the wrong one
+gives a digest over a NUL-truncated prefix: no diagnostic, no exception, and an
+output that looks exactly like a digest. In an archiver that is silent corruption
+of the field whose entire job is detecting corruption.
+
+**Cost to fix:** a real distinct type is a language change and is not proposed
+here. What is cheap and would have caught this one: give the hashing and encoding
+entry points a `bytes` arm (`sha256.hex_bytes`, `base64.encode_bytes`) so the
+byte-shaped call site never has to launder through `string` at all, and say in
+`docs/spec/18-library.md` that a `string` argument to a digest means *text*. That
+is a signature and a sentence, not a type system.
+
+### 3. `compress.decompress` cannot distinguish empty from corrupt
+
+Measured, not reasoned. A probe compressing `""`, a 65-byte payload with byte 12
+XORed by `0xFF`, and that payload cut in half:
+
+```
+legit-empty: gzip len=20 inflated len=0
+legit-empty: sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+good      : gzip len=65 inflated len=51
+corrupt   : gzip len=65 inflated len=0
+corrupt   : sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+truncated : inflated len=0
+truncated : sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+```
+
+Legitimate-empty, corrupt and truncated are **byte-identical answers**. The return
+value carries no discriminator at all, and the shim is why: every error path in
+`corelib/compress/compress_shim.c@zx_decompress` sets `*outlen = 0` and returns.
+
+**An archive can legitimately contain a zero-byte file**, so for any container
+format this means a corrupt member reads as an empty one — data loss that looks
+like data. `tycho-ar` survives it only because the format carries the original
+length out of band and checks it (`tools/tycho-ar/main.ty@cmd_x`: `inflated to 0
+bytes, header says 12 (corrupt payload)`), and `tools/tycho-ar/run.sh` leg 4c
+forges the payload digest specifically to prove that check, not the digest, is
+what catches it. A caller who trusts the return value has no such recourse.
+
+**Cost to fix: small, and the information is already there.** `zx_decompress`
+knows which branch it took; it discards that on the way out. Returning
+`Result(bytes, string)` — the shape every other fallible corelib call now uses —
+is a shim return value, a signature and the call sites. This ranks third only
+because the workaround exists; for a caller without an out-of-band length there is
+no workaround at all.
+
+### 4. `strings.parse_int` fails open, so no format parser can use it
+
+`corelib/strings/strings.ty@parse_int` returns 0 for `""`, 0 for a leading
+non-digit, and **stops at the first non-digit without objecting** — a damaged
+length field of `"1x4"` parses as `1`. That is the right behaviour for user input,
+where 0 is a fine default, and the wrong one for a length field, where a wrong
+length that *parses* is precisely how a reader ends up hashing the wrong span of
+bytes. `tools/tycho-ar/main.ty@parse_uint` is the strict version this program had
+to carry: returns `-1`, no silent prefix.
+
+There is no strict or `Result`-returning counterpart in `core:strings` — this call
+predates the `Result` convention the rest of the corelib converged on.
+**Cost to fix:** ~15 lines for `parse_int_strict(s) -> Result(int, string)`,
+leaving `parse_int` alone so no caller moves.
+
+### 5. `bytes` slices clamp, so a slice is not a bounds check
+
+`data[p:p + 8]` past the end of a `bytes` value yields three bytes rather than
+trapping (`docs/spec/03-types.md:139`). For a format parser that is a trap dressed
+as a convenience: a reader that treats the slice as its bounds check reads a short
+footer, compares it against the real one, and gets the **right answer by accident**
+— then slices a payload, hashes a prefix, and gets the wrong one. Every read in
+`tools/tycho-ar/main.ty@parse` therefore tests `len(...)` of what came back
+against what it asked for.
+
+**The hazard is the spelling, not the semantics.** An array slice aborts; a
+`string` slice and a `bytes` slice clamp; all three are written `x[a:b]`. Clamping
+is right for a text tool and the identical syntax is what makes it invisible.
+**Cost to fix: documentation, and it is already partly paid** — the behaviour is
+specified. What is missing is the warning beside it, one paragraph in
+`docs/spec/03-types.md` saying in words that a clamping slice cannot be used as a
+bounds check.
+
+### 6. There is no `eprintln`, and the missing channel removed a feature
+
+The builtins are `println`, `die` (stderr, then exit 1) and `exit(n)`. **A
+non-fatal warning is inexpressible**: it can only go to stdout, alongside whatever
+the program's actual output is.
+
+This is normally a nuisance and here it changed an interface. `t` writes its
+listing to stdout, so **its stdout is its data**, and a per-member warning would be
+a diagnostic sharing a stream with the filenames — a consumer cannot tell them
+apart. The resolution was to make `t` all-or-nothing: verify framing, paths,
+footers, payload digests and the trailer count for every member *before* printing a
+single line, then print member lines and nothing else — no summary, no
+"listed 8 of 9", no per-member note. A bad archive gets an empty stdout, a reason
+on stderr and exit 1.
+
+That is a defensible interface, and it is **strictly less than `tar t`, which can
+report a bad member and keep listing.** The gap is no longer predicted; it has a
+feature attached to it. **Cost to fix:** one builtin, next to `println`.
+
+### 7. gzip byte-determinism is real, undocumented, and load-bearing
+
+Every archive this program writes is reproducible **because zlib writes zero into
+RFC 1952's MTIME header field unless the caller supplies a `gz_header`, and
+`corelib/compress/compress_shim.c@zx_compress` supplies none.** A compressor that
+filled that field in — as the `gzip(1)` command does by default — would make every
+archive differ from the last, and `make ar-check`'s first leg would redden on a
+program that had done nothing wrong.
+
+Nothing in `docs/spec/18-library.md`'s `core:compress` entry says the output is
+byte-deterministic. So the tree's one reproducibility gate rests on a property
+that is true, verified by reading the shim, and **promised by nobody** — a second
+implementation of `core:compress` could set MTIME and still conform.
+**Cost to fix: one sentence in the spec**, which converts an accident into a
+contract. Cheapest item on this list by a wide margin, and the only one where the
+fix is purely making an existing truth binding.
+
+### 8. mtime is captured faithfully and cannot be restored — and the gate is green over the hole
+
+`io.mtime` reads it, every member header carries the real `st_mtime`, `t` prints
+it, and `x` drops it on the floor: there is no `utimensat`, no `utimes` and no
+`chmod` anywhere in `corelib/io/io.ty` or `corelib/io/io_shim.c`. This is a
+different shape from "the format cannot store permission bits" — that is data
+never captured; this is **data captured correctly that the extractor cannot
+apply.**
+
+The part worth the rank: **`diff -r` does not compare mtimes**, so the round-trip
+assertion this program is gated by is green over a gap a user meets on their first
+restore. The gate is not wrong, it is narrow, and nothing about running it says so.
+**Cost to fix:** one shim function plus one `core:io` signature; the gate would
+then need an mtime comparison to be worth anything.
+
+### Smaller than they looked once written down
+
+Recorded because they were hit, ranked below the line because writing them out
+shrank them. Padding this list would make the eight above harder to act on.
+
+- **No `io.write_bytes`.** Writing bytes is `io.write(p, to_str(b))`, which is
+  correct — `runtime/tycho_rt.c@tycho_write_file` fwrites the length header to a
+  `"wb"` handle — but a caller has to read the runtime to know that, because the
+  signature says `string`. **Smaller than it looked:** it is one signature away
+  from symmetric with `io.read_bytes` and it never actually cost this program a
+  bug, only a paragraph of comment justifying a line. Legibility, not safety.
+- **No `mkdir -p`.** `corelib/io/io_shim.c@iox_make_dir` is one `mkdir(2)`, which
+  is the correct primitive, and `Ok(false)` for "already a directory" is exactly
+  the right interface — it is what makes the loop idempotent. Every caller writing
+  into a tree it does not own rebuilds the component chain;
+  `tools/tycho-ar/main.ty@mkdir_p` is 18 lines of it. **Real, and 18 lines.**
+- **A package cannot mark a top-level function internal.** Every `fn` in
+  `corelib/sha256/sha256.ty` is callable as `sha256.<name>` from an importing
+  program — `k_table`, `h_init`, `ch`, `maj`, `pow2`, `hex2` all probed and
+  returned. **Both halves are true and they cancel:** this is what made item 1's
+  60 lines cheap, since not one constant or round table is duplicated; and it means
+  every corelib helper is public API by accident, so any rename is a breaking
+  change to callers the author never knew existed. No cost estimate, because the
+  fix is a visibility rule and that is a language question, not a corelib one.
+- **`core:io` is path-based, with no file handles.** The compressor's read and the
+  digest's reads are separate `open(2)`s over the same path, so an archiver cannot
+  read a file atomically. A writer racing between them is **detectable** — a read
+  returning zero before the expected length is fatal in
+  `tools/tycho-ar/main.ty@sha_file` — but not preventable. Unlike the two items
+  above this is the shape of the whole package rather than one missing call, which
+  is why it is an entry here and not a proposal.
+- **No expression line continuation.** `x := a + b +` followed by a continuation
+  line is `error: expected an expression`, caret at the column after the trailing
+  `+`. Every header build in this program has that shape, so one two-line
+  expression became three statements. **The only thing that changed the code rather
+  than the comments**, and it changed it by two lines.
+- **`chr(n)` is the only route from a number to a byte.** There is no `bytes`
+  builder from integers; `to_bytes` takes a `string`. SHA-256's padding is
+  therefore assembled as a `string` and converted. Harmless at ≤120 bytes built
+  once per file, and it would not be in a hot loop. Pairs with `io.write_bytes`:
+  **`bytes` is a good type to receive and an awkward one to construct.**
+- **A match arm cannot be empty.** An arm with no body is `error: expected an
+  indented block`, with the caret on the *next* arm's line, so a success case with
+  no work still needs a statement (`Ok(_): continue`). Kept only because it is the
+  same family as the line-continuation entry — the grammar has no way to say
+  nothing. **And it is a correction:** the first draft of this claimed there was no
+  `_` wildcard binding, which is false — `Ok(_)` compiles and a whole-arm `_:`
+  wildcard is at `docs/spec/12-aggregates.md:653`. An unverified absence claim
+  nearly shipped into this file, which is the one file here where that is
+  expensive.
+- **`push` has no inverse.** No `pop`, so the directory walk is a queue with a
+  cursor rather than a stack. **Not a defect** — the queue reads better — but the
+  data structure was chosen by the corelib rather than by the program.
+
+### What did not go wrong, which is also data
+
+- **It compiled first try, three phases out of three.** The list/extract phase and
+  the chunked-hashing phase each built with no errors on the first `./tychoc`,
+  including a hand-written SHA-256 with `inout` state threading through four
+  functions. This matches what the concurrent-program re-scoring above found and
+  contradicts the picture the older half of this file paints.
+- **The `bytes`/`string` crossing cost one call and no copy** (item 2).
+- **`sort.asc` over `[string]` is unsigned-byte lexicographic and locale-free**,
+  because string comparison is `memcmp` over the length header
+  (`runtime/tycho_rt.c@tycho_str_cmp`). That is what a format needs, and a
+  locale-aware comparison would have quietly broken reproducibility across hosts.
+  `runtime/tycho_rt.c@tycho_list_dir` returns filesystem order, so the sort is the
+  entire determinism story on the walk side.
+- **`path.safe_join` fails closed and was asserted, not assumed.** A hand-built
+  archive whose member path is `../a.txt` — the same eight bytes as `xx/a.txt`, and
+  no digest in the format covers the path, so the substitution leaves a
+  structurally valid archive — is refused before the first write, destination
+  never created. That is leg 4a of `tools/tycho-ar/run.sh`, and neutering the
+  substitution reddens it, so the leg is measured rather than assumed.

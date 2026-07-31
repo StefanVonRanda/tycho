@@ -482,7 +482,7 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
       file atomically with this interface. Different in kind from phases 11/12
       (a missing call): this is the shape of the whole package.
 
-- [ ] **Phase 4 — the gate, and what the program surfaced**
+- [x] **Phase 4 — the gate, and what the program surfaced**
   - Scope: a runner, its `Makefile` target, a `scripts/ci.sh` step,
     `CLAUDE.md`'s gate table, and `FRICTION.md`.
   - Unlike the server this is a batch program, so it gates with a golden and
@@ -498,6 +498,183 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
   - Done when: the gate is wired and green, `make ci` is green with an observed
     exit code, and `FRICTION.md` carries what was learned.
   - Verify: the gate, then `make ci` once, waited on in-turn, observed.
+
+  **Done.** `tools/tycho-ar/run.sh` (new), `tools/tycho-ar/expected.out` (new
+  golden), `Makefile` (`ar-check`), `scripts/ci.sh` (`[3e/13]`), `.gitignore`
+  (un-ignore for the golden), `CLAUDE.md` (two table rows), `FRICTION.md` (the
+  deliverable), and four `Makefile:313` citations repointed because this phase
+  inserted lines above them.
+
+  **The gate is a golden runner, not a daemon harness**, because the program is
+  batch: build, run over a fixture the runner writes itself, compare `t`'s
+  listing to a recorded golden, then four assertions on top. **The fixture is
+  built by the script and stamped `touch -d @1700000000`** — mtime is a header
+  field and `t` prints it, so a fixture with a real mtime would make the golden a
+  record of the minute it was recorded. No random bytes, because a golden cannot
+  carry them; the multi-chunk file is a counted loop (152000 bytes, three 64 KiB
+  chunks).
+
+  **The archive bytes deliberately have no golden.** They embed a gzip payload
+  whose length depends on the host's zlib, so a recorded byte length would be a
+  claim about the grader's zlib. Determinism is a property of two runs on one
+  host, which leg 1 measures directly; every offset the damage legs use is
+  **parsed out of the member header** rather than hardcoded, for the same reason.
+
+  ```
+  $ time make -s ar-check
+  tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip
+  empty; traversal, absolute path, flipped payload, forged csha and truncation
+  all refused)
+  real    0m2.390s
+  ```
+
+  **The golden is independently correct**, not merely self-consistent: rebuilding
+  the eight fixture files by hand and scoring them with `wc -c` and coreutils
+  `sha256sum` reproduces the golden's size and digest columns exactly, all 8
+  members, including the file with interior NULs and the 152000-byte one. (The
+  only textual difference is GNU `sha256sum`'s `\` prefix on the
+  newline-in-filename entry.)
+
+  **The four refusals, run by hand to record what the tool actually says:**
+
+  ```
+  tycho-ar: f.tyar: member 0 (xx/a.txt): payload digest mismatch (csha)      x/t exit=1
+  tycho-ar: f.tyar: xx/a.txt: inflated to 0 bytes, header says 12 (corrupt payload)  exit=1
+  tycho-ar: e.tyar: refusing member 0: path escapes the destination: ../a.txt        exit=1
+  tycho-ar: t.tyar: truncated (no trailer after 1 members)                           exit=1
+  ```
+
+  The traversal fixture is the honest one: `../a.txt` is the **same eight bytes**
+  as `xx/a.txt` and no digest in the format covers the path, so overwriting it in
+  place leaves an archive that is valid in every other respect. Destination never
+  created. The forged-`csha` leg exists to disarm check 2 so that `size` is the
+  only remaining witness — it is the only leg that needs `sha256sum`, and it
+  prints a SKIP line rather than pretending if it is absent.
+
+  **BREAK PROOF, both directions, twice.** The previous plan's phase 1 shipped a
+  gate that was green because `-pthread` had disarmed it, so this is not
+  optional.
+
+  ```
+  A) corrupt the golden (one hex digit of a.txt's digest):
+     FAIL: t listing != golden
+           2c2
+           < 15 1700000000 49372d8d2101c0a8... a.txt
+           ---
+           > 15 1700000000 49372d8c2101c0a8... a.txt
+     tycho-ar: FAIL          EXIT=2
+     restore -> tycho-ar: green      EXIT=0
+
+  B) neuter the traversal patch (`../a.txt` -> `yy/a.txt`, a path that does NOT
+     escape), which proves the leg is driving the tool rather than passing for
+     an unrelated reason:
+     FAIL: traversal: x EXITED 0 -- the archive was accepted
+     FAIL: traversal: destination was created before the refusal
+     tycho-ar: FAIL          EXIT=2
+     restore -> tycho-ar: green      EXIT=0
+  ```
+
+  **What the lane actually closes, corrected mid-phase.** The first draft of the
+  `Makefile` and `scripts/ci.sh` comments claimed this is the only lane that
+  touches `tools/tycho-ar/main.ty`. **False, and caught by reading
+  `scripts/tools_check.sh`:** it sweeps every `.ty` in the tree and runs
+  `--emit-c` over each for its semantic-preservation leg, so a tycho-ar that
+  stopped compiling already reddened step `[9]`. What no lane did was **run** it —
+  `scripts/entrypoints.sh` globs `examples/*/` plus `server/main.ty` and never
+  looks under `tools/`. Both comments now say the narrower true thing.
+
+  **Numbered `[3e/13]`, not 14**, following `2b/2c/2d/3b/3c/3d`: it is a dogfood
+  compared against a recorded golden, which is what every leg of step 3 is, and
+  the `/13` denominator counts the numbered steps. Placed beside the cheap lanes
+  rather than beside `[9] tools-check` because its subject is a program composing
+  `core:compress` + `sha256` + `io` + `path` + `cli` + `sort` + `strings`, not the
+  tooling's own quality — and because it costs 2.4s where `[9]` costs a minute.
+
+  **`FRICTION.md` carries the findings, ranked**, under
+  "Re-scored against a batch, data-shaped program, 2026-07-31 (head `bb6c43d`)".
+  Eight ranked entries, a "smaller than they looked" group of seven that says so
+  in words rather than padding the ranked list, and a "what did not go wrong"
+  group. The order, worst first: the borrowed-parameter rule making a one-shot
+  digest the natural shape; the wrong `string` compiling silently; `decompress`
+  unable to distinguish empty from corrupt; `parse_int` failing open; clamping
+  `bytes` slices; no `eprintln`; undocumented gzip determinism; unrestorable
+  mtime.
+
+  **The section opens with a claim that had to be corrected before it shipped.**
+  The draft said neither `server/main.ty` nor `tools/prunner/main.ty` crosses
+  `bytes`/`string` even once. `grep -n to_bytes server/main.ty` returns **seven
+  hits**. What is true, and what it now says: neither program imports
+  `core:sha256` or `core:compress` (grep returns nothing), prunner has zero
+  `to_bytes`/`to_str`/`read_bytes`, and every one of the server's seven crossings
+  is `to_bytes` on a literal or an error page heading for a socket — it hands
+  bytes along and never hashes, inflates or parses them.
+
+  ```
+  $ python3 scripts/check_citations.py        -> citation check: ok
+  $ sh scripts/check_links.sh                 -> link check: ok (140 markdown files)
+  ```
+
+  **`make ci` once, at the end, exit code observed** — this phase adds a CI step,
+  which is the case that earns the full sweep. Wrapped so the status could not be
+  lost: `make ci > /tmp/tycho-ci.log 2>&1; echo "CI_EXIT=$?" >> /tmp/tycho-ci.log`,
+  polled in-turn.
+
+  ```
+  >>> [3e/13] make ar-check  (tycho-ar: create twice byte-identical, t vs golden,
+      diff -r round trip, damage and path traversal refused)
+  tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip
+  empty; traversal, absolute path, flipped payload, forged csha and truncation
+  all refused)
+  ...
+  passed: 560   failed: 0        # [2/13] make test, and again under [2b] ilp32
+  conc: passed 38   failed 0
+   CI GREEN -- tree is good
+  CI_EXIT=0
+  ```
+
+  All 13 steps green on the first sweep, no re-runs. `make test` held at 560, the
+  count this plan started from.
+
+  **Disposition of the carried-forward items this program produced (9–18).** All
+  ten are now recorded in `FRICTION.md`, which was the deliverable; none is
+  closed by code here. 15, 16 and 18 were filed as `FRICTION.md` entries rather
+  than proposals from the start and are **closed by this phase**. 9, 10, 11, 12,
+  13, 14 and 17 stay open as corelib proposals with a cost estimate now attached
+  to each — 14 (a streaming digest) and 13 (a strict `parse_int`) are the two
+  worth doing first, and 12 (unrestorable mtime) is the one whose gate is green
+  over the hole.
+
+  **NEW — discovery 19, filed below rather than absorbed.** `.gitignore`'s broad
+  `*.out` rule swallowed this phase's golden silently: `git check-ignore -v
+  tools/tycho-ar/expected.out` named it, and the file did not appear in `git
+  status` at all. Ten un-ignore lines already exist for exactly this reason (one
+  per lane that ever recorded a golden), so the failure mode is established: a
+  new lane records its golden, passes locally, and fails on a fresh clone with
+  `no golden -- run RECORD=1`. Nothing gates it. Filed as phase 19.
+
+## Status — PLAN COMPLETE
+
+All four phases are done and committed. `tycho-ar` creates, lists and extracts;
+an extracted tree is `diff -r`-identical to its input; the archive is
+byte-identical across runs; `make ar-check` proves all of it and reddens when
+broken, proved in both directions twice; and `FRICTION.md` carries eight ranked
+findings plus seven the writing shrank.
+
+**What the program was for, answered.** The brief was to find out what the
+language and corelib do badly when the work is batch and data-shaped rather than
+socket-shaped, on the grounds that fourteen corelib packages had exactly one
+consumer each and that consumer was always the package's own demo. It found the
+thing a demo cannot find: **`core:sha256` and `core:compress` are one-shot
+because a Tycho parameter is borrowed read-only**, so a streaming state cannot
+thread through calls without `inout` being reached for deliberately. That is one
+language default shaping a family of library interfaces, and no demo passing a
+literal would ever have surfaced it.
+
+**Closing sweep:** `make ci` once, observed — see the exit code recorded above
+under Phase 4.
+
+Phases 5–19 below are carried forward and are not part of this plan's
+completion.
 
 ## Carried forward
 
@@ -584,7 +761,18 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
       detects a racing writer — a zero-length read before the expected length is
       fatal — but cannot prevent one. Unlike phases 11/12 this is the shape of
       the package rather than one missing call, so it is a `FRICTION.md` entry
-      before it is a proposal.
+      before it is a proposal. **Closed by phase 4** — filed in `FRICTION.md`,
+      which is all this item ever asked for.
+
+- [ ] **Phase 19** — a new lane's golden is invisible until someone clones.
+      `.gitignore` ignores `*.out` broadly and un-ignores it per directory, one
+      line per lane that ever recorded a golden — ten of them now. Phase 4 hit
+      this: `tools/tycho-ar/expected.out` was written, `make ar-check` went
+      green, and the file never appeared in `git status`, so the commit would
+      have shipped a lane that fails on a fresh clone with
+      `no golden -- run RECORD=1`. The cheap gate is mechanical: for every
+      `*/run.sh` naming a golden path, `git ls-files --error-unmatch` it. Found
+      by phase 4; a tooling change, so not absorbed.
 
 ## Out of scope
 
