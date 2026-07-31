@@ -135,7 +135,10 @@ string). (`push`/`pop`/`len`/`range` are builtins.) `docs/guides/corelib.md:81-8
 ### 32.7 `iter`
 
 Generic higher-order helpers over any `[T]`, each taking a `fn`/closure (pure
-Tycho): `map`, `filter`, `reduce`, `count`, `any`. `docs/guides/corelib.md:89-90`.
+Tycho): `map`, `filter`, `reduce`, `count`, `any`. `map` is the one that may
+change the element type — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, so
+`map(ints, to_str)` is a `[string]`; the rest are type-preserving.
+`docs/guides/corelib.md:89-90`.
 
 ### 32.8 `sort`
 
