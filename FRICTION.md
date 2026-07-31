@@ -120,6 +120,11 @@ diagnostic exist at HEAD and say what the note claims?) and 8 live runs of the c
 > lanes** — and the freeze retirement alone closes two items below and invalidates
 > the stated *reason* for several "deliberately kept" ones. The current open list is
 > the dated section that follows this one; this table is not it.
+>
+> **Still not it, 2026-07-31 (head `9e8f8f2`).** That open list has since been re-scored
+> again, in place, and stands at **11 items**. It is the section titled "The real remaining
+> debt — the open list, re-scored in place", immediately below; its own header carries the
+> current count and the current head.
 
 ### The count
 
@@ -212,51 +217,87 @@ file, a missing path and an unreadable one alike) with four accurate ones. `Resu
 made the distinctions *available*; **spending them costs one branch per cause**, and
 nothing about the error model makes accuracy free at the call site.
 
-### The real remaining debt, re-scored 2026-07-30 against `afa67da` — 10 open items
+### The real remaining debt — the open list, re-scored in place
 
-Every item below was **re-verified against the tree at `afa67da`** before it was
-scored: the compiler was run by hand on the shape the item describes, or the cited
-source was opened, or the gate/shim was invoked directly. **All ten reproduce.**
-Nothing on the previous list turned out to be already closed — but four of them are
-*bigger* or *cheaper* than the previous list said, and every citation on the list has
-been re-derived, because the old ones had drifted.
+**Re-scored 2026-07-31 against `9e8f8f2` — 11 open items.** 43 commits since the
+previous pass: `core:signal`, `io.mtime` / `io.read_at` / `io.size`,
+`Last-Modified` / `304`, `Range` / `206` / `416`, bounded worker retry, and a
+citation gate that grew four directions, ambiguous-anchor rejection and a
+`path@SYMBOL` form. **One numbered item closed** (item 7, the `parallel for`
+fan-out — its spec defect was corrected and its undocumented ceiling documented),
+**one grew** (item 1 is now three shims, because the plan that shipped
+`core:signal` added a fourth instance of the same defect), and **two were added**
+(items 11 and 12). Four unnumbered items elsewhere in this file closed as well;
+they are struck in place in their own sections.
 
-Two items that were **not** on the numbered list did close, both by the same event —
-the `tychoc0` freeze lanes were retired 2026-07-29 — and both are struck through in
-place below (the six non-gated `tychoc0` runners, and "new language syntax can no
-longer be given a `tests/` fixture").
+**The numbering is frozen on purpose.** Sections below this one address items by
+number ("item 7", "Open list item 5"), so a closed item is struck where it stands
+and new ones are appended. The count above is the count of *unstruck* entries.
 
-The old list addressed its items by bare `:N` line numbers into this file. Those are
-gone: a bare `:N` binds to the previously named path (`CLAUDE.md`, "Citations"), so
-they were never self-references at all, and they went stale on every edit. Items are
-named by their section instead.
+The paragraphs below are the previous pass's, kept as its record:
 
-Ordered so the top of the list is what to pick up first.
+> **Re-scored 2026-07-30 against `afa67da` — 10 open items.**
+> Every item below was **re-verified against the tree at `afa67da`** before it was
+> scored: the compiler was run by hand on the shape the item describes, or the cited
+> source was opened, or the gate/shim was invoked directly. **All ten reproduce.**
+> Nothing on the previous list turned out to be already closed — but four of them are
+> *bigger* or *cheaper* than the previous list said, and every citation on the list has
+> been re-derived, because the old ones had drifted.
 
-1. **Two shims do not compile under `-std=c11`** (*Found by phase 1's gate sweep*) —
-   **the cheapest thing on this list, and it is now two files, not one.**
-   `cc -std=c11 -c corelib/net/net_shim.c` gives **4 errors** (`corelib/net/net_shim.c:84`
-   storage size of `hints`, `corelib/net/net_shim.c:88` implicit `getaddrinfo`,
-   `corelib/net/net_shim.c:89` invalid use of undefined `struct addrinfo`,
-   `corelib/net/net_shim.c:90` implicit `freeaddrinfo`), and **`corelib/tls/tls_shim.c`
-   has the same defect with 9 errors** from `corelib/tls/tls_shim.c:38` — which the
-   original item did not know, because it found the first one through
-   `scripts/frontparity.sh` and that gate no longer runs. Re-measured here by invoking
-   `cc` directly on all 11 shims: those two fail, seven pass, and `corelib/image/image_shim.c`'s
-   single "error" is only a missing `png.h` (environmental, item 6). **The fix is already
-   in the tree four times** — an `#ifndef`/`#define` pair with a one-line reason at
-   `corelib/io/io_shim.c:10-11`, `corelib/os/os_shim.c:9-10`,
-   `corelib/datetime/datetime_shim.c:10-11` and `corelib/time/time_shim.c:22-23` — so this
-   is **3 lines copied into each of 2 files**, with a known-good pattern to copy. Left on
-   scope three times now.
-2. **`spawn f(x)` as a bare statement** (*Earlier phases*) — reproduced verbatim at HEAD:
-   `spawn work(1)` gives `error: a statement must be a declaration, assignment, or call --
-   a bare expression has no effect` (`src/tychoc.c:3575`), which still never states the
+> Two items that were **not** on the numbered list did close, both by the same event —
+> the `tychoc0` freeze lanes were retired 2026-07-29 — and both are struck through in
+> place below (the six non-gated `tychoc0` runners, and "new language syntax can no
+> longer be given a `tests/` fixture").
+>
+> The old list addressed its items by bare `:N` line numbers into this file. Those are
+> gone: a bare `:N` binds to the previously named path (`CLAUDE.md`, "Citations"), so
+> they were never self-references at all, and they went stale on every edit. Items are
+> named by their section instead.
+
+The 2026-07-30 list was ordered so the top was what to pick up first, and that
+order is preserved. **The two appended items are not last in priority just
+because they are last in the list** — item 11 is the cheapest thing here. The
+pick-up order is written out in full under "What moved this pass" below.
+
+1. **Three shims do not compile under `-std=c11`** (*Found by phase 1's gate sweep*) —
+   **still the cheapest thing on this list, and it is now three files. It was one, then
+   two, then three, and the growth is the item.**
+   Re-measured at HEAD by invoking `cc -std=c11 -c` directly on all **12** shims
+   (there were 11 at the previous pass): **eight pass**, three fail, and
+   `corelib/image/image_shim.c`'s single "error" is only a missing `png.h`
+   (environmental, item 9 — the previous pass wrote "item 6" here, which was wrong).
+   - `corelib/net/net_shim.c` — **4 errors** (`corelib/net/net_shim.c:84` storage size
+     of `hints`, `corelib/net/net_shim.c:88` implicit `getaddrinfo`,
+     `corelib/net/net_shim.c:89` invalid use of undefined `struct addrinfo`,
+     `corelib/net/net_shim.c:90` implicit `freeaddrinfo`).
+   - `corelib/tls/tls_shim.c` — **9 errors** of the same kind from
+     `corelib/tls/tls_shim.c:38`.
+   - **NEW at this pass — `corelib/signal/signal_shim.c`, 3 errors**: storage size of
+     `sa` (`corelib/signal/signal_shim.c:201`), implicit `sigemptyset`
+     (`corelib/signal/signal_shim.c:204`), implicit `sigaction`
+     (`corelib/signal/signal_shim.c:206`). `struct sigaction` and its two helpers are
+     POSIX, not ISO C, so this is the identical cause with a different header.
+   **This is the finding, and it outranks the fix.** The signal plan wrote a brand-new
+   shim, in a tree where this item had been open and named for two re-scores, and
+   reproduced the defect — because **no gate compiles a shim standalone**, so nothing
+   could tell it. The item is no longer "two files want three lines"; it is "every new
+   shim will want them, and the tree has no way to notice". A gate that runs
+   `cc -std=c11 -fsyntax-only` over `corelib/*/*_shim.c` would cost about as much as
+   `scripts/entrypoints.sh` and would close the class rather than the instances.
+   **The fix per file is already in the tree four times** — an `#ifndef`/`#define` pair
+   with a one-line reason at `corelib/io/io_shim.c:10-11` (`_DEFAULT_SOURCE`),
+   `corelib/os/os_shim.c:9-10`, `corelib/datetime/datetime_shim.c:10-11` and
+   `corelib/time/time_shim.c:22-23` (`_POSIX_C_SOURCE 200809L`) — so it is **3 lines
+   copied into each of 3 files**, plus the gate. Left on scope four times now.
+2. **`spawn f(x)` as a bare statement** (*Earlier phases*) — reproduced verbatim again at
+   `9e8f8f2` with a scratch program: `spawn work(1)` gives `error: a statement must be a
+   declaration, assignment, or call -- a bare expression has no effect`
+   (`src/tychoc.c:3575`, unmoved since the previous pass), which still never states the
    real rule — a task handle must be *bound* so the compiler can hang the implicit join on
    it. **One line of diagnostic text at a known line.** Open only because nobody has spent
-   it.
+   it, through two re-scores.
 3. **`docs/bootstrap.md` is not reachable from `docs/README.md`** (*Found by phase 1's gate
-   sweep*) — verified: `grep bootstrap docs/README.md` is empty. Sharper than the old
+   sweep*) — re-verified at HEAD: `grep -c bootstrap docs/README.md` → `0`. Sharper than the old
    entry: the index deliberately points at *directories* (`docs/reference/`, `docs/guides/`,
    `docs/spec/`, `docs/internals/`, `docs/rfc/`), so almost every unlisted file is covered
    by its directory — and `docs/bootstrap.md` is **the only top-level `docs/*.md` no index
@@ -265,43 +306,79 @@ Ordered so the top of the list is what to pick up first.
    link**, plus the real question behind it: `scripts/check_links.sh` checks that links
    *resolve*, not that documents are *reachable*, so an orphan is invisible to every gate.
    Three files under `docs/internals/` are additionally mentioned by no Markdown at all.
-4. **The `send` collision** (*Phase 7*) — reproduced at HEAD, and this re-score found the
-   fix's exact shape. `fn send(a: int, b: int) -> int` still compiles silently and dies at
-   the *call* with `error: send(ch, v) takes a channel, got int`, while `fn die(s: string)
-   -> int` is rejected at the *definition*. **The reason is now pinned:** the definition-time
-   duplicate check is `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
+4. **The `send` collision** (*Phase 7*) — reproduced again at `9e8f8f2` with two scratch
+   programs, and every citation on this entry re-checked and still correct.
+   `fn send(a: int, b: int) -> int` compiles silently and dies at the *call* with
+   `error: send(ch, v) takes a channel, got int`, while `fn die(s: string) -> int` is
+   rejected at the *definition* with `error: 'die' is already defined`. **The reason is
+   pinned:** the definition-time duplicate check is
+   `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
    (`src/tychoc.c:7842`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
-   as real entries (`src/tychoc.c:4521-4522`, in `register_builtins`,
-   `src/tychoc.c:4508`) but **holds no entry for `send`, `recv` or `close` at all**; those
-   three are recognised ad hoc during resolution (`src/tychoc.c:5609`,
-   `src/tychoc.c:5618`, `src/tychoc.c:5624`). So it is not a table that omits three rows,
-   it is three builtins that were never in the table. **The code is ~1 line** at
-   `src/tychoc.c:7842`; the open part is the decision — which builtin names are
-   shadowable — because landing it newly rejects any program defining `send`/`recv`/`close`.
+   as real entries (`src/tychoc.c:4521-4522`, inside `src/tychoc.c@register_builtins`)
+   but **holds no entry for `send`, `recv` or `close` at all**; those three are recognised
+   ad hoc during resolution (`src/tychoc.c:5609`, `src/tychoc.c:5618`,
+   `src/tychoc.c:5624`). So it is not a table that omits three rows, it is three builtins
+   that were never in the table. **The code is ~1 line** at `src/tychoc.c:7842`; the open
+   part is the decision — which builtin names are shadowable — because landing it newly
+   rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
+   (`src/tychoc.c:7836`) consults the same two tables plus `generic_find`, so whatever is
+   decided has to be written twice.
 5. **Stale in-tree comments asserting constraints that the freeze retirement killed**
-   (*phase 10, widened here*) — the old entry named two files; there are **six sites**, and
-   they now carry two *different* false claims:
-   - "the language has no nested patterns" — `corelib/net/net.ty:20`,
-     `examples/corelib/httpd/main.ty:55`, and (new here) `corelib/result/result.ty:29-31`,
-     which goes further and tells the reader "nothing in `corelib/` may use one".
+   (*phase 10, widened at the previous pass*) — **all six sites re-read at `9e8f8f2` and
+   all six survive verbatim.** Two of the six citations had drifted and are re-derived
+   here; the entry carries two *different* false claims:
+   - "the language has no nested patterns" — `corelib/net/net.ty:20-21`
+     ("Tycho has no nested patterns -- `Err(net.Timeout)` does not parse"),
+     `examples/corelib/httpd/main.ty:55`, and `corelib/result/result.ty:29-31`, which goes
+     further and tells the reader "nothing in `corelib/` may use one".
    - "this package is compiled by the FROZEN `tychoc0`, so it must not use X" —
-     `corelib/httpd/httpd.ty:100-109` (why `crlf()` must stay),
-     `corelib/httpd/httpd.ty:281-289` (why `out` must stay), `tools/lsp.ty:259`
-     (why `"" + '\r' + '\n'` must stay). **The freeze lanes were retired 2026-07-29**, so
+     `corelib/httpd/httpd.ty:101-109` (why `corelib/httpd/httpd.ty@crlf` must stay;
+     was cited `:100-109`), `corelib/httpd/httpd.ty:312-320` (why the `out` local must
+     stay; **was cited `:281-289`, a 31-line drift**), `tools/lsp.ty:257-259` (why
+     `"" + '\r' + '\n'` must stay). **The freeze lanes were retired 2026-07-29**, so
      every one of these states a live constraint that no longer exists — each run.sh header
      in the tree has already been corrected to the past tense, and these six were missed.
-   `corelib/test/io/main.ty:44` and `corelib/test/result/main.ty:128` show the corrected
-   form. **~15 lines of comment across 6 files**, and worth doing before someone reads one
+   `corelib/test/io/main.ty:51-52` and `corelib/test/result/main.ty:126-130` show the
+   corrected form, the second one naming the *real* surviving constraint
+   (`docs/spec/appendix-e-conformance.md` §E.2.1) instead of the expired one — which is
+   the model to copy, because at least one of the six sites does still have a reason to
+   stay — just not this one. **~15 lines of comment across 6 files**, and worth doing
+   before someone reads one
    of them as a reason not to write the obvious thing.
-6. **`ends_with` needs `core:strings`** (*Earlier phases*) — still true: `ends_with` lives
-   at `corelib/strings/strings.ty:37` and `core:httpd` still hand-rolls its own
-   `has_ext` (`corelib/httpd/httpd.ty:387`) rather than import the package for one
-   predicate. **Not lines — a corelib layering decision** about whether a leaf package may
-   depend on `core:strings`. Note the precedent that has since landed: `core:io` *dropped*
-   a dependency (`core:path`) when a syscall made it unnecessary, so the tree's current
-   direction is fewer inter-package edges, not more.
-7. **`parallel for` caps concurrency at `min(N, ncpu)` and nothing warns** (*Earlier
-   phases*) — **reproduced live at HEAD**, not merely re-read. Four iterations of an equal
+6. **`ends_with` needs `core:strings`** (*Earlier phases*) — still true at `9e8f8f2`:
+   `corelib/strings/strings.ty@ends_with` exists and `core:httpd` still hand-rolls its own
+   `corelib/httpd/httpd.ty@has_ext` rather than import the package for one predicate.
+   `core:httpd`'s imports are `core:net` and `core:result` and nothing else
+   (`corelib/httpd/httpd.ty:42-43`), which is the shape the decision is about.
+   **Not lines — a corelib layering decision** about whether a leaf package may depend on
+   `core:strings`. Note the precedent that has since landed: `core:io` *dropped* a
+   dependency (`core:path`) when a syscall made it unnecessary, so the tree's current
+   direction is fewer inter-package edges, not more. (The old entry cited `has_ext` at
+   `corelib/httpd/httpd.ty:387`; it is 40 lines further down now, which is why this
+   citation is a `path@SYMBOL` — the definition has a name and its line number was only
+   ever a record of how much prose sat above it.)
+7. ~~**`parallel for` caps concurrency at `min(N, ncpu)` and nothing warns** (*Earlier
+   phases*)~~ — **CLOSED 2026-07-31 at `9e8f8f2`, by the spec catching up with the
+   compiler.** Both live halves are answered in `docs/spec/`, verified by reading it:
+   - **The 64-chunk ceiling is documented.** `docs/spec/13-concurrency.md:81-83` now
+     reads "the reference implementation uses `min(ncpu(), N)` chunks, MAY expose an
+     override (`TYCHO_THREADS`), and MAY impose a fixed upper bound on the chunk count —
+     the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
+     reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
+     and the cap — is gone. The compiler side is cited anchored from the spec's own
+     provenance block, `src/tychoc.c:10040@_pk > 64`, so the gate now polices it.
+   - **`ncpu()`'s false definition is corrected**, which was the other half:
+     `docs/spec/16-builtins.md:251` states outright that it is "the *requested* worker
+     count, **not** the width a `parallel for` will actually use" and that "a program that
+     sizes a buffer or a work split from `ncpu()` MUST NOT assume that many chunks run".
+   - **The warning half stays uncosted and that is now a settled non-item**, not a gap:
+     `N` is a runtime expression, so there is nothing static to warn from, and
+     `docs/internals/plan-prunner-DONE.md` phase 1 measured that the cap limits width
+     without starving — 200 items came back 200 at every setting.
+   **What is left is item 8**, which already carries it: the one thing the spec fix does
+   not give anyone is a way for a program to *choose* the width. The record of this item,
+   as it stood, follows — the numbers in it are measurements of past trees and stay.
+   - **Reproduced live**, not merely re-read. Four iterations of an equal
    fixed workload: `TYCHO_THREADS=4` → **222 ms**, `TYCHO_THREADS=2` → **433 ms**,
    `TYCHO_THREADS=1` → **853 ms**. All N iterations *do* run (the reduction total is
    identical at every width); what is capped is how many run *at once*, so an iteration
@@ -309,18 +386,20 @@ Ordered so the top of the list is what to pick up first.
    know:
    - The behaviour is now **specified**, which it was not: "the iteration space is split
      into chunks; the reference implementation uses `ncpu()` chunks and MAY expose an
-     override (`TYCHO_THREADS`)" (`docs/spec/13-concurrency.md:78-82`).
+     override (`TYCHO_THREADS`)". *(That is the pre-fix wording of §22, quoted as it stood
+     on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
+     longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
      (`src/tychoc.c:4519`, lowering at `src/tychoc.c:9129`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
-   - There is an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:10040`, inside `gen_parfor`,
-     `src/tychoc.c:10026`) — which `docs/spec/13-concurrency.md` does not mention, so on a
-     box with more than 64 CPUs the spec's "uses `ncpu()` chunks" is false. **That half is
-     a ~1-line spec fix and should be split out and taken;** the warning half remains
-     uncosted, because `N` is a runtime expression (`docs/spec/13-concurrency.md:86`) and
+   - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:10040`, inside `src/tychoc.c@gen_parfor`) —
+     which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
+     CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
+     and should be split out and taken** — *it was, and closing it is what closed this
+     item.* The warning half remains uncosted, because `N` is a runtime expression and
      there is nothing static to warn about. Runtime detail at
-     `runtime/tycho_rt.c:843-852` (`tycho_ncpu`).
+     `runtime/tycho_rt.c@tycho_ncpu`.
    - **Confirmed and bounded by measurement, 2026-07-31** (`docs/internals/plan-prunner-DONE.md` phase 1, a real
      `parallel for` program rather than the server that never used one). The 64 is exact
      and it was forced, at K=200 jobs of 50 ms each: `TYCHO_THREADS=32` → `maxconc=32`,
@@ -330,36 +409,48 @@ Ordered so the top of the list is what to pick up first.
      never returns never starts" is true only for a body that can fail to return, and a
      terminating body is never at risk). At the real workload — 560 jobs, `ncpu()` = 16 —
      the cap is not in the picture at all. So the live half of this item is now just the
-     undocumented ceiling and `ncpu()`'s own false definition above it
-     (`docs/spec/16-builtins.md:251`), split out as `plan.md`'s carried-forward phase 7.
-8. **No direct spelling for N workers** (*Earlier phases*) — reproduced: `hs := [spawn
-   work(1), spawn work(2)]` is refused with `tychoc: a task handle cannot be stored in a
-   container or aggregate -- wait(t) first` (`src/tychoc.c:639`, `task_container_err`,
-   fail-closed at the type-intern choke points so a task cannot escape and be waited twice
-   or never). `server/main.ty:499-501` still pays the recursive fan-out — worker k spawns
-   worker k+1 into a frame-local, then runs its own accept loop. **An array of handles is a
-   type-system change, not an item-sized fix. Uncosted, and still the honest core of what
-   is left**, together with item 7.
+     undocumented ceiling and `ncpu()`'s own false definition above it, split out as a
+     carried-forward phase. *(It was taken, and both halves are the CLOSED note at the
+     head of this item.)*
+8. **No direct spelling for N workers** (*Earlier phases*) — reproduced again at
+   `9e8f8f2` with a scratch program: `hs := [spawn work(1), spawn work(2)]` is refused with
+   `tychoc: a task handle cannot be stored in a container or aggregate -- wait(t) first`
+   (`src/tychoc.c@task_container_err`, fail-closed at the type-intern choke points so a
+   task cannot escape and be waited twice or never). `server/main.ty@worker` still pays the
+   recursive fan-out — worker k spawns worker k+1 into a frame-local, then runs its own
+   accept loop. **An array of handles is a type-system change, not an item-sized fix.
+   Uncosted, and still the honest core of what is left.** *(This entry cited
+   `src/tychoc.c:639` and `server/main.ty:499-501` at the previous pass; the first drifted
+   by one line and the second by 440, because `server/main.ty` roughly doubled — 1088 lines
+   now. Both are `path@SYMBOL` here, which is why they will not drift again.)*
    **NARROWED, 2026-07-31, and the item reads stronger than it is** (`docs/internals/plan-prunner-DONE.md` phases 1–3).
    The first program in this tree to actually run a worker pool started **16 workers in one
    line and stored no handle**: `parallel for` is a direct spelling for N workers, and
-   `parallel for x in ch:` — specified at `docs/spec/13-concurrency.md:91-92`, worked at
-   `docs/guides/concurrency.md:86-104`, fixtured at `tests/conc/parfor_chan.ty:16` — is a
+   `parallel for x in ch:` — specified at `docs/spec/13-concurrency.md:99-100`, worked at
+   `docs/guides/concurrency.md:86-112`, fixtured at `tests/conc/parfor_chan.ty:16` — is a
    direct spelling for a *bounded pool over a queue*, the exact shape this item says has
    none. So the premise "it is either N hand-written `spawn` lines or a recursive fan-out"
    is **false for N = ncpu**, which is the N most programs want, and an array of task
    handles is not what a worker pool needs. **What survives is one sentence and it is
    sharper than the original:** the program cannot choose N. `ParallelFor`
    (`docs/spec/02-grammar.md:248-249`) has no width slot in the grammar, so the only knob
-   is `TYCHO_THREADS`, read once per process at `runtime/tycho_rt.c:848` — a fixture runner
-   that wants `-j 4` on a laptop and `-j 32` in CI cannot say so from inside the language,
-   and must be *launched* differently instead. `server/main.ty:499-501`'s recursion is
-   still evidence, but for a **different** want: N long-lived workers each carrying its own
-   `wid`, which `parallel for` genuinely cannot express because a chunk's identity is not
-   observable. Two items, not one, and only the second needs the type system.
+   is `TYCHO_THREADS`, read once per process in `runtime/tycho_rt.c@tycho_ncpu` — a fixture
+   runner that wants `-j 4` on a laptop and `-j 32` in CI cannot say so from inside the
+   language, and must be *launched* differently instead. `server/main.ty@worker`'s recursion
+   is still evidence, but for a **different** want: N long-lived workers each carrying its
+   own `wid`, which `parallel for` genuinely cannot express because a chunk's identity is
+   not observable. Two items, not one, and only the second needs the type system.
+   **Re-checked at `9e8f8f2` and the narrowed form holds in both halves.** The grammar
+   still has no width slot — `docs/spec/02-grammar.md:248-249` is two productions, a
+   counting one over a literal `0..<Expr` and a foreach one over a bare name, and neither
+   carries a count. And `server/main.ty` still spells its pool as a recursion carrying
+   `wid`, which the file now uses for more than logging: the shutdown registry is indexed
+   by `wid - 1` (`server/main.ty:903-914`), so worker identity is load-bearing there and
+   `parallel for` remains unable to supply it.
  9. **`corelib/test/image` is skipped without libpng** (*`docs/internals/plan-friction-DONE.md`
     phase 7, non-blocking*) — confirmed environmental and confirmed *live*:
-    `corelib/image/deps` names `libpng`, `pkg-config --exists libpng` fails on this machine,
+    `corelib/image/deps` names `libpng`, `pkg-config --exists libpng` still fails on this
+    machine at `9e8f8f2`,
     and `corelib/run.sh:39` prints `skip <name> (missing dependency: ...)` and continues. Its
    golden therefore asserts nothing here. **Not closable in-tree** — it is a property of
    the machine, and the skip is the deliberate design that keeps `make ci` green on
@@ -388,18 +479,126 @@ Ordered so the top of the list is what to pick up first.
     that names a moving target should be replaced by one that names a stable one, not
     repointed.**
 
-**What moved and what did not.** Items 1, 2, 3 and 5 are lines and links with the work
-already identified — roughly a day between them, and item 1 has a known-good pattern to
-copy four times over. Items 7 and 8 are the concurrency pair and are still the honest
-core: one wants a type-system answer, the other wants a warning there is nothing static
-to warn from. **That sentence did not survive being tested — see the 2026-07-31 section
-below.** Item 8's type-system answer is not what a worker pool wants (it stores no
-handles), and item 7's danger is bounded by measurement; what is left of the pair is one
-missing width parameter. Item 6 wants a decision, not lines. Items 9 and 10 are properties of the
-environment and of the file itself. **The list did not shrink, and that is the finding —
-sixty commits of real language work went past this list without touching it**, because
-every one of them was driven by `new_ideas.md` and by the loop and array plans instead.
-A list nothing is pulling from does not get shorter on its own.
+    **NARROWED 2026-07-31 at `9e8f8f2`, and the narrowing is a decision the tree has now
+    made twice, not a measurement that moved.** The claim is still true and was re-measured
+    here; the *prescription* — "a mechanical pass to anchored form" — is the part that has
+    been settled against, and this file now carries the settlement in two sections of its
+    own ("Retired citation drift" and "Retired citation phases, second set"). The
+    reconciliation, so the item and those sections stop disagreeing:
+    - **The population splits three ways, and only one third is work.** Refs that are
+      *correct* stay bare — declined three times with a measurement each time, most
+      recently because a repair pass was found to have rotted again in four days. Refs that
+      are *unresolvable as posed* — a basename with no directory, a `:N` into the live
+      `plan.md` — are retired, because no gate and no sweep can settle them. Refs that are
+      **already false** are the actionable third, and they are filed as phases on the live
+      plan rather than here.
+    - **This file's own five already-false refs are protected**, and the reason is written
+      into that phase: several of this file's entries are struck-through closed records
+      quoting line counts as *evidence for a decision*, and `CLAUDE.md`'s record-line rule
+      forbids repairing those numbers. Two of the five sit in live prose rather than in a
+      record and were repaired here, by naming the construct instead of the line
+      (`server/main.ty@stopped`, `server/main.ty@accept_loop`); the other three sit
+      inside measurements and were left exactly as written.
+    - **Re-measured on the open list itself**, which is the sample that matters because it
+      is the part anyone acts on. The previous pass re-derived every citation on this list
+      on 2026-07-30. One day and 43 commits later, **5 of roughly 25 have drifted** — and
+      the inversion is the finding: **not one of them is into `src/tychoc.c`.** The
+      previous pass concluded that compiler refs are the ones that rot, from a batch of
+      compiler work; this batch was server and corelib work, and it rotted
+      `server/main.ty` (by 440 lines — the file roughly doubled) and
+      `corelib/httpd/httpd.ty` (by 31 and 40) while every `src/tychoc.c` ref on the list
+      held. **Which file drifts is a property of what is being worked on, not of how big
+      the file is**, so "anchor the compiler refs" is not the rule it looked like.
+    - **What changed underneath, and it is why converting is now cheap:**
+      `scripts/check_citations.py` gained a `` `path@SYMBOL` `` form that takes no line
+      number and is checked by finding the token in that file, so it survives every
+      insertion and reddens only on a rename or a deletion. The open list's definition
+      citations were converted to it in this pass. That is the mechanism the item asked
+      for; what it does **not** license is a sweep over correct refs, which is the thing
+      three separate passes have declined.
+11. **NEW — `docs/spec/14-ffi.md` §24.1.1 documents one of the two ways a shim returns a
+    payload and a classification, and the tree now uses both** (*the conditional-requests
+    and byte-ranges work*). §24.1.1 is normative and good: it says the classification is a
+    numeric `inout` and the payload keeps the return, spells the C ABI out
+    (`docs/spec/14-ffi.md:77-94`), and its provenance block says "the shape is used
+    twice — `netx_read` and `iox_read_file`". **It is used five times now, and two of them
+    are the mirror image**: `iox_stat_mtime` and `iox_stat_size`
+    (`corelib/io/io.ty:100`, `corelib/io/io.ty:106`) put the *status* in the return and the
+    *payload* in the `inout`. Neither §24.1.1 nor its "When NOT to use it" paragraph
+    (`docs/spec/14-ffi.md:111-115`, which covers the no-payload case,
+    `corelib/io/io.ty@iox_stat_kind`) mentions that arrangement exists.
+    **The rule is not a preference, and that is why it belongs in the spec.** Which slot
+    each half takes is *forced*, by two different constraints:
+    - A `bytes` or array payload **cannot** be an `inout` — the compiler rejects it in as
+      many words (`src/tychoc.c@ffi_scalar_type`; the message names `bytes` explicitly at
+      `src/tychoc.c:3915`), because the crossable `inout` set is int/char/float/bool/ptr.
+      So a `bytes` payload takes the return and the status takes the `inout`. That is
+      §24.1.1's case.
+    - A **scalar** payload can occupy either slot, so the choice is forced the other way
+      instead: an epoch second cannot share a code space with the 0..3 status codes, so
+      the status takes the return and the payload takes the `inout`. That is the mirror,
+      and it is the case §24.1.1 is silent on.
+    **This is the same failure §24.1.1 was written to fix, one turn later.** That section
+    exists because the `inout`-ahead-of-the-payload ordering was reproduced verbatim from
+    one shim's comments into another's with no spec to copy. `corelib/io/io.ty:86-105` is
+    now three comment blocks working the mirror rule out by hand and cross-referencing each
+    other — "the mirror of `iox_read_file`, where the `bytes` payload must be the return so
+    the status takes the `inout` instead" — which is a sibling's comment doing a spec's job
+    again. **~4 sentences plus one provenance line**, and the "used twice" count wants
+    correcting to five in the same edit.
+12. **NEW — `cli.has` answers a narrower question than its name, and no diagnostic is
+    possible** (*promoted from the 2026-07-31 concurrency re-score below, where it was
+    recorded but never numbered*). A bare `--stats` lands in `Cli.flags`, not `Cli.keys`,
+    so `cli.has(c, "stats")` returns **false** while `cli.flag(c, "stats")` returns true;
+    both spellings compile, both return `bool`, and the failure is a missing line of output
+    with nothing printed. **It is not a defect** — `corelib/cli/cli.ty@has` and
+    `corelib/cli/cli.ty@flag` scan different vectors on purpose and the doc comment above
+    `has` says outright "Was option `key` (a `--key=value`) supplied at all?". Re-checked at
+    `9e8f8f2`: unchanged, and no `supplied` exists. **A decision, not lines** — rename to
+    `has_value`, or add a `supplied(c, name)` that scans both — and it is numbered here
+    because it is the only thing in this file that failed *silently*, which is the class
+    this file exists to catch.
+
+> **What moved and what did not (2026-07-30, kept as that pass's record).** Items 1, 2, 3
+> and 5 are lines and links with the work already identified — roughly a day between them,
+> and item 1 has a known-good pattern to copy four times over. Items 7 and 8 are the
+> concurrency pair and are still the honest core: one wants a type-system answer, the other
+> wants a warning there is nothing static to warn from. **That sentence did not survive
+> being tested — see the 2026-07-31 section below.** Item 8's type-system answer is not what
+> a worker pool wants (it stores no handles), and item 7's danger is bounded by measurement;
+> what is left of the pair is one missing width parameter. Item 6 wants a decision, not
+> lines. Items 9 and 10 are properties of the environment and of the file itself. **The list
+> did not shrink, and that is the finding — sixty commits of real language work went past
+> this list without touching it**, because every one of them was driven by `new_ideas.md`
+> and by the loop and array plans instead. A list nothing is pulling from does not get
+> shorter on its own.
+
+**What moved this pass, 2026-07-31 at `9e8f8f2` — and the previous paragraph's finding
+was overturned.** It said a list nothing pulls from does not get shorter. Something did
+pull from it: item 7 was closed, and it was closed *because* the concurrency work went
+looking for what the list said was open. Four more of this file's unnumbered items closed
+the same way. So the mechanism works; what the previous pass had actually measured was a
+batch that happened to be aimed elsewhere.
+
+**Pick-up order, cheapest first.**
+
+1. **Item 11** — one paragraph plus a provenance line in `docs/spec/14-ffi.md`, and it is
+   the only open item where the tree already has three working instances and no written
+   rule. Minutes.
+2. **Item 2** — one line of diagnostic text at a line that has not moved in two re-scores.
+3. **Item 3** — one link in `docs/README.md`.
+4. **Item 1** — 3 lines into each of 3 files with a pattern to copy, *plus* the gate that
+   stops the next shim repeating it. The gate is the part worth the time.
+5. **Item 5** — ~15 lines of comment across 6 files, all six re-read and located here.
+6. **Item 4** — ~1 line of code, gated on a decision (which builtin names are shadowable).
+7. **Item 6**, **item 12** — decisions, not lines: a corelib layering rule, and a naming
+   question in `core:cli` where the current name is documented and the trap is that the
+   documentation is what you have to read to avoid it.
+8. **Item 8** — the last genuinely hard one. A width slot on `ParallelFor`, or task
+   handles in a container; only the second needs the type system, and neither is
+   item-sized.
+9. **Items 9, 10** — a property of this machine and a property of this file. Neither is
+   closable by writing code, and both are listed so nobody re-derives them again.
 
 ## Re-scored against a real concurrent program, 2026-07-31 (head `9e7a090`)
 
@@ -446,8 +645,17 @@ re-scored in place above. What is new is below.
   and produces no aliasing surprise. Probed before it was relied on, half expecting
   `int`-only. A channel restricted to scalars would have forced a side table keyed by
   index and every attribution bug that implies.
-- **NEW — §22 of the spec does not describe the construct every per-item worker pool
-  depends on.** `send` on a captured channel from inside a `parallel for` body is what
+- ~~**NEW — §22 of the spec does not describe the construct every per-item worker pool
+  depends on.**~~ **CLOSED 2026-07-31, verified at `9e8f8f2` by reading §22.**
+  `docs/spec/13-concurrency.md:86-90` now carries the carve-out as a normative paragraph
+  of its own: "Each chunk's captured values are deep-copied into it, **with one exception:
+  a `Channel(T)` capture is a scalar handle and is passed by value.** Every chunk therefore
+  shares the one queue rather than receiving a private copy of it. This is not a detail of
+  the reference implementation — it is what makes a worker pool expressible at all, and an
+  implementation MUST NOT deep-copy a captured channel." That is the `MUST NOT` the entry
+  said a second implementation would otherwise have to guess at, and it is in the normative
+  document rather than only in the guide. The entry as it stood:
+  `send` on a captured channel from inside a `parallel for` body is what
   routes results out, and within §22 (`docs/spec/13-concurrency.md:76-121`) the only
   mention of a channel is that it may be the foreach *source*
   (`docs/spec/13-concurrency.md:91-92`). Worse, the section states that "each chunk's
@@ -456,11 +664,19 @@ re-scored in place above. What is new is below.
   compiler does and of what 560 jobs crossing one channel proves. The rule is written
   down, but only in the **non-normative** guide: "the chunk tasks share the captured
   channels (a channel is a scalar handle, passed by value — not deep-copied per chunk)"
-  (`docs/guides/concurrency.md:154-155`). **A conformance gap, not a language defect** —
-  the implementation is right and the normative document is silent where a second
-  implementation would have to guess. ~3 sentences in §22 plus a carve-out beside the
-  write rule. Filed as `plan.md`'s carried-forward phase 10.
-- **NEW — `iter.map` cannot change the element type, and the lambda syntax hid it.**
+  (`docs/guides/concurrency.md` "the chunk tasks share the captured channels").
+  **A conformance gap, not a language defect** — the implementation is right and the
+  normative document is silent where a second implementation would have to guess.
+  ~3 sentences in §22 plus a carve-out beside the write rule. Filed as a carried-forward
+  phase. **The estimate was right: what landed is one paragraph.**
+- ~~**NEW — `iter.map` cannot change the element type, and the lambda syntax hid it.**~~
+  **CLOSED 2026-07-31, verified at `9e8f8f2`:** `corelib/iter/iter.ty:14` is now
+  `fn map(xs: [$T], f: fn($T) -> $U) -> [$U]`, two type variables, so `[Res] -> [int]` is
+  expressible. **And it answers the question the entry flagged as unverified** — the entry
+  said "whether the inference reaches a **function-typed** `fn($T) -> $U` parameter is
+  **not verified**, and is the thing to check before costing this". It does; that was the
+  whole cost. `filter` is unchanged (`corelib/iter/iter.ty:20`, `fn($T) -> int`), as the
+  entry predicted. The entry as it stood:
   `corelib/iter/iter.ty:8` is `fn map(xs: [$T], f: fn($T) -> $T) -> [$T]`: **one** type
   variable, so `[Res] -> [int]` is not expressible through it. Measured — a
   correctly-spelled lambda gets `error: argument 2 of 'iter__map' is fn(Res) -> int, which
@@ -475,7 +691,9 @@ re-scored in place above. What is new is below.
   **function-typed** `fn($T) -> $U` parameter is **not verified**, and is the thing to
   check before costing this. `filter` is unaffected (`fn($T) -> int` already).
 - **NEW, small — `cli.has` answers a narrower question than its name, and there is no
-  diagnostic possible.** A bare `--stats` lands in `Cli.flags`, not `Cli.keys`, so
+  diagnostic possible.** **PROMOTED 2026-07-31 to open list item 12** — still open, still
+  unchanged at `9e8f8f2` (no `supplied` exists), and numbered there because an unnumbered
+  bullet in a dated section is not something anyone picks up. A bare `--stats` lands in `Cli.flags`, not `Cli.keys`, so
   `cli.has(c, "stats")` returns **false** and `cli.flag(c, "stats")` returns true;
   measured, both spellings compile, both return `bool`, and the failure is a missing line
   of output with nothing printed. **It is not a defect** — the doc comment at
@@ -490,8 +708,17 @@ re-scored in place above. What is new is below.
   in parentheses works, verified, and implicit joining inside `(`/`[` has existed since
   `tests/multiline_literals.ty` (see the phase-7 multi-line-string entry below). The
   language has the feature; the author did not reach for it.
-- **NEW, one line — the guide's bounded-fan-out section points its reader at the
-  desugaring.** `docs/guides/concurrency.md:86-104` introduces `parallel for x in ch:`,
+- ~~**NEW, one line — the guide's bounded-fan-out section points its reader at the
+  desugaring.**~~ **CLOSED 2026-07-31, verified at `9e8f8f2`:** `docs/guides/concurrency.md`
+  now closes the section by naming both fixtures with the right framing —
+  "Worked example of the sugar: `tests/conc/parfor_chan.ty` … `tests/conc/workers.ty` is
+  the *manual* form the sugar replaces … read it to see what the sugar saves, not as the
+  way to write this" (`docs/guides/concurrency.md:108-112`). The section also absorbed
+  item 7's spec fix a few lines above, stating that the chunk count is `min(ncpu(), N)` and
+  capped at 64 (`docs/guides/concurrency.md:104-106`).
+  **One wrong pointer cost a plan its recon; naming both fixtures is what fixed it.**
+  The entry as it stood:
+  `docs/guides/concurrency.md:86-104` introduces `parallel for x in ch:`,
   explains that it "desugars to a `parallel for` over `0..<ncpu()`" and then closes with
   "Worked example: `tests/conc/workers.ty`" (`docs/guides/concurrency.md:104`) — and
   `tests/conc/workers.ty:2-3` says of itself that it is "the pattern `parallel for x in
@@ -692,7 +919,7 @@ about the error model at all.
 
 ## The signal plan, 2026-07-31 (head `5428fa1`) — closed for one case, narrowed for the rest
 
-`server/main.ty:646` prints `tycho-httpd: stopped after N requests` and was
+`server/main.ty@stopped` prints `tycho-httpd: stopped after N requests` and was
 **unreachable**. Nothing in the tree installed a `SIGTERM` or `SIGINT` handler, because
 Tycho had no signal surface at all, and `server/run.sh` asserted wait status **143** — it
 asserted the *absence* of clean shutdown and called that a passing gate. `core:signal`
@@ -706,14 +933,15 @@ handling, and the difference is deliberate rather than unfinished.
   (`server/main.ty@on_shutdown`) because the handler is per-process and acts on the
   shared listener, so which thread the kernel delivers to never matters. **No new control
   flow was needed anywhere**: every thread blocked in `accept` gets `Err`, the wind-down
-  arm that already existed (`server/main.ty:494-495`) retires each loop, and the count
+  arm that already existed (`server/main.ty@accept_loop`'s `Err` arm) retires each loop, and the count
   line prints. Measured at `--workers 4`, four connections held so all four loops were
   provably busy: exit status **0**, the line, `/proc/<pid>` gone, shutdown in **1 ms**.
   The gate now asserts the clean exit it used to assert the absence of, plus `SIGINT`,
   plus `SIGKILL` as the control — 52 assertions to 57.
 - **STILL OPEN, narrowed — there is no general handler, and "narrow" is the design and
   not the backlog.** `signal.on(sig, handler)` was refused, with the reason written into
-  the package header (`corelib/signal/signal.ty:19-31`): calling a Tycho function from
+  the package header (`corelib/signal/signal.ty:41-56`; the previous pass cited
+  `:19-31`, which the `register_conn` / `retire_conn` additions pushed down): calling a Tycho function from
   handler context is a *language* feature, because every Tycho value lives in a
   bump-allocated arena that is not re-entrant and channel operations park behind a mutex
   (`runtime/tycho_rt.c:657@mu`) — a handler that interrupts the allocator or the lock
@@ -727,8 +955,28 @@ handling, and the difference is deliberate rather than unfinished.
   your callback" is not a contract anyone can code against; (4) the re-entrancy clause in
   the spec. None of it is needed to shut a server down, and the tree has exactly one
   caller.
-- **NEW, measured — clean shutdown is not *prompt* shutdown, and `--idle-ms` is what
-  bounds it.** A worker can only notice a shutdown between requests: one parked in
+- ~~**NEW, measured — clean shutdown is not *prompt* shutdown, and `--idle-ms` is what
+  bounds it.**~~ **CLOSED, `docs/internals/plan-signals-DONE.md` phases 15 and 19 — and it
+  took two phases because the entry named the wrong worst case.** Phase 15 gave
+  `signal.shutdown_requested()` its caller (`server/main.ty@shutdown_requested`, in the
+  keep-alive loop condition) and found a case the entry had not: a client keeping its
+  connection *busy* held a worker for **102215 ms**, serving `MAX_REQS` requests at its own
+  pace, because nothing told the loop to stop. That went to 6–8 ms. **The entry's own
+  case — a worker already parked in a blocking read — did not move at all**, and phase 15
+  said so rather than claiming it: nothing wakes a `recv` on a *connection* fd when the
+  handler shuts down the *listener*, so the loop condition cannot run until
+  `SO_RCVTIMEO` expires. Phase 19 closed it by letting the handler reach accepted fds too:
+  a `static volatile sig_atomic_t sigx_conns[256]`, one slot per worker, written only by
+  that worker from ordinary context and only *read* in handler context, with `fd + 1`
+  stored so static zero-initialisation is already correct — no lock, because the design
+  removes the need for mutual exclusion rather than trying to take a mutex safely in a
+  handler. `signal.register_conn` / `signal.retire_conn` are the Tycho surface; the server
+  calls them either side of `serve_conn` (`server/main.ty:915`, `server/main.ty:925`).
+  Measured `--workers 4 --idle-ms 5000`, before from a clean worktree at `61a66b0`:
+  **4 parked idle clients 4878 ms → 1 ms**, 5 runs of 5, exit 0, the stopped line, and
+  `w1..w4` all present in the access log. `server/run.sh` gained the assertion that
+  reddens on the old binary with `wait status 137`. The entry as it stood:
+  A worker can only notice a shutdown between requests: one parked in
   `serve_conn` on an idle keep-alive connection waits out `SO_RCVTIMEO` first. At
   `--workers 4 --idle-ms 5000`, 0 or 1 held connections shut down in **1 ms** and four
   held connections take **5141 ms** — exit 0 with the line in every case, so bounded and
@@ -756,6 +1004,15 @@ handling, and the difference is deliberate rather than unfinished.
 
 ## Retired citation drift — three phases closed by decision, 2026-07-31
 
+> **How this section and open list item 10 fit together, since they are about the
+> same defect and used to read as if they disagreed.** Item 10 is the *observation*
+> — this file's coordinates rot and no gate can see it — and it is still true and
+> still measured. This section and the one after it are the *decisions* taken about
+> what to do with the population: correct-but-bare refs stay bare, unresolvable
+> ones are retired, and only already-false refs are work. Item 10 was narrowed at
+> the 2026-07-31 re-score to say exactly that, so the item no longer prescribes the
+> sweep these sections decline.
+
 Phases 21, 23 and 25 of `docs/internals/plan-signals-DONE.md` are **stale
 `path:line` pointers, not wrong claims**, and they are retired here rather than
 swept. Recorded so the next reader knows they exist and why nobody fixed them:
@@ -777,10 +1034,16 @@ repair, and a later phase found a reference that had been repointed four times
 
 **What actually closes this class**, and it is not a sweep: the anchored
 `path:N@token` form, which reddens the gate when its target moves instead of
-rotting silently. 2850 bare refs are bounds-checked and unverified against 192
-anchored ones that are. Converting the load-bearing ones is real work with a
-real payoff; repointing numbers by hand is a treadmill, and this file is where
-this repo records the difference.
+rotting silently — and, since this was written, the `` `path@SYMBOL` `` form for
+a *definition*, which carries no line number at all and so cannot rot in the
+first place. The bare refs are bounds-checked and unverified; the anchored ones
+are checked. **Run `python3 scripts/check_citations.py --stats` for the split;
+the numbers this paragraph originally quoted have been removed rather than
+updated**, because `CLAUDE.md` says not to copy a figure the gate prints into
+prose and this paragraph was doing it in the middle of an argument about stale
+numbers. Converting the load-bearing ones is real work with a real payoff;
+repointing numbers by hand is a treadmill, and this file is where this repo
+records the difference.
 
 Distinguish these from the two filed alongside them that were **fixed** rather
 than retired: `docs/reference/` asserting an `ncpu()` behaviour the spec had just
