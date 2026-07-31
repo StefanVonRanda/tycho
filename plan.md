@@ -867,7 +867,7 @@ Unclosed discoveries from the previous plan; none blocking.
       "the `parallel for` fan-out width") is false above 64, measured.
 - [ ] **Phase 8** — every `tests/reject/` fixture carrying a `package` header is
       scored against the whole directory; affects `tests/run.sh` equally.
-- [ ] **Phase 9** — *(closed by the previous plan's phase 4; kept for the record)*
+- [x] **Phase 9** — *(closed by the previous plan's phase 4; kept for the record)*
 - [ ] **Phase 14** — filed by phase 1. `accept_loop` treats *every* `Err` from
       `net.accept` as "listener closed" and sets `running = false`
       (`server/main.ty:493-494`), because `netx_accept`
@@ -977,3 +977,21 @@ Unclosed discoveries from the previous plan; none blocking.
        `NO COUNT FOUND` and instructs the reader not to reword it.
   - Not done here: this is a gate design decision, not a count fix, and this
     plan's phase 4 was documentation-only. Cost either way: under an hour.
+
+## Cleanup batches — how the remaining nine phases are being run, 2026-07-31
+
+Phase 9 was already closed by the previous plan and only its checkbox was open;
+ticked, not worked. The nine real items are grouped into **four batches**, each
+independently verifiable and each committing once. Every phase keeps its own
+entry and checkbox; a batch ticks what it closes.
+
+| batch | phases | subject |
+|---|---|---|
+| A | 14, 15 | **the server's two measured behaviour gaps** — `accept_loop` retiring a worker on *any* `Err` so a transient `EMFILE` silently drains the pool, and shutdown waiting a full `--idle-ms` (5141 ms measured) when workers are parked in `serve_conn` |
+| B | 7, 10, 11, 12 | **spec and guide corrections from the concurrency work** — `ncpu()`'s definition false above 64, §22 never describing `send` from a `parallel for` body, the guide pointing at a fixture that contradicts it, and `iter.map`'s single type variable |
+| C | 6, 8 | **the two structural items** — 110 "`plan.md` phase N" references pointing at the wrong plan across 42 files, and `tests/reject/` fixtures with a `package` header scored against the whole directory |
+| D | 16, 17, 18 | **documentation and gate hygiene** — `core:signal` missing from the corelib guide, seven stale source→source comments this plan caused in `server/run.sh`, and the zed README count that has now reddened CI four times |
+
+**Order is deliberate.** A first because it is real behaviour and the rest is
+description; D last because phase 18 is a gate *design* decision and the tree
+should be otherwise settled before a gate changes shape.
