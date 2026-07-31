@@ -739,7 +739,7 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   insertion by construction. **No sweep**; only the refs this phase broke were
   touched.
 
-- [ ] **Phase 5 — spec, README, and the sweep**
+- [x] **Phase 5 — spec, README, and the sweep**
   - Scope: `docs/spec/` for the two new `core:io` calls,
     `docs/guides/corelib.md`, `server/README.md`, and `make ci`.
   - `server/README.md` lists both features under "Deliberately not implemented".
@@ -748,6 +748,186 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   - Done when: both calls are specified with provenance, the README describes
     what the server now does, and `make ci` is green with the exit code observed.
   - Verify: the three doc gates, then `make ci` once, waited on in-turn.
+
+  **Evidence (2026-07-31).**
+
+  *Three calls, not two, and phase 6 is why this phase knew.* The scope line
+  above says "the two new `core:io` calls" because it was written before phase 6
+  existed. Phase 6's hand-off names the residual risk in as many words — an agent
+  reading only its own brief documents two of three — and `corelib/io/io.ty@size`
+  is the one that is easy to miss. All three are specified: `io.mtime` (phase 1),
+  `io.read_at` (phase 3), `io.size` (phase 6).
+
+  *The spec, in §32's per-package form and not a new one.* `docs/spec/18-library.md`
+  §32.21 was read against its neighbours first. §32's preamble says each
+  subsection gives a **realization kind** and the **key exports**, and §32.10
+  `time` and §32.11 `datetime` are the two entries that carry a normative clause
+  list — "Three semantics are normative for the package" — plus a trailing shim
+  citation. This entry follows that shape exactly: catalog paragraph, then "Five
+  semantics are normative for the three", then
+  `docs/guides/corelib.md:267-298`; shim `corelib/io/io_shim.c`.
+
+  *Two sentences in the old §32.21 were wrong, and a wrong normative sentence is
+  worse than a missing one.* It said the package was **"pure Tycho"** and that it
+  **"composes `core:strings` and `core:path`"**. Both were false before this plan
+  and neither is a drift this plan caused: `corelib/io/io.ty`'s header records
+  that the `core:path` dependency went on 2026-07-26 when `exists` became
+  `stat`-backed, and its only `import` is `core:strings`; and `corelib/io/io_shim.c`
+  has existed since the `getline` streaming reader, so the realization kind is the
+  same "pure core plus a **libc-only shim**" that §32.10 and §32.11 state for
+  their own packages. Repaired in place, because the three calls this phase
+  specifies are shim calls and the entry could not name them while claiming the
+  package makes no syscalls. **No count was written into that sentence** — the
+  guide's "**Six** calls go past the builtins" is a figure the guide already
+  frames and defends; restating it in the spec would be a second copy to rot.
+
+  *The five normative clauses, each read out of the source rather than the
+  evidence above it.* Every claim was checked against
+  `corelib/io/io_shim.c@iox_read_at`, `@iox_stat_size` and `@iox_stat_mtime` and
+  against the `Result` mapping in `corelib/io/io.ty@read_at`, `@size` and
+  `@mtime`:
+
+  | clause | what the source actually says |
+  |---|---|
+  | directory is `Ok` for `mtime`, `Err(IsDir)` for `size` | `iox_stat_mtime` has no `S_ISDIR` arm at all and returns `TY_RF_OK`; `iox_stat_size` returns `TY_RF_DIR` before it ever reads `st_size` |
+  | `size` succeeds on exactly the paths `read_at` can read | both refuse `!S_ISREG` with the same `TY_RF_ERR` → `Err(Failed)`, and both answer `TY_RF_DIR` on a directory |
+  | `Ok(0)` is a success, never the failure value | the status rides the shim's **return**, the payload an `inout`, so `0` is reachable only through `TY_RF_OK` |
+  | the allocation is bounded by the FILE | `want = n < avail ? n : avail` where `avail = size - off` from the `fstat` on the open fd, and `malloc(want)` — never `malloc(n)` |
+  | at-or-past EOF is `Ok` with zero bytes | the guard is `if (off >= size) { *status = TY_RF_OK; ... }`, so **at** EOF as well as past it — the spec says "at or past", which the phase brief's wording did not |
+
+  The last row is the one worth flagging: the brief said "a read starting past
+  EOF". `off == size` takes the same arm, so the spec sentence says **at or
+  past**. Stating only "past" would have left the boundary case unspecified,
+  which is exactly the gap a reader fills in with a guess.
+
+  *How the guide was grown without shifting a single cited range — the
+  measurement that decided it.* `docs/guides/corelib.md`'s `io` bullet was
+  **rewritten at an identical line count**, 32 lines, occupying 267-298 before and
+  after; `docs/guides/corelib.md` is 473 lines before and after, and `- **`os`**`
+  still begins at 299. This was not stylistic. Phase 6's brief said ~30 refs in
+  `docs/spec/18-library.md` cite this file by range, and grepping every
+  line-numbered ref to it found **12 that begin past line 298** and would have
+  moved: `docs/spec/18-library.md`'s `os` entry, three ranges in
+  `docs/spec/appendix-h-differences.md`, six in
+  `docs/internals/plan-signals-DONE.md`, one in
+  `docs/internals/plan-friction-DONE.md`, and **one in `FRICTION.md`**. That last
+  one is the whole argument: `FRICTION.md` is the file a person edits by hand and
+  the one CLAUDE.md protects explicitly, so it could not be repaired here — and
+  every one of the 12 is a **bare range**, which phase 4 established is never
+  content-checked and therefore rots in silence with the gate green. Growing the
+  bullet would have broken twelve pointers, repaired ten, and left two knowingly
+  false. So the budget was fixed and the text was reflowed to fit it: the new
+  material on the three calls was paid for by compressing the `make_dir`/`remove`
+  prose and dropping one sentence about payload-free variants that the **previous
+  bullet already states**.
+
+  *One rotted range repaired, in scope.* §32.21's citation read
+  `docs/guides/corelib.md:266-297`. Line 266 is the tail of the *previous* bullet
+  and 298 the tail of `io`'s — off by one, wrong before this plan, and invisible
+  to the gate for the bare-range reason above. Repointed to `267-298`, verified by
+  reading both boundary lines. A range has no `path@SYMBOL` form, so repointing is
+  the only repair available; there is nothing to convert it to.
+
+  *The README was stale in six places where the brief warned of one.* Phase 4's
+  note said an earlier phase found four; this found six, and only two of them are
+  the ones the brief named:
+
+  | # | what it said | what is true |
+  |---|---|---|
+  | 1 | byte ranges and conditional requests under "Deliberately not implemented" | both implemented — moved, with the date |
+  | 2 | "57 assertions in total" | **173**, counted from the runner's own output; and 57 was already stale before this plan, since Pre-flight measured 61 at `edb7f78` |
+  | 3 | `Statuses \| 200, 301, 400, 403, 404, 405, 408, 431` | 206, 304 and 416 were missing |
+  | 4 | `make server-check  # ~4s` | **8.5 s measured** here; written as `~8s` |
+  | 5 | "`io.is_dir` a fourth in `core:io`" | four `core:io` additions this program forced, not one |
+  | 6 | "### Three rough edges that were here" | five |
+
+  Items 3-6 are the ones the brief's "check the whole file" caught. Item 5 is the
+  one a reader would have been most misled by: that parenthesis exists to count
+  what running this server has forced into the corelib, and it is the sentence
+  this plan's entire premise is written on.
+
+  *What the README now records, and the exclusion that is a decision.* Two new
+  rows in "What it does" — **Conditional GET** (`Last-Modified` on every file
+  `200`; `304` only when the mtime is *not newer*; absent, unparseable, an
+  obsolete date form or an unreadable mtime all `200`) and **Byte ranges** (the
+  three forms, the inclusive-both-ends clamp, `416` with `bytes */LEN`, and
+  `Accept-Ranges` on exactly the `200` for a file and the `206`). Two new bullets
+  under the rough edges, with commits (`74fd4c7`; `cf0c0f3` and `de3fccb`, served
+  by `7552384`) and `path@SYMBOL` citations throughout, so they survive the next
+  insertion into either file.
+
+  **Multipart ranges moved into "Deliberately not implemented" with the reason
+  written down**, which phase 4 required and `server/main.ty@parse_range`'s own
+  comment promises the README carries: `bytes=0-99,200-299` is answered **`200`
+  with the whole file**. The two alternatives are named and rejected — `416` would
+  be false, because those ranges *are* satisfiable and only this server's response
+  format is missing; and returning the first range alone would misdescribe what
+  was sent. `ETag` stays excluded and now says why it is the *validator half* of
+  conditional requests rather than reading as a synonym for the half that shipped.
+
+  *One figure was written qualitatively on purpose.* The controls — assertions no
+  mutation of the feature can redden — are labelled in `server/run.sh` in
+  comments, not in a countable form: one comment reads "the first two are
+  CONTROLS". Phases 2 and 4 between them describe seven. Rather than publish a
+  number no command reproduces and nothing checks, the README says "a handful …
+  labelled as controls in the script" and points at the script. This is the
+  "never copy a figure the gate prints into prose" rule applied one step earlier:
+  to a figure nothing prints at all.
+
+  *Gates, all foreground, one command each, in the brief's order.*
+
+  ```
+  $ python3 scripts/check_citations.py
+  citation check: ok
+
+  $ sh scripts/check_links.sh
+  link check: ok (138 markdown files, no dead relative links)
+
+  $ sh scripts/spec_check.sh
+  spec-check: Appendix A grammar matches §3/§4 (ok)
+  spec-check: all Appendix E fixture citations resolve (ok)
+  spec-examples: 9 runnable example(s), all pass
+  ```
+
+  **No ref was broken and none needed repairing** — the first phase here of which
+  that is true without a repair paragraph following it. The guide did not shift a
+  line, the spec's own growth is cited only by bare bounds-checked refs, and every
+  citation written by this phase is in the `path@SYMBOL` form, which survives
+  insertion by construction. (The gate's `path@SYMBOL` count rises across this
+  commit; the number is not quoted here, per CLAUDE.md — run
+  `python3 scripts/check_citations.py --stats` for today's.)
+
+  *The sweep, run once, at the end, with the exit code observed.*
+
+  ```
+  $ make ci > ci.log 2>&1; echo "CI_EXIT=$?" >> ci.log
+  CI_EXIT=0                                   (1100 s wall = 18m20s)
+  ```
+
+  All thirteen steps green, and the four the brief singled out as never having
+  seen this work are in that run by name: `[2b/13] make ilp32` (the fixture suite
+  rebuilt under `-m32`, which is the lane that would catch a `tycho_int` /
+  `off_t` / `st_size` width mistake in the three new shim functions),
+  `[2c/13] make asan-self` (`compiled: 577  failed: 0`), `[3c/13] make
+  server-check`, and the three fuzz lanes — `[6] ok=200`, `[7] accepted=34
+  rejected=166`, `[8] ok=150`, all `FAIL=0`. `make test` reported `passed: 560
+  failed: 0`, unchanged across all six phases for the reason each of them
+  recorded: the corelib work extends an existing `corelib/test/` lane rather than
+  adding a `tests/` fixture.
+
+  **This was the plan's only `make ci`.** Six phases, one sweep, and it confirmed
+  rather than discovered — which is what CLAUDE.md asks of it.
+
+  *What the sweep did and did not cover, stated exactly.* All three documentation
+  files were already written when it started, so `[12] spec-check`,
+  `[12b] docs-fences` and `[13] check-links` ran over them. **This evidence block
+  was written afterwards** and is not in that run — deliberately, since it is
+  Markdown and CLAUDE.md's gate table says Markdown cannot affect a compiled
+  artifact. It is covered instead by re-running the two doc gates after writing
+  it, which is what caught the four bare refs in phase 8's table below: reproduced
+  the way the citing files spell them, they bound to the wrong document and
+  reddened the gate on the report of the defect. Both gates are green above at
+  the state being committed.
 
 - [x] **Phase 6 — `io.size`, and it must land BEFORE phase 4**
   - Found by phase 3, not absorbed by it: phase 3's scope was `read_at`, and adding
@@ -968,6 +1148,57 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
     Markdown cannot affect a compiled artifact. `make -s server-check` only if
     `server/run.sh` is touched.
 
+- [ ] **Phase 8 — the bare refs into `docs/spec/18-library.md`, wrong before this
+  plan and now further from their targets**
+  - Found by phase 5 while checking what its own insertion would move, and **not
+    absorbed by it**: phase 5's scope was the `io` entry, these reach four other
+    files, and none of them is drift phase 5 caused. This is phase 7's class in a
+    second document, which is the reason it is worth its own phase rather than a
+    line in phase 7 — the *files* differ, so the "count them again" step differs.
+  - **Verified wrong at `edb7f78`**, before this plan touched anything, by reading
+    each cited line out of that commit (`git show edb7f78:docs/spec/18-library.md`
+    piped through `sed -n '<N>p'`, one ref at a time). Not one names what its prose
+    claims:
+
+    | the citing line | the ref it holds | its prose claims | that line at `edb7f78` actually is |
+    |---|---|---|---|
+    | `docs/internals/spec-plan.md:429` | `docs/spec/18-library.md:254` | §32.24 `net` | inside §32.22 `os` |
+    | `docs/internals/spec-plan.md:429` | `docs/spec/18-library.md:265` | §32.25 `bignum` | a blank line |
+    | `docs/internals/spec-plan-audit-2026-07-24.md:109` | `docs/spec/18-library.md:254` | §32.24 `net` | inside §32.22 `os` |
+    | `docs/internals/plan-signals-DONE.md:336` | `docs/spec/18-library.md:263` | `net` | inside §32.23 `regex` |
+    | `docs/internals/plan-signals-DONE.md:337` | `docs/spec/18-library.md:285` | `decimal` | inside §32.25 `bignum` |
+
+    (Each `docs/spec/18-library.md:N` above is written with its path spelled out.
+    Reproduced the way the citing files write them — bare `:254`, `:265` — they
+    would bind to whichever document *this* table row named last, which reddens
+    the gate on the very defect being reported. That is the trap this phase
+    exists to close, and it caught this write-up first.)
+
+  - **This phase's own edit moved them a further +41 lines.** `docs/spec/18-library.md`
+    grew from 434 to 475 lines, all of it inside §32.21, so every section from
+    §32.22 down shifted by 41 and every ref in the table above is 41 lines further
+    from its subject than it was this morning. That is disclosed rather than
+    repaired here because repairing it is a different file set from this phase's
+    scope, and because the refs were already false — the shift makes a wrong
+    pointer wronger, not a right one wrong.
+  - **Why the gate is green over all of them**, which is phase 7's finding
+    reproduced in a second file: every one is a **bare** ref with no `@token`, so
+    `scripts/check_citations.py` bounds-checks it and nothing more. A ref stays
+    green as long as the file is long enough, and `docs/spec/18-library.md` only
+    ever gets longer.
+  - **Two of the five are inside record shapes and must be left alone**, which is
+    why this is not a sweep: `docs/internals/plan-signals-DONE.md:1406-1409` is a
+    six-row before/after table whose cells *quote* the two
+    `docs/spec/18-library.md` line numbers above as what a ref said at a past
+    moment, and `docs/internals/spec-plan.md:429`'s ref sits inside
+    a `**[CLOSED — …]**` marker, which is a closure record. Read each one
+    individually before touching it; the number on a record line is data.
+  - Scope: whichever refs are still both live pointers and wrong. Not
+    `scripts/check_citations.py`.
+  - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`.
+    **Not `make test`, not `make ci`** — Markdown cannot affect a compiled
+    artifact.
+
 ## Out of scope
 
 - **Multipart ranges.** Stated in phase 4 and recorded in the README.
@@ -976,3 +1207,40 @@ answers `206` with `Content-Range`, both are asserted by `make server-check`, an
   `If-Modified-Since` half.
 - **The six other excluded features** (TLS, HTTP/2, compression, virtual hosts,
   directory listings, pipelining). The costing rejected all six with reasons.
+
+## Status — PLAN COMPLETE
+
+Six phases, six commits, one `make ci`:
+
+| phase | commit | what shipped |
+|---|---|---|
+| 1 | `74fd4c7` | `io.mtime` — `stat(2)` mtime in whole seconds; a directory is `Ok` |
+| 2 | `ca716a2` | `Last-Modified` / `If-Modified-Since`, `304`; `httpd.bodyless`, `304` in `reason_phrase` |
+| 3 | `cf0c0f3` | `io.read_at` — `pread(2)`, allocation clamped to the file |
+| 6 | `de3fccb` | `io.size` — a length without a read; a directory is `Err(IsDir)` |
+| 4 | `7552384` | `Range` / `206` / `416`, `Accept-Ranges`; `206` and `416` in `reason_phrase` |
+| 5 | this commit | the spec, the guide, the README, and the sweep |
+
+Phase 6 was filed by phase 3 and had to land **before** phase 4, so the commit
+order is 1, 2, 3, 6, 4, 5 rather than the numbering.
+
+**What the goal asked for, and whether it happened.** A conditional GET answers
+`304` with no body; a `Range` request answers `206` with `Content-Range`; both
+are asserted by `make server-check`, which went **61 → 173 assertions**. `core:io`
+gained not two capabilities but **three** — `mtime`, `read_at` and `size` — all
+three usable by any Tycho program and all three specified in
+`docs/spec/18-library.md` §32.21. `make ci`: **CI_EXIT=0**, observed, 1100 s.
+
+**Still open, and deliberately.** `ETag`, multipart ranges, and the six other
+excluded features — all under "Out of scope" above and all recorded in
+`server/README.md` with their reasons. Two documentation phases are filed and
+unstarted: **phase 7** (bare refs into `server/main.ty`, wrong before phase 4)
+and **phase 8** (the same class in `docs/spec/18-library.md`, found by phase 5).
+Neither blocks anything; both are pointers that are already false and that no
+gate can see.
+
+**One observation this phase cannot explain and did not cause.** An untracked
+`new_ideas.md` was present in the working tree at the start of this phase's
+session and is absent now. This phase ran no `rm`, `git clean` or `git checkout`,
+and `grep -n "git clean\|rm -rf\|distclean" scripts/ci.sh Makefile` returns
+nothing, so `make ci` did not remove it either. Recorded rather than guessed at.

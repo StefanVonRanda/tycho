@@ -264,38 +264,38 @@ element type instead of a family of per-type siblings.
   nested pattern itself: those packages are also compiled by the frozen
   `compiler/tychoc0.ty`. Pure computation: no shim, no allocation, nothing
   aborts.
-- **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
-  and **the first corelib module to compose others** (imports `core:strings` for line
-  splitting; it also imported `core:path` for the old `exists`, which the `stat`-backed
-  one no longer needs). `read(p)` (`""` if missing/unreadable),
-  `write(p, s)` (truncate, returns false if unopenable), `append(p, s)` (read-rewrite,
-  not atomic), `read_lines(p)` / `write_lines(p, lines)` (newline-terminated round-trip),
-  `list(p)` (entry basenames), `exists(p)` (**one `stat(2)`** since 2026-07-26 — it used
-  to list the parent directory and check membership, O(entries) and blind to a leaf under
-  an unlistable parent; `false` still means "`stat` could not say yes", so it fails
-  closed). For inputs too large to slurp, a **bounded-memory streaming line
-  reader** over a libc `getline` shim: `open_lines(p)` → `read_line(r)` (`Some(line)` /
-  `None` at EOF) → `close_lines(r)`, plus `fold_lines(p, init, f)` — peak memory is
-  O(longest line), not O(file). `read_bytes(p) -> Result(bytes, io.IoErr)` reads a whole
-  file as raw `bytes` (binary-safe — interior NUL bytes are preserved, unlike `read`'s
-  string), and it is the one call here that reports *why*: an **empty file is `Ok`** with
-  zero bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three
-  outcomes that were the same empty `bytes` until 2026-07-26, which is how a static file
-  server ends up serving a 0-byte `200` for a path it cannot read. The variants are
-  payload-free so both `==` and a nested `Err(io.IsDir)` arm work on them. Three calls go past the
-  builtins to real syscalls, because `list`'s empty-directory-vs-non-directory ambiguity
-  was never a return-type problem — it was a missing `stat(2)`:
-  `is_dir(p) -> Result(bool, io.IoErr)` asks it (`Ok(true)`/`Ok(false)` are both answers,
-  `Err(NotFound)` is no answer — an **empty directory is a directory**, which
-  `len(list(p)) > 0` gets wrong), and `make_dir(p)` / `remove(p)` — `mkdir(2)` and
-  `remove(3)`, **one entry, never recursive** — return the same `Result(bool, io.IoErr)`,
-  where `Ok(true)` means "changed it" and `Ok(false)` means "it was already how you asked".
-  `make_dir` splits `EEXIST` into `Ok(false)` (already a directory: goal met) and
-  `Err(Exists)` (something else is in the way: goal unreachable); a missing parent is
-  `Err(NotFound)` — there is no `mkdir -p`. `remove` treats a missing path as `Ok(false)`
-  and a **non-empty directory as `Err(Failed)`**, which is what keeps it from being
-  `rm -rf` behind a corelib name. The rest of the module keeps the builtins' sentinels
-  deliberately — each has one meaning on the write side. Nothing aborts.
+- **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins, and **the
+  first corelib module to compose others** (imports `core:strings` for line splitting; it also
+  imported `core:path` for the old `exists`, which the `stat`-backed one no longer needs).
+  `read(p)` (`""` if missing/unreadable), `write(p, s)` (truncate, returns false if unopenable),
+  `append(p, s)` (read-rewrite, not atomic), `read_lines(p)` / `write_lines(p, lines)`
+  (newline-terminated round-trip), `list(p)` (entry basenames), `exists(p)` (**one `stat(2)`**
+  since 2026-07-26 — it used to list the parent directory, O(entries) and blind to a leaf under an
+  unlistable parent; `false` still means "`stat` could not say yes", so it fails closed). For
+  inputs too large to slurp, a **bounded-memory streaming line reader** over a libc `getline`
+  shim: `open_lines(p)` → `read_line(r)` (`Some(line)` / `None` at EOF) → `close_lines(r)`, plus
+  `fold_lines(p, init, f)` — peak memory is O(longest line), not O(file). `read_bytes(p) ->
+  Result(bytes, io.IoErr)` reads a whole file as raw `bytes` (binary-safe — interior NUL bytes are
+  preserved, unlike `read`'s string), and it reports *why*: an **empty file is `Ok`** with zero
+  bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three outcomes that
+  were the same empty `bytes` until 2026-07-26, which is how a static file server ends up serving
+  a 0-byte `200` for a path it cannot read. The variants are payload-free, so `==` and a nested
+  `Err(io.IsDir)` arm both work. **Six** calls go past the builtins to real syscalls. Three since
+  2026-07-26, because `list`'s empty-directory-vs-non-directory ambiguity was a missing `stat(2)`
+  and never a return type: `is_dir(p) -> Result(bool, io.IoErr)` asks it (an **empty directory is
+  a directory**, which `len(list(p)) > 0` gets wrong), and `make_dir(p)` / `remove(p)` —
+  `mkdir(2)` and `remove(3)`, **one entry, never recursive**, no `mkdir -p` and no `rm -rf` behind
+  a corelib name — answer `Ok(true)` for "changed it" and `Ok(false)` for "it was already how you
+  asked", splitting `EEXIST` into `Ok(false)` (already a directory: goal met) and `Err(Exists)`
+  (something else is in the way), and `remove` refusing a **non-empty directory with
+  `Err(Failed)`**. Three since 2026-07-31, each an HTTP answer `tycho-httpd` could not otherwise
+  give: `mtime(p) -> Result(int, io.IoErr)`, whole seconds on `now()`'s clock, where a **directory
+  is `Ok`** because it has a modification time; `size(p) -> Result(int, io.IoErr)`, a length
+  without reading the file, where a **directory is `Err(IsDir)`** because `st_size` there is the
+  entry structure and not readable bytes, and `size` succeeds on exactly the paths `read_at` can
+  read; and `read_at(p, off, n) -> Result(bytes, io.IoErr)` over `pread(2)`, which allocates
+  `min(n, size - off)` and never `n`, so a length off the wire cannot over-allocate, and answers
+  `Ok` with zero bytes past EOF. The rest keeps the builtins' sentinels. Nothing aborts.
 - **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the

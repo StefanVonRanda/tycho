@@ -52,10 +52,12 @@ filed as phase 15 of `docs/internals/plan-signals-DONE.md`.
 | **Bodies** | `bytes` end to end, so images and fonts come back byte-identical. |
 | **Content types** | By extension, via `httpd.content_type`, extended locally with `.ttf`/`.otf`/`.map`/`.webmanifest`/`.md`. An unknown extension is `application/octet-stream`, never `text/plain`. |
 | **Index resolution** | `/` and `/dir/` append `index.html`. `/dir` (no slash) gets a `301` to `/dir/`, so relative links on the page resolve correctly. |
+| **Conditional GET** | Every `200` for a file carries `Last-Modified` (`io.mtime`, formatted as an RFC 7231 IMF-fixdate). An `If-Modified-Since` that the file's mtime is **not newer** than gets `304` with no body. Absent, unparseable, one of the two obsolete date forms, or an mtime that could not be read: all `200`. The comparison never fails open, because a wrong `304` is a browser keeping a file that changed. |
+| **Byte ranges** | One range. `Range: bytes=A-B` (both ends inclusive, `B` clamped to the last byte), `bytes=A-` and the suffix `bytes=-N` get `206` with `Content-Range: bytes A-B/LEN` and a `Content-Length` of the **slice**. A range with no satisfiable byte is `416` with `Content-Range: bytes */LEN`. An invalid spec, an unknown unit or a multipart request is ignored: `200`, whole file. `Accept-Ranges: bytes` goes on exactly the `200` for a file and the `206`. A `304` outranks a `Range` (RFC 7232 §6). |
 | **Keep-alive** | HTTP/1.1 default-on, `Connection: close` honoured, HTTP/1.0 defaults to close. Up to 1024 requests per connection. |
 | **Idle timeout** | `SO_RCVTIMEO` on each accepted socket, so a silent peer cannot pin a worker. |
 | **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:646`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
-| **Statuses** | 200, 301, 400, 403, 404, 405, 408, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
+| **Statuses** | 200, 206, 301, 304, 400, 403, 404, 405, 408, 416, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
 | **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:343-353`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
 
 ## Concurrency
@@ -128,18 +130,29 @@ in fact read that file. `make server-check` asserts both groups.
 
 ## Deliberately not implemented
 
-TLS (terminate it in front), HTTP/2, byte ranges, compression, conditional
-requests (`ETag`/`If-Modified-Since`), virtual hosts, directory listings, and
-request pipelining. None of them is load-bearing for "serve a directory of files
-to a browser", and each would have been scope the plan did not ask for.
+TLS (terminate it in front), HTTP/2, compression, virtual hosts, directory
+listings, request pipelining, **`ETag`** — the validator half of conditional
+requests, which `sha256.hex` would make cheap but which is a separate feature the
+costing did not rank — and **multipart ranges**. None of them is load-bearing for
+"serve a directory of files to a browser", and each would have been scope the
+plan did not ask for.
 
-### Three rough edges that were here, and are not any more
+**Multipart is a decision, not an omission, and it is visible on the wire.**
+`Range: bytes=0-99,200-299` is answered **`200` with the whole file**, which the
+RFC permits (a server may ignore a `Range` header) and which most servers do. A
+`multipart/byteranges` body is a second serialization format rather than a bigger
+parser, so it was declined. The two alternatives are both worse: `416` would be
+false, since those ranges *are* satisfiable and only this server's response
+format is missing; and returning just the first range would be a lie about what
+was sent.
+
+### Five rough edges that were here, and are not any more
 
 The first two were real limitations of the *corelib*, not of this program, and
-both were closed on **2026-07-26**; the third was a gap in the language itself
-and closed on **2026-07-31**. The history is kept rather than deleted: what was
-hard is worth as much as what is true now, and each of these is why a syscall
-exists.
+both were closed on **2026-07-26**; the third was a gap in the language itself,
+and the last two were `core:io` gaps this program is what exposed — all three
+closed on **2026-07-31**. The history is kept rather than deleted: what was hard
+is worth as much as what is true now, and each of these is why a syscall exists.
 
 - **An empty directory used to be answered `404`** instead of the `301` to
   `<path>/` a real directory gets. `resolve()` could not ask "is this a
@@ -198,6 +211,53 @@ And a third, closed on **2026-07-31**:
   closed: a handler that cannot be installed warns on stderr and the server runs
   on with the old behaviour.
 
+And two `core:io` gaps, both closed on **2026-07-31**. Each is the same shape as
+`is_dir` above: a syscall the corelib did not expose, found by trying to answer
+an HTTP request without it.
+
+- **A file's modification time was unreachable**, so nothing could send
+  `Last-Modified` and a conditional GET was impossible — every request re-sent a
+  body the client already held. `mtime` existed nowhere in the tree, and the
+  `stat(2)` that answers it was **already being made**: the shim behind `is_dir`
+  filled a `struct stat`, returned `S_ISDIR` and dropped `st_mtim` on the floor,
+  one field short of the answer.
+  **Fixed 2026-07-31** (`74fd4c7`) by `fn mtime(p: string) -> Result(int, IoErr)`
+  over its own `stat(2)` (`corelib/io/io.ty@mtime`), in whole seconds on the
+  clock `now()` reads. A directory is `Ok` there, not an error — it has a
+  modification time and `stat(2)` reports it. The server formats it with
+  `server/main.ty@http_date_at`, which is the existing `Date` formatter
+  generalised to take a timestamp rather than a second spelling of IMF-fixdate,
+  and reads the client's copy back with `server/main.ty@parse_http_date`, which
+  validates the fixed positions itself and then rearranges the fields into
+  `datetime.parse_clf`'s shape rather than being a second date parser to rot.
+  **The `304` path is cheaper than the `200` it replaces**: one `stat(2)`, no
+  `open`, no read. `make server-check` asserts both directions, and the negative
+  one is the point — a stamp *older* than the file must be `200` **with** the
+  body, because a comparison that is wrong in the permissive direction is a
+  browser keeping a file that changed.
+- **Serving part of a file meant reading all of it.** `pread`/`lseek` appeared
+  nowhere in `corelib/`, and neither did any way to ask a file's length:
+  `io.read_bytes` reads whole files, so `len(io.read_bytes(p))` was the only size
+  available — a gigabyte read to learn that it is a gigabyte. A `Range` server
+  built on that allocates the whole file to send a kilobyte of it.
+  **Fixed 2026-07-31** by two calls. `fn read_at(p, off, n) -> Result(bytes,
+  IoErr)` over `pread(2)` (`cf0c0f3`, `corelib/io/io.ty@read_at`), whose
+  **allocation is bounded by the file and not by `n`** — it is `min(n, size -
+  off)` — so a `Range` header naming a terabyte allocates only what the file
+  holds past `off`, and no arbitrary cap had to be invented on top. And
+  `fn size(p) -> Result(int, IoErr)` over one `stat(2)` (`de3fccb`,
+  `corelib/io/io.ty@size`), because every range form needs the length *before* it
+  knows what to read: a `416` emits `bytes */LEN` and opens nothing, and
+  `bytes=-N` has no start until the length is known. A directory is `Err(IsDir)`
+  there — the opposite of `mtime`, and deliberately: `st_size` on a directory is
+  its own entry structure, not a count of bytes anyone can read.
+  The serve path is now `io.size` then `io.read_at` — one `stat(2)` and one
+  `pread(2)`, never `read_bytes` (`server/main.ty@parse_range`, `7552384`).
+  `make server-check` asserts the **bytes**, not the lengths: every `206` body is
+  compared against the same slice cut from the file on disk, over a **binary**
+  asset, because `Content-Length: 100` is satisfied just as well by the wrong
+  hundred bytes.
+
 ## Two socket fixes this program forced into `core:net`
 
 Both were found by running the server, both are C-level socket properties that
@@ -207,8 +267,9 @@ is now narrower than it was, and it still holds: `core:signal` gave Tycho a
 signal surface on 2026-07-31, but a deliberately narrow one that arms
 `SIGTERM`/`SIGINT` for shutdown and cannot set any other signal's disposition, so
 `MSG_NOSIGNAL` is still the only fix for this. (`getpeername` was a
-third `core:net` addition this program forced, and `io.is_dir` a fourth in
-`core:io`; those two are above, under the rough edges they closed.)
+third `core:net` addition this program forced, and `io.is_dir`, `io.mtime`,
+`io.read_at` and `io.size` are four more in `core:io`; all five are above, under
+the rough edges they closed.)
 
 - **`MSG_NOSIGNAL` / `SO_NOSIGPIPE`** (`corelib/net/net_shim.c:41-53` and
   `corelib/net/net_shim.c:151-152`). Before this, one client that sent a partial request and closed
@@ -229,7 +290,7 @@ third `core:net` addition this program forced, and `io.is_dir` a fourth in
 ## Verifying it
 
 ```sh
-make server-check      # ~4s, the gate
+make server-check      # ~8s, the gate
 ```
 
 `server/run.sh` starts the real binary, talks HTTP to it over raw sockets,
@@ -244,7 +305,17 @@ ignores `SIGINT` in the caller for the duration of the call, and that fixture
 kills through `os.system`); and `SIGKILL` must give wait status **137** with
 **no** stopped line, which is the control — without it, "exit 0 and a line"
 would be consistent with the process having printed that on the way out of any
-signal at all. 57 assertions in total. A 10 s watchdog `SIGKILL`s the `SIGTERM`
+signal at all. **173 assertions in total**, counted from the runner's own output
+on 2026-07-31, against 61 before conditional requests and byte ranges landed that
+day. Two things the new ones do that a status-code check would not: the runner
+pins one file's mtime with `os.utime`, so `Last-Modified` is compared against a
+date python formatted independently instead of merely being a plausible-looking
+string; and every `206` body is compared against the matching slice cut from the
+file on disk, over a binary asset, because the wrong hundred bytes satisfy
+`Content-Length: 100` exactly as well as the right hundred. A handful of
+assertions no mutation of the feature could redden are **labelled as controls in
+the script**, because from the pass line a control and a proof look identical. A
+10 s watchdog `SIGKILL`s the `SIGTERM`
 case, so a regression that leaves one accept loop blocked reddens this gate
 instead of hanging it. `make server-check`
 runs it (`Makefile:247-248`), and it has been in `make ci` as step **`[3c/13]`**
