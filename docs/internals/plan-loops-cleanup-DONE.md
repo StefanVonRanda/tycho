@@ -3142,7 +3142,7 @@ request (`fc921d7`, `7a04e53`).
       added the grammar.
   - `scripts/asan_self.sh:38` says the generic bind vector is xmalloc'd at
     `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`,
-    an unrelated function. The real site is `src/tychoc.c:7585@gi.binds` — off
+    an unrelated function. The real site is `src/tychoc.c:7592@gi.binds` — off
     by ~690 lines, in bounds the whole time, and therefore green.
   - `tests/rtparity/run.py:67` cites `src/tychoc.c:10343` as "the loop codegen".
     That line is a bare closing brace.
@@ -3200,7 +3200,7 @@ source→source refs carried an `@`, so the grammar change alone could not redde
 anything. It was adopted on **8 sites verified by reading the target line**, all
 in shell and Python comments — `Makefile:245@SKIPPED` from `scripts/asan_self.sh`
 (twice), `scripts/editors_check.sh` (once) ; `scripts/tools_check.sh:25@editors`
-from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6668@r_step`
+from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6675@r_step`
 and `src/tychoc.c:3366@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
 `.ty` file was touched on purpose: a `.ty` edit is `make test` and
 `scripts/tools_check.sh` territory, and this batch's gate budget is the two doc
@@ -3464,7 +3464,7 @@ old spelling and why it was wrong are written into the line.
 - `tests/rtparity/run.py:67` cited `src/tychoc.c:10343` for the inline
   `tycho: range step is zero` trap; that line is a bare `}`. The trap survived
   the removal of `range()` — it is at `:10843` — so this one *is* repointable,
-  and is now `src/tychoc.c:10886@_step`. Its sibling `compiler/tychoc0.ty:9513`
+  and is now `src/tychoc.c:10893@_step`. Its sibling `compiler/tychoc0.ty:9513`
   was read and is correct.
 
 The anchor token is `[A-Za-z0-9_]+` on the source side, so `@binds` is the
@@ -4989,7 +4989,7 @@ implemented the sentence. `docs/spec/09-expressions.md:83` lumped shift in with
 bitwise and required "the same integer type". That is true of `& | ^` —
 `src/tychoc.c:6214` tests `lt != rt` — and false of `<< >>`, whose arm at
 `src/tychoc.c:6103-6109` accepts any two integers and returns the *left* type
-(`src/tychoc.c:6109@lt`). Verified by running it: a `u32` shifted by an `int`
+(`src/tychoc.c:6116@lt`). Verified by running it: a `u32` shifted by an `int`
 compiles today. Tightening the compiler to match the spec would break `x << n`
 for every `n: int`, which is why this is a spec repair.
 

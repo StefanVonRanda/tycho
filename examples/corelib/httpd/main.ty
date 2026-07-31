@@ -52,8 +52,9 @@ fn main():
 
     # ... and a malformed head is now distinguishable from a hangup or a timeout,
     # which is what a server needs to answer 400 to one and stay silent on the
-    # others. `Err(httpd.Malformed)` cannot be a match arm (Tycho has no nested
-    # patterns), so the test is err_or plus `==`.
+    # others. `Err(httpd.Malformed):` IS a legal match arm -- Tycho gained nested
+    # patterns on 2026-07-26 -- but this caller wants a one-line test with no arm
+    # for the Ok case it does not care about, which is what err_or plus `==` is for.
     junk := httpd.parse_request("GARBAGE" + nl + nl)
     println("garbage= " + str(result.err_or(junk, httpd.Failed) == httpd.Malformed))   # true
 

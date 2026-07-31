@@ -160,7 +160,7 @@ cannot, the four current failures fixed, and five friction items closed.
   `corelib/signal/signal_shim.c:204-210`, which the gate cannot check and would
   have silently gone stale.
 
-- [ ] **Phase 2 — the five cheap friction items**
+- [x] **Phase 2 — the five cheap friction items**
   - Scope: `docs/spec/14-ffi.md`, `src/tychoc.c` (one diagnostic string),
     `docs/README.md`, ~6 files carrying stale comments, and a naming decision in
     `corelib/cli/`.
@@ -192,6 +192,81 @@ cannot, the four current failures fixed, and five friction items closed.
   - Verify: `make test` for the diagnostic change, then the three doc gates. Not
     `make ci` — phase 1 owns the sweep.
 
+  **Evidence.**
+
+  All five closed; `FRICTION.md` items 1, 2, 3, 5, 11, 12 struck (item 1 was
+  phase 1's and was still unstruck). Three new items filed: **13** the
+  reachability gate item 3 named, **14** a disproved claim in
+  `corelib/test/result/main.ty`, **15** two `make` targets `README.md` documents
+  that the `Makefile` does not have.
+
+  **What each actually cost, since the brief asked for the number rather than the
+  prediction.** The re-score ordered these by lines and the order was wrong twice.
+
+  - **Item 11 (spec paragraph)** — ran to estimate. Wrote the mirror arrangement
+    into `docs/spec/14-ffi.md` §24.1.1 and repointed `corelib/io/io.ty`'s three
+    comment blocks at it. One thing the item did not predict: the old provenance
+    block cited `gen_extern_proto` as `src/tychoc.c:10920-10949` and the function
+    is at `src/tychoc.c@gen_extern_proto`, 43 lines below — a **bare range, so no
+    gate could see it**. Rewrote the block in `path@SYMBOL` form, which is why it
+    cannot go stale that way again.
+  - **Item 2 (one diagnostic line)** — **by far the most expensive of the five,
+    and the ordering had it second-cheapest.** The line itself was minutes:
+    `E_SPAWN` tested ahead of the generic bare-expression `die_at`, reproduced
+    before and after on the same scratch program. No `tests/diag/` fixture pinned
+    the old text (grepped; the string lives only in `docs/internals/`), so the
+    corpus count is untouched. The cost was the **7-line insertion at
+    `src/tychoc.c`'s line 3574 staling 80 anchored citations across 16 files** —
+    ~10x the +3 shift phase 1 absorbed, because the insertion point is 3,000 lines
+    higher and everything below it is downstream. Repaired mechanically against a
+    real `difflib` old→new line map, each target asserted to contain its anchor
+    token on exactly one line before rewriting. **21 of the 80 are record lines**
+    (18 before/after table rows in
+    `docs/internals/plan-postfreeze-rawstring-DONE.md`, plus three prose repair-log
+    lines a shape detector misses — "cited X … Repaired to Y") and took
+    `CLAUDE.md`'s "drop the anchor, keep the number" rather than a repoint — the
+    first time that rule has been exercised at scale.
+  - **Item 3 (one link)** — one link, as advertised, plus a **seventh site of item
+    5's class found in the same file**: `docs/README.md`'s Contributing paragraph
+    still promised "every feature must work in *both* compilers, or the fixpoint
+    goes red" while the `CONTRIBUTING.md` it points at already says those gates are
+    gone. Fixed with it. The reachability question is filed as item 13, not solved.
+  - **Item 5 (~15 lines across 6 files)** — cost **more** than item 11 despite the
+    ordering. Rewriting an expired reason means first establishing what the
+    surviving reason is, and for `corelib/httpd/httpd.ty@read_request_capped` that
+    took a compile probe: patched the tail to `return (Err(why), buf)` /
+    `return (parse_request(buf), buf)`, compiled `corelib/test/httpd/main.ty`
+    **clean**, reverted. That **disproves** `corelib/test/result/main.ty`'s claim
+    that the rewrite "still fails" — filed as item 14 rather than absorbed.
+  - **Item 12 (a decision)** — the **cheapest**, and the ordering had it eighth.
+    Closed as working-as-intended. A rename to `has_value` is cheap (three call
+    sites in `corelib/test/cli/main.ty`, one line of `docs/guides/corelib.md`) but
+    moves the guess instead of removing it — the caller still picks between
+    `has_value` and `flag`, same silent false, same absent diagnostic. So the fix
+    went into `corelib/cli/cli.ty@has`'s doc comment: name the failure mode, name
+    `flag`, and give `cli.has(c, k) || cli.flag(c, k)` as the call-site spelling.
+
+  **Verification, one command each, foreground.**
+
+  - `python3 scripts/check_citations.py` → `citation check: ok` (178 anchored,
+    124 `path@SYMBOL`). It **reddened first**, with 80 stale, which is how the
+    blast radius above was measured rather than guessed.
+  - `sh scripts/check_links.sh` → `link check: ok (139 markdown files, no dead
+    relative links)`.
+  - `sh scripts/spec_check.sh` → `9 runnable example(s), all pass`,
+    `Appendix A grammar matches §3/§4 (ok)`,
+    `all Appendix E fixture citations resolve (ok)`.
+  - `make test` → `passed: 560   failed: 0`, `all green`, observed `TEST_EXIT=0`.
+    Held at 560, which is the number that would have moved had the new `E_SPAWN`
+    arm rejected something the corpus relies on.
+  - Not run, deliberately: `make ci` (phase 1 spent it) and `make shim-check` /
+    `make corelib` (no shim and no corelib *code* changed — the corelib edits are
+    comments, and the five entry points that were touched were each compiled
+    individually as a sanity check: `corelib/test/cli`, `corelib/test/result`,
+    `corelib/test/net`, `corelib/test/httpd`, `examples/corelib/httpd` all build).
+    `tools/lsp.ty` does not link standalone — **verified identical at HEAD**, a
+    pre-existing missing-shim link error, not this phase's.
+
 - [ ] **Phase 3 — the shim gate's blind spot: a skipped shim is never compiled
       at all** *(filed by phase 1, out of its scope)*
   - `make shim-check` skips a shim whose `deps` package is absent, which is the
@@ -211,6 +286,19 @@ cannot, the four current failures fixed, and five friction items closed.
     silently. Phase 1 repointed that one by hand only because it happened to be
     reading the file. Worth knowing whether that class is large before deciding
     it needs anything.
+
+## Status — PLAN COMPLETE
+
+Both phases are done and committed. Phase 3 below is **filed, not planned** — it
+was raised by phase 1 as out of its own scope and is left unchecked deliberately,
+for whoever picks up the shim gate's blind spot. It is not work this plan owes.
+
+`FRICTION.md`'s open list went from **eleven entries to eight**: six struck (1, 2,
+3, 5, 11, 12) and three filed (13, 14, 15). **None of the eight survivors is a line
+of code** — 4 and 6 want decisions, 8 wants a design, 9 and 10 are properties of
+the machine and of the file, 13 needs a definition of "reachable" that the cheap
+gate would not satisfy, and 14 and 15 are stale claims that want re-deriving
+rather than deleting. The cheap end of the list is spent.
 
 ## Out of scope
 

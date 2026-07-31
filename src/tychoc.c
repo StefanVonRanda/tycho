@@ -3571,6 +3571,13 @@ static Stmt *parse_stmt(Parser *ps) {
      * matching tychoc0, whose statement grammar only accepts `name(args)` here. */
     if (e->kind == E_IDENT && !strcmp(e->sval, "while"))   /* F9: `while cond:` — Tycho has no while keyword */
         die_at(t->line, "Tycho has no `while` -- use `for cond:` for a conditional loop (e.g. `for i < 3:`)");
+    /* `spawn f(x)` alone reaches here as an E_SPAWN, and the generic message below
+     * never states the rule it broke: a Task handle is affine and MUST NOT be
+     * discarded (spec §21), and binding it is what gives the implicit join at scope
+     * exit something to wait on. Say that instead of "no effect" -- the task very
+     * much would have had one. */
+    if (e->kind == E_SPAWN)
+        die_at(t->line, "a `spawn` must be bound to a task handle -- write `t := spawn f(args)`, because the implicit join at scope exit needs a handle to wait on (a Task cannot be discarded)");
     if (e->kind != E_CALL)
         die_at(t->line, "a statement must be a declaration, assignment, or call -- a bare expression has no effect");
     Stmt *s = new_stmt(S_EXPR, t->line);

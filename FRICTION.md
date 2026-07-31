@@ -259,7 +259,18 @@ order is preserved. **The two appended items are not last in priority just
 because they are last in the list** — item 11 is the cheapest thing here. The
 pick-up order is written out in full under "What moved this pass" below.
 
-1. **Three shims do not compile under `-std=c11`** (*Found by phase 1's gate sweep*) —
+1. ~~**Three shims do not compile under `-std=c11`** (*Found by phase 1's gate sweep*)~~ —
+   **CLOSED 2026-07-31 at `ada7893` by the shim-gate phase, gate first.**
+   `scripts/shim_check.sh` /
+   `make shim-check` / `scripts/ci.sh` step `[3d/13]` compiles every
+   `corelib/*/*_shim.c` standalone under `-std=c11`, and the three failures were fixed
+   by copying `corelib/io/io_shim.c`'s `_DEFAULT_SOURCE` block. The gate was **proven
+   to redden** by reverting the `signal` fix. Two things the item got wrong, both found
+   by measuring: `corelib/image/image_shim.c` was never a defect (its one error is a
+   missing `png.h`, item 9), and a first version of the gate that kept `-pthread` was
+   silently green on the unfixed shim — `-pthread` defines `_REENTRANT`, which glibc
+   turns back into `_POSIX_C_SOURCE=199506L`. Phase 1's evidence block has the numbers.
+   The record of what the item said when open follows.
    **still the cheapest thing on this list, and it is now three files. It was one, then
    two, then three, and the growth is the item.**
    Re-measured at HEAD by invoking `cc -std=c11 -c` directly on all **12** shims
@@ -289,15 +300,29 @@ pick-up order is written out in full under "What moved this pass" below.
    `corelib/os/os_shim.c:9-10`, `corelib/datetime/datetime_shim.c:10-11` and
    `corelib/time/time_shim.c:22-23` (`_POSIX_C_SOURCE 200809L`) — so it is **3 lines
    copied into each of 3 files**, plus the gate. Left on scope four times now.
-2. **`spawn f(x)` as a bare statement** (*Earlier phases*) — reproduced verbatim again at
+2. ~~**`spawn f(x)` as a bare statement**~~ — **CLOSED 2026-07-31: the parser now names
+   the rule.** `parse_stmt` tests `E_SPAWN` ahead of the generic bare-expression
+   `die_at` and says `a `spawn` must be bound to a task handle -- write
+   `t := spawn f(args)`, because the implicit join at scope exit needs a handle to wait
+   on (a Task cannot be discarded)`. Measured before and after on the same scratch
+   program; **no `tests/diag/` fixture pinned the old text** (grepped `tests/` for it and
+   found the string only in `docs/internals/`), so the corpus count is unchanged at 560.
+   The record of what the item said when open follows.
+   (*Earlier phases*) — reproduced verbatim again at
    `9e8f8f2` with a scratch program: `spawn work(1)` gives `error: a statement must be a
    declaration, assignment, or call -- a bare expression has no effect`
    (`src/tychoc.c:3575`, unmoved since the previous pass), which still never states the
    real rule — a task handle must be *bound* so the compiler can hang the implicit join on
    it. **One line of diagnostic text at a known line.** Open only because nobody has spent
    it, through two re-scores.
-3. **`docs/bootstrap.md` is not reachable from `docs/README.md`** (*Found by phase 1's gate
-   sweep*) — re-verified at HEAD: `grep -c bootstrap docs/README.md` → `0`. Sharper than the old
+3. ~~**`docs/bootstrap.md` is not reachable from `docs/README.md`**~~ — **CLOSED
+   2026-07-31: `docs/README.md` now lists it** under "How the docs are organized", beside
+   `architecture.md`. The real question behind it — nothing checks that a document is
+   *reachable*, only that its links resolve — is **not** closed and is filed as item 13
+   below. A seventh site of item 5's class was found in the same file while adding the
+   link and is recorded there. The record of what the item said when open follows.
+   (*Found by phase 1's gate
+   sweep*) — re-verified at the time: `grep -c bootstrap docs/README.md` → `0`. Sharper than the old
    entry: the index deliberately points at *directories* (`docs/reference/`, `docs/guides/`,
    `docs/spec/`, `docs/internals/`, `docs/rfc/`), so almost every unlisted file is covered
    by its directory — and `docs/bootstrap.md` is **the only top-level `docs/*.md` no index
@@ -323,7 +348,23 @@ pick-up order is written out in full under "What moved this pass" below.
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
    (`src/tychoc.c:7836`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
-5. **Stale in-tree comments asserting constraints that the freeze retirement killed**
+5. ~~**Stale in-tree comments asserting constraints that the freeze retirement killed**~~
+   — **CLOSED 2026-07-31: all six rewritten, and a seventh found.** Each now states what
+   the old reason was, that it expired on 2026-07-29, and what (if anything) survives as
+   the real reason — the form `corelib/test/io/main.ty` already modelled.
+   `corelib/net/net.ty@NetErr`'s header and `examples/corelib/httpd/main.ty` now say
+   nested patterns DO parse (since 2026-07-26) and that `==` is the one-line spelling,
+   not the only one; `corelib/result/result.ty` retires "nothing in `corelib/` may use
+   one"; `corelib/httpd/httpd.ty@crlf` keeps `crlf()` for compatibility rather than for
+   tychoc0's lexer; `corelib/httpd/httpd.ty@read_request_capped` keeps its typed local as
+   a style choice; `tools/lsp.ty@crlf` drops the retired `scripts/frontparity.sh` reason.
+   **One claim was disproved while rewriting it**: `corelib/test/result/main.ty` says
+   rewriting `read_request_capped`'s tail to `return (Err(why), buf)` "still fails". It
+   does not — patched in and compiled `corelib/test/httpd/main.ty` clean, then reverted.
+   That is filed as item 14. The **seventh** site is `docs/README.md`'s Contributing
+   paragraph, which still promised "every language feature must work in *both* compilers,
+   or the fixpoint goes red" while the `CONTRIBUTING.md` it points at already said those
+   gates are gone. The record of what the item said when open follows.
    (*phase 10, widened at the previous pass*) — **all six sites re-read at `9e8f8f2` and
    all six survive verbatim.** Two of the six citations had drifted and are re-derived
    here; the entry carries two *different* false claims:
@@ -366,7 +407,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:10040@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:10047@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:251` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -516,9 +557,19 @@ pick-up order is written out in full under "What moved this pass" below.
       citations were converted to it in this pass. That is the mechanism the item asked
       for; what it does **not** license is a sweep over correct refs, which is the thing
       three separate passes have declined.
-11. **NEW — `docs/spec/14-ffi.md` §24.1.1 documents one of the two ways a shim returns a
-    payload and a classification, and the tree now uses both** (*the conditional-requests
-    and byte-ranges work*). §24.1.1 is normative and good: it says the classification is a
+11. ~~**NEW — `docs/spec/14-ffi.md` §24.1.1 documents one of the two ways a shim returns a
+    payload and a classification, and the tree now uses both**~~ — **CLOSED 2026-07-31:
+    §24.1.1 now states both arrangements and the rule that forces each.** The new text
+    says the split is decided by what can cross as an `inout`, not by taste: a `bytes`
+    payload cannot be one (`src/tychoc.c@ffi_scalar_type`) so it takes the return; a
+    scalar payload can, so the collision moves to the code space and the status keeps the
+    return. Provenance rewritten from "used twice" to the five real uses, and re-derived
+    as `path@SYMBOL` refs — the old block's `src/tychoc.c:10920-10949` for
+    `gen_extern_proto` was **43 lines stale** and, being a bare range, unreachable by the
+    citation gate. `corelib/io/io.ty`'s three cross-referencing comment blocks now point
+    at §24.1.1 instead of deriving it. The record of what the item said when open follows.
+    (*the conditional-requests
+    and byte-ranges work*). §24.1.1 was normative and good: it says the classification is a
     numeric `inout` and the payload keeps the return, spells the C ABI out
     (`docs/spec/14-ffi.md:77-94`), and its provenance block says "the shape is used
     twice — `netx_read` and `iox_read_file`". **It is used five times now, and two of them
@@ -546,8 +597,21 @@ pick-up order is written out in full under "What moved this pass" below.
     the status takes the `inout` instead" — which is a sibling's comment doing a spec's job
     again. **~4 sentences plus one provenance line**, and the "used twice" count wants
     correcting to five in the same edit.
-12. **NEW — `cli.has` answers a narrower question than its name, and no diagnostic is
-    possible** (*promoted from the 2026-07-31 concurrency re-score below, where it was
+12. ~~**NEW — `cli.has` answers a narrower question than its name, and no diagnostic is
+    possible**~~ — **CLOSED 2026-07-31 as WORKING-AS-INTENDED, decided rather than
+    renamed.** The decision and what a rename would have cost: `has` → `has_value` breaks
+    three call sites (`corelib/test/cli/main.ty` ×3) and one line of
+    `docs/guides/corelib.md` — cheap — but it does not remove the guess, it moves it: a
+    caller asking "did the user supply `--stats`?" would still have to choose between
+    `has_value` and `flag`, with the same silent-false failure and the same absence of a
+    diagnostic (both spellings compile, both return `bool`). What removes the trap is
+    saying so at the definition, so `corelib/cli/cli.ty@has`'s doc comment now names the
+    failure mode, names `flag` as the predicate for a bare `--key`, and gives
+    `cli.has(c, k) || cli.flag(c, k)` as the call-site spelling for "supplied in any
+    form" — deliberately not a corelib function, because a caller who cannot say which
+    they mean usually has a schema question (`parse_spec`), not a lookup question.
+    The record of what the item said when open follows.
+    (*promoted from the 2026-07-31 concurrency re-score below, where it was
     recorded but never numbered*). A bare `--stats` lands in `Cli.flags`, not `Cli.keys`,
     so `cli.has(c, "stats")` returns **false** while `cli.flag(c, "stats")` returns true;
     both spellings compile, both return `bool`, and the failure is a missing line of output
@@ -558,6 +622,39 @@ pick-up order is written out in full under "What moved this pass" below.
     `has_value`, or add a `supplied(c, name)` that scans both — and it is numbered here
     because it is the only thing in this file that failed *silently*, which is the class
     this file exists to catch.
+13. **NEW — nothing checks that a document is REACHABLE, only that its links resolve**
+    (*split off item 3 when item 3 was closed, 2026-07-31*). `scripts/check_links.sh`
+    reports "139 markdown files, no dead relative links" — a link that points nowhere is
+    a hard failure, a document nobody points at is invisible. `docs/bootstrap.md` was
+    orphaned for days and was found by a human reading the index, not by a gate. The
+    2026-07-31 pass also recorded three files under `docs/internals/` mentioned by no
+    Markdown at all. **The open question is what "reachable" should mean**, and it is not
+    obvious: the index deliberately points at *directories*, so a naive
+    reachability check over links alone would flag almost every file in `docs/reference/`
+    and `docs/guides/`. A gate that treats "your directory is linked" as reachable would
+    have stayed green on `docs/bootstrap.md`'s whole outage, since `docs/` is trivially
+    reachable — so the cheap version of this gate is the version that does not work.
+    Sized as a decision, not a line.
+14. **NEW — `corelib/test/result/main.ty` states a compile failure that no longer
+    happens** (*found 2026-07-31 while closing item 5*). Its note says the real surviving
+    constraint on `httpd.read_request_capped` is `docs/spec/appendix-e-conformance.md`
+    §E.2.1, and that "rewriting it to `return (Err(why), buf)` still fails, because the
+    Ok payload type cannot be grounded from a partially-inferred Request". **Measured:
+    it does not fail.** Replacing that function's `out` local with
+    `return (Err(why), buf)` / `return (Err(TooLarge), buf)` /
+    `return (parse_request(buf), buf)` and compiling `corelib/test/httpd/main.ty` builds
+    clean; the patch was reverted. So the comment is one generation behind the same way
+    the six sites of item 5 were, except its expired claim is about the *live* compiler
+    rather than the frozen one — which makes it the harder class to notice, because
+    nothing about it looks dated. Worth re-deriving what §E.2.1's surviving constraint
+    actually is before rewriting the note, rather than deleting the sentence.
+15. **NEW — `README.md` documents two `make` targets that do not exist**
+    (*found 2026-07-31 while closing item 3*). `README.md:223` lists
+    `make bootstrap` / `make fixpoint` — "Build / self-host-check
+    `compiler/tychoc0.ty`" — and `grep -n 'fixpoint\|bootstrap' Makefile` is **empty**;
+    both went with the 2026-07-29 freeze retirement. A reader following the README gets
+    "No rule to make target". One table row, and the same class as item 5 in a file no
+    in-tree comment gate covers.
 
 > **What moved and what did not (2026-07-30, kept as that pass's record).** Items 1, 2, 3
 > and 5 are lines and links with the work already identified — roughly a day between them,
@@ -599,6 +696,27 @@ batch that happened to be aimed elsewhere.
    item-sized.
 9. **Items 9, 10** — a property of this machine and a property of this file. Neither is
    closable by writing code, and both are listed so nobody re-derives them again.
+
+**Spent, 2026-07-31 — the pick-up order above is now history.** Items 1, 2, 3, 5, 11 and
+12 are struck: six of the eleven then-open entries, in one plan of two phases, and the
+nine lines above covered every one of them. **What is left open is
+items 4, 6, 8, 9, 10 and the three this pass created (13, 14, 15)** — and none of the
+survivors is a line of code. Items 4 and 6 want decisions, 8 wants a design, 9 and 10 are
+properties of the machine and of this file, and 13 wants a definition of "reachable" that
+the cheap version of the gate does not have. **That is the real finding of the batch: the
+cheap end of this list was cheap, and clearing it leaves nothing that a bigger effort
+budget alone would close.**
+
+**And the ordering was by lines, which is again not effort.** The two doc-only items (3,
+11) ran to roughly their estimate. Item 5's "~15 lines across 6 files" cost more than
+item 11's paragraph, because rewriting an expired reason means first establishing what
+the surviving reason is — which took a compile probe and disproved a sibling comment
+(item 14). Item 12 was a decision and cost the least of all: the answer was already in
+the tree. And **item 2, "one line of diagnostic text", was by far the most expensive** —
+not for the line, but because inserting seven lines at `src/tychoc.c`'s line 3574 staled
+**80 anchored citations** across 16 files. The line was minutes; its blast radius was the
+work. Nothing in a list ordered by lines can see that, because the cost is a property of
+*where* the line goes, not how long it is.
 
 ## Re-scored against a real concurrent program, 2026-07-31 (head `9e7a090`)
 

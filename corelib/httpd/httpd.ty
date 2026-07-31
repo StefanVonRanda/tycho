@@ -99,14 +99,14 @@ fn trim(s: string) -> string:
 # CR-LF, the HTTP line terminator.
 #
 # `"\r\n"` IS a string literal since docs/internals/plan-friction-DONE.md phase 2, so this function is no longer
-# forced -- it is KEPT DELIBERATELY, and this package must keep using it. `core:httpd`
-# is compiled by the FROZEN self-hosted `tychoc0` (`examples/webserver/run.sh` imports
-# this package and asserts `tychoc == tychoc0 == golden`), and tychoc0's lexer rejects
-# `\r`: `compiler/tychoc0.ty:195`, "lex: unsupported string escape (use \n \t \\ \")".
-# Writing the literal here would break that comparison at a file that is frozen and
-# must not be edited. It also stays a public entry point that callers already use
-# (`examples/webserver/main.ty:237`). Use `"\r\n"` in any program tychoc0 does not
-# compile -- `server/main.ty` and `corelib/test/`, for instance.
+# forced. It is KEPT DELIBERATELY, but NOT for the reason this comment used to give:
+# it said `core:httpd` is compiled by the FROZEN self-hosted `tychoc0`, which rejects
+# `\r`, so writing the literal here would redden `examples/webserver/run.sh`'s
+# `tychoc == tychoc0 == golden` comparison. That leg was RETIRED on 2026-07-29 (see
+# run.sh's own header) and nothing builds tychoc0 now, so no lexer forbids the
+# literal anywhere. What survives is the ordinary reason: `crlf()` is a public entry
+# point callers already use (`examples/webserver/main.ty:237`), so it stays for
+# compatibility, not for a lexer. Inside this package either spelling is fine.
 fn crlf() -> string:
     return chr(13) + chr(10)
 
@@ -311,13 +311,16 @@ fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     #
     # `out` IS KEPT DELIBERATELY, and no longer because the compiler needs it: as of
     # docs/internals/plan-friction-DONE.md phase 3 a tuple literal DOES infer a Result element, so
-    # `return (Err(why), buf)` compiles under src/tychoc.c. It does not compile under
-    # the FROZEN compiler/tychoc0.ty, which examples/webserver/run.sh feeds this
-    # package (it asserts tychoc == tychoc0 == golden) and which reports
-    # `returning (Result(,httpd__ReqErr),str) but this function returns
-    # (Result(httpd__Request,httpd__ReqErr),str)` -- measured, not assumed. Same
-    # reach as the \r literal in phase 2: this file cannot use anything tychoc0
-    # rejects. The direct form is demonstrated in corelib/test/result instead.
+    # `return (Err(why), buf)` compiles under src/tychoc.c. The reason this comment
+    # used to give for keeping the local was that the same line did NOT compile under
+    # the FROZEN compiler/tychoc0.ty, which examples/webserver/run.sh fed this package
+    # while asserting tychoc == tychoc0 == golden. That leg was RETIRED on 2026-07-29
+    # and nothing builds tychoc0 now, so the constraint is gone -- the typed local is
+    # now a style choice (it names the Ok payload type at the one place the tuple
+    # would have to infer it), not a requirement. MEASURED, not assumed: rewriting
+    # this tail to `return (Err(why), buf)` / `return (parse_request(buf), buf)` and
+    # compiling corelib/test/httpd/main.ty succeeds at this tree. The direct form is
+    # also demonstrated in corelib/test/result.
     out: Result(Request, ReqErr) = Err(TooLarge)
     if find(buf, term) < 0:
         if cut:

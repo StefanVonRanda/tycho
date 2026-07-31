@@ -255,8 +255,11 @@ fn digits_to_int(s: string) -> int:
 # ---- JSON-RPC transport -----------------------------------------------------
 fn crlf() -> string:
     # `"\r\n"` IS a string literal since docs/internals/plan-friction-DONE.md phase 2, so this is no longer forced.
-    # It is KEPT DELIBERATELY: `scripts/frontparity.sh` feeds `tools/*.ty`
-    # to the FROZEN `tychoc0`, whose lexer rejects `\r` (`compiler/tychoc0.ty:195`).
+    # The reason this comment used to give for keeping it -- `scripts/frontparity.sh`
+    # feeds `tools/*.ty` to the FROZEN `tychoc0`, whose lexer rejects `\r` -- EXPIRED
+    # on 2026-07-29 when that lane was retired; nothing builds `tychoc0` now, so
+    # `"\r\n"` is writable here. This spelling stays because it works and churning it
+    # buys nothing, not because a lexer forbids the literal.
     return "" + '\r' + '\n'
 
 fn send_msg(body: string):
