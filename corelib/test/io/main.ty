@@ -329,3 +329,38 @@ fn main():
     ramiss := io.read_at("/tmp/tycho_corelib_io_absent.xyz", 0, 4)
     radir := io.read_at("/tmp", 0, 4)
     println(f"read_at_missing={why(ramiss)} read_at_dir={why(radir)}")
+
+    # ---- size: the file's length, WITHOUT reading the file ---------------------
+    # read_at's fixture asserts letters so a wrong offset prints wrong letters. A
+    # size fixture is the inverse -- the NUMBER is the assertion -- so the file has
+    # to have a length that is unambiguous in this source rather than a property of
+    # the machine. `alpha` above is the 26 letters of the alphabet, written by this
+    # run, so 26 is a fact of the fixture. It is ALSO cross-checked against
+    # len(read_bytes) on the same file -- the read-the-whole-thing way this call
+    # exists to replace -- so a size that disagrees with the bytes actually present
+    # fails even if the literal 26 were wrong. Both must hold.
+    sz := io.size(rf)
+    szn := result.unwrap_or(sz, -1)
+    println(f"size={mwhy(sz)} n={szn} is26={b2i(szn == 26)} agrees={b2i(szn == nb(io.read_bytes(rf)))}")
+
+    # A ZERO-LENGTH FILE IS Ok(0), and "0" must never be confusable with "failed".
+    # That is what the shim's return/out-param split buys: the status rides the
+    # return, so a failure is an Err and cannot arrive as a small number. Printed
+    # as the PAIR (why, n) for exactly that reason -- an Err collapsing through
+    # unwrap_or would read `Failed n=-1`, and a status leaking into the payload
+    # would read `Ok n=1`. Only `Ok n=0` passes. A static server meets this file
+    # for real and owes it a 200 with Content-Length: 0, not a 500.
+    ef := "/tmp/tycho_corelib_io_empty.dat"
+    wef := io.write(ef, "")
+    esz := io.size(ef)
+    esn := result.unwrap_or(esz, -1)
+    println(f"size_empty={mwhy(esz)} n={esn} wrote={b2i(wef)} readlen={nb(io.read_bytes(ef))}")
+
+    # The error path, and the one answer where size deliberately DIFFERS from
+    # mtime: a directory is Err(IsDir) here and Ok above. st_size on a directory is
+    # the size of its own entry structure, not a count of readable bytes, so
+    # reporting it would hand a Range caller a length no read could ever produce.
+    # These two golden lines and mtime_dir=Ok together are the record of that.
+    szmiss := io.size("/tmp/tycho_corelib_io_absent.xyz")
+    szdir := io.size("/tmp")
+    println(f"size_missing={mwhy(szmiss)} size_dir={mwhy(szdir)}")

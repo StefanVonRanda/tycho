@@ -98,6 +98,12 @@ extern fn iox_stat_kind(path: string) -> int
 # the payload takes the `inout`, the mirror of iox_read_file, where the `bytes`
 # payload must be the return so the status takes the `inout` instead.
 extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
+# stat(2) a third time, for st_size. Same shape as iox_stat_mtime -- a scalar
+# payload in the `inout`, the status in the return -- but NOT the same directory
+# answer: 2 (directory) is a real status here, not an Ok. See iox_stat_size in
+# io_shim.c for why the two calls differ on that, and why this is a sibling
+# rather than a second `inout` on iox_stat_mtime.
+extern fn iox_stat_size(path: string, size: inout int) -> int
 # mkdir(2) / remove(3), one entry each, in the same code space (plus FS_EXISTS).
 extern fn iox_make_dir(path: string) -> int
 extern fn iox_remove(path: string) -> int
@@ -228,6 +234,50 @@ fn mtime(p: string) -> Result(int, IoErr):
         return Ok(secs)
     if k == RF_MISS:
         return Err(NotFound)
+    return Err(Failed)
+
+# How many bytes `p` holds, WITHOUT READING THEM. Until this existed the only way
+# to ask was `len(read_bytes(p))`, which reads a gigabyte to learn that it is a
+# gigabyte -- the same defect read_at above was added to remove, and a Range
+# server built on it would allocate exactly what read_at stopped allocating.
+#
+#   Ok(n)           `p` is a regular file of n bytes
+#   Err(NotFound)   nothing is there
+#   Err(IsDir)      the path names a directory
+#   Err(Failed)     it is there and has no byte length -- unstattable, or a fifo,
+#                   socket or device
+#
+# Ok(0) IS A SUCCESS AND IT IS NOT THE FAILURE VALUE. An empty file has a length
+# and that length is zero. The status rides the shim's return rather than the
+# payload (see iox_stat_size in io_shim.c), so `0` is never what a failure looks
+# like -- a failure is an Err and cannot be mistaken for a small file. This is the
+# case a static server meets for real: a 0-byte asset must serve a 200 with
+# `Content-Length: 0`, not a 500.
+#
+# A DIRECTORY IS Err(IsDir) HERE, WHICH IS THE OPPOSITE OF mtime ABOVE, and the
+# difference is not an inconsistency. mtime returns Ok for a directory because a
+# directory HAS a modification time and stat(2) reports the real one; refusing it
+# would throw away an answer. st_size on a directory is not the answer to this
+# question at all -- it is the size of the directory's own entry structure (4096
+# on ext4, filesystem-dependent everywhere), not a count of readable bytes. So
+# this is not withholding an answer, it is refusing to report a number that is not
+# one. The test that settles it: size(p) is the length read_bytes(p) would return,
+# and read_bytes on a directory is Err(IsDir) too. The two agree on every path.
+#
+# ONE stat(2), NOT SHARED with mtime's and not with read_at's fstat. A caller
+# wanting size and mtime pays two; a caller wanting size and then a slice pays a
+# stat and then a read, and it needs the size FIRST -- a 416 answer emits the
+# length and reads nothing, and a suffix range needs the length to know where to
+# start. See iox_stat_size in io_shim.c for the caller count behind the split.
+fn size(p: string) -> Result(int, IoErr):
+    n := 0
+    k := iox_stat_size(p, &n)
+    if k == RF_OK:
+        return Ok(n)
+    if k == RF_MISS:
+        return Err(NotFound)
+    if k == RF_DIR:
+        return Err(IsDir)
     return Err(Failed)
 
 # Create the single directory `p` (mode 0777 & ~umask). NOT `mkdir -p`: a missing

@@ -29,3 +29,6 @@ short=[UVWXYZ] len=6 why=Ok
 negoff=Failed len=0 negn=Failed len=0
 zerolen len=0 why=Ok huge=[ABCDEFGHIJKLMNOPQRSTUVWXYZ] why=Ok
 read_at_missing=NotFound read_at_dir=IsDir
+size=Ok n=26 is26=1 agrees=1
+size_empty=Ok n=0 wrote=1 readlen=0
+size_missing=NotFound size_dir=IsDir

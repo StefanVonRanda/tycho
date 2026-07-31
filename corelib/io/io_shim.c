@@ -284,6 +284,70 @@ tycho_int iox_stat_mtime(const char *path, tycho_int *mtime) {
     return TY_RF_OK;
 }
 
+/* The SIZE IN BYTES of the regular file `path`, written through *size. Same
+ * status code space as iox_stat_mtime above:
+ *
+ *      TY_RF_OK   (1)  stat succeeded and `path` is a regular file; *size holds
+ *                      its length, and 0 is a SUCCESS (an empty file has a length)
+ *      TY_RF_MISS (0)  no such path (ENOENT/ENOTDIR)
+ *      TY_RF_DIR  (2)  the path names a directory -- see below, this is NOT the
+ *                      same call as iox_stat_mtime's
+ *      TY_RF_ERR  (3)  it is there and has no byte length: unstattable (EACCES,
+ *                      ELOOP), or a fifo/socket/device
+ *
+ * The out-param/return split is iox_stat_mtime's exactly, for its reason: the
+ * payload is a scalar, so it cannot share a code space with 0..3 (a 2-byte file
+ * would be indistinguishable from TY_RF_DIR), and a scalar CAN be an `inout`,
+ * so the payload takes the `inout` and the status keeps the return.
+ *
+ * A THIRD stat(2) SIBLING, not a second out-param on iox_stat_mtime. Phase 1
+ * refused to fold mtime into iox_stat_kind by counting the callers who would
+ * pass a value they discard, and the same count decides this -- it just lands
+ * differently. iox_stat_mtime has ONE caller (io.mtime), so folding a size into
+ * it costs one discard, not three. But it costs a second one immediately: io.size
+ * would then call iox_stat_mtime and discard the mtime, so BOTH public calls
+ * would be discarding half of a merged fetch, and the merged function's name
+ * would have to stop being iox_stat_mtime. Two discards and a rename, to save a
+ * syscall for a caller that wants both -- and no such caller exists: a Range
+ * request wants a size and a slice, not a size and a date.
+ *
+ * NOR IS IT SHARED WITH iox_read_at, which already fstats. That fstat happens on
+ * an fd that is opened, read and closed inside one call, and the three callers
+ * that need a size need it BEFORE they know what to read: a 416 emits
+ * `Content-Range: bytes *\/LEN` and reads nothing at all, a suffix range
+ * `bytes=-N` needs LEN to compute its start, and `bytes=A-` needs LEN to name its
+ * end. Returning a size out of read_at would hand it back after the decision that
+ * needed it. The cost of the split is one extra stat(2) on the path that then
+ * also reads; the 416 path pays one stat and opens nothing.
+ *
+ * A DIRECTORY IS TY_RF_DIR HERE, AND THAT DIFFERS FROM iox_stat_mtime ON PURPOSE.
+ * Phase 1 made a directory's mtime TY_RF_OK because refusing it would discard a
+ * field the kernel had already filled in. That argument does not carry here,
+ * because st_size on a directory is not an answer to this question: it is the
+ * size of the directory's own on-disk entry structure (4096 on ext4, something
+ * else on btrfs, 0 on some filesystems), not a count of bytes anyone can read.
+ * A directory's mtime IS the modification time being asked for; a directory's
+ * st_size is not the byte length being asked for. So this is not discarding an
+ * answer, it is declining to report a number that would be one -- and the caller
+ * that would be misled is exactly the one this exists for, which would answer a
+ * 416 with `bytes *\/4096` for a path holding no bytes at all.
+ *
+ * The rule that keeps the two calls honest with each other: iox_stat_size
+ * succeeds on exactly the paths iox_read_at can read. Regular file -> both work;
+ * directory -> both TY_RF_DIR; fifo/socket/device -> both TY_RF_ERR, since
+ * st_size is meaningless for them and pread(2) fails ESPIPE on anything
+ * unseekable. A size no read could ever produce is worse than no size. */
+tycho_int iox_stat_size(const char *path, tycho_int *size) {
+    struct stat st;
+    *size = 0;
+    errno = 0;
+    if (stat(path, &st) != 0) return ty_rf_errno();   /* ENOENT/ENOTDIR -> MISS */
+    if (S_ISDIR(st.st_mode)) return TY_RF_DIR;
+    if (!S_ISREG(st.st_mode)) return TY_RF_ERR;       /* fifo/socket/device: no length */
+    *size = (tycho_int)st.st_size;
+    return TY_RF_OK;
+}
+
 /* One code the read/stat space has no use for: the path is occupied by something
  * that is NOT a directory, so make_dir cannot have what it asked for. TY_RF_OK
  * cannot carry it -- OK already means "I did it" below. */
