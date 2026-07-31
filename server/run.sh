@@ -406,9 +406,9 @@ fi
 # A second server, started the same way and polled for the same banner. Used by
 # both remaining cases; there is only one process to kill per case, and the first
 # one is already gone.
-respawn() {  # respawn <errfile>; sets SRV
+respawn() {  # respawn <errfile> [idle-ms]; sets SRV
     "$T/tycho-httpd" --root "$T/www" --host 127.0.0.1 --port 0 \
-                     --workers 4 --idle-ms 500 >/dev/null 2>"$1" &
+                     --workers 4 --idle-ms "${2:-500}" >/dev/null 2>"$1" &
     SRV=$!
     i=0
     while [ "$i" -lt 500 ]; do                   # the banner, not a fixed sleep
@@ -457,6 +457,182 @@ if grep -q '^tycho-httpd: stopped after' "$T/kill.err"; then
     echo "  FAIL SIGKILL: printed the stopped line -- no handler can have run"; fail=1
 else
     echo "  ok   SIGKILL: no stopped line, nothing wound down (the control for case 1)"
+fi
+
+# The bound port out of a respawned server's banner, same regex as the driver's.
+port_of() {
+    sed -n 's|^tycho-httpd: serving .* on http://[^:]*:\([0-9]*\)/.*|\1|p' "$1" | head -n 1
+}
+
+# ---- case 4: a TRANSIENT accept failure must not retire a worker ------------
+# plan.md phase 14. Until batch A, accept_loop's Err arm was an unconditional
+# `running = false`, so ONE EMFILE retired that accept loop for the life of the
+# process -- and with every loop retired the server left through its own bottom
+# with no signal at all, printing the stopped line and exiting 0 while the
+# operator was told nothing except that it had gone. That is the exact shape this
+# asserts against: after a transient fd exhaustion that has since been LIFTED, the
+# server must still be running and must still answer.
+#
+# The exhaustion is induced with prlimit(2) on the live process rather than with a
+# storm of connections, because a storm cannot do it: with four accept loops the
+# server never holds more than four connections at once, so its own fd budget is
+# never what runs out. Lowering the SOFT limit only (the hard limit is left alone,
+# or it could not be raised back without CAP_SYS_RESOURCE) makes the next accept
+# fail with EMFILE and nothing else change.
+#
+# WHY --idle-ms 200 AND A WINDOW LONGER THAN IT, which is the whole reason this
+# case is not three lines. A thread already blocked in accept(2) has ALREADY
+# passed the rlimit check: __sys_accept4 reserves the descriptor with
+# get_unused_fd_flags() and only then blocks in do_accept(). So lowering the limit
+# under four parked accept loops changes nothing for those four calls -- they
+# complete and install fds 4..7 over a soft limit of 4. EMFILE is reached only
+# when a loop enters accept(2) AFRESH, which happens after its connection closes,
+# which for a client that never speaks is one idle timeout. Measured directly:
+# with idle 500 and a 400ms window the loops never re-enter accept and NOTHING
+# fails, on patched and unpatched alike; with the timeout inside the window the
+# unpatched server retires all four loops and exits 0 on its own every time.
+respawn "$T/emfile.err" 200
+# `>/dev/null` on the watchdog is not tidiness. `kill "$WD"` reaps the subshell
+# but NOT the `sleep` it is blocked in, and an orphaned sleep still holds the
+# stdout this script inherited -- so a caller that captures output, as
+# `out=$(sh server/run.sh)` does, blocks until the longest sleep expires rather
+# than until the script exits. Measured: 4.4s per run direct, 34.5s per run
+# captured, entirely the orphan. Closing its stdout costs nothing and removes it.
+( sleep 15; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+WD=$!
+python3 - "$SRV" "$(port_of "$T/emfile.err")" <<'PY'
+import resource, socket, sys, time
+pid, port = int(sys.argv[1]), int(sys.argv[2])
+if not hasattr(resource, "prlimit"):
+    print("  skip transient-accept: resource.prlimit unavailable (needs Linux)"); sys.exit(0)
+try:
+    soft, hard = resource.prlimit(pid, resource.RLIMIT_NOFILE)
+except (OSError, PermissionError) as e:
+    print("  skip transient-accept: prlimit on the server denied (%s)" % e); sys.exit(0)
+
+def get(timeout=3.0):
+    s = socket.create_connection(("127.0.0.1", port), timeout)
+    s.settimeout(timeout)
+    s.sendall(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        d = s.recv(65536)
+        if not d:
+            break
+        buf += d
+    s.close()
+    return buf
+
+if not get().startswith(b"HTTP/1.1 200"):
+    print("  FAIL transient-accept: server was not serving before the test"); sys.exit(1)
+time.sleep(0.3)                              # every loop back in accept(2)
+resource.prlimit(pid, resource.RLIMIT_NOFILE, (4, hard))   # 0,1,2 + the listener
+storm = []
+for _ in range(8):                           # four get taken, four stay queued
+    try:
+        storm.append(socket.create_connection(("127.0.0.1", port), 1.0))
+    except OSError:
+        break
+time.sleep(0.8)                              # > the 200ms idle, so the loops
+                                             # re-enter accept(2) inside the window
+try:
+    resource.prlimit(pid, resource.RLIMIT_NOFILE, (soft, hard))   # lifted again
+except ProcessLookupError:
+    # The pre-batch-A failure, and the reason this case exists: no signal was
+    # sent and no error was reported, the accept loops simply retired one by one
+    # and main() walked out of its own bottom printing the stopped line.
+    print("  FAIL transient-accept: the server EXITED during the EMFILE window")
+    print("       no signal was sent -- every accept loop retired on a transient error")
+    sys.exit(1)
+for s in storm:
+    try:
+        s.close()
+    except OSError:
+        pass
+time.sleep(0.6)
+try:
+    body = get()
+except OSError as e:
+    print("  FAIL transient-accept: server unreachable after the EMFILE window (%s)" % e)
+    sys.exit(1)
+if body.startswith(b"HTTP/1.1 200"):
+    print("  ok   transient accept failure (EMFILE, window lifted): server still serving")
+else:
+    print("  FAIL transient-accept: got %r, want a 200" % body[:40]); sys.exit(1)
+PY
+rc=$?
+kill "$WD" 2>/dev/null
+wait "$WD" 2>/dev/null
+[ "$rc" -eq 0 ] || fail=1
+# ...and the accept loops that survived it are still able to wind DOWN, which is
+# the half a retry loop can silently cost. Same assertion as case 1, on a server
+# that has been through the EMFILE window. `kill -0` FIRST, or this passes
+# vacuously against a server that already drained: a dead pid takes the signal
+# without complaint and `wait` hands back the exit status it had anyway.
+if ! kill -0 "$SRV" 2>/dev/null; then
+    echo "  FAIL after EMFILE: server was already gone before SIGTERM (the pool drained)"; fail=1
+fi
+( sleep 10; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+WD=$!
+kill -TERM "$SRV" 2>/dev/null
+wait "$SRV" 2>/dev/null
+rc=$?
+kill "$WD" 2>/dev/null
+wait "$WD" 2>/dev/null
+SRV=""
+if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/emfile.err"; then
+    echo "  ok   after EMFILE: SIGTERM still exits 0 with the stopped line (retry did not eat the shutdown)"
+else
+    echo "  FAIL after EMFILE: wait status $rc, want 0 with a stopped line"; fail=1
+    sed 's/^/      /' "$T/emfile.err"
+fi
+
+# ---- case 5: shutdown must not wait out a BUSY keep-alive connection --------
+# plan.md phase 15. serve_conn's keep-alive loop now tests
+# signal.shutdown_requested() in its loop condition, so a worker stops between
+# requests instead of serving its peer until MAX_REQS. Measured on the four-client
+# drip below: 102215 ms before, 8 ms after. The 10s watchdog is therefore not a
+# margin, it is a cliff -- the pre-batch-A behaviour misses it by two orders of
+# magnitude, so a regression FAILS here rather than merely getting slower.
+#
+# NOTE this is the busy case, not the parked-idle one. A worker already blocked in
+# a read when the signal lands still waits out SO_RCVTIMEO; that is phase 19 and
+# no assertion here claims otherwise.
+respawn "$T/busy.err"
+# Four connections, each sending a fresh request every 100ms forever. The server
+# has four workers, so every one of them ends up in serve_conn's keep-alive loop.
+python3 - "$(port_of "$T/busy.err")" >"$T/drip.out" 2>&1 <<'PY' &
+import socket, sys, threading, time
+port = int(sys.argv[1])
+def drip():
+    s = socket.create_connection(("127.0.0.1", port), 3.0)
+    s.settimeout(3.0)
+    while True:
+        s.sendall(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n")
+        if not s.recv(65536):
+            return
+        time.sleep(0.1)
+for _ in range(4):
+    threading.Thread(target=drip, daemon=True).start()
+time.sleep(60)
+PY
+DRIP=$!
+sleep 1
+( sleep 10; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+WD=$!
+kill -TERM "$SRV" 2>/dev/null
+wait "$SRV" 2>/dev/null
+rc=$?
+kill "$WD" 2>/dev/null
+wait "$WD" 2>/dev/null
+kill "$DRIP" 2>/dev/null
+wait "$DRIP" 2>/dev/null
+SRV=""
+if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/busy.err"; then
+    echo "  ok   SIGTERM under 4 busy keep-alive clients: exit 0 well inside the 10s watchdog"
+else
+    echo "  FAIL SIGTERM under load: wait status $rc, want 0 (137 = it served the clients instead)"; fail=1
+    tail -n 3 "$T/busy.err" | sed 's/^/      /'
 fi
 
 # ---- the command line -------------------------------------------------------
