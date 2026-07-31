@@ -2,13 +2,13 @@
 #
 # Walks a directory, and for every regular file records its relative path, its
 # size, its mtime and the sha256 of its contents; gzips the contents; and writes
-# one archive file. Only `c` (create) is implemented so far; `t` (list) and `x`
-# (extract) are the next step, and the format below was designed for their sake
-# rather than for the writer's.
+# one archive file. `c` creates, `t` lists, `x` extracts.
 #
 # Build and run, from the repo root:
 #     ./tychoc tools/tycho-ar/main.ty -o build/tycho-ar
-#     ./build/tycho-ar c out.tar-ish some/dir
+#     ./build/tycho-ar c out.tyar some/dir
+#     ./build/tycho-ar t out.tyar
+#     ./build/tycho-ar x out.tyar some/dest
 #
 # WHY THIS IS A DIRECTORY AND NOT A FLAT `tools/tycho-ar.ty`. A program that
 # imports `core:*` needs a `package` header, and a `package` header makes tychoc
@@ -64,21 +64,96 @@
 #      were flipped passes check 1 and fails here. Checked before decompression,
 #      so a reader never hands damaged input to zlib in the first place.
 #   3. `size` AND `sha` OVER THE INFLATED BYTES. This is the check that keeps a
-#      corrupt member distinguishable from an empty one. `compress.decompress`
-#      FAILS CLOSED TO EMPTY BYTES on damaged input
-#      (`corelib/compress/compress_shim.c@zx_decompress`), and an empty result is
-#      indistinguishable from a legitimately empty member unless something
-#      outside the payload says how long the answer should be. `size` says. A
-#      zero-byte file is `size 0` carrying the sha256 of the empty string
-#      (e3b0c442…); a member that inflated to nothing because it was corrupt has
-#      a `size` that does not match, and must be rejected rather than extracted
-#      as an empty file. Silently turning a damaged member into an empty file is
-#      the worst thing an archiver can do, and this field is what makes it
-#      detectable.
+#      corrupt member distinguishable from an empty one, and it is the one the
+#      whole format was designed around. See EMPTY VERSUS CORRUPT below.
 #
 # And the trailer's `count` catches the one thing per-member checks cannot: a
 # whole member sheared off the end. Nine members plus a trailer saying ten is a
 # truncation that every individual member survived.
+#
+# EVERY ONE OF THOSE CHECKS IS AN EXPLICIT LENGTH TEST, NOT AN EXPECTED ABORT.
+# A `bytes` slice CLAMPS its bounds rather than aborting
+# (`docs/spec/03-types.md:139`), exactly as a string slice does -- so
+# `data[p:p + 8]` on a truncated archive quietly yields three bytes instead of
+# trapping. A reader that treated the slice as a bounds check would read a short
+# footer, compare it against the real one, and get the right answer by accident;
+# a reader that sliced a payload and hashed it would hash a prefix. Every read
+# below therefore checks `len(...)` of what it got against what it asked for
+# BEFORE using it. The clamp is the right default for a text tool and a trap for
+# a format parser, and the difference is worth naming.
+#
+# ===========================================================================
+# EMPTY VERSUS CORRUPT -- the question phase 2 existed to settle
+# ===========================================================================
+#
+# `compress.decompress` FAILS CLOSED TO EMPTY BYTES on damaged input: every error
+# path in `corelib/compress/compress_shim.c@zx_decompress` sets `*outlen = 0` and
+# returns, and a legitimately empty member inflates to zero bytes too. So the
+# worry was that a corrupt member and an empty file are indistinguishable, which
+# would make an archiver silently replace damaged data with an empty file -- the
+# worst thing a tool trusted to store bytes can do.
+#
+# MEASURED, not reasoned about. Compressing "" and inflating it, inflating a
+# 65-byte payload with byte 12 XORed by 0xFF, and inflating that payload cut in
+# half all produce the SAME answer:
+#
+#     legit-empty:  inflated len=0  sha=e3b0c442…7852b855
+#     corrupt    :  inflated len=0  sha=e3b0c442…7852b855
+#     truncated  :  inflated len=0  sha=e3b0c442…7852b855
+#
+# The return value carries NO discriminator at all -- not a length, not a sha,
+# not an error. Everything that tells the two apart has to come from outside the
+# payload, and that is what the header fields are for. Three of them, in the
+# order the reader applies them:
+#
+#   `csha` FIRST, over the raw gzip payload, BEFORE decompression. A flipped byte
+#   dies here, and the reader never hands damaged input to zlib at all. This is
+#   also what stops check 2 from ever being the only line of defence: a corrupt
+#   member whose `size` happens to be 0 would pass the size check (an empty file
+#   is what it inflates to, and that is even the right content) -- csha catches
+#   it first, on the bytes themselves.
+#
+#   `size` SECOND, against `len(inflated)`. This is the actual discriminator the
+#   Pre-flight asked for. A zero-byte file is `size 0`; a member that inflated to
+#   nothing because it was damaged has a nonzero `size` that does not match, and
+#   is rejected instead of extracted. Cheap, and it is a length comparison rather
+#   than a hash, so it fires before any work.
+#
+#   `sha` THIRD, over the inflated bytes. Catches the residue: an inflate that
+#   produced the right NUMBER of bytes but the wrong ones.
+#
+# A zero-byte file survives all three -- `size 0` and the sha256 of the empty
+# string, e3b0c442… -- so the round trip keeps its empty files, which is the
+# other half of getting this right. An archiver that rejected empty files to be
+# safe would have failed the same test from the other side.
+#
+# ===========================================================================
+# WHY `t` PRINTS NOTHING BUT MEMBER LINES
+# ===========================================================================
+#
+# There is no `eprintln`. The builtins are `println`, `die` (stderr, then exit 1)
+# and `exit(n)`, so the only way to write to stderr is to terminate. A warning
+# that does not terminate can only go to stdout -- and `t`'s stdout IS its data.
+#
+# The consequence is an interface decision, not a workaround: `t` IS ALL OR
+# NOTHING. It verifies the framing, the paths, the footers, the payload digests
+# and the trailer count for EVERY member before printing a single line; then it
+# prints one line per member and nothing else. There is no summary line, no
+# "listed 8 of 9", no "member 3 looks damaged" -- because every one of those
+# would be a diagnostic sharing a stream with the listing, and a consumer reading
+# `t`'s output cannot tell a diagnostic from a filename. A bad archive exits
+# nonzero with the reason on stderr and an empty stdout, which is a signal a
+# caller can actually act on.
+#
+# `t` does NOT inflate. Its checks stop at `csha`, which is where the evidence
+# stops being free; `x` does the remaining two because it is producing the bytes
+# anyway. So `t` proves an archive is INTACT and `x` proves it is CORRECT, and
+# the split is honest about which is which.
+#
+# One thing `t` cannot fix, and it is POSIX's fault rather than the corelib's: a
+# filename may contain a newline, so a line-oriented listing of such an archive
+# is ambiguous by construction. The path is printed last on the line and printed
+# raw. `x` is the interface that handles those names correctly; `t` is for eyes.
 #
 # `plen` is why the path is length-prefixed rather than newline-terminated. A
 # POSIX filename may contain any byte but '/' and NUL -- including '\n'. A
@@ -143,6 +218,16 @@
 #
 # Each of those is a real archiver feature and each needs a corelib call that
 # does not exist today. They are named here rather than discovered later.
+#
+# AND ONE THAT IS STORED BUT CANNOT BE RESTORED: mtime. Every member header
+# carries the real st_mtime, `t` prints it, and `x` DROPS IT -- an extracted file
+# gets the time it was written. `core:io` has `io.mtime` to read one and nothing
+# to set one; grepping `corelib/io/io.ty` and `corelib/io/io_shim.c` for
+# utimensat/utimes/chmod finds nothing. This is a different shape of gap from the
+# four above: those are data the format never captured, this is data the format
+# captured faithfully and the extractor is unable to apply. `diff -r` does not
+# compare mtimes, so the round-trip gate stays green over a hole a user would
+# notice on the first restore. Said here so the green is not read as a promise.
 
 package main
 
@@ -155,6 +240,7 @@ import "core:sort"
 
 const MAGIC   = "TYAR1\n"
 const MFOOTER = "\nTYAR-M\n"
+const TRAILER = "TYAR-END\n"
 
 # One regular file, as the archive will record it. Built entirely before
 # anything is written, so a read failure aborts before a partial archive lands.
@@ -252,7 +338,7 @@ fn create(archive: string, root: string):
     out := to_bytes(MAGIC)
     for i := 0; i < len(files); i += 1:
         out = out + encode_member(member_of(root, files[i]))
-    out = out + to_bytes("TYAR-DIR " + str(len(files)) + "\nTYAR-END\n")
+    out = out + to_bytes("TYAR-DIR " + str(len(files)) + "\n" + TRAILER)
 
     # `io.write` takes a `string`, and `tycho_write_file`
     # (`runtime/tycho_rt.c@tycho_write_file`) fwrites the header length to a "wb"
@@ -261,10 +347,251 @@ fn create(archive: string, root: string):
         die("tycho-ar: cannot write " + archive)
     println("tycho-ar: " + archive + ": " + str(len(files)) + " files, " + str(len(out)) + " bytes")
 
+# ---------------------------------------------------------------------------
+# READING
+# ---------------------------------------------------------------------------
+
+# One member as the header describes it. `off` is the absolute offset of the
+# gzip payload inside the archive, so `t` can verify every member without
+# copying a single payload out.
+struct Entry:
+    rel:   string
+    size:  int
+    mtime: int
+    clen:  int
+    sha:   string
+    csha:  string
+    off:   int
+
+# A STRICT decimal parser, and the reason it is not `strings.parse_int`.
+# `strings.parse_int` FAILS OPEN: it returns 0 for the empty string and for a
+# leading non-digit, and it stops at the first non-digit rather than objecting
+# (`corelib/strings/strings.ty@parse_int`). Those are sane choices for parsing
+# user input, where 0 is a fine default. They are the wrong choices for a length
+# field in a format, where a damaged `clen` of "1x4" must be an error and not a
+# silent 1 -- a wrong length that parses is exactly how a reader ends up hashing
+# the wrong span. Returns -1 for anything that is not a non-empty run of ASCII
+# digits, and for anything absurdly large.
+fn parse_uint(s: string) -> int:
+    if len(s) == 0:
+        return -1
+    v := 0
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c < 48 or c > 57:
+            return -1
+        v = v * 10 + (c - 48)
+        if v > 1000000000000000000:
+            return -1
+    return v
+
+# 64 lowercase hex digits, the shape `sha256.hex` produces. Checked so a damaged
+# digest field is a parse error rather than a mismatch reported against garbage.
+fn is_hex64(s: string) -> bool:
+    if len(s) != 64:
+        return false
+    for i := 0; i < 64; i += 1:
+        c := s[i]
+        if (c < 48 or c > 57) and (c < 97 or c > 102):
+            return false
+    return true
+
+# Offset of the next '\n' at or after `from`, searching at most `cap` bytes.
+# The cap is a fail-closed bound, not an optimisation: a header line is at most
+# 211 bytes (2 + four decimals + three spaces + two 64-char digests), so a scan
+# that runs past 256 is looking at binary and should stop rather than sweep a
+# hundred-kilobyte payload hunting for a byte that means nothing there.
+fn find_nl(data: bytes, from: int, cap: int) -> int:
+    stop := from + cap
+    if stop > len(data):
+        stop = len(data)
+    i := from
+    for i < stop:
+        if data[i] == 10:
+            return i
+        i = i + 1
+    return -1
+
+fn read_archive(archive: string) -> bytes:
+    data := to_bytes("")
+    match io.read_bytes(archive):
+        Ok(b):
+            data = b
+        Err(e):
+            die("tycho-ar: cannot read " + archive)
+    return data
+
+# Parse and STRUCTURALLY VERIFY the whole archive: magic, every member's header,
+# path, footer and payload digest, and the trailer. Nothing is returned unless
+# everything checked out, so no caller ever holds a half-trusted archive. Does
+# not inflate -- that is `x`'s job, and the last two checks with it.
+fn parse(archive: string, data: bytes) -> [Entry]:
+    out := []Entry
+    if len(data) < len(MAGIC) or to_str(data[0:len(MAGIC)]) != MAGIC:
+        die("tycho-ar: " + archive + ": not a tycho-ar archive (bad magic)")
+    p := len(MAGIC)
+    for p < len(data):
+        if to_str(data[p:p + 9]) == "TYAR-DIR ":
+            break
+        who := "member " + str(len(out))
+        if to_str(data[p:p + 2]) != "F ":
+            die("tycho-ar: " + archive + ": " + who + ": no record marker at byte " + str(p))
+        nl := find_nl(data, p, 256)
+        if nl < 0:
+            die("tycho-ar: " + archive + ": " + who + ": unterminated header at byte " + str(p))
+        f := split(to_str(data[p:nl]), " ")
+        if len(f) != 7:
+            die("tycho-ar: " + archive + ": " + who + ": header has " + str(len(f)) + " fields, want 7")
+        size := parse_uint(f[1])
+        mtime := parse_uint(f[2])
+        clen := parse_uint(f[3])
+        plen := parse_uint(f[4])
+        if size < 0 or mtime < 0 or clen < 0 or plen < 0:
+            die("tycho-ar: " + archive + ": " + who + ": header has a non-numeric length field")
+        if not is_hex64(f[5]) or not is_hex64(f[6]):
+            die("tycho-ar: " + archive + ": " + who + ": header digest is not 64 hex digits")
+        # THE PATH. Length-prefixed, so a '\n' inside a filename is data. The
+        # `len(rel) != plen` test is the truncation check -- the slice clamps.
+        ps := nl + 1
+        pe := ps + plen
+        if pe >= len(data):
+            die("tycho-ar: " + archive + ": " + who + ": truncated inside the path")
+        rel := to_str(data[ps:pe])
+        if len(rel) != plen:
+            die("tycho-ar: " + archive + ": " + who + ": path is " + str(len(rel)) + " bytes, header says " + str(plen))
+        if data[pe] != 10:
+            die("tycho-ar: " + archive + ": " + who + ": path is not newline-terminated (plen is wrong)")
+        # THE PAYLOAD, then the footer that confirms `clen` was telling the truth.
+        ds := pe + 1
+        de := ds + clen
+        if de + len(MFOOTER) > len(data):
+            die("tycho-ar: " + archive + ": " + who + ": truncated inside the payload")
+        payload := data[ds:de]
+        if len(payload) != clen:
+            die("tycho-ar: " + archive + ": " + who + ": payload is " + str(len(payload)) + " bytes, header says " + str(clen))
+        if to_str(data[de:de + len(MFOOTER)]) != MFOOTER:
+            die("tycho-ar: " + archive + ": " + who + ": member footer missing (clen is wrong, or the payload was cut)")
+        if sha256.hex(to_str(payload)) != f[6]:
+            die("tycho-ar: " + archive + ": " + who + " (" + rel + "): payload digest mismatch (csha)")
+        push(out, Entry(rel, size, mtime, clen, f[5], f[6], ds))
+        p = de + len(MFOOTER)
+    # THE TRAILER. Reached either by `break` or by running out of bytes, and the
+    # same test settles both: if the trailer is not here, the archive was cut.
+    if to_str(data[p:p + 9]) != "TYAR-DIR ":
+        die("tycho-ar: " + archive + ": truncated (no trailer after " + str(len(out)) + " members)")
+    tnl := find_nl(data, p, 256)
+    if tnl < 0:
+        die("tycho-ar: " + archive + ": unterminated trailer")
+    tline := to_str(data[p:tnl])
+    count := parse_uint(substr(tline, 9, len(tline)))
+    if count < 0:
+        die("tycho-ar: " + archive + ": trailer count is not a number")
+    # The one truncation every per-member check survives: a whole member gone.
+    if count != len(out):
+        die("tycho-ar: " + archive + ": trailer says " + str(count) + " members, found " + str(len(out)))
+    es := tnl + 1
+    if es + len(TRAILER) != len(data) or to_str(data[es:es + len(TRAILER)]) != TRAILER:
+        die("tycho-ar: " + archive + ": archive does not end exactly at TYAR-END")
+    return out
+
+# `io.make_dir` is ONE level -- `mkdir(2)` and nothing else
+# (`corelib/io/io_shim.c@iox_make_dir`), which is the right primitive and not
+# the one an extractor wants. There is no `mkdir -p` in the corelib, so the
+# chain is built here a component at a time. `Ok(false)` means "already a
+# directory", which is a success: extracting ten files into one subdirectory
+# calls this ten times and creates it once.
+fn mkdir_p(p: string):
+    if len(p) == 0 or p == "." or p == "/":
+        return
+    rooted := p[0] == 47
+    parts := split(p, "/")
+    cur := ""
+    for i := 0; i < len(parts); i += 1:
+        seg := parts[i]
+        if len(seg) == 0 or seg == ".":
+            continue
+        if len(cur) == 0:
+            if rooted:
+                cur = "/" + seg
+            else:
+                cur = seg
+        else:
+            cur = cur + "/" + seg
+        # `Ok(_)` because BOTH booleans are successes -- true created it, false
+        # it was already a directory -- and there is nothing to do with either.
+        # The arm is `continue` rather than empty because an arm with no body is
+        # `error: expected an indented block`; the match is the last thing in the
+        # loop, so `continue` is exactly "nothing more to do here".
+        match io.make_dir(cur):
+            Ok(_):
+                continue
+            Err(e):
+                die("tycho-ar: cannot create directory " + cur)
+
+# LIST. Every member is verified before the first line is printed, and nothing
+# but member lines is printed -- see WHY `t` PRINTS NOTHING BUT MEMBER LINES.
+fn cmd_t(archive: string):
+    entries := parse(archive, read_archive(archive))
+    for i := 0; i < len(entries); i += 1:
+        e := entries[i]
+        line := str(e.size) + " " + str(e.mtime) + " " + e.sha + " " + e.rel
+        println(line)
+
+# EXTRACT.
+fn cmd_x(archive: string, dest: string):
+    data := read_archive(archive)
+    entries := parse(archive, data)
+
+    # EVERY PATH IS CHECKED BEFORE ANY FILE IS WRITTEN. `path.safe_join` returns
+    # "" for a member path that is absolute or climbs out of `dest` with ".."
+    # (`corelib/path/path.ty@safe_join`), and that refusal is fatal. Doing the
+    # whole sweep first is the difference between "refused" and "refused after
+    # writing eight files": a hostile archive that puts its escape in the last
+    # member must not get the first eight extracted before anyone objects.
+    targets := []string
+    for i := 0; i < len(entries); i += 1:
+        t := path.safe_join(dest, entries[i].rel)
+        if t == "":
+            die("tycho-ar: " + archive + ": refusing member " + str(i) + ": path escapes the destination: " + entries[i].rel)
+        push(targets, t)
+
+    # WHAT IS AND IS NOT ATOMIC, said plainly. Paths are ALL validated above
+    # before one byte is written, so a hostile archive cannot get its first
+    # members extracted before the reader reaches the escape in its last one.
+    # Content is verified per member as it is written, so a member that fails
+    # the inflate checks below leaves the members before it on disk and exits
+    # nonzero. That is deliberate: verifying every payload into memory first
+    # would hold the whole inflated archive at once. It is also nearly
+    # unreachable by accident -- `parse` already matched `csha` against every
+    # payload, so getting here means the gzip bytes are exactly what the writer
+    # digested and still do not inflate to what the header claims, which is
+    # forgery rather than damage. A damaged archive is caught before any write.
+    mkdir_p(dest)
+    for i := 0; i < len(entries); i += 1:
+        e := entries[i]
+        raw := compress.decompress(data[e.off:e.off + e.clen])
+        # THE EMPTY-VERSUS-CORRUPT CHECK. `decompress` fails closed to empty
+        # bytes and says nothing else, so `size` is the only thing that can tell
+        # a damaged member from a zero-byte file. Length first, digest second.
+        if len(raw) != e.size:
+            die("tycho-ar: " + archive + ": " + e.rel + ": inflated to " + str(len(raw)) + " bytes, header says " + str(e.size) + " (corrupt payload)")
+        if sha256.hex(to_str(raw)) != e.sha:
+            die("tycho-ar: " + archive + ": " + e.rel + ": content digest mismatch (sha)")
+        mkdir_p(path.dir(targets[i]))
+        # `io.write` takes a `string`; `tycho_write_file` is length-header-driven
+        # (`runtime/tycho_rt.c@tycho_write_file`), so NULs survive.
+        if not io.write(targets[i], to_str(raw)):
+            die("tycho-ar: cannot write " + targets[i])
+    println("tycho-ar: " + dest + ": " + str(len(entries)) + " files extracted")
+
 fn usage():
     println("usage: tycho-ar c <archive> <dir>")
+    println("       tycho-ar t <archive>")
+    println("       tycho-ar x <archive> <dest>")
     println("")
     println("  c   create <archive> from every regular file under <dir>")
+    println("  t   list <archive> as: size mtime sha256 path")
+    println("  x   extract <archive> under <dest>")
     println("")
     println("Entries are stored in sorted path order, so archiving one tree")
     println("twice produces two byte-identical files. See the format comment")
@@ -275,8 +602,18 @@ fn main():
     if len(av) == 0 or av[0] == "-h" or av[0] == "--help":
         usage()
         exit(0)
-    if av[0] != "c":
-        die("tycho-ar: unknown command: " + av[0] + " (try --help)")
-    if len(av) != 3:
-        die("tycho-ar: c takes exactly <archive> and <dir> (try --help)")
-    create(av[1], av[2])
+    cmd := av[0]
+    if cmd == "c":
+        if len(av) != 3:
+            die("tycho-ar: c takes exactly <archive> and <dir> (try --help)")
+        create(av[1], av[2])
+    elif cmd == "t":
+        if len(av) != 2:
+            die("tycho-ar: t takes exactly <archive> (try --help)")
+        cmd_t(av[1])
+    elif cmd == "x":
+        if len(av) != 3:
+            die("tycho-ar: x takes exactly <archive> and <dest> (try --help)")
+        cmd_x(av[1], av[2])
+    else:
+        die("tycho-ar: unknown command: " + cmd + " (try --help)")
