@@ -171,7 +171,7 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
      a real archiver feature blocked on a missing call. Named in the source
      header so nothing infers otherwise.
 
-- [ ] **Phase 2 — `t` (list) and `x` (extract), and the round trip**
+- [x] **Phase 2 — `t` (list) and `x` (extract), and the round trip**
   - Scope: the same program.
   - `t` lists without extracting. `x` writes the tree out and **must** refuse a
     member whose path escapes the destination — use `path.safe_join`, which
@@ -184,6 +184,160 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
     **rejected**, not silently extracted as empty.
   - Verify: the round trip by `diff -r`, the corruption case, the traversal
     refusal.
+
+  **Done.** `tools/tycho-ar/main.ty` only; nothing outside `tools/tycho-ar/`
+  changed. Built first try — the only compile was the final one.
+
+  **The Pre-flight's assumption holds exactly, and it was measured, not
+  reasoned.** A probe compressing `""`, a 65-byte payload with byte 12 XORed by
+  `0xFF`, and that payload cut in half:
+
+  ```
+  legit-empty: gzip len=20 inflated len=0
+  legit-empty: sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  good      : gzip len=65 inflated len=51
+  corrupt   : gzip len=65 inflated len=0
+  corrupt   : sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  truncated : inflated len=0
+  truncated : sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  ```
+
+  Legitimate-empty, corrupt and truncated are **byte-identical answers**. The
+  return value carries no discriminator at all, which matches the shim: every
+  error path in `corelib/compress/compress_shim.c@zx_decompress` sets
+  `*outlen = 0` and returns. So the format's out-of-band fields are load-bearing,
+  and the reader applies three, in this order: `csha` over the raw payload
+  **before** decompression; `size` against `len(inflated)`, which is the actual
+  empty-versus-corrupt discriminator; then `sha` over the inflated bytes. A
+  zero-byte file survives all three (`size 0`, e3b0c442…), so empty files round
+  trip rather than being rejected defensively.
+
+  **The corruption case was run twice, to prove the discriminator in
+  isolation.** Flipping a payload byte is caught by `csha`, which would leave
+  `size` untested — so a second archive flips the byte *and recomputes `csha` to
+  match*, neutralising check 1:
+
+  ```
+  $ python3 surgery.py flip t.tyar flip.tyar        # csha left alone
+  $ ./build/tycho-ar x flip.tyar out_flip
+  tycho-ar: flip.tyar: member 1 (a.txt): payload digest mismatch (csha)
+  x exit=1        # out_flip was never created
+
+  $ python3 surgery.py flip-and-fix-csha t.tyar fixed.tyar
+  flipped byte 12 of a.txt's payload AND recomputed csha to match;
+  size=12, so the inflated length is the only remaining witness
+  $ ./build/tycho-ar x fixed.tyar out_fixed
+  tycho-ar: fixed.tyar: a.txt: inflated to 0 bytes, header says 12 (corrupt payload)
+  x exit=1
+  ```
+
+  Which check caught it: **`csha`** in the first, **`size`** in the second. Plus
+  the trailer count, against an archive with a whole member sheared off:
+  `trailer says 8 members, found 7`, exit 1.
+
+  **Traversal, asserted rather than assumed** — a hand-built archive (an
+  independent Python emitter working from the format comment, not the Tycho
+  writer) holding `ok.txt` then `../escape`:
+
+  ```
+  $ ./build/tycho-ar x esc.tyar dest
+  tycho-ar: esc.tyar: refusing member 1: path escapes the destination: ../escape
+  x exit=1
+  dest contents: dest        # empty -- ok.txt was NOT written first
+  escape: No such file or directory
+  ```
+
+  An absolute member path is refused the same way. `ok.txt` staying unwritten is
+  the point of validating **every** path before the first write: an escape in the
+  last member must not get the earlier ones extracted.
+
+  **Round trip:**
+
+  ```
+  $ ./tychoc tools/tycho-ar/main.ty -o build/tycho-ar
+  built build/tycho-ar
+  $ ./build/tycho-ar c d1.tyar tree && ./build/tycho-ar c d2.tyar tree && cmp d1.tyar d2.tyar
+  create-twice: CMP-IDENTICAL
+  $ ./build/tycho-ar x d1.tyar out2
+  tycho-ar: out2: 8 files extracted
+  $ diff -r tree out2 && echo EMPTY
+  EMPTY
+  ```
+
+  Fixture tree as phase 1's: nested dirs, an empty file, a dotfile, a space in a
+  name, a **newline** in a name, 6 binary bytes with interior NULs, 100 KB of
+  `/dev/urandom`. `cmp` individually on the named cases: empty file identical at
+  0 bytes; interior-NUL file identical (`od`: `A \0 B \0 C \0`);
+  newline-in-filename identical; 100 KB random identical. Phase 1's archive bytes
+  are unchanged by this phase (`cmp d1.tyar t.tyar` identical), so create-twice
+  still holds. `python3 scripts/check_citations.py` → `citation check: ok`.
+
+  (`find tree -type f | wc -l` says 9 for this tree and the tool says 8. The tool
+  is right: `wc -l` counts the newline **inside** a filename as a line break. A
+  fixture designed to break line-oriented tools breaks the one you check it
+  with.)
+
+  **The `t`-and-stdout decision, since phase 1's note 4 landed here.** There is
+  no `eprintln`, so a non-fatal warning can only reach stdout, and `t`'s stdout
+  **is** its data. The resolution is an interface decision rather than a
+  workaround: **`t` is all-or-nothing.** It verifies framing, paths, footers,
+  payload digests and the trailer count for every member *before* printing a
+  single line, then prints one line per member and nothing else — no summary
+  line, no "listed 8 of 9", no per-member warning. Each of those would be a
+  diagnostic sharing a stream with the listing, and a consumer cannot tell a
+  diagnostic from a filename. A bad archive gets an empty stdout, a reason on
+  stderr and exit 1, which is a signal a caller can act on. The cost is real and
+  is the finding: **the missing channel removed a feature**, not just a
+  convenience. `tar t` can report a bad member and keep listing; this cannot.
+
+  **Notes for phase 4 — what phase 2 surfaced.**
+
+  9. **`strings.parse_int` fails OPEN, and a format parser cannot use it.** It
+     returns 0 for `""`, 0 for a leading non-digit, and stops at the first
+     non-digit without objecting (`corelib/strings/strings.ty@parse_int`) — so a
+     damaged `clen` of `"1x4"` parses as `1`. Correct for user input, where 0 is
+     a fine default; wrong for a length field, where a wrong length that parses
+     is exactly how a reader hashes the wrong span. The program carries its own
+     strict `parse_uint` returning `-1`. The corelib has no strict counterpart
+     and no `Option`-returning variant, which is the gap: `Result(int, ...)` is
+     the shape every other fallible corelib call now uses, and this one predates
+     it.
+  10. **`bytes` slices CLAMP, so slicing is not a bounds check.**
+      `data[p:p + 8]` on a truncated archive yields three bytes rather than
+      trapping (`docs/spec/03-types.md:139`). A reader that treats the slice as
+      the check gets the right answer by accident on the footer compare and the
+      *wrong* one when it hashes a payload prefix. Every read in the reader
+      therefore tests `len(...)` against what it asked for. The clamp is right
+      for a text tool and a trap for a parser; the danger is that the trapping
+      behaviour (array slices abort) and the clamping behaviour (string and
+      `bytes` slices) are spelled identically.
+  11. **No `mkdir -p`.** `io.make_dir` is one `mkdir(2)`
+      (`corelib/io/io_shim.c@iox_make_dir`) — the right primitive, and not the
+      one an extractor wants. The component-at-a-time chain is 18 lines here and
+      will be rewritten by the next program that extracts anything. `Ok(false)`
+      for "already a directory" is what makes the loop idempotent, and that part
+      of the interface is exactly right. Filed as phase 11 below.
+  12. **mtime is stored and cannot be restored.** Every member header carries the
+      real `st_mtime`, `t` prints it, and `x` drops it: `core:io` reads mtime and
+      has nothing to set one — no `utimensat`, `utimes` or `chmod` anywhere in
+      `corelib/io/io.ty` or `corelib/io/io_shim.c`. This is a different shape of
+      gap from the four phase 1 named: those are data the format never captured,
+      this is data captured faithfully that the extractor cannot apply. **And
+      `diff -r` does not compare mtimes**, so the gate this phase is verified by
+      is green over a hole a user meets on the first restore. Filed as phase 12.
+  13. **A match arm cannot be empty, and this note is also a correction.** The
+      draft of it claimed there was no `_` wildcard binding, so the do-nothing
+      arm of `match io.make_dir(cur)` was written `Ok(made): cur = cur`. That was
+      an unverified absence claim and it is **false**: `Ok(_)` compiles, and a
+      whole-arm `_:` wildcard is specified at `docs/spec/12-aggregates.md:653`.
+      What is genuinely missing is an **empty block** — an arm with no body is
+      `error: expected an indented block`, caret on the *next* arm's line, so a
+      success case with no work still needs a statement. The arm is now
+      `Ok(_): continue`, which is honest because the match is the last thing in
+      the loop. Small on its own; kept because "the grammar has no way to say
+      nothing" is the same family as phase 1's note 1, and because the near-miss
+      is the point — the first draft would have shipped a made-up gap into
+      `FRICTION.md`, which is the one file here where that is expensive.
 
 - [ ] **Phase 3 — chunked hashing through `io.read_at`**
   - Scope: the same program.
@@ -235,7 +389,31 @@ proves it, and `FRICTION.md` has whatever the writing surfaced.
 - [ ] **Phase 10** — there is no `eprintln`: `die` is the only route to stderr
       and it exits. A non-fatal warning is inexpressible, so it lands on stdout
       alongside a tool's actual output. Bites `t` in phase 2. Same disposition
-      question as phase 9.
+      question as phase 9. **Phase 2 settled what `tycho-ar` does about it —
+      `t` is all-or-nothing, verify everything then print only data — and that
+      resolution cost a feature `tar t` has, so this is now a measured gap
+      rather than a predicted one.**
+
+- [ ] **Phase 11** — no `mkdir -p` in `core:io`. `io.make_dir` is one `mkdir(2)`
+      (`corelib/io/io_shim.c@iox_make_dir`), which is the correct primitive;
+      every caller that writes into a tree it does not own has to build the
+      component chain itself, as `tools/tycho-ar/main.ty@mkdir_p` does in 18
+      lines. Found by phase 2; a corelib change, so not absorbed. Phase 4 decides
+      whether this is a `FRICTION.md` entry or an `io.make_dirs`.
+
+- [ ] **Phase 12** — mtime is readable and not writable. `io.mtime` exists;
+      nothing in `corelib/io/io.ty` or `corelib/io/io_shim.c` sets one
+      (no `utimensat`/`utimes`, and no `chmod` either). `tycho-ar` therefore
+      stores a faithful mtime it cannot restore, and `diff -r` — the gate phase 2
+      is verified by — does not compare mtimes, so the gap is invisible to the
+      check that would otherwise catch it. Found by phase 2; a corelib change.
+
+- [ ] **Phase 13** — `strings.parse_int` fails open: `""` and a leading
+      non-digit both return 0, and it stops silently at the first non-digit
+      (`corelib/strings/strings.ty@parse_int`). Right for user input, wrong for
+      any parser with a length field, which phase 2 discovered by having to write
+      its own strict version. There is no strict or `Result`-returning
+      counterpart in `core:strings`. Found by phase 2; a corelib change.
 
 ## Out of scope
 
