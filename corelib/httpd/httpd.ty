@@ -350,6 +350,8 @@ fn reason_phrase(status: int) -> string:
         return "Created"
     if status == 204:
         return "No Content"
+    if status == 206:
+        return "Partial Content"
     if status == 301:
         return "Moved Permanently"
     if status == 302:
@@ -368,6 +370,11 @@ fn reason_phrase(status: int) -> string:
         return "Method Not Allowed"
     if status == 408:
         return "Request Timeout"
+    # RFC 7233 4.4's spelling. RFC 2616 called it "Requested Range Not
+    # Satisfiable"; the shorter form is the current one and is what a 7233-era
+    # client expects to read back in a log.
+    if status == 416:
+        return "Range Not Satisfiable"
     if status == 431:
         return "Request Header Fields Too Large"
     if status == 500:
