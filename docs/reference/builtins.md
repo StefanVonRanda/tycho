@@ -72,7 +72,7 @@ See [Concurrency](concurrency.md) for semantics.
 | Builtin | Type | Notes |
 | --- | --- | --- |
 | `wait(t)` | `Task(T) -> T` | Join a spawned task (result deep-copied out). Exactly once per task. |
-| `ncpu()` | `-> int` | `parallel for` fan-out width (online CPUs; `TYCHO_THREADS` overrides). |
+| `ncpu()` | `-> int` | Online CPUs, or `TYCHO_THREADS` when set to an integer >= 1. The *requested* worker count, **not** the fan-out width: `parallel for` clamps to 64 chunk tasks. |
 | `channel(T, cap)` | `-> Channel(T)` | A bounded lock-free queue (`cap` rounds up to a power of two). Legal only as a declaration's direct RHS. |
 | `send(ch, v)` | `(Channel(T), T) -> void` | Deep-copy `v` in; blocks when full; aborts if closed. |
 | `recv(ch)` | `Channel(T) -> Option(T)` | Blocking receive (deep-copied out); `None` means closed **and** drained. |
