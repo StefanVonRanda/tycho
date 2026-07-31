@@ -198,10 +198,20 @@ The boundary is one question: **can a command produce this number today?**
 
 - **Yes** → name the command, not the number.
 - **No** → it is a one-time measurement that decided something, and it *stays*,
-  with its date or its commit. "271 record lines across 9 of 13 files", "45 refs
-  versus 16", "11 of 15 spot-checked refs drifting" are evidence for choices,
-  true of the tree they were taken on. Deleting those destroys the reasoning;
-  being about a past tree is exactly what makes them safe to write down.
+  with its date or its commit. "45 refs versus 16", "11 of 15 spot-checked refs
+  drifting" are evidence for choices, true of the tree they were taken on.
+  Deleting those destroys the reasoning; being about a past tree is exactly what
+  makes them safe to write down.
+
+**A "no" is not by itself a licence.** This list used to open with "271 record
+lines across 9 of 13 files", and that figure was wrong on the very tree it was
+taken on — the record-line section below withdrew it. No command could produce
+it, and that is exactly why nobody checked it. Non-recomputability is the
+signature of a protected measurement *and* of a number nobody can falsify, and
+from the outside the two are indistinguishable. So the "no" branch carries a
+second obligation: state how it was measured, tightly enough that a reader could
+repeat it. A measurement whose method is unstated is not evidence, and "no
+command produces it" will not save it.
 
 **There is no ratchet and no budget on the bare count, on purpose.** Pressure to
 shrink it would eventually point someone at a before/after record block, whose
@@ -251,16 +261,45 @@ today** — the two that did were repaired this way, by dropping their anchors, 
 `docs/internals/plan-signals-DONE.md`'s six-row table. So this is a rule for
 whoever meets the 41st, not a sweep. Nothing needs doing now.
 
-**No marker is inserted, and the count is why.** The question was whether to tag
-these blocks explicitly. Counted over the twelve archived plans plus the live
-one: **271 record lines across 9 of 13 files** — 120 in
-`docs/internals/plan-postfreeze-rawstring-DONE.md`, 95 in
-`docs/internals/plan-front-door-DONE.md`, 33 in
-`docs/internals/plan-signals-DONE.md`, and only **3** in the live `plan.md`.
-Tagging 271 lines *is itself the hand sweep this repo has declined three times*,
-and 268 of them are in frozen records the tag would be editing. The shape
-already marks them; a tag would only restate it 271 times, at the cost of
-touching every archive to say so.
+**No marker is inserted, and the distribution is why.** The question was whether
+to tag these blocks explicitly. They are heavily concentrated in frozen
+archives — `docs/internals/plan-postfreeze-rawstring-DONE.md`,
+`docs/internals/plan-front-door-DONE.md` and
+`docs/internals/plan-signals-DONE.md`, plus a fourth cluster in
+`docs/internals/frontend-restriction-audit-2026-07-25.md`. The live files hold
+almost none: a couple in `plan.md`, and in `FRICTION.md` — the one file in this
+set a person edits by hand — **none at all**. Tagging them *is itself the hand
+sweep this repo has declined three times*, and nearly every tag would be an edit
+to a frozen record. The shape already marks them; a tag would only restate it,
+at the cost of touching every archive to say so.
+
+**This paragraph used to quote a total, and the total was wrong.** It read "271
+record lines across 9 of 13 files", counted over the twelve archived plans plus
+the live one. The file list asked "which *plans* have record lines" when the rule
+it justifies asks "which *lines* have the record shape" — so it never looked at
+the audits under `docs/internals/`, or at `FRICTION.md`. And the count is not
+reproducible: three later attempts to detect the same two shapes over every
+tracked Markdown file returned three different totals, none of them 271 and none
+of them each other, differing only in how strictly "joined by an arrow" and
+"ref-bearing cell" were read. Run the strictest of them against the commit that
+introduced the sentence and it returns exactly what it returns against this
+tree — the population never moved, so this was not a true measurement that went
+stale. It was wrong when written, which is why it is repaired rather than
+protected.
+
+**The total is withdrawn rather than corrected, because the shapes are semantic
+and no regex settles them.** The proof is this section's own repair-log bullet
+above: a detector implementing it literally — a ref, an arrow, a ref, adjacent —
+does not match that bullet, because the escaping that displays its backticks
+inserts backtick characters between each ref and the arrow. The canonical example
+of the shape fails the literal reading of the rule that describes it. Looser
+readings do worse in the other direction: allowing any arrow anywhere on the line
+counts C pointer dereferences (`e->sval`), function types (`-> Result(T)`),
+before/after line counts and command output, which is how `FRICTION.md` was
+credited with record lines it does not have. A rule that cannot match its own
+example, and whose relaxations match prose, does not define a countable set — any
+number published for it is a number about one unrecorded detector. The no-marker
+decision never needed a total, and it stands on the distribution above.
 
 **No rule *targets* record lines** — none counts, budgets or ratchets them, so
 nothing pushes anyone to sweep one. That is the load-bearing defence, and the

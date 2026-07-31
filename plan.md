@@ -1478,7 +1478,7 @@ or retired with a measurement:
 
 ## Filed by phases 35/38/39
 
-- [ ] **Phase 40 — the record-line census counted plans, not shapes, and misses
+- [x] **Phase 40 — the record-line census counted plans, not shapes, and misses
       at least 57 record lines outside them.** `CLAUDE.md` states "271 record
       lines across 9 of 13 files", counted over "the twelve archived plans plus
       the live one". Detecting the same two shapes over **every** tracked
@@ -1500,3 +1500,160 @@ or retired with a measurement:
     that the figure itself is a dated one-time measurement under phase 38's
     rule, so it is repaired by re-dating, not by deleting.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
+
+### Phase 40 evidence — the census counted the wrong thing, and so did its correction
+
+**The recount.** One command, over every tracked Markdown file, implementing the
+two documented shapes as written — a repair log is two refs *joined by* an arrow
+(adjacent, not merely co-present on the line), a before/after row is a table row
+with two or more ref-bearing cells:
+
+```
+python3 - <<'PY'
+import re, subprocess, collections
+REF = r'`(?:[A-Za-z0-9_./-]+)?:\d+(?:-\d+)?(?:@[A-Za-z0-9_]+)?`'
+REPAIR = re.compile(REF + r'\s*(?:->|→)\s*' + REF)   # refs JOINED by an arrow
+RX = re.compile(REF)
+files = subprocess.run(['git','ls-files','*.md'],capture_output=True,text=True).stdout.split()
+tot = collections.Counter(); shape = collections.Counter()
+for f in files:
+    for s in open(f, encoding='utf-8').read().split('\n'):
+        if REPAIR.search(s):
+            tot[f] += 1; shape['repair log'] += 1
+        elif s.lstrip().startswith('|') and len(
+             [c for c in s.strip().strip('|').split('|') if RX.search(c)]) >= 2:
+            tot[f] += 1; shape['before/after table row'] += 1
+print(f'{sum(tot.values())} record lines in {len(tot)} of {len(files)} tracked Markdown files')
+for k,v in shape.items(): print(f'   {v:5d}  {k}')
+for f,n in sorted(tot.items(), key=lambda kv:-kv[1]): print(f'{n:5d}  {f}')
+PY
+```
+
+```
+294 record lines in 12 of 144 tracked Markdown files
+     276  before/after table row
+      18  repair log
+  121  docs/internals/plan-postfreeze-rawstring-DONE.md
+   87  docs/internals/plan-front-door-DONE.md
+   32  docs/internals/frontend-restriction-audit-2026-07-25.md
+   32  docs/internals/plan-signals-DONE.md
+    7  docs/internals/plan-loops-cleanup-DONE.md
+    5  docs/internals/plan-friction-DONE.md
+    2  docs/internals/int64-migration-audit.md
+    2  docs/internals/plan-int64-DONE.md
+    2  docs/internals/spec-plan-audit-2026-07-24.md
+    2  plan.md
+    1  docs/internals/plan-array-arith-DONE.md
+    1  docs/internals/plan-webserver-gate-DONE.md
+```
+
+**This phase's own brief was wrong, in the same way the census was.** The brief
+asserted 344 record lines, with `FRICTION.md` (16),
+`docs/internals/frontend-restriction-audit-2026-07-25.md` (32) and
+`docs/internals/int64-migration-audit.md` (9) as the gap, and it asserted the
+census agreed exactly with its detector at 120/95/33 on the three files it named.
+None of that reproduces. Four honest readings of the same two sentences give four
+totals — **271** (the census), **344** (the brief), **317** (an arrow-anywhere
+detector), **294** (the adjacency detector above) — and no two agree on any
+single file. The disagreement is entirely in how strictly "joined by an arrow"
+and "ref-bearing cell" are read.
+
+**`FRICTION.md` has zero record lines, not 16.** This inverts the brief's
+headline risk. Every hit the loose detector scored there is an arrow that joins
+something other than two refs: `e->sval` and `!e->qual` (C pointer dereference in
+inline code), `-> Result(string, NetErr)` and `-> (string, string)` (function
+types), `372 -> 341 code lines` and `4 silent peers -> 4,824 ms` (before/after
+counts and benchmark figures), and `grep -c bootstrap Makefile` -> `0` (command
+and its output). The file has 18 table rows and not one of them carries two
+ref-bearing cells. The live hand-edited file was never the exposure.
+
+**The 271 was wrong when written, not stale.** Run the adjacency detector against
+`46cbb35`, the commit that introduced the sentence (`git log -S'271 record lines'
+-- CLAUDE.md`), and it returns **294 in 12 of 144** with a byte-identical
+per-file breakdown to the run above. The population has not moved at all since
+the figure was published, so the "true of the tree it was taken on" defence is
+unavailable to it. Under phase 31's distinction that makes it an error, not a
+record, and repairing it is correct.
+
+**Decision on the figure: withdrawn, not corrected, and not kept.** All three
+options were live and the reasoning matters more than the outcome.
+
+- *Kept as a dated measurement* fails on the evidence above: it was never true of
+  its own tree.
+- *Corrected to 294* fails for a subtler reason. The decisive test is that a
+  detector implementing the repair-log bullet literally **does not match that
+  bullet itself** — the escaping that displays its backticks inserts backtick
+  characters between each ref and the arrow, so the canonical example of the
+  shape fails the literal reading of the rule describing it. Relaxing the reading
+  to fix that is what starts counting C dereferences and function types. A rule
+  that cannot match its own example, and whose relaxations match ordinary prose,
+  does not define a countable population; any total published for it describes
+  one unrecorded detector, not the tree. Writing 294 would rebuild the same trap
+  with a fresher number.
+- *Withdrawn* is therefore right — but **not** for phase 38's stated reason. This
+  is the case phase 38's dichotomy did not anticipate: no command can produce
+  this number, and its "no" branch reads non-recomputability as proof of record
+  status. Here non-recomputability is why the error survived in `CLAUDE.md` for
+  two commits as the worked example of a number that never needs correcting. The
+  rule now carries a second obligation on its "no" branch — state the method
+  tightly enough to be repeated — and the 271 is gone from its example list.
+
+The no-marker decision itself **survives unchanged**, and on firmer ground: it
+never needed a total. Record lines are concentrated in four frozen documents; the
+live files hold two in `plan.md` and none in `FRICTION.md`. Tagging them is still
+the hand sweep this repo has declined, and nearly every tag would edit a frozen
+record.
+
+**Scope.** `CLAUDE.md` only. `scripts/check_citations.py` was not touched —
+phase 39's finding holds, no gate rule targets record lines, and nothing here
+needs one.
+
+**Gates, foreground, one per command:**
+
+```
+$ python3 scripts/check_citations.py
+citation check: ok (227 anchored contain the token they name and each names one line, 3087 bare in bounds (2019 frozen record, 54 live-plan evidence, 196 exempt `> Provenance:` range, 818 reachable prose), 275 source->doc citations resolve, 247 source->source in bounds, 15 source->source anchored, 8 `path@SYMBOL` definition refs name a symbol still in their file)
+EXIT=0
+
+$ sh scripts/check_links.sh
+link check: ok (137 markdown files, no dead relative links)
+EXIT=0
+```
+
+**No new findings filed.** The one place a successor phase looked plausible was
+non-Markdown files: phase 35 widened `SRC_PREFIX` so source files now reach the
+gate, and a record line in a `.py` docstring would be exposed with no rule
+covering it. Running the same detector over all 1486 tracked non-Markdown files
+returns **0 record-shaped lines in 0 files**. There is nothing there, and nothing
+else surfaced. No phase 41.
+
+## Status — PLAN COMPLETE
+
+All 40 phases are checked. The plan ran in three arcs.
+
+- **Phases 1-10** were language and library work: `bytes` gained concat, index
+  and slice; `core:cli` learned `--flag VALUE`; the server's concurrency and
+  `or_return` decisions were settled with measurements; `FRICTION.md` was
+  re-scored against the tree.
+- **Phases 11-34** built the citation gate and hardened it — anchored refs,
+  frozen-record exemptions, `> Provenance:` ranges, source-to-doc and
+  source-to-source scanning, and phase 30's `path@SYMBOL` definition form that
+  survives insertions.
+- **Phases 35-40** turned the gate on its own documentation, which is where the
+  plan found its most durable lesson. Phase 38 removed queryable figures from
+  prose. Phase 39 established that no gate rule targets record lines. Phase 40
+  found that the rule's own supporting census had counted plans instead of
+  shapes, that the figure was wrong on the tree it was taken on, and that the
+  shapes are semantic rather than lexical — so the total was withdrawn instead
+  of refreshed.
+
+The recurring failure across all three arcs was the same one: **a number typed
+into prose that no command reproduces**. It went stale inside a single day in
+phase 38's case, and in phase 40's it was never right at all, sitting for two
+commits as the example of a figure beyond correction. Nine phases reddened the
+citation gate on their own evidence blocks. The standing defences are that no
+rule counts, budgets or ratchets record lines, and that any figure surviving in
+prose must now carry the method that produced it.
+
+Gates green at completion: `python3 scripts/check_citations.py` and
+`sh scripts/check_links.sh`.
