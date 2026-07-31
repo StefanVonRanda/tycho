@@ -31,7 +31,7 @@ asserting the kill.
   `SIGFPE` comment at `runtime/tycho_rt.c:103` and `pthread_cond_signal` at
   `runtime/tycho_rt.c:707`.
 - **Verified — the wind-down is already `Err`-driven and already written.**
-  `server/main.ty:493-494` sets `running = false` in the `Err` arm of accept,
+  `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint] sets `running = false` in the `Err` arm of accept,
   commented "listener closed: wind down". The served count returns at
   `server/main.ty:753@stopped`. **No new control flow is needed in the server** — the
   path exists and nothing reaches it.
@@ -141,7 +141,7 @@ asserting the kill.
   `corelib/net/net_shim.c`'s accept, no polling in the steady state, and no fd
   lifetime hazard. `netx_accept` (`corelib/net/net_shim.c:162-167`) returns `-1`
   on `EINVAL`, which becomes `Err` in Tycho, which is already the wind-down arm
-  at `server/main.ty:493-494`. `shutdown()` is on this system's
+  at `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint]. `shutdown()` is on this system's
   async-signal-safe list (`man 7 signal-safety`). The fd is never closed, so
   nothing can reuse the number while a loop is still in `accept`. Measured
   release: 0.000 s of extra latency, all four loops at 0.552 s, the same
@@ -163,7 +163,7 @@ asserting the kill.
     the shim: with a timeout armed on the listener, a plain idle tick returns
     `-1`/`EAGAIN`, `netx_accept` (`corelib/net/net_shim.c:162-167`) collapses
     that to `-1` exactly as it collapses a real failure, and
-    `server/main.ty:493-494` sets `running = false` on any `Err`. **Every worker
+    `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint] sets `running = false` on any `Err`. **Every worker
     would retire on its first idle timeout.** So mechanism 1 costs a shim change
     *and* a new "was that a timeout or a failure?" surface, to buy a slower
     version of what mechanism 2 does for free.
@@ -376,7 +376,7 @@ asserting the kill.
   What the fixture proves, and what it does not. It proves the handler installs,
   fails closed on a bad fd, actually fires, and leaves the listener in a state
   where `accept` returns `Err` instead of blocking — which is exactly the arm
-  `server/main.ty:493-494` already winds down on. It does **not** prove all N
+  `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint] already winds down on. It does **not** prove all N
   accept loops are released; that is a property of `shutdown()` rather than of
   this API, it is measured at N=4 in phase 1's table, and phase 3 must still prove
   it end to end in the server as the Pre-flight requires.
@@ -434,7 +434,7 @@ asserting the kill.
 - [x] **Phase 3 — the server shuts down cleanly, and the gate proves it**
   - Scope: `server/main.ty` and `server/run.sh`.
   - The server change should be small — the wind-down path already exists at
-    `server/main.ty:493-494` and the count already returns at `:753@stopped`.
+    `server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint] and the count already returns at `:753@stopped`.
   - **`server/run.sh` currently asserts wait status 143**, i.e. that the server
     is killed. That assertion must change to assert clean exit and the printed
     count. Do not delete the abrupt-kill case — SIGKILL should still be tested,
@@ -877,7 +877,7 @@ Unclosed discoveries from the previous plan; none blocking.
 - [x] **Phase 9** — *(closed by the previous plan's phase 4; kept for the record)*
 - [x] **Phase 14** — filed by phase 1. `accept_loop` treats *every* `Err` from
       `net.accept` as "listener closed" and sets `running = false`
-      (`server/main.ty:493-494`), because `netx_accept`
+      (`server/main.ty:493-494` [SUPERSEDED: construct deleted in batch A — do not repoint]), because `netx_accept`
       (`corelib/net/net_shim.c:162-167`) collapses every failure to `-1` and the
       errno is not carried into Tycho. A transient, per-call error — `EMFILE`,
       `ENFILE`, `ECONNABORTED`, `EPROTO`, all of which POSIX says to retry —
@@ -2056,3 +2056,54 @@ edit that moves them reddens the gate instead of drifting silently.
       and needs a migration rather than a phase. **Do not start (ii) without
       counting the real blast radius first.** Verify either way:
       `python3 scripts/check_citations.py`.
+
+---
+
+## Annotation added 2026-07-31: `[SUPERSEDED]`, and what it does NOT mean
+
+This record is frozen. The tag `[SUPERSEDED: …]` was added to six lines of it
+**after** freezing, and it is the only post-freeze change to this document's
+prose. It is not a correction. Nothing above it was renumbered, reworded or
+removed; each tag sits beside the citation it qualifies and the citation still
+reads exactly as it was written.
+
+**What the six tagged lines say.** Each cites `server/main.ty:493-494` and
+states that those lines set `running = false` in the `Err` arm of `accept`.
+When this plan was written that was true, and it was the load-bearing fact
+behind phases 1, 3 and 14.
+
+**Why they are tagged rather than repaired.** Batch A of this very plan
+**deleted** that construct. It did not move. There is therefore no line to
+repoint to, and the nearest true statement in today's file is a *different*
+rule — one that only winds down when `signal.shutdown_requested()` agrees —
+which batch A adopted precisely because retiring a worker on any `Err` was
+wrong. Repointing these six refs at it would make a frozen record assert, in
+today's line numbers, the opposite of what this plan concluded. A wrong write
+is worse than a skipped one, so nothing was written.
+
+**Where the replacement reasoning lives.** `server/main.ty` carries a comment
+block headed `WHY THE ERR ARM IS NOT `running = false`, AND WHY THAT NEEDED NO
+ERRNO.` — grep that heading rather than trusting a number; it was at
+`server/main.ty:520` on the day this note was written, and the point of the note
+is that such numbers move.
+
+**The rule this establishes, for the next reader who greps `493-494`:** a
+citation in a frozen record whose *construct* was deleted is not a citation to
+repair. It is a claim about superseded behaviour. Tag it where it stands, name
+what deleted it, and point at the reasoning that replaced it. Do not repoint it,
+and do not delete it — the claim is part of the evidence for why the change was
+made.
+
+**Why the tag is prose and not a gate feature**, and the reason is stronger than
+it first looked. `scripts/check_citations.py` never asked for a repair here and
+never will — but not because these six are merely bare. They are not checked at
+all: `server/` is absent from that file's `SRC_PREFIX`, so a Markdown citation
+into the server is skipped before bounds, existence or anchors are considered.
+That was measured while this note was being written, and the note's first draft
+said "bounds only", which was wrong. 179 refs into `server/` are in that state,
+and 751 across all trees outside the prefix; it is filed as its own phase and is
+not this annotation's business.
+
+So the exposure here was never the gate, in either direction. It was a human
+sweeping for stale-looking numbers — which is exactly what a marker a human
+reads can stop, and what a marker only a gate reads could not have.
