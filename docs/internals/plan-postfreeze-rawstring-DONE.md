@@ -1088,7 +1088,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     Provenance lines, and this phase is the evidence.** §3.8 is the proof by
     construction — `src/tychoc.c:402` stayed in bounds through phase 2 and
     quietly became the raw-string scanner while claiming to be `::`. Written
-    `src/tychoc.c:485@TK_COLONCOLON` it could not have survived, exactly as the
+    `src/tychoc.c:606@TK_COLONCOLON` it could not have survived, exactly as the
     22 anchored citations survived. The numbers now support making it a rule
     rather than a suggestion: a `> Provenance:` line names a specific mechanism
     by definition, there are far fewer of them than the 1794 bare refs, and each
@@ -1637,22 +1637,22 @@ full run is ever wanted, `make ci N=0` is the cheap form.
 
     | citation site | old | new (anchored) | text at the new line |
     |---|---|---|---|
-    | `docs/spec/01-lexical.md:47` | `src/tychoc.c:222` | `src/tychoc.c:240@*p == '#') {` | the comment-only-line skip |
-    | `docs/spec/01-lexical.md:47` | `src/tychoc.c:244` | `src/tychoc.c:266@*p != '\n' && *p != '#'` | the token loop, which stops at `#` |
-    | `docs/spec/01-lexical.md:82` | `src/tychoc.c:230` | `src/tychoc.c:251@indentation too deep` | the indent-depth bound |
-    | `docs/spec/01-lexical.md:354` | `src/tychoc.c:289` | `src/tychoc.c:313@!(c == 'f' && p[1] == '"')` | the identifier scanner declining the `f` of `f"…"` |
+    | `docs/spec/01-lexical.md:47` | `src/tychoc.c:222` | `src/tychoc.c:240` | the comment-only-line skip |
+    | `docs/spec/01-lexical.md:47` | `src/tychoc.c:244` | `src/tychoc.c:266` | the token loop, which stops at `#` |
+    | `docs/spec/01-lexical.md:82` | `src/tychoc.c:230` | `src/tychoc.c:251` | the indent-depth bound |
+    | `docs/spec/01-lexical.md:354` | `src/tychoc.c:289` | `src/tychoc.c:313` | the identifier scanner declining the `f` of `f"…"` |
     | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3459` | `src/tychoc.c:4139` | `static void parse_package_decl(Parser *ps) {` |
     | `docs/spec/02-grammar.md:46` | `src/tychoc.c:3466` | `src/tychoc.c:4146` | `static void parse_import_decl(Parser *ps) {` |
-    | `docs/spec/03-types.md:382` | `src/tychoc.c:567` | `src/tychoc.c:638@task_container_err` | `static void task_container_err(void) {` |
-    | `docs/spec/03-types.md:382` | `src/tychoc.c:607` | `src/tychoc.c:678@chan_container_err` | `static void chan_container_err(void) {` |
+    | `docs/spec/03-types.md:382` | `src/tychoc.c:567` | `src/tychoc.c:638` | `static void task_container_err(void) {` |
+    | `docs/spec/03-types.md:382` | `src/tychoc.c:607` | `src/tychoc.c:678` | `static void chan_container_err(void) {` |
     | `docs/spec/03-types.md:385` | `src/tychoc.c:5418` | `src/tychoc.c:5841` | that `die_at` |
     | `docs/spec/03-types.md:462` | `src/tychoc.c:7115` | `src/tychoc.c:8808` | the `IS_FUNC(t)` arm of the equality emitter |
-    | `docs/spec/10-statements.md:8` | `src/tychoc.c:2338` | `src/tychoc.c:2732@parse_if` | `static Stmt *parse_if(Parser *ps, int line) {` |
-    | `docs/spec/10-statements.md:9` | `src/tychoc.c:2409` | `src/tychoc.c:2838@parse_match` | `static Stmt *parse_match(Parser *ps, int line, int value) {` |
+    | `docs/spec/10-statements.md:8` | `src/tychoc.c:2338` | `src/tychoc.c:2732` | `static Stmt *parse_if(Parser *ps, int line) {` |
+    | `docs/spec/10-statements.md:9` | `src/tychoc.c:2409` | `src/tychoc.c:2838` | `static Stmt *parse_match(Parser *ps, int line, int value) {` |
     | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9641` | `src/tychoc.c:11840` | the emitted array-`pop` abort |
     | `docs/spec/12-aggregates.md:15` | `src/tychoc.c:9960` | `src/tychoc.c:12006` | the emitted SOA-`pop` abort |
-    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1613` | `src/tychoc.c:1960@a tuple has at most 8 elements` | the arity cap |
-    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1617` | `src/tychoc.c:1964@a tuple type needs at least two elements` | the arity floor |
+    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1613` | `src/tychoc.c:1960` | the arity cap |
+    | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1617` | `src/tychoc.c:1964` | the arity floor |
     | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9918` | `src/tychoc.c:11975` | the emitted `keys()` walk |
     | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9931` | `src/tychoc.c:11930` | the append that *defines* the order |
     | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:509` | `runtime/tycho_rt.c:751` | the publish in `tycho_chan_send_commit` |
@@ -1801,7 +1801,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
       `runtime/tycho_rt.c:795`.
   - **And one anchored range shows the caveat the checker's own header warns
     about.** `docs/spec/03-types.md:376` cites
-    `src/tychoc.c:729-741@arrc_sized_b` and **passes**, because line 736 — the
+    `src/tychoc.c:850-862@arrc_sized_b` and **passes**, because line 736 — the
     function's opening line — is inside 727-739. But the function is
     `src/tychoc.c:736-748`: the range is misaligned by nine lines and its first
     nine lines are an unrelated comment about `int64_t` sizes. A live instance of
@@ -1879,7 +1879,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     | `docs/spec/16-builtins.md:145` | `src/tychoc.c:8212-8220` | `src/tychoc.c:8641-8648` | `if (!strcmp(e->sval, "char_at")) {` … `return sfmt("tycho_str_get(%s, %s)", s, ix);` |
     | `docs/spec/13-concurrency.md:9` | `runtime/tycho_rt.c:286-610` | `runtime/tycho_rt.c:528-841` | `/* ---- tasks (CC-1: …` … the `}` closing `tycho_chan_free` |
     | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:381-545` | `runtime/tycho_rt.c:623-833` | `/* CC-5: the ring is a Vyukov bounded MPMC queue…` … the `}` closing `tycho_chan_close` |
-    | `docs/spec/03-types.md:376` (ANCHORED) | `src/tychoc.c:729-741@arrc_sized_b` | `src/tychoc.c:736-748@arrc_sized_b` | `static Type arrc_sized_b(Type elem, int64_t size, char bnd) {` … `}` |
+    | `docs/spec/03-types.md:376` (ANCHORED) | `src/tychoc.c:729-741` | `src/tychoc.c:736-748` | `static Type arrc_sized_b(Type elem, int64_t size, char bnd) {` … `}` |
 
     **`docs/spec/16-builtins.md:85` could not be repaired as one range, and that
     is a finding, not a workaround.** The prose says "All nine are `Sig` builtins";
@@ -1900,7 +1900,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     `docs/spec/15-program.md:22`'s `src/tychoc.c:3811-3881`
     included the function's opening line as its **last** line; the function is
     `src/tychoc.c:3707-3777`. And `docs/spec/03-types.md:376`'s
-    `src/tychoc.c:1904-1920@"bounded"` ended one line into the `bounded` branch
+    `src/tychoc.c:2025-2041@"bounded"` ended one line into the `bounded` branch
     that starts at `src/tychoc.c:1863` and runs to `:1880`. **Three of the nine
     anchored ranges were misaligned** — a 33% failure rate in the class the gate
     reports as green, which is the caveat's whole point.

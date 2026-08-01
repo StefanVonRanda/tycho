@@ -26,6 +26,7 @@
 #include <inttypes.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <locale.h>    /* newlocale/uselocale: the "C" LC_NUMERIC float literals are read and written in */
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
 
@@ -96,6 +97,122 @@ static void *xmalloc(size_t n) {
     void *p = malloc(n);
     if (!p) { fprintf(stderr, "tychoc: oom\n"); exit(1); }
     return p;
+}
+
+/* --- float literals: read and written in the "C" locale, always -----------
+ *
+ * WHY THE COMPILER CARES ABOUT LC_NUMERIC. strtod and printf's "%g" both take
+ * their decimal separator from LC_NUMERIC. Nothing in this tree calls setlocale,
+ * so tychoc runs under "C" and a bare strtod/snprintf happens to be right -- but
+ * that is an unstated dependency on a process-wide global. Note what does NOT
+ * change it: setting LC_ALL in the environment. A C program starts in "C" until
+ * something calls setlocale(LC_ALL, ""), so `LC_ALL=da_DK.UTF-8 tychoc prog.ty`
+ * is inert and cannot be used to test this. What changes it is any linked C
+ * library calling setlocale from a load-time constructor -- measured with an
+ * LD_PRELOAD doing exactly that. Under a comma-decimal LC_NUMERIC the two sites
+ * then broke in opposite directions:
+ *
+ *   READ  (lex_num below). strtod("1.5") stops at the '.', which is no longer
+ *         the separator, and returns 1.0. The literal 1.5 becomes 1.
+ *   WRITE (c_expr's E_FLOAT). snprintf("%.17g", 1.5) emits the bytes `1,5`, the
+ *         ".0" guard scans for '.' and finds none, so it appends: `1,5.0`. In
+ *         EXPRESSION position that is a legal COMMA EXPRESSION, so cc accepts it
+ *         with no diagnostic and the value is wrong. Measured over the shapes
+ *         codegen actually emits a literal into: `_l0.data[0] = 1,5.0;` silently
+ *         stores 1, `(1,5.0 + 0.0)` is silently 5.0, and only a declarator
+ *         initializer (`double _ret = 1,5.0;`) is a syntax error. The loud case
+ *         exists but does not cover the others -- a wrong number in a compiled
+ *         binary, from a correct source file, with nothing on stderr.
+ *
+ * Fixing one alone makes the round trip worse than leaving both: read-only-fixed
+ * turns 1.5 into 5.0 where cc accepts it, write-only-fixed turns it into 1.0
+ * everywhere. They are one defect.
+ * runtime/tycho_rt.c@tycho_float_to_str is the same fix one layer down, for the
+ * string a program PRINTS; this one is for the C source a compiler READS.
+ *
+ * WHY uselocale AND NOT snprintf_l/strtod_l. The _l forms are BSD/macOS
+ * extensions in <xlocale.h>; glibc does not declare snprintf_l with or without
+ * _GNU_SOURCE (measured for the runtime twin: `implicit declaration of function
+ * 'snprintf_l'` under cc -std=c11). newlocale/uselocale/LC_NUMERIC_MASK are POSIX
+ * 2008 and present on both, and the _GNU_SOURCE this file declares at the top
+ * already exposes them -- no new feature-test macro. The handle is this
+ * translation unit's own; it deliberately does NOT share the runtime's, which is
+ * a separate translation unit compiled into a different program.
+ *
+ * FALLBACK, AND WHY IT IS STILL CORRECT. If newlocale fails at run time (no "C"
+ * locale, out of memory) each direction converts under the ambient locale and
+ * then translates the one separator by hand, taken from localeconv() -- C89,
+ * always present. Same digits, same rounding; only the separator moves. A float
+ * literal token is ASCII by construction (the lexer accepted only [0-9.eE+-]),
+ * so rewriting its '.' is unambiguous.
+ *
+ * THE ".0" GUARD'S CONTRACT, AND WHY THE SCAN IS SOUND. At the write site the
+ * guard answers "would this text be read back by `cc` as an INTEGER constant?"
+ * and appends ".0" when it would, so the Tycho literal 3.0 emits `3.0` and
+ * `3.0 / 2.0` is not integer division. It decides by scanning for the only things
+ * %.17g can emit that make a C token non-integral: '.' (the separator), 'e'/'E'
+ * (an exponent), and the 'n'/'i' of "nan"/"inf". That scan is sound ONLY because
+ * the separator is now known to be '.': under any other separator the character
+ * is absent from the set, every finite non-integral value looks integral to it,
+ * and the guard appends ".0" to text that already had a fraction -- which is
+ * exactly how `1,5` became `1,5.0`. The guard is correct because of the
+ * conversion above it; changing one without the other reintroduces the bug. */
+static locale_t c_numeric_handle(void) {
+    static locale_t h;      /* tychoc is single-threaded: no pthread_once needed, */
+    static int tried;       /* unlike the runtime twin, whose callers are tasks.  */
+    if (!tried) { tried = 1; h = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0); }
+    return h;               /* 0 on failure -- callers take the fallback leg */
+}
+
+/* The ambient LC_NUMERIC separator, which may be several bytes; "." when it is
+ * already the C one. Fallback legs only. */
+static const char *ambient_decimal_point(void) {
+    struct lconv *lc = localeconv();
+    return (lc && lc->decimal_point && lc->decimal_point[0]) ? lc->decimal_point : ".";
+}
+
+/* READ. Parse the float literal [s, end) as C would. */
+static double c_strtod(const char *s, const char *end) {
+    locale_t h = c_numeric_handle();
+    if (h) {
+        locale_t prev = uselocale(h);
+        double v = strtod(s, NULL);
+        uselocale(prev);            /* prev may be LC_GLOBAL_LOCALE; that is legal */
+        return v;
+    }
+    const char *dp = ambient_decimal_point();
+    if (dp[0] == '.' && dp[1] == '\0') return strtod(s, NULL);
+    size_t dplen = strlen(dp), n = 0;
+    char buf[512];
+    for (const char *q = s; q < end && n + dplen + 1 < sizeof buf; q++) {
+        if (*q == '.') { memcpy(buf + n, dp, dplen); n += dplen; }
+        else buf[n++] = *q;
+    }
+    buf[n] = '\0';
+    return strtod(buf, NULL);
+}
+
+/* WRITE. Format v into b as a C float literal body (no ".0" guard yet -- that is
+ * the caller's, and the comment above says why the two belong together).
+ * Returns the length. %.17g round-trips a double exactly. */
+static int c_dtoa(char *b, size_t bs, double v) {
+    locale_t h = c_numeric_handle();
+    int m;
+    if (h) {
+        locale_t prev = uselocale(h);
+        m = snprintf(b, bs, "%.17g", v);
+        uselocale(prev);
+        return m;
+    }
+    m = snprintf(b, bs, "%.17g", v);
+    const char *dp = ambient_decimal_point();
+    size_t dplen = strlen(dp);
+    if (dplen == 1 && dp[0] == '.') return m;       /* already C-like */
+    char *at = strstr(b, dp);
+    if (!at) return m;                              /* integral, or inf/nan */
+    *at = '.';                                      /* %g emits at most one separator */
+    memmove(at + 1, at + dplen, (size_t)((b + m) - (at + dplen)) + 1);   /* +1 carries the NUL */
+    return m - (int)dplen + 1;
 }
 
 static void *xrealloc(void *p, size_t n) {
@@ -295,7 +412,11 @@ static TokVec lex(const char *src) {
                     }
                 }
                 if (is_float) {
-                    double dv = strtod(s, NULL);
+                    /* c_strtod, not strtod: under a comma-decimal LC_NUMERIC a
+                     * bare strtod stops at the '.' and reads 1.5 as 1. See
+                     * c_numeric_handle above -- this and the E_FLOAT emit are
+                     * one defect with two sites. */
+                    double dv = c_strtod(s, p);
                     tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv, tcol});
                 } else {
                     int64_t v = 0;      /* fixed 64-bit, not `long`: on an ILP32 host a
@@ -9491,9 +9612,13 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_FLOAT: {
             /* %.17g round-trips the double exactly; ensure the C literal reads
              * as a double (has '.', 'e', or is inf/nan) so e.g. 3.0 / 2.0 is
-             * not integer division. */
+             * not integer division. c_dtoa, not a bare snprintf: the separator
+             * must be '.' before the scan below can mean anything -- under a
+             * comma locale every finite value looks integral to it and the guard
+             * turns `1,5` into `1,5.0`, a comma expression cc accepts. The
+             * conversion and the guard are one change; see c_numeric_handle. */
             char b[64];
-            snprintf(b, sizeof b, "%.17g", e->fval);
+            c_dtoa(b, sizeof b, e->fval);
             int isfloaty = 0;
             for (char *q = b; *q; q++)
                 if (*q == '.' || *q == 'e' || *q == 'E' || *q == 'n' || *q == 'i') { isfloaty = 1; break; }

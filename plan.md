@@ -53,7 +53,7 @@ Done looks like: all four resolved, each with a check that is proved to fail.
 
 ## Phases
 
-- [ ] **Phase 1 — the compiler emits float literals under the ambient locale too**
+- [x] **Phase 1 — the compiler emits float literals under the ambient locale too**
   - `src/tychoc.c:9496` formats a float literal into the **generated C source**
     with `snprintf(b, sizeof b, "%.17g", e->fval)`, then applies the same `'.'`
     scan at `:9498-9499` to decide whether to append `".0"`. It is the identical
@@ -80,6 +80,138 @@ Done looks like: all four resolved, each with a check that is proved to fail.
   - Verify: `make test` — `src/tychoc.c`, so it is the gate. Count was
     `passed: 561 failed: 0`. Prove the check can fail by reverting and showing
     the red.
+
+  **Evidence, 2026-08-02.** Changed: `src/tychoc.c` — a new
+  `src/tychoc.c@c_numeric_handle` / `src/tychoc.c@c_strtod` /
+  `src/tychoc.c@c_dtoa` block, the lexer's `strtod` call, and the `E_FLOAT` arm
+  of codegen — plus `tests/float_lit_locale.ty` and its golden
+  `tests/float_lit_locale.out`. `#include <locale.h>` was added; **no new
+  feature-test macro was needed**, because this file already declares
+  `_GNU_SOURCE` at its top, which on glibc implies `_POSIX_C_SOURCE 200809L` and
+  so declares `newlocale`/`uselocale`/`LC_NUMERIC_MASK`. Checked rather than
+  assumed: `make` compiles it clean under `-Wall -Wextra -std=c11` with no
+  implicit-declaration warning. The handle is this translation unit's own static;
+  it is deliberately not shared with `runtime/tycho_rt.c@tycho_float_to_str`'s,
+  and unlike that one it needs no `pthread_once` — tychoc is single-threaded,
+  and `grep -n pthread src/tychoc.c` finds only the `-pthread` flag tychoc puts
+  on the `cc` line it invokes.
+
+  **THE PRE-FLIGHT'S TEST ROUTE DOES NOT WORK, AND THIS IS THE PHASE'S MAIN
+  FINDING.** The brief proposed `LC_ALL=<comma locale> ./tychoc …` as "the honest
+  route" for the write side. It is inert. **A C program starts in the `"C"`
+  locale whatever `LC_ALL` says**, until something calls `setlocale(LC_ALL, "")`
+  — and tychoc never does, which is precisely why the plan calls this defect
+  latent. Measured: the first break-and-revert attempt ran the *fully broken*
+  compiler under `LC_ALL=da_DK.utf8` and the fixture came out **green**, i.e. the
+  check could not fail. A check that cannot fail is not a check, and this one
+  would have been written into the evidence as proof.
+
+  What does reach it is the trigger the code comment names — a linked C library
+  calling `setlocale` from a load-time constructor. Reproduced with a four-line
+  `LD_PRELOAD`:
+
+      __attribute__((constructor)) static void go(void) { setlocale(LC_ALL, ""); }
+
+      $ cc -shared -fPIC -o loc.so loc.c
+      $ LC_ALL=da_DK.utf8 LD_PRELOAD=./loc.so ./tychoc tests/float_lit_locale.ty --emit-c -o w
+      $ grep 'h_a = \|h_small = ' w.c
+          double h_a = 1.5;
+          double h_small = 0.0025000000000000001;
+
+  `locale -a | grep -i da_DK` lists `da_DK` and `da_DK.utf8` on this host, and
+  `da_DK.utf8` is the one used throughout.
+
+  **Both locale runs, same golden.**
+
+      $ ./tychoc tests/float_lit_locale.ty --emit-c -o v && cc -O2 -fwrapv -std=c11 -o v.bin v.c -lm
+      $ ./v.bin | cmp - tests/float_lit_locale.out          # silent
+      $ LC_ALL=da_DK.utf8 LD_PRELOAD=./loc.so ./tychoc tests/float_lit_locale.ty --emit-c -o w
+      $ cc -O2 -fwrapv -std=c11 -o w.bin w.c -lm && ./w.bin | cmp - tests/float_lit_locale.out
+                                                            # silent
+
+  **WHAT THE FIXTURE HOLDS ITSELF, AND WHAT IT MISSES.** It holds the *runtime*
+  half: `tycho_test_make_locale_hostile()` — the hook
+  `tests/float_str_locale.ty` already declares — flips `LC_NUMERIC` inside the
+  process and the same nine lines are printed again, so the numbers in the golden
+  are the compiler's baked-in values on any grader's machine rather than an
+  artifact of the printing locale. It **cannot** hold the compile-time half:
+  tychoc is a separate process that has already exited before `main()` runs, and
+  the environment cannot reach it either (see above). So under `make test` the
+  compile side is exercised at the *grader's* compiler locale, which is `"C"` —
+  the case that never broke. **The compile-side proof is the `LD_PRELOAD`
+  transcript above and the break-and-reverts below, run by hand; nothing in CI
+  reruns it.** Closing that would mean a harness change, which is out of this
+  phase's scope. Filed as phase 5.
+
+  **The plan's "silent comma expression" claim is right, but not everywhere —
+  measured.** Of the three shapes codegen emits a float literal into, cc rejects
+  one and silently miscompiles two:
+
+  | emitted shape | `cc` | value |
+  |---|---|---|
+  | `double _ret = 1,5.0;` (declarator init) | **error:** expected identifier or `(` before numeric constant | — |
+  | `_l0.data[0] = 1,5.0;` (assignment stmt) | accepted, no diagnostic | element becomes **1.0** |
+  | `(1,5.0 + 0.0)` (parenthesised expr) | accepted, no diagnostic | **5.0** |
+
+  So the loud case exists but covers only one of three; the blast radius the plan
+  claims is real for the other two.
+
+  **The `".0"` guard's contract is written down** above
+  `src/tychoc.c@c_numeric_handle`: it answers "would `cc` read this text back as
+  an **integer** constant?" and appends `.0` when it would, so `3.0 / 2.0` is not
+  integer division. The scan for `'.' 'e' 'E' 'n' 'i'` is sound **only** because
+  the separator is now known to be `'.'` — under any other separator the
+  character is absent from the set, every finite non-integral value looks
+  integral, and the guard appends `.0` to text that already had a fraction, which
+  is exactly how `1,5` became `1,5.0`. The comment says the conversion and the
+  guard are one change.
+
+  **Edge cases — every line is in the golden, identical in both blocks.**
+
+  | source literal | emitted C | printed | why that outcome |
+  |---|---|---|---|
+  | `1.5` | `1.5` | `1.5` | the case that used to be `1,5.0` |
+  | `half(1.5)` | `h_half(&_t, 1.5)` | `0.75` | a literal in call-argument position |
+  | `3.0` | `3.0` | `3.0` | `%.17g` gives `3`; the guard fires, correctly |
+  | `3.0 / 2.0` | `3.0 / 2.0` | `1.5` | proves the guard keeps it out of integer division |
+  | `2.5e-3` | `0.0025000000000000001` | `0.0025` | separator **and** no `e`, so it took the guard too: `0,0025…` + `.0` was worth 2.5e15 |
+  | `1e300` | `1e+300` | `1e+300` | exponent form, no separator: neither half could touch it |
+  | `1e-300` | `1e-300` | `1e-300` | as above |
+  | `-0.5` | `-0.5` | `-0.5` | read-side breakage shows here as `-0.0` |
+  | `0.30000000000000004` | same, 17 digits | `exact` | compared against `0.1 + 0.2` rather than printed, because `str()` renders `%.15g` and would show `0.3` for both |
+
+  **Break and revert — two sites, two reverts, each rebuilt with `make` and run
+  under the `LD_PRELOAD` above.**
+
+  *Write side reverted* (`c_dtoa` → the bare `snprintf(b, sizeof b, "%.17g", …)`):
+
+      double h_a = 1,5.0;
+      double h_small = 0,0025000000000000001.0;
+      cc REJECTED the emitted C:
+      b.c:2564:20: error: expected identifier or ‘(’ before numeric constant
+
+  *Read side reverted* (`c_strtod` → the bare `strtod(s, NULL)`): cc accepts, the
+  program runs, and the golden diff is
+
+      < 1.5            = 1.5          > 1.5            = 1.0
+      < half(1.5)      = 0.75         > half(1.5)      = 0.5
+      < 2.5e-3         = 0.0025       > 2.5e-3         = 2.0
+      < -0.5           = -0.5         > -0.5           = -0.0
+
+  *Both restored:* `double h_a = 1.5;`, no diff against the golden.
+
+  **`make test`: `passed: 562   failed: 0`**, up from the 561 this phase started
+  at — the one new fixture, nothing lost.
+
+  **Citation churn.** The +125-line net insert near the top of `src/tychoc.c`
+  moved 135 anchored refs. 118 were repointed by the diff's own old→new line map;
+  **12 sat on record lines** (before/after table rows in
+  `docs/internals/plan-postfreeze-rawstring-DONE.md` and its neighbours) and got
+  the other treatment — number kept, anchor dropped — and 5 more were
+  unbackticked refs in `fuzz/run_parforparity.py`, `scripts/asan_self.sh` and
+  `scripts/check_citations.py` that the automated pass could not address and were
+  repointed by hand. `python3 scripts/check_citations.py` and
+  `sh scripts/check_links.sh` are both green.
 
 - [ ] **Phase 2 — the other two lanes still grep for direct imports, and they also need the `deps` closure**
   - `corelib/run.sh:32` and `examples/corelib/run.sh:30` carry the **same
@@ -147,6 +279,53 @@ Done looks like: all four resolved, each with a check that is proved to fail.
     widens. Not `Makefile` itself.
   - Verify: `python3 scripts/check_citations.py`, then prove it cannot silently
     pass by deleting the `SKIPPED` line from `Makefile` and showing the red.
+
+- [ ] **Phase 5 — an overflowing float literal emits `inf`, which is not C**
+  - Found by phase 1 while reading the `".0"` guard's `'n'`/`'i'` cases, and
+    filed rather than absorbed. `1e400` lexes fine, `strtod` returns infinity,
+    and codegen writes the bare token `inf` into the generated C. Measured:
+
+        $ printf 'fn main():\n    x := 1e400\n    println(str(x))\n' > inf.ty
+        $ ./tychoc inf.ty --emit-c -o inf && cc -O2 -std=c11 -o inf.bin inf.c -lm
+        inf.c:2556:18: error: ‘inf’ undeclared (first use in this function);
+                              did you mean ‘ynf’?
+
+    So the user gets a C compiler error, in generated code, naming a libm
+    function they never wrote — instead of a Tycho diagnostic on their own
+    source line. `nan` has the same shape, though no literal reaches it.
+  - This means the `'n'` and `'i'` arms of the `".0"` guard are dead as far as
+    *valid* output goes: every value that makes them fire is a value whose
+    emitted C does not compile. Either the literal is rejected at lex time with
+    a real diagnostic (`float literal out of range`, matching the existing
+    `integer literal out of range` at the same site), or codegen emits
+    `(1.0/0.0)` / `__builtin_inf()` and the guard's arms become live. Decide
+    which; do not leave both.
+  - Scope: `src/tychoc.c`, a `tests/reject/` fixture if the answer is rejection,
+    a `tests/` fixture with its golden if it is emission.
+  - Verify: `make test`, which was `passed: 562 failed: 0` after phase 1. Not
+    `make ci`.
+
+- [ ] **Phase 6 — nothing in CI compiles anything under a hostile `LC_NUMERIC`**
+  - Phase 1 fixed both locale sites in `src/tychoc.c` and proved them by hand
+    with an `LD_PRELOAD` whose constructor calls `setlocale(LC_ALL, "")`. That
+    proof is not repeatable by any gate: `tests/run.sh` compiles every fixture in
+    the grader's own environment, and the environment cannot change a compiler's
+    locale anyway (a C program starts in `"C"` until something calls
+    `setlocale`). So `tests/float_lit_locale.ty` locks the *values* but exercises
+    the compile side only under `"C"` — the case that never broke.
+  - The same hole covers the runtime twin: `tests/float_str_locale.ty` holds its
+    locale in-process, so it is fine, but nothing checks that a *third* site does
+    not appear. `grep -n 'strtod\|%[0-9.]*g' src/tychoc.c runtime/tycho_rt.c
+    corelib/*/*.c` is the enumeration a gate would encode.
+  - Cheapest shape that could work: a small lane that builds the preload shim,
+    compiles two or three float-bearing fixtures under it, and golden-compares —
+    the same shape `make ar-check` and `make q-check` already have. It must skip
+    cleanly on a host with no comma-decimal locale and on macOS, where
+    `DYLD_INSERT_LIBRARIES` is the spelling and SIP blocks it.
+  - Scope: `scripts/`, `Makefile`, and a CI step. **This is the one phase in this
+    plan whose brief legitimately ends in `make ci`**, because it adds a step.
+  - Done when: the new lane is proved red by reverting either half of phase 1's
+    fix, and green with both.
 
 ## Carried forward
 
