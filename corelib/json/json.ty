@@ -25,6 +25,8 @@
 #   huge integer          123456789012345678901234567890        (see NUMBERS)
 #   string                "tycho"
 #   string escapes        "a\"b\nc\td"          (\" \\ \/ \b \f \n \r \t)
+#   \u escape             "\u0041" -> A          "\u00e9" -> the 2 UTF-8 bytes of é
+#   surrogate pair        "\ud83d\ude00" -> the 4 UTF-8 bytes of an emoji
 #   array                 [1,"x",true,null]     []
 #   object                {"a":1,"b":[2]}       {}
 #   whitespace            space / tab / CR / LF between any two tokens
@@ -63,9 +65,11 @@
 #      than represented. It is valid RFC 8259 and this parser fails closed on
 #      it. The way out is an arbitrary-precision variant (`core:bignum` /
 #      `core:decimal`), which is a numeric-tower decision, not a parser one.
-# gap: no `\uXXXX`. It is an error at the `u`, where it used to silently become
-#      the four hex digits as literal text. The way out is a UTF-8 encoder plus
-#      surrogate-pair joining inside `parse_string`.
+# gap: a RAW control byte (0x00-0x1F) inside a string is accepted, and RFC 8259
+#      forbids it -- `"a<TAB>b"` with a literal tab parses. It loses no data and
+#      invents none, so the leniency is one-directional: `esc` always escapes
+#      those bytes on the way OUT, so nothing this package emits contains one.
+#      The way out is a `s[pos] < 32` test in parse_string's two scan loops.
 # gap: a trailing comma is accepted -- `[1,]` parses as `[1]`. It loses no data
 #      and invents none, so it is left lenient; the way out is a `saw_comma`
 #      flag tested at the closing bracket.
@@ -106,12 +110,21 @@ const JE_BYTE    = 2    # a byte that can begin no value: `.` `+` `:` `}` junk
 const JE_NUMBER  = 3    # `-` with no digit after it
 const JE_FLOAT   = 4    # a malformed fraction or exponent: `1.`, `1e`, `1e+`
 const JE_KEYWORD = 5    # `t`/`f`/`n` that is not `true`/`false`/`null`
-const JE_ESCAPE  = 6    # `\u`, or any escape outside " \ / b f n r t
+const JE_ESCAPE  = 6    # any escape outside " \ / b f n r t u
 const JE_KEY     = 7    # an object member that does not begin with `"`
 const JE_COLON   = 8    # an object key not followed by `:`
 const JE_SEP     = 9    # an element followed by neither `,` nor the closer
 const JE_STUCK   = 10   # the structural guard fired: a nested parse ate nothing
 const JE_RANGE   = 11   # well-formed, but binary64 holds no such value: `1e400`
+const JE_UESC    = 12   # a `\u` not followed by four hex digits: `\uZZZZ`, `\u00"`
+const JE_SURR    = 13   # a UTF-16 surrogate with no partner: a lone `\ud83d`
+
+# WHICH BYTE THE TWO \u FAILURES NAME, because they differ and the difference is
+# deliberate. JE_UESC names the OFFENDING BYTE ITSELF -- the first thing in the
+# four-digit run that is not a hex digit, which is the byte the writer must fix.
+# JE_SURR names the `u` of the OFFENDING ESCAPE, because there is no single bad
+# byte: every byte of `\ud83d` is fine and it is the escape as a whole that has
+# no partner. That matches JE_ESCAPE, which has always named the escape letter.
 
 # The public failure. Every variant carries the byte offset, so a caller that
 # only wants the position never has to know which cause it was.
@@ -127,8 +140,14 @@ enum JsonErr:
     MissingSep(int)
     NoProgress(int)
     NumberRange(int)
+    BadUnicode(int)
+    LoneSurrogate(int)
 
 fn err_at(code: int, off: int) -> JsonErr:
+    if code == JE_UESC:
+        return BadUnicode(off)
+    if code == JE_SURR:
+        return LoneSurrogate(off)
     if code == JE_RANGE:
         return NumberRange(off)
     if code == JE_TRUNC:
@@ -164,6 +183,8 @@ fn err_offset(e: JsonErr) -> int:              # byte offset of the failure
         MissingSep(o): return o
         NoProgress(o): return o
         NumberRange(o): return o
+        BadUnicode(o): return o
+        LoneSurrogate(o): return o
 
 fn err_reason(e: JsonErr) -> string:           # what was wrong, without the where
     match e:
@@ -178,6 +199,8 @@ fn err_reason(e: JsonErr) -> string:           # what was wrong, without the whe
         MissingSep(o): return "element followed by neither ',' nor the closer"
         NoProgress(o): return "nested parse consumed no byte"
         NumberRange(o): return "number outside the range a float can represent"
+        BadUnicode(o): return "\\u escape is not followed by four hex digits"
+        LoneSurrogate(o): return "UTF-16 surrogate escape with no partner"
 
 # The one-line message a caller wants on stderr: cause and byte offset together.
 fn err_str(e: JsonErr) -> string:
@@ -188,6 +211,63 @@ fn err_str(e: JsonErr) -> string:
 fn skip_ws(s: string, n: int, pos: inout int):
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
+
+# ---- \uXXXX: hex, UTF-8, and the surrogate pair ----------------------------
+#
+# The three constants that make the surrogate arithmetic readable. UTF-16 splits
+# a code point above 0xFFFF into a LEADING surrogate D800-DBFF and a TRAILING one
+# DC00-DFFF; neither half is a character on its own, which is why a lone one is
+# an error here rather than a substituted U+FFFD. A replacement character is a
+# guess, and this parser does not guess.
+const SURR_HI_LO = 55296        # 0xD800, first leading surrogate
+const SURR_HI_HI = 56319        # 0xDBFF, last leading surrogate
+const SURR_LO_LO = 56320        # 0xDC00, first trailing surrogate
+const SURR_LO_HI = 57343        # 0xDFFF, last trailing surrogate
+
+fn hexval(c: int) -> int:                      # 0..15 for 0-9 a-f A-F, else -1
+    if c >= 48 and c <= 57:                    # '0'..'9'
+        return c - 48
+    if c >= 97 and c <= 102:                   # 'a'..'f' -- hex is CASE-INSENSITIVE
+        return c - 87
+    if c >= 65 and c <= 70:                    # 'A'..'F'
+        return c - 55
+    return -1
+
+# Read the four hex digits of a `\u` escape. `pos` ENTERS on the `u` and LEAVES
+# on the LAST hex digit, so parse_string's own `pos = pos + 1` steps past the
+# whole escape -- the same contract every other escape arm has.
+#
+# On failure nothing advances again, per the file's error invariant: JE_UESC
+# leaves `pos` on the byte that is not a hex digit (which is how `"\u00"` is
+# reported -- the closing quote is that byte), and JE_TRUNC leaves `pos == n`.
+fn hex4(s: string, n: int, pos: inout int, ecode: inout int) -> int:
+    v := 0
+    for i := 0; i < 4; i += 1:
+        pos = pos + 1
+        if pos >= n:
+            ecode = JE_TRUNC                   # `"\u00` -- input ended mid-escape
+            return 0
+        d := hexval(s[pos])
+        if d < 0:
+            ecode = JE_UESC
+            return 0
+        v = v * 16 + d
+    return v
+
+# A code point as its UTF-8 bytes. Division and modulo rather than shifts and
+# masks because `cp` is always a non-negative int here, so the two agree exactly
+# and this reads as the RFC 3629 table it is. The 4-byte arm cannot be reached
+# with anything above 0x10FFFF: the only route into it is a surrogate pair, whose
+# maximum is 0x10000 + 0x3FF*0x400 + 0x3FF = 0x10FFFF.
+fn utf8(cp: int) -> string:
+    if cp < 128:                               # 0xxxxxxx
+        return chr(cp)
+    if cp < 2048:                              # 110xxxxx 10xxxxxx
+        return chr(192 + cp / 64) + chr(128 + cp % 64)
+    if cp < 65536:                             # 1110xxxx 10xxxxxx 10xxxxxx
+        return chr(224 + cp / 4096) + chr(128 + (cp / 64) % 64) + chr(128 + cp % 64)
+    # 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+    return chr(240 + cp / 262144) + chr(128 + (cp / 4096) % 64) + chr(128 + (cp / 64) % 64) + chr(128 + cp % 64)
 
 fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     pos = pos + 1                              # skip opening "
@@ -230,10 +310,39 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
                 r = r + chr(12)
             elif e == 114:                     # \r
                 r = r + chr(13)
+            elif e == 117:                     # \uXXXX -- decoded to UTF-8
+                ustart := pos                  # the `u`; the byte JE_SURR names
+                cp := hex4(s, n, &pos, &ecode)
+                if ecode != JE_OK:
+                    return r
+                if cp >= SURR_HI_LO and cp <= SURR_HI_HI:
+                    # A LEADING surrogate. The trailing half must follow at once
+                    # as a second `\u`. Anything else -- end of input, a literal
+                    # character, some other escape, a second leading surrogate --
+                    # is a LONE surrogate and an error. `pos` rewinds to this
+                    # escape's `u` so the offset names what is unpaired.
+                    if pos + 2 >= n or s[pos + 1] != 92 or s[pos + 2] != 117:
+                        pos = ustart
+                        ecode = JE_SURR
+                        return r
+                    pos = pos + 2              # onto the second escape's `u`
+                    lo := hex4(s, n, &pos, &ecode)
+                    if ecode != JE_OK:
+                        return r
+                    if lo < SURR_LO_LO or lo > SURR_LO_HI:
+                        pos = ustart
+                        ecode = JE_SURR
+                        return r
+                    cp = 65536 + (cp - SURR_HI_LO) * 1024 + (lo - SURR_LO_LO)
+                elif cp >= SURR_LO_LO and cp <= SURR_LO_HI:
+                    pos = ustart               # a TRAILING surrogate, no leader
+                    ecode = JE_SURR
+                    return r
+                r = r + utf8(cp)
             else:
-                # `\u` and every unknown escape. This used to emit the escape
-                # letter itself, so `"A"` became the text `u0041` -- a
-                # value nobody wrote. Fail closed AT the letter instead.
+                # Every unknown escape (`\q`, `\x`). This used to emit the escape
+                # letter itself, so `"\q"` became the text `q` -- a value nobody
+                # wrote. Fail closed AT the letter instead.
                 ecode = JE_ESCAPE
                 return r
         else:
@@ -501,7 +610,30 @@ fn parse(s: string) -> Json:
 
 # ---- serializer (walk the tree, build a compact string) --------------------
 
-fn esc(s: string) -> string:                   # minimal JSON string escaping
+fn hexdig(v: int) -> string:                   # one LOWERCASE hex digit, 0..15
+    if v < 10:
+        return chr(48 + v)
+    return chr(87 + v)
+
+# WHAT IS ESCAPED ON OUTPUT, AND WHY. Exactly the set RFC 8259 forbids raw
+# inside a string, and nothing else:
+#
+#   "  \        the two that would end or re-open the string -- must escape
+#   0x00-0x1F   control bytes. RFC 8259 forbids ALL of them raw. The five with
+#               short forms get them (\b \f \n \r \t); the other 27 get \u00XX.
+#               parse_string is LENIENT about these on the way IN (see the gap
+#               in the header), so this is the direction that keeps the leniency
+#               one-way: a control byte can get in, but never back out raw.
+#   everything else passes through as its own bytes, DELIBERATELY:
+#     /         legal raw; `\/` is permitted but not required, and escaping it
+#               would make stringify(parse(x)) differ from x for no gain.
+#     >= 0x80   a decoded `\uXXXX` is UTF-8 bytes by the time it reaches here,
+#               and raw UTF-8 is legal in a JSON string. Re-escaping it back to
+#               `\uXXXX` would need a UTF-8 DECODER and would answer a question
+#               nobody asked; passing the bytes through makes parse -> stringify
+#               -> parse a FIXED POINT, which is the property that matters.
+#     0x7F      DEL is not a control byte for RFC 8259's purposes; legal raw.
+fn esc(s: string) -> string:
     out := ""
     for i := 0; i < len(s); i += 1:
         c := s[i]
@@ -509,10 +641,18 @@ fn esc(s: string) -> string:                   # minimal JSON string escaping
             out = out + "\\\""
         elif c == 92:                          # backslash
             out = out + "\\\\"
+        elif c == 8:
+            out = out + "\\b"
+        elif c == 12:
+            out = out + "\\f"
         elif c == 10:
             out = out + "\\n"
+        elif c == 13:
+            out = out + "\\r"
         elif c == 9:
             out = out + "\\t"
+        elif c < 32:                           # every other control byte
+            out = out + "\\u00" + hexdig(c / 16) + hexdig(c % 16)
         else:
             out = out + chr(c)
     return out

@@ -385,7 +385,7 @@ The six, quoted from `corelib/json/json.ty`:
   tycho-q **refuses** the float cell instead of storing 0, which is the
   `kind == "float"` decision working as designed.
 
-- [ ] **Phase 3 — strings: `\uXXXX` and surrogate pairs (gap 2)**
+- [x] **Phase 3 — strings: `\uXXXX` and surrogate pairs (gap 2)**
   - Scope: `corelib/json/json.ty`, `corelib/test/json/main.ty`,
     `corelib/test/json.out`.
   - Decode `\uXXXX` to UTF-8. A leading surrogate must combine with its trailing
@@ -399,6 +399,130 @@ The six, quoted from `corelib/json/json.ty`:
     and `"\uZZZZ"` are errors with offsets; and parse -> stringify -> parse is a
     fixed point on all of them. Gap 2 deleted from the header.
   - Verify: `make corelib`, `sh examples/corelib/run.sh`.
+
+  **Evidence.**
+
+  `corelib/json/json.ty@parse_string` gained a `\u` arm; three new helpers sit
+  above it — `corelib/json/json.ty@hexval` (case-insensitive, `-1` for a non-hex
+  byte), `corelib/json/json.ty@hex4` and `corelib/json/json.ty@utf8`. `utf8` uses
+  division and modulo rather than shifts and masks: `cp` is always non-negative
+  here so the two agree exactly, and it reads as the RFC 3629 table it is.
+
+  `hex4`'s contract is the one thing that had to match the existing code rather
+  than be invented: `pos` **enters on the `u` and leaves on the LAST hex digit**,
+  so `parse_string`'s own bottom-of-loop `pos = pos + 1` steps past the whole
+  escape — the identical contract every other escape arm already had.
+
+  *The two new error variants, and why they name different bytes.*
+  `corelib/json/json.ty@BadUnicode` (`JE_UESC`) names **the offending byte
+  itself** — the first thing in the four-digit run that is not a hex digit, which
+  is the byte the writer has to fix. `corelib/json/json.ty@LoneSurrogate`
+  (`JE_SURR`) names **the `u` of the unpaired escape**, because there is no
+  single bad byte: every byte of `\ud83d` is fine and it is the escape as a whole
+  that has no partner. That matches `JE_ESCAPE`, which has always named the
+  escape letter. The difference is written above the constants in the file.
+
+  Adding two variants to `JsonErr` broke no consumer: the only external `match`
+  over it is `tools/tycho-q/main.ty@json_err`, which has a `_` arm.
+
+  *Accepted — every row is a line in `corelib/test/json.out`.* Bytes are printed
+  as hex, not as a glyph, so a terminal cannot normalise the thing under test.
+
+  | input | bytes out | note |
+  |---|---|---|
+  | `"\u0041"` | `41` | was an error at the `u`; before the error channel, the literal text `u0041` |
+  | `"\u00e9"` | `c3 a9` | and equal to a literal é written in the source: `yes` |
+  | `"\u00E9"` | `c3 a9` | hex is case-insensitive — equal to the lowercase spelling: `yes` |
+  | `"\u20ac"` | `e2 82 ac` | 3-byte BMP (EURO SIGN) |
+  | `"\ud83d\ude00"` | `f0 9f 98 80` | U+1F600, **four** bytes — not two 3-byte surrogates, which is what encoding each half separately would give (CESU-8, and wrong). Equal to a literal emoji in the source: `yes` |
+  | `"\u007f"` / `"\u0080"` | `7f` / `c2 80` | the 1-to-2-byte boundary |
+  | `"\u07ff"` / `"\u0800"` | `df bf` / `e0 a0 80` | the 2-to-3-byte boundary |
+  | `"\udbff\udfff"` | `f4 8f bf bf` | U+10FFFF, the largest value the 4-byte arm can ever be handed |
+  | `"a\u00e9b"` | `61 c3 a9 62` | mid-string, so the slow path's prefix joining is tested |
+  | `"a\u0000b"` | `61 00 62`, len 3 | a Tycho string is length-counted, so a NUL does not truncate it |
+
+  *Rejected, at the byte each must name.* A lone surrogate is an **error, not
+  U+FFFD**: a replacement character is a guess about what the writer meant.
+
+  | input | error | offset |
+  |---|---|---|
+  | `"\ud83d"` | `UTF-16 surrogate escape with no partner` | 2 — the `u` |
+  | `"\ude00"` | same | 2 — a trailing surrogate with no leader |
+  | `"\ud83d\ud83d"` | same | 2 — a second *leading* surrogate is not a partner |
+  | `"\ud83dx"` | same | 2 — a literal character is not a partner |
+  | `"\ud83d\n"` | same | 2 — some *other* escape is not a partner either |
+  | `"\u00"` | `\u escape is not followed by four hex digits` | 5 — the closing quote, which is where the third digit had to be |
+  | `"\uZZZZ"` | same | 3 — the first `Z` |
+  | `["\uZZZZ"]` | same | 4 — not accidentally right only at byte 0 |
+  | `"\u00` (input ends) | `input ended inside a value` | 5 — truncation, told apart from a bad digit |
+
+  *`esc`, and what it escapes on output.* Exactly the set RFC 8259 forbids raw,
+  and nothing else — the reasoning is written above `corelib/json/json.ty@esc`.
+  `"` and `\` as before; `\b \f \n \r \t` for the five control bytes with short
+  forms; and **`\u00XX` for the other 27**, which is new. Deliberately NOT
+  escaped: `/` (legal raw, and escaping it would make `stringify(parse(x))`
+  differ from `x` for no gain), bytes at or above `0x80` (a decoded escape is
+  UTF-8 by the time it reaches `esc`, raw UTF-8 is legal inside a JSON string,
+  and re-escaping would need a UTF-8 *decoder* to answer a question nobody
+  asked), and `0x7f` (DEL is not a control byte for RFC 8259's purposes).
+
+  *The fixed point, and why identity is the wrong test.* `"\u0041"` is **not**
+  byte-identical through `stringify` — it comes back as `"A"`, on purpose. So the
+  property asserted is stability, by `corelib/test/json/main.ty@fixed`:
+  parse -> stringify -> parse -> stringify lands on the same bytes twice.
+  `fixed=yes` on all fourteen accepted cases: the four boundary widths, the
+  emoji, U+10FFFF, a mid-string escape, the classic `a\"b\nc\td`, `\b\f\r`,
+  `a\/b`, `a\u0000b`, `\u001f`, `\u000b`, a whole mixed document
+  `{"A":["😀",1.5,null]}` — and a **raw tab**, which gets in (see
+  the new gap) and comes back out as `"a\tb"`, never raw.
+
+  *A gap recorded, not silently closed.* `parse_string` **accepts a raw control
+  byte** (0x00-0x1F) inside a string, which RFC 8259 forbids: neither of its scan
+  loops tests for it. Checked rather than assumed — the `fp raw tab` line shows a
+  literal tab parsing. It is a new `# gap:` in the file header and a new
+  unchecked phase below. The leniency is now strictly one-directional: a control
+  byte can get **in**, but `esc` means it can never get back **out** raw.
+
+  *Two mechanisms broken on purpose, and the golden reddened for each.*
+
+  - the surrogate combining arithmetic, `* 1024` changed to `* 1000`:
+
+        < u emoji     = f0 9f 98 80          < u 10ffff    = f4 8f bf bf
+        > u emoji     = f0 9f 81 88          > u 10ffff    = f4 8a 80 97
+        < u emoji lit = yes
+        > u emoji lit = no
+
+  - the lone-surrogate refusal removed (`if pos + 2 >= n or ...` -> `if false`):
+
+        < u lone hi   = err UTF-16 surrogate escape with no partner at byte 2
+        > u lone hi   = err input ended inside a value at byte 9
+        < u lone off  = 2
+
+    Note what the second one shows: with the refusal gone the parser does not
+    accept the lone surrogate quietly, it misreads the closing quote as the
+    partner escape and reports truncation at byte 9 — a wrong cause at a wrong
+    offset, which is exactly the diagnosis this phase exists to prevent.
+
+  Both were reverted and `make corelib` is green again.
+
+  *One existing golden line was reused rather than moved.* The `bad escape` case
+  used `["a\u0041"]`, which is a **value** now, so the test switched to `["a\q"]`
+  — an escape that is genuinely not in RFC 8259's list. The `q` sits at byte 4
+  exactly as the `u` did, so that golden line is byte-for-byte unchanged and the
+  whole diff to `corelib/test/json.out` is **44 insertions, 0 deletions**.
+
+  *Gates, each foreground:*
+
+      make corelib                ->  corelib: all green (tychoc matches goldens)
+      sh examples/corelib/run.sh  ->  corelib examples: all green
+      python3 scripts/check_citations.py  ->  citation check: ok
+      ./tychoc <each of the six consumers> -o /tmp/...  ->  all six built
+
+  `make ci`, `make test` and `make q-check` were **not** run: nothing outside
+  `corelib/` changed, `tests/run.sh:113` globs the top level only, and
+  `make q-check` is red from phase 2's commit until phase 5 lands (phase 7
+  below). `tools/tycho-q/main.ty` still **compiles**, which is what this phase
+  owed it.
 
 - [ ] **Phase 4 — the grammar gets strict (gaps 4, 5, 6)**
   - Scope: `corelib/json/json.ty`, `corelib/test/json/main.ty`,
@@ -490,6 +614,28 @@ The six, quoted from `corelib/json/json.ty`:
     advice is now both wrong and attached to the wrong failure.
   - Verify: `make q-check` (`RECORD=1 sh tools/tycho-q/run.sh` once the moved
     lines are understood, never before).
+
+- [ ] **Phase 8 — a raw control byte inside a string is accepted, and RFC 8259
+      forbids it**
+  - Found in phase 3, outside its scope (phase 3 owned `\uXXXX`; this is a
+    grammar leniency, and the brief scope-locked the grammar gaps to phase 4), so
+    recorded rather than absorbed. **Interacts with phase 4**, whose Done clause
+    is "no `# gap:` line about the grammar remains" — this is one, so phase 4
+    either closes it or says in its evidence why not.
+  - `corelib/json/json.ty@parse_string` has two scan loops and neither tests
+    `s[pos] < 32`, so a string containing a literal tab byte parses. RFC 8259 §7
+    allows only `%x20-21 / %x23-5B / %x5D-10FFFF` unescaped. Measured, not
+    assumed: the `fp raw tab` line in `corelib/test/json.out` shows it parsing.
+  - It is the **mildest** of the leniencies and was deliberately left: it loses
+    no data and invents none, and phase 3 made it one-directional —
+    `corelib/json/json.ty@esc` escapes every byte below 0x20 on output, so
+    nothing this package emits contains a raw one. A document can get a control
+    byte in; it cannot get one back out.
+  - The way out is an `s[pos] < 32` test in both of `parse_string`'s scan loops,
+    with a new `JE_` code so the message can say "control byte" rather than
+    borrow `JE_BYTE`, whose text is about *beginning a value*.
+  - Verify: `make corelib`, `sh examples/corelib/run.sh`. Not `make test` —
+    nothing outside `corelib/` changes.
 
 ## Carried forward
 

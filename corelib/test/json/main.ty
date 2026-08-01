@@ -45,6 +45,39 @@ fn rt(src: string) -> string:
         Err(e):
             return "err " + json.err_str(e)
 
+# Every byte of a string as lowercase hex, space-separated. A decoded \u escape
+# is UTF-8 BYTES, and the whole point of this phase is which bytes -- so they are
+# asserted directly rather than through a glyph that a terminal might normalise.
+fn hex2(c: int) -> string:
+    d := "0123456789abcdef"
+    return substr(d, c / 16, c / 16 + 1) + substr(d, c % 16, c % 16 + 1)
+
+fn bytes_of(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        if i > 0:
+            out = out + " "
+        out = out + hex2(s[i])
+    return out
+
+# THE FIXED POINT, which is the round-trip property a \u escape can actually
+# have. `"\u0041"` is NOT byte-identical through stringify -- it comes back as
+# the character `A`, deliberately -- so identity with the source is the wrong
+# test. Stability is the right one: parse -> stringify -> parse -> stringify must
+# land on the same bytes twice. A lost byte, an invented byte or an escape that
+# re-parses as something else all break it.
+fn fixed(src: string) -> string:
+    match json.parse_checked(src):
+        Ok(v1):
+            s1 := json.stringify(v1)
+            match json.parse_checked(s1):
+                Ok(v2):
+                    return s1 + " fixed=" + yn(s1 == json.stringify(v2))
+                Err(e):
+                    return "REPARSE FAILED " + json.err_str(e)
+        Err(e):
+            return "err " + json.err_str(e)
+
 fn main():
     src := "{\"name\": \"tycho\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}, \"empty\": [], \"nothing\": null}"
     j := json.parse(src)
@@ -172,7 +205,10 @@ fn main():
     println("bad byte    = " + show(json.parse_checked("[+1]")))
     println("bad number  = " + show(json.parse_checked("[-x]")))
     println("bad keyword = " + show(json.parse_checked("[tru]")))
-    println("bad escape  = " + show(json.parse_checked("[\"a\\u0041\"]")))
+    # `\q` -- \u0041 used to be here, because \u was the unsupported escape.
+    # It is a decoded VALUE now (see the \u block below), so the class needs an
+    # escape that is genuinely not in RFC 8259's list.
+    println("bad escape  = " + show(json.parse_checked("[\"a\\q\"]")))
     println("bad key     = " + show(json.parse_checked("{1:2}")))
     println("no colon    = " + show(json.parse_checked("{\"a\" 1}")))
     println("no sep      = " + show(json.parse_checked("[1 2]")))
@@ -185,3 +221,85 @@ fn main():
     println("trailing txt= " + show(json.parse_checked("{\"a\":1} junk")))
     # escapes the parser DOES represent, round-tripped through the byte values
     println("esc bfr     = " + str(len(json.as_str(json.parse("\"\\b\\f\\r\\/\"")))))
+
+    # ---- \uXXXX and the surrogate pair (gap 2) ------------------------------
+    # Before this, `\u` was the ONE escape parse_string refused: `"\u0041"` was
+    # an error at the `u`, and before the error channel it silently became the
+    # literal text `u0041` -- four bytes nobody wrote.
+    println("u A         = " + json.as_str(json.parse("\"\\u0041\"")) + "|")
+    println("u A len     = " + str(len(json.as_str(json.parse("\"\\u0041\"")))))
+    println("u A bytes   = " + bytes_of(json.as_str(json.parse("\"\\u0041\""))))
+    # A 2-byte code point, and the property the phase names: `\u00e9` and a
+    # LITERAL e-acute in the source must produce the SAME string, byte for byte.
+    println("u e9 bytes  = " + bytes_of(json.as_str(json.parse("\"\\u00e9\""))))
+    println("u e9 == lit = " + yn(json.as_str(json.parse("\"\\u00e9\"")) == json.as_str(json.parse("\"é\""))))
+    # Hex is CASE-INSENSITIVE, so the two spellings are one character.
+    println("u E9 == e9  = " + yn(json.as_str(json.parse("\"\\u00E9\"")) == json.as_str(json.parse("\"\\u00e9\""))))
+    # A 3-byte code point: U+20AC EURO SIGN.
+    println("u 20ac      = " + bytes_of(json.as_str(json.parse("\"\\u20ac\""))))
+    # THE SURROGATE PAIR. U+1F600 is written in JSON as two UTF-16 halves and is
+    # FOUR UTF-8 bytes here -- not two 3-byte surrogates, which is what a parser
+    # that encoded each half separately would produce (CESU-8, and wrong).
+    println("u emoji len = " + str(len(json.as_str(json.parse("\"\\ud83d\\ude00\"")))))
+    println("u emoji     = " + bytes_of(json.as_str(json.parse("\"\\ud83d\\ude00\""))))
+    println("u emoji lit = " + yn(json.as_str(json.parse("\"\\ud83d\\ude00\"")) == json.as_str(json.parse("\"😀\""))))
+    # The boundary code points of each UTF-8 width, so an off-by-one in `utf8`
+    # cannot hide: 0x7F/0x80 and 0x7FF/0x800.
+    println("u 007f      = " + bytes_of(json.as_str(json.parse("\"\\u007f\""))))
+    println("u 0080      = " + bytes_of(json.as_str(json.parse("\"\\u0080\""))))
+    println("u 07ff      = " + bytes_of(json.as_str(json.parse("\"\\u07ff\""))))
+    println("u 0800      = " + bytes_of(json.as_str(json.parse("\"\\u0800\""))))
+    # The last code point a surrogate pair can name, U+10FFFF. It is the largest
+    # value `utf8`'s 4-byte arm can ever be handed.
+    println("u 10ffff    = " + bytes_of(json.as_str(json.parse("\"\\udbff\\udfff\""))))
+    # A \u escape mid-string, so the slow path's prefix/suffix joining is tested
+    # and not just an escape that is the whole string.
+    println("u mid       = " + bytes_of(json.as_str(json.parse("\"a\\u00e9b\""))))
+    # A NUL byte from `\u0000`: a Tycho string is length-counted, so it is a byte
+    # like any other and does NOT truncate the string.
+    println("u nul len   = " + str(len(json.as_str(json.parse("\"a\\u0000b\"")))))
+    println("u nul bytes = " + bytes_of(json.as_str(json.parse("\"a\\u0000b\""))))
+
+    # ---- the \u failures, each at the byte it must name ---------------------
+    # A LONE surrogate is an error, NOT U+FFFD. A replacement character is a
+    # guess about what the writer meant, and guessing is what this package spent
+    # two plans removing. The offset names the `u` of the unpaired escape (byte
+    # 2 in every line below), because no single byte of `\ud83d` is itself wrong.
+    println("u lone hi   = " + show(json.parse_checked("\"\\ud83d\"")))
+    println("u lone lo   = " + show(json.parse_checked("\"\\ude00\"")))
+    println("u hi+hi     = " + show(json.parse_checked("\"\\ud83d\\ud83d\"")))
+    println("u hi+char   = " + show(json.parse_checked("\"\\ud83dx\"")))
+    println("u hi+esc    = " + show(json.parse_checked("\"\\ud83d\\n\"")))
+    println("u lone off  = " + str(offset_of(json.parse_checked("\"\\ud83d\""))))
+    # A truncated escape and a non-hex digit name the OFFENDING BYTE itself.
+    # `"\u00"` fails at byte 5 -- the closing quote, which is the third "digit".
+    println("u trunc     = " + show(json.parse_checked("\"\\u00\"")))
+    println("u nonhex    = " + show(json.parse_checked("\"\\uZZZZ\"")))
+    println("u trunc off = " + str(offset_of(json.parse_checked("\"\\u00\""))))
+    println("u nonhex off= " + str(offset_of(json.parse_checked("\"\\uZZZZ\""))))
+    # Input that ends INSIDE the escape is truncation, not a bad digit.
+    println("u eof       = " + show(json.parse_checked("\"\\u00")))
+    # In a container, so the offset is not accidentally right only at byte 0.
+    println("u in arr    = " + show(json.parse_checked("[\"\\uZZZZ\"]")))
+
+    # ---- parse -> stringify -> parse is a FIXED POINT -----------------------
+    # `fixed=yes` on every accepted line above. Note what stringify emits: a
+    # decoded escape comes back as its UTF-8 BYTES (raw UTF-8 is legal in a JSON
+    # string), and a control byte comes back as an ESCAPE -- never raw, which is
+    # the one direction of the control-byte gap in the corelib header.
+    println("fp A        = " + fixed("\"\\u0041\""))
+    println("fp e9       = " + fixed("\"\\u00e9\""))
+    println("fp 20ac     = " + fixed("\"\\u20ac\""))
+    println("fp emoji    = " + fixed("\"\\ud83d\\ude00\""))
+    println("fp 10ffff   = " + fixed("\"\\udbff\\udfff\""))
+    println("fp mid      = " + fixed("\"a\\u00e9b\""))
+    println("fp classic  = " + fixed("\"a\\\"b\\nc\\td\""))
+    println("fp bfr      = " + fixed("\"\\b\\f\\r\""))
+    println("fp slash    = " + fixed("\"a\\/b\""))
+    println("fp nul      = " + fixed("\"a\\u0000b\""))
+    println("fp ctl 1f   = " + fixed("\"\\u001f\""))
+    println("fp ctl 0b   = " + fixed("\"\\u000b\""))
+    println("fp doc      = " + fixed("{\"\\u0041\":[\"\\ud83d\\ude00\",1.5,null]}"))
+    # A RAW control byte gets IN (the gap in the corelib header says so) and can
+    # never get back OUT raw: it re-emerges as an escape, and THAT is stable.
+    println("fp raw tab  = " + fixed("\"a\tb\""))

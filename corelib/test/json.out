@@ -74,3 +74,47 @@ empty       = err input ended inside a value at byte 3
 trailing ,  = ok  [1]
 trailing txt= ok  {"a":1}
 esc bfr     = 4
+u A         = A|
+u A len     = 1
+u A bytes   = 41
+u e9 bytes  = c3 a9
+u e9 == lit = yes
+u E9 == e9  = yes
+u 20ac      = e2 82 ac
+u emoji len = 4
+u emoji     = f0 9f 98 80
+u emoji lit = yes
+u 007f      = 7f
+u 0080      = c2 80
+u 07ff      = df bf
+u 0800      = e0 a0 80
+u 10ffff    = f4 8f bf bf
+u mid       = 61 c3 a9 62
+u nul len   = 3
+u nul bytes = 61 00 62
+u lone hi   = err UTF-16 surrogate escape with no partner at byte 2
+u lone lo   = err UTF-16 surrogate escape with no partner at byte 2
+u hi+hi     = err UTF-16 surrogate escape with no partner at byte 2
+u hi+char   = err UTF-16 surrogate escape with no partner at byte 2
+u hi+esc    = err UTF-16 surrogate escape with no partner at byte 2
+u lone off  = 2
+u trunc     = err \u escape is not followed by four hex digits at byte 5
+u nonhex    = err \u escape is not followed by four hex digits at byte 3
+u trunc off = 5
+u nonhex off= 3
+u eof       = err input ended inside a value at byte 5
+u in arr    = err \u escape is not followed by four hex digits at byte 4
+fp A        = "A" fixed=yes
+fp e9       = "é" fixed=yes
+fp 20ac     = "€" fixed=yes
+fp emoji    = "😀" fixed=yes
+fp 10ffff   = "􏿿" fixed=yes
+fp mid      = "aéb" fixed=yes
+fp classic  = "a\"b\nc\td" fixed=yes
+fp bfr      = "\b\f\r" fixed=yes
+fp slash    = "a/b" fixed=yes
+fp nul      = "a\u0000b" fixed=yes
+fp ctl 1f   = "\u001f" fixed=yes
+fp ctl 0b   = "\u000b" fixed=yes
+fp doc      = {"A":["😀",1.5,null]} fixed=yes
+fp raw tab  = "a\tb" fixed=yes
