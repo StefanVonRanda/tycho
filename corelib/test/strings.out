@@ -4,6 +4,20 @@ ababab|[spaced text]
 bits=7 miss=0 p1=-42 p2=123
 pmax=9223372036854775807 pmin=-9223372036854775808
 ovf=0 ovn=0 pe=0 pd=0 pg=0
+hostile=1
+pf 1.5      ok eq1.5=yes eq1.0=NO
+pf 1,5      err Syntax
+pf empty    err Empty
+pf -        err Syntax
+pf 1.5x     err Syntax
+pf ' 1.5'   err Syntax
+pf 1e400    err Overflow
+pf 1e-400   err Underflow
+pf -0.0     ok eq0=yes neg=yes
+pf 0        ok eq0=yes neg=no
+pf 1e3      ok eq1000=yes
+pf 1E+3     ok eq1000=yes
+pf 25digit  ok eq=yes
 vt=[x]
 s1=[a|b|c]
 s2=[|a|]

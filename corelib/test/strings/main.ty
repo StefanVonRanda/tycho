@@ -29,6 +29,29 @@ fn main():
     pd := strings.parse_int("-")
     pg := strings.parse_int("garbage")
     println(f"ovf={ovf} ovn={ovn} pe={pe} pd={pd} pg={pg}")   # ovf=0 ovn=0 pe=0 pd=0 pg=0
+    # ---- parse_float: the strict opposite of parse_int, under a HOSTILE locale --
+    # Everything below runs with LC_NUMERIC switched to a comma-decimal locale, so
+    # bare strtod("1.5") would return 1.0 and stop at the '.'. `hostile=1` is the
+    # proof that switch took effect; a host with no such locale installed prints
+    # `hostile=0` and FAILS here on purpose, rather than quietly testing "C".
+    # Nothing below prints a raw float: str(float) goes through printf and so
+    # renders "1,5.0" under this locale, which would make the golden depend on the
+    # host's LANG. Verdicts (== against a literal) are locale-independent.
+    println(f"hostile={strx_test_make_locale_hostile()}")     # hostile=1
+    println("pf 1.5      " + pfs("1.5") + " eq1.5=" + pfeq("1.5", 1.5) + " eq1.0=" + pfeq("1.5", 1.0))
+    println("pf 1,5      " + pfs("1,5"))                      # the locale trap: Err, never 1.0
+    println("pf empty    " + pfs(""))
+    println("pf -        " + pfs("-"))
+    println("pf 1.5x     " + pfs("1.5x"))                     # no partial parse
+    println("pf ' 1.5'   " + pfs(" 1.5"))                     # no leading whitespace
+    println("pf 1e400    " + pfs("1e400"))                    # overflow, not +inf
+    println("pf 1e-400   " + pfs("1e-400"))                   # underflow, not 0
+    println("pf -0.0     " + pfs("-0.0") + " eq0=" + pfeq("-0.0", 0.0) + " neg=" + pfneg("-0.0"))
+    println("pf 0        " + pfs("0") + " eq0=" + pfeq("0", 0.0) + " neg=" + pfneg("0"))
+    println("pf 1e3      " + pfs("1e3") + " eq1000=" + pfeq("1e3", 1000.0))
+    println("pf 1E+3     " + pfs("1E+3") + " eq1000=" + pfeq("1E+3", 1000.0))
+    d25 := "1234567890123456789012345"                        # 25 digits: rounded, not refused
+    println("pf 25digit  " + pfs(d25) + " eq=" + pfeq(d25, 1.2345678901234568e24))
     # is_space covers \v (11) and \f (12) too: trim strips them
     println("vt=[" + strings.trim(chr(11) + "x" + chr(12)) + "]")   # vt=[x]
     # ---- builtin split shapes (corelib composes with it; empty sep aborts by design) ----
@@ -61,6 +84,37 @@ fn main():
     bf, af := strings.split_once("k=v=w", "=")
     nb, na := strings.split_once("nosep", "=")
     println("split=[" + bf + "][" + af + "][" + nb + "][" + na + "]")   # split=[k][v=w][nosep][]
+
+# ---- parse_float helpers ----------------------------------------------------
+# The test hook lives in corelib/strings/strings_shim.c and is deliberately NOT
+# exported by core:strings -- no library function should move a process-wide
+# global -- so the extern is declared here, in the only program that wants it.
+# tychoc auto-discovers the imported package's shim, which is what resolves it.
+extern fn strx_test_make_locale_hostile() -> int
+
+fn pfs(s: string) -> string:      # the outcome as one word, never a value
+    match strings.parse_float(s):
+        Ok(v): return "ok"
+        Err(strings.Empty): return "err Empty"
+        Err(strings.Syntax): return "err Syntax"
+        Err(strings.Overflow): return "err Overflow"
+        Err(strings.Underflow): return "err Underflow"
+
+fn pfeq(s: string, want: float) -> string:   # equality against a literal: locale-proof
+    match strings.parse_float(s):
+        Ok(v):
+            if v == want:
+                return "yes"
+            return "NO"
+        Err(e): return "err"
+
+fn pfneg(s: string) -> string:    # is it NEGATIVE zero? (-0.0 == 0.0, so divide)
+    match strings.parse_float(s):
+        Ok(v):
+            if 1.0 / v < 0.0:
+                return "yes"
+            return "no"
+        Err(e): return "err"
 
 fn jn(xs: [string]) -> string:    # local join with '|' so pieces are visible
     r := ""
