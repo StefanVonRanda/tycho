@@ -524,7 +524,7 @@ The six, quoted from `corelib/json/json.ty`:
   below). `tools/tycho-q/main.ty` still **compiles**, which is what this phase
   owed it.
 
-- [ ] **Phase 4 — the grammar gets strict (gaps 4, 5, 6)**
+- [x] **Phase 4 — the grammar gets strict (gaps 4, 5, 6)**
   - Scope: `corelib/json/json.ty`, `corelib/test/json/main.ty`,
     `corelib/test/json.out`, and — only if a consumer breaks — that consumer.
   - Trailing comma rejected (`[1,]`, `{"a":1,}`). Leading zeros rejected (`01`,
@@ -541,6 +541,209 @@ The six, quoted from `corelib/json/json.ty`:
     gaps 4, 5 and 6 are deleted from the header, and **no `# gap:` line about the
     grammar remains** — anything still unhandled gets a fresh, honest one.
   - Verify: `make corelib`, `sh examples/corelib/run.sh`.
+
+  **Evidence.**
+
+  Four rejections landed, plus phase 8's control byte, which this phase closed
+  rather than deferred (see the bottom of this block). Four new codes —
+  `corelib/json/json.ty@JE_COMMA`, `corelib/json/json.ty@JE_ZERO`,
+  `corelib/json/json.ty@JE_TRAIL`, `corelib/json/json.ty@JE_CTRL` — and four new
+  `JsonErr` variants beside them. Adding variants broke no consumer for the same
+  reason phase 3's two did not: the only external `match` over `JsonErr` is
+  `tools/tycho-q/main.ty@json_err`, which has a `_` arm, so a tycho-q user meeting
+  one of these gets the generic `path: byte N: reason` line, which is correct.
+
+  *Which byte each names, and why that was a choice.* A block above the constants
+  now records it: **name the byte the writer has to delete or change**, not the
+  byte the scanner was standing on when it noticed. That distinction is not
+  cosmetic — the second break below shows the same error firing five bytes away
+  from the fault.
+
+  **1. Trailing comma** (`corelib/json/json.ty@parse_array`,
+  `corelib/json/json.ty@parse_object`). Detected after the comma is consumed and
+  whitespace skipped; `pos` then rewinds to the remembered comma, the same shape
+  `JE_SURR` already used to rewind to its `u`.
+
+  | input | error | offset | naming |
+  |---|---|---|---|
+  | `[1,]` | `trailing comma before the closing bracket` | 2 | the comma; byte 3 is a good `]` |
+  | `{"a":1,}` | same | 6 | the comma |
+  | `[1,  ]` | same | 2 | whitespace does not move it |
+  | `[[1,]]` | same | 3 | the INNER comma, not the outer array |
+  | `[1,` | `input ended inside a value` | 3 | truncation stays told apart |
+
+  **2. Leading zero** (`corelib/json/json.ty@parse_number`). RFC 8259's
+  `int = zero / (digit1-9 *DIGIT)`: a `0` may be the whole integer part but may
+  not be followed by another digit.
+
+  | input | error | offset | naming |
+  |---|---|---|---|
+  | `01` | `number has a leading zero` | 0 | the zero |
+  | `-01` | same | 1 | the ZERO, not the sign, which is legal |
+  | `00` | same | 0 | |
+  | `01.5` | same | 0 | caught before the fraction is even scanned |
+  | `[10,01]` | same | 4 | not accidentally right only at byte 0 |
+
+  **3. Trailing text** (`corelib/json/json.ty@parse_checked`). `skip_ws` then
+  `pos != n`. The offset names the first non-whitespace byte after the document.
+
+  | input | error | offset | naming |
+  |---|---|---|---|
+  | `{"a":1} junk` | `text after the end of the document` | 8 | the `j`, past the space |
+  | `{"a":1}{"b":2}` | same | 7 | the second document's `{` |
+  | `1 2` | same | 2 | |
+  | `[1]]` | same | 3 | a stray closer is trailing text, not a container error |
+  | `nullx` | same | 4 | |
+
+  **4. Raw control byte** (`corelib/json/json.ty@parse_string`, phase 8's gap).
+  RFC 8259 §7 allows only `%x20-21 / %x23-5B / %x5D-10FFFF` unescaped. Both scan
+  loops needed it and both got it — the fast escape-free scan gained
+  `and s[pos] >= 32` plus a test after it, and the slow path's copy branch gained
+  the same test. Two loops, two tests, and the table proves each separately.
+
+  | input | error | offset | which loop |
+  |---|---|---|---|
+  | `"a<TAB>b"` | `raw control byte inside a string` | 2 | fast |
+  | `"a<LF>b"` | same | 2 | fast |
+  | `"<TAB>b"` | same | 1 | fast, at the very first byte |
+  | `"a\nb<TAB>c"` | same | 5 | **slow** — an escape precedes it |
+  | `{"a<TAB>b":1}` | same | 3 | in an object KEY |
+
+  *The valid neighbours, every one asserted as a golden line rather than argued.*
+
+  | still parses | line in `corelib/test/json.out` |
+  |---|---|
+  | `[1]`, `[1,2]`, `{"a":1}`, `[]`, `{}` | `tc ok …` — an empty container has no comma to be trailing |
+  | `0`, `-0`, `0.5`, `0e1`, `0.0e0`, `10`, `100` | `lz ok …` |
+  | `{"a":1}   `, `{"a":1}\n`, `  {"a":1}`, ` \t\r\n{"a":1} \t\r\n`, ` 1 ` | `tt ok …` — every byte `skip_ws` knows, on both sides |
+  | `"a\tb"`, `"a\u0009b"`, `" "` | `cb ok …` — the ESCAPED spellings are untouched |
+  | a raw `0x7F` (DEL) | `cb ok del = 61 7f 62` — not a control byte for this rule |
+
+  `parse` and `parse_checked` run **one** grammar. Lenient was rewritten in the
+  header to mean "discards the error", not "accepts more", and `parse` is now
+  literally a `match` over `parse_checked`, so the two cannot drift: `tt parse`
+  and `tc parse` are `null`, `tt parse ok` is `obj`.
+
+  *The fixed point still holds.* `fp` lines are `fixed=yes` on all fourteen
+  accepted cases, unchanged. `fp raw tab` is the one that moved — it used to
+  prove a one-directional leniency and now proves the refusal, with a new
+  `fp esc tab` line carrying the fixed-point assertion for the escaped spelling
+  of the same byte.
+
+  *Phase 2's leading-zero interaction, closed rather than left.* `parse_number`'s
+  round-trip proof used to skip leading zeros on the lexeme side before comparing
+  `str(iv)` to it, purely because `01` was accepted and `str(1)` could never match
+  it. With the zero rejected there are none left to skip, so that loop is deleted
+  and the comparison is now against the lexeme verbatim. This was the interaction
+  the brief warned about and it resolves by **removing** code, not adding a case.
+
+  **Gap 6: what each of the six consumers actually does — read one at a time,
+  before the change, and the answer is that none of them relies on it.**
+
+  | consumer | what it hands `parse` | verdict |
+  |---|---|---|
+  | `examples/site/main.ty` | `io.read(site.json)` — one file, one document. `examples/site/site.json` ends `}` + newline | safe; trailing **whitespace** is still accepted, which is the case that mattered |
+  | `examples/fetch/main.ty` | `http.body(r)` — the response body alone; `corelib/http/http.ty@body` returns the body, headers already stripped | safe; one document |
+  | `examples/corelib/json/main.ty` | a string literal in the source | safe |
+  | `bench/json/json.ty` | a document the bench generates itself, `[` … `]` with nothing after | safe |
+  | `tools/tycho-q/main.ty` | one file's whole text through `tools/tycho-q/main.ty@json_root` | safe; one document per file |
+  | `corelib/test/json/main.ty` | literals, including the two that ASSERTED the old leniency | **the only one that relied on it** — and it is the test, whose job is to assert current behaviour. Both lines are rewritten |
+
+  So no caller needed the lenient route and none was built. **The finding worth
+  recording is that the old behaviour was not merely lenient, it was a silent
+  wrong ANSWER**: `{"a":1}{"b":2}` returned the first object and said nothing
+  about the second, so a caller handed two documents got one and could not tell.
+  That reasoning is now in the header above `parse_checked` so the next person to
+  wonder why the promise was broken finds it there.
+
+  *Two consumers were RUN, not merely compiled*, because compiling proves nothing
+  about a parser that got stricter at run time:
+
+      sh examples/site/run.sh  ->  site: green (io+path+json+csv+strings+sort+
+                                   datetime+sha256 compose; tychoc+ASan, matches golden)
+      bench/json/json.ty       ->  1275919372
+
+  The bench number is not merely non-zero (a failed parse folds to 0): it equals
+  the cross-language checksum recorded at `bench/json/RESULTS.md:21`, which the C
+  and Go implementations of the same benchmark also emit. An independent
+  implementation agreeing on the whole tree is a stronger statement than the
+  golden.
+
+  *A claim in the new header was checked instead of asserted, and it was the one
+  that could have been a real bug.* The control-byte test is `s[pos] >= 32`. If a
+  Tycho string byte were **signed**, `0x80`-`0xFF` would read as negative and that
+  test would have rejected every non-ASCII UTF-8 byte in the tree — the phase
+  would have broken `é`, `€` and the emoji while looking correct. Probed in a
+  throwaway binary first (`"a<FF>b"` -> `ok len=3 bytes=97 255 98`, so bytes are
+  unsigned), and then left behind as two permanent golden lines rather than a
+  probe that ran once:
+
+      cb ok high  = 61 ff 62
+      cb ok 80    = 80
+
+  *The tests can fail — two mechanisms broken on purpose, rebuilt, reverted.*
+
+  - **the rejection itself**, `JE_ZERO`'s test replaced by `if false`:
+
+        < lz 01       = err number has a leading zero at byte 0
+        > lz 01       = ok  01
+        < lz -01 off  = 1
+        > lz -01 off  = -1
+        < lz in arr   = 4
+        > lz in arr   = -1
+
+  - **the offset**, `pos = cpos` deleted from `parse_array` so the comma is
+    detected but not named. This is the more valuable of the two, because the
+    error still fires and a test asserting only "it is an error" would have
+    stayed green:
+
+        < tc arr off  = 2          > tc arr off  = 3     (names the `]`)
+        < tc ws off   = 2          > tc ws off   = 5     (five bytes from the fault)
+        < tc nest off = 3          > tc nest off = 4
+
+    A rejection at the wrong byte is a diagnosis pointing at innocent code, which
+    is the failure the whole error channel exists to prevent.
+
+  Both reverted; `cmp` against the golden is byte-identical again and
+  `make corelib` is green.
+
+  *No `# gap:` line about the grammar remains.* Four were deleted (trailing
+  comma, leading zeros, trailing text, and phase 3's control byte). Two remain and
+  **both are now labelled as ceilings elsewhere, with the grammar explicitly
+  exonerated in the sentence above them**:
+
+  - `gap: REPRESENTATION` — `1e400` is well-formed RFC 8259 and refused, because
+    representing it means an infinity or a 0. Way out: a numeric-tower decision
+    (`core:bignum` / `core:decimal`), unchanged from before.
+  - `gap: ENCODING` — **new, honest, and measured this phase.** RFC 8259 §8.1
+    requires valid UTF-8 and this parser does not validate the bytes ≥ 0x80 it
+    copies through; the `cb ok high` line above is the proof, read as a feature
+    from one side and a gap from the other. It invents nothing (bytes out are
+    bytes in) and a decoded `\uXXXX` is well-formed by construction, so the
+    damage is confined to bytes the document already held. Way out: a UTF-8
+    decoder over the string span — the same decoder `corelib/json/json.ty@esc`
+    deliberately does not have, so it is one piece of work serving both
+    directions. Filed as phase 9 below.
+
+  *Phase 8 was TICKED, not deleted*, and the choice is deliberate: deleting it
+  would erase the record that the control byte was found in phase 3, why it was
+  left, and that the leniency was one-directional in the meantime. A ticked phase
+  says "found here, closed there"; a deleted one says nothing.
+
+  *Gates, each foreground:*
+
+      make corelib                ->  corelib: all green (tychoc matches goldens)
+      sh examples/corelib/run.sh  ->  corelib examples: all green
+      sh examples/site/run.sh     ->  site: green (… matches golden)
+      python3 scripts/check_citations.py  ->  citation check: ok
+      ./tychoc <each of the six consumers> -o …  ->  all six COMPILE ok
+
+  `tools/tycho-q/main.ty` **compiles**, which is what this phase owed it.
+  `make q-check` was **not** run and is still red from phase 2's commit until
+  phase 5 lands (phase 7 below) — its redness is not this phase's. `make ci`,
+  `make test` and `make shim-check` were not run: nothing outside `corelib/`
+  changed, no `_shim.c` was touched, and `tests/run.sh:113` globs the top level
+  only. The whole diff is three files.
 
 - [ ] **Phase 5 — the consumers, and the closing sweep**
   - Scope: `tools/tycho-q/main.ty`, `tools/tycho-q/run.sh`,
@@ -615,8 +818,14 @@ The six, quoted from `corelib/json/json.ty`:
   - Verify: `make q-check` (`RECORD=1 sh tools/tycho-q/run.sh` once the moved
     lines are understood, never before).
 
-- [ ] **Phase 8 — a raw control byte inside a string is accepted, and RFC 8259
-      forbids it**
+- [x] **Phase 8 — a raw control byte inside a string is accepted, and RFC 8259
+      forbids it** — **CLOSED BY PHASE 4**, which is what its "interacts with
+      phase 4" note asked for. The way out described below is exactly what was
+      done: an `s[pos] < 32` test in both of `parse_string`'s scan loops, with a
+      new `JE_CTRL` code so the message says "raw control byte inside a string"
+      rather than borrowing `JE_BYTE`'s text about beginning a value. Kept
+      rather than deleted so the record of where it was found survives; the
+      evidence is in phase 4's block, rejection 4.
   - Found in phase 3, outside its scope (phase 3 owned `\uXXXX`; this is a
     grammar leniency, and the brief scope-locked the grammar gaps to phase 4), so
     recorded rather than absorbed. **Interacts with phase 4**, whose Done clause
@@ -636,6 +845,34 @@ The six, quoted from `corelib/json/json.ty`:
     borrow `JE_BYTE`, whose text is about *beginning a value*.
   - Verify: `make corelib`, `sh examples/corelib/run.sh`. Not `make test` —
     nothing outside `corelib/` changes.
+
+- [ ] **Phase 9 — `core:json` does not validate UTF-8, and RFC 8259 §8.1
+      requires it**
+  - Found in phase 4, and deliberately **not** absorbed into it: phase 4's
+    subject was the grammar, this is the encoding, and closing it needs a UTF-8
+    decoder that phase 4 had no reason to write. It is recorded as the `gap:
+    ENCODING` line in `corelib/json/json.ty`'s header, labelled there as a
+    ceiling that is not a grammar leniency.
+  - Measured, not assumed: `corelib/test/json.out`'s `cb ok high` line shows
+    `"a<FF>b"` — a raw 0xFF, which is not a legal UTF-8 sequence anywhere —
+    parsing to a three-byte string. `corelib/json/json.ty@parse_string` copies
+    every byte ≥ 0x20 through without inspecting it.
+  - **This is the mildest remaining leniency and it is one-directional in the
+    same way the control byte was.** It invents nothing: the bytes out are the
+    bytes in, and a `\uXXXX` escape the parser decodes is well-formed UTF-8 by
+    construction (`corelib/json/json.ty@utf8` builds it from the RFC 3629 table),
+    so only bytes the document itself contained can be malformed.
+  - The way out is **one** UTF-8 decoder serving both directions, not a parser
+    patch: `corelib/json/json.ty@esc` deliberately does not re-escape bytes ≥ 0x80
+    on output for exactly the same missing-decoder reason, and its comment says
+    so. Whoever writes it should close both at once and decide, explicitly,
+    whether an invalid sequence is an error at its first byte (fail closed, in
+    keeping with this package) or is passed through — and if the latter, say why
+    in the header rather than leaving a reader to infer it.
+  - Note the interaction with **phase 6**: neither is urgent on its own, but both
+    are "the corelib assumes an encoding/locale nobody has stated".
+  - Verify: `make corelib`, `sh examples/corelib/run.sh`. Not `make test` —
+    nothing outside `corelib/` need change.
 
 ## Carried forward
 

@@ -152,10 +152,13 @@ fn main():
     # `-0` as an INTEGER cannot be a JNum: str(0) is "0", which is not the
     # lexeme, so the round-trip proof fails it into JFloat and the sign lives.
     println("n -0        = " + rt("-0"))
-    # `01` is still lenient (the leading-zero gap in the header). The leading
-    # zero is skipped before the round-trip comparison, so this stays JNum(1)
-    # and is NOT quietly reclassified as a float on the way past.
-    println("n 01        = " + rt("01"))
+    # `0` is a whole integer part by itself, and a fraction or an exponent may
+    # follow it. RFC 8259's rule forbids a zero followed by another DIGIT, and
+    # these four are the neighbours of `01` that must survive it.
+    println("n 0.5       = " + rt("0.5"))
+    println("n 0e1       = " + rt("0e1"))
+    println("n -0.5      = " + rt("-0.5"))
+    println("n 0 again   = " + rt("0"))
 
     # the VALUES, asserted by comparison because printing a float is locale-bound
     println("v 1.5 eq1.5 = " + yn(json.as_float(json.parse("1.5")) == 1.5))
@@ -216,11 +219,105 @@ fn main():
     println("unclosed {  = " + show(json.parse_checked("{\"a\":1")))
     println("unclosed \"  = " + show(json.parse_checked("\"ab")))
     println("empty       = " + show(json.parse_checked("   ")))
-    # lenient by design (see the header's gap list): these stay Ok
-    println("trailing ,  = " + show(json.parse_checked("[1,]")))
-    println("trailing txt= " + show(json.parse_checked("{\"a\":1} junk")))
     # escapes the parser DOES represent, round-tripped through the byte values
     println("esc bfr     = " + str(len(json.as_str(json.parse("\"\\b\\f\\r\\/\"")))))
+
+    # ---- the four leniencies that are now errors (gaps 4, 5, 6 + control) ----
+    # Each of the four was, until this phase, an accepted input. Each line below
+    # shows the refusal AND its offset, because the offset is the whole promise:
+    # the byte named is the byte the writer has to delete or change.
+    #
+    # 1. TRAILING COMMA. `[1,]` used to parse as `[1]` -- a document that says
+    #    one thing read as a document that says another. The offset names the
+    #    COMMA (byte 2), not the `]`, which is a perfectly good bracket.
+    println("tc arr      = " + show(json.parse_checked("[1,]")))
+    println("tc arr off  = " + str(offset_of(json.parse_checked("[1,]"))))
+    println("tc obj      = " + show(json.parse_checked("{\"a\":1,}")))
+    println("tc obj off  = " + str(offset_of(json.parse_checked("{\"a\":1,}"))))
+    # Whitespace between the comma and the closer does not hide it, and the
+    # offset still names the comma rather than wherever the scan stopped.
+    println("tc ws off   = " + str(offset_of(json.parse_checked("[1,  ]"))))
+    println("tc nest off = " + str(offset_of(json.parse_checked("[[1,]]"))))
+    # `[1,` is TRUNCATION, not a trailing comma: nothing has closed it yet, so
+    # the two failures stay told apart.
+    println("tc trunc    = " + show(json.parse_checked("[1,")))
+    # THE VALID NEIGHBOURS. A comma between two elements is not a trailing one,
+    # and an EMPTY container has no comma to be trailing.
+    println("tc ok [1]   = " + show(json.parse_checked("[1]")))
+    println("tc ok [1,2] = " + show(json.parse_checked("[1,2]")))
+    println("tc ok obj   = " + show(json.parse_checked("{\"a\":1}")))
+    println("tc ok []    = " + show(json.parse_checked("[]")))
+    println("tc ok {}    = " + show(json.parse_checked("{}")))
+    #
+    # 2. LEADING ZERO. `01` used to parse as JNum(1) -- the document said one
+    #    thing and the tree held another. The offset names the ZERO.
+    println("lz 01       = " + show(json.parse_checked("01")))
+    println("lz 01 off   = " + str(offset_of(json.parse_checked("01"))))
+    # `-01` names byte 1: the zero, NOT the sign, which is legal.
+    println("lz -01      = " + show(json.parse_checked("-01")))
+    println("lz -01 off  = " + str(offset_of(json.parse_checked("-01"))))
+    println("lz 00       = " + show(json.parse_checked("00")))
+    println("lz 01.5     = " + show(json.parse_checked("01.5")))
+    println("lz in arr   = " + str(offset_of(json.parse_checked("[10,01]"))))
+    # THE VALID NEIGHBOURS: a lone zero, a signed zero, and a zero that is the
+    # whole integer part of a float. `10` and `100` are not leading zeros.
+    println("lz ok 0     = " + show(json.parse_checked("0")))
+    println("lz ok -0    = " + show(json.parse_checked("-0")))
+    println("lz ok 0.5   = " + show(json.parse_checked("0.5")))
+    println("lz ok 0e1   = " + show(json.parse_checked("0e1")))
+    println("lz ok 10    = " + show(json.parse_checked("10")))
+    println("lz ok 100   = " + show(json.parse_checked("100")))
+    println("lz ok 0.0e0 = " + show(json.parse_checked("0.0e0")))
+    #
+    # 3. TRAILING TEXT. `{"a":1} junk` used to be Ok, and a caller handed TWO
+    #    documents got the first one and no way to learn about the second. The
+    #    offset names the first non-whitespace byte after the document.
+    println("tt junk     = " + show(json.parse_checked("{\"a\":1} junk")))
+    println("tt junk off = " + str(offset_of(json.parse_checked("{\"a\":1} junk"))))
+    println("tt two docs = " + show(json.parse_checked("{\"a\":1}{\"b\":2}")))
+    println("tt scalar   = " + show(json.parse_checked("1 2")))
+    println("tt closer   = " + show(json.parse_checked("[1]]")))
+    println("tt off0     = " + str(offset_of(json.parse_checked("nullx"))))
+    # THE VALID NEIGHBOURS: whitespace after the document, before it, and both,
+    # in every flavour skip_ws knows -- a trailing newline is what a JSON file
+    # on disk actually ends with (`examples/site/site.json` does).
+    println("tt ok pad   = " + show(json.parse_checked("{\"a\":1}   ")))
+    println("tt ok nl    = " + show(json.parse_checked("{\"a\":1}\n")))
+    println("tt ok lead  = " + show(json.parse_checked("  {\"a\":1}")))
+    println("tt ok both  = " + show(json.parse_checked(" \t\r\n{\"a\":1} \t\r\n")))
+    println("tt ok scalar= " + show(json.parse_checked(" 1 ")))
+    # The lenient wrapper runs the SAME grammar; lenient means it discards the
+    # error, not that it accepts more. All three of these fail closed to null.
+    println("tt parse    = " + json.kind(json.parse("{\"a\":1} junk")))
+    println("tt parse ok = " + json.kind(json.parse("{\"a\":1}\n")))
+    println("tc parse    = " + json.kind(json.parse("[1,]")))
+    #
+    # 4. A RAW CONTROL BYTE inside a string. RFC 8259 s7 allows only
+    #    %x20-21 / %x23-5B / %x5D-10FFFF unescaped. The offset names the byte.
+    println("cb tab      = " + show(json.parse_checked("\"a\tb\"")))
+    println("cb tab off  = " + str(offset_of(json.parse_checked("\"a\tb\""))))
+    println("cb nl       = " + show(json.parse_checked("\"a\nb\"")))
+    println("cb first    = " + str(offset_of(json.parse_checked("\"\tb\""))))
+    # After an escape, so the SLOW path's copy loop is tested and not just the
+    # fast scan -- they are two separate loops and each needed its own test.
+    println("cb slow     = " + show(json.parse_checked("\"a\\nb\tc\"")))
+    println("cb slow off = " + str(offset_of(json.parse_checked("\"a\\nb\tc\""))))
+    # In an object KEY, which goes through the same parse_string.
+    println("cb key off  = " + str(offset_of(json.parse_checked("{\"a\tb\":1}"))))
+    # THE VALID NEIGHBOURS: the ESCAPED forms of the same bytes are still fine,
+    # and 0x20 (space) and 0x7F (DEL) are not control bytes for this rule.
+    println("cb ok esc   = " + show(json.parse_checked("\"a\\tb\"")))
+    println("cb ok uesc  = " + show(json.parse_checked("\"a\\u0009b\"")))
+    println("cb ok space = " + show(json.parse_checked("\" \"")))
+    # THE ASSUMPTION `s[pos] >= 32` RESTS ON: that a string byte is UNSIGNED.
+    # If `s[pos]` were signed, 0x80-0xFF would read as negative, the control-byte
+    # test would swallow every high byte, and this parser would reject all UTF-8
+    # above ASCII. `chr(255)` here is a raw 0xFF -- it must survive as one byte,
+    # and it does (which is also the ENCODING gap in the corelib header: nothing
+    # VALIDATES it as UTF-8, it is merely copied through unharmed).
+    println("cb ok high  = " + bytes_of(json.as_str(json.parse("\"a" + chr(255) + "b\""))))
+    println("cb ok 80    = " + bytes_of(json.as_str(json.parse("\"" + chr(128) + "\""))))
+    println("cb ok del   = " + bytes_of(json.as_str(json.parse("\"a" + chr(127) + "b\""))))
 
     # ---- \uXXXX and the surrogate pair (gap 2) ------------------------------
     # Before this, `\u` was the ONE escape parse_string refused: `"\u0041"` was
@@ -300,6 +397,9 @@ fn main():
     println("fp ctl 1f   = " + fixed("\"\\u001f\""))
     println("fp ctl 0b   = " + fixed("\"\\u000b\""))
     println("fp doc      = " + fixed("{\"\\u0041\":[\"\\ud83d\\ude00\",1.5,null]}"))
-    # A RAW control byte gets IN (the gap in the corelib header says so) and can
-    # never get back OUT raw: it re-emerges as an escape, and THAT is stable.
+    # A raw control byte used to get IN and come back out as an escape, which
+    # made this line the proof of a one-directional leniency. It is REFUSED now,
+    # so the line proves the refusal instead -- and the escaped spelling of the
+    # same byte is the fixed point it always should have been.
     println("fp raw tab  = " + fixed("\"a\tb\""))
+    println("fp esc tab  = " + fixed("\"a\\tb\""))

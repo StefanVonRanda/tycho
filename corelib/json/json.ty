@@ -29,16 +29,31 @@
 #   surrogate pair        "\ud83d\ude00" -> the 4 UTF-8 bytes of an emoji
 #   array                 [1,"x",true,null]     []
 #   object                {"a":1,"b":[2]}       {}
-#   whitespace            space / tab / CR / LF between any two tokens
-#   trailing text         {"a":1} junk          value parsed, remainder ignored
+#   whitespace            space / tab / CR / LF between any two tokens,
+#                         and before/after the whole document
 #
 # EVERY other input is an error carrying the byte offset of the byte that caused
 # it -- see `JsonErr`, `err_reason`, `err_offset`, `err_str`. Nothing is guessed.
 #
+# ---- WHAT IS REFUSED, and it is now exactly what RFC 8259 refuses -----------
+#
+# The four leniencies this parser used to have are gone; each is now an error at
+# a named byte, and the byte named is the one the writer has to fix:
+#
+#   [1,]  {"a":1,}      a trailing comma           -- names the COMMA
+#   01  -01             a leading zero             -- names the ZERO
+#   {"a":1} junk        text after the document    -- names the first junk byte
+#   "a<TAB>b"           a raw control byte 00-1F   -- names the CONTROL BYTE
+#
+# Still accepted, and still correct: whitespace anywhere between tokens and on
+# either side of the whole document, so `  {"a":1}\n ` is Ok. `0`, `-0`, `0.5`
+# and `0e1` are fine -- the leading-zero rule forbids a zero FOLLOWED BY another
+# digit, which is RFC 8259's `int = zero / (digit1-9 *DIGIT)`.
+#
 # ---- NUMBERS: which variant a number lands in, and why ----------------------
 #
-# The accepted number grammar is RFC 8259's, minus the leading-zero rule (see
-# the gap below):  `-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?`
+# The accepted number grammar is RFC 8259's, exactly:
+# `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`
 #
 #   JNum(int)            an integer that ROUND-TRIPS EXACTLY through 64 bits.
 #                        Proved, not assumed: the accumulated int is rendered
@@ -59,27 +74,25 @@
 # A number whose VALUE binary64 cannot hold at all (`1e400`, `1e-400`) is an
 # error at the first byte of the number, not an infinity and not a 0.
 #
-# What it still cannot do, each with the ceiling and the way out:
+# What it still cannot do. NEITHER OF THESE IS A GRAMMAR LENIENCY -- the grammar
+# this parser accepts is now exactly RFC 8259's. Both are ceilings elsewhere:
 #
-# gap: a number outside binary64's range (`1e400`, `1e-400`) is refused rather
-#      than represented. It is valid RFC 8259 and this parser fails closed on
-#      it. The way out is an arbitrary-precision variant (`core:bignum` /
+# gap: REPRESENTATION, not grammar. A number outside binary64's range (`1e400`,
+#      `1e-400`) is well-formed RFC 8259 and is REFUSED rather than represented,
+#      because representing it would mean an infinity or a 0 -- a silent wrong
+#      value. The way out is an arbitrary-precision variant (`core:bignum` /
 #      `core:decimal`), which is a numeric-tower decision, not a parser one.
-# gap: a RAW control byte (0x00-0x1F) inside a string is accepted, and RFC 8259
-#      forbids it -- `"a<TAB>b"` with a literal tab parses. It loses no data and
-#      invents none, so the leniency is one-directional: `esc` always escapes
-#      those bytes on the way OUT, so nothing this package emits contains one.
-#      The way out is a `s[pos] < 32` test in parse_string's two scan loops.
-# gap: a trailing comma is accepted -- `[1,]` parses as `[1]`. It loses no data
-#      and invents none, so it is left lenient; the way out is a `saw_comma`
-#      flag tested at the closing bracket.
-# gap: leading zeros are accepted (`01` -> 1); a leading `+` is an error. Only
-#      the first is lenient. The way out is a first-digit test in parse_number.
-# gap: trailing text after the top-level value is ignored, so `{"a":1} junk` is
-#      Ok. Deliberate -- it is the documented behaviour six callers already
-#      have. The way out is a `skip_ws` + `pos == len(s)` test in
-#      `parse_checked`, which is a caller-visible change and belongs to whoever
-#      wants it.
+#      Until then `as_lexeme` still returns the digits for the value that WAS
+#      accepted; a refused one never enters the tree at all.
+# gap: ENCODING, not grammar. RFC 8259 s8.1 requires a JSON text to be valid
+#      UTF-8, and this parser does not VALIDATE the bytes >= 0x80 it copies
+#      through: `"<FF>"` with a raw 0xFF byte parses to a one-byte string. It
+#      invents nothing (the bytes out are the bytes in) and a `\uXXXX` escape it
+#      decodes is always well-formed UTF-8 by construction, so the damage is
+#      confined to bytes the document already contained. The way out is a UTF-8
+#      decoder over the string span -- the same decoder `esc` deliberately does
+#      not have (see the note above `esc`), so it is one piece of work serving
+#      both directions, not a parser patch.
 package json
 import "core:strings"
 
@@ -118,6 +131,10 @@ const JE_STUCK   = 10   # the structural guard fired: a nested parse ate nothing
 const JE_RANGE   = 11   # well-formed, but binary64 holds no such value: `1e400`
 const JE_UESC    = 12   # a `\u` not followed by four hex digits: `\uZZZZ`, `\u00"`
 const JE_SURR    = 13   # a UTF-16 surrogate with no partner: a lone `\ud83d`
+const JE_COMMA   = 14   # a trailing comma before a closer: `[1,]`, `{"a":1,}`
+const JE_ZERO    = 15   # a leading zero: `01`, `-01`
+const JE_TRAIL   = 16   # text after the top-level value: `{"a":1} junk`
+const JE_CTRL    = 17   # a raw control byte 0x00-0x1F inside a string
 
 # WHICH BYTE THE TWO \u FAILURES NAME, because they differ and the difference is
 # deliberate. JE_UESC names the OFFENDING BYTE ITSELF -- the first thing in the
@@ -125,6 +142,19 @@ const JE_SURR    = 13   # a UTF-16 surrogate with no partner: a lone `\ud83d`
 # JE_SURR names the `u` of the OFFENDING ESCAPE, because there is no single bad
 # byte: every byte of `\ud83d` is fine and it is the escape as a whole that has
 # no partner. That matches JE_ESCAPE, which has always named the escape letter.
+#
+# THE SAME QUESTION FOR THE FOUR GRAMMAR FAILURES, answered the same way: name
+# the byte the writer has to DELETE or CHANGE, not the byte the scanner happened
+# to be standing on when it noticed.
+#
+#   JE_COMMA  the COMMA, not the `]` that revealed it. `[1,]` is fixed by
+#             deleting byte 2; byte 3 is a perfectly good closing bracket.
+#             `pos` rewinds to the comma, exactly as JE_SURR rewinds to its `u`.
+#   JE_ZERO   the leading ZERO. `01` is fixed by deleting byte 0. (`-01` names
+#             byte 1 -- the zero, not the sign, which is legal.)
+#   JE_TRAIL  the FIRST NON-WHITESPACE byte after the document, because the
+#             document itself is fine and everything from there on is the fault.
+#   JE_CTRL   the CONTROL BYTE itself. It has to become an escape in place.
 
 # The public failure. Every variant carries the byte offset, so a caller that
 # only wants the position never has to know which cause it was.
@@ -142,8 +172,20 @@ enum JsonErr:
     NumberRange(int)
     BadUnicode(int)
     LoneSurrogate(int)
+    TrailingComma(int)
+    LeadingZero(int)
+    TrailingText(int)
+    ControlByte(int)
 
 fn err_at(code: int, off: int) -> JsonErr:
+    if code == JE_COMMA:
+        return TrailingComma(off)
+    if code == JE_ZERO:
+        return LeadingZero(off)
+    if code == JE_TRAIL:
+        return TrailingText(off)
+    if code == JE_CTRL:
+        return ControlByte(off)
     if code == JE_UESC:
         return BadUnicode(off)
     if code == JE_SURR:
@@ -185,6 +227,10 @@ fn err_offset(e: JsonErr) -> int:              # byte offset of the failure
         NumberRange(o): return o
         BadUnicode(o): return o
         LoneSurrogate(o): return o
+        TrailingComma(o): return o
+        LeadingZero(o): return o
+        TrailingText(o): return o
+        ControlByte(o): return o
 
 fn err_reason(e: JsonErr) -> string:           # what was wrong, without the where
     match e:
@@ -201,6 +247,10 @@ fn err_reason(e: JsonErr) -> string:           # what was wrong, without the whe
         NumberRange(o): return "number outside the range a float can represent"
         BadUnicode(o): return "\\u escape is not followed by four hex digits"
         LoneSurrogate(o): return "UTF-16 surrogate escape with no partner"
+        TrailingComma(o): return "trailing comma before the closing bracket"
+        LeadingZero(o): return "number has a leading zero"
+        TrailingText(o): return "text after the end of the document"
+        ControlByte(o): return "raw control byte inside a string"
 
 # The one-line message a caller wants on stderr: cause and byte offset together.
 fn err_str(e: JsonErr) -> string:
@@ -276,11 +326,16 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     # The common JSON string has no escapes, so this takes it in one substr --
     # one allocation instead of a chr()+append per character (parse_string was
     # ~20% of a parse's CPU; the per-char append + chr() temp dominated it).
-    for pos < n and s[pos] != 34 and s[pos] != 92:
+    # `s[pos] >= 32` is the RFC 8259 s7 rule: unescaped is %x20-21 / %x23-5B /
+    # %x5D-10FFFF, so a raw control byte ends the span and is an error below.
+    for pos < n and s[pos] != 34 and s[pos] != 92 and s[pos] >= 32:
         pos = pos + 1
     r := substr(s, start, pos)                 # the escape-free prefix (the whole string in the common case)
     if pos >= n:
         ecode = JE_TRUNC                       # ran off the end with no closing "
+        return r
+    if s[pos] < 32:
+        ecode = JE_CTRL                        # `"a<TAB>b"` -- must be escaped
         return r
     if s[pos] == 34:
         pos = pos + 1                          # skip closing "
@@ -346,6 +401,9 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
                 ecode = JE_ESCAPE
                 return r
         else:
+            if s[pos] < 32:                    # the same RFC 8259 s7 rule as the
+                ecode = JE_CTRL                # fast path, on the slow path too
+                return r
             r = r + chr(s[pos])
         pos = pos + 1
     if pos >= n:
@@ -379,6 +437,13 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         ecode = JE_NUMBER
         return JNull
     dstart := pos                              # first digit of the integer part
+    # RFC 8259: `int = zero / (digit1-9 *DIGIT)`. A `0` may be the WHOLE integer
+    # part (`0`, `-0`, `0.5`, `0e1` are all fine) but may not be followed by
+    # another digit. The offset names the zero, which is the byte to delete.
+    if s[dstart] == 48 and dstart + 1 < n and s[dstart + 1] >= 48 and s[dstart + 1] <= 57:
+        pos = dstart
+        ecode = JE_ZERO
+        return JNull
     v := 0
     ovf := false                               # the value left the int range
     for pos < n and s[pos] >= 48 and s[pos] <= 57:
@@ -421,12 +486,11 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         # compare it to the lexeme's own digits. Only an exact match becomes a
         # JNum; anything else falls through to the float path WITH its lexeme,
         # so a value this `int` cannot hold is never handed back as if it could.
-        # Leading zeros are skipped on the lexeme side only (they are lenient
-        # here -- see the gap in the header), so `01` still yields JNum(1).
-        z := dstart
-        for z < dend - 1 and s[z] == 48:
-            z = z + 1
-        canon := substr(s, z, dend)
+        # The digits compared are the lexeme's own, verbatim: this used to skip
+        # leading zeros first, because `01` was accepted and `str(1)` could never
+        # match it. The leading-zero test above means there are none left to
+        # skip, so the comparison is now against exactly what was written.
+        canon := substr(s, dstart, dend)
         if neg:
             canon = "-" + canon
         if str(iv) == canon:
@@ -482,8 +546,13 @@ fn parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_TRUNC
             return JArr(xs)
         if s[pos] == 44:                       # ,
+            cpos := pos                        # remembered so the error can name it
             pos = pos + 1
             skip_ws(s, n, &pos)
+            if pos < n and s[pos] == 93:       # `[1,]` -- a comma promises an element
+                pos = cpos
+                ecode = JE_COMMA
+                return JArr(xs)
         elif s[pos] != 93:                     # neither , nor ]
             ecode = JE_SEP
             return JArr(xs)
@@ -531,8 +600,13 @@ fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_TRUNC
             return JObj(ks, vs)
         if s[pos] == 44:                       # ,
+            cpos := pos                        # remembered so the error can name it
             pos = pos + 1
             skip_ws(s, n, &pos)
+            if pos < n and s[pos] == 125:      # `{"a":1,}` -- a comma promises a member
+                pos = cpos
+                ecode = JE_COMMA
+                return JObj(ks, vs)
         elif s[pos] != 125:                    # neither , nor }
             ecode = JE_SEP
             return JObj(ks, vs)
@@ -585,28 +659,40 @@ fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     ecode = JE_BYTE
     return JNull
 
-# THE ENTRY POINT FOR NEW CODE. Parse a whole document; trailing text is ignored
-# (see the gaps in the header). On failure the Err names the cause and the byte
+# THE ENTRY POINT FOR NEW CODE. Parse a WHOLE document: the value, then optional
+# whitespace, then the end of the input. Anything else after the value is an
+# error naming its first byte. On failure the Err names the cause and the byte
 # offset of the byte that caused it.
+#
+# This function used to ignore trailing text, and that was documented behaviour
+# for as long as the package existed. It stopped because ignoring it is a silent
+# wrong ANSWER, not merely a lenient one: `{"a":1} {"b":2}` returned the first
+# object and said nothing about the second, so a caller handed two documents got
+# one and could not tell. All six callers in this tree hand it exactly one
+# document each -- checked, one at a time, before the change.
 fn parse_checked(s: string) -> Result(Json, JsonErr):
+    n := len(s)
     pos := 0
     ecode := JE_OK
-    j := parse_value(s, len(s), &pos, &ecode)
+    j := parse_value(s, n, &pos, &ecode)
     if ecode != JE_OK:
         return Err(err_at(ecode, pos))
+    skip_ws(s, n, &pos)                        # a trailing newline is still fine
+    if pos != n:
+        return Err(TrailingText(pos))
     return Ok(j)
 
 # The lenient wrapper, kept so the callers written before the error channel keep
-# compiling and keep their signature. It runs the same parser and DISCARDS the
-# error, failing closed to JNull for the whole document rather than handing back
-# a half-built tree. Prefer `parse_checked`.
+# compiling and keep their signature. LENIENT MEANS "discards the error", NOT
+# "accepts more": it runs the same parser over the same grammar and fails closed
+# to JNull for the whole document rather than handing back a half-built tree.
+# Prefer `parse_checked`.
 fn parse(s: string) -> Json:
-    pos := 0
-    ecode := JE_OK
-    j := parse_value(s, len(s), &pos, &ecode)
-    if ecode != JE_OK:
-        return JNull
-    return j
+    match parse_checked(s):
+        Ok(j):
+            return j
+        Err(e):
+            return JNull
 
 # ---- serializer (walk the tree, build a compact string) --------------------
 
@@ -621,9 +707,11 @@ fn hexdig(v: int) -> string:                   # one LOWERCASE hex digit, 0..15
 #   "  \        the two that would end or re-open the string -- must escape
 #   0x00-0x1F   control bytes. RFC 8259 forbids ALL of them raw. The five with
 #               short forms get them (\b \f \n \r \t); the other 27 get \u00XX.
-#               parse_string is LENIENT about these on the way IN (see the gap
-#               in the header), so this is the direction that keeps the leniency
-#               one-way: a control byte can get in, but never back out raw.
+#               parse_string refuses a raw one on the way IN (JE_CTRL), so the
+#               two directions now agree: such a byte can only ever enter as an
+#               escape, and it only ever leaves as one. A string built in Tycho
+#               rather than parsed can still hold one, which is why this arm is
+#               load-bearing and not merely symmetric.
 #   everything else passes through as its own bytes, DELIBERATELY:
 #     /         legal raw; `\/` is permitted but not required, and escaping it
 #               would make stringify(parse(x)) differ from x for no gain.
