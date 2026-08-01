@@ -4575,6 +4575,22 @@ static void add_shim(const char *path) {
  * harness probes the same `deps` and SKIPS instead). */
 static char *pkg_config_flags(const char *name);   /* defined with the cc-line code below */
 static char *g_pkgdeps = NULL;                      /* accumulated --cflags --libs */
+/* The pkg-config NAMES are retained separately from the flags they resolve to,
+ * and the two answer different questions. `g_pkgdeps` is what goes on the cc
+ * line; it is the *resolved* form, and on a host where the library is absent it
+ * is EMPTY -- indistinguishable from a package that declared no deps at all. A
+ * harness that wants to SKIP rather than fail needs the question "which packages
+ * does this program require?", which only the names answer, and it needs the
+ * answer on exactly the hosts where resolution fails. So the name is recorded
+ * BEFORE resolution is attempted and regardless of whether it succeeds. Read out
+ * by `--print-deps`; see the flag's comment in main. */
+static const char **g_pkgnames;
+static int  g_npkgnames = 0, g_pkgnames_cap = 0;
+/* Set by `--print-deps`: the caller wants the names, so resolving each one would
+ * fork pkg-config for an answer nobody reads, and on a host missing the library
+ * it would print a "could not resolve" line into the exact case the caller is
+ * asking in order to handle gracefully. */
+static int g_pkgdeps_names_only = 0;
 static void add_pkg_deps(const char *dir) {
     char *path = sfmt("%s/deps", dir);
     FILE *f = fopen(path, "r");
@@ -4586,6 +4602,11 @@ static void add_pkg_deps(const char *dir) {
         char *e = s + strlen(s);
         while (e > s && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t')) *--e = 0;
         if (!*s || *s == '#') continue;
+        char *name = sfmt("%s", s);
+        int seen = 0;
+        for (int i = 0; i < g_npkgnames; i++) if (!strcmp(g_pkgnames[i], name)) { seen = 1; break; }
+        if (!seen) { TBL_ENSURE(g_pkgnames, g_npkgnames, g_pkgnames_cap); g_pkgnames[g_npkgnames++] = name; }
+        if (g_pkgdeps_names_only) continue;
         char *fl = pkg_config_flags(s);
         if (fl && *fl) g_pkgdeps = g_pkgdeps ? sfmt("%s %s", g_pkgdeps, fl) : sfmt("%s", fl);
         else fprintf(stderr, "tychoc: pkg-config could not resolve dependency '%s' (from %s)\n", s, path);
@@ -12779,6 +12800,7 @@ int main(int argc, char **argv) {
     int emit_c_only = 0;
     int want_symbols = 0;
     int print_shims = 0;   /* --print-shims: list the transitive <pkg>_shim.c closure, no codegen */
+    int print_deps  = 0;   /* --print-deps: list the transitive pkg-config names from <pkg>/deps, no codegen */
     int bundle = 0;
     int debug = 0;    /* -g: emit #line directives + build with -O0 -g (single-file only) */
     int native = 0;   /* --native: add -march=native (non-portable: SIGILL on a different CPU) */
@@ -12790,6 +12812,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--emit-c")) emit_c_only = 1;
         else if (!strcmp(argv[i], "--symbols")) want_symbols = 1;
         else if (!strcmp(argv[i], "--print-shims")) print_shims = 1;
+        else if (!strcmp(argv[i], "--print-deps")) { print_deps = 1; g_pkgdeps_names_only = 1; }
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--native")) native = 1;
         else if (!strcmp(argv[i], "-g")) debug = 1;
@@ -12813,10 +12836,12 @@ int main(int argc, char **argv) {
     if (!input) {
         fprintf(stderr, "usage: tychoc file.ty [-o name] [--emit-c] [-g] [--bundle] [--native] [--cc <compiler>]\n"
                         "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n"
-                        "                     [--print-shims]\n"
+                        "                     [--print-shims] [--print-deps]\n"
                         "  --emit-c with -o writes <name>.c; with no -o it writes the C to stdout.\n"
                         "  --print-shims lists the <pkg>_shim.c files this program needs, one per line,\n"
-                        "  transitively -- what a lane linking the emitted C by hand must pass to cc.\n");
+                        "  transitively -- what a lane linking the emitted C by hand must pass to cc.\n"
+                        "  --print-deps lists the pkg-config package names this program needs, one per\n"
+                        "  line, transitively -- what a lane must probe to decide whether to SKIP.\n");
         return 1;
     }
     g_srcname = input;
@@ -12877,6 +12902,26 @@ int main(int argc, char **argv) {
      * closure is a correct answer, not a failure. */
     if (print_shims) {
         for (int i = 0; i < g_nshims; i++) printf("%s\n", g_shims[i]);
+        return 0;
+    }
+    /* --print-deps: the same closure, read out as pkg-config NAMES instead of shim
+     * paths. It exists because `--print-shims` cannot answer the question the test
+     * harnesses actually ask. They do not link the emitted C -- they let tychoc
+     * build -- so they need no shim list at all; what they need is "would this
+     * program's link line resolve on this host?", so that a missing library is a
+     * SKIP rather than a red. That question is about names, and until this flag the
+     * only way to get them was to grep the program's own `import` lines and map
+     * each to `corelib/<mod>/deps` -- which sees direct imports only, exactly the
+     * transitive blindness `--print-shims` was added to fix on the other two lanes.
+     *
+     * `g_pkgnames` is filled by the same `merge_pkg` DFS that fills `g_shims`
+     * (`add_pkg_deps` beside `add_shim` as the walk enters a package), so an
+     * indirect import's dependency is listed on the same terms as a direct one.
+     * Names, not the resolved `g_pkgdeps` flags: on the host where the library is
+     * missing the flags are empty, which is the one host whose answer matters.
+     * Printed here, before type checking, for the reason `--print-shims` is. */
+    if (print_deps) {
+        for (int i = 0; i < g_npkgnames; i++) printf("%s\n", g_pkgnames[i]);
         return 0;
     }
     if (debug && !pkg) {   /* -g: line info only for single-file builds -- merged packages lose per-node filenames */

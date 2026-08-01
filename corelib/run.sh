@@ -22,22 +22,38 @@ for entry in corelib/test/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
     golden="corelib/test/$name.out"
-    # FFI: tychoc auto-discovers each imported module's <mod>_shim.c and reads its
-    # `deps`. We still gather the pkg-config deps of EVERY core:X the test imports
-    # (e.g. core:httpd wraps core:net) so that a test whose dependency is absent is
-    # SKIPPED rather than failed -- that keeps `make ci` green on platforms without
-    # the lib, and tychoc reads the same `deps` itself, so the two stay in lockstep.
-    shim=""; allpkgs=""
-    for mod in $(grep -E '^[[:space:]]*import' "$entry" | grep -oE 'core:[a-z0-9_]+' | sed 's/core://' | sort -u); do
-        s="corelib/$mod/${mod}_shim.c"; [ -f "$s" ] && shim="$shim $s"
-        d="corelib/$mod/deps"; [ -f "$d" ] && allpkgs="$allpkgs $(grep -vE '^[[:space:]]*(#|$)' "$d")"
-    done
-    depflags=""
+    # FFI SKIP: tychoc auto-discovers each imported module's <mod>_shim.c and its
+    # `deps`, and links both itself -- the build below is a plain `tychoc -o`. So
+    # this lane needs no shim list and no cc flags. The one thing it does need is
+    # whether the link line CAN resolve on this host, so that a test whose
+    # dependency is absent is SKIPPED rather than failed (that keeps `make ci`
+    # green on a platform without the lib). ASK THE COMPILER: `--print-deps`
+    # prints the pkg-config NAMES of the whole transitive import closure, one per
+    # line, from the same `merge_pkg` walk `--print-shims` reads -- and it prints
+    # them whether or not they resolve here, which is the point: on the host that
+    # is missing the library the resolved flags are empty, and only the names can
+    # say what to skip for.
+    #
+    # THIS WAS A GREP over the program's own `import` lines until 2026-08-02, and
+    # a grep sees DIRECT imports only. That is the same transitive blindness
+    # `--print-shims` was added to fix in examples/fetch/run.sh, whose header
+    # records two silent staleness breaks caused by it. Measured on this tree
+    # before the change: over all 68 programs in this lane and the corelib
+    # examples lane the grep and the flag agree, because every deps-bearing
+    # module (compress, crypto, http, image, tls) is imported directly by its own
+    # test -- so the blindness here is LATENT, not live. The first module to
+    # reach zlib or libcurl through an intermediate would have skipped nothing and
+    # failed to link instead, which is a red on a host the SKIP exists to spare.
+    #
+    # The old loop also built a `shim` and a `depflags` that NOTHING in this file
+    # read; they were dead from the day tychoc learned to discover them. Deleted.
+    if ! allpkgs="$("$TYCHOC" "$entry" --print-deps 2>"$T/deps.log")"; then
+        echo "FAIL $name (tychoc --print-deps)"; sed 's/^/      /' "$T/deps.log"; fail=1; continue
+    fi
     if [ -n "$allpkgs" ]; then
         missing=""
         for pkg in $allpkgs; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
         if [ -n "$missing" ]; then echo "skip $name (missing dependency:$missing)"; continue; fi
-        depflags="$(pkg-config --cflags --libs $allpkgs 2>/dev/null)"
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
     "$T/c" > "$T/co" 2>&1

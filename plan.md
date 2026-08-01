@@ -213,7 +213,7 @@ Done looks like: all four resolved, each with a check that is proved to fail.
   repointed by hand. `python3 scripts/check_citations.py` and
   `sh scripts/check_links.sh` are both green.
 
-- [ ] **Phase 2 — the other two lanes still grep for direct imports, and they also need the `deps` closure**
+- [x] **Phase 2 — the other two lanes still grep for direct imports, and they also need the `deps` closure**
   - `corelib/run.sh:32` and `examples/corelib/run.sh:30` carry the **same
     direct-import grep** the previous plan's phase 2 deleted from the example
     lanes — `for mod in $(grep … 'core:[a-z0-9_]+' …)`, mapping each to
@@ -236,6 +236,113 @@ Done looks like: all four resolved, each with a check that is proved to fail.
     probe where a dep is absent, not by reasoning that it still works.
   - Verify: `make corelib`, `make corelib-examples`, `make fetch`, and `make test`
     if `src/tychoc.c` gains the flag — which it will. Not `make ci`.
+
+  **Evidence, 2026-08-02.** Changed: `src/tychoc.c` (a `--print-deps` flag and the
+  name retention behind it), `corelib/run.sh`, `examples/corelib/run.sh`,
+  `examples/fetch/run.sh`, and `docs/spec/15-program.md` §27.4 beside
+  `--print-shims`.
+
+  **WHAT `g_pkgdeps` ACTUALLY HOLDS — the Pre-flight's assumption, checked.** It
+  holds the **resolved cflags/libs only**, exactly as the Pre-flight suspected.
+  `src/tychoc.c@add_pkg_deps` parses a `deps` line into `s`, and `s` reaches
+  `pkg_config_flags(s)` and the `could not resolve` error message and **nothing
+  else** — the accumulator appends `fl`, the resolved string, never the name.
+  The names were retained nowhere in the process. So the print alone could not
+  have worked, and the fix is the one the brief authorised: a `g_pkgnames`
+  accumulator beside `g_pkgdeps`, filled from the same loop.
+
+  **The name is recorded BEFORE resolution is attempted, and that is the whole
+  point.** On a host where the library is absent, `pkg_config_flags` fails and
+  `g_pkgdeps` stays empty — indistinguishable from a package that declared no
+  dependencies at all. That is precisely the host the SKIP exists for, so a flag
+  reading the resolved form would print nothing exactly when it is needed.
+  Measured, with the host's pkg-config search path emptied:
+
+      $ PKG_CONFIG_LIBDIR=/tmp/emptypc ./tychoc examples/fetch/main.ty --print-deps
+      libcurl
+
+  `--print-deps` also sets a names-only mode, so it never forks pkg-config for an
+  answer nobody reads and never prints a `could not resolve` line into the case
+  the caller asked in order to handle gracefully.
+
+  **THE DEPS BLINDNESS IS LATENT ON THIS TREE, NOT LIVE — say so rather than
+  claim a catch.** Over all 68 programs in the two lanes, the old grep and the new
+  flag agree on the dependency set: every deps-bearing module (`compress`,
+  `crypto`, `http`, `image`, `tls`) is imported *directly* by its own test and its
+  own example, so no transitive edge is in play today. The flag is still the right
+  derivation, and the blindness is reachable rather than theoretical — proved by
+  constructing the missing edge, a scratch `corelib/zwrap` importing `core:compress`
+  and a program importing only `core:zwrap`:
+
+      --- grep over the program's own imports (the OLD derivation) ---
+      (end -- nothing above means it found no deps)
+      --- ./tychoc --print-deps (the NEW derivation) ---
+      zlib
+
+  The grep finds nothing and the lane would have skipped nothing, then failed to
+  link. Both scratch files were deleted after the measurement.
+
+  **A SECOND FINDING THE PHASE DID NOT EXPECT: the `shim` and `depflags` those
+  loops built were DEAD.** Both lanes assigned them and neither ever read them —
+  `grep -n 'shim\|depflags'` over each file before the change returns only the
+  assignments. The build in both lanes is a plain `"$TYCHOC" "$entry" -o …`, which
+  discovers and links the shims and the resolved flags itself. So these two lanes
+  never needed `--print-shims` at all; the only live output of that loop was the
+  pkg-config names. Deleted rather than ported.
+
+  **SKIP PROBE, BOTH DIRECTIONS, BEFORE AND AFTER — byte-identical.** The host is
+  missing libpng and has the other four, so one SKIP is natural; the rest were
+  forced with `PKG_CONFIG_LIBDIR=/tmp/emptypc` (an empty directory — this replaces
+  the default search path, where `PKG_CONFIG_PATH` would only prepend to it).
+
+  | probe | before | after |
+  |---|---|---|
+  | `sh corelib/run.sh` | `skip image (missing dependency: libpng)`, all green | identical |
+  | forced, `corelib` | skips compress, crypto, http, image, tls; all green | identical |
+  | forced, `examples/corelib` | same five skips; all green | identical |
+  | forced, `examples/fetch` | `fetch: SKIP (libcurl not installed)` | identical |
+
+  The fetch SKIP line is now *derived*: the name in it comes from `--print-deps`,
+  and it reads the same because the derivation returns `libcurl`.
+
+  **BREAK AND REVERT, WITH THE BREAK CONFIRMED ON DISK FIRST.** The previous
+  plan's phase 2 had a break silently do nothing and nearly wrote a false proof, so
+  the break was asserted unique before it was applied and `diff`ed after:
+
+      12924c12924
+      <         for (int i = 0; i < g_npkgnames; i++) printf("%s\n", g_pkgnames[i]);
+      ---
+      >         for (int i = 0; i < 0; i++) printf("%s\n", g_pkgnames[i]);   /* BREAK PROBE */
+
+  Rebuilt with `make`, both lanes went red in exactly the shape the SKIP exists to
+  prevent — not a cosmetic diff:
+
+      --- corelib lane, BROKEN derivation ---
+      FAIL image (tychoc compile)
+      corelib: FAIL
+      --- fetch lane, BROKEN derivation, forced-missing ---
+      undefined reference to `curl_easy_getinfo'
+      fetch: FAIL
+
+  Restored (`diff` silent), rebuilt, and both are green again — `skip image
+  (missing dependency: libpng)` / `corelib: all green`, and `fetch: SKIP (libcurl
+  not installed)` under the forced probe.
+
+  **Gates.** `make` clean under `-Wall -Wextra -std=c11`. `make corelib`,
+  `make corelib-examples` and `make fetch` all green. `make test`:
+  **`passed: 562   failed: 0`** — the same count as after phase 1, nothing lost and
+  nothing added (this phase adds no fixture; its checks are the three lanes).
+  `sh scripts/spec_check.sh` green (9 runnable examples) because `docs/spec/15-program.md`
+  changed. `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`
+  both green.
+
+  **Citation churn.** The insert moved 55 anchored refs across 14 files; all were
+  repointed by the diff's own old→new line map. **Zero landed on a record line** —
+  the one line the record-shape detector flagged, `docs/spec/12-aggregates.md:18`,
+  was a **false positive**, and it is the exact failure `CLAUDE.md` predicts: it is
+  a live `> Provenance:` block whose `→` sits in ordinary prose (``delete` →
+  `map_del``), not a repair log joining two refs. Repointed by hand after reading
+  it rather than trusted to the detector.
 
 - [ ] **Phase 3 — four lanes' goldens are tracked but would be invisible if re-recorded**
   - `examples/mandelbrot`, `examples/raytrace`, `examples/weblog` and
@@ -326,6 +433,38 @@ Done looks like: all four resolved, each with a check that is proved to fail.
     plan whose brief legitimately ends in `make ci`**, because it adds a step.
   - Done when: the new lane is proved red by reverting either half of phase 1's
     fix, and green with both.
+
+- [ ] **Phase 7 — three more lanes hand-maintain a dependency `--print-deps` cannot see**
+  - Found by phase 2 while sweeping for the third form of the defect
+    (`examples/fetch/run.sh`'s hard-coded `DEPF`), and filed rather than absorbed.
+    `examples/sqlite/run.sh:29-30`, `bench/dbquery/run.sh:17-18` and
+    `bench/fair_rest.sh:52-58` each name `sqlite3` by hand, in both a SKIP guard
+    and a link line — the same hand-maintained shape phase 2 retired in three
+    places.
+  - **`--print-deps` does not close them, and the reason is structural rather than
+    an oversight.** It reads a package's `deps` file, and these programs have no
+    package: `examples/sqlite/demo.ty:15` declares `extern "sqlite3" fn
+    sqlite3_open(…)`, so the dependency arrives through `extern "Lib"` (and
+    `--pkg` on the CLI), which lands in `g_links` and on the `-l` part of the cc
+    line. Measured: `./tychoc examples/sqlite/demo.ty --print-deps` prints nothing
+    at all, which is a *correct* answer to the question that flag asks.
+  - So the shape that would close these is a third read-out of the same walk —
+    the `extern "Lib"` link-library names — not a widening of `--print-deps`.
+    Note the two questions genuinely differ: a pkg-config name is something to
+    probe with `--exists`, an `extern "Lib"` name is a bare `-l` with no probe,
+    and `bench/dbquery/run.sh:13-18` already documents that macOS ships libsqlite3
+    with **no** `.pc` file, so a lane must fall back to a `-lsqlite3` link probe.
+    Any flag here must not push those lanes into assuming pkg-config exists.
+  - Decide first whether it is worth it: three lanes, one library between them,
+    versus a new compiler flag and its spec section. "Leave them hand-written and
+    say why" is a legitimate answer — record it if so, the way phase 4 is prepared
+    to retire its row.
+  - Scope: `src/tychoc.c` if a flag is added, the three `run.sh` files, and
+    `docs/spec/15-program.md` §27.4. Not `make ci`.
+  - Verify: `make bench-guard` for the two bench lanes and `sh examples/sqlite/run.sh`
+    for the third, plus `make test` if `src/tychoc.c` changes. The SKIP path must
+    be proved on a forced-missing host as phase 2 did (`PKG_CONFIG_LIBDIR` at an
+    empty directory), in both directions.
 
 ## Carried forward
 

@@ -121,7 +121,7 @@ fn main():
 # was `range(a, b, step)` and a non-unit step was a SOUNDNESS gate (a strided space
 # cannot be chunked); `parallel for i in range(0, 10, 2)` was its fixture. `0..<N`
 # has no step syntax at all, so that die_at is now unreachable by construction and
-# is kept only as a fail-closed assertion (src/tychoc.c:6796@r_step). The constraint that
+# is kept only as a fail-closed assertion (src/tychoc.c:6817@r_step). The constraint that
 # took its place is the LOWER bound: `0..<N` demands a literal `0`
 # (src/tychoc.c:3487@i_dotlt), so this is the range-shape rejection that still has a source
 # spelling. Folding the old stride into the body (`0..<5` with `i * 2`) was the

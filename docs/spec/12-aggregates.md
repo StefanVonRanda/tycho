@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2016-2017`,`:2033-2034`;
-> `pop`-empty abort `:11972@pop from an empty array`,`:12138@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
+> `pop`-empty abort `:11993@pop from an empty array`,`:12159@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
 > arity `:2081@a tuple has at most 8 elements`,`:2085@a tuple type needs at least two elements`, index `:4823-4831`; destructuring `:3282-3296`,`:6757-6773`;
 > map read (pure `map_get`, no insert) `:5126-5141`; map place insert+zero
-> `:9896-9905`; `keys()` insertion order — the walk `:12107@m.elive[e]` over the append-only entries array `:12062@m->ecount++`; `delete` → `map_del`
+> `:9896-9905`; `keys()` insertion order — the walk `:12128@m.elive[e]` over the append-only entries array `:12083@m->ecount++`; `delete` → `map_del`
 > `:3130-3154`,`:5756-5762`; subscript parse + rules `:3757-3809`, dispatch
 > `:3831-3839`; `or_return` `:5002-5019`.
 
@@ -319,18 +319,18 @@ fixtures lived in `tests/postfreeze/` until the `tychoc0` lanes were retired on
 > Provenance: two-array arm `src/tychoc.c:6123-6153`, broadcast arm
 > `src/tychoc.c:6182-6208`; per-element-type operator set
 > `src/tychoc.c:1145@elem_arith_ok`; fixed-length mismatch
-> `src/tychoc.c:6277@on a fixed array requires the same static length`; mixed
-> kinds `src/tychoc.c:6269@cannot mix a fixed array and a growable array`;
-> `bounded`/`[$N]T` `src/tychoc.c:6259@IS_BOUNDED`; element-type mismatch
-> `src/tychoc.c:6262@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
-> element type `src/tychoc.c:6331@requires the scalar to have the array's element type`,
+> `src/tychoc.c:6298@on a fixed array requires the same static length`; mixed
+> kinds `src/tychoc.c:6290@cannot mix a fixed array and a growable array`;
+> `bounded`/`[$N]T` `src/tychoc.c:6280@IS_BOUNDED`; element-type mismatch
+> `src/tychoc.c:6283@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
+> element type `src/tychoc.c:6352@requires the scalar to have the array's element type`,
 > its literal adaptation `src/tychoc.c:6193-6198`; the fresh spine
-> `src/tychoc.c:9590@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:9574@gen_arith_op`, operands never reordered
-> `src/tychoc.c:9571@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:9594@tycho_ew_len`, and the abort
+> `src/tychoc.c:9611@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:9595@gen_arith_op`, operands never reordered
+> `src/tychoc.c:9592@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:9615@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:2540@arithmetic on arrays of different lengths`;
-> literal-zero divisor `src/tychoc.c:6227@division by zero`.
+> literal-zero divisor `src/tychoc.c:6248@division by zero`.
 
 ---
 

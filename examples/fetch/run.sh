@@ -29,8 +29,23 @@ TYCHOC=./tychoc
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 export TYCHO_CORELIB="$PWD/corelib"
 CC="${CC:-cc}"
-if ! pkg-config --exists libcurl 2>/dev/null; then echo "fetch: SKIP (libcurl not installed)"; exit 0; fi
-DEPF="$(pkg-config --cflags --libs libcurl)"
+# The SKIP guard and the sanitizer leg's link flags both used to name `libcurl`
+# by hand. That is the THIRD form of the defect the shim list below had, and it
+# is stale-prone for the same reason: nothing rechecks a hand-written dependency
+# when main.ty's import graph moves, and the graph is what decides. ASK THE
+# COMPILER: `--print-deps` prints the pkg-config names of the transitive closure,
+# read out of the same `merge_pkg` walk `--print-shims` reads. It prints them
+# whether or not they resolve on this host, which is exactly the case that
+# matters -- where the library is missing the RESOLVED flags are empty and
+# indistinguishable from "no dependencies", so only the names can say what to
+# skip for.
+DEPS="$("$TYCHOC" examples/fetch/main.ty --print-deps)" \
+    || { echo "fetch: FAIL (tychoc --print-deps)"; exit 1; }
+for pkg in $DEPS; do
+    pkg-config --exists "$pkg" 2>/dev/null || { echo "fetch: SKIP ($pkg not installed)"; exit 0; }
+done
+DEPF=""
+[ -n "$DEPS" ] && DEPF="$(pkg-config --cflags --libs $DEPS)"
 # The --emit-c leg (2) links the shims by hand, so it has to know which ones.
 # It ASKS THE COMPILER: `--print-shims` prints the transitive <pkg>_shim.c closure
 # that the normal build path (leg 1) splices onto its own cc line. There is no

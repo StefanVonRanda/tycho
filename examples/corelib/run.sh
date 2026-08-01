@@ -21,21 +21,21 @@ for entry in examples/corelib/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
     golden="examples/corelib/$name.out"
-    # Gather the C shim AND pkg-config deps of EVERY core:X the example imports --
-    # not just the same-name one (e.g. an httpd example wraps core:net, so
-    # net_shim.c is needed). Same lookup the corelib test harness uses. If any dep
-    # is absent, SKIP (keeps the deps-gated modules green on platforms without them).
-    shim=""; allpkgs=""
-    for mod in $(grep -E '^[[:space:]]*import' "$entry" | grep -oE 'core:[a-z0-9_]+' | sed 's/core://' | sort -u); do
-        s="corelib/$mod/${mod}_shim.c"; [ -f "$s" ] && shim="$shim $s"
-        d="corelib/$mod/deps"; [ -f "$d" ] && allpkgs="$allpkgs $(grep -vE '^[[:space:]]*(#|$)' "$d")"
-    done
-    depflags=""
+    # If any pkg-config dependency is absent, SKIP (keeps the deps-gated modules
+    # green on platforms without them). ASK THE COMPILER which ones there are:
+    # `--print-deps` prints the pkg-config names of the whole transitive import
+    # closure, which is the set that matters -- an httpd example wraps core:net,
+    # and a module's dependency can be reached through an intermediate. tychoc
+    # links the shims and the resolved flags itself, so nothing else is needed
+    # here. Same derivation as the corelib test harness; see corelib/run.sh's
+    # comment for what this replaced and what was measured about it.
+    if ! allpkgs="$("$TYCHOC" "$entry" --print-deps 2>"$T/deps.log")"; then
+        echo "FAIL $name (tychoc --print-deps)"; sed 's/^/      /' "$T/deps.log"; fail=1; continue
+    fi
     if [ -n "$allpkgs" ]; then
         missing=""
         for pkg in $allpkgs; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
         if [ -n "$missing" ]; then echo "skip $name (missing dependency:$missing)"; continue; fi
-        depflags="$(pkg-config --cflags --libs $allpkgs 2>/dev/null)"
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
     "$T/c" > "$T/co" 2>&1

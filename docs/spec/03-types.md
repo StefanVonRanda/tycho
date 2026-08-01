@@ -397,7 +397,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > (`arrc_sized_b` `src/tychoc.c:857-869@arrc_sized_b`, messages `:759@task_container_err` and `:799@chan_container_err`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
 > Rejections: slice `src/tychoc.c:5166-5167`, `pop` `:5817-5818`, `reserve`
-> `:5969@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
+> `:5990@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
 > `:11698-11701`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
@@ -474,4 +474,4 @@ is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is 
 one-byte glyph.)
 
 > Provenance: `src/tychoc.c:6045-6078` (equality/ordering resolver); function-
-> value identity equality `:8936@identity equality`.
+> value identity equality `:8957@identity equality`.
