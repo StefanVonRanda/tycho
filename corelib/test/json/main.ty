@@ -9,6 +9,21 @@ fn b2i(b: bool) -> int:
         return 1
     return 0
 
+# Render a fallible parse as one line: the whole document on success, the cause
+# and the byte offset on failure. Asserting the WHOLE document matters -- the
+# fabricated-key bug below exited 0 and only the serialized tree showed it.
+fn show(r: Result(json.Json, json.JsonErr)) -> string:
+    match r:
+        Ok(v): return "ok  " + json.stringify(v)
+        Err(e): return "err " + json.err_str(e)
+
+# The byte offset alone, so it can be asserted against the byte it must name.
+# -1 on success, which is a value no offset can take.
+fn offset_of(r: Result(json.Json, json.JsonErr)) -> int:
+    match r:
+        Ok(v): return -1
+        Err(e): return json.err_offset(e)
+
 fn main():
     src := "{\"name\": \"tycho\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}, \"empty\": [], \"nothing\": null}"
     j := json.parse(src)
@@ -44,3 +59,45 @@ fn main():
 
     # truncated input fails closed to null (no out-of-bounds abort)
     println("truncated   = " + json.kind(json.parse("   ")))
+
+    # ---- input core:json cannot represent must be an error, never a guess ----
+    # Each of the three below is a REAL failure this test was written to catch;
+    # each line's "before" is what the parser did on 2026-08-01, at exit 0
+    # except where noted.
+    #
+    # `1.5`  before: json.stringify(json.parse("1.5")) printed `1`.
+    #        The fraction was dropped and a wrong number returned confidently.
+    println("f scalar    = " + json.stringify(json.parse("1.5")))
+    println("f scalar r  = " + show(json.parse_checked("1.5")))
+    # `[{"a":1.5}]`  before: printed `[{"a":1,"5}]":null}]` -- the parser
+    #        invented a SECOND column named `5}]`, in a document the caller
+    #        believed it had read. The worst of the three: no symptom at all.
+    println("f in obj    = " + json.stringify(json.parse("[{\"a\":1.5}]")))
+    println("f in obj r  = " + show(json.parse_checked("[{\"a\":1.5}]")))
+    # `[1.5]`  before: `tycho: out of memory`, exit 1 -- parse_array consumed
+    #        nothing at the `.` and pushed JNum(0) forever. Five bytes of input.
+    #        Probed in a throwaway binary under `ulimit -v 262144`, never here.
+    println("f in arr    = " + json.stringify(json.parse("[1.5]")))
+    println("f in arr r  = " + show(json.parse_checked("[1.5]")))
+    # The offset is checked against the byte it must name, not merely non-zero:
+    # in `[1.5]` the `.` is at index 2.
+    println("f in arr off= " + str(offset_of(json.parse_checked("[1.5]"))))
+
+    # the rest of the error channel: one line per failure class
+    println("ok doc      = " + show(json.parse_checked("{\"a\":[1,-2,null]}")))
+    println("bad byte    = " + show(json.parse_checked("[+1]")))
+    println("bad number  = " + show(json.parse_checked("[-x]")))
+    println("bad keyword = " + show(json.parse_checked("[tru]")))
+    println("bad escape  = " + show(json.parse_checked("[\"a\\u0041\"]")))
+    println("bad key     = " + show(json.parse_checked("{1:2}")))
+    println("no colon    = " + show(json.parse_checked("{\"a\" 1}")))
+    println("no sep      = " + show(json.parse_checked("[1 2]")))
+    println("unclosed [  = " + show(json.parse_checked("[1")))
+    println("unclosed {  = " + show(json.parse_checked("{\"a\":1")))
+    println("unclosed \"  = " + show(json.parse_checked("\"ab")))
+    println("empty       = " + show(json.parse_checked("   ")))
+    # lenient by design (see the header's gap list): these stay Ok
+    println("trailing ,  = " + show(json.parse_checked("[1,]")))
+    println("trailing txt= " + show(json.parse_checked("{\"a\":1} junk")))
+    # escapes the parser DOES represent, round-tripped through the byte values
+    println("esc bfr     = " + str(len(json.as_str(json.parse("\"\\b\\f\\r\\/\"")))))

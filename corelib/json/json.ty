@@ -1,16 +1,62 @@
 # corelib: a JSON parser + serializer. Import with `import "core:json"`,
-# parse with `json.parse(s)`, serialize with `json.stringify(j)`.
+# serialize with `json.stringify(j)`.
+#
+# WHICH ENTRY POINT TO CALL. New code should call
+# `parse_checked(s) -> Result(Json, JsonErr)`. It is the only one that can tell
+# you the document you got back is the document you handed in. `parse(s) -> Json`
+# is the lenient wrapper kept for the callers that predate the error channel: it
+# runs the exact same parser and then throws the error away, returning JNull for
+# the whole document. Use it only where a failure is genuinely not actionable;
+# anything that reports a value to a person should use `parse_checked`.
 #
 # The parsed document is a recursive value-semantic tree (the `Json` enum),
 # built by recursive descent and walked to serialize, with ZERO manual memory
 # management -- every node and string lives in a lexical arena freed when its
 # scope exits. This is the thesis (docs/thesis.md) as a real, reusable module.
+# (Objects are parallel key/value arrays because tycho's maps don't take a
+# recursive value type here.)
 #
-# Scope: null / bool / integers / strings (with \n \t \" \\ escapes) / arrays /
-# objects, plus whitespace. (Objects are parallel key/value arrays because
-# tycho's maps don't take a recursive value type here; floats are out of scope.)
-# Input is assumed well-formed in that subset; truncated input fails closed to
-# JNull (no abort), but malformed tokens are parsed leniently.
+# ---- every input shape this parser accepts, one real example each -----------
+#
+#   null                  null
+#   bool                  true                  false
+#   integer               7        -3        0
+#   string                "tycho"
+#   string escapes        "a\"b\nc\td"          (\" \\ \/ \b \f \n \r \t)
+#   array                 [1,"x",true,null]     []
+#   object                {"a":1,"b":[2]}       {}
+#   whitespace            space / tab / CR / LF between any two tokens
+#   trailing text         {"a":1} junk          value parsed, remainder ignored
+#
+# EVERY other input is an error carrying the byte offset of the byte that caused
+# it -- see `JsonErr`, `err_reason`, `err_offset`, `err_str`. Nothing is guessed.
+# In particular a fraction or an exponent (`1.5`, `1e3`) is an error AT the `.`
+# or `e`, not the truncated integer part: a wrong number reported confidently is
+# worse than a refusal.
+#
+# What it still cannot do, each with the ceiling and the way out:
+#
+# gap: no float or exponent value at all. `1.5` is an error, never a number.
+#      The way out is a `JFloat` (or exact-decimal) variant on `Json`; that is a
+#      numeric-tower decision, not a parser one -- `float` loses exactness and
+#      `core:decimal` has no `div` yet -- so it is deliberately not taken here.
+# gap: no `\uXXXX`. It is an error at the `u`, where it used to silently become
+#      the four hex digits as literal text. The way out is a UTF-8 encoder plus
+#      surrogate-pair joining inside `parse_string`.
+# gap: integers wrap silently at 64 bits. `parse_number` accumulates into an
+#      `int` with no overflow test, so a 20-digit JSON integer still yields a
+#      wrong number at exit 0. The way out is a digit-count bound there, or
+#      `core:bignum`. This is the one remaining silent-wrong-value path.
+# gap: a trailing comma is accepted -- `[1,]` parses as `[1]`. It loses no data
+#      and invents none, so it is left lenient; the way out is a `saw_comma`
+#      flag tested at the closing bracket.
+# gap: leading zeros are accepted (`01` -> 1); a leading `+` is an error. Only
+#      the first is lenient. The way out is a first-digit test in parse_number.
+# gap: trailing text after the top-level value is ignored, so `{"a":1} junk` is
+#      Ok. Deliberate -- it is the documented behaviour six callers already
+#      have. The way out is a `skip_ws` + `pos == len(s)` test in
+#      `parse_checked`, which is a caller-visible change and belongs to whoever
+#      wants it.
 package json
 
 enum Json:
@@ -21,13 +67,102 @@ enum Json:
     JArr([Json])
     JObj([string], [Json])        # parallel keys / values
 
-# ---- parser (recursive descent; `pos` is threaded by inout) ----------------
+# ---- the error channel -----------------------------------------------------
+#
+# Internally every recursive-descent function threads ONE extra `inout int`: the
+# error code. The invariant that makes the byte offset free, and that the whole
+# file depends on:
+#
+#   WHEN `ecode` IS NOT JE_OK, `pos` IS THE OFFSET OF THE BYTE THAT FAILED, AND
+#   NO FUNCTION ADVANCES `pos` AGAIN.
+#
+# Every site that sets `ecode` returns immediately without touching `pos`, and
+# every loop tests `ecode` in its head as well, so a future edit that forgets a
+# return still terminates instead of spinning.
+const JE_OK      = 0
+const JE_TRUNC   = 1    # input ended inside a value, a string, or a container
+const JE_BYTE    = 2    # a byte that can begin no value: `.` `+` `:` `}` junk
+const JE_NUMBER  = 3    # `-` with no digit after it
+const JE_FLOAT   = 4    # a fraction or an exponent -- out of scope, see the gaps
+const JE_KEYWORD = 5    # `t`/`f`/`n` that is not `true`/`false`/`null`
+const JE_ESCAPE  = 6    # `\u`, or any escape outside " \ / b f n r t
+const JE_KEY     = 7    # an object member that does not begin with `"`
+const JE_COLON   = 8    # an object key not followed by `:`
+const JE_SEP     = 9    # an element followed by neither `,` nor the closer
+const JE_STUCK   = 10   # the structural guard fired: a nested parse ate nothing
+
+# The public failure. Every variant carries the byte offset, so a caller that
+# only wants the position never has to know which cause it was.
+enum JsonErr:
+    Truncated(int)
+    BadByte(int)
+    BadNumber(int)
+    BadFloat(int)
+    BadKeyword(int)
+    BadEscape(int)
+    BadKey(int)
+    MissingColon(int)
+    MissingSep(int)
+    NoProgress(int)
+
+fn err_at(code: int, off: int) -> JsonErr:
+    if code == JE_TRUNC:
+        return Truncated(off)
+    if code == JE_NUMBER:
+        return BadNumber(off)
+    if code == JE_FLOAT:
+        return BadFloat(off)
+    if code == JE_KEYWORD:
+        return BadKeyword(off)
+    if code == JE_ESCAPE:
+        return BadEscape(off)
+    if code == JE_KEY:
+        return BadKey(off)
+    if code == JE_COLON:
+        return MissingColon(off)
+    if code == JE_SEP:
+        return MissingSep(off)
+    if code == JE_STUCK:
+        return NoProgress(off)
+    return BadByte(off)
+
+fn err_offset(e: JsonErr) -> int:              # byte offset of the failure
+    match e:
+        Truncated(o): return o
+        BadByte(o): return o
+        BadNumber(o): return o
+        BadFloat(o): return o
+        BadKeyword(o): return o
+        BadEscape(o): return o
+        BadKey(o): return o
+        MissingColon(o): return o
+        MissingSep(o): return o
+        NoProgress(o): return o
+
+fn err_reason(e: JsonErr) -> string:           # what was wrong, without the where
+    match e:
+        Truncated(o): return "input ended inside a value"
+        BadByte(o): return "byte begins no JSON value"
+        BadNumber(o): return "'-' with no digit after it"
+        BadFloat(o): return "fraction or exponent (floats are out of scope)"
+        BadKeyword(o): return "not 'true', 'false' or 'null'"
+        BadEscape(o): return "unsupported string escape"
+        BadKey(o): return "object member does not begin with a quote"
+        MissingColon(o): return "object key not followed by ':'"
+        MissingSep(o): return "element followed by neither ',' nor the closer"
+        NoProgress(o): return "nested parse consumed no byte"
+
+# The one-line message a caller wants on stderr: cause and byte offset together.
+fn err_str(e: JsonErr) -> string:
+    return err_reason(e) + " at byte " + str(err_offset(e))
+
+# ---- parser (recursive descent; `pos` and `ecode` are threaded by inout) ----
 
 fn skip_ws(s: string, n: int, pos: inout int):
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
 
-fn parse_string(s: string, n: int, pos: inout int) -> string:
+fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     pos = pos + 1                              # skip opening "
     start := pos
     # Fast path: scan the escape-free span up to the closing " or the first '\'.
@@ -37,9 +172,11 @@ fn parse_string(s: string, n: int, pos: inout int) -> string:
     for pos < n and s[pos] != 34 and s[pos] != 92:
         pos = pos + 1
     r := substr(s, start, pos)                 # the escape-free prefix (the whole string in the common case)
-    if pos >= n or s[pos] == 34:
-        if pos < n:
-            pos = pos + 1                        # skip closing "
+    if pos >= n:
+        ecode = JE_TRUNC                       # ran off the end with no closing "
+        return r
+    if s[pos] == 34:
+        pos = pos + 1                          # skip closing "
         return r
     # Slow path: an escape is present. `r` holds the [start, pos) prefix; continue
     # char-by-char from the first backslash (rare, so the append cost is fine here).
@@ -47,94 +184,232 @@ fn parse_string(s: string, n: int, pos: inout int) -> string:
         if s[pos] == 92:                       # backslash escape
             pos = pos + 1
             if pos >= n:
-                return r                        # truncated escape: stop closed
+                ecode = JE_TRUNC               # `"a\` -- the escape has no body
+                return r
             e := s[pos]
-            if e == 110:
+            if e == 110:                       # \n
                 r = r + "\n"
-            elif e == 116:
+            elif e == 116:                     # \t
                 r = r + "\t"
-            elif e == 34:
+            elif e == 34:                      # \"
                 r = r + "\""
-            elif e == 92:
+            elif e == 92:                      # backslash
                 r = r + "\\"
+            elif e == 47:                      # \/ -- legal JSON, means '/'
+                r = r + "/"
+            elif e == 98:                      # \b
+                r = r + chr(8)
+            elif e == 102:                     # \f
+                r = r + chr(12)
+            elif e == 114:                     # \r
+                r = r + chr(13)
             else:
-                r = r + chr(e)
+                # `\u` and every unknown escape. This used to emit the escape
+                # letter itself, so `"A"` became the text `u0041` -- a
+                # value nobody wrote. Fail closed AT the letter instead.
+                ecode = JE_ESCAPE
+                return r
         else:
             r = r + chr(s[pos])
         pos = pos + 1
+    if pos >= n:
+        ecode = JE_TRUNC                       # no closing " after the escape
+        return r
     pos = pos + 1                              # skip closing "
     return r
 
-fn parse_number(s: string, n: int, pos: inout int) -> int:
+# Called only with `s[pos]` already known to be `-` or a digit (parse_value
+# checks). Consumes at least one byte on success, which is half of why the
+# array/object loops below cannot spin.
+fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> int:
+    start := pos
     neg := false
     if s[pos] == 45:                           # '-'
         neg = true
         pos = pos + 1
+    if pos >= n or s[pos] < 48 or s[pos] > 57:
+        pos = start                            # `-` alone, or `-x`
+        ecode = JE_NUMBER
+        return 0
     v := 0
     for pos < n and s[pos] >= 48 and s[pos] <= 57:
         v = v * 10 + (s[pos] - 48)
         pos = pos + 1
+    # A fraction or an exponent is a value `Json` cannot hold. Stop AT it rather
+    # than returning the integer part: `1.5` used to parse as `1` at exit 0, and
+    # inside a container it left the cursor mid-token, which is how `[{"a":1.5}]`
+    # invented the key `5}]`. `pos` is left on the `.`/`e`, so the reported
+    # offset names the offending byte.
+    if pos < n and (s[pos] == 46 or s[pos] == 101 or s[pos] == 69):   # . e E
+        ecode = JE_FLOAT
+        return 0
     if neg:
         return 0 - v
     return v
 
-fn parse_array(s: string, n: int, pos: inout int) -> Json:
+# The structural anti-spin guard lives in this function and in parse_object.
+#
+# Every iteration must consume at least one byte. `before := pos` records the
+# cursor; if `parse_value` returns having moved nothing, the document is
+# malformed in a way this parser cannot name and it stops (JE_STUCK) instead of
+# pushing another node forever. The guard does not care WHICH byte class caused
+# it, which is the point -- it holds for all of them:
+#
+#   opener  { [                 recurses, always eats the opener
+#   quote   "                   parse_string always eats the opening quote
+#   t f n   true/false/null     eats 4/5 bytes or errors, never 0
+#   - 0-9   -3, 7               parse_number eats >= 1 digit or errors
+#   . + e   1.5, +1, e9         JE_FLOAT / JE_BYTE -- error, not a 0-byte read
+#   closer  ] }                 JE_BYTE (the loop head handles the RIGHT closer)
+#   , :     stray separators    JE_BYTE
+#   ws      handled by skip_ws before the dispatch
+#   any other byte              JE_BYTE
+#
+# So today no path can reach the guard. It stays anyway: it is the invariant, and
+# the previous version of this loop was one missing `else` away from the OOM that
+# five bytes of input (`[1.5]`) used to cause.
+fn parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip [
     xs := []Json
     skip_ws(s, n, &pos)
-    for pos < n and s[pos] != 93:              # until ]
-        push(xs, parse_value(s, n, &pos))
+    for pos < n and s[pos] != 93 and ecode == JE_OK:   # until ]
+        before := pos
+        push(xs, parse_value(s, n, &pos, &ecode))
+        if ecode != JE_OK:
+            return JArr(xs)
+        if pos == before:                      # cannot happen today -- see above
+            ecode = JE_STUCK
+            return JArr(xs)
         skip_ws(s, n, &pos)
-        if pos < n and s[pos] == 44:           # ,
+        if pos >= n:
+            ecode = JE_TRUNC
+            return JArr(xs)
+        if s[pos] == 44:                       # ,
             pos = pos + 1
             skip_ws(s, n, &pos)
+        elif s[pos] != 93:                     # neither , nor ]
+            ecode = JE_SEP
+            return JArr(xs)
+    if ecode != JE_OK:
+        return JArr(xs)
+    if pos >= n:
+        ecode = JE_TRUNC                       # `[1` -- no closing ]
+        return JArr(xs)
     pos = pos + 1                              # skip ]
     return JArr(xs)
 
-fn parse_object(s: string, n: int, pos: inout int) -> Json:
+fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip {
     ks := []string
     vs := []Json
     skip_ws(s, n, &pos)
-    for pos < n and s[pos] != 125:             # until }
-        k := parse_string(s, n, &pos)
+    for pos < n and s[pos] != 125 and ecode == JE_OK:  # until }
+        before := pos
+        if s[pos] != 34:                       # a member must start with a key
+            ecode = JE_KEY
+            return JObj(ks, vs)
+        k := parse_string(s, n, &pos, &ecode)
+        if ecode != JE_OK:
+            return JObj(ks, vs)
         skip_ws(s, n, &pos)
+        # This used to be an unconditional `pos = pos + 1  # skip :`, which is
+        # how a value the parser could not read left the cursor mid-token and the
+        # next iteration read the remainder as a key. It is now checked.
+        if pos >= n:
+            ecode = JE_TRUNC
+            return JObj(ks, vs)
+        if s[pos] != 58:                       # :
+            ecode = JE_COLON
+            return JObj(ks, vs)
         pos = pos + 1                          # skip :
         push(ks, k)
-        push(vs, parse_value(s, n, &pos))
+        push(vs, parse_value(s, n, &pos, &ecode))
+        if ecode != JE_OK:
+            return JObj(ks, vs)
+        if pos == before:                      # cannot happen today -- see above
+            ecode = JE_STUCK
+            return JObj(ks, vs)
         skip_ws(s, n, &pos)
-        if pos < n and s[pos] == 44:           # ,
+        if pos >= n:
+            ecode = JE_TRUNC
+            return JObj(ks, vs)
+        if s[pos] == 44:                       # ,
             pos = pos + 1
             skip_ws(s, n, &pos)
+        elif s[pos] != 125:                    # neither , nor }
+            ecode = JE_SEP
+            return JObj(ks, vs)
+    if ecode != JE_OK:
+        return JObj(ks, vs)
+    if pos >= n:
+        ecode = JE_TRUNC                       # `{"a":1` -- no closing }
+        return JObj(ks, vs)
     pos = pos + 1                              # skip }
     return JObj(ks, vs)
 
-fn parse_value(s: string, n: int, pos: inout int) -> Json:
+fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     skip_ws(s, n, &pos)
     if pos >= n:
-        return JNull                           # truncated / empty: fail closed
+        ecode = JE_TRUNC                       # truncated / empty: fail closed
+        return JNull
     c := s[pos]
     if c == 123:                               # {
-        return parse_object(s, n, &pos)
+        return parse_object(s, n, &pos, &ecode)
     if c == 91:                                # [
-        return parse_array(s, n, &pos)
+        return parse_array(s, n, &pos, &ecode)
     if c == 34:                                # "
-        return JStr(parse_string(s, n, &pos))
+        return JStr(parse_string(s, n, &pos, &ecode))
     if c == 116:                               # 'true'
-        pos = pos + 4
-        return JBool(true)
-    if c == 102:                               # 'false'
-        pos = pos + 5
-        return JBool(false)
-    if c == 110:                               # 'null'
-        pos = pos + 4
+        e := pos + 4
+        if e <= n and s[pos:e] == "true":
+            pos = e
+            return JBool(true)
+        ecode = JE_KEYWORD
         return JNull
-    return JNum(parse_number(s, n, &pos))      # number
+    if c == 102:                               # 'false'
+        e := pos + 5
+        if e <= n and s[pos:e] == "false":
+            pos = e
+            return JBool(false)
+        ecode = JE_KEYWORD
+        return JNull
+    if c == 110:                               # 'null'
+        e := pos + 4
+        if e <= n and s[pos:e] == "null":
+            pos = e
+            return JNull
+        ecode = JE_KEYWORD
+        return JNull
+    if c == 45 or (c >= 48 and c <= 57):       # number
+        return JNum(parse_number(s, n, &pos, &ecode))
+    # Everything else -- `.` `+` `:` `,` a stray closer, a control byte. The old
+    # parser fell through to parse_number here, which consumed nothing and
+    # returned JNum(0); that is the whole spin.
+    ecode = JE_BYTE
+    return JNull
 
-# The entry point: parse a whole document. Trailing text is ignored.
+# THE ENTRY POINT FOR NEW CODE. Parse a whole document; trailing text is ignored
+# (see the gaps in the header). On failure the Err names the cause and the byte
+# offset of the byte that caused it.
+fn parse_checked(s: string) -> Result(Json, JsonErr):
+    pos := 0
+    ecode := JE_OK
+    j := parse_value(s, len(s), &pos, &ecode)
+    if ecode != JE_OK:
+        return Err(err_at(ecode, pos))
+    return Ok(j)
+
+# The lenient wrapper, kept so the callers written before the error channel keep
+# compiling and keep their signature. It runs the same parser and DISCARDS the
+# error, failing closed to JNull for the whole document rather than handing back
+# a half-built tree. Prefer `parse_checked`.
 fn parse(s: string) -> Json:
     pos := 0
-    return parse_value(s, len(s), &pos)
+    ecode := JE_OK
+    j := parse_value(s, len(s), &pos, &ecode)
+    if ecode != JE_OK:
+        return JNull
+    return j
 
 # ---- serializer (walk the tree, build a compact string) --------------------
 
