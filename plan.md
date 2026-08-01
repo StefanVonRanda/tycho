@@ -111,7 +111,7 @@ row pipeline.
 
 ## Phases
 
-- [ ] **Phase 1 — the value model, the parser, and `--explain`**
+- [x] **Phase 1 — the value model, the parser, and `--explain`**
   - Scope: `tools/tycho-q/main.ty`, new. The `Value` enum, the `Expr` enum, a
     lexer over the query text, a recursive-descent parser with precedence, and
     an `--explain` mode that prints the parsed AST as an s-expression. No file
@@ -135,6 +135,288 @@ row pipeline.
   - Do NOT run `make test` or `make ci` — this phase adds one new file under
     `tools/` and touches no corelib, no fixture and no golden. `python3
     scripts/check_citations.py` if the evidence block cites a `path:line`.
+
+  - **Verified 2026-08-01.**
+
+    **The probe, run before a line of the parser was written.** Both recursive
+    forms compile and run. Direct recursion is NOT rejected, so the AST uses
+    direct `Expr` payloads and NOT indices into a node array.
+
+    ```
+    $ ./tychoc <scratch>/probe/main.ty -o <scratch>/probe/p
+    built <scratch>/probe/p
+    $ <scratch>/probe/p
+    (42 1 (f 7 (43 2 3)))
+    ```
+
+    The probe declared, in a `package main` program (not the corelib):
+
+    ```
+    enum Expr:
+        ENum(int)
+        EBin(int, Expr, Expr)        # DIRECT recursion
+        ECall(string, [Expr])        # recursion through an ARRAY payload
+    ```
+
+    and a `show(e: Expr) -> string` that `match`es all three arms and recurses
+    into itself from `EBin` and from `ECall`'s array. Zero diagnostics. The
+    Pre-flight's first "Assuming" bullet is therefore CONFIRMED, in both the
+    direct and the array-payload position, and its "Risk if wrong" (an
+    index-into-array AST) does not apply.
+
+    A second probe settled three more things the parser depends on: an enum
+    payload may carry another package's struct (`VDec(decimal.Decimal)`);
+    `decimal.from_str("1.50")` round-trips through `decimal.to_str` as
+    `"1.50"`, scale preserved, so a decimal literal survives `--explain`
+    byte-exactly; and a struct literal is `Tok(1, "hi", 0)`, positional — the
+    `Tok{kind: 1, ...}` spelling is a lex error, "unexpected character '{'".
+
+    **Build.**
+
+    ```
+    $ TYCHO_CORELIB=$PWD/corelib ./tychoc tools/tycho-q/main.ty -o /tmp/q
+    built /tmp/q
+    ```
+
+    **The fixed query set — 19 queries, all exit 0.** Precedence and
+    associativity are proved by the s-expressions, not by prose: `1 + 2 * 3`
+    is `(+ 1 (* 2 3))` and `1 - 2 - 3` is `(- (- 1 2) 3)`.
+
+    ```
+    $ tycho-q --explain 'select 1 + 2 * 3 from x.csv'
+    (query
+      (select (+ 1 (* 2 3)))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select 1 - 2 - 3 from x.csv'
+    (query
+      (select (- (- 1 2) 3))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select 2 * 3 + 4 * 5 from x.csv'
+    (query
+      (select (+ (* 2 3) (* 4 5)))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select (1 + 2) * 3 from x.csv'
+    (query
+      (select (* (+ 1 2) 3))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select 10 % 3 / 2 from x.csv'
+    (query
+      (select (/ (% 10 3) 2))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select -1 + 2 from x.csv'
+    (query
+      (select (+ (neg 1) 2))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select 1, 1.50, 0.1, "eu", 'sq', true, false, null from x.csv'
+    (query
+      (select 1 1.50 0.1 "eu" "sq" true false null)
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select qty from x.csv'
+    (query
+      (select (col qty))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select a == 1, a != 1, a < 1, a <= 1, a > 1, a >= 1 from x.csv'
+    (query
+      (select (== (col a) 1) (!= (col a) 1) (< (col a) 1) (<= (col a) 1) (> (col a) 1) (>= (col a) 1))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select a == 1 and b > 2 or c < 3 from x.csv'
+    (query
+      (select (or (and (== (col a) 1) (> (col b) 2)) (< (col c) 3)))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select not a and b from x.csv'
+    (query
+      (select (and (not (col a)) (col b)))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select not (a == b) from x.csv'
+    (query
+      (select (not (== (col a) (col b))))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select a + 1 < b * 2 from x.csv'
+    (query
+      (select (< (+ (col a) 1) (* (col b) 2)))
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select * from x.csv'
+    (query
+      (select *)
+      (from "x.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select *, qty * price as total from data/sales.csv'
+    (query
+      (select * (as total (* (col qty) (col price))))
+      (from "data/sales.csv")
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'SELECT Qty AS Total FROM Sales.CSV WHERE Qty > 10 ORDER BY Total DESC LIMIT 5'
+    (query
+      (select (as Total (col Qty)))
+      (from "Sales.CSV")
+      (where (> (col Qty) 10))
+      (order (key (col Total) desc))
+      (limit 5)
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select name, qty * price as total
+             from sales.csv
+             where region == "eu" and qty > 10
+             order by total desc
+             limit 5'
+    (query
+      (select (col name) (as total (* (col qty) (col price))))
+      (from "sales.csv")
+      (where (and (== (col region) "eu") (> (col qty) 10)))
+      (order (key (col total) desc))
+      (limit 5)
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select a from x.csv order by a, b desc, c asc limit 0'
+    (query
+      (select (col a))
+      (from "x.csv")
+      (order (key (col a) asc) (key (col b) desc) (key (col c) asc))
+      (limit 0)
+    )
+    -- exit 0
+
+    $ tycho-q --explain 'select a from 'has space.csv''
+    (query
+      (select (col a))
+      (from "has space.csv")
+    )
+    -- exit 0
+    ```
+
+    **Malformed queries — 12, every one exit 1, every one naming the offending
+    token and its byte offset, every one with an EMPTY stdout.**
+
+    ```
+    $ tycho-q --explain 'select a form x.csv'
+    tycho-q: parse error at byte 9: unexpected token form (expected `from` after the select list)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'from x.csv'
+    tycho-q: parse error at byte 0: unexpected token from (expected `select` at the start of the query)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select a, from x.csv'
+    tycho-q: parse error at byte 10: unexpected token from (expected an operand (that word is a reserved keyword))
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select (1 + 2 from x.csv'
+    tycho-q: parse error at byte 14: unexpected token from (expected `)` to close the group)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select a from x.csv limitt 3'
+    tycho-q: parse error at byte 20: unexpected token limitt (expected the end of the query)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select 1e3 from x.csv'
+    tycho-q: parse error at byte 8: unexpected token e3 (expected `from` after the select list)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select 1. from x.csv'
+    tycho-q: parse error at byte 7: unexpected token 1. (expected a digit after the decimal point)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select a from x.csv where a = 1'
+    tycho-q: parse error at byte 28: unexpected token = (expected an operator or an operand)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select a from x.csv where a @ 1'
+    tycho-q: parse error at byte 28: unexpected token @ (expected an operator or an operand)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select 'unterminated from x.csv'
+    tycho-q: parse error at byte 7: unexpected token ' (expected a closing ' for the string literal opened here)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select a as from from x.csv'
+    tycho-q: parse error at byte 12: unexpected token from (expected an alias name after `as`)
+    -- exit 1, stdout 0 bytes
+    $ tycho-q --explain 'select a from where'
+    tycho-q: parse error at byte 14: unexpected token where (expected a source path after `from`)
+    -- exit 1, stdout 0 bytes
+    ```
+
+    **Friction found, all three recorded in the program's own header where the
+    next reader meets them; they are the raw material for phase 4's
+    `FRICTION.md` section, whose scope already names that file.**
+
+    1. **A bare `or_return` is not a statement, and `Result(void, E)` does not
+       exist — one defect seen twice.** A helper that can only fail must still
+       return something, so `eat_kw` returns `Result(int, PErr)` ending in a
+       meaningless `Ok(0)`; and that meaningless value must then be BOUND at
+       every call site, because `eat_kw(...) or_return` alone on a line is
+       rejected with "a statement must be a declaration, assignment, or call --
+       a bare expression has no effect". `docs/spec/10-statements.md:16-18`
+       names `or_return` among the forms refused as a bare-expression
+       statement, so this is specified, not a compiler quirk.
+       `tools/tycho-q/main.ty` opens `parse_query` with `_ := eat_kw(...)`
+       and carries `_ = ...` twice more purely to satisfy it.
+    2. **There is no no-op statement.** An absent `where` should print nothing,
+       so the `None` arm of the match has no work — and an empty arm cannot be
+       spelled. `pass` is not a keyword (the same "must be a declaration,
+       assignment, or call" error), and grepping `corelib/`, `tools/` and
+       `server/` for a bare `pass` line returns nothing outside this file's
+       own rejected draft, so nothing in the tree had hit it before. The
+       workaround is structural: lift the match into a function whose arms all
+       `return`, carrying the emptiness as a value —
+       `tools/tycho-q/main.ty@where_line` and
+       `tools/tycho-q/main.ty@limit_line` exist only for that reason.
+    3. **A cursor threaded by `inout` cannot also be passed by value in the
+       same call.** `lex_string(s, n, pos, &pos)` is refused: "variable 'pos'
+       is passed to an inout parameter and also by value in the same call to
+       'lex_string' (overlapping access -- the by-value copy would alias the
+       inout'd value)". The diagnostic is good and the rule is right; the
+       consequence is a shape rule for anyone writing a lexer here — a function
+       wanting both "where I started" and "where I am" derives the first from
+       the second on entry, which is why `lex_string` and `lex_number` take no
+       `start` parameter.
+
+    **Not friction, recorded so it is not re-derived:** `Option(Expr)` and
+    `Option(int)` are usable as struct fields over a program-local recursive
+    enum, `None` infers its type from the field it is assigned to, and
+    `Some(parse_expr(...) or_return)` composes — the `Result`/`Option` half of
+    the Pre-flight's second "Assuming" bullet needed no workaround anywhere.
+
+    **Gates.** Per this phase's brief and `CLAUDE.md`'s gate table: no
+    `make test`, no `make test-fast`, no `make ci`, no `make ar-check` — the
+    phase adds one new file under `tools/` and touches no corelib, no fixture
+    and no golden, so none of them can redden for it.
+    `python3 scripts/check_citations.py` was run for this evidence block.
 
 - [ ] **Phase 2 — rows in, rows out: `from`, `where`, `select` over CSV**
   - Scope: `tools/tycho-q/main.ty` only. Read a CSV via `core:csv`, take row 0

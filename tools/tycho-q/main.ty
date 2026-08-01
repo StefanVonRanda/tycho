@@ -1,0 +1,697 @@
+# tycho-q -- a SQL-ish query tool over CSV/JSON, in Tycho.
+#
+# This phase (plan.md phase 1) is the FRONT END ONLY: a lexer, a recursive
+# descent parser with precedence, and `--explain`, which prints the parsed
+# query as an s-expression. Nothing is read from disk and no row is evaluated.
+#
+# Build and run, from the repo root:
+#     ./tychoc tools/tycho-q/main.ty -o build/tycho-q
+#     ./build/tycho-q --explain 'select a, b * 2 as d from x.csv where a > 1'
+#
+# WHY THIS IS A DIRECTORY AND NOT A FLAT `tools/tycho-q.ty`: same reason as
+# `tools/tycho-ar/main.ty` -- a `package` header makes tychoc compile the whole
+# containing directory as one unit, so a flat file in `tools/` would drag
+# `tools/lsp.ty` and `tools/tychofmt.ty` into this program.
+#
+# ===========================================================================
+# THE GRAMMAR THIS ACCEPTS
+# ===========================================================================
+#
+#     query   := "select" item ("," item)*
+#                "from" source
+#                ["where" expr]
+#                ["order" "by" key ("," key)*]
+#                ["limit" INT]
+#
+#     item    := "*" | expr ["as" IDENT]
+#     source  := PATH | STRING
+#     key     := expr ["asc" | "desc"]          -- "asc" is the default
+#
+#     expr    := or_expr
+#     or_expr := and_expr ("or"  and_expr)*
+#     and_expr:= cmp_expr ("and" cmp_expr)*
+#     cmp_expr:= add_expr (("=="|"!="|"<"|"<="|">"|">=") add_expr)*
+#     add_expr:= mul_expr (("+"|"-") mul_expr)*
+#     mul_expr:= unary   (("*"|"/"|"%") unary)*
+#     unary   := ("-" | "not") unary | primary
+#     primary := INT | DEC | STRING | "true" | "false" | "null"
+#              | IDENT                          -- a column reference
+#              | "(" expr ")"
+#
+# EVERY BINARY LEVEL IS LEFT-ASSOCIATIVE, and each is one `for` loop over a
+# single operand parser, so associativity is a property of the loop rather than
+# of a recursion the reader has to trace: `1 - 2 - 3` is `(- (- 1 2) 3)`.
+#
+# WHERE `not` SITS, AND WHY IT IS NOT WHERE SQL PUTS IT. In this grammar `not`
+# is a UNARY at the tightest level, binding exactly as tightly as unary `-`.
+# Real SQL puts NOT between AND and the comparisons, so SQL reads
+# `not a == b` as `not (a == b)` and this reads it as `(not a) == b`. That is a
+# deliberate deviation, taken because plan.md phase 1 specifies the precedence
+# ladder in that order, and it is a WART: write `not (qty > 10)`, with the
+# parentheses, whenever the operand of `not` is a comparison. `not a and b` is
+# `(and (not a) b)` in both languages, which is why the difference is easy to
+# miss.
+#
+# CASE. Keywords are case-insensitive (`SELECT`, `Select` and `select` are one
+# token); identifiers are NOT (`Qty` and `qty` are different columns). Every
+# token therefore carries two spellings: `text`, the raw source bytes, and
+# `low`, an ASCII-lowercased copy used only for keyword and operator matching.
+#
+# STRINGS ARE QUOTED WITH EITHER `'` OR `"`. SQL reserves double quotes for
+# delimited identifiers, and this does not: both quote characters open a string
+# literal, because the query arrives as one shell argument -- already inside a
+# pair of single quotes -- and forcing `\''` on the user to write a string
+# constant is a worse tax than losing delimited identifiers, which this
+# language has no other use for yet. There is one escape, `\` before the
+# closing quote character or before another `\`; nothing else is special.
+#
+# A SOURCE PATH IS A BARE TOKEN. `from sales.csv` has to lex `sales.csv` as one
+# thing, so an identifier that is immediately followed by `.` or `/` keeps
+# consuming letters, digits, `_`, `.` and `/`. That rule is not scoped to the
+# `from` clause -- it is in the lexer -- so a column literally named `a.b` is a
+# single identifier everywhere. There are no qualified column names in this
+# language, so nothing is lost. `from 'has space.csv'` (a string literal) is
+# the escape hatch for a path the bare rule cannot spell.
+#
+# ===========================================================================
+# THE VALUE MODEL
+# ===========================================================================
+#
+# `Value` is the sum type every cell and every literal collapses to. Phase 1
+# only constructs it from LITERALS; phase 2 will also build it from CSV cells.
+#
+#     VNull | VBool(bool) | VInt(int) | VDec(decimal.Decimal) | VStr(string)
+#
+# A NUMERIC LITERAL WITH A `.` BECOMES A `VDec`, NEVER A FLOAT. `core:decimal`
+# keeps the scale it parsed -- `decimal.from_str("1.50")` prints back as
+# "1.50", verified by probe -- so a literal survives `--explain` byte-exactly,
+# and `0.1 + 0.2` has an exact answer available for phase 2. There is no float
+# anywhere in this program on purpose.
+#
+# `1e3` IS NOT A NUMBER HERE. The number lexer takes digits and at most one
+# `.`; it stops at `e`, which then lexes as the identifier `e3` and the parser
+# rejects it by naming that token. Exponent notation is out of scope, and
+# failing loudly at parse time is the fail-closed reading of that: a silent
+# `1` followed by a dropped `e3` would be the corruption this program exists
+# not to commit.
+#
+# ===========================================================================
+# ERRORS: A `Result` THROUGH THE WHOLE PARSER, `die` ONLY AT THE TOP
+# ===========================================================================
+#
+# Every lexer and parser function returns `Result(T, PErr)` and propagates with
+# `or_return`; `main` is the single place that turns an `Err` into a message
+# and a non-zero exit. That shape is deliberate -- it is the half of the type
+# system this program exists to exercise -- and it costs one real thing:
+#
+#   FRICTION 1. `or_return` only works inside a function that itself returns a
+#   compatible `Result` (`docs/spec/10-statements.md:157-163`), so the
+#   discipline is all-or-nothing per call chain. A helper as small as `eat_kw`
+#   cannot be written as a plain `fn ... -> bool` and still participate; it has
+#   to return `Result(int, PErr)` with a payload nobody reads. `Result(void, E)`
+#   is not expressible, so the placeholder `Ok(0)` ends every such helper.
+#
+#   FRICTION 2, and it is the one that bites. A helper that ONLY fails still
+#   cannot be called as a statement: `eat_kw(...) or_return` on its own line is
+#   rejected -- "a statement must be a declaration, assignment, or call -- a
+#   bare expression has no effect" -- because `docs/spec/10-statements.md:16-18`
+#   permits only a call as a bare-expression statement and names `or_return`
+#   among the forms it refuses. So the discarded `Ok(0)` has to be BOUND, and
+#   `parse_query` opens with `_ := eat_kw(...) or_return` and then `_ = ...`
+#   twice more. The rule is right in general (a dropped `or_return` value is
+#   usually a bug) and it has no exemption for the case where the value is by
+#   construction meaningless, which is exactly the case a `void` Result would
+#   have removed. The two frictions are one defect seen twice.
+#
+# The message names the offending token and its byte offset, because a parse
+# error against a one-line query argument is only actionable with an offset:
+#
+#     tycho-q: parse error at byte 21: unexpected token "form" (expected `from`)
+#
+# `die` is the only route to stderr in this language -- the builtins are
+# `println`, `die` and `exit(n)`, with no `eprintln` (carried-forward phase 10
+# of plan.md) -- so an error is necessarily fatal. That happens to be right
+# here: a query that does not parse has no partial result worth printing.
+#
+# ===========================================================================
+# THE `--explain` OUTPUT
+# ===========================================================================
+#
+# One s-expression per query, over several lines, two spaces per level. It is a
+# TOTAL rendering of the AST -- every clause present in the parse appears, and
+# an absent optional clause prints nothing at all -- so a golden over it is a
+# golden over the parse.
+#
+#     (query
+#       (select (col name) (as total (* (col qty) (col price))))
+#       (from "sales.csv")
+#       (where (and (== (col region) "eu") (> (col qty) 10)))
+#       (order (key (col total) desc))
+#       (limit 5)
+#     )
+#
+# Literals print bare and are told apart by shape: `10` is an int, `1.50` is a
+# decimal (it has a `.`), `"eu"` is a string, `true`/`false` are bools, `null`
+# is null. A column reference is `(col name)` rather than a bare name, so a
+# column named `null` or `true` cannot be confused with the literal.
+#
+# Unary minus prints `(neg x)`, not `(- x)`. An s-expression could tell the two
+# minuses apart by arity, but only by counting, and a reader diffing a golden
+# should not have to count.
+package main
+
+import "core:cli"
+import "core:decimal"
+import "core:strings"
+
+# ---------------------------------------------------------------------------
+# tokens
+# ---------------------------------------------------------------------------
+
+const T_EOF   = 0
+const T_INT   = 1
+const T_DEC   = 2
+const T_STR   = 3
+const T_IDENT = 4        # a bare word: a keyword, a column, or a source path
+const T_PUNCT = 5        # an operator, a parenthesis, a comma, or `*`
+
+struct Tok:
+    kind: int
+    text: string         # the token's value: raw identifier, decoded string body, operator
+    low:  string         # `text` ASCII-lowercased; keyword and operator matching uses this
+    off:  int            # byte offset of the token's first byte in the query text
+
+# A parse or lex failure. Carried as the `E` of every `Result` in this file.
+struct PErr:
+    msg: string          # what was expected, in the reader's terms
+    tok: string          # the offending token as the user would recognise it
+    off: int             # its byte offset in the query text
+
+# ---------------------------------------------------------------------------
+# the value model and the AST
+# ---------------------------------------------------------------------------
+
+enum Value:
+    VNull
+    VBool(bool)
+    VInt(int)
+    VDec(decimal.Decimal)
+    VStr(string)
+
+# The AST. Recursion is DIRECT -- `EBin` holds two `Expr` payloads, not two
+# indices into a node array -- which a probe established before this file was
+# written: an enum declared in a program (not the corelib) may recurse both
+# directly and through an array payload, and `match` may bind a payload and
+# recurse into the same function. See plan.md phase 1's evidence.
+enum Expr:
+    ELit(Value)
+    ECol(string)
+    EUn(string, Expr)          # op is "neg" or "not"
+    EBin(string, Expr, Expr)   # op is the source spelling: "+", "==", "and", ...
+
+# One `select` item. An enum rather than a struct with a `star: bool`, so that
+# `select *` cannot carry a meaningless expression alongside the flag.
+enum Item:
+    IStar
+    IExpr(Expr, string)        # expression, alias ("" when there is no `as`)
+
+# One `order by` key.
+struct OrdKey:
+    expr: Expr
+    desc: bool
+
+struct Query:
+    sel: [Item]
+    src: string                # the source path, unquoted
+    filt: Option(Expr)         # the `where` expression, if any
+    ord:  [OrdKey]             # empty when there is no `order by`
+    lim:  Option(int)          # the `limit`, if any
+
+# ---------------------------------------------------------------------------
+# the lexer
+# ---------------------------------------------------------------------------
+
+fn is_ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 10 or c == 13
+
+fn is_digit(c: int) -> bool:
+    return c >= 48 and c <= 57
+
+fn is_alpha(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+
+# The continuation set for a bare word once it has hit a `.` or a `/`: this is
+# what makes `sales.csv` and `data/sales.csv` single tokens. See the header.
+fn is_pathchar(c: int) -> bool:
+    return is_alpha(c) or is_digit(c) or c == 46 or c == 47
+
+fn mktok(kind: int, text: string, off: int) -> Tok:
+    return Tok(kind, text, strings.to_lower(text), off)
+
+# A string literal. The opening quote byte is read from `s[pos]`; `\` escapes
+# the next byte and nothing else is special. An unterminated literal is an
+# error naming the offset of the OPENING quote, the byte the user has to fix.
+#
+# WHY THIS TAKES NO `start` PARAMETER, though it reads better with one. The
+# obvious signature is `(s, n, start: int, pos: inout int)` and the obvious
+# call is `lex_string(s, n, pos, &pos)` -- which the compiler refuses:
+# "variable 'pos' is passed to an inout parameter and also by value in the same
+# call ... the by-value copy would alias the inout'd value". That is a GOOD
+# diagnostic and it is right, but the consequence is a shape rule worth knowing
+# before writing a lexer here: a cursor threaded by `inout` can never also be
+# handed over as a plain value in the same call, so every function that wants
+# both "where I started" and "where I am" has to derive the first from the
+# second on entry.
+fn lex_string(s: string, n: int, pos: inout int) -> Result(Tok, PErr):
+    start := pos
+    quote := s[start]
+    pos = start + 1
+    body := ""
+    for pos < n and s[pos] != quote:
+        if s[pos] == 92 and pos + 1 < n:       # backslash
+            pos = pos + 1
+        body = body + chr(s[pos])
+        pos = pos + 1
+    if pos >= n:
+        # Phrased as an expectation, not as a diagnosis, because `main` renders
+        # every PErr as "unexpected token X (expected MSG)" and a reason read
+        # into that slot comes out as nonsense.
+        return Err(PErr("a closing " + chr(quote) + " for the string literal opened here", chr(quote), start))
+    pos = pos + 1                              # skip the closing quote
+    return Ok(mktok(T_STR, body, start))
+
+# A number. Digits, then at most one `.` followed by at least one digit. A
+# trailing `.` with no digit after it (`1.`) is rejected rather than silently
+# read as `1` -- see the fail-closed note in the header.
+fn lex_number(s: string, n: int, pos: inout int) -> Result(Tok, PErr):
+    start := pos
+    for pos < n and is_digit(s[pos]):
+        pos = pos + 1
+    kind := T_INT
+    if pos < n and s[pos] == 46:               # '.'
+        if pos + 1 >= n or not is_digit(s[pos + 1]):
+            return Err(PErr("a digit after the decimal point", substr(s, start, pos + 1), start))
+        kind = T_DEC
+        pos = pos + 1
+        for pos < n and is_digit(s[pos]):
+            pos = pos + 1
+    return Ok(mktok(kind, substr(s, start, pos), start))
+
+fn lex(s: string) -> Result([Tok], PErr):
+    n := len(s)
+    out := []Tok
+    pos := 0
+    for pos < n:
+        c := s[pos]
+        if is_ws(c):
+            pos = pos + 1
+        elif c == 39 or c == 34:               # ' or "
+            push(out, lex_string(s, n, &pos) or_return)
+        elif is_digit(c):
+            push(out, lex_number(s, n, &pos) or_return)
+        elif is_alpha(c):
+            start := pos
+            for pos < n and (is_alpha(s[pos]) or is_digit(s[pos])):
+                pos = pos + 1
+            # A `.` or `/` here turns the word into a path token (header).
+            if pos < n and (s[pos] == 46 or s[pos] == 47):
+                for pos < n and is_pathchar(s[pos]):
+                    pos = pos + 1
+            push(out, mktok(T_IDENT, substr(s, start, pos), start))
+        else:
+            start := pos
+            two := ""
+            if pos + 1 < n:
+                two = substr(s, pos, pos + 2)
+            if two == "==" or two == "!=" or two == "<=" or two == ">=":
+                pos = pos + 2
+                push(out, mktok(T_PUNCT, two, start))
+            elif c == 40 or c == 41 or c == 44 or c == 42 or c == 47 or c == 37 or c == 43 or c == 45 or c == 60 or c == 62:
+                # ( ) , * / % + - < >
+                pos = pos + 1
+                push(out, mktok(T_PUNCT, chr(c), start))
+            else:
+                # Includes a lone `=`, which is NOT an alias for `==` here: an
+                # assignment-looking comparison is a classic silent bug, so it
+                # is named rather than guessed at.
+                return Err(PErr("an operator or an operand", chr(c), start))
+    push(out, mktok(T_EOF, "<eof>", n))
+    return Ok(out)
+
+# ---------------------------------------------------------------------------
+# token-stream helpers
+# ---------------------------------------------------------------------------
+
+fn cur(ts: [Tok], p: int) -> Tok:
+    if p < len(ts):
+        return ts[p]
+    return ts[len(ts) - 1]                     # the EOF token; the stream never runs out
+
+fn is_kw(t: Tok, k: string) -> bool:
+    return t.kind == T_IDENT and t.low == k
+
+fn is_op(t: Tok, o: string) -> bool:
+    return t.kind == T_PUNCT and t.text == o
+
+# `text` is the decoded body for a T_STR, so a bad token that happens to be a
+# string would be reported without its quotes. Put them back for the message.
+fn shown(t: Tok) -> string:
+    if t.kind == T_STR:
+        return "\"" + t.text + "\""
+    return t.text
+
+fn oops(t: Tok, want: string) -> PErr:
+    return PErr(want, shown(t), t.off)
+
+# Consume a keyword or die trying. The `int` payload is the placeholder
+# discussed in the header: `Result(void, E)` is not expressible, so a helper
+# that only fails has to return something.
+fn eat_kw(ts: [Tok], p: inout int, k: string, want: string) -> Result(int, PErr):
+    if not is_kw(cur(ts, p), k):
+        return Err(oops(cur(ts, p), want))
+    p = p + 1
+    return Ok(0)
+
+# ---------------------------------------------------------------------------
+# the expression parser (recursive descent, one function per precedence level)
+# ---------------------------------------------------------------------------
+
+fn parse_primary(ts: [Tok], p: inout int) -> Result(Expr, PErr):
+    t := cur(ts, p)
+    if t.kind == T_INT:
+        p = p + 1
+        return Ok(ELit(VInt(strings.parse_int(t.text))))
+    if t.kind == T_DEC:
+        p = p + 1
+        return Ok(ELit(VDec(decimal.from_str(t.text))))
+    if t.kind == T_STR:
+        p = p + 1
+        return Ok(ELit(VStr(t.text)))
+    if is_op(t, "("):
+        p = p + 1
+        e := parse_expr(ts, &p) or_return
+        if not is_op(cur(ts, p), ")"):
+            return Err(oops(cur(ts, p), "`)` to close the group"))
+        p = p + 1
+        return Ok(e)
+    if t.kind == T_IDENT:
+        # The three word-shaped literals are checked BEFORE the column route,
+        # so `true` is never a column reference. A column that really is named
+        # `true` is unreachable, which is the accepted cost of not having
+        # delimited identifiers (header).
+        if t.low == "true":
+            p = p + 1
+            return Ok(ELit(VBool(true)))
+        if t.low == "false":
+            p = p + 1
+            return Ok(ELit(VBool(false)))
+        if t.low == "null":
+            p = p + 1
+            return Ok(ELit(VNull))
+        if is_reserved(t.low):
+            return Err(oops(t, "an operand (that word is a reserved keyword)"))
+        p = p + 1
+        return Ok(ECol(t.text))
+    return Err(oops(t, "an operand"))
+
+# The clause keywords cannot be column references, or `select a from x` would
+# parse `from` as a column and then fail somewhere unhelpful. `and`/`or`/`not`
+# are here too: they are operators, never operands.
+fn is_reserved(w: string) -> bool:
+    return w == "select" or w == "from" or w == "where" or w == "order" or w == "by" or w == "asc" or w == "desc" or w == "limit" or w == "as" or w == "and" or w == "or" or w == "not"
+
+fn parse_unary(ts: [Tok], p: inout int) -> Result(Expr, PErr):
+    t := cur(ts, p)
+    if is_op(t, "-"):
+        p = p + 1
+        e := parse_unary(ts, &p) or_return
+        return Ok(EUn("neg", e))
+    if is_kw(t, "not"):
+        p = p + 1
+        e := parse_unary(ts, &p) or_return
+        return Ok(EUn("not", e))
+    return parse_primary(ts, &p)
+
+fn parse_mul(ts: [Tok], p: inout int) -> Result(Expr, PErr):
+    lhs := parse_unary(ts, &p) or_return
+    for is_op(cur(ts, p), "*") or is_op(cur(ts, p), "/") or is_op(cur(ts, p), "%"):
+        op := cur(ts, p).text
+        p = p + 1
+        rhs := parse_unary(ts, &p) or_return
+        lhs = EBin(op, lhs, rhs)
+    return Ok(lhs)
+
+fn parse_add(ts: [Tok], p: inout int) -> Result(Expr, PErr):
+    lhs := parse_mul(ts, &p) or_return
+    for is_op(cur(ts, p), "+") or is_op(cur(ts, p), "-"):
+        op := cur(ts, p).text
+        p = p + 1
+        rhs := parse_mul(ts, &p) or_return
+        lhs = EBin(op, lhs, rhs)
+    return Ok(lhs)
+
+fn is_cmp(t: Tok) -> bool:
+    return is_op(t, "==") or is_op(t, "!=") or is_op(t, "<") or is_op(t, "<=") or is_op(t, ">") or is_op(t, ">=")
+
+fn parse_cmp(ts: [Tok], p: inout int) -> Result(Expr, PErr):
+    lhs := parse_add(ts, &p) or_return
+    for is_cmp(cur(ts, p)):
+        op := cur(ts, p).text
+        p = p + 1
+        rhs := parse_add(ts, &p) or_return
+        lhs = EBin(op, lhs, rhs)
+    return Ok(lhs)
+
+fn parse_and(ts: [Tok], p: inout int) -> Result(Expr, PErr):
+    lhs := parse_cmp(ts, &p) or_return
+    for is_kw(cur(ts, p), "and"):
+        p = p + 1
+        rhs := parse_cmp(ts, &p) or_return
+        lhs = EBin("and", lhs, rhs)
+    return Ok(lhs)
+
+fn parse_expr(ts: [Tok], p: inout int) -> Result(Expr, PErr):
+    lhs := parse_and(ts, &p) or_return
+    for is_kw(cur(ts, p), "or"):
+        p = p + 1
+        rhs := parse_and(ts, &p) or_return
+        lhs = EBin("or", lhs, rhs)
+    return Ok(lhs)
+
+# ---------------------------------------------------------------------------
+# the clause parser
+# ---------------------------------------------------------------------------
+
+fn parse_item(ts: [Tok], p: inout int) -> Result(Item, PErr):
+    # `*` is only a select-star in the item position, and only when it stands
+    # alone: `select *` is the star, `select a * b` reaches this with `a` and
+    # never sees the `*` here.
+    if is_op(cur(ts, p), "*"):
+        p = p + 1
+        return Ok(IStar)
+    e := parse_expr(ts, &p) or_return
+    if is_kw(cur(ts, p), "as"):
+        p = p + 1
+        a := cur(ts, p)
+        if a.kind != T_IDENT or is_reserved(a.low):
+            return Err(oops(a, "an alias name after `as`"))
+        p = p + 1
+        return Ok(IExpr(e, a.text))
+    return Ok(IExpr(e, ""))
+
+fn parse_source(ts: [Tok], p: inout int) -> Result(string, PErr):
+    t := cur(ts, p)
+    if t.kind == T_STR:
+        p = p + 1
+        return Ok(t.text)
+    if t.kind == T_IDENT and not is_reserved(t.low):
+        p = p + 1
+        return Ok(t.text)
+    return Err(oops(t, "a source path after `from`"))
+
+fn parse_key(ts: [Tok], p: inout int) -> Result(OrdKey, PErr):
+    e := parse_expr(ts, &p) or_return
+    if is_kw(cur(ts, p), "desc"):
+        p = p + 1
+        return Ok(OrdKey(e, true))
+    if is_kw(cur(ts, p), "asc"):
+        p = p + 1
+        return Ok(OrdKey(e, false))
+    return Ok(OrdKey(e, false))                # ascending is the default
+
+fn parse_query(s: string) -> Result(Query, PErr):
+    ts := lex(s) or_return
+    p := 0
+
+    _ := eat_kw(ts, &p, "select", "`select` at the start of the query") or_return
+    sel := []Item
+    push(sel, parse_item(ts, &p) or_return)
+    for is_op(cur(ts, p), ","):
+        p = p + 1
+        push(sel, parse_item(ts, &p) or_return)
+
+    _ = eat_kw(ts, &p, "from", "`from` after the select list") or_return
+    src := parse_source(ts, &p) or_return
+
+    filt := None
+    if is_kw(cur(ts, p), "where"):
+        p = p + 1
+        filt = Some(parse_expr(ts, &p) or_return)
+
+    ord := []OrdKey
+    if is_kw(cur(ts, p), "order"):
+        p = p + 1
+        _ = eat_kw(ts, &p, "by", "`by` after `order`") or_return
+        push(ord, parse_key(ts, &p) or_return)
+        for is_op(cur(ts, p), ","):
+            p = p + 1
+            push(ord, parse_key(ts, &p) or_return)
+
+    lim := None
+    if is_kw(cur(ts, p), "limit"):
+        p = p + 1
+        t := cur(ts, p)
+        if t.kind != T_INT:
+            return Err(oops(t, "a non-negative integer after `limit`"))
+        p = p + 1
+        lim = Some(strings.parse_int(t.text))
+
+    # The trailing check is what makes a typo in a clause keyword land here
+    # with the right token rather than being silently ignored. Without it,
+    # `select a from x limitt 3` would parse clean and drop `limitt 3`.
+    if cur(ts, p).kind != T_EOF:
+        return Err(oops(cur(ts, p), "the end of the query"))
+    return Ok(Query(sel, src, filt, ord, lim))
+
+# ---------------------------------------------------------------------------
+# `--explain`: render the AST as an s-expression
+# ---------------------------------------------------------------------------
+
+fn esc(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 34:
+            out = out + "\\\""
+        elif c == 92:
+            out = out + "\\\\"
+        elif c == 10:
+            out = out + "\\n"
+        elif c == 9:
+            out = out + "\\t"
+        else:
+            out = out + chr(c)
+    return out
+
+fn show_value(v: Value) -> string:
+    match v:
+        VNull:
+            return "null"
+        VBool(b):
+            if b:
+                return "true"
+            return "false"
+        VInt(n):
+            return str(n)
+        VDec(d):
+            return decimal.to_str(d)
+        VStr(s):
+            return "\"" + esc(s) + "\""
+
+fn show_expr(e: Expr) -> string:
+    match e:
+        ELit(v):
+            return show_value(v)
+        ECol(name):
+            return "(col " + name + ")"
+        EUn(op, x):
+            return "(" + op + " " + show_expr(x) + ")"
+        EBin(op, l, r):
+            return "(" + op + " " + show_expr(l) + " " + show_expr(r) + ")"
+
+fn show_item(it: Item) -> string:
+    match it:
+        IStar:
+            return "*"
+        IExpr(e, alias):
+            if alias == "":
+                return show_expr(e)
+            return "(as " + alias + " " + show_expr(e) + ")"
+
+# FRICTION, and the reason these two exist as functions rather than as a
+# `match` inside `explain`. An absent clause prints nothing, so the `None` arm
+# of the match has no work to do -- and Tycho has NO no-op statement. There is
+# no `pass`: `docs/spec/10-statements.md:16-18` permits only a call as a bare
+# expression statement, so an empty arm cannot be spelled at all, and the
+# compiler rejects the arm rather than the missing keyword ("a statement must
+# be a declaration, assignment, or call"). A match whose arms differ in whether
+# they act therefore has to be lifted into a function whose arms all RETURN,
+# with the emptiness carried in the value. Grepping the tree for a bare `pass`
+# finds none outside this file's own rejected draft, so nothing else has hit it
+# -- the corelib's matches are all total in the same way `show_value` is.
+fn where_line(o: Option(Expr)) -> string:
+    match o:
+        Some(e):
+            return "  (where " + show_expr(e) + ")"
+        None:
+            return ""
+
+fn limit_line(o: Option(int)) -> string:
+    match o:
+        Some(n):
+            return "  (limit " + str(n) + ")"
+        None:
+            return ""
+
+fn explain(q: Query):
+    println("(query")
+    line := "  (select"
+    for i := 0; i < len(q.sel); i += 1:
+        line = line + " " + show_item(q.sel[i])
+    println(line + ")")
+    # The source is rendered QUOTED even though it usually needs no quotes:
+    # `from 'has space.csv'` is legal, and a bare rendering of that path would
+    # make `(from has space.csv)` -- three atoms where the AST has one.
+    println("  (from \"" + esc(q.src) + "\")")
+    w := where_line(q.filt)
+    if w != "":
+        println(w)
+    if len(q.ord) > 0:
+        line = "  (order"
+        for i := 0; i < len(q.ord); i += 1:
+            dir := "asc"
+            if q.ord[i].desc:
+                dir = "desc"
+            line = line + " (key " + show_expr(q.ord[i].expr) + " " + dir + ")"
+        println(line + ")")
+    l := limit_line(q.lim)
+    if l != "":
+        println(l)
+    println(")")
+
+# ---------------------------------------------------------------------------
+# entry point
+# ---------------------------------------------------------------------------
+
+fn usage():
+    println("usage: tycho-q --explain '<query>'")
+    println("")
+    println("  --explain   parse the query and print its AST as an s-expression")
+    println("")
+    println("The accepted grammar is at the top of tools/tycho-q/main.ty.")
+    println("Reading a file and evaluating rows are not implemented yet.")
+
+fn main():
+    av := cli.argv()
+    if len(av) == 0 or av[0] == "-h" or av[0] == "--help":
+        usage()
+        exit(0)
+    if av[0] != "--explain":
+        die("tycho-q: unknown option: " + av[0] + " (try --help)")
+    if len(av) != 2:
+        die("tycho-q: --explain takes exactly one query argument (try --help)")
+    match parse_query(av[1]):
+        Ok(q):
+            explain(q)
+        Err(e):
+            die("tycho-q: parse error at byte " + str(e.off) + ": unexpected token " + e.tok + " (expected " + e.msg + ")")
