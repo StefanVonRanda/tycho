@@ -127,7 +127,7 @@ source instead of inferring them from the sign of a step expression.
 > parsed by `parse_stmt` itself `src/tychoc.c:3433@parse_stmt`; loop scoping and
 > the post clause resolved outside the body block `src/tychoc.c:7248-7253`;
 > `continue` emitted as `goto _post<id>` `src/tychoc.c:10712-10715` with the
-> label at `src/tychoc.c:10946@_post%d`; the `range()` refusal
+> label at `src/tychoc.c:10967@_post%d`; the `range()` refusal
 > `src/tychoc.c:3510@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1555-1561`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`

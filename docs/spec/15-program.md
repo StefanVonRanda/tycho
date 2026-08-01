@@ -16,11 +16,11 @@ the C boundary, and how — is [§24](14-ffi.md). This chapter
 specifies only *program- and package-level* structure and does not restate
 those rules.
 
-> Provenance: entry point `src/tychoc.c:7997@no 'main' procedure` (no `main`),
-> `:8022-8023@'main' must be` (the signature rule); compilation unit
-> `compile_package` `:12613-12618@compile_package`, driver `:12672-12776@int main(`;
+> Provenance: entry point `src/tychoc.c:8018@no 'main' procedure` (no `main`),
+> `:8043-8044@'main' must be` (the signature rule); compilation unit
+> `compile_package` `:12634-12639@compile_package`, driver `:12693-12797@int main(`;
 > `extern` `parse_extern_fn` `:3965-4035@parse_extern_fn`; the C compiler
-> invocation `:12916@system(cmd)`.
+> invocation `:12961@system(cmd)`.
 
 ## 27. Program structure
 
@@ -29,10 +29,10 @@ those rules.
 A program MUST define exactly one procedure named `main`. It MUST take no
 parameters and MUST return `void`; the declaration form is `fn main():`. An
 implementation MUST reject a program that defines no `main` (the reference
-diagnoses `no 'main' procedure`, `src/tychoc.c:7997@no 'main' procedure`) and MUST
+diagnoses `no 'main' procedure`, `src/tychoc.c:8018@no 'main' procedure`) and MUST
 reject a `main` that declares any parameter or a non-`void` return type — the
 reference enforces both halves in one test inside `resolve_program`,
-`:8022-8023@'main' must be`; `compiler/tychoc0.ty` checks it at parse time in
+`:8043-8044@'main' must be`; `compiler/tychoc0.ty` checks it at parse time in
 `parse_program`, `compiler/tychoc0.ty:3911@'main' must be`.
 
 A minimal complete program is therefore:
@@ -163,6 +163,20 @@ closure is not recomputed for the flag — it is the `g_shims` set that `merge_p
 fills as it walks the import graph, so a shim reached only through an indirect
 import is listed on the same terms as a directly imported one. A program with no
 package prints nothing and exits 0; an empty closure is an answer, not an error.
+
+**`--print-deps`** reads the same walk out the other way: the *transitive* closure
+of pkg-config package **names** declared by each package's `deps` file (§28.6),
+one per line on stdout, then exits without code generation. It answers a different
+question from `--print-shims`, for a caller that does not link the C itself — a
+harness that lets the reference compiler build, and only needs to know whether the
+link line *can* resolve on this host, so that a missing library is a skip rather
+than a failure. The names are recorded as the walk enters each package and
+**before** resolution is attempted, so they are printed whether or not pkg-config
+can resolve them here; the resolved `--cflags --libs` form that reaches the cc line
+is empty on exactly the host where the library is absent, which makes it
+indistinguishable from a package that declared no dependencies at all. Duplicates
+are collapsed. A program whose closure declares no `deps` prints nothing and exits
+0.
 
 `-L<dir>` and `-I<dir>` (attached or separated) also accumulate onto the line
 (`:10537-10540`). Every library/package name that reaches the shell — from
