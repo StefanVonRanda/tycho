@@ -1655,9 +1655,9 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     | `docs/spec/12-aggregates.md:16` | `src/tychoc.c:1617` | `src/tychoc.c:1964@a tuple type needs at least two elements` | the arity floor |
     | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9918` | `src/tychoc.c:11975` | the emitted `keys()` walk |
     | `docs/spec/12-aggregates.md:18` | `src/tychoc.c:9931` | `src/tychoc.c:11930` | the append that *defines* the order |
-    | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:509` | `runtime/tycho_rt.c:751@c->seq, c->pos + 1, memory_order_release` | the publish in `tycho_chan_send_commit` |
-    | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:521` | `runtime/tycho_rt.c:763@memory_order_acquire) - (pos + 1)` | the acquire load in the recv claim |
-    | `docs/spec/14-ffi.md:9` | `runtime/tycho_rt.c:1026` | `runtime/tycho_rt.c:1284@tycho_arr_int_from_c` | that boundary copy routine |
+    | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:509` | `runtime/tycho_rt.c:751` | the publish in `tycho_chan_send_commit` |
+    | `docs/spec/13-concurrency.md:10` | `runtime/tycho_rt.c:521` | `runtime/tycho_rt.c:763` | the acquire load in the recv claim |
+    | `docs/spec/14-ffi.md:9` | `runtime/tycho_rt.c:1026` | `runtime/tycho_rt.c:1284` | that boundary copy routine |
     | `docs/spec/16-builtins.md:85` | `src/tychoc.c:8283` | `src/tychoc.c:9114` | the `eprint` emit |
     | `docs/spec/16-builtins.md:116` | `src/tychoc.c:4152` | `src/tychoc.c:4520` | the `chr` `Sig` |
     | `docs/spec/16-builtins.md:143` | `src/tychoc.c:4158` | `src/tychoc.c:4527` | the `split` `Sig` |

@@ -47,6 +47,7 @@
 #include <sched.h>     /* sched_yield in the spin-escalation ladder */
 #include <time.h>      /* clock_gettime (clock()), time() (now()) */
 #include <time.h>      /* timed parking */
+#include <locale.h>    /* newlocale/uselocale: the "C" LC_NUMERIC used by tycho_float_to_str */
 #include <stdint.h>
 #include <inttypes.h>
 typedef int64_t tycho_int;
@@ -1230,13 +1231,81 @@ char *tycho_bool_to_str(Arena *a, tycho_int b) {
     return r;
 }
 
-/* Float to string: %.15g trims trailing zeros while keeping ~15 significant
- * digits (readable, not full 17-digit round-trip). A value that prints with no
- * '.', exponent, or inf/nan marker (e.g. 3 for 3.0) gets a trailing ".0" so it
- * is never mistaken for an int. */
+/* --- float -> string, in the "C" locale, always ---------------------------
+ *
+ * WHY A LOCALE HANDLE IS INVOLVED AT ALL. printf's "%g" takes its decimal
+ * separator from LC_NUMERIC. Nothing in this tree calls setlocale, so a Tycho
+ * program runs under "C" and a bare snprintf happens to be right -- but that is
+ * an unstated dependency on a process-wide global, and one linked C library
+ * calling setlocale(LC_ALL, "") under a comma-decimal locale breaks it. It broke
+ * WORSE than "1,5": the ".0" guard below scans for '.', "1,5" has none, so the
+ * guard fired and the output was `1,5.0` -- not a float in any grammar, not
+ * readable by core:strings' parse_float, not valid Tycho source.
+ * corelib/strings/strings_shim.c fixed the same defect on the parse side; this
+ * is that fix in the other direction.
+ *
+ * WHY uselocale AND NOT snprintf_l. snprintf_l is a BSD/macOS extension living
+ * in <xlocale.h>; glibc does NOT declare it, with or without _GNU_SOURCE
+ * (measured on this host: `implicit declaration of function 'snprintf_l'` under
+ * cc -std=c11 with _GNU_SOURCE defined). uselocale/newlocale/LC_NUMERIC_MASK are
+ * POSIX 2008 and present on both, and _DEFAULT_SOURCE (declared at the top of
+ * this file) already exposes them -- no new feature-test macro is needed.
+ * uselocale sets the calling THREAD's locale, which matters because a Tycho task
+ * is a pthread: swapping the global with setlocale would be a data race between
+ * tasks, and this is not.
+ *
+ * FALLBACK, AND WHY IT IS STILL CORRECT. If newlocale fails at run time (out of
+ * memory, no "C" locale) we format under the ambient locale and then rewrite its
+ * separator -- taken from localeconv(), C89, always present -- back to '.' in the
+ * buffer. Same digits, same rounding; only the one separator byte-run moves.
+ *
+ * THE ".0" GUARD'S CONTRACT, AND WHY THE SCAN IS SOUND. The guard answers "would
+ * this text be read back as an int?" and appends ".0" when it would, so str(3.0)
+ * is "3.0" and never "3". It decides by scanning for the only four things %.15g
+ * can emit that make text non-integral: '.' (the separator), 'e'/'E' (an
+ * exponent), and the i/I/n/N of "inf"/"nan". That scan is sound ONLY because the
+ * separator is now known to be '.': under any other separator the character is
+ * absent from the set, every finite non-integral value looks integral, and the
+ * guard appends ".0" to a string that already had a fraction -- which is exactly
+ * the `1,5.0` above. The guard is correct because of the conversion above it;
+ * changing one without the other reintroduces the bug. */
+static locale_t       ty_c_numeric;
+static pthread_once_t ty_c_numeric_once = PTHREAD_ONCE_INIT;
+
+static void ty_c_numeric_init(void) {
+    ty_c_numeric = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);   /* 0 on failure */
+}
+
+/* Fallback path only: rewrite the running locale's decimal separator (which may
+ * be several bytes) to a single '.' in place. Returns the new length. %g emits at
+ * most one separator, so one rewrite is enough. */
+static int ty_fix_decimal_point(char *s, int n) {
+    struct lconv *lc = localeconv();
+    const char *dp   = (lc && lc->decimal_point && lc->decimal_point[0]) ? lc->decimal_point : ".";
+    size_t dplen     = strlen(dp);
+    if (dplen == 1 && dp[0] == '.') return n;        /* already C-like */
+    char *at = strstr(s, dp);
+    if (!at) return n;                               /* integral, or inf/nan: no separator */
+    *at = '.';
+    memmove(at + 1, at + dplen, (size_t)((s + n) - (at + dplen)) + 1);   /* +1 carries the NUL */
+    return n - (int)dplen + 1;
+}
+
+/* %.15g trims trailing zeros while keeping ~15 significant digits (readable, not
+ * full 17-digit round-trip: a value needing 17 digits prints shortened, and
+ * parsing that text back gives a nearby double, not the same one). */
 char *tycho_float_to_str(Arena *a, double x) {
     char tmp[64];
-    int m = snprintf(tmp, sizeof tmp, "%.15g", x);
+    int m;
+    pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
+    if (ty_c_numeric) {
+        locale_t prev = uselocale(ty_c_numeric);
+        m = snprintf(tmp, sizeof tmp, "%.15g", x);
+        uselocale(prev);                             /* prev may be LC_GLOBAL_LOCALE; that is legal */
+    } else {
+        m = snprintf(tmp, sizeof tmp, "%.15g", x);
+        m = ty_fix_decimal_point(tmp, m);
+    }
     int floaty = 0;
     for (int i = 0; i < m; i++) {
         char c = tmp[i];
@@ -1246,6 +1315,50 @@ char *tycho_float_to_str(Arena *a, double x) {
     char *r = tycho_str_alloc(a, m);
     memcpy(r, tmp, (size_t)m);
     return r;
+}
+
+/* ---- TEST HOOKS ------------------------------------------------------------
+ * Two functions with no Tycho-visible declaration anywhere: they are not
+ * builtins and no ordinary program can reach them. tests/float_str_locale.ty
+ * declares them itself with `extern fn`, the same shape
+ * corelib/test/strings/main.ty uses for corelib/strings/strings_shim.c's hook.
+ * They live HERE, in the runtime, because tests/run.sh compiles a fixture with
+ * plain `cc ... -lm` and no --shim, so a fixture has no other C to link against.
+ *
+ * make_locale_hostile makes LC_NUMERIC a comma-decimal locale, so the assertions
+ * run against the exact condition that used to produce `1,5.0` rather than
+ * against the "C" locale a Tycho program would otherwise never leave. It returns
+ * 1 if the separator is now something other than '.', 0 if the host has none of
+ * these locales; the fixture PRINTS that into its golden, so a host with no such
+ * locale fails loudly instead of silently testing nothing.
+ *
+ * float_roundtrip formats x with tycho_float_to_str above and re-reads it with
+ * strtod under the same "C" handle, returning 1 if the value came back
+ * identically -- signbit compared too, so -0.0 does not pass as 0.0. It returns
+ * -1 if the "C" handle could not be built, because then neither leg is trustworthy
+ * and a golden should say so rather than score it. */
+tycho_int tycho_test_make_locale_hostile(void) {
+    static const char *cands[] = { "", "da_DK.UTF-8", "da_DK.utf8", "da_DK",
+                                   "de_DE.UTF-8", "fr_FR.UTF-8", NULL };
+    for (int i = 0; cands[i]; i++) {
+        if (!setlocale(LC_NUMERIC, cands[i])) continue;
+        struct lconv *lc = localeconv();
+        if (lc && lc->decimal_point && strcmp(lc->decimal_point, ".") != 0) return 1;
+    }
+    setlocale(LC_NUMERIC, "C");      /* none was hostile: leave a known state */
+    return 0;
+}
+
+tycho_int tycho_test_float_roundtrip(double x) {
+    pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
+    if (!ty_c_numeric) return -1;
+    Arena a  = arena_new(0);
+    char *s  = tycho_float_to_str(&a, x);
+    locale_t prev = uselocale(ty_c_numeric);
+    double back   = strtod(s, NULL);
+    uselocale(prev);
+    arena_free(&a);
+    return (back == x && signbit(back) == signbit(x)) ? 1 : (x != x && back != back) ? 1 : 0;
 }
 
 /* --- [int] arrays ---------------------------------------------------------
