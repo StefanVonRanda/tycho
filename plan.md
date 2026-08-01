@@ -88,7 +88,7 @@ The six, quoted from `corelib/json/json.ty`:
 
 ## Phases
 
-- [ ] **Phase 1 — `strings.parse_float`, and the locale trap**
+- [x] **Phase 1 — `strings.parse_float`, and the locale trap**
   - Scope: `corelib/strings/strings.ty`, new `corelib/strings/strings_shim.c`,
     `corelib/test/strings/main.ty`, `corelib/test/strings.out`.
   - A strict, `Result`-returning string-to-float. Strict means: the **whole**
@@ -113,6 +113,125 @@ The six, quoted from `corelib/json/json.ty`:
     run `make ci`. `make test` cannot redden for a `corelib/` change
     (`docs/internals/plan-json-error-DONE.md` phase 23 — `tests/run.sh:113` globs
     top level only), so run it only if you touch something outside `corelib/`.
+
+  **Evidence.**
+
+  Added `corelib/strings/strings.ty@parse_float` returning
+  `Result(float, FloatErr)`, `corelib/strings/strings.ty@FloatErr` with four
+  payload-free variants, and a new `corelib/strings/strings_shim.c` holding
+  `corelib/strings/strings_shim.c@strx_parse_double`. No `deps` file: pure libc,
+  so `core:strings` stays core tier.
+
+  *The accepted grammar* (whole string, or `Err(Syntax)`), written down above the
+  code:
+
+      number := sign? ( digits frac? | frac ) exp?
+      sign   := '+' | '-'
+      digits := ('0'..'9')+
+      frac   := '.' digits          -- a point NEEDS digits after it
+      exp    := ('e' | 'E') sign? digits
+
+  A deliberate **superset** of RFC 8259's number grammar (it takes `+1`, `.5`,
+  `01`), so phase 2's JSON lexer can check its own stricter shape and then hand
+  the lexeme here. Refused although bare `strtod` would take them: leading or
+  trailing whitespace, `inf`/`nan`, hex floats, a comma separator, any trailing
+  byte, and a NUL byte plus whatever follows it — the scan walks all `len(s)`
+  bytes, so a length-counted Tycho string cannot smuggle bytes past C's NUL.
+
+  *The locale dependency is removed, not documented.* `strtod_l` against a
+  `newlocale(LC_NUMERIC_MASK, "C", (locale_t)0)` handle built once under
+  `pthread_once` (a Tycho task is a pthread, so a bare lazy assignment is a data
+  race that also leaks the handle). Two fallbacks, both correct: a libc without
+  `strtod_l`, or `newlocale` failing at run time, take
+  `corelib/strings/strings_shim.c@ty_strtod_localeconv`, which rewrites `'.'` to
+  the running locale's own `localeconv()->decimal_point` and calls plain
+  `strtod`.
+
+  The feature-test macro is **`_GNU_SOURCE`, not `_POSIX_C_SOURCE`**, and that
+  was measured rather than assumed: `newlocale`/`locale_t` are POSIX 2008 but
+  `strtod_l` is not, so with `_POSIX_C_SOURCE 200809L` and `-std=c11` the file
+  fails. `make shim-check` is the only gate that sees it — proved by breaking it
+  on purpose:
+
+      FAIL corelib/strings/strings_shim.c
+             corelib/strings/strings_shim.c: In function ‘strx_parse_double’:
+             error: implicit declaration of function ‘strtod_l’; did you mean ‘strtok_r’?
+
+  *Both locale runs.* The test forces LC_NUMERIC hostile itself, via a hook in
+  the shim that `corelib/test/strings/main.ty` declares as its own `extern` (it
+  is deliberately not part of `core:strings`' API — no library function should
+  move a process-wide global). `hostile=1` is the printed proof the switch took
+  effect; a host with no comma-decimal locale prints `hostile=0` and reddens with
+  a line naming the reason instead of quietly testing `"C"`. Nothing in the block
+  prints a raw float, because `str(float)` is itself locale-sensitive (see the
+  new phase below), so the two runs are byte-identical:
+
+      $ ./st                                  # default env (LANG=en_GB.UTF-8, LC_NUMERIC unset)
+      $ LC_ALL=da_DK.UTF-8 ./st
+      hostile=1
+      pf 1.5      ok eq1.5=yes eq1.0=NO
+      pf 1,5      err Syntax
+      pf empty    err Empty
+      pf -        err Syntax
+      pf 1.5x     err Syntax
+      pf ' 1.5'   err Syntax
+      pf 1e400    err Overflow
+      pf 1e-400   err Underflow
+      pf -0.0     ok eq0=yes neg=yes
+      pf 0        ok eq0=yes neg=no
+      pf 1e3      ok eq1000=yes
+      pf 1E+3     ok eq1000=yes
+      pf 25digit  ok eq=yes
+      $ cmp default.txt dadk.txt   ->   identical, byte for byte
+
+  `da_DK.utf8` is installed here (`locale -a | grep -i da_DK` lists
+  `da_DK`, `da_DK.utf8`), so no substitute locale was needed.
+
+  | input | outcome | why |
+  |---|---|---|
+  | `"1.5"` | `Ok(1.5)`, `== 1.5` true, `== 1.0` false | the whole point |
+  | `"1,5"` | `Err(Syntax)` | the comma is not in the grammar, under any locale |
+  | `""` | `Err(Empty)` | told apart from junk, unlike `parse_int` |
+  | `"-"` | `Err(Syntax)` | a sign with no digits |
+  | `"1.5x"` | `Err(Syntax)` | no partial parse — never `1.5` |
+  | `" 1.5"` | `Err(Syntax)` | no leading whitespace; the caller trims if it means to |
+  | `"1e400"` | `Err(Overflow)` | never `+inf` |
+  | `"1e-400"` | `Err(Underflow)` | never `0.0` |
+  | `"-0.0"` | `Ok(-0.0)` — `== 0.0`, and `1.0/v < 0` | the sign survives |
+  | `"0"` | `Ok(0.0)`, `1.0/v > 0` | positive zero |
+  | `"1e3"` | `Ok(1000.0)` | |
+  | `"1E+3"` | `Ok(1000.0)` | capital `E` and a `+` exponent |
+  | `"1234567890123456789012345"` | `Ok(1.2345678901234568e24)` | 25 digits are ROUNDED, not refused; the header says the digits are not preserved |
+
+  `"1e-320"` is also `Err(Underflow)`: glibc sets `ERANGE` for a subnormal
+  result, and a subnormal has already lost digits. Measured with a standalone C
+  probe before the shim was written.
+
+  *The test can fail* — checked by breaking the shim two ways and rebuilding:
+
+  - forced onto the `localeconv` fallback (both `strtod_l` and the C-locale
+    handle bypassed): `pf 1.5 ok eq1.5=yes` — the fallback is genuinely correct,
+    not merely unreached.
+  - replaced by bare `strtod`: `pf 1.5 err Syntax eq1.5=err eq1.0=err`. Under
+    the hostile locale bare `strtod` stops at the `'.'`, the shim's
+    whole-string check catches the leftover, and the test reddens. The
+    standalone C probe shows the raw damage directly:
+    `plain strtod 1.5 -> 1 rest=[.5]` versus `strtod_l(C) 1.5 -> 1.5 rest=[]`.
+
+  *Gates, all foreground, in the briefed order:*
+
+      make shim-check   ->  shim-check: 12 ok, 1 skipped, 0 failed
+      make corelib      ->  ok   strings ... corelib: all green (tychoc matches goldens)
+      sh examples/corelib/run.sh  ->  ok   strings ... corelib examples: all green
+      LC_ALL=da_DK.UTF-8 <test binary>  ->  byte-identical to the default run (above)
+      python3 scripts/check_citations.py  ->  citation check: ok
+
+  `make ci` and `make test` were **not** run: nothing outside `corelib/` changed,
+  and `tests/run.sh:113` globs the top level only.
+
+  `corelib/strings/strings.ty@parse_int` is unchanged, as briefed. The two now sit
+  together with a block above `parse_float` saying which to reach for, and the
+  package header names the split in four lines so a reader meets it first.
 
 - [ ] **Phase 2 — numbers: the float path and the 64-bit wrap (gaps 1 and 3)**
   - Scope: `corelib/json/json.ty`, `corelib/test/json/main.ty`,
@@ -200,6 +319,35 @@ The six, quoted from `corelib/json/json.ty`:
     scripts/check_citations.py`, `sh scripts/check_links.sh`, and **`make ci`
     once, last** as the closing sweep. If `make ci` reddens, fix with the failing
     step's own gate and re-run that gate — never `make ci` as a loop.
+
+- [ ] **Phase 6 — `str(float)` is locale-sensitive, and it renders corrupt output**
+  - Found in phase 1, out of its scope (`runtime/`, not `corelib/`), so recorded
+    rather than absorbed.
+  - Phase 1 removed the locale dependency from the string **to** float direction.
+    The float **to** string direction still has it, and it is worse than a wrong
+    separator. Measured with the phase 1 test hook holding LC_NUMERIC at
+    `da_DK.UTF-8`, `str(1.5)` printed:
+
+        1,5.0
+
+    The mechanism is read, not guessed: `runtime/tycho_rt.c@tycho_float_to_str`
+    formats with `%.15g`, which takes its separator from LC_NUMERIC, and then
+    scans the result for `'.'`, `'e'`, `'E'` or an inf/nan marker to decide
+    whether to append `".0"` so the value is "never mistaken for an int". Under a
+    comma locale `1,5` contains none of those, so the guard fires and appends
+    `".0"` to a string that already had a fraction. The result is neither valid
+    Tycho float syntax nor a number any parser in this tree will read back, so
+    `parse_float(str(v))` is not a round trip under a comma-decimal locale.
+  - Today nothing in this tree calls `setlocale`, so a Tycho program never leaves
+    `"C"` and this is latent — exactly the position `strtod` was in before phase
+    1. One linked C library calling `setlocale(LC_ALL, "")` makes every float
+    this runtime prints wrong, and no gate would notice.
+  - The fix is the same shape as phase 1's: render through a `"C"`-locale
+    conversion (`snprintf_l`, or format the digits without printf's separator),
+    not through the ambient locale. Scope is `runtime/`, so it needs `make test`,
+    not `make corelib`.
+  - The phase 1 test deliberately prints **no** raw float for this reason; a
+    future phase that wants one in a golden has to close this first.
 
 ## Carried forward
 

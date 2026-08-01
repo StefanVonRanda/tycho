@@ -1,5 +1,10 @@
 # corelib: string utilities. Import with `import "core:strings"`, use `strings.trim(s)`.
 # (split/find/substr/len/chr are builtins; these build on them.)
+#
+# TWO PARSERS, OPPOSITE POLICIES. `parse_int` FAILS OPEN -- "" and "garbage" are
+# both 0, "123stop" is 123 -- and `parse_float` FAILS CLOSED, returning a
+# Result and refusing anything the whole of which is not a number. They sit
+# together below and the block above `parse_float` says which to reach for.
 package strings
 
 fn is_space(c: int) -> bool:                 # ASCII whitespace: space \t \n \v \f \r
@@ -87,6 +92,119 @@ fn parse_int(s: string) -> int:              # decimal int, optional leading '-'
     if v == min64:                           # +9223372036854775808 does not fit
         return 0
     return 0 - v
+
+# ---- parse_float: the STRICT one -------------------------------------------
+#
+# WHICH ONE TO REACH FOR. These two live next to each other on purpose and they
+# have opposite failure policies. Read this before picking one.
+#
+#   parse_int(s)   -> int                      FAILS OPEN.  Above.
+#       "" is 0. "-" is 0. "garbage" is 0. "123stop" is 123 -- it stops at the
+#       first non-digit and tells nobody. Overflow is 0. 0 is also a legitimate
+#       value, so a caller CANNOT tell success from failure. Use it only where
+#       the input is already known-good and 0 is a fine answer for junk.
+#
+#   parse_float(s) -> Result(float, FloatErr)  FAILS CLOSED. Here.
+#       The WHOLE string must match the grammar below. A partial parse is an
+#       error, not a prefix. There is no in-band failure value: every refusal is
+#       an Err naming what was wrong. Use it for anything the program did not
+#       write itself -- a config file, a CSV cell, a JSON number, a CLI argument.
+#
+# THE GRAMMAR. The whole string must match; anything else is Err(Syntax).
+#
+#     number := sign? ( digits frac? | frac ) exp?
+#     sign   := '+' | '-'
+#     digits := ('0'..'9')+
+#     frac   := '.' digits                       -- a point NEEDS digits after it
+#     exp    := ('e' | 'E') sign? digits
+#
+# So ".5", "+1", "01" and "1E+3" are accepted; "1." , ".", "1e", "1e+", "" and
+# "-" are not. This is deliberately a SUPERSET of the RFC 8259 JSON number
+# grammar (which forbids "+1", ".5" and leading zeros) -- a JSON parser is
+# expected to check its own stricter shape first and then hand the lexeme here.
+#
+# DELIBERATELY NOT ACCEPTED, all of which bare strtod would take:
+#   * leading or trailing whitespace  -- " 1.5" is Err, not 1.5
+#   * "inf", "infinity", "nan"        -- no non-finite value is reachable
+#   * hex floats ("0x1p3")
+#   * a comma decimal separator       -- "1,5" is Err under EVERY locale
+#   * anything after the number       -- "1.5x" is Err, never 1.5
+#   * a NUL byte and whatever follows it. A Tycho string is length-counted, so
+#     "1.5\0junk" carries eight bytes; C would see three. The grammar scan below
+#     walks all len(s) of them, so the NUL is just a byte not in the grammar.
+#
+# LOCALE. Correct under any LC_NUMERIC. The conversion goes through strtod_l
+# against a private "C" locale handle, never bare strtod -- see the long note in
+# corelib/strings/strings_shim.c for the measurement of what bare strtod does to
+# "1.5" under a comma-decimal locale.
+#
+# PRECISION. The value is IEEE-754 binary64, correctly rounded by the C library.
+# A decimal with more significant digits than binary64 holds is ROUNDED, not
+# rejected: parse_float("1234567890123456789012345") is Ok(1.2345678901234568e24).
+# A caller that needs the digits back must keep the original string; this
+# function does not preserve it.
+
+# Why parse_float refused. Every variant is payload-free so `==` works on it.
+enum FloatErr:
+    Empty          # the string had no bytes at all
+    Syntax         # a byte outside the grammar, or the whole string not consumed
+    Overflow       # magnitude too large for binary64 ("1e400") -- NOT infinity
+    Underflow      # non-zero but too small to represent ("1e-400", "1e-320"):
+                   # the C library would round it to 0 or to a subnormal that has
+                   # already lost digits, and either is a silent wrong value
+
+# The shim's status codes, named once. Mirrored by the TY_PF_* defines in
+# corelib/strings/strings_shim.c -- change one, change the other.
+const PF_OK        = 0
+const PF_OVERFLOW  = 1
+const PF_UNDERFLOW = 2
+
+extern fn strx_parse_double(s: string, status: inout int) -> float
+
+fn parse_float(s: string) -> Result(float, FloatErr):
+    n := len(s)
+    if n == 0:
+        return Err(Empty)
+    i := 0
+    if s[i] == 43 or s[i] == 45:                 # '+' or '-'
+        i = i + 1
+    intd := 0
+    for i < n and s[i] >= 48 and s[i] <= 57:     # digits
+        i = i + 1
+        intd = intd + 1
+    fracd := 0
+    if i < n and s[i] == 46:                     # '.'
+        i = i + 1
+        for i < n and s[i] >= 48 and s[i] <= 57:
+            i = i + 1
+            fracd = fracd + 1
+        if fracd == 0:                           # "1." and "." -- a point needs digits
+            return Err(Syntax)
+    if intd == 0 and fracd == 0:                 # "-", "+", "e5", "abc"
+        return Err(Syntax)
+    if i < n and (s[i] == 101 or s[i] == 69):    # 'e' or 'E'
+        i = i + 1
+        if i < n and (s[i] == 43 or s[i] == 45):
+            i = i + 1
+        expd := 0
+        for i < n and s[i] >= 48 and s[i] <= 57:
+            i = i + 1
+            expd = expd + 1
+        if expd == 0:                            # "1e", "1e+"
+            return Err(Syntax)
+    if i != n:                                   # trailing bytes: "1.5x", "1.5 ", a NUL
+        return Err(Syntax)
+    # The grammar held for every byte. Only now does anything reach the C library,
+    # and it can still refuse on range -- which is an Err, never a 0.
+    st := 0
+    v := strx_parse_double(s, &st)
+    if st == PF_OK:
+        return Ok(v)
+    if st == PF_OVERFLOW:
+        return Err(Overflow)
+    if st == PF_UNDERFLOW:
+        return Err(Underflow)
+    return Err(Syntax)                           # shim disagreed with the scan above
 
 # (split(s, sep) and find(s, sub) are language builtins -- not duplicated here.)
 
