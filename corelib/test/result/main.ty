@@ -127,9 +127,15 @@ fn io_why(p: string) -> string:
 # The old note here said httpd.read_request_capped still builds its outcome in a
 # typed local "because it is compiled by frozen tychoc0". That reason expired on
 # 2026-07-29 when the tychoc0 lanes were retired; the function's real constraint
-# is the one measured in appendix-e-conformance.md §E.2.1 -- rewriting it to
-# `return (Err(why), buf)` still fails, because the Ok payload type cannot be
-# grounded from a partially-inferred Request. tests/result_tuple.ty is this
+# is the one measured in appendix-e-conformance.md §E.2.1. This note used to go on
+# to claim that rewriting the tail to `return (Err(why), buf)` "still fails,
+# because the Ok payload type cannot be grounded from a partially-inferred
+# Request". That claim is FALSE and was corrected on 2026-08-01: the neighbouring
+# file already disproves it in its own comment, which records the measurement --
+# `corelib/httpd/httpd.ty@read_request_capped` says the rewrite "compiles under
+# src/tychoc.c" and that its typed local is "now a style choice ... not a
+# requirement". Two files, one construct, opposite claims, and the wrong one sat
+# in the test that exists to document the construct. tests/result_tuple.ty is this
 # construct's tests/ fixture as of 2026-07-30.
 fn outcome(ok: bool) -> (Result(int, Local), string):
     if ok:

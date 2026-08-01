@@ -220,7 +220,6 @@ verifies the whole tree.
 | `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
 | `make test` | Run the test suite (below). |
 | `make bench` | Run the performance guard (below). |
-| `make bootstrap` / `make fixpoint` | Build / self-host-check `compiler/tychoc0.ty`. |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer. |
 | `make corelib` | Build + validate the standard library three ways. |
 | `make ci` | The full local gate — no cloud CI. |
