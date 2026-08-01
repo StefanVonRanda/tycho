@@ -26,13 +26,18 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/out"
 fail=0
 
-# Gather the C shim of every core: module the site imports (same lookup as
-# corelib/run.sh). Only datetime has one today; auto-discovery keeps this from
-# silently breaking again if another composed module gains FFI.
-shim=""
-for mod in $(grep -oE 'core:[a-z0-9]+' "$SRC" | sed 's/core://' | sort -u); do
-    s="corelib/$mod/${mod}_shim.c"; [ -f "$s" ] && shim="$shim $s"
-done
+# The C shims the ASan leg must link. ASK THE COMPILER: `--print-shims` prints the
+# transitive <pkg>_shim.c closure, which is exactly what tychoc splices onto its
+# own cc line in leg (1).
+#
+# This used to grep $SRC for `core:` imports and map each to corelib/<m>/<m>_shim.c.
+# That found DIRECT imports only, and the difference is not theoretical: it is the
+# 2026-08-01 break in examples/fetch/run.sh, where the missing shim (core:strings)
+# was reached through core:json and no grep of the program's own source could see
+# it. This lane happened to survive because it imports core:strings directly --
+# survival by coincidence, not by the mechanism working.
+shim="$("$TYCHOC" "$SRC" --print-shims)" \
+    || { echo "site: FAIL (tychoc --print-shims)"; exit 1; }
 
 # (1) C reference compiler
 if ! "$TYCHOC" "$SRC" -o "$T/c" >"$T/c.log" 2>&1; then

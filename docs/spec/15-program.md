@@ -20,7 +20,7 @@ those rules.
 > `:7901-7902@'main' must be` (the signature rule); compilation unit
 > `compile_package` `:12488-12493@compile_package`, driver `:12547-12651@int main(`;
 > `extern` `parse_extern_fn` `:3844-3914@parse_extern_fn`; the C compiler
-> invocation `:12765@system(cmd)`.
+> invocation `:12791@system(cmd)`.
 
 ## 27. Program structure
 
@@ -154,6 +154,15 @@ Three CLI options let a program splice additional flags onto this line for FFI
   result.
 - **`--shim <file.c>`** adds a companion C source that is compiled and linked
   alongside the generated C.
+
+A build that stops early at `--emit-c` and links the generated C itself needs the
+same auto-discovered shim set that §27.4's line would have received. **`--print-shims`**
+prints it: the *transitive* closure of companion `<pkg>_shim.c` sources (§28.6),
+one absolute path per line on stdout, then exits without code generation. The
+closure is not recomputed for the flag — it is the `g_shims` set that `merge_pkg`
+fills as it walks the import graph, so a shim reached only through an indirect
+import is listed on the same terms as a directly imported one. A program with no
+package prints nothing and exits 0; an empty closure is an answer, not an error.
 
 `-L<dir>` and `-I<dir>` (attached or separated) also accumulate onto the line
 (`:10537-10540`). Every library/package name that reaches the shell — from
