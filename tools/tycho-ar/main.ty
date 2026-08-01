@@ -26,7 +26,8 @@
 # structural markers are ASCII literals, and the only binary spans are the file
 # payloads, each preceded by its own byte count. That is deliberate -- a format
 # whose framing is text can be eyeballed with `head -c`, and its corruption
-# cases can be produced by hand for the phase 2 gate.
+# cases can be produced by hand for the gate of `docs/internals/plan-ar-DONE.md`
+# phase 2.
 #
 #     archive := magic member* trailer
 #
@@ -83,7 +84,7 @@
 # a format parser, and the difference is worth naming.
 #
 # ===========================================================================
-# EMPTY VERSUS CORRUPT -- the question phase 2 existed to settle
+# EMPTY VERSUS CORRUPT -- what `docs/internals/plan-ar-DONE.md` phase 2 settled
 # ===========================================================================
 #
 # `compress.decompress` FAILS CLOSED TO EMPTY BYTES on damaged input: every error
