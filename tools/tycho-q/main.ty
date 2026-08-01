@@ -2,10 +2,11 @@
 #
 # What works today: a lexer, a recursive descent parser with precedence,
 # `--explain` (which prints the parsed query as an s-expression), and
-# evaluation of `select` / `from` / `where` over a CSV file, printing the
-# result as CSV on stdout. `order by`, `limit` and JSON input parse but are
-# refused at run time rather than silently ignored -- see REFUSED, NOT
-# IGNORED below.
+# evaluation of the whole query -- `select` / `from` / `where` / `order by` /
+# `limit` -- over a CSV **or JSON** file, printing the result as CSV on stdout.
+#
+# Not here, and each is a plan of its own: `group by`, aggregates, joins, any
+# kind of index.
 #
 # Build and run, from the repo root:
 #     ./tychoc tools/tycho-q/main.ty -o build/tycho-q
@@ -301,13 +302,192 @@
 # is a bug.
 #
 # ===========================================================================
+# ORDER 1 -- THE TOTAL ORDER `order by` USES, AND WHY IT IS NOT `where`'s
+# ===========================================================================
+#
+# `where` REFUSES a cross-kind question: `where code > 42` against a string
+# cell is a runtime error naming both kinds (see EVALUATION above). That is
+# right for a filter, because "is "007" greater than 42" has no answer the user
+# meant, and inventing one silently keeps or drops rows.
+#
+# A SORT CANNOT REFUSE. It does not answer a truth question, it assigns a SEAT
+# to every row, and there is a seat for every row whatever is in it. A
+# comparator that errors part-way leaves no defined result -- not "some rows
+# unsorted" but NO OUTPUT AT ALL -- on a file whose only crime is a column with
+# two kinds in it, which DECISION 1 says is normal and expected. So `order by`
+# uses a SEPARATE, TOTAL order. This is the one place in the program where two
+# values of different kinds are compared instead of refused, and the asymmetry
+# is the point: refusing is right when the answer would be a claim, and wrong
+# when it would only be a seat.
+#
+# THE ORDER, ascending, in full:
+#
+#   1. KIND RANK FIRST:    null  <  bool  <  number  <  string
+#      A `VNull` sorts before everything, so ascending puts nulls FIRST. There
+#      is no NULLS FIRST / NULLS LAST modifier: `desc` negates the whole
+#      comparison including the rank, so descending puts nulls LAST.
+#   2. WITHIN one rank, the SAME rule `where` uses, so the two cannot disagree:
+#        null vs null   -- equal, always.
+#        bool vs bool   -- false < true.
+#        number vs number - BY VALUE across `VInt` and `VDec` alike (widen with
+#                         `decimal.from_int`, then `decimal.cmp`), so `7` and
+#                         `7.0` are EQUAL here exactly as they are to `==`.
+#                         They share one rank for precisely this reason.
+#        string vs string - byte-lexicographic (`str_cmp`): a UTF-8 field
+#                         orders by its bytes, which is codepoint order and
+#                         NOT locale order.
+#      That reuse is structural, not a promise: `ord_cmp` calls `cmp_vals`, the
+#      same function `where` calls, and equal rank guarantees it cannot fail.
+#
+# THE SURPRISING HALF, stated because it will surprise someone: a column
+# holding `42`, `007` and an empty cell sorts as (empty), 42, "007". The number
+# comes before the string because the RANK decides before any value is looked
+# at, and `007` is a string (DECISION 1). It is not "007 < 42" and it is not
+# "42 < 007" -- the two are never compared by value at all.
+#
+# ===========================================================================
+# ORDER 2 -- THE SORT IS WRITTEN HERE, AND WHY IT IS NOT `sort.by_key`
+# ===========================================================================
+#
+# `core:sort` cannot express this sort. Read against its actual signatures:
+#
+#   `corelib/sort/sort.ty@by_key` is `fn(xs: [$T], key: fn($T) -> int) -> [$T]`.
+#   The key is an `int`. This order ranks by KIND and then by value across
+#   `VStr` and `decimal.Decimal`, and there is no order-preserving injection of
+#   that into a single `int` -- a string does not fit in one.
+#
+#   `corelib/sort/sort.ty@asc` and `@desc` are `where comparable(T)` over the
+#   VALUES themselves, and even granting a `comparable` `Value` they take ONE
+#   array and ONE direction. `order by a asc, b desc` is two keys and two
+#   directions over the same rows, which no signature in the package accepts.
+#   `@argsort` / `@argsort_desc` have the same shape and the same ceiling.
+#
+# So the sort is `merge_sort` below: bottom-up, iterative, STABLE, and taking
+# its comparator as a FIRST-CLASS FUNCTION VALUE.
+#
+# STABILITY IS A PROPERTY OF THE MERGE, NOT OF A TIEBREAK. The merge takes from
+# the left run whenever the comparator says `<= 0`, and the left run holds the
+# earlier input rows, so rows the comparator calls equal come out in the order
+# they went in. Making the comparator total-by-index instead (compare input
+# positions once every key ties) would look identical on every test here and is
+# deliberately NOT done: it would reverse the tie order under `desc` too, and
+# then `order by k desc limit 3` on a column with ties would return a different
+# three rows by a rule nobody wrote down. Equal rows keep INPUT order in BOTH
+# directions, so `order by k desc` is NOT the reverse of `order by k asc`
+# whenever `k` has a duplicate. That is deliberate, and it is tested in both
+# directions rather than asserted.
+#
+# THE COMPARATOR IS A CLOSURE, AND THE PROBE BEHIND IT CORRECTS A PHASE 2
+# FINDING. Probed before this was written: a sort declared as
+# `fn(xs: [int], f: fn(int, int) -> Result(int, E)) -> Result([int], E)`
+# COMPILES, accepts both a named function and a lambda in that position, and
+# `or_return` propagates a comparator failure straight out through it. So the
+# wall phase 2 hit is narrower than it looked: it was
+# `corelib/iter/iter.ty@filter`'s SIGNATURE pinning the lambda's return type to
+# `int`, NOT a language rule against fallible higher-order functions. A caller
+# who declares the parameter type gets the fallible version.
+#
+# This sort does not need it. The order above is TOTAL by construction, so the
+# comparator cannot fail and is plainly `fn(int, int) -> int`; declaring it as
+# a `Result` would be machinery around an `Err` that cannot be built. What CAN
+# fail is evaluating the KEYS, and that happens once per row before the sort
+# starts -- see the comment in `execute`, which is also where the O(n log n)
+# argument for precomputing them lives.
+#
+# ===========================================================================
+# DECISION 3 -- JSON INPUT, AND THE THREE THINGS `core:json` DOES WITH `1.5`
+# ===========================================================================
+#
+# `from x.json` reads an ARRAY OF OBJECTS: one object per row, keys as columns.
+#
+# THE PROBE FIRST, because it decides the whole design. `corelib/json/json.ty`
+# has no float path -- `@parse_number` reads an optional `-`, then digits, and
+# STOPS -- and that much was known. What it does INSTEAD was established by
+# RUNNING it, and it is three different failures depending on where the number
+# sits:
+#
+#   json.parse("1.5")         -> JNum(1), exit 0, no diagnostic.
+#                                SILENT TRUNCATION: 1.5 becomes 1.
+#   json.parse("[1.5]")       -> "tycho: out of memory", exit 1.
+#                                NON-TERMINATION: `@parse_array` advances only
+#                                on `,` or `]`, so parked on `.` it re-enters
+#                                `@parse_value`, which consumes nothing and
+#                                hands back JNum(0) forever. Unbounded memory
+#                                from five bytes of input.
+#   json.parse('[{"a":1.5}]') -> [{"a":1,"5}]":null}]  and exit 0.
+#                                SILENT CORRUPTION: the leftover `.5}]` is read
+#                                as the next KEY, so a document that "parsed"
+#                                now carries a column nobody wrote.
+#
+# The third is the one that matters, because it is the shape this program
+# actually reads and it is the one with no symptom. And `json.parse` returns
+# `Json`, not `Result(Json, E)` -- there is NO ERROR CHANNEL anywhere in the
+# package -- so no caller can ask whether any of this happened. It is
+# documented as lenient (`corelib/json/json.ty:12-13`), and it is, in the sense
+# that it always returns something.
+#
+# SO tycho-q VALIDATES BEFORE IT PARSES. `json_guard` walks the raw bytes and
+# refuses anything `core:json` cannot faithfully represent, which is the
+# explicit handling this needed instead of an inherited one. A non-integer
+# number is refused BY NAME, with its offset and the value it would have been
+# silently read as. The full rule, and the reason the bracket check is
+# load-bearing rather than decorative, is on `json_guard` itself.
+#
+# THE LOSS IS REAL AND IS STATED PLAINLY: a JSON file cannot carry a
+# non-integer number into this program AT ALL. A price column that is a `VDec`
+# in CSV has to be written as a STRING in JSON, and a JSON string is not
+# re-typed (below), so it stays a `VStr` and orders as text. The guard does not
+# repair that. It makes it visible instead of letting it be wrong.
+#
+# WHAT A JSON VALUE BECOMES -- and note this is NOT DECISION 1's round trip:
+#
+#   null         -> VNull    the same "nothing here" an empty CSV cell means
+#   true / false -> VBool    a kind CSV cannot produce at all: a CSV cell
+#                            reading `true` is a `VStr`, because DECISION 1
+#                            types by round trip and `VBool` is not in it
+#   number       -> VInt     always an int; the guard already refused the rest
+#   string       -> VStr     VERBATIM. `"42"` stays the STRING "42".
+#   array/object -> ERROR    refused, naming the row and the key
+#
+# WHY A JSON STRING IS NOT RE-CLASSIFIED. DECISION 1 exists because CSV LOST
+# the type: every cell arrives as a `string` whether it was written as one or
+# not, so the round trip is a RECONSTRUCTION of information that was destroyed.
+# JSON destroyed nothing. A document that says `"42"` said string, on purpose,
+# and re-running the round trip over it would overrule the author in order to
+# guess back the very thing they already stated. Failing closed here means
+# believing the input.
+#
+# THE COST OF THAT, in one line: `{"qty":"12"}` and a CSV cell `12` do NOT
+# produce the same `Value`. Two files are equivalent only if they are spelled
+# equivalently -- a JSON NUMBER for a column that is numeric in CSV.
+#
+# A MISSING KEY IS `VNull`, and the header is the UNION of every object's keys
+# in first-appearance order. CSV REFUSES a short row ("row 3 has 1 fields but
+# the header has 2") while JSON ACCEPTS a sparse object, which looks
+# inconsistent and is not: a short CSV row means the DELIMITERS are wrong, so
+# field k is not missing but MISALIGNED -- every value after the gap sits under
+# the wrong column and nothing says which one was dropped. A JSON key is NAMED,
+# so an absent key is unambiguous and nothing shifts. Absence is expressible in
+# JSON and is not expressible in CSV.
+#
+# A DUPLICATE KEY IN ONE OBJECT IS AN ERROR, matching the duplicate-CSV-header
+# rule for the same reason: `json.get` would answer with the first of them, and
+# a reference that could mean either of two columns is not a column.
+#
+# A NESTED ARRAY OR OBJECT AS A CELL IS AN ERROR -- not flattened and not
+# re-serialised. Rendering `{"a":1}` into a CSV field means inventing a
+# spelling, and `where tags == '["a"]'` would then depend on this program's
+# choice of spaces. Refusing says the true thing: this is a table tool, and
+# that is not a table.
+#
+# ===========================================================================
 # REFUSED, NOT IGNORED
 # ===========================================================================
 #
-# `order by`, `limit` and a `.json` source all PARSE -- `--explain` shows them
-# -- and are refused with a non-zero exit when a query is actually run. They
-# are not silently dropped. A query tool that accepts `limit 5` and returns
-# 400 rows is worse than one that does not accept `limit` at all, because the
+# Nothing in the accepted grammar is silently dropped any more: every clause
+# the parser accepts is now executed. The rule that got the program here still
+# stands for anything added later -- a query tool that accepts `limit 5` and
+# returns 400 rows is worse than one that rejects `limit` outright, because the
 # first one is believed.
 #
 # ===========================================================================
@@ -380,6 +560,7 @@ import "core:cli"
 import "core:csv"
 import "core:decimal"
 import "core:io"
+import "core:json"
 import "core:strings"
 
 # ---------------------------------------------------------------------------
@@ -1071,6 +1252,115 @@ fn shown_val(v: Value) -> string:
     return render(v)
 
 # ---------------------------------------------------------------------------
+# ORDER 1 in code: the total order `order by` uses (see the header block)
+# ---------------------------------------------------------------------------
+
+# The KIND RANK. Numbers share one rank so that `VInt` and `VDec` fall through
+# to a comparison BY VALUE and `1` sorts equal to `1.00`, exactly as `==` says.
+const R_NULL = 0
+const R_BOOL = 1
+const R_NUM  = 2
+const R_STR  = 3
+
+fn ord_rank(v: Value) -> int:
+    k := kind(v)
+    if k == K_NULL:
+        return R_NULL
+    if k == K_BOOL:
+        return R_BOOL
+    if k == K_STR:
+        return R_STR
+    return R_NUM
+
+# TOTAL: every pair of values has an answer, including pairs `cmp_vals` refuses.
+# This is the ONLY place in the program where two different kinds are compared
+# instead of being an error, and the header says at length why sorting may do
+# that where `where` may not.
+fn ord_cmp(a: Value, b: Value) -> int:
+    ra := ord_rank(a)
+    rb := ord_rank(b)
+    if ra != rb:
+        if ra < rb:
+            return 0 - 1
+        return 1
+    if ra == R_NULL:
+        return 0                               # two nulls are equal, always
+    # Equal rank means COMPATIBLE kinds, so `cmp_vals` -- the same function
+    # `where` uses -- cannot fail here, and the within-kind order is therefore
+    # the same one by construction rather than by a promise in a comment. The
+    # `Err` arm is unreachable for that reason and returns an inert 0, the same
+    # shape as the unreachable arms of `int_of` and friends above.
+    match cmp_vals(a, b):
+        Ok(c):
+            return c
+        Err(e):
+            return 0
+
+# Compare two rows of the precomputed key matrix, first key first, each key
+# NEGATED if that key is `desc`. Negating the comparison rather than reversing
+# the output is what lets `asc` and `desc` mix in one `order by` at all.
+fn cmp_key_rows(keys: [[Value]], dirs: [bool], i: int, j: int) -> int:
+    for k := 0; k < len(dirs); k += 1:
+        c := ord_cmp(keys[i][k], keys[j][k])
+        if dirs[k]:
+            c = 0 - c
+        if c != 0:
+            return c
+    return 0
+
+# Bottom-up merge sort over an index array, STABLE, taking the comparator as a
+# first-class function value. See ORDER 2 in the header for why this is written
+# here instead of being reached for in `core:sort`, and for what the probe
+# established about fallible comparators.
+#
+# Bottom-up rather than recursive because it needs no array slicing: the runs
+# are addressed by index arithmetic into two flat buffers that are the same
+# size for the whole sort.
+fn merge_sort(idx: [int], less: fn(int, int) -> int) -> [int]:
+    n := len(idx)
+    a := []int
+    b := []int
+    for i := 0; i < n; i += 1:
+        push(a, idx[i])
+        push(b, 0)
+    width := 1
+    for width < n:
+        lo := 0
+        for lo < n:
+            mid := lo + width
+            hi := lo + width + width
+            if mid > n:
+                mid = n
+            if hi > n:
+                hi = n
+            i := lo
+            j := mid
+            k := lo
+            for k < hi:
+                take_left := false
+                if i >= mid:
+                    take_left = false
+                elif j >= hi:
+                    take_left = true
+                else:
+                    # `<= 0` -- NOT `< 0` -- is the whole of the stability
+                    # guarantee: on a tie the LEFT run, which holds the earlier
+                    # input rows, goes first.
+                    take_left = (less(a[i], a[j]) <= 0)
+                if take_left:
+                    b[k] = a[i]
+                    i = i + 1
+                else:
+                    b[k] = a[j]
+                    j = j + 1
+                k = k + 1
+            lo = lo + width + width
+        for t := 0; t < n; t += 1:
+            a[t] = b[t]
+        width = width + width
+    return a
+
+# ---------------------------------------------------------------------------
 # DECISION 1 in code: a cell becomes a Value (see the header block)
 # ---------------------------------------------------------------------------
 
@@ -1142,12 +1432,8 @@ fn join_names(hdr: [string]) -> string:
         out = out + hdr[i]
     return out
 
-# Read a CSV file and type every cell. Everything that can be checked ONCE, for
-# the whole file, is checked here rather than per row: a missing file, an empty
-# file, a duplicated header name, a ragged row. A check that runs per row can
-# only fail on a file that has rows, and a query over a file with none would
-# then pass a check it should have failed.
-fn load(path: string) -> Result(Table, RErr):
+# The bytes of the source, or a diagnosis of why there are none.
+fn read_source(path: string) -> Result(string, RErr):
     # `io.read` returns "" for a missing file, which is indistinguishable from
     # an empty one (`corelib/io/io.ty@read`), so the existence question is
     # asked separately and with the variant kept.
@@ -1165,7 +1451,24 @@ fn load(path: string) -> Result(Table, RErr):
             # is a legal statement where a bare expression is not, so binding
             # the unwanted value is the cheapest legal way to say "nothing".
             ok := sz
-    text := io.read(path)
+    return Ok(io.read(path))
+
+# The source path decides the reader, on its extension and nothing else. There
+# is no content sniffing: a `.json` file that is really CSV should say so in
+# its name, and guessing from the first byte is how a tool ends up reading a
+# quoted CSV field as a JSON array.
+fn load(path: string) -> Result(Table, RErr):
+    text := read_source(path) or_return
+    if strings.ends_with(strings.to_lower(path), ".json"):
+        return load_json(path, text)
+    return load_csv(path, text)
+
+# Read a CSV file and type every cell. Everything that can be checked ONCE, for
+# the whole file, is checked here rather than per row: an empty file, a
+# duplicated header name, a ragged row. A check that runs per row can only fail
+# on a file that has rows, and a query over a file with none would then pass a
+# check it should have failed.
+fn load_csv(path: string, text: string) -> Result(Table, RErr):
     raw := csv.parse(text)
     if len(raw) == 0:
         return Err(RErr("empty file, so there is no header row: " + path))
@@ -1185,6 +1488,189 @@ fn load(path: string) -> Result(Table, RErr):
         row := []Value
         for c := 0; c < len(src); c += 1:
             push(row, classify(src[c]))
+        push(rows, row)
+    return Ok(Table(hdr, rows))
+
+# ---------------------------------------------------------------------------
+# DECISION 3 in code: JSON input (see the header block for the probe that
+# forced this shape)
+# ---------------------------------------------------------------------------
+
+fn word_at(s: string, n: int, i: int, w: string) -> bool:
+    if i + len(w) > n:
+        return false
+    return substr(s, i, i + len(w)) == w
+
+# VALIDATE BEFORE PARSING. `json.parse` returns `Json`, not `Result(Json, E)`:
+# it has NO ERROR CHANNEL, so a caller cannot ask whether the parse went well,
+# and the header records three separate things it does with input it cannot
+# represent -- one of them a silent truncation, one a silent corruption, and
+# one an out-of-memory abort on four bytes.
+#
+# This walks the raw text and accepts only what `core:json` can actually
+# represent, in two layers:
+#
+#   THE TOKEN ALPHABET -- whitespace, `{}[],:`, a string literal, the three
+#   words `true` / `false` / `null`, and an INTEGER. A `.` or an exponent in a
+#   number is refused BY NAME, because that is the case a user will actually
+#   hit and "unexpected byte `.`" would not tell them what to do about it.
+#
+#   THE BRACKET NESTING -- every `}` closes an open `{`, every `]` an open `[`,
+#   `:` only inside an object, and nothing left open at the end. This layer is
+#   NOT decoration and not a general well-formedness claim: it is precisely
+#   what rules out the non-termination. `json.parse`'s array loop advances only
+#   on `,` or `]`, so a value position holding a byte `parse_value` consumes
+#   NOTHING of spins forever -- `[}]` is the smallest example. With the
+#   alphabet above, the only such bytes are `}` and `:`, and both are
+#   unreachable inside an array once brackets must nest.
+#
+# What this does NOT claim is full JSON validation: `[1 2]` (a missing comma)
+# passes the guard, and `core:json` reads it as two elements. That is lenient,
+# not dangerous -- it terminates and it invents no data -- and chasing it would
+# mean writing a second JSON parser to check the first one.
+const C_OBJ = 0
+const C_ARR = 1
+
+fn json_guard(path: string, s: string) -> Result(int, RErr):
+    n := len(s)
+    stk := []int
+    depth := 0
+    i := 0
+    for i < n:
+        c := s[i]
+        if is_ws(c):
+            i = i + 1
+        elif c == 123:                         # {
+            push(stk, C_OBJ)
+            depth = depth + 1
+            i = i + 1
+        elif c == 91:                          # [
+            push(stk, C_ARR)
+            depth = depth + 1
+            i = i + 1
+        elif c == 125:                         # }
+            if depth == 0 or stk[depth - 1] != C_OBJ:
+                return Err(RErr(path + ": byte " + str(i) + ": a `}` here closes nothing that was opened"))
+            depth = depth - 1
+            i = i + 1
+        elif c == 93:                          # ]
+            if depth == 0 or stk[depth - 1] != C_ARR:
+                return Err(RErr(path + ": byte " + str(i) + ": a `]` here closes nothing that was opened"))
+            depth = depth - 1
+            i = i + 1
+        elif c == 58:                          # :
+            if depth == 0 or stk[depth - 1] != C_OBJ:
+                return Err(RErr(path + ": byte " + str(i) + ": a `:` outside an object"))
+            i = i + 1
+        elif c == 44:                          # ,
+            if depth == 0:
+                return Err(RErr(path + ": byte " + str(i) + ": a `,` outside any array or object"))
+            i = i + 1
+        elif c == 34:                          # a string literal
+            i = i + 1
+            for i < n and s[i] != 34:
+                if s[i] == 92:                 # backslash escapes the next byte
+                    i = i + 1
+                i = i + 1
+            if i >= n:
+                return Err(RErr(path + ": the file ends inside a string literal"))
+            i = i + 1
+        elif c == 45 or is_digit(c):           # a number
+            start := i
+            if c == 45:
+                i = i + 1
+            d0 := i
+            for i < n and is_digit(s[i]):
+                i = i + 1
+            if i == d0:
+                return Err(RErr(path + ": byte " + str(start) + ": a `-` with no digits after it"))
+            if i < n and (s[i] == 46 or s[i] == 101 or s[i] == 69):     # . e E
+                # Take the whole offending token for the message, so the user
+                # sees `1.5` and not the `1` that `core:json` would have kept.
+                j := i
+                for j < n and not (is_ws(s[j]) or s[j] == 44 or s[j] == 93 or s[j] == 125):
+                    j = j + 1
+                whole := substr(s, start, j)
+                return Err(RErr(path + ": byte " + str(start) + ": JSON numbers here must be integers, and `" + whole + "` is not -- core:json has no float path at all and would read it as " + substr(s, start, i) + " with no diagnostic. Write it as the string \"" + whole + "\" if the text is what matters (see DECISION 3 at the top of tools/tycho-q/main.ty)"))
+        elif word_at(s, n, i, "true"):
+            i = i + 4
+        elif word_at(s, n, i, "false"):
+            i = i + 5
+        elif word_at(s, n, i, "null"):
+            i = i + 4
+        else:
+            return Err(RErr(path + ": byte " + str(i) + ": unexpected byte `" + chr(c) + "` -- this reads null, true, false, an integer, a string, an array and an object, and nothing else"))
+    if depth != 0:
+        return Err(RErr(path + ": the file ends with " + str(depth) + " unclosed array(s) or object(s)"))
+    return Ok(0)
+
+# An article for a diagnostic, so the message reads as a sentence.
+fn a_kind(k: string) -> string:
+    if k == "arr":
+        return "an array"
+    if k == "obj":
+        return "an object"
+    if k == "num":
+        return "a number"
+    if k == "str":
+        return "a string"
+    if k == "bool":
+        return "a boolean"
+    return "null"
+
+# One JSON value as a cell. JSON did not lose the type, so this BELIEVES it and
+# does NOT re-run DECISION 1's round trip over a string (header).
+fn json_cell(path: string, r: int, key: string, j: json.Json) -> Result(Value, RErr):
+    k := json.kind(j)
+    if k == "null":
+        return Ok(VNull)
+    if k == "bool":
+        return Ok(VBool(json.as_bool(j)))
+    if k == "num":
+        return Ok(VInt(json.as_num(j)))
+    if k == "str":
+        return Ok(VStr(json.as_str(j)))
+    return Err(RErr(path + ": row " + str(r + 1) + ", key `" + key + "`: the value is " + a_kind(k) + ", and a table cell cannot hold one -- flattening it would invent a spelling that every later query would then depend on (see DECISION 3 at the top of tools/tycho-q/main.ty)"))
+
+fn load_json(path: string, text: string) -> Result(Table, RErr):
+    _ := json_guard(path, text) or_return
+    root := json.parse(text)
+    if json.kind(root) != "arr":
+        return Err(RErr(path + ": the top level of a JSON source must be an ARRAY of objects, one object per row, and this is " + a_kind(json.kind(root))))
+    nrows := json.len_of(root)
+    if nrows == 0:
+        return Err(RErr("an empty array, so there are no keys and therefore no header: " + path))
+
+    # The header is the UNION of every object's keys, in first-appearance
+    # order. It is built in a whole pass of its own, BEFORE any cell is read,
+    # because a column that appears for the first time in the last row is still
+    # a column of the table and every earlier row needs a null in it.
+    hdr := []string
+    for r := 0; r < nrows; r += 1:
+        ob := json.at(root, r)
+        if json.kind(ob) != "obj":
+            return Err(RErr(path + ": row " + str(r + 1) + " is " + a_kind(json.kind(ob)) + ", but every element of the array must be an object -- one object is one row"))
+        ks := json.keys(ob)
+        for a := 0; a < len(ks); a += 1:
+            for b := a + 1; b < len(ks); b += 1:
+                if ks[a] == ks[b]:
+                    # The same refusal as a duplicated CSV header name, for the
+                    # same reason: `json.get` would answer with the first, and
+                    # a reference that could mean either is not a column.
+                    return Err(RErr(path + ": row " + str(r + 1) + " names the key `" + ks[a] + "` twice"))
+            if col_index(hdr, ks[a]) < 0:
+                push(hdr, ks[a])
+
+    rows := [][Value]
+    for r := 0; r < nrows; r += 1:
+        ob := json.at(root, r)
+        ks := json.keys(ob)
+        row := []Value
+        for c := 0; c < len(hdr); c += 1:
+            if col_index(ks, hdr[c]) < 0:
+                push(row, VNull)               # a MISSING key, not a null one
+            else:
+                push(row, json_cell(path, r, hdr[c], json.get(ob, hdr[c])) or_return)
         push(rows, row)
     return Ok(Table(hdr, rows))
 
@@ -1349,18 +1835,62 @@ fn has_limit(o: Option(int)) -> bool:
         None:
             return false
 
+fn limit_of(o: Option(int)) -> int:
+    match o:
+        Some(n):
+            return n
+        None:
+            return 0
+
+# `order by total` where `total` is an alias in the select list and not a
+# column of the source. The plan's own headline query is
+# `select name, qty * price as total ... order by total desc`, so without this
+# the tool does not run its own example.
+#
+# THE RESOLUTION IS DELIBERATELY NARROW: only a key that is EXACTLY a bare
+# column reference is considered, never an alias buried inside a larger
+# expression (`order by total * 2` still means the COLUMN `total`, and says so
+# by failing if there is none). Substituting inside an expression would mean a
+# name resolving one way at the top of a key and another way underneath it.
+fn alias_expr(q: Query, name: string) -> Option(Expr):
+    for i := 0; i < len(q.sel); i += 1:
+        match q.sel[i]:
+            IStar:
+                _ := 0
+            IExpr(e, alias):
+                if alias == name:
+                    return Some(e)
+    return None
+
+# A column of the source WINS over nothing, an alias wins over nothing, and a
+# name that is BOTH is refused rather than resolved by a precedence rule. Either
+# choice would be defensible and neither is guessable from the query text, and
+# "the same query means two different things depending on the file's header" is
+# the wrong-rows-as-data failure again.
+fn resolve_key(q: Query, hdr: [string], k: OrdKey) -> Result(OrdKey, RErr):
+    match k.expr:
+        ECol(name):
+            in_hdr := col_index(hdr, name) >= 0
+            match alias_expr(q, name):
+                Some(e):
+                    if in_hdr:
+                        return Err(RErr("`order by " + name + "` is ambiguous: `" + name + "` is both a column of " + q.src + " and an alias in the select list -- rename the alias"))
+                    return Ok(OrdKey(e, k.desc))
+                None:
+                    return Ok(k)
+        _:
+            return Ok(k)
+
 # The whole result is built BEFORE anything is printed. That is what makes the
 # "a runtime error prints nothing on stdout" guarantee true: an error on the
 # last row of a million must not leave 999,999 rows already emitted, because a
 # consumer reading a truncated CSV cannot tell it is truncated.
 fn execute(q: Query) -> Result([[string]], RErr):
-    if len(q.ord) > 0:
-        return Err(RErr("`order by` is not implemented yet -- refused rather than ignored"))
-    if has_limit(q.lim):
-        return Err(RErr("`limit` is not implemented yet -- refused rather than ignored"))
-    if strings.ends_with(strings.to_lower(q.src), ".json"):
-        return Err(RErr("JSON input is not implemented yet -- refused rather than ignored: " + q.src))
     t := load(q.src) or_return
+
+    ord := []OrdKey
+    for i := 0; i < len(q.ord); i += 1:
+        push(ord, resolve_key(q, t.hdr, q.ord[i]) or_return)
 
     for i := 0; i < len(q.sel); i += 1:
         match q.sel[i]:
@@ -1377,6 +1907,8 @@ fn execute(q: Query) -> Result([[string]], RErr):
             _ := check_cols(fe, t.hdr) or_return
         None:
             _ := 0
+    for i := 0; i < len(ord); i += 1:
+        _ := check_cols(ord[i].expr, t.hdr) or_return
 
     # FRICTION, MEASURED. The row filter below is the shape `core:iter` exists
     # for, and it cannot be written with it. Two independent walls, both probed
@@ -1404,8 +1936,7 @@ fn execute(q: Query) -> Result([[string]], RErr):
     # `for` loop with `or_return` in the body. Every higher-order combinator in
     # `core:iter` is unavailable to any pipeline stage that can fail, which is
     # most of the stages in a query engine.
-    out := [][string]
-    push(out, header_row(q, t.hdr))
+    kept := [][Value]
     for r := 0; r < len(t.rows); r += 1:
         row := t.rows[r]
         keep := true
@@ -1416,7 +1947,58 @@ fn execute(q: Query) -> Result([[string]], RErr):
             None:
                 keep = true
         if keep:
-            push(out, project(q, t.hdr, row) or_return)
+            push(kept, row)
+
+    # ORDER BY. The keys are evaluated ONCE PER ROW, here, and not inside the
+    # comparator: a sort makes O(n log n) comparisons over n rows, so a key
+    # computed in the comparator is computed a logarithmic factor too often --
+    # and `qty * price` is a `core:decimal` multiply. Evaluating up front is
+    # also what keeps the comparator INFALLIBLE, because this is the step that
+    # can fail (an unknown column is already ruled out, but `/` need not be
+    # exact and `+` need not have two numbers), and it fails HERE, with
+    # `or_return`, before a single comparison is made.
+    if len(ord) > 0:
+        keys := [][Value]
+        for r := 0; r < len(kept); r += 1:
+            kr := []Value
+            for k := 0; k < len(ord); k += 1:
+                push(kr, eval(ord[k].expr, t.hdr, kept[r]) or_return)
+            push(keys, kr)
+        dirs := []bool
+        for k := 0; k < len(ord); k += 1:
+            push(dirs, ord[k].desc)
+        idx := []int
+        for r := 0; r < len(kept); r += 1:
+            push(idx, r)
+        # THE COMPARATOR AS A FIRST-CLASS VALUE. The lambda's body is a single
+        # expression, which is all a lambda may be (`docs/spec/11-functions.md:70`),
+        # so the multi-key loop lives in the named `cmp_key_rows` and the
+        # closure exists to CAPTURE `keys` and `dirs` -- the two things a
+        # top-level function could not reach. Capture is by deep copy at
+        # creation, so the key matrix is copied once here; that is a real cost
+        # and it is paid once, not per comparison.
+        less := fn(i: int, j: int) -> int: cmp_key_rows(keys, dirs, i, j)
+        pos := merge_sort(idx, less)
+        sorted := [][Value]
+        for r := 0; r < len(pos); r += 1:
+            push(sorted, kept[pos[r]])
+        kept = sorted
+
+    # LIMIT, applied AFTER the ordering -- `order by x limit 3` is the top
+    # three by x, not three arbitrary rows put in order. `limit 0` is a legal
+    # query with an empty answer, so it yields the header and nothing else; it
+    # is not the same as no `limit` at all, which is why the option is kept as
+    # an `Option(int)` rather than as a sentinel 0.
+    n := len(kept)
+    if has_limit(q.lim):
+        lv := limit_of(q.lim)
+        if lv < n:
+            n = lv
+
+    out := [][string]
+    push(out, header_row(q, t.hdr))
+    for r := 0; r < n; r += 1:
+        push(out, project(q, t.hdr, kept[r]) or_return)
     return Ok(out)
 
 # ---------------------------------------------------------------------------
@@ -1429,13 +2011,15 @@ fn usage():
     println("  --explain   parse the query and print its AST as an s-expression,")
     println("              reading no file and evaluating no row")
     println("")
-    println("Without --explain the query is run: the `from` file is read as CSV,")
-    println("row 0 is the header, `where` is evaluated per row, and the surviving")
-    println("rows are printed as CSV on stdout with a header row first.")
+    println("Without --explain the query is run. A `.json` source is read as an")
+    println("array of objects, one object per row; anything else is read as CSV")
+    println("with row 0 as the header. `where` is evaluated per row, `order by`")
+    println("sorts (stable, multi-key, per-key asc/desc), `limit` truncates, and")
+    println("the surviving rows are printed as CSV on stdout, header first.")
     println("")
-    println("The accepted grammar, the cell-typing rule and what `/` does are all")
-    println("at the top of tools/tycho-q/main.ty.")
-    println("`order by`, `limit` and JSON input parse but are refused when run.")
+    println("The accepted grammar, the cell-typing rule, what `/` does, the total")
+    println("order `order by` uses and what JSON input can and cannot carry are")
+    println("all at the top of tools/tycho-q/main.ty.")
 
 fn run(q: Query):
     match execute(q):

@@ -922,7 +922,7 @@ row pipeline.
     above), the query set, and `python3 scripts/check_citations.py`, which is
     now **`ok`** — up from `FAILED (4 stale)` at the parent commit.
 
-- [ ] **Phase 3 — `order by`, `limit`, and JSON input**
+- [x] **Phase 3 — `order by`, `limit`, and JSON input**
   - Scope: `tools/tycho-q/main.ty` only.
   - `order by` needs a comparator sort and `core:sort` has none (Pre-flight).
     Write the sort in the program, **stable**, multi-key, per-key direction.
@@ -943,6 +943,506 @@ row pipeline.
   - Verify: the query set run against both fixtures, actual stdout in the
     evidence, including the CSV-vs-JSON identity as a `cmp`.
   - Do NOT run `make test` or `make ci`.
+
+  - **Verified 2026-08-01.**
+
+    **Build.**
+
+    ```
+    $ TYCHO_CORELIB=$PWD/corelib ./tychoc tools/tycho-q/main.ty -o /tmp/q
+    built /tmp/q
+    ```
+
+    ### The `1.5` probe — three different failures, none of them an error
+
+    The Pre-flight recorded that `corelib/json/json.ty@parse_number` has no
+    float path. It does not say what happens instead, and the phase brief
+    forbade assuming. Reading first: that function takes an optional `-`, then
+    digits, and returns — it never consumes the `.`. `corelib/json/json.ty:81-92`
+    (`parse_array`) loops until `]` and advances only on `,`. That predicts
+    non-termination, so the probe was run under `ulimit -v 2000000` and
+    `timeout`. **The prediction was right for one of three cases and the other
+    two are worse**, because they exit 0:
+
+    ```
+    $ ./pj '1.5'
+    in:  1.5
+    kind:num
+    out: 1
+    exit 0
+
+    $ ./pj '[1.5]'
+    in:  [1.5]
+    tycho: out of memory
+    exit 1
+
+    $ ./pj '[{"a":1.5}]'
+    in:  [{"a":1.5}]
+    kind:arr
+    out: [{"a":1,"5}]":null}]
+    exit 0
+    ```
+
+    - **Bare `1.5` → `JNum(1)`, exit 0.** Silent truncation.
+    - **`[1.5]` → out of memory, exit 1.** `parse_value` consumes nothing at
+      `.`, the array loop never advances, and `JNum(0)` is pushed until memory
+      runs out. Five bytes of input.
+    - **`[{"a":1.5}]` → exit 0 with a corrupted tree.** The leftover `.5}]` is
+      read as the next KEY. This is the shape `tycho-q` actually reads, and it
+      is the one with no symptom at all.
+
+    `json.parse` returns `Json` and not `Result(Json, E)` — **there is no error
+    channel in the package** — so no caller can ask whether any of this
+    happened. `corelib/json/json.ty:12-13` documents the parser as lenient, and
+    it is, in the sense that it always returns something.
+
+    **So `tycho-q` validates before it parses** rather than inheriting this:
+    `tools/tycho-q/main.ty@json_guard` walks the raw bytes and accepts only
+    what `core:json` can faithfully represent. Two layers, and the second is
+    load-bearing rather than tidy: the token alphabet, and **bracket nesting**,
+    because the non-termination needs a byte that `parse_value` consumes none
+    of sitting at a value position inside an array — `}` and `:` are the only
+    two the alphabet still admits, and requiring brackets to nest is what makes
+    them unreachable there. Proof that the hole is actually closed, on the
+    smallest spinning input, run under the same memory cap:
+
+    ```
+    $ tycho-q 'select * from float.json'          # [{"a":1.5}]
+    tycho-q: float.json: byte 6: JSON numbers here must be integers, and `1.5`
+    is not -- core:json has no float path at all and would read it as 1 with no
+    diagnostic. Write it as the string "1.5" if the text is what matters (see
+    DECISION 3 at the top of tools/tycho-q/main.ty)
+    -- exit 1, stdout 0 bytes
+
+    $ tycho-q 'select * from spin.json'           # [}]  -- OOMs raw json.parse
+    tycho-q: spin.json: byte 1: a `}` here closes nothing that was opened
+    -- exit 1, stdout 0 bytes
+    ```
+
+    What the guard does NOT claim is full JSON validation: `[1 2]` passes it
+    and `core:json` reads two elements. That is lenient but not dangerous — it
+    terminates and invents no data — and closing it would mean writing a second
+    JSON parser to check the first.
+
+    ### The total order (ORDER 1 in `tools/tycho-q/main.ty`)
+
+    `where` refuses a cross-kind comparison. A sort **cannot** refuse: it
+    assigns a seat, not a truth value, and a comparator that errors part-way
+    yields no output at all on a file whose only crime is a column with two
+    kinds in it — which DECISION 1 calls normal. So ordering uses a separate,
+    total order, and that asymmetry is the decision:
+
+    - **Kind rank first:** `null < bool < number < string`. Nulls sort first
+      ascending; `desc` negates the whole comparison including the rank, so
+      nulls sort last descending. There is no NULLS FIRST/LAST modifier.
+    - **Within a rank, the same rule `where` uses**, structurally rather than
+      by promise: `tools/tycho-q/main.ty@ord_cmp` calls `cmp_vals`, the same
+      function `where` calls, and equal rank guarantees it cannot fail.
+      `VInt` and `VDec` share one rank so they compare BY VALUE — `7` equals
+      `7.0` here exactly as it does to `==`.
+
+    **Every rule tested in both directions.** `mix.csv` holds one awkward value
+    per row; all keys are distinct except the `7`/`7.0` pair, so `desc` must be
+    the exact reverse of `asc` *except* there:
+
+    ```
+    $ tycho-q 'select id, v from mix.csv order by v'
+    id,v
+    2,          <- null first
+    4,1.5       <- numbers, by value: 1.5 < 7 < 42
+    6,7
+    7,7.0       <- VInt 7 and VDec 7.0 are EQUAL; input order breaks the tie
+    1,42
+    5,007       <- strings last, byte order: "007" < "zz"
+    3,zz
+    -- exit 0
+
+    $ tycho-q 'select id, v from mix.csv order by v desc'
+    id,v
+    3,zz
+    5,007
+    1,42
+    6,7         <- STILL 6 before 7: the tie did NOT reverse
+    7,7.0
+    4,1.5
+    2,          <- null last
+    -- exit 0
+    ```
+
+    CSV cannot produce a `VBool` at all (DECISION 1 types by round trip and
+    `VBool` is not in it), so the bool rank is tested from JSON, which can:
+
+    ```
+    $ tycho-q 'select id, v from mix.json order by v'
+    id,v
+    2,          <- null
+    5,false     <- bool: false < true
+    4,true
+    6,7         <- number
+    1,42
+    3,zz        <- string
+    -- exit 0
+
+    $ tycho-q 'select id, v from mix.json order by v desc'
+    id,v
+    3,zz
+    1,42
+    6,7
+    4,true
+    5,false
+    2,
+    -- exit 0
+    ```
+
+    Both directions of every rank boundary — null/bool, bool/number,
+    number/string — plus false<true, byte order, and value order across
+    `VInt`/`VDec`.
+
+    ### The sort, and why it is not `core:sort` (ORDER 2)
+
+    Read against the signatures rather than asserted:
+    `corelib/sort/sort.ty@by_key` takes `key: fn($T) -> int`, and this order
+    ranks by kind and then by value across `VStr` and `decimal.Decimal` — there
+    is no order-preserving injection of that into one `int`, because a string
+    does not fit in one. `corelib/sort/sort.ty@asc` and
+    `corelib/sort/sort.ty@desc` are `where comparable(T)` over the values and
+    take ONE array and ONE direction, so `order by a asc, b desc` — two keys,
+    two directions, same rows — fits no signature in the package;
+    `corelib/sort/sort.ty@argsort` has the same ceiling. Hence
+    `tools/tycho-q/main.ty@merge_sort`: bottom-up, iterative (no slicing
+    needed), stable, comparator as a first-class value.
+
+    **Stability is a property of the merge, not of a tiebreak.** The merge
+    takes the left run on `<= 0`. A total-by-index comparator would look
+    identical on every test above and is deliberately not used: it would
+    reverse tie order under `desc`, and then `order by k desc limit 3` on a
+    column with ties would return different rows by a rule nobody wrote down.
+    Proved on `ord.csv`, which has two duplicate-key pairs — `0.20` (Bo, Eve)
+    and `1.50` (Ada, Fox):
+
+    ```
+    $ tycho-q 'select name, price from ord.csv order by price'
+    name,price
+    Bo,0.20        <- tie: input order Bo, Eve
+    Eve,0.20
+    Ada,1.50       <- tie: input order Ada, Fox
+    Fox,1.50
+    Di,2.05
+    Cy,10.00       <- numeric, NOT string order ("10.00" would sort first)
+    -- exit 0
+
+    $ tycho-q 'select name, price from ord.csv order by price desc'
+    name,price
+    Cy,10.00
+    Di,2.05
+    Ada,1.50       <- STILL Ada before Fox
+    Fox,1.50
+    Bo,0.20        <- STILL Bo before Eve
+    Eve,0.20
+    -- exit 0
+    ```
+
+    The Pre-flight's `"10" < "9"` worry is disproved by the last line of the
+    first listing: `10.00` sorts after `2.05`, by value.
+
+    **A probe corrected a phase 2 finding.** Before writing the sort, a
+    fallible higher-order function was probed:
+
+    ```
+    fn msort(xs: [int], f: fn(int, int) -> Result(int, E)) -> Result([int], E)
+    ```
+
+    ```
+    $ ./pc
+    named comparator: 123
+    closure comparator: 120
+    propagated: 99 does not compare
+    ok
+    ```
+
+    It compiles, accepts **both** a named function and a lambda in that
+    position, and `or_return` propagates a comparator failure out through it.
+    So phase 2's wall narrows: it was `corelib/iter/iter.ty@filter`'s
+    **signature** pinning the lambda's return type to `int`, **not** a language
+    rule against fallible higher-order functions. A caller who declares the
+    parameter type gets the fallible version. This is recorded in
+    `tools/tycho-q/main.ty`'s ORDER 2 block as a correction, not a new
+    complaint — and phase 4's `FRICTION.md` entry for `core:iter` should say
+    "the corelib's signature", not "the language".
+
+    This sort does not need it: the order is total by construction, so the
+    comparator is `fn(int, int) -> int` and declaring a `Result` would be
+    machinery around an `Err` that cannot be built. What can fail is evaluating
+    the KEYS, which happens once per row before the sort — also the O(n log n)
+    argument, since a key computed inside the comparator is computed a
+    logarithmic factor too often and `qty * price` is a `core:decimal` multiply.
+
+    ### Multi-key, mixed directions, and `limit`
+
+    ```
+    $ tycho-q 'select name, region, price from ord.csv order by region asc, price desc'
+    name,region,price
+    Cy,eu,10.00
+    Ada,eu,1.50
+    Eve,eu,0.20
+    Di,us,2.05
+    Fox,us,1.50
+    Bo,us,0.20
+    -- exit 0
+
+    $ tycho-q 'select name, qty from ord.csv order by qty desc, name asc'
+    name,qty
+    Ada,7
+    Cy,7
+    Eve,7
+    Bo,3
+    Fox,3
+    Di,1
+    -- exit 0
+
+    $ tycho-q 'select name, price from ord.csv order by price desc limit 3'
+    name,price
+    Cy,10.00
+    Di,2.05
+    Ada,1.50
+    -- exit 0
+
+    $ tycho-q 'select name from ord.csv order by name limit 0'
+    name
+    -- exit 0                      # header only, and exit 0: an empty answer
+                                   # is not an error
+
+    $ tycho-q 'select name from ord.csv limit 2'
+    name
+    Ada
+    Bo
+    -- exit 0
+
+    $ tycho-q 'select name from ord.csv limit 99'   # limit > rows: all rows
+    name
+    Ada
+    Bo
+    Cy
+    Di
+    Eve
+    Fox
+    -- exit 0
+    ```
+
+    `limit` applies AFTER the ordering, so `order by x limit 3` is the top
+    three by x. `limit 0` stays an `Option(int)` rather than a sentinel 0
+    precisely so it can differ from no `limit` at all.
+
+    ### CSV and JSON produce byte-identical output
+
+    `pair.csv` and `pair.json` carry the same four rows, spelled equivalently —
+    JSON **numbers** for the numeric column, per DECISION 3's cost note. One
+    logical query, both sources, compared with `cmp`:
+
+    ```
+    $ tycho-q "select name, qty from pair.csv where region == 'eu' order by qty desc, name asc limit 2" > out.csv
+    name,qty
+    Ada,12
+    Cy,7
+    $ tycho-q "select name, qty from pair.json where region == 'eu' order by qty desc, name asc limit 2" > out.json
+    name,qty
+    Ada,12
+    Cy,7
+    $ cmp out.csv out.json; echo "cmp exit $?"
+    cmp exit 0
+    ```
+
+    That query exercises `where`, both `order by` directions, a tie broken by
+    the second key, and `limit`, over both readers. `select *` also matches
+    byte-for-byte, which additionally proves the JSON header (union of keys, in
+    first-appearance order) reproduces the CSV column order:
+
+    ```
+    $ tycho-q 'select * from pair.csv' > a.csv
+    $ tycho-q 'select * from pair.json' > a.json
+    $ cat a.csv
+    name,region,qty
+    Ada,eu,12
+    Bo,us,3
+    Cy,eu,7
+    Di,eu,7
+    $ cmp a.csv a.json; echo "cmp exit $?"
+    cmp exit 0
+    ```
+
+    ### The JSON row rules, and the failure legs
+
+    A missing key is `VNull`; the header is the union of all keys in
+    first-appearance order, built in its own pass **before** any cell is read,
+    because a column first seen in the last row is still a column and every
+    earlier row needs a null in it:
+
+    ```
+    $ cat sparse.json
+    [{"a":1,"b":2},{"b":5},{"a":9,"c":"new"}]
+    $ tycho-q 'select * from sparse.json'
+    a,b,c
+    1,2,
+    ,5,
+    9,,new
+    -- exit 0
+    ```
+
+    CSV refuses a short row while JSON accepts a sparse object, which looks
+    inconsistent and is not: a short CSV row means the **delimiters** are
+    wrong, so field k is not missing but MISALIGNED — every value after the gap
+    sits under the wrong column. A JSON key is NAMED, so an absent key is
+    unambiguous and nothing shifts. Absence is expressible in JSON and is not
+    expressible in CSV.
+
+    ```
+    $ tycho-q 'select * from nest.json'        # [{"a":[1,2]}]
+    tycho-q: nest.json: row 1, key `a`: the value is an array, and a table cell
+    cannot hold one -- flattening it would invent a spelling that every later
+    query would then depend on (see DECISION 3 at the top of tools/tycho-q/main.ty)
+    -- exit 1, stdout 0 bytes
+
+    $ tycho-q 'select * from dupkey.json'      # [{"a":1,"a":2}]
+    tycho-q: dupkey.json: row 1 names the key `a` twice
+    -- exit 1, stdout 0 bytes
+
+    $ tycho-q 'select * from obj.json'         # {"a":1}
+    tycho-q: obj.json: the top level of a JSON source must be an ARRAY of
+    objects, one object per row, and this is an object
+    -- exit 1, stdout 0 bytes
+
+    $ tycho-q 'select * from emptyarr.json'    # []
+    tycho-q: an empty array, so there are no keys and therefore no header:
+    emptyarr.json
+    -- exit 1, stdout 0 bytes
+    ```
+
+    A JSON string is **not** re-classified — `"42"` stays the string `"42"`.
+    DECISION 1's round trip exists because CSV LOST the type; JSON did not, and
+    re-running it would overrule an author to guess back what they already
+    stated. The cost is the CSV/JSON asymmetry above: equivalent files need
+    equivalent spelling.
+
+    ### `order by` on a select alias — needed for the plan's own headline query
+
+    The Goal's example is `select name, qty * price as total ... order by total
+    desc`, where `total` is an alias and not a column. Without resolution that
+    query fails, so the tool would not run its own example.
+    `tools/tycho-q/main.ty@resolve_key` resolves a key that is **exactly** a
+    bare column reference against the select aliases — never an alias buried
+    inside a larger expression, which would make a name resolve one way at the
+    top of a key and another way underneath it. A name that is **both** a
+    column and an alias is refused rather than settled by a precedence rule:
+    either choice is defensible and neither is guessable from the query text.
+
+    ```
+    $ tycho-q "select name, qty * price as total from sales.csv where region == 'eu' and qty > 10 order by total desc limit 5"
+    name,total
+    Di,99.00
+    Ada,18.00
+    Cy,2.00
+    -- exit 0
+
+    $ tycho-q 'select name, qty as name2 from sales.csv order by name2 desc'
+    name,name2
+    Bo,30
+    Cy,20
+    Ada,12
+    Di,11
+    -- exit 0
+
+    $ tycho-q 'select name, qty * 2 as qty from sales.csv order by qty'
+    tycho-q: `order by qty` is ambiguous: `qty` is both a column of sales.csv
+    and an alias in the select list -- rename the alias
+    -- exit 1, stdout 0 bytes
+    ```
+
+    ### No regressions in phases 1 and 2
+
+    The loader was refactored (the stat/read split out of `load` so both
+    readers share it), so phase 2's strongest check was re-run, along with the
+    key ones either side of it:
+
+    ```
+    $ tycho-q 'select * from fix.csv' | cmp - fix.csv && echo "byte-identical (cmp exit 0)"
+    byte-identical (cmp exit 0)
+
+    $ tycho-q "select 0.1 + 0.2 as sum from fix.csv where name == 'Ada'"
+    sum
+    0.3
+
+    $ tycho-q 'select name from fix.csv where region == null'
+    name
+    Di
+
+    $ tycho-q --explain 'select 1 + 2 * 3 from x.csv'
+    (query
+      (select (+ 1 (* 2 3)))
+      (from "x.csv")
+    )
+    ```
+
+    A key expression that cannot be evaluated fails before any comparison, with
+    empty stdout — the "build the whole result before printing" guarantee holds
+    through the new stages:
+
+    ```
+    $ tycho-q 'select name from fix.csv order by qty / 5'
+    tycho-q: `/` is exact-only: 12 / 5 is not a whole number, and core:decimal
+    has no div, so there is no rounding policy to apply (see DECISION 2 at the
+    top of tools/tycho-q/main.ty)
+    -- exit 1, stdout 0 bytes
+
+    $ tycho-q 'select nope from fix.csv order by nope'
+    tycho-q: no such column: nope (the header has: name, region, qty, price, code, note)
+    -- exit 1, stdout 0 bytes
+    ```
+
+    ### Friction found
+
+    **1. `core:json` is unsafe on input it cannot represent, and has no error
+    channel to say so.** Measured above: silent truncation, silent corruption
+    with exit 0, and unbounded memory on five bytes. `json.parse` returns
+    `Json`, so *every* caller that cares must pre-validate the text — which
+    means writing most of a second parser. Filed as **phase 21** below; it is a
+    corelib change and out of this phase's scope.
+
+    **2. `core:sort` has no comparator-taking sort at all.** Recorded in the
+    Pre-flight as a prediction and confirmed against the signatures here. Any
+    program ordering by more than one key, or in more than one direction, or
+    over a type with no `comparable` instance, writes its own sort. This one is
+    ~35 lines.
+
+    **3. Phase 2's `core:iter` finding was too broad, and this phase narrows
+    it** — see the probe above. Fallible higher-order functions ARE expressible;
+    `corelib/iter/iter.ty@filter`'s signature is what is not. Phase 4 should
+    write the narrower claim.
+
+    **Not friction, recorded so it is not re-derived:** a lambda with a
+    `Result` return type is accepted; a closure capturing two arrays compiles
+    and works (capture is by deep copy at creation, so the key matrix is copied
+    once, not per comparison); a qualified enum from another package
+    (`json.Json`) works as a parameter type; and the whole of this phase
+    compiled **first try** with zero diagnostics — the first phase here to do
+    so.
+
+    ### Gates
+
+    Per this phase's brief and `CLAUDE.md`'s gate table: **no `make test`, no
+    `make test-fast`, no `make ci`, no `make ar-check`.** This phase edits one
+    file under `tools/` and touches no corelib, no fixture and no golden, so
+    none of them can redden for it; every fixture above was written to the
+    scratchpad, not into the tree — phase 4 owns the tracked ones. Run: the
+    compile after every edit, the query set above, and `python3
+    scripts/check_citations.py` over the **tree** (not merely this block, which
+    is how phase 1's leftovers survived):
+
+    ```
+    $ python3 scripts/check_citations.py
+    citation check: ok (178 anchored contain the token they name and each names
+    one line, ... 201 `path@SYMBOL` definition refs name a symbol still in their
+    file)
+    ```
 
 - [ ] **Phase 4 — the gate, the CI step, and what the program surfaced**
   - Scope: `tools/tycho-q/run.sh` (new), `tools/tycho-q/expected.out` (new,
@@ -1057,6 +1557,29 @@ completion.
       choice of default scale reviewable. This is a corelib change, so it is
       **`make test`**, not the tools gates. Named as out of scope by this
       plan's own "Out of scope" section, which anticipated exactly this filing.
+
+- [ ] **Phase 21** — `core:json` mis-handles input it cannot represent, three
+      different ways, and cannot report any of them. Measured by probe in phase
+      3, not inferred: `json.parse("1.5")` returns `JNum(1)` at exit 0 (silent
+      truncation); `json.parse("[1.5]")` **exhausts memory** — `parse_value`
+      consumes nothing at the `.` and `corelib/json/json.ty:81-92` advances only
+      on `,` or `]`, so `JNum(0)` is pushed forever, from five bytes of input;
+      and `json.parse('[{"a":1.5}]')` returns exit 0 with `.5}]` parsed as the
+      next KEY, inventing a column. The last is the dangerous one: it is the
+      shape a table reader actually meets and it has no symptom.
+      **The root cause is not the missing float path, it is the missing error
+      channel:** `corelib/json/json.ty@parse` returns `Json`, not
+      `Result(Json, E)`, so no caller can ask whether a parse succeeded, and
+      "fails closed to JNull" (`corelib/json/json.ty:12-13`) is not closed when
+      the failure is an OOM or a fabricated key. `tycho-q` works around it with
+      `tools/tycho-q/main.ty@json_guard`, which validates the raw bytes before
+      handing them over — i.e. every caller who cares has to write most of a
+      second parser. Scope: at minimum make `parse` fallible and make
+      `parse_array` unable to loop without advancing; a float path is a
+      separate, larger question that interacts with phase 20 (`decimal.div`),
+      since `core:decimal` is the only exact numeric tower here and `JNum` is
+      an `int`. This is a corelib change, so it is **`make test`**, plus
+      whatever under `corelib/test/` covers `core:json`.
 
 ## Out of scope
 
