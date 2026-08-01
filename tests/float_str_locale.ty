@@ -1,0 +1,71 @@
+# str(float) renders in the "C" locale whatever the ambient LC_NUMERIC is.
+#
+# printf's "%g" takes its decimal separator from LC_NUMERIC, so under a
+# comma-decimal locale str(1.5) used to produce the bytes `1,5` -- and then the
+# runtime's ".0" guard, which asks "is this text integral?" by scanning for '.',
+# found none and appended ".0", giving `1,5.0`. Not a float in any grammar, not
+# readable by core:strings' parse_float, not valid Tycho source. See
+# runtime/tycho_rt.c@tycho_float_to_str.
+#
+# THE LOCALE IS FORCED HERE, NOT BY THE HARNESS. tests/run.sh runs every fixture
+# under whatever environment the grader has, which on almost every machine is
+# "C" -- exactly the case that never broke. So this fixture switches LC_NUMERIC
+# to a comma-decimal locale itself, through a runtime test hook, and prints the
+# same values twice: once under the default environment, once under the hostile
+# locale. Both blocks are in the golden and both must match, so the fix is
+# checked on every host rather than on a host that happens to have LANG set.
+#
+# `hostile=1` is the proof the switch took effect. A host with no comma-decimal
+# locale installed prints `hostile=0`, which is NOT the golden, so it fails
+# loudly rather than quietly re-testing "C" a second time.
+#
+# The two externs are declared here and nowhere else: they are test hooks in the
+# runtime, not builtins and not part of any package's API. Same shape
+# corelib/test/strings/main.ty uses for corelib/strings/strings_shim.c's hook.
+extern fn tycho_test_make_locale_hostile() -> int
+extern fn tycho_test_float_roundtrip(x: float) -> int
+
+# rt=1 means str(x) parsed back to bit-identical x (sign included, so -0.0 is not
+# 0.0); rt=0 means it did not; rt=-1 means the "C" locale handle could not be
+# built and neither leg is trustworthy.
+fn show(label: string, x: float):
+    println(label + " = " + str(x) + "  rt=" + str(tycho_test_float_roundtrip(x)))
+
+# inf - inf is a quiet NaN, and its SIGN is not specified by IEEE-754 for an
+# invalid operation: x86 hands back "-nan" here, arm64 hands back "nan". The
+# leading '-' is stripped so the golden is about the format -- three letters, and
+# critically NO ".0" appended, because the guard sees the 'n' -- rather than about
+# the host's FPU. rt=1 records "came back a NaN", not "came back the same bits":
+# a NaN is not equal to itself, so identity is not the contract and the hook
+# compares by kind.
+fn show_nan(x: float):
+    s := str(x)
+    if s[0:1] == "-":
+        s = s[1:]
+    println("nan         = " + s + "  rt=" + str(tycho_test_float_roundtrip(x)))
+
+fn block():
+    show("1.5        ", 1.5)
+    show("3.0        ", 3.0)
+    show("-0.0       ", -0.0)
+    show("1e300      ", 1e300)
+    show("1e-300     ", 1e-300)
+    # 0.1 + 0.2 is 0.30000000000000004: 17 significant digits. %.15g is readable,
+    # not round-trip, so it prints 0.3 and rt=0. That is the stated, accepted
+    # cost of the format -- it is not a locale defect, and it is identical under
+    # both locales.
+    tenth := 0.1
+    fifth := 0.2
+    show("0.1+0.2    ", tenth + fifth)
+    huge := 1e308
+    inf := huge * 10.0
+    show("inf        ", inf)
+    show("-inf       ", 0.0 - inf)
+    show_nan(inf - inf)
+
+fn main():
+    println("-- default environment --")
+    block()
+    println(f"hostile={tycho_test_make_locale_hostile()}")
+    println("-- hostile LC_NUMERIC --")
+    block()

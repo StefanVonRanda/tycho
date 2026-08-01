@@ -69,7 +69,7 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
 
 ## Phases
 
-- [ ] **Phase 1 — `str(float)` renders in the `"C"` locale, whatever the ambient one**
+- [x] **Phase 1 — `str(float)` renders in the `"C"` locale, whatever the ambient one**
   - Scope: `runtime/tycho_rt.c`, and a fixture under `tests/`.
   - Render through a `"C"`-locale conversion rather than the ambient one — the
     same shape as `corelib/strings/strings_shim.c`'s `strtod_l` fix, in the
@@ -86,6 +86,118 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
   - Verify: `make test` — this is `runtime/`, so it is the gate, and the fixture
     count was `passed: 560 failed: 0`. Prove the check can fail by reverting the
     fix and showing the red. Not `make corelib`, which cannot see `runtime/`.
+
+  **Evidence, 2026-08-01.** Changed: `runtime/tycho_rt.c@tycho_float_to_str`, plus
+  `tests/float_str_locale.ty` and its golden `tests/float_str_locale.out`.
+
+  **`snprintf_l` is NOT the route on glibc — the Pre-flight assumption was wrong
+  in its specifics.** It is a BSD/macOS extension in `<xlocale.h>`; glibc does not
+  declare it with or without `_GNU_SOURCE`. Measured, a five-line program under
+  `cc -std=c11` with `_GNU_SOURCE` defined:
+
+      lt.c:7:3: error: implicit declaration of function 'snprintf_l';
+                       did you mean 'snprintf'?
+
+  What is used instead is `uselocale()` against a `newlocale(LC_NUMERIC_MASK,
+  "C", 0)` handle — POSIX 2008, present on glibc and the BSDs both, and already
+  exposed by the `_DEFAULT_SOURCE` this file declares at `runtime/tycho_rt.c:34`,
+  so **no new feature-test macro was needed**. It sets the calling *thread's*
+  locale, which is what a runtime shared by pthread-backed Tycho tasks needs;
+  `setlocale` would have been a data race. Measured on this host under
+  `LC_ALL=da_DK.utf8`:
+
+      ambient  = 1,5
+      uselocale= 1.5
+      restored = 1,5
+
+  **The `".0"` guard's contract is written down** in the comment above the
+  function: it answers "would this text be read back as an int?" and appends
+  `.0` when it would. The scan for `'.' 'e' 'E' i/I n/N` is sound **only**
+  because the separator is now known to be `'.'` — under any other separator
+  every finite non-integral value looks integral to it, which is precisely how
+  `1,5` became `1,5.0`. The comment says the two changes are one change.
+
+  **Both locale runs.** `tests/float_str_locale.ty` prints the same nine values
+  twice: once under the ambient environment, then again after flipping
+  `LC_NUMERIC` to a comma-decimal locale through a runtime test hook it declares
+  itself with `extern fn` (`corelib/test/strings/main.ty`'s pattern — the hook is
+  in `runtime/tycho_rt.c` and not in any package API, because `tests/run.sh`
+  builds a fixture with plain `cc … -lm` and no `--shim`, so a fixture has no
+  other C to link). `hostile=1` sits between the blocks as proof the switch took;
+  a host with no comma-decimal locale prints `hostile=0` and fails the golden
+  loudly instead of re-testing `"C"` twice. `locale -a | grep -i da_DK` on this
+  host lists `da_DK` and `da_DK.utf8`, and `da_DK.UTF-8` is the candidate that
+  takes.
+
+  The golden also matched with the hostile locale imposed from *outside* the
+  process, which is the independent check that nothing leaked:
+
+      $ LC_ALL=da_DK.utf8 ./nat | cmp - tests/float_str_locale.out   # silent
+      $ LC_NUMERIC=de_DE.utf8 ./nat | cmp - tests/float_str_locale.out  # silent
+
+  **Edge cases — each line is in the golden, identical in both blocks.** `rt=1`
+  means `str(x)` re-read to a bit-identical `x`, sign included.
+
+  | value | `str(x)` | `rt` | why that outcome |
+  |---|---|---|---|
+  | `1.5` | `1.5` | 1 | the case that used to be `1,5.0` |
+  | `3.0` | `3.0` | 1 | integral: the `".0"` guard fires, correctly |
+  | `-0.0` | `-0.0` | 1 | guard fires on `-0`; `signbit` compared, so it is not `0.0` |
+  | `1e300` | `1e+300` | 1 | exponent already makes it non-integral |
+  | `1e-300` | `1e-300` | 1 | as above |
+  | `0.1+0.2` | `0.3` | **0** | 17 significant digits; `%.15g` is readable, not round-trip. Stated cost of the format, not a locale defect, and identical under both locales |
+  | `inf` | `inf` | 1 | `'i'` in the scan set, so no `".0"` |
+  | `-inf` | `-inf` | 1 | as above |
+  | `nan` | `nan` | 1 | printed sign-stripped: the sign of an invalid-operation NaN is unspecified by IEEE-754 and is `-nan` on x86, `nan` on arm64. `rt=1` here means "came back a NaN" — a NaN is not equal to itself, so bitwise identity is not the contract |
+
+  **Break and revert.** With `tycho_float_to_str` reduced to the bare ambient
+  `snprintf` (both the `uselocale` leg and the `localeconv` fallback removed),
+  rebuilt with `make`, the fixture goes red on exactly the two lines that carry a
+  decimal separator — and reproduces the reported symptom byte for byte:
+
+      13c13
+      < 1.5         = 1.5  rt=1
+      ---
+      > 1.5         = 1,5.0  rt=0
+      18c18
+      < 0.1+0.2     = 0.3  rt=0
+      ---
+      > 0.1+0.2     = 0,3.0  rt=0
+
+  Restoring the file and re-running `make` returns it to green (`cmp` silent).
+  The seven other rows are unmoved by the break, which is honest: they have no
+  separator to corrupt. The check is not vacuous — it fails for the real reason.
+
+  **Gate.** `make test`: `passed: 561 failed: 0`, from `passed: 560 failed: 0`
+  before. +1 is the new fixture and nothing was lost. The ASan/UBSan leg and the
+  `-O2` leg produced byte-identical output with `detect_leaks=1` and no report,
+  which is what makes the `arena_new`/`arena_free` pair inside the round-trip
+  hook safe. `make corelib` was not run — it cannot see `runtime/`. `make ci` was
+  not run — no CI step changed.
+
+  **Citation fallout, and how it was repaired.** +113 net lines in
+  `runtime/tycho_rt.c` moved every anchored ref pointing past them, and
+  `python3 scripts/check_citations.py` reddened with 13 of them. Twelve are live
+  prose or `> Provenance:` and were repointed, anchor kept: `:657`→`:658`,
+  `:693`→`:694`, `:751`→`:752`, `:763`→`:764`, `:577`→`:578`, `:1005`→`:1006`,
+  `:1184`→`:1185`, `:1284`→`:1397`, `:2427`→`:2540`, each verified by reading the
+  new line and comparing it with `git show HEAD:runtime/tycho_rt.c`. Three sit in
+  a before/after table in `docs/internals/plan-postfreeze-rawstring-DONE.md` —
+  record lines by shape, two ref-bearing cells each — so `CLAUDE.md`'s rule
+  applies literally: **the anchor was dropped and the number kept.**
+
+  Bare refs into `runtime/tycho_rt.c` moved too and the gate cannot see them.
+  They were **not** swept, which is this repo's stated position on bare refs
+  rather than an oversight.
+
+  One red was already there before this phase and is not fallout: `plan.md`'s
+  backlog row 12 wrote `` `:366` `` bare, which inherits `FRICTION.md` from the
+  row above and resolves to the wrong document. The intended subject is
+  `Makefile:366`, confirmed by the four citing lines it describes —
+  `scripts/asan_self.sh:11`, `scripts/asan_self.sh:72`,
+  `scripts/editors_check.sh:29` and `scripts/check_citations.py:398`, every one
+  of which spells it `Makefile:366@SKIPPED`. The row now names that path. Both
+  doc gates are green: `check_citations.py` `ok`, `check_links.sh` `ok`.
 
 - [ ] **Phase 2 — the compiler prints its shim closure, and the hand lists go**
   - Scope: `src/tychoc.c` (a `--print-shims` or equivalent), `examples/fetch/run.sh`,
@@ -119,6 +231,31 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
   - Verify: the check itself, both directions; `sh scripts/ci.sh` lists the new
     step; and **`make ci` once, last**, since this phase adds a CI step. Never
     `make ci` as a debugging loop.
+
+- [ ] **Phase 4 — the compiler emits float literals under the ambient locale too**
+  - Found while doing phase 1, outside its scope lock (`src/tychoc.c` was locked),
+    so it is filed here rather than absorbed.
+  - `src/tychoc.c:9496` formats a float literal into the **generated C source**
+    with `snprintf(b, sizeof b, "%.17g", e->fval)`, then applies the *same* `'.'`
+    scan at `:9498-9499` to decide whether to append `".0"`. It is the identical
+    defect phase 1 just fixed in `runtime/tycho_rt.c@tycho_float_to_str`, one
+    layer up, and the blast radius is larger: the runtime one corrupted a string a
+    human reads, this one corrupts **C source a compiler reads**. Under a comma
+    locale `f(1.5)` would emit `f(1,5.0)` — which is not a syntax error but a
+    comma expression, so `cc` accepts it and the program silently gets `5.0`.
+  - The mirror side is at `src/tychoc.c:298`: the lexer reads a float literal with
+    plain `strtod`, which under a comma locale stops at the `'.'` and returns `1`
+    for `1.5`, exactly the trap `corelib/strings/strings_shim.c` documents.
+  - Latent today for the same reason phase 1's was: nothing in this tree calls
+    `setlocale`. That is an unstated dependency on a process global, not a fix.
+  - Scope: `src/tychoc.c` only. The `"C"` handle and the fallback in
+    `runtime/tycho_rt.c` are the pattern to copy; do not share state across the
+    two files, they are separate translation units.
+  - Done when: a fixture proves both directions under a hostile locale, and the
+    `".0"` guard at `:9498-9499` carries the same written contract phase 1 gave
+    its twin.
+  - Verify: `make test` — `src/tychoc.c`, so it is the gate. Count is 561 after
+    phase 1.
 
 ## Backlog audit, 2026-08-01
 
@@ -160,7 +297,7 @@ Ranked by harm × likelihood over cost. Phases 1-3 above are the top three.
 | 9 | mtime is readable, not writable | ar phase 12 | no `utimensat`/`utimes` in `corelib/io/io_shim.c` or `io.ty`. `tycho-ar` stores an mtime it cannot restore, and `diff -r` does not compare mtimes, so the gate cannot see it |
 | 10 | incremental digest | ar phase 14 | no `update`-shaped function in `corelib/sha256`, `md5`, `crypto` or `hash`. The `FRICTION.md:1237` entry is the record; the code gap is real |
 | 11 | `eprintln` | ar phase 10 | no hit anywhere in `corelib/`, `src/tychoc.c` or `docs/spec/appendix-d-builtins.md`. A non-fatal warning is inexpressible, so it lands on stdout beside a tool's data |
-| 12 | `Makefile:<N>@SKIPPED` citations | ar phase 22 | four refs still at `:366` across `scripts/asan_self.sh` (twice), `scripts/check_citations.py` and `scripts/editors_check.sh`. Six repointing edits over two phases, zero information carried |
+| 12 | `Makefile:<N>@SKIPPED` citations | ar phase 22 | four refs still at `Makefile:366` across `scripts/asan_self.sh` (twice), `scripts/check_citations.py` and `scripts/editors_check.sh`. Six repointing edits over two phases, zero information carried |
 | 13 | the `image` shim is compiled by nothing here | ar phase 5 | `scripts/shim_check.sh:43` skips it for missing libpng, as does `make corelib`. Only matters on a host that has libpng |
 | 14 | no document-reachability gate | ar phase 6 | no such check in `scripts/`. Would have stayed green through `docs/bootstrap.md`'s entire outage |
 
