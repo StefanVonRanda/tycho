@@ -440,11 +440,16 @@
 # `parse_checked` and reports what the parser tells it -- see `json_err`, which
 # is the one place tycho-q still adds words of its own.
 #
-# THE LOSS IS REAL AND IS STATED PLAINLY, and removing the guard did not change
-# it: a JSON file still cannot carry a non-integer number into this program AT
-# ALL. A price column that is a `VDec` in CSV has to be written as a STRING in
-# JSON, and a JSON string is not re-typed (below), so it stays a `VStr` and
-# orders as text. Nothing here repairs that. It is visible instead of wrong.
+# THE LOSS THAT USED TO BE HERE IS GONE, and this paragraph records what it
+# was so the fixtures that were shaped around it are readable. Until 2026-08-01
+# a JSON file could not carry a non-integer number into this program AT ALL: a
+# price column that is a `VDec` in CSV had to be written as a STRING in JSON,
+# where it stayed a `VStr` and ordered as text. `corelib/json/json.ty@JFloat`
+# closed that, and `1.50` in JSON is now the same `VDec` as `1.50` in CSV --
+# equal to it, ordering with it, byte-identical out of `select *`. The one
+# residue is the two spellings named under `json_float_cell` below (`1e3` and
+# `-0.0`), each refused because accepting it would contradict what the same text
+# means in a query literal or a CSV cell.
 #
 # WHAT A JSON VALUE BECOMES -- and note this is NOT DECISION 1's round trip:
 #
@@ -452,7 +457,11 @@
 #   true / false -> VBool    a kind CSV cannot produce at all: a CSV cell
 #                            reading `true` is a `VStr`, because DECISION 1
 #                            types by round trip and `VBool` is not in it
-#   number       -> VInt     always an int; the guard already refused the rest
+#   integer      -> VInt     a `JNum`: an integer that fit 64 bits exactly
+#   any other    -> VDec     a `JFloat`, read through its LEXEME and never
+#     number                 through its binary64 value, so `0.1` is exact and a
+#                            30-digit integer keeps all thirty digits. Two
+#                            spellings are refused instead: see `json_float_cell`
 #   string       -> VStr     VERBATIM. `"42"` stays the STRING "42".
 #   array/object -> ERROR    refused, naming the row and the key
 #
@@ -1525,15 +1534,20 @@ fn load_csv(path: string, text: string) -> Result(Table, RErr):
 # refused; the messages come from the parser now, and the two failure legs in
 # tools/tycho-q/run.sh assert against those instead of against these.
 #
-# The one thing tycho-q still says for itself is the float case, below: the
-# corelib says "fraction or exponent (floats are out of scope)", which is true
-# and is not advice. A tycho-q user needs to be told what to do instead, and
-# what it costs -- DECISION 3 at the top of this file.
+# The one thing tycho-q still says for itself is `BadFloat`, below, and its
+# meaning CHANGED on 2026-08-01. It used to mean "floats are out of scope", so
+# the advice told the user to write the number as a string. `core:json` has a
+# float path now (`corelib/json/json.ty@JFloat`) and reads `1.5` exactly, so
+# `BadFloat` no longer means "we cannot", it means the number is MALFORMED --
+# `corelib/json/json.ty@err_reason` renders it as "'.' or exponent with no
+# digits after it", which fires on `1.`, `1e`, `1e+` and `1.x`. The corelib
+# names the cause and the byte; what it cannot say is which spellings are legal,
+# so that is what this arm adds and all it adds.
 fn json_err(path: string, e: json.JsonErr) -> RErr:
     m := path + ": byte " + str(json.err_offset(e)) + ": " + json.err_reason(e)
     match e:
         json.BadFloat(o):
-            return RErr(m + " -- JSON numbers here must be integers, and core:json has no float path at all. Write the value as a string if the text is what matters, and note that a JSON string is not re-typed, so it will order as text (see DECISION 3 at the top of tools/tycho-q/main.ty)")
+            return RErr(m + " -- a JSON number needs at least one digit after the `.` and at least one after the `e`, so `1.5`, `1.50` and `-0.125` are numbers and `1.`, `1e` and `1e+` are not. Fix the digits rather than quoting the value: a JSON string is not re-typed here, so quoting it would make it order as text (see DECISION 3 at the top of tools/tycho-q/main.ty)")
         _:
             return RErr(m)
 
@@ -1547,6 +1561,16 @@ fn json_root(path: string, text: string) -> Result(json.Json, RErr):
             return Err(json_err(path, e))
 
 # An article for a diagnostic, so the message reads as a sentence.
+#
+# `"num"` and `"float"` BOTH read as "a number", and that is not a shortcut.
+# JSON has one number type; `core:json` splits it in two only to record whether
+# the value fit an `int` exactly, which is an implementation fact about the
+# reader and not something the document said. A message telling the user their
+# value is "a float" would be describing our storage, not their file. The arm is
+# spelled out rather than folded into the fallthrough because `"float"` reaching
+# the final `return "null"` is exactly the bug this fixes: a refused float cell
+# used to be reported as "the value is null", a wrong noun in the one message
+# whose whole job is naming what the user wrote.
 fn a_kind(k: string) -> string:
     if k == "arr":
         return "an array"
@@ -1554,11 +1578,54 @@ fn a_kind(k: string) -> string:
         return "an object"
     if k == "num":
         return "a number"
+    if k == "float":
+        return "a number"
     if k == "str":
         return "a string"
     if k == "bool":
         return "a boolean"
     return "null"
+
+# A JSON float as a cell, THROUGH ITS LEXEME AND NEVER THROUGH ITS BINARY64
+# VALUE. `corelib/json/json.ty@JFloat` carries both; `@as_float` would hand back
+# a double, and routing `0.1` through a double and out again is precisely the
+# rounding `core:decimal` exists to refuse -- there is no float anywhere in this
+# program on purpose (THE VALUE MODEL). `@as_lexeme` is the number as the
+# document spelled it, and `decimal.from_str` over that is exact.
+#
+# The lexeme is BRACKETED exactly as DECISION 1 brackets a CSV cell, and for the
+# same reason: `decimal.from_str` reads `[-|+]digits[.digits]` and NOTHING else
+# (`corelib/decimal/decimal.ty@from_str`), so a lexeme outside that shape would
+# be mis-read rather than refused. `num_shape` runs in front of it and the
+# round trip `decimal.to_str(d) == lx` runs behind it, so a spelling this program
+# cannot reproduce is refused instead of quietly altered.
+#
+# WHAT THAT REFUSES, and why each refusal is the consistent answer rather than a
+# gap:
+#
+#   1e3     -- an exponent. `core:json` accepts it and keeps the lexeme, so
+#              nothing is lost on the way in; it is refused HERE because the same
+#              text is already refused in the other two positions this program
+#              reads a number from: the query lexer rejects the literal `1e3`
+#              (THE VALUE MODEL) and a CSV cell reading `1e3` is a `VStr`
+#              (DECISION 1). Accepting it only from JSON would make `1e3` mean
+#              three different things in one program.
+#   -0.0    -- the round trip fails: `decimal.to_str` renders it `0.0` and the
+#              sign is gone. Storing it would REWRITE the cell, which is the one
+#              thing a query that neither filters nor computes must never do --
+#              the same call DECISION 1 makes for a CSV `-0`.
+#
+# WHAT IT ACCEPTS THAT AN `int` CANNOT HOLD: an integer too large for 64 bits
+# arrives here as a JFloat (that is how `corelib/json/json.ty` stopped wrapping
+# silently), its lexeme is plain digits, and `core:decimal` is arbitrary
+# precision underneath, so all thirty digits of it survive into a `VDec`. The
+# binary64 route would have lost them at the seventeenth.
+fn json_float_cell(path: string, r: int, key: string, lx: string) -> Result(Value, RErr):
+    if num_shape(lx) != 0:
+        d := decimal.from_str(lx)
+        if decimal.to_str(d) == lx:
+            return Ok(VDec(d))
+    return Err(RErr(path + ": row " + str(r + 1) + ", key `" + key + "`: the number " + lx + " has no exact decimal spelling here. tycho-q reads a JSON number through core:decimal, whose shape is `-? digit+ ( \".\" digit+ )?` and nothing else -- the same shape a CSV cell must match -- so an exponent (`1e3`) and a negative zero (`-0.0`) are refused rather than rounded through a float. Write the value in plain positional notation, or as a string if the text is what matters (see DECISION 3 at the top of tools/tycho-q/main.ty)"))
 
 # One JSON value as a cell. JSON did not lose the type, so this BELIEVES it and
 # does NOT re-run DECISION 1's round trip over a string (header).
@@ -1570,6 +1637,8 @@ fn json_cell(path: string, r: int, key: string, j: json.Json) -> Result(Value, R
         return Ok(VBool(json.as_bool(j)))
     if k == "num":
         return Ok(VInt(json.as_num(j)))
+    if k == "float":
+        return json_float_cell(path, r, key, json.as_lexeme(j))
     if k == "str":
         return Ok(VStr(json.as_str(j)))
     return Err(RErr(path + ": row " + str(r + 1) + ", key `" + key + "`: the value is " + a_kind(k) + ", and a table cell cannot hold one -- flattening it would invent a spelling that every later query would then depend on (see DECISION 3 at the top of tools/tycho-q/main.ty)"))

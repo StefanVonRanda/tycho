@@ -1520,12 +1520,57 @@ being byte-identical to its input, CSV and JSON agreeing under `cmp`, and ten
 failure legs refusing with empty stdout.
 
 Below is what writing it surfaced, **ranked**, worst first. The two corelib
-defects at the top are filed as unchecked phases in the plan that produced this
-section and are **deliberately not fixed here** — they are corelib changes and
-this was a tools phase. The last group is the entries that got smaller as they
-were written down, and they are labelled as such rather than padded.
+defects at the top were filed as unchecked phases in the plan that produced this
+section and were **deliberately not fixed here** — they are corelib changes and
+this was a tools phase. **Finding 1 has since been fixed, in two plans; finding 2
+is still open.** Each carries its own status banner below, and the finding texts
+are left exactly as they were written: they are the record of what was wrong, and
+a repaired description of a fixed defect describes nothing. The last group is the
+entries that got smaller as they were written down, and they are labelled as such
+rather than padded.
 
 ### 1. `core:json` accepts input it cannot represent, three ways, and cannot report any of them
+
+> **[FIXED, 2026-08-01.]** Both halves are closed, by two plans in sequence. The
+> finding below is left **verbatim**, including the parts that are no longer true
+> of the tree — `json_guard` is gone, `parse` is no longer the only entry point,
+> and none of the three probe lines reproduces. It stays because it is the only
+> record of what the package did and why `tycho-q` is shaped the way it is.
+>
+> **The error channel** — which the finding names as the root cause, correctly —
+> was closed by `docs/internals/plan-json-error-DONE.md`, whose phase 1 landed as
+> commit `e291d49`: `corelib/json/json.ty@parse_checked` returns
+> `Result(Json, JsonErr)`, every variant carries the byte offset of the byte that
+> failed, and the non-termination is unreachable rather than merely caught
+> (`corelib/json/json.ty@parse_value` no longer falls through to a number parse
+> for a byte that begins no value, and both container loops carry a
+> cursor-must-advance guard). That is what let `tools/tycho-q/main.ty@json_guard`
+> — most of a second JSON parser, written only because the first one could not
+> speak — be **deleted** rather than maintained.
+>
+> **The float path**, which the finding correctly separates as "a separate,
+> larger question", was closed by the plan this banner was written under:
+> `76d5c3d` added `corelib/json/json.ty@JFloat`, carrying the binary64 value
+> **and the original lexeme**, so a number the parser cannot represent exactly
+> keeps its digits and `stringify` re-emits them byte-for-byte; the same commit
+> ended the silent 64-bit integer wrap, which was the last silent-wrong-value
+> path in the package. `62b7a0c` added `\uXXXX` and surrogate-pair decoding, and
+> `d571b16` made the grammar exactly RFC 8259's — trailing commas, leading zeros,
+> trailing text after the document and raw control bytes inside a string are all
+> refused now, each naming the byte the writer has to change.
+>
+> **And the interaction the finding predicted with item 2 resolved the other
+> way.** It expected the float path to be blocked on `core:decimal`, since
+> "`core:decimal` is the only exact numeric tower here and `JNum` is an `int`".
+> It was not: `core:json` stores the **lexeme**, so `tycho-q` maps it straight
+> through `decimal.from_str` (`tools/tycho-q/main.ty@json_float_cell`) and never
+> touches the binary64 value. A JSON `1.50` and a CSV `1.50` are now the same
+> `VDec` — they compare equal, sort together, multiply exactly and render
+> identically, which `make q-check` asserts with `cmp` over the same query run
+> against both fixtures. Two spellings are refused rather than rounded (`1e3`,
+> `-0.0`), for the stated reason that the same text is already refused in a query
+> literal and in a CSV cell. **Finding 2 is untouched by any of this and remains
+> open**: there is still no `decimal.div`.
 
 **This is the most serious thing this program found, and it has no symptom.**
 Measured by probe, not inferred. `corelib/json/json.ty@parse_number` takes an
@@ -1574,6 +1619,15 @@ path is a separate, larger question that interacts with item 2, since
 programmer; this one is paid by the person reading the output.**
 
 ### 2. `core:decimal` has no `div`, so the ordinary averaging query has no answer
+
+> **[STILL OPEN, checked 2026-08-01.]** Unchanged and re-read, not assumed:
+> `corelib/decimal/decimal.ty` still has no division, and its header still gives
+> the same reason. Two plans have now closed `core:json` around it without
+> needing it — the lexeme route means a JSON float reaches `core:decimal` exactly
+> and never needs dividing to get there — so this is narrower than it looked
+> from item 1, not broader. It is carried in the live plan as the `decimal.div`
+> phase, and the fix is still `div(a, b, scale, mode)` with both the scale and
+> the rounding mode named by the **caller**.
 
 `corelib/decimal/decimal.ty` has `from_int`, `from_str`, `add`, `sub`, `mul`,
 `cmp`, `rescale`, `to_str`, `neg`, `abs` and `is_zero`. **No division.** The

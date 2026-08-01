@@ -42,7 +42,22 @@ DEPF="$(pkg-config --cflags --libs libcurl)"
 # added when main.ty gained its core:io imports. The lane has therefore been red
 # on this box independently of the retirement. Adding io_shim.c fixes the link;
 # a SECOND pre-existing failure is behind it -- see the note by the golden below.
-SHIM="corelib/http/http_shim.c corelib/io/io_shim.c"
+#
+# AND IT WENT STALE A SECOND TIME, on 2026-08-01, the same way and for a reason
+# worth writing down because it defeats the obvious fix. `core:strings` gained a
+# shim (`strx_parse_double`, backing `strings.parse_float`), and this lane went
+# red with `undefined reference to strx_parse_double` -- measured by running
+# `make fetch` at d571b16 with everything else stashed, so it is this list being
+# stale and not any change above it.
+#
+# NOTE WHAT IS *NOT* THE FIX. examples/site/run.sh auto-discovers its shims by
+# grepping its own source for `core:` imports, and that would NOT have caught
+# this one: examples/fetch/main.ty does not import core:strings. It imports
+# core:json, and corelib/json/json.ty imports core:strings -- so the dependency
+# is TRANSITIVE, and a grep over this program's own imports finds nothing to
+# add. Discovering it properly means walking the import graph, which is filed as
+# a phase rather than improvised here.
+SHIM="corelib/http/http_shim.c corelib/io/io_shim.c corelib/strings/strings_shim.c"
 RECORD="${RECORD:-0}"
 golden=examples/fetch/expected.out
 URL="file://$PWD/examples/fetch/fixture.json"
