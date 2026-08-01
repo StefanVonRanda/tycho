@@ -13,6 +13,7 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `sh scripts/spec_check.sh` | ~6s | runnable examples in `docs/spec/`, Appendix A vs §3/§4, **and every backticked `tests/…` path in Appendix E resolving to a real file** — so any commit that moves or deletes a fixture directory must run this, not just the two doc gates |
 | `make shim-check` | <1s | any corelib `<pkg>_shim.c` — compiles each one standalone under `-std=c11`. **`make corelib` cannot redden for this**: the real build appends a shim to the generated `.c` on one `cc` line with no `-std`, so a missing feature-test macro compiles there and only here |
 | `make ar-check` | ~3s | `tools/tycho-ar/`, and any `core:compress`/`sha256`/`io`/`path` change that moves a digest, the walk order or the archive round trip — **the only lane that runs anything under `tools/tycho-ar/`** |
+| `make q-check` | ~3.5s | `tools/tycho-q/`, and any `core:csv`/`core:json`/`core:decimal`/`core:sort` change that moves a header, a cell's classification, a decimal's scale or a sort order — **the only lane that runs anything under `tools/tycho-q/`** |
 | `make server-check` | ~7s | `server/main.ty`, `server/www/`, `server/run.sh`, and the `core:net` accept/recv/send path |
 | `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
 | `sh scripts/asan_self.sh` | minutes | `src/tychoc.c` under ASan/UBSan over the whole corpus |
@@ -75,6 +76,7 @@ end, to confirm what you already believe.
 | `[3c] server-check` | `make server-check` (~7s; it starts tycho-httpd for real — a red here is a behaviour change in `server/main.ty` or `core:net`, not a build break, which `[3b]` would have caught first) |
 | `[3d] shim-check` | `make shim-check` |
 | `[3e] ar-check` | `make ar-check` (~3s; it builds and runs `tycho-ar` over a fixture it writes itself — a red here is a digest, a walk order or a round-trip change, and `RECORD=1 sh tools/tycho-ar/run.sh` re-records the golden once you know why) |
+| `[3f] q-check` | `make q-check` (~3.5s; it builds and runs `tycho-q` over fixtures it writes itself — a red here is a changed row, order, header or cell classification, and `RECORD=1 sh tools/tycho-q/run.sh` re-records the transcript once you know why) |
 | `[4] conc` | `make conc` |
 | `[5] ffi` | `make ffi` |
 | `[6]/[7] fuzz` | `python3 fuzz/run.py <small N>` |

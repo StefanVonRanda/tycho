@@ -1,0 +1,173 @@
+=== Q01 precedence
+(query
+  (select (+ 1 (* 2 3)))
+  (from "x.csv")
+)
+=== Q02 left assoc
+(query
+  (select (- (- 1 2) 3))
+  (from "x.csv")
+)
+=== Q03 parens + unary
+(query
+  (select (* (+ 1 2) 3) (+ (neg 1) 2))
+  (from "x.csv")
+)
+=== Q04 literals
+(query
+  (select 1 1.50 0.1 "eu" "sq" true false null)
+  (from "x.csv")
+)
+=== Q05 and/or/not
+(query
+  (select (or (and (== (col a) 1) (> (col b) 2)) (not (col c))))
+  (from "x.csv")
+)
+=== Q06 all clauses
+(query
+  (select (col name) (as total (* (col qty) (col price))))
+  (from "sales.csv")
+  (where (and (== (col region) "eu") (> (col qty) 10)))
+  (order (key (col total) desc))
+  (limit 5)
+)
+=== Q07 multi-key
+(query
+  (select (col a))
+  (from "x.csv")
+  (order (key (col a) asc) (key (col b) desc) (key (col c) asc))
+  (limit 0)
+)
+=== Q08 select *
+name,region,qty,price,code,note
+Ada,eu,12,1.50,007,"Hello, world"
+Bo,us,-3,0.10,42,"line one
+line two"
+Cy,eu,7,0.20,0080,café
+Di,,0,2.00,9,plain
+Eve,eu,7,1.50,11,dup
+=== Q09 projection
+name,code,note
+Ada,007,"Hello, world"
+Bo,42,"line one
+line two"
+Cy,0080,café
+Di,9,plain
+Eve,11,dup
+=== Q10 where string
+name
+Ada
+Cy
+Eve
+=== Q11 where decimal
+name,price
+Ada,1.50
+Cy,0.20
+Di,2.00
+Eve,1.50
+=== Q12 where null
+name
+Di
+=== Q13 typing
+n,num
+2,0
+4,-3
+5,1.50
+10,12345678901234567890123456
+=== Q14 no rows
+name
+=== Q15 and/or/not rows
+name
+Ada
+Bo
+Di
+=== Q16 decimal mul
+name,total
+Ada,18.00
+Cy,1.40
+Eve,10.50
+=== Q17 0.1 + 0.2
+sum
+0.3
+=== Q18 exact div
+name,third
+Ada,4
+=== Q19 unaliased
+name,(* (col qty) (col price))
+Cy,1.40
+=== Q20 order asc
+name,price
+Bo,0.10
+Cy,0.20
+Ada,1.50
+Eve,1.50
+Di,2.00
+=== Q21 order desc
+name,price
+Di,2.00
+Ada,1.50
+Eve,1.50
+Cy,0.20
+Bo,0.10
+=== Q22 order string
+name
+Eve
+Di
+Cy
+Bo
+Ada
+=== Q23 mixed keys
+name,region,price
+Di,,2.00
+Ada,eu,1.50
+Eve,eu,1.50
+Cy,eu,0.20
+Bo,us,0.10
+=== Q24 total order asc
+id,v
+2,
+5,false
+4,true
+6,7
+1,42
+3,zz
+=== Q25 total order desc
+id,v
+3,zz
+1,42
+6,7
+4,true
+5,false
+2,
+=== Q26 order + limit
+name,price
+Di,2.00
+Ada,1.50
+Eve,1.50
+=== Q27 limit 0
+name
+=== Q28 limit > rows
+name
+Ada
+Bo
+Cy
+Di
+Eve
+=== Q29 json select *
+name,region,qty,price,code,note
+Ada,eu,12,1.50,007,"Hello, world"
+Bo,us,-3,0.10,42,"line one
+line two"
+Cy,eu,7,0.20,0080,café
+Di,,0,2.00,9,plain
+Eve,eu,7,1.50,11,dup
+=== Q30 json sparse
+a,b,c
+1,2,
+,5,
+9,,new
+=== Q31 order by alias
+name,total
+Ada,18.00
+Eve,10.50
+Cy,1.40

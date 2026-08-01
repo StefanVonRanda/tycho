@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check ar-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check ar-check q-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -260,6 +260,37 @@ shim-check:
 # See tools/tycho-ar/run.sh.
 ar-check: tychoc
 	@sh tools/tycho-ar/run.sh
+
+# q-check: the gate for tycho-q, the SQL-ish query tool in tools/tycho-q/.
+# Same shape and same reasoning as ar-check above -- a batch program, so it gates
+# with a golden rather than a daemon harness: build it, run 31 queries over
+# fixtures the runner writes itself from literals, and compare the concatenated
+# stdout against a recorded transcript.
+#
+# WHAT IT REDDENS FOR. tycho-q's only way to betray a caller is to return the
+# WRONG ROWS and look like it worked, so the golden is a transcript rather than a
+# row count: it carries the parsed s-expressions (precedence), the classification
+# of every awkward cell, the `where` results, decimal arithmetic, the total order
+# across null/bool/number/string, sort stability under BOTH directions, `limit`,
+# and both readers. On top of it: `select *` must be byte-identical to the input
+# file (a query that neither filters nor computes must not rewrite `007`, `-0` or
+# a 26-digit integer); CSV and JSON must agree under `cmp`; and ten failure legs
+# must exit non-zero with their reason on stderr and NOTHING on stdout.
+#
+# It is the only lane that RUNS tycho-q, exactly as ar-check is for tycho-ar, and
+# for the same two reasons: scripts/tools_check.sh sweeps every .ty in the tree
+# with `--emit-c`, so a syntax error already reddens step [9], but
+# scripts/entrypoints.sh globs examples/*/ plus server/main.ty and never looks
+# under tools/. So without this the evaluator could start dropping rows, ordering
+# by string bytes, or truncating a decimal, with every other gate green.
+#
+# It also reddens for core:csv, core:json, core:decimal and core:sort: the
+# transcript is a recorded assertion about what those four packages do, which is
+# most of what makes it worth its 3.5s (measured 2026-08-01). In `make ci` as
+# step [3f/13].
+# See tools/tycho-q/run.sh.
+q-check: tychoc
+	@sh tools/tycho-q/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the

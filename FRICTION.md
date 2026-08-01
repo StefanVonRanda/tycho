@@ -1495,3 +1495,294 @@ shrank them. Padding this list would make the eight above harder to act on.
   structurally valid archive — is refused before the first write, destination
   never created. That is leg 4a of `tools/tycho-ar/run.sh`, and neutering the
   substitution reddens it, so the leg is measured rather than assumed.
+
+## Re-scored against a type-system-shaped program, 2026-08-01 (head `75e8175`)
+
+The section above re-scored this file against a batch, data-shaped program and
+found one language default steering a whole family of library interfaces. But
+`tools/tycho-ar/main.ty` is structurally flat: **one struct, no enum of its own,
+no closure, and no recursion except a directory walk.** So the half of the
+language the documentation is loudest about — recursive sum types, generics with
+`where` constraints, first-class function values — had still never been exercised
+by anything in this tree but `corelib/json/json.ty` and the test corpus. Every
+judgement in this file about what it costs to *model* something was written by
+programs that modelled nothing.
+
+`tools/tycho-q/main.ty` does. 2059 lines: a lexer, a recursive-descent parser
+producing a recursive `Expr` enum, a `Value` sum type that every row cell and
+every intermediate result flows through, an evaluator that is an exhaustive
+`match` over the AST, a stable multi-key merge sort taking a comparator as a
+first-class value, and two readers. It runs
+`select name, qty * price as total from sales.csv where region == 'eu' and
+qty > 10 order by total desc limit 5` and returns the right rows. It is gated by
+`make q-check` (`tools/tycho-q/run.sh`) on a 31-query transcript, `select *`
+being byte-identical to its input, CSV and JSON agreeing under `cmp`, and ten
+failure legs refusing with empty stdout.
+
+Below is what writing it surfaced, **ranked**, worst first. The two corelib
+defects at the top are filed as unchecked phases in the plan that produced this
+section and are **deliberately not fixed here** — they are corelib changes and
+this was a tools phase. The last group is the entries that got smaller as they
+were written down, and they are labelled as such rather than padded.
+
+### 1. `core:json` accepts input it cannot represent, three ways, and cannot report any of them
+
+**This is the most serious thing this program found, and it has no symptom.**
+Measured by probe, not inferred. `corelib/json/json.ty@parse_number` takes an
+optional `-` and then digits, and never consumes a `.`:
+
+```
+$ ./pj '1.5'          → kind:num  out: 1                      exit 0
+$ ./pj '[1.5]'        → tycho: out of memory                  exit 1
+$ ./pj '[{"a":1.5}]'  → kind:arr  out: [{"a":1,"5}]":null}]   exit 0
+```
+
+Three different failures, and **two of them exit 0**:
+
+- **Bare `1.5` truncates silently** to `JNum(1)`.
+- **`[1.5]` exhausts memory from five bytes of input.** `parse_value` consumes
+  nothing at the `.`, and `corelib/json/json.ty:81-92` advances only on `,` or
+  `]`, so `JNum(0)` is pushed forever. Not a slow parse — an unbounded one, from
+  input a user could paste by accident.
+- **`[{"a":1.5}]` exits 0 with a fabricated column.** The leftover `.5}]` is read
+  as the next KEY. **This is the shape a table reader actually meets**, and it is
+  the one with nothing to notice.
+
+**The root cause is not the missing float path — it is the missing error
+channel.** `corelib/json/json.ty@parse` returns `Json`, not `Result(Json, E)`, so
+no caller can ask whether a parse succeeded. `corelib/json/json.ty:12-13`
+documents the parser as lenient and "failing closed to `JNull`", and it is
+lenient in the sense that it always returns something; closed is not what an OOM
+or an invented key is.
+
+**What it cost, measured.** `tycho-q` cannot inherit any of that — a query tool
+whose worst case is returning wrong rows cannot be built on a reader that invents
+columns — so `tools/tycho-q/main.ty@json_guard` validates the raw bytes *before*
+handing them over. Two layers, and the second is load-bearing rather than tidy: a
+token alphabet, and **bracket nesting**, because the non-termination needs a byte
+`parse_value` consumes none of sitting at a value position inside an array, and
+requiring brackets to nest is what makes the two survivors (`}` and `:`)
+unreachable there. That is most of a second JSON parser, written to check the
+first. What it does **not** claim is full validation: `[1 2]` passes it and
+`core:json` reads two elements — lenient, but it terminates and invents nothing.
+
+**Cost to fix:** make `parse` fallible and make `parse_array` unable to loop
+without advancing. Both are small and neither needs a language change. A float
+path is a separate, larger question that interacts with item 2, since
+`core:decimal` is the only exact numeric tower here and `JNum` is an `int`.
+**This ranks first because every other item on this list is a cost paid by the
+programmer; this one is paid by the person reading the output.**
+
+### 2. `core:decimal` has no `div`, so the ordinary averaging query has no answer
+
+`corelib/decimal/decimal.ty` has `from_int`, `from_str`, `add`, `sub`, `mul`,
+`cmp`, `rescale`, `to_str`, `neg`, `abs` and `is_zero`. **No division.** The
+package's own header says why, and the reason is right: division needs a target
+scale and a rounding policy and it has neither.
+
+Three options, and all three lose. Rejecting `/` at parse time refuses `6 / 2`,
+which has a perfectly good exact answer. Converting to `float` puts a lie in
+exactly the place `core:decimal` exists to prevent one, and puts it there
+quietly. Integer truncation is honest for `VInt / VInt` and has no answer at all
+when either side is a decimal, so it decides half the question.
+
+`tycho-q` chose **exact-only**: `/` computes when the result is exact and errors
+when it is not, with the zero check *before* the operator because division by a
+zero value aborts the process (`docs/spec/09-expressions.md:27-28`) and an abort
+is not an error message.
+
+**The cost is large and this is not pretending otherwise.** `select total /
+count` — the single most common reason anyone writes `/` in SQL — fails on almost
+all real data:
+
+```
+$ tycho-q 'select name, qty / 5 as h from sales.csv'
+tycho-q: `/` is exact-only: 12 / 5 is not a whole number, and core:decimal has
+no div, so there is no rounding policy to apply
+```
+
+**Cost to fix:** not `div(a, b)` but `div(a, b, scale, mode)`, with **both named
+by the caller**, plus the rounding modes spelled out — at minimum half-up and
+toward-zero, since `corelib/decimal/decimal.ty@rescale` already truncates toward
+zero and a second policy must not silently disagree with it. It ranks second
+rather than first because the failure is loud: a caller who hits it knows.
+
+### 3. `core:sort` has no comparator-taking sort at all
+
+Read against the signatures, not assumed. `corelib/sort/sort.ty@by_key` takes
+`key: fn($T) -> int` — **the key is an `int`**, so it can express no order that
+does not fit in one machine word, and this program's order ranks by kind and then
+by value across `VStr` and `decimal.Decimal`. There is no order-preserving
+injection of a string into an `int`. `corelib/sort/sort.ty@asc` and
+`corelib/sort/sort.ty@desc` are `where comparable(T)` over the values themselves
+and take ONE array and ONE direction, so `order by a asc, b desc` — two keys, two
+directions, same rows — fits no signature in the package.
+`corelib/sort/sort.ty@argsort` has the same ceiling.
+
+So `tools/tycho-q/main.ty@merge_sort` exists: bottom-up, iterative, stable,
+comparator as a first-class function value, ~35 lines. **Stability is a property
+of the merge, not of a tiebreak** — the merge takes the left run on `<= 0`, and a
+total-by-index comparator would look identical on every test but reverse tie order
+under `desc`, so `order by k desc limit 3` on a column with ties would return
+different rows by a rule nobody wrote down.
+
+**Cost to fix:** one `sort_by(xs, cmp: fn($T, $T) -> int)` beside the existing
+entry points, ~35 lines that already exist in this tree. **Any program ordering by
+more than one key, in more than one direction, or over a type with no `comparable`
+instance writes its own sort today**, and each one gets its own answer to the
+stability question.
+
+### 4. `Result(void, E)` is not expressible, and a bare `or_return` is not a statement — one defect, three sightings
+
+A helper that can only succeed or fail must still return *something*, so it
+returns `Result(int, E)` and ends in a meaningless `Ok(0)`. Then that meaningless
+value must be **bound at every call site**, because `eat_kw(...) or_return` alone
+on a line is refused: "a statement must be a declaration, assignment, or call — a
+bare expression has no effect". `docs/spec/10-statements.md:16-18` names
+`or_return` among the forms refused as a bare-expression statement, so this is
+specified rather than a compiler quirk — but the specification is of the general
+rule, and the interaction with a void-returning fallible function is what bites.
+
+Three independent sightings, in code with nothing else in common: the parser's
+keyword eater, and `tools/tycho-q/main.ty@check_cols`, a validator that only
+succeeds or fails and must therefore carry `_ := check_cols(l, hdr) or_return`
+through its own recursion. **It is not a parser-shaped problem; it is what happens
+to every validator.**
+
+**Cost to fix:** either a unit-like type usable as a `Result`'s success payload,
+or admitting `or_return` as a statement when the value is discarded. Both are
+language changes, which is why this ranks below three corelib items that are not.
+
+### 5. An enum cannot be asked which variant it is without binding a payload
+
+There is no `is`, no tag accessor, and a match arm must name a binder it never
+uses. `Value` needs its tag **constantly** — every comparison rule, every
+arithmetic rule and the whole kind-rank order are "what kind is this" — so
+`tools/tycho-q/main.ty@kind` is the tag accessor the language does not have,
+hand-written once, with binders that are pure decoration.
+
+Writing it once and switching on an `int` everywhere is much the lesser evil, and
+that is the finding: **a sum type used as data rather than as control flow wants a
+discriminator, and the only way to get one is to build it.** The alternative is
+that decoration at every site, which is where a reader stops being able to see
+which arms actually use their payloads.
+
+### 6. Two error types cannot share an `or_return` chain
+
+`PErr` (parse — carries a byte offset) and `RErr` (runtime — carries a column name
+or nothing) genuinely differ, and folding them would put a meaningless `off: 0` on
+two thirds of the messages. But `Result(T, PErr)` and `Result(T, RErr)` are
+different types and there is **no `From`-style error conversion**, so no function
+can propagate across the boundary.
+
+Here they meet only in `main` and the cost is one extra `match`. That is why it
+ranks sixth and not higher — but the cost is structural, not proportional: **a
+program with three error types and a call graph that mixed them would pay this at
+every boundary, with no language feature to make it cheaper**, and the pressure
+would be to collapse them into one type carrying fields that are meaningless for
+two thirds of its values.
+
+### 7. `core:iter` is unusable for a fallible pipeline stage — and this entry got *smaller* as it was written
+
+**Labelled a correction, because the first version of this finding was too broad
+and a probe disproved it.** The row filter is the exact shape `core:iter` exists
+for, and it cannot be written with it:
+
+```
+$ ys := iter.filter(xs, fn(x: int) -> bool: x > 1)
+error: argument 2 of 'iter__filter' is fn(int) -> bool, which does not fit the
+       parameter pattern
+
+$ ys := iter.filter(xs, fn(x: int) -> int: chk(x) or_return)
+error: or_return requires the enclosing function to return a Result, but it
+       returns int
+```
+
+The first draft read those two diagnostics as a **language** rule against
+fallible higher-order functions. It is not. A later probe declared the parameter
+type explicitly:
+
+```
+fn msort(xs: [int], f: fn(int, int) -> Result(int, E)) -> Result([int], E)
+```
+
+and it compiles, accepts **both** a named function and a lambda in that position,
+and `or_return` propagates a comparator failure out through it. So the true claim
+is narrower and lands somewhere else: **it is `corelib/iter/iter.ty@filter`'s
+signature.** `keep` is declared `fn($T) -> int`, which pins the lambda's return
+type — a lambda's body is a single expression (`docs/spec/11-functions.md:70`) and
+its return type is fixed by the parameter pattern it is passed to, so there is no
+way to widen it to a `Result` and no way to write the handling `match` inline.
+
+Two things follow, and the second is the one worth having. Every caller spells its
+predicate as a 0/1 `int` in a language that has `bool`. And **`core:iter` has no
+fallible counterpart at all** — no `try_filter`, no `filter` over
+`fn($T) -> Result(int, $E)` — so every stage of a query engine that can fail, which
+is most of them, is a plain `for` loop with `or_return` in the body instead.
+
+**Cost to fix: a signature, not a language change**, which is precisely what the
+correction bought. The broad version of this claim would have sent someone to the
+compiler.
+
+### Smaller than they looked once written down
+
+Recorded because they were hit, ranked below the line because writing them out
+shrank them. Padding this list would make the seven above harder to act on.
+
+- **There is no no-op statement, and the workaround is now known.** An absent
+  `where` should print nothing, so a `match` arm has no work — and an empty arm
+  cannot be spelled (`pass` is not a keyword; same "must be a declaration,
+  assignment, or call" error). The section above already records that a match arm
+  cannot be empty. **What is new is the cheap answer for an arm in the middle of a
+  statement sequence: a declaration IS a legal statement where a bare expression
+  is not, so bind something** — `ok := sz`, `_ := 0`. Only when the match is the
+  whole body is the more expensive lift needed, giving every arm a `return`;
+  `tools/tycho-q/main.ty@where_line` and `tools/tycho-q/main.ty@limit_line` exist
+  for that reason and no other. **Real, and two lines each.**
+- **A cursor threaded by `inout` cannot also be passed by value in the same
+  call.** `lex_string(s, n, pos, &pos)` is refused: "variable 'pos' is passed to
+  an inout parameter and also by value in the same call ... the by-value copy
+  would alias the inout'd value". **The diagnostic is good and the rule is
+  right** — this is the aliasing bug it exists to prevent, caught at compile time.
+  What it leaves is a shape rule for anyone writing a lexer here: a function
+  wanting both "where I started" and "where I am" derives the first from the
+  second on entry. **Cost: one line per lexer function, and no bug.**
+- **A bare path in `from` cannot be absolute.** `from /tmp/x.csv` lexes the
+  leading `/` as division and fails with "expected a source path after `from`" —
+  a diagnostic about division for a problem about quoting. **A tool wart, not a
+  language one**: `from '/tmp/x.csv'` works, the escape hatch predates the
+  problem, and the fix is in this program's lexer. Recorded only because the
+  diagnostic points away from the cause.
+
+### What did not go wrong, which is also data
+
+- **Recursive enums work, in both positions, and the phase that depended on it
+  probed before writing.** `EBin(int, Expr, Expr)` (direct) and
+  `ECall(string, [Expr])` (through an array payload) both compile in a
+  `package main` program, with a `match` that recurses into itself from either.
+  Zero diagnostics. The AST is therefore direct recursion and **not** the
+  index-into-a-node-array fallback the plan had budgeted for.
+- **`Option` and `Result` plumbing needed no workaround anywhere.** `Option(Expr)`
+  and `Option(int)` are usable as struct fields over a program-local recursive
+  enum, `None` infers its type from the field it is assigned to, and
+  `Some(parse_expr(...) or_return)` composes. Given items 4 and 6 above, this is
+  worth stating: what is missing from the `Result` story is a *void* payload and a
+  *conversion*, not the plumbing.
+- **First-class functions carry their weight.** A lambda with a `Result` return
+  type is accepted; a closure capturing two arrays compiles and works; capture is
+  by deep copy at creation, so the sort's key matrix is copied once rather than
+  per comparison. `tools/tycho-q/main.ty@merge_sort` takes its comparator as a
+  value and that is the ordinary way to write it here.
+- **A qualified enum from another package works as a payload and as a parameter
+  type** — `VDec(decimal.Decimal)` and `json.Json` — and nested patterns over
+  another package's enum match directly, qualified: `Err(io.NotFound)` works,
+  bare `NotFound` is "not a variant of io__IoErr", which is the right answer.
+- **`core:decimal` preserves scale through a round trip.** `decimal.from_str("1.50")`
+  renders back as `1.50`, so a decimal literal survives byte-exactly and `0.1 +
+  0.2` is the three characters `0.3` — not `0.30000000000000004` and not `0.30`.
+  There is no float anywhere in this program, and that is the reason a query tool
+  could be written here at all.
+- **The last of three phases compiled first try, zero diagnostics** — including
+  the comparator sort, the closure and the JSON reader. This matches what the two
+  re-scorings above found and continues to contradict the picture the older half
+  of this file paints.
