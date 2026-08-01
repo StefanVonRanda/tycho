@@ -15,38 +15,41 @@
 # betray the person using it: return the wrong rows, and look like it worked.
 # Every leg below is aimed at one route to that.
 #
-#   [1] THE TRANSCRIPT MATCHES A GOLDEN. 30 queries covering the parse (`--explain`
+#   [1] THE TRANSCRIPT MATCHES A GOLDEN. 33 queries covering the parse (`--explain`
 #       s-expressions, so precedence is proved by shape and not by prose), cell
 #       typing, `where`, decimal arithmetic, the total order, sort stability,
-#       multi-key mixed directions, `limit`, and both readers. The golden is the
-#       concatenated stdout, so it reddens on any change to a row, an order, a
-#       header or a rendering.
+#       multi-key mixed directions, `limit`, JSON floats read exactly, and both
+#       readers. The golden is the concatenated stdout, so it reddens on any
+#       change to a row, an order, a header or a rendering.
 #   [2] READING DOES NOT REWRITE. `select *` over each fixture is `cmp`-identical
 #       to the fixture file itself. A query that neither filters nor computes must
 #       return the bytes it was given -- including `007`, `-0`, `0080`, a 26-digit
 #       integer, an empty field, a quoted comma, an embedded newline and UTF-8.
 #   [3] CSV AND JSON AGREE. The same logical query over sales.csv and sales.json
 #       is compared with `cmp`. Two readers that disagree would make the source
-#       format part of the answer.
+#       format part of the answer. Since 2026-08-01 that query includes `price`,
+#       a DECIMAL in CSV and a FLOAT in JSON: it filters, orders, multiplies and
+#       renders it, and the two sources still produce the same bytes.
 #   [4] THE FAILURE LEGS REFUSE. A malformed query, a missing file, an unknown
 #       column, an incompatible comparison and a `/` with no exact answer each
 #       exit non-zero with their reason on STDERR and NOTHING on stdout. The
 #       empty-stdout half is the load-bearing half: tycho-q builds the whole
 #       result before printing, so a consumer never reads a truncated CSV it
 #       cannot tell is truncated.
-#   [5] core:json's ERROR CHANNEL REACHES THE USER. `[{"a":1.5}]` and `[}]` are
+#   [5] core:json's ERROR CHANNEL REACHES THE USER. `[{"a":1.}]` and `[}]` are
 #       refused, each naming the byte that failed. Handed to the OLD `json.parse`
-#       the first exited 0 having FABRICATED a column -- the leftover `.5}]` was
-#       read as the next key -- and the second exhausted memory from three bytes,
+#       `[{"a":1.5}]` exited 0 having FABRICATED a column -- the leftover `.5}]`
+#       was read as the next key -- and `[}]` exhausted memory from three bytes,
 #       because `parse_value` consumed nothing at a byte it did not recognise
 #       while the array loop advanced only on `,` or `]`. Neither was reportable:
 #       `parse` returned `Json`, not a `Result`, so the package had no error
 #       channel and tycho-q carried its own pre-validator in front of it.
 #       `corelib/json/json.ty@parse_checked` fixed that on 2026-08-01 and the
-#       pre-validator is gone; these two legs now assert on the CORELIB's message
-#       (`tools/tycho-q/main.ty@json_err` relabels it and adds the float advice),
-#       which is what proves the error actually crosses the package boundary and
-#       reaches stderr.
+#       pre-validator is gone; these legs assert on the CORELIB's message
+#       (`tools/tycho-q/main.ty@json_err` relabels it and adds the advice about
+#       which spellings are legal), which is what proves the error actually
+#       crosses the package boundary and reaches stderr. `[{"a":1.5}]` itself is
+#       no longer here at all: it is Q32 in the golden, because it PARSES now.
 #
 # THE GOLDEN IS DETERMINISTIC ONLY BECAUSE THE FIXTURES ARE BUILT HERE. Every
 # fixture is written by this script from a heredoc literal -- never from
@@ -79,12 +82,14 @@ fi
 # ---------------------------------------------------------------------------
 # the fixtures -- every awkward case the phases used, from literals only.
 #
-# sales.csv and sales.json carry the SAME five rows. `price` is spelled as a
-# JSON string because core:json has no float path at all and now refuses `1.50`
-# outright rather than let it be read as 1 (DECISION 3 in
-# tools/tycho-q/main.ty); a JSON string is not re-classified, so it stays a
-# string there and a decimal here. That asymmetry is the documented cost, and
-# leg [3] below picks a query over the columns where the two agree.
+# sales.csv and sales.json carry the SAME five rows, and as of 2026-08-01 they
+# carry them with the SAME SPELLINGS. `price` used to be a JSON STRING here,
+# because core:json had no float path and a JSON `1.50` could not be read at
+# all; a JSON string is not re-classified, so it stayed a `VStr` there and was a
+# `VDec` here, and leg [3] had to pick a query over the columns where the two
+# agreed. `corelib/json/json.ty@JFloat` closed that, `price` is a JSON NUMBER
+# now, and leg [3] covers it -- which is the whole point of the change: the two
+# readers no longer disagree about what a price is.
 # ---------------------------------------------------------------------------
 fix="$T/fix"; mkdir -p "$fix"
 
@@ -102,18 +107,21 @@ Eve,eu,7,1.50,11,dup
 EOF
 
 cat > "$fix/sales.json" <<'EOF'
-[{"name":"Ada","region":"eu","qty":12,"price":"1.50","code":"007","note":"Hello, world"},
- {"name":"Bo","region":"us","qty":-3,"price":"0.10","code":"42","note":"line one\nline two"},
- {"name":"Cy","region":"eu","qty":7,"price":"0.20","code":"0080","note":"café"},
- {"name":"Di","region":null,"qty":0,"price":"2.00","code":"9","note":"plain"},
- {"name":"Eve","region":"eu","qty":7,"price":"1.50","code":"11","note":"dup"}]
+[{"name":"Ada","region":"eu","qty":12,"price":1.50,"code":"007","note":"Hello, world"},
+ {"name":"Bo","region":"us","qty":-3,"price":0.10,"code":"42","note":"line one\nline two"},
+ {"name":"Cy","region":"eu","qty":7,"price":0.20,"code":"0080","note":"café"},
+ {"name":"Di","region":null,"qty":0,"price":2.00,"code":"9","note":"plain"},
+ {"name":"Eve","region":"eu","qty":7,"price":1.50,"code":"11","note":"dup"}]
 EOF
 
 # one classification edge case per row. `v * 1` succeeds only where the cell was
 # typed as a number, so leg [1]'s Q13 is a verdict on each in turn, and leg [2]'s
 # round trip proves none of them is rewritten on the way out. The 26-digit
-# integer is here rather than in sales.csv because a JSON integer that large
-# would overflow core:json's int-only JNum, which is a different finding.
+# integer used to be confined to CSV because a JSON integer that large wrapped
+# silently inside core:json's int-only JNum; it does not any more -- an integer
+# that does not round-trip through 64 bits becomes a JFloat carrying its own
+# lexeme, which tycho-q reads through core:decimal, so float.json below now
+# asserts the same digits survive the JSON reader too.
 cat > "$fix/types.csv" <<'EOF'
 n,v
 1,007
@@ -141,8 +149,31 @@ EOF
 # of keys in first-appearance order, and every earlier row needs a null in it.
 printf '%s\n' '[{"a":1,"b":2},{"b":5},{"a":9,"c":"new"}]' > "$fix/sparse.json"
 
-printf '%s' '[{"a":1.5}]' > "$fix/float.json"   # was: exit 0, key `.5}]`
-printf '%s' '[}]'         > "$fix/spin.json"    # was: out of memory
+# THE FLOAT FIXTURE, AND WHAT EACH COLUMN IS FOR. `[{"a":1.5}]` alone used to
+# live here as a REFUSAL: it was the document the old json.parse read as
+# `{"a":1,".5}]":null}` at exit 0, fabricating a column. It is a SUCCESS case
+# now, and each column proves a different half of "exactly":
+#
+#   a      1.5    the plain case, and the one the old parser corrupted
+#   tenth  0.1    NOT representable in binary64. If tycho-q read the JFloat's
+#                 VALUE instead of its LEXEME this would come back as
+#                 0.1000000000000000055511151231257827, and the golden says it
+#                 does not. This column is the whole reason `json_float_cell`
+#                 exists.
+#   big    30 digits, far past 2^63. core:json cannot hold it as an int and does
+#                 not try; core:decimal is arbitrary precision, so every digit
+#                 survives. The binary64 route would have lost them at the 17th.
+#   scale  1.50   a trailing zero. core:decimal keeps the scale it parsed, so
+#                 `1.50` comes back `1.50` and not `1.5` -- the JSON lexeme and
+#                 the CSV cell agree on this too.
+printf '%s' '[{"a":1.5,"tenth":0.1,"big":123456789012345678901234567890,"scale":1.50}]' > "$fix/float.json"
+
+# the two spellings json_float_cell refuses, one file each, so a leg that stops
+# firing cannot hide behind the other.
+printf '%s' '[{"a":1e3}]'   > "$fix/exp.json"      # an exponent: refused HERE, not by core:json
+printf '%s' '[{"a":-0.0}]'  > "$fix/negzero.json"  # the round trip drops the sign
+printf '%s' '[{"a":1.}]'    > "$fix/badnum.json"   # malformed: core:json's own BadFloat
+printf '%s' '[}]'           > "$fix/spin.json"     # was: out of memory
 
 # ---------------------------------------------------------------------------
 # [1] the transcript, against the golden
@@ -210,6 +241,15 @@ q 'Q29 json select *'   'select * from sales.json'
 q 'Q30 json sparse'     'select * from sparse.json'
 q 'Q31 order by alias'  "select name, qty * price as total from sales.csv where region == 'eu' order by total desc limit 5"
 
+# --- JSON floats, read through the LEXEME and not through binary64. Q32 is the
+# exactness claim (see the float.json comment for what each column proves) and
+# Q33 is the ordering-and-arithmetic claim; leg [3] below turns Q33 into a `cmp`
+# against the identical query over the CSV fixture, which is what makes it a
+# claim about JSON floats and CSV decimals AGREEING rather than a claim about
+# JSON alone.
+q 'Q32 json float exact' 'select * from float.json'
+q 'Q33 json float order' 'select name, price, qty * price as total from sales.json where price > 0.15 order by price desc, name asc'
+
 if [ "$RECORD" = 1 ]; then
     if [ "$fail" -ne 0 ]; then echo "FAIL: refusing to RECORD from a failed run"; exit 1; fi
     cp "$out" "$golden"; echo "rec  tycho-q"
@@ -233,11 +273,20 @@ done
 # ---------------------------------------------------------------------------
 # [3] CSV and JSON agree
 #
-# `where` + both order directions + a tie broken by the second key + `limit`,
-# over the columns the two fixtures spell identically (DECISION 3's asymmetry
-# puts `price` outside that set, deliberately).
+# `where` + both order directions + a tie broken by the second key + `limit`.
+#
+# `price` IS IN THIS QUERY, and that is the load-bearing change of 2026-08-01.
+# It used to be excluded: a price was a `VDec` from CSV and a `VStr` from JSON,
+# so the two readers disagreed about its kind, its order and its arithmetic, and
+# the identity query had to route around it. It is a JSON NUMBER in the fixture
+# now, so this leg compares a JSON float against a CSV decimal of the same value
+# in all four ways that can differ -- it FILTERS on it (`price > 0.15`, a
+# cross-source comparison), ORDERS on it, COMPUTES with it (`qty * price`) and
+# RENDERS it -- and `cmp` says the two sources produce the same bytes. Had the
+# lexeme been routed through binary64 instead, `0.10` and `0.20` would not have
+# survived the multiply and this is the leg that would have caught it.
 # ---------------------------------------------------------------------------
-ident="select name, qty, code from %s where region == 'eu' order by qty desc, name asc limit 2"
+ident="select name, qty, code, price, qty * price as total from %s where region == 'eu' and price > 0.15 order by price desc, name asc limit 2"
 # shellcheck disable=SC2059
 "$Q" "$(printf "$ident" sales.csv)"  > "$T/id.csv"  2>"$T/id.err" || bad "identity: CSV leg failed"
 # shellcheck disable=SC2059
@@ -291,15 +340,24 @@ refuses 'decimal /'         '`/` on a decimal has no exact result' \
         'select name, price / qty as u from sales.csv'
 refuses 'no truthiness'     '`where` needs a boolean' \
         'select name from sales.csv where qty'
-refuses 'json float'        'JSON numbers here must be integers' \
-        'select * from float.json'
+# `[{"a":1.5}]` USED TO BE A REFUSAL LEG HERE. It is Q32 in the golden now --
+# core:json reads the float and tycho-q reads its lexeme exactly. What is
+# refused instead is the narrower set, and each leg names a DIFFERENT mechanism:
+# the first two are tycho-q's own decision (json_float_cell), the third is
+# core:json's parse error arriving through the rewritten json_err advice.
+refuses 'json exponent'     'the number 1e3 has no exact decimal spelling here' \
+        'select * from exp.json'
+refuses 'json negative zero' 'the number -0.0 has no exact decimal spelling here' \
+        'select * from negzero.json'
+refuses 'json malformed num' "byte 8: '.' or exponent with no digits after it -- a JSON number needs at least one digit after the \`.\`" \
+        'select * from badnum.json'
 # `[}]`: the old OOM. The message is the corelib's own -- `}` begins no value --
 # and the byte offset is the point: it names the `}` at 1, not the document.
 refuses 'json bad byte'     'spin.json: byte 1: byte begins no JSON value' \
         'select * from spin.json'
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-q: green (31-query transcript == golden; select * over 2 fixtures byte-identical to the input; CSV and JSON agree under cmp; malformed query, missing file, unknown column, bad comparison, inexact / and both core:json parse errors all refused with empty stdout)"
+    echo "tycho-q: green (33-query transcript == golden; select * over 2 fixtures byte-identical to the input; CSV and JSON agree under cmp on a query that filters, orders, multiplies and renders a price that is a decimal in one and a float in the other; malformed query, missing file, unknown column, bad comparison, inexact /, both refused JSON float spellings and both core:json parse errors all refused with empty stdout)"
 else
     echo "tycho-q: FAIL"; exit 1
 fi

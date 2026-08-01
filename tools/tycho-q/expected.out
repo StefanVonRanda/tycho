@@ -171,3 +171,12 @@ name,total
 Ada,18.00
 Eve,10.50
 Cy,1.40
+=== Q32 json float exact
+a,tenth,big,scale
+1.5,0.1,123456789012345678901234567890,1.50
+=== Q33 json float order
+name,price,total
+Di,2.00,0.00
+Ada,1.50,18.00
+Eve,1.50,10.50
+Cy,0.20,1.40

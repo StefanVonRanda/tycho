@@ -15,6 +15,8 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `make ar-check` | ~3s | `tools/tycho-ar/`, and any `core:compress`/`sha256`/`io`/`path` change that moves a digest, the walk order or the archive round trip — **the only lane that runs anything under `tools/tycho-ar/`** |
 | `make q-check` | ~3.5s | `tools/tycho-q/`, and any `core:csv`/`core:json`/`core:decimal`/`core:sort` change that moves a header, a cell's classification, a decimal's scale or a sort order — **the only lane that runs anything under `tools/tycho-q/`** |
 | `make server-check` | ~7s | `server/main.ty`, `server/www/`, `server/run.sh`, and the `core:net` accept/recv/send path |
+| `make corelib-examples` | ~44s (43.7 s, measured 2026-08-01) | `examples/corelib/**`, and any corelib change with a worked example — it compiles and runs each one against its golden. `sh examples/corelib/run.sh` is the same work at the same cost (43.5 s in the same session) |
+| `make corelib` | ~49s (49.4 s, measured 2026-08-01) | **any `corelib/` change.** Builds and runs every `corelib/test/<pkg>/main.ty` against `corelib/test/<pkg>.out`. **`make test` cannot redden for a corelib change** — see the rule below — so this is the gate, not a supplement to one |
 | `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
 | `sh scripts/asan_self.sh` | minutes | `src/tychoc.c` under ASan/UBSan over the whole corpus |
 | `make test-fast` | ~1 min | the same 560 fixtures as `make test`, over a worker pool — **advisory, see below** |
@@ -26,7 +28,16 @@ cheapest gate that can actually redden for your change.** Running a broader one
 - **Markdown, comments, evidence blocks** → the two doc gates. Nothing else.
   They cannot affect a compiled artifact, so `make test` cannot tell you
   anything `check_citations.py` did not.
-- **A `.ty` fixture or a corelib change** → `make test`.
+- **A `.ty` fixture** → `make test`.
+- **A `corelib/` change** → `make corelib`, plus `make corelib-examples` if the
+  package has a worked example, plus `make shim-check` if a `<pkg>_shim.c` moved.
+  **Not `make test`, which cannot redden for it**: `tests/run.sh:113` globs
+  `examples/*.ty tests/*.ty` at the top level and never descends, so no file
+  under `corelib/` is in its corpus. This line used to read "a `.ty` fixture or a
+  corelib change → `make test`", which sent every corelib change to an eight-minute
+  gate that could not fail for it — the expensive kind of wrong, because it looks
+  like caution. Run `make test` for a corelib change only when something *outside*
+  `corelib/` changed too.
 - **`src/tychoc.c`** → `make test`.
 - **`make ci` runs once**, at the end of a chain of related work, or when a
   phase adds a CI step. Not per phase. Not "to confirm". Once.

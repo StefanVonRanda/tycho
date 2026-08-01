@@ -745,7 +745,7 @@ The six, quoted from `corelib/json/json.ty`:
   changed, no `_shim.c` was touched, and `tests/run.sh:113` globs the top level
   only. The whole diff is three files.
 
-- [ ] **Phase 5 — the consumers, and the closing sweep**
+- [x] **Phase 5 — the consumers, and the closing sweep**
   - Scope: `tools/tycho-q/main.ty`, `tools/tycho-q/run.sh`,
     `tools/tycho-q/expected.out`, whichever of the other five consumers needs a
     change, `FRICTION.md`, `CLAUDE.md`.
@@ -771,6 +771,201 @@ The six, quoted from `corelib/json/json.ty`:
     scripts/check_citations.py`, `sh scripts/check_links.sh`, and **`make ci`
     once, last** as the closing sweep. If `make ci` reddens, fix with the failing
     step's own gate and re-run that gate — never `make ci` as a loop.
+
+  **Evidence.**
+
+  *The lexeme route, and why it is not the value route.*
+  `tools/tycho-q/main.ty@json_cell` gained a `"float"` arm delegating to the new
+  `tools/tycho-q/main.ty@json_float_cell`, which takes `json.as_lexeme(j)` — the
+  number as the document spelled it — and never `json.as_float(j)`. The lexeme is
+  bracketed exactly as `tools/tycho-q/main.ty@classify` brackets a CSV cell:
+  `tools/tycho-q/main.ty@num_shape` in front (because
+  `corelib/decimal/decimal.ty@from_str` reads `[-|+]digits[.digits]` and nothing
+  else, so an unchecked lexeme would be mis-read rather than refused) and the
+  round trip `decimal.to_str(d) == lx` behind it. A JSON float therefore lands in
+  `VDec` and stays exact.
+
+  *Two spellings are refused rather than rounded*, each because accepting it only
+  from JSON would contradict what the same text already means elsewhere in the
+  program: `1e3` (the query lexer rejects the literal, and a CSV cell reading
+  `1e3` is a `VStr`) and `-0.0` (the round trip drops the sign, and rewriting a
+  cell is the one thing `select *` must never do — the same call DECISION 1 makes
+  for a CSV `-0`). Both were measured, not predicted:
+
+      exp.json     -> row 1, key `a`: the number 1e3 has no exact decimal spelling here …   exit 1
+      negzero.json -> row 1, key `a`: the number -0.0 has no exact decimal spelling here …  exit 1
+
+  *Phase 7 closed, both halves.* `tools/tycho-q/main.ty@a_kind` gained its
+  `"float"` arm returning **"a number"** — the same article `"num"` gets, because
+  JSON has one number type and the `JNum`/`JFloat` split is a fact about our
+  reader, not about the user's file. Before the arm, `"float"` fell through to the
+  final `return "null"` and a refused float was reported as *"the value is null"*.
+  `tools/tycho-q/main.ty@json_err`'s `BadFloat` advice was rewritten: it used to
+  say "core:json has no float path at all", which stopped being true in `76d5c3d`;
+  `BadFloat` now means a **malformed** fraction or exponent, so the advice names
+  the legal spellings instead:
+
+      badnum.json -> byte 8: '.' or exponent with no digits after it -- a JSON number
+                     needs at least one digit after the `.` and at least one after the `e` …
+
+  *WHICH GOLDEN LINES MOVED, AND WHY — nine lines, all ADDITIONS, zero deletions
+  and zero modifications.* The `diff` before re-recording was exactly:
+
+      173a174,182
+      > === Q32 json float exact
+      > a,tenth,big,scale
+      > 1.5,0.1,123456789012345678901234567890,1.50
+      > === Q33 json float order
+      > name,price,total
+      > Di,2.00,0.00
+      > Ada,1.50,18.00
+      > Eve,1.50,10.50
+      > Cy,0.20,1.40
+
+  **The zero-deletions half is the load-bearing half, and it is not luck.**
+  `tools/tycho-q/run.sh`'s `sales.json` fixture changed in this phase: `price`
+  was five JSON **strings** (`"1.50"`, `"0.10"`, …) and is now five JSON
+  **numbers**. Every one of Q01–Q31 is byte-unchanged through that, including
+  `Q29 json select *`, because a JSON `1.50` now produces the identical `VDec` a
+  CSV `1.50` does and renders identically. Had the lexeme been routed through
+  binary64, Q29 would have moved. It did not.
+
+  Q32's four columns each prove a different half of "exactly": `a` = `1.5` (the
+  plain case, and the document the old parser read as `{"a":1,".5}]":null}`);
+  `tenth` = `0.1`, which binary64 **cannot** represent; `big` = a 30-digit
+  integer, far past 2^63, which `core:json` refuses to wrap and `core:decimal`
+  holds whole; `scale` = `1.50`, whose trailing zero survives because
+  `core:decimal` keeps the scale it parsed.
+
+  *THE JSON-FLOAT-VS-CSV-DECIMAL ORDERING PROOF.* `price` was previously excluded
+  from leg [3]'s identity query by the documented asymmetry (a `VDec` from CSV, a
+  `VStr` from JSON). It is **in** that query now, and the query exercises all four
+  ways the two could differ — it FILTERS on it (`price > 0.15`), ORDERS on it
+  (`order by price desc, name asc`), COMPUTES with it (`qty * price`) and RENDERS
+  it — with the CSV and JSON legs compared by `cmp`:
+
+      select name, qty, code, price, qty * price as total from %s
+      where region == 'eu' and price > 0.15 order by price desc, name asc limit 2
+
+      CSV leg == JSON leg under `cmp`            (leg [3])
+      select * over sales.json == sales.csv      (leg [3], byte-identical to the FILE)
+
+  So a JSON float and a CSV decimal of the same value compare equal, sort
+  together, multiply exactly and render identically.
+
+  *The gate can fail — the lexeme route was broken on purpose and rebuilt.*
+  `json.as_lexeme(j)` replaced by `str(json.as_float(j))`, which is precisely the
+  binary64 route the design refuses. **Four independent legs reddened**, which is
+  why the property is worth its permanent golden lines:
+
+      Q32: exited 1 -- the number 1.23456789012346e+29 has no exact decimal spelling
+      Q29/Q33: 1.50 -> 1.5, 2.00 -> 2.0, 0.20 -> 0.2, 18.00 -> 18.0   (the scale destroyed)
+      leg [3] identity: CSV and JSON disagree on the same query
+      leg [3]: select * over JSON != the CSV fixture
+
+  Reverted; `make q-check` green again.
+
+  *`CLAUDE.md`'s gate table (carried-forward phase 23), with MEASURED timings.*
+  Both numbers are from real runs in this session, not estimates —
+  `make corelib` **49.4 s** and `make corelib-examples` **43.7 s** (and
+  `sh examples/corelib/run.sh` **43.5 s**, the same work). Two rows added, and the
+  rule line split: "a `.ty` fixture **or a corelib change** → `make test`" became
+  a `.ty` fixture → `make test`, and a `corelib/` change → `make corelib`
+  (+ `make corelib-examples`, + `make shim-check` if a shim moved). The claim
+  underneath it was **verified rather than inherited**: `tests/run.sh:113` reads
+  `for hi in examples/*.ty tests/*.ty; do` — top level only, no descent — so no
+  file under `corelib/` is in `make test`'s corpus and an eight-minute gate could
+  never have reddened for a corelib change.
+
+  *`FRICTION.md` (carried-forward phase 24).* Finding 1 carries a `[FIXED,
+  2026-08-01]` banner naming both halves and their commits — the error channel by
+  `e291d49` (`parse_checked`, which is what let `json_guard` be deleted), the
+  float path by `76d5c3d`, `\uXXXX` by `62b7a0c`, the RFC 8259 grammar by
+  `d571b16`. **The finding's text is left verbatim**, including the parts no
+  longer true of the tree, because it is the record of what was wrong. The
+  preamble's "deliberately not fixed here" was corrected to say finding 1 is fixed
+  and finding 2 is not, and finding 2 gained a `[STILL OPEN]` banner. One thing
+  the banner records that the finding got wrong: it predicted the float path would
+  be blocked on `core:decimal`; it was not, because storing the **lexeme** routes
+  around the missing `decimal.div` entirely. No number on any record line
+  elsewhere in the file was touched.
+
+  *`make ci` reddened once, at `[3/13]`, and it was a REAL PRE-EXISTING DEFECT —
+  not this phase's, but this phase's to close.* `CI_EXIT=2`:
+
+      FAIL: sanitizer cc
+            undefined reference to `strx_parse_double'
+      fetch: FAIL
+      make[1]: *** [Makefile:304: fetch] Error 1
+
+  **Proved pre-existing rather than assumed:** with all five phase-5 files
+  `git stash`ed, `make fetch` at `d571b16` fails identically. Phase 1 added
+  `corelib/strings/strings_shim.c`; `examples/fetch/run.sh@SHIM` hard-codes the
+  shim list its `--emit-c` sanitizer leg links by hand, and it went stale — for
+  the **second** time, the first being recorded in its own comment. No phase 1–4
+  could see it: none ran `make fetch` or `make ci`, and the normal build path
+  auto-links shims, so only the hand-linked sanitizer leg breaks.
+
+  **The obvious fix would not have worked, and that is the finding.**
+  `examples/site/run.sh` auto-discovers shims by grepping its own source for
+  `core:` imports — and `examples/fetch/main.ty` **does not import
+  `core:strings`**. It imports `core:json`, and phase 2 made
+  `corelib/json/json.ty` import `core:strings`, so the dependency is
+  **transitive** and a grep over the program's own imports finds nothing to add.
+  Checked, not assumed: `grep '^import' examples/fetch/main.ty` lists http, json,
+  sha256, io, path. The fix is therefore the one shim named explicitly, with the
+  transitivity written down; walking the import graph properly is filed as phase
+  10 below.
+
+      make fetch  ->  fetch: green (http+json+sha256+io+path compose; tychoc+ASan;
+                      real libcurl via file://)
+
+  *Gates, each foreground, in the briefed order:*
+
+      make q-check                        ->  tycho-q: green (33-query transcript == golden; …)
+      make corelib                        ->  corelib: all green (tychoc matches goldens)      [49.4 s]
+      sh examples/corelib/run.sh          ->  corelib examples: all green                      [43.5 s]
+      make corelib-examples               ->  corelib examples: all green                      [43.7 s]
+      ./tychoc <each of the six consumers> ->  all six COMPILE ok
+      make test                           ->  passed: 560   failed: 0   /  all green
+      python3 scripts/check_citations.py  ->  citation check: ok
+      sh scripts/check_links.sh           ->  link check: ok (143 markdown files, no dead relative links)
+      make fetch                          ->  fetch: green   (after the shim fix)
+      make ci  (1st)                      ->  CI_EXIT=2, red at [3/13] fetch -- the stale shim list
+      make ci  (2nd, confirmation only)   ->  CI_EXIT=0, reached [13/13]
+                                              "CI GREEN -- tree is good"
+
+  The sweep was run **twice and only twice**: once as the briefed closing sweep,
+  which found the fetch red, and once to confirm the one-line shim fix. The red
+  was diagnosed and fixed with `make fetch` alone — `make ci` was never used as
+  the debugging loop, per `CLAUDE.md`'s "confirmation, not discovery".
+
+  `make site` was **not** run separately and did not need to be: `examples/site/`
+  was not changed by this phase, and `make ci`'s `[3]` step runs it — it reported
+  `site: green` in the first sweep, past the point of the failure.
+
+- [ ] **Phase 10 — the hand-linked shim lists do not follow TRANSITIVE imports**
+  - Found in phase 5, from a real `make ci` red, and deliberately not absorbed:
+    phase 5's fix was the one missing shim, and this is the mechanism that will
+    produce the next one.
+  - `examples/fetch/run.sh@SHIM` is a hard-coded list of `<pkg>_shim.c` paths that
+    the `--emit-c` sanitizer leg links by hand. It has now gone stale **twice** —
+    `core:io`'s shim in 2026-07, `core:strings`' shim in phase 5 — each time
+    turning up as `undefined reference` in a lane nothing else runs.
+  - **The existing auto-discovery does not solve it.** `examples/site/run.sh`
+    greps its own source for `core:` imports, which catches only DIRECT imports.
+    Phase 5's break was transitive: `examples/fetch/main.ty` imports `core:json`,
+    which imports `core:strings`, which owns the missing shim. A grep over the
+    program's own imports finds nothing to add, so copying site's loop into
+    fetch would have left the lane red.
+  - The way out is to walk the import graph — the same closure `tychoc` already
+    computes to auto-link shims on the normal build path, which is why the
+    normal path never breaks and only the hand-linked legs do. Exposing that
+    closure (a `--print-shims` or equivalent) would let every `--emit-c` lane ask
+    the compiler instead of maintaining a list, and would retire both
+    `examples/fetch/run.sh@SHIM` and `examples/site/run.sh`'s grep at once.
+  - Verify: `make fetch`, `sh examples/site/run.sh`. Not `make test` — nothing
+    outside the harness scripts need change.
 
 - [ ] **Phase 6 — `str(float)` is locale-sensitive, and it renders corrupt output**
   - Found in phase 1, out of its scope (`runtime/`, not `corelib/`), so recorded
@@ -801,7 +996,15 @@ The six, quoted from `corelib/json/json.ty`:
   - The phase 1 test deliberately prints **no** raw float for this reason; a
     future phase that wants one in a golden has to close this first.
 
-- [ ] **Phase 7 — two stale strings in `tycho-q` that phase 5 must not miss**
+- [x] **Phase 7 — two stale strings in `tycho-q` that phase 5 must not miss** —
+      **CLOSED BY PHASE 5**, which is what its "do these with phase 5, not
+      separately" note asked for. `tools/tycho-q/main.ty@a_kind` gained a
+      `"float"` arm returning "a number", so a refused float is no longer
+      reported as "the value is null"; `tools/tycho-q/main.ty@json_err`'s
+      `BadFloat` advice no longer claims `core:json` has no float path and now
+      names the legal spellings instead. Kept rather than deleted so the record
+      of where they were found survives; the evidence is in phase 5's block.
+      `make q-check` is green again, red from `76d5c3d` until phase 5 landed.
   - Found in phase 2, outside its scope (`tools/`), so recorded rather than
     absorbed. Both live in `tools/tycho-q/main.ty`, which phase 5 already owns —
     **do these with phase 5, not separately**, and do not let phase 5's
@@ -923,6 +1126,102 @@ deliberately, because they are documentation about this exact work.
       adds a target; six edits across two phases carried zero information. Teach
       the source-to-source citation form the no-line-number `path@SYMBOL`
       spelling the Markdown side already has.
+
+## Status — PLAN COMPLETE
+
+All five phases are done and committed. Phases 6, 9 and 10 are filed follow-ups
+discovered along the way, not conditions of this plan's completion — the same
+standing as everything under "Carried forward". Phases 7 and 8 were closed by
+phases 5 and 4 respectively and are ticked in place rather than deleted, so the
+record of where each was found survives.
+
+**The Goal was: all six `# gap:` lines closed, `core:json` accepting exactly the
+RFC 8259 grammar, every number it accepts round-tripping through `stringify`
+without losing a digit, and the gates proving it. All six are closed.** What each
+became:
+
+1. **No float or exponent value at all** (`1.5` was an error) → `JFloat(float,
+   string)` carries the binary64 value **and the original lexeme**.
+   `corelib/json/json.ty@kind` answers `"float"`, and `@as_float`, `@as_lexeme`
+   and `@as_num` say plainly which question each answers — `as_num` returns 0 for
+   a `JFloat` on purpose, because it promises an exact 64-bit integer and a
+   `JFloat` is precisely the number that is not one.
+2. **No `\uXXXX`** (an error at the `u`) → decoded to UTF-8, with surrogate pairs
+   combined into one 4-byte codepoint rather than two 3-byte halves. A **lone**
+   surrogate, a truncated escape and a non-hex digit are each errors at the byte
+   the writer must fix — never U+FFFD, which would be a guess.
+3. **Integers wrapped silently at 64 bits** — the last silent-wrong-value path in
+   the package → closed by **construction, not detection**: the accumulator is
+   tested before the multiply that would overflow it, then the accumulated int is
+   rendered back and compared to the lexeme, and **only an exact match becomes
+   `JNum`**. `9223372036854775808` is a `JFloat` keeping all nineteen digits.
+4. **A trailing comma was accepted** (`[1,]` parsed as `[1]`) → refused, naming
+   the **comma**, not the closer it was standing on.
+5. **Leading zeros were accepted** (`01` → 1) → refused, naming the zero (and for
+   `-01`, the zero rather than the legal sign).
+6. **Trailing text after the top-level value was ignored** → refused. This one was
+   not merely lenient: `{"a":1}{"b":2}` returned the first object and said nothing
+   about the second, so a caller handed two documents got one and could not tell.
+
+**What `core:json` now accepts:** exactly RFC 8259's grammar. Numbers as
+`-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`; strings with the full escape
+set including `\uXXXX` and surrogate pairs; whitespace on both sides of the
+document. **Every number round-trips byte-identically**, because `stringify`
+emits a `JFloat`'s **stored lexeme** and never a re-rendered float: `1e3` comes
+back `1e3` and not `1000.0`, `1E+3` keeps its capital `E` and its `+`, and a
+30-digit integer keeps all thirty digits.
+
+**What it now refuses:** a trailing comma, a leading zero, trailing text, a raw
+control byte inside a string (phase 8, RFC 8259 §7), a lone or unpaired surrogate,
+a malformed `\u` escape, `1.` / `.5` / `+1` / `1e` / `1e+`, and a number outside
+binary64's range. Every refusal names the byte the writer has to change — a
+deliberate choice recorded above the constants, because a rejection at the wrong
+byte is a diagnosis pointing at innocent code.
+
+**And the consumers stopped working around it.** `tools/tycho-q/main.ty` reads a
+JSON float **exactly**, through the lexeme and `core:decimal`, never through
+binary64. The asymmetry that made a price a `VDec` from CSV and a `VStr` from
+JSON is gone: the two are the same value, and `make q-check` asserts it with
+`cmp` over a query that filters, orders, multiplies and renders it from both
+sources.
+
+**What is still open, named rather than implied.**
+
+Two `# gap:` lines remain in `corelib/json/json.ty`'s header, and **both are
+labelled there as ceilings elsewhere, with the grammar explicitly exonerated** —
+no `# gap:` line about the grammar remains:
+
+- **`gap: REPRESENTATION`** (`corelib/json/json.ty:80`) — `1e400` is well-formed
+  RFC 8259 and is **refused**, because representing it means an infinity or a 0.
+  The way out is a numeric-tower decision (`core:bignum` / `core:decimal`), not a
+  parser change.
+- **`gap: ENCODING`** (`corelib/json/json.ty:87`) — RFC 8259 §8.1 requires valid
+  UTF-8 and this parser does not validate the bytes ≥ 0x80 it copies through. It
+  invents nothing (the bytes out are the bytes in) and a decoded `\uXXXX` is
+  well-formed by construction, so the damage is confined to bytes the document
+  already held. Filed as **phase 9**.
+
+Three unchecked phases this plan filed:
+
+- **Phase 6** — `str(float)` is locale-sensitive and renders **corrupt** output:
+  under a comma-decimal `LC_NUMERIC`, `str(1.5)` is `1,5.0`, which no parser in
+  this tree will read back. Latent today because nothing calls `setlocale`, which
+  is exactly where `strtod` sat before phase 1. Scope is `runtime/`, so it needs
+  `make test`.
+- **Phase 9** — the UTF-8 validation above. One decoder serves both directions,
+  since `corelib/json/json.ty@esc` declines to re-escape bytes ≥ 0x80 for the same
+  missing-decoder reason.
+- **Phase 10** — the hand-linked shim lists do not follow **transitive** imports.
+  Found from a real `make ci` red in phase 5, and the reason it is a phase rather
+  than a one-line fix is that the existing auto-discovery (a grep for direct
+  `core:` imports) would not have caught it.
+
+Nothing in "Carried forward" was closed by this plan except phases 23 and 24 of
+its predecessor, which phase 5 absorbed deliberately. **Phase 20 —
+`core:decimal` has no `div`** — is worth one line here because this plan changed
+what it costs: the lexeme route means a JSON float reaches `core:decimal`
+**exactly** and never needs dividing to get there, so the missing `div` is
+narrower than `FRICTION.md`'s finding 1 predicted, not broader.
 
 ## Out of scope
 
