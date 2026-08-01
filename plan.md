@@ -488,7 +488,7 @@ Done looks like: all four resolved, each with a check that is proved to fail.
   nothing compiled changed, no CI step was added, and `scripts/ci.sh`'s
   `[1b/13]` already invokes the gate that did change.
 
-- [ ] **Phase 4 — `Makefile:<N>@SKIPPED` has now been repointed seven times**
+- [x] **Phase 4 — `Makefile:<N>@SKIPPED` has now been repointed seven times**
   - The previous plan's phase 3 moved it again, `:366`→`:376`, across the same
     four citing lines in `scripts/asan_self.sh` (twice),
     `scripts/check_citations.py` and `scripts/editors_check.sh`. Seven repairs,
@@ -506,6 +506,127 @@ Done looks like: all four resolved, each with a check that is proved to fail.
     widens. Not `Makefile` itself.
   - Verify: `python3 scripts/check_citations.py`, then prove it cannot silently
     pass by deleting the `SKIPPED` line from `Makefile` and showing the red.
+
+  **Evidence, 2026-08-02. THE DECISION: `Makefile@SKIPPED` IS ACCEPTED, and the
+  rule is widened to say so.** Changed: `scripts/asan_self.sh`,
+  `scripts/editors_check.sh`, `scripts/check_citations.py` (docstring, `SYMCITE`,
+  and one guard) and `CLAUDE.md`. `Makefile` itself was not changed — the probes
+  below restored it byte-identically.
+
+  **THE REASON, and it is not "the old form was annoying".** `CLAUDE.md` said to
+  use `@SYMBOL` "for a definition, not for a region", and that wording named the
+  **case** instead of the **property**. What makes the symbol form right is that
+  the target *has a name of its own*, so the line number carries nothing the name
+  does not; a region fails that test because it has no name. A line whose identity
+  **is** a distinctive token passes it. All three citing sites quote the word
+  itself — "the ASan lane SKIPPED", "its 'ASan lane SKIPPED for ilp32'" — so
+  `SKIPPED` is the subject and the address was the accident.
+
+  **THE ARGUMENT THAT SETTLED IT WAS NOT THE CHURN, IT WAS THAT THE CHURN
+  MANUFACTURED A WRONG CITATION.** `git log -L 11,11:scripts/asan_self.sh` shows
+  **twelve** edits to that one line between 2026-07-25 and 2026-08-01, not seven:
+  the anchored number went 202, 245, 253, 267, 270, 278, 286, 304, 313, 335, 366,
+  376. The unanchored companion went 214, 246, 246, 246, 246, 279, 287, 305, 305,
+  327, 358, 358 — and `:358` is a **blank line** of today's `Makefile` (checked;
+  its subject, `TYCHO_NO_ASAN=1`, is on `Makefile:377`). Nothing could see that: a
+  bare `:N` in a *source* file names no path, and `SRCCITE` requires one, so that
+  ref was checked by **nothing** through all twelve edits. Twelve chances, one
+  taken wrongly, zero caught.
+
+  **NO CODE WAS NEEDED TO ACCEPT THE FORM ON THE SOURCE SIDE — the brief's
+  premise, checked.** The brief said `SRCCITE` "still requires a line number with
+  its `@token` form", and that is true of `SRCCITE`. But `SYMCITE_SRC` is a
+  *separate* grammar for exactly the numberless form and it **already** named
+  `Makefile` in its path alternation, for the same reason `DOC_SCAN_PREFIX` does
+  ("it is a file, not a tree"). The two cannot collide: `SRCCITE`'s `Makefile`
+  branch demands a `:` next, `SYMCITE_SRC`'s demands an `@`. So the form was
+  accepted the day it shipped; what was missing was the sanction to use it.
+
+  **ONE REAL WIDENING WAS NEEDED, ON THE MARKDOWN SIDE.** `SYMCITE` (the
+  backticked form) required a **dot** in the path, so `` `Makefile@SKIPPED` ``
+  written in a document matched nothing and was skipped in silence — a fail-open
+  this phase would otherwise have created by sanctioning a form the docs cannot
+  have checked. `Makefile` joined that alternation, and it is admitted by an
+  explicit `sp == "Makefile"` beside the `SRC_PREFIX` test rather than by joining
+  `SRC_PREFIX`, deliberately: that list gates the **line** forms too. Measured
+  2026-08-02, by running this file's own `CITE` grammar with the path alternation
+  widened over every tracked `.md`: 67 `Makefile:N` refs in Markdown are checked by
+  nothing today, four of them **anchored** inside a frozen archive
+  (`Makefile:245@SKIPPED` twice and `Makefile:253@SKIPPED` twice in
+  `docs/internals/plan-loops-cleanup-DONE.md`), and lines 245 and 253 of today's
+  `Makefile` are `tycho-ar` comments containing no `SKIPPED`. That is exactly the
+  record-line collision `CLAUDE.md` predicts for "the next widening", and it is
+  filed as phase 11 rather than absorbed.
+
+  **THE FOUR REFS, BEFORE AND AFTER.**
+
+      scripts/asan_self.sh:11    Makefile:376@SKIPPED,:358   ->  Makefile@SKIPPED, Makefile@TYCHO_NO_ASAN
+      scripts/asan_self.sh:72    Makefile:376@SKIPPED        ->  Makefile@SKIPPED
+      scripts/editors_check.sh:29  Makefile:376@SKIPPED      ->  Makefile@SKIPPED
+      scripts/check_citations.py:398  Makefile:376@SKIPPED   ->  (retired as a grammar example)
+
+  The fourth is different in kind and was handled differently. It was a **shape
+  example** in the docstring's `ANCHORED SOURCE -> SOURCE` section, and that same
+  docstring already argues at its head that a shape example spelled with a real
+  path *is a live citation* and "puts this docstring into the population every
+  renumbering sweep has to repair" — the reason the shape table names the
+  nonexistent `src/example.c`. So it was removed as an example rather than
+  repointed, with a pointer to the new section. Its sibling example on the next
+  line is still a live line ref and is out of this phase's scope; filed as phase 10.
+
+  **THE PROOF — RED, THEN GREEN, TWICE.** `Makefile` was backed up first and
+  `git diff --stat -- Makefile` was empty before the probes.
+
+  *(a) delete the `SKIPPED` echo* (`grep -v 'ASan lane SKIPPED for ilp32'`;
+  `grep -c SKIPPED Makefile` then answers 0):
+
+      citation check: FAILED (9 stale citation(s) above)
+      STALE  scripts/asan_self.sh:11   `Makefile@SKIPPED` -> 'SKIPPED' does not appear anywhere in Makefile.
+      STALE  scripts/asan_self.sh:73   `Makefile@SKIPPED` -> ...
+      STALE  scripts/editors_check.sh:29  `Makefile@SKIPPED` -> ...
+      STALE  scripts/check_citations.py:402  `Makefile@SKIPPED` -> ...
+      STALE  scripts/check_citations.py:801  `Makefile@SKIPPED` -> ...
+      STALE  CLAUDE.md:183             `Makefile@SKIPPED` -> ...
+      STALE  plan.md:45, plan.md:502   `Makefile@SKIPPED` -> ...
+      STALE  docs/internals/plan-three-gates-DONE.md:554  `Makefile@SKIPPED` -> ...
+
+  All three citing scripts are named, and so are the two Markdown files that were
+  **unchecked before this phase** — which is the Markdown widening earning its
+  keep in the same run.
+
+  *(b) rename the companion's subject* (`sed s/TYCHO_NO_ASAN/TYCHO_SKIP_ASAN_LANE/g`):
+
+      citation check: FAILED (3 stale citation(s) above)
+      STALE  scripts/asan_self.sh:11  `Makefile@TYCHO_NO_ASAN` -> 'TYCHO_NO_ASAN' does not appear anywhere in Makefile.
+
+  This is the half the old form could not do at all: the ref it replaces pointed
+  at a blank line and passed.
+
+  *(c) restored.* `cmp` against the backup silent, `git diff --stat -- Makefile`
+  empty, `grep -n SKIPPED Makefile` back to its one hit on the ilp32 echo, gate
+  green.
+
+  **WHAT THE CHOSEN FORM DOES NOT CATCH — stated so the next reader does not file
+  it as a defect.** The check is **file-wide existence with no uniqueness
+  requirement**. `SKIPPED` is an ordinary English word, not an identifier, so if
+  the ilp32 echo is deleted while some unrelated recipe gains a "SKIPPED" message
+  of its own, this citation goes on passing while pointing at nothing.
+  `shutdown_requested` cannot collide that way; a message word can. It also no
+  longer tells a reader **which line** to open — `grep` does, and that is the
+  trade. Today the exposure is nil and it was checked rather than assumed:
+  `grep -c SKIPPED Makefile` answers **1**. Against that stands the line form's
+  measured behaviour on this exact citation — twelve mechanical repairs in eight
+  days and one silent error nobody caught — so this is the smaller loss, not no
+  loss.
+
+  **Gates.** `python3 scripts/check_citations.py` green (counts moved as the
+  change predicts: source->source anchored 11 -> 7, the four line-anchored refs
+  that left; `path@SYMBOL` 357 -> 369). `sh scripts/check_links.sh` green, 145
+  markdown files. **`sh scripts/asan_self.sh` and `make editors-check` were NOT
+  run and are not the gate here** — this phase edits *comment text* in those two
+  scripts, not a line either of them executes; `git diff` on both is confined to
+  `#`-led lines. `make ci`, `make test` and `make corelib` were not run for the
+  same reason: nothing compiled changed.
 
 - [ ] **Phase 5 — an overflowing float literal emits `inf`, which is not C**
   - Found by phase 1 while reading the `".0"` guard's `'n'`/`'i'` cases, and
@@ -622,6 +743,148 @@ Done looks like: all four resolved, each with a check that is proved to fail.
     `sh examples/weblog/run.sh` and `sh examples/webserver/run.sh` are the gates,
     plus `make goldens-check`. Prove the new step can redden by perturbing one
     lane's output, not by reasoning that `diff` works.
+
+- [ ] **Phase 9 — `scripts/asan_self.sh`'s other Makefile citation is stale, and it is a bare range**
+  - Found by phase 4 two lines above the ones it was allowed to touch, and filed
+    rather than absorbed. The header block reads `Makefile:103-106  documents that
+    lane`, meaning the `tests/run.sh` ASan lane. Lines 103-106 of today's
+    `Makefile` are the wiki-sync recipe's two lines, a blank, and the `demo:`
+    target — nothing about sanitizers. The comment block it means is `Makefile:111-114`
+    (`# Differential test suite: … under -fsanitize=address,undefined …`).
+  - It is a **bare range**, so `SRCCITE` checks it for bounds only, and it is in
+    bounds — the exact blind spot the gate's own docstring names. It has drifted
+    silently at least since the `-m32` refs beside it started moving.
+  - Decide the form, do not just repoint it: a range has no single subject token
+    (`CLAUDE.md` is explicit that inventing one produces a false anchor), so the
+    honest options are a tightened bare range or a symbol ref onto a token the
+    block actually names. Whichever, say which in one line so the next drift is
+    visible.
+  - Scope: `scripts/asan_self.sh`'s header only. Not `Makefile`.
+  - Verify: `python3 scripts/check_citations.py`, and prove the choice can redden
+    the way phase 4 did — a bare range only reddens by going out of bounds, so if
+    that is the form chosen, say plainly that nothing catches a repeat of this.
+
+- [ ] **Phase 10 — the citation gate's docstring still spells a live line ref as a grammar example**
+  - Found by phase 4 while retiring the `Makefile` half of the same two-line
+    example block, and filed rather than absorbed. The surviving line, in the
+    `ANCHORED SOURCE -> SOURCE` section of `scripts/check_citations.py`, is
+
+        src/tychoc.c:3487@i_dotlt      as cited from fuzz/run_parforparity.py
+
+    (written unbackticked here on purpose: backticking it makes the whole phrase
+    an anchor token and reddens the gate, which this phase confirmed by doing it).
+  - This is the defect that file's own header already argues against: the shape
+    table at the top names the **nonexistent** `src/example.c` on purpose,
+    reasoning that a shape example spelled with a real path "is a live citation"
+    and "puts this docstring into the population every renumbering sweep has to
+    repair". The reasoning applies verbatim here and was simply not applied.
+    Phase 1 of this plan moved 135 anchored refs in `src/tychoc.c` alone, so this
+    one is in that population every time the compiler is edited.
+  - Note the real constraint before writing a placeholder: `SRCCITE` has **no word
+    boundary** before its `Makefile` branch, so a plausible-looking fake path
+    ending in a real tracked filename still matches and still gets checked. A
+    placeholder has to be a path that is genuinely not tracked, the way
+    `src/example.c` is.
+  - Scope: `scripts/check_citations.py`'s docstring. No code.
+  - Verify: `python3 scripts/check_citations.py`, plus a check that the
+    placeholder is inert — break it deliberately (point it past EOF) and show the
+    gate stays green, which is what "not a citation" means here.
+
+- [ ] **Phase 11 — 67 `Makefile:N` refs in the docs are checked by nothing**
+  - Found by phase 4 while deciding how to admit `Makefile` to the Markdown symbol
+    grammar, and filed rather than absorbed because it is a different size of
+    change. `SRC_PREFIX` gates what a **Markdown** citation may name and it does
+    not list `Makefile`, so every `` `Makefile:N` `` in the docs falls into the
+    header's "FAIL-OPEN CASES" skip. Phase 4 admitted `Makefile` to `SYMCITE`
+    alone, by an explicit test beside `SRC_PREFIX` rather than by joining it, so
+    the line forms were left exactly as they were.
+  - Measured 2026-08-02, by running the gate's own `CITE` grammar with the path
+    alternation widened over every tracked `.md`: **67** such refs. Most sit in
+    frozen `docs/internals/plan-*-DONE.md` archives. **Four are anchored** —
+    `Makefile:245@SKIPPED` and `Makefile:253@SKIPPED`, twice each, in
+    `docs/internals/plan-loops-cleanup-DONE.md` — and lines 245 and 253 of today's
+    `Makefile` are `tycho-ar` comments with no `SKIPPED` in them, so all four go
+    red the moment the prefix widens.
+  - **That is the collision `CLAUDE.md` predicts, not a surprise**: "a rule does
+    not have to be about record lines to redden one … expect that again on the
+    next widening". The repair it names is already decided — **drop the anchor,
+    keep the number** — so this phase is mostly the discipline to apply it four
+    times without repointing a single number.
+  - Decide first whether it is worth it: the win is that a `Makefile` ref in a
+    live document stops rotting unseen; the cost is four edits into frozen
+    archives. "Leave `Makefile` out of `SRC_PREFIX` and say why in the docstring"
+    is a legitimate answer, the way phase 4 was prepared to retire its row.
+  - Scope: `scripts/check_citations.py`'s `SRC_PREFIX` and docstring, and the
+    archives only if the answer is to widen. Not `Makefile`.
+  - Verify: `python3 scripts/check_citations.py`. If it widens, the new coverage
+    must be proved the way phase 4 proved its own — break one live `Makefile:N`
+    ref and show the red — and the count of newly-checked refs stated, because a
+    widening that checks nothing new is not a widening.
+
+## Status — PLAN COMPLETE
+
+All four phases are done and committed, one commit each. Phases 5 through 11 are
+filed follow-ups discovered **inside** phases 1 through 4 and pushed out of them
+by their scope locks — they have the standing of the queued backlog rows below,
+not of conditions on this plan.
+
+**The Goal was: close four defects that a phase of the previous plan found while
+doing something else, each with a check that is proved to fail. All four are
+closed and every one of them has a break-and-restore transcript under its
+phase.** What each became:
+
+1. **The compiler emitted float literals under the ambient locale**, one layer
+   above the runtime defect the previous plan fixed and worse, because it
+   corrupts **C source a compiler reads** rather than a string a human reads →
+   `src/tychoc.c` now reads and writes float literals through a `"C"`-locale
+   `uselocale()` handle at both sites, with `tests/float_lit_locale.ty` locking
+   the values. The phase's own main finding was that the brief's proposed test
+   route was **inert** — a C program starts in the `"C"` locale whatever `LC_ALL`
+   says — and the first break-and-revert came out green against a fully broken
+   compiler. A four-line `LD_PRELOAD` constructor is what reaches it.
+2. **Two more lanes derived their shims from a direct-import grep** → both now
+   ask the compiler, through a new `--print-deps`. The Pre-flight's assumption
+   was right and the fix was bigger than a print: `g_pkgdeps` held only resolved
+   cflags, never the pkg-config **names** the SKIP logic tests, so a names
+   accumulator was added and it records the name **before** resolution is
+   attempted — otherwise the flag prints nothing on exactly the host the SKIP
+   exists for. Second unplanned finding: the `shim` and `depflags` those loops
+   built were **dead**, assigned and never read, so they were deleted rather than
+   ported.
+3. **Four lanes' goldens were tracked but sat inside ignored directories** → all
+   four are un-ignored, each with a per-directory `.gitignore`, and
+   `scripts/check_goldens.py` now asserts it. The phase's finding was that
+   `git check-ignore -v` is the **wrong tool for the verdict** — it prints the
+   last matching pattern *including a negation* and exits 0 — so reading it as a
+   hit would have made the new assertion pass on the whole tree forever. The
+   Pre-flight's worst case did not materialise: all four already built into a
+   temp dir, so there was no build path left to move.
+4. **A citation had been repointed seven times carrying no information** → the
+   count was actually **twelve**, and the phase answered the open question rather
+   than assuming it: `Makefile@SKIPPED` is accepted, because the property that
+   licenses the symbol form is "the target has a name of its own", not "the target
+   is a definition". `CLAUDE.md` and the gate's docstring now say so, and one real
+   fail-open was closed on the way — a `` `Makefile@SKIPPED` `` written in a
+   *document* had matched nothing at all.
+
+**The rate is the finding this plan exists to record.** Every one of these four
+was filed by a phase of the previous plan, and these four phases filed **seven
+more** (5 through 11) by the same rule: work discovered outside a phase's scope
+is appended, never absorbed. Three fixes found four; four fixes found seven. The
+ratio is not falling, and the honest reading is that it is a property of a tree
+this heavily gated rather than a backlog that can be worked down — each gate that
+gets sharp enough to redden shows the next thing nothing was watching. What the
+rule buys is not fewer discoveries, it is that none of them lands inside a phase
+that then cannot be verified against its own brief.
+
+**What phase 4's chosen form cannot catch**, restated here because a gate's edges
+belong in the summary and not only in the evidence: `SKIPPED` is an English word
+checked for existence anywhere in `Makefile`, with no uniqueness requirement, so
+an unrelated recipe growing its own "SKIPPED" message would keep the citation
+green after the ilp32 echo was deleted. `grep -c SKIPPED Makefile` answers 1
+today. The line form it replaces could not collide that way and had, measurably,
+a worse record: twelve repointings in eight days, one of which silently landed on
+a blank line.
 
 ## Carried forward
 

@@ -174,6 +174,29 @@ gates them. Two things that bite every time:
     demanding one occurrence would reject every symbol anyone actually calls.
   - **Use it for a definition, not for a region.** Pointing at a loop body or a
     table still wants `` `path:N-M` ``; there is no name to use.
+  - **"Definition" was the case, not the property — a line whose identity is a
+    distinctive token counts too.** What makes the symbol form right is that the
+    target *has a name of its own*, so the line number carries nothing the name
+    does not. A region fails that test because it has no name. The ilp32 recipe's
+    `@echo "ilp32: ASan lane SKIPPED for ilp32 …"` passes it: `SKIPPED` is a word
+    in an echo string rather than a definition, and it is still what every
+    citation of that line is *about*. So `` `Makefile@SKIPPED` `` is correct, and
+    so is `` `Makefile@TYCHO_NO_ASAN` `` for the recipe's last line. Two
+    conditions, both the writer's judgement rather than the gate's: the token must
+    be **what the citation is about**, and it must be **distinctive in its file**
+    (`grep -c SKIPPED Makefile` answers 1 as of 2026-08-02).
+  - **What that widening does not sanction, and what it costs.** It does *not*
+    license picking a word out of a region and citing it as a symbol — that is the
+    false anchor the range exemption exists to prevent, one grammar over. And
+    because the check is file-wide existence with no uniqueness requirement, an
+    ordinary English word can be kept alive by an unrelated new occurrence: delete
+    the ilp32 echo while some other recipe gains its own "SKIPPED" message and the
+    citation passes while pointing at nothing. A symbol like `shutdown_requested`
+    cannot collide that way; a message word can. That is a real loss against the
+    line form, and it is the smaller one — the line form's measured behaviour on
+    this exact citation was twelve mechanical repointings in eight days and one
+    silent error (its companion bare `:N` drifted onto a **blank** line and no
+    pass could see it, because a bare `:N` in a source file names no path).
   - **Converting correct old-form refs is not work.** 22 live refs would qualify
     (37 counting frozen archives, of 218 anchored). They are not wrong and there
     is no sweep to do — write the new form for new definition citations, and
