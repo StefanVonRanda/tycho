@@ -395,8 +395,12 @@ ANCHORED SOURCE -> SOURCE (added 2026-07-30, docs/internals/plan-loops-cleanup-D
 The wrong-line class needs an expected token, so SRCCITE now accepts an optional
 `@token` suffix and content-checks the cited lines when one is present:
 
-    Makefile:376@SKIPPED           as cited from scripts/asan_self.sh
     src/tychoc.c:3487@i_dotlt      as cited from fuzz/run_parforparity.py
+
+This block used to carry a second example, the ilp32 recipe's "ASan lane SKIPPED"
+echo as cited from scripts/asan_self.sh.  Those refs moved to the numberless
+`Makefile@SKIPPED` on 2026-08-02; see "A LINE WHOSE IDENTITY IS A TOKEN" below
+for what widened, what forced it, and what it costs.
 
 TWO DIFFERENCES FROM THE MARKDOWN ANCHOR, both forced by the medium.  (1) The
 token is `[A-Za-z0-9_]+` -- no spaces.  A Markdown anchor sits inside a backtick
@@ -639,6 +643,63 @@ at its definition and at every use is normal, and demanding uniqueness would
 reject every symbol that is actually called anywhere.  Different job, different
 rule.
 
+A LINE WHOSE IDENTITY IS A TOKEN (widened 2026-08-02)
+-----------------------------------------------------
+The rule above shipped as "a definition, not a region", and that wording named
+the CASE instead of the PROPERTY.  What makes the symbol form right is not that
+the target is a definition; it is that the target HAS A NAME OF ITS OWN, so the
+line number carries nothing the name does not.  A region fails that test because
+it has no name.  A third thing passes it: A LINE WHOSE IDENTITY IS A DISTINCTIVE
+TOKEN IT CONTAINS.
+
+The case that forced the widening is the ilp32 recipe's
+
+    @echo "ilp32: ASan lane SKIPPED for ilp32 (...)"
+
+cited from scripts/asan_self.sh (twice), scripts/editors_check.sh, and this
+docstring.  `SKIPPED` is a word in an echo string -- neither a definition nor a
+region -- so the rule as written sanctioned nothing, while the line form was
+repointed on TWELVE separate commits between 2026-07-25 and 2026-08-01 (202, 245,
+253, 267, 270, 278, 286, 304, 313, 335, 366, 376) and not one repair carried
+information: the echo never changed, recipes above it grew.
+
+AND THE REPOINTING MANUFACTURED A WRONG CITATION, which is the argument that
+settles it.  The companion `,:358` riding the same comment line drifted onto a
+BLANK line of the Makefile, and nothing here could see it: a bare `:N` in a
+source file names no path, and SRCCITE requires one, so that ref was checked by
+NOTHING through all twelve edits.  Its subject is the `TYCHO_NO_ASAN=1` on the
+recipe's last line, which is a name, so it moved to `Makefile@TYCHO_NO_ASAN`.
+
+THE TEST TO APPLY, narrow on purpose:
+  * the token must be WHAT THE CITATION IS ABOUT.  All three citing lines quote
+    the word itself ("the ASan lane SKIPPED", "its 'ASan lane SKIPPED for
+    ilp32'"), so the name is the subject and the address was the accident.
+  * it must be DISTINCTIVE IN ITS FILE.  Uniqueness is not enforced (see the
+    paragraph above; that does not change), so this is a judgement the writer
+    makes and states rather than one the gate makes.  `grep -c SKIPPED Makefile`
+    answers 1 as of 2026-08-02.
+
+WHAT THIS DOES NOT SANCTION: picking a word out of a REGION and citing it as a
+symbol.  That is the false anchor the range exemption at the top of this
+docstring exists to prevent, one grammar over -- `path:N-M` on a loop body stays
+bare, and a symbol ref naming a token from inside that loop would be a promise
+about the FILE dressed as a promise about the loop.  The widening is for a line a
+token NAMES, not for a region a token happens to sit in.
+
+WHAT IT COSTS, recorded so it is not rediscovered as a defect.  `SKIPPED` is an
+ordinary English word and the check is file-wide existence, so if the ilp32 echo
+is deleted while some unrelated recipe gains a "SKIPPED" message of its own, the
+citation goes on passing while pointing at nothing.  A symbol like
+`shutdown_requested` cannot collide that way; a message word can.  That is a real
+loss against the line form, and it is the smaller one: the line form's measured
+behaviour on this exact citation was twelve mechanical repairs and one silent
+error nobody caught.
+
+NO CODE CHANGED FOR THIS.  SYMCITE_SRC below already names `Makefile` in its path
+alternation, for the same reason DOC_SCAN_PREFIX does -- it is a file, not a tree
+-- so the form was accepted the day it shipped.  What was missing was the
+sanction to use it, which lived in prose.
+
 THE POPULATION WAS COUNTED BEFORE THE FORM WAS WRITTEN, over the whole tree,
 using this file's own grammar: 37 of 218 anchored refs cite a single line that
 BINDS their token (a `fn`/`static`/`#define`/assignment head), of which 22 are
@@ -736,7 +797,10 @@ CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
 # grammars cannot both match the same span. The symbol is a bare identifier --
 # no spaces, unlike the line-anchor token, because a phrase is not a definition
 # and the anchored form already covers phrases.
-SYMCITE = re.compile(r'`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)@([A-Za-z0-9_]+)`')
+# `Makefile` joined the alternation on 2026-08-02, mirroring SYMCITE_SRC below:
+# once "A LINE WHOSE IDENTITY IS A TOKEN" sanctions `Makefile@SKIPPED`, a doc
+# writing it must be CHECKED rather than silently skipped for want of a dot.
+SYMCITE = re.compile(r'`((?:[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)|Makefile)@([A-Za-z0-9_]+)`')
 
 # The same form in a source file (no backticks to delimit it), filtered against
 # the tracked set exactly as SRCCITE is, so an email address or a stray `a.b@c`
@@ -841,7 +905,13 @@ def main():
             # must not become the silent subject of a following bare `:N`.
             for m in SYMCITE.finditer(line):
                 sp, sym = m.group(1), m.group(2)
-                if not sp.startswith(SRC_PREFIX):
+                # `Makefile` is admitted HERE and deliberately not by joining
+                # SRC_PREFIX: that list gates the LINE forms too, and widening it
+                # would put every `Makefile:N` ref in the docs under the gate in
+                # one commit -- most of them in frozen archives, several anchored,
+                # i.e. exactly the record-line collision CLAUDE.md warns the next
+                # widening will produce. That is its own phase, not this one.
+                if not (sp.startswith(SRC_PREFIX) or sp == "Makefile"):
                     continue
                 n_sym += 1
                 ssrc = lines_of(sp)
