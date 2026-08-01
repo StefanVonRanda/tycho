@@ -77,7 +77,7 @@ with tests that fail against today's parser.
 
 ## Phases
 
-- [ ] **Phase 1 — a parser that cannot spin, and an error channel**
+- [x] **Phase 1 — a parser that cannot spin, and an error channel**
   - Scope: `corelib/json/json.ty`, `corelib/test/json/main.ty`,
     `corelib/test/json.out`. No caller changes in this phase.
   - **Write the failing tests first.** Before changing the parser, add the three
@@ -110,6 +110,90 @@ with tests that fail against today's parser.
     the fixture count before and after; it was 560 as of `CLAUDE.md`'s table, and
     a number that moves down is a silent loss to investigate, not to accept. Do
     NOT run `make ci`, `make q-check`, `make ar-check` or the tools gates.
+
+  **Evidence (2026-08-01).**
+
+  **Before — all three failures reproduced against the unmodified parser**, in a
+  throwaway program under the scratchpad, not in the gated test. Built with
+  `TYCHO_CORELIB=$PWD/corelib ./tychoc <probe>/main.ty -o <bin>`:
+
+  ```
+  1.5          -> 1                              exit 0
+  [{"a":1.5}] -> [{"a":1,"5}]":null}]            exit 0
+  ```
+
+  The second is worse than the Pre-flight predicted: the fabricated key is `5}]`
+  and it carries a `null` value, so the document grew a **second column** nobody
+  wrote, at exit 0, with no symptom. `[1.5]` was probed separately under
+  `ulimit -v 262144` with a 20 s timeout, because it exhausts memory:
+
+  ```
+  tycho: out of memory                           exit 1
+  ```
+
+  **After — the same three inputs, now as locked lines of
+  `corelib/test/json.out`:**
+
+  ```
+  f scalar    = null
+  f scalar r  = err fraction or exponent (floats are out of scope) at byte 1
+  f in obj    = null
+  f in obj r  = err fraction or exponent (floats are out of scope) at byte 7
+  f in arr    = null
+  f in arr r  = err fraction or exponent (floats are out of scope) at byte 2
+  f in arr off= 2
+  ```
+
+  The offset is asserted against the byte it must name, not against non-zero: in
+  `[1.5]` the `.` is at index 2, in `[{"a":1.5}]` at index 7, in `1.5` at index 1.
+  Re-running the `[1.5]` probe against the fixed parser under the same
+  `ulimit -v 262144` prints `[1.5] -> null` and exits 0 — the OOM is gone, not
+  merely unreached by the test corpus.
+
+  Twelve more failure classes are locked in the same golden (`bad byte`,
+  `bad number`, `bad keyword`, `bad escape`, `bad key`, `no colon`, `no sep`,
+  three `unclosed` cases, `empty`), plus three lines asserting what stays
+  deliberately lenient (`trailing ,`, `trailing txt`, and the `\b \f \r \/`
+  escapes that are now decoded rather than guessed).
+
+  **The two halves.** The structural anti-spin guard is `before := pos` plus a
+  `pos == before` test in both `corelib/json/json.ty@parse_array` and
+  `corelib/json/json.ty@parse_object`; the comment above `parse_array` enumerates
+  every byte class and shows that no path reaches the guard today, which is the
+  point — it is the invariant, not the fix. The fix that ends the OOM is that
+  `corelib/json/json.ty@parse_value` no longer falls through to `parse_number`
+  for a byte that begins no value; it sets `JE_BYTE` and stops.
+  `parse_object`'s unconditional `pos = pos + 1  # skip :` is now a checked
+  `s[pos] != 58` test, which is what closed the fabricated key. The fallible
+  entry point is `corelib/json/json.ty@parse_checked`, returning
+  `Result(Json, JsonErr)`; `corelib/json/json.ty@parse` keeps its signature and
+  discards the error, so no caller changed.
+
+  **The error type carries a payload on both arms**, as
+  `docs/internals/plan-q-DONE.md` phase 1 required: all ten `JsonErr` variants
+  carry the byte offset, so `corelib/json/json.ty@err_offset` is total without a
+  sentinel. Internally the recursion threads one extra `inout int` rather than a
+  `Result`, under the invariant that when the code is not `JE_OK` the cursor is
+  the failing byte and nothing advances it again — stated in the header and
+  enforced by an immediate `return` at every site that sets it.
+
+  **`# gap:` lines added to the package header** (`corelib/json/json.ty`), each
+  naming the ceiling and the way out: no float/exponent value; no `\uXXXX`;
+  **integers wrap silently at 64 bits**, which is the one silent-wrong-value path
+  left in the parser; trailing commas accepted; leading zeros accepted; trailing
+  text after the top-level value ignored.
+
+  **Gates.**
+
+  - `make test` → `passed: 560   failed: 0`, `all green`. 560 before (`CLAUDE.md`'s
+    table), 560 after — no fixture lost.
+  - `make corelib` → `ok   json`, `corelib: all green`. **This, not `make test`,
+    is what actually gates `corelib/test/json.out`** — see the new phase 23 below.
+  - `examples/corelib/run.sh` → `ok   json`, `corelib examples: all green`.
+  - All six consumers still compile untouched, checked one at a time with
+    `TYCHO_CORELIB=$PWD/corelib ./tychoc <file> -o <tmp>`: `examples/site/main.ty`,
+    `examples/fetch/main.ty`, `examples/corelib/json/main.ty`,
+    `bench/json/json.ty`, `tools/tycho-q/main.ty`, `corelib/test/json/main.ty`.
 
 - [ ] **Phase 2 — the callers stop working around it**
   - Scope: `tools/tycho-q/main.ty`, `tools/tycho-q/expected.out`, and whichever
@@ -146,6 +230,29 @@ with tests that fail against today's parser.
     has no `div` (carried-forward phase 20), so the two interact and should be
     decided together.
   - Not started. Promoting it is a decision for the user, not for a phase agent.
+
+- [ ] **Phase 23 — `make test` cannot redden for a `corelib/` change, and the
+      gate table does not say so** (found by phase 1, out of its scope)
+  - Phase 1's brief said "this is a corelib change, so `make test` is the gate".
+    It is not. `tests/run.sh:113` globs `examples/*.ty tests/*.ty` — top level
+    only, no descent — so nothing under `corelib/` and nothing under
+    `examples/*/` is in its 560 fixtures. A change to `corelib/json/json.ty` that
+    broke every corelib golden would leave `make test` green.
+  - What actually gates `corelib/test/<name>.out` is `corelib/run.sh`, i.e.
+    **`make corelib`** (`Makefile:224-225`), which is a few seconds. `CLAUDE.md`'s
+    gate-budget table does not list `make corelib` at all, and its rule line says
+    "**A `.ty` fixture or a corelib change** → `make test`" — which sends every
+    corelib phase to the eight-minute gate that cannot see its change, and away
+    from the three-second one that can. The same holds for
+    `examples/corelib/run.sh` (`make corelib-examples`) and the `examples/*/`
+    dogfoods.
+  - Phase 1 ran both and reported both, so nothing shipped unverified; the defect
+    is in the table, not in this plan's result.
+  - Scope: `CLAUDE.md` only — add `make corelib` and `make corelib-examples` rows
+    with their real cost and what they redden for, and correct the rule line to
+    send a corelib change to `make corelib` first. A doc change, so the gate is
+    `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`. **Not**
+    `make test` — which is the whole point of the finding.
 
 ## Carried forward
 
