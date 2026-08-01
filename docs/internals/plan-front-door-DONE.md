@@ -6045,7 +6045,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
        freezes whatever is on disk at generation time, so it would have blessed all ~290
        stale citations as correct, and it puts the expected content in a second file that
        drifts from the prose.
-    3. **Adopted: an opt-in content anchor.** `` `src/tychoc.c:7901-7902@'main' must be` ``
+    3. **Adopted: an opt-in content anchor.** `` `src/tychoc.c:8022-8023@'main' must be` ``
        — the gate asserts the cited range literally contains that token. The token is
        chosen by whoever verifies the citation, which is exactly the expected content a
        bare `path:N` cannot carry. Not applied docs-wide (1300+ sites, and anchoring an
@@ -6162,8 +6162,8 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - **Repaired (5 sites, each verified by reading the target line):**
     `docs/spec/15-program.md:19-23` (the provenance block) and `:31-36` (§27.1's
     sentence) — both `:7098-7099` and `:7124-7125` replaced with
-    `` `src/tychoc.c:7876@no 'main' procedure` `` and
-    `` `:7901-7902@'main' must be` ``, plus the tychoc0 citation corrected from
+    `` `src/tychoc.c:7997@no 'main' procedure` `` and
+    `` `:8022-8023@'main' must be` ``, plus the tychoc0 citation corrected from
     `parse_program` `:3637-3648` to `` `compiler/tychoc0.ty:3911@'main' must be` ``;
     `docs/internals/frontend-restriction-audit-2026-07-25.md:356` — the audit's §8 is a
     dated record, so its wrong text is left standing and a **Corrected 2026-07-25** note

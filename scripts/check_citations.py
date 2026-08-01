@@ -396,7 +396,7 @@ The wrong-line class needs an expected token, so SRCCITE now accepts an optional
 `@token` suffix and content-checks the cited lines when one is present:
 
     Makefile:376@SKIPPED           as cited from scripts/asan_self.sh
-    src/tychoc.c:3366@i_dotlt      as cited from fuzz/run_parforparity.py
+    src/tychoc.c:3487@i_dotlt      as cited from fuzz/run_parforparity.py
 
 TWO DIFFERENCES FROM THE MARKDOWN ANCHOR, both forced by the medium.  (1) The
 token is `[A-Za-z0-9_]+` -- no spaces.  A Markdown anchor sits inside a backtick
