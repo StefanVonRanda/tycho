@@ -32,7 +32,10 @@ n intmax+1  = float 9223372036854775808 identical=yes
 n 0         = num 0 identical=yes
 n -3        = num -3 identical=yes
 n -0        = float -0 identical=yes
-n 01        = num 1 identical=no
+n 0.5       = float 0.5 identical=yes
+n 0e1       = float 0e1 identical=yes
+n -0.5      = float -0.5 identical=yes
+n 0 again   = num 0 identical=yes
 v 1.5 eq1.5 = yes
 v 1.5 eq1   = no
 v 1e3 eq1000= yes
@@ -71,9 +74,60 @@ unclosed [  = err input ended inside a value at byte 2
 unclosed {  = err input ended inside a value at byte 6
 unclosed "  = err input ended inside a value at byte 3
 empty       = err input ended inside a value at byte 3
-trailing ,  = ok  [1]
-trailing txt= ok  {"a":1}
 esc bfr     = 4
+tc arr      = err trailing comma before the closing bracket at byte 2
+tc arr off  = 2
+tc obj      = err trailing comma before the closing bracket at byte 6
+tc obj off  = 6
+tc ws off   = 2
+tc nest off = 3
+tc trunc    = err input ended inside a value at byte 3
+tc ok [1]   = ok  [1]
+tc ok [1,2] = ok  [1,2]
+tc ok obj   = ok  {"a":1}
+tc ok []    = ok  []
+tc ok {}    = ok  {}
+lz 01       = err number has a leading zero at byte 0
+lz 01 off   = 0
+lz -01      = err number has a leading zero at byte 1
+lz -01 off  = 1
+lz 00       = err number has a leading zero at byte 0
+lz 01.5     = err number has a leading zero at byte 0
+lz in arr   = 4
+lz ok 0     = ok  0
+lz ok -0    = ok  -0
+lz ok 0.5   = ok  0.5
+lz ok 0e1   = ok  0e1
+lz ok 10    = ok  10
+lz ok 100   = ok  100
+lz ok 0.0e0 = ok  0.0e0
+tt junk     = err text after the end of the document at byte 8
+tt junk off = 8
+tt two docs = err text after the end of the document at byte 7
+tt scalar   = err text after the end of the document at byte 2
+tt closer   = err text after the end of the document at byte 3
+tt off0     = 4
+tt ok pad   = ok  {"a":1}
+tt ok nl    = ok  {"a":1}
+tt ok lead  = ok  {"a":1}
+tt ok both  = ok  {"a":1}
+tt ok scalar= ok  1
+tt parse    = null
+tt parse ok = obj
+tc parse    = null
+cb tab      = err raw control byte inside a string at byte 2
+cb tab off  = 2
+cb nl       = err raw control byte inside a string at byte 2
+cb first    = 1
+cb slow     = err raw control byte inside a string at byte 5
+cb slow off = 5
+cb key off  = 3
+cb ok esc   = ok  "a\tb"
+cb ok uesc  = ok  "a\tb"
+cb ok space = ok  " "
+cb ok high  = 61 ff 62
+cb ok 80    = 80
+cb ok del   = 61 7f 62
 u A         = A|
 u A len     = 1
 u A bytes   = 41
@@ -117,4 +171,5 @@ fp nul      = "a\u0000b" fixed=yes
 fp ctl 1f   = "\u001f" fixed=yes
 fp ctl 0b   = "\u000b" fixed=yes
 fp doc      = {"A":["😀",1.5,null]} fixed=yes
-fp raw tab  = "a\tb" fixed=yes
+fp raw tab  = err raw control byte inside a string at byte 2
+fp esc tab  = "a\tb" fixed=yes
