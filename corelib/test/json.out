@@ -14,14 +14,51 @@ keys.len    = 6
 key0        = name
 esc rt      = "a\"b\nc\td"
 built       = [1,"x",true,null]
+built float = 1.50
 truncated   = null
-f scalar    = null
-f scalar r  = err fraction or exponent (floats are out of scope) at byte 1
-f in obj    = null
-f in obj r  = err fraction or exponent (floats are out of scope) at byte 7
-f in arr    = null
-f in arr r  = err fraction or exponent (floats are out of scope) at byte 2
-f in arr off= 2
+f scalar    = float 1.5 identical=yes
+f scalar r  = ok  1.5
+f in obj    = arr [{"a":1.5}] identical=yes
+f in arr    = arr [1.5] identical=yes
+f mixed     = obj {"a":[1.5,2,1e3],"b":-0.0} identical=yes
+n 1.5       = float 1.5 identical=yes
+n -0.0      = float -0.0 identical=yes
+n 1e3       = float 1e3 identical=yes
+n 1E+3      = float 1E+3 identical=yes
+n 2.5e-3    = float 2.5e-3 identical=yes
+n 30 digits = float 123456789012345678901234567890 identical=yes
+n intmax    = num 9223372036854775807 identical=yes
+n intmax+1  = float 9223372036854775808 identical=yes
+n 0         = num 0 identical=yes
+n -3        = num -3 identical=yes
+n -0        = float -0 identical=yes
+n 01        = num 1 identical=no
+v 1.5 eq1.5 = yes
+v 1.5 eq1   = no
+v 1e3 eq1000= yes
+v 1E+3 eq1e3= yes
+v -0.0 eq0  = yes
+v -0.0 neg  = yes
+v 2.5e-3    = yes
+v JNum wide = yes
+g3 kind     = float
+g3 as_num   = 0
+g3 lexeme   = 9223372036854775808
+g3 30 lex   = 123456789012345678901234567890
+g3 max kind = num
+g3 max num  = 9223372036854775807
+g3 max lex  = 9223372036854775807
+g3 str lex  = |
+bad 1.      = err '.' or exponent with no digits after it at byte 2
+bad 1e      = err '.' or exponent with no digits after it at byte 2
+bad 1e+     = err '.' or exponent with no digits after it at byte 3
+bad 1.x     = err '.' or exponent with no digits after it at byte 2
+bad [1.]off = 3
+bad .5      = err byte begins no JSON value at byte 0
+bad +1      = err byte begins no JSON value at byte 0
+bad 1e400   = err number outside the range a float can represent at byte 0
+bad 1e-400  = err number outside the range a float can represent at byte 0
+bad [1e400] = 1
 ok doc      = ok  {"a":[1,-2,null]}
 bad byte    = err byte begins no JSON value at byte 1
 bad number  = err '-' with no digit after it at byte 1

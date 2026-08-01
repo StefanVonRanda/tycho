@@ -24,6 +24,27 @@ fn offset_of(r: Result(json.Json, json.JsonErr)) -> int:
         Ok(v): return -1
         Err(e): return json.err_offset(e)
 
+fn yn(b: bool) -> string:
+    if b:
+        return "yes"
+    return "no"
+
+# THE NUMBER PROPERTY, on one line: which variant the number landed in, what
+# `stringify` emits for it, and whether that is BYTE-IDENTICAL to the input.
+#
+# `identical` is the whole point of JFloat carrying its lexeme. NOTHING here
+# prints a raw float, deliberately: `str(float)` goes through `%.15g`, which
+# takes its decimal separator from LC_NUMERIC and renders `1,5.0` under a
+# comma-decimal locale -- so a golden containing one would be locale-dependent.
+# Values are asserted by comparison instead (`eq` lines below).
+fn rt(src: string) -> string:
+    match json.parse_checked(src):
+        Ok(v):
+            out := json.stringify(v)
+            return json.kind(v) + " " + out + " identical=" + yn(out == src)
+        Err(e):
+            return "err " + json.err_str(e)
+
 fn main():
     src := "{\"name\": \"tycho\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}, \"empty\": [], \"nothing\": null}"
     j := json.parse(src)
@@ -56,32 +77,95 @@ fn main():
     # build a tree programmatically (cross-package variant construction)
     built := json.JArr([json.JNum(1), json.JStr("x"), json.JBool(true), json.JNull])
     println("built       = " + json.stringify(built))
+    # a two-payload variant, constructed from OUTSIDE the package
+    println("built float = " + json.stringify(json.JFloat(1.5, "1.50")))
 
     # truncated input fails closed to null (no out-of-bounds abort)
     println("truncated   = " + json.kind(json.parse("   ")))
 
-    # ---- input core:json cannot represent must be an error, never a guess ----
+    # ---- floats: they parse now, and they round-trip byte-identically -------
     # Each of the three below is a REAL failure this test was written to catch;
-    # each line's "before" is what the parser did on 2026-08-01, at exit 0
-    # except where noted.
+    # each line's "before" is what the parser did BEFORE the error channel
+    # landed on 2026-08-01, at exit 0 except where noted. All three were then
+    # errors, and are now values -- the assertion has tightened twice.
     #
     # `1.5`  before: json.stringify(json.parse("1.5")) printed `1`.
     #        The fraction was dropped and a wrong number returned confidently.
-    println("f scalar    = " + json.stringify(json.parse("1.5")))
+    println("f scalar    = " + rt("1.5"))
     println("f scalar r  = " + show(json.parse_checked("1.5")))
     # `[{"a":1.5}]`  before: printed `[{"a":1,"5}]":null}]` -- the parser
     #        invented a SECOND column named `5}]`, in a document the caller
     #        believed it had read. The worst of the three: no symptom at all.
-    println("f in obj    = " + json.stringify(json.parse("[{\"a\":1.5}]")))
-    println("f in obj r  = " + show(json.parse_checked("[{\"a\":1.5}]")))
+    println("f in obj    = " + rt("[{\"a\":1.5}]"))
     # `[1.5]`  before: `tycho: out of memory`, exit 1 -- parse_array consumed
     #        nothing at the `.` and pushed JNum(0) forever. Five bytes of input.
     #        Probed in a throwaway binary under `ulimit -v 262144`, never here.
-    println("f in arr    = " + json.stringify(json.parse("[1.5]")))
-    println("f in arr r  = " + show(json.parse_checked("[1.5]")))
-    # The offset is checked against the byte it must name, not merely non-zero:
-    # in `[1.5]` the `.` is at index 2.
-    println("f in arr off= " + str(offset_of(json.parse_checked("[1.5]"))))
+    println("f in arr    = " + rt("[1.5]"))
+    # A float nested in a container keeps its lexeme too, so a whole document
+    # of them round-trips: the exponent stays an exponent, un-normalised.
+    println("f mixed     = " + rt("{\"a\":[1.5,2,1e3],\"b\":-0.0}"))
+
+    # every shape of the RFC 8259 number grammar, one line each
+    println("n 1.5       = " + rt("1.5"))
+    println("n -0.0      = " + rt("-0.0"))
+    println("n 1e3       = " + rt("1e3"))
+    println("n 1E+3      = " + rt("1E+3"))
+    println("n 2.5e-3    = " + rt("2.5e-3"))
+    println("n 30 digits = " + rt("123456789012345678901234567890"))
+    println("n intmax    = " + rt("9223372036854775807"))
+    println("n intmax+1  = " + rt("9223372036854775808"))
+    println("n 0         = " + rt("0"))
+    println("n -3        = " + rt("-3"))
+    # `-0` as an INTEGER cannot be a JNum: str(0) is "0", which is not the
+    # lexeme, so the round-trip proof fails it into JFloat and the sign lives.
+    println("n -0        = " + rt("-0"))
+    # `01` is still lenient (the leading-zero gap in the header). The leading
+    # zero is skipped before the round-trip comparison, so this stays JNum(1)
+    # and is NOT quietly reclassified as a float on the way past.
+    println("n 01        = " + rt("01"))
+
+    # the VALUES, asserted by comparison because printing a float is locale-bound
+    println("v 1.5 eq1.5 = " + yn(json.as_float(json.parse("1.5")) == 1.5))
+    println("v 1.5 eq1   = " + yn(json.as_float(json.parse("1.5")) == 1.0))
+    println("v 1e3 eq1000= " + yn(json.as_float(json.parse("1e3")) == 1000.0))
+    println("v 1E+3 eq1e3= " + yn(json.as_float(json.parse("1E+3")) == 1000.0))
+    println("v -0.0 eq0  = " + yn(json.as_float(json.parse("-0.0")) == 0.0))
+    println("v -0.0 neg  = " + yn(1.0 / json.as_float(json.parse("-0.0")) < 0.0))
+    println("v 2.5e-3    = " + yn(json.as_float(json.parse("2.5e-3")) == 0.0025))
+    println("v JNum wide = " + yn(json.as_float(json.parse("7")) == 7.0))
+
+    # GAP 3, the last silent-wrong-value path, closed. `9223372036854775808` is
+    # one past int max: the old parser accumulated it into a signed int and
+    # handed back a wrapped number at exit 0. It is now a JFloat -- so `as_num`
+    # answers 0 (a refusal, not a wrapped value) and `as_lexeme` returns every
+    # digit the document contained, which is what an exact consumer parses.
+    println("g3 kind     = " + json.kind(json.parse("9223372036854775808")))
+    println("g3 as_num   = " + str(json.as_num(json.parse("9223372036854775808"))))
+    println("g3 lexeme   = " + json.as_lexeme(json.parse("9223372036854775808")))
+    println("g3 30 lex   = " + json.as_lexeme(json.parse("123456789012345678901234567890")))
+    # int max itself still round-trips as an exact integer -- the bound is not
+    # off by one, and a JNum's lexeme is its exact rendering.
+    println("g3 max kind = " + json.kind(json.parse("9223372036854775807")))
+    println("g3 max num  = " + str(json.as_num(json.parse("9223372036854775807"))))
+    println("g3 max lex  = " + json.as_lexeme(json.parse("9223372036854775807")))
+    println("g3 str lex  = " + json.as_lexeme(json.parse("\"x\"")) + "|")
+
+    # ---- numbers that are still errors, at the byte that must be named ------
+    # A malformed fraction/exponent errors where the digit was required.
+    println("bad 1.      = " + show(json.parse_checked("1.")))
+    println("bad 1e      = " + show(json.parse_checked("1e")))
+    println("bad 1e+     = " + show(json.parse_checked("1e+")))
+    println("bad 1.x     = " + show(json.parse_checked("1.x")))
+    println("bad [1.]off = " + str(offset_of(json.parse_checked("[1.]"))))
+    # `.5` and `+1` begin no JSON value at all: the error is at byte 0, from
+    # parse_value's dispatch, and parse_number is never entered.
+    println("bad .5      = " + show(json.parse_checked(".5")))
+    println("bad +1      = " + show(json.parse_checked("+1")))
+    # Well-formed, but binary64 holds no such value. Fail closed: never an
+    # infinity, never a 0. The offset names the FIRST byte of the number.
+    println("bad 1e400   = " + show(json.parse_checked("1e400")))
+    println("bad 1e-400  = " + show(json.parse_checked("1e-400")))
+    println("bad [1e400] = " + str(offset_of(json.parse_checked("[1e400]"))))
 
     # the rest of the error channel: one line per failure class
     println("ok doc      = " + show(json.parse_checked("{\"a\":[1,-2,null]}")))
