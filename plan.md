@@ -344,7 +344,7 @@ Done looks like: all four resolved, each with a check that is proved to fail.
   `map_del``), not a repair log joining two refs. Repointed by hand after reading
   it rather than trusted to the detector.
 
-- [ ] **Phase 3 — four lanes' goldens are tracked but would be invisible if re-recorded**
+- [x] **Phase 3 — four lanes' goldens are tracked but would be invisible if re-recorded**
   - `examples/mandelbrot`, `examples/raytrace`, `examples/weblog` and
     `examples/webserver` each hold a **tracked** `expected.out` inside a directory
     `.gitignore`'s `/examples/*` rule excludes outright, with no un-ignore
@@ -367,6 +367,126 @@ Done looks like: all four resolved, each with a check that is proved to fail.
     on a lane put back, and `git status --short` is clean after a build.
   - Verify: `make goldens-check`, then `git status --short` after `make corelib`,
     `make mandelbrot` and `make raytrace`. Not `make ci`.
+
+  **Evidence, 2026-08-02.** Changed: `.gitignore` (four `!/examples/<dir>` lines
+  and four `!/examples/<dir>/*.out` lines, in the two existing blocks), a new
+  per-directory `.gitignore` in each of `examples/mandelbrot`,
+  `examples/raytrace`, `examples/weblog`, `examples/webserver`, and
+  `scripts/check_goldens.py`. No `run.sh` needed changing — see below.
+
+  **`git check-ignore -v <dir>/__probe.out`, before and after.**
+
+  | lane | before | after |
+  |---|---|---|
+  | `examples/mandelbrot` | `.gitignore:77:/examples/*` | `.gitignore:148:!/examples/mandelbrot/*.out` |
+  | `examples/raytrace` | `.gitignore:77:/examples/*` | `.gitignore:149:!/examples/raytrace/*.out` |
+  | `examples/weblog` | `.gitignore:77:/examples/*` | `.gitignore:150:!/examples/weblog/*.out` |
+  | `examples/webserver` | `.gitignore:77:/examples/*` | `.gitignore:151:!/examples/webserver/*.out` |
+
+  All seven lanes that were already un-ignored (`sqlite`, `life`, `snake`,
+  `minesweeper`, `corelib`, `fetch`, `site`) still resolve to their own `!` line;
+  the eleven were probed in one loop.
+
+  **`-v` IS THE WRONG TOOL FOR THE VERDICT, AND THE GATE DOES NOT USE IT.**
+  `git check-ignore -v` prints the last matching pattern **including a
+  negation**, and exits 0 because it printed something: `examples/life/life.out`
+  comes back as `!/examples/life/*.out`, which means *not* ignored. Reading that
+  as a hit inverts the check. Plain `git check-ignore` (no `-v`) lists only
+  genuinely-ignored paths, and that is what the gate reads; `-v` is re-run on the
+  offenders alone, where a negation cannot appear, to name the rule in the error.
+  The `--no-index` flag is the second half: without it `check-ignore` consults
+  the index and calls every tracked golden not-ignored — true, and exactly the
+  question this phase exists to stop asking. Either mistake makes the new
+  assertion pass on the whole tree forever. Both are written into the script's
+  header rather than left in a commit message.
+
+  **PER-LANE DECISION: per-directory `.gitignore` for all four, and no build path
+  moved — because all four already build into a temp dir.** The phase brief and
+  the Pre-flight both expected the opposite ("the binaries and emitted `.c` those
+  lanes build in place"). Read rather than assumed: every one of the four opens
+  with `T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT` and passes `-o "$T/…"` to
+  every `tychoc` and `cc` invocation — `examples/mandelbrot/run.sh:22` with
+  `:26`/`:33`/`:42`, `examples/raytrace/run.sh:22` with `:26`/`:33`,
+  `examples/weblog/run.sh:24` with `:27`, `examples/webserver/run.sh:23` with
+  `:27`. `examples/raytrace/main.ty:150` writes `out.qoi` relative to the cwd and
+  the runner `cd`s into `$T` first (`examples/raytrace/run.sh:29`);
+  `examples/weblog/main.ty:143` writes its demo log to an absolute `/tmp` path.
+  So **un-ignoring these four directories exposes nothing the gates produce** —
+  the alternative the brief offered (move the build to a temp dir, as `fetch` and
+  `site` do) was already done here years of commits ago, and there was no build
+  path left to move. The per-directory `.gitignore` files are therefore written
+  for the case `examples/sqlite/.gitignore` documents in its own first line —
+  the manual `tychoc examples/<lane>/main.ty -o …` a reader reaches for — and
+  each names what that invocation and the lane's README would drop (`/main`,
+  `/main.c`, plus `/out.qoi` for raytrace and the README's `-o weblog` / `-o
+  server` spellings). Belt and braces, not load-bearing.
+
+  **THE GATE'S NEW ASSERTION, PROVED RED TWICE — ONE BREAK PER HALF.** Both the
+  directory un-ignore and the `*.out` un-ignore are needed, and `.gitignore` now
+  claims so, so each was removed on its own and the claim checked rather than
+  asserted. Only `examples/raytrace`'s lines were touched; the file was diffed
+  against a backup before and after each run.
+
+      (a) removed `!/examples/raytrace`  (diff: 109d108)
+          goldens-check: FAIL
+            examples/raytrace/run.sh:20: examples/raytrace/expected.out is tracked
+            but .gitignore would REFUSE it (.gitignore:77:/examples/*) -- …
+
+      (b) restored it, removed `!/examples/raytrace/*.out`  (diff: 149d148)
+          goldens-check: FAIL
+            examples/raytrace/run.sh:20: examples/raytrace/expected.out is tracked
+            but .gitignore would REFUSE it (.gitignore:115:*.out) -- …
+
+      (c) both restored (diff silent)
+          35 runners scanned, 17 name a golden, 18 in NO_GOLDEN, 400 golden files
+          checked, all tracked by git; 400 distinct paths checked against
+          .gitignore, none ignored.
+          goldens-check: ok
+
+  Two different rules fired, which is the point: neither half is redundant. Note
+  the `ok examples/raytrace/… 1 file` row printed in both red runs — the *old*
+  assertion stayed green throughout, so this genuinely is an addition and not a
+  restatement.
+
+  **AND THE DEFECT ITSELF, END TO END — the check the brief warned a clean
+  `git status` does not substitute for.** Deleting the golden and re-recording it
+  is the actual failure, so it was run, on `weblog`, in both tree states:
+
+      --- weblog put back under /examples/* ---
+      $ git rm --cached -q examples/weblog/expected.out && rm examples/weblog/expected.out
+      $ RECORD=1 sh examples/weblog/run.sh   # weblog: golden recorded
+      file on disk? yes
+      $ git status --short | grep weblog
+      D  examples/weblog/expected.out        # and NOTHING else -- INVISIBLE
+
+      --- the fix in place, identical sequence ---
+      $ git status --short | grep weblog
+      D  examples/weblog/expected.out
+      ?? examples/weblog/expected.out        # git offers it back
+
+  Restored with `git checkout --`; the golden is byte-identical to the backup
+  taken first (`cmp` silent) and `.gitignore` diffs clean against its backup.
+
+  **`git status --short` after a build of each lane — clean, four times.**
+  `make mandelbrot` (green), `make raytrace` (green), then the two lanes that
+  have **no `make` target at all** — `grep -nE 'weblog' Makefile` returns
+  nothing, and `webserver` appears only in a comment at `Makefile:69` — so they
+  were run as `sh examples/weblog/run.sh` (`weblog: ok`) and
+  `sh examples/webserver/run.sh` (`webserver: ok`). After every one of the four,
+  `git status --short` was exactly this phase's own edits and nothing else:
+
+      M .gitignore
+      M scripts/check_goldens.py
+      ?? examples/mandelbrot/.gitignore
+      ?? examples/raytrace/.gitignore
+      ?? examples/weblog/.gitignore
+      ?? examples/webserver/.gitignore
+
+  **Gates.** `make goldens-check` green with the list above.
+  `python3 scripts/check_citations.py` and `sh scripts/check_links.sh` both
+  green. `make test` and `make ci` were **not** run and are not the gate here:
+  nothing compiled changed, no CI step was added, and `scripts/ci.sh`'s
+  `[1b/13]` already invokes the gate that did change.
 
 - [ ] **Phase 4 — `Makefile:<N>@SKIPPED` has now been repointed seven times**
   - The previous plan's phase 3 moved it again, `:366`→`:376`, across the same
@@ -465,6 +585,43 @@ Done looks like: all four resolved, each with a check that is proved to fail.
     for the third, plus `make test` if `src/tychoc.c` changes. The SKIP path must
     be proved on a forced-missing host as phase 2 did (`PKG_CONFIG_LIBDIR` at an
     empty directory), in both directions.
+
+- [ ] **Phase 8 — `weblog` and `webserver` have a gate-protected golden that no gate compares**
+  - Found by phase 3 while looking for the `make` target to build each lane with,
+    and filed rather than absorbed. There is none: `grep -nE 'weblog' Makefile`
+    returns **nothing at all**, and `webserver` appears only inside a comment at
+    `Makefile:69`. Both lanes run only as `sh examples/<lane>/run.sh`, by hand.
+  - So the two are in a strange half-state. `scripts/check_goldens.py` now
+    asserts their `expected.out` is tracked *and* that `.gitignore` would take it
+    back — but **nothing ever diffs the program's output against it**.
+    `scripts/ci.sh:110` runs `make entrypoints`, which is compile-only
+    (`--emit-c`, no cc, no link — `scripts/ci.sh:107-108` says so), and
+    `scripts/ci.sh:102-104` states outright that the remaining runner-bearing
+    examples "were outside this file". A behaviour change in
+    `examples/weblog/main.ty` or `examples/webserver/main.ty` — or in `core:cli`,
+    `core:regex`, `core:datetime`, `core:net` under them — leaves `make ci` fully
+    green. That is the same shape as the outage `scripts/ci.sh:106` records, one
+    step short: the lane now compiles under a gate, and still is not run.
+  - Note what makes this cheap and what does not: both runners are already
+    hermetic (temp-dir build, no network, no pkg-config dependency, deterministic
+    stdout — measured in phase 3), and `webserver`'s golden comes from the
+    no-argument self-test with **no socket**, so neither needs the `server-check`
+    treatment. `sqlite` is the third lane in `scripts/ci.sh:104`'s list and is
+    genuinely different — it needs libsqlite3 and a SKIP path — so decide whether
+    it joins or stays out, rather than sweeping all three in.
+  - Decide first whether these belong as their own `make` targets beside
+    `raytrace`/`mandelbrot` at `Makefile:350` and `Makefile:356` and one CI step, or folded
+    into an existing step. "Leave them hand-run and say why in `scripts/ci.sh`"
+    is a legitimate answer — but then `scripts/check_goldens.py`'s guarantee for
+    those two lanes should say what it does and does not cover, because a
+    protected golden nobody compares reads as more coverage than it is.
+  - Scope: `Makefile`, `scripts/ci.sh`, and `scripts/check_goldens.py`'s header if
+    the answer is "leave them". Not the two `run.sh` files, which already work.
+  - Verify: **this is a phase whose brief legitimately ends in `make ci`**, because
+    it adds or changes a CI step — but only once, at the end. While building it,
+    `sh examples/weblog/run.sh` and `sh examples/webserver/run.sh` are the gates,
+    plus `make goldens-check`. Prove the new step can redden by perturbing one
+    lane's output, not by reasoning that `diff` works.
 
 ## Carried forward
 

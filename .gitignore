@@ -94,6 +94,21 @@ gmon.out
 !/examples/fetch
 # the static-site generator dogfood (main.ty + fixture site + runner + golden).
 !/examples/site
+# The four below each hold a TRACKED expected.out and, until 2026-08-02, no
+# un-ignore at all: the `/examples/*` rule above swallowed the whole directory
+# and only the index kept those goldens alive. A tracked file beats every ignore
+# rule, so nothing showed -- but `RECORD=1` over a deleted one re-created an
+# INVISIBLE file, and scripts/check_goldens.py could not see it because "is it
+# tracked" is a different question from "would .gitignore let it back in".
+# Un-ignoring cost nothing here: all four runners already build into a
+# `mktemp -d` (examples/mandelbrot/run.sh:22, examples/raytrace/run.sh:22,
+# examples/weblog/run.sh:24, examples/webserver/run.sh:23), so no build artifact
+# lands in these directories. Each still carries its own .gitignore for the
+# manual `tychoc examples/<lane>/main.ty -o ...` case, as examples/sqlite does.
+!/examples/mandelbrot
+!/examples/raytrace
+!/examples/weblog
+!/examples/webserver
 
 # Editor/OS noise
 *.o
@@ -127,6 +142,13 @@ gmon.out
 !/examples/fetch/*.out
 # the site dogfood's golden (examples/site/expected.out) is tracked too
 !/examples/site/*.out
+# ...and the four whose directories were un-ignored above. Both halves are
+# required: un-ignoring the directory alone leaves the broad `*.out` rule to
+# swallow the golden again. scripts/check_goldens.py asserts this now.
+!/examples/mandelbrot/*.out
+!/examples/raytrace/*.out
+!/examples/weblog/*.out
+!/examples/webserver/*.out
 .koka/
 # concurrency suite goldens (tests/conc/<name>.out) are tracked too
 !/tests/conc/*.out

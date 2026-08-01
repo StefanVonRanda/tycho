@@ -1,0 +1,7 @@
+# run.sh builds into a `mktemp -d` (examples/mandelbrot/run.sh:22), so nothing
+# lands here from the gate. These catch the manual form the README does not use
+# but a reader will reach for: `./tychoc examples/mandelbrot/main.ty -o
+# examples/mandelbrot/main` (binary), and the same with `--emit-c` (main.c).
+# (expected.out is un-ignored in the root .gitignore, like the other goldens.)
+/main
+/main.c

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every golden a runner names must be tracked by git.
+"""Every golden a runner names must be tracked by git AND un-ignored.
 
 A lane records a golden, `make <lane>-check` goes green, and the file never
 appears in `git status` -- because `.gitignore` ignores `*.out` broadly and
@@ -39,27 +39,40 @@ against the repo root otherwise.
 A resolved token is either a LITERAL -- which must exist and be tracked -- or a
 GLOB, which must match at least one file, all of them tracked.
 
-TRACKED, NOT UN-IGNORED -- and the gap that leaves
---------------------------------------------------
-This asserts the golden is in the index. It does NOT assert `.gitignore` would
-let it back in if it were deleted and re-recorded, because a tracked file beats
-every ignore rule and so the two questions are genuinely different.
+TRACKED IS NOT ENOUGH -- THE SECOND ASSERTION
+---------------------------------------------
+Being in the index and being un-ignored are DIFFERENT questions, because a
+tracked file beats every ignore rule. A golden inside an ignored directory looks
+perfectly healthy -- it is committed, `git status` is clean, this gate's first
+assertion passes -- right up until someone deletes it and re-records it, at
+which point `RECORD=1` writes an INVISIBLE file and the tree is back in the
+fresh-clone failure above with nothing to show for it.
 
-Four lanes are live examples of the difference, measured 2026-08-01 with
-`git check-ignore -v`: `examples/mandelbrot`, `examples/raytrace`,
-`examples/weblog` and `examples/webserver` each have a tracked `expected.out`
-sitting inside a directory `.gitignore:77`'s `/examples/*` excludes outright,
-with no `!/examples/<dir>/*.out` beneath it. `RECORD=1` over a deleted golden
-there re-creates an INVISIBLE file. That is not fixable in four un-ignore lines
--- un-ignoring the directory also exposes the binaries and emitted `.c` those
-lanes build in place, which is why the four with a per-directory `.gitignore`
-(sqlite, life, snake, minesweeper) needed one. It is filed as its own phase.
+That was not hypothetical either. Measured 2026-08-01: `examples/mandelbrot`,
+`examples/raytrace`, `examples/weblog` and `examples/webserver` each held a
+tracked `expected.out` inside a directory `/examples/*` excluded outright, with
+no `!/examples/<dir>/*.out` beneath it. Fixed 2026-08-02 by un-ignoring the four
+directories and giving each its own `.gitignore`; this gate now asserts it, so
+the fifth lane cannot arrive quietly.
 
-Checking it here would redden on those four today, so this gate deliberately
-asks the narrower question it can answer cleanly.
+So every golden is also run through `git check-ignore --no-index`. Two details
+in that command are load-bearing:
 
-THE VACUOUS PASS, AND THE THREE GUARDS AGAINST IT
--------------------------------------------------
+  --no-index   WITHOUT it, `git check-ignore` consults the index and reports a
+               tracked path as not-ignored -- which is true, and is exactly the
+               question we are NOT asking. The check would pass vacuously on
+               every golden in the tree, forever, because a golden is tracked by
+               the time it gets here.
+  no -v        `-v` prints the last matching pattern INCLUDING a negation, and
+               exits 0 when it printed anything. `examples/life/life.out` comes
+               back as `!/examples/life/*.out` -- matched, not ignored. Reading
+               that as a failure inverts the check. Plain (no `-v`) output lists
+               only paths that are genuinely ignored, which is the answer wanted;
+               `-v` is re-run afterwards on the offenders alone, to name the rule
+               in the error message.
+
+THE VACUOUS PASS, AND THE FOUR GUARDS AGAINST IT
+------------------------------------------------
 "Walk a list, assert each entry" passes trivially when the walk finds nothing.
 A bad glob, a renamed variable, a lane that starts spelling its golden some new
 way, and this exits 0 having checked zero files. So:
@@ -72,6 +85,13 @@ way, and this exits 0 having checked zero files. So:
      out from under the scan reddens here instead of going quiet.
   3. Every golden found is PRINTED, with the `run.sh:line` that names it. The
      output is the evidence; the exit code alone is not.
+  4. The ignore check is COUNTED, and the count is printed beside the tracked
+     count. Both assertions run over the same list, so if the two numbers ever
+     disagree the second one silently stopped covering some of the first -- and
+     "0 checked for ignore" is visible on the green line rather than inferred
+     from a missing red. This guard is why the `--no-index`/`no -v` note above
+     is written out: both mistakes make the check pass while checking nothing,
+     and neither shows up as an error.
 
 FLOOR, NOT COUNT -- and why
 ---------------------------
@@ -152,6 +172,36 @@ def tracked_set():
     return set(p for p in out.stdout.split("\0") if p)
 
 
+def ignored_map(paths):
+    """{path: matching rule} for those of `paths` .gitignore would refuse.
+
+    `--no-index` and the absence of `-v` are both required; see the docstring's
+    "TRACKED IS NOT ENOUGH" section for what each one prevents. check-ignore
+    exits 1 when nothing matched, which is the ordinary green case, so the exit
+    code is not checked -- only 128 (a real git error) must not pass silently.
+    """
+    if not paths:
+        return {}
+    stdin = "\0".join(paths) + "\0"
+    r = subprocess.run(["git", "check-ignore", "--no-index", "-z", "--stdin"],
+                       input=stdin, capture_output=True, text=True)
+    if r.returncode not in (0, 1):
+        raise SystemExit("git check-ignore failed (%d): %s" % (r.returncode, r.stderr.strip()))
+    bad = [p for p in r.stdout.split("\0") if p]
+    if not bad:
+        return {}
+    # Re-run with -v on the offenders ALONE to name the rule. Safe here in a way
+    # it is not above: every path in `bad` is already known to be ignored, so a
+    # negation cannot be misread as a failure.
+    v = subprocess.run(["git", "check-ignore", "--no-index", "-v", "-z", "--stdin"],
+                       input="\0".join(bad) + "\0", capture_output=True, text=True)
+    f = [x for x in v.stdout.split("\0") if x != ""]
+    rules = {}
+    for i in range(0, len(f) - 3, 4):
+        rules[f[i + 3]] = "%s:%s:%s" % (f[i], f[i + 1], f[i + 2])
+    return {p: rules.get(p, "(rule not reported)") for p in bad}
+
+
 def scan(path, tracked):
     """Yield (line_no, resolved_pattern, is_glob) for each golden `path` names."""
     src = open(path, encoding="utf-8", errors="replace").read().splitlines()
@@ -221,6 +271,7 @@ def main():
     runners = sorted(p for p in tracked if p == "run.sh" or p.endswith("/run.sh"))
 
     errors, gaps, rows = [], [], []
+    goldens = {}          # resolved path -> first (run.sh, line) that names it
     lanes = 0
     for r in runners:
         found = {}
@@ -248,6 +299,8 @@ def main():
                     errors.append("%s:%d: %s matches nothing -- the lane's golden "
                                   "convention moved and this check went blind" % (r, n, pat))
                     continue
+                for p in disk:
+                    goldens.setdefault(p, (r, n))
                 untracked = [p for p in disk if p not in tracked]
                 for p in untracked:
                     errors.append("%s:%d: %s exists but is NOT tracked by git "
@@ -258,6 +311,8 @@ def main():
                         print("      %s %s" % ("!!" if p not in tracked else "ok", p))
             else:
                 ok = pat in tracked
+                if os.path.exists(pat):
+                    goldens.setdefault(pat, (r, n))
                 if not os.path.exists(pat):
                     errors.append("%s:%d: %s is named as a golden but does not exist"
                                   % (r, n, pat))
@@ -265,6 +320,19 @@ def main():
                     errors.append("%s:%d: %s exists but is NOT tracked by git "
                                   "-- a fresh clone fails with `no golden`" % (r, n, pat))
                 rows.append((r, n, pat, 1, 0 if ok else 1))
+
+    # Second assertion: tracked is not enough -- .gitignore must also be willing
+    # to take the file back, or `RECORD=1` over a deleted golden writes an
+    # invisible one and the first assertion goes on passing.
+    ign = ignored_map(sorted(goldens))
+    for p in sorted(ign):
+        r, n = goldens[p]
+        errors.append("%s:%d: %s is tracked but .gitignore would REFUSE it "
+                      "(%s) -- delete it, RECORD=1, and the golden comes back "
+                      "INVISIBLE. Un-ignore its directory, and un-ignore the "
+                      "golden itself AFTER the broad `*.out` rule -- both halves "
+                      "are needed. Verify with `git check-ignore --no-index -v %s`."
+                      % (r, n, p, ign[p], p))
 
     total = 0
     for r, n, pat, cnt, bad in rows:
@@ -279,9 +347,11 @@ def main():
 
     if not errors:
         print("\n%d runner%s scanned, %d name a golden, %d in NO_GOLDEN, "
-              "%d golden file%s checked, all tracked by git."
+              "%d golden file%s checked, all tracked by git; %d distinct path%s "
+              "checked against .gitignore, none ignored."
               % (len(runners), "" if len(runners) == 1 else "s", lanes,
-                 len(NO_GOLDEN), total, "" if total == 1 else "s"))
+                 len(NO_GOLDEN), total, "" if total == 1 else "s",
+                 len(goldens), "" if len(goldens) == 1 else "s"))
 
     if errors:
         sys.stdout.flush()   # the table is the evidence; it must precede the verdict
