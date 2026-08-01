@@ -199,7 +199,7 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
   of which spells it `Makefile:366@SKIPPED`. The row now names that path. Both
   doc gates are green: `check_citations.py` `ok`, `check_links.sh` `ok`.
 
-- [ ] **Phase 2 — the compiler prints its shim closure, and the hand lists go**
+- [x] **Phase 2 — the compiler prints its shim closure, and the hand lists go**
   - Scope: `src/tychoc.c` (a `--print-shims` or equivalent), `examples/fetch/run.sh`,
     `examples/site/run.sh`.
   - Expose the transitive closure the normal build path already computes, then
@@ -215,6 +215,83 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
     only route to a shim is transitive.
   - Verify: `make fetch`, `sh examples/site/run.sh`, and `make test` if
     `src/tychoc.c` changed — which it will.
+
+  **Evidence, 2026-08-01.** Changed: `src/tychoc.c` (`--print-shims`),
+  `examples/fetch/run.sh`, `examples/site/run.sh`, and `docs/spec/15-program.md`
+  §27.4, which is where this tree documents its other CLI flags.
+
+  **The Pre-flight assumption HELD — the closure exists and is transitive.** It is
+  not a separate pass: `merge_pkg` adds a package's co-located shim as the DFS
+  *enters* it, at `src/tychoc.c:12429`, and then recurses into that package's own
+  imports at `:12456`. So `g_shims` (`src/tychoc.c@add_shim`, which dedupes) is the
+  transitive closure by construction, and `:12788` splices it onto the normal cc
+  line. What was missing was any way to *read* it: `--emit-c` returns at `:12775`,
+  before the cc line is ever built, so a lane linking the emitted C by hand had
+  nothing to ask and guessed instead.
+
+  **The flag.** `--print-shims` parses at `:12667` alongside `--symbols`, and
+  prints at `:12753-12754` — after the package merge, deliberately *before*
+  `check_finite_types`/`resolve_program`, because the shim set is a property of the
+  import graph and not of the program type-checking. Nothing else goes to stdout,
+  so a shell splices it straight onto a cc line. A single-file program with no
+  package prints nothing and exits 0 (`./tychoc tests/for3.ty --print-shims` →
+  empty, `exit=0`): an empty closure is an answer. `--print-shim` (singular) is
+  still `tychoc: unknown flag`, so the new spelling did not widen what is accepted.
+
+  **The transitive break, proved both ways on the real case.**
+  `examples/fetch/main.ty` imports `core:http`, `core:io`, `core:json`,
+  `core:path`, `core:sha256` — **not** `core:strings`. The shim it needs is reached
+  through `corelib/json/json.ty`. Measured on this tree:
+
+      old (grep the program's own core: imports):
+        corelib/http/http_shim.c
+        corelib/io/io_shim.c
+      new (./tychoc examples/fetch/main.ty --print-shims):
+        .../corelib/http/http_shim.c
+        .../corelib/strings/strings_shim.c      <-- transitive, via core:json
+        .../corelib/io/io_shim.c
+
+  That missing third line **is** the 2026-08-01 break. The grep cannot see it by
+  construction, which is why copying `examples/site/run.sh`'s loop into fetch would
+  have left the lane red.
+
+  **`examples/site/run.sh` was passing by coincidence, not by mechanism.** Its grep
+  and the closure agree there (io, strings, datetime) — but only because
+  `examples/site/main.ty` imports `core:strings` *directly*. The lane had no
+  property that would have saved it; it had a program that happened not to need
+  one. Both lanes now ask the compiler, and **no hand-maintained shim list remains
+  in either**: `examples/fetch/run.sh`'s `SHIM=` is a command substitution and
+  site's `for mod in $(grep …)` loop is deleted.
+
+  **Break and revert — the lanes really do depend on the derived list.** Filtering
+  the transitively-reached entry back out of fetch's derivation
+  (`--print-shims | grep -v strings_shim`, i.e. reproducing exactly the stale state)
+  and running `make fetch`:
+
+      FAIL: sanitizer cc
+            /tmp/…/san_src.c:3524:(.text+0x1f2b0): undefined reference to `strx_parse_double'
+      fetch: FAIL
+
+  which is the historical error string byte for byte. Restoring the line returns it
+  to `fetch: green`. The check is not vacuous — it fails for the real reason, and it
+  fails at the link step the stale list used to break.
+
+  Note a *first* attempt at this break silently did nothing: a `sed` whose
+  replacement text contained a `|` collided with its own `s|…|…|` delimiter and
+  errored, and the "broken" run was in fact the unbroken file printing green. It is
+  recorded because a break-proof that quietly fails to break is indistinguishable
+  from a gate that cannot fail, which is the exact hazard the Pre-flight names.
+
+  **Gate.** `make test`: `passed: 561 failed: 0`, `all green` — the same 561 as
+  after phase 1. Nothing moved, which is the expected result: `--print-shims` adds
+  a flag and returns early, and no fixture passes it. `make fetch` green,
+  `sh examples/site/run.sh` green. Doc gates green after repointing one anchored
+  ref that the +26-line `src/tychoc.c` insert moved — `docs/spec/15-program.md`'s
+  `> Provenance:` line, `` `:12765@system(cmd)` ``→`` `:12791@system(cmd)` ``, live
+  prose so the anchor was kept and repointed, verified by reading the new line
+  (`int rc = system(cmd);`). `sh scripts/spec_check.sh` was also run, since
+  `docs/spec/` changed: `9 runnable example(s), all pass`. `make ci` was not run —
+  no CI step changed.
 
 - [ ] **Phase 3 — every golden a runner names is tracked, and a gate says so**
   - Scope: a new check (its own script, or a step in an existing one),
@@ -256,6 +333,36 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
     its twin.
   - Verify: `make test` — `src/tychoc.c`, so it is the gate. Count is 561 after
     phase 1.
+
+- [ ] **Phase 5 — the other two lanes still grep for direct imports, and they also need the `deps` closure**
+  - Found while doing phase 2, outside its scope lock (which named
+    `examples/fetch/run.sh` and `examples/site/run.sh` only), so it is filed here
+    rather than absorbed.
+  - `corelib/run.sh:32` and `examples/corelib/run.sh:30` carry the **same
+    direct-import grep** phase 2 just deleted from the two example lanes —
+    `for mod in $(grep … 'core:[a-z0-9_]+' …)`, mapping each to
+    `corelib/<mod>/<mod>_shim.c`. Same defect, same blindness to a transitive
+    dependency, and these two lanes cover far more programs than the two that were
+    fixed: every `corelib/test/*/main.ty` and every `examples/corelib/*/main.ty`.
+  - **`--print-shims` alone does NOT close them, which is why this is a phase and
+    not a five-line follow-up.** Both lanes use the same loop for a second purpose:
+    they read each module's sibling `<mod>/deps` file to decide whether to **SKIP**
+    on a host missing a pkg-config dependency (`corelib/run.sh:33` and
+    `:36-40`). A shim list does not carry that. Closing them properly wants a
+    `--print-deps` (or one flag emitting both), and the compiler already
+    accumulates it in `g_pkgdeps` via `add_pkg_deps` — but it accumulates resolved
+    *cflags/libs*, not the pkg-config **names** the SKIP logic tests with
+    `pkg-config --exists`, so the exposure is not a straight print of what exists.
+  - `examples/fetch/run.sh:33` has the same gap in its third form: it hard-codes
+    `DEPF="$(pkg-config --cflags --libs libcurl)"`, a hand-maintained *dependency*
+    list beside the shim list phase 2 retired. It is stale-prone for exactly the
+    reason the shim list was — a transitively imported package gaining a `deps`
+    file would not appear in it.
+  - Done when: no `run.sh` in the tree derives shims or deps from a grep over its
+    own source, and the SKIP behaviour is preserved (proved by a host, or a forced
+    probe, where a dep is absent).
+  - Verify: `make corelib`, `make corelib-examples`, `make fetch`, and `make test`
+    if `src/tychoc.c` gains the flag — which it will. Not `make ci`.
 
 ## Backlog audit, 2026-08-01
 

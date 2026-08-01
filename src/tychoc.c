@@ -12653,6 +12653,7 @@ int main(int argc, char **argv) {
     const char *cc    = "cc";
     int emit_c_only = 0;
     int want_symbols = 0;
+    int print_shims = 0;   /* --print-shims: list the transitive <pkg>_shim.c closure, no codegen */
     int bundle = 0;
     int debug = 0;    /* -g: emit #line directives + build with -O0 -g (single-file only) */
     int native = 0;   /* --native: add -march=native (non-portable: SIGILL on a different CPU) */
@@ -12663,6 +12664,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--emit-c")) emit_c_only = 1;
         else if (!strcmp(argv[i], "--symbols")) want_symbols = 1;
+        else if (!strcmp(argv[i], "--print-shims")) print_shims = 1;
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--native")) native = 1;
         else if (!strcmp(argv[i], "-g")) debug = 1;
@@ -12686,7 +12688,10 @@ int main(int argc, char **argv) {
     if (!input) {
         fprintf(stderr, "usage: tychoc file.ty [-o name] [--emit-c] [-g] [--bundle] [--native] [--cc <compiler>]\n"
                         "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n"
-                        "  --emit-c with -o writes <name>.c; with no -o it writes the C to stdout.\n");
+                        "                     [--print-shims]\n"
+                        "  --emit-c with -o writes <name>.c; with no -o it writes the C to stdout.\n"
+                        "  --print-shims lists the <pkg>_shim.c files this program needs, one per line,\n"
+                        "  transitively -- what a lane linking the emitted C by hand must pass to cc.\n");
         return 1;
     }
     g_srcname = input;
@@ -12727,6 +12732,27 @@ int main(int argc, char **argv) {
         fprintf(stderr, "%s:%d: error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line\n",
                 input, g_imports[0].line);
         return 1;
+    }
+    /* --print-shims: the companion-shim closure this program needs, one path per
+     * line and nothing else on stdout, so a shell can splice it straight onto a cc
+     * line. It does not compute anything new -- `compile_package` above has already
+     * walked the whole import graph, and `merge_pkg` calls `add_shim` as the DFS
+     * *enters* each package, so a shim reached only through an indirect import is
+     * in `g_shims` on exactly the same terms as a directly imported one. That
+     * closure is what the normal build path splices onto its cc line; `--emit-c`
+     * returns before ever reaching it, which is why every hand-linked lane had to
+     * guess. Two lanes guessed from direct imports and went stale twice on
+     * transitive deps (`examples/fetch/run.sh`'s note records both). They ask here
+     * now.
+     *
+     * Printed BEFORE `check_finite_types`/`resolve_program`, deliberately: the
+     * shim list is a property of the import graph, not of the program type-checking,
+     * and a build script wants the link line even while the program is mid-edit.
+     * A single-file program with no package prints nothing and exits 0 -- an empty
+     * closure is a correct answer, not a failure. */
+    if (print_shims) {
+        for (int i = 0; i < g_nshims; i++) printf("%s\n", g_shims[i]);
+        return 0;
     }
     if (debug && !pkg) {   /* -g: line info only for single-file builds -- merged packages lose per-node filenames */
         g_line_info = 1;

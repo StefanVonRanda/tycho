@@ -31,33 +31,33 @@ export TYCHO_CORELIB="$PWD/corelib"
 CC="${CC:-cc}"
 if ! pkg-config --exists libcurl 2>/dev/null; then echo "fetch: SKIP (libcurl not installed)"; exit 0; fi
 DEPF="$(pkg-config --cflags --libs libcurl)"
-# main.ty imports core:http and core:io, and BOTH carry a shim. tychoc auto-links
-# a package's <pkg>_shim.c on the normal build path (leg 1); the --emit-c path
-# below links by hand, so both are named.
+# The --emit-c leg (2) links the shims by hand, so it has to know which ones.
+# It ASKS THE COMPILER: `--print-shims` prints the transitive <pkg>_shim.c closure
+# that the normal build path (leg 1) splices onto its own cc line. There is no
+# hand-maintained list here any more, and the history below is why.
 #
-# This was ALREADY BROKEN at HEAD before the 2026-07-29 tychoc0 retirement, and
-# measured rather than assumed: running the pre-change run.sh at HEAD fails with
-# `undefined reference to iox_close_lines / iox_stat_kind` while linking the
-# tychoc0 leg, because SHIM named http_shim.c alone and core:io's shim was never
-# added when main.ty gained its core:io imports. The lane has therefore been red
-# on this box independently of the retirement. Adding io_shim.c fixes the link;
-# a SECOND pre-existing failure is behind it -- see the note by the golden below.
+# THIS LIST WENT STALE TWICE, both times silently, both times the same shape.
+# (1) Before the 2026-07-29 tychoc0 retirement, measured rather than assumed:
+# running the pre-change run.sh at HEAD failed with `undefined reference to
+# iox_close_lines / iox_stat_kind`, because the list named http_shim.c alone and
+# core:io's shim was never added when main.ty gained its core:io imports.
+# (2) On 2026-08-01, `core:strings` gained a shim (`strx_parse_double`, backing
+# `strings.parse_float`) and the lane went red with `undefined reference to
+# strx_parse_double` -- measured by running `make fetch` at d571b16 with
+# everything else stashed, so it was this list being stale and nothing above it.
 #
-# AND IT WENT STALE A SECOND TIME, on 2026-08-01, the same way and for a reason
-# worth writing down because it defeats the obvious fix. `core:strings` gained a
-# shim (`strx_parse_double`, backing `strings.parse_float`), and this lane went
-# red with `undefined reference to strx_parse_double` -- measured by running
-# `make fetch` at d571b16 with everything else stashed, so it is this list being
-# stale and not any change above it.
-#
-# NOTE WHAT IS *NOT* THE FIX. examples/site/run.sh auto-discovers its shims by
-# grepping its own source for `core:` imports, and that would NOT have caught
-# this one: examples/fetch/main.ty does not import core:strings. It imports
-# core:json, and corelib/json/json.ty imports core:strings -- so the dependency
-# is TRANSITIVE, and a grep over this program's own imports finds nothing to
-# add. Discovering it properly means walking the import graph, which is filed as
-# a phase rather than improvised here.
-SHIM="corelib/http/http_shim.c corelib/io/io_shim.c corelib/strings/strings_shim.c"
+# NOTE WHAT WAS *NOT* THE FIX, because it is the trap the whole phase exists to
+# avoid. examples/site/run.sh used to auto-discover its shims by grepping its own
+# source for `core:` imports, and that would NOT have caught break (2):
+# examples/fetch/main.ty does not import core:strings. It imports core:json, and
+# corelib/json/json.ty imports core:strings -- the dependency is TRANSITIVE, and a
+# grep over this program's own imports finds nothing to add. Measured on this tree
+# after the flag landed: the grep yields http+io, `--print-shims` yields
+# http+strings+io. Only a walk of the import graph sees it, and the compiler was
+# already doing that walk (`merge_pkg` recurses, adding each package's shim as it
+# enters); the flag just prints what it found.
+SHIM="$("$TYCHOC" examples/fetch/main.ty --print-shims)" \
+    || { echo "fetch: FAIL (tychoc --print-shims)"; exit 1; }
 RECORD="${RECORD:-0}"
 golden=examples/fetch/expected.out
 URL="file://$PWD/examples/fetch/fixture.json"
