@@ -34,16 +34,19 @@
 #       empty-stdout half is the load-bearing half: tycho-q builds the whole
 #       result before printing, so a consumer never reads a truncated CSV it
 #       cannot tell is truncated.
-#   [5] THE core:json GUARD HOLDS. `[{"a":1.5}]` and `[}]` are refused. Handed
-#       straight to `json.parse` the first exits 0 having FABRICATED a column --
-#       the leftover `.5}]` is read as the next key -- and the second exhausts
-#       memory from three bytes, because `parse_value` consumes nothing at a byte
-#       it does not recognise and `corelib/json/json.ty:81-92` advances only on
-#       `,` or `]`. Neither is reportable: `corelib/json/json.ty@parse` returns
-#       `Json`, not a `Result`, so the package has no error channel at all. This
-#       leg is what proves tools/tycho-q/main.ty@json_guard is still in front of
-#       them. Filed against the corelib and NOT fixed here; see FRICTION.md's
-#       2026-08-01 section, item 1.
+#   [5] core:json's ERROR CHANNEL REACHES THE USER. `[{"a":1.5}]` and `[}]` are
+#       refused, each naming the byte that failed. Handed to the OLD `json.parse`
+#       the first exited 0 having FABRICATED a column -- the leftover `.5}]` was
+#       read as the next key -- and the second exhausted memory from three bytes,
+#       because `parse_value` consumed nothing at a byte it did not recognise
+#       while the array loop advanced only on `,` or `]`. Neither was reportable:
+#       `parse` returned `Json`, not a `Result`, so the package had no error
+#       channel and tycho-q carried its own pre-validator in front of it.
+#       `corelib/json/json.ty@parse_checked` fixed that on 2026-08-01 and the
+#       pre-validator is gone; these two legs now assert on the CORELIB's message
+#       (`tools/tycho-q/main.ty@json_err` relabels it and adds the float advice),
+#       which is what proves the error actually crosses the package boundary and
+#       reaches stderr.
 #
 # THE GOLDEN IS DETERMINISTIC ONLY BECAUSE THE FIXTURES ARE BUILT HERE. Every
 # fixture is written by this script from a heredoc literal -- never from
@@ -77,8 +80,8 @@ fi
 # the fixtures -- every awkward case the phases used, from literals only.
 #
 # sales.csv and sales.json carry the SAME five rows. `price` is spelled as a
-# JSON string because core:json has no float path at all and tycho-q's guard
-# refuses `1.50` in JSON rather than let it be read as 1 (DECISION 3 in
+# JSON string because core:json has no float path at all and now refuses `1.50`
+# outright rather than let it be read as 1 (DECISION 3 in
 # tools/tycho-q/main.ty); a JSON string is not re-classified, so it stays a
 # string there and a decimal here. That asymmetry is the documented cost, and
 # leg [3] below picks a query over the columns where the two agree.
@@ -138,8 +141,8 @@ EOF
 # of keys in first-appearance order, and every earlier row needs a null in it.
 printf '%s\n' '[{"a":1,"b":2},{"b":5},{"a":9,"c":"new"}]' > "$fix/sparse.json"
 
-printf '%s' '[{"a":1.5}]' > "$fix/float.json"   # json.parse: exit 0, key `.5}]`
-printf '%s' '[}]'         > "$fix/spin.json"    # json.parse: out of memory
+printf '%s' '[{"a":1.5}]' > "$fix/float.json"   # was: exit 0, key `.5}]`
+printf '%s' '[}]'         > "$fix/spin.json"    # was: out of memory
 
 # ---------------------------------------------------------------------------
 # [1] the transcript, against the golden
@@ -290,11 +293,13 @@ refuses 'no truthiness'     '`where` needs a boolean' \
         'select name from sales.csv where qty'
 refuses 'json float'        'JSON numbers here must be integers' \
         'select * from float.json'
-refuses 'json unbalanced'   'closes nothing that was opened' \
+# `[}]`: the old OOM. The message is the corelib's own -- `}` begins no value --
+# and the byte offset is the point: it names the `}` at 1, not the document.
+refuses 'json bad byte'     'spin.json: byte 1: byte begins no JSON value' \
         'select * from spin.json'
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-q: green (31-query transcript == golden; select * over 2 fixtures byte-identical to the input; CSV and JSON agree under cmp; malformed query, missing file, unknown column, bad comparison, inexact / and the core:json float/spin guards all refused with empty stdout)"
+    echo "tycho-q: green (31-query transcript == golden; select * over 2 fixtures byte-identical to the input; CSV and JSON agree under cmp; malformed query, missing file, unknown column, bad comparison, inexact / and both core:json parse errors all refused with empty stdout)"
 else
     echo "tycho-q: FAIL"; exit 1
 fi
