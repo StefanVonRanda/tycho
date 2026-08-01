@@ -135,6 +135,12 @@ gmon.out
 # broad `*.out` rule above swallows it silently and `make ar-check` fails on a
 # fresh clone with "no golden".
 !/tools/tycho-ar/*.out
+# the tycho-q query tool's transcript golden (tools/tycho-q/expected.out) is
+# tracked too, for the same reason and against the same trap: the golden gets
+# written, `make q-check` goes green, and without this line the file never
+# appears in `git status` at all, so a fresh clone fails with "no golden". That
+# is not hypothetical -- it is exactly what happened to tycho-ar's golden above.
+!/tools/tycho-q/*.out
 
 # Claude Code session state (locks, worktrees) — never publish
 /.claude/

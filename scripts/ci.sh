@@ -139,6 +139,22 @@ make -s shim-check
 step "[3e/13] make ar-check  (tycho-ar: create twice byte-identical, t vs golden, diff -r round trip, damage and path traversal refused)"
 make -s ar-check
 
+# 3f for the same reason 3e is 3e: a dogfood compared against a recorded golden,
+# which is what every leg of step 3 is, and the /13 denominator counts the
+# numbered steps. It sits beside ar-check because it closes the same hole for the
+# same directory -- step [9] tools-check `--emit-c`s every .ty in the tree, so
+# tycho-q failing to COMPILE already reddens there, and [3b] entrypoints never
+# looks under tools/, so before this step nothing RAN it. An evaluator that
+# started dropping rows, ordering "10" before "9", or truncating a decimal would
+# have kept `make ci` green.
+#
+# Unlike the archiver's, this golden is also an assertion about FOUR corelib
+# packages at once -- core:csv, core:json, core:decimal and core:sort -- because
+# the transcript records what they actually return for a header, a `1.50`, a
+# 26-digit integer and a multi-key order. ~3.5s.
+step "[3f/13] make q-check  (tycho-q: 31-query transcript vs golden, select * byte-identical to the input, CSV == JSON, ten failure legs refused with empty stdout)"
+make -s q-check
+
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
 

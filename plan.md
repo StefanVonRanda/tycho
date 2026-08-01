@@ -1444,7 +1444,7 @@ row pipeline.
     file)
     ```
 
-- [ ] **Phase 4 — the gate, the CI step, and what the program surfaced**
+- [x] **Phase 4 — the gate, the CI step, and what the program surfaced**
   - Scope: `tools/tycho-q/run.sh` (new), `tools/tycho-q/expected.out` (new,
     **and tracked** — see carried-forward phase 19, which is exactly this trap),
     `.gitignore`, `Makefile` (`q-check`), `scripts/ci.sh` (a new step),
@@ -1468,6 +1468,266 @@ row pipeline.
     and it is also a phase that adds a CI step, which is the other condition
     that earns it. Read which step reddens and fix with that step's own gate;
     never re-run `make ci` as the debugging loop.
+
+  - **Verified 2026-08-01.**
+
+    ### The gate
+
+    `tools/tycho-q/run.sh`, modelled on `tools/tycho-ar/run.sh` and gating the
+    same way for the same stated reason — a batch program compares stdout
+    against a golden rather than starting a daemon. Five legs, and the split
+    between "golden" and "assertion" follows the archiver's: a golden where the
+    subject is bytes, a `grep -qF` where the subject is an exit code and a
+    stderr substring.
+
+    ```
+    $ make q-check
+    tycho-q: green (31-query transcript == golden; select * over 2 fixtures
+    byte-identical to the input; CSV and JSON agree under cmp; malformed query,
+    missing file, unknown column, bad comparison, inexact / and the core:json
+    float/spin guards all refused with empty stdout)
+    ```
+
+    `time sh tools/tycho-q/run.sh` → **3.55s total** (measured 2026-08-01), which
+    is the figure written into `CLAUDE.md`'s gate table and the `Makefile`
+    comment.
+
+    **The fixtures are written by the runner from heredoc literals** — never
+    `/dev/urandom`, never copied out of the tree — and every query runs with the
+    fixture directory as its working directory, so **no temp path and no host
+    detail can reach the golden**. Unlike `tycho-ar`'s fixture no `touch -d` is
+    needed: `tycho-q` reads no mtime and prints none. The four fixtures carry
+    every awkward case the phases used: an empty field, a quoted comma, an
+    embedded newline, UTF-8 (`café`), leading-zero numeric strings (`007`,
+    `0080`), a negative, decimals at two scales, duplicate sort keys (price
+    `1.50` twice, qty `7` twice), and a 26-digit integer.
+
+    **The golden was read line by line before it was trusted**, not merely
+    recorded. A golden accepted because the gate went green asserts whatever the
+    program did, right or wrong, which is the one failure mode a golden runner
+    has. Each of the 31 entries was checked against the rule the earlier phases
+    wrote down — `1 + 2 * 3` is `(+ 1 (* 2 3))`; `not` binds tighter than `and`
+    and `or`; `0.1 + 0.2` is `0.3`; `price > 0.15` keeps four rows and drops
+    `0.10`; the kind rank is null < bool < number < string in Q24 and its exact
+    reverse in Q25; and Ada precedes Eve on the `1.50` tie in **both** Q20 (asc)
+    and Q21 (desc), which is the stability claim.
+
+    ### It reddens when broken — proved in both directions by an actual edit
+
+    The break is one character in the multi-key comparator
+    (`tools/tycho-q/main.ty@cmp_key_rows`): `k < len(dirs)` → `k < 1`, so only
+    the first `order by` key is considered. Realistic, silent, and exactly the
+    class of defect that returns wrong rows while looking like it worked.
+
+    ```
+    $ make q-check                      # WITH the break
+    FAIL: transcript != golden
+          123d122
+          < Eve,eu,1.50
+          124a124
+          > Eve,eu,1.50
+    tycho-q: FAIL
+    make: *** [Makefile:293: q-check] Error 1
+    ```
+
+    That is Q23 (`order by region asc, price desc`): with the secondary key
+    ignored the three `eu` rows fall back to input order, so `Eve` moves. Then
+    reverted and re-run:
+
+    ```
+    $ diff tools/tycho-q/main.ty <pre-break backup>
+    main.ty IDENTICAL to pre-break backup
+    $ make q-check
+    tycho-q: green (31-query transcript == golden; ...)
+    ```
+
+    ### The golden is tracked — carried-forward phase 19's trap, closed
+
+    `.gitignore` ignores `*.out` broadly and un-ignores per directory. Without a
+    new line the golden is written, `make q-check` goes green, and the file never
+    appears in `git status` at all — so a fresh clone fails with "no golden".
+    That is not hypothetical; it is what happened to `tools/tycho-ar/expected.out`.
+
+    ```
+    $ git check-ignore -v tools/tycho-q/expected.out
+    .gitignore:143:!/tools/tycho-q/*.out	tools/tycho-q/expected.out
+
+    $ git ls-files --error-unmatch tools/tycho-q/expected.out
+    tools/tycho-q/expected.out
+    -- exit 0
+    ```
+
+    ### The wiring
+
+    - **`Makefile`**: `q-check`, with a comment block in the register of
+      `ar-check`'s, saying what it reddens for and why it is the only lane that
+      RUNS `tycho-q` — `scripts/tools_check.sh` `--emit-c`s every `.ty` in the
+      tree so a syntax error already reddens step `[9]`, and
+      `scripts/entrypoints.sh` globs `examples/*/` plus `server/main.ty` and
+      never looks under `tools/`. Added to `.PHONY`.
+    - **`scripts/ci.sh`**: `[3f/13]`, beside `[3e/13] make ar-check`. Numbered
+      `3f` rather than `14` because it is a dogfood compared against a recorded
+      golden, which is what every leg of step 3 is, and because `2b/2c/2d/3b/3c/
+      3d/3e` are the existing convention for a sub-lane — the `/13` denominator
+      counts the numbered steps and does not move.
+    - **`CLAUDE.md`**: a gate-table row (`make q-check`, ~3.5s) and a row in the
+      "run this instead while fixing" table, so a red `[3f]` routes to its own
+      gate rather than to another 19-minute sweep.
+
+    ### Out-of-scope work found, and what was done about it
+
+    **The `Makefile` edit broke four citations elsewhere in the tree, and they
+    were repaired here rather than filed.** Inserting the `q-check` comment block
+    moved every later line of the `Makefile` down by exactly 31, which shifted
+    `SKIPPED` from line 335 to 366 and made four anchored refs stale:
+    `scripts/asan_self.sh:11` and `:72`, `scripts/check_citations.py:398`, and
+    `scripts/editors_check.sh:29`. A fifth — the second, unanchored Makefile line
+    number in that same `scripts/asan_self.sh` comment — was **not** reported,
+    because a bare ref is range-checked and not content-checked, but it had
+    drifted by the same 31 lines and was repointed too. Verified by reading the
+    old line out of `HEAD` and confirming it is character-for-character the line
+    the new number names.
+
+    These are ordinary live citations in comments, not record lines (no arrow,
+    no before/after table row), so `CLAUDE.md`'s "A record line is not a
+    citation" rule does not protect them — and they were not "discovered work"
+    outside the phase's scope but **damage this phase's own in-scope edit
+    caused**, which is why they were fixed rather than appended as a new phase.
+
+    **They are NOT a lane registration, and the check that would have suggested
+    otherwise is what makes this interesting.** Commit `0cc3697` — the phase that
+    registered the `tycho-ar` lane — touches the same three files, which invites
+    reading them as something a new lane has to do. It is not: that commit's
+    hunks are `Makefile:313@SKIPPED,:305` → `:335,:327`, character for character
+    the same repair as this one, one lane earlier. Adding `ar-check`'s comment
+    block moved `SKIPPED` by 22 lines; adding `q-check`'s moved it by 31. **The
+    same four citations have now been repaired twice in a row by two consecutive
+    phases, neither of which was about them**, and each repair carried no
+    information — which is exactly the failure mode `CLAUDE.md`'s `path@SYMBOL`
+    rule exists to end. Filed as **phase 22** below; `SKIPPED` is a definition-ish
+    token on a single `Makefile` recipe line and the anchor already names it, so
+    the fix is small and this phase is not the place for it.
+
+    The narrower lesson stands on its own: **inserting a comment block into a
+    file that other files cite by line number is a citation-moving change**, and
+    nothing about editing a `Makefile` says so.
+
+    ### `FRICTION.md`
+
+    A new dated section, `## Re-scored against a type-system-shaped program,
+    2026-08-01 (head 75e8175)`, in the shape of the `tycho-ar` one. Seven ranked
+    findings, worst first, then three that shrank as they were written and six
+    things that did not go wrong.
+
+    Three things it was required to get right, and did:
+
+    - **Ranked by cost to a caller.** `core:json` is first because it is the one
+      item on the list whose cost is paid by the person reading the output rather
+      than by the programmer: `1.5` truncates silently, `[1.5]` exhausts memory
+      from five bytes, and `[{"a":1.5}]` exits 0 having **fabricated a column**.
+      It is stated plainly there as **filed and not fixed here** — it is a
+      corelib change and this was a tools phase.
+    - **The narrower, true `core:iter` claim.** Phase 3's probe corrected phase
+      2's finding, so the section says the wall is
+      `corelib/iter/iter.ty@filter`'s **signature** pinning a lambda's return
+      type to `int`, **not** a language rule against fallible higher-order
+      functions — and it is labelled as an entry that got smaller, with the
+      disproof shown. That correction changes the cost of fixing it from a
+      language change to a signature.
+    - **No record line elsewhere in the file was touched.** The section is
+      appended; nothing above it was edited.
+
+    ### Gates
+
+    - `make q-check` — green (above), and red on a deliberate break (above).
+    - `python3 scripts/check_citations.py` — **`ok`**. It was `FAILED (5 stale)`
+      mid-phase, from the `Makefile` line shift and from one rotating
+      "`plan.md` phase N" reference this phase wrote into
+      `tools/tycho-q/run.sh`'s own header — the exact class `CLAUDE.md` gates,
+      caught by running the gate over the **tree** rather than over the evidence.
+    - `sh scripts/check_links.sh` — `link check: ok (141 markdown files, no dead
+      relative links)`.
+    - `sh scripts/spec_check.sh` — **deliberately not run.** Appendix E cites
+      `tests/…` paths and this phase moved no fixture and touched no
+      `docs/spec/` file, so it cannot redden for this change; `make ci` step
+      `[12/13]` runs it regardless, below.
+    - `make ci` — run **once**, as the closing sweep of the chain and because
+      this phase adds a CI step, the two conditions `CLAUDE.md` says earn it.
+      **`CI_EXIT=0`**, all thirteen numbered steps plus every sub-lane, and the
+      new step appears in its place:
+
+      ```
+      >>> [3e/13] make ar-check  (tycho-ar: create twice byte-identical, ...)
+      >>> [3f/13] make q-check  (tycho-q: 31-query transcript vs golden, select *
+          byte-identical to the input, CSV == JSON, ten failure legs refused with
+          empty stdout)
+      >>> [4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan ...)
+      ...
+      >>> [13/13] make check-links
+      CI_EXIT=0
+      ```
+
+      It reddened **zero** times, so it was run once and never as a debugging
+      loop — the doc gates and `make q-check` had already been run on their own,
+      which is the whole point of the ladder.
+
+## Status — PLAN COMPLETE
+
+All four phases are done and committed. `tycho-q` lexes a query, parses it into a
+recursive `Expr` enum, classifies every cell into a `Value` sum type, evaluates
+`select`/`where` with an exhaustive `match`, orders with a stable multi-key merge
+sort taking a first-class comparator, applies `limit`, and reads both CSV and
+JSON. It runs this plan's own headline query and returns the right rows.
+`make q-check` proves it and reddens when broken, proved in both directions by an
+actual edit and revert; the golden is tracked; `make ci` is green at
+`CI_EXIT=0` with the new `[3f/13]` step in it; and `FRICTION.md` carries seven
+ranked findings plus three the writing shrank.
+
+**What the program was for, answered.** The brief was to lean on the **type
+system** rather than on syscalls — recursive enums, generics, closures,
+`Result`/`Option` plumbing — and find out what the language and corelib do badly
+there, on the grounds that `tycho-ar` had been structurally flat and that half of
+the language had never been exercised by anything but `corelib/json/json.ty` and
+the test corpus.
+
+**The type system itself came out well, and that is the first result.** Recursive
+enums work in both positions — direct (`EBin(int, Expr, Expr)`) and through an
+array payload (`ECall(string, [Expr])`) — probed before a line of the parser was
+written, so the index-into-a-node-array fallback the Pre-flight had budgeted for
+was never needed. `Option`/`Result` plumbing needed no workaround anywhere.
+Lambdas with `Result` return types, closures capturing arrays, and comparators as
+values all work. Phase 3 compiled first try with zero diagnostics.
+
+**What it surfaced instead is that the corelib is not built for callers who can
+fail.** Every one of the top three findings is a signature, not a language
+limit: `core:json` has no error channel at all, so `json.parse` cannot report
+that it truncated `1.5`, exhausted memory on `[1.5]`, or **fabricated a column**
+from `[{"a":1.5}]` at exit 0 — the last being the shape a table reader actually
+meets, and the only finding in this file whose cost is paid by the person reading
+the output rather than by the programmer. `core:decimal` has no `div`, so the
+ordinary averaging query has no exact answer. `core:sort` has no comparator-taking
+sort, so every multi-key order writes its own. And `core:iter`'s `filter` pins its
+predicate to `fn($T) -> int`, which is what makes the combinators unusable for a
+fallible pipeline stage — **not** a language rule against fallible higher-order
+functions, which is what phase 2 believed until phase 3 probed it and wrote the
+narrower claim.
+
+**A demo would have found none of them**, for the same reason the previous plan
+gave: a demo passes a literal it chose and never asks what happens to input it
+did not. Three of the four are one signature away from fixed.
+
+**What the program cost to write.** 2059 lines over three phases, plus a
+243-line gate. The recurring tax was not the type system but the gaps around it:
+`Result(void, E)` is not expressible and a bare `or_return` is not a statement,
+which showed up three times in code with nothing else in common; an enum cannot
+be asked its variant without binding a payload, so `Value` needed a hand-written
+tag accessor; and two error types cannot share an `or_return` chain, which is
+cheap here and would not be in a program with three.
+
+**Closing sweep:** `make ci` once, `CI_EXIT=0` — recorded above under Phase 4.
+
+Phases 5–19 below are carried forward and are not part of this plan's
+completion; phases 20–22 were discovered by it and are likewise not part of it.
 
 ## Carried forward
 
@@ -1580,6 +1840,26 @@ completion.
       since `core:decimal` is the only exact numeric tower here and `JNum` is
       an `int`. This is a corelib change, so it is **`make test`**, plus
       whatever under `corelib/test/` covers `core:json`.
+
+- [ ] **Phase 22** — four citations move every time anyone adds a `Makefile`
+      target, and two consecutive phases have now repaired them without either
+      being about them. `scripts/asan_self.sh` (twice),
+      `scripts/check_citations.py` and `scripts/editors_check.sh` all cite the
+      ilp32 recipe's "ASan lane SKIPPED" line as `Makefile:<N>@SKIPPED`, plus one
+      unanchored companion number. Commit `0cc3697` repointed them `313 -> 335`
+      when it added `ar-check`'s comment block (+22 lines); phase 4 of this plan
+      repointed the same four `335 -> 366` when it added `q-check`'s (+31). **Not
+      one of those six edits carried information** — they are the exact defect
+      `CLAUDE.md`'s `path@SYMBOL` rule was introduced to end, in the one direction
+      that rule does not yet cover, since `SRCCITE`'s `@token` form still requires
+      a line number. Scope: teach the source->source citation form the same
+      no-line-number `path@SYMBOL` spelling the Markdown side already has, or, if
+      that is too broad, give the recipe line a stable named anchor and cite that.
+      `SKIPPED` occurs on exactly one line of the `Makefile` today, so the weak-
+      check caveat in `CLAUDE.md` applies and should be stated rather than
+      discovered. Gates: `python3 scripts/check_citations.py`, plus whatever
+      covers the checker's own tests — this is a doc-gate change and **not**
+      `make test`.
 
 ## Out of scope
 
