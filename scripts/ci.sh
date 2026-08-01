@@ -33,6 +33,23 @@ bar
 step "[1/13] build (make tychoc)"
 make -s tychoc
 
+# Sub-lane of 1, not a step of its own: the /13 denominator counts the numbered
+# steps and 2b/2c/2d/3b..3f are the existing convention. It sits FIRST -- ahead
+# of every lane that consumes a golden -- for two reasons. It needs no build
+# product at all (it is `git ls-files` over a text scan of the runners, ~0.07s),
+# and every lane below it compares against goldens that are on THIS disk, so an
+# untracked one leaves all of them green while a fresh clone dies with
+# `no golden -- run RECORD=1`. Reporting that after eighteen minutes of lanes
+# that could not see it is the wrong order.
+#
+# `tools/tycho-ar/expected.out` shipped untracked once and was caught by hand;
+# `.gitignore`'s `*.out` rule plus its per-directory un-ignore list is the
+# structural trap, not that one lane's mistake. `make test` cannot redden for
+# this -- it reads the golden off the working tree, which is exactly the copy
+# that exists.
+step "[1b/13] make goldens-check  (every golden a run.sh names is tracked by git -- the fresh-clone check)"
+make -s goldens-check
+
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 

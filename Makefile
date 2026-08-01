@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check ar-check q-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -238,6 +238,16 @@ corelib-examples: tychoc
 # See scripts/shim_check.sh for why the flags differ from the build's.
 shim-check:
 	@sh scripts/shim_check.sh
+
+# goldens-check: every golden a `run.sh` names is tracked by git. `.gitignore`
+# ignores *.out broadly and un-ignores per directory, one line per lane, so a new
+# lane's recorded golden is green here and absent from a fresh clone --
+# tools/tycho-ar/expected.out shipped that way once and was caught by hand. Needs
+# no tychoc and no build: it is `git ls-files` over a text scan of the runners,
+# ~0.07s. See the header of scripts/check_goldens.py for what the scan follows,
+# the one gap it does not, and why it floors per lane instead of counting.
+goldens-check:
+	@python3 scripts/check_goldens.py
 
 # ar-check: the gate for tycho-ar, the deterministic archiver in
 # tools/tycho-ar/. A batch program, so it gates with a golden the way the
