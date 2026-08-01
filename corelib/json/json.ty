@@ -21,6 +21,8 @@
 #   null                  null
 #   bool                  true                  false
 #   integer               7        -3        0
+#   float / exponent      1.5      -0.0      1e3      1E+3      2.5e-3
+#   huge integer          123456789012345678901234567890        (see NUMBERS)
 #   string                "tycho"
 #   string escapes        "a\"b\nc\td"          (\" \\ \/ \b \f \n \r \t)
 #   array                 [1,"x",true,null]     []
@@ -30,23 +32,40 @@
 #
 # EVERY other input is an error carrying the byte offset of the byte that caused
 # it -- see `JsonErr`, `err_reason`, `err_offset`, `err_str`. Nothing is guessed.
-# In particular a fraction or an exponent (`1.5`, `1e3`) is an error AT the `.`
-# or `e`, not the truncated integer part: a wrong number reported confidently is
-# worse than a refusal.
+#
+# ---- NUMBERS: which variant a number lands in, and why ----------------------
+#
+# The accepted number grammar is RFC 8259's, minus the leading-zero rule (see
+# the gap below):  `-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?`
+#
+#   JNum(int)            an integer that ROUND-TRIPS EXACTLY through 64 bits.
+#                        Proved, not assumed: the accumulated int is rendered
+#                        back to text and compared to the lexeme's own digits.
+#   JFloat(v, lexeme)    everything else -- a fraction, an exponent, or an
+#                        integer too big for `int`. It carries BOTH the
+#                        binary64 value AND the original text.
+#
+# The lexeme is why this is not a new silent-wrong-value path. `1e309` would be
+# an infinity and `123456789012345678901234567890` rounds in binary64, so a
+# consumer that needs the digits back asks `as_lexeme` and gets the bytes the
+# document actually contained; `stringify` emits that lexeme verbatim, never a
+# re-rendered float, so parse -> stringify is byte-identical for every number
+# above. (Re-rendering would also be LOCALE-SENSITIVE: `runtime/tycho_rt.c`'s
+# `tycho_float_to_str` formats with `%.15g`, so `str(1.5)` is `1,5.0` under a
+# comma-decimal LC_NUMERIC. Emitting the lexeme sidesteps that entirely.)
+#
+# A number whose VALUE binary64 cannot hold at all (`1e400`, `1e-400`) is an
+# error at the first byte of the number, not an infinity and not a 0.
 #
 # What it still cannot do, each with the ceiling and the way out:
 #
-# gap: no float or exponent value at all. `1.5` is an error, never a number.
-#      The way out is a `JFloat` (or exact-decimal) variant on `Json`; that is a
-#      numeric-tower decision, not a parser one -- `float` loses exactness and
-#      `core:decimal` has no `div` yet -- so it is deliberately not taken here.
+# gap: a number outside binary64's range (`1e400`, `1e-400`) is refused rather
+#      than represented. It is valid RFC 8259 and this parser fails closed on
+#      it. The way out is an arbitrary-precision variant (`core:bignum` /
+#      `core:decimal`), which is a numeric-tower decision, not a parser one.
 # gap: no `\uXXXX`. It is an error at the `u`, where it used to silently become
 #      the four hex digits as literal text. The way out is a UTF-8 encoder plus
 #      surrogate-pair joining inside `parse_string`.
-# gap: integers wrap silently at 64 bits. `parse_number` accumulates into an
-#      `int` with no overflow test, so a 20-digit JSON integer still yields a
-#      wrong number at exit 0. The way out is a digit-count bound there, or
-#      `core:bignum`. This is the one remaining silent-wrong-value path.
 # gap: a trailing comma is accepted -- `[1,]` parses as `[1]`. It loses no data
 #      and invents none, so it is left lenient; the way out is a `saw_comma`
 #      flag tested at the closing bracket.
@@ -58,11 +77,13 @@
 #      `parse_checked`, which is a caller-visible change and belongs to whoever
 #      wants it.
 package json
+import "core:strings"
 
 enum Json:
     JNull
     JBool(bool)
-    JNum(int)
+    JNum(int)                     # an integer that round-trips through 64 bits
+    JFloat(float, string)         # binary64 value + the ORIGINAL lexeme (NUMBERS, above)
     JStr(string)
     JArr([Json])
     JObj([string], [Json])        # parallel keys / values
@@ -83,13 +104,14 @@ const JE_OK      = 0
 const JE_TRUNC   = 1    # input ended inside a value, a string, or a container
 const JE_BYTE    = 2    # a byte that can begin no value: `.` `+` `:` `}` junk
 const JE_NUMBER  = 3    # `-` with no digit after it
-const JE_FLOAT   = 4    # a fraction or an exponent -- out of scope, see the gaps
+const JE_FLOAT   = 4    # a malformed fraction or exponent: `1.`, `1e`, `1e+`
 const JE_KEYWORD = 5    # `t`/`f`/`n` that is not `true`/`false`/`null`
 const JE_ESCAPE  = 6    # `\u`, or any escape outside " \ / b f n r t
 const JE_KEY     = 7    # an object member that does not begin with `"`
 const JE_COLON   = 8    # an object key not followed by `:`
 const JE_SEP     = 9    # an element followed by neither `,` nor the closer
 const JE_STUCK   = 10   # the structural guard fired: a nested parse ate nothing
+const JE_RANGE   = 11   # well-formed, but binary64 holds no such value: `1e400`
 
 # The public failure. Every variant carries the byte offset, so a caller that
 # only wants the position never has to know which cause it was.
@@ -104,8 +126,11 @@ enum JsonErr:
     MissingColon(int)
     MissingSep(int)
     NoProgress(int)
+    NumberRange(int)
 
 fn err_at(code: int, off: int) -> JsonErr:
+    if code == JE_RANGE:
+        return NumberRange(off)
     if code == JE_TRUNC:
         return Truncated(off)
     if code == JE_NUMBER:
@@ -138,19 +163,21 @@ fn err_offset(e: JsonErr) -> int:              # byte offset of the failure
         MissingColon(o): return o
         MissingSep(o): return o
         NoProgress(o): return o
+        NumberRange(o): return o
 
 fn err_reason(e: JsonErr) -> string:           # what was wrong, without the where
     match e:
         Truncated(o): return "input ended inside a value"
         BadByte(o): return "byte begins no JSON value"
         BadNumber(o): return "'-' with no digit after it"
-        BadFloat(o): return "fraction or exponent (floats are out of scope)"
+        BadFloat(o): return "'.' or exponent with no digits after it"
         BadKeyword(o): return "not 'true', 'false' or 'null'"
         BadEscape(o): return "unsupported string escape"
         BadKey(o): return "object member does not begin with a quote"
         MissingColon(o): return "object key not followed by ':'"
         MissingSep(o): return "element followed by neither ',' nor the closer"
         NoProgress(o): return "nested parse consumed no byte"
+        NumberRange(o): return "number outside the range a float can represent"
 
 # The one-line message a caller wants on stderr: cause and byte offset together.
 fn err_str(e: JsonErr) -> string:
@@ -218,10 +245,21 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     pos = pos + 1                              # skip closing "
     return r
 
+# The largest `int` is 9223372036854775807. Split so the accumulator can be
+# tested BEFORE the multiply that would overflow it -- signed overflow is what
+# the old parser did, and it is how a 20-digit integer used to leave here as a
+# wrong number at exit 0. Nothing below ever performs the overflowing multiply.
+const INT_MAX_DIV10 = 922337203685477580
+const INT_MAX_LAST  = 7
+
 # Called only with `s[pos]` already known to be `-` or a digit (parse_value
 # checks). Consumes at least one byte on success, which is half of why the
 # array/object loops below cannot spin.
-fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> int:
+#
+# Returns JNum for an integer PROVED to survive 64 bits, JFloat(value, lexeme)
+# for everything else. See NUMBERS in the file header for why the lexeme is
+# carried rather than the value alone.
+fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     start := pos
     neg := false
     if s[pos] == 45:                           # '-'
@@ -230,22 +268,72 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> int:
     if pos >= n or s[pos] < 48 or s[pos] > 57:
         pos = start                            # `-` alone, or `-x`
         ecode = JE_NUMBER
-        return 0
+        return JNull
+    dstart := pos                              # first digit of the integer part
     v := 0
+    ovf := false                               # the value left the int range
     for pos < n and s[pos] >= 48 and s[pos] <= 57:
-        v = v * 10 + (s[pos] - 48)
+        d := s[pos] - 48
+        if ovf or v > INT_MAX_DIV10 or (v == INT_MAX_DIV10 and d > INT_MAX_LAST):
+            ovf = true                         # stop accumulating; keep scanning
+        else:
+            v = v * 10 + d
         pos = pos + 1
-    # A fraction or an exponent is a value `Json` cannot hold. Stop AT it rather
-    # than returning the integer part: `1.5` used to parse as `1` at exit 0, and
-    # inside a container it left the cursor mid-token, which is how `[{"a":1.5}]`
-    # invented the key `5}]`. `pos` is left on the `.`/`e`, so the reported
-    # offset names the offending byte.
-    if pos < n and (s[pos] == 46 or s[pos] == 101 or s[pos] == 69):   # . e E
-        ecode = JE_FLOAT
-        return 0
-    if neg:
-        return 0 - v
-    return v
+    dend := pos                                # one past the last integer digit
+    isfloat := false
+    if pos < n and s[pos] == 46:               # '.' -- a fraction
+        isfloat = true
+        pos = pos + 1
+        fd := 0
+        for pos < n and s[pos] >= 48 and s[pos] <= 57:
+            pos = pos + 1
+            fd = fd + 1
+        if fd == 0:                            # `1.` -- a point NEEDS digits
+            ecode = JE_FLOAT
+            return JNull
+    if pos < n and (s[pos] == 101 or s[pos] == 69):   # 'e' / 'E' -- an exponent
+        isfloat = true
+        pos = pos + 1
+        if pos < n and (s[pos] == 43 or s[pos] == 45):
+            pos = pos + 1
+        ed := 0
+        for pos < n and s[pos] >= 48 and s[pos] <= 57:
+            pos = pos + 1
+            ed = ed + 1
+        if ed == 0:                            # `1e`, `1e+`
+            ecode = JE_FLOAT
+            return JNull
+    lex := substr(s, start, pos)               # the number exactly as written
+    if not isfloat and not ovf:
+        iv := v
+        if neg:
+            iv = 0 - v
+        # THE ROUND-TRIP PROOF. Render the accumulated int back to text and
+        # compare it to the lexeme's own digits. Only an exact match becomes a
+        # JNum; anything else falls through to the float path WITH its lexeme,
+        # so a value this `int` cannot hold is never handed back as if it could.
+        # Leading zeros are skipped on the lexeme side only (they are lenient
+        # here -- see the gap in the header), so `01` still yields JNum(1).
+        z := dstart
+        for z < dend - 1 and s[z] == 48:
+            z = z + 1
+        canon := substr(s, z, dend)
+        if neg:
+            canon = "-" + canon
+        if str(iv) == canon:
+            return JNum(iv)
+    # The float path. `lex` already matched a grammar that is a strict subset of
+    # `strings.parse_float`'s, so Syntax is unreachable here; the reachable
+    # failures are Overflow (`1e400`) and Underflow (`1e-400`), and both are
+    # refusals rather than an infinity or a 0. `pos` rewinds to the first byte of
+    # the number so the reported offset names the token, not its end.
+    match strings.parse_float(lex):
+        Ok(fv):
+            return JFloat(fv, lex)
+        Err(fe):
+            pos = start
+            ecode = JE_RANGE
+            return JNull
 
 # The structural anti-spin guard lives in this function and in parse_object.
 #
@@ -258,8 +346,8 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> int:
 #   opener  { [                 recurses, always eats the opener
 #   quote   "                   parse_string always eats the opening quote
 #   t f n   true/false/null     eats 4/5 bytes or errors, never 0
-#   - 0-9   -3, 7               parse_number eats >= 1 digit or errors
-#   . + e   1.5, +1, e9         JE_FLOAT / JE_BYTE -- error, not a 0-byte read
+#   - 0-9   -3, 7, 1.5, 1e3     parse_number eats >= 1 digit or errors
+#   . + e   .5, +1, e9          JE_BYTE -- error, not a 0-byte read
 #   closer  ] }                 JE_BYTE (the loop head handles the RIGHT closer)
 #   , :     stray separators    JE_BYTE
 #   ws      handled by skip_ws before the dispatch
@@ -380,8 +468,8 @@ fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             return JNull
         ecode = JE_KEYWORD
         return JNull
-    if c == 45 or (c >= 48 and c <= 57):       # number
-        return JNum(parse_number(s, n, &pos, &ecode))
+    if c == 45 or (c >= 48 and c <= 57):       # number -- JNum or JFloat, its call
+        return parse_number(s, n, &pos, &ecode)
     # Everything else -- `.` `+` `:` `,` a stray closer, a control byte. The old
     # parser fell through to parse_number here, which consumed nothing and
     # returned JNum(0); that is the whole spin.
@@ -439,6 +527,12 @@ fn stringify(j: Json) -> string:
             return "false"
         JNum(x):
             return str(x)
+        JFloat(v, lx):
+            # The STORED LEXEME, never `str(v)`. Re-rendering a binary64 loses
+            # digits (`123456789012345678901234567890` would come back as
+            # `1.2345678901234568e+29`) and is locale-sensitive besides, so
+            # emitting the original bytes is the only byte-identical round trip.
+            return lx
         JStr(s):
             return "\"" + esc(s) + "\""
         JArr(xs):
@@ -458,7 +552,17 @@ fn stringify(j: Json) -> string:
 
 # ---- accessors (typed queries into the document) ---------------------------
 
-fn kind(j: Json) -> string:                    # "null"/"bool"/"num"/"str"/"arr"/"obj"
+# "null"/"bool"/"num"/"float"/"str"/"arr"/"obj"
+#
+# A JFloat reports "float", NOT "num", and that is a fail-closed choice made by
+# reading the consumers rather than by taste. `tools/tycho-q/main.ty@json_cell`
+# dispatches on this string and answers `k == "num"` with `json.as_num(j)` --
+# which returns 0 for a JFloat. Folding floats into "num" would therefore turn
+# every JSON float into the cell value 0 at exit 0: a silent wrong value, the
+# exact class of bug this package spent two plans removing. With "float" that
+# same code takes its final `return Err(...)` branch and REFUSES the cell, which
+# is honest until a consumer learns the variant.
+fn kind(j: Json) -> string:
     match j:
         JNull:
             return "null"
@@ -466,6 +570,8 @@ fn kind(j: Json) -> string:                    # "null"/"bool"/"num"/"str"/"arr"
             return "bool"
         JNum(x):
             return "num"
+        JFloat(v, lx):
+            return "float"
         JStr(s):
             return "str"
         JArr(xs):
@@ -486,6 +592,8 @@ fn get(j: Json, key: string) -> Json:          # object field, else JNull
             return JNull
         JNum(x):
             return JNull
+        JFloat(v, lx):
+            return JNull
         JStr(s):
             return JNull
         JArr(xs):
@@ -503,6 +611,8 @@ fn at(j: Json, i: int) -> Json:                # array element i, else JNull
             return JNull
         JNum(x):
             return JNull
+        JFloat(v, lx):
+            return JNull
         JStr(s):
             return JNull
         JObj(ks, vs):
@@ -517,6 +627,8 @@ fn keys(j: Json) -> [string]:                  # object keys (in order), else []
         JBool(b):
             return []string
         JNum(x):
+            return []string
+        JFloat(v, lx):
             return []string
         JStr(s):
             return []string
@@ -537,13 +649,47 @@ fn len_of(j: Json) -> int:                     # array/object element count, str
             return 0
         JNum(x):
             return 0
+        JFloat(v, lx):
+            return 0
 
-fn as_num(j: Json) -> int:                     # JNum payload, else 0
+# JNum payload, else 0. A JFloat answers 0 HERE ON PURPOSE and the arm is
+# spelled out rather than left to `_` so the choice is visible: `as_num` promises
+# an exact 64-bit integer and a JFloat is precisely the number that is not one.
+# Reach for `as_float` for the value, or `as_lexeme` for the digits as written.
+fn as_num(j: Json) -> int:
     match j:
         JNum(x):
             return x
+        JFloat(v, lx):
+            return 0
         _:
             return 0
+
+# The binary64 value: a JFloat's own, a JNum widened. 0.0 for everything else.
+# Beware the widening: an `int` above 2^53 does not survive it exactly, which is
+# why `as_lexeme` exists.
+fn as_float(j: Json) -> float:
+    match j:
+        JFloat(v, lx):
+            return v
+        JNum(x):
+            return to_float(x)
+        _:
+            return 0.0
+
+# THE EXACT ANSWER. The number as the document spelled it -- a JFloat's stored
+# lexeme, a JNum rendered back (which is exact by construction: parse_number only
+# builds a JNum after proving that render matches the input). "" for a non-number.
+# A caller needing full precision (an arbitrary-precision decimal, say) parses
+# this, never `as_float`.
+fn as_lexeme(j: Json) -> string:
+    match j:
+        JFloat(v, lx):
+            return lx
+        JNum(x):
+            return str(x)
+        _:
+            return ""
 
 fn as_str(j: Json) -> string:                  # JStr payload, else ""
     match j:

@@ -233,7 +233,7 @@ The six, quoted from `corelib/json/json.ty`:
   together with a block above `parse_float` saying which to reach for, and the
   package header names the split in four lines so a reader meets it first.
 
-- [ ] **Phase 2 — numbers: the float path and the 64-bit wrap (gaps 1 and 3)**
+- [x] **Phase 2 — numbers: the float path and the 64-bit wrap (gaps 1 and 3)**
   - Scope: `corelib/json/json.ty`, `corelib/test/json/main.ty`,
     `corelib/test/json.out`.
   - Add `JFloat(float, string)` — the binary64 value **and the original
@@ -259,6 +259,131 @@ The six, quoted from `corelib/json/json.ty`:
     deleted from the header because they are closed.
   - Verify: `make corelib`, `sh examples/corelib/run.sh`, and `make shim-check`
     if phase 1's shim changed. Not `make ci`.
+
+  **Evidence.**
+
+  `corelib/json/json.ty@JFloat` added to the `Json` enum carrying
+  `(float, string)` — the binary64 value **and** the original lexeme.
+  `corelib/json/json.ty@parse_number` now returns `Json` rather than `int`, and
+  `corelib/json/json.ty` gained `import "core:strings"` so the conversion goes
+  through phase 1's `corelib/strings/strings.ty@parse_float` rather than a second
+  implementation. That import is an established shape, not a new one:
+  `corelib/io/io.ty:33` already does it.
+
+  *`kind` returns `"float"`, not `"num"` — and the consumers decided it.* All six
+  were read first. Only two touch `kind`'s result at all:
+  `examples/corelib/json/main.ty:13` prints it, and
+  `tools/tycho-q/main.ty@json_cell` **dispatches on it**:
+
+      tools/tycho-q/main.ty:1571-1572
+          if k == "num":
+              return Ok(VInt(json.as_num(j)))
+
+  `json.as_num` answers `0` for a `JFloat`. So folding floats into `"num"` would
+  have turned every JSON float into the cell value **0, at exit 0** — a silent
+  wrong value, and precisely the class of bug the previous plan spent itself
+  removing. With `"float"` that same code falls through to its final
+  `return Err(...)` and refuses the cell. Measured, not predicted — see the
+  `make q-check` line below, where tycho-q refuses rather than answering 0. The
+  other four consumers (`examples/site/main.ty`, `examples/fetch/main.ty`,
+  `bench/json/json.ty`, `corelib/test/json/main.ty`) never call `kind` on a
+  number.
+
+  *The round-trip proof, which is how gap 3 stops being silent.* The integer
+  accumulator is tested **before** the multiply that would overflow it
+  (`corelib/json/json.ty@INT_MAX_DIV10`), so no signed overflow is ever
+  performed; then the accumulated int is rendered back with `str` and compared to
+  the lexeme's own digits, and **only an exact match becomes `JNum`**. Leading
+  zeros are skipped on the lexeme side, so `01` still yields `JNum(1)` — gap 5 is
+  phase 4's and this phase does not move it.
+
+  *The number table.* Every row is a line in `corelib/test/json.out`; `identical`
+  is `stringify(parse(src)) == src`, byte for byte.
+
+  | input | parses to | stringify | identical |
+  |---|---|---|---|
+  | `1.5` | `float` | `1.5` | yes |
+  | `-0.0` | `float` | `-0.0` | yes |
+  | `1e3` | `float` | `1e3` | yes — the exponent is NOT normalised to `1000.0` |
+  | `1E+3` | `float` | `1E+3` | yes — capital `E` and `+` survive |
+  | `2.5e-3` | `float` | `2.5e-3` | yes |
+  | `123456789012345678901234567890` | `float` | all 30 digits | yes |
+  | `9223372036854775808` (int max + 1) | `float` | `9223372036854775808` | yes |
+  | `9223372036854775807` (int max) | `num` | `9223372036854775807` | yes — the bound is not off by one |
+  | `0`, `-3`, `7` | `num` | unchanged | yes |
+  | `-0` | `float` | `-0` | yes — `str(0)` is `"0"`, so the round trip refuses it into a float and the SIGN survives |
+  | `01` | `num` (`1`) | `1` | no — unchanged leniency, gap 5, phase 4 |
+  | `{"a":[1.5,2,1e3],"b":-0.0}` | `obj` | itself | yes — a whole mixed document |
+
+  Values are asserted by comparison, never printed: `as_float(parse("1.5")) ==
+  1.5` is yes and `== 1.0` is no; `-0.0` is `== 0.0` **and** `1.0/v < 0.0`. No
+  raw float reaches the golden, because `runtime/tycho_rt.c@tycho_float_to_str`
+  renders `1,5.0` under a comma-decimal `LC_NUMERIC` (phase 6 below), which would
+  make the golden locale-dependent.
+
+  *Gap 3, shown closed rather than asserted:* `as_num` on `9223372036854775808`
+  is `0` (a refusal), `as_lexeme` returns all nineteen digits, and `kind` is
+  `float`. The old parser handed back a wrapped integer here at exit 0.
+
+  *Still errors, at the byte that must be named:*
+
+  | input | error | offset |
+  |---|---|---|
+  | `1.` | `'.' or exponent with no digits after it` | 2 |
+  | `1e` | same | 2 |
+  | `1e+` | same | 3 |
+  | `1.x` | same | 2 — names the `x` |
+  | `[1.]` | same | 3 |
+  | `.5` | `byte begins no JSON value` | 0 — `parse_number` is never entered |
+  | `+1` | `byte begins no JSON value` | 0 |
+  | `1e400` | `number outside the range a float can represent` | 0 |
+  | `1e-400` | same | 0 |
+  | `[1e400]` | same | 1 — the first byte of the NUMBER, not its end |
+
+  `JE_FLOAT`/`corelib/json/json.ty@BadFloat` is **kept and repurposed** rather
+  than deleted: `tools/tycho-q/main.ty:1535` matches the variant by name, so
+  removing it would have broken a consumer's compile. It now means a malformed
+  fraction or exponent, and `err_reason` was rewritten to say so. The new
+  `corelib/json/json.ty@NumberRange` variant is safe to add for the same reason
+  inverted — that `match` has a `_` arm.
+
+  *The test can fail* — both load-bearing mechanisms broken on purpose and
+  rebuilt:
+
+  - `stringify`'s `JFloat` arm changed to `str(v)`:
+    `n 1e3 -> float 1000.0 identical=no`, `f mixed -> {"a":[1.5,2,1000.0]}
+    identical=no`. The lexeme is genuinely what makes the round trip hold.
+  - the overflow guard and the round-trip comparison both removed:
+    `n intmax+1 -> num 922337203685477580 identical=no` and
+    `n 30 digits -> num 1234567890123456789 identical=no` — the exact silent
+    wrong values gap 3 named, reproduced and then re-fixed.
+
+  *Gates, each foreground:*
+
+      make corelib                ->  corelib: all green (tychoc matches goldens)
+      sh examples/corelib/run.sh  ->  corelib examples: all green
+      python3 scripts/check_citations.py  ->  citation check: ok
+      ./tychoc <each of the six consumers> -o /tmp/…  ->  all six COMPILE, untouched
+
+  `make shim-check` was **not** run and did not need to be: no `_shim.c` was
+  touched. `core:strings`' shim is still exercised, because `make corelib` builds
+  the json test, which now links it through the new import. `make ci` and
+  `make test` were not run — nothing outside `corelib/` changed.
+
+  **`make q-check` is RED, deliberately, and phase 5 owns the fix.** Recorded
+  rather than patched, because the brief scope-locks `tools/` to phase 5:
+
+      FAIL: json float: failed but not for the expected reason
+            (want: JSON numbers here must be integers)
+      tycho-q: float.json: row 1, key `a`: the value is null, and a table cell
+               cannot hold one -- ...
+
+  Two separate defects in that line, both phase 5's: `tools/tycho-q/main.ty@a_kind`
+  has no `"float"` arm so it falls through to `"null"` and misnames the value,
+  and its `BadFloat` message still says "core:json has no float path at all",
+  which stopped being true in this commit. The important half is what it proves:
+  tycho-q **refuses** the float cell instead of storing 0, which is the
+  `kind == "float"` decision working as designed.
 
 - [ ] **Phase 3 — strings: `\uXXXX` and surrogate pairs (gap 2)**
   - Scope: `corelib/json/json.ty`, `corelib/test/json/main.ty`,
@@ -348,6 +473,23 @@ The six, quoted from `corelib/json/json.ty`:
     not `make corelib`.
   - The phase 1 test deliberately prints **no** raw float for this reason; a
     future phase that wants one in a golden has to close this first.
+
+- [ ] **Phase 7 — two stale strings in `tycho-q` that phase 5 must not miss**
+  - Found in phase 2, outside its scope (`tools/`), so recorded rather than
+    absorbed. Both live in `tools/tycho-q/main.ty`, which phase 5 already owns —
+    **do these with phase 5, not separately**, and do not let phase 5's
+    `JFloat -> VDec` mapping be mistaken for having covered them. `make q-check`
+    is red from phase 2's commit until they are done.
+  - `tools/tycho-q/main.ty@a_kind` maps a `json.kind` string to an article for a
+    diagnostic and has no `"float"` arm, so its final `return "null"` fires and a
+    refused float cell is reported as *"the value is null"*. That is a wrong
+    noun in a message whose whole job is telling the user what they wrote.
+  - `tools/tycho-q/main.ty@json_err`'s `BadFloat` arm still advises that
+    "core:json has no float path at all". Phase 2 gave it one and repurposed
+    `BadFloat` to mean a **malformed** fraction or exponent (`1.`, `1e`), so the
+    advice is now both wrong and attached to the wrong failure.
+  - Verify: `make q-check` (`RECORD=1 sh tools/tycho-q/run.sh` once the moved
+    lines are understood, never before).
 
 ## Carried forward
 
