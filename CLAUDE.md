@@ -11,6 +11,7 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `python3 scripts/check_citations.py` | <1s | any `path:line` written in Markdown, comments, or evidence blocks |
 | `sh scripts/check_links.sh` | <1s | relative Markdown links |
 | `sh scripts/spec_check.sh` | ~6s | runnable examples in `docs/spec/`, Appendix A vs §3/§4, **and every backticked `tests/…` path in Appendix E resolving to a real file** — so any commit that moves or deletes a fixture directory must run this, not just the two doc gates |
+| `make goldens-check` | ~0.07s | any new `run.sh`, any change to how one names its golden, and **any newly recorded golden** — it asserts every golden a runner names is tracked by git. `.gitignore` ignores `*.out` broadly and un-ignores per directory, so a new lane's golden is green on your disk and absent from a fresh clone; `make test` reads the copy that exists and cannot redden for it |
 | `make shim-check` | <1s | any corelib `<pkg>_shim.c` — compiles each one standalone under `-std=c11`. **`make corelib` cannot redden for this**: the real build appends a shim to the generated `.c` on one `cc` line with no `-std`, so a missing feature-test macro compiles there and only here |
 | `make ar-check` | ~3s | `tools/tycho-ar/`, and any `core:compress`/`sha256`/`io`/`path` change that moves a digest, the walk order or the archive round trip — **the only lane that runs anything under `tools/tycho-ar/`** |
 | `make q-check` | ~3.5s | `tools/tycho-q/`, and any `core:csv`/`core:json`/`core:decimal`/`core:sort` change that moves a header, a cell's classification, a decimal's scale or a sort order — **the only lane that runs anything under `tools/tycho-q/`** |
@@ -81,6 +82,7 @@ end, to confirm what you already believe.
 
 | `make ci` step | run this instead while fixing |
 |---|---|
+| `[1b] goldens-check` | `make goldens-check` (~0.07s; it names the `run.sh:line` and the untracked file. The fix is a `.gitignore` un-ignore line for that lane's directory plus `git add`, not a re-record) |
 | `[2] make test`, `[2b] ilp32`, `[2c] asan-self` | `make test` (`sh scripts/asan_self.sh` for the ASan-specific case) |
 | `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` / `make fetch` |
 | `[3b] entrypoints` | `sh scripts/entrypoints.sh` |

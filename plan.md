@@ -293,7 +293,7 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
   `docs/spec/` changed: `9 runnable example(s), all pass`. `make ci` was not run —
   no CI step changed.
 
-- [ ] **Phase 3 — every golden a runner names is tracked, and a gate says so**
+- [x] **Phase 3 — every golden a runner names is tracked, and a gate says so**
   - Scope: a new check (its own script, or a step in an existing one),
     `.gitignore` if a lane turns out to be untracked, `scripts/ci.sh`,
     `CLAUDE.md`'s gate table.
@@ -308,6 +308,149 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
   - Verify: the check itself, both directions; `sh scripts/ci.sh` lists the new
     step; and **`make ci` once, last**, since this phase adds a CI step. Never
     `make ci` as a debugging loop.
+
+  **Evidence, 2026-08-01.** Added `scripts/check_goldens.py`; wired as
+  `make goldens-check` in the `Makefile` and as step `[1b/13]` in
+  `scripts/ci.sh`; `CLAUDE.md`'s gate table and its `make ci` step→gate table
+  both have a row.
+
+  **The population, and how I know it is all of it.** 35 `run.sh` files, and the
+  count is closed from both ends: `git ls-files | grep -E '(^|/)run\.sh$'`
+  returns 35 and `find . -name run.sh -not -path './.git/*'` also returns 35, so
+  there is no untracked runner the tracked list misses. Of the 35, **17 name a
+  golden and 18 do not** — the 18 are benches comparing the three builds'
+  checksums against *each other*, `compiler/run.sh` (a differential, not a
+  golden), `server/run.sh` (asserts live HTTP, no recorded stdout), and
+  `tests/recursion/run.sh` (asserts fail-closed).
+
+  The extraction was designed against a dump of **every** `.out`/`.err` token on
+  a non-comment line of all 35, not against a guess. That dump is what made the
+  five naming forms visible, and every one is handled by reading the runner
+  rather than by encoding a convention:
+
+  | form | example | resolved by |
+  |---|---|---|
+  | literal path | `golden=examples/site/expected.out` | as written |
+  | bare literal + self-`cd` | `life.out` after `cd "$(dirname "$0")"` | the runner's own directory |
+  | `$PWD/` prefix | `golden="$PWD/tools/tycho-q/expected.out"` | strip the prefix |
+  | literal-assigned var | `$D/expected.out` with `D=examples/weblog` | that assignment |
+  | var in the basename | `corelib/test/$name.out` | glob the directory |
+  | loop var | `${f%.ty}.err` under `for f in tests/conc/abort/*.ty` | the loop's glob |
+
+  Scratch is excluded **mechanically**: a token rooted at a variable the same
+  runner assigns from `mktemp` is a temp path. Every one of the 34 `$T/…`,
+  `$TMP/…` tokens drops out by that rule and no name list was needed, so a lane
+  that renames its temp variable stays classified.
+
+  The extension set is `.out` and `.err`, and that is measured, not assumed: all
+  11 `golden=`/`gold=` assignments in the tree end `.out`, the four bare-literal
+  lanes are `life.out`/`mine.out`/`snake.out`/`$D/expected.out`, and the only
+  other recorded outputs are the `.err` diagnostic goldens under `tests/diag`,
+  `tests/warn` and `tests/conc/abort`. A golden with any other extension is
+  recorded as a `# gap:` in the script's header rather than silently skipped.
+
+  **The printed list — 21 patterns over 17 lanes, 399 files:**
+
+      ok   corelib/run.sh:24            corelib/test/*.out                 39 files
+      ok   examples/corelib/run.sh:23   examples/corelib/*.out             37 files
+      ok   examples/fetch/run.sh:62     examples/fetch/expected.out         1 file
+      ok   examples/life/run.sh:14      examples/life/life.out              1 file
+      ok   examples/mandelbrot/run.sh:20 examples/mandelbrot/expected.out    1 file
+      ok   examples/minesweeper/run.sh:13 examples/minesweeper/mine.out       1 file
+      ok   examples/raytrace/run.sh:20  examples/raytrace/expected.out      1 file
+      ok   examples/site/run.sh:22      examples/site/expected.out          1 file
+      ok   examples/snake/run.sh:13     examples/snake/snake.out            1 file
+      ok   examples/sqlite/run.sh:32    examples/sqlite/expected.out        1 file
+      ok   examples/weblog/run.sh:31    examples/weblog/expected.out        1 file
+      ok   examples/webserver/run.sh:31 examples/webserver/expected.out     1 file
+      ok   tests/conc/run.sh:39         tests/conc/*.out                   13 files
+      ok   tests/conc/run.sh:79         tests/conc/abort/*.err              3 files
+      ok   tests/ffi/run.sh:21          tests/ffi/expected.out              1 file
+      ok   tests/run.sh:52              tests/*.out                       252 files
+      ok   tests/run.sh:237             tests/diag/*.err                   21 files
+      ok   tests/run.sh:132             tests/pkg/*.out                    15 files
+      ok   tests/run.sh:270             tests/warn/*.err                    6 files
+      ok   tools/tycho-ar/run.sh:57     tools/tycho-ar/expected.out         1 file
+      ok   tools/tycho-q/run.sh:71      tools/tycho-q/expected.out          1 file
+
+      35 runners scanned, 17 name a golden, 18 in NO_GOLDEN, 399 golden files
+      checked, all tracked by git.
+
+  **Floor, not count, and the reason is a specific failure mode.** There is
+  deliberately no global expected total. Every new fixture under `tests/` adds a
+  golden, so a total moves on ordinary work — and a number that moves on ordinary
+  work gets bumped reflexively, which turns the floor into a chore that reports
+  its own edit history rather than a check. What this gate exists to catch is not
+  "the tree has fewer goldens", it is "a lane's goldens became invisible", so the
+  floor is **per lane, and it is one**: every glob must match at least one file,
+  and every runner must either yield a golden or be named in `NO_GOLDEN` with a
+  reason. Neither needs a number maintained.
+
+  **The vacuous pass was real inside my own scan, and it is why the union exists.**
+  The first working version collapsed every `$(…)` to a marker so the token regex
+  would not split on the spaces inside `$(basename "$hi" .ty).err`. That also ate
+  `tests/conc/run.sh`'s `want=$(cat "${f%.ty}.err")` whole — the whole command
+  substitution became one marker and **three abort goldens vanished with the check
+  still printing `ok`**. Caught only because the printed total was 396 when the
+  directory listing said 399. The scan now takes the union of the collapsed and
+  the raw line. This is recorded because it is exactly the hazard the Pre-flight
+  names, occurring inside the gate written to prevent it.
+
+  **Proved red four ways, each restored.** The `git rm --cached` route reproduces
+  the fresh-clone state exactly: the file stays on disk, so every other lane keeps
+  passing, and only the index differs.
+
+  1. *The literal path, on the lane that historically broke.*
+     `git rm --cached tools/tycho-ar/expected.out`:
+
+         FAIL tools/tycho-ar/run.sh:57     tools/tycho-ar/expected.out         1 file
+         goldens-check: FAIL
+           tools/tycho-ar/run.sh:57: tools/tycho-ar/expected.out exists but is NOT
+           tracked by git -- a fresh clone fails with `no golden`
+
+     exit 1. `git add` restored it; `git diff --cached --stat` empty afterwards,
+     so the index is byte-identical to before.
+  2. *The glob path, which is separate code.* `git rm --cached corelib/test/json.out`
+     — one file inside a 39-file glob — reddened naming that file, and the lane's
+     row flipped to `FAIL` while still reporting 39. Restored the same way.
+  3. *Guard 1, the runner that stops being followed.* Renaming
+     `examples/site/run.sh`'s `golden=` to `GOLDEN_PATH=…expected_v2.txt`:
+     `examples/site/run.sh: names no golden and is not in NO_GOLDEN`. This is the
+     guard that stops a convention change from emptying the walk silently.
+  4. *Guard 2, the lane whose directory moves.* Pointing `corelib/run.sh` at
+     `corelib/testcases/$name.out`:
+     `corelib/testcases/*.out matches nothing -- the lane's golden convention
+     moved and this check went blind`.
+
+  Green again after each restore: `35 runners scanned … all tracked by git`,
+  exit 0, and `git status --short` clean.
+
+  **Measured cost: ~0.07 s** (0.076 / 0.073 / 0.073 s over three runs), which is
+  the figure in `CLAUDE.md`'s table. It needs no build product at all — it is
+  `git ls-files` over a text scan — which is why it is step `[1b/13]`, ahead of
+  everything that consumes a golden. Every lane below it compares against the
+  copy on *this* disk, so an untracked golden leaves all of them green; reporting
+  that after eighteen minutes of blind lanes is the wrong order.
+
+  **Gate.** `make ci`: **exit 0, `CI GREEN -- tree is good`**. `make test` inside
+  it: `passed: 561 failed: 0`, the same 561 as after phases 1 and 2 — nothing
+  gained, nothing lost, which is right for a phase that adds no fixture. The new
+  step ran and printed its list inside the sweep. The only `FAIL` strings
+  anywhere in the log are the fuzz lanes' own `FAIL=0` counters.
+
+  **Citation fallout.** The +10-line `Makefile` insert moved `Makefile:366` to
+  `:376` and reddened `check_citations.py` on four refs, all live prose in
+  scripts, none a record line — so the anchor was kept and the number repointed,
+  verified by reading the new line and comparing it with `git show HEAD:Makefile`
+  (identical text at `:366` then and `:376` now): `:366`→`:376` in
+  `scripts/asan_self.sh` twice, `scripts/check_citations.py` and
+  `scripts/editors_check.sh`. That is the **seventh** repointing of this one ref,
+  which is precisely what the backlog's row 12 predicted; converting it to the
+  `path@SYMBOL` form is filed as phase 7 rather than done here, because whether a
+  `Makefile` echo string counts as a "definition" is a citation-policy question
+  this phase should not answer silently. Both doc gates green afterwards:
+  `check_citations.py` `ok`, `check_links.sh`
+  `ok (144 markdown files, no dead relative links)`.
 
 - [ ] **Phase 4 — the compiler emits float literals under the ambient locale too**
   - Found while doing phase 1, outside its scope lock (`src/tychoc.c` was locked),
@@ -364,6 +507,58 @@ Each is a break that ships green. Done looks like: all three fixed, and for 2 an
   - Verify: `make corelib`, `make corelib-examples`, `make fetch`, and `make test`
     if `src/tychoc.c` gains the flag — which it will. Not `make ci`.
 
+- [ ] **Phase 6 — four lanes' goldens are tracked but would be invisible if re-recorded**
+  - Found while doing phase 3, outside its scope lock (which allowed a
+    `.gitignore` edit only "if a lane turns out to be untracked" — these four are
+    tracked), so it is filed here rather than absorbed.
+  - `examples/mandelbrot`, `examples/raytrace`, `examples/weblog` and
+    `examples/webserver` each hold a **tracked** `expected.out` inside a directory
+    that `.gitignore`'s `/examples/*` rule excludes outright, with no
+    `!/examples/<dir>/…` un-ignore beneath it. Measured with
+    `git check-ignore -v examples/mandelbrot/__probe.out`, which answers
+    `/examples/*`. They survive today only because **a tracked file beats every
+    ignore rule** — which is a property of the index, not of the tree.
+  - So `RECORD=1` over a deleted golden in any of the four re-creates an
+    **invisible** file, and phase 3's gate cannot see it: that gate asks whether
+    the golden is tracked, which is a different question from whether
+    `.gitignore` would let it back in. The `.err` goldens are not exposed
+    (`.gitignore` has no `*.err` rule); `tests/`, `corelib/test/`,
+    `examples/{sqlite,life,snake,minesweeper,corelib,fetch,site}` and both
+    `tools/` lanes each already carry an un-ignore line.
+  - **Not a four-line fix, which is why it is a phase.** Un-ignoring those
+    directories also exposes the binaries and emitted `.c` they build in place —
+    that is exactly why the four lanes that *are* un-ignored needed a
+    per-directory `.gitignore` of their own. The same treatment is what these
+    want, plus the decision of whether `mandelbrot`/`raytrace` should build into a
+    temp dir instead, as `fetch` and `site` do.
+  - Scope: `.gitignore`, a per-directory `.gitignore` in each of the four, and
+    `scripts/check_goldens.py` to add the stricter check once it can be green.
+  - Done when: `git check-ignore -v <dir>/__probe.out` answers "not ignored" for
+    every lane that records a golden, the gate asserts that too, and
+    `git status --short` is still clean after `make ci`.
+  - Verify: `make goldens-check`, `git status --short` after `make corelib` and
+    `make mandelbrot`/`make raytrace`. Not `make ci`.
+
+- [ ] **Phase 7 — `Makefile:<N>@SKIPPED` has now been repointed seven times**
+  - Backlog row 12, re-confirmed by phase 3: the +10-line `Makefile` insert moved
+    it again, `:366`→`:376`, across the same four citing lines in
+    `scripts/asan_self.sh` (twice), `scripts/check_citations.py` and
+    `scripts/editors_check.sh`. Seven repairs, zero information carried by any of
+    them.
+  - `CLAUDE.md`'s own rule names the fix — "convert an old one when it next
+    breaks", to `path@SYMBOL` with no line number — and the gate reports 344 refs
+    already in that form, so the machinery exists.
+  - **The open question is whether this ref qualifies**, and it should be
+    answered rather than assumed. `CLAUDE.md` says to use `@SYMBOL` "for a
+    definition, not for a region", and `SKIPPED` is a word inside a `Makefile`
+    echo string — neither a definition nor a region. If `Makefile@SKIPPED` is
+    accepted, the rule's wording should be widened to say so; if it is not, this
+    row should be retired as "will keep moving, and that is fine".
+  - Scope: the four citing lines, and `CLAUDE.md`'s citation section if the rule
+    widens. Not `Makefile` itself.
+  - Verify: `python3 scripts/check_citations.py`, then prove it cannot silently
+    pass by deleting the `SKIPPED` line from `Makefile` and showing the red.
+
 ## Backlog audit, 2026-08-01
 
 Nineteen unchecked items were carried across four plan rotations. Each was
@@ -407,6 +602,70 @@ Ranked by harm × likelihood over cost. Phases 1-3 above are the top three.
 | 12 | `Makefile:<N>@SKIPPED` citations | ar phase 22 | four refs still at `Makefile:366` across `scripts/asan_self.sh` (twice), `scripts/check_citations.py` and `scripts/editors_check.sh`. Six repointing edits over two phases, zero information carried |
 | 13 | the `image` shim is compiled by nothing here | ar phase 5 | `scripts/shim_check.sh:43` skips it for missing libpng, as does `make corelib`. Only matters on a host that has libpng |
 | 14 | no document-reachability gate | ar phase 6 | no such check in `scripts/`. Would have stayed green through `docs/bootstrap.md`'s entire outage |
+
+## Status — PLAN COMPLETE
+
+All three phases are done and committed, one commit each. Phases 4, 5, 6 and 7
+are filed follow-ups discovered inside phases 1, 2 and 3 and pushed out of them
+by their scope locks — they have the standing of the queued backlog rows below,
+not of conditions on this plan.
+
+**The Goal was: close the three latent breakages no gate in this tree can see,
+and for the second and third leave behind a mechanical gate so the next one
+reddens instead of shipping. All three are closed and both gates exist.** What
+each became:
+
+1. **`str(float)` corrupted its own output under a comma-decimal locale** —
+   measured at `1,5.0`, which is neither valid Tycho float syntax nor readable by
+   any parser in this tree → `runtime/tycho_rt.c@tycho_float_to_str` now renders
+   through a `"C"`-locale `uselocale()` handle, so the separator is `'.'`
+   whatever the ambient locale is. `snprintf_l`, the route the Pre-flight
+   assumed, turned out to be a BSD extension glibc does not declare at all; the
+   POSIX 2008 `uselocale`/`newlocale` pair needed **no new feature-test macro**
+   and is thread-scoped, which `setlocale` would not have been. The `".0"` guard
+   that scanned for a `'.'` was the second half of the same defect and now
+   carries its contract in a comment: the scan is sound *only* because the
+   separator is known.
+2. **The hand-linked shim lists went stale twice, because they tracked direct
+   imports and the dependency that breaks them is transitive** → the Pre-flight
+   assumption held, the compiler's `merge_pkg` already builds the transitive
+   closure as a side effect of the import DFS, and `--print-shims` exposes it.
+   `examples/fetch/run.sh` and `examples/site/run.sh` now ask the compiler, and
+   **no hand-maintained shim list remains in either**. The proof was the real
+   case: `examples/fetch/main.ty` never imports `core:strings`, reaches its shim
+   through `core:json`, and the old grep could not see it by construction.
+3. **A new lane's golden was invisible until someone cloned** → `make
+   goldens-check` walks all 35 runners and asserts every golden they name is in
+   the index, printing all 399 of them. It is step `[1b/13]`, ahead of every lane
+   that consumes a golden.
+
+**What the two new gates catch.** `--print-shims` removes the failure mode
+rather than detecting it: there is no list left to go stale, so the 2026-08-01
+break is not merely caught but unrepresentable in those two lanes.
+`goldens-check` catches an untracked golden on any of the 17 lanes that record
+one, a runner whose golden the scan stops following, and a lane whose golden
+directory moves out from under it — each proved red by breaking a real lane and
+restored.
+
+**What they cannot catch, stated plainly because a gate's edges are the part
+that gets forgotten.**
+
+- `--print-shims` closes the two example lanes only. `corelib/run.sh` and
+  `examples/corelib/run.sh` still grep their own source for direct imports, over
+  far more programs — that is phase 5, and it needs a `--print-deps` too, because
+  those loops serve a second purpose the shim list does not carry.
+- `goldens-check` asks whether a golden is **tracked**, not whether `.gitignore`
+  would let it back in if it were deleted and re-recorded. Four lanes are live
+  examples of the difference — phase 6.
+- Neither gate follows a golden whose path is computed from something the text
+  scan cannot see, nor one that does not end `.out`/`.err`. No runner in the tree
+  is in that position today; the `# gap:` in `scripts/check_goldens.py`'s header
+  says so and says how it was checked, so the next reader does not have to
+  re-derive it.
+- Phase 1's fix is in `runtime/tycho_rt.c` only. The **identical defect one layer
+  up** — `src/tychoc.c` formatting float literals into generated C, where
+  `f(1,5.0)` is a legal comma expression `cc` accepts silently — is phase 4, and
+  it has the larger blast radius of the two.
 
 ## Out of scope
 
