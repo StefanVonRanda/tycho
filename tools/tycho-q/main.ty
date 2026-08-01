@@ -1,12 +1,17 @@
 # tycho-q -- a SQL-ish query tool over CSV/JSON, in Tycho.
 #
-# This phase (plan.md phase 1) is the FRONT END ONLY: a lexer, a recursive
-# descent parser with precedence, and `--explain`, which prints the parsed
-# query as an s-expression. Nothing is read from disk and no row is evaluated.
+# What works today: a lexer, a recursive descent parser with precedence,
+# `--explain` (which prints the parsed query as an s-expression), and
+# evaluation of `select` / `from` / `where` over a CSV file, printing the
+# result as CSV on stdout. `order by`, `limit` and JSON input parse but are
+# refused at run time rather than silently ignored -- see REFUSED, NOT
+# IGNORED below.
 #
 # Build and run, from the repo root:
 #     ./tychoc tools/tycho-q/main.ty -o build/tycho-q
 #     ./build/tycho-q --explain 'select a, b * 2 as d from x.csv where a > 1'
+#     ./build/tycho-q 'select name, qty * price as total from sales.csv
+#                      where region == "eu" and qty > 10'
 #
 # WHY THIS IS A DIRECTORY AND NOT A FLAT `tools/tycho-q.ty`: same reason as
 # `tools/tycho-ar/main.ty` -- a `package` header makes tychoc compile the whole
@@ -46,8 +51,8 @@
 # is a UNARY at the tightest level, binding exactly as tightly as unary `-`.
 # Real SQL puts NOT between AND and the comparisons, so SQL reads
 # `not a == b` as `not (a == b)` and this reads it as `(not a) == b`. That is a
-# deliberate deviation, taken because plan.md phase 1 specifies the precedence
-# ladder in that order, and it is a WART: write `not (qty > 10)`, with the
+# deliberate deviation, taken because the precedence ladder in THE GRAMMAR THIS
+# ACCEPTS above puts `not` there, and it is a WART: write `not (qty > 10)`, with the
 # parentheses, whenever the operand of `not` is a comparison. `not a and b` is
 # `(and (not a) b)` in both languages, which is why the difference is easy to
 # miss.
@@ -73,6 +78,13 @@
 # language, so nothing is lost. `from 'has space.csv'` (a string literal) is
 # the escape hatch for a path the bare rule cannot spell.
 #
+# THE BARE RULE STARTS AT A LETTER, so an ABSOLUTE path cannot be written bare:
+# `from /tmp/x.csv` lexes the leading `/` as the division operator and fails
+# with "unexpected token / (expected a source path after `from`)". That is a
+# consequence of the rule above rather than a separate decision, and the escape
+# hatch already covers it -- `from '/tmp/x.csv'`. It is spelled out here because
+# the diagnostic talks about division while the cause is quoting.
+#
 # ===========================================================================
 # THE VALUE MODEL
 # ===========================================================================
@@ -94,6 +106,209 @@
 # failing loudly at parse time is the fail-closed reading of that: a silent
 # `1` followed by a dropped `e3` would be the corruption this program exists
 # not to commit.
+#
+# ===========================================================================
+# DECISION 1 -- HOW A CSV CELL BECOMES A `Value`
+# ===========================================================================
+#
+# `csv.parse` hands back `[[string]]` and nothing else: every cell is a
+# `string` until this program decides otherwise (`corelib/csv/csv.ty@parse`).
+# The decision below is made PER CELL, and it is made by ROUND TRIP.
+#
+# THE RULE, in one sentence: a cell becomes a number only if rendering that
+# number back reproduces the cell's bytes EXACTLY; otherwise it stays a
+# `VStr`. An empty cell is `VNull`.
+#
+# Concretely, in order:
+#
+#   1. `""`            -> `VNull`.  See WHY NULL below.
+#   2. shape check     -> the cell must match `-? digit+ ( "." digit+ )?` and
+#                         nothing else. No `+`, no exponent, no leading or
+#                         trailing space, no bare leading `.`, no trailing
+#                         `.`. A cell failing this is a `VStr` immediately;
+#                         `num_shape` is the whole rule and it is 20 lines.
+#   3. integer shape   -> `VInt(n)` IF `str(n) == cell`.
+#   4. any number shape-> `VDec(d)` IF `decimal.to_str(d) == cell`.
+#   5. otherwise       -> `VStr(cell)`.
+#
+# WHAT THAT DECIDES, case by case, all of them named by the plan:
+#
+#   ""      -> VNull      (rule 1)
+#   007     -> VStr       int round trip gives "7"; decimal gives "7"; neither
+#                         is "007", so the leading zero is EVIDENCE that this
+#                         column is a code, not a quantity. This is the single
+#                         most important case: a part number, a zip code and a
+#                         phone number all die if `007` becomes `7`.
+#   0       -> VInt(0)    round trips.
+#   -0      -> VStr       int gives "0", decimal gives "0"; neither is "-0".
+#                         Typing it as `VInt(0)` would REWRITE the cell on the
+#                         way out, and a query that neither filters nor
+#                         computes on a column must never alter it.
+#   1.5     -> VDec       scale 1, prints "1.5".
+#   1.50    -> VDec       scale 2, prints "1.50" -- `core:decimal` preserves the
+#                         scale it parsed, so trailing zeros survive.
+#   -3      -> VInt(-3)   round trips.
+#   1e3     -> VStr       fails the shape check at `e`. This matches what the
+#                         QUERY lexer does with the literal `1e3` (it refuses
+#                         it), so the same text means the same thing in both
+#                         positions.
+#   +1      -> VStr       fails the shape check at `+`.
+#   " 1"    -> VStr       fails the shape check at the space. Whitespace is
+#                         never stripped: `csv.parse` gives the field's bytes
+#                         and a leading space is one of them.
+#   1.      -> VStr       fails the shape check (no digit after the point).
+#   .5      -> VStr       fails the shape check (no digit before the point).
+#   a 25-digit integer -> VDec, because `str(parse_int(...))` does NOT round
+#                         trip -- integer overflow WRAPS in this language
+#                         (`docs/spec/09-expressions.md:31`), so the wrapped
+#                         value renders as some other number and rule 3
+#                         rejects it. `core:decimal` is arbitrary precision
+#                         underneath (`core:bignum`), so rule 4 takes it and
+#                         the digits survive. The round trip is therefore also
+#                         this program's overflow check, and it is one it gets
+#                         for free rather than having to remember.
+#
+# WHY THE ROUND TRIP AND NOT A HAND-WRITTEN PARSER. `strings.parse_int` FAILS
+# OPEN: `""` and a leading non-digit both return 0 and it stops silently at the
+# first non-digit (`corelib/strings/strings.ty@parse_int`). That is the
+# `docs/internals/plan-ar-DONE.md` phase 13, carried forward and met here
+# exactly where that item predicted it would be met, and it is NOT re-filed. What this program does about it
+# is to BRACKET it rather than replace it: the shape check runs before it, so
+# it never sees a byte it could mis-read, and the round trip runs after it, so
+# a value it read differently from how this program would render it is thrown
+# away. Bracketing beats reimplementing because the round trip also catches
+# overflow, which a hand-written digit loop would have to be told about
+# separately.
+#
+# WHY `""` IS NULL AND NOT THE EMPTY STRING. CSV has exactly one in-band way to
+# say "nothing here", and it is the empty field. If `""` were `VStr("")` then
+# absence would be inexpressible from data and the `VNull` variant would be
+# reachable only from the `null` literal in a query. On the way OUT the choice
+# is free -- `VNull` and `VStr("")` both render as an empty field -- so it
+# costs nothing there. It costs one thing on the way IN, and here it is:
+# `where region == ""` does NOT match an empty field. Write `where region ==
+# null`. That is why `==` and `!=` are defined against `VNull` instead of
+# being an error like the other cross-kind comparisons.
+#
+# TYPING IS PER CELL, NOT PER COLUMN, and this is deliberate. There is no
+# schema and no first-pass column inference. A column reading `007, 42, 0080,
+# 9` yields `VStr, VInt, VStr, VInt` -- FOUR values, two kinds, in one column.
+# The alternative (infer a column type from the first row, or from all rows,
+# and coerce the rest) has to either reject the file or corrupt a cell, and
+# both are worse than what happens here, which is: `where code == 42` raises a
+# runtime error on the first row whose `code` is a string. That error is
+# LOUD, it names both kinds, and it is telling the truth -- the column really
+# is not a number. The cost is real and is stated plainly: an error that
+# depends on the data can appear at row N of a file that worked yesterday.
+# The mitigation is the same as the diagnosis: the message names the column
+# and the two kinds, so the fix (`where code == '42'`) is readable off it.
+#
+# ===========================================================================
+# DECISION 2 -- WHAT `/` DOES, GIVEN THAT `core:decimal` HAS NO `div`
+# ===========================================================================
+#
+# `corelib/decimal/decimal.ty` has `add`, `sub`, `mul`, `cmp`, `rescale`,
+# `neg`, `abs`, `is_zero`, `from_int`, `from_str`, `to_str` -- and NO `div`.
+# Its own header says why: division needs a target scale and a rounding
+# policy, and it has neither, so it defers.
+#
+# THE THREE OPTIONS AND WHY EACH LOSES:
+#
+#   REJECT `/` AT PARSE TIME. Cheapest, and wrong twice. `/` is already in the
+#   accepted grammar and in the `--explain` golden (`10 % 3 / 2` prints as
+#   `(/ (% 10 3) 2)`), so removing it would invalidate work that is already
+#   verified; and it would refuse `6 / 2`, which has a perfectly good exact
+#   answer, on the grounds that `7 / 2` does not.
+#
+#   CONVERT TO FLOAT. There is no float anywhere in this program on purpose
+#   (see THE VALUE MODEL). Introducing one for `/` alone would mean
+#   `qty * price / 2` lies in exactly the way `core:decimal` exists to
+#   prevent, and it would lie QUIETLY, which is this program's worst case.
+#
+#   INTEGER-DIVIDE (truncate). Honest for `VInt / VInt` if documented, but it
+#   has no answer at all for `price / qty` where either side is a `VDec`, so
+#   it does not actually decide the question -- it decides half of it and
+#   leaves the other half to be decided again.
+#
+# THE DECISION: `/` IS EXACT-ONLY. It computes when the answer is exact and
+# raises a runtime error when it is not.
+#
+#   VInt / VInt, remainder 0  ->  VInt          6 / 2 is 3
+#   VInt / VInt, remainder != 0 ->  ERROR       7 / 2 has no exact result
+#   anything involving a VDec ->  ERROR         no `decimal.div` exists
+#   divisor is zero           ->  ERROR         and it is checked BEFORE the
+#                                               division, because integer
+#                                               division by a zero VALUE
+#                                               aborts the process
+#                                               (`docs/spec/09-expressions.md:27-28`)
+#                                               -- an abort is not an error
+#                                               message and cannot be caught.
+#
+# `%` is the same shape: two `VInt`s only, non-zero divisor, else an error.
+#
+# THE COST, STATED PLAINLY BECAUSE IT IS LARGE: `select total / count` -- the
+# ordinary averaging query, the single most common reason anyone writes `/` in
+# SQL -- fails on almost all real data. That is not a small loss and this is
+# not pretending otherwise. It is the price of refusing to invent a rounding
+# policy silently, and the fix is a real `decimal.div(a, b, scale, mode)` with
+# the scale and the mode named by the CALLER, which is a corelib change and is
+# filed as such rather than smuggled in here.
+#
+# ===========================================================================
+# EVALUATION: WHAT COMPARES TO WHAT, AND WHAT IS AN ERROR
+# ===========================================================================
+#
+# NO TRUTHINESS. `where` must produce a `VBool`, and `and` / `or` / `not`
+# take `VBool` operands. `where qty` is an error, not "non-zero is true".
+# A query language that guesses at truthiness silently drops rows, which is
+# the failure mode this whole program is organised against.
+#
+# `and` and `or` SHORT-CIRCUIT: `where region == 'eu' and qty > 10` never
+# evaluates the right side on a row where the left is false. That is
+# observable, because the right side can ERROR -- so short-circuiting decides
+# which rows can raise. It is the SQL-ish behaviour and it is the useful one:
+# `where code_is_numeric and code > 5` is expressible because of it.
+#
+# ORDERING (`<`, `<=`, `>`, `>=`) REQUIRES COMPATIBLE KINDS: both numeric
+# (`VInt` and `VDec` mix freely and compare by value, so `1` == `1.00`), or
+# both string (byte-lexicographic, see `str_cmp` -- this is a BYTE order, so
+# a UTF-8 field orders by its bytes, which for ASCII is alphabetical and for
+# anything else is codepoint order, not locale order), or both bool
+# (false < true). Anything else is a runtime error naming both kinds.
+# `VNull` never orders: there is no answer to "is nothing less than 3" that
+# is not a lie or a three-valued logic this program does not have.
+#
+# EQUALITY (`==`, `!=`) is ordering plus ONE exception: if EITHER side is
+# `VNull`, the answer is total -- null == null is true, null == anything else
+# is false, and nothing errors. That exception exists so that `where region ==
+# null` is the null test (see WHY `""` IS NULL). Cross-kind equality between
+# two non-null values is an ERROR, exactly as ordering is; `where code == 42`
+# against a string cell does not quietly answer "false".
+#
+# ARITHMETIC needs two numbers. `VInt op VInt` stays `VInt`; anything with a
+# `VDec` promotes the other side with `decimal.from_int` and yields `VDec`.
+# `+` is NOT string concatenation -- SQL spells that `||`, this program does
+# not have it, and overloading `+` would make `'1' + 1` a coin flip.
+# Arithmetic on `VNull` is an ERROR and not zero: an empty cell silently
+# becoming 0 is precisely the corruption class this program exists to refuse.
+#
+# KNOWN HOLE, written down rather than fixed: `VInt` arithmetic can overflow,
+# and integer overflow WRAPS (`docs/spec/09-expressions.md:31`). `9223372036854775807
+# + 1` yields a negative number here with no diagnostic. Cell TYPING is
+# protected against this by its round trip (DECISION 1), but a sum computed
+# across rows is not. Fixing it means routing all arithmetic through
+# `core:decimal`, which is a real cost per cell and a bigger change than this
+# is a bug.
+#
+# ===========================================================================
+# REFUSED, NOT IGNORED
+# ===========================================================================
+#
+# `order by`, `limit` and a `.json` source all PARSE -- `--explain` shows them
+# -- and are refused with a non-zero exit when a query is actually run. They
+# are not silently dropped. A query tool that accepts `limit 5` and returns
+# 400 rows is worse than one that does not accept `limit` at all, because the
+# first one is believed.
 #
 # ===========================================================================
 # ERRORS: A `Result` THROUGH THE WHOLE PARSER, `die` ONLY AT THE TOP
@@ -129,8 +344,9 @@
 #     tycho-q: parse error at byte 21: unexpected token "form" (expected `from`)
 #
 # `die` is the only route to stderr in this language -- the builtins are
-# `println`, `die` and `exit(n)`, with no `eprintln` (carried-forward phase 10
-# of plan.md) -- so an error is necessarily fatal. That happens to be right
+# `print`, `println`, `die` and `exit(n)`, with no `eprintln`
+# (`docs/internals/plan-ar-DONE.md` phase 10, carried forward) -- so an error
+# is necessarily fatal. That happens to be right
 # here: a query that does not parse has no partial result worth printing.
 #
 # ===========================================================================
@@ -161,7 +377,9 @@
 package main
 
 import "core:cli"
+import "core:csv"
 import "core:decimal"
+import "core:io"
 import "core:strings"
 
 # ---------------------------------------------------------------------------
@@ -181,11 +399,29 @@ struct Tok:
     low:  string         # `text` ASCII-lowercased; keyword and operator matching uses this
     off:  int            # byte offset of the token's first byte in the query text
 
-# A parse or lex failure. Carried as the `E` of every `Result` in this file.
+# A parse or lex failure. Carried as the `E` of every `Result` in the parser.
 struct PErr:
     msg: string          # what was expected, in the reader's terms
     tok: string          # the offending token as the user would recognise it
     off: int             # its byte offset in the query text
+
+# A load or evaluation failure: a bad file, an unknown column, a comparison
+# between kinds that do not compare, a division with no exact answer.
+#
+# WHY A SECOND ERROR TYPE, AND WHAT IT COSTS. A parse error has a byte offset
+# into the query text and a runtime error does not -- it has a row number, or
+# a column name, or nothing at all -- so folding them into one struct would
+# mean a meaningless `off: 0` on two thirds of the messages. The cost is that
+# `or_return` does not cross the boundary: no function may propagate from the
+# parser into the evaluator or back, because `Result(T, PErr)` and
+# `Result(T, RErr)` are different types and Tycho has no `From`-style error
+# conversion to bridge them. In practice the two chains meet only in `main`,
+# which `match`es each separately, so the cost is one extra `match` -- but a
+# program with three error types and a call graph that mixed them would pay
+# this at every boundary, and there is no language feature here to make that
+# cheaper.
+struct RErr:
+    msg: string
 
 # ---------------------------------------------------------------------------
 # the value model and the AST
@@ -202,7 +438,7 @@ enum Value:
 # indices into a node array -- which a probe established before this file was
 # written: an enum declared in a program (not the corelib) may recurse both
 # directly and through an array payload, and `match` may bind a payload and
-# recurse into the same function. See plan.md phase 1's evidence.
+# recurse into the same function -- `show_expr` and `eval` below both do it.
 enum Expr:
     ELit(Value)
     ECol(string)
@@ -670,28 +906,570 @@ fn explain(q: Query):
     println(")")
 
 # ---------------------------------------------------------------------------
+# values: kinds, rendering, and the comparisons
+# ---------------------------------------------------------------------------
+
+# The KIND of a value, as an int, so that every rule below can be written as a
+# comparison of two ints instead of as a nine-armed nested `match`.
+#
+# FRICTION. An enum has no way to ask for a value's variant WITHOUT binding its
+# payload: there is no `is`, no tag accessor, and a match arm must name a
+# binder even when the arm does not use it. So `kind` is the tag accessor this
+# language does not have, hand-written once, and `VBool(b)` binds a `b` that is
+# never read -- three times over. It compiles, so the cost is only that the
+# reader of `kind` has to notice the binders are decoration. Written once here
+# and used everywhere is much the lesser evil: the alternative is that decoration
+# at every site that needs a tag.
+const K_NULL = 0
+const K_BOOL = 1
+const K_INT  = 2
+const K_DEC  = 3
+const K_STR  = 4
+
+fn kind(v: Value) -> int:
+    match v:
+        VNull:
+            return K_NULL
+        VBool(b):
+            return K_BOOL
+        VInt(n):
+            return K_INT
+        VDec(d):
+            return K_DEC
+        VStr(s):
+            return K_STR
+
+fn kind_name(v: Value) -> string:
+    k := kind(v)
+    if k == K_NULL:
+        return "null"
+    if k == K_BOOL:
+        return "bool"
+    if k == K_INT:
+        return "int"
+    if k == K_DEC:
+        return "decimal"
+    return "string"
+
+fn is_num(v: Value) -> bool:
+    k := kind(v)
+    return k == K_INT or k == K_DEC
+
+# Payload accessors. Each has a total `match`, so each needs a value for the
+# arms that cannot happen -- the same missing "unreachable" that `kind` works
+# around. Every call site guards with `kind` first; the fallbacks are never
+# reached and are chosen to be inert rather than plausible.
+fn int_of(v: Value) -> int:
+    match v:
+        VInt(n):
+            return n
+        _:
+            return 0
+
+fn bool_of(v: Value) -> bool:
+    match v:
+        VBool(b):
+            return b
+        _:
+            return false
+
+fn str_of(v: Value) -> string:
+    match v:
+        VStr(s):
+            return s
+        _:
+            return ""
+
+# A numeric value as a Decimal. `VInt` widens exactly (`decimal.from_int`), so
+# this is the common denominator for a mixed `VInt`/`VDec` comparison or sum.
+fn dec_of(v: Value) -> decimal.Decimal:
+    match v:
+        VDec(d):
+            return d
+        VInt(n):
+            return decimal.from_int(n)
+        _:
+            return decimal.from_int(0)
+
+# How a value goes back out as a CSV field. `csv.stringify` adds the quoting;
+# this only decides the bytes. `VNull` and `VStr("")` both render empty, which
+# is what makes DECISION 1's null choice free on the way out.
+fn render(v: Value) -> string:
+    match v:
+        VNull:
+            return ""
+        VBool(b):
+            if b:
+                return "true"
+            return "false"
+        VInt(n):
+            return str(n)
+        VDec(d):
+            return decimal.to_str(d)
+        VStr(s):
+            return s
+
+# Byte-lexicographic string order: -1 / 0 / 1. Written here rather than reached
+# for because this program needs the ORDER, not just equality, and a byte order
+# is the only one it can honestly claim -- `café` sorts by its UTF-8 bytes.
+fn str_cmp(a: string, b: string) -> int:
+    na := len(a)
+    nb := len(b)
+    n := na
+    if nb < n:
+        n = nb
+    for i := 0; i < n; i += 1:
+        if a[i] != b[i]:
+            if a[i] < b[i]:
+                return 0 - 1
+            return 1
+    if na < nb:
+        return 0 - 1
+    if na > nb:
+        return 1
+    return 0
+
+# Three-way compare, or an error. Compatible kinds only: numeric with numeric,
+# string with string, bool with bool. `VNull` never orders (header).
+fn cmp_vals(a: Value, b: Value) -> Result(int, RErr):
+    if is_num(a) and is_num(b):
+        if kind(a) == K_INT and kind(b) == K_INT:
+            x := int_of(a)
+            y := int_of(b)
+            if x < y:
+                return Ok(0 - 1)
+            if x > y:
+                return Ok(1)
+            return Ok(0)
+        return Ok(decimal.cmp(dec_of(a), dec_of(b)))
+    if kind(a) == K_STR and kind(b) == K_STR:
+        return Ok(str_cmp(str_of(a), str_of(b)))
+    if kind(a) == K_BOOL and kind(b) == K_BOOL:
+        x := 0
+        y := 0
+        if bool_of(a):
+            x = 1
+        if bool_of(b):
+            y = 1
+        return Ok(x - y)
+    return Err(RErr("cannot compare " + kind_name(a) + " " + shown_val(a) + " with " + kind_name(b) + " " + shown_val(b)))
+
+# Equality: `cmp_vals` plus the one `VNull` exception (header).
+fn eq_vals(a: Value, b: Value) -> Result(bool, RErr):
+    if kind(a) == K_NULL or kind(b) == K_NULL:
+        return Ok(kind(a) == K_NULL and kind(b) == K_NULL)
+    c := cmp_vals(a, b) or_return
+    return Ok(c == 0)
+
+# A value in a diagnostic. Strings are quoted so that `cannot compare string
+# "007" with int 42` cannot be misread as being about the number 7.
+fn shown_val(v: Value) -> string:
+    if kind(v) == K_STR:
+        return "\"" + esc(str_of(v)) + "\""
+    if kind(v) == K_NULL:
+        return "(empty)"
+    return render(v)
+
+# ---------------------------------------------------------------------------
+# DECISION 1 in code: a cell becomes a Value (see the header block)
+# ---------------------------------------------------------------------------
+
+# 0 = not a number at all, 1 = integer shape, 2 = decimal shape.
+# The whole accepted shape is `-? digit+ ( "." digit+ )?` and nothing else.
+# This runs BEFORE `strings.parse_int`, so that fail-open primitive never sees
+# a byte it could mis-read.
+fn num_shape(s: string) -> int:
+    n := len(s)
+    i := 0
+    if i < n and s[i] == 45:                   # '-'
+        i = i + 1
+    d0 := i
+    for i < n and is_digit(s[i]):
+        i = i + 1
+    if i == d0:
+        return 0                                # no digits at all, or "-" alone
+    if i == n:
+        return 1
+    if s[i] != 46:                             # something that is not a point
+        return 0
+    i = i + 1
+    d1 := i
+    for i < n and is_digit(s[i]):
+        i = i + 1
+    if i == d1:
+        return 0                                # a point with no digits after it
+    if i != n:
+        return 0                                # trailing junk after the digits
+    return 2
+
+fn classify(cell: string) -> Value:
+    if cell == "":
+        return VNull
+    sh := num_shape(cell)
+    if sh == 0:
+        return VStr(cell)
+    if sh == 1:
+        n := strings.parse_int(cell)
+        # THE ROUND TRIP. `007` renders as `7`, `-0` as `0`, and an integer too
+        # large for `int` renders as its wrapped self -- none of them equal to
+        # the cell, so none of them is taken.
+        if str(n) == cell:
+            return VInt(n)
+    d := decimal.from_str(cell)
+    if decimal.to_str(d) == cell:
+        return VDec(d)
+    return VStr(cell)
+
+# ---------------------------------------------------------------------------
+# the table
+# ---------------------------------------------------------------------------
+
+struct Table:
+    hdr:  [string]
+    rows: [[Value]]
+
+fn col_index(hdr: [string], name: string) -> int:
+    for i := 0; i < len(hdr); i += 1:
+        if hdr[i] == name:
+            return i
+    return 0 - 1
+
+fn join_names(hdr: [string]) -> string:
+    out := ""
+    for i := 0; i < len(hdr); i += 1:
+        if i > 0:
+            out = out + ", "
+        out = out + hdr[i]
+    return out
+
+# Read a CSV file and type every cell. Everything that can be checked ONCE, for
+# the whole file, is checked here rather than per row: a missing file, an empty
+# file, a duplicated header name, a ragged row. A check that runs per row can
+# only fail on a file that has rows, and a query over a file with none would
+# then pass a check it should have failed.
+fn load(path: string) -> Result(Table, RErr):
+    # `io.read` returns "" for a missing file, which is indistinguishable from
+    # an empty one (`corelib/io/io.ty@read`), so the existence question is
+    # asked separately and with the variant kept.
+    match io.size(path):
+        Err(io.NotFound):
+            return Err(RErr("no such file: " + path))
+        Err(io.IsDir):
+            return Err(RErr("not a file: " + path + " is a directory"))
+        Err(other):
+            return Err(RErr("cannot read: " + path))
+        Ok(sz):
+            # The success arm has no work to do -- the size is not wanted, only
+            # the fact that stat succeeded -- and an empty match arm cannot be
+            # spelled (see the FRICTION note above `where_line`). A DECLARATION
+            # is a legal statement where a bare expression is not, so binding
+            # the unwanted value is the cheapest legal way to say "nothing".
+            ok := sz
+    text := io.read(path)
+    raw := csv.parse(text)
+    if len(raw) == 0:
+        return Err(RErr("empty file, so there is no header row: " + path))
+    hdr := raw[0]
+    for i := 0; i < len(hdr); i += 1:
+        for j := i + 1; j < len(hdr); j += 1:
+            if hdr[i] == hdr[j]:
+                # Refused rather than resolved first-wins: a column reference
+                # that could mean either of two columns is exactly the "wrong
+                # rows, presented as data" failure this program refuses.
+                return Err(RErr("the header of " + path + " names the column `" + hdr[i] + "` twice"))
+    rows := [][Value]
+    for r := 1; r < len(raw); r += 1:
+        src := raw[r]
+        if len(src) != len(hdr):
+            return Err(RErr(path + ": row " + str(r + 1) + " has " + str(len(src)) + " fields but the header has " + str(len(hdr))))
+        row := []Value
+        for c := 0; c < len(src); c += 1:
+            push(row, classify(src[c]))
+        push(rows, row)
+    return Ok(Table(hdr, rows))
+
+# ---------------------------------------------------------------------------
+# the evaluator
+# ---------------------------------------------------------------------------
+
+fn need_bool(v: Value, ctx: string) -> Result(bool, RErr):
+    if kind(v) != K_BOOL:
+        return Err(RErr(ctx + " needs a boolean, got " + kind_name(v) + " " + shown_val(v) + " -- there is no truthiness here"))
+    return Ok(bool_of(v))
+
+fn arith(op: string, a: Value, b: Value) -> Result(Value, RErr):
+    if not is_num(a) or not is_num(b):
+        return Err(RErr("`" + op + "` needs two numbers, got " + kind_name(a) + " " + shown_val(a) + " and " + kind_name(b) + " " + shown_val(b)))
+    if kind(a) == K_INT and kind(b) == K_INT:
+        x := int_of(a)
+        y := int_of(b)
+        if op == "+":
+            return Ok(VInt(x + y))
+        if op == "-":
+            return Ok(VInt(x - y))
+        if op == "*":
+            return Ok(VInt(x * y))
+        # The zero check is BEFORE the operator, because division or modulo by
+        # a zero value ABORTS the process (`docs/spec/09-expressions.md:27-28`)
+        # -- there would be no error to return.
+        if y == 0:
+            return Err(RErr("`" + op + "` by zero"))
+        if op == "%":
+            return Ok(VInt(x % y))
+        if x % y != 0:
+            return Err(RErr("`/` is exact-only: " + str(x) + " / " + str(y) + " is not a whole number, and core:decimal has no div, so there is no rounding policy to apply (see DECISION 2 at the top of tools/tycho-q/main.ty)"))
+        return Ok(VInt(x / y))
+    da := dec_of(a)
+    db := dec_of(b)
+    if op == "+":
+        return Ok(VDec(decimal.add(da, db)))
+    if op == "-":
+        return Ok(VDec(decimal.sub(da, db)))
+    if op == "*":
+        return Ok(VDec(decimal.mul(da, db)))
+    if op == "%":
+        return Err(RErr("`%` needs two integers, got " + kind_name(a) + " and " + kind_name(b)))
+    return Err(RErr("`/` on a decimal has no exact result: core:decimal has no div (see DECISION 2 at the top of tools/tycho-q/main.ty)"))
+
+fn eval(e: Expr, hdr: [string], row: [Value]) -> Result(Value, RErr):
+    match e:
+        ELit(v):
+            return Ok(v)
+        ECol(name):
+            i := col_index(hdr, name)
+            if i < 0:
+                return Err(RErr("no such column: " + name))
+            return Ok(row[i])
+        EUn(op, x):
+            v := eval(x, hdr, row) or_return
+            if op == "not":
+                b := need_bool(v, "`not`") or_return
+                return Ok(VBool(not b))
+            if kind(v) == K_INT:
+                return Ok(VInt(0 - int_of(v)))
+            if kind(v) == K_DEC:
+                return Ok(VDec(decimal.neg(dec_of(v))))
+            return Err(RErr("unary `-` needs a number, got " + kind_name(v) + " " + shown_val(v)))
+        EBin(op, l, r):
+            # `and` / `or` short-circuit, so the right side is not evaluated --
+            # and therefore cannot error -- on a row the left side settles.
+            if op == "and" or op == "or":
+                lv := eval(l, hdr, row) or_return
+                lb := need_bool(lv, "`" + op + "`") or_return
+                if op == "and" and not lb:
+                    return Ok(VBool(false))
+                if op == "or" and lb:
+                    return Ok(VBool(true))
+                rv := eval(r, hdr, row) or_return
+                rb := need_bool(rv, "`" + op + "`") or_return
+                return Ok(VBool(rb))
+            a := eval(l, hdr, row) or_return
+            b := eval(r, hdr, row) or_return
+            if op == "==":
+                eq := eq_vals(a, b) or_return
+                return Ok(VBool(eq))
+            if op == "!=":
+                eq := eq_vals(a, b) or_return
+                return Ok(VBool(not eq))
+            if op == "<" or op == "<=" or op == ">" or op == ">=":
+                c := cmp_vals(a, b) or_return
+                if op == "<":
+                    return Ok(VBool(c < 0))
+                if op == "<=":
+                    return Ok(VBool(c <= 0))
+                if op == ">":
+                    return Ok(VBool(c > 0))
+                return Ok(VBool(c >= 0))
+            return arith(op, a, b)
+
+# Every column named anywhere in the query, checked against the header ONCE,
+# before a single row is evaluated. Without this, `select nope from empty.csv`
+# would print a header naming a column that does not exist and exit 0.
+#
+# FRICTION, the third sighting of one defect. This function cannot fail-or-
+# succeed: `Result(void, E)` is not expressible, so it returns `Result(int,
+# PErr-shaped RErr)` with an `Ok(0)` nobody reads, and the recursive call has
+# to BIND that meaningless value (`_ := ... or_return`) because a bare
+# `or_return` is not a statement. Both are already described in the ERRORS
+# block at the top of this file; this is where they cost a third time.
+fn check_cols(e: Expr, hdr: [string]) -> Result(int, RErr):
+    match e:
+        ELit(v):
+            return Ok(0)
+        ECol(name):
+            if col_index(hdr, name) < 0:
+                return Err(RErr("no such column: " + name + " (the header has: " + join_names(hdr) + ")"))
+            return Ok(0)
+        EUn(op, x):
+            return check_cols(x, hdr)
+        EBin(op, l, r):
+            _ := check_cols(l, hdr) or_return
+            return check_cols(r, hdr)
+
+# The output header name for one un-aliased select item. A bare column keeps
+# its own name; anything computed gets its s-expression, which is ugly on
+# purpose -- it is a legible instruction to write `as`.
+fn expr_header(e: Expr) -> string:
+    match e:
+        ECol(name):
+            return name
+        _:
+            return show_expr(e)
+
+fn header_row(q: Query, hdr: [string]) -> [string]:
+    names := []string
+    for i := 0; i < len(q.sel); i += 1:
+        match q.sel[i]:
+            IStar:
+                for j := 0; j < len(hdr); j += 1:
+                    push(names, hdr[j])
+            IExpr(e, alias):
+                if alias != "":
+                    push(names, alias)
+                else:
+                    push(names, expr_header(e))
+    return names
+
+fn project(q: Query, hdr: [string], row: [Value]) -> Result([string], RErr):
+    out := []string
+    for i := 0; i < len(q.sel); i += 1:
+        match q.sel[i]:
+            IStar:
+                for j := 0; j < len(row); j += 1:
+                    push(out, render(row[j]))
+            IExpr(e, alias):
+                v := eval(e, hdr, row) or_return
+                push(out, render(v))
+    return Ok(out)
+
+fn has_limit(o: Option(int)) -> bool:
+    match o:
+        Some(n):
+            return true
+        None:
+            return false
+
+# The whole result is built BEFORE anything is printed. That is what makes the
+# "a runtime error prints nothing on stdout" guarantee true: an error on the
+# last row of a million must not leave 999,999 rows already emitted, because a
+# consumer reading a truncated CSV cannot tell it is truncated.
+fn execute(q: Query) -> Result([[string]], RErr):
+    if len(q.ord) > 0:
+        return Err(RErr("`order by` is not implemented yet -- refused rather than ignored"))
+    if has_limit(q.lim):
+        return Err(RErr("`limit` is not implemented yet -- refused rather than ignored"))
+    if strings.ends_with(strings.to_lower(q.src), ".json"):
+        return Err(RErr("JSON input is not implemented yet -- refused rather than ignored: " + q.src))
+    t := load(q.src) or_return
+
+    for i := 0; i < len(q.sel); i += 1:
+        match q.sel[i]:
+            IStar:
+                # `*` names no column, so there is nothing to check here. The
+                # empty-arm friction again: `_ := 0` is a declaration, which is
+                # a legal statement, where the no-op this arm actually wants is
+                # not spellable at all.
+                _ := 0
+            IExpr(e, alias):
+                _ := check_cols(e, t.hdr) or_return
+    match q.filt:
+        Some(fe):
+            _ := check_cols(fe, t.hdr) or_return
+        None:
+            _ := 0
+
+    # FRICTION, MEASURED. The row filter below is the shape `core:iter` exists
+    # for, and it cannot be written with it. Two independent walls, both probed
+    # rather than assumed:
+    #
+    #   1. `corelib/iter/iter.ty@filter` is `fn(xs: [$T], keep: fn($T) -> int)`.
+    #      A predicate returning the language's own `bool` does not fit:
+    #        "argument 2 of 'iter__filter' is fn(int) -> bool, which does not
+    #         fit the parameter pattern"
+    #      So every caller of the one filter in the corelib has to spell its
+    #      predicate in a 0/1 int, in a language that has `bool`.
+    #   2. Worse, and fatal here: this predicate can FAIL -- an unknown kind
+    #      comparison, a `/` with no exact answer -- so it is a `Result`, and a
+    #      lambda cannot propagate one:
+    #        "or_return requires the enclosing function to return a Result,
+    #         but it returns int"
+    #      A lambda's body is a single expression (`docs/spec/11-functions.md:70`)
+    #      and its return type is fixed by the parameter pattern it is being
+    #      passed to, so there is no way to widen it to `Result` and no way to
+    #      write the match that would handle it inline. `core:iter` has no
+    #      fallible counterpart -- no `try_filter`, no `filter` over
+    #      `fn($T) -> Result(int, $E)`.
+    #
+    # The consequence is not a workaround, it is a different program: a plain
+    # `for` loop with `or_return` in the body. Every higher-order combinator in
+    # `core:iter` is unavailable to any pipeline stage that can fail, which is
+    # most of the stages in a query engine.
+    out := [][string]
+    push(out, header_row(q, t.hdr))
+    for r := 0; r < len(t.rows); r += 1:
+        row := t.rows[r]
+        keep := true
+        match q.filt:
+            Some(fe):
+                v := eval(fe, t.hdr, row) or_return
+                keep = need_bool(v, "`where`") or_return
+            None:
+                keep = true
+        if keep:
+            push(out, project(q, t.hdr, row) or_return)
+    return Ok(out)
+
+# ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
 
 fn usage():
-    println("usage: tycho-q --explain '<query>'")
+    println("usage: tycho-q [--explain] '<query>'")
     println("")
-    println("  --explain   parse the query and print its AST as an s-expression")
+    println("  --explain   parse the query and print its AST as an s-expression,")
+    println("              reading no file and evaluating no row")
     println("")
-    println("The accepted grammar is at the top of tools/tycho-q/main.ty.")
-    println("Reading a file and evaluating rows are not implemented yet.")
+    println("Without --explain the query is run: the `from` file is read as CSV,")
+    println("row 0 is the header, `where` is evaluated per row, and the surviving")
+    println("rows are printed as CSV on stdout with a header row first.")
+    println("")
+    println("The accepted grammar, the cell-typing rule and what `/` does are all")
+    println("at the top of tools/tycho-q/main.ty.")
+    println("`order by`, `limit` and JSON input parse but are refused when run.")
+
+fn run(q: Query):
+    match execute(q):
+        Ok(rows):
+            # `csv.stringify` already terminates every row with '\n', so this
+            # is `print` and not `println` -- the latter would add a blank
+            # line that a byte-exact golden would then have to carry.
+            print(csv.stringify(rows))
+        Err(er):
+            die("tycho-q: " + er.msg)
 
 fn main():
     av := cli.argv()
     if len(av) == 0 or av[0] == "-h" or av[0] == "--help":
         usage()
         exit(0)
-    if av[0] != "--explain":
+    explaining := false
+    qtext := ""
+    if av[0] == "--explain":
+        if len(av) != 2:
+            die("tycho-q: --explain takes exactly one query argument (try --help)")
+        explaining = true
+        qtext = av[1]
+    elif strings.starts_with(av[0], "-"):
         die("tycho-q: unknown option: " + av[0] + " (try --help)")
-    if len(av) != 2:
-        die("tycho-q: --explain takes exactly one query argument (try --help)")
-    match parse_query(av[1]):
+    else:
+        if len(av) != 1:
+            die("tycho-q: takes exactly one query argument (try --help)")
+        qtext = av[0]
+    match parse_query(qtext):
         Ok(q):
-            explain(q)
+            if explaining:
+                explain(q)
+            else:
+                run(q)
         Err(e):
             die("tycho-q: parse error at byte " + str(e.off) + ": unexpected token " + e.tok + " (expected " + e.msg + ")")
