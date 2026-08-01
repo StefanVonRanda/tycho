@@ -400,44 +400,51 @@
 #
 # `from x.json` reads an ARRAY OF OBJECTS: one object per row, keys as columns.
 #
-# THE PROBE FIRST, because it decides the whole design. `corelib/json/json.ty`
-# has no float path -- `@parse_number` reads an optional `-`, then digits, and
-# STOPS -- and that much was known. What it does INSTEAD was established by
-# RUNNING it, and it is three different failures depending on where the number
-# sits:
+# THE PROBE FIRST, because it decided the whole design. THE CORELIB IS FIXED AS
+# OF 2026-08-01 and the paragraph below is history -- it stays because it is
+# the only record of why this reader is shaped the way it is, and because the
+# loss it names has NOT gone away. `corelib/json/json.ty` had no float path --
+# `@parse_number` read an optional `-`, then digits, and STOPPED -- and that
+# much was known. What it did INSTEAD was established by RUNNING it, and it was
+# three different failures depending on where the number sat:
 #
 #   json.parse("1.5")         -> JNum(1), exit 0, no diagnostic.
-#                                SILENT TRUNCATION: 1.5 becomes 1.
+#                                SILENT TRUNCATION: 1.5 became 1.
 #   json.parse("[1.5]")       -> "tycho: out of memory", exit 1.
-#                                NON-TERMINATION: `@parse_array` advances only
-#                                on `,` or `]`, so parked on `.` it re-enters
-#                                `@parse_value`, which consumes nothing and
-#                                hands back JNum(0) forever. Unbounded memory
+#                                NON-TERMINATION: `@parse_array` advanced only
+#                                on `,` or `]`, so parked on `.` it re-entered
+#                                `@parse_value`, which consumed nothing and
+#                                handed back JNum(0) forever. Unbounded memory
 #                                from five bytes of input.
 #   json.parse('[{"a":1.5}]') -> [{"a":1,"5}]":null}]  and exit 0.
-#                                SILENT CORRUPTION: the leftover `.5}]` is read
+#                                SILENT CORRUPTION: the leftover `.5}]` was read
 #                                as the next KEY, so a document that "parsed"
-#                                now carries a column nobody wrote.
+#                                carried a column nobody wrote.
 #
-# The third is the one that matters, because it is the shape this program
-# actually reads and it is the one with no symptom. And `json.parse` returns
-# `Json`, not `Result(Json, E)` -- there is NO ERROR CHANNEL anywhere in the
-# package -- so no caller can ask whether any of this happened. It is
-# documented as lenient (`corelib/json/json.ty:12-13`), and it is, in the sense
-# that it always returns something.
+# The third is the one that mattered, because it is the shape this program
+# actually reads and it was the one with no symptom. And `json.parse` returned
+# `Json`, not `Result(Json, E)` -- there was NO ERROR CHANNEL anywhere in the
+# package -- so no caller could ask whether any of this had happened.
 #
-# SO tycho-q VALIDATES BEFORE IT PARSES. `json_guard` walks the raw bytes and
-# refuses anything `core:json` cannot faithfully represent, which is the
-# explicit handling this needed instead of an inherited one. A non-integer
-# number is refused BY NAME, with its offset and the value it would have been
-# silently read as. The full rule, and the reason the bracket check is
-# load-bearing rather than decorative, is on `json_guard` itself.
+# SO tycho-q USED TO VALIDATE BEFORE IT PARSED. `json_guard` walked the raw
+# bytes and refused anything `core:json` could not faithfully represent. It was
+# most of a second JSON parser, written only because the first one could not
+# speak, and it could only ever approximate what that one actually did.
 #
-# THE LOSS IS REAL AND IS STATED PLAINLY: a JSON file cannot carry a
-# non-integer number into this program AT ALL. A price column that is a `VDec`
-# in CSV has to be written as a STRING in JSON, and a JSON string is not
-# re-typed (below), so it stays a `VStr` and orders as text. The guard does not
-# repair that. It makes it visible instead of letting it be wrong.
+# IT IS GONE. `corelib/json/json.ty@parse_checked` returns
+# `Result(Json, JsonErr)`; every variant carries the byte offset of the byte
+# that failed, and all three failures above are now reported AT that byte. The
+# spin is not merely caught, it is unreachable: `@parse_value` no longer falls
+# through to `@parse_number` for a byte that begins no value, and both container
+# loops carry a structural cursor-must-advance guard. `load_json` now calls
+# `parse_checked` and reports what the parser tells it -- see `json_err`, which
+# is the one place tycho-q still adds words of its own.
+#
+# THE LOSS IS REAL AND IS STATED PLAINLY, and removing the guard did not change
+# it: a JSON file still cannot carry a non-integer number into this program AT
+# ALL. A price column that is a `VDec` in CSV has to be written as a STRING in
+# JSON, and a JSON string is not re-typed (below), so it stays a `VStr` and
+# orders as text. Nothing here repairs that. It is visible instead of wrong.
 #
 # WHAT A JSON VALUE BECOMES -- and note this is NOT DECISION 1's round trip:
 #
@@ -1496,113 +1503,48 @@ fn load_csv(path: string, text: string) -> Result(Table, RErr):
 # forced this shape)
 # ---------------------------------------------------------------------------
 
-fn word_at(s: string, n: int, i: int, w: string) -> bool:
-    if i + len(w) > n:
-        return false
-    return substr(s, i, i + len(w)) == w
+# WHAT USED TO BE HERE, AND WHY IT IS NOT.
+#
+# `json_guard` stood here: about a hundred lines that walked the raw text before
+# `json.parse` saw it and accepted only what `core:json` could represent, in two
+# layers -- a TOKEN ALPHABET (whitespace, `{}[],:`, a string literal, `true` /
+# `false` / `null`, and an INTEGER, with a `.` or an exponent refused BY NAME)
+# and a BRACKET NESTING check, which was the layer that ruled out the
+# non-termination rather than being decoration.
+#
+# It existed for exactly one reason: `json.parse` returned `Json`, not a
+# `Result`, so the package had NO ERROR CHANNEL and a caller could not ask
+# whether the document it got back was the document it handed in. Checking in
+# front of a parser you cannot question means writing a second parser, and a
+# second parser is only ever an approximation of the first -- the guard's own
+# comment admitted that `[1 2]` passed it.
+#
+# `corelib/json/json.ty@parse_checked` reports a cause and a byte offset, so the
+# check now happens ONCE, inside the parser that actually reads the bytes, and
+# there is no approximation to drift. Everything the guard refused is still
+# refused; the messages come from the parser now, and the two failure legs in
+# tools/tycho-q/run.sh assert against those instead of against these.
+#
+# The one thing tycho-q still says for itself is the float case, below: the
+# corelib says "fraction or exponent (floats are out of scope)", which is true
+# and is not advice. A tycho-q user needs to be told what to do instead, and
+# what it costs -- DECISION 3 at the top of this file.
+fn json_err(path: string, e: json.JsonErr) -> RErr:
+    m := path + ": byte " + str(json.err_offset(e)) + ": " + json.err_reason(e)
+    match e:
+        json.BadFloat(o):
+            return RErr(m + " -- JSON numbers here must be integers, and core:json has no float path at all. Write the value as a string if the text is what matters, and note that a JSON string is not re-typed, so it will order as text (see DECISION 3 at the top of tools/tycho-q/main.ty)")
+        _:
+            return RErr(m)
 
-# VALIDATE BEFORE PARSING. `json.parse` returns `Json`, not `Result(Json, E)`:
-# it has NO ERROR CHANNEL, so a caller cannot ask whether the parse went well,
-# and the header records three separate things it does with input it cannot
-# represent -- one of them a silent truncation, one a silent corruption, and
-# one an out-of-memory abort on four bytes.
-#
-# This walks the raw text and accepts only what `core:json` can actually
-# represent, in two layers:
-#
-#   THE TOKEN ALPHABET -- whitespace, `{}[],:`, a string literal, the three
-#   words `true` / `false` / `null`, and an INTEGER. A `.` or an exponent in a
-#   number is refused BY NAME, because that is the case a user will actually
-#   hit and "unexpected byte `.`" would not tell them what to do about it.
-#
-#   THE BRACKET NESTING -- every `}` closes an open `{`, every `]` an open `[`,
-#   `:` only inside an object, and nothing left open at the end. This layer is
-#   NOT decoration and not a general well-formedness claim: it is precisely
-#   what rules out the non-termination. `json.parse`'s array loop advances only
-#   on `,` or `]`, so a value position holding a byte `parse_value` consumes
-#   NOTHING of spins forever -- `[}]` is the smallest example. With the
-#   alphabet above, the only such bytes are `}` and `:`, and both are
-#   unreachable inside an array once brackets must nest.
-#
-# What this does NOT claim is full JSON validation: `[1 2]` (a missing comma)
-# passes the guard, and `core:json` reads it as two elements. That is lenient,
-# not dangerous -- it terminates and it invents no data -- and chasing it would
-# mean writing a second JSON parser to check the first one.
-const C_OBJ = 0
-const C_ARR = 1
-
-fn json_guard(path: string, s: string) -> Result(int, RErr):
-    n := len(s)
-    stk := []int
-    depth := 0
-    i := 0
-    for i < n:
-        c := s[i]
-        if is_ws(c):
-            i = i + 1
-        elif c == 123:                         # {
-            push(stk, C_OBJ)
-            depth = depth + 1
-            i = i + 1
-        elif c == 91:                          # [
-            push(stk, C_ARR)
-            depth = depth + 1
-            i = i + 1
-        elif c == 125:                         # }
-            if depth == 0 or stk[depth - 1] != C_OBJ:
-                return Err(RErr(path + ": byte " + str(i) + ": a `}` here closes nothing that was opened"))
-            depth = depth - 1
-            i = i + 1
-        elif c == 93:                          # ]
-            if depth == 0 or stk[depth - 1] != C_ARR:
-                return Err(RErr(path + ": byte " + str(i) + ": a `]` here closes nothing that was opened"))
-            depth = depth - 1
-            i = i + 1
-        elif c == 58:                          # :
-            if depth == 0 or stk[depth - 1] != C_OBJ:
-                return Err(RErr(path + ": byte " + str(i) + ": a `:` outside an object"))
-            i = i + 1
-        elif c == 44:                          # ,
-            if depth == 0:
-                return Err(RErr(path + ": byte " + str(i) + ": a `,` outside any array or object"))
-            i = i + 1
-        elif c == 34:                          # a string literal
-            i = i + 1
-            for i < n and s[i] != 34:
-                if s[i] == 92:                 # backslash escapes the next byte
-                    i = i + 1
-                i = i + 1
-            if i >= n:
-                return Err(RErr(path + ": the file ends inside a string literal"))
-            i = i + 1
-        elif c == 45 or is_digit(c):           # a number
-            start := i
-            if c == 45:
-                i = i + 1
-            d0 := i
-            for i < n and is_digit(s[i]):
-                i = i + 1
-            if i == d0:
-                return Err(RErr(path + ": byte " + str(start) + ": a `-` with no digits after it"))
-            if i < n and (s[i] == 46 or s[i] == 101 or s[i] == 69):     # . e E
-                # Take the whole offending token for the message, so the user
-                # sees `1.5` and not the `1` that `core:json` would have kept.
-                j := i
-                for j < n and not (is_ws(s[j]) or s[j] == 44 or s[j] == 93 or s[j] == 125):
-                    j = j + 1
-                whole := substr(s, start, j)
-                return Err(RErr(path + ": byte " + str(start) + ": JSON numbers here must be integers, and `" + whole + "` is not -- core:json has no float path at all and would read it as " + substr(s, start, i) + " with no diagnostic. Write it as the string \"" + whole + "\" if the text is what matters (see DECISION 3 at the top of tools/tycho-q/main.ty)"))
-        elif word_at(s, n, i, "true"):
-            i = i + 4
-        elif word_at(s, n, i, "false"):
-            i = i + 5
-        elif word_at(s, n, i, "null"):
-            i = i + 4
-        else:
-            return Err(RErr(path + ": byte " + str(i) + ": unexpected byte `" + chr(c) + "` -- this reads null, true, false, an integer, a string, an array and an object, and nothing else"))
-    if depth != 0:
-        return Err(RErr(path + ": the file ends with " + str(depth) + " unclosed array(s) or object(s)"))
-    return Ok(0)
+# The parse, with the corelib's failure relabelled as one of ours.
+fn json_root(path: string, text: string) -> Result(json.Json, RErr):
+    r := json.parse_checked(text)
+    match r:
+        Ok(j):
+            return Ok(j)
+        Err(e):
+            return Err(json_err(path, e))
 
 # An article for a diagnostic, so the message reads as a sentence.
 fn a_kind(k: string) -> string:
@@ -1633,8 +1575,7 @@ fn json_cell(path: string, r: int, key: string, j: json.Json) -> Result(Value, R
     return Err(RErr(path + ": row " + str(r + 1) + ", key `" + key + "`: the value is " + a_kind(k) + ", and a table cell cannot hold one -- flattening it would invent a spelling that every later query would then depend on (see DECISION 3 at the top of tools/tycho-q/main.ty)"))
 
 fn load_json(path: string, text: string) -> Result(Table, RErr):
-    _ := json_guard(path, text) or_return
-    root := json.parse(text)
+    root := json_root(path, text) or_return
     if json.kind(root) != "arr":
         return Err(RErr(path + ": the top level of a JSON source must be an ARRAY of objects, one object per row, and this is " + a_kind(json.kind(root))))
     nrows := json.len_of(root)

@@ -195,7 +195,7 @@ with tests that fail against today's parser.
     `examples/fetch/main.ty`, `examples/corelib/json/main.ty`,
     `bench/json/json.ty`, `tools/tycho-q/main.ty`, `corelib/test/json/main.ty`.
 
-- [ ] **Phase 2 — the callers stop working around it**
+- [x] **Phase 2 — the callers stop working around it**
   - Scope: `tools/tycho-q/main.ty`, `tools/tycho-q/expected.out`, and whichever
     of the other five consumers phase 1's evidence shows needs a change.
   - `tools/tycho-q/main.ty@json_guard` exists only because the corelib could not
@@ -217,6 +217,106 @@ with tests that fail against today's parser.
     `examples/`. Then `make ci` **once**, last, as the closing sweep of this
     chain — and if it reddens, fix with the failing step's own gate and re-run
     that gate, never `make ci` as a loop.
+
+  **Evidence (2026-08-01).**
+
+  **Which consumers changed: one.** `tools/tycho-q/main.ty` was the only one of
+  the six carrying a hand-written pre-validator. The other five were each read
+  and left alone, and here is what each actually does with the package, so the
+  "left alone" is a finding and not an omission:
+
+  | consumer | what it calls | why untouched |
+  |---|---|---|
+  | `examples/site/main.ty` | `json.parse` on `site.json`, then `as_str`/`get` | no validator; a config the example ships itself |
+  | `examples/fetch/main.ty` | `json.parse` on a response body, then `keys`/`len_of` | no validator; failure is genuinely not actionable there |
+  | `examples/corelib/json/main.ty` | `json.parse` on a literal, plus `json.JArr(...)` constructors | no validator; it is the lenient path's own demo |
+  | `bench/json/json.ty` | `json.parse` on a document it generates | no validator; changing it would move the benchmark |
+  | `corelib/test/json/main.ty` | both `parse` and `parse_checked` | phase 1 already converted it; it is the golden |
+
+  `tools/tycho-q/run.sh` also changed, and had to: the two guard legs asserted on
+  substrings of the guard's own messages, so leaving it alone would have left a
+  gate asserting against deleted code.
+
+  **What was deleted.** `json_guard` (72 lines), its `word_at` helper and its
+  `C_OBJ` / `C_ARR` constants — all four were reachable from nothing else
+  (`is_ws` and `is_digit` have other callers in the lexer and stayed). What
+  replaced it is 15 lines: `tools/tycho-q/main.ty@json_root`, which calls
+  `corelib/json/json.ty@parse_checked` and relabels the failure, and
+  `tools/tycho-q/main.ty@json_err`, which formats it. `load_json`'s two lines
+  `_ := json_guard(path, text) or_return` / `root := json.parse(text)` became the
+  single `root := json_root(path, text) or_return`.
+
+  **The comment block was rewritten, not deleted**, in both places the reasoning
+  lived: DECISION 3 in `tools/tycho-q/main.ty`'s header now records the probe in
+  the past tense, says plainly that the guard was most of a second JSON parser
+  written only because the first one could not speak, and says what replaced it;
+  the block where the code used to sit keeps the two-layer description of what
+  the guard checked and adds why an approximation of a parser could never be
+  right (its own comment had admitted `[1 2]` passed it). The one thing tycho-q
+  still says for itself is the float advice, and the comment says why: the
+  corelib's "fraction or exponent (floats are out of scope)" is true and is not
+  advice.
+
+  **Before/after of the two failure-leg messages**, run against the real binary
+  (`TYCHO_CORELIB=$PWD/corelib ./tychoc tools/tycho-q/main.ty -o /tmp/q`, then
+  `/tmp/q 'select * from <fixture>'` in a scratch fixture dir):
+
+  ```
+  [{"a":1.5}]  before: float.json: byte 6: JSON numbers here must be integers, and `1.5` is not -- core:json ... would read it as 1 ...
+               after : float.json: byte 7: fraction or exponent (floats are out of scope) -- JSON numbers here must be integers, and core:json has no float path at all. Write the value as a string ...
+  [}]          before: spin.json: byte 1: a `}` here closes nothing that was opened
+               after : spin.json: byte 1: byte begins no JSON value
+  ```
+
+  The "before" column is not from reading the deleted code — an offset inferred
+  that way was **wrong by one** and the run corrected it. It is from building
+  `git show HEAD:tools/tycho-q/main.ty` into `/tmp/oldq/q` and running the same
+  two queries against the same two fixtures. Both versions `exit=1` with
+  `stdout=0`, observed on all four runs.
+
+  Two things moved and both are improvements: the float offset went from 6 (the
+  `1`, i.e. the token start, which is where the guard's own scan happened to be)
+  to **7, the actual `.`** — the parser reports the byte that failed, not the
+  byte a second scanner guessed; and the `[}]` message is now about the byte
+  rather than about brackets, which is what actually goes wrong.
+
+  **`tools/tycho-q/run.sh`'s legs, both still firing.** `refuses 'json float'`
+  keeps its substring `JSON numbers here must be integers` **unchanged** — the
+  advice half of the new message deliberately preserves it, so that leg is a
+  true before/after control. `refuses 'json unbalanced'` was renamed
+  `refuses 'json bad byte'` and its substring changed from
+  `closes nothing that was opened` to the whole line
+  `spin.json: byte 1: byte begins no JSON value`, which is stricter than what it
+  replaced: it now pins the offset as well as the reason. Header `[5]` and the
+  green summary line were rewritten to match; the two stale citations in them
+  (`corelib/json/json.ty:81-92`, which now names the `JE_*` constants, and the
+  claim that the finding was "NOT fixed here") are gone.
+
+  **The golden did NOT move and was NOT re-recorded.** `tools/tycho-q/expected.out`
+  is untouched — `git status --short` after all edits lists only
+  `tools/tycho-q/main.ty` and `tools/tycho-q/run.sh` — and `make q-check` reports
+  `31-query transcript == golden`. That is the expected result rather than a
+  lucky one: the guard only ever *rejected*, every fixture in the transcript
+  passed both it and `parse_checked`, so no accepted document changed shape.
+
+  **Gates, in the order the brief set them, each run in the foreground.**
+
+  - `make q-check` → `tycho-q: green (31-query transcript == golden; select *
+    over 2 fixtures byte-identical to the input; CSV and JSON agree under cmp;
+    malformed query, missing file, unknown column, bad comparison, inexact / and
+    both core:json parse errors all refused with empty stdout)`. Ten failure legs,
+    all refusing with empty stdout.
+  - `make corelib` → `corelib: all green (tychoc matches goldens)`.
+  - `sh examples/corelib/run.sh` → `corelib examples: all green`.
+  - `make test` → `passed: 560   failed: 0`, `all green`. 560 at phase 1, 560
+    here — nothing lost.
+  - `python3 scripts/check_citations.py` → `citation check: ok`.
+  - `sh scripts/check_links.sh` → `link check: ok (142 markdown files, no dead
+    relative links)`.
+  - `make ci` → **`CI GREEN -- tree is good`, exit code 0**, first and only run.
+    Its `[3f]` leg carries the new tycho-q line verbatim; `[3c] site`, `[3c]
+    fetch` and `[3] corelib examples` are green with the three untouched
+    `examples/` consumers in them.
 
 - [ ] **Phase 3 — a float path for `Json` (FILED, NOT PART OF THIS PLAN)**
   - After phases 1 and 2 a JSON document containing `1.5` is a hard error with a
@@ -253,6 +353,90 @@ with tests that fail against today's parser.
     send a corelib change to `make corelib` first. A doc change, so the gate is
     `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`. **Not**
     `make test` — which is the whole point of the finding.
+
+- [ ] **Phase 24 — `FRICTION.md`'s top-ranked finding is fixed and the file does
+      not know it** (found by phase 2, out of its scope)
+  - `FRICTION.md`'s `## Re-scored against a type-system-shaped program,
+    2026-08-01` section opens with item **1. `core:json` accepts input it cannot
+    represent, three ways, and cannot report any of them**, and its preamble says
+    the two corelib defects at the top are "**deliberately not fixed here**". As
+    of this plan, item 1 IS fixed — that is what this plan was. A reader landing
+    on the ranked list is told the tree's worst finding is open when it is
+    closed, which is worse than not ranking it.
+  - Phase 2 did not edit it, on scope lock: the brief named six consumers plus
+    `tools/tycho-q/`, and `FRICTION.md` is none of them. The one reference phase 2
+    *could* reach — `tools/tycho-q/run.sh`'s `[5]` header, which pointed at
+    "FRICTION.md's 2026-08-01 section, item 1" as unfixed — was rewritten.
+  - Scope: `FRICTION.md` only. Mark item 1 FIXED with the commit that did it and
+    leave the finding's text intact (it is the record of what was wrong), and
+    re-check the preamble's "deliberately not fixed here" sentence, which still
+    correctly describes item 2 (`core:decimal` has no `div`, carried-forward
+    phase 20) and now over-claims for item 1. A doc change, so the gates are
+    `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`. **Not**
+    `make test` and **not** `make ci`.
+
+## Status — PLAN COMPLETE
+
+Both phases of this plan are done and committed. Phases 3, 23 and 24 are filed
+follow-ups discovered along the way, not conditions of this plan's completion —
+the same standing as everything under "Carried forward".
+
+**What the parser could not report before.** `corelib/json/json.ty@parse`
+returned `Json`, not a `Result`. There was no error channel anywhere in the
+package, so no caller could ask whether the document it got back was the document
+it handed in — and the parser had three separate answers for input it could not
+represent, all of them silent. `1.5` became `1` at exit 0. `[{"a":1.5}]` became
+`[{"a":1,"5}]":null}]` at exit 0: a **second column that nobody wrote**, in a
+document the caller believed it had read. `[1.5]` — five bytes — exhausted memory,
+because `parse_value` fell through to `parse_number` at the `.`, consumed nothing,
+returned `JNum(0)`, and the array loop advanced only on `,` or `]`.
+
+**What it reports now.** `corelib/json/json.ty@parse_checked` returns
+`Result(Json, JsonErr)`. All ten `JsonErr` variants carry the byte offset of the
+byte that failed, so `corelib/json/json.ty@err_offset` is total without a
+sentinel and `corelib/json/json.ty@err_str` is a one-line stderr message. The
+three failures above are now `BadFloat` at byte 1, byte 7 and byte 2
+respectively — asserted against the byte each must name, not against non-zero —
+plus twelve further failure classes locked in `corelib/test/json.out`. The spin
+is not caught, it is **unreachable**: `parse_value` no longer falls through for a
+byte that begins no value, and both container loops carry a structural
+cursor-must-advance guard that no path can reach today and that stays as the
+invariant. `parse` keeps its signature and discards the error, so the lenient
+callers were untouched.
+
+**And the working-around stopped.** `tools/tycho-q/main.ty` carried `json_guard`:
+72 lines that re-scanned the raw bytes ahead of the parser, because checking in
+front of a parser you cannot question is the only place left to check. It is
+gone, replaced by 15 lines that call `parse_checked` and relabel the failure. The
+two gate legs that used to prove the guard was in front of the corelib now prove
+the corelib's own error crosses the package boundary and reaches stderr. No
+consumer in the tree carries a hand-written pre-validator any more.
+
+**What is still unfixed, named rather than implied.** Six `# gap:` lines sit in
+`corelib/json/json.ty`'s header, each with its ceiling and its way out:
+
+1. **no float or exponent value at all** — `1.5` is an error, never a number;
+2. **no `\uXXXX`** — an error at the `u`, where it used to become the four hex
+   digits as literal text;
+3. **integers wrap silently at 64 bits** — `parse_number` accumulates into an
+   `int` with no overflow test, so a 20-digit JSON integer still yields a wrong
+   number at exit 0. **This is the one silent-wrong-value path left in the
+   parser**, and it is the only gap of the six that fails open;
+4. **a trailing comma is accepted** — `[1,]` parses as `[1]`; lenient, loses and
+   invents nothing;
+5. **leading zeros are accepted** — `01` → 1, while a leading `+` is an error;
+6. **trailing text after the top-level value is ignored** — `{"a":1} junk` is Ok,
+   which is the documented behaviour six callers already had.
+
+**A float path is filed as phase 3 and is not done.** A JSON document containing
+`1.5` is a hard error with a byte offset. That is correct — the package header
+declares floats out of scope, so this makes a declared scope enforced instead of
+silently violated — but it is still a JSON parser that cannot read ordinary JSON,
+and every real feed has a float in it somewhere. The Pre-flight measured what
+promoting it would cost (no `match` over `Json` exists outside
+`corelib/json/json.ty`, so no external exhaustive match breaks); the open question
+is which numeric tower it lands in, and it interacts with carried-forward phase 20
+(`core:decimal` has no `div`). Promoting it is a decision for the user.
 
 ## Carried forward
 
