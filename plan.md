@@ -17,7 +17,11 @@ Measured, on this tree:
   `expected a match arm \`Variant(bindings):\` or \`Variant:\``. Confirmed by
   probe, not inherited.
 - `defer` is absent from `docs/spec/appendix-b-keywords.md`; `defer f()` parses
-  as a bare expression statement and is rejected.
+  as a bare expression statement and is rejected. **This is recorded and is not
+  a phase.** Memory is arena-freed at scope exit, `core:io` is path-based with
+  no handles, and the only manual cleanup in the tree is 15 `close` calls in
+  `server/main.ty` plus a handful in `examples/`. Nothing here needs it; it was
+  filed because the probe surprised me, which is not a reason.
 
 ## Phases
 
@@ -76,21 +80,7 @@ Measured, on this tree:
     instructions/sec before and after and report both — phase 3 predicted a
     number, and this is where it is checked.
 
-- [ ] **Phase 5 — `defer`**
-  - Not a rare feature: it does not exist. Every acquire/release path in the
-    tree is hand-unwound.
-  - The design question is its interaction with the arena memory model
-    (`docs/spec/07-memory-model.md`): when does a deferred call run relative to
-    the scope's arena being freed, and what happens to a value it captures.
-    Answer that in the phase, in the spec, before implementing.
-  - Scope: `src/tychoc.c`, `docs/spec/`, fixtures under `tests/`.
-  - Done when: a fixture proves ordering (LIFO within a scope), that a deferred
-    call runs on every exit path including an early `return`, and whatever the
-    design decides about a captured value.
-  - Verify: `make test`. Convert one real caller — `tools/tycho-ar/main.ty` or
-    `corelib/io/` — and show the diff is smaller.
-
-- [ ] **Phase 6 — DESIGN: a cheap reference to an aggregate**
+- [ ] **Phase 5 — DESIGN: a cheap reference to an aggregate**
   - Deliverable is a written design at `docs/internals/design-aggregate-ref.md`,
     **not code**. This is the most valuable item here and the one most likely to
     be got wrong by starting with an implementation.
