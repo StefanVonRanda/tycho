@@ -7,7 +7,7 @@
 # tychoc *itself*:
 #   tests/run.sh:74-75   builds the EMITTED C of each fixture with
 #                        -fsanitize=address,undefined -fno-sanitize-recover=all
-#   Makefile:103-106     documents that lane
+#   Makefile@Differential  documents that lane, above the `test` target
 #   Makefile@SKIPPED, Makefile@TYCHO_NO_ASAN
 #                        disable it for -m32 (32-bit ASan is absent under multilib)
 # Nothing anywhere builds src/tychoc.c with -fsanitize. So the reference
