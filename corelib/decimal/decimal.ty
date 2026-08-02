@@ -5,8 +5,10 @@
 # That makes it the right type for money and any base-10-exact arithmetic.
 #
 # add/sub/mul/cmp are exact; the stored scale is preserved (1.50 stays "1.50").
-# rescale truncates toward zero. Division is deferred (it needs a target scale +
-# rounding policy) -- use rescale after a scaled multiply, or add it on demand.
+# rescale truncates toward zero. div is the one operation with no exact answer in
+# general, so it takes what it needs from the CALLER instead of inventing it:
+# `div(a, b, scale, mode)` -- the target scale and the rounding mode are arguments,
+# and dividing by zero is an `Err(DivByZero)` rather than an abort.
 package decimal
 import "core:bignum"
 
@@ -82,6 +84,54 @@ fn rescale(a: Decimal, newscale: int) -> Decimal:
         return Decimal(scale_up(a.coeff, newscale - a.scale), newscale)
     factor := bignum.pow(bignum.from_int(10), a.scale - newscale)
     return Decimal(bignum.div(a.coeff, factor), newscale)
+
+# ---- division --------------------------------------------------------------
+
+# Rounding modes for `div`. There is no default -- the caller names one.
+const HALF_UP = 0        # ties away from zero: 0.5 -> 1, -0.5 -> -1
+const TOWARD_ZERO = 1    # drop the remainder; agrees with `rescale`, which also truncates
+
+# A `const` does not cross a package boundary here (`decimal.HALF_UP` is "package
+# 'decimal' has no variant 'HALF_UP'"), so the two modes are also readable as calls
+# -- that is what a caller in another package writes.
+fn half_up() -> int:
+    return HALF_UP
+
+fn toward_zero() -> int:
+    return TOWARD_ZERO
+
+# Why `div` refuses. DivByZero is an Err and not an abort because a caller
+# dividing values it read from a file has to be able to report the row.
+enum DivErr:
+    DivByZero
+    BadScale(int)        # a negative target scale
+    BadMode(int)         # a mode that is neither HALF_UP nor TOWARD_ZERO
+
+# a/b at exactly `scale` fractional digits, rounded by `mode`.
+#
+# a/b == (ca * 10^-sa) / (cb * 10^-sb), so the coefficient wanted at `scale` is
+# ca * 10^(sb+scale) / (cb * 10^sa) -- one bignum long division, no float. Both
+# sides are taken as magnitudes so the rounding question is only ever "is the
+# remainder past half", and the sign is reapplied to the finished quotient.
+fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr):
+    if bignum.is_zero(b.coeff):
+        return Err(DivByZero)
+    if scale < 0:
+        return Err(BadScale(scale))
+    if mode != HALF_UP and mode != TOWARD_ZERO:
+        return Err(BadMode(mode))
+    num := bignum.abs(scale_up(a.coeff, b.scale + scale))
+    den := bignum.abs(scale_up(b.coeff, a.scale))
+    q, r := bignum.divmod(num, den)
+    if mode == HALF_UP:
+        if bignum.cmp(bignum.mul(r, bignum.from_int(2)), den) >= 0:
+            q = bignum.add(q, bignum.from_int(1))
+    zero := bignum.from_int(0)
+    aneg := bignum.cmp(a.coeff, zero) < 0
+    bneg := bignum.cmp(b.coeff, zero) < 0
+    if aneg != bneg:
+        q = bignum.neg(q)
+    return Ok(Decimal(q, scale))
 
 # "[-]int[.frac]", frac left-zero-padded to `scale`. The stored scale is shown, so a
 # value at scale 2 always prints two fractional digits (e.g. "1.50", "0.00").
