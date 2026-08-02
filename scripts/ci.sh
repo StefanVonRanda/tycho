@@ -86,7 +86,7 @@ make -s asan-self
 step "[2d/13] make rtparity  (the emitted runtime surface -- env knobs, tycho: traps, arena-stats rows -- vs the oracle)"
 make -s rtparity
 
-step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch dogfoods vs goldens)"
+step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch/weblog/webserver dogfoods vs goldens)"
 make -s corelib
 make -s corelib-examples
 make -s site
@@ -98,13 +98,29 @@ make -s mandelbrot
 # unconditionally. Before this it was in no aggregate lane at all: its golden was
 # left stale by 39d75be and stayed red, unnoticed, until plan.md batch 5.
 make -s fetch
+# weblog and webserver joined this step on 2026-08-02, and the paragraph below
+# used to name them as the examples this file did not run. Both runners already
+# compared their own expected.out with `diff -u`; what was missing was any lane
+# that invoked them, so the two goldens were asserted by nothing -- the same shape
+# as fetch's stale golden above, and un-ignoring them (see .gitignore) had made
+# them visible without making them checked. Both are deterministic with NOTHING
+# excluded from the comparison (weblog's log is embedded in its source; the
+# webserver leg run here dispatches a fixed route list through the pure handler
+# and binds no socket, so there is no port in the output). ~4s for the pair,
+# measured 2026-08-02. They need cc and libc only -- no network, no sqlite3 -- so
+# like the four above they are safe here unconditionally.
+make -s weblog
+make -s webserver
 
-# Step 3 above builds corelib, corelib-examples, site, raytrace, mandelbrot and
-# fetch -- and NOTHING else in the tree with an entry point. The remaining
-# examples with their own runner (webserver, weblog, sqlite) were outside this
-# file, so
-# examples/webserver/main.ty once sat uncompilable for a whole phase with no gate
-# red. This lane is compile-only (`--emit-c`: no cc, no link, no libcurl/sqlite3)
+# Step 3 above builds corelib, corelib-examples, site, raytrace, mandelbrot,
+# fetch, weblog and webserver -- and NOTHING else in the tree with an entry point.
+# Four runners remain outside it: examples/sqlite (deliberately -- it needs
+# sqlite3) and examples/life, examples/minesweeper, examples/snake, which each
+# hold a golden that no lane compares -- the same hole this step just closed for
+# weblog and webserver, filed rather than absorbed on 2026-08-02.
+# That gap is why examples/webserver/main.ty once sat uncompilable for a whole
+# phase with no gate red -- webserver is covered twice over now, here and by its
+# own golden above, but those four reach this lane only. It is compile-only (`--emit-c`: no cc, no link, no libcurl/sqlite3)
 # and costs milliseconds, so closing that hole is not a reason to run `make ci`
 # less often. It does NOT assert freeze parity -- see scripts/entrypoints.sh.
 step "[3b/13] make entrypoints  (every entry point in the tree still compiles)"

@@ -306,7 +306,7 @@ phases.
   `docs/internals/plan-loops-cleanup-DONE.md:3145` independently names. Phase 7
   files the leftover inconsistency in that archive.
 
-- [ ] **Phase 3 — the two orphan lanes get compared, not just compiled**
+- [x] **Phase 3 — the two orphan lanes get compared, not just compiled**
   - `examples/weblog/expected.out` and `examples/webserver/expected.out` are
     tracked, and as of the previous plan they are un-ignored and gate-protected —
     and **nothing in `make ci` compares them**. `scripts/entrypoints.sh` proves
@@ -326,6 +326,129 @@ phases.
   - Verify: the new lane both directions, `sh scripts/entrypoints.sh`, and
     `make goldens-check` (the new lane must not break the golden inventory).
     Hold `make ci` for phase 4, which closes the chain.
+
+  **Evidence, 2026-08-02.** Changed: `examples/weblog/run.sh` and
+  `examples/webserver/run.sh` (header comments only — not one executed line),
+  `Makefile` (two targets + `.PHONY`), `scripts/ci.sh`, `CLAUDE.md`'s two gate
+  tables, and two citations my own edit broke (below). No golden was re-recorded;
+  no `.ty` was changed.
+
+  **WHAT THE RUNNERS ALREADY DID — the brief said not to assume, and the answer
+  is that BOTH ALREADY COMPARED THEIR GOLDEN.** Each ends in a `diff -u` of
+  `$D/expected.out` against the program's stdout, sets `fail=1` on a difference
+  and `exit 1`s, and each already had a `RECORD=1` re-record path. So the
+  assumption in the Pre-flight — "their goldens exist and were being protected,
+  which suggests their runners compare them locally" — held. **The hole was never
+  a missing assertion. It was that nothing invoked the runners**, so a correct
+  comparison sat unexecuted: `scripts/entrypoints.sh` proves only that the two
+  `main.ty` compile, and its own line for them is in a compile-only sweep. This
+  phase therefore added no comparison logic at all; it added the two `make`
+  targets and the two `make -s` calls that make the existing comparison run. That
+  is the whole functional diff.
+
+  **DETERMINISM — ESTABLISHED BEFORE ANYTHING WAS WIRED, AND NOTHING IS
+  EXCLUDED.** One build each into a `mktemp -d`, then the binary run three times:
+
+      weblog: 3 runs byte-identical
+      webserver: 3 runs byte-identical
+      weblog == golden
+      webserver == golden
+
+  `cmp` was silent between runs 1/2 and 2/3 for each program, and between run 1
+  and the tracked golden. The comparison is therefore over the **whole** of
+  stdout for both lanes, with no field masked and no `grep -v` — and that is a
+  property of the programs, checked rather than hoped for:
+
+  - **weblog** parses a demo log embedded as a string literal in its own source
+    when given no arguments, so every timestamp it prints is the log's
+    (`2000-10-10 13`), not the clock's. No port, no hostname, no readdir order.
+  - **webserver's** no-argument leg is the `else` branch of `main`, which
+    dispatches a **fixed** `paths` list through the pure `route()` and prints
+    status + body — `# Golden-locked (no socket needed)` in the source says so,
+    and it is true: no socket is created, so no port exists to leak.
+    `examples/webserver/main.ty@getenv` reads `PORT` only inside `if serve:`,
+    which this runner never takes. Pages render from
+    `examples/webserver/main.ty@ROOT` = `examples/webserver/content`, all eight
+    files tracked, so a change there is a real golden change and should redden.
+
+  Both binaries are built into a `mktemp -d`, but that path never reaches stdout —
+  which is why nothing had to be excluded. **The exclusion statement is written
+  into both runner headers**, per the brief, not only here; `tools/tycho-ar/run.sh`
+  is the precedent and the wording follows it. The webserver header also says in
+  as many words that it is **not** `server-check`: that lane binds `--port 0` and
+  excludes the bound port, and the two are one edit away from being confused.
+
+  **WHERE IT IS WIRED, AND WHY THERE.** `make weblog` and `make webserver`, each
+  `: tychoc` running its own `run.sh` — the exact convention `fetch`, `site`,
+  `raytrace` and `mandelbrot` already use — added to **step [3/13]** of
+  `scripts/ci.sh` beside them. Step 3 is the right home by that step's own
+  definition: `scripts/ci.sh` describes it as the lane where "everything in step 3
+  compares stdout to a recorded golden", which is precisely what these two do. No
+  new step number was created, so the `/13` denominator is untouched. The stale
+  paragraph at the old `scripts/ci.sh:104` — which named webserver and weblog as
+  examples that "were outside this file" — is now false and was rewritten rather
+  than left to mislead.
+
+  **RED, THEN GREEN — ONCE PER LANE, BY CHANGING WHAT THE PROGRAM PRINTS.** Each
+  `main.ty` was backed up first and the restore was `cmp`-silent against the
+  backup, with `git diff --stat` empty, before the green run.
+
+  *weblog*, `println("status classes:")` → `println("status classes (by code):")`:
+
+      -status classes:
+      +status classes (by code):
+      weblog: tychoc output differs from golden
+      make: *** [Makefile:335: weblog] Error 1
+
+  *webserver*, the footer literal `Served by Tycho.` → `Served by Tycho (dev).`:
+
+      -<footer>Served by Tycho.</footer>
+      +<footer>Served by Tycho (dev).</footer>
+      webserver: tychoc output differs from golden
+      make: *** [Makefile:338: webserver] Error 1
+
+  After restoring each: `make weblog exit=0` and `make webserver exit=0`, both
+  printing `ok (tychoc == golden; ...)`. Note the webserver diff landed at
+  `@@ -108,7 +108,7 @@` — the change was 108 lines into a 117-line golden, so
+  this is not a lane that only checks its first screen.
+
+  **MEASURED COST, NOT ESTIMATED.** Three runs of each runner, wall clock via
+  `date +%s.%N`: weblog `2.14 / 1.85 / 1.85 s`, webserver `2.07 / 2.10 / 2.10 s`
+  — **~1.9s and ~2.1s, ~4s for the pair**. Nearly all of it is tychoc + `cc`; the
+  programs themselves are milliseconds. `CLAUDE.md`'s gate table carries the pair
+  as one row with that figure and its date, and the `make ci` step table's `[3]`
+  row now names `make weblog` and `make webserver` among the targets to reach for
+  instead of the sweep.
+
+  **A CITATION MY OWN EDIT BROKE, WHICH THE GREEN GATE DID NOT CATCH.** Growing
+  the two runner headers shifted their bodies down (weblog `+13`, webserver
+  `+23`), and three refs elsewhere name those body lines by number:
+  `.gitignore` cited `examples/weblog/run.sh:24` and
+  `examples/webserver/run.sh:23` for the `mktemp -d`, and
+  `scripts/check_goldens.py` cited `examples/weblog/run.sh:23` for `D`'s literal
+  assignment. **`python3 scripts/check_citations.py` was green across the break**
+  — `SRCCITE` bounds-checks a source→source ref and nothing more, exactly as
+  phase 1 measured on `Makefile:103-106` — so all three drifted silently, and
+  `examples/webserver/run.sh:23` had come to rest on a **new comment line of mine
+  that contains the words `mktemp -d`**, the worst case: a ref that looks right
+  and points at prose about the thing instead of the thing. Repaired by repointing
+  to `:37`, `:46` and `:36`, and by rewording both new headers to say "throwaway
+  temp dir" so the token `mktemp` occurs exactly once per runner and cannot
+  produce that false resolution again. This is collateral of this phase's own
+  edit, not a discovery — the general defect it re-demonstrates is already filed
+  as phase 5, which this strengthens with a second instance.
+
+  **GATES, each run in the foreground after the repair.** `make weblog webserver`
+  green **twice in a row** (determinism at the lane level, not just the binary).
+  `sh scripts/entrypoints.sh` → `entrypoints: ok (11 entry points compile with
+  tychoc)`, with `ok examples/weblog/main.ty` and `ok examples/webserver/main.ty`
+  in the list. `make goldens-check` → `goldens-check: ok`, `35 runners scanned, 17
+  name a golden ... all tracked by git` — the new wiring did not disturb the
+  inventory, which was the specific risk. `python3 scripts/check_citations.py` and
+  `sh scripts/check_links.sh` both green; their tallies are deliberately not
+  copied here, per `CLAUDE.md` — run the command. `sh -n` clean on `scripts/ci.sh`
+  and both runners. **`make ci` and `make test` were NOT run**, as instructed:
+  nothing compiled changed, and phase 4 closes the chain.
 
 - [ ] **Phase 4 — a CI lane that compiles under a hostile locale**
   - Two plans have now fixed a locale defect — `runtime/tycho_rt.c@tycho_float_to_str`
@@ -438,6 +561,44 @@ phases.
   - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`.
     **Not** `make test` — no compiled artifact is involved, so it can tell you
     nothing the doc gates did not.
+
+- [ ] **Phase 8 — three MORE orphan goldens, found while closing the first two**
+  - Found by phase 3 and filed rather than absorbed: its scope was the two lanes
+    the plan named, and this is three different programs with a different reason
+    for being uncovered.
+  - `ls examples/*/run.sh` returns eleven runners. After phase 3, step [3/13]
+    covers `corelib`, `site`, `raytrace`, `mandelbrot`, `fetch`, `weblog` and
+    `webserver`. Of the four left, **`examples/sqlite` is deliberate** — it needs
+    `sqlite3`, and the audit table above already retired the phase about it. The
+    other three are not deliberate and were never argued for: `examples/life`,
+    `examples/minesweeper` and `examples/snake` each ship a tracked golden
+    (`life.out`, `mine.out`, `snake.out`) and `grep -n 'life\|snake\|minesweeper'
+    Makefile scripts/ci.sh` returns **no target and no CI call** for any of them.
+    They are exactly the state weblog and webserver were in one commit ago:
+    goldens visible, protected by `make goldens-check`, compared by nothing.
+  - **The open question is whether these three CAN be gated, and it must be
+    answered by reading them, not assumed.** All three are terminal games, so
+    unlike weblog they may want a TTY, may read a clock for a frame delay, may
+    seed a PRNG, or may print ANSI cursor control whose bytes depend on terminal
+    size. Any one of those makes the golden a record of the minute it was
+    recorded. Phase 3's method transfers: run each binary three times from one
+    build and `cmp` before wiring anything.
+  - If a program is deterministic, wire it exactly as phase 3 did (a `make`
+    target beside the others, a `make -s` call in step [3/13], the exclusion
+    statement in the runner). **If one is not, do not mask fields to force it
+    green** — say so in the runner and in the evidence, and consider whether the
+    golden should exist at all rather than being asserted by nothing while
+    looking asserted. That is a real possible outcome here and is not a failure
+    of the phase.
+  - Scope: `examples/life/run.sh`, `examples/minesweeper/run.sh`,
+    `examples/snake/run.sh`, `Makefile`, `scripts/ci.sh`, `CLAUDE.md`'s gate
+    table. **Not** the three `main.ty` files — if a program must change to be
+    gateable, that is a further phase, not this one.
+  - Verify: the new lane both directions per program (red by changing what it
+    prints, green after reverting), `make goldens-check`, and the two doc gates.
+    **Not** `make test` and **not** `make ci` — no compiled artifact changes, and
+    `scripts/ci.sh:117` already records this filing so the next reader of that
+    comment meets it.
 
 ## Audit of the seven filed phases, 2026-08-02
 

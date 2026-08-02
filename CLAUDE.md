@@ -16,6 +16,7 @@ cheapest gate that can actually redden for your change.** Running a broader one
 | `make ar-check` | ~3s | `tools/tycho-ar/`, and any `core:compress`/`sha256`/`io`/`path` change that moves a digest, the walk order or the archive round trip — **the only lane that runs anything under `tools/tycho-ar/`** |
 | `make q-check` | ~3.5s | `tools/tycho-q/`, and any `core:csv`/`core:json`/`core:decimal`/`core:sort` change that moves a header, a cell's classification, a decimal's scale or a sort order — **the only lane that runs anything under `tools/tycho-q/`** |
 | `make server-check` | ~7s | `server/main.ty`, `server/www/`, `server/run.sh`, and the `core:net` accept/recv/send path |
+| `make weblog webserver` | ~4s (1.9 s + 2.1 s, three runs each, measured 2026-08-02) | `examples/weblog/`, `examples/webserver/` — including `content/`, whose rendered pages are half the golden — and any `core:datetime`/`core:strings`/`core:sort` or `core:markdown`/`core:httpd` change that moves a parsed timestamp, a bucket order or rendered HTML. **The only lanes that run either program**; `scripts/entrypoints.sh` compiles them and asserts nothing. Neither binds a socket, so neither is `server-check` |
 | `make corelib-examples` | ~44s (43.7 s, measured 2026-08-01) | `examples/corelib/**`, and any corelib change with a worked example — it compiles and runs each one against its golden. `sh examples/corelib/run.sh` is the same work at the same cost (43.5 s in the same session) |
 | `make corelib` | ~49s (49.4 s, measured 2026-08-01) | **any `corelib/` change.** Builds and runs every `corelib/test/<pkg>/main.ty` against `corelib/test/<pkg>.out`. **`make test` cannot redden for a corelib change** — see the rule below — so this is the gate, not a supplement to one |
 | `sh scripts/tools_check.sh` | ~1 min | `tools/tychofmt.ty`, `tools/lsp.ty` |
@@ -84,7 +85,7 @@ end, to confirm what you already believe.
 |---|---|
 | `[1b] goldens-check` | `make goldens-check` (~0.07s; it names the `run.sh:line` and the untracked file. The fix is a `.gitignore` un-ignore line for that lane's directory plus `git add`, not a re-record) |
 | `[2] make test`, `[2b] ilp32`, `[2c] asan-self` | `make test` (`sh scripts/asan_self.sh` for the ASan-specific case) |
-| `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` / `make fetch` |
+| `[3] corelib` and its dogfoods | `make corelib` / `make corelib-examples` / `make fetch` / `make weblog` / `make webserver` |
 | `[3b] entrypoints` | `sh scripts/entrypoints.sh` |
 | `[3c] server-check` | `make server-check` (~7s; it starts tycho-httpd for real — a red here is a behaviour change in `server/main.ty` or `core:net`, not a build break, which `[3b]` would have caught first) |
 | `[3d] shim-check` | `make shim-check` |

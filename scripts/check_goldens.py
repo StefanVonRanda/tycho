@@ -27,7 +27,7 @@ Four substitutions make the rest resolvable, each of them read out of the same
 runner:
 
   $PWD/x            -> x                      (tools/tycho-q/run.sh:71)
-  $D/expected.out   -> D's literal assignment (examples/weblog/run.sh:23)
+  $D/expected.out   -> D's literal assignment (examples/weblog/run.sh:36)
   dir/$name.out     -> dir/*.out              (corelib/run.sh:24)
   ${f%.ty}.err      -> the dirname of the enclosing `for f in <glob>`
                                               (tests/conc/run.sh:79 over :77)
