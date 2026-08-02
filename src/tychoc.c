@@ -27,6 +27,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <locale.h>    /* newlocale/uselocale: the "C" LC_NUMERIC float literals are read and written in */
+#include <float.h>     /* DBL_MAX: the float-literal overflow test. NOT math.h/isinf -- tychoc links without -lm */
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
 
@@ -417,6 +418,33 @@ static TokVec lex(const char *src) {
                      * c_numeric_handle above -- this and the E_FLOAT emit are
                      * one defect with two sites. */
                     double dv = c_strtod(s, p);
+                    /* OVERFLOW IS A TYCHO ERROR, UNDERFLOW IS NOT. `1e400` has no
+                     * binary64 value: strtod returns +-HUGE_VAL, and codegen used to
+                     * emit the bare token `inf`, which is not a C keyword and not a
+                     * standard macro -- so the user wrote Tycho and cc answered
+                     * "'inf' undeclared". Refusing it here matches the integer twin
+                     * a few lines below (`integer literal out of range`) and loses no
+                     * expressible value: docs/spec/03-types.md 5.2.2 makes infinity a
+                     * legal float VALUE, reachable as 1.0/0.0, which this does not
+                     * touch. What it rejects is a SPELLING nobody writes on purpose --
+                     * a finite decimal silently becoming an infinity is the same class
+                     * of defect as the locale bug above: correct source, wrong number,
+                     * nothing on stderr.
+                     * UNDERFLOW STAYS LEGAL. `1e-400` is below the smallest denormal,
+                     * so its correctly-rounded binary64 value IS 0.0 -- ordinary
+                     * IEEE-754 gradual underflow, still finite, and it compiles and
+                     * behaves today. errno cannot tell the two apart (strtod sets
+                     * ERANGE for both), which is why the test is on the VALUE.
+                     * DBL_MAX, not isinf: the token grammar above accepted only
+                     * [0-9.eE+-], so it can never spell "nan" -- a magnitude past
+                     * DBL_MAX is therefore exactly an infinity -- and <float.h> is
+                     * freestanding, while math.h's isinf can leave an undefined
+                     * reference on a host that does not inline it -- Makefile@tychoc
+                     * is the link recipe and it carries no -lm. */
+                    if (dv > DBL_MAX || dv < -DBL_MAX)
+                        die_at(line, "float literal out of range: `%.*s` exceeds the largest float "
+                                     "(IEEE-754 binary64); write 1.0/0.0 for an infinity",
+                               (int)(p - s), s);
                     tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv, tcol});
                 } else {
                     int64_t v = 0;      /* fixed 64-bit, not `long`: on an ILP32 host a
@@ -9637,7 +9665,17 @@ static char *gen_expr(Expr *e, const char *arena) {
              * must be '.' before the scan below can mean anything -- under a
              * comma locale every finite value looks integral to it and the guard
              * turns `1,5` into `1,5.0`, a comma expression cc accepts. The
-             * conversion and the guard are one change; see c_numeric_handle. */
+             * conversion and the guard are one change; see c_numeric_handle.
+             * NON-FINITE CANNOT REACH HERE, and the 'n'/'i' arm of the scan is
+             * kept as the guard's stated contract rather than as a live path.
+             * Every fval is finite by construction: the lexer now REFUSES an
+             * out-of-range literal (see the DBL_MAX check in lex_num), int->float
+             * literal conversion and the synthesized 0.0/1.0 seeds start finite,
+             * and const_fold folds only unary minus on a float -- its binop arm
+             * bails on any non-E_INT operand, so 1.0/0.0 is never folded. WIDEN
+             * const_fold TO FLOAT ARITHMETIC AND `inf` COMES BACK HERE as the
+             * bare token cc rejects; give it a portable form (HUGE_VAL, or a
+             * 1.0/0.0 construction) in the same change. */
             char b[64];
             c_dtoa(b, sizeof b, e->fval);
             int isfloaty = 0;

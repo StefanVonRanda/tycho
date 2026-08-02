@@ -1088,7 +1088,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     Provenance lines, and this phase is the evidence.** §3.8 is the proof by
     construction — `src/tychoc.c:402` stayed in bounds through phase 2 and
     quietly became the raw-string scanner while claiming to be `::`. Written
-    `src/tychoc.c:606@TK_COLONCOLON` it could not have survived, exactly as the
+    `src/tychoc.c:634@TK_COLONCOLON` it could not have survived, exactly as the
     22 anchored citations survived. The numbers now support making it a rule
     rather than a suggestion: a `> Provenance:` line names a specific mechanism
     by definition, there are far fewer of them than the 1794 bare refs, and each
@@ -1801,7 +1801,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
       `runtime/tycho_rt.c:795`.
   - **And one anchored range shows the caveat the checker's own header warns
     about.** `docs/spec/03-types.md:376` cites
-    `src/tychoc.c:850-862@arrc_sized_b` and **passes**, because line 736 — the
+    `src/tychoc.c:878-890@arrc_sized_b` and **passes**, because line 736 — the
     function's opening line — is inside 727-739. But the function is
     `src/tychoc.c:736-748`: the range is misaligned by nine lines and its first
     nine lines are an unrelated comment about `int64_t` sizes. A live instance of
@@ -1900,7 +1900,7 @@ full run is ever wanted, `make ci N=0` is the cheap form.
     `docs/spec/15-program.md:22`'s `src/tychoc.c:3811-3881`
     included the function's opening line as its **last** line; the function is
     `src/tychoc.c:3707-3777`. And `docs/spec/03-types.md:376`'s
-    `src/tychoc.c:2025-2041@"bounded"` ended one line into the `bounded` branch
+    `src/tychoc.c:2053-2069@"bounded"` ended one line into the `bounded` branch
     that starts at `src/tychoc.c:1863` and runs to `:1880`. **Three of the nine
     anchored ranges were misaligned** — a 33% failure rate in the class the gate
     reports as green, which is the caveat's whole point.

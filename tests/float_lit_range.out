@@ -1,0 +1,6 @@
+1e-400         = 0.0
+1e-300         = 1e-300
+DBL_MAX        = accepted, finite
+0.1 round trip = exact
+1.0/0.0        = +inf, -1.0/0.0 = -inf
+0.0/0.0        = NaN, unordered
