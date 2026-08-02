@@ -15,12 +15,13 @@
 # betray the person using it: return the wrong rows, and look like it worked.
 # Every leg below is aimed at one route to that.
 #
-#   [1] THE TRANSCRIPT MATCHES A GOLDEN. 33 queries covering the parse (`--explain`
+#   [1] THE TRANSCRIPT MATCHES A GOLDEN. 35 queries covering the parse (`--explain`
 #       s-expressions, so precedence is proved by shape and not by prose), cell
 #       typing, `where`, decimal arithmetic, the total order, sort stability,
 #       multi-key mixed directions, `limit`, JSON floats read exactly, and both
-#       readers. The golden is the concatenated stdout, so it reddens on any
-#       change to a row, an order, a header or a rendering.
+#       readers, and division at the default scale and rounding mode. The golden
+#       is the concatenated stdout, so it reddens on any change to a row, an
+#       order, a header or a rendering.
 #   [2] READING DOES NOT REWRITE. `select *` over each fixture is `cmp`-identical
 #       to the fixture file itself. A query that neither filters nor computes must
 #       return the bytes it was given -- including `007`, `-0`, `0080`, a 26-digit
@@ -31,7 +32,7 @@
 #       a DECIMAL in CSV and a FLOAT in JSON: it filters, orders, multiplies and
 #       renders it, and the two sources still produce the same bytes.
 #   [4] THE FAILURE LEGS REFUSE. A malformed query, a missing file, an unknown
-#       column, an incompatible comparison and a `/` with no exact answer each
+#       column, an incompatible comparison and a `/` whose divisor is zero each
 #       exit non-zero with their reason on STDERR and NOTHING on stdout. The
 #       empty-stdout half is the load-bearing half: tycho-q builds the whole
 #       result before printing, so a consumer never reads a truncated CSV it
@@ -220,7 +221,7 @@ q 'Q15 and/or/not rows' "select name from sales.csv where not (region == 'eu') o
 # --- arithmetic. 0.1 + 0.2 is 0.3 exactly: core:decimal, and no float anywhere.
 q 'Q16 decimal mul'     'select name, qty * price as total from sales.csv where qty > 0'
 q 'Q17 0.1 + 0.2'       "select 0.1 + 0.2 as sum from sales.csv where name == 'Ada'"
-q 'Q18 exact div'       "select name, qty / 3 as third from sales.csv where name == 'Ada'"
+q 'Q18 div'             "select name, qty / 3 as third from sales.csv where name == 'Ada'"
 q 'Q19 unaliased'       "select name, qty * price from sales.csv where name == 'Cy'"
 
 # --- the order. Both directions of every rank boundary, and stability.
@@ -249,6 +250,15 @@ q 'Q31 order by alias'  "select name, qty * price as total from sales.csv where 
 # JSON alone.
 q 'Q32 json float exact' 'select * from float.json'
 q 'Q33 json float order' 'select name, price, qty * price as total from sales.json where price > 0.15 order by price desc, name asc'
+
+# --- division. Both of these were REFUSAL legs until decimal.div existed.
+# Q34 is the averaging shape the old DECISION 2 named as its own cost: a total
+# over a count, at scale 6, rounded half-up. Q35 is the inexact int division
+# that used to be the 'inexact /' refusal -- and it is the case that proves the
+# result kind does not depend on the row, because `0 / 5` prints `0.000000`
+# here and not `0`.
+q 'Q34 total / count'   'select name, qty * price as total, qty * price / qty as avg from sales.csv where qty > 0'
+q 'Q35 inexact div'     'select name, qty / 5 as fifth from sales.csv'
 
 if [ "$RECORD" = 1 ]; then
     if [ "$fail" -ne 0 ]; then echo "FAIL: refusing to RECORD from a failed run"; exit 1; fi
@@ -334,9 +344,13 @@ refuses 'unknown order key' 'no such column: nope' \
         'select name from sales.csv order by nope'
 refuses 'bad comparison'    'cannot compare string "007" with int 42' \
         'select name from sales.csv where code == 42'
-refuses 'inexact /'         '`/` is exact-only' \
-        'select name, qty / 5 as h from sales.csv'
-refuses 'decimal /'         '`/` on a decimal has no exact result' \
+# `/` USED TO HAVE TWO REFUSAL LEGS HERE -- an inexact int division and any
+# division touching a decimal. `corelib/decimal/decimal.ty@div` exists now, so
+# both COMPUTE: they are Q34 and Q35 in the golden. What is still refused is the
+# narrower thing, a zero divisor, and it is refused for a different reason than
+# before: `decimal.div` returns Err(DivByZero) rather than the process aborting.
+# Di's qty is 0 in the fixture, so this query reaches it.
+refuses 'divide by zero'    '`/` by zero' \
         'select name, price / qty as u from sales.csv'
 refuses 'no truthiness'     '`where` needs a boolean' \
         'select name from sales.csv where qty'
@@ -357,7 +371,7 @@ refuses 'json bad byte'     'spin.json: byte 1: byte begins no JSON value' \
         'select * from spin.json'
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-q: green (33-query transcript == golden; select * over 2 fixtures byte-identical to the input; CSV and JSON agree under cmp on a query that filters, orders, multiplies and renders a price that is a decimal in one and a float in the other; malformed query, missing file, unknown column, bad comparison, inexact /, both refused JSON float spellings and both core:json parse errors all refused with empty stdout)"
+    echo "tycho-q: green (35-query transcript == golden; select * over 2 fixtures byte-identical to the input; CSV and JSON agree under cmp on a query that filters, orders, multiplies and renders a price that is a decimal in one and a float in the other; malformed query, missing file, unknown column, bad comparison, division by zero, both refused JSON float spellings and both core:json parse errors all refused with empty stdout)"
 else
     echo "tycho-q: FAIL"; exit 1
 fi

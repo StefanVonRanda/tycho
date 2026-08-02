@@ -89,9 +89,9 @@ Eve,10.50
 === Q17 0.1 + 0.2
 sum
 0.3
-=== Q18 exact div
+=== Q18 div
 name,third
-Ada,4
+Ada,4.000000
 === Q19 unaliased
 name,(* (col qty) (col price))
 Cy,1.40
@@ -180,3 +180,15 @@ Di,2.00,0.00
 Ada,1.50,18.00
 Eve,1.50,10.50
 Cy,0.20,1.40
+=== Q34 total / count
+name,total,avg
+Ada,18.00,1.500000
+Cy,1.40,0.200000
+Eve,10.50,1.500000
+=== Q35 inexact div
+name,fifth
+Ada,2.400000
+Bo,-0.600000
+Cy,1.400000
+Di,0.000000
+Eve,1.400000
