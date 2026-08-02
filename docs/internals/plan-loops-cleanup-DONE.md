@@ -3142,7 +3142,7 @@ request (`fc921d7`, `7a04e53`).
       added the grammar.
   - `scripts/asan_self.sh:38` says the generic bind vector is xmalloc'd at
     `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`,
-    an unrelated function. The real site is `src/tychoc.c:7734@gi.binds` — off
+    an unrelated function. The real site is `src/tychoc.c:7762@gi.binds` — off
     by ~690 lines, in bounds the whole time, and therefore green.
   - `tests/rtparity/run.py:67` cites `src/tychoc.c:10343` as "the loop codegen".
     That line is a bare closing brace.
@@ -3200,8 +3200,8 @@ source→source refs carried an `@`, so the grammar change alone could not redde
 anything. It was adopted on **8 sites verified by reading the target line**, all
 in shell and Python comments — `Makefile:245@SKIPPED` from `scripts/asan_self.sh`
 (twice), `scripts/editors_check.sh` (once) ; `scripts/tools_check.sh:25@editors`
-from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6817@r_step`
-and `src/tychoc.c:3487@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
+from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6845@r_step`
+and `src/tychoc.c:3515@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
 `.ty` file was touched on purpose: a `.ty` edit is `make test` and
 `scripts/tools_check.sh` territory, and this batch's gate budget is the two doc
 gates. Sites whose target line did **not** support the claim were left bare and
@@ -3458,13 +3458,13 @@ old spelling and why it was wrong are written into the line.
 
 - `scripts/asan_self.sh:38` said the generic bind vector is xmalloc'd at
   `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`. The
-  real site is `src/tychoc.c:7727@binds` (`gi.binds = (Type *)xmalloc(...)`),
+  real site is `src/tychoc.c:7755@binds` (`gi.binds = (Type *)xmalloc(...)`),
   ~690 lines away and in bounds the whole time. Now **anchored**, so the next
   shift reddens the gate instead of rotting.
 - `tests/rtparity/run.py:67` cited `src/tychoc.c:10343` for the inline
   `tycho: range step is zero` trap; that line is a bare `}`. The trap survived
   the removal of `range()` — it is at `:10843` — so this one *is* repointable,
-  and is now `src/tychoc.c:11039@_step`. Its sibling `compiler/tychoc0.ty:9513`
+  and is now `src/tychoc.c:11077@_step`. Its sibling `compiler/tychoc0.ty:9513`
   was read and is correct.
 
 The anchor token is `[A-Za-z0-9_]+` on the source side, so `@binds` is the
@@ -4447,7 +4447,7 @@ compiled: `compiles: corelib/test/result`, `compiles: corelib/test/httpd`.
   > only bounds-checks. The gate's clean run below is the proof it held.
   >
   > **Fixtures first, as the brief required, and they earned it.** The narrow
-  > operator rule is `elem_arith_ok`'s char arm, `src/tychoc.c:1150@et == T_CHAR`.
+  > operator rule is `elem_arith_ok`'s char arm, `src/tychoc.c:1178@et == T_CHAR`.
   > It could not be annotated, but it *is* reachable by inference: an array
   > literal of `char_at` calls infers `[char]` without the type ever being
   > written. Measured at HEAD, before any compiler change:
@@ -5248,7 +5248,7 @@ token `bool` and said in prose "its diagnostic lists `bool` as permitted" — an
 anchor (reproduced here without its `@token`, which the gate would read as a
 live citation and redden on) whose whole point
 was the allow-list phase 54 deleted. The clause now says the diagnostic states
-the rule instead of enumerating it, anchored `src/tychoc.c:2157@void`. Any
+the rule instead of enumerating it, anchored `src/tychoc.c:2185@void`. Any
 rewrite of a diagnostic in this tree should expect the spec to be quoting it.
 
 `sh scripts/tools_check.sh` and `make conc` were run because the change touches
@@ -6452,9 +6452,9 @@ conclusion is that it needs a separate plan.
        `bytes` is accepted, with §12/§16 documenting when to reach for which.
   - **The work if the answer is 2 or 3 is small and already located.** Two parse
     sites reject `char`, re-derived at batch 12 and both still current: a named
-    type position falls through to `src/tychoc.c:2262@unknown type` (`char` is
+    type position falls through to `src/tychoc.c:2290@unknown type` (`char` is
     lexed as an identifier, so there is no `TK_KW_CHAR` — that is why the two
-    sites differ), and the keyword switch's `src/tychoc.c:2280@expected a type`
+    sites differ), and the keyword switch's `src/tychoc.c:2308@expected a type`
     is where a `TK_KW_CHAR` case would land. `T_CHAR` already has a C
     representation (`src/tychoc.c:1361`), a diagnostic spelling
     (`src/tychoc.c:7435`) and a full operator story; only the *name* is missing.

@@ -395,7 +395,7 @@ ANCHORED SOURCE -> SOURCE (added 2026-07-30, docs/internals/plan-loops-cleanup-D
 The wrong-line class needs an expected token, so SRCCITE now accepts an optional
 `@token` suffix and content-checks the cited lines when one is present:
 
-    src/tychoc.c:3487@i_dotlt      as cited from fuzz/run_parforparity.py
+    src/tychoc.c:3515@i_dotlt      as cited from fuzz/run_parforparity.py
 
 This block used to carry a second example, the ilp32 recipe's "ASan lane SKIPPED"
 echo as cited from scripts/asan_self.sh.  Those refs moved to the numberless

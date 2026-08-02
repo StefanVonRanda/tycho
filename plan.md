@@ -145,7 +145,7 @@ phases.
   `make editors-check`, `make test` and `make ci` were not run for the same
   reason: no compiled artifact and no executed line changed.
 
-- [ ] **Phase 2 — an overflowing float literal is a Tycho diagnostic, not a `cc` error**
+- [x] **Phase 2 — an overflowing float literal is a Tycho diagnostic, not a `cc` error**
   - `1e400` reaches codegen as an infinity and is emitted as the bare token
     `inf`, so the generated C fails to compile with `'inf' undeclared`. The user
     wrote Tycho and got an error about C.
@@ -166,6 +166,145 @@ phases.
   - Verify: `make`, then `make test` (~8 min, timeout at least 900000 ms). It
     was `passed: 562 failed: 0`; your fixture should make it 563, and a number
     that moves DOWN is a silent loss. Prove the check can fail by reverting.
+
+  **Evidence, 2026-08-02.** Changed: `src/tychoc.c` — one `#include`, a range
+  check in the float-literal arm of the lexer, and a comment in codegen's
+  `E_FLOAT` arm. Added: `tests/diag/float_lit_overflow.ty` + `.err`,
+  `tests/reject/float_lit_overflow_neg.ty`, `tests/float_lit_range.ty` + `.out`.
+  Nothing under `runtime/`, `corelib/` or the harness.
+
+  **THE DECISION: (a), A TYCHO COMPILE ERROR — and the reason is that the spec's
+  guarantee is about VALUES, while `1e400` is a SPELLING.**
+  `docs/spec/03-types.md:59` does make infinity legal (`1.0/0.0` is `+inf`, and
+  `/` does not trap), which is a real argument against rejecting anything. It is
+  not an argument for this literal: refusing `1e400` removes no expressible
+  value, because `1.0/0.0` is untouched and still produces `+inf` — asserted in
+  `tests/float_lit_range.ty`, not assumed. What is removed is a shape nobody
+  writes on purpose, in which a finite decimal the user typed silently becomes an
+  infinity. That is the same class of defect as the locale bug the previous plan
+  fixed one commit earlier: correct source, wrong number, nothing on stderr.
+
+  **The decisive evidence is in-tree, not taste.** `src/tychoc.c:455` already
+  does exactly this for the integer twin — `die_at(line, "integer literal out of
+  range")`, eleven lines below the new check, in the same `lex` arm. An
+  out-of-range integer literal has always been a Tycho diagnostic here. Option
+  (b) would have left the two literal kinds answering the same question in
+  opposite ways.
+
+  **THE CHECK, AND WHY IT IS SPELLED THAT WAY.** `src/tychoc.c:444` —
+  `if (dv > DBL_MAX || dv < -DBL_MAX)`, with `src/tychoc.c:30` adding
+  `<float.h>`. Two choices in there were measured rather than assumed:
+
+  - **`DBL_MAX`, not `isinf`.** `Makefile@tychoc` is the compiler's link recipe
+    and carries no `-lm`, so `math.h`'s `isinf` risks an undefined reference on
+    any host that does not inline it. `<float.h>` is freestanding. The
+    substitution is exact: the token grammar above the check accepted only
+    `[0-9.eE+-]`, so a literal can never spell `nan`, and a magnitude past
+    `DBL_MAX` is therefore exactly an infinity.
+  - **The value, not `errno`.** `strtod` sets `ERANGE` for overflow **and** for
+    underflow, so an `errno` test would have rejected `1e-400` too.
+
+  **THE NEIGHBOURING CASES, EACH RUN, NOT ASSUMED.** Probed with `--emit-c` on
+  the built compiler; the middle column is what the emitted C or the compiler
+  said before this phase.
+
+  | Written | Before | Now | Why |
+  |---|---|---|---|
+  | `1e400` | `double h_x = inf;` → `cc`: `'inf' undeclared` | Tycho error quoting `` `1e400` `` | no binary64 value; `1.0/0.0` is the way to an infinity |
+  | `-1e400` | `double h_x = (-inf);` → same `cc` error | same error, quoting `` `1e400` `` | the lexer sees the magnitude; unary minus is its own token, so no separate check was needed |
+  | `1e-400` | `double h_x = 0.0;` | unchanged | gradual underflow: the correctly-rounded binary64 value **is** `0.0`, still finite, legal IEEE-754 |
+  | `0.1` | `double h_x = 0.10000000000000001;` | unchanged | finite with no exact binary64 form — must keep working, and does |
+  | `1.7976931348623157e308` | accepted | accepted | the boundary is inclusive; a `>=` check would have rejected `DBL_MAX` itself |
+  | `1.0/0.0`, `0.0/0.0` | runtime division | unchanged | **not** const-folded — `src/tychoc.c:4481` bails on any non-`E_INT` operand — so no `nan`/`inf` ever reaches codegen as a literal |
+
+  **NO PATH CAN PRODUCE A `nan` LITERAL, and that is enumerated rather than
+  hoped for.** Every `E_FLOAT` `fval` is finite by construction: the lexer now
+  refuses an out-of-range literal; int→float literal conversion and the
+  synthesized `0.0`/`1.0` seeds start finite; and `const_fold` folds only unary
+  minus on a float (negating a finite gives a finite) because its binop arm
+  returns early on any non-`E_INT` operand. So the `'n'`/`'i'` arm of the `".0"`
+  guard's scan is now unreachable. It is **kept**, with that fact written at
+  `src/tychoc.c:9669`, because it states the guard's contract — and because
+  widening `const_fold` to float arithmetic would bring `inf` straight back to
+  that line as the bare token `cc` rejects. The note says so where the next
+  person will meet it.
+
+  **A PORTABLE EMISSION (`HUGE_VAL`) WAS CONSIDERED AND NOT WRITTEN.** After the
+  lexer check nothing can reach codegen non-finite, so such code could not be
+  exercised by any fixture — a check that cannot fail, in the same commit as a
+  phase about checks that cannot fail. The enumeration above plus the comment is
+  the honest form; `CLAUDE.md`'s ladder rung 1 is the rest of the reason.
+
+  **THE FIXTURE CONVENTION, AND WHERE IT WAS READ.** Three lanes, all defined in
+  `tests/run.sh` and used as they are already used there:
+
+  - `tests/diag/<name>.ty` + `.err` — an invalid program whose **exact** compiler
+    output is a golden (`tests/run.sh:229-252`). Chosen for `1e400` because this
+    is the lane that can prove the message **quotes the literal**; `tests/reject/`
+    asserts only "nonzero exit, non-empty diagnostic" and would pass on
+    "out of range" with no number in it. Modelled on
+    `tests/diag/array_arith_fixlen.ty`, whose header says in as many words that
+    `tests/reject/` locks *that* and this lane locks *what*.
+  - `tests/reject/<name>.ty` — the cheap companion for `-1e400`. Flat, no
+    `package` header, per the guard `tests/run.sh:153-166`.
+  - `tests/<name>.ty` + `.out` — the positive lane, for everything that must keep
+    compiling. **Nothing in it prints an `inf` or a `nan`:**
+    `docs/spec/appendix-f-impl-defined.md` records that text as
+    implementation-defined, so a golden holding it would be a portability trap
+    rather than a range test. Non-finites are checked structurally instead — by
+    comparison against `DBL_MAX`, and by NaN's unorderedness.
+
+  **BREAK AND REVERT — BOTH DIRECTIONS, AND THE SECOND ONE MATTERS.**
+  `src/tychoc.c` was backed up first; the restore was `cmp`-silent against the
+  backup before the final `make`.
+
+  *Too narrow* — the check replaced by `if (0)`, rebuilt:
+
+      FAIL diag_float_lit_overflow (compiler ACCEPTED an invalid program)
+      FAIL reject_float_lit_overflow_neg (tychoc ACCEPTED an invalid program)
+      /tmp/.../dg.c:2556:18: error: 'inf' undeclared (first use in this function)
+       2556 |     double h_x = inf;
+
+  — which is the original filing reproduced exactly, from the fixture.
+
+  *Too wide* — the same check as `dv >= DBL_MAX || dv <= -DBL_MAX`, rebuilt:
+
+      tests/float_lit_range.ty:42: error: float literal out of range:
+      `1.7976931348623157e308` exceeds the largest float ...
+
+  The positive fixture is therefore not decoration: it is the only thing holding
+  the boundary inclusive, and it reddens on an off-by-one nobody would notice.
+
+  **COUNT: `passed: 562` before, `passed: 565   failed: 0` after** — `+3`, one
+  per fixture, in three different lanes. The brief predicted 563 for one fixture;
+  the two extra are the negated form and the positive side, both named in the
+  brief's own "do not fix only the one case" list, and neither could share a file
+  with the first (the compiler stops at the first error). Nothing moved down.
+  `make` is clean under `-Wall -Wextra -std=c11`. `make ci` and `make corelib`
+  were not run, as instructed.
+
+  **CITATION CHURN: 120 stale anchors, all repointed, none deleted.** The insert
+  shifts `src/tychoc.c` by `+1` from line 30, `+28` from line 420 and `+38` from
+  line 9641 (`git diff -U0 -- src/tychoc.c` hunk headers). Repointed from the
+  gate's own STALE report rather than by hand, so only refs it named were
+  touched; the seven it declined were finished individually after reading each
+  line. **No record line was repointed** — the one candidate the scan flagged,
+  `docs/spec/12-aggregates.md:18`, is ordinary provenance prose that happens to
+  contain a `→`, not a before/after row, so it was shifted like the rest.
+  `python3 scripts/check_citations.py` and `sh scripts/check_links.sh` both green.
+  Their tallies are deliberately not copied here: every one of them moves when any
+  later phase adds a citation, so a number typed into this paragraph would be
+  stale by the next commit with nothing checking it — run the command.
+
+  **ONE REPOINT IS NOT MECHANICAL, AND IT IS FLAGGED HERE.**
+  `scripts/asan_self.sh:39` anchored `binds` at a line that, at `HEAD`, read
+  `if (sig_find(nm)) { g_sizebinds = saved_sb; return; }` — it passed only
+  because `g_sizebinds` **contains** the substring `binds`. It was already
+  pointing at the wrong statement and the gate could not say so. Rather than
+  shift a wrong number by 28, it now reads `src/tychoc.c:7762@gi.binds`, the
+  `xmalloc` the sentence actually describes — which is the same site
+  `docs/internals/plan-loops-cleanup-DONE.md:3145` independently names. Phase 7
+  files the leftover inconsistency in that archive.
 
 - [ ] **Phase 3 — the two orphan lanes get compared, not just compiled**
   - `examples/weblog/expected.out` and `examples/webserver/expected.out` are
@@ -242,6 +381,63 @@ phases.
   - Verify: `python3 scripts/check_citations.py`, and — if the chosen form is
     checkable — a break-and-restore proving it red. If it is not checkable,
     say so plainly instead of claiming a proof.
+
+- [ ] **Phase 6 — the same silent overflow, one width down: an `f32` literal**
+  - Found by phase 2 while enumerating the neighbouring cases, and filed rather
+    than absorbed: it is a different type, a different site and a different
+    verdict, and phase 2's scope was `float`.
+  - Measured on the built compiler: `a: f32 = 3.5e38` **compiles clean and prints
+    `inf`**. `3.5e38` is a perfectly good binary64, so phase 2's `DBL_MAX` check
+    passes it; codegen then emits `float h_a = 3.5e+38;` and the C narrowing to
+    binary32 — whose maximum is about `3.4e38` — turns it into an infinity. No
+    diagnostic from tychoc, none from `cc`, and unlike the `float` case the
+    program builds and runs, so nothing anywhere says a word.
+  - **This is not simply "apply phase 2 again", and the phase must decide, not
+    assume.** Phase 2 rejected a literal with no representable value at all;
+    here the literal is representable as a `float` and is only out of range for
+    the **annotated** target width, which is a narrowing question. `src/tychoc.c`
+    already rewrites an `E_INT`/`E_FLOAT` literal in place when `want == T_F32`
+    (`src/tychoc.c:6490` and the arms around it) — that rewrite is the natural
+    place for a range check, and it is also the place a check would catch
+    coercions the user did not write. Check whether the integer side already
+    answers this for `u32`/`i32` narrowing and follow whatever it does, rather
+    than inventing a third convention.
+  - Scope: `src/tychoc.c`, and a fixture. Whether `f32` arithmetic that overflows
+    at **runtime** should say anything is explicitly **out** of scope — that is
+    IEEE-754 doing its job, exactly as `1.0/0.0` is.
+  - Verify: `make`, then `make test` (~8 min), which was `passed: 565` after
+    phase 2. Prove the check can fail both ways, as phase 2 did: a literal that
+    must be refused, and the `f32` maximum itself, which must stay legal.
+
+- [ ] **Phase 7 — a frozen archive names two different "real sites" for the same ref**
+  - Found by phase 2's citation churn. Not urgent and possibly not work at all —
+    filed so the next reader of that archive is not left to rediscover it.
+  - `docs/internals/plan-loops-cleanup-DONE.md:3145` says the real site of
+    `scripts/asan_self.sh`'s generic-bind-vector reference is the `gi.binds`
+    `xmalloc`; `docs/internals/plan-loops-cleanup-DONE.md:3461` says it is a
+    different line, and quotes the same `xmalloc` **beside a number that is not
+    it**. The two cannot both be right, and they were written into the same
+    archive.
+  - Phase 2 repaired the live citation (`scripts/asan_self.sh:39` now points at
+    the `xmalloc`, agreeing with the first of the two) and left both archive
+    lines shifted mechanically, because `CLAUDE.md` protects a frozen record's
+    numbers and this phase had no mandate to decide which of them was the record.
+  - **The question is whether either line is a record line at all**, in the shape
+    `CLAUDE.md` defines — neither is a repair log and neither is a table row, so
+    on the letter of the rule they are ordinary prose in a frozen file, which the
+    rule does not protect and the shape does not mark. That reading is worth
+    testing before anything is edited: if it holds, the second line is simply
+    wrong and can be corrected; if it does not, the honest move is to leave both
+    and say why here.
+  - **Read the whole `binds`/`gi.binds` history before touching either.** The
+    ref has been repointed across several phases and the accidental
+    `g_sizebinds` ⊃ `binds` substring match — which is why the gate never
+    reddened on it — is itself part of the record.
+  - Scope: `docs/internals/plan-loops-cleanup-DONE.md`, and only if the answer is
+    "correct it". **Not** `scripts/check_citations.py`, and not a sweep.
+  - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`.
+    **Not** `make test` — no compiled artifact is involved, so it can tell you
+    nothing the doc gates did not.
 
 ## Audit of the seven filed phases, 2026-08-02
 

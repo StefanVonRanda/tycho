@@ -1,0 +1,20 @@
+# The exact wording of the out-of-range float literal diagnostic.
+#
+# BEFORE THIS EXISTED, `1e400` was ACCEPTED. strtod returned +HUGE_VAL, codegen's
+# E_FLOAT arm ran it through %.17g and emitted the bare token `inf` -- not a C
+# keyword, not a standard macro -- so the generated C failed with `'inf'
+# undeclared`. The user wrote Tycho and got an error about C, naming a line of a
+# file they never wrote. This lane locks the Tycho-level replacement, including
+# that the message QUOTES THE LITERAL: an error that says only "out of range"
+# leaves the reader hunting for which number in the line it meant.
+#
+# tests/reject/float_lit_overflow_neg.ty is the companion for the negated form
+# (`-1e400`), which reaches the same check because the lexer sees the magnitude
+# and the unary minus is a separate token. tests/float_lit_range.ty is the
+# positive side: the neighbouring cases that must keep compiling -- underflow to
+# zero, DBL_MAX, an inexact finite, and the 1.0/0.0 route to an infinity that
+# docs/spec/03-types.md 5.2.2 guarantees and this diagnostic deliberately leaves
+# alone.
+fn main():
+    x := 1e400
+    println(str(x))
