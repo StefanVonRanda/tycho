@@ -163,6 +163,12 @@ gmon.out
 # appears in `git status` at all, so a fresh clone fails with "no golden". That
 # is not hypothetical -- it is exactly what happened to tycho-ar's golden above.
 !/tools/tycho-q/*.out
+# the tycho-vm bytecode tool's golden (tools/tycho-vm/expected.out) is tracked
+# too -- the disassembly listings, the three programs' output and fib's trace
+# excerpt are recorded assertions, not build artifacts. Same line, same reason
+# as the two above; the runner builds the binary and every .tyc into a
+# `mktemp -d`, so nothing else in that directory needs un-ignoring.
+!/tools/tycho-vm/*.out
 
 # Claude Code session state (locks, worktrees) — never publish
 /.claude/
