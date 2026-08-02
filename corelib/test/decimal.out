@@ -9,3 +9,10 @@ negabs=-3.14 3.14
 rescale=1.5000 1.23
 bigprec_ok=1
 cents=1.00 ok=1
+div_exact=3 3 0.25 0.25
+div_repeat=0.33333 0.33333 0.66667 0.66666
+div_modes=0.67 0.66 1 0
+div_scale0=4 3
+div_neg=-0.67 -0.67 0.67 -0.66
+div_vs_rescale=1.23 -1.23 ok=1
+div_err=ERR:divzero ERR:divzero ERR:scale-1 ERR:mode9
