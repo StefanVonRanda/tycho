@@ -3142,7 +3142,7 @@ request (`fc921d7`, `7a04e53`).
       added the grammar.
   - `scripts/asan_self.sh:38` says the generic bind vector is xmalloc'd at
     `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`,
-    an unrelated function. The real site is `src/tychoc.c:7762@gi.binds` — off
+    an unrelated function. The real site is `src/tychoc.c:7770@gi.binds` — off
     by ~690 lines, in bounds the whole time, and therefore green.
   - `tests/rtparity/run.py:67` cites `src/tychoc.c:10343` as "the loop codegen".
     That line is a bare closing brace.
@@ -3200,7 +3200,7 @@ source→source refs carried an `@`, so the grammar change alone could not redde
 anything. It was adopted on **8 sites verified by reading the target line**, all
 in shell and Python comments — `Makefile:245@SKIPPED` from `scripts/asan_self.sh`
 (twice), `scripts/editors_check.sh` (once) ; `scripts/tools_check.sh:25@editors`
-from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6845@r_step`
+from `scripts/editors_check.sh` and `scripts/ci.sh` ; `src/tychoc.c:6853@r_step`
 and `src/tychoc.c:3515@i_dotlt` (twice) from `fuzz/run_parforparity.py`. No
 `.ty` file was touched on purpose: a `.ty` edit is `make test` and
 `scripts/tools_check.sh` territory, and this batch's gate budget is the two doc
@@ -3458,13 +3458,13 @@ old spelling and why it was wrong are written into the line.
 
 - `scripts/asan_self.sh:38` said the generic bind vector is xmalloc'd at
   `src/tychoc.c:6870`. That line is `static const char *discarded_map_get`. The
-  real site is `src/tychoc.c:7755@binds` (`gi.binds = (Type *)xmalloc(...)`),
+  real site is `src/tychoc.c:7763@binds` (`gi.binds = (Type *)xmalloc(...)`),
   ~690 lines away and in bounds the whole time. Now **anchored**, so the next
   shift reddens the gate instead of rotting.
 - `tests/rtparity/run.py:67` cited `src/tychoc.c:10343` for the inline
   `tycho: range step is zero` trap; that line is a bare `}`. The trap survived
   the removal of `range()` — it is at `:10843` — so this one *is* repointable,
-  and is now `src/tychoc.c:11077@_step`. Its sibling `compiler/tychoc0.ty:9513`
+  and is now `src/tychoc.c:11085@_step`. Its sibling `compiler/tychoc0.ty:9513`
   was read and is correct.
 
 The anchor token is `[A-Za-z0-9_]+` on the source side, so `@binds` is the

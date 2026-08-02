@@ -301,7 +301,7 @@ phases.
   `if (sig_find(nm)) { g_sizebinds = saved_sb; return; }` — it passed only
   because `g_sizebinds` **contains** the substring `binds`. It was already
   pointing at the wrong statement and the gate could not say so. Rather than
-  shift a wrong number by 28, it now reads `src/tychoc.c:7762@gi.binds`, the
+  shift a wrong number by 28, it now reads `src/tychoc.c:7770@gi.binds`, the
   `xmalloc` the sentence actually describes — which is the same site
   `docs/internals/plan-loops-cleanup-DONE.md:3145` independently names. Phase 7
   files the leftover inconsistency in that archive.
