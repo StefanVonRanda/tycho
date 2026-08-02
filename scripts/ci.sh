@@ -209,6 +209,19 @@ make -s ar-check
 step "[3f/13] make q-check  (tycho-q: 31-query transcript vs golden, select * byte-identical to the input, CSV == JSON, ten failure legs refused with empty stdout)"
 make -s q-check
 
+# 3g for the same reason 3e and 3f are: a dogfood compared against a recorded
+# golden, and the /13 denominator counts the numbered steps. Third lane closing
+# the same hole for the same directory -- [9] tools-check compiles every .ty
+# under tools/, [3b] entrypoints never looks there, so nothing ran the VM.
+#
+# What this one adds that the other two cannot: an assembler and a disassembler
+# that must agree byte for byte, and seven runtime traps that must each name
+# their pc and leave stdout empty. A VM that started wrapping on overflow,
+# jumping one past the end, or printing half a result before dying would have
+# kept `make ci` green. ~2.3s.
+step "[3g/13] make vm-check  (tycho-vm: asm deterministic, dis round-trips byte-identically, listings + fib/gcd/sort output vs golden, trace deterministic, 7 runtime traps + 4 malformed sources refused with empty stdout)"
+make -s vm-check
+
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
 

@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -330,6 +330,35 @@ ar-check: tychoc
 # See tools/tycho-q/run.sh.
 q-check: tychoc
 	@sh tools/tycho-q/run.sh
+
+# vm-check: the gate for tycho-vm, the bytecode assembler/disassembler/
+# interpreter in tools/tycho-vm/. Third of the same shape as ar-check and
+# q-check above, and it exists for the same reason both of those do: step [9]
+# tools-check `--emit-c`s every .ty in the tree, so a syntax error already
+# reddens there, and [3b] entrypoints globs examples/*/ plus server/main.ty and
+# never looks under tools/ -- so nothing RAN the VM.
+#
+# WHAT IT REDDENS FOR. A VM betrays its caller by computing the wrong answer
+# quietly, so the golden carries the three programs' output (fib 0..89, gcd
+# 6 21 1 6, sort 1 3 5 7 9) AND their disassembly listings, which is where an
+# operand kind or a jump target moves. On top of the golden: each program
+# assembled twice must be byte-identical (a non-deterministic writer), `asm` of
+# `dis` must reproduce the .tyc byte for byte (a printer and a parser that
+# disagree), and two traces of a program must be cmp-identical.
+#
+# The other half is the refusals: the seven runtime traps -- division by zero,
+# stack underflow, stack overflow, jump out of range, bad slot index, call depth
+# exceeded, bad const index -- must each exit non-zero NAMING THE PC with
+# nothing on stdout, and four malformed .tasm inputs must each exit non-zero
+# naming a LINE with nothing on stdout. Without the empty-stdout half a VM could
+# print half a program's output and then die, which is worse than not running.
+# The bad-const-index leg hex-patches an assembled .tyc, because the assembler
+# range-checks that operand and there is no other route to the trap.
+#
+# ~2.3s, measured 2026-08-02. In `make ci` as step [3g/13].
+# See tools/tycho-vm/run.sh.
+vm-check: tychoc
+	@sh tools/tycho-vm/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
