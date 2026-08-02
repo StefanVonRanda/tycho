@@ -205,15 +205,17 @@
 # and the two kinds, so the fix (`where code == '42'`) is readable off it.
 #
 # ===========================================================================
-# DECISION 2 -- WHAT `/` DOES, GIVEN THAT `core:decimal` HAS NO `div`
+# DECISION 2 -- WHAT `/` DOES
 # ===========================================================================
 #
-# `corelib/decimal/decimal.ty` has `add`, `sub`, `mul`, `cmp`, `rescale`,
-# `neg`, `abs`, `is_zero`, `from_int`, `from_str`, `to_str` -- and NO `div`.
-# Its own header says why: division needs a target scale and a rounding
-# policy, and it has neither, so it defers.
+# THIS BLOCK RECORDS TWO DECISIONS, THE OLD ONE FIRST, BECAUSE THE OLD ONE IS
+# WHAT MAKES THE NEW DEFAULT REVIEWABLE. What changed underneath is one thing:
+# `corelib/decimal/decimal.ty@div` now exists.
 #
-# THE THREE OPTIONS AND WHY EACH LOSES:
+# WHAT THIS SAID BEFORE, AND WHY. `core:decimal` had `add`, `sub`, `mul`,
+# `cmp`, `rescale`, `neg`, `abs`, `is_zero`, `from_int`, `from_str`, `to_str`
+# -- and no `div`, because division needs a target scale and a rounding
+# policy and the package had neither. Three options were weighed here:
 #
 #   REJECT `/` AT PARSE TIME. Cheapest, and wrong twice. `/` is already in the
 #   accepted grammar and in the `--explain` golden (`10 % 3 / 2` prints as
@@ -231,29 +233,51 @@
 #   it does not actually decide the question -- it decides half of it and
 #   leaves the other half to be decided again.
 #
-# THE DECISION: `/` IS EXACT-ONLY. It computes when the answer is exact and
-# raises a runtime error when it is not.
+# So `/` WAS EXACT-ONLY: `6 / 2` was `3`, `7 / 2` was an error, anything
+# touching a `VDec` was an error. The cost was stated plainly at the time and
+# it was the whole reason to change: `select total / count` -- the ordinary
+# averaging query, the single most common reason anyone writes `/` in SQL --
+# failed on almost all real data. The stated fix was `decimal.div(a, b, scale,
+# mode)` with the scale and the mode named by the CALLER, as a corelib change.
+# That is exactly what was built, so this is now the caller, and a caller has
+# to name them.
 #
-#   VInt / VInt, remainder 0  ->  VInt          6 / 2 is 3
-#   VInt / VInt, remainder != 0 ->  ERROR       7 / 2 has no exact result
-#   anything involving a VDec ->  ERROR         no `decimal.div` exists
-#   divisor is zero           ->  ERROR         and it is checked BEFORE the
-#                                               division, because integer
-#                                               division by a zero VALUE
-#                                               aborts the process
-#                                               (`docs/spec/09-expressions.md:27-28`)
-#                                               -- an abort is not an error
-#                                               message and cannot be caught.
+# THE DECISION: `/` ALWAYS PRODUCES A DECIMAL, AT SCALE 6, ROUNDED HALF-UP.
+# `DIV_SCALE` and `decimal.half_up()` are the defaults for a query that names
+# neither, which is every query today -- there is no syntax for naming them yet.
 #
-# `%` is the same shape: two `VInt`s only, non-zero divisor, else an error.
+#   VInt / VInt  ->  VDec      7 / 2 is 3.500000, 6 / 2 is 3.000000
+#   any VDec     ->  VDec      price / qty is 0.125000
+#   divisor 0    ->  ERROR     `decimal.div` returns Err(DivByZero); nothing
+#                              here ever reaches tycho's integer `/`, whose
+#                              zero divisor ABORTS the process
+#                              (`docs/spec/09-expressions.md:27-28`) and so
+#                              could not be reported at all.
 #
-# THE COST, STATED PLAINLY BECAUSE IT IS LARGE: `select total / count` -- the
-# ordinary averaging query, the single most common reason anyone writes `/` in
-# SQL -- fails on almost all real data. That is not a small loss and this is
-# not pretending otherwise. It is the price of refusing to invent a rounding
-# policy silently, and the fix is a real `decimal.div(a, b, scale, mode)` with
-# the scale and the mode named by the CALLER, which is a corelib change and is
-# filed as such rather than smuggled in here.
+# WHY THE RESULT KIND DOES NOT DEPEND ON THE ROW. `6 / 2` could have stayed a
+# `VInt` and only the inexact cases become decimals. That was rejected: it
+# makes the type of a column depend on the DATA in it, so `qty / 5` over this
+# repo's own fixture would print `0` on one row and `2.400000` on the next.
+# The same objection is made against data-dependent errors above (DECISION 1);
+# it applies to data-dependent kinds too. `/` is a decimal, always.
+#
+# WHY 6 AND WHY HALF-UP. Six digits is past money (2) and past the percentage
+# and per-unit-cost cases that `total / count` is usually reaching for, and it
+# is a fixed number rather than a per-row guess. Half-up is the rounding a
+# person doing this on paper does, and it is what the reader of a rounded
+# average expects; toward-zero is available in the corelib
+# (`decimal.toward_zero()`) and is what `rescale` does, but silently biasing
+# every average toward zero is a worse default than the familiar one.
+#
+# WHAT IS STILL REFUSED, AND WHAT THAT COSTS. A zero divisor is an error on
+# the row that has it -- `price / qty` over a fixture with one `qty` of 0
+# fails, and the message names both operands. That is data-dependent, with the
+# same trade as DECISION 1: loud and true, rather than a fabricated row.
+# And scale 6 is a REAL LOSS OF INFORMATION where the exact answer needed
+# more: `1 / 3` is `0.333333` and the remaining thirds are gone. `/` is the
+# only operator here that rounds; `+`, `-` and `*` are still exact.
+#
+# `%` is unchanged: two `VInt`s only, non-zero divisor, else an error.
 #
 # ===========================================================================
 # EVALUATION: WHAT COMPARES TO WHAT, AND WHAT IS AN ERROR
@@ -1693,6 +1717,10 @@ fn need_bool(v: Value, ctx: string) -> Result(bool, RErr):
         return Err(RErr(ctx + " needs a boolean, got " + kind_name(v) + " " + shown_val(v) + " -- there is no truthiness here"))
     return Ok(bool_of(v))
 
+# The target scale every `/` is computed at. There is no syntax for naming one
+# per query yet, so this is THE scale -- see DECISION 2 for why 6 and not 2.
+const DIV_SCALE = 6
+
 fn arith(op: string, a: Value, b: Value) -> Result(Value, RErr):
     if not is_num(a) or not is_num(b):
         return Err(RErr("`" + op + "` needs two numbers, got " + kind_name(a) + " " + shown_val(a) + " and " + kind_name(b) + " " + shown_val(b)))
@@ -1705,16 +1733,15 @@ fn arith(op: string, a: Value, b: Value) -> Result(Value, RErr):
             return Ok(VInt(x - y))
         if op == "*":
             return Ok(VInt(x * y))
-        # The zero check is BEFORE the operator, because division or modulo by
-        # a zero value ABORTS the process (`docs/spec/09-expressions.md:27-28`)
-        # -- there would be no error to return.
-        if y == 0:
-            return Err(RErr("`" + op + "` by zero"))
         if op == "%":
+            # The zero check is BEFORE the operator, because modulo by a zero
+            # value ABORTS the process (`docs/spec/09-expressions.md:27-28`)
+            # -- there would be no error to return.
+            if y == 0:
+                return Err(RErr("`%` by zero"))
             return Ok(VInt(x % y))
-        if x % y != 0:
-            return Err(RErr("`/` is exact-only: " + str(x) + " / " + str(y) + " is not a whole number, and core:decimal has no div, so there is no rounding policy to apply (see DECISION 2 at the top of tools/tycho-q/main.ty)"))
-        return Ok(VInt(x / y))
+        # `/` falls through to the decimal path: it is a decimal on every input,
+        # and tycho's integer `/` is never reached (see DECISION 2).
     da := dec_of(a)
     db := dec_of(b)
     if op == "+":
@@ -1725,7 +1752,16 @@ fn arith(op: string, a: Value, b: Value) -> Result(Value, RErr):
         return Ok(VDec(decimal.mul(da, db)))
     if op == "%":
         return Err(RErr("`%` needs two integers, got " + kind_name(a) + " and " + kind_name(b)))
-    return Err(RErr("`/` on a decimal has no exact result: core:decimal has no div (see DECISION 2 at the top of tools/tycho-q/main.ty)"))
+    dr := decimal.div(da, db, DIV_SCALE, decimal.half_up())
+    match dr:
+        Ok(d):
+            return Ok(VDec(d))
+        Err(e):
+            match e:
+                decimal.DivByZero:
+                    return Err(RErr("`/` by zero: " + shown_val(a) + " / " + shown_val(b) + " -- the divisor is zero on this row"))
+                _:
+                    return Err(RErr("`/` was refused by core:decimal: the scale or the rounding mode tycho-q asked for is not valid. That is a bug in tycho-q, not in the query (see DECISION 2 at the top of tools/tycho-q/main.ty)"))
 
 fn eval(e: Expr, hdr: [string], row: [Value]) -> Result(Value, RErr):
     match e:
