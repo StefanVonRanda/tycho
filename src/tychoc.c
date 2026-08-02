@@ -27,7 +27,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <locale.h>    /* newlocale/uselocale: the "C" LC_NUMERIC float literals are read and written in */
-#include <float.h>     /* DBL_MAX: the float-literal overflow test. NOT math.h/isinf -- tychoc links without -lm */
+#include <float.h>     /* DBL_MAX/FLT_MAX: the float- and f32-literal overflow tests. NOT math.h/isinf -- tychoc links without -lm */
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
 
@@ -5054,6 +5054,17 @@ static int is_ufcs_builtin(const char *n) {
     for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
     return 0;
 }
+/* An int/float LITERAL adapting to an f32 destination, on every route that does it.
+ * The lexer's DBL_MAX test (lex_num) cannot catch this one: 3.5e38 is a perfectly
+ * ordinary binary64, and it only becomes an infinity here, when the destination
+ * narrows it to binary32 -- correct source, wrong number, nothing on stderr. */
+static void f32_lit(Expr *e) {
+    if (e->kind == E_INT) { e->kind = E_FLOAT; e->fval = (double)e->ival; }
+    if (e->fval > FLT_MAX || e->fval < -FLT_MAX)
+        die_at(e->line, "f32 literal out of range: `%g` exceeds the largest f32 "
+                        "(IEEE-754 binary32); write to_f32(1.0/0.0) for an infinity", e->fval);
+    e->type = T_F32;
+}
 static Type resolve_expr_inner(Expr *e);
 static Type resolve_expr(Expr *e) {
     if (++g_resolve_depth > TYCHO_MAX_TREE_DEPTH) die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_TREE_DEPTH);
@@ -6214,12 +6225,10 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->lhs->kind == E_INT && is_sized_int(rt)) { e->lhs->type = rt; lt = rt; }
             if (e->rhs->kind == E_INT && is_sized_int(lt)) { e->rhs->type = lt; rt = lt; }
             if (rt == T_F32 && (e->lhs->kind == E_INT || e->lhs->kind == E_FLOAT)) {
-                if (e->lhs->kind == E_INT) { e->lhs->kind = E_FLOAT; e->lhs->fval = (double)e->lhs->ival; }
-                e->lhs->type = T_F32; lt = T_F32;
+                f32_lit(e->lhs); lt = T_F32;
             }
             if (lt == T_F32 && (e->rhs->kind == E_INT || e->rhs->kind == E_FLOAT)) {
-                if (e->rhs->kind == E_INT) { e->rhs->kind = E_FLOAT; e->rhs->fval = (double)e->rhs->ival; }
-                e->rhs->type = T_F32; rt = T_F32;
+                f32_lit(e->rhs); rt = T_F32;
             }
             if (is_cmp(e->op)) {
                 if (e->op == TK_EQEQ || e->op == TK_NEQ) {
@@ -6371,8 +6380,7 @@ static Type resolve_expr_inner(Expr *e) {
                 Type et = arr_elem(at);
                 if (sc->kind == E_INT && is_sized_int(et)) { sc->type = et; st = et; }
                 else if (et == T_F32 && (sc->kind == E_INT || sc->kind == E_FLOAT)) {
-                    if (sc->kind == E_INT) { sc->kind = E_FLOAT; sc->fval = (double)sc->ival; }
-                    sc->type = T_F32; st = T_F32;
+                    f32_lit(sc); st = T_F32;
                 } else if (et == T_FLOAT && st == T_INT && sc->kind == E_INT) {
                     sc->kind = E_FLOAT; sc->fval = (double)sc->ival; sc->type = T_FLOAT; st = T_FLOAT;
                 }
@@ -6488,7 +6496,7 @@ static Type resolve_exp(Expr *e, Type want) {
      * return type, or arg) — `w: u32 = 5`, `return 0u64`, `f(3.0)` where f wants f32. */
     if (e->kind == E_INT && is_sized_int(want)) return e->type = want;
     if ((e->kind == E_INT || e->kind == E_FLOAT) && want == T_F32) {
-        if (e->kind == E_INT) { e->kind = E_FLOAT; e->fval = (double)e->ival; }
+        f32_lit(e);
         return e->type = T_F32;
     }
     if (e->kind == E_LAMBDA && IS_FUNC(want)) {  /* lambda param/ret elision from the expected fn type (B-2) */

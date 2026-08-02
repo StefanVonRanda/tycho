@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9291@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9299@tycho_eprint`; `die` codegen
 > `:9150-9151`.
 
 ## 29.4 Conversions
@@ -159,7 +159,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4704@.name="split"`;
 > `len` magic
 > `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4703@.name="char_at"`, codegen `:9000-9007`
-> (`tycho_str_get`, the same call `s[i]` emits at `:9808@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:9816@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -231,7 +231,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7661@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7669@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -260,7 +260,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5233-5247`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10231@_pk > 64`.
+> 64 is `src/tychoc.c:10239@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -353,5 +353,5 @@ conditions terminate rather than proceed into undefined behavior.
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:4506-4538` or the
-> `resolve_expr` magic block (`case E_CALL:` `:5394@case E_CALL:`, running
-> through `reserve` at `:6006@"reserve"`).
+> `resolve_expr` magic block (`case E_CALL:` `:5405@case E_CALL:`, running
+> through `reserve` at `:6017@"reserve"`).
