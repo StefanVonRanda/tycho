@@ -86,6 +86,27 @@ make -s asan-self
 step "[2d/13] make rtparity  (the emitted runtime surface -- env knobs, tycho: traps, arena-stats rows -- vs the oracle)"
 make -s rtparity
 
+# 2e, not a new number: it re-reads two of step 2's own fixtures, so it is a
+# sub-lane of the tests/ suite exactly as 2b/2c/2d are, and the /13 denominator
+# counts the numbered steps.
+#
+# It closes a hole three plans in a row opened and none closed. Each fixed a
+# locale defect -- the lexer's strtod, codegen's snprintf, the runtime's %g --
+# and until this step `grep -n 'LC_ALL\|LC_NUMERIC\|LD_PRELOAD' scripts/ci.sh
+# Makefile` returned NOTHING, so all three could regress with every gate green.
+# They are latent by nature: a C program starts in the "C" locale whatever
+# LC_ALL says, until a linked library calls setlocale, and nothing here does.
+# That also means the obvious spelling of this step -- an LC_ALL= prefix on the
+# make line -- would be INERT and was measured so on a fully broken compiler.
+# The step LD_PRELOADs a constructor that calls setlocale instead.
+#
+# It SKIPS (loudly, by name, exit 0) where it cannot run: no comma-decimal
+# locale, no locale(1), no buildable preload, or a preload the loader ignores.
+# That is deliberate -- a machine without a Danish locale must not redden CI --
+# and the skip prints its reason so it can never be mistaken for a pass. ~1.5s.
+step "[2e/13] make locale-check  (both locale fixtures compiled AND run under a comma-decimal LC_ALL forced by an LD_PRELOAD constructor)"
+make -s locale-check
+
 step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch/weblog/webserver dogfoods vs goldens)"
 make -s corelib
 make -s corelib-examples
