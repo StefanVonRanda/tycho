@@ -102,7 +102,7 @@ gmon.out
 # tracked" is a different question from "would .gitignore let it back in".
 # Un-ignoring cost nothing here: all four runners already build into a
 # `mktemp -d` (examples/mandelbrot/run.sh:22, examples/raytrace/run.sh:22,
-# examples/weblog/run.sh:24, examples/webserver/run.sh:23), so no build artifact
+# examples/weblog/run.sh:37, examples/webserver/run.sh:46), so no build artifact
 # lands in these directories. Each still carries its own .gitignore for the
 # manual `tychoc examples/<lane>/main.ty -o ...` case, as examples/sqlite does.
 !/examples/mandelbrot

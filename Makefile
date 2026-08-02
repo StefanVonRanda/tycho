@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check fetch site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -312,6 +312,30 @@ q-check: tychoc
 # See examples/fetch/run.sh.
 fetch: tychoc
 	@sh examples/fetch/run.sh
+
+# weblog / webserver: the last two examples/ dogfoods whose runner compared a
+# golden that no lane ever ran. Both runners have compared their own `expected.out`
+# with `diff -u` since they were written -- the hole was never a missing assertion,
+# it was that `make ci` invoked neither, so `scripts/entrypoints.sh` (compile-only)
+# was the whole of their coverage and the two goldens could rot exactly as
+# examples/fetch's did before it joined step [3/13]. Same fix, same place: both are
+# in `make ci` since 2026-08-02, inside step [3/13].
+#
+# Both are deterministic end to end, so the WHOLE of stdout is compared and nothing
+# is excluded -- weblog parses a demo log embedded in its own source, and
+# webserver's no-argument leg dispatches a fixed route list through the pure
+# handler with no socket, hence no port. Measured 2026-08-02: three runs of one
+# build, `cmp` silent across all three, for each. ~1.9s and ~2.1s (three runs each,
+# same date), ~4s together, nearly all of it tychoc + cc.
+#
+# `webserver` is NOT `server-check`: that lane runs server/main.ty as a live daemon
+# over a real socket. This one never binds. See examples/weblog/run.sh and
+# examples/webserver/run.sh for what each golden does and does not assert.
+weblog: tychoc
+	@sh examples/weblog/run.sh
+
+webserver: tychoc
+	@sh examples/webserver/run.sh
 
 # server: build tycho-httpd, the static web server in server/. A BUILD target
 # only: it asserts nothing and is not in `make ci`. The gate is `server-check`
