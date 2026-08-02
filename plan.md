@@ -53,7 +53,7 @@ phases.
 
 ## Phases
 
-- [ ] **Phase 1 — the stale citation, and nothing else**
+- [x] **Phase 1 — the stale citation, and nothing else**
   - `scripts/asan_self.sh:10` says `Makefile:103-106     documents that lane`.
     Those lines are `make wiki`'s recipe. Find where the ASan lane is actually
     documented in the `Makefile` and cite that, in whichever form
@@ -69,6 +69,81 @@ phases.
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`.
     **Not** `sh scripts/asan_self.sh` — this changes a `#`-led comment line and
     nothing that script executes. Say so rather than running it.
+
+  **Evidence, 2026-08-02. One line changed in `scripts/asan_self.sh`, nothing
+  else.** `Makefile` was not changed — the probe below restored it
+  byte-identically.
+
+      -#   Makefile:103-106     documents that lane
+      +#   Makefile@Differential  documents that lane, above the `test` target
+
+  **WHERE THE LANE IS ACTUALLY DOCUMENTED.** The citing line is the second item
+  of a three-item list, and "that lane" is the item above it — `tests/run.sh`'s
+  sanitizing of the **emitted** C, i.e. `make test`. Its `Makefile`
+  documentation is the comment block above the `test` target, opening
+  `# Differential test suite: every examples/*.ty and tests/*.ty built both /
+  native -O2 and under -fsanitize=address,undefined`. The old `:103-106` is the
+  `make wiki` recipe (`python3 scripts/sync-wiki.py`), eight lines earlier and
+  about nothing related.
+
+  **THE FORM: `Makefile@Differential`, and the reason is that a bare range has
+  already been measured failing on this exact citation.** `SRCCITE` checks a
+  source-side range for **bounds only** (`scripts/check_citations.py:1118` —
+  `if a < 1 or b < a or b > len(sl)`), so `:103-106` stayed green the whole time
+  it was drifting across recipe boundaries. Re-writing it as `Makefile:111-114`
+  would re-arm exactly that silent drift. The widened rule from
+  `docs/internals/plan-four-found-DONE.md` phase 4 asks whether the target **has
+  a name of its own**, and this one does: the lane *is* the differential test
+  suite, and `Differential` is the word that opens its comment.
+  **`grep -c Differential Makefile` answers 1** — the token occurs on exactly
+  one line of the file, so the ref cannot resolve to some other construct. The
+  `@SYMBOL` check remains deliberately weak (existence anywhere in the file, no
+  uniqueness demanded); uniqueness here is a property of today's tree, checked
+  rather than assumed, not a promise the gate enforces.
+
+  **A BARE RANGE WAS THE OTHER CANDIDATE AND WAS REJECTED ON THE EVIDENCE, not
+  on taste.** `CLAUDE.md` sanctions it "when there is no single subject token"
+  and forbids manufacturing one. A token was not manufactured here: it was
+  already the first word of the block it names.
+
+  **THE PROOF — RED, THEN GREEN.** `git diff --stat -- Makefile` was empty
+  first.
+
+      $ sed -i 's/Differential test suite/Cross-checked test suite/' Makefile
+      STALE  scripts/asan_self.sh:10  `Makefile@Differential` -> 'Differential'
+             does not appear anywhere in Makefile.
+      citation check: FAILED (1 stale citation(s) above)
+
+  Restored from the backup: `cmp` silent, `git diff --stat -- Makefile` empty,
+  `grep -c Differential Makefile` back to 1, gate green. The gate names
+  `scripts/asan_self.sh` by file and line, so it cannot pass silently on a
+  rename or a deletion of the thing it points at.
+
+  **THE REPLACEMENT IS ONE LINE FOR ONE LINE, DELIBERATELY.** The first draft
+  wrapped onto a second comment line, and that **broke a correct citation two
+  screens down**: `scripts/asan_self.sh:84` carries a bare self-referential
+  `:110-111` for the sanitized build, which a +2 line shift silently invalidates
+  — a bare `:N-M` in a *source* file names no path, and `SRCCITE` requires one,
+  so no gate would have said a word. Rewritten to a single line;
+  `git show HEAD:scripts/asan_self.sh | wc -l` and `wc -l` both answer 162, and
+  line 110 is still `mkdir -p build`. The self-ref's own pre-existing off-by-one
+  is filed as phase 5 rather than absorbed.
+
+  **The gate then caught this write-up itself**, which is worth recording: the
+  phase-5 filing below first described "the `:358` companion", and that bare
+  `:358` bound to the previously named path in this document —
+  `scripts/asan_self.sh`, 163 lines — for `STALE plan.md:215 ... OUT OF BOUNDS`.
+  `CLAUDE.md` warns about exactly this in as many words, and four earlier phases
+  reddened the gate on their own evidence the same way. Repaired by dropping the
+  number, which carried nothing the sentence did not.
+
+  **Gates.** `python3 scripts/check_citations.py` green (`163 anchored`,
+  `258 source->source in bounds`, `384 path@SYMBOL`). `sh scripts/check_links.sh`
+  green, 146 markdown files. **`sh scripts/asan_self.sh` was NOT run and is not
+  the gate here** — the diff is a single `#`-led comment line, confirmed with
+  `git diff -- scripts/asan_self.sh`, and the script executes nothing on it.
+  `make editors-check`, `make test` and `make ci` were not run for the same
+  reason: no compiled artifact and no executed line changed.
 
 - [ ] **Phase 2 — an overflowing float literal is a Tycho diagnostic, not a `cc` error**
   - `1e400` reaches codegen as an infinity and is emitted as the bare token
@@ -135,6 +210,38 @@ phases.
     timeout at least 1500000 ms) — this phase adds a CI step and closes the
     chain, the two conditions that earn the sweep. If it reddens, fix with the
     failing step's own gate and re-run that gate, never `make ci` as a loop.
+
+- [ ] **Phase 5 — a source file's bare self-reference is checked by nothing, and this one is already wrong**
+  - Found by phase 1, which nearly displaced it by two lines and shortened its
+    own edit to avoid doing so. Filed rather than absorbed.
+  - `scripts/asan_self.sh:84` reads "the LIVE compiler: `:110-111` builds
+    src/tychoc.c with -fsanitize". Today line 110 is `mkdir -p build` and the
+    `src/tychoc.c` token it names is on line 112 — the build statement is
+    111-112. Off by one at both ends, and **no gate can see it**: a bare `:N-M`
+    in a source file names no path, `SRCCITE` requires one, so the ref is
+    checked by nothing at all. This is the same blind spot
+    `docs/internals/plan-four-found-DONE.md` phase 4 measured on the unanchored
+    companion ref beside it, which had drifted onto a blank line of `Makefile`
+    through twelve edits without one gate noticing.
+  - **The open question is what a self-reference should look like, and it must
+    be answered rather than assumed.** Three candidates, none obviously right:
+    repoint the numbers (a repair carrying no information, which will drift
+    again the next time a comment line is added above it); write the path out
+    so `SRCCITE` at least bounds-checks it; or name the construct with the
+    `@SYMBOL` form the previous plan widened, which for a self-reference means
+    a file citing itself — a shape nothing in the tree uses yet.
+  - Whichever is chosen, decide whether **every** bare in-file `:N` deserves it
+    or only this one, and write the answer into `CLAUDE.md` so the next reader
+    is not left guessing. `CLAUDE.md` is explicit that the bare-ref count is not
+    a backlog and the reachable ones stay bare — that argument was made about
+    *Markdown* prose, and whether it transfers to a source file whose refs are
+    checked by nothing is exactly the question.
+  - Scope: `scripts/asan_self.sh`'s line 84, and `CLAUDE.md` if the rule gains a
+    sentence. **Not** `scripts/check_citations.py` unless the chosen form needs
+    it, and not a sweep of other files.
+  - Verify: `python3 scripts/check_citations.py`, and — if the chosen form is
+    checkable — a break-and-restore proving it red. If it is not checkable,
+    say so plainly instead of claiming a proof.
 
 ## Audit of the seven filed phases, 2026-08-02
 
