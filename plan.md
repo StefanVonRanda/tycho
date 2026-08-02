@@ -450,7 +450,7 @@ phases.
   and both runners. **`make ci` and `make test` were NOT run**, as instructed:
   nothing compiled changed, and phase 4 closes the chain.
 
-- [ ] **Phase 4 — a CI lane that compiles under a hostile locale**
+- [x] **Phase 4 — a CI lane that compiles under a hostile locale**
   - Two plans have now fixed a locale defect — `runtime/tycho_rt.c@tycho_float_to_str`
     and both float-literal sites in `src/tychoc.c` — and **nothing in CI would
     notice either regressing**, because the defect is latent until a linked
@@ -472,6 +472,178 @@ phases.
     timeout at least 1500000 ms) — this phase adds a CI step and closes the
     chain, the two conditions that earn the sweep. If it reddens, fix with the
     failing step's own gate and re-run that gate, never `make ci` as a loop.
+
+  **Evidence, 2026-08-02.** Added: `scripts/locale_check.sh`. Changed: `Makefile`
+  (a `locale-check` target, `.PHONY`, and the ilp32 CC line — see the red below),
+  `scripts/ci.sh` (a new step `[2e/13]`), `CLAUDE.md`'s two tables. No `.ty`, no
+  golden, no compiler and no runtime source was changed.
+
+  **THE THREE SITES, AND WHAT EXERCISES EACH.** The lane compiles both fixtures
+  with tychoc under `LC_ALL=da_DK.utf8` + an `LD_PRELOAD` constructor, then runs
+  the resulting binary in both locales against the same golden.
+
+  | site | exercised by | already gated elsewhere? |
+  |---|---|---|
+  | `src/tychoc.c@c_strtod` (lexer READ) | compiling either fixture under the preload | **no** |
+  | `src/tychoc.c@c_dtoa` (codegen WRITE) | same, plus `cmp` of the two emitted `.c` | **no** |
+  | `runtime/tycho_rt.c@tycho_float_to_str` | running the binary under the preload | **yes** — see below |
+
+  **THE THIRD SITE WAS ALREADY COVERED, AND SAYING SO IS THE HONEST FORM.** The
+  brief asked for all three; the lane does reach all three, but only two of them
+  were unguarded. `tests/float_str_locale.ty` flips `LC_NUMERIC` **inside its own
+  process** through a runtime test hook, so `make test` already reddens for
+  `tycho_float_to_str` on any host. That is visible in the runtime break-and-
+  revert below: it reddened the *default-locale* run, inside the fixture's own
+  `-- hostile LC_NUMERIC --` block, not the preloaded one. The two **compiler**
+  sites cannot be covered that way and that is the hole this lane closes —
+  tychoc is a separate process that has exited before `main()` runs.
+
+  **A FOURTH LOCALE SITE EXISTS AND IS ALREADY GATED — enumerated, not assumed.**
+  `grep` for `%g`-family formats and `strtod` over `runtime/tycho_rt.c`,
+  `src/tychoc.c` and every `corelib/*/*.c` returns exactly four float paths
+  tree-wide. The fourth is `corelib/strings/strings_shim.c`'s `strtod_l`, and
+  `corelib/test/strings/main.ty:40` forces a hostile locale in-process the same
+  way, printing `hostile=1` into its golden, so `make corelib` is its gate. There
+  is no fifth.
+
+  **RED, THEN GREEN — THREE REVERTS, ONE PER SITE.** `src/tychoc.c` and
+  `runtime/tycho_rt.c` were backed up first; every restore was `cmp`-silent
+  against its backup with `git diff --stat` empty before the green run, and each
+  revert was rebuilt with `make -s tychoc` (`Makefile:13-14` embeds the runtime,
+  so a runtime revert needs the rebuild too).
+
+  *Compiler WRITE side* (`c_dtoa` → the pre-fix bare `snprintf`), lane exit 1:
+
+      FAIL: float_lit_locale -- emitted C DIFFERS between the default and the
+            da_DK.utf8 locale (src/tychoc.c: c_strtod / c_dtoa)
+      -    double h_a = 1.5;
+      +    double h_a = 1,5.0;
+      -    double h_small = 0.0025000000000000001;
+      +    double h_small = 0,0025000000000000001.0;
+      FAIL: float_lit_locale -- cc REJECTED the C emitted under LC_ALL=da_DK.utf8
+
+  *Runtime side* (`tycho_float_to_str` → the pre-fix bare `snprintf`), exit 1:
+
+      FAIL: float_lit_locale -- built under da_DK.utf8, RUN in the default
+            locale: differs from tests/float_lit_locale.out
+      -1.5            = 1.5
+      +1.5            = 1,5.0
+      -half(1.5)      = 0.75
+      +half(1.5)      = 0,75.0
+
+  *Compiler READ side* (`c_strtod` → the pre-fix bare `strtod`), exit 1 — run
+  because "the lane exercises all three sites" is a claim, and two reverts prove
+  two of them:
+
+      -1.5            = 1.5        +1.5            = 1.0
+      -2.5e-3         = 0.0025     +2.5e-3         = 2.0
+
+  After each restore: `make -s tychoc`, lane exit 0.
+
+  **A LEG THAT COULD NOT FAIL, CAUGHT IN MY OWN SCRIPT.** The first draft
+  `continue`d out of the fixture loop when the two emitted `.c` files differed.
+  Write-side breakage **always** moves those bytes, so the `cc REJECTED` leg
+  below it was unreachable for the only defect that produces it — a check that
+  cannot fail, in the gate whose entire subject is checks that cannot fail. It
+  records the failure and falls through now; the write-side transcript above
+  shows both legs firing, which is how it was confirmed rather than argued.
+
+  **THE FORCED SKIP.** The decision input is overridable so the skip path is
+  testable without uninstalling a locale:
+
+      $ TYCHO_LOCALE_CHECK_LOCALES="C POSIX en_US.utf8" sh scripts/locale_check.sh
+      locale-check: SKIP (no comma-decimal locale installed -- none of 3
+                    candidate name(s) reports decimal_point=",")
+      exit=0
+
+  Three other skips exist and each names its reason: no `locale(1)`, no buildable
+  preload, and — the one that matters — **a preload that builds but does not take
+  effect**. "The `.so` compiled" and "the `.so` changed the separator" are
+  different facts; the lane compiles a two-line C probe and requires
+  `printf("%g", 1.5)` to give `1,5` before it will run at all. Without that, a
+  host where `LD_PRELOAD` is stripped would pass vacuously, which is the failure
+  mode this chain has hit five times.
+
+  **LD_PRELOAD HYGIENE.** The lane sets its own `LD_PRELOAD` for one command at a
+  time via `env -u LD_PRELOAD LC_ALL=... LD_PRELOAD=...`, so an inherited value is
+  **replaced, not extended**, and it prints a note naming the inherited value when
+  it finds one. Extending would drag a sanitizer or the tmux `block-nnp.so` shim
+  into a lane whose whole subject is what a load-time constructor does —
+  `CLAUDE.md`'s Environment section records a stale `LD_PRELOAD` scoring 251/527
+  spurious failures once already. The caller's environment is not modified.
+
+  **NOTHING IS LEFT IN THE TREE.** The `.so`, the probe, the emitted C and both
+  binaries live in a `mktemp -d` removed on `EXIT`. After a run,
+  `make goldens-check` is `ok` (`35 runners scanned, 17 name a golden`, unchanged
+  — the script is not a `run.sh`, so the inventory does not classify it) and
+  `git status --short` shows only the four files this phase edits. There is no
+  `RECORD=1` path on purpose: the two goldens belong to `tests/run.sh`, and this
+  lane is a second, harsher reader of them, not a second owner.
+
+  **MEASURED COST, NOT ESTIMATED.** Three runs, wall clock via `date +%s.%N`:
+  **1.73 / 1.46 / 1.44 s — ~1.5s**. Green twice in a row before wiring and again
+  through `make -s locale-check`. `CLAUDE.md`'s gate table carries that figure
+  with its date, and the `make ci` step table gains a `[2e]` row.
+
+  **`make ci` REDDENED, AND IT WAS NOT THIS PHASE.** First sweep: **exit 2**, at
+  `[2b/13] make ilp32`, `FAIL float_lit_range (output != golden)` —
+  `passed: 564 failed: 1`. Step `[2/13] make test` was `passed: 565 failed: 0` in
+  the same run, so the fixture passes at 64-bit and fails only under `-m32`.
+
+      4c4
+      < 0.1 round trip = exact
+      ---
+      > 0.1 round trip = LOST
+
+  `tests/float_lit_range.ty` is **phase 2's** fixture, and phase 2's brief told it
+  to run `make test` and not `make ci` — so this red has been latent since commit
+  `26a59e5` and was found, not caused, by this sweep. Proved pre-existing rather
+  than asserted: `tests/` and `src/` are byte-identical to `f79dca8` (nothing but
+  the four gate files is modified), and the failure reproduces from
+  `tychoc --emit-c` plus `gcc -m32` alone.
+
+  **THE CAUSE IS x87 EXCESS PRECISION, AND THE SPEC DECIDES WHOSE BUG IT IS.**
+  `gcc -m32` defaults to the x87 FPU, which evaluates `double` expressions in
+  80-bit registers and rounds to binary64 only on store, so the binary64-exact
+  identity `0.1 + 0.2 == 0.30000000000000004` comes out **false**. Two fixes were
+  defensible — loosen the fixture, or fix the lane — and `docs/spec/03-types.md:55`
+  settles it: `float` **is** an IEEE-754 binary64 and "its arithmetic, rounding,
+  and special values ... follow IEEE-754", with
+  `docs/spec/appendix-f-impl-defined.md:44` making only the *textual* form of
+  NaN/inf implementation-defined and saying the values are "fully defined". x87
+  evaluation is therefore not a permitted configuration for this language: the
+  fixture's assertion is correct and **the ilp32 lane was compiling Tycho floats
+  at a precision the spec forbids**. Fixed in the lane, in scope, one line:
+  `CC="gcc -m32"` → `CC="gcc -m32 -msse2 -mfpmath=sse"`.
+
+  | build | `0.1 round trip` |
+  |---|---|
+  | `gcc -m32` (before) | `LOST` |
+  | `gcc -m32 -msse2 -mfpmath=sse` | `exact` |
+  | `gcc -m32 -ffloat-store` | `LOST` — rounds on store, not in the comparison |
+  | `gcc` (64-bit, SSE2 baseline) | `exact` |
+
+  `-ffloat-store` is in the table because it was tried first and **did not work**;
+  recording only the flag that worked would hide that the obvious fix is wrong
+  here. Every host that can already run this lane is x86-64, where SSE2 is
+  baseline, so nothing is narrowed. The lane's subject is integer width, not the
+  FPU, and it kept its own count: `make ilp32` alone went to
+  **`passed: 565 failed: 0`**, matching the 64-bit lane exactly.
+
+  **THE DEBUG LOOP WAS NOT ENTERED.** Per `CLAUDE.md`, the red was diagnosed by
+  reading the failing step's output and reproducing the single fixture by hand,
+  then fixed and re-checked with **`make ilp32` alone**, not with the sweep. One
+  confirming `make ci` followed, for a fix already believed: **`MAKE_CI_EXIT=0`**,
+  all thirteen steps, with `[2e/13]` printing `locale-check: hostile locale
+  da_DK.utf8 (decimal_point=","), preload verified` and both fixtures `ok`. Two
+  sweeps total, which is the brief's allowance.
+
+  **GATES.** `make ci` **exit 0**. `make locale-check` green twice.
+  `make ilp32` `passed: 565 failed: 0`. `make goldens-check` `ok`.
+  `python3 scripts/check_citations.py` and `sh scripts/check_links.sh` green
+  (tallies deliberately not copied — run the command). `sh -n` clean on
+  `scripts/ci.sh` and `scripts/locale_check.sh`. `git status --short` after the
+  final sweep lists only this phase's four files.
 
 - [ ] **Phase 5 — a source file's bare self-reference is checked by nothing, and this one is already wrong**
   - Found by phase 1, which nearly displaced it by two lines and shortened its
@@ -600,6 +772,59 @@ phases.
     `scripts/ci.sh:117` already records this filing so the next reader of that
     comment meets it.
 
+- [ ] **Phase 9 — the ilp32 lane ran non-conforming for its whole life, and only an accident found it**
+  - Found by phase 4's `make ci`, filed rather than absorbed: phase 4 fixed the
+    **lane** (one flag on one `CC` line, in its scope) and deliberately did not
+    answer the general question below.
+  - `make ilp32` compiled every fixture under `gcc -m32`, which defaults to x87
+    and evaluates `double` in 80-bit registers. `docs/spec/03-types.md:55` says
+    Tycho `float` arithmetic follows IEEE-754 binary64, so that lane was testing
+    a configuration the language does not permit — for as long as it has existed.
+  - **Nothing could see it**, and that is the part worth a phase. It surfaced
+    only because phase 2 happened to write a fixture asserting an FP identity
+    that is exact in binary64 and false at 80-bit. No gate asks whether a lane's
+    compiler flags match the spec's arithmetic; the question is whether one
+    should, or whether the answer is a sentence in `docs/spec` and a comment.
+  - **Open questions, none to be assumed.** Does any *other* lane compile the
+    emitted C with flags that change FP semantics (`make conc`, `make ffi`,
+    `scripts/asan_self.sh`, `tests/rtparity`, the fuzz lanes, `bench/`)? Grep
+    their `cc` lines for `-ffast-math`, `-Ofast`, `-mfpmath`, `-m32`. And should
+    the spec say in as many words that evaluation carries **no excess precision**
+    (C's `FLT_EVAL_METHOD == 0`)? It currently says the *values* are binary64,
+    which a reader can satisfy while evaluating wider.
+  - Scope: `docs/spec/` if the answer is a sentence, and other lanes' `cc` lines
+    if the grep finds one. **Not** `src/tychoc.c` — the compiler emits C and does
+    not choose the host's FPU mode — and **not** `tests/float_lit_range.ty`,
+    whose assertion phase 4 established is correct.
+  - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`
+    for a spec sentence; `make ilp32` only if a `cc` line actually changes.
+    **Not** `make ci`.
+
+- [ ] **Phase 10 — a golden-consuming script that is not named `run.sh` is outside the golden inventory by construction**
+  - Found by phase 4 while checking that its new script would not disturb
+    `make goldens-check`. It does not — and the reason is the finding.
+  - `scripts/check_goldens.py` walks **every tracked `run.sh`** and requires each
+    to either yield a golden or be listed in `NO_GOLDEN` with a reason. A script
+    named anything else is never classified, so it is neither checked nor
+    reported missing. Measured: staging `scripts/locale_check.sh`, which reads
+    `tests/float_lit_locale.out` and `tests/float_str_locale.out`, left the count
+    at `35 runners scanned` — unchanged, and silently so.
+  - No hole exists **today**: both goldens it reads are already inventoried
+    through `tests/run.sh`, and `scripts/asan_self.sh` (the other such script)
+    consumes none. So this is a shape, not a live defect, and it may well be
+    correct as it stands — `run.sh` is a real convention and widening the walk to
+    every `*.sh` would sweep in dozens of scripts that own nothing.
+  - **The question to answer, not assume:** is the guard's contract "every
+    *runner*" or "every *golden consumer*"? If the first, say so in the
+    docstring, because the current wording reads as the second. If the second,
+    the walk needs to widen and `NO_GOLDEN` needs a much larger exemption list —
+    at which point the cost may exceed the value, which is a legitimate outcome.
+  - Scope: `scripts/check_goldens.py`, and its docstring at minimum. **Not** a
+    rename of any existing script.
+  - Verify: `make goldens-check` both directions — the count must move if the
+    walk widens, and a deliberately un-inventoried golden must redden it.
+    **Not** `make test`.
+
 ## Audit of the seven filed phases, 2026-08-02
 
 Each was re-checked against the tree with a command before this plan was
@@ -613,6 +838,79 @@ written. Four survived and are the phases above. Three are retired:
 
 Retiring these deletes nothing. Their filings stay in
 `docs/internals/plan-four-found-DONE.md` with the reasoning that produced them.
+
+## Status — PLAN COMPLETE
+
+All four phases are done and committed, one commit each. Phases 5 through 10 are
+filed follow-ups discovered **inside** phases 1 through 4 and pushed out of them
+by their scope locks — they have the standing of the queued backlog rows below,
+not of conditions on this plan.
+
+**The Goal was: close four defects the previous plan's phases found while doing
+something else — after re-checking all seven of its filings against this tree and
+retiring three. All four are closed and every one has a break-and-restore
+transcript under its phase.** What each was, and is now:
+
+1. **A citation pointed at the wrong recipe** — `scripts/asan_self.sh:10` cited
+   `Makefile:103-106` as documenting the ASan lane; those lines are `make wiki`'s
+   recipe → it now reads `Makefile@Differential`, naming the differential test
+   suite's own comment block. The phase's finding was *why* a bare range was the
+   wrong repair rather than a matter of taste: `SRCCITE` bounds-checks a
+   source-side range and nothing more, so `:103-106` stayed green the entire time
+   it drifted across recipe boundaries, and re-writing it as a number would have
+   re-armed exactly that.
+2. **An overflowing float literal emitted `inf` into generated C**, so the user
+   wrote Tycho and got `'inf' undeclared` from `cc` → a Tycho diagnostic quoting
+   the literal, decided on in-tree evidence rather than preference: the integer
+   twin eleven lines away has always been a Tycho error. `DBL_MAX` not `isinf`
+   (no `-lm` on the compiler's link line), the value not `errno` (which cannot
+   separate overflow from underflow, and `1e-400` must stay legal). Three
+   fixtures in three lanes, `562 → 565`, and the positive one is the only thing
+   holding the boundary inclusive.
+3. **Two goldens no gate ever compared** — `weblog` and `webserver` → both are
+   compared by `make ci` step `[3/13]`. The finding was that **both runners
+   already did the comparison**; the hole was that nothing invoked them, so a
+   correct assertion sat unexecuted. The phase therefore added no assertion at
+   all, only two `make` targets and two calls — and determinism was established
+   by three byte-identical runs each *before* anything was wired.
+4. **Nothing in CI compiled under a hostile `LC_NUMERIC`** → `make locale-check`,
+   step `[2e/13]`, ~1.5s. The load-bearing fact, inherited from the previous
+   plan and re-confirmed here, is that the obvious spelling is **inert**: a C
+   program stays in the `"C"` locale whatever `LC_ALL` says, so only an
+   `LD_PRELOAD` constructor calling `setlocale` reaches the two compiler sites.
+   Two of the three sites were genuinely unguarded; the runtime's third was
+   already covered by a fixture that flips the locale in-process, and the phase
+   says so rather than claiming three.
+
+**Which of the seven filed phases were retired, and why.** Three, each re-checked
+with a command before this plan was written, none deleted — their filings remain
+in `docs/internals/plan-four-found-DONE.md` with the reasoning that produced them.
+The hand-named `sqlite3` dependency was **not a defect**: the dependency arrives
+through `extern "Lib"`, which `--print-deps` correctly cannot see, so the
+hand-naming is necessary. The citation gate's docstring example was **already
+done** — the filing was written against a state that no longer existed when the
+commit landed. And gating 96 Markdown `Makefile:N` refs was **against stated
+policy and would redden frozen archives**, which is the failure mode `CLAUDE.md`
+warns about by name and which had already happened once when `SRC_PREFIX` widened.
+
+**This plan filed three new phases: 8, 9 and 10.** Phase 3 found three *more*
+orphan goldens (`life`, `minesweeper`, `snake`) whose gateability is an open
+question because all three are terminal games. Phase 4 found the ilp32 lane
+compiling Tycho floats at x87 precision the spec forbids — fixed in the lane,
+with the general question of whether any *other* lane's flags change FP semantics
+filed rather than assumed — and that a golden-consuming script not named `run.sh`
+is invisible to `make goldens-check` by construction.
+
+**The discovery rate keeps falling, and that is worth recording against the
+previous plan's reading of it.** Three fixes found four; four fixes found seven;
+these four found three. `docs/internals/plan-four-found-DONE.md` called the ratio
+"not falling" and read it as a property of a heavily gated tree. One plan later
+it has halved. Two readings survive and this plan cannot separate them: the
+backlog of unguarded things is genuinely being worked down, or these four phases
+simply touched less surface than the previous four. What did not change is the
+rule that produced the number — none of the three was absorbed into the phase
+that found it, and phase 4's ilp32 red is the sharpest case, because fixing the
+lane was in scope while deciding the language question was not.
 
 ## Carried forward
 

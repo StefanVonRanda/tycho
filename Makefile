@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -163,6 +163,35 @@ conc: tychoc
 # "tycho: range step is zero" trap from the emitted C.
 rtparity: tychoc
 	@python3 tests/rtparity/run.py
+
+# locale-check: the two locale fixtures, compiled AND run with the process
+# locale actually hostile. A sub-lane of step 2 for the same reason rtparity is
+# -- it consumes tests/*.out -- and it is in `make ci` as step [2e/13].
+#
+# WHAT ONLY THIS LANE CAN SEE. Three locale fixes landed across three plans and
+# NOTHING gated any of them, because each is latent until something in the
+# process calls setlocale, and neither tychoc nor the runtime ever does:
+#
+#   src/tychoc.c@c_strtod           the lexer READing a float literal
+#   src/tychoc.c@c_dtoa             codegen WRITing one
+#   runtime/tycho_rt.c@tycho_float_to_str   a running program's str(float)
+#
+# The third is already covered by `make test`: tests/float_str_locale.ty flips
+# LC_NUMERIC inside its own process through a runtime test hook, so the grader's
+# environment does not matter. The first two are NOT, and cannot be by a fixture:
+# tychoc is a separate process that has exited before main() runs, and setting
+# LC_ALL for it is INERT -- a C program starts in "C" whatever the environment
+# says (docs/internals/plan-four-found-DONE.md phase 1 ran the fully broken
+# compiler under LC_ALL=da_DK.utf8 and it came out green). Reaching them needs a
+# load-time constructor calling setlocale, which is what this lane LD_PRELOADs.
+#
+# It builds its preload in a mktemp -d, writes nothing into the tree, and skips
+# loudly by name -- with a reason, exit 0 -- on a host with no comma-decimal
+# locale, no locale(1), or an LD_PRELOAD that does not take effect. ~1.5s
+# (1.73 / 1.46 / 1.44 s, measured 2026-08-02).
+# See scripts/locale_check.sh.
+locale-check: tychoc
+	@sh scripts/locale_check.sh
 
 # Re-record the expected-output goldens (tests/*.out) from current output.
 # Opt-in only: a normal `make test` never writes them, so a regression cannot
@@ -388,6 +417,20 @@ mandelbrot: tychoc
 # ONLY gate that proves the migration off LP64 (dev box has long==int64). Reuses
 # tests/run.sh via TYCHO_NO_ASAN=1 (32-bit ASan runtime is absent under multilib;
 # ASan stays covered by the 64-bit `make test`). Fails LOUDLY if -m32 is absent.
+#
+# WHY -msse2 -mfpmath=sse IS ON THE CC LINE. `gcc -m32` defaults to the x87 FPU,
+# which evaluates double expressions in 80-bit registers and rounds to binary64
+# only on store. docs/spec/03-types.md:55-56 says Tycho `float` IS an IEEE-754
+# binary64 and that "its arithmetic, rounding, and special values follow
+# IEEE-754" -- and docs/spec/appendix-f-impl-defined.md:44 makes only the textual form of
+# NaN/inf implementation-defined, never the values. So x87 evaluation is not a
+# permitted configuration for this language, and without these flags this lane
+# was compiling Tycho floats at a precision the spec forbids. Measured: under
+# `gcc -m32` alone, tests/float_lit_range.ty's binary64-exact `0.1 + 0.2 ==
+# 0.30000000000000004` comes out FALSE; adding these two flags makes it true, and
+# `-ffloat-store` does NOT (it rounds on store but not in the comparison).
+# Every host that can already run this lane is x86-64, where SSE2 is baseline, so
+# this narrows nothing. The lane's subject is integer width, not the FPU.
 ilp32: tychoc
 	@printf '#include <stdint.h>\n_Static_assert(sizeof(long)==4,"want ILP32 long");\nint main(void){int64_t x=5000000000LL;return x==5000000000LL?0:1;}\n' > build/.m32probe.c
 	@gcc -m32 build/.m32probe.c -o build/.m32probe 2>build/.m32probe.log || { \
@@ -398,7 +441,7 @@ ilp32: tychoc
 	@rm -f build/.m32probe.c build/.m32probe build/.m32probe.log
 	@echo "ilp32: -m32 toolchain OK (32-bit long, 64-bit int64_t verified)"
 	@echo "ilp32: ASan lane SKIPPED for ilp32 (32-bit ASan runtime absent under multilib; 64-bit 'make test' covers ASan)"
-	@CC="gcc -m32" TYCHO_NO_ASAN=1 sh tests/run.sh
+	@CC="gcc -m32 -msse2 -mfpmath=sse" TYCHO_NO_ASAN=1 sh tests/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # ASan-clean, matched to a golden. See tests/ffi/run.sh.
