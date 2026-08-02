@@ -3,10 +3,33 @@
 Previous plan archived at
 [docs/internals/plan-four-of-seven-DONE.md](docs/internals/plan-four-of-seven-DONE.md).
 
-Five findings, from writing a bytecode VM (`tools/tycho-vm/`, commits e0906e7,
-4ec02c7, 7250fb1) — the first program here to need a hot dispatch loop and
-fixed-capacity memory. Ordered by land-ability, not by value. Finding 1 is the
-most valuable and comes last, because it needs a design before anyone writes code.
+From writing a bytecode VM (`tools/tycho-vm/`, commits e0906e7, 4ec02c7,
+7250fb1) — the first program here to need a hot dispatch loop and fixed-capacity
+memory.
+
+**Five findings came out of it; two are phases.** The test each had to pass:
+*does anything that is not `tycho-vm` need this?* Writing a program to exercise
+a construct, hitting friction, and filing the friction as language work is
+circular — it is the demo problem this whole exercise exists to find in other
+packages.
+
+Recorded, not phases:
+
+- **`bounded[N]T` has no `push`/`pop`/`len`**, so it cannot model a stack.
+  `grep -rl 'bounded\[' --include='*.ty' corelib/ examples/ tools/ server/`
+  returns **one file, `tools/tycho-vm/main.ty`** — the other 51 hits are all
+  under `tests/`. One customer, and it is the program written to want one. Comes
+  back if a second caller appears.
+- **A `[N]T` table cannot be a top-level `const`** (`expected '=' after the
+  constant name`; §12.2 wants the RHS to fold to one literal). The only
+  fixed-array table returned by a function in the tree is
+  `tools/tycho-vm/main.ty@optable`. Same reasoning.
+- **`defer` does not exist** (absent from `docs/spec/appendix-b-keywords.md`;
+  `defer f()` is rejected as a bare expression statement). Memory is arena-freed
+  at scope exit, `core:io` is path-based with no handles, and the only manual
+  cleanup in the tree is 15 `close` calls in `server/main.ty` plus a handful in
+  `examples/`. Nothing needs it; it was filed because the probe surprised me,
+  which is not a reason.
 
 Measured, on this tree:
 
@@ -16,42 +39,15 @@ Measured, on this tree:
 - `match` on an `int` or a `string` is a parse error:
   `expected a match arm \`Variant(bindings):\` or \`Variant:\``. Confirmed by
   probe, not inherited.
-- `defer` is absent from `docs/spec/appendix-b-keywords.md`; `defer f()` parses
-  as a bare expression statement and is rejected. **This is recorded and is not
-  a phase.** Memory is arena-freed at scope exit, `core:io` is path-based with
-  no handles, and the only manual cleanup in the tree is 15 `close` calls in
-  `server/main.ty` plus a handful in `examples/`. Nothing here needs it; it was
-  filed because the probe surprised me, which is not a reason.
+- Six files carry an `if`/`elif` ladder of 4+ arms over a scalar — `tools/lsp.ty`
+  (54), `tools/tycho-vm/main.ty` (38), `tools/tychofmt.ty` (18),
+  `corelib/json/json.ty` (18), `corelib/markdown/markdown.ty` (16),
+  `tools/tycho-q/main.ty` (9). Five of the six predate `tycho-vm`, which is why
+  scalar `match` is a phase and the two constructs above are not.
 
 ## Phases
 
-- [ ] **Phase 1 — `bounded[N]T` becomes a container**
-  - It compiles and reserves capacity, and has no `push`, `pop` or `len`, so it
-    cannot model a stack — the one thing fixed-capacity code always needs.
-    `tools/tycho-vm/main.ty` uses it for the operand stack and drives the depth
-    with a hand-rolled `sp`, so the type checks the capacity but not the thing
-    that overflows it.
-  - Add `push`/`pop`/`len`, with overflow and underflow as errors the caller can
-    act on rather than aborts. Decide whether that is a `Result`, a `bool`
-    return or a trap, and say why — `docs/spec/03-types.md` §5.3.10 is the
-    contract to keep.
-  - Done when: `tools/tycho-vm/main.ty`'s operand stack drops its `sp` and the
-    VM still passes `make vm-check`.
-  - Verify: `make test` (was `passed: 566 failed: 0`), then `make vm-check`.
-
-- [ ] **Phase 2 — a `[N]T` table can be a top-level `const`**
-  - `const T: [N]Meta = [...]` is rejected — `expected '=' after the constant
-    name` — because §12.2 requires the RHS to fold to one literal.
-    `tools/tycho-vm/main.ty@optable` is a function that rebuilds a 24-entry
-    dispatch table instead, which is exactly the shape a static table wants not
-    to be.
-  - Decide the scope: does a const array literal of scalars fold, or does this
-    need general const evaluation? The first is small and covers the case; say
-    which you did.
-  - Done when: the VM's opcode table is a `const` and `make vm-check` passes.
-  - Verify: `make test`, then `make vm-check`.
-
-- [ ] **Phase 3 — DESIGN: `match` on scalars**
+- [ ] **Phase 1 — DESIGN: `match` on scalars**
   - Deliverable is a written design at `docs/internals/design-scalar-match.md`,
     **not code**. No phase after this starts until it is read.
   - `match` is enums-only, so every dispatch table in the tree is an `if`/`elif`
@@ -70,7 +66,7 @@ Measured, on this tree:
   - Verify: the document exists, `sh scripts/check_links.sh` and
     `python3 scripts/check_citations.py` are green. No build gate.
 
-- [ ] **Phase 4 — IMPLEMENT scalar `match`**
+- [ ] **Phase 2 — IMPLEMENT scalar `match`**
   - Only after phase 3's design is written and its scope agreed.
   - Scope: `src/tychoc.c`, `docs/spec/` (§4.3.2 statements, §5.5 or wherever
     `match` is specified, Appendix A grammar), and fixtures under `tests/`.
@@ -80,7 +76,7 @@ Measured, on this tree:
     instructions/sec before and after and report both — phase 3 predicted a
     number, and this is where it is checked.
 
-- [ ] **Phase 5 — DESIGN: a cheap reference to an aggregate**
+- [ ] **Phase 3 — DESIGN: a cheap reference to an aggregate**
   - Deliverable is a written design at `docs/internals/design-aggregate-ref.md`,
     **not code**. This is the most valuable item here and the one most likely to
     be got wrong by starting with an implementation.
