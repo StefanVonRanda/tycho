@@ -1,0 +1,547 @@
+# tycho-vm -- an assembler and disassembler for a small stack-machine bytecode.
+#
+#     ./tychoc tools/tycho-vm/main.ty -o build/tycho-vm
+#     ./build/tycho-vm asm tools/tycho-vm/progs/fib.tasm -o build/fib.tyc
+#     ./build/tycho-vm dis build/fib.tyc
+#
+# This is part 1: text <-> bytecode. The interpreter is part 2.
+#
+# ---------------------------------------------------------------------------
+# THE MACHINE part 2 HAS TO IMPLEMENT
+# ---------------------------------------------------------------------------
+# A value stack of tagged values (int or string), and a call stack of frames.
+# Each frame owns numbered slots. Execution starts at pc 0 in frame 0 and ends
+# at HALT.
+#
+#   PUSH  imm      push the immediate int
+#   LOADK k        push const-pool entry k (a string)
+#   LOAD  s        push the current frame's slot s
+#   STORE s        pop into the current frame's slot s
+#   ADD SUB MUL    pop b, pop a, push a op b
+#   DIV MOD        same; division by zero is a run-time trap
+#   EQ NE LT LE GT GE   pop b, pop a, push 1 or 0
+#   JMP  t         pc = t
+#   JZ   t         pop v; if v == 0 then pc = t
+#   JNZ  t         pop v; if v != 0 then pc = t
+#   CALL t n       pop n values; the first pushed becomes slot 0, the last
+#                  slot n-1; push a frame and jump to t
+#   RET            pop the return value, drop the frame, push it on the caller
+#   PRINT          pop and print, with a newline
+#   HALT DUP POP   stop; duplicate top; discard top
+#
+# ---------------------------------------------------------------------------
+# THE .tyc CONTAINER
+# ---------------------------------------------------------------------------
+# Little-endian, no padding, no timestamps, no map iteration anywhere in the
+# writer -- so assembling the same source twice is byte-identical.
+#
+#   "TYC1"                       4 bytes
+#   u32 nconsts
+#   u32 ncode
+#   nconsts x { u32 len; len bytes }        in source order
+#   ncode   x { u8 op; i32 a; i32 b }       9 bytes each
+#
+# Jump targets are stored as absolute pc, so `dis` prints them as integers
+# rather than inventing label names. Assembling `dis` output therefore
+# reproduces the input file byte for byte.
+#
+# ---------------------------------------------------------------------------
+# LANGUAGE CONSTRUCTS, AND WHAT THE PROBE FOUND
+# ---------------------------------------------------------------------------
+# `defer` is NOT in this language. It is not a keyword (it appears nowhere in
+# docs/spec/appendix-b-keywords.md) and `defer f()` parses as a bare expression
+# statement: "a statement must be a declaration, assignment, or call". There is
+# no cleanup path here to write around it -- io.read/io.write own their handles.
+#
+# A fixed-size array cannot be a top-level `const`: a `const` right-hand side
+# MUST fold to a single literal (docs/spec/08-declarations.md 12.2), so
+# `const T: [N]Meta = [...]` fails at "expected '=' after the constant name".
+# The opcode table is therefore a function returning `[NOPCODES]Meta`, built
+# once in main and threaded through as a `[$N]Meta` parameter.
+
+package main
+
+import "core:cli"
+import "core:io"
+import "core:strings"
+
+# ---------------------------------------------------------------------------
+# newtypes: three different things that are all machine ints. Mixing them is a
+# compile error -- `Pc(1) + ConstIdx(1)` is rejected with "arithmetic requires
+# two ints or two floats (got Pc, ConstIdx)".
+# ---------------------------------------------------------------------------
+
+type Pc = int
+type ConstIdx = int
+type SlotIdx = int
+
+const NOPCODES = 24
+const MAXOPERANDS = 2
+
+# operand kinds -- what a mnemonic's operand means, and how `dis` prints it
+const K_NONE = 0
+const K_IMM = 1
+const K_CONST = 2
+const K_SLOT = 3
+const K_PC = 4
+
+const OP_PUSH = 0
+const OP_LOADK = 1
+const OP_LOAD = 2
+const OP_STORE = 3
+const OP_JMP = 15
+const OP_JZ = 16
+const OP_JNZ = 17
+const OP_CALL = 18
+
+struct Meta:
+    name: string
+    nops: int
+    k0: int
+    k1: int
+
+fn optable() -> [NOPCODES]Meta:
+    return [
+        Meta("PUSH", 1, K_IMM, K_NONE),
+        Meta("LOADK", 1, K_CONST, K_NONE),
+        Meta("LOAD", 1, K_SLOT, K_NONE),
+        Meta("STORE", 1, K_SLOT, K_NONE),
+        Meta("ADD", 0, K_NONE, K_NONE),
+        Meta("SUB", 0, K_NONE, K_NONE),
+        Meta("MUL", 0, K_NONE, K_NONE),
+        Meta("DIV", 0, K_NONE, K_NONE),
+        Meta("MOD", 0, K_NONE, K_NONE),
+        Meta("EQ", 0, K_NONE, K_NONE),
+        Meta("NE", 0, K_NONE, K_NONE),
+        Meta("LT", 0, K_NONE, K_NONE),
+        Meta("LE", 0, K_NONE, K_NONE),
+        Meta("GT", 0, K_NONE, K_NONE),
+        Meta("GE", 0, K_NONE, K_NONE),
+        Meta("JMP", 1, K_PC, K_NONE),
+        Meta("JZ", 1, K_PC, K_NONE),
+        Meta("JNZ", 1, K_PC, K_NONE),
+        Meta("CALL", 2, K_PC, K_IMM),
+        Meta("RET", 0, K_NONE, K_NONE),
+        Meta("PRINT", 0, K_NONE, K_NONE),
+        Meta("HALT", 0, K_NONE, K_NONE),
+        Meta("DUP", 0, K_NONE, K_NONE),
+        Meta("POP", 0, K_NONE, K_NONE),
+    ]
+
+fn op_named(t: [$N]Meta, name: string) -> int:
+    for i := 0; i < N; i += 1:
+        if t[i].name == name:
+            return i
+    return -1
+
+fn meta_of(t: [$N]Meta, op: int) -> Meta:
+    if op < 0 or op >= N:
+        return Meta("???", 0, K_NONE, K_NONE)
+    return t[op]
+
+# ---------------------------------------------------------------------------
+# the instruction stream, laid out the way a VM wants it: one array per column
+# ---------------------------------------------------------------------------
+
+struct Ins:
+    op: int
+    a: int
+    b: int
+    line: int          # the .tasm line this came from, for diagnostics
+
+struct Label:
+    name: string
+    at: Pc
+
+struct Patch:
+    at: int            # index into the code stream
+    slot: int          # 0 or 1 -- which operand needs the address
+    name: string
+    line: int
+
+fn fail(line: int, msg: string):
+    die("line " + str(line) + ": " + msg)
+
+# ---------------------------------------------------------------------------
+# text scanning
+# ---------------------------------------------------------------------------
+
+fn is_ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 13
+
+# Split off a trailing `#` comment. A `#` inside a quoted string is data, so
+# this tracks the quote state rather than searching for the first `#`.
+fn strip_comment(s: string) -> string:
+    inq := false
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if inq:
+            if c == 92:
+                i += 1
+            elif c == 34:
+                inq = false
+        elif c == 34:
+            inq = true
+        elif c == 35:
+            return substr(s, 0, i)
+    return s
+
+fn tokenize(s: string) -> [string]:
+    out: [string] = []
+    i := 0
+    for i < len(s):
+        if is_ws(s[i]):
+            i += 1
+        else:
+            start := i
+            for i < len(s) and not is_ws(s[i]):
+                i += 1
+            push(out, substr(s, start, i))
+    return out
+
+# strings.parse_int stops at the first non-digit and reports nothing, which
+# would quietly turn `PUSH 1x` into `PUSH 1`. This rejects instead.
+fn parse_int_strict(s: string, line: int, what: string) -> int:
+    if len(s) == 0:
+        fail(line, "empty " + what)
+    i := 0
+    neg := false
+    if s[0] == 45:
+        neg = true
+        i = 1
+        if len(s) == 1:
+            fail(line, "bad " + what + ": " + s)
+    v := 0
+    for i < len(s):
+        c := s[i]
+        if c < 48 or c > 57:
+            fail(line, "bad " + what + ": " + s)
+        v = v * 10 + (c - 48)
+        i += 1
+    if neg:
+        return -v
+    return v
+
+fn is_ident_start(c: int) -> bool:
+    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 or c == 46
+
+# ---------------------------------------------------------------------------
+# constant literals: one escape vocabulary, used by both the parser and the
+# printer, so a dis'd constant re-assembles to the same bytes
+# ---------------------------------------------------------------------------
+
+fn hexval(c: int, line: int) -> int:
+    if c >= 48 and c <= 57:
+        return c - 48
+    if c >= 97 and c <= 102:
+        return c - 87
+    if c >= 65 and c <= 70:
+        return c - 55
+    fail(line, "bad \\x escape in constant")
+    return 0
+
+fn unquote(s: string, line: int) -> string:
+    if len(s) < 2 or s[0] != 34 or s[len(s) - 1] != 34:
+        fail(line, "constant must be a double-quoted string")
+    out := ""
+    i := 1
+    last := len(s) - 1
+    for i < last:
+        c := s[i]
+        if c != 92:
+            out = out + chr(c)
+            i += 1
+        else:
+            if i + 1 >= last:
+                fail(line, "trailing backslash in constant")
+            e := s[i + 1]
+            if e == 110:
+                out = out + chr(10)
+            elif e == 116:
+                out = out + chr(9)
+            elif e == 114:
+                out = out + chr(13)
+            elif e == 48:
+                out = out + chr(0)
+            elif e == 92:
+                out = out + chr(92)
+            elif e == 34:
+                out = out + chr(34)
+            elif e == 120:
+                if i + 3 >= last:
+                    fail(line, "truncated \\x escape in constant")
+                out = out + chr(hexval(s[i + 2], line) * 16 + hexval(s[i + 3], line))
+                i += 2
+            else:
+                fail(line, "unknown escape in constant")
+            i += 2
+    return out
+
+fn hexdig(n: int) -> string:
+    return substr("0123456789abcdef", n, n + 1)
+
+fn quote(s: string) -> string:
+    out := "\""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 92:
+            out = out + "\\\\"
+        elif c == 34:
+            out = out + "\\\""
+        elif c == 10:
+            out = out + "\\n"
+        elif c == 9:
+            out = out + "\\t"
+        elif c == 13:
+            out = out + "\\r"
+        elif c < 32 or c > 126:
+            out = out + "\\x" + hexdig(c / 16) + hexdig(c % 16)
+        else:
+            out = out + chr(c)
+    return out + "\""
+
+# A `.const` line's argument is one quoted string that may contain spaces, so
+# it is taken from the raw line rather than from the token list.
+fn const_arg(s: string, line: int) -> string:
+    i := 0
+    for i < len(s) and is_ws(s[i]):
+        i += 1
+    for i < len(s) and not is_ws(s[i]):        # skip ".const"
+        i += 1
+    for i < len(s) and is_ws(s[i]):
+        i += 1
+    j := len(s)
+    for j > i and is_ws(s[j - 1]):
+        j -= 1
+    if j <= i:
+        fail(line, ".const needs a quoted string")
+    return unquote(substr(s, i, j), line)
+
+# ---------------------------------------------------------------------------
+# assemble
+# ---------------------------------------------------------------------------
+
+fn label_at(labels: [Label], name: string) -> int:
+    for i := 0; i < len(labels); i += 1:
+        if labels[i].name == name:
+            return i
+    return -1
+
+struct Program:
+    consts: [string]
+    code: soa [Ins]
+
+fn operand(tok: string, kind: int, line: int, npool: int) -> int:
+    if kind == K_IMM:
+        return parse_int_strict(tok, line, "immediate")
+    if kind == K_SLOT:
+        s := SlotIdx(parse_int_strict(tok, line, "slot"))
+        if to_int(s) < 0:
+            fail(line, "negative slot: " + tok)
+        return to_int(s)
+    if kind == K_CONST:
+        k := ConstIdx(parse_int_strict(tok, line, "constant index"))
+        if to_int(k) < 0 or to_int(k) >= npool:
+            fail(line, "constant index out of range: " + tok)
+        return to_int(k)
+    return 0
+
+fn assemble(src: string, table: [$NT]Meta) -> Program:
+    consts: [string] = []
+    code := soa []Ins
+    labels: [Label] = []
+    patches: [Patch] = []
+
+    lines := split(src, "\n")
+    for ln := 0; ln < len(lines); ln += 1:
+        line := ln + 1
+        raw := strip_comment(lines[ln])
+        toks := tokenize(raw)
+        if len(toks) == 0:
+            continue
+
+        head := toks[0]
+
+        if head == ".const":
+            if len(code) > 0:
+                fail(line, ".const must come before the first instruction")
+            push(consts, const_arg(raw, line))
+            continue
+
+        if head[len(head) - 1] == 58:                 # `name:`
+            name := substr(head, 0, len(head) - 1)
+            if len(toks) != 1:
+                fail(line, "a label must be alone on its line")
+            if len(name) == 0 or not is_ident_start(name[0]):
+                fail(line, "bad label name")
+            if label_at(labels, name) >= 0:
+                fail(line, "duplicate label: " + name)
+            push(labels, Label(name, Pc(len(code))))
+            continue
+
+        op := op_named(table, head)
+        if op < 0:
+            fail(line, "unknown mnemonic: " + head)
+        m := meta_of(table, op)
+
+        # The operand tokens of one instruction: at most two, always.
+        args: bounded[MAXOPERANDS]string = []
+        if len(toks) - 1 != m.nops:
+            fail(line, m.name + " takes " + str(m.nops) + " operand(s), got " + str(len(toks) - 1))
+        for i := 1; i < len(toks); i += 1:
+            push(args, toks[i])
+
+        here := len(code)
+        push(code, Ins(op, 0, 0, line))
+        kinds := [m.k0, m.k1]
+        for i := 0; i < len(args); i += 1:
+            if kinds[i] == K_PC:
+                # a jump target is either an absolute pc or a label to resolve
+                if args[i][0] >= 48 and args[i][0] <= 57:
+                    v := parse_int_strict(args[i], line, "address")
+                    if i == 0:
+                        code[here].a = v
+                    else:
+                        code[here].b = v
+                else:
+                    push(patches, Patch(here, i, args[i], line))
+            else:
+                v := operand(args[i], kinds[i], line, len(consts))
+                if i == 0:
+                    code[here].a = v
+                else:
+                    code[here].b = v
+
+    for i := 0; i < len(patches); i += 1:
+        p := patches[i]
+        li := label_at(labels, p.name)
+        if li < 0:
+            fail(p.line, "unknown label: " + p.name)
+        target := labels[li].at
+        if p.slot == 0:
+            code[p.at].a = to_int(target)
+        else:
+            code[p.at].b = to_int(target)
+
+    for i := 0; i < len(code); i += 1:
+        m := meta_of(table, code[i].op)
+        if m.k0 == K_PC and (code[i].a < 0 or code[i].a > len(code)):
+            fail(code[i].line, "jump target out of range: " + str(code[i].a))
+
+    return Program(consts, code)
+
+# ---------------------------------------------------------------------------
+# encode / decode
+# ---------------------------------------------------------------------------
+
+fn put_u32(v: int) -> string:
+    return chr(v % 256) + chr((v / 256) % 256) + chr((v / 65536) % 256) + chr((v / 16777216) % 256)
+
+fn put_i32(v: int) -> string:
+    if v < 0:
+        return put_u32(v + 4294967296)
+    return put_u32(v)
+
+fn get_u32(s: string, off: int) -> int:
+    return s[off] + s[off + 1] * 256 + s[off + 2] * 65536 + s[off + 3] * 16777216
+
+fn get_i32(s: string, off: int) -> int:
+    v := get_u32(s, off)
+    if v >= 2147483648:
+        return v - 4294967296
+    return v
+
+fn encode(p: Program) -> string:
+    out := "TYC1" + put_u32(len(p.consts)) + put_u32(len(p.code))
+    for i := 0; i < len(p.consts); i += 1:
+        out = out + put_u32(len(p.consts[i])) + p.consts[i]
+    for i := 0; i < len(p.code); i += 1:
+        out = out + chr(p.code[i].op) + put_i32(p.code[i].a) + put_i32(p.code[i].b)
+    return out
+
+fn decode(blob: string, table: [$NT]Meta) -> Program:
+    if len(blob) < 12 or substr(blob, 0, 4) != "TYC1":
+        die("not a .tyc file (bad magic)")
+    nconsts := get_u32(blob, 4)
+    ncode := get_u32(blob, 8)
+    consts: [string] = []
+    off := 12
+    for i := 0; i < nconsts; i += 1:
+        if off + 4 > len(blob):
+            die("truncated constant pool")
+        n := get_u32(blob, off)
+        off += 4
+        if off + n > len(blob):
+            die("truncated constant pool")
+        push(consts, substr(blob, off, off + n))
+        off += n
+    code := soa []Ins
+    for i := 0; i < ncode; i += 1:
+        if off + 9 > len(blob):
+            die("truncated code section")
+        op := blob[off]
+        if op >= NOPCODES:
+            die("unknown opcode " + str(op) + " at pc " + str(i))
+        push(code, Ins(op, get_i32(blob, off + 1), get_i32(blob, off + 5), 0))
+        off += 9
+    return Program(consts, code)
+
+# ---------------------------------------------------------------------------
+# disassemble -- output that re-assembles to the same bytes
+# ---------------------------------------------------------------------------
+
+fn disassemble(p: Program, table: [$NT]Meta) -> string:
+    out := ""
+    for i := 0; i < len(p.consts); i += 1:
+        out = out + ".const " + quote(p.consts[i]) + "\n"
+    if len(p.consts) > 0:
+        out = out + "\n"
+    for i := 0; i < len(p.code); i += 1:
+        m := meta_of(table, p.code[i].op)
+        s := "    " + m.name
+        if m.nops > 0:
+            s = s + " " + str(p.code[i].a)
+        if m.nops > 1:
+            s = s + " " + str(p.code[i].b)
+        # The address goes in the trailing comment, not a left-hand column: a
+        # left column would be re-read as a mnemonic when this listing is fed
+        # back to `asm`, and the round trip is the point.
+        s = strings.pad_right(s, 24, " ") + "# " + strings.pad_left(str(i), 4, " ")
+        if m.k0 == K_CONST and p.code[i].a < len(p.consts):
+            s = s + "  " + quote(p.consts[p.code[i].a])
+        out = out + s + "\n"
+    return out
+
+fn main():
+    # cli.parse_spec never reads a value for a SHORT option (corelib/cli/cli.ty
+    # says so outright), and `-o FILE` is the spelling this tool wants, so the
+    # front door is a hand-rolled scan.
+    av := cli.argv()
+    pos: [string] = []
+    out := ""
+    for i := 0; i < len(av); i += 1:
+        if av[i] == "-o":
+            if i + 1 >= len(av):
+                die("-o needs a path")
+            out = av[i + 1]
+            i += 1
+        else:
+            push(pos, av[i])
+    if len(pos) < 2:
+        die("usage: tycho-vm asm <in.tasm> -o <out.tyc> | tycho-vm dis <in.tyc>")
+    table := optable()
+    cmd := pos[0]
+    path := pos[1]
+    if not io.exists(path):
+        die("no such file: " + path)
+
+    if cmd == "asm":
+        if out == "":
+            die("asm needs -o <out.tyc>")
+        p := assemble(io.read(path), table)
+        if not io.write(out, encode(p)):
+            die("cannot write " + out)
+    elif cmd == "dis":
+        print(disassemble(decode(io.read(path), table), table))
+    else:
+        die("unknown command: " + cmd)
