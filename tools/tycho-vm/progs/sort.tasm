@@ -1,0 +1,91 @@
+# sort -- bubble sort of five values held in slots 0..4, printed ascending.
+# Expected output: sorted: then 1 3 5 7 9, one per line.
+#
+# LOAD/STORE take a constant slot, so there is no way to index memory with a
+# running variable: the inner sweep over adjacent pairs is unrolled, and the
+# outer loop is the real one -- it repeats while slot 5 (the "swapped" flag)
+# is still set, which is what makes this bubble sort and not four fixed passes.
+#
+# Each compare-swap leaves the pair on the stack and stores it back reversed:
+# STORE i pops the value loaded second, STORE j the value loaded first.
+.const "sorted:"
+
+    PUSH 5
+    STORE 0
+    PUSH 3
+    STORE 1
+    PUSH 9
+    STORE 2
+    PUSH 1
+    STORE 3
+    PUSH 7
+    STORE 4
+
+sweep:
+    PUSH 0
+    STORE 5             # swapped = 0
+
+    LOAD 0
+    LOAD 1
+    LE
+    JNZ keep01
+    LOAD 0
+    LOAD 1
+    STORE 0
+    STORE 1
+    PUSH 1
+    STORE 5
+keep01:
+
+    LOAD 1
+    LOAD 2
+    LE
+    JNZ keep12
+    LOAD 1
+    LOAD 2
+    STORE 1
+    STORE 2
+    PUSH 1
+    STORE 5
+keep12:
+
+    LOAD 2
+    LOAD 3
+    LE
+    JNZ keep23
+    LOAD 2
+    LOAD 3
+    STORE 2
+    STORE 3
+    PUSH 1
+    STORE 5
+keep23:
+
+    LOAD 3
+    LOAD 4
+    LE
+    JNZ keep34
+    LOAD 3
+    LOAD 4
+    STORE 3
+    STORE 4
+    PUSH 1
+    STORE 5
+keep34:
+
+    LOAD 5
+    JNZ sweep
+
+    LOADK 0
+    PRINT
+    LOAD 0
+    PRINT
+    LOAD 1
+    PRINT
+    LOAD 2
+    PRINT
+    LOAD 3
+    PRINT
+    LOAD 4
+    PRINT
+    HALT

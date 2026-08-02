@@ -1,0 +1,43 @@
+# fib -- prints fib(0) .. fib(11), each computed by a recursive call.
+# Expected output: fib: then 0 1 1 2 3 5 8 13 21 34 55 89, one per line.
+.const "fib:"
+
+    LOADK 0
+    PRINT
+    PUSH 0
+    STORE 0             # i = 0
+loop:
+    LOAD 0
+    PUSH 12
+    LT
+    JZ done
+    LOAD 0
+    CALL fib 1
+    PRINT
+    LOAD 0
+    PUSH 1
+    ADD
+    STORE 0
+    JMP loop
+done:
+    HALT
+
+# fib(n): slot 0 = n. n < 2 returns n, else fib(n-1) + fib(n-2).
+fib:
+    LOAD 0
+    PUSH 2
+    LT
+    JZ recurse
+    LOAD 0
+    RET
+recurse:
+    LOAD 0
+    PUSH 1
+    SUB
+    CALL fib 1
+    LOAD 0
+    PUSH 2
+    SUB
+    CALL fib 1
+    ADD
+    RET

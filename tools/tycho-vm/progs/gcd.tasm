@@ -1,0 +1,37 @@
+# gcd -- Euclid, recursively, over four pairs.
+# Expected output: gcd: then 6 21 1 6, one per line.
+.const "gcd:"
+
+    LOADK 0
+    PRINT
+    PUSH 48
+    PUSH 18
+    CALL gcd 2
+    PRINT               # 6
+    PUSH 1071
+    PUSH 462
+    CALL gcd 2
+    PRINT               # 21
+    PUSH 17
+    PUSH 5
+    CALL gcd 2
+    PRINT               # 1
+    PUSH 270
+    PUSH 192
+    CALL gcd 2
+    PRINT               # 6
+    HALT
+
+# gcd(a, b): slot 0 = a, slot 1 = b. b == 0 returns a, else gcd(b, a % b).
+gcd:
+    LOAD 1
+    JZ base
+    LOAD 1
+    LOAD 0
+    LOAD 1
+    MOD
+    CALL gcd 2
+    RET
+base:
+    LOAD 0
+    RET
