@@ -84,15 +84,9 @@
 #      `core:decimal`), which is a numeric-tower decision, not a parser one.
 #      Until then `as_lexeme` still returns the digits for the value that WAS
 #      accepted; a refused one never enters the tree at all.
-# gap: ENCODING, not grammar. RFC 8259 s8.1 requires a JSON text to be valid
-#      UTF-8, and this parser does not VALIDATE the bytes >= 0x80 it copies
-#      through: `"<FF>"` with a raw 0xFF byte parses to a one-byte string. It
-#      invents nothing (the bytes out are the bytes in) and a `\uXXXX` escape it
-#      decodes is always well-formed UTF-8 by construction, so the damage is
-#      confined to bytes the document already contained. The way out is a UTF-8
-#      decoder over the string span -- the same decoder `esc` deliberately does
-#      not have (see the note above `esc`), so it is one piece of work serving
-#      both directions, not a parser patch.
+# CLOSED 2026-08-03: raw bytes >= 0x80 in a string are now validated (utf8_len
+#      below, the s8.1 requirement). A raw 0xFF byte is BadUtf8, not a one-byte
+#      string; `\uXXXX` escapes were already well-formed by construction.
 package json
 import "core:strings"
 
@@ -135,6 +129,7 @@ const JE_COMMA   = 14   # a trailing comma before a closer: `[1,]`, `{"a":1,}`
 const JE_ZERO    = 15   # a leading zero: `01`, `-01`
 const JE_TRAIL   = 16   # text after the top-level value: `{"a":1} junk`
 const JE_CTRL    = 17   # a raw control byte 0x00-0x1F inside a string
+const JE_UTF8    = 18   # a raw byte >= 0x80 that is not well-formed UTF-8
 
 # WHICH BYTE THE TWO \u FAILURES NAME, because they differ and the difference is
 # deliberate. JE_UESC names the OFFENDING BYTE ITSELF -- the first thing in the
@@ -176,6 +171,7 @@ enum JsonErr:
     LeadingZero(int)
     TrailingText(int)
     ControlByte(int)
+    BadUtf8(int)
 
 fn err_at(code: int, off: int) -> JsonErr:
     if code == JE_COMMA:
@@ -186,6 +182,8 @@ fn err_at(code: int, off: int) -> JsonErr:
         return TrailingText(off)
     if code == JE_CTRL:
         return ControlByte(off)
+    if code == JE_UTF8:
+        return BadUtf8(off)
     if code == JE_UESC:
         return BadUnicode(off)
     if code == JE_SURR:
@@ -231,6 +229,7 @@ fn err_offset(e: JsonErr) -> int:              # byte offset of the failure
         LeadingZero(o): return o
         TrailingText(o): return o
         ControlByte(o): return o
+        BadUtf8(o): return o
 
 fn err_reason(e: JsonErr) -> string:           # what was wrong, without the where
     match e:
@@ -251,6 +250,7 @@ fn err_reason(e: JsonErr) -> string:           # what was wrong, without the whe
         LeadingZero(o): return "number has a leading zero"
         TrailingText(o): return "text after the end of the document"
         ControlByte(o): return "raw control byte inside a string"
+        BadUtf8(o): return "invalid UTF-8"
 
 # The one-line message a caller wants on stderr: cause and byte offset together.
 fn err_str(e: JsonErr) -> string:
@@ -319,6 +319,56 @@ fn utf8(cp: int) -> string:
     # 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
     return chr(240 + cp / 262144) + chr(128 + (cp / 4096) % 64) + chr(128 + (cp / 64) % 64) + chr(128 + cp % 64)
 
+# The byte at `pos` must START a well-formed UTF-8 sequence (RFC 8259 s8.1
+# allows unescaped %x20-21 / %x23-5B / %x5D-10FFFF). Returns the sequence
+# length (2..4) or -1: a stray continuation, an overlong encoding, the UTF-16
+# surrogate range (ED A0-BF), a value above U+10FFFF (F4 90-BF and F5-FF), or
+# a truncated sequence. The `\uXXXX` escapes are validated separately (hex4 and
+# the SURR pair logic); this is only the raw-bytes path.
+fn utf8_len(s: string, pos: int, n: int) -> int:
+    b0 := s[pos]
+    if b0 < 128:
+        return 1
+    if b0 < 194:                    # 80-BF (a lone continuation) or C0-C1 (overlong)
+        return -1
+    if b0 < 224:                    # 2-byte: C2-DF
+        if pos + 1 >= n:
+            return -1
+        b1 := s[pos + 1]
+        if b1 < 128 or b1 > 191:
+            return -1
+        return 2
+    if b0 < 240:                    # 3-byte: E0-EF
+        if pos + 2 >= n:
+            return -1
+        b1 := s[pos + 1]
+        if b0 == 224 and b1 < 160:      # E0 80-9F: overlong
+            return -1
+        if b0 == 237 and b1 >= 160:     # ED A0-BF: UTF-16 surrogates
+            return -1
+        if b1 < 128 or b1 > 191:
+            return -1
+        b2 := s[pos + 2]
+        if b2 < 128 or b2 > 191:
+            return -1
+        return 3
+    if b0 < 245:                    # 4-byte: F0-F4
+        if pos + 3 >= n:
+            return -1
+        b1 := s[pos + 1]
+        if b0 == 240 and b1 < 144:      # F0 80-8F: overlong
+            return -1
+        if b0 == 244 and b1 > 143:      # F4 90-BF: above U+10FFFF
+            return -1
+        if b1 < 128 or b1 > 191:
+            return -1
+        b2 := s[pos + 2]
+        b3 := s[pos + 3]
+        if b2 < 128 or b2 > 191 or b3 < 128 or b3 > 191:
+            return -1
+        return 4
+    return -1                       # F5-FF: above U+10FFFF
+
 fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     pos = pos + 1                              # skip opening "
     start := pos
@@ -329,7 +379,14 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     # `s[pos] >= 32` is the RFC 8259 s7 rule: unescaped is %x20-21 / %x23-5B /
     # %x5D-10FFFF, so a raw control byte ends the span and is an error below.
     for pos < n and s[pos] != 34 and s[pos] != 92 and s[pos] >= 32:
-        pos = pos + 1
+        if s[pos] >= 128:                      # a raw byte must be part of a
+            k := utf8_len(s, pos, n)           # well-formed UTF-8 sequence (s8.1)
+            if k < 0:
+                ecode = JE_UTF8
+                return substr(s, start, pos)
+            pos = pos + k
+        else:
+            pos = pos + 1
     r := substr(s, start, pos)                 # the escape-free prefix (the whole string in the common case)
     if pos >= n:
         ecode = JE_TRUNC                       # ran off the end with no closing "
@@ -404,6 +461,14 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
             if s[pos] < 32:                    # the same RFC 8259 s7 rule as the
                 ecode = JE_CTRL                # fast path, on the slow path too
                 return r
+            if s[pos] >= 128:                  # raw UTF-8: validate the sequence
+                k := utf8_len(s, pos, n)
+                if k < 0:
+                    ecode = JE_UTF8
+                    return r
+                r = r + substr(s, pos, pos + k)
+                pos = pos + k
+                continue
             r = r + chr(s[pos])
         pos = pos + 1
     if pos >= n:

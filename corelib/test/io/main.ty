@@ -108,6 +108,42 @@ fn addlen(acc: int, line: string) -> int:      # a fold_lines reducer
 fn main():
     tmp := "/tmp/tycho_corelib_io_selftest.txt"
 
+    # write_bytes: the binary write side of read_bytes. Interior NULs survive
+    # (chr(0) is a real byte in a string -- the sha256 padding relies on it),
+    # and the missing-path / directory answers match read_bytes'.
+    wb := io.write_bytes(tmp, to_bytes("a" + chr(0) + "b"))
+    rbb := io.read_bytes(tmp)
+    wok := 0
+    wlen := -1
+    wa := -1
+    match wb:
+        Ok(v):
+            wok = b2i(v)
+        Err(e):
+            wok = 0
+    match rbb:
+        Ok(b):
+            wlen = len(b)
+            if wlen == 3:
+                wa = b[0] * 256 + b[2]
+        Err(e):
+            wlen = -1
+    wmiss := io.write_bytes("/tmp/tycho_corelib_io_no_dir_xyz/f", to_bytes(""))
+    wdir := io.write_bytes("/tmp", to_bytes(""))
+    wmiss_k := 0
+    wdir_k := 0
+    match wmiss:
+        Err(NotFound):
+            wmiss_k = 1
+        _:
+            wmiss_k = 0
+    match wdir:
+        Err(IsDir):
+            wdir_k = 1
+        _:
+            wdir_k = 0
+    println(f"wb_ok={wok} len={wlen} ab={wa} miss={wmiss_k} dir={wdir_k}")
+
     # write truncates; read returns the exact bytes; append extends
     w1 := io.write(tmp, "hello\nworld\n")
     body := io.read(tmp)
