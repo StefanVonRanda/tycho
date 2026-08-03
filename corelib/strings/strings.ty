@@ -93,6 +93,51 @@ fn parse_int(s: string) -> int:              # decimal int, optional leading '-'
         return 0
     return 0 - v
 
+# ---- parse_int_checked: the STRICT int ---------------------------------------
+#
+# WHICH ONE TO REACH FOR. parse_int above is the LENIENT one: 0 for an empty
+# string and for garbage, and it stops at the first non-digit. Those are sane
+# choices for parsing user input, where 0 is a fine default -- and they are the
+# wrong choices for a length field in a format, where a damaged "1x4" must be
+# an error and not a silent 1 (a wrong length that parses is how a reader ends
+# up hashing the wrong span). This one fails closed: an empty string, a non-
+# digit anywhere, or an out-of-int64 value is an Err naming why. tycho-ar and
+# server/main.ty each hand-rolled a strict parser for want of this.
+#
+# The errors are payload-free, so both spellings work: `==` for a one-line test
+# and a nested pattern (`Err(Overflow):`) for a `match`.
+enum IntErr:
+    EmptyInput         # "" (or a bare "-")
+    Garbage            # a non-digit anywhere
+    OutOfRange         # outside [-9223372036854775808, 9223372036854775807]
+
+fn parse_int_checked(s: string) -> Result(int, IntErr):
+    if len(s) == 0:
+        return Err(EmptyInput)
+    neg := false
+    i := 0
+    if s[0] == 45:                           # '-'
+        neg = true
+        i = 1
+        if i >= len(s):                      # a bare "-"
+            return Err(Garbage)
+    min64 := (0 - 9223372036854775807) - 1
+    v := 0
+    for i < len(s):
+        c := s[i]
+        if c < 48 or c > 57:
+            return Err(Garbage)
+        d := c - 48
+        if v < (min64 + d) / 10:             # v*10 - d would underflow int64
+            return Err(OutOfRange)
+        v = v * 10 - d
+        i = i + 1
+    if neg:
+        return Ok(v)
+    if v == min64:                           # +9223372036854775808 does not fit
+        return Err(OutOfRange)
+    return Ok(0 - v)
+
 # ---- parse_float: the STRICT one -------------------------------------------
 #
 # WHICH ONE TO REACH FOR. These two live next to each other on purpose and they

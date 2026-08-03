@@ -396,3 +396,33 @@ tycho_int iox_remove(const char *path) {
     if (remove(path) == 0) return TY_RF_OK;
     return ty_rf_errno();
 }
+
+/* Write ALL of `data` (datalen bytes) to `path`, truncating it first. Same
+ * status code space as iox_read_file:
+ *
+ *      TY_RF_OK   (1)  every byte was written (datalen == 0 truncates and is Ok)
+ *      TY_RF_MISS (0)  a path component does not exist (ENOENT/ENOTDIR)
+ *      TY_RF_DIR  (2)  the path names a directory
+ *      TY_RF_ERR  (3)  could not write -- EACCES, ENOSPC, EROFS, EISDIR on
+ *                      some platforms, or a PARTIAL write (disk full mid-file)
+ *
+ * All-or-nothing: a partial fwrite is an error, not a short success. A file
+ * that half-wrote is worse than one that did not write -- the caller can
+ * remove() the residue -- and the length is known, so a short write is never
+ * ambiguous. `data` arrives as `const unsigned char *` plus an implicit length
+ * (the compiler's bytes-input FFI shape); NULL with datalen 0 is the empty
+ * bytes value and must not be written. */
+void iox_write_bytes(const char *path, const unsigned char *data,
+                     tycho_int datalen, tycho_int *status) {
+    *status = TY_RF_ERR;
+    errno = 0;
+    FILE *f = fopen(path, "wb");
+    if (!f) { *status = ty_rf_errno(); return; }       /* fail closed: nothing written */
+    if (datalen > 0 && data && fwrite(data, 1, (size_t)datalen, f) != (size_t)datalen) {
+        *status = ty_rf_errno();                        /* partial write: an error */
+        fclose(f);
+        return;
+    }
+    if (fclose(f) != 0) { *status = ty_rf_errno(); return; }
+    *status = TY_RF_OK;
+}

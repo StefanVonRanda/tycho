@@ -315,8 +315,20 @@ fn main():
     # above ASCII. `chr(255)` here is a raw 0xFF -- it must survive as one byte,
     # and it does (which is also the ENCODING gap in the corelib header: nothing
     # VALIDATES it as UTF-8, it is merely copied through unharmed).
-    println("cb ok high  = " + bytes_of(json.as_str(json.parse("\"a" + chr(255) + "b\""))))
-    println("cb ok 80    = " + bytes_of(json.as_str(json.parse("\"" + chr(128) + "\""))))
+    # raw bytes >= 0x80 must be WELL-FORMED UTF-8 (s8.1, closed 2026-08-03):
+    # a valid 2/3/4-byte sequence passes through unchanged; a lone continuation,
+    # an overlong lead, a surrogate, a value above U+10FFFF, or a truncated
+    # sequence is BadUtf8. 0x7F (DEL) stays legal (it is < 0x80).
+    println("cb ok e9    = " + bytes_of(json.as_str(json.parse("\"" + chr(195) + chr(169) + "\""))))       # raw "é" (C3 A9)
+    println("cb ok 20ac  = " + bytes_of(json.as_str(json.parse("\"" + chr(226) + chr(130) + chr(172) + "\""))))   # raw "€" (E2 82 AC)
+    println("cb ok f09f  = " + bytes_of(json.as_str(json.parse("\"" + chr(240) + chr(159) + chr(152) + chr(128) + "\"")))) # raw emoji (F0 9F 98 80)
+    println("cb bad ff   = " + show(json.parse_checked("\"a" + chr(255) + "b\"")))
+    println("cb bad ff off = " + str(offset_of(json.parse_checked("\"a" + chr(255) + "b\""))))
+    println("cb bad 80   = " + show(json.parse_checked("\"" + chr(128) + "\"")))
+    println("cb bad c0   = " + show(json.parse_checked("\"" + chr(192) + chr(175) + "\"")))       # overlong "/"
+    println("cb bad ed   = " + show(json.parse_checked("\"" + chr(237) + chr(160) + chr(128) + "\"")))  # ED A0 80: surrogate
+    println("cb bad f4   = " + show(json.parse_checked("\"" + chr(244) + chr(144) + chr(128) + chr(128) + "\""))) # F4 90: > U+10FFFF
+    println("cb bad trunc= " + show(json.parse_checked("\"" + chr(195) + "\"")))                   # C3 with no continuation
     println("cb ok del   = " + bytes_of(json.as_str(json.parse("\"a" + chr(127) + "b\""))))
 
     # ---- \uXXXX and the surrogate pair (gap 2) ------------------------------

@@ -3,6 +3,8 @@ hello, world!
 ababab|[spaced text]
 bits=7 miss=0 p1=-42 p2=123
 pmax=9223372036854775807 pmin=-9223372036854775808
+c0=Ok(0) cm=Ok(-42) cb=Ok(9223372036854775807) cmin=Ok(-9223372036854775808)
+ce=Err(strings__EmptyInput) cg=Err(strings__Garbage) cd=Err(strings__Garbage) cov=Err(strings__OutOfRange) cow=Err(strings__OutOfRange)
 ovf=0 ovn=0 pe=0 pd=0 pg=0
 hostile=1
 pf 1.5      ok eq1.5=yes eq1.0=NO

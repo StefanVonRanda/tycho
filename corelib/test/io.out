@@ -1,3 +1,4 @@
+wb_ok=1 len=3 ab=24930 miss=1 dir=1
 write=1 bytes=12 append=1 lines=3
 joined=hello|world|again
 wl=1 rl=3 a|b|c

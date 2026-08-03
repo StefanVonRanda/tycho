@@ -49,6 +49,17 @@ enum IoErr:
 fn read(p: string) -> string:
     return read_file(p)
 
+fn write_bytes(p: string, b: bytes) -> Result(bool, IoErr):
+    st := 0
+    iox_write_bytes(p, b, &st)
+    if st == RF_OK:
+        return Ok(true)
+    if st == RF_MISS:
+        return Err(NotFound)
+    if st == RF_DIR:
+        return Err(IsDir)
+    return Err(Failed)
+
 # Truncate `p` and write `s`. Returns false if the path can't be opened.
 fn write(p: string, s: string) -> bool:
     return write_file(p, s)
@@ -89,6 +100,11 @@ extern fn iox_read_file(path: string, status: inout int) -> bytes
 # `bytes`-payload case (a `bytes` payload cannot be an `inout`, so it takes the
 # return), and iox_stat_mtime below is its mirror.
 extern fn iox_read_at(path: string, off: int, n: int, status: inout int) -> bytes
+# Write ALL of `b` to `path`, truncating it first -- the write side's mirror of
+# iox_read_file: the same status code space, so write_bytes' Err answers match
+# read_bytes' (NotFound/IsDir/Failed). All-or-nothing: a partial write is an
+# error, never a short success.
+extern fn iox_write_bytes(path: string, data: bytes, status: inout int)
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int

@@ -28,6 +28,19 @@ fn main():
     pe := strings.parse_int("")
     pd := strings.parse_int("-")
     pg := strings.parse_int("garbage")
+    # parse_int_checked: the STRICT one -- empty / garbage / overflow are Err
+    # naming why, "0" is Ok(0), and the int64 bounds parse exactly.
+    c0 := strings.parse_int_checked("0")
+    cm := strings.parse_int_checked("-42")
+    cb := strings.parse_int_checked("9223372036854775807")
+    cmin := strings.parse_int_checked("-9223372036854775808")
+    ce := strings.parse_int_checked("")
+    cg := strings.parse_int_checked("1x4")
+    cd := strings.parse_int_checked("-")
+    cov := strings.parse_int_checked("12345678901234567890")
+    cow := strings.parse_int_checked("9223372036854775808")
+    println(f"c0={c0} cm={cm} cb={cb} cmin={cmin}")
+    println(f"ce={ce} cg={cg} cd={cd} cov={cov} cow={cow}")
     println(f"ovf={ovf} ovn={ovn} pe={pe} pd={pd} pg={pg}")   # ovf=0 ovn=0 pe=0 pd=0 pg=0
     # ---- parse_float: the strict opposite of parse_int, under a HOSTILE locale --
     # Everything below runs with LC_NUMERIC switched to a comma-decimal locale, so

@@ -23,3 +23,26 @@ fn main():
     d := sha256.digest("abc")
     h := sha256.hex("abc")
     println(f"digest_len={len(d)} hex_len={len(h)} ok={b2i(len(d) == 32 and len(h) == 64)}")
+
+    # streaming == one-shot, fed in awkward chunk sizes (1, 63, 64, 65 bytes)
+    # so every boundary of the pending buffer is crossed.
+    msg := fox + big
+    st := sha256.init()
+    for i := 0; i < len(msg); i += 1:      # one byte at a time
+        sha256.update(&st, to_bytes(msg[i:i + 1]))
+    println("stream1 = " + sha256.final_hex(&st))
+    println(f"stream1_eq= {b2i(sha256.hex(msg) == streamed(msg, 63))}")
+    println(f"stream2_eq= {b2i(sha256.hex(msg) == streamed(msg, 64))}")
+    println(f"stream3_eq= {b2i(sha256.hex(msg) == streamed(msg, 65))}")
+    println(f"stream0_eq= {b2i(sha256.hex("") == streamed("", 64))}")
+
+fn streamed(msg: string, chunk: int) -> string:
+    st := sha256.init()
+    i := 0
+    for i < len(msg):
+        hi := i + chunk
+        if hi > len(msg):
+            hi = len(msg)
+        sha256.update(&st, to_bytes(msg[i:hi]))
+        i = hi
+    return sha256.final_hex(&st)
