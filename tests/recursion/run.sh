@@ -115,5 +115,70 @@ accept "valid-chain"     ok_chain
 accept "valid-stmt"      ok_stmt
 accept "valid-type"      ok_type
 
+# ---- generated-code side (plan phase 1): deep recursion in a PROGRAM -------
+# The reject/accept above guard the COMPILER's own recursion. Until the
+# stack-overflow guard landed in the runtime (tycho_rt.c), deep recursion in
+# emitted code died with SIGSEGV -- no diagnostic, no cleanup. Two measured
+# victims: the Scheme interpreter at ~5k levels (eval-apply chain, big frames)
+# and the json walker at ~100k nests (parse_value, small frames). Each deep
+# program must COMPILE (it is valid Tycho), then DIE CLEANLY at runtime:
+# exit 1-127 (NOT a signal), empty stdout, "stack overflow" on stderr. The
+# modestly-nested counterpart must run and print the right answer.
+py >"$T/prog_big.ty"   <<'P'
+import sys; print("fn f(n: int) -> int:\n    if n <= 0:\n        return 1\n    return n + f(n - 1)\nfn main():\n    print(str(f(2000000)))")
+P
+py >"$T/prog_small.ty" <<'P'
+import sys; print("fn f(n: int) -> int:\n    if n <= 0:\n        return 0\n    return f(n - 1)\nfn main():\n    print(str(f(2000000)))")
+P
+py >"$T/prog_spawn.ty" <<'P'
+import sys; print("fn deep(n: int) -> int:\n    if n <= 0:\n        return 0\n    return deep(n - 1)\nfn tm() -> int:\n    return deep(2000000)\nfn main():\n    t := spawn tm()\n    print(str(t.wait()))")
+P
+py >"$T/prog_ok_big.ty" <<'P'
+import sys; print("fn f(n: int) -> int:\n    if n <= 0:\n        return 1\n    return n + f(n - 1)\nfn main():\n    print(str(f(1000)))")
+P
+py >"$T/prog_ok_spawn.ty" <<'P'
+import sys; print("fn deep(n: int) -> int:\n    if n <= 0:\n        return 0\n    return deep(n - 1)\nfn tm() -> int:\n    return deep(1000)\nfn main():\n    t := spawn tm()\n    print(str(t.wait()))")
+P
+
+# A deep program: compiles, then fails CLOSED at runtime.
+progdie() {
+    name="$1"; f="$T/$2.ty"
+    if ! run "$TYCHOC" "$f" --emit-c -o "$T/$2" >"$T/$2.log" 2>&1; then
+        echo "FAIL $name (compile)"; sed 's/^/      /' "$T/$2.log"; fail=1; return
+    fi
+    if ! $CC -O2 -fwrapv -std=c11 -o "$T/$2.bin" "$T/$2.c" -lm >"$T/$2.cc.log" 2>&1; then
+        echo "FAIL $name (cc)"; sed 's/^/      /' "$T/$2.cc.log"; fail=1; return
+    fi
+    out=$("$T/$2.bin" 2>"$T/$2.err"); rc=$?
+    if [ "$rc" -eq 0 ] || [ "$rc" -ge 128 ]; then
+        echo "FAIL $name (exit $rc -- must fail closed, 1-127, never a signal)"; fail=1; return
+    fi
+    if [ -n "$out" ]; then echo "FAIL $name (stdout not empty: '$out')"; fail=1; return; fi
+    if ! grep -q "stack overflow" "$T/$2.err"; then
+        echo "FAIL $name (stderr lacks the diagnostic)"; sed 's/^/      /' "$T/$2.err"; fail=1; return
+    fi
+    echo "ok    $name (program died cleanly, rc=$rc)"
+}
+# The modestly-nested counterpart: must compile AND run, printing its answer.
+progrun() {
+    name="$1"; f="$T/$2.ty"; expect="$3"
+    if ! run "$TYCHOC" "$f" --emit-c -o "$T/$2" >"$T/$2.log" 2>&1; then
+        echo "FAIL $name (compile)"; sed 's/^/      /' "$T/$2.log"; fail=1; return
+    fi
+    if ! $CC -O2 -fwrapv -std=c11 -o "$T/$2.bin" "$T/$2.c" -lm >"$T/$2.cc.log" 2>&1; then
+        echo "FAIL $name (cc)"; sed 's/^/      /' "$T/$2.cc.log"; fail=1; return
+    fi
+    got=$("$T/$2.bin" 2>&1); rc=$?
+    if [ "$rc" -ne 0 ]; then echo "FAIL $name (exit $rc)"; fail=1; return; fi
+    if [ "$got" != "$expect" ]; then echo "FAIL $name (got '$got', want '$expect')"; fail=1; return; fi
+    echo "ok    $name (ran, output '$got')"
+}
+
+progdie "prog-deep-big"    prog_big
+progdie "prog-deep-small"  prog_small
+progdie "prog-deep-spawn"  prog_spawn
+progrun "prog-ok-big"      prog_ok_big    "500501"
+progrun "prog-ok-spawn"    prog_ok_spawn  "0"
+
 [ "$fail" -eq 0 ] && echo "recursion-cap: all green (fail closed on deep input, no stack overflow)" || echo "recursion-cap: FAIL"
 exit "$fail"
