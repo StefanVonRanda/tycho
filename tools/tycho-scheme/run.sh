@@ -1,19 +1,25 @@
 #!/bin/sh
-# Gate for tycho-scheme, the Scheme interpreter in tools/tycho-scheme/. Same
-# shape as vm-check: step [9] tools-check --emit-c's every .ty in the tree, so a
-# syntax error already reddens there, and [3b] entrypoints never looks under
-# tools/ -- so nothing RAN the interpreter.
+# Gate for tycho-scheme, the Scheme interpreter AND its bytecode compiler.
+# Same shape as vm-check: step [9] tools-check --emit-c's every .ty in the
+# tree, so a syntax error already reddens there, and [3b] entrypoints never
+# looks under tools/ -- so nothing RAN the interpreter or the compiler.
 #
 # WHAT IT ASSERTS:
-#   [1] each program's output matches the golden, byte-identical, on TWO runs
-#       (determinism: the environment pool and the evaluator are pure functions
-#       of the source, so two runs must agree).
-#   [2] the error cases die non-zero with EMPTY stdout (fail closed, the
-#       interpreter's die() path).
-#   [3] a deep-recursion program is NOT here -- the runtime now turns stack
-#       exhaustion into a clean failure (`docs/internals/plan-tycho-scheme-DONE.md` phase 1: the stack-overflow guard
-#       in runtime/tycho_rt.c), and the CRASH tests for that live in
-#       tests/recursion/run.sh's generated-code side. These four programs stay
+#   [1] each program's interpreter output matches the golden, byte-identical,
+#       on TWO runs (determinism).
+#   [2] THE COMPILER: each program compiles to tycho-vm bytecode and the VM's
+#       run is byte-identical to the interpreter's -- the differential that
+#       proves the compiler lowers the same subset to the same answers
+#       (`docs/internals/plan-tycho-scheme-DONE.md` phase 1, the compiler
+#       front end; the VM's pair/closure ops came from it).
+#   [3] the compiler dies non-zero at COMPILE time on what it cannot lower
+#       (unbound variables, non-compilable primitives, primitive shadowing),
+#       never emitting something silently wrong.
+#   [4] the interpreter's runtime error cases die non-zero with EMPTY stdout.
+#   [5] a deep-recursion program is NOT here -- the runtime's stack guard
+#       (`docs/internals/plan-tycho-scheme-DONE.md` phase 1) turns stack
+#       exhaustion into a clean failure, and the crash tests live in
+#       tests/recursion/run.sh's generated-code side. The programs stay
 #       shallow because their goldens are answers, not crash tests.
 #
 # Re-record the golden with:  RECORD=1 sh tools/tycho-scheme/run.sh
@@ -31,15 +37,21 @@ bad() { echo "FAIL: $*"; fail=1; }
 
 S="$T/tycho-scheme"
 if ! "$TYCHOC" tools/tycho-scheme/main.ty -o "$S" >"$T/build.log" 2>&1; then
-    echo "FAIL: tychoc compile"; sed 's/^/      /' "$T/build.log"
+    echo "FAIL: tychoc compile (interpreter)"; sed 's/^/      /' "$T/build.log"
+    echo "tycho-scheme: FAIL"; exit 1
+fi
+V="$T/tycho-vm"
+if ! "$TYCHOC" tools/tycho-vm/main.ty -o "$V" >"$T/vm.log" 2>&1; then
+    echo "FAIL: tychoc compile (tycho-vm)"; sed 's/^/      /' "$T/vm.log"
     echo "tycho-scheme: FAIL"; exit 1
 fi
 
 out="$T/all.out"
 : > "$out"
 
-# [1] the programs: run each twice, lock to the golden.
-for p in fib closures ho sort; do
+# [1] + [2] the programs: interpreter (twice, deterministic, locked to the
+# golden), then compiled and run on the VM, byte-identical to the interpreter.
+for p in fib closures ho sort shadow eqsym; do
     if ! "$S" run "$progs/$p.scm" >"$T/$p.1" 2>"$T/$p.1.err"; then
         bad "$p first run failed"; sed 's/^/      /' "$T/$p.1.err"; continue
     fi
@@ -48,6 +60,13 @@ for p in fib closures ho sort; do
     fi
     cmp -s "$T/$p.1" "$T/$p.2" || bad "$p is not deterministic"
     cat "$T/$p.1" >> "$out"
+    if ! "$S" compile "$progs/$p.scm" -o "$T/$p.tyc" >"$T/$p.c.err" 2>&1; then
+        bad "$p: the compiler refused it"; sed 's/^/      /' "$T/$p.c.err"; continue
+    fi
+    if ! "$V" run "$T/$p.tyc" >"$T/$p.vm" 2>"$T/$p.vm.err"; then
+        bad "$p: the VM rejected the compiled output"; sed 's/^/      /' "$T/$p.vm.err"; continue
+    fi
+    cmp -s "$T/$p.vm" "$T/$p.1" || bad "$p: compiled output differs from the interpreter"
 done
 
 if [ "$RECORD" = "1" ]; then
@@ -60,7 +79,24 @@ if ! cmp -s "$out" "$golden"; then
     diff "$golden" "$out" | head -10 | sed 's/^/      /'
 fi
 
-# [2] the error cases: die non-zero, stdout EMPTY.
+# [3] the compiler's compile-time rejections: die non-zero, nothing emitted.
+crej() {
+    name="$1"; src="$2"
+    printf '%s\n' "$src" > "$T/cr.scm"
+    if "$S" compile "$T/cr.scm" -o "$T/cr.tyc" >/dev/null 2>"$T/cr.err"; then
+        bad "compile-reject $name: compiled anyway"
+    elif [ -s "$T/cr.tyc" ]; then
+        bad "compile-reject $name: emitted a .tyc despite dying"
+    else
+        echo "ok    compile-reject $name"
+    fi
+}
+crej "unbound"        '(display undefined-symbol)'
+crej "not-compilable" '(define (f x) (pair? x))'
+crej "prim-shadow"    '(define + 5)'
+crej "arity"          '(define (f a b) (- a))'
+
+# [4] the interpreter's runtime error cases: die non-zero, stdout EMPTY.
 errcase() {
     name="$1"; shift
     printf '%s\n' "$1" > "$T/err.scm"
@@ -79,4 +115,4 @@ if [ "$fail" -eq 1 ]; then
     echo "tycho-scheme: FAIL"
     exit 1
 fi
-echo "tycho-scheme: green (fib/closures/ho/sort match the golden byte-identically on two runs; 5 error cases die non-zero with empty stdout)"
+echo "tycho-scheme: green (6 programs byte-identical interpreter-vs-VM-compiled; interpreter golden locked on two runs; 4 compile-time rejections; 5 interpreter error cases die with empty stdout)"

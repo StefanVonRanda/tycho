@@ -569,13 +569,36 @@ fn eval_all(src: string, env: int, pool: inout [Env]):
 # ---- main ---------------------------------------------------------------------
 fn main():
     av := cli.argv()
-    if len(av) < 2 or av[0] != "run":
-        die("usage: tycho-scheme run <file.scm>")
-    src := io.read(av[1])
-    pool := []Env
-    g := push_env(&pool, []string: Val, -1)
-    names := prim_names()
-    for i := 0; i < len(names); i += 1:
-        pool[g].vars[names[i]] = VPrim(i)
-    eval_all(PRELUDE, g, &pool)
-    eval_all(src, g, &pool)
+    if len(av) < 2:
+        die("usage: tycho-scheme run <file.scm> | compile <file.scm> -o <out.tyc>")
+    if av[0] == "run":
+        src := io.read(av[1])
+        pool := []Env
+        g := push_env(&pool, []string: Val, -1)
+        names := prim_names()
+        for i := 0; i < len(names); i += 1:
+            pool[g].vars[names[i]] = VPrim(i)
+        eval_all(PRELUDE, g, &pool)
+        eval_all(src, g, &pool)
+    elif av[0] == "compile":
+        # tycho-scheme compile <file.scm> -o <out.tyc>: lower the prelude +
+        # the program to tycho-vm bytecode. The .tyc is run by `tycho-vm run`.
+        out := ""
+        pos: [string] = []
+        for i := 1; i < len(av); i += 1:
+            if av[i] == "-o":
+                if i + 1 >= len(av):
+                    die("-o needs a path")
+                out = av[i + 1]
+                i += 1
+            else:
+                push(pos, av[i])
+        if len(pos) != 1:
+            die("usage: tycho-scheme compile <file.scm> -o <out.tyc>")
+        if out == "":
+            die("compile needs -o <out.tyc>")
+        p := compile_scheme(io.read(pos[0]))
+        if not io.write(out, encode(p)):
+            die("cannot write " + out)
+    else:
+        die("unknown command: " + av[0])
