@@ -25,6 +25,14 @@ copy-in/copy-out mutable *borrow* that is provably equivalent to `x = f(x)` and
 is not a storable reference. `inout` does not reintroduce aliasing; it is
 specified precisely so that it cannot.
 
+> The contract is copy-in/copy-out; the **codegen is in-place**. An `inout`
+> argument is passed as a pointer to the caller's variable plus the value's
+> owning arena (a hidden `_ina_` parameter), and the callee's allocating
+> mutations route into that arena — the caller's, where the value lives — so
+> no aggregate is ever copied in or out. The `x = f(x)` contract is what the
+> language promises; the pointer pass is how it is kept (measured in
+> `docs/internals/design-aggregate-ref.md`).
+
 ### 9.2 Copy on assignment, argument, and return
 
 Assignment (`b := a`, `b = a`), argument passing, and returning a value all

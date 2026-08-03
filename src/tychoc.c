@@ -4974,6 +4974,7 @@ static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's 
  * Statement handlers that resolve a place target (S_INDEXSET/S_FIELDSET, push's
  * first arg) set it to 1 around that one resolve. #2 (docs/guides/map-mutation.md). */
 static int g_place = 0;
+static int g_in_arg = 0;   /* set while resolving a call argument: the one place `&` is legal */
 static Type g_fn_ret = T_VOID;   /* return type of the proc currently being resolved (for or_return) */
 
 /* A place we can mutate in place (take `&` of in C): a variable, a field of
@@ -5200,7 +5201,9 @@ static Type resolve_expr_inner(Expr *e) {
             }
             Type saved = g_fn_ret; g_fn_ret = pr->ret;
             g_dup_base = mark;   /* lambda body shares its caps+params scope (same lifted C function) */
+            int saved_arg = g_in_arg; g_in_arg = 0;   /* a `&` in the body is not an argument of the call that resolved this lambda */
             resolve_block(pr->body, pr->nbody, pr->ret);
+            g_in_arg = saved_arg;
             g_fn_ret = saved;
             vars_restore(mark);
             if (g_lambda_procs.n == g_lambda_procs.cap) { g_lambda_procs.cap = g_lambda_procs.cap ? g_lambda_procs.cap * 2 : 8; g_lambda_procs.v = (Proc **)xrealloc(g_lambda_procs.v, (size_t)g_lambda_procs.cap * sizeof(Proc *)); }
@@ -5452,8 +5455,13 @@ static Type resolve_expr_inner(Expr *e) {
             if (fsg) die_at(e->line, "struct %s has no field '%s'; did you mean '%s'?", sd->name, e->sval, fsg);
             die_at(e->line, "struct %s has no field '%s'", sd->name, e->sval);
         }
-        case E_ADDR:   /* &place; only valid as an inout argument (checked at
-                        * the call site). Its type is the underlying place's. */
+        case E_ADDR:   /* &place; only valid as the direct argument of an inout
+                        * parameter (the call site validates that). Anywhere
+                        * else -- `r := &a`, `&a + 1` -- it would emit a C
+                        * initializer taken from a pointer, which is invalid C
+                        * (the design-aggregate-ref finding). Reject it here. */
+            if (!g_in_arg)
+                die_at(e->line, "'&' is only valid as the argument to an inout parameter, e.g. f(&x)");
             return e->type = resolve_expr(e->lhs);
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
@@ -5658,9 +5666,12 @@ static Type resolve_expr_inner(Expr *e) {
                 if (!IS_FUNC(ct)) die_at(e->line, "calling a value that isn't a function (%s)", type_name(ct));
                 if (e->nargs != func_n(ct))
                     die_at(e->line, "this function value expects %d argument(s), got %d", func_n(ct), e->nargs);
-                for (int i = 0; i < e->nargs; i++)
-                    if (resolve_exp(e->args[i], func_param(ct, i)) != func_param(ct, i))
-                        die_at(e->line, "argument %d must be %s", i + 1, type_name(func_param(ct, i)));
+                for (int i = 0; i < e->nargs; i++) {
+                    g_in_arg++;
+                    int arg_ok = resolve_exp(e->args[i], func_param(ct, i)) == func_param(ct, i);
+                    g_in_arg--;
+                    if (!arg_ok) die_at(e->line, "argument %d must be %s", i + 1, type_name(func_param(ct, i)));
+                }
                 e->op = TK_FN;   /* indirect-call marker */
                 return e->type = func_ret(ct);
             }
@@ -5668,9 +5679,12 @@ static Type resolve_expr_inner(Expr *e) {
             if (!e->qual && vars_find(e->sval, &fvt) && IS_FUNC(fvt)) {
                 if (e->nargs != func_n(fvt))
                     die_at(e->line, "'%s' expects %d argument(s), got %d", e->sval, func_n(fvt), e->nargs);
-                for (int i = 0; i < e->nargs; i++)
-                    if (resolve_exp(e->args[i], func_param(fvt, i)) != func_param(fvt, i))
-                        die_at(e->line, "argument %d to '%s' must be %s", i + 1, e->sval, type_name(func_param(fvt, i)));
+                for (int i = 0; i < e->nargs; i++) {
+                    g_in_arg++;
+                    int arg_ok = resolve_exp(e->args[i], func_param(fvt, i)) == func_param(fvt, i);
+                    g_in_arg--;
+                    if (!arg_ok) die_at(e->line, "argument %d to '%s' must be %s", i + 1, e->sval, type_name(func_param(fvt, i)));
+                }
                 e->op = TK_FN;   /* indirect-call marker; gen_call's user-proc tail emits h_<var>(arena, args) */
                 return e->type = func_ret(fvt);
             }
@@ -6153,7 +6167,9 @@ static Type resolve_expr_inner(Expr *e) {
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
             for (int i = 0; i < e->nargs; i++) {
+                g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
+                g_in_arg--;
                 /* inout parameter: the argument must be `&place` naming a
                  * mutable variable (an lvalue we can write back through). A
                  * by-value param rejects `&`. */
@@ -7849,7 +7865,9 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] = e->typeargs[i];
     }
     for (int j = 0; j < gt->nparams; j++) {
+        g_in_arg++;                                   /* generic inference is an argument context too */
         Type at_ = resolve_expr(e->args[j]);          /* the concrete argument type */
+        g_in_arg--;
         /* structurally match the parameter pattern against the arg, binding each
          * `$T` -- handles `$T`, `[$T]`, `Option($T)`, `Result($T,$E)` (Stage 3). */
         if (!match_type(gt->params[j].type, at_, binds))
