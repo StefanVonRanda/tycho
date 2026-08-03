@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -384,6 +384,20 @@ scheme-check: tychoc
 # See tools/tycho-kv/run.sh.
 kv-check: tychoc
 	@sh tools/tycho-kv/run.sh
+
+# chess-check: the gate for tycho-chess, the perft (legal-move counting)
+# engine in tools/tycho-chess/. Sixth of the same shape as the tool lanes:
+# nothing else RUNS a tool under tools/ (step [9] tools-check only --emit-c's
+# them), so this is what executes the engine. The ground-truth differential is
+# the point: perft totals for the start position, Kiwipete and Position 3
+# against PUBLISHED values, plus ep/promotion/castling edge cases against the
+# python-chess oracle, plus a divide transcript golden that catches a subtree
+# gaining or losing a move without changing a total.
+#
+# ~10s, measured 2026-08-04. In `make ci` as step [3j/16].
+# See tools/tycho-chess/run.sh.
+chess-check: tychoc
+	@sh tools/tycho-chess/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
