@@ -52,6 +52,16 @@ for s in big delete-heavy stress; do
         bad "$s: the B+ tree and the map disagree"
         diff "$T/$s.map" "$T/$s.btree" | head -8 | sed 's/^/      /'
     }
+    # [1b] the CONCURRENT scan (phase 2): replay the script with every `scan`
+    # rewritten to `pscan` -- the parallel leaf-chunk scan -- and require the
+    # output to be byte-identical to the serial batch. A race, a lost chunk,
+    # or an out-of-order merge reddens here.
+    sed 's/^scan /pscan /; s/^scan$/pscan/' "$scripts/$s.txt" > "$T/$s.pscan.txt"
+    "$K" batch "$store" "$T/$s.pscan.txt" > "$T/$s.pscan" 2>>"$T/$s.err" || {
+        bad "$s: pscan variant failed"; sed 's/^/      /' "$T/$s.err"
+    }
+    cmp -s "$T/$s.pscan" "$T/$s.btree" || bad "$s: pscan differs from the serial scan"
+
     # [2] persistence: reload the store, replay the scans, compare to the
     # batch's OWN scan output (the map backend starts empty on a scan-only
     # replay, so it is the wrong reference here)

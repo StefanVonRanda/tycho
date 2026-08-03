@@ -144,6 +144,36 @@ fn main():
             wdir_k = 0
     println(f"wb_ok={wok} len={wlen} ab={wa} miss={wmiss_k} dir={wdir_k}")
 
+    # write_at: the positional write, the sibling of read_at. Writing at an
+    # offset leaves the surrounding bytes untouched (in-place page updates);
+    # beyond the current end extends. The file exists (write_bytes just made
+    # it) -- the create-if-absent case is the store's init, exercised there.
+    wat1 := io.write_at(tmp, 1, to_bytes("X"))
+    rat1 := io.read_bytes(tmp)
+    watk := 0
+    wat1k := 0
+    wat2k := 0
+    match wat1:
+        Ok(v):
+            watk = b2i(v)
+        Err(e):
+            watk = 0
+    match rat1:
+        Ok(b):
+            if len(b) == 3 and b[0] == 97 and b[1] == 88 and b[2] == 98:  # aXb
+                wat1k = 1
+        Err(e):
+            wat1k = 0
+    wat2 := io.write_at(tmp, 5, to_bytes("Z"))
+    rat2 := io.read_bytes(tmp)
+    match rat2:
+        Ok(b):
+            if len(b) == 6 and b[5] == 90:                                 # ...Z
+                wat2k = 1
+        Err(e):
+            wat2k = 0
+    println(f"wat_ok={watk} ins={wat1k} ext={wat2k}")
+
     # write truncates; read returns the exact bytes; append extends
     w1 := io.write(tmp, "hello\nworld\n")
     body := io.read(tmp)
