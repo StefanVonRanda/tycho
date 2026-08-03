@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2016-2017`,`:2033-2034`;
-> `pop`-empty abort `:12290@pop from an empty array`,`:12456@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
+> `pop`-empty abort `:12299@pop from an empty array`,`:12465@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
 > arity `:2118@a tuple has at most 8 elements`,`:2122@a tuple type needs at least two elements`, index `:4823-4831`; destructuring `:3282-3296`,`:6757-6773`;
 > map read (pure `map_get`, no insert) `:5126-5141`; map place insert+zero
-> `:9896-9905`; `keys()` insertion order — the walk `:12425@m.elive[e]` over the append-only entries array `:12380@m->ecount++`; `delete` → `map_del`
+> `:9896-9905`; `keys()` insertion order — the walk `:12434@m.elive[e]` over the append-only entries array `:12389@m->ecount++`; `delete` → `map_del`
 > `:3130-3154`,`:5756-5762`; subscript parse + rules `:3757-3809`, dispatch
 > `:3831-3839`; `or_return` `:5002-5019`.
 
