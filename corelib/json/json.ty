@@ -13,8 +13,10 @@
 # built by recursive descent and walked to serialize, with ZERO manual memory
 # management -- every node and string lives in a lexical arena freed when its
 # scope exits. This is the thesis (docs/thesis.md) as a real, reusable module.
-# (Objects are parallel key/value arrays because tycho's maps don't take a
-# recursive value type here.)
+# (Objects are parallel key/value arrays for iteration-order stability and
+# simple equality, not because maps refuse the value: a recursive enum IS a
+# legal map value -- `[]string: Tree` with `TNode(Tree, Tree)` compiles and
+# runs.)
 #
 # ---- every input shape this parser accepts, one real example each -----------
 #
