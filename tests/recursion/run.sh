@@ -115,7 +115,7 @@ accept "valid-chain"     ok_chain
 accept "valid-stmt"      ok_stmt
 accept "valid-type"      ok_type
 
-# ---- generated-code side (plan phase 1): deep recursion in a PROGRAM -------
+# ---- generated-code side (`docs/internals/plan-tycho-scheme-DONE.md` phase 1): deep recursion in a PROGRAM -------
 # The reject/accept above guard the COMPILER's own recursion. Until the
 # stack-overflow guard landed in the runtime (tycho_rt.c), deep recursion in
 # emitted code died with SIGSEGV -- no diagnostic, no cleanup. Two measured

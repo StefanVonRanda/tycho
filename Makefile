@@ -365,7 +365,7 @@ vm-check: tychoc
 # else RUNS a tool under tools/ (step [9] tools-check only --emit-c's them), so
 # this is what executes the interpreter. The programs stay SHALLOW because
 # their goldens are answers; the deep-recursion crash tests (now fail-closed
-# via the runtime stack guard, plan phase 1) live in tests/recursion/run.sh.
+# via the runtime stack guard, `docs/internals/plan-tycho-scheme-DONE.md` phase 1) live in tests/recursion/run.sh.
 #
 # ~1s, measured 2026-08-03. In `make ci` as step [3h/14].
 # See tools/tycho-scheme/run.sh.
@@ -492,7 +492,7 @@ ffi: tychoc
 # Recursion-cap regression: deeply nested / long input must fail closed (clean
 # nonzero exit) instead of overflowing the C stack (SIGSEGV).
 # Covers parens, unary/operator chains, generic bodies, statement + type nesting
-# (the COMPILER's own recursion), plus, since plan phase 1, the generated-code
+# (the COMPILER's own recursion), plus, since `docs/internals/plan-tycho-scheme-DONE.md` phase 1, the generated-code
 # side: deep recursion in a PROGRAM (big frames, small frames, a spawned task's
 # own stack) must fail closed via the runtime stack guard -- see the runner.
 recursion: tychoc
