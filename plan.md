@@ -47,7 +47,7 @@ Measured, on this tree:
 
 ## Phases
 
-- [ ] **Phase 1 — DESIGN: `match` on scalars**
+- [x] **Phase 1 — DESIGN: `match` on scalars**
   - Deliverable is a written design at `docs/internals/design-scalar-match.md`,
     **not code**. No phase after this starts until it is read.
   - `match` is enums-only, so every dispatch table in the tree is an `if`/`elif`
@@ -65,8 +65,10 @@ Measured, on this tree:
     committing to an implementation.
   - Verify: the document exists, `sh scripts/check_links.sh` and
     `python3 scripts/check_citations.py` are green. No build gate.
+  - **DONE 2026-08-03.** The design is
+    `docs/internals/design-scalar-match.md`; both doc gates green.
 
-- [ ] **Phase 2 — IMPLEMENT scalar `match`**
+- [x] **Phase 2 — IMPLEMENT scalar `match`**
   - Only after phase 3's design is written and its scope agreed.
   - Scope: `src/tychoc.c`, `docs/spec/` (§4.3.2 statements, §5.5 or wherever
     `match` is specified, Appendix A grammar), and fixtures under `tests/`.
@@ -75,6 +77,21 @@ Measured, on this tree:
   - Verify: `make test`, `make corelib`, `make vm-check`. Measure the VM's
     instructions/sec before and after and report both — phase 3 predicted a
     number, and this is where it is checked.
+  - **DONE 2026-08-03.** Both done-when rewrites landed and pass their gates:
+    the VM dispatch is a scalar `match` (`OP_ADD..OP_GE` for the grouped
+    arithmetic arm, `OP_JZ | OP_JNZ` for the branch pair) and
+    `corelib/json/json.ty@parse_value`'s byte dispatch is `45 | 48..57` for the
+    number test. Codegen emits a C `switch`-of-gotos for 4+ arms (the goto
+    keeps a user `break` in an arm body targeting the loop, not the switch;
+    verified by `tests/match_scalar_break.ty`) and a chain below; the resolver
+    folds const-name arms, checks dup/overlap by interval merge, and requires
+    `_` on int/char. `make test` 580/0, `make corelib` green, `make vm-check`
+    green. **VM throughput, measured:** 300 fib runs best-of-3: 2.354 s (if/elif
+    chain, built from git HEAD) → 2.311 s (match) = **-1.8%**; 500 sort runs
+    best-of-5: 0.616 s → 0.601 s = **-2.4%**. The design estimated dispatch at
+    ~1% of instruction time (chain misprediction makes it a little more); the
+    switch is marginally faster, not a win to build for — the ergonomics and
+    fail-closed semantics were the point.
 
 - [ ] **Phase 3 — DESIGN: a cheap reference to an aggregate**
   - Deliverable is a written design at `docs/internals/design-aggregate-ref.md`,

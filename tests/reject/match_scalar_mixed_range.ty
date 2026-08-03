@@ -1,0 +1,8 @@
+# A range's two ends must be the same kind of value.
+fn main():
+    x := 5
+    match x:
+        1..'a':
+            print("x")
+        _:
+            print("y")

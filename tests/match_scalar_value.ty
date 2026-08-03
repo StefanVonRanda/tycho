@@ -1,0 +1,19 @@
+# Scalar `match` in value (tail) position: each arm's tail is the value.
+
+fn f(x: int) -> string:
+    return match x:
+        0:
+            "a"
+        1 | 2:
+            "b"
+        3..5:
+            "c"
+        _:
+            "d"
+
+fn main():
+    println(f(0))
+    println(f(1))
+    println(f(2))
+    println(f(4))
+    println(f(9))

@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3108-3578` (`parse_if` `:2881@parse_if`,
-> `parse_match` `:2987@parse_match`, `for` `:3245-3446`, `select` `:3189-3225`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3108-3578` (`parse_if` `:2890@parse_if`,
+> `parse_match` `:2996@parse_match`, `for` `:3245-3446`, `select` `:3189-3225`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -71,6 +71,30 @@ refined arms naming the same variant are likewise rejected. A side is exhaustive
 when it has an unrefined arm, when its refined arms name every variant of the
 payload's enum, or when a `_` arm is present.
 
+### 14.3.2 Scalar subjects
+
+A `match` whose subject is an `int`, `char`, or `bool` takes **scalar arms**: a
+literal (`1:`, `'a':`, `true:`), an inclusive range (`1..9:`), a set
+(`1 | 3 | 5:`), a set mixing ranges (`45 | 48..57:`), or an `int` constant name
+(`OP_ADD:`, `OP_ADD..OP_GE:`). The arm elements must be the subject's own kind:
+an `int` subject takes int literals and int constants; a `char` subject takes
+char literals; a `bool` subject takes `true`/`false`. A range's two ends must be
+the same kind, and its start must not exceed its end. The subject is evaluated
+exactly once, as in §14.3.
+
+`_` is **required** for `int` and `char` subjects — the domain is unbounded, so
+exhaustiveness is unprovable — and a non-exhaustive scalar `match` is rejected
+at compile time, exactly like a non-exhaustive enum `match`. A `bool` subject is
+exhaustive when both `true` and `false` are covered; `_` is optional there.
+
+Duplicate or **overlapping** arms are an error: `1..9` plus `5` is a duplicate,
+because an earlier arm would be dead. `match` on `string`, `bytes`, or `float`
+is refused — nothing in the tree dispatches on them; `if`/`elif` is the form.
+
+The statement and value forms are those of §14.3. Codegen: a match with 4+ arms
+emits a C `switch` (a jump table at `-O3` when the values are dense); fewer arms
+emit a chain.
+
 ```tycho
 match httpd.read_request(fd):
     Ok(req): serve(req)
@@ -122,13 +146,13 @@ the implementation **does not diagnose it**, at compile time or at run time.
 bought is a single loop form that says its own direction and amount in the
 source instead of inferring them from the sign of a step expression.
 
-> Provenance: bare `for:` `src/tychoc.c:3404@TK_COLON`; the three-clause header
+> Provenance: bare `for:` `src/tychoc.c:3459@TK_COLON`; the three-clause header
 > scan and its five required-clause refusals `src/tychoc.c:3279-3328`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:3461@parse_stmt`; loop scoping and
+> parsed by `parse_stmt` itself `src/tychoc.c:3516@parse_stmt`; loop scoping and
 > the post clause resolved outside the body block `src/tychoc.c:7248-7253`;
 > `continue` emitted as `goto _post<id>` `src/tychoc.c:10712-10715` with the
-> label at `src/tychoc.c:11013@_post%d`; the `range()` refusal
-> `src/tychoc.c:3538@was removed: write`. There is no step in the implementation
+> label at `src/tychoc.c:11246@_post%d`; the `range()` refusal
+> `src/tychoc.c:3593@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1555-1561`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
 > (`src/tychoc.c:10885-10889`).

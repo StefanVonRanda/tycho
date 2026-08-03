@@ -624,40 +624,42 @@ fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         ecode = JE_TRUNC                       # truncated / empty: fail closed
         return JNull
     c := s[pos]
-    if c == 123:                               # {
-        return parse_object(s, n, &pos, &ecode)
-    if c == 91:                                # [
-        return parse_array(s, n, &pos, &ecode)
-    if c == 34:                                # "
-        return JStr(parse_string(s, n, &pos, &ecode))
-    if c == 116:                               # 'true'
-        e := pos + 4
-        if e <= n and s[pos:e] == "true":
-            pos = e
-            return JBool(true)
-        ecode = JE_KEYWORD
-        return JNull
-    if c == 102:                               # 'false'
-        e := pos + 5
-        if e <= n and s[pos:e] == "false":
-            pos = e
-            return JBool(false)
-        ecode = JE_KEYWORD
-        return JNull
-    if c == 110:                               # 'null'
-        e := pos + 4
-        if e <= n and s[pos:e] == "null":
-            pos = e
+    match c:
+        123:                                 # {
+            return parse_object(s, n, &pos, &ecode)
+        91:                                   # [
+            return parse_array(s, n, &pos, &ecode)
+        34:                                   # "
+            return JStr(parse_string(s, n, &pos, &ecode))
+        116:                                  # 'true'
+            e := pos + 4
+            if e <= n and s[pos:e] == "true":
+                pos = e
+                return JBool(true)
+            ecode = JE_KEYWORD
             return JNull
-        ecode = JE_KEYWORD
-        return JNull
-    if c == 45 or (c >= 48 and c <= 57):       # number -- JNum or JFloat, its call
-        return parse_number(s, n, &pos, &ecode)
-    # Everything else -- `.` `+` `:` `,` a stray closer, a control byte. The old
-    # parser fell through to parse_number here, which consumed nothing and
-    # returned JNum(0); that is the whole spin.
-    ecode = JE_BYTE
-    return JNull
+        102:                                  # 'false'
+            e := pos + 5
+            if e <= n and s[pos:e] == "false":
+                pos = e
+                return JBool(false)
+            ecode = JE_KEYWORD
+            return JNull
+        110:                                  # 'null'
+            e := pos + 4
+            if e <= n and s[pos:e] == "null":
+                pos = e
+                return JNull
+            ecode = JE_KEYWORD
+            return JNull
+        45 | 48..57:                          # '-' or a digit -- number, JNum or JFloat
+            return parse_number(s, n, &pos, &ecode)
+        _:
+            # Everything else -- `.` `+` `:` `,` a stray closer, a control byte.
+            # The old parser fell through to parse_number here, which consumed
+            # nothing and returned JNum(0); that is the whole spin.
+            ecode = JE_BYTE
+            return JNull
 
 # THE ENTRY POINT FOR NEW CODE. Parse a WHOLE document: the value, then optional
 # whitespace, then the end of the input. Anything else after the value is an

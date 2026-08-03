@@ -1,0 +1,7 @@
+# A bool match with only `true` covered is not exhaustive; `_` or `false` is
+# required.
+fn main():
+    b := true
+    match b:
+        true:
+            print("a")

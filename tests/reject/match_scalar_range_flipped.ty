@@ -1,0 +1,8 @@
+# A range whose start exceeds its end is rejected.
+fn main():
+    x := 5
+    match x:
+        9..3:
+            print("x")
+        _:
+            print("y")

@@ -1,0 +1,9 @@
+# A char arm on an int subject is a type error: arms must be the subject's own
+# kind.
+fn main():
+    x := 5
+    match x:
+        'a':
+            print("x")
+        _:
+            print("y")

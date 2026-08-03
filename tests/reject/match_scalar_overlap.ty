@@ -1,0 +1,10 @@
+# Overlapping arms are duplicates: `1..9` makes `5` dead. Both are rejected.
+fn main():
+    x := 5
+    match x:
+        1..9:
+            print("a")
+        5:
+            print("b")
+        _:
+            print("c")
