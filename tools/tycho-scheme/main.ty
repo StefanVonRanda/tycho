@@ -1,0 +1,581 @@
+# tycho-scheme -- a small Scheme interpreter written in Tycho.
+#
+#     ./tychoc tools/tycho-scheme/main.ty -o build/tycho-scheme
+#     ./build/tycho-scheme run tools/tycho-scheme/progs/fib.scm
+#
+# WHAT IT IS FOR. The first program in the tree to use UPWARD closures (a
+# function that returns a closure over captured state), a recursive value tree
+# (the `Val` enum carries itself directly -- `VPair(Val, Val)`) at interpreter
+# scale, and an ENVIRONMENT POOL: environments are integers indexing a global
+# pool, the flat-index idiom the thesis recommends for pointer-shaped data, so a
+# closure captures one int and never deep-copies its environment chain.
+#
+# The evaluator is a tree-walker: the reader parses S-expressions into `Val`
+# trees, eval walks them, apply dispatches closures and a 22-entry primitive
+# table through a scalar `match` (the tycho-vm finding).
+#
+# The plan this program feeds is plan.md; findings appear there as the
+# interpreter finds them, and a finding is a phase only when a second,
+# independent caller needs it.
+
+package main
+import "core:cli"
+import "core:io"
+import "core:strings"
+
+# ---- the value -------------------------------------------------------------
+enum Val:
+    VInt(int)
+    VBool(bool)
+    VStr(string)
+    VSym(string)
+    VNil
+    VPair(Val, Val)
+    VPrim(int)                # an index into g_prim_names (dispatch below)
+    VClo(Val, [string], int)  # body, parameters, environment-pool index
+
+# ---- the environment pool ---------------------------------------------------
+# Environments are never nested by value (a recursive struct is rejected): they
+# live in one pool, and a closure carries an INDEX. The pool is append-only for
+# the life of a run -- a frame is created, bound, and only ever read afterwards
+# -- so indices never dangle and nothing is ever copied to capture an
+# environment. This is the flat-pool idiom, exercised for real.
+struct Env:
+    vars: [string: Val]
+    parent: int
+
+fn push_env(pool: inout [Env], vars: [string: Val], parent: int) -> int:
+    push(pool, Env(vars, parent))
+    return len(pool) - 1
+
+fn lookup(pool: [Env], name: string, env: int) -> Val:
+    e := env
+    for e >= 0:
+        if name in pool[e].vars:
+            return pool[e].vars[name]
+        e = pool[e].parent
+    die("tycho-scheme: unbound variable '" + name + "'")
+
+# ---- primitives --------------------------------------------------------------
+# The name table and the dispatch are a scalar `match` on the index -- the
+# dispatch shape the tycho-vm plan built scalar match for. A primitive's arity
+# is checked in its arm (variadic: +, *, list).
+fn prim_names() -> [string]:
+    return ["+", "-", "*", "/", "=", "<", ">",
+            "cons", "car", "cdr", "pair?", "null?",
+            "eq?", "not", "zero?",
+            "display", "newline", "list",
+            "number?", "symbol?", "string?", "boolean?"]
+
+fn call_prim(i: int, args: [Val]) -> Val:
+    match i:
+        0:                                   # +
+            if len(args) == 0:
+                return VInt(0)
+            r := 0
+            for k := 0; k < len(args); k += 1:
+                match args[k]:
+                    VInt(x): r = r + x
+                    _: die("tycho-scheme: + expects integers")
+            return VInt(r)
+        1:                                   # -
+            if len(args) != 2:
+                die("tycho-scheme: - expects two arguments")
+            match args[0]:
+                VInt(a):
+                    match args[1]:
+                        VInt(b): return VInt(a - b)
+                        _: die("tycho-scheme: - expects integers")
+                _: die("tycho-scheme: - expects integers")
+        2:                                   # *
+            r := 1
+            for k := 0; k < len(args); k += 1:
+                match args[k]:
+                    VInt(x): r = r * x
+                    _: die("tycho-scheme: * expects integers")
+            return VInt(r)
+        3:                                   # /
+            if len(args) != 2:
+                die("tycho-scheme: / expects two arguments")
+            match args[0]:
+                VInt(a):
+                    match args[1]:
+                        VInt(b):
+                            if b == 0:
+                                die("tycho-scheme: division by zero")
+                            return VInt(a / b)
+                        _: die("tycho-scheme: / expects integers")
+                _: die("tycho-scheme: / expects integers")
+        4:                                   # =
+            if len(args) != 2:
+                die("tycho-scheme: = expects two arguments")
+            match args[0]:
+                VInt(a):
+                    match args[1]:
+                        VInt(b): return VBool(a == b)
+                        _: die("tycho-scheme: = expects integers")
+                _: die("tycho-scheme: = expects integers")
+        5:                                   # <
+            if len(args) != 2:
+                die("tycho-scheme: < expects two arguments")
+            match args[0]:
+                VInt(a):
+                    match args[1]:
+                        VInt(b): return VBool(a < b)
+                        _: die("tycho-scheme: < expects integers")
+                _: die("tycho-scheme: < expects integers")
+        6:                                   # >
+            if len(args) != 2:
+                die("tycho-scheme: > expects two arguments")
+            match args[0]:
+                VInt(a):
+                    match args[1]:
+                        VInt(b): return VBool(a > b)
+                        _: die("tycho-scheme: > expects integers")
+                _: die("tycho-scheme: > expects integers")
+        7:                                   # cons
+            if len(args) != 2:
+                die("tycho-scheme: cons expects two arguments")
+            return VPair(args[0], args[1])
+        8:                                   # car
+            if len(args) != 1:
+                die("tycho-scheme: car expects one argument")
+            match args[0]:
+                VPair(a, b): return a
+                _: die("tycho-scheme: car of a non-pair")
+        9:                                   # cdr
+            if len(args) != 1:
+                die("tycho-scheme: cdr expects one argument")
+            match args[0]:
+                VPair(a, b): return b
+                _: die("tycho-scheme: cdr of a non-pair")
+        10:                                  # pair?
+            if len(args) != 1:
+                die("tycho-scheme: pair? expects one argument")
+            match args[0]:
+                VPair(a, b): return VBool(true)
+                _: return VBool(false)
+        11:                                  # null?
+            if len(args) != 1:
+                die("tycho-scheme: null? expects one argument")
+            match args[0]:
+                VNil: return VBool(true)
+                _: return VBool(false)
+        12:                                  # eq?
+            if len(args) != 2:
+                die("tycho-scheme: eq? expects two arguments")
+            match args[0]:
+                VInt(a):
+                    match args[1]:
+                        VInt(b): return VBool(a == b)
+                        _: return VBool(false)
+                VStr(a):
+                    match args[1]:
+                        VStr(b): return VBool(a == b)
+                        _: return VBool(false)
+                VSym(a):
+                    match args[1]:
+                        VSym(b): return VBool(a == b)
+                        _: return VBool(false)
+                VBool(a):
+                    match args[1]:
+                        VBool(b): return VBool(a == b)
+                        _: return VBool(false)
+                VNil:
+                    match args[1]:
+                        VNil: return VBool(true)
+                        _: return VBool(false)
+                _: return VBool(false)
+        13:                                  # not
+            if len(args) != 1:
+                die("tycho-scheme: not expects one argument")
+            return VBool(not is_true(args[0]))
+        14:                                  # zero?
+            if len(args) != 1:
+                die("tycho-scheme: zero? expects one argument")
+            match args[0]:
+                VInt(x): return VBool(x == 0)
+                _: return VBool(false)
+        15:                                  # display
+            if len(args) != 1:
+                die("tycho-scheme: display expects one argument")
+            print_val(args[0])
+            return VNil
+        16:                                  # newline
+            if len(args) != 0:
+                die("tycho-scheme: newline takes no arguments")
+            println("")
+            return VNil
+        17:                                  # list
+            return list_of(args)
+        18:                                  # number?
+            if len(args) != 1:
+                die("tycho-scheme: number? expects one argument")
+            match args[0]:
+                VInt(x): return VBool(true)
+                _: return VBool(false)
+        19:                                  # symbol?
+            if len(args) != 1:
+                die("tycho-scheme: symbol? expects one argument")
+            match args[0]:
+                VSym(s): return VBool(true)
+                _: return VBool(false)
+        20:                                  # string?
+            if len(args) != 1:
+                die("tycho-scheme: string? expects one argument")
+            match args[0]:
+                VStr(s): return VBool(true)
+                _: return VBool(false)
+        21:                                  # boolean?
+            if len(args) != 1:
+                die("tycho-scheme: boolean? expects one argument")
+            match args[0]:
+                VBool(b): return VBool(true)
+                _: return VBool(false)
+        _:
+            die("tycho-scheme: unknown primitive")
+    return VNil
+
+# ---- the reader ---------------------------------------------------------------
+# Tokenize then parse. Token kinds: 0 '(', 1 ')', 2 '\'', 3 atom, 4 string.
+struct Tok:
+    kind: int
+    text: string
+
+fn is_ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 10 or c == 13
+
+fn tokenize(s: string) -> [Tok]:
+    toks := []Tok
+    i := 0
+    n := len(s)
+    for i < n:
+        c := s[i]
+        if is_ws(c):
+            i = i + 1
+        elif c == 40:                          # (
+            push(toks, Tok(0, "("))
+            i = i + 1
+        elif c == 41:                          # )
+            push(toks, Tok(1, ")"))
+            i = i + 1
+        elif c == 39:                          # '
+            push(toks, Tok(2, "'"))
+            i = i + 1
+        elif c == 59:                          # ; comment to end of line
+            for i < n and s[i] != 10:
+                i = i + 1
+        elif c == 34:                          # "string"
+            j := i + 1
+            buf := ""
+            for j < n and s[j] != 34:
+                if s[j] == 92:                 # backslash escape
+                    if j + 1 >= n:
+                        die("tycho-scheme: unterminated string escape")
+                    j = j + 1
+                    if s[j] == 110:            # \n
+                        buf = buf + "\n"
+                    elif s[j] == 116:          # \t
+                        buf = buf + "\t"
+                    elif s[j] == 34:           # \"
+                        buf = buf + "\""
+                    elif s[j] == 92:           # \\
+                        buf = buf + "\\"
+                    else:
+                        die("tycho-scheme: bad string escape")
+                    j = j + 1
+                else:
+                    buf = buf + chr(s[j])
+                    j = j + 1
+            if j >= n:
+                die("tycho-scheme: unterminated string")
+            push(toks, Tok(4, buf))
+            i = j + 1
+        else:
+            j := i
+            for j < n and not is_ws(s[j]) and s[j] != 40 and s[j] != 41 and s[j] != 39 and s[j] != 34:
+                j = j + 1
+            push(toks, Tok(3, substr(s, i, j)))
+            i = j
+    return toks
+
+# Is `t` a non-empty run of ASCII digits (optional leading '-')?
+fn is_int_text(t: string) -> bool:
+    if len(t) == 0:
+        return false
+    i := 0
+    if t[0] == 45:                             # '-'
+        i = 1
+        if len(t) == 1:
+            return false
+    for i < len(t):
+        if t[i] < 48 or t[i] > 57:
+            return false
+        i = i + 1
+    return true
+
+fn parse_toks(toks: [Tok], pos: inout int) -> Val:
+    if pos >= len(toks):
+        die("tycho-scheme: unexpected end of input")
+    t := toks[pos]
+    if t.kind == 0:                            # ( a b c ... )
+        pos = pos + 1
+        items := []Val
+        for pos < len(toks) and toks[pos].kind != 1:
+            push(items, parse_toks(toks, &pos))
+        if pos >= len(toks):
+            die("tycho-scheme: missing ')'")
+        pos = pos + 1
+        return list_of(items)
+    if t.kind == 1:
+        die("tycho-scheme: unexpected ')'")
+    if t.kind == 2:                            # 'x -> (quote x)
+        pos = pos + 1
+        return VPair(VSym("quote"), VPair(parse_toks(toks, &pos), VNil))
+    if t.kind == 4:
+        pos = pos + 1
+        return VStr(t.text)
+    pos = pos + 1                              # atom
+    if t.text == "#t":
+        return VBool(true)
+    if t.text == "#f":
+        return VBool(false)
+    if is_int_text(t.text):
+        return VInt(int_of(t.text))
+    return VSym(t.text)
+
+# The strict int parse: a token that passed is_int_text is a well-formed int.
+fn int_of(t: string) -> int:
+    match strings.parse_int_checked(t):
+        Ok(v):
+            return v
+        Err(e):
+            die("tycho-scheme: bad integer '" + t + "'")
+    return 0
+
+# (a b c ...) as a proper list, built tail-first.
+fn list_of(items: [Val]) -> Val:
+    r := VNil
+    i := len(items) - 1
+    for i >= 0:
+        r = VPair(items[i], r)
+        i = i - 1
+    return r
+
+# ---- list accessors (work on the Val representation) --------------------------
+fn is_nil(v: Val) -> bool:
+    match v:
+        VNil: return true
+        _: return false
+
+fn car(v: Val) -> Val:
+    match v:
+        VPair(a, b): return a
+        _: die("tycho-scheme: car of a non-pair")
+    return VNil
+
+fn cdr(v: Val) -> Val:
+    match v:
+        VPair(a, b): return b
+        _: die("tycho-scheme: cdr of a non-pair")
+    return VNil
+
+# Scheme truth: #f and () are false; everything else is true.
+fn is_true(v: Val) -> bool:
+    match v:
+        VBool(b): return b
+        VNil: return false
+        _: return true
+
+# ---- the evaluator ------------------------------------------------------------
+fn eval(v: Val, env: int, pool: inout [Env]) -> Val:
+    match v:
+        VInt(i): return v
+        VBool(b): return v
+        VStr(s): return v
+        VSym(name): return lookup(pool, name, env)
+        VPair(head, rest):
+            match head:
+                VSym(s):
+                    if s == "quote":
+                        return car(rest)
+                    if s == "if":
+                        if is_true(eval(car(rest), env, &pool)):
+                            return eval(car(cdr(rest)), env, &pool)
+                        return eval(car(cdr(cdr(rest))), env, &pool)
+                    if s == "define":
+                        # (define name value) or (define (name p...) body...)
+                        target := car(rest)
+                        match target:
+                            VSym(name):
+                                val := eval(car(cdr(rest)), env, &pool)
+                                pool[env].vars[name] = val
+                                return VNil
+                            VPair(fnhead, fnrest):
+                                fname := ""
+                                match fnhead:
+                                    VSym(nm):
+                                        fname = nm
+                                    _:
+                                        die("tycho-scheme: bad define")
+                                params := collect_params(fnrest)
+                                body := begin_of(cdr(rest))
+                                pool[env].vars[fname] = VClo(body, params, env)
+                                return VNil
+                            _:
+                                die("tycho-scheme: bad define")
+                        return VNil
+                    if s == "lambda":
+                        # (lambda (p...) body...)
+                        params := collect_params(car(rest))
+                        body := begin_of(cdr(rest))
+                        return VClo(body, params, env)
+                    if s == "set!":
+                        # (set! name value): mutate the frame that DEFINES the
+                        # name, so a closure can update a captured binding.
+                        # define writes the current frame; set! walks up.
+                        match car(rest):
+                            VSym(name):
+                                val := eval(car(cdr(rest)), env, &pool)
+                                e := env
+                                for e >= 0:
+                                    if name in pool[e].vars:
+                                        pool[e].vars[name] = val
+                                        return VNil
+                                    e = pool[e].parent
+                                die("tycho-scheme: set! on unbound variable '" + name + "'")
+                            _:
+                                die("tycho-scheme: bad set!")
+                        return VNil
+                    if s == "begin":
+                        r := VNil
+                        a := rest
+                        for not is_nil(a):
+                            r = eval(car(a), env, &pool)
+                            a = cdr(a)
+                        return r
+                    # not a special form: an application
+                    return apply_form(head, rest, env, &pool)
+                _:
+                    # an operator that is not a symbol is still a call target
+                    return apply_form(head, rest, env, &pool)
+        _:
+            die("tycho-scheme: cannot evaluate a non-form")
+    return VNil
+
+
+# Evaluate the operator and the operands of an application, left to right.
+fn apply_form(op: Val, args_list: Val, env: int, pool: inout [Env]) -> Val:
+    f := eval(op, env, &pool)
+    args := []Val
+    a := args_list
+    for not is_nil(a):
+        push(args, eval(car(a), env, &pool))
+        a = cdr(a)
+    return apply(f, args, &pool)
+
+# The parameter list (p1 p2 ...) of a lambda/define head.
+fn collect_params(v: Val) -> [string]:
+    out := []string
+    a := v
+    for not is_nil(a):
+        match car(a):
+            VSym(name):
+                push(out, name)
+            _:
+                die("tycho-scheme: a parameter must be a symbol")
+        a = cdr(a)
+    return out
+
+# One body expression stays itself; several become a (begin ...) form.
+fn begin_of(body: Val) -> Val:
+    if is_nil(cdr(body)):
+        return car(body)
+    return VPair(VSym("begin"), body)
+
+fn apply(f: Val, args: [Val], pool: inout [Env]) -> Val:
+    match f:
+        VPrim(i):
+            return call_prim(i, args)
+        VClo(body, params, capenv):
+            if len(args) != len(params):
+                die("tycho-scheme: expected " + str(len(params)) +
+                    " argument(s), got " + str(len(args)))
+            vars := []string: Val
+            for i := 0; i < len(params); i += 1:
+                vars[params[i]] = args[i]
+            newenv := push_env(&pool, vars, capenv)
+            return eval(body, newenv, &pool)
+        _:
+            die("tycho-scheme: attempt to call a non-function")
+    return VNil
+
+# ---- the printer --------------------------------------------------------------
+fn print_val(v: Val):
+    match v:
+        VInt(i): print(str(i))
+        VBool(b):
+            if b:
+                print("#t")
+            else:
+                print("#f")
+        VStr(s): print(s)
+        VSym(name): print(name)
+        VNil: print("()")
+        VPair(a, d):
+            print("(")
+            print_pair(a, d)
+            print(")")
+        VPrim(i): print("#<primitive " + prim_names()[i] + ">")
+        VClo(b, p, e): print("#<closure>")
+
+fn print_pair(a: Val, d: Val):
+    print_val(a)
+    match d:
+        VNil:
+            return
+        VPair(a2, d2):
+            print(" ")
+            print_pair(a2, d2)
+        _:
+            print(" . ")
+            print_val(d)
+
+# ---- the prelude: a small standard library, in Scheme -------------------------
+# Parsed and evaluated at startup in the global environment. These definitions
+# exercise the reader, define-sugar, recursion, and closures passed as
+# arguments (map/filter) -- and the progs exercise closures RETURNED.
+const PRELUDE = `
+(define (map f xs) (if (null? xs) '() (cons (f (car xs)) (map f (cdr xs)))))
+(define (filter p xs) (if (null? xs) '() (if (p (car xs)) (cons (car xs) (filter p (cdr xs))) (filter p (cdr xs)))))
+(define (append a b) (if (null? a) b (cons (car a) (append (cdr a) b))))
+(define (reverse xs) (rev2 xs '()))
+(define (rev2 xs acc) (if (null? xs) acc (rev2 (cdr xs) (cons (car xs) acc))))
+(define (length xs) (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+(define (sum xs) (if (null? xs) 0 (+ (car xs) (sum (cdr xs)))))
+(define (abs x) (if (< x 0) (- 0 x) x))
+(define (even? n) (= n (* 2 (/ n 2))))
+(define (odd? n) (not (even? n)))
+(define (range lo hi) (if (< lo hi) (cons lo (range (+ lo 1) hi)) '()))
+`
+
+fn eval_all(src: string, env: int, pool: inout [Env]):
+    toks := tokenize(src)
+    pos := 0
+    for pos < len(toks):
+        form := parse_toks(toks, &pos)
+        eval(form, env, &pool)
+
+# ---- main ---------------------------------------------------------------------
+fn main():
+    av := cli.argv()
+    if len(av) < 2 or av[0] != "run":
+        die("usage: tycho-scheme run <file.scm>")
+    src := io.read(av[1])
+    pool := []Env
+    g := push_env(&pool, []string: Val, -1)
+    names := prim_names()
+    for i := 0; i < len(names); i += 1:
+        pool[g].vars[names[i]] = VPrim(i)
+    eval_all(PRELUDE, g, &pool)
+    eval_all(src, g, &pool)
