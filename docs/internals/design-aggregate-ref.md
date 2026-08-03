@@ -49,7 +49,13 @@ Re-examining the three symptoms against the codegen:
 
 - **tycho-vm**: the helper is free today; the machine does not have to live in
   one function. The cost the comment fears was already gone when the comment
-  was written.
+  was written. **Validated 2026-08-03:** the dispatch was refactored —
+  vpush/vpop/arith are now helpers called from every arm, the gate's golden is
+  byte-identical, and the emitted C shows the pointer passes (`&(h_st),
+  &(h_sp)`) with no copy. The one boundary the extraction hit was cc inlining,
+  not copies: extracting CALL/RET regressed the call-heavy fib program ~4.5%
+  in two sessions, so they stay inline. The stale premise was wrong in
+  mechanism but the one-function shape had a real reason after all.
 - **tycho-ar**: the file's own comment says `inout` "is the answer, it works on
   `[u32]` and on `bytes`, and it forwards" (`tools/tycho-ar/main.ty:154-156`).
   Streaming state threading is supported; what is missing is `core:sha256`'s

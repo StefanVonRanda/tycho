@@ -67,10 +67,14 @@
 #     That is the whole friction, it stayed local to `execute`, and it is worth
 #     it: `pc = Pc(ia)` vs `pc = Pc(ib)` is the kind of typo it makes impossible.
 #
-# Measured: 14,000,005 instructions in 10.04 s = 1.39 M ins/s. A `JMP`, which
-# touches no `Val`, costs ~110 ns; every instruction that copies a `Val` (a
-# struct with a `string` field) costs ~815 ns. Struct-with-string copy is 7x the
-# rest of the dispatch and is where a faster VM would have to start.
+# Measured across the dispatch eras (interleaved best-of-N on one machine; the
+# ratios are the claim, the absolute times are not): if/elif chain 2.354 s,
+# scalar-match dispatch 2.311 s, match + stack helpers 2.358 s -- per 300 fib
+# runs, so the scalar match is marginally FASTER than the chain and the helper
+# extraction is inside this machine's noise. A `JMP`, which touches no `Val`,
+# costs ~110 ns; every instruction that copies a `Val` (a struct with a
+# `string` field) costs ~815 ns. Struct-with-string copy is 7x the rest of the
+# dispatch and is where a faster VM would have to start.
 
 package main
 
@@ -570,6 +574,76 @@ fn vstr(v: Val) -> string:
         return v.s
     return str(v.i)
 
+# Stack helpers: the push/pop pattern every arm repeats, factored out once
+# in-place `inout` made them free. The plan that built scalar `match` premised
+# that a vpush(&st, &sp, v) helper would copy the entire 1024-slot stack twice
+# per instruction; the design-aggregate-ref finding measured that premise stale
+# (the codegen passes a pointer plus the owner arena -- no copy), and these
+# helpers ARE the proof: every push/pop arm calls them and the gate's golden is
+# byte-identical. `here` is threaded for the traps.
+#
+# The boundary was then MEASURED, and the one honest signal is the call/ret
+# extraction: it consistently regressed the call-heavy fib program (~4.5%
+# interleaved best-of-N, in two independent sessions) because cc -O3 does not
+# inline the twenty-line frame helpers. vpush/vpop/arith are within this
+# machine's noise floor (one session: sort 0.598 vs 0.601, another: 0.552 vs
+# 0.523 -- the direction does not even agree). So the one-function shape the
+# plan premised had a real reason after all -- not the stale copy claim, but cc
+# inlining -- and CALL/RET stay inline for it while the small helpers stay
+# factored.
+fn vpush(st: inout bounded[STACKMAX]Val, sp: inout int, v: Val, here: Pc):
+    if sp >= STACKMAX:
+        trap(here, "operand stack overflow")
+    st[sp] = v
+    sp = sp + 1
+
+fn vpop(st: inout bounded[STACKMAX]Val, sp: inout int, fbase: int, here: Pc) -> Val:
+    if sp - 1 < fbase:
+        trap(here, "operand stack underflow")
+    sp = sp - 1
+    return st[sp]
+
+# The arithmetic/comparison group, pure over two operands (`here` is only for
+# the division-by-zero and string-operand traps). The dispatch arm is now the
+# two pops, this call, and one push -- the ladder this used to inline.
+fn arith(op: int, a: Val, b: Val, here: Pc) -> Val:
+    if a.isstr or b.isstr:
+        trap(here, "arithmetic on a string value")
+    r := 0
+    if op == OP_ADD:
+        r = a.i + b.i
+    elif op == OP_SUB:
+        r = a.i - b.i
+    elif op == OP_MUL:
+        r = a.i * b.i
+    elif op == OP_DIV:
+        if b.i == 0:
+            trap(here, "division by zero")
+        r = a.i / b.i
+    elif op == OP_MOD:
+        if b.i == 0:
+            trap(here, "division by zero")
+        r = a.i % b.i
+    elif op == OP_EQ:
+        if a.i == b.i:
+            r = 1
+    elif op == OP_NE:
+        if a.i != b.i:
+            r = 1
+    elif op == OP_LT:
+        if a.i < b.i:
+            r = 1
+    elif op == OP_LE:
+        if a.i <= b.i:
+            r = 1
+    elif op == OP_GT:
+        if a.i > b.i:
+            r = 1
+    else:
+        if a.i >= b.i:
+            r = 1
+    return Val(false, r, "")
+
 # The machine lives in one function, but not because it must. The reason this
 # file used to give -- that `inout` is copy-in/copy-out, so a vpush(&st, &sp,
 # v) helper would copy the entire 1024-slot stack twice per instruction -- is
@@ -628,70 +702,19 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
             OP_LOAD:
                 if ia < 0 or ia >= SLOTSPERFRAME:
                     trap(here, "bad slot index " + str(ia))
-                if sp >= STACKMAX:
-                    trap(here, "operand stack overflow")
-                st[sp] = slots[sb + ia]
-                sp += 1
+                vpush(&st, &sp, slots[sb + ia], here)
             OP_PUSH:
-                if sp >= STACKMAX:
-                    trap(here, "operand stack overflow")
-                st[sp] = Val(false, ia, "")
-                sp += 1
+                vpush(&st, &sp, Val(false, ia, ""), here)
             OP_ADD..OP_GE:
-                if sp - 2 < fbase:
-                    trap(here, "operand stack underflow")
-                a := st[sp - 2]
-                b := st[sp - 1]
-                sp -= 2
-                if a.isstr or b.isstr:
-                    trap(here, "arithmetic on a string value")
-                r := 0
-                if op == OP_ADD:
-                    r = a.i + b.i
-                elif op == OP_SUB:
-                    r = a.i - b.i
-                elif op == OP_MUL:
-                    r = a.i * b.i
-                elif op == OP_DIV:
-                    if b.i == 0:
-                        trap(here, "division by zero")
-                    r = a.i / b.i
-                elif op == OP_MOD:
-                    if b.i == 0:
-                        trap(here, "division by zero")
-                    r = a.i % b.i
-                elif op == OP_EQ:
-                    if a.i == b.i:
-                        r = 1
-                elif op == OP_NE:
-                    if a.i != b.i:
-                        r = 1
-                elif op == OP_LT:
-                    if a.i < b.i:
-                        r = 1
-                elif op == OP_LE:
-                    if a.i <= b.i:
-                        r = 1
-                elif op == OP_GT:
-                    if a.i > b.i:
-                        r = 1
-                else:
-                    if a.i >= b.i:
-                        r = 1
-                st[sp] = Val(false, r, "")
-                sp += 1
+                b := vpop(&st, &sp, fbase, here)
+                a := vpop(&st, &sp, fbase, here)
+                vpush(&st, &sp, arith(op, a, b, here), here)
             OP_STORE:
                 if ia < 0 or ia >= SLOTSPERFRAME:
                     trap(here, "bad slot index " + str(ia))
-                if sp - 1 < fbase:
-                    trap(here, "operand stack underflow")
-                sp -= 1
-                slots[sb + ia] = st[sp]
+                slots[sb + ia] = vpop(&st, &sp, fbase, here)
             OP_JZ | OP_JNZ:
-                if sp - 1 < fbase:
-                    trap(here, "operand stack underflow")
-                sp -= 1
-                v := st[sp]
+                v := vpop(&st, &sp, fbase, here)
                 if v.isstr:
                     trap(here, "branch on a string value")
                 taken := v.i == 0
@@ -737,10 +760,7 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
                 sp += 1
                 pc = f.ret
             OP_PRINT:
-                if sp - 1 < fbase:
-                    trap(here, "operand stack underflow")
-                sp -= 1
-                println(vstr(st[sp]))
+                println(vstr(vpop(&st, &sp, fbase, here)))
             OP_LOADK:
                 if ia < 0 or ia >= nconsts:
                     trap(here, "bad const index " + str(ia))
@@ -751,10 +771,7 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
             OP_DUP:
                 if sp - 1 < fbase:
                     trap(here, "operand stack underflow")
-                if sp >= STACKMAX:
-                    trap(here, "operand stack overflow")
-                st[sp] = st[sp - 1]
-                sp += 1
+                vpush(&st, &sp, st[sp - 1], here)
             OP_POP:
                 if sp - 1 < fbase:
                     trap(here, "operand stack underflow")
