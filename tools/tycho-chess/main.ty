@@ -14,7 +14,9 @@
 # same-depth exact values, so it can cut transpositions and reorder moves but
 # never change a result -- which is what `make chess-check` asserts (search
 # is deterministic and `search-nott` reports the same best line). The PARALLEL
-# root search via `parallel for` is the remaining milestone of this plan.
+# root search (`parsearch`) fans the root moves out over `parallel for`, one
+# full-window search per task, results merged by (score, index); it matches
+# the serial best line and is the plan's `parallel for` probe.
 #
 # Design choices, honestly stated:
 #  - boards are VALUES: make returns a new board, no unmake (value
@@ -1087,6 +1089,58 @@ fn search_root(tt: inout TT, b: Board, tab: Tables, zob: Zob, pst: PST, depth: i
             bp = legal[i].promo
     println("best " + sq_name(bf) + sq_name(bt) + " " + str(best))
 
+# the parallel root: `parallel for` over the root moves, one full-window
+# search per task, results sent on a channel and merged. Each task deep-copies
+# its captures -- including an EMPTY TT, so the exact-only table is per-task
+# and never shared (a shared, written-per-node map would be the race). Every
+# root move gets the FULL window here (there is no shared best-so-far to
+# narrow it), so the per-move scores are exact where the serial root reports
+# bounds -- but the BEST line must match the serial search exactly, and that
+# is the gate. The per-move lines are sorted by (score desc, index asc) so
+# the transcript is byte-deterministic regardless of recv order.
+struct RootRes:
+    score: int
+    idx: int
+
+fn search_root_par(b: Board, tab: Tables, zob: Zob, pst: PST, depth: int):
+    legal := legal_moves(b, tab)
+    order_moves(&legal, b, pst)
+    n := len(legal)
+    ch := channel(RootRes, n)
+    parallel for i in 0..<n:
+        tt := TT([]int: TTEntry)
+        nb := make_move(b, legal[i], tab)
+        score := -search(&tt, nb, tab, zob, pst, depth - 1, -MATE - 1, MATE, true)
+        send(ch, RootRes(score, i))
+    results := []RootRes
+    for k := 0; k < n; k += 1:
+        match recv(ch):
+            Some(r):
+                push(results, r)
+            None:
+                continue
+    # sort by (score desc, idx asc) -- deterministic merge
+    for i := 1; i < len(results); i += 1:
+        k := results[i]
+        j := i - 1
+        for j >= 0 and (results[j].score < k.score or (results[j].score == k.score and results[j].idx > k.idx)):
+            results[j + 1] = results[j]
+            j = j - 1
+        results[j + 1] = k
+    best := -MATE - 1
+    bf := 0
+    bt := 0
+    bp := 0
+    for k := 0; k < len(results); k += 1:
+        m := legal[results[k].idx]
+        println(sq_name(m.from) + sq_name(m.to) + " " + str(results[k].score))
+        if results[k].score > best:
+            best = results[k].score
+            bf = m.from
+            bt = m.to
+            bp = m.promo
+    println("best " + sq_name(bf) + sq_name(bt) + " " + str(best))
+
 # ---- main --------------------------------------------------------------------------
 
 fn main():
@@ -1106,6 +1160,8 @@ fn main():
     if cmd == "search-nott":
         use_tt = false
         cmd = "search"
+    elif cmd == "parsearch":
+        cmd = "search"
     if cmd != "perft" and cmd != "search":
         die("unknown command: " + av[0])
     depth := 0
@@ -1123,6 +1179,9 @@ fn main():
         zob := build_zob()
         pst := build_pst()
         tt := TT([]int: TTEntry)
-        search_root(&tt, b, tab, zob, pst, depth, use_tt)
+        if av[0] == "parsearch":
+            search_root_par(b, tab, zob, pst, depth)
+        else:
+            search_root(&tt, b, tab, zob, pst, depth, use_tt)
     else:
         perft_split(b, tab, depth)
