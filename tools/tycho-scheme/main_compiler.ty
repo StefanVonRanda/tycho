@@ -1,7 +1,8 @@
 # tycho-scheme compile: Scheme -> tycho-vm bytecode (.tyc).
 #
 # The target is the tycho-vm ISA (tools/tycho-vm/main.ty); the .tyc container
-# is the format its header documents. The design record is plan.md; the
+# is the format its header documents. The design record is
+# `docs/internals/plan-tycho-scheme-compiler-DONE.md`; the
 # decisions that shape this file:
 #
 #  - DEFUNCTIONALIZATION (Reynolds): every lambda is one VM function whose
@@ -22,7 +23,8 @@
 #    primitive shadowing, and primitives without a lowering.
 #
 # Compile-time positions are not tracked (the reader discards them); a
-# compile error names the construct, not the line -- recorded in plan.md.
+# compile error names the construct, not the line -- recorded in
+# `docs/internals/plan-tycho-scheme-compiler-DONE.md`.
 #
 # Three passes: A collects the global defines; B (analysis) walks the whole
 # program assigning every lambda a tag (discovery order) and computing its
@@ -544,7 +546,7 @@ fn compile_scheme(src: string) -> Program:
     # list, so the lambda tags stay aligned. Divergence from the interpreter:
     # a top-level expression that OBSERVES the define interleaving (a define
     # with an observable side effect between two expressions) runs later
-    # here -- recorded in plan.md; the programs do not do this.
+    # here -- recorded in `docs/internals/plan-tycho-scheme-compiler-DONE.md`; the programs do not do this.
     forms = order_top_forms(forms)
     gnames := []string
     collect_globals(forms, &gnames)
@@ -859,7 +861,7 @@ fn emit_apply_expr(op: Val, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [F
 # into (a1..an, env, globals) in slots 0..n+1. The interpreter evaluates the
 # operator first; the compiled code evaluates the args first -- observable
 # only through evaluation-order side effects, which the compiled programs do
-# not have (recorded in plan.md).
+# not have (recorded in `docs/internals/plan-tycho-scheme-compiler-DONE.md`).
 fn emit_dispatch(b: Bind, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
     nargs := count_args(rest)
     emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)   # [a1..an]

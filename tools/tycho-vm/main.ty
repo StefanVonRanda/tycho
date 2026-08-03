@@ -29,7 +29,7 @@
 #   PRINT          pop and print, with a newline
 #   HALT DUP POP   stop; duplicate top; discard top
 #
-# The pair ops (added for the tycho-scheme compiler -- plan phase 1): a
+# The pair ops (added for the tycho-scheme compiler -- `docs/internals/plan-tycho-scheme-compiler-DONE.md`): a
 # bounded heap of CONS cells; a pair's components are Vals, fetched by CAR/
 # CDR. Lists end in the distinguished NIL value. Scheme truth: everything but
 # NIL is true, so `if` in compiled code is ISNIL + JZ.
