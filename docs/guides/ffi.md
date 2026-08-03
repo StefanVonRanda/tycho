@@ -60,7 +60,7 @@ You cannot re-declare a symbol the language already provides: this catalogue
 showed `extern fn sqrt(x: float) -> float` until 2026-07-30, and that exact line
 does not compile — `sqrt` is a builtin, so it fails with `'sqrt' is already
 defined`. It became visible when `make docs-fences` learned to count an
-`extern fn` as a declaration (docs/internals/plan-loops-cleanup-DONE.md phase 62); before that the fence was filed
+`extern fn` as a declaration (the loops-cleanup plan); before that the fence was filed
 as a fragment and compiled by nothing.
 
 ## Type mapping

@@ -1,7 +1,7 @@
 # What `tycho-vm` said the language needs
 
-Previous plan archived at
-[docs/internals/plan-four-of-seven-DONE.md](docs/internals/plan-four-of-seven-DONE.md).
+Previous plan: the four-of-seven plan (archived, then pruned 2026-08-03;
+still at `git show docs-archive:docs/internals/plan-four-of-seven-DONE.md`).
 
 From writing a bytecode VM (`tools/tycho-vm/`, commits e0906e7, 4ec02c7,
 7250fb1) — the first program here to need a hot dispatch loop and fixed-capacity
@@ -85,7 +85,7 @@ Measured, on this tree:
     touch part of a large value without copying it:
     - `tools/tycho-ar/main.ty` — a streaming digest cannot thread state through
       calls, so `core:sha256` is one-shot and the archiver wrote its own
-      (`docs/internals/plan-ar-DONE.md` phases 14, 15).
+      (the tycho-ar plan).
     - `corelib/decimal/decimal.ty` and the corelib generally — the same default
       shapes every hashing and compression interface in the tree.
     - `tools/tycho-vm/main.ty` — push/pop had to be inlined into one function,
@@ -103,7 +103,7 @@ Measured, on this tree:
 
 ## Not in this plan
 
-The eleven-item backlog from `docs/internals/plan-three-gates-DONE.md` (JSON
+The eleven-item backlog from the three-gates plan (JSON
 UTF-8 validation, `strings.parse_int` failing open, `io.write_bytes`,
 `io.make_dirs`, writable mtime, incremental digest, `eprintln`, the `image`
 shim, a document-reachability gate, the `ParallelFor` width slot), plus the six

@@ -11,7 +11,7 @@
 # Re-record the golden with:  RECORD=1 sh tools/tycho-ar/run.sh
 #
 # WHAT IT ASSERTS, and why each leg exists. The four properties
-# `docs/internals/plan-ar-DONE.md` phases 1-3 established are the four ways this
+# the tycho-ar plan established are the four ways this
 # program can betray the person using it:
 #
 #   [1] CREATE IS DETERMINISTIC. Archiving one tree twice gives two

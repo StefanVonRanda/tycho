@@ -21,7 +21,7 @@ import "core:result"
 # The fd, or -1. Every call below is on loopback and must succeed, so collapsing
 # the Result keeps the test's output identical to the sentinel-era golden while
 # still going through the new API. Both collapses were a hand-written four-line
-# `match` until core:result landed (docs/internals/plan-option-result-DONE.md phase 2) -- this is the duplicate it
+# `match` until core:result landed (the option-result plan) -- this is the duplicate it
 # removed, one of three copies of the same four lines in this tree.
 fn fd_of(r: Result(int, net.NetErr)) -> int:
     return result.unwrap_or(r, -1)

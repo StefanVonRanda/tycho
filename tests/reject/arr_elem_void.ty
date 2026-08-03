@@ -2,7 +2,7 @@
 # refuses -- the diagnostic used to be an allow-list ("int, float, bool, string,
 # a struct, an array, or an Option") that named neither what works nor what does
 # not: `[bytes]`, `[(int, int)]` and `[[string: int]]` all compile and none of
-# them appears in that list. docs/internals/plan-loops-cleanup-DONE.md phase 54.
+# them appears in that list. the loops-cleanup plan.
 #
 # This is the one of the three void guards a program can actually reach. The two
 # in the type parser (src/tychoc.c:2035, src/tychoc.c:2352) are defensive: no

@@ -12,8 +12,7 @@
 # runtime instead of silently reading the new occupant.
 #
 # HONEST SCOPE: `pool` improves ERGONOMICS, not memory. Pointer-shaped storage
-# still costs ~1.55x C in this model (fundamental -- see
-# docs/internals/hylo-mvs-research.md); the pool doesn't change that. What it
+# still costs ~1.55x C in this model (fundamental); the pool doesn't change that. What it
 # removes is the hand-rolled index-plus-generation bookkeeping.
 #
 # A Handle packs `(generation << 24) | slot-index`, so a pool holds up to 2^24

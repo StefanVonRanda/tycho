@@ -15,10 +15,6 @@
 #
 # WHAT IT SKIPS, and why each skip is named rather than silent:
 #
-#   FROZEN     docs/internals/plan-*-DONE.md. Archived verification evidence;
-#              its snippets record syntax as it was at the time and must not be
-#              dragged forward. Same exemption, same reason, as ARCHIVED in
-#              scripts/check_citations.py@ARCHIVED.
 #   FRAGMENT   a fence containing no `fn` declaration at all. The spec is
 #              written mostly in fragments (a type, an expression, three lines of
 #              a body) and wrapping them in a synthetic `main` would typecheck a
@@ -39,7 +35,7 @@
 # phase 43. Tagging is what opts a fence in, so the number grows by review,
 # never by a heuristic guessing at a language.
 #
-# EVERY FENCE IN docs/ NOW CARRIES A TAG (docs/internals/plan-loops-cleanup-DONE.md phase 61, 2026-07-30). The 64
+# EVERY FENCE IN docs/ NOW CARRIES A TAG (the loops-cleanup plan). The 64
 # that did not -- 56 in docs/internals/, 4 in docs/rfc/, 4 in docs/ -- were read
 # one at a time and tagged `text` (73 total), `sh`, or `tycho`. Only three became
 # `tycho`, and the rule that produced that number is the one to keep: a fence in a
@@ -70,13 +66,9 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # Pass 1: carve every ```tycho fence out of every tracked docs/*.md into
 # $TMP/f_<n>.ty, and emit one classification record per fence on stdout:
 #   <n> TAB <verdict> TAB <file> TAB <line> TAB <reason>
-# verdict is CHECK, FROZEN, FRAGMENT or MARKED.
+# verdict is CHECK, FRAGMENT or MARKED.
 git ls-files 'docs/*.md' | while read -r f; do
-    case "$f" in
-        docs/internals/plan-*-DONE.md) frozen=1 ;;
-        *) frozen=0 ;;
-    esac
-    awk -v OUT="$TMP" -v F="$f" -v FROZEN="$frozen" '
+    awk -v OUT="$TMP" -v F="$f" '
       # remember the most recent skip marker; any non-blank non-marker line clears it
       /^[ \t]*<!--[ \t]*fence-skip:/ {
           mark = $0
@@ -100,8 +92,7 @@ git ls-files 'docs/*.md' | while read -r f; do
           printf "%s", buf > file
           close(file)
           verdict = "CHECK"; reason = ""
-          if (FROZEN == "1")   { verdict = "FROZEN";   reason = "archived verification evidence" }
-          else if (mark != "") { verdict = "MARKED";   reason = mark }
+          if (mark != "") { verdict = "MARKED";   reason = mark }
           else if (!hasfn)     { verdict = "FRAGMENT"; reason = "no fn declaration" }
           printf "%s\t%s\t%s\t%d\t%s\n", file, verdict, F, start, reason
           mode=0; mark=""; next
@@ -109,7 +100,7 @@ git ls-files 'docs/*.md' | while read -r f; do
       mode==1 {
           # `extern fn NAME(...)` is a declaration too -- the bare /fn[ \t]/ test
           # missed it and filed three compilable FFI fences as FRAGMENT
-          # "no fn declaration" (docs/internals/plan-loops-cleanup-DONE.md phase 62).
+          # "no fn declaration" (the loops-cleanup plan).
           if ($0 ~ /^[ \t]*(extern[ \t]+)?fn[ \t]/) hasfn=1
           # `extern "lib" fn NAME(...)` -- the library name sits between the two
           # keywords, so the anchored form above cannot reach it.

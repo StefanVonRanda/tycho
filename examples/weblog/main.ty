@@ -127,7 +127,7 @@ fn demo_lines() -> [string]:
 
 fn main():
     # cli.argv() is args() with argv[0] (the program path) dropped, which is what
-    # cli.parse wants. This was the four-line copy loop above -- docs/internals/plan-friction-DONE.md phase 6.
+    # cli.parse wants. This was the four-line copy loop above -- the friction plan.
     c := cli.parse(cli.argv())
     files := cli.positionals(c)
     topk := strings.parse_int(cli.get(c, "top", "5"))

@@ -55,8 +55,8 @@ data, not the domain of the workload:
   compact indexed-dict map layout). Value semantics store children *by value*, not by
   reference, so every *live* edge costs a whole node rather than an 8-byte pointer, and
   there is no sharing. This is a **standing cost, fundamental to mutable value
-  semantics** — the most mature MVS language (Hylo) hits the identical wall
-  (`docs/internals/hylo-mvs-research.md`), not a tycho implementation shortfall.
+  semantics** — the most mature MVS language (Hylo) hits the identical wall,
+  not a tycho implementation shortfall.
 - **The bridge** — express the same graph as an **adjacency list of integer indices**
   (`dijkstra/`: **41 vs 31.5 MB, ~1.3× C**, ≈ Go). Indices are value-shaped, so the graph
   drops from ~3.2× to ~1.3× C. This is the idiom `docs/internals/value-semantics-limits.md`

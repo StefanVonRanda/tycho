@@ -19,7 +19,7 @@
 # program starts in the "C" locale whatever LC_ALL says**, until something calls
 # setlocale(LC_ALL, ""), and neither tychoc nor the runtime ever does -- which is
 # precisely why all three defects are latent rather than live. So
-# `LC_ALL=da_DK.utf8 ./tychoc ...` is INERT: docs/internals/plan-four-found-DONE.md
+# `LC_ALL=da_DK.utf8 ./tychoc ...` is INERT: the four-found plan
 # phase 1 ran the FULLY BROKEN compiler that way and the fixture came out green.
 # A check that cannot fail is not a check.
 #

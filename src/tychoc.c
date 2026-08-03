@@ -789,7 +789,7 @@ static void task_container_err(void) {
     exit(1);
 }
 
-/* Typed C handles (FFI R2, docs/internals/typed-handles-design.md): `handle Name:
+/* Typed C handles (FFI R2): `handle Name:
  * free: free_fn` declares an affine, opaque (void*) type that the compiler frees
  * by emitting `free_fn(h)` at the owning variable's scope exit -- the same affine
  * + finalizer model as tasks, with a user-supplied destructor. Sits in the free
@@ -1707,7 +1707,7 @@ struct Stmt {
                                           * only producer and went on 2026-07-29, so it
                                           * had been ALWAYS NULL since; `0..<N` and the
                                           * foreach/parfor desugarings all step by 1. It
-                                          * went with its codegen -- docs/internals/plan-loops-cleanup-DONE.md phase 53. */
+                                          * went with its codegen -- the loops-cleanup plan. */
     char    *names[8]; int nnames;       /* S_MDECL targets: `a, b := f()` */
     Type     mtypes[8];                  /* S_MDECL resolved element types */
     Stmt   **body; int nbody;
@@ -4113,7 +4113,7 @@ static Proc *parse_extern_fn(Parser *ps) {
  *     free: c_free_fn
  * Declares an affine, opaque (void*) C handle whose destructor `c_free_fn` (a C
  * symbol, normally an `extern fn c_free_fn(h: Name)`) the compiler calls at the
- * owning variable's scope exit. See docs/internals/typed-handles-design.md. */
+ * owning variable's scope exit. */
 static void parse_handle(Parser *ps) {
     eat(ps, TK_HANDLE, "'handle'");
     Tok *nameT = eat(ps, TK_IDENT, "a handle name");
@@ -6464,7 +6464,7 @@ static Type resolve_exp(Expr *e, Type want) {
     }
     /* [e0, ..., eN-1] checked against an ARRAY destination: fixed `[N]T` (1.6, count must match) or dynamic `[T]` (any count). Each
      * element is checked AGAINST T, so literal adaptation reaches the elements -- `a: [u32] = [1, 2]`, which used to die "declared type
-     * [u32] but value is [int]" while the fixed form compiled (docs/internals/plan-loops-cleanup-DONE.md phase 55). Bounded is the branch below; a `[$N]T`/`[$T]` template destination stays out (those resolve after substitution); with no destination a bracket literal still synthesizes a dynamic `[T]`. */
+     * [u32] but value is [int]" while the fixed form compiled (the loops-cleanup plan). Bounded is the branch below; a `[$N]T`/`[$T]` template destination stays out (those resolve after substitution); with no destination a bracket literal still synthesizes a dynamic `[T]`. */
     if (e->kind == E_ARRLIT && e->nargs > 0 && e->op != TK_COLON && is_array(want) && !IS_BOUNDED(want) && !IS_SIZEPARAM_ARR(want) && !has_typaram(want)) {
         int64_t n = IS_FIXARR(want) ? fixarr_size(want) : e->nargs;   /* a dynamic [T] accepts any count */
         if (e->nargs != n)
@@ -6537,7 +6537,7 @@ static Type resolve_exp(Expr *e, Type want) {
      * to T_OK_PARTIAL/T_ERR_PARTIAL). Each element is resolved EXACTLY ONCE and
      * the SYNTHESIZED element types are returned, not `want`: a mismatch then
      * reports through the caller's own equality check with its own message
-     * instead of a second visit to the same node (docs/internals/plan-friction-DONE.md phase 1). */
+     * instead of a second visit to the same node (the friction plan). */
     if (e->kind == E_TUPLE && IS_TUP(want) && e->nargs == tup_n(want) &&
         e->nargs >= 2 && e->nargs <= 8) {
         Type elems[8];
@@ -6637,7 +6637,7 @@ static void pf_scan_expr(Expr *e) {
      * read-only...)`, telling the user to copy an array they never wrote as a
      * parameter, and leaving this gate's coverage resting on a rule in another
      * pass. Fail-closed either way -- the program was already rejected -- so this
-     * changes the diagnostic, not the accept/reject verdict. docs/internals/plan-loops-cleanup-DONE.md phase 39. */
+     * changes the diagnostic, not the accept/reject verdict. the loops-cleanup plan. */
     if (e->kind == E_CALL && e->sval && e->nargs >= 1 &&
         (!strcmp(e->sval, "push") || !strcmp(e->sval, "pop"))) {
         Expr *root = e->args[0];
@@ -6852,7 +6852,7 @@ static void resolve_parfor(Stmt *s) {
     }
     /* HISTORY: a fail-closed `if (s->r_step) die_at(s->line, "parallel for does not
      * support a range step")` stood here until 2026-07-30, unreachable since `range()`
-     * went on 2026-07-29. It was deleted with the field -- docs/internals/plan-loops-cleanup-DONE.md phase 53. */
+     * went on 2026-07-29. It was deleted with the field -- the loops-cleanup plan. */
     if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
         die_at(s->line, "parallel for needs an int range");
     if (g_nparfor >= 64) die_at(s->line, "too many parallel for loops (max 64)");
@@ -7037,7 +7037,7 @@ static void wl_scan_body(Stmt **body, int n, const char *muts[], int *nm, int *e
         wl_scan_expr(s->target, muts, nm, exit);
         wl_scan_expr(s->r_start, muts, nm, exit);
         wl_scan_expr(s->r_stop, muts, nm, exit);
-        /* no r_step to scan: every S_FORRANGE steps by 1 (docs/internals/plan-loops-cleanup-DONE.md phase 53). */
+        /* no r_step to scan: every S_FORRANGE steps by 1 (the loops-cleanup plan). */
         wl_scan_body(s->body, s->nbody, muts, nm, exit);
         wl_scan_body(s->els, s->nels, muts, nm, exit);
         for (int a = 0; a < s->narms; a++) wl_scan_body(s->arms[a].body, s->arms[a].nbody, muts, nm, exit);
@@ -7084,7 +7084,7 @@ static const char *discarded_map_get(Expr *e) {
     return NULL;
 }
 
-/* ---- nested match patterns (docs/internals/plan-friction-DONE.md phase 3 / FRICTION.md:139) --------------
+/* ---- nested match patterns (the friction plan / FRICTION.md:139) --------------
  *
  * One `match` side (the Ok, Err or Some arms) is a small ordered decision list:
  * zero or more REFINED arms, each testing one variant of the payload's enum, and
@@ -7111,7 +7111,7 @@ static int side_total(SideCov *sc, Type pt) {
  * here rather than in the parser is the whole point: only the resolver knows that
  * the payload is an enum with a variant `A`. It is idempotent -- a promoted arm has
  * arm->sub set and skips the promotion branch -- because a generic function's body
- * is cloned per instance and re-resolved (docs/internals/plan-friction-DONE.md phase 1: resolution is not
+ * is cloned per instance and re-resolved (the friction plan: resolution is not
  * single-pass, and a non-idempotent in-place rewrite is exactly what bit there). */
 static void match_arm_payload(MatchArm *arm, Type pt, const char *tag, SideCov *sc) {
     if (sc->plain)
@@ -7499,7 +7499,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * guarantee does not survive into the three-clause form either: a post
              * clause is arbitrary code, so `for i := 0; i < n; i += 0:` cannot be
              * diagnosed. docs/spec/10-statements.md records that deliberate loss;
-             * the field and this check went together in docs/internals/plan-loops-cleanup-DONE.md phase 53. */
+             * the field and this check went together in the loops-cleanup plan. */
             int m = vars_mark();
             vars_push(s->name, T_INT, 1);   /* loop variable is int, scoped to the loop */
             resolve_block(s->body, s->nbody, ret);
@@ -7869,7 +7869,7 @@ static void chan_scan_stmt(ProcVec *prog, Stmt *s, const char *nm, ChanUse *u) {
     chan_scan_expr(prog, s->target, nm, u);
     chan_scan_expr(prog, s->r_start, nm, u);
     chan_scan_expr(prog, s->r_stop, nm, u);
-    /* no r_step: every S_FORRANGE steps by 1 (docs/internals/plan-loops-cleanup-DONE.md phase 53). */
+    /* no r_step: every S_FORRANGE steps by 1 (the loops-cleanup plan). */
     if (s->kind == S_SELECT) {
         int mine = 0, closed_arm = 0, dflt = 0;
         for (int a = 0; a < s->narms; a++) {
@@ -8199,7 +8199,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
  * which is what `tychoc -g` builds (src/tychoc.c:12754) and what a debugger step
- * actually runs. Deleting it is a live option (docs/internals/plan-loops-cleanup-DONE.md phase 40 option (b)) but
+ * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
@@ -11076,14 +11076,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             int id = g_blk++;
             char *start = gen_expr(s->r_start, scope);
             char *stop  = gen_expr(s->r_stop,  scope);
-            /* no `step` local: the loop always advances by 1 (docs/internals/plan-loops-cleanup-DONE.md phase 53). */
+            /* no `step` local: the loop always advances by 1 (the loops-cleanup plan). */
             char *ss = sfmt("&_scr%d", id);
             indent(o, ind); fprintf(o, "{\n");
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, NULL);   /* bounds eval once, pre-loop */
             indent(o, ind + 1); fprintf(o, "tycho_int _stop%d = %s;\n", id, stop);
             /* `_stepN`, its `tycho: range step is zero` abort and the `_stepN > 0 ? ... : ...`
-             * direction ternary went with the field on 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 53). */
+             * direction ternary went with the field on 2026-07-30 (the loops-cleanup plan). */
             indent(o, ind + 1);
             fprintf(o, "for (tycho_int h_%s = %s; h_%s < _stop%d; h_%s += 1) {\n", s->name, start, s->name, id, s->name);
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
@@ -11516,7 +11516,7 @@ static Stmt *clone_stmt(Stmt *s, Type *binds) {
     c->target  = clone_expr(s->target, binds);
     c->r_start = clone_expr(s->r_start, binds);
     c->r_stop  = clone_expr(s->r_stop, binds);
-    /* no r_step to clone: every S_FORRANGE steps by 1 (docs/internals/plan-loops-cleanup-DONE.md phase 53). */
+    /* no r_step to clone: every S_FORRANGE steps by 1 (the loops-cleanup plan). */
     c->body = clone_block(s->body, s->nbody, binds);
     c->els  = clone_block(s->els, s->nels, binds);
     if (s->typed_decl && has_typaram(s->annot))   /* `x : $T = ...` annotation */
@@ -11575,7 +11575,7 @@ static char *mapc_kparam(Type k) {        /* the key function parameter (READ-on
  * hand-written twin this family mirrors, likewise takes `char *k`. So the owning
  * param is exactly the slot type, which is also the invariant tychoc0 states
  * directly (`kpar := kslot + " k"`, tychoc0.ty:10475). Nothing writes THROUGH the
- * slot -- trace under docs/internals/plan-front-door-DONE.md phase 4. */
+ * slot -- trace under the front-door plan. */
 static char *mapc_kparam_own(Type k) {
     return sfmt("%sk", mapc_kslot(k));
 }
@@ -12907,7 +12907,7 @@ int main(int argc, char **argv) {
      * (the compiler dir, tychoc0.c, tychofmt.c, ...), and 31 directories hold
      * BOTH .ty sources and hand-written .c shims (the corelib, bench and tools
      * dirs, tests/ffi), so a by-pattern ignore would hide a newly added shim --
-     * a worse failure than the one it fixes. See docs/internals/plan-loops-cleanup-DONE.md phase 25. All but one
+     * a worse failure than the one it fixes. See the loops-cleanup plan. All but one
      * in-tree caller already passed -o (the fuzz runners,
      * scripts/entrypoints.sh:63, bench/guard.sh:28, the three examples
      * sanitizer legs); the exception was the bytes-rehome lane in
@@ -13012,7 +13012,7 @@ int main(int argc, char **argv) {
      * hand-written, tracked .c files, and 27 of those .c files share a basename with the
      * sibling .ty (all of bench/, the hand-written C ports README:29 builds against), so a
      * by-pattern ignore would hide a real file. Removing it here is the same fix `--emit-c`
-     * with no -o got in docs/internals/plan-loops-cleanup-DONE.md phase 25; this is phase 52. To KEEP the C, ask for it:
+     * with no -o got in the loops-cleanup plan; this is phase 52. To KEEP the C, ask for it:
      * `--emit-c -o name` (docs/guides/debugging.md:37 is the workflow that does).
      * Note the pre-existing hazard this does NOT introduce: a plain build of `bench/json/json.ty`
      * already OVERWROTE the hand-written `bench/json/json.c` before it got here. Nothing in

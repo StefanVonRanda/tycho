@@ -63,8 +63,7 @@ paid by the trie's millions of never-deleting maps for no benefit.
 The compact indexed-dict layout supersedes both concerns at once: value entries are now
 **dense** (sized to live child count, so value-array capacity no longer multiplies
 empty-slot waste — the cap-8-vs-cap-4 tradeoff is gone) and the per-slot order list is
-**deleted entirely**. That is what took 119 → 58.7 MB. See
-`docs/internals/compact-dict-map-design.md`.
+**deleted entirely**. That is what took 119 → 58.7 MB.
 
 ## Notes / honest limits
 

@@ -11,7 +11,7 @@
 #
 # This fixture carries the first. (The reject lane asserts a loud refusal,
 # not the message text -- the message is asserted by this comment and by
-# the evidence under phase 4 of docs/internals/plan-loops-cleanup-DONE.md.)
+# the evidence under the loops-cleanup plan.)
 fn main():
     i := 0
     for ; i < 3; i += 1:

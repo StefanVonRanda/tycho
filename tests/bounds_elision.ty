@@ -8,7 +8,7 @@
 #
 # It stopped proving that for one day. Until 2026-07-29 the elision keyed off
 # S_FORRANGE's r_start/r_stop/r_step and the loops here were spelled `for i in
-# range(len(A)):`; phase 6 of docs/internals/plan-loops-cleanup-DONE.md rewrote them to
+# range(len(A)):`; the loops-cleanup plan rewrote them to
 # the three-clause form, which is S_FOR3 and had no elision arm, so all four loops
 # silently fell back to the checked accessor. The golden did not move — the fallback is
 # the CHECKED path, so the tree got slower and safer, never wrong — which is exactly

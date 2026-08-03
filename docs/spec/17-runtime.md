@@ -13,9 +13,9 @@ diagnostic text is not ([§1.1](00-conventions.md)).
 
 > Provenance: `tycho_idiv`/`imod` `runtime/tycho_rt.c:107-116`, bounds
 > `:1324-1330`,`:1037-1044`, `pop` `:1318-1322`, `substr` `:1058-1068`, string
-> header `:854-872`, map hashing `:1734-1737`, channels/tasks `:528-841`;
-> `docs/internals/integer-overflow.md`. Behaviors marked *(probed)* were
-> confirmed on both compilers (spec-plan.md §6a).
+> header `:854-872`, map hashing `:1734-1737`, channels/tasks `:528-841`.
+> Behaviors marked *(probed)* were
+> confirmed on both compilers.
 
 ## 30.1 Defined wraparound
 

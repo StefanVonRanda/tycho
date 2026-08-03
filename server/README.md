@@ -42,7 +42,7 @@ status is 0 and the stopped line prints in every case, so a busy shutdown is
 slow, not hung — but a large `--idle-ms` is a proportionally slow `SIGTERM`.
 `signal.shutdown_requested()` (`corelib/signal/signal.ty:88@shutdown_requested`)
 exists to cut that to one in-flight request and has no caller in the tree yet;
-filed as phase 15 of `docs/internals/plan-signals-DONE.md`.
+filed as phase 15 of the signals plan.
 
 ## What it does
 
@@ -78,7 +78,7 @@ fn worker(cfg: Config, srv: int, wid: int, remaining: int) -> int:
 That shape is forced, not chosen. A task handle in Tycho is **affine**: it
 cannot be stored in an array, a struct, or any aggregate, so the only place to
 keep N live handles is N stack frames. Phase 1 of
-`docs/internals/plan-webserver-DONE.md` measured the alternatives —
+the webserver plan measured the alternatives —
 `parallel for` silently collapses to `min(N, ncpu)` live iterations, and
 accept-on-main-spawn-per-connection serialises completely because the compiler
 emits an implicit join at the handle's scope exit. Both are still open as
@@ -86,7 +86,7 @@ emits an implicit join at the handle's scope exit. Both are still open as
 
 It is one connection per worker at a time, so N workers means N concurrent
 connections. **Recorded measurements, 2026-07-26**, on loopback, 8 workers,
-`--quiet` (`docs/internals/plan-webserver-DONE.md:814-816`). These are history,
+`--quiet`. These are history,
 not a gate: `make server-check` asserts the *structural* fact that all four
 workers take traffic, and deliberately asserts no wall-clock number, because
 timing on a shared machine is the one flake a CI lane must not have.
@@ -121,7 +121,7 @@ not yours. A **400** means it was never a path this server would take: steps 2
 and 4 fire before there is anything to resolve, so a NUL byte is malformed
 input rather than a refused location.
 
-Verified against 13 vectors (`docs/internals/plan-webserver-DONE.md:748`) and
+Verified against 13 vectors and
 re-checked live at HEAD: `/../../etc/passwd`, `/..%2f..%2f..%2fetc/passwd`,
 `/%2e%2e/%2e%2e/etc/passwd`, `/....//....//etc/passwd`, `//etc/passwd` and
 `/.git/config` are each **403**; `/%00` is **400**, at step 4. All refused, with
@@ -160,8 +160,7 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   reports an empty directory as a *file* — a directory's **contents** were
   deciding its **status**. That was never fixable by a return type; `stat(2)` was
   the missing question, not the missing answer.
-  **Fixed 2026-07-26** (`4fa192d`, `docs/internals/plan-option-result-DONE.md`
-  phase 4) by adding `fn is_dir(p: string) -> Result(bool, IoErr)` over a real
+  **Fixed 2026-07-26** (`4fa192d`) by adding `fn is_dir(p: string) -> Result(bool, IoErr)` over a real
   `stat(2)` (`corelib/io/io.ty@is_dir`), which `resolve()` matches on at
   `server/main.ty@is_dir`. One `stat(2)` now answers all three tails: `Ok(true)`
   with no trailing slash is the `301`, `Ok(false)` is a file to serve, and
@@ -175,8 +174,7 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   `getsockname` and nothing else, so the field every real access log leads with
   was unreachable from Tycho — and unreachable in a way no Tycho program could
   work around, since `net.accept` hands back a bare fd.
-  **Fixed 2026-07-26** (`7b76fcd`, `docs/internals/plan-friction-DONE.md` phase
-  5): `netx_peer_addr` is `getpeername` + `inet_ntop`
+  **Fixed 2026-07-26** (`7b76fcd`): `netx_peer_addr` is `getpeername` + `inet_ntop`
   (`corelib/net/net_shim.c:204`), surfaced as
   `fn peer_addr(fd: int) -> Result(string, NetErr)`
   (`corelib/net/net.ty:144@peer_addr`) and used at
@@ -281,7 +279,7 @@ the rough edges they closed.)
   `httpd.write_response` sends the head and the body as two writes, on purpose,
   so the body is never copied into an intermediate string. With Nagle enabled
   that second small segment waits for the peer's delayed ACK. **Recorded
-  measurement, 2026-07-26** (`docs/internals/plan-webserver-DONE.md:855`):
+  measurement, 2026-07-26**:
   **43.73 ms per request, 23 req/s** with Nagle on, against **0.07 ms per
   request, 14,465 req/s** with it off — a 620× difference that is entirely one
   stalled segment per response. Like the concurrency table, this is history and
@@ -356,6 +354,6 @@ transcript has no `trap`, and a forgotten `tycho-httpd` stays bound to 8080.
 The full transcript this was originally signed off against — every status code,
 the binary `cmp`s, the traversal matrix, the abuse suite, and the concurrency
 measurements — is recorded under Phase 7 of
-`docs/internals/plan-webserver-DONE.md`. What the gate asserts today is a
+the webserver plan. What the gate asserts today is a
 superset of it in behaviour and a subset in timing: it adds the smuggling and
 abuse cases and the access-log checks, and drops every wall-clock number.

@@ -54,7 +54,7 @@ The three exceptions in the tree are the ones that prove the rule, because each 
   and freed when a later send reclaims the slot (`runtime/tycho_rt.c:633`, `:673`,
   `:725`, `:831`);
 - a typed FFI handle's destructor, which is emitted into exactly the slot the task
-  finaliser uses (`docs/internals/typed-handles-design.md:56-60`, `:98-102`).
+  finaliser uses.
 
 All three are still lexically scoped from the program's point of view: the compiler
 emits their finaliser at every exit of the scope that declared them.
@@ -286,8 +286,7 @@ typedef struct { Arena rgn; Arr_Conn conns; } Server;
 Allocations for elements of `s.conns` target `&s.rgn` instead of the current scope
 string; the deep copy becomes `_c.rgn = arena_new(0);` followed by the existing
 recursive element copy; and the free is one `arena_free(&s.rgn)` emitted into exactly
-the finaliser slot tasks and handles already use (`src/tychoc.c:8716-8718`,
-`docs/internals/typed-handles-design.md:98-102`), which fires at block end, early
+the finaliser slot tasks and handles already use (`src/tychoc.c:8716-8718`), which fires at block end, early
 `return`, `break`/`continue` and `or_return` (`src/tychoc.c:8733-8737`). There is a
 genuine simplification available: `inout` on a heap value today threads the caller's
 owning scope to the callee as a hidden parameter so an allocating mutation lands where
@@ -380,8 +379,8 @@ as errata against a named version, "never silently"
 (`docs/spec/00-conventions.md:106-114`); the spec
 index records it as ratified on 2026-07-13 (`docs/spec/README.md:3`), and the plan's
 locked decision is that the 1.0 spec *is* the language freeze with date-based versions
-after it (`docs/internals/spec-plan.md:43`). The spec's scope is language **and**
-corelib (`docs/internals/spec-plan.md:41`), so a corelib-only addition is a spec change
+after it. The spec's scope is language **and**
+corelib, so a corelib-only addition is a spec change
 too.
 
 | Design | Fits inside the 1.0 freeze? | Why |
@@ -455,13 +454,12 @@ alone — which is what §4 does.
 
 **`handle` is the lifecycle object this question was asking for, minus the storage.**
 A typed FFI handle is already an affine value with a compiler-known destructor that runs
-at every scope exit, built by reusing the task finaliser machinery
-(`docs/internals/typed-handles-design.md:1-12`, `:56-70`), and the design note's own
-soundness argument is that affine ownership plus a scope-exit finaliser plus
-container/escape bans equals no use-after-free, no double-free, no leak
-(`docs/internals/typed-handles-design.md:118-123`). Design B is that pattern with
+at every scope exit, built by reusing the task finaliser machinery, and the
+soundness argument for that pattern is that affine ownership plus a scope-exit finaliser plus
+container/escape bans equals no use-after-free, no double-free, no leak.
+Design B is that pattern with
 `arena_free` as the finaliser instead of a C symbol — which is the strongest available
 evidence that it would work, and also the clearest statement of what it would cost: the
 same v1 bans (no storing in containers, no returning) that handles still carry
-(`docs/internals/typed-handles-design.md:65-70`, `:80-82`) would apply to regions on
+would apply to regions on
 day one, and lifting them is precisely the ownership-transfer work that note defers.

@@ -99,7 +99,7 @@ typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelis
 static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1); }
 
 /* Integer division/modulo guard. The int-overflow contract
- * (docs/internals/integer-overflow.md) defines signed overflow as two's-complement
+ * defines signed overflow as two's-complement
  * wrapping via -fwrapv -- but division is the one arithmetic op -fwrapv does NOT
  * make total: `x / 0` and `x % 0` are undefined (SIGFPE on x86), and INT64_MIN/-1
  * overflows the quotient (also a trap). Abort cleanly with a tycho: message, like
@@ -2174,7 +2174,7 @@ uint64_t tycho_arr_str_hash(TychoArrStr x) {
  * from growing without bound under an arena that never frees. Insertion order
  * is the entries array (independent of hash seed), so a random per-process
  * seed stays observable-output-invisible (fixpoint/parity byte-identical).
- * Compact-dict design: docs/internals/compact-dict-map-design.md. */
+ * Compact-dict design (design note archived with the 2026-08 docs prune). */
 typedef struct { tycho_int *ekeys; tycho_int *evals; unsigned char *elive; int *idx; tycho_int len, ecount, ecap, icap; } TychoMapII;
 typedef struct { tycho_int *ekeys; double *evals; unsigned char *elive; int *idx; tycho_int len, ecount, ecap, icap; } TychoMapIF;
 
