@@ -223,8 +223,8 @@ EOF
 asmok deep
 traps 'call depth exceeded' 'call depth exceeded' "$W/deep.tyc"
 
-# The pair ops (added for the tycho-scheme compiler, plan phase 1 of
-# `docs/internals/plan-tycho-scheme-DONE.md`): the three new traps -- car/cdr
+# The pair ops (added for the tycho-scheme compiler, `docs/internals/plan-tycho-scheme-compiler-DONE.md`): the three
+# new traps -- car/cdr
 # of a non-pair, set-car! on a non-pair, and the bounded pair-heap ceiling.
 cat > "$W/carnonpair.tasm" <<'EOF'
     PUSH 1

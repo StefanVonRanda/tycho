@@ -14,7 +14,8 @@
 # trees, eval walks them, apply dispatches closures and a 22-entry primitive
 # table through a scalar `match` (the tycho-vm finding).
 #
-# The plan this program feeds is plan.md; findings appear there as the
+# The plan this program fed was archived as
+# `docs/internals/plan-tycho-scheme-compiler-DONE.md`; findings appear there as the
 # interpreter finds them, and a finding is a phase only when a second,
 # independent caller needs it.
 
