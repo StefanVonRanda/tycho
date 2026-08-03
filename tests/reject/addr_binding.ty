@@ -1,0 +1,8 @@
+# `&` is only valid as the argument to an inout parameter. A ref binding is not
+# a feature (the design-aggregate-ref finding: the compatible constructs are
+# in-place inout and yielding subscripts); it would emit a C initializer taken
+# from a pointer, which is invalid C.
+fn main():
+    a: [int] = []
+    r := &a
+    print(str(len(r)))

@@ -93,7 +93,7 @@ Measured, on this tree:
     switch is marginally faster, not a win to build for — the ergonomics and
     fail-closed semantics were the point.
 
-- [ ] **Phase 3 — DESIGN: a cheap reference to an aggregate**
+- [x] **Phase 3 — DESIGN: a cheap reference to an aggregate**
   - Deliverable is a written design at `docs/internals/design-aggregate-ref.md`,
     **not code**. This is the most valuable item here and the one most likely to
     be got wrong by starting with an implementation.
@@ -117,6 +117,60 @@ Measured, on this tree:
     is a deliberate position, not an oversight — say what is lost by adding this
     and why it is worth it, or conclude that it is not.
   - Verify: the document exists, both doc gates green. No build gate.
+  - **DONE 2026-08-03.** The design is
+    `docs/internals/design-aggregate-ref.md`; both doc gates green. **The
+    premise was stale in a measured place:** `inout` already passes a pointer
+    plus the value's owning arena (`_ina_`) — no aggregate is copied in or out
+    (verified in emitted C for the exact VM shape: `h_vm(&_scr2, &_scope,
+    &(h_st), &(h_sp), ...)`). The tycho-vm `vpush` helper is free today;
+    tycho-ar's streaming state threads through in-place `inout`; the spec's
+    "copy-in/copy-out" is the semantic contract (`x = f(x)`), not the
+    implementation. Recommendation: build nothing new; the compatible
+    construct already ships twice (in-place `inout`, yielding subscripts). Two
+    real findings became the phases below: `&` outside argument position
+    compiles to invalid C, and the `inout` docs read as implementation.
+
+- [x] **Phase 4 — REJECT `&` outside an inout argument**
+  - Found by phase 3's design. `&` parses as a unary `E_ADDR` everywhere
+    (`src/tychoc.c:2785-2788`) and the resolver only validates it at call
+    sites (`src/tychoc.c:5455-5457`), so `r := &a` compiles to invalid C
+    (`TychoArrInt h_r = &(h_a);` — cc: "invalid initializer") and `&a + 1`
+    emits garbage. The one valid use is the direct argument of an inout
+    parameter.
+  - Scope: `src/tychoc.c` (an E_ADDR context check), reject fixtures under
+    `tests/reject/`, `docs/spec/` if the grammar implies otherwise.
+  - Done when: `r := &a`, `x := &a`, `&a + 1` reject with a clean diagnostic;
+    `f(&x)` into an `inout` param still compiles; `make test` green.
+  - Verify: `make test`.
+
+  - Verify: `make test`.
+  - **DONE 2026-08-03.** A `g_in_arg` resolve-context flag, set around the
+    three argument-resolution paths (the `E_CALL` loop, `instantiate_generic`
+    inference, and the two fn-value call loops) and cleared around lambda
+    bodies, makes `resolve_expr`'s `E_ADDR` case reject anywhere else:
+    `r := &a`, `&a + 1`, and `&` in a lambda body all die with a clean
+    diagnostic; `f(&x)` into `inout`, subscripts as inout arguments, and
+    generic inout calls all still compile. Reject fixtures
+    `tests/reject/addr_{binding,expr}.ty`. `make test` 582/0.
+
+- [x] **Phase 5 — CORRECT the stale `inout` documentation**
+  - Found by phase 3's design. The spec and reference say `inout` is
+    copy-in/copy-out; that is the semantic contract, but it has been read as
+    the implementation, which is how the copy-tax premise entered the last
+    plan. The codegen is an in-place pointer pass with the owner arena carried
+    (`src/tychoc.c:8460-8468`); no aggregate is copied.
+  - Scope: `docs/spec/07-memory-model.md` §11, `docs/reference/basics.md`,
+    the stale "one big function" comment at `tools/tycho-vm/main.ty:573`.
+  - Verify: the two doc gates, `make vm-check`. No build gate.
+  - **DONE 2026-08-03.** `docs/spec/07-memory-model.md` §11 and
+    `docs/reference/basics.md` now state the contract/codegen split (the
+    promise is `x = f(x)`; the codegen is an in-place pointer pass plus the
+    owner arena, so no aggregate is copied), and the stale "one big function"
+    comment at `tools/tycho-vm/main.ty:573` is corrected. The 41 spec
+    citations shifted by phase 4's compiler edits were repointed. Doc gates,
+    `make vm-check`, `make spec-check` green.
+
+## All phases complete
 
 ## Not in this plan
 

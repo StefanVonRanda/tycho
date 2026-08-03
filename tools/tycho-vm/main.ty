@@ -570,10 +570,15 @@ fn vstr(v: Val) -> string:
         return v.s
     return str(v.i)
 
-# The whole machine lives in one function on purpose. `inout` is copy-in/
-# copy-out ("equivalent to x = f(x)", docs/spec/11-functions.md), so a
-# vpush(&st, &sp, v) helper would copy the entire 1024-slot stack twice per
-# instruction. There is no borrow that does not copy, so push/pop are inlined.
+# The machine lives in one function, but not because it must. The reason this
+# file used to give -- that `inout` is copy-in/copy-out, so a vpush(&st, &sp,
+# v) helper would copy the entire 1024-slot stack twice per instruction -- is
+# stale: the contract is copy-in/copy-out but the codegen is an in-place
+# pointer pass plus the owner arena (no aggregate is copied in or out; the
+# design-aggregate-ref finding measured it). The one-function shape is a style
+# choice: the dispatch shares `here`/`ip`/`sp`/`st` across all arms and the
+# trace block reads them after, which a helper refactor would have to thread
+# explicitly. Nothing stops it; nobody has wanted it.
 fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
     # `bounded` has no `pop` (docs/spec/03-types.md 5.3.10), so it cannot be
     # driven as a stack by its own count. It is filled to capacity once and

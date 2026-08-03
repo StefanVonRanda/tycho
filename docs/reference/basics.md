@@ -40,7 +40,9 @@ parameters of one call (that would be overlapping mutable access). `inout` cover
 value structs, and the heap aggregates (`[int]`, `[string]`, heap-bearing structs, maps) —
 including `push`/growth and element/field mutation through the borrow. `inout string` works too:
 the string stays immutable, but reassignment through the borrow (`s = s + "."`) reaches the
-caller, with the new bytes built in the caller's arena.
+caller, with the new bytes built in the caller's arena. (The copy-in/copy-out wording is the
+semantic contract; the codegen passes a pointer plus the owner arena, so no aggregate is copied
+in or out — see `docs/internals/design-aggregate-ref.md`.)
 
 A third convention, `sink`, marks a parameter the callee **owns and consumes** — owned, so it
 may mutate the buffer (a plain borrow is read-only); consuming, so the caller gives it up:
