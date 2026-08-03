@@ -385,16 +385,17 @@ scheme-check: tychoc
 kv-check: tychoc
 	@sh tools/tycho-kv/run.sh
 
-# chess-check: the gate for tycho-chess, the perft (legal-move counting)
-# engine in tools/tycho-chess/. Sixth of the same shape as the tool lanes:
-# nothing else RUNS a tool under tools/ (step [9] tools-check only --emit-c's
-# them), so this is what executes the engine. The ground-truth differential is
-# the point: perft totals for the start position, Kiwipete and Position 3
-# against PUBLISHED values, plus ep/promotion/castling edge cases against the
-# python-chess oracle, plus a divide transcript golden that catches a subtree
-# gaining or losing a move without changing a total.
+# chess-check: the gate for tycho-chess, the perft + search engine in
+# tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else
+# RUNS a tool under tools/ (step [9] tools-check only --emit-c's them), so
+# this is what executes the engine. The ground-truth differential is the
+# point: perft totals for the start position, Kiwipete and Position 3 against
+# PUBLISHED values, plus ep/promotion/castling edge cases against the
+# python-chess oracle, plus a divide transcript golden. The search section
+# asserts determinism, TT-invariance (search == search-nott) and three exact
+# tactical probes (a free queen, a hanging queen, scholar's mate).
 #
-# ~10s, measured 2026-08-04. In `make ci` as step [3j/16].
+# ~32s, measured 2026-08-04. In `make ci` as step [3j/16].
 # See tools/tycho-chess/run.sh.
 chess-check: tychoc
 	@sh tools/tycho-chess/run.sh
