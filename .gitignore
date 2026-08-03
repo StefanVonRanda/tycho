@@ -169,6 +169,11 @@ gmon.out
 # as the two above; the runner builds the binary and every .tyc into a
 # `mktemp -d`, so nothing else in that directory needs un-ignoring.
 !/tools/tycho-vm/*.out
+# the tycho-scheme interpreter's golden (tools/tycho-scheme/expected.out) is
+# tracked too, same line, same reason as the three above; the runner builds the
+# binary into a `mktemp -d`, so nothing else in that directory needs
+# un-ignoring.
+!/tools/tycho-scheme/*.out
 
 # Claude Code session state (locks, worktrees) — never publish
 /.claude/

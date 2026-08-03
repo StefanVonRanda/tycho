@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -359,6 +359,19 @@ q-check: tychoc
 # See tools/tycho-vm/run.sh.
 vm-check: tychoc
 	@sh tools/tycho-vm/run.sh
+
+# scheme-check: the gate for tycho-scheme, the Scheme interpreter in
+# tools/tycho-scheme/. Fourth of the same shape as ar/q/vm-check above: nothing
+# else RUNS a tool under tools/ (step [9] tools-check only --emit-c's them), so
+# this is what executes the interpreter. The programs it runs stay SHALLOW:
+# generated-code recursion segfaults past the C stack (no guard in emitted
+# code; the compiler's own recursion gate does not cover it) -- recorded in
+# plan.md as a finding.
+#
+# ~1s, measured 2026-08-03. In `make ci` as step [3h/14].
+# See tools/tycho-scheme/run.sh.
+scheme-check: tychoc
+	@sh tools/tycho-scheme/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
