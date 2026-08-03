@@ -1,0 +1,1076 @@
+# tycho-scheme compile: Scheme -> tycho-vm bytecode (.tyc).
+#
+# The target is the tycho-vm ISA (tools/tycho-vm/main.ty); the .tyc container
+# is the format its header documents. The design record is plan.md; the
+# decisions that shape this file:
+#
+#  - DEFUNCTIONALIZATION (Reynolds): every lambda is one VM function whose
+#    signature is (params..., env, globals) -- params in slots 0..k-1, the
+#    captured-env chain in slot k, the global chain in slot k+1. A closure
+#    VALUE is the pair (tag . env), tag a compile-time int. A call through a
+#    function value dispatches on the tag; a call to a statically-known
+#    global function is a direct CALL.
+#  - BOXING: a local that an inner lambda captures is boxed at its binding
+#    (one CONS cell) -- reads are CAR, set! is SET-CAR -- so a closure can
+#    mutate a captured binding (the interpreter's set! walks to the defining
+#    frame; compiled code cannot, so the box IS the shared state).
+#  - GLOBALS are a pair-chain in frame-0 slot 0, built by the entry code in
+#    define order; a reference walks the chain at a compile-known depth.
+#    Primitives compile to direct ops and never touch the chain.
+#  - Everything the compiler cannot lower dies at COMPILE time, never
+#    silently wrong: unbound variables, arity errors, malformed forms,
+#    primitive shadowing, and primitives without a lowering.
+#
+# Compile-time positions are not tracked (the reader discards them); a
+# compile error names the construct, not the line -- recorded in plan.md.
+#
+# Three passes: A collects the global defines; B (analysis) walks the whole
+# program assigning every lambda a tag (discovery order) and computing its
+# captures, marking captured locals boxed; C (emission) compiles each lambda
+# into its own buffer and the entry into another; D lays the buffers out and
+# patches the local jumps and the cross-function CALLs.
+
+package main
+import "core:strings"
+
+# ---------------------------------------------------------------------------
+# shared state (threaded as inout -- no mutable module state)
+# ---------------------------------------------------------------------------
+
+struct Ins:
+    op: int
+    a: int
+    b: int
+# ---------------------------------------------------------------------------
+# the .tyc container (the format tools/tycho-vm/main.ty documents)
+# ---------------------------------------------------------------------------
+
+struct Program:
+    consts: [string]
+    code: [Ins]
+
+
+struct Bind:
+    kind: int        # 0 = local slot, 1 = capture (env position), 2 = global
+    idx: int
+    boxed: bool      # captured by an inner lambda: bind a CONS cell, read via CAR
+
+struct FnInfo:       # the ANALYSIS output: everything emission needs per lambda
+    params: [string]
+    captures: [string]       # env order = first-reference order in the body
+    scope: [string: Bind]    # the fn's own scope (params + locals), boxed set
+
+struct FnCode:
+    tag: int
+    code: [Ins]
+
+struct CallPatch:    # a CALL whose target is a fn tag, patched at layout
+    buf: int         # -1 = the entry buffer, else the fn's tag
+    ins: int
+    tag: int
+
+struct Ctx:
+    consts: [string]
+    gdepth: [string: int]    # global name -> chain depth (0 = newest define)
+    gtag: [string: int]      # global name -> fn tag, or -1 for a plain value
+
+# opcodes, mirroring tools/tycho-vm/main.ty (the numbers are the .tyc format)
+const OP_PUSH = 0
+const OP_LOADK = 1
+const OP_LOAD = 2
+const OP_STORE = 3
+const OP_ADD = 4
+const OP_SUB = 5
+const OP_MUL = 6
+const OP_DIV = 7
+const OP_MOD = 8
+const OP_EQ = 9
+const OP_NE = 10
+const OP_LT = 11
+const OP_LE = 12
+const OP_GT = 13
+const OP_GE = 14
+const OP_JMP = 15
+const OP_JZ = 16
+const OP_JNZ = 17
+const OP_CALL = 18
+const OP_RET = 19
+const OP_PRINT = 20
+const OP_HALT = 21
+const OP_DUP = 22
+const OP_POP = 23
+const OP_CONS = 24
+const OP_CAR = 25
+const OP_CDR = 26
+const OP_SETCAR = 27
+const OP_NIL = 28
+const OP_ISNIL = 29
+const OP_EQV = 30
+const OP_PRINTS = 31
+const OP_DIE = 32
+const OP_TRUTHY = 33
+
+const SLOTSPERFRAME = 16      # the VM's fixed frame width; locals must fit
+const K_LOCAL = 0
+const K_CAPTURE = 1
+const K_GLOBAL = 2
+const K_PRIM = 3         # a primitive: known at compile time, compiled inline
+
+fn die_c(msg: string):
+    die("tycho-scheme compile: " + msg)
+
+# a no-op call for match arms that must fall through to shared code below
+fn nop():
+    return
+
+fn list_has(xs: [string], name: string) -> bool:
+    for i := 0; i < len(xs); i += 1:
+        if xs[i] == name:
+            return true
+    return false
+
+# ---- const pool --------------------------------------------------------------
+
+fn const_of(ctx: inout Ctx, s: string) -> int:
+    for i := 0; i < len(ctx.consts); i += 1:
+        if ctx.consts[i] == s:
+            return i
+    push(ctx.consts, s)
+    return len(ctx.consts) - 1
+
+# ---- primitives ---------------------------------------------------------------
+# A primitive compiles to direct ops. The interpreter's 22-entry table, with
+# the five that have no lowering named so the failure is loud, not silent.
+
+fn is_primitive(name: string) -> bool:
+    for i := 0; i < len(prim_names()); i += 1:
+        if prim_names()[i] == name:
+            return true
+    return false
+
+# ---- globals (pass A) ---------------------------------------------------------
+
+# Stable partition: all top-level defines first, in order, then the rest.
+fn order_top_forms(forms: [Val]) -> [Val]:
+    defs := []Val
+    rest := []Val
+    for i := 0; i < len(forms); i += 1:
+        if is_define_form(forms[i]):
+            push(defs, forms[i])
+        else:
+            push(rest, forms[i])
+    out := []Val
+    for i := 0; i < len(defs); i += 1:
+        push(out, defs[i])
+    for i := 0; i < len(rest); i += 1:
+        push(out, rest[i])
+    return out
+
+fn is_define_form(v: Val) -> bool:
+    match v:
+        VPair(head, rest):
+            match head:
+                VSym(s):
+                    return s == "define"
+                _: return false
+        _: return false
+
+fn define_name(v: Val) -> string:
+    match v:
+        VPair(head, rest):
+            match car(rest):
+                VSym(name): return name
+                VPair(fnhead, fnrest):
+                    match fnhead:
+                        VSym(name): return name
+                        _: die_c("a define target must be a symbol")
+                    return ""
+                _: die_c("a define target must be a symbol")
+            return ""
+        _: die_c("malformed define")
+    return ""
+
+fn collect_globals(forms: [Val], gnames: inout [string]):
+    for i := 0; i < len(forms); i += 1:
+        if is_define_form(forms[i]):
+            push(gnames, define_name(forms[i]))
+
+fn build_gdepth(gnames: [string], ctx: inout Ctx):
+    total := len(gnames)
+    for i := 0; i < total; i += 1:
+        ctx.gdepth[gnames[i]] = total - 1 - i
+        ctx.gtag[gnames[i]] = -1
+
+# ---- name resolution ----------------------------------------------------------
+
+# The analysis resolves against a STACK of scopes (innermost first: the fn
+# being analyzed, then its enclosing fns). The emission resolves against one
+# fn's own scope, its capture map, then the globals.
+fn resolve(scopes: [ [string: Bind] ], ctx: Ctx, name: string) -> Bind:
+    # innermost first: push APPENDS, so the current fn's scope is the LAST
+    for i := len(scopes) - 1; i >= 0; i -= 1:
+        if name in scopes[i]:
+            return scopes[i][name]
+    if name in ctx.gdepth:
+        return Bind(K_GLOBAL, ctx.gdepth[name], false)
+    if is_primitive(name):
+        return Bind(K_PRIM, 0, false)
+    die_c("unbound variable '" + name + "'")
+    return Bind(K_GLOBAL, 0, false)
+
+fn mark_boxed(scopes: inout [ [string: Bind] ], name: string):
+    for i := 0; i < len(scopes); i += 1:
+        if name in scopes[i]:
+            scopes[i][name].boxed = true
+            return
+
+# ---- analysis (pass B) --------------------------------------------------------
+
+fn analyze_forms(forms: [Val], ctx: inout Ctx, infos: inout [FnInfo]):
+    scopes := [] [string: Bind]
+    for i := 0; i < len(forms); i += 1:
+        analyze_top(forms[i], &ctx, &infos, &scopes)
+
+fn analyze_top(v: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [string: Bind] ]):
+    if is_define_form(v):
+        name := define_name(v)
+        if is_primitive(name):
+            die_c("cannot redefine primitive '" + name + "'")
+        match v:
+            VPair(head, rest):
+                match car(rest):
+                    VPair(fnhead, fnrest):
+                        params := collect_params(fnrest)
+                        body := begin_of(cdr(rest))
+                        push(scopes, param_scope(params))
+                        idx := len(infos)
+                        push(infos, FnInfo(params, []string, []string: Bind))
+                        caps := analyze_body(body, &ctx, &infos, &scopes)
+                        own := current_scope(scopes)
+                        pop(scopes)
+                        infos[idx].captures = caps
+                        infos[idx].scope = own
+                        ctx.gtag[name] = idx
+                        return
+                    _:
+                        analyze_expr(car(cdr(rest)), &ctx, &infos, &scopes)
+                        return
+            _: die_c("malformed define")
+    analyze_expr(v, &ctx, &infos, &scopes)
+
+fn param_scope(params: [string]) -> [string: Bind]:
+    m := []string: Bind
+    for i := 0; i < len(params); i += 1:
+        m[params[i]] = Bind(K_LOCAL, i, false)
+    return m
+
+# Copy a scope map. Returning an array-of-maps ELEMENT directly trips a
+# codegen bug (the copy for a map-of-struct element is emitted with the wrong
+# C function -- recorded in plan.md); copying through a map parameter works.
+fn current_scope(scopes: [ [string: Bind] ]) -> [string: Bind]:
+    if len(scopes) == 0:
+        return []string: Bind
+    return scope_copy(scopes[len(scopes) - 1])
+
+fn scope_copy(m: [string: Bind]) -> [string: Bind]:
+    r := []string: Bind
+    ks := keys(m)
+    for i := 0; i < len(ks); i += 1:
+        r[ks[i]] = m[ks[i]]
+    return r
+
+fn analyze_expr(v: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [string: Bind] ]):
+    match v:
+        VPair(head, rest):
+            match head:
+                VSym(s):
+                    if s == "quote":
+                        return
+                    if s == "lambda":
+                        params := collect_params(car(rest))
+                        body := begin_of(cdr(rest))
+                        push(scopes, param_scope(params))
+                        idx := len(infos)
+                        push(infos, FnInfo(params, []string, []string: Bind))
+                        caps := analyze_body(body, &ctx, &infos, &scopes)
+                        own := current_scope(scopes)
+                        pop(scopes)
+                        infos[idx].captures = caps
+                        infos[idx].scope = own
+                        return
+                    if s == "if":
+                        analyze_expr(car(rest), &ctx, &infos, &scopes)
+                        analyze_expr(car(cdr(rest)), &ctx, &infos, &scopes)
+                        analyze_expr(car(cdr(cdr(rest))), &ctx, &infos, &scopes)
+                        return
+                    if s == "define":
+                        target := car(rest)
+                        match target:
+                            VSym(name):
+                                scopes[len(scopes) - 1][name] = Bind(K_LOCAL, -1, false)
+                                analyze_expr(car(cdr(rest)), &ctx, &infos, &scopes)
+                                return
+                            VPair(fnhead, fnrest):
+                                params := collect_params(fnrest)
+                                body := begin_of(cdr(rest))
+                                push(scopes, param_scope(params))
+                                idx := len(infos)
+                                push(infos, FnInfo(params, []string, []string: Bind))
+                                caps := analyze_body(body, &ctx, &infos, &scopes)
+                                own := current_scope(scopes)
+                                pop(scopes)
+                                infos[idx].captures = caps
+                                infos[idx].scope = own
+                                match fnhead:
+                                    VSym(nm):
+                                        scopes[len(scopes) - 1][nm] = Bind(K_LOCAL, -1, false)
+                                    _: die_c("bad define")
+                                return
+                            _: die_c("bad define")
+                        return
+                    if s == "set!":
+                        match car(rest):
+                            VSym(name):
+                                analyze_expr(VSym(name), &ctx, &infos, &scopes)
+                                analyze_expr(car(cdr(rest)), &ctx, &infos, &scopes)
+                                return
+                            _: die_c("bad set!")
+                        return
+                    if s == "begin":
+                        analyze_args(rest, &ctx, &infos, &scopes)
+                        return
+                _:
+                    nop()
+            analyze_expr(head, &ctx, &infos, &scopes)
+            analyze_args(rest, &ctx, &infos, &scopes)
+            return
+        _:
+            return
+
+fn analyze_args(lst: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [string: Bind] ]):
+    a := lst
+    for not is_nil(a):
+        analyze_expr(car(a), &ctx, &infos, &scopes)
+        a = cdr(a)
+
+fn analyze_body(body: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [string: Bind] ]) -> [string]:
+    free := []string
+    walk_free(body, &ctx, &infos, &scopes, &free)
+    return free
+
+fn walk_free(v: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [string: Bind] ], free: inout [string]):
+    match v:
+        VSym(name):
+            # free = resolves OUTSIDE the current fn's own scope (the LAST)
+            if len(scopes) == 0 or not (name in scopes[len(scopes) - 1]):
+                b := resolve(scopes, ctx, name)
+                if b.kind == K_LOCAL or b.kind == K_CAPTURE:
+                    if not list_has(free, name):
+                        push(free, name)
+                    mark_boxed(&scopes, name)
+            return
+        VPair(head, rest):
+            match head:
+                VSym(s):
+                    if s == "quote":
+                        return
+                    if s == "lambda":
+                        params := collect_params(car(rest))
+                        body := begin_of(cdr(rest))
+                        push(scopes, param_scope(params))
+                        idx := len(infos)
+                        push(infos, FnInfo(params, []string, []string: Bind))
+                        caps := analyze_body(body, &ctx, &infos, &scopes)
+                        own := current_scope(scopes)
+                        pop(scopes)
+                        infos[idx].captures = caps
+                        infos[idx].scope = own
+                        return
+                    if s == "if":
+                        walk_free(car(rest), &ctx, &infos, &scopes, &free)
+                        walk_free(car(cdr(rest)), &ctx, &infos, &scopes, &free)
+                        walk_free(car(cdr(cdr(rest))), &ctx, &infos, &scopes, &free)
+                        return
+                    if s == "define":
+                        match car(rest):
+                            VSym(name):
+                                scopes[len(scopes) - 1][name] = Bind(K_LOCAL, -1, false)
+                                walk_free(car(cdr(rest)), &ctx, &infos, &scopes, &free)
+                                return
+                            VPair(fnhead, fnrest):
+                                params := collect_params(fnrest)
+                                body := begin_of(cdr(rest))
+                                push(scopes, param_scope(params))
+                                idx := len(infos)
+                                push(infos, FnInfo(params, []string, []string: Bind))
+                                caps := analyze_body(body, &ctx, &infos, &scopes)
+                                own := current_scope(scopes)
+                                pop(scopes)
+                                infos[idx].captures = caps
+                                infos[idx].scope = own
+                                match fnhead:
+                                    VSym(nm):
+                                        scopes[len(scopes) - 1][nm] = Bind(K_LOCAL, -1, false)
+                                    _: die_c("bad define")
+                                return
+                            _: die_c("bad define")
+                        return
+                    if s == "set!":
+                        match car(rest):
+                            VSym(name):
+                                walk_free(VSym(name), &ctx, &infos, &scopes, &free)
+                                walk_free(car(cdr(rest)), &ctx, &infos, &scopes, &free)
+                                return
+                            _: die_c("bad set!")
+                        return
+                    if s == "begin":
+                        walk_args(rest, &ctx, &infos, &scopes, &free)
+                        return
+                _:
+                    nop()
+            walk_free(head, &ctx, &infos, &scopes, &free)
+            walk_args(rest, &ctx, &infos, &scopes, &free)
+            return
+        _:
+            return
+
+fn walk_args(lst: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [string: Bind] ], free: inout [string]):
+    a := lst
+    for not is_nil(a):
+        walk_free(car(a), &ctx, &infos, &scopes, &free)
+        a = cdr(a)
+
+# ---------------------------------------------------------------------------
+# emission (pass C)
+# ---------------------------------------------------------------------------
+
+struct Emit:
+    code: [Ins]
+    bufid: int         # -1 for the entry, else this fn's tag
+    nparams: int       # -1 for the entry
+    nlocals: int
+    entry: bool        # globals live in frame-0 slot 0, no env/globals params
+    scope: [string: Bind]    # this fn's own scope (params + locals)
+    caps: [string: Bind]     # this fn's captures: name -> env position
+
+fn e_push(em: inout Emit, imm: int):
+    push(em.code, Ins(OP_PUSH, imm, 0))
+
+fn e_load(em: inout Emit, slot: int):
+    push(em.code, Ins(OP_LOAD, slot, 0))
+
+fn e_store(em: inout Emit, slot: int):
+    push(em.code, Ins(OP_STORE, slot, 0))
+
+fn e_loadk(em: inout Emit, k: int):
+    push(em.code, Ins(OP_LOADK, k, 0))
+
+fn e_op(em: inout Emit, op: int):
+    push(em.code, Ins(op, 0, 0))
+
+fn e_jump(em: inout Emit, op: int) -> int:
+    push(em.code, Ins(op, 0, 0))
+    return len(em.code) - 1
+
+fn e_patch(em: inout Emit, at: int):
+    em.code[at].a = len(em.code)
+
+fn env_slot(em: Emit) -> int:
+    return em.nparams
+
+fn globals_slot(em: Emit) -> int:
+    if em.entry:
+        return 0
+    return em.nparams + 1
+
+# resolution at emission: own scope, then captures, then globals
+fn resolve_emit(em: Emit, ctx: Ctx, name: string) -> Bind:
+    if name in em.scope:
+        return em.scope[name]
+    if name in em.caps:
+        return em.caps[name]
+    if name in ctx.gdepth:
+        return Bind(K_GLOBAL, ctx.gdepth[name], false)
+    if is_primitive(name):
+        return Bind(K_PRIM, 0, false)
+    die_c("unbound variable '" + name + "'")
+    return Bind(K_GLOBAL, 0, false)
+
+# push a boxed name's BOX (no deref) -- what a closure captures, so a
+# captured binding and its mutations are shared through the box
+fn emit_box_ref(b: Bind, em: inout Emit):
+    if b.kind == K_PRIM:
+        die_c("cannot pass a primitive as a value (wrap it in a lambda)")
+    if b.kind == K_GLOBAL:
+        e_load(&em, globals_slot(em))
+        for i := 0; i < b.idx; i += 1:
+            e_op(&em, OP_CDR)
+        e_op(&em, OP_CAR)
+        return
+    if b.kind == K_LOCAL:
+        e_load(&em, b.idx)
+        return
+    e_load(&em, env_slot(em))
+    for i := 0; i < b.idx; i += 1:
+        e_op(&em, OP_CDR)
+    return
+
+# push a name's value
+fn emit_ref(b: Bind, em: inout Emit):
+    if b.kind == K_PRIM:
+        die_c("cannot pass a primitive as a value (wrap it in a lambda)")
+    if b.kind == K_GLOBAL:
+        e_load(&em, globals_slot(em))
+        for i := 0; i < b.idx; i += 1:
+            e_op(&em, OP_CDR)
+        e_op(&em, OP_CAR)
+        return
+    if b.kind == K_LOCAL:
+        e_load(&em, b.idx)
+        if b.boxed:
+            e_op(&em, OP_CAR)
+        return
+    e_load(&em, env_slot(em))
+    for i := 0; i < b.idx; i += 1:
+        e_op(&em, OP_CDR)
+    e_op(&em, OP_CAR)          # the env element: the BOX
+    e_op(&em, OP_CAR)          # the box's content
+
+# ---- the driver ----------------------------------------------------------------
+
+fn compile_scheme(src: string) -> Program:
+    # parse the prelude + the program as one body of top-level forms
+    forms := []Val
+    toks := tokenize(PRELUDE + "\n" + src)
+    pos := 0
+    for pos < len(toks):
+        push(forms, parse_toks(toks, &pos))
+
+    # The interpreter resolves globals BY NAME, so a top-level display may
+    # sit between defines and still work. The compiled globals are a chain
+    # walked at compile-known DEPTH, which requires the chain to be complete
+    # when a reference runs -- so the defines are emitted first, in their
+    # relative order, then the expressions. Both passes use the reordered
+    # list, so the lambda tags stay aligned. Divergence from the interpreter:
+    # a top-level expression that OBSERVES the define interleaving (a define
+    # with an observable side effect between two expressions) runs later
+    # here -- recorded in plan.md; the programs do not do this.
+    forms = order_top_forms(forms)
+    gnames := []string
+    collect_globals(forms, &gnames)
+    ctx := Ctx([]string, []string: int, []string: int)
+    build_gdepth(gnames, &ctx)
+
+    infos := []FnInfo
+    analyze_forms(forms, &ctx, &infos)
+
+    fns := []FnCode
+    calls := []CallPatch
+    entry := []Ins
+    tagseq := 0
+    emit_top_forms(forms, &ctx, infos, &fns, &calls, &tagseq, &entry)
+
+    code := layout(fns, entry, calls)
+    return Program(ctx.consts, code)
+
+fn emit_top_forms(forms: [Val], ctx: inout Ctx, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int, entry: inout [Ins]):
+    em := Emit([]Ins, -1, -1, 0, true, []string: Bind, []string: Bind)
+    e_op(&em, OP_NIL)
+    e_store(&em, 0)                  # frame-0 slot 0 = the global chain
+    for i := 0; i < len(forms); i += 1:
+        emit_expr(forms[i], &ctx, &em, infos, &fns, &calls, &tagseq)
+        e_op(&em, OP_POP)            # a top-level form's value is discarded
+    e_op(&em, OP_HALT)
+    entry = em.code
+
+# ---- the main expression compiler ------------------------------------------------
+
+fn emit_expr(v: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    match v:
+        VInt(i):
+            e_push(&em, i)
+            return
+        VBool(b):
+            if b:
+                e_push(&em, 1)
+            else:
+                e_op(&em, OP_NIL)
+            return
+        VStr(s):
+            e_loadk(&em, const_of(&ctx, s))
+            return
+        VSym(name):
+            emit_ref(resolve_emit(em, ctx, name), &em)
+            return
+        VPair(head, rest):
+            match head:
+                VSym(s):
+                    if s == "quote":
+                        emit_quoted(car(rest), &ctx, &em)
+                        return
+                    if s == "if":
+                        emit_expr(car(rest), &ctx, &em, infos, &fns, &calls, &tagseq)
+                        e_op(&em, OP_TRUTHY)
+                        jz := e_jump(&em, OP_JZ)
+                        emit_expr(car(cdr(cdr(rest))), &ctx, &em, infos, &fns, &calls, &tagseq)
+                        jmp := e_jump(&em, OP_JMP)
+                        e_patch(&em, jz)
+                        emit_expr(car(cdr(rest)), &ctx, &em, infos, &fns, &calls, &tagseq)
+                        e_patch(&em, jmp)
+                        return
+                    if s == "define":
+                        emit_define(car(rest), cdr(rest), &ctx, &em, infos, &fns, &calls, &tagseq)
+                        return
+                    if s == "lambda":
+                        emit_lambda(car(rest), cdr(rest), &ctx, &em, infos, &fns, &calls, &tagseq)
+                        return
+                    if s == "set!":
+                        match car(rest):
+                            VSym(name):
+                                b := resolve_emit(em, ctx, name)
+                                # SET-CAR pops the VALUE (top) then the PAIR,
+                                # so the pair is pushed FIRST
+                                if b.kind == K_GLOBAL:
+                                    e_load(&em, globals_slot(em))
+                                    for i := 0; i < b.idx; i += 1:
+                                        e_op(&em, OP_CDR)
+                                elif b.kind == K_LOCAL:
+                                    if b.boxed:
+                                        e_load(&em, b.idx)
+                                else:
+                                    e_load(&em, env_slot(em))
+                                    for i := 0; i < b.idx; i += 1:
+                                        e_op(&em, OP_CDR)
+                                    e_op(&em, OP_CAR)
+                                emit_expr(car(cdr(rest)), &ctx, &em, infos, &fns, &calls, &tagseq)
+                                if b.kind == K_GLOBAL or (b.kind == K_LOCAL and b.boxed) or b.kind == K_CAPTURE:
+                                    e_op(&em, OP_SETCAR)
+                                else:
+                                    e_store(&em, b.idx)
+                                e_op(&em, OP_NIL)   # set! returns VNil
+                                return
+                            _: die_c("bad set!")
+                        return
+                    if s == "begin":
+                        emit_begin(rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+                        return
+                    emit_apply_sym(s, rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+                    return
+                _:
+                    nop()
+            emit_apply_expr(head, rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+            return
+        _:
+            die_c("cannot compile a non-form")
+    return
+
+fn emit_begin(lst: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    # every expression leaves exactly one value (the no-value forms push NIL);
+    # the intermediate forms' values are discarded, the last is the result
+    n := count_args(lst)
+    i := 0
+    a := lst
+    for not is_nil(a):
+        emit_expr(car(a), &ctx, &em, infos, &fns, &calls, &tagseq)
+        if i < n - 1:
+            e_op(&em, OP_POP)
+        i = i + 1
+        a = cdr(a)
+
+fn emit_quoted(v: Val, ctx: inout Ctx, em: inout Emit):
+    match v:
+        VInt(i):
+            e_push(&em, i)
+            return
+        VBool(b):
+            if b:
+                e_push(&em, 1)
+            else:
+                e_op(&em, OP_NIL)
+            return
+        VStr(s):
+            e_loadk(&em, const_of(&ctx, s))
+            return
+        VSym(name):
+            e_loadk(&em, const_of(&ctx, name))    # a symbol IS a string const
+            return
+        VNil:
+            e_op(&em, OP_NIL)
+            return
+        VPair(a, d):
+            # (quote (a b ...)) -> push the elements, NIL, CONS per element
+            items := []Val
+            x := v
+            for not is_nil(x):
+                push(items, car(x))
+                x = cdr(x)
+            for i := 0; i < len(items); i += 1:
+                emit_quoted(items[i], &ctx, &em)
+            e_op(&em, OP_NIL)
+            for i := 0; i < len(items); i += 1:
+                e_op(&em, OP_CONS)
+            return
+        _:
+            die_c("cannot quote a non-form")
+
+# ---- defines ------------------------------------------------------------------
+
+fn emit_define(target: Val, body: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    match target:
+        VSym(name):
+            if em.entry:
+                # a global value: eval, cons onto the chain, store slot 0
+                emit_expr(car(body), &ctx, &em, infos, &fns, &calls, &tagseq)
+                e_load(&em, 0)
+                e_op(&em, OP_CONS)
+                e_store(&em, 0)
+                e_op(&em, OP_NIL)          # define returns VNil
+                return
+            b := em.scope[name]
+            if b.idx < 0:
+                b.idx = em.nparams + 2 + em.nlocals
+                em.nlocals = em.nlocals + 1
+                if b.idx >= SLOTSPERFRAME:
+                    die_c("too many locals in one function (frame width " + str(SLOTSPERFRAME) + ")")
+                em.scope[name] = b
+            emit_expr(car(body), &ctx, &em, infos, &fns, &calls, &tagseq)
+            if b.boxed:
+                e_op(&em, OP_NIL)
+                e_op(&em, OP_CONS)      # (value . nil): the box, CAR = value
+            e_store(&em, b.idx)
+            e_op(&em, OP_NIL)          # define returns VNil
+            return
+        VPair(fnhead, fnrest):
+            fname := ""
+            match fnhead:
+                VSym(nm):
+                    fname = nm
+                _: die_c("bad define")
+            params := collect_params(fnrest)
+            body2 := begin_of(body)
+            info := infos[tagseq]
+            mytag := tagseq
+            fncode := compile_fn_body(info, body2, &ctx, infos, &fns, &calls, &tagseq)
+            push(fns, FnCode(mytag, fncode))
+            emit_closure(info, &ctx, &em, mytag)
+            if em.entry:
+                e_load(&em, 0)
+                e_op(&em, OP_CONS)
+                e_store(&em, 0)
+                e_op(&em, OP_NIL)          # define returns VNil
+            else:
+                b := em.scope[fname]
+                if b.idx < 0:
+                    b.idx = em.nparams + 2 + em.nlocals
+                    em.nlocals = em.nlocals + 1
+                    if b.idx >= SLOTSPERFRAME:
+                        die_c("too many locals in one function (frame width " + str(SLOTSPERFRAME) + ")")
+                    em.scope[fname] = b
+                e_store(&em, b.idx)
+            return
+        _:
+            die_c("bad define")
+    return
+
+# (lambda (params) body...): compile the fn, then emit (tag . env) on the stack
+fn emit_lambda(params_list: Val, body: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    params := collect_params(params_list)
+    body2 := begin_of(body)
+    info := infos[tagseq]
+    mytag := tagseq
+    fncode := compile_fn_body(info, body2, &ctx, infos, &fns, &calls, &tagseq)
+    push(fns, FnCode(mytag, fncode))
+    emit_closure(info, &ctx, &em, mytag)
+
+# the closure VALUE: (tag . env) with env = the captures, in env order
+fn emit_closure(info: FnInfo, ctx: inout Ctx, em: inout Emit, tag: int):
+    e_push(&em, tag)
+    for i := 0; i < len(info.captures); i += 1:
+        emit_box_ref(resolve_emit(em, ctx, info.captures[i]), &em)
+    e_op(&em, OP_NIL)
+    for i := 0; i < len(info.captures); i += 1:
+        e_op(&em, OP_CONS)
+    e_op(&em, OP_CONS)          # pair the tag with the env -- even when empty
+
+# compile a lambda's body into a fresh buffer; returns the code
+fn compile_fn_body(info: FnInfo, body: Val, ctx: inout Ctx, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int) -> [Ins]:
+    caps := []string: Bind
+    for i := 0; i < len(info.captures); i += 1:
+        caps[info.captures[i]] = Bind(K_CAPTURE, i, true)
+    em := Emit([]Ins, tagseq, len(info.params), 0, false, info.scope, caps)
+    # box the captured params at entry
+    for i := 0; i < len(info.params); i += 1:
+        if info.scope[info.params[i]].boxed:
+            e_load(&em, i)
+            e_op(&em, OP_NIL)
+            e_op(&em, OP_CONS)
+            e_store(&em, i)
+    # body is ONE form (begin_of already wrapped a multi-expression body).
+    # Its nested lambdas take the tags AFTER this fn's: start the body's
+    # counter at tag+1 and return the next free tag through tagseq -- the
+    # caller must NOT add its own increment (that double-counted the nested
+    # lambdas' tags and collided the next fn's tag with theirs).
+    inner := tagseq + 1
+    emit_expr(body, &ctx, &em, infos, &fns, &calls, &inner)
+    e_op(&em, OP_RET)
+    tagseq = inner
+    return em.code
+
+# ---- applications ----------------------------------------------------------------
+
+fn emit_apply_sym(s: string, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    # a primitive compiles inline
+    if is_primitive(s):
+        emit_prim(s, rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+        return
+    b := resolve_emit(em, ctx, s)
+    if b.kind == K_GLOBAL and ctx.gtag[s] >= 0:
+        # a statically-known global function: a direct call
+        nargs := emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+        e_op(&em, OP_NIL)                    # the empty env
+        e_load(&em, globals_slot(em))
+        emit_call(&em, &calls, ctx.gtag[s], nargs + 2)
+        return
+    # a function value: dispatch on the tag
+    emit_dispatch(b, rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+
+fn emit_apply_expr(op: Val, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    # a lambda literal in operator position: a direct call, env built inline
+    match op:
+        VPair(head, body):
+            match head:
+                VSym(s):
+                    if s == "lambda":
+                        params := collect_params(car(body))
+                        body2 := begin_of(cdr(body))
+                        info := infos[tagseq]
+                        mytag := tagseq
+                        fncode := compile_fn_body(info, body2, &ctx, infos, &fns, &calls, &tagseq)
+                        push(fns, FnCode(mytag, fncode))
+                        nargs := emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+                        for i := 0; i < len(info.captures); i += 1:
+                            emit_ref(resolve_emit(em, ctx, info.captures[i]), &em)
+                        e_op(&em, OP_NIL)
+                        for i := 0; i < len(info.captures); i += 1:
+                            e_op(&em, OP_CONS)
+                        e_load(&em, globals_slot(em))
+                        emit_call(&em, &calls, mytag, nargs + 2)
+                        return
+                _:
+                    nop()
+        _:
+            nop()
+    b := operator_binding(op, em, ctx)
+    emit_dispatch(b, rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+
+# a call through a function value. The ARGS are emitted first, then the
+# operator -- so the operator sits on top where the tag check can reach it,
+# and the CDR+LOAD leave [args..., env, globals], which the CALL's copy turns
+# into (a1..an, env, globals) in slots 0..n+1. The interpreter evaluates the
+# operator first; the compiled code evaluates the args first -- observable
+# only through evaluation-order side effects, which the compiled programs do
+# not have (recorded in plan.md).
+fn emit_dispatch(b: Bind, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    nargs := count_args(rest)
+    emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)   # [a1..an]
+    emit_ref(b, &em)                                           # [a1..an, f]
+    ntags := len(infos)
+    e_op(&em, OP_DUP)
+    e_op(&em, OP_CAR)                                          # [a1..an, f, tag]
+    jnzs := []int
+    for t := 0; t < ntags; t += 1:
+        e_op(&em, OP_DUP)                 # the tag must SURVIVE each compare
+        e_push(&em, t)
+        e_op(&em, OP_EQ)
+        push(jnzs, e_jump(&em, OP_JNZ))
+    e_loadk(&em, const_of(&ctx, "tycho-scheme: attempt to call a non-function"))
+    e_op(&em, OP_DIE)
+    prologue_start := len(em.code)
+    for t := 0; t < ntags; t += 1:
+        em.code[jnzs[t]].a = prologue_start + 5 * t
+        e_op(&em, OP_POP)                    # drop the tag copy
+        e_op(&em, OP_CDR)                    # [a1..an, env]
+        e_load(&em, globals_slot(em))        # [a1..an, env, globals]
+        emit_call(&em, &calls, t, nargs + 2)
+        e_jump(&em, OP_JMP)                  # skip the OTHER prologues: the
+                                             # CALL returns one instruction on
+    jmp_after := e_jump(&em, OP_JMP)         # ... and the prologues fall through
+    e_patch(&em, jmp_after)                  # (unused fall-through for the last)
+    # patch each prologue's trailing JMP to skip the whole region
+    for t := 0; t < ntags; t += 1:
+        em.code[prologue_start + 5 * t + 4].a = len(em.code)
+    return
+
+# A computed operator that is NOT a symbol cannot be emitted args-first (the
+# dispatch needs a binding to push after the args). Lambda literals take the
+# direct path; a non-symbol operator dies loudly rather than silently wrong.
+fn operator_binding(op: Val, em: Emit, ctx: Ctx) -> Bind:
+    match op:
+        VSym(name):
+            return resolve_emit(em, ctx, name)
+        _:
+            die_c("cannot dispatch on a non-symbol operator (only lambda literals and variables)")
+    return Bind(K_GLOBAL, 0, false)
+
+fn count_args(lst: Val) -> int:
+    n := 0
+    a := lst
+    for not is_nil(a):
+        n = n + 1
+        a = cdr(a)
+    return n
+
+fn emit_args(lst: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int) -> int:
+    n := 0
+    a := lst
+    for not is_nil(a):
+        emit_expr(car(a), &ctx, &em, infos, &fns, &calls, &tagseq)
+        n = n + 1
+        a = cdr(a)
+    return n
+
+fn emit_call(em: inout Emit, calls: inout [CallPatch], tag: int, arity: int):
+    push(em.code, Ins(OP_CALL, 0, arity))
+    push(calls, CallPatch(em.bufid, len(em.code) - 1, tag))
+
+# ---- primitives -------------------------------------------------------------------
+
+fn prim_arity(s: string, n: int, want: int):
+    if n != want:
+        die_c("'" + s + "' expects " + str(want) + " argument(s), got " + str(n))
+
+fn emit_prim(s: string, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
+    if s == "+" or s == "*":
+        n := emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+        if n == 0:
+            if s == "+":
+                e_push(&em, 0)
+            else:
+                e_push(&em, 1)
+            return
+        # the operands are on the stack; fold left with the op
+        for i := 0; i < n - 1; i += 1:
+            if s == "+":
+                e_op(&em, OP_ADD)
+            else:
+                e_op(&em, OP_MUL)
+        return
+    if s == "-":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 2)
+        e_op(&em, OP_SUB)
+        return
+    if s == "/":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 2)
+        e_op(&em, OP_DIV)
+        return
+    if s == "=":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 2)
+        e_op(&em, OP_EQ)
+        return
+    if s == "<":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 2)
+        e_op(&em, OP_LT)
+        return
+    if s == ">":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 2)
+        e_op(&em, OP_GT)
+        return
+    if s == "cons":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 2)
+        e_op(&em, OP_CONS)
+        return
+    if s == "car":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 1)
+        e_op(&em, OP_CAR)
+        return
+    if s == "cdr":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 1)
+        e_op(&em, OP_CDR)
+        return
+    if s == "null?":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 1)
+        e_op(&em, OP_ISNIL)
+        return
+    if s == "not":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 1)
+        e_op(&em, OP_TRUTHY)
+        return
+    if s == "zero?":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 1)
+        e_push(&em, 0)
+        e_op(&em, OP_EQV)
+        return
+    if s == "eq?":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 2)
+        e_op(&em, OP_EQV)
+        return
+    if s == "list":
+        n := emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)
+        e_op(&em, OP_NIL)
+        for i := 0; i < n; i += 1:
+            e_op(&em, OP_CONS)
+        return
+    if s == "display":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 1)
+        e_op(&em, OP_PRINTS)
+        e_op(&em, OP_NIL)          # display returns VNil in the interpreter
+        return
+    if s == "newline":
+        prim_arity(s, emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq), 0)
+        e_loadk(&em, const_of(&ctx, ""))
+        e_op(&em, OP_PRINT)
+        e_op(&em, OP_NIL)          # newline returns VNil
+        return
+    die_c("primitive '" + s + "' is not compilable (no lowering)")
+
+fn layout(fns: [FnCode], entry: [Ins], calls: [CallPatch]) -> [Ins]:
+    # the VM starts executing at pc 0, so the ENTRY comes first; the fn
+    # bodies follow, and every CALL target is patched to its fn's start.
+    entry_start := 0
+    starts := []int
+    ntags := len(fns)
+    for i := 0; i < ntags; i += 1:
+        push(starts, 0)
+    pos := len(entry)
+    for i := 0; i < ntags; i += 1:
+        starts[fns[i].tag] = pos
+        pos = pos + len(fns[i].code)
+    out := []Ins
+    for j := 0; j < len(entry); j += 1:
+        push(out, entry[j])
+    for i := 0; i < ntags; i += 1:
+        for j := 0; j < len(fns[i].code); j += 1:
+            push(out, fns[i].code[j])
+    # local jumps in the entry keep their buffer-local targets (start = 0)
+    # local jumps in the fns: make the buffer-local targets absolute
+    for i := 0; i < ntags; i += 1:
+        base := starts[fns[i].tag]
+        for j := 0; j < len(fns[i].code); j += 1:
+            op := fns[i].code[j].op
+            if op == OP_JMP or op == OP_JZ or op == OP_JNZ:
+                out[base + j].a = out[base + j].a + base
+    # cross-function calls
+    for i := 0; i < len(calls); i += 1:
+        c := calls[i]
+        base := entry_start
+        if c.buf >= 0:
+            base = starts[c.buf]
+        out[base + c.ins].a = starts[c.tag]
+    return out
+
+
+fn put_u32(v: int) -> string:
+    return chr(v % 256) + chr((v / 256) % 256) + chr((v / 65536) % 256) + chr((v / 16777216) % 256)
+
+fn put_i32(v: int) -> string:
+    if v < 0:
+        return put_u32(v + 4294967296)
+    return put_u32(v)
+
+fn encode(p: Program) -> string:
+    out := "TYC1" + put_u32(len(p.consts)) + put_u32(len(p.code))
+    for i := 0; i < len(p.consts); i += 1:
+        out = out + put_u32(len(p.consts[i])) + p.consts[i]
+    for i := 0; i < len(p.code); i += 1:
+        out = out + chr(p.code[i].op) + put_i32(p.code[i].a) + put_i32(p.code[i].b)
+    return out

@@ -29,6 +29,25 @@
 #   PRINT          pop and print, with a newline
 #   HALT DUP POP   stop; duplicate top; discard top
 #
+# The pair ops (added for the tycho-scheme compiler -- plan phase 1): a
+# bounded heap of CONS cells; a pair's components are Vals, fetched by CAR/
+# CDR. Lists end in the distinguished NIL value. Scheme truth: everything but
+# NIL is true, so `if` in compiled code is ISNIL + JZ.
+#
+#   CONS           pop b, pop a, allocate the cell (a . b), push it
+#   CAR CDR        pop a pair, push its component (trap on a non-pair)
+#   SET-CAR        pop v, pop a pair, set its car to v   (the compiled set!)
+#   NIL            push the distinguished empty-list/false value
+#   ISNIL          pop v, push 1 if v is NIL else 0
+#   EQV            pop b, pop a, push 1 if equal (int/nil/string; pairs never)
+#   PRINTS         pop and print its Scheme FORM, no newline (compiled display)
+#   DIE  k         die with const-pool message k (compiled runtime errors)
+#   TRUTHY         pop v, push 1 if v is FALSE (nil, or a non-string non-pair
+#                  with value 0) else 0 -- the compiled Scheme `if`/`not` test.
+#
+# Every new opcode is APPENDED -- the byte encoding of the pre-existing ops is
+# part of the locked .tyc format and never renumbers.
+#
 # ---------------------------------------------------------------------------
 # THE .tyc CONTAINER
 # ---------------------------------------------------------------------------
@@ -92,7 +111,7 @@ type Pc = int
 type ConstIdx = int
 type SlotIdx = int
 
-const NOPCODES = 24
+const NOPCODES = 34
 const MAXOPERANDS = 2
 
 # operand kinds -- what a mnemonic's operand means, and how `dis` prints it
@@ -126,6 +145,16 @@ const OP_PRINT = 20
 const OP_HALT = 21
 const OP_DUP = 22
 const OP_POP = 23
+const OP_CONS = 24
+const OP_CAR = 25
+const OP_CDR = 26
+const OP_SETCAR = 27
+const OP_NIL = 28
+const OP_ISNIL = 29
+const OP_EQV = 30
+const OP_PRINTS = 31
+const OP_DIE = 32
+const OP_TRUTHY = 33
 
 # Machine limits. Fixed on purpose: exceeding one is a diagnosed runtime error
 # naming the pc, never a wrap and never an abort.
@@ -166,6 +195,16 @@ fn optable() -> [NOPCODES]Meta:
         Meta("HALT", 0, K_NONE, K_NONE),
         Meta("DUP", 0, K_NONE, K_NONE),
         Meta("POP", 0, K_NONE, K_NONE),
+        Meta("CONS", 0, K_NONE, K_NONE),
+        Meta("CAR", 0, K_NONE, K_NONE),
+        Meta("CDR", 0, K_NONE, K_NONE),
+        Meta("SET-CAR", 0, K_NONE, K_NONE),
+        Meta("NIL", 0, K_NONE, K_NONE),
+        Meta("ISNIL", 0, K_NONE, K_NONE),
+        Meta("EQV", 0, K_NONE, K_NONE),
+        Meta("PRINTS", 0, K_NONE, K_NONE),
+        Meta("DIE", 1, K_CONST, K_NONE),
+        Meta("TRUTHY", 0, K_NONE, K_NONE),
     ]
 
 fn op_named(t: [$N]Meta, name: string) -> int:
@@ -558,8 +597,20 @@ fn disassemble(p: Program, table: [$NT]Meta) -> string:
 
 struct Val:
     isstr: bool
+    isnil: bool
+    ispair: bool
     i: int
     s: string
+
+# The pair heap: a bounded array of cells, bumped once per CONS. Fixed on
+# purpose like the stack and frame limits -- overflow is a diagnosed trap,
+# never a wrap. A pair's components are Vals; the heap is threaded through
+# the printer and the dispatch (Tycho has no mutable module state).
+struct Cell:
+    a: Val
+    b: Val
+
+const MAXCELLS = 32768
 
 struct Frame:
     ret: Pc            # where the caller resumes
@@ -569,10 +620,32 @@ struct Frame:
 fn trap(pc: Pc, msg: string):
     die("pc " + str(to_int(pc)) + ": " + msg)
 
-fn vstr(v: Val) -> string:
+fn vstr(v: Val, cells: [Cell]) -> string:
     if v.isstr:
         return v.s
+    if v.isnil:
+        return "()"
+    if v.ispair:
+        return list_form(v, cells)
     return str(v.i)
+
+# A pair as its Scheme form: (a b c), dotted for an improper tail, nested
+# lists recursing through vstr. The spine is walked iteratively (a deep list
+# does not recurse per element); nested elements recurse, and the runtime's
+# stack-overflow guard turns a pathological depth into a clean failure.
+fn list_form(v: Val, cells: [Cell]) -> string:
+    out := "("
+    a := v
+    first := true
+    for a.ispair:
+        if not first:
+            out = out + " "
+        out = out + vstr(cells[a.i].a, cells)
+        a = cells[a.i].b
+        first = false
+    if not a.isnil:
+        out = out + " . " + vstr(a, cells)
+    return out + ")"
 
 # Stack helpers: the push/pop pattern every arm repeats, factored out once
 # in-place `inout` made them free. The plan that built scalar `match` premised
@@ -607,8 +680,8 @@ fn vpop(st: inout bounded[STACKMAX]Val, sp: inout int, fbase: int, here: Pc) -> 
 # the division-by-zero and string-operand traps). The dispatch arm is now the
 # two pops, this call, and one push -- the ladder this used to inline.
 fn arith(op: int, a: Val, b: Val, here: Pc) -> Val:
-    if a.isstr or b.isstr:
-        trap(here, "arithmetic on a string value")
+    if a.isstr or b.isstr or a.isnil or b.isnil or a.ispair or b.ispair:
+        trap(here, "arithmetic on a non-int value")
     r := 0
     if op == OP_ADD:
         r = a.i + b.i
@@ -642,7 +715,7 @@ fn arith(op: int, a: Val, b: Val, here: Pc) -> Val:
     else:
         if a.i >= b.i:
             r = 1
-    return Val(false, r, "")
+    return Val(false, false, false, r, "")
 
 # The machine lives in one function, but not because it must. The reason this
 # file used to give -- that `inout` is copy-in/copy-out, so a vpush(&st, &sp,
@@ -660,13 +733,14 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
     # capacity is a compile-time constant nothing can grow past.
     st: bounded[STACKMAX]Val = []
     for i := 0; i < STACKMAX; i += 1:
-        push(st, Val(false, 0, ""))
+        push(st, Val(false, false, false, 0, ""))
     slots: bounded[MAXSLOTS]Val = []
     for i := 0; i < MAXSLOTS; i += 1:
-        push(slots, Val(false, 0, ""))
+        push(slots, Val(false, false, false, 0, ""))
     frames: bounded[MAXFRAMES]Frame = []
     for i := 0; i < MAXFRAMES; i += 1:
         push(frames, Frame(Pc(0), 0, 0))
+    cells := []Cell
 
     ncode := len(p.code)
     nconsts := len(p.consts)
@@ -679,7 +753,7 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
     for i := 0; i < len(argv); i += 1:
         if i >= SLOTSPERFRAME:
             die("too many arguments: at most " + str(SLOTSPERFRAME))
-        slots[i] = Val(false, parse_int_strict(argv[i], 0, "argument"), "")
+        slots[i] = Val(false, false, false, parse_int_strict(argv[i], 0, "argument"), "")
 
     sp := 0
     fp := 1
@@ -704,7 +778,7 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
                     trap(here, "bad slot index " + str(ia))
                 vpush(&st, &sp, slots[sb + ia], here)
             OP_PUSH:
-                vpush(&st, &sp, Val(false, ia, ""), here)
+                vpush(&st, &sp, Val(false, false, false, ia, ""), here)
             OP_ADD..OP_GE:
                 b := vpop(&st, &sp, fbase, here)
                 a := vpop(&st, &sp, fbase, here)
@@ -740,7 +814,7 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
                 nb := sp - ib
                 ns := fp * SLOTSPERFRAME
                 for i := 0; i < SLOTSPERFRAME; i += 1:
-                    slots[ns + i] = Val(false, 0, "")
+                    slots[ns + i] = Val(false, false, false, 0, "")
                 for i := 0; i < ib; i += 1:
                     slots[ns + i] = st[nb + i]
                 sp = nb
@@ -760,13 +834,73 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
                 sp += 1
                 pc = f.ret
             OP_PRINT:
-                println(vstr(vpop(&st, &sp, fbase, here)))
+                println(vstr(vpop(&st, &sp, fbase, here), cells))
+            OP_PRINTS:
+                # the compiled display: the value's Scheme form, no newline
+                print(vstr(vpop(&st, &sp, fbase, here), cells))
+            OP_CONS:
+                if len(cells) >= MAXCELLS:
+                    trap(here, "pair heap overflow")
+                b := vpop(&st, &sp, fbase, here)
+                a := vpop(&st, &sp, fbase, here)
+                push(cells, Cell(a, b))
+                vpush(&st, &sp, Val(false, false, true, len(cells) - 1, ""), here)
+            OP_CAR | OP_CDR:
+                v := vpop(&st, &sp, fbase, here)
+                if not v.ispair:
+                    trap(here, "car/cdr of a non-pair")
+                c := cells[v.i]
+                if op == OP_CAR:
+                    vpush(&st, &sp, c.a, here)
+                else:
+                    vpush(&st, &sp, c.b, here)
+            OP_SETCAR:
+                v := vpop(&st, &sp, fbase, here)
+                p := vpop(&st, &sp, fbase, here)
+                if not p.ispair:
+                    trap(here, "set-car! on a non-pair")
+                cells[p.i].a = v
+            OP_NIL:
+                vpush(&st, &sp, Val(false, true, false, 0, ""), here)
+            OP_ISNIL:
+                v := vpop(&st, &sp, fbase, here)
+                if v.isnil:
+                    vpush(&st, &sp, Val(false, false, false, 1, ""), here)
+                else:
+                    vpush(&st, &sp, Val(false, false, false, 0, ""), here)
+            OP_EQV:
+                b := vpop(&st, &sp, fbase, here)
+                a := vpop(&st, &sp, fbase, here)
+                eq := false
+                if a.ispair or b.ispair:
+                    eq = false              # eq? on pairs: never equal
+                elif a.isnil or b.isnil:
+                    eq = a.isnil and b.isnil
+                elif a.isstr or b.isstr:
+                    eq = a.isstr and b.isstr and a.s == b.s
+                else:
+                    eq = a.i == b.i
+                if eq:
+                    vpush(&st, &sp, Val(false, false, false, 1, ""), here)
+                else:
+                    vpush(&st, &sp, Val(false, false, false, 0, ""), here)
+            OP_DIE:
+                if ia < 0 or ia >= nconsts:
+                    trap(here, "bad const index " + str(ia))
+                trap(here, p.consts[ia])
+            OP_TRUTHY:
+                v := vpop(&st, &sp, fbase, here)
+                falsy := v.isnil or (not v.isstr and not v.ispair and v.i == 0)
+                if falsy:
+                    vpush(&st, &sp, Val(false, false, false, 1, ""), here)
+                else:
+                    vpush(&st, &sp, Val(false, false, false, 0, ""), here)
             OP_LOADK:
                 if ia < 0 or ia >= nconsts:
                     trap(here, "bad const index " + str(ia))
                 if sp >= STACKMAX:
                     trap(here, "operand stack overflow")
-                st[sp] = Val(true, 0, p.consts[ia])
+                st[sp] = Val(true, false, false, 0, p.consts[ia])
                 sp += 1
             OP_DUP:
                 if sp - 1 < fbase:
@@ -791,6 +925,10 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
             for i := 0; i < sp; i += 1:
                 if st[i].isstr:
                     out = out + " " + quote(st[i].s)
+                elif st[i].isnil:
+                    out = out + " ()"
+                elif st[i].ispair:
+                    out = out + " " + vstr(st[i], cells)
                 else:
                     out = out + " " + str(st[i].i)
             println(out + " ]")

@@ -360,12 +360,14 @@ q-check: tychoc
 vm-check: tychoc
 	@sh tools/tycho-vm/run.sh
 
-# scheme-check: the gate for tycho-scheme, the Scheme interpreter in
-# tools/tycho-scheme/. Fourth of the same shape as ar/q/vm-check above: nothing
-# else RUNS a tool under tools/ (step [9] tools-check only --emit-c's them), so
-# this is what executes the interpreter. The programs stay SHALLOW because
-# their goldens are answers; the deep-recursion crash tests (now fail-closed
-# via the runtime stack guard, `docs/internals/plan-tycho-scheme-DONE.md` phase 1) live in tests/recursion/run.sh.
+# scheme-check: the gate for tycho-scheme, the Scheme interpreter and its
+# bytecode compiler in tools/tycho-scheme/. Fourth of the same shape as
+# ar/q/vm-check above: nothing else RUNS a tool under tools/ (step [9]
+# tools-check only --emit-c's them), so this is what executes the interpreter
+# AND the compiler -- the compiled programs are run on tycho-vm and must match
+# the interpreter byte-identically. The programs stay SHALLOW because their
+# goldens are answers; the deep-recursion crash tests live in
+# tests/recursion/run.sh.
 #
 # ~1s, measured 2026-08-03. In `make ci` as step [3h/14].
 # See tools/tycho-scheme/run.sh.

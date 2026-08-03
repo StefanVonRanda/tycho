@@ -223,6 +223,39 @@ EOF
 asmok deep
 traps 'call depth exceeded' 'call depth exceeded' "$W/deep.tyc"
 
+# The pair ops (added for the tycho-scheme compiler, plan phase 1 of
+# `docs/internals/plan-tycho-scheme-DONE.md`): the three new traps -- car/cdr
+# of a non-pair, set-car! on a non-pair, and the bounded pair-heap ceiling.
+cat > "$W/carnonpair.tasm" <<'EOF'
+    PUSH 1
+    CAR
+    HALT
+EOF
+asmok carnonpair
+traps 'car/cdr of a non-pair' 'car/cdr of a non-pair' "$W/carnonpair.tyc"
+
+cat > "$W/setcarnonpair.tasm" <<'EOF'
+    PUSH 1
+    PUSH 2
+    SET-CAR
+    HALT
+EOF
+asmok setcarnonpair
+traps 'set-car! on a non-pair' 'set-car! on a non-pair' "$W/setcarnonpair.tyc"
+
+# MAXCELLS conses with no reuse. A loop, like the stack-overflow fixture, so
+# MAXCELLS can move without editing it.
+cat > "$W/heapfill.tasm" <<'EOF'
+loop:
+    NIL
+    NIL
+    CONS
+    POP
+    JMP loop
+EOF
+asmok heapfill
+traps 'pair heap overflow' 'pair heap overflow' "$W/heapfill.tyc"
+
 # THE HEX-PATCHED ONE. `LOADK 9` is refused at assembly time -- operand()
 # range-checks a K_CONST against the pool it has read so far -- so the only
 # route to the runtime's own `bad const index` is to assemble a VALID LOADK and
@@ -307,7 +340,7 @@ EOF
 refuses 'bad immediate' 'line 3: bad immediate: 1x' badimm
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-vm: green (3 programs assembled twice byte-identically; dis round-trips to the same .tyc; listings + run output == golden; trace deterministic over 3 programs; 7 runtime traps and 4 malformed-source diagnostics all refused with empty stdout)"
+    echo "tycho-vm: green (3 programs assembled twice byte-identically; dis round-trips to the same .tyc; listings + run output == golden; trace deterministic over 3 programs; 10 runtime traps and 4 malformed-source diagnostics all refused with empty stdout)"
 else
     echo "tycho-vm: FAIL"; exit 1
 fi
