@@ -243,7 +243,7 @@ typedef enum {
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE, TK_HANDLE,
     TK_BREAK, TK_CONTINUE,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
-    TK_DOT, TK_ELLIPSIS, TK_DOTLT, TK_DOLLAR,
+    TK_DOT, TK_ELLIPSIS, TK_DOTLT, TK_DOTDOT, TK_DOLLAR,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR, TK_KW_BYTES,
     TK_KW_U32, TK_KW_U64, TK_KW_F32,
     TK_KW_U8, TK_KW_U16, TK_KW_I8, TK_KW_I16, TK_KW_I32, TK_KW_I64
@@ -631,6 +631,7 @@ static TokVec lex(const char *src) {
             if (c == '/' && c2 == '/') { g_err_col = tcol; die_at(line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division"); }
             if (c == '.' && c2 == '.' && p[2] == '.') { k = TK_ELLIPSIS; len = 3; }  /* variadic `...T` / spread `x...` */
             else if (c == '.' && c2 == '.' && p[2] == '<') { k = TK_DOTLT; len = 3; }  /* `0..<N`: half-open counting range (parallel for) */
+            else if (c == '.' && c2 == '.') { k = TK_DOTDOT; len = 2; }  /* `1..9`: inclusive range in a scalar match arm */
             else if (c == ':' && c2 == ':')      { k = TK_COLONCOLON; len = 2; }
             else if (c == ':' && c2 == '=') { k = TK_COLONEQ;    len = 2; }
             else if (c == '=' && c2 == '=') { k = TK_EQEQ;       len = 2; }
@@ -1691,7 +1692,15 @@ typedef struct Stmt Stmt;
  * reads it rather than recomputing, so the arm is visited once. */
 typedef struct { char *variant; char *binds[8]; int nbinds;
                  char *sub; char *subbinds[8]; int nsubbinds; int sub_line; int sub_vi;
-                 Stmt **body; int nbody; int line; } MatchArm;
+                 Stmt **body; int nbody; int line;
+                 /* Scalar-match arms (variant == NULL): up to 8 pattern elements,
+                  * each a literal or a range `plo..phi`. pkind: 0 int literal,
+                  * 1 char literal, 2 bool (plo/phi hold 0/1), 3 a const NAME that
+                  * the resolver folds to a value (pcname/pch, then rewritten to
+                  * pkind 0 in place). The resolver also rewrites a bare const-
+                  * name arm (parsed through the ident path) to pn=1 here. */
+                 int pn; int pkind[8]; int64_t plo[8], phi[8];
+                 char *pcname[8], *pch[8]; } MatchArm;
 struct Stmt {
     StmtKind kind;
     int      line;
@@ -2993,27 +3002,72 @@ static Stmt *parse_match(Parser *ps, int line, int value) {
     int cap = 0;
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
-        Tok *vn = eat(ps, TK_IDENT, "a match arm `Variant(bindings):` or `Variant:`");
-        const char *vqual = NULL, *vname = vn->text;
-        if (accept(ps, TK_DOT)) {           /* qualified `pkg.Variant:` */
-            vqual = vn->text;
-            vname = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
-        }
         if (s->narms == cap) { cap = cap ? cap * 2 : 4; s->arms = (MatchArm *)xrealloc(s->arms, (size_t)cap * sizeof(MatchArm)); }
         MatchArm *arm = &s->arms[s->narms++];
-        if (vqual) {
-            check_pkg_private(vqual, vname, vn->line);
-            arm->variant = sfmt("%s%s", pkg_prefix_for(vqual), vname);
-        }
-        else if (!strcmp(vname, "_"))
-            arm->variant = (char *)vname;
-        else if (!strcmp(vname, "Some") || !strcmp(vname, "None") || !strcmp(vname, "Ok") || !strcmp(vname, "Err"))
-            arm->variant = (char *)vname;
-        else
-            arm->variant = pkg_mangle(vname);
-        arm->nbinds = 0; arm->line = vn->line;
-        arm->sub = NULL; arm->nsubbinds = 0; arm->sub_line = vn->line; arm->sub_vi = -1;
-        if (accept(ps, TK_LPAREN)) {
+        arm->nbinds = 0; arm->sub = NULL; arm->nsubbinds = 0; arm->sub_vi = -1;
+        arm->pn = 0;
+        TokKind k0 = peek(ps, 0)->kind;
+        if (k0 == TK_INT || k0 == TK_CHAR || k0 == TK_TRUE || k0 == TK_FALSE
+            || (k0 == TK_MINUS && peek(ps, 1)->kind == TK_INT)
+            || (k0 == TK_IDENT && (peek(ps, 1)->kind == TK_DOTDOT || peek(ps, 1)->kind == TK_PIPE))) {
+            /* SCALAR pattern arm: a literal, `a..b` (inclusive range), a set
+             * `a | b | ...`, or a const NAME element (resolved against the
+             * subject's type). `variant` stays NULL; the resolver type-checks
+             * and folds const names, and the codegen emits a switch/chain on
+             * the values. */
+            arm->variant = NULL;
+            arm->line = peek(ps, 0)->line; arm->sub_line = arm->line;
+            for (;;) {
+                if (arm->pn >= 8) die_at(arm->line, "too many values in one match arm (max 8)");
+                int kind = 0; int64_t v = 0; int neg = 0;
+                if (accept(ps, TK_MINUS)) neg = 1;
+                if (at(ps, TK_INT)) { kind = 0; v = peek(ps, 0)->ival; ps->p++; }
+                else if (at(ps, TK_CHAR)) { kind = 1; v = peek(ps, 0)->ival; ps->p++; }
+                else if (at(ps, TK_TRUE)) { kind = 2; v = 1; ps->p++; }
+                else if (at(ps, TK_FALSE)) { kind = 2; v = 0; ps->p++; }
+                else if (at(ps, TK_IDENT)) { kind = 3; arm->pcname[arm->pn] = pkg_mangle(peek(ps, 0)->text); ps->p++; }
+                else die_at(arm->line, "a match arm must be a variant name, a scalar literal, a range, or `_`");
+                if (neg) { if (kind != 0) die_at(arm->line, "'-' is only valid before an int literal in a match arm"); v = -v; }
+                arm->pkind[arm->pn] = kind;
+                arm->plo[arm->pn] = v;
+                arm->phi[arm->pn] = v;
+                arm->pcname[arm->pn] = (kind == 3) ? arm->pcname[arm->pn] : NULL;
+                arm->pch[arm->pn] = NULL;
+                if (accept(ps, TK_DOTDOT)) {          /* inclusive range: `a..b` */
+                    int hkind = 0; int64_t h = 0; int hneg = 0;
+                    if (accept(ps, TK_MINUS)) hneg = 1;
+                    if (at(ps, TK_INT)) { hkind = 0; h = peek(ps, 0)->ival; ps->p++; }
+                    else if (at(ps, TK_CHAR)) { hkind = 1; h = peek(ps, 0)->ival; ps->p++; }
+                    else if (at(ps, TK_TRUE)) { hkind = 2; h = 1; ps->p++; }
+                    else if (at(ps, TK_FALSE)) { hkind = 2; h = 0; ps->p++; }
+                    else if (at(ps, TK_IDENT)) { hkind = 3; arm->pch[arm->pn] = pkg_mangle(peek(ps, 0)->text); ps->p++; }
+                    else die_at(arm->line, "expected a value after '..' in the match arm");
+                    if (hneg) { if (hkind != 0) die_at(arm->line, "'-' is only valid before an int literal in a match arm"); h = -h; }
+                    if (hkind != kind) die_at(arm->line, "a range's two ends must be the same kind of value");
+                    arm->phi[arm->pn] = h;
+                }
+                arm->pn++;
+                if (!accept(ps, TK_PIPE)) break;
+            }
+        } else {
+            Tok *vn = eat(ps, TK_IDENT, "a match arm `Variant(bindings):` or `Variant:`");
+            const char *vqual = NULL, *vname = vn->text;
+            if (accept(ps, TK_DOT)) {           /* qualified `pkg.Variant:` */
+                vqual = vn->text;
+                vname = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
+            }
+            if (vqual) {
+                check_pkg_private(vqual, vname, vn->line);
+                arm->variant = sfmt("%s%s", pkg_prefix_for(vqual), vname);
+            }
+            else if (!strcmp(vname, "_"))
+                arm->variant = (char *)vname;
+            else if (!strcmp(vname, "Some") || !strcmp(vname, "None") || !strcmp(vname, "Ok") || !strcmp(vname, "Err"))
+                arm->variant = (char *)vname;
+            else
+                arm->variant = pkg_mangle(vname);
+            arm->line = vn->line; arm->sub_line = vn->line;
+            if (accept(ps, TK_LPAREN)) {
             /* One level of NESTED pattern, when the spelling is unambiguous at
              * parse time: `pkg.Variant` (a DOT follows) or `Variant(b, ...)` (an
              * LPAREN follows). A bare `Name` cannot be told from a binding here --
@@ -3045,6 +3099,7 @@ static Stmt *parse_match(Parser *ps, int line, int value) {
                 }
             }
             eat(ps, TK_RPAREN, "')'");
+            }
         }
         eat(ps, TK_COLON, "':' after the arm pattern");
         if (accept(ps, TK_NEWLINE))          /* block arm: indented body on the next line */
@@ -7340,7 +7395,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * and makes the match exhaustive without listing the remaining variants. */
             int wild = 0;
             for (int i = 0; i < s->narms; i++)
-                if (!strcmp(s->arms[i].variant, "_")) {
+                if (s->arms[i].variant && !strcmp(s->arms[i].variant, "_")) {
                     if (i != s->narms - 1) die_at(s->arms[i].line, "a `_` wildcard must be the last match arm");
                     if (s->arms[i].nbinds != 0) die_at(s->arms[i].line, "a `_` wildcard binds nothing");
                     wild = 1;
@@ -7430,8 +7485,99 @@ static void resolve_stmt(Stmt *s, Type ret) {
                             die_at(s->line, "non-exhaustive match: missing variant %s of %s",
                                    ed->variants[v].name, ed->name);
                 free(covered);
+            } else if (st == T_INT || st == T_CHAR || st == T_BOOL) {
+                /* Scalar subject: arms are literals, ranges, sets, or const
+                 * names. `_` is REQUIRED for int/char (the domain is unbounded,
+                 * so exhaustiveness is unprovable); a bool match is exhaustive
+                 * when both values are covered. Duplicate or overlapping arms
+                 * are an error (an earlier arm is dead). See
+                 * docs/internals/design-scalar-match.md. */
+                typedef struct { int64_t lo, hi; int line; } Iv;
+                Iv *ivs = xmalloc((size_t)(s->narms * 8) * sizeof(Iv));
+                int niv = 0;
+                for (int i = 0; i < s->narms; i++) {
+                    MatchArm *arm = &s->arms[i];
+                    int m = vars_mark();
+                    if (arm->variant && !strcmp(arm->variant, "_")) {
+                        resolve_block(arm->body, arm->nbody, ret);
+                        vars_restore(m);
+                        continue;
+                    }
+                    if (arm->variant != NULL) {   /* a bare const name: `OP_LOAD:` */
+                        Expr *c = consts_find(arm->variant);
+                        if (c == NULL || c->kind != E_INT)
+                            die_at(arm->line, "'%s' is not an int constant (match arms for %s are literals)",
+                                   arm->variant, type_name(st));
+                        arm->variant = NULL;      /* normalized for codegen */
+                        arm->pn = 1; arm->pkind[0] = 0; arm->pcname[0] = NULL;
+                        arm->plo[0] = arm->phi[0] = c->ival;
+                    }
+                    for (int k = 0; k < arm->pn; k++) {
+                        int64_t lo = arm->plo[k], hi = arm->phi[k];
+                        int kind = arm->pkind[k];
+                        if (kind == 3) {          /* a const name element: fold now */
+                            Expr *c = consts_find(arm->pcname[k]);
+                            if (c == NULL || c->kind != E_INT)
+                                die_at(arm->line, "'%s' is not an int constant", arm->pcname[k]);
+                            lo = c->ival;
+                            hi = lo;              /* single const: no range unless pch overrides */
+                            kind = 0;             /* normalized: an int value */
+                        }
+                        if (arm->pch[k]) {        /* the range's high end is a const name */
+                            Expr *d = consts_find(arm->pch[k]);
+                            if (d == NULL || d->kind != E_INT)
+                                die_at(arm->line, "'%s' is not an int constant", arm->pch[k]);
+                            hi = d->ival;
+                        }
+                        arm->pkind[k] = kind;
+                        arm->plo[k] = lo; arm->phi[k] = hi;   /* codegen reads these */
+                        if (st == T_INT && kind != 0)
+                            die_at(arm->line, "a match on an int takes int literal arms, not a %s",
+                                   kind == 1 ? "char" : "bool");
+                        if (st == T_CHAR && kind != 1)
+                            die_at(arm->line, "a match on a char takes char literal arms");
+                        if (st == T_BOOL && kind != 2)
+                            die_at(arm->line, "a match on a bool takes true/false arms");
+                        if (lo > hi)
+                            die_at(arm->line, "a range starts at %lld and ends at %lld (the start must not exceed the end)",
+                                   (long long)lo, (long long)hi);
+                        ivs[niv].lo = lo; ivs[niv].hi = hi; ivs[niv].line = arm->line; niv++;
+                    }
+                    resolve_block(arm->body, arm->nbody, ret);
+                    vars_restore(m);
+                }
+                /* dup/overlap: sort by lo, then any interval touching the
+                 * previous one is a duplicate. Arm counts are tiny, so an
+                 * insertion sort. */
+                for (int i = 1; i < niv; i++)
+                    for (int j = i; j > 0 && ivs[j].lo < ivs[j - 1].lo; j--) {
+                        Iv t = ivs[j]; ivs[j] = ivs[j - 1]; ivs[j - 1] = t;
+                    }
+                for (int i = 1; i < niv; i++)
+                    if (ivs[i].lo <= ivs[i - 1].hi)
+                        die_at(ivs[i].line, "duplicate or overlapping match arm: [%lld..%lld] overlaps [%lld..%lld] from line %d",
+                               (long long)ivs[i - 1].lo, (long long)ivs[i - 1].hi,
+                               (long long)ivs[i].lo, (long long)ivs[i].hi, ivs[i - 1].line);
+                if (!wild) {
+                    if (st == T_INT || st == T_CHAR)
+                        die_at(s->line, "a match on %s must carry a `_` arm (the domain is unbounded)",
+                               type_name(st));
+                    if (st == T_BOOL) {
+                        int has0 = 0, has1 = 0;
+                        for (int i = 0; i < niv; i++) {
+                            if (ivs[i].lo <= 0 && 0 <= ivs[i].hi) has0 = 1;
+                            if (ivs[i].lo <= 1 && 1 <= ivs[i].hi) has1 = 1;
+                        }
+                        if (!has0 || !has1)
+                            die_at(s->line, "a match on a bool must cover both true and false, or carry a `_` arm");
+                    }
+                }
+                free(ivs);
+            } else if (st == T_STRING || st == T_BYTES || st == T_FLOAT) {
+                die_at(s->line, "match on %s is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)",
+                       type_name(st));
             } else {
-                die_at(s->line, "match expects an Option, Result, or enum value, got %s", type_name(st));
+                die_at(s->line, "match expects an Option, Result, or enum value, or an int/char/bool, got %s", type_name(st));
             }
             break;
         }
@@ -10861,7 +11007,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * explicit branch is absent. */
             MatchArm *wildarm = NULL;
             for (int i = 0; i < s->narms; i++)
-                if (!strcmp(s->arms[i].variant, "_")) wildarm = &s->arms[i];
+                if (s->arms[i].variant && !strcmp(s->arms[i].variant, "_")) wildarm = &s->arms[i];
             if (IS_OPT(st)) {
                 MatchArm *none = NULL;
                 for (int i = 0; i < s->narms; i++)
@@ -10880,6 +11026,93 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 gen_match_side(o, s, "Err", res_err(st), sfmt("_m%d.errv", mid),
                                ind + 2, wildarm, scope, ret);
                 indent(o, ind + 1); fprintf(o, "}\n");
+            } else if (st == T_INT || st == T_CHAR || st == T_BOOL) {
+                /* Scalar match. With >= 4 arms and no range wider than 64, a
+                 * switch-of-gotos: the goto keeps a user `break`/`continue` in
+                 * an arm body targeting the surrounding LOOP, not this switch
+                 * (S_BREAK emits a plain C `break`), and cc -O3 lowers the
+                 * dense switch to a jump table. Below that, a plain if/else
+                 * chain. The resolver guarantees `_` for int/char and full
+                 * coverage for bool; the default below is the same fail-closed
+                 * backstop as the enum else. The resolver has folded const
+                 * names to values, so only plo/phi are read here. */
+                int wide = 0;
+                for (int i = 0; i < s->narms; i++)
+                    for (int k = 0; k < s->arms[i].pn; k++)
+                        if (s->arms[i].phi[k] - s->arms[i].plo[k] > 64) wide = 1;
+                if (s->narms >= 4 && !wide) {
+                    int wildidx = -1;
+                    for (int i = 0; i < s->narms; i++)
+                        if (s->arms[i].variant && !strcmp(s->arms[i].variant, "_")) wildidx = i;
+                    indent(o, ind + 1); fprintf(o, "switch (_m%d) {\n", mid);
+                    for (int i = 0; i < s->narms; i++) {
+                        MatchArm *arm = &s->arms[i];
+                        if (arm->variant) continue;      /* the `_` arm is the default */
+                        indent(o, ind + 2);
+                        for (int k = 0; k < arm->pn; k++)
+                            for (int64_t v = arm->plo[k]; ; v++) {
+                                fprintf(o, "case %lld: ", (long long)v);
+                                if (v == arm->phi[k]) break;
+                            }
+                        fprintf(o, "goto _m%d_a%d;\n", mid, i);
+                    }
+                    indent(o, ind + 2);
+                    if (wildidx >= 0) fprintf(o, "default: goto _m%d_a%d;\n", mid, wildidx);
+                    else fprintf(o, "default: fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1);\n");
+                    indent(o, ind + 1); fprintf(o, "}\n");
+                    for (int i = 0; i < s->narms; i++) {
+                        MatchArm *arm = &s->arms[i];
+                        if (arm->variant) continue;      /* the `_` arm is emitted last */
+                        indent(o, ind + 1); fprintf(o, "_m%d_a%d: {", mid, i);
+                        gen_block(o, arm->body, arm->nbody, ind + 2, scope, ret);
+                        indent(o, ind + 1); fprintf(o, "}");
+                        if (!block_ends_in_return(arm->body, arm->nbody)) {
+                            indent(o, ind + 1); fprintf(o, "goto _m%d_done;\n", mid);
+                        } else {
+                            fprintf(o, "\n");
+                        }
+                    }
+                    if (wildidx >= 0) {
+                        indent(o, ind + 1); fprintf(o, "_m%d_a%d: {", mid, wildidx);
+                        gen_block(o, s->arms[wildidx].body, s->arms[wildidx].nbody,
+                                  ind + 2, scope, ret);
+                        indent(o, ind + 1); fprintf(o, "}\n");
+                    }
+                    indent(o, ind + 1); fprintf(o, "_m%d_done: ;\n", mid);
+                } else {
+                    int ncond = 0;
+                    for (int i = 0; i < s->narms; i++) {
+                        MatchArm *arm = &s->arms[i];
+                        if (arm->variant) continue;
+                        char *cond = sfmt("%s", "");
+                        for (int k = 0; k < arm->pn; k++) {
+                            char *piece = (arm->plo[k] == arm->phi[k])
+                                ? sfmt("_m%d == %lld", mid, (long long)arm->plo[k])
+                                : sfmt("_m%d >= %lld && _m%d <= %lld", mid,
+                                       (long long)arm->plo[k], mid,
+                                       (long long)arm->phi[k]);
+                            char *old = cond;
+                            cond = sfmt("%s%s%s", old, k ? " || " : "", piece);
+                        }
+                        indent(o, ind + 1);
+                        fprintf(o, "%sif (%s) {\n", ncond ? "else " : "", cond);
+                        ncond++;
+                        gen_block(o, arm->body, arm->nbody, ind + 2, scope, ret);
+                        indent(o, ind + 1); fprintf(o, "}\n");
+                    }
+                    if (ncond == 0) {   /* only a `_` arm: no if to else */
+                        indent(o, ind + 1); fprintf(o, "{\n");
+                        gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
+                        indent(o, ind + 1); fprintf(o, "}\n");
+                    } else if (wildarm) {
+                        indent(o, ind + 1); fprintf(o, "else {\n");
+                        gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
+                        indent(o, ind + 1); fprintf(o, "}\n");
+                    } else {
+                        indent(o, ind + 1);
+                        fprintf(o, "else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n");
+                    }
+                }
             } else {   /* IS_ENUM: a tag dispatch; each arm binds its payload */
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
                 const char *en = ed->name;

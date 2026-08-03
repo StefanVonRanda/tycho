@@ -44,7 +44,7 @@ A comment begins with `#` and runs to the end of the line. Comments do not
 nest, and there is no block-comment form. A `#` inside a string or character
 literal is an ordinary byte, not a comment.
 
-> Provenance: a comment-only line is skipped without touching the indent stack `src/tychoc.c:358@*p == '#') {`; the token loop stops at `#` `:384@*p != '\n' && *p != '#'`; the trailing comment is consumed at `:673@if (*p == '#') while`.
+> Provenance: a comment-only line is skipped without touching the indent stack `src/tychoc.c:358@*p == '#') {`; the token loop stops at `#` `:384@*p != '\n' && *p != '#'`; the trailing comment is consumed at `:674@if (*p == '#') while`.
 
 ## 3.4 Indentation (`INDENT` / `DEDENT`)
 
@@ -138,8 +138,8 @@ is unaffected. They are **not** reserved:
   resolved as a call; none is reserved ([§29](16-builtins.md)).
 
 > Provenance: contextual dispatch at `src/tychoc.c:4378-4387` (top level),
-> `:3265@"const"`/`:3281@"delete"` (`const`/`delete`), `:2060@soa [Struct]`/`:2548@soa []Struct` (`soa`),
-> `:3851@"where"` (`where`), `:3817@"sink"` (`sink`), `:3537@"range"` (`range`, refusal only).
+> `:3320@"const"`/`:3336@"delete"` (`const`/`delete`), `:2069@soa [Struct]`/`:2557@soa []Struct` (`soa`),
+> `:3906@"where"` (`where`), `:3872@"sink"` (`sink`), `:3592@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -171,8 +171,8 @@ literal (§3.9.5). The **only** range operator is `..<`; `..` alone is not a
 token, and the `range(…)` form it replaced is gone (§14.4). Operator precedence and associativity are
 defined with the expression grammar in [§4.5](02-grammar.md#45-operator-precedence-and-associativity).
 
-> Provenance: `src/tychoc.c:477-513`. `::` is lexed at `:634@TK_COLONCOLON` but no grammar
-> production consumes it; `..<` at `:633@TK_DOTLT`, tested after `...` so maximal munch holds; `;` at `:657@TK_SEMI`.
+> Provenance: `src/tychoc.c:477-513`. `::` is lexed at `:635@TK_COLONCOLON` but no grammar
+> production consumes it; `..<` at `:633@TK_DOTLT`, tested after `...` so maximal munch holds; `;` at `:658@TK_SEMI`.
 
 ## 3.9 Literals
 
@@ -353,7 +353,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:434-435`, its per-piece bound `:588@rn + 2 >= (int)sizeof rbuf`,`:591@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:595@unterminated raw string literal`; adjacent join `:2288-2300`; `const` string fold
 > `:4317-4321`; codegen pastes the escaped text into a C string literal
-> `:9697@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1006@strlen(s)`.
+> `:9843@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1006@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

@@ -1,0 +1,26 @@
+# Scalar `match` on an int subject: a literal, a set, an inclusive range, a
+# negative literal, and a constant-name range -- the tycho-vm dispatch shapes
+# (design: docs/internals/design-scalar-match.md D5/D6).
+
+const OP_ADD = 4
+const OP_GE = 10
+
+fn label(x: int) -> string:
+    match x:
+        0:
+            return "zero"
+        1 | 2:
+            return "small"
+        OP_ADD..OP_GE:
+            return "arith"
+        11..19:
+            return "teens"
+        -1:
+            return "neg"
+        _:
+            return "other"
+
+fn main():
+    for i := -1; i < 21; i += 1:
+        print(label(i) + " ")
+    println("")

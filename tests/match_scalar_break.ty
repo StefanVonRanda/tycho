@@ -1,0 +1,22 @@
+# A user `break` inside a match arm must target the enclosing LOOP, not the
+# generated switch -- the switch dispatches via gotos precisely so this holds
+# (design: docs/internals/design-scalar-match.md D6).
+
+fn brk(n: int) -> int:
+    total := 0
+    for i := 0; i < n; i += 1:
+        match i % 5:
+            0:
+                total = total + 1
+            1:
+                break
+            2:
+                total = total + 10
+            3:
+                total = total + 100
+            _:
+                total = total + 1000
+    return total
+
+fn main():
+    println(str(brk(20)))

@@ -1,0 +1,9 @@
+# An arm identifier on an int subject must be an int constant; a bare name is
+# rejected.
+fn main():
+    x := 5
+    match x:
+        NotAConst:
+            print("x")
+        _:
+            print("y")

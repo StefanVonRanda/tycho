@@ -1,0 +1,22 @@
+# Scalar `match` on a bool subject: both values covered, no `_` needed (the
+# domain is exhaustive) -- and `_` accepted when present.
+
+fn b2s(b: bool) -> string:
+    match b:
+        true:
+            return "yes"
+        false:
+            return "no"
+
+fn b2w(b: bool) -> string:
+    match b:
+        true:
+            return "t"
+        _:
+            return "f"
+
+fn main():
+    println(b2s(true))
+    println(b2s(false))
+    println(b2w(true))
+    println(b2w(false))

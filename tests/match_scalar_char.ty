@@ -1,0 +1,23 @@
+# Scalar `match` on a char subject: char literals and a char range. `char` is
+# not a user-named type, so the subject comes from a char literal.
+
+fn main():
+    match 'a':
+        'a':
+            println("aye")
+        _:
+            println("other")
+    match 'c':
+        'a':
+            println("aye")
+        'b'..'d':
+            println("bcd")
+        _:
+            println("other")
+    match 'z':
+        'a':
+            println("aye")
+        'b'..'d':
+            println("bcd")
+        _:
+            println("other")
