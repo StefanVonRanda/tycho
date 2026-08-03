@@ -185,3 +185,7 @@ dist/
 
 # generated wiki mirror (see scripts/sync-wiki.py, make wiki)
 .wiki/
+# the tycho-chess engine's perft divide transcript golden
+# (tools/tycho-chess/expected.out) is tracked too, same line, same reason as
+# the four above; the runner builds the binary into a `mktemp -d`.
+!/tools/tycho-chess/*.out
