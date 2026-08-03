@@ -76,12 +76,18 @@ a phase -- nothing outside the compiler wants it):
   files in lexical order and types do not forward-reference across files, so
   the compiler (which uses main.ty's `Val`) must sort AFTER main.ty. It is
   named `main_compiler.ty` for exactly that reason.
-- **A real compiler bug, found by this build and worked around: returning an
-  array-of-maps ELEMENT from a function emits the wrong C copy** (the map-of-
-  struct copy is emitted with the wrong C function -- a src/tychoc.c codegen
-  bug, reproduced minimally, `current_scope` now copies through a map
-  parameter instead). Recorded because the workaround is in the compiler; the
-  underlying codegen bug is not fixed.
+- **A real compiler bug, found by this build and FIXED: returning a map
+  PARAMETER emits the wrong C copy.** `src/tychoc.c`'s return branch
+  hardcoded `tycho_map_%s_copy(map_fn)`; `map_fn` defaults to `"si"` for
+  every map that is not sf/ii/if, so `[string: Struct]` and `[string:
+  string]` returned from a parameter emitted `tycho_map_si_copy` over a
+  `TychoMapC0` and the generated C did not compile. Returning a LOCAL dodged
+  it via the return-slot no-op move; only the param-copy path reached the
+  wrong name. Fixed by routing the copy through `copy_into` (which already
+  picks `tycho_mapc%d_copy` for composite maps); the compiler's earlier
+  `scope_copy` workaround was then reverted, so the compiler itself now
+  exercises the fixed path. Regression fixture: `tests/map_param_return.ty`
+  (struct-valued and string-valued param returns).
 - **Divergences from the interpreter, each documented in the code and
   avoided by the programs** (the gate's differential would catch one): a bare
   `#t` displays as `1` (the VM has no bool Val); symbols ARE strings, so

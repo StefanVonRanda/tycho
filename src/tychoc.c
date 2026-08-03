@@ -10951,10 +10951,19 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 /* promote up, exactly like the array cases: a bare map variable
                  * is only a value whose tables live in this scope, so deep-copy
                  * into the caller's arena before freeing — UNLESS the return-slot
-                 * optimization already built it in _parent (then a no-op move). */
+                 * optimization already built it in _parent (then a no-op move).
+                 * The copy goes through copy_into, NOT tycho_map_%s_copy(map_fn):
+                 * map_fn defaults to "si" for every map that is not sf/ii/if, so
+                 * a composite map ([string: Struct], [string: string]) returned
+                 * from a PARAMETER emitted tycho_map_si_copy over a TychoMapC0
+                 * and the generated C did not compile. Returning a LOCAL dodged
+                 * it via the return-slot no-op move; only the param-copy path
+                 * reached the wrong name. Found by the tycho-scheme compiler
+                 * (plan phase: current_scope's workaround). */
                 if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
-                    indent(o, ind); fprintf(o, "{ %s_ret = tycho_map_%s_copy(_parent, %s); %s return _ret; }\n", c_type(ret), map_fn(ret), v, rf);
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
+                                            c_type(ret), copy_into(ret, "_parent", v), rf);
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n", c_type(ret), v, rf);

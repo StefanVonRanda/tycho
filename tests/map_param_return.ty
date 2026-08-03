@@ -1,0 +1,29 @@
+# A function returning a map PARAMETER used to emit the wrong C copy
+# (tycho_map_si_copy over a composite map) and fail to compile. Both the
+# struct-valued and the string-valued maps go through the param-copy path;
+# the return-slot no-op move only ever dodged LOCAL returns.
+struct Row:
+    id: int
+    name: string
+
+fn echo_struct(m: [string: Row]) -> [string: Row]:
+    return m
+
+fn echo_str(m: [string: string]) -> [string: string]:
+    return m
+
+fn main():
+    a := []string: Row
+    a["r1"] = Row(7, "ada")
+    b := echo_struct(a)
+    print(str(b["r1"].id))
+    print(" ")
+    print(b["r1"].name)
+    print(" ")
+    print(str(len(b)))
+    println("")
+    c := []string: string
+    c["k"] = "v"
+    d := echo_str(c)
+    print(d["k"])
+    println("")

@@ -264,20 +264,10 @@ fn param_scope(params: [string]) -> [string: Bind]:
         m[params[i]] = Bind(K_LOCAL, i, false)
     return m
 
-# Copy a scope map. Returning an array-of-maps ELEMENT directly trips a
-# codegen bug (the copy for a map-of-struct element is emitted with the wrong
-# C function -- recorded in plan.md); copying through a map parameter works.
 fn current_scope(scopes: [ [string: Bind] ]) -> [string: Bind]:
     if len(scopes) == 0:
         return []string: Bind
-    return scope_copy(scopes[len(scopes) - 1])
-
-fn scope_copy(m: [string: Bind]) -> [string: Bind]:
-    r := []string: Bind
-    ks := keys(m)
-    for i := 0; i < len(ks); i += 1:
-        r[ks[i]] = m[ks[i]]
-    return r
+    return scopes[len(scopes) - 1]
 
 fn analyze_expr(v: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [string: Bind] ]):
     match v:
