@@ -236,9 +236,12 @@ Match       ::= "match" Expr ":" NEWLINE INDENT MatchArm+ DEDENT
 MatchArm    ::= Pattern ":" NEWLINE Block
 Pattern     ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?   /* variant, with 0..8 bindings */
               | VariantName "(" SubPattern ")"               /* Ok/Err/Some: one nested level */
+              | ScalarPattern                                /* int/char/bool subject */
               | "_"                                          /* wildcard */
 VariantName ::= IDENT | IDENT "." IDENT                       /* Variant or pkg.Variant */
 SubPattern  ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?
+ScalarPattern ::= ScalarElem ( ".." ScalarElem )? ( "|" ScalarElem ( ".." ScalarElem )? )*
+ScalarElem  ::= "-"? ( INT | CHAR | TRUE | FALSE ) | IDENT    /* IDENT: an int constant */
 For         ::= "for" ForInit ";" Expr ";" ForPost ":" NEWLINE Block  /* three-clause; all three REQUIRED */
               | "for" IDENT "in" Expr ":" NEWLINE Block               /* foreach */
               | "for" Expr ":" NEWLINE Block                          /* condition */

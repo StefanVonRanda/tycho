@@ -1048,7 +1048,7 @@ handling, and the difference is deliberate rather than unfinished.
   `:19-31`, which the `register_conn` / `retire_conn` additions pushed down): calling a Tycho function from
   handler context is a *language* feature, because every Tycho value lives in a
   bump-allocated arena that is not re-entrant and channel operations park behind a mutex
-  (`runtime/tycho_rt.c:658@mu`) — a handler that interrupts the allocator or the lock
+  (`runtime/tycho_rt.c:829@mu`) — a handler that interrupts the allocator or the lock
   holder and then allocates or touches a channel deadlocks or corrupts the process it was
   invoked to shut down. **What a general version would need, so the next person costs it
   rather than rediscovers it:** (1) an async-signal-safe hand-off out of handler context —

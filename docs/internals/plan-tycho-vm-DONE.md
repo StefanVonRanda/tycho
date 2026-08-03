@@ -174,8 +174,22 @@ Measured, on this tree:
 
 ## Not in this plan
 
-The eleven-item backlog from the three-gates plan (JSON
-UTF-8 validation, `strings.parse_int` failing open, `io.write_bytes`,
-`io.make_dirs`, writable mtime, incremental digest, `eprintln`, the `image`
-shim, a document-reachability gate, the `ParallelFor` width slot), plus the six
-filed by the last plan. None is a language change and none blocks these.
+The backlog as filed was stale on arrival — the three-gates audit it came from
+admitted nineteen unchecked items across four rotations with colliding counts
+and false claims, and "the six filed by the last plan" are no longer
+enumerable in the live tree. Re-scored against the demand test (does a program
+that is not its own test need it?) on 2026-08-03, four survive:
+
+- **incremental digest** — `core:sha256` init/update/final over in-place
+  `inout` state; tycho-ar wrote its own streaming sha256 for want of it
+  (`tools/tycho-ar/main.ty:140-162`).
+- **JSON UTF-8 validation** — raw UTF-8 in strings is not validated.
+- **`strings.parse_int` failing open** — `0` is both "zero" and "garbage";
+  the corelib's own house style is a `Result` for exactly this class.
+- **`io.write_bytes`** — the read side has `read_bytes`/`read_at`; the write
+  side stops at strings.
+
+Filed, not phases — the demand test fails, the customer would have to appear
+first: recursive `make_dirs`, writable mtime, the libpng image shim, the
+ParallelFor width slot. `eprintln` is stale (`eprint` ships). All four real
+items are library work; none is a language change.

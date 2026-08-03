@@ -30,7 +30,14 @@
 /* strict -std=c11 (__STRICT_ANSI__) hides the POSIX declarations the
  * concurrency runtime needs (clock_gettime, sched_yield, nanosleep, ...);
  * _DEFAULT_SOURCE restores glibc's default visibility. Must precede every
- * include -- this runtime is the first thing in each generated file. */
+ * include -- this runtime is the first thing in each generated file.
+ * _GNU_SOURCE additionally exposes pthread_getattr_np (the overflow guard's
+ * way to learn a thread's stack region) and the REG_RSP/REG_ESP/REG_SP
+ * ucontext indices; the 13 corelib shims define no GNU-conflicting names
+ * (checked 2026-08-03). */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 #endif
@@ -42,6 +49,8 @@
 #include <math.h>
 #include <dirent.h>
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
+#include <signal.h>    /* the stack-overflow guard (sigaltstack/sigaction) */
+#include <ucontext.h>  /* the faulting SP for the same guard */
 #include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
 #include <stdatomic.h> /* lock-free channel fast path (CC-5) */
 #include <sched.h>     /* sched_yield in the spin-escalation ladder */
@@ -55,6 +64,112 @@ typedef int64_t tycho_int;
 _Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");
 
 #define TYCHO_BLOCK_DEFAULT (1u << 16)
+
+/* ---- stack-overflow guard: generated-code recursion fails closed ---------- */
+/* The compiler fails closed on pathologically nested INPUT (its own recursion
+ * gate, tests/recursion/); nothing guarded the C stack of generated code, so
+ * deep recursion in a Tycho program died with SIGSEGV, no diagnostic, no
+ * cleanup. Two measured victims: the Scheme interpreter at ~5k levels, the
+ * json walker at ~100k nests. This guard turns stack exhaustion into a clean
+ * failure: a SIGSEGV handler on an alternate signal stack (zero steady-state
+ * cost -- it runs only when the main stack is already exhausted) checks the
+ * FAULTING stack pointer against the thread's recorded stack region; past the
+ * bottom, it prints one line and _exits(1). Any other SIGSEGV is re-raised
+ * with the default disposition, so a real bug (null deref, wild write) still
+ * crashes as a real crash, debugger-visible, exit 139.
+ *
+ * Thread-local bounds: pthread_getattr_np (a GNU extension, exposed by the
+ * _GNU_SOURCE above) is the one reliable way to learn a thread's stack
+ * region. macOS has pthread_get_stackaddr_np in the system headers. Any
+ * other platform leaves the bounds zero and the guard inert: it never
+ * falsely claims an overflow, it simply falls back to the old SIGSEGV death. */
+
+typedef struct { uintptr_t hi; uintptr_t lo; } TychoStackBounds;
+static __thread TychoStackBounds g_stack_bounds = {0, 0};
+
+static void tycho_record_stack_bounds(void) {
+    /* stack grows DOWN: hi is the top, lo the bottom of the mapped region */
+#if defined(__linux__)
+    pthread_attr_t a;
+    if (pthread_getattr_np(pthread_self(), &a) == 0) {
+        void *addr; size_t size;
+        if (pthread_attr_getstack(&a, &addr, &size) == 0) {
+            g_stack_bounds.hi = (uintptr_t)addr + size;
+            g_stack_bounds.lo = (uintptr_t)addr;
+        }
+        pthread_attr_destroy(&a);
+    }
+#elif defined(__APPLE__)
+    void *top = pthread_get_stackaddr_np(pthread_self());
+    size_t size = pthread_get_stacksize_np(pthread_self());
+    g_stack_bounds.hi = (uintptr_t)top;
+    g_stack_bounds.lo = (uintptr_t)top - size;
+#endif
+}
+
+static char g_altstack[32 * 1024] __attribute__((aligned(16)));
+
+static void tycho_segv_handler(int sig, siginfo_t *si, void *uctx) {
+    uintptr_t sp = 0;
+    ucontext_t *uc = (ucontext_t *)uctx;
+#if defined(__x86_64__)
+    sp = (uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
+#elif defined(__i386__)
+    sp = (uintptr_t)uc->uc_mcontext.gregs[REG_ESP];
+#elif defined(__aarch64__)
+    sp = (uintptr_t)uc->uc_mcontext.sp;
+#endif
+    int overflow = 0;
+    if (g_stack_bounds.hi && g_stack_bounds.lo) {
+        uintptr_t margin = 64u * 1024;   /* within the last 64K: exhausted */
+        overflow = (sp <= g_stack_bounds.lo + margin);
+    }
+    if (overflow) {
+        /* write() and _exit are async-signal-safe; nothing else is used */
+        static const char msg[] = "tycho: stack overflow -- recursion too deep\n";
+        ssize_t w = write(2, msg, sizeof(msg) - 1); (void)w;
+        _exit(1);
+    }
+    /* not a stack overflow: restore the default disposition and re-raise, so
+     * the fault is a real crash (core dump, exit 139, debugger-visible) */
+    signal(SIGSEGV, SIG_DFL);
+    raise(SIGSEGV);
+}
+
+/* sigaltstack is PER-THREAD: the handler must run on an alternate stack that
+ * the faulting thread itself configured, or it runs on the exhausted stack and
+ * dies a second time. The constructor calls this for the main thread; the
+ * task trampoline calls it for every spawned thread. sigaction itself is
+ * process-wide, so it is installed once, here. */
+static void tycho_stack_guard_thread_init(void) {
+    tycho_record_stack_bounds();
+    stack_t ss; memset(&ss, 0, sizeof ss);
+    ss.ss_sp = g_altstack; ss.ss_size = sizeof g_altstack;
+    sigaltstack(&ss, NULL);
+}
+
+/* ASan's thread-destroy path munmaps whatever altstack is CURRENT on the
+ * exiting thread, assuming it is ASan's own. Ours is a static buffer, so that
+ * munmap fails with EINVAL and ASan reports "failed to deallocate ... Failed
+ * to munmap" on every spawned task under -fsanitize=address. Clearing the
+ * altstack before the task's fn returns leaves destroy nothing to unmap.
+ * Native builds do not need this (no munmap-at-destroy) and skip the syscall. */
+static void tycho_stack_guard_thread_fini(void) {
+#if defined(__SANITIZE_ADDRESS__)
+    stack_t ss; memset(&ss, 0, sizeof ss);
+    ss.ss_flags = SS_DISABLE;
+    sigaltstack(&ss, NULL);
+#endif
+}
+
+__attribute__((constructor)) static void tycho_stack_guard_init(void) {
+    tycho_stack_guard_thread_init();
+    struct sigaction sa; memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = tycho_segv_handler;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, NULL);
+}
 
 typedef struct HBlock HBlock;
 struct HBlock { HBlock *next; size_t cap; size_t off; };
@@ -569,13 +684,33 @@ static tycho_int tycho_max_tasks(void) {
     return m;
 }
 
+/* per-thread stack bounds for the overflow guard (see the guard section) */
+static void *tycho_task_trampoline(void *p) {
+    typedef struct { void *(*fn)(void *); void *arg; } TaskStart;
+    TaskStart *start = (TaskStart *)p;
+    tycho_stack_guard_thread_init();   /* per-thread bounds AND altstack */
+    void *r = start->fn(start->arg);
+    tycho_stack_guard_thread_fini();   /* ASan: clear before thread destroy */
+    return r;
+}
+
 static void tycho_task_start(HTask *t, void *(*fn)(void *), void *arg) {
     if (atomic_fetch_add(&g_live_tasks, 1) + 1 > tycho_max_tasks()) {
         atomic_fetch_sub(&g_live_tasks, 1);
         fprintf(stderr, "tycho: too many concurrent tasks (max %" TY_PRId "); raise TYCHO_MAX_TASKS to override\n", tycho_max_tasks());
         exit(1);
     }
-    if (pthread_create(&t->th, NULL, fn, arg) != 0) {
+    /* The trampoline installs THIS thread's stack bounds and alternate stack
+     * (both per-thread), so deep recursion inside a spawned task fails closed
+     * under the same guard as the main thread. The
+     * start struct lives in the task's root arena (bump alloc, freed with the
+     * tree at tycho_task_free): a heap malloc/free per spawn would be a real
+     * cost on spawn-bound workloads (parallel-for), and a stack local would
+     * race -- the child may read it after this frame is gone. */
+    typedef struct { void *(*fn)(void *); void *arg; } TaskStart;
+    TaskStart *start = (TaskStart *)arena_alloc(&t->root, sizeof *start);
+    start->fn = fn; start->arg = arg;
+    if (pthread_create(&t->th, NULL, tycho_task_trampoline, start) != 0) {
         atomic_fetch_sub(&g_live_tasks, 1);
         fprintf(stderr, "tycho: spawn failed (cannot create thread)\n");
         exit(1);
