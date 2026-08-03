@@ -66,7 +66,8 @@ fn write_bytes(p: string, b: bytes) -> Result(bool, IoErr):
 # flush can lay down the file. The sibling of
 # read_at -- the read side has had positional access since the beginning; the
 # write side stopped at whole-file write_bytes until the tycho-kv store
-# (plan phase 1) needed to update pages in place. Same fail-closed discipline
+# (docs/internals/plan-tycho-kv-DONE.md phase 1) needed to update pages in
+# place. Same fail-closed discipline
 # as write_bytes: a partial write is an error, never a silent short write.
 fn write_at(p: string, off: int, b: bytes) -> Result(bool, IoErr):
     st := 0
