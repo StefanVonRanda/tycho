@@ -412,6 +412,21 @@ tycho_int iox_remove(const char *path) {
  * ambiguous. `data` arrives as `const unsigned char *` plus an implicit length
  * (the compiler's bytes-input FFI shape); NULL with datalen 0 is the empty
  * bytes value and must not be written. */
+void iox_write_at(const char *path, tycho_int off,
+                  const unsigned char *data, tycho_int datalen, tycho_int *status) {
+    *status = TY_RF_ERR;
+    if (off < 0 || datalen < 0) return;            /* fail closed, before open(2) */
+    errno = 0;
+    int fd = open(path, O_RDWR | O_CREAT, 0644);   /* create if absent, like write_bytes */
+    if (fd < 0) { *status = ty_rf_errno(); return; }
+    if (datalen > 0 && data) {
+        ssize_t w = pwrite(fd, data, (size_t)datalen, (off_t)off);
+        if (w != (ssize_t)datalen) { *status = ty_rf_errno(); close(fd); return; }  /* partial: error, fail closed */
+    }
+    if (close(fd) != 0) { *status = ty_rf_errno(); return; }
+    *status = TY_RF_OK;
+}
+
 void iox_write_bytes(const char *path, const unsigned char *data,
                      tycho_int datalen, tycho_int *status) {
     *status = TY_RF_ERR;

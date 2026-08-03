@@ -64,5 +64,80 @@ run. What the build found:
 
 ## Phases
 
-(none yet -- a finding becomes a phase only when a second, independent caller
-needs it)
+### Phase 1 -- `io.write_at`: the positional write the read side always had  [DONE 2026-08-03]
+
+**What shipped:** `corelib/io/io.ty`'s `write_at(p, off, b) -> Result(bool,
+IoErr)` plus `iox_write_at` in the shim (open `O_RDWR|O_CREAT`, `pwrite` at
+the offset, fail closed on a partial write -- the write_bytes discipline;
+created if absent, so a store's first flush can lay down the file; NOT
+truncating). The store's flush now writes the superpage plus only the DIRTY
+pages at their own offsets (the Store tracks them; every insert/delete/split
+marks what it touched) -- a batch no longer rewrites the whole file. The
+differential stayed byte-identical (kv-check green), which is the round-trip
+proof; `corelib/test/io` gained a write_at case (in-place byte survives,
+extend-past-EOF works). Gates: make corelib, shim-check, kv-check all green.
+
+### Phase 2 -- the store's concurrent range scans  [DONE 2026-08-03]
+
+**What shipped:** a `pscan` command (CLI + batch). The leaves are collected
+in order (one serial pass), split into four contiguous slices, each scanned
+in its own `spawn`ed task, and the rows merge in chunk order. The tasks
+SHARE the loaded store: value semantics copies the map struct, the table is
+heap data, and the share is read-only -- the probe was whether concurrent
+map reads are safe. They are: every script's `pscan` variant is
+byte-identical to its serial `scan` (the gate asserts it), on trees after
+200 inserts + 67 deletes and on an empty store.
+
+**Findings:** the first concurrent program found no language gap. One design
+constraint, recorded not phased: Task handles are affine (cannot be stored in
+a container), so the chunk count is a named constant with four explicit
+spawns -- dynamic fan-out lives in `parallel for`, not in task arrays. The
+runtime's spawn paths (conc tests) are unchanged.
+
+
+
+**Why now:** the store filed it with one caller; the API asymmetry is the same
+shape that phased `write_bytes` in the backlog (the read side has
+`read_bytes`/`read_at`; the write side stopped at whole-file writes). `read_at`
+has never had a `write_at` sibling, so every program that wants to update one
+page in place must read the whole file, patch it, and rewrite it all.
+
+**The work:**
+1. `corelib/io/io.ty` gains `write_at(p, off, b) -> Result(bool, IoErr)` -- the
+   sibling of `read_at`, not truncating (bytes after the write are untouched,
+   so in-place page updates work; a missing file is `Err(NotFound)`).
+   `corelib/io/io_shim.c` gains `iox_write_at` (open `r+b`, seek, write, fail
+   closed on partial writes -- the write_bytes discipline).
+2. The store's flush switches from rewriting the whole file to writing the
+   superpage + the DIRTY pages at their offsets: the Store tracks dirty pages,
+   every insert/delete/split marks the pages it touched, and the file's extent
+   is unchanged. The differential must stay byte-identical (the reload after a
+   batch reproduces it), which is the round-trip proof for write_at.
+3. A corelib test for write_at: write at an offset, confirm the untouched
+   bytes survive.
+
+**Gates:** `make corelib` (the io module), `make shim-check` (the shim moved),
+`make kv-check` (the store now flushes through write_at; the differential is
+the round-trip proof).
+
+### Phase 2 -- the store's concurrent range scans  [not started]
+
+**Why now:** every program so far is single-threaded. The store's deferred
+concurrency angle is the first real `spawn` stress in the plan: the scan of a
+large range splits into chunks, one task per chunk reads its leaf slice from
+the SHARED loaded store, and the main task merges the results in key order.
+
+**The work:**
+1. A `pscan` batch command: collect the leaves in order (one serial pass),
+   hand each chunk of leaves to a spawned task, merge the returned rows.
+2. The differential extends: `pscan` output must equal `scan` (which equals
+   the map backend's), so a race, a lost chunk, or an out-of-order merge
+   reddens the existing gate.
+3. The probes this finds get recorded: whether a spawned task can read a map
+   shared from the parent's store without copies, whether the runtime's task
+   spawn cap (1024) and the parallel-for chunking behave, and any concurrency
+   finding the first multi-threaded program surfaces.
+
+**Gates:** `make kv-check` (the pscan differential), `make conc` (the runtime
+paths the tasks use), `make test` only if a runtime change appears.
+

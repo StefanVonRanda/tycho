@@ -53,6 +53,12 @@ struct Store:
     nodes: [int: Node]     # page number -> node (page 1 is the root)
     root: int
     npages: int            # node pages are 1..npages-1; page 0 is the superpage
+    dirty: [int: bool]     # pages written since the last flush (phase 1: the
+                           # flush writes only these, at their offsets, via io.write_at)
+
+fn node_set(st: inout Store, p: int, n: Node):
+    st.nodes[p] = n
+    st.dirty[p] = true
 
 fn die_kv(msg: string):
     die("tycho-kv: " + msg)
@@ -144,7 +150,7 @@ fn node_bytes(n: Node) -> bytes:
 
 fn store_new() -> Store:
     root := empty_node(K_LEAF)
-    return Store([1: root], 1, 2)
+    return Store([1: root], 1, 2, [1: true])
 
 fn store_load(path: string) -> Store:
     match io.read_bytes(path):
@@ -166,23 +172,33 @@ fn store_load(path: string) -> Store:
                     nodes[p] = parse_leaf(pg)
                 else:
                     nodes[p] = parse_internal(pg)
-            return Store(nodes, root, npages)
+            return Store(nodes, root, npages, []int: bool)
         Err(e):
             die_kv("cannot open " + path)
-    return Store([1: empty_node(K_LEAF)], 1, 2)
+    return Store([1: empty_node(K_LEAF)], 1, 2, [1: true])
 
 fn store_flush(path: string, st: Store):
-    out := to_bytes("TYKV1") + put_u32(1) + put_u32(st.npages) + put_u32(st.root)
-    for p := 1; p < st.npages; p += 1:
-        n := st.nodes[p]
-        out = out + node_bytes(n)
-        if n.kind == K_INTERNAL:
-            out = out + zeros(NODE_L - NODE_I)   # pages are fixed-width in the file
-    match io.write_bytes(path, out):
-        Ok(ok):
-            return
+    # the superpage always (the root/npages live there), then only the DIRTY
+    # pages, each at its own offset -- io.write_at, the phase-1 addition. The
+    # extent is unchanged: untouched pages keep their on-disk bytes.
+    super := to_bytes("TYKV1") + put_u32(1) + put_u32(st.npages) + put_u32(st.root)
+    match io.write_at(path, 0, super):
+        Ok(x):
+            nop()
         Err(e):
             die_kv("cannot write " + path)
+    ks := keys(st.dirty)
+    for i := 0; i < len(ks); i += 1:
+        p := ks[i]
+        n := st.nodes[p]
+        pg := node_bytes(n)
+        if n.kind == K_INTERNAL:
+            pg = pg + zeros(NODE_L - NODE_I)   # pages are fixed-width in the file
+        match io.write_at(path, SUPER_L + (p - 1) * NODE_L, pg):
+            Ok(x):
+                nop()
+            Err(e):
+                die_kv("cannot write " + path)
 
 # ---------------------------------------------------------------------------
 # the tree ops -- B+ tree: separators in internal nodes, values in leaves
@@ -240,7 +256,7 @@ fn split_leaf(n: Node, st: inout Store) -> (string, int):
         right.vals[i - half] = n.vals[i]
     right.nkeys = M + 1 - half        # 5
     mid := right.keys[0]
-    st.nodes[st.npages] = right
+    node_set(&st, st.npages, right)
     rp := st.npages
     st.npages = st.npages + 1
     return (mid, rp)
@@ -274,7 +290,7 @@ fn split_internal(n: Node, st: inout Store) -> (string, int):
     right.children[M - h] = n.children[M + 1]
     right.nkeys = M - h               # 4
     mid := n.keys[h]
-    st.nodes[st.npages] = right
+    node_set(&st, st.npages, right)
     rp := st.npages
     st.npages = st.npages + 1
     return (mid, rp)
@@ -287,11 +303,11 @@ fn insert_rec(st: inout Store, page: int, key: string, val: string) -> Option((s
         i := find_key(n, key)
         if i < n.nkeys and n.keys[i] == key:
             n.vals[i] = val           # replace
-            st.nodes[page] = n
+            node_set(&st, page, n)
             return None
         leaf_insert(&n, i, key, val)
         if n.nkeys <= M:
-            st.nodes[page] = n
+            node_set(&st, page, n)
             return None
         mid, rp := split_leaf(n, &st)
         left := empty_node(K_LEAF)
@@ -299,7 +315,7 @@ fn insert_rec(st: inout Store, page: int, key: string, val: string) -> Option((s
             left.keys[i2] = n.keys[i2]
             left.vals[i2] = n.vals[i2]
         left.nkeys = M / 2
-        st.nodes[page] = left
+        node_set(&st, page, left)
         return Some((mid, rp))
     # internal
     i := child_index(n, key)
@@ -308,7 +324,7 @@ fn insert_rec(st: inout Store, page: int, key: string, val: string) -> Option((s
             mid, rp := split
             internal_insert(&n, i, mid, rp)
             if n.nkeys <= M:
-                st.nodes[page] = n
+                node_set(&st, page, n)
                 return None
             mid2, rp2 := split_internal(n, &st)
             left := empty_node(K_INTERNAL)
@@ -317,7 +333,7 @@ fn insert_rec(st: inout Store, page: int, key: string, val: string) -> Option((s
                 left.children[i2] = n.children[i2]
             left.children[M / 2] = n.children[M / 2]
             left.nkeys = M / 2
-            st.nodes[page] = left
+            node_set(&st, page, left)
             return Some((mid2, rp2))
         _:
             return None
@@ -334,7 +350,7 @@ fn kv_insert(st: inout Store, key: string, val: string):
             newroot.children[0] = st.root
             newroot.children[1] = rp
             newroot.nkeys = 1
-            st.nodes[st.npages] = newroot
+            node_set(&st, st.npages, newroot)
             st.root = st.npages
             st.npages = st.npages + 1
         _:
@@ -457,7 +473,7 @@ fn delete_rec(st: inout Store, page: int, key: string) -> (bool, Option(int), Op
         nf := None
         if i == 0 and n.nkeys > 0:
             nf = Some(n.keys[0])          # the first key changed
-        st.nodes[page] = n
+        node_set(&st, page, n)
         if n.nkeys < MIN:
             return (true, Some(page), nf)
         return (true, None, nf)
@@ -470,7 +486,7 @@ fn delete_rec(st: inout Store, page: int, key: string) -> (bool, Option(int), Op
         Some(x):
             if i > 0:
                 n.keys[i - 1] = x
-                st.nodes[page] = n
+                node_set(&st, page, n)
             # if i == 0, THIS node's first key changed too: propagate
         _: nop()
     match u:
@@ -486,7 +502,7 @@ fn delete_rec(st: inout Store, page: int, key: string) -> (bool, Option(int), Op
                     n2.keys[i - 1] = first_key(st, n2.children[i])
                 if i < n2.nkeys:
                     n2.keys[i] = first_key(st, n2.children[i + 1])
-                st.nodes[page] = n2
+                node_set(&st, page, n2)
             return (true, r, None)
         _:
             match nf:
@@ -505,28 +521,28 @@ fn rebalance(st: inout Store, page: int, i: int) -> Option(int):
         if i + 1 <= n.nkeys and st.nodes[n.children[i + 1]].nkeys > MIN:
             s := st.nodes[n.children[i + 1]]
             borrow_right_leaf(&c, &s, &n, i)
-            st.nodes[n.children[i]] = c
-            st.nodes[n.children[i + 1]] = s
-            st.nodes[page] = n
+            node_set(&st, n.children[i], c)
+            node_set(&st, n.children[i + 1], s)
+            node_set(&st, page, n)
             return None
         if i - 1 >= 0 and st.nodes[n.children[i - 1]].nkeys > MIN:
             s := st.nodes[n.children[i - 1]]
             borrow_left_leaf(&c, &s, &n, i)
-            st.nodes[n.children[i]] = c
-            st.nodes[n.children[i - 1]] = s
-            st.nodes[page] = n
+            node_set(&st, n.children[i], c)
+            node_set(&st, n.children[i - 1], s)
+            node_set(&st, page, n)
             return None
         if i + 1 <= n.nkeys:
             s := st.nodes[n.children[i + 1]]
             merged := merge_leaves(c, s)
             dead = n.children[i + 1]
-            st.nodes[n.children[i]] = merged
+            node_set(&st, n.children[i], merged)
             remove_sep(&n, i)
         else:
             s := st.nodes[n.children[i - 1]]
             merged := merge_leaves(s, c)
             dead = n.children[i]
-            st.nodes[n.children[i - 1]] = merged
+            node_set(&st, n.children[i - 1], merged)
             remove_sep(&n, i - 1)
     else:
         if i + 1 <= n.nkeys and st.nodes[n.children[i + 1]].nkeys > MIN:
@@ -534,28 +550,28 @@ fn rebalance(st: inout Store, page: int, i: int) -> Option(int):
             borrow_right_int(&c, &s, &n, i)
             st.nodes[n.children[i]] = c
             st.nodes[n.children[i + 1]] = s
-            st.nodes[page] = n
+            node_set(&st, page, n)
             return None
         if i - 1 >= 0 and st.nodes[n.children[i - 1]].nkeys > MIN:
             s := st.nodes[n.children[i - 1]]
             borrow_left_int(&c, &s, &n, i)
             st.nodes[n.children[i]] = c
             st.nodes[n.children[i - 1]] = s
-            st.nodes[page] = n
+            node_set(&st, page, n)
             return None
         if i + 1 <= n.nkeys:
             s := st.nodes[n.children[i + 1]]
             merged := merge_internals(c, n.keys[i], s)
             dead = n.children[i + 1]
-            st.nodes[n.children[i]] = merged
+            node_set(&st, n.children[i], merged)
             remove_sep(&n, i)
         else:
             s := st.nodes[n.children[i - 1]]
             merged := merge_internals(s, n.keys[i - 1], c)
             dead = n.children[i]
-            st.nodes[n.children[i - 1]] = merged
+            node_set(&st, n.children[i - 1], merged)
             remove_sep(&n, i - 1)
-    st.nodes[page] = n
+    node_set(&st, page, n)
     # a merge cost this node a separator: it underflows only when ITS nkeys
     # drops below MIN -- a healthy parent must NOT signal an underflow, or
     # the cascade rebalances an already-fine child and corrupts it
@@ -575,6 +591,8 @@ fn kv_delete(st: inout Store, key: string) -> bool:
 # ---------------------------------------------------------------------------
 # scan -- in-order traversal of the leaves
 # ---------------------------------------------------------------------------
+
+const NCHUNKS = 4
 
 fn scan_rec(st: Store, page: int, lo: string, hi: string, out: inout [string]):
     n := st.nodes[page]
@@ -636,6 +654,58 @@ fn verify(st: Store):
     if n.nkeys > M:
         die_kv("verify: root has " + str(n.nkeys) + " keys")
     verify_rec(st, st.root, "", "")
+
+# ---- concurrent range scan (phase 2): the store's first spawn stress ------
+# The leaves are collected in order (one serial pass), split into NCHUNKS
+# contiguous slices, and each slice is scanned in its own task; the tasks
+# SHARE the loaded store (value semantics: the map's table is heap data, the
+# copy the task captures shares it -- a read-only share, which is the probe:
+# concurrent map reads must be safe). The rows merge in chunk order, so the
+# output is byte-identical to the serial scan -- the gate asserts it.
+
+fn collect_leaves(st: Store, page: int, out: inout [int]):
+    n := st.nodes[page]
+    if n.kind == K_INTERNAL:
+        for i := 0; i <= n.nkeys; i += 1:
+            collect_leaves(st, n.children[i], &out)
+        return
+    push(out, page)
+
+fn scan_leaf_slice(st: Store, leaves: [int], start: int, end: int, lo: string, hi: string) -> [string]:
+    out := []string
+    for i := start; i < end; i += 1:
+        n := st.nodes[leaves[i]]
+        for k := 0; k < n.nkeys; k += 1:
+            if n.keys[k] >= lo and (hi == "" or n.keys[k] <= hi):
+                push(out, n.keys[k] + " = " + n.vals[k])
+    return out
+
+fn pscan(st: Store, lo: string, hi: string) -> [string]:
+    leaves := []int
+    collect_leaves(st, st.root, &leaves)
+    total := len(leaves)
+    c0 := total * 0 / NCHUNKS
+    c1 := total * 1 / NCHUNKS
+    c2 := total * 2 / NCHUNKS
+    c3 := total * 3 / NCHUNKS
+    t1 := spawn scan_leaf_slice(st, leaves, c0, c1, lo, hi)
+    t2 := spawn scan_leaf_slice(st, leaves, c1, c2, lo, hi)
+    t3 := spawn scan_leaf_slice(st, leaves, c2, c3, lo, hi)
+    t4 := spawn scan_leaf_slice(st, leaves, c3, total, lo, hi)
+    r1 := t1.wait()
+    r2 := t2.wait()
+    r3 := t3.wait()
+    r4 := t4.wait()
+    out := []string
+    for i := 0; i < len(r1); i += 1:
+        push(out, r1[i])
+    for i := 0; i < len(r2); i += 1:
+        push(out, r2[i])
+    for i := 0; i < len(r3); i += 1:
+        push(out, r3[i])
+    for i := 0; i < len(r4); i += 1:
+        push(out, r4[i])
+    return out
 
 # ---------------------------------------------------------------------------
 # the CLI and the batch runner
@@ -710,6 +780,16 @@ fn run_btree(store_path: string, script: string):
                 hi = toks[2]
             rows := []string
             scan_rec(st, st.root, lo, hi, &rows)
+            for k := 0; k < len(rows); k += 1:
+                println(rows[k])
+        elif cmd == "pscan":
+            lo := ""
+            hi := ""
+            if len(toks) > 1:
+                lo = toks[1]
+            if len(toks) > 2:
+                hi = toks[2]
+            rows := pscan(st, lo, hi)
             for k := 0; k < len(rows); k += 1:
                 println(rows[k])
         elif cmd == "verify":
@@ -798,6 +878,17 @@ fn main():
             store_flush(path, st)
         else:
             println("NOT FOUND")
+    elif cmd == "pscan":
+        st := store_load(path)
+        lo := ""
+        hi := ""
+        if i + 2 < len(av):
+            lo = av[i + 2]
+        if i + 3 < len(av):
+            hi = av[i + 3]
+        rows := pscan(st, lo, hi)
+        for k := 0; k < len(rows); k += 1:
+            println(rows[k])
     elif cmd == "scan":
         st := store_load(path)
         lo := ""
