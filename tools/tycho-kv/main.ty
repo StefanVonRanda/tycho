@@ -1,0 +1,816 @@
+# tycho-kv -- a persistent B+ tree key-value store in Tycho.
+#
+#     ./tychoc tools/tycho-kv/main.ty -o build/tycho-kv
+#     ./build/tycho-kv init /tmp/db.kv
+#     ./build/tycho-kv put /tmp/db.kv alpha 1
+#     ./build/tycho-kv get /tmp/db.kv alpha
+#     ./build/tycho-kv scan /tmp/db.kv
+#     ./build/tycho-kv batch /tmp/db.kv script.txt
+#     ./build/tycho-kv --map batch /tmp/db.kv script.txt   (the differential)
+#
+# WHAT IT IS FOR. The second plan's program (docs/internals/plan-tycho-scheme-
+# compiler-DONE.md's successor): a real data structure over real random-access
+# file I/O, the first program to stress core:io's whole-file read/write paths
+# (read_bytes/write_bytes -- the backlog's write_bytes item), manual bytes
+# serialization (the VM's .tyc pattern), value semantics over page-sized
+# buffers, and Option/Result plumbing. The B+ tree: internal nodes hold only
+# separators (copies of leaf keys), leaves hold key/value pairs; the tree is
+# flattened into PAGE NUMBERS in a cache -- the flat-index idiom again.
+#
+# The differential: `--map batch` replays the same command script against a
+# naive in-memory map and must print byte-identical output to the B+ tree's
+# `batch` -- the tycho-scheme pattern, proving the tree's answers.
+#
+# Limits, fixed on purpose (the die is loud, never silent): keys <= 32 bytes,
+# values <= 128 bytes, order 8 (max 8 keys per node, min 4 after delete).
+
+package main
+import "core:cli"
+import "core:io"
+import "core:strings"
+
+const M = 8            # max keys per node
+const MIN = 4          # min keys per node (M/2)
+const KS = 32          # max key length
+const VS = 128         # max value length
+const SLOT_L = 4 + KS + 4 + VS    # leaf slot: klen key vlen value
+const SLOT_I = 4 + KS + 4         # internal slot: klen key child
+const NODE_L = 5 + M * SLOT_L     # leaf node byte size
+const NODE_I = 5 + M * SLOT_I + (M + 1) * 4
+const SUPER_L = 5 + 4 + 4 + 4     # magic + version + npages + root
+
+const K_LEAF = 0
+const K_INTERNAL = 1
+
+struct Node:
+    kind: int
+    keys: [9]string      # M+1: an insert into a full node briefly holds M+1
+    vals: [9]string      # before the split rebalances it
+    children: [10]int
+    nkeys: int
+
+struct Store:
+    nodes: [int: Node]     # page number -> node (page 1 is the root)
+    root: int
+    npages: int            # node pages are 1..npages-1; page 0 is the superpage
+
+fn die_kv(msg: string):
+    die("tycho-kv: " + msg)
+
+# a no-op call for match arms that must fall through to shared code below
+fn nop():
+    return
+
+# ---------------------------------------------------------------------------
+# serialization -- the VM's .tyc pattern: manual bytes, no padding surprises
+# ---------------------------------------------------------------------------
+
+fn put_u32(v: int) -> bytes:
+    return to_bytes([v % 256, (v / 256) % 256, (v / 65536) % 256, (v / 16777216) % 256])
+
+fn get_u32(b: bytes, off: int) -> int:
+    return b[off] + b[off + 1] * 256 + b[off + 2] * 65536 + b[off + 3] * 16777216
+
+fn zeros(n: int) -> bytes:
+    z := []int
+    for i := 0; i < n; i += 1:
+        push(z, 0)
+    return to_bytes(z)
+
+fn padded(s: string, width: int) -> bytes:
+    if len(s) > width:
+        die_kv("value or key longer than " + str(width) + " bytes")
+    return to_bytes(s) + zeros(width - len(s))
+
+fn leaf_bytes(n: Node) -> bytes:
+    out := to_bytes([K_LEAF]) + put_u32(n.nkeys)
+    for i := 0; i < M; i += 1:
+        if i < n.nkeys:
+            out = out + put_u32(len(n.keys[i]))
+            out = out + padded(n.keys[i], KS)
+            out = out + put_u32(len(n.vals[i]))
+            out = out + padded(n.vals[i], VS)
+        else:
+            out = out + put_u32(0) + zeros(KS) + put_u32(0) + zeros(VS)
+    return out
+
+fn internal_bytes(n: Node) -> bytes:
+    out := to_bytes([K_INTERNAL]) + put_u32(n.nkeys)
+    for i := 0; i < M; i += 1:
+        if i < n.nkeys:
+            out = out + put_u32(len(n.keys[i])) + padded(n.keys[i], KS) + put_u32(n.children[i + 1])
+        else:
+            out = out + put_u32(0) + zeros(KS) + put_u32(0)
+    for i := 0; i < M + 1; i += 1:
+        out = out + put_u32(n.children[i])
+    return out
+
+fn empty_node(kind: int) -> Node:
+    return Node(kind, ["", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", ""],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 0)
+
+fn parse_leaf(b: bytes) -> Node:
+    n := empty_node(K_LEAF)
+    n.nkeys = get_u32(b, 1)
+    for i := 0; i < n.nkeys; i += 1:
+        off := 5 + i * SLOT_L
+        klen := get_u32(b, off)
+        n.keys[i] = to_str(b[off + 4: off + 4 + klen])
+        vlen := get_u32(b, off + 4 + KS)
+        n.vals[i] = to_str(b[off + 4 + KS + 4: off + 4 + KS + 4 + vlen])
+    return n
+
+fn parse_internal(b: bytes) -> Node:
+    n := empty_node(K_INTERNAL)
+    n.nkeys = get_u32(b, 1)
+    for i := 0; i < n.nkeys; i += 1:
+        off := 5 + i * SLOT_I
+        klen := get_u32(b, off)
+        n.keys[i] = to_str(b[off + 4: off + 4 + klen])
+        n.children[i + 1] = get_u32(b, off + 4 + KS)
+    for i := 0; i < M + 1; i += 1:
+        n.children[i] = get_u32(b, 5 + M * SLOT_I + i * 4)
+    return n
+
+fn node_bytes(n: Node) -> bytes:
+    if n.kind == K_LEAF:
+        return leaf_bytes(n)
+    return internal_bytes(n)
+
+# ---------------------------------------------------------------------------
+# load / flush -- the whole file, the honest shape for a small store; a later
+# finding may phase page-level I/O when a second caller wants it
+# ---------------------------------------------------------------------------
+
+fn store_new() -> Store:
+    root := empty_node(K_LEAF)
+    return Store([1: root], 1, 2)
+
+fn store_load(path: string) -> Store:
+    match io.read_bytes(path):
+        Ok(blob):
+            if len(blob) < SUPER_L or to_str(blob[0:5]) != "TYKV1":
+                die_kv(path + " is not a tycho-kv store (bad magic)")
+            version := get_u32(blob, 5)
+            if version != 1:
+                die_kv(path + " has unknown version " + str(version))
+            npages := get_u32(blob, 9)
+            root := get_u32(blob, 13)
+            nodes := []int: Node
+            for p := 1; p < npages; p += 1:
+                off := SUPER_L + (p - 1) * (NODE_L)
+                if len(blob) < off + NODE_L:
+                    die_kv(path + " is truncated (page " + str(p) + ")")
+                pg := blob[off: off + NODE_L]
+                if pg[0] == K_LEAF:
+                    nodes[p] = parse_leaf(pg)
+                else:
+                    nodes[p] = parse_internal(pg)
+            return Store(nodes, root, npages)
+        Err(e):
+            die_kv("cannot open " + path)
+    return Store([1: empty_node(K_LEAF)], 1, 2)
+
+fn store_flush(path: string, st: Store):
+    out := to_bytes("TYKV1") + put_u32(1) + put_u32(st.npages) + put_u32(st.root)
+    for p := 1; p < st.npages; p += 1:
+        n := st.nodes[p]
+        out = out + node_bytes(n)
+        if n.kind == K_INTERNAL:
+            out = out + zeros(NODE_L - NODE_I)   # pages are fixed-width in the file
+    match io.write_bytes(path, out):
+        Ok(ok):
+            return
+        Err(e):
+            die_kv("cannot write " + path)
+
+# ---------------------------------------------------------------------------
+# the tree ops -- B+ tree: separators in internal nodes, values in leaves
+# ---------------------------------------------------------------------------
+
+fn find_key(n: Node, key: string) -> int:
+    # the first slot >= key (linear: M is 8, binary is not worth it)
+    for i := 0; i < n.nkeys; i += 1:
+        if n.keys[i] >= key:
+            return i
+    return n.nkeys
+
+fn child_index(n: Node, key: string) -> int:
+    # the child to descend into: the first separator > key, else the last
+    for i := 0; i < n.nkeys; i += 1:
+        if key < n.keys[i]:
+            return i
+    return n.nkeys
+
+fn kv_lookup(st: Store, key: string) -> Option(string):
+    page := st.root
+    for true:
+        n := st.nodes[page]
+        if n.kind == K_INTERNAL:
+            page = n.children[child_index(n, key)]
+            continue
+        i := find_key(n, key)
+        if i < n.nkeys and n.keys[i] == key:
+            return Some(n.vals[i])
+        return None
+
+# insert a (key, value) pair at position i in a LEAF (shift right)
+fn leaf_insert(n: inout Node, i: int, key: string, val: string):
+    k := n.nkeys
+    for k > i:
+        n.keys[k] = n.keys[k - 1]
+        n.vals[k] = n.vals[k - 1]
+        k = k - 1
+    n.keys[i] = key
+    n.vals[i] = val
+    n.nkeys = n.nkeys + 1
+
+# split a FULL leaf (M+1 keys): left keeps 0..M/2-1, right gets M/2..M,
+# the separator (promoted) is the right half's first key. Returns (mid, right).
+fn split_leaf(n: Node, st: inout Store) -> (string, int):
+    left := empty_node(K_LEAF)
+    right := empty_node(K_LEAF)
+    half := M / 2                     # 4
+    for i := 0; i < half; i += 1:
+        left.keys[i] = n.keys[i]
+        left.vals[i] = n.vals[i]
+    left.nkeys = half
+    for i := half; i <= M; i += 1:
+        right.keys[i - half] = n.keys[i]
+        right.vals[i - half] = n.vals[i]
+    right.nkeys = M + 1 - half        # 5
+    mid := right.keys[0]
+    st.nodes[st.npages] = right
+    rp := st.npages
+    st.npages = st.npages + 1
+    return (mid, rp)
+
+# insert a separator (mid) at position i in an INTERNAL node (shift right;
+# the separator's right child is `rp`)
+fn internal_insert(n: inout Node, i: int, mid: string, rp: int):
+    k := n.nkeys
+    for k > i:
+        n.keys[k] = n.keys[k - 1]
+        n.children[k + 1] = n.children[k]
+        k = k - 1
+    n.keys[i] = mid
+    n.children[i + 1] = rp
+    n.nkeys = n.nkeys + 1
+
+# split a full INTERNAL (M+1 separators, M+2 children): left keeps seps 0..h-1
+# + children 0..h, right keeps seps h+1..M + children h+1..M+1, sep[h] promotes.
+fn split_internal(n: Node, st: inout Store) -> (string, int):
+    left := empty_node(K_INTERNAL)
+    right := empty_node(K_INTERNAL)
+    h := M / 2                        # 4
+    for i := 0; i < h; i += 1:
+        left.keys[i] = n.keys[i]
+        left.children[i] = n.children[i]
+    left.children[h] = n.children[h]
+    left.nkeys = h
+    for i := h + 1; i <= M; i += 1:
+        right.keys[i - h - 1] = n.keys[i]
+        right.children[i - h - 1] = n.children[i]
+    right.children[M - h] = n.children[M + 1]
+    right.nkeys = M - h               # 4
+    mid := n.keys[h]
+    st.nodes[st.npages] = right
+    rp := st.npages
+    st.npages = st.npages + 1
+    return (mid, rp)
+
+# insert_rec returns None (no split) or Some((mid, right)) -- this node split,
+# the caller must absorb the separator. The split-on-the-way-up formulation.
+fn insert_rec(st: inout Store, page: int, key: string, val: string) -> Option((string, int)):
+    n := st.nodes[page]
+    if n.kind == K_LEAF:
+        i := find_key(n, key)
+        if i < n.nkeys and n.keys[i] == key:
+            n.vals[i] = val           # replace
+            st.nodes[page] = n
+            return None
+        leaf_insert(&n, i, key, val)
+        if n.nkeys <= M:
+            st.nodes[page] = n
+            return None
+        mid, rp := split_leaf(n, &st)
+        left := empty_node(K_LEAF)
+        for i2 := 0; i2 < M / 2; i2 += 1:
+            left.keys[i2] = n.keys[i2]
+            left.vals[i2] = n.vals[i2]
+        left.nkeys = M / 2
+        st.nodes[page] = left
+        return Some((mid, rp))
+    # internal
+    i := child_index(n, key)
+    match insert_rec(&st, n.children[i], key, val):
+        Some(split):
+            mid, rp := split
+            internal_insert(&n, i, mid, rp)
+            if n.nkeys <= M:
+                st.nodes[page] = n
+                return None
+            mid2, rp2 := split_internal(n, &st)
+            left := empty_node(K_INTERNAL)
+            for i2 := 0; i2 < M / 2; i2 += 1:
+                left.keys[i2] = n.keys[i2]
+                left.children[i2] = n.children[i2]
+            left.children[M / 2] = n.children[M / 2]
+            left.nkeys = M / 2
+            st.nodes[page] = left
+            return Some((mid2, rp2))
+        _:
+            return None
+    return None
+
+fn kv_insert(st: inout Store, key: string, val: string):
+    if len(key) == 0:
+        die_kv("empty key")
+    match insert_rec(&st, st.root, key, val):
+        Some(split):
+            mid, rp := split
+            newroot := empty_node(K_INTERNAL)
+            newroot.keys[0] = mid
+            newroot.children[0] = st.root
+            newroot.children[1] = rp
+            newroot.nkeys = 1
+            st.nodes[st.npages] = newroot
+            st.root = st.npages
+            st.npages = st.npages + 1
+        _:
+            nop()
+
+# ---- delete with borrow-or-merge -------------------------------------------
+# c (the underflowed child at index i) borrows from a sibling with keys to
+# spare, else merges with one. The parent's separator between c and its right
+# sibling is parent.keys[i]; between c and its left sibling, parent.keys[i-1].
+# rebalance returns Some(dead) if THIS node also underflowed after the merge
+# (the next ancestor must rebalance); `dead` is the page that merged away.
+
+fn remove_slot(n: inout Node, i: int):
+    k := i
+    for k < n.nkeys - 1:
+        n.keys[k] = n.keys[k + 1]
+        n.vals[k] = n.vals[k + 1]
+        k = k + 1
+    n.nkeys = n.nkeys - 1
+
+fn remove_sep(n: inout Node, i: int):
+    k := i
+    for k < n.nkeys - 1:
+        n.keys[k] = n.keys[k + 1]
+        n.children[k + 1] = n.children[k + 2]
+        k = k + 1
+    n.nkeys = n.nkeys - 1
+
+fn borrow_right_leaf(c: inout Node, s: inout Node, p: inout Node, i: int):
+    # move s's first pair to c's end; the separator becomes s's new first key
+    c.keys[c.nkeys] = s.keys[0]
+    c.vals[c.nkeys] = s.vals[0]
+    c.nkeys = c.nkeys + 1
+    k := 0
+    for k < s.nkeys - 1:
+        s.keys[k] = s.keys[k + 1]
+        s.vals[k] = s.vals[k + 1]
+        k = k + 1
+    s.nkeys = s.nkeys - 1
+    p.keys[i] = s.keys[0]
+
+fn borrow_left_leaf(c: inout Node, s: inout Node, p: inout Node, i: int):
+    # move s's last pair to c's start; the separator becomes c's new first key
+    k := c.nkeys
+    for k > 0:
+        c.keys[k] = c.keys[k - 1]
+        c.vals[k] = c.vals[k - 1]
+        k = k - 1
+    c.keys[0] = s.keys[s.nkeys - 1]
+    c.vals[0] = s.vals[s.nkeys - 1]
+    c.nkeys = c.nkeys + 1
+    s.nkeys = s.nkeys - 1
+    p.keys[i - 1] = c.keys[0]
+
+fn borrow_right_int(c: inout Node, s: inout Node, p: inout Node, i: int):
+    # c gains the parent separator as its last, then s's leftmost child;
+    # the separator becomes s's first separator
+    c.keys[c.nkeys] = p.keys[i]
+    c.children[c.nkeys + 1] = s.children[0]
+    c.nkeys = c.nkeys + 1
+    k := 0
+    for k < s.nkeys - 1:
+        s.keys[k] = s.keys[k + 1]
+        s.children[k] = s.children[k + 1]
+        k = k + 1
+    s.children[s.nkeys - 1] = s.children[s.nkeys]
+    p.keys[i] = s.keys[0]
+    s.nkeys = s.nkeys - 1
+
+fn borrow_left_int(c: inout Node, s: inout Node, p: inout Node, i: int):
+    # c gains s's rightmost child and the parent separator at its front
+    k := c.nkeys
+    for k > 0:
+        c.keys[k] = c.keys[k - 1]
+        c.children[k + 1] = c.children[k]
+        k = k - 1
+    c.children[1] = c.children[0]
+    c.keys[0] = p.keys[i - 1]
+    c.children[0] = s.children[s.nkeys]
+    c.nkeys = c.nkeys + 1
+    s.nkeys = s.nkeys - 1
+    p.keys[i - 1] = s.keys[s.nkeys]
+
+fn merge_leaves(a: Node, b: Node) -> Node:
+    r := empty_node(K_LEAF)
+    for i := 0; i < a.nkeys; i += 1:
+        r.keys[i] = a.keys[i]
+        r.vals[i] = a.vals[i]
+    for i := 0; i < b.nkeys; i += 1:
+        r.keys[a.nkeys + i] = b.keys[i]
+        r.vals[a.nkeys + i] = b.vals[i]
+    r.nkeys = a.nkeys + b.nkeys
+    return r
+
+fn merge_internals(a: Node, sep: string, b: Node) -> Node:
+    r := empty_node(K_INTERNAL)
+    for i := 0; i < a.nkeys; i += 1:
+        r.keys[i] = a.keys[i]
+        r.children[i] = a.children[i]
+    r.children[a.nkeys] = a.children[a.nkeys]
+    r.keys[a.nkeys] = sep
+    for i := 0; i < b.nkeys; i += 1:
+        r.keys[a.nkeys + 1 + i] = b.keys[i]
+        r.children[a.nkeys + 1 + i] = b.children[i]
+    r.children[a.nkeys + 1 + b.nkeys] = b.children[b.nkeys]
+    r.nkeys = a.nkeys + 1 + b.nkeys
+    return r
+
+# delete_rec returns (found, underflow, newfirst): whether the key was
+# present; Some(page) if `page` UNDERFLOWED so the caller must rebalance; and
+# Some(new-first) when the subtree's FIRST key changed (a B+ separator is a
+# copy of its right child's first key, so the parent must refresh it).
+fn delete_rec(st: inout Store, page: int, key: string) -> (bool, Option(int), Option(string)):
+    n := st.nodes[page]
+    if n.kind == K_LEAF:
+        i := find_key(n, key)
+        if i >= n.nkeys or n.keys[i] != key:
+            return (false, None, None)    # not found
+        remove_slot(&n, i)
+        nf := None
+        if i == 0 and n.nkeys > 0:
+            nf = Some(n.keys[0])          # the first key changed
+        st.nodes[page] = n
+        if n.nkeys < MIN:
+            return (true, Some(page), nf)
+        return (true, None, nf)
+    i := child_index(n, key)
+    f, u, nf := delete_rec(&st, n.children[i], key)
+    if not f:
+        return (false, None, None)
+    # the separator before the child is a copy of the child's first key
+    match nf:
+        Some(x):
+            if i > 0:
+                n.keys[i - 1] = x
+                st.nodes[page] = n
+            # if i == 0, THIS node's first key changed too: propagate
+        _: nop()
+    match u:
+        Some(x):
+            r := rebalance(&st, page, i)
+            # refresh the separators AROUND the rebalanced child -- re-READ
+            # the node (the rebalance rewrote it). A merge leaves the sep
+            # AFTER the merged child stale (it held the merged-away child's
+            # first key); both boundaries must mirror the children again.
+            if i > 0 or i < st.nodes[page].nkeys:
+                n2 := st.nodes[page]
+                if i > 0:
+                    n2.keys[i - 1] = first_key(st, n2.children[i])
+                if i < n2.nkeys:
+                    n2.keys[i] = first_key(st, n2.children[i + 1])
+                st.nodes[page] = n2
+            return (true, r, None)
+        _:
+            match nf:
+                Some(x):
+                    if i == 0:
+                        return (true, None, Some(x))
+                _: nop()
+            return (true, None, None)
+    return (false, None, None)
+
+fn rebalance(st: inout Store, page: int, i: int) -> Option(int):
+    n := st.nodes[page]
+    c := st.nodes[n.children[i]]
+    dead := 0
+    if c.kind == K_LEAF:
+        if i + 1 <= n.nkeys and st.nodes[n.children[i + 1]].nkeys > MIN:
+            s := st.nodes[n.children[i + 1]]
+            borrow_right_leaf(&c, &s, &n, i)
+            st.nodes[n.children[i]] = c
+            st.nodes[n.children[i + 1]] = s
+            st.nodes[page] = n
+            return None
+        if i - 1 >= 0 and st.nodes[n.children[i - 1]].nkeys > MIN:
+            s := st.nodes[n.children[i - 1]]
+            borrow_left_leaf(&c, &s, &n, i)
+            st.nodes[n.children[i]] = c
+            st.nodes[n.children[i - 1]] = s
+            st.nodes[page] = n
+            return None
+        if i + 1 <= n.nkeys:
+            s := st.nodes[n.children[i + 1]]
+            merged := merge_leaves(c, s)
+            dead = n.children[i + 1]
+            st.nodes[n.children[i]] = merged
+            remove_sep(&n, i)
+        else:
+            s := st.nodes[n.children[i - 1]]
+            merged := merge_leaves(s, c)
+            dead = n.children[i]
+            st.nodes[n.children[i - 1]] = merged
+            remove_sep(&n, i - 1)
+    else:
+        if i + 1 <= n.nkeys and st.nodes[n.children[i + 1]].nkeys > MIN:
+            s := st.nodes[n.children[i + 1]]
+            borrow_right_int(&c, &s, &n, i)
+            st.nodes[n.children[i]] = c
+            st.nodes[n.children[i + 1]] = s
+            st.nodes[page] = n
+            return None
+        if i - 1 >= 0 and st.nodes[n.children[i - 1]].nkeys > MIN:
+            s := st.nodes[n.children[i - 1]]
+            borrow_left_int(&c, &s, &n, i)
+            st.nodes[n.children[i]] = c
+            st.nodes[n.children[i - 1]] = s
+            st.nodes[page] = n
+            return None
+        if i + 1 <= n.nkeys:
+            s := st.nodes[n.children[i + 1]]
+            merged := merge_internals(c, n.keys[i], s)
+            dead = n.children[i + 1]
+            st.nodes[n.children[i]] = merged
+            remove_sep(&n, i)
+        else:
+            s := st.nodes[n.children[i - 1]]
+            merged := merge_internals(s, n.keys[i - 1], c)
+            dead = n.children[i]
+            st.nodes[n.children[i - 1]] = merged
+            remove_sep(&n, i - 1)
+    st.nodes[page] = n
+    # a merge cost this node a separator: it underflows only when ITS nkeys
+    # drops below MIN -- a healthy parent must NOT signal an underflow, or
+    # the cascade rebalances an already-fine child and corrupts it
+    if n.nkeys < MIN:
+        return Some(dead)
+    return None
+
+fn kv_delete(st: inout Store, key: string) -> bool:
+    found, u, nf := delete_rec(&st, st.root, key)
+    # root shrink: an internal root with no separators becomes its only child
+    n := st.nodes[st.root]
+    for n.kind == K_INTERNAL and n.nkeys == 0:
+        st.root = n.children[0]
+        n = st.nodes[st.root]
+    return found
+
+# ---------------------------------------------------------------------------
+# scan -- in-order traversal of the leaves
+# ---------------------------------------------------------------------------
+
+fn scan_rec(st: Store, page: int, lo: string, hi: string, out: inout [string]):
+    n := st.nodes[page]
+    if n.kind == K_INTERNAL:
+        for i := 0; i <= n.nkeys; i += 1:
+            scan_rec(st, n.children[i], lo, hi, &out)
+        return
+    for i := 0; i < n.nkeys; i += 1:
+        if n.keys[i] >= lo and (hi == "" or n.keys[i] <= hi):
+            push(out, n.keys[i] + " = " + n.vals[i])
+
+
+fn verify_rec(st: Store, page: int, lo: string, hi: string):
+    n := st.nodes[page]
+    if n.nkeys < 0 or n.nkeys > M:
+        die_kv("verify: node " + str(page) + " has " + str(n.nkeys) + " keys")
+    if n.kind == K_INTERNAL:
+        for i := 0; i <= n.nkeys; i += 1:
+            if n.children[i] <= 0 or n.children[i] >= st.npages:
+                die_kv("verify: node " + str(page) + " child " + str(i) + " = " + str(n.children[i]) + " out of range")
+        for i := 1; i < n.nkeys; i += 1:
+            if not (n.keys[i - 1] < n.keys[i]):
+                die_kv("verify: node " + str(page) + " separators not ascending")
+        for i := 0; i < n.nkeys; i += 1:
+            if lo != "" and not (n.keys[i] > lo):
+                die_kv("verify: node " + str(page) + " sep below lo")
+            if hi != "" and not (n.keys[i] < hi):
+                die_kv("verify: node " + str(page) + " sep above hi")
+        # the B+ invariant: sep[i] == the leftmost key of subtree children[i+1]
+        for i := 0; i < n.nkeys; i += 1:
+            if first_key(st, n.children[i + 1]) != n.keys[i]:
+                ks := ""
+                for i2 := 0; i2 < n.nkeys; i2 += 1:
+                    ks = ks + n.keys[i2] + "|"
+                ch := ""
+                for i2 := 0; i2 <= n.nkeys; i2 += 1:
+                    ch = ch + first_key(st, n.children[i2]) + "|"
+                die_kv("verify: node " + str(page) + " seps=[" + ks + "] childfirsts=[" + ch + "]")
+        for i := 0; i <= n.nkeys; i += 1:
+            verify_rec(st, n.children[i], lo, hi)
+    else:
+        for i := 1; i < n.nkeys; i += 1:
+            if not (n.keys[i - 1] < n.keys[i]):
+                die_kv("verify: leaf " + str(page) + " keys not ascending")
+        if n.nkeys > 0:
+            if lo != "" and not (n.keys[0] >= lo):
+                die_kv("verify: leaf " + str(page) + " first key < lo")
+            if hi != "" and not (n.keys[n.nkeys - 1] <= hi):
+                die_kv("verify: leaf " + str(page) + " last key > hi")
+
+fn first_key(st: Store, page: int) -> string:
+    n := st.nodes[page]
+    for n.kind == K_INTERNAL:
+        n = st.nodes[n.children[0]]
+    return n.keys[0]
+
+fn verify(st: Store):
+    n := st.nodes[st.root]
+    if n.nkeys > M:
+        die_kv("verify: root has " + str(n.nkeys) + " keys")
+    verify_rec(st, st.root, "", "")
+
+# ---------------------------------------------------------------------------
+# the CLI and the batch runner
+# ---------------------------------------------------------------------------
+
+fn sorted_keys(m: [string: string]) -> [string]:
+    ks := keys(m)
+    # insertion sort (the tree's own ordering is lexical; the map backend
+    # must match it for the differential)
+    for i := 1; i < len(ks); i += 1:
+        k := ks[i]
+        j := i
+        for j > 0 and ks[j - 1] > k:
+            ks[j] = ks[j - 1]
+            j = j - 1
+        ks[j] = k
+    return ks
+
+fn map_scan(m: [string: string], lo: string, hi: string) -> [string]:
+    out := []string
+    ks := sorted_keys(m)
+    for i := 0; i < len(ks); i += 1:
+        if ks[i] >= lo and (hi == "" or ks[i] <= hi):
+            push(out, ks[i] + " = " + m[ks[i]])
+    return out
+
+fn split_ws(s: string) -> [string]:
+    out := []string
+    i := 0
+    n := len(s)
+    for i < n:
+        c := s[i]
+        if c == 32 or c == 9:
+            i = i + 1
+        else:
+            j := i
+            for j < n and s[j] != 32 and s[j] != 9:
+                j = j + 1
+            push(out, substr(s, i, j))
+            i = j
+    return out
+
+# run one script against the B+ tree; prints the results, flushes the store
+fn run_btree(store_path: string, script: string):
+    st := store_load(store_path)
+    ls := script_lines(script)
+    for i := 0; i < len(ls); i += 1:
+        ln := ls[i]
+        if ln == "" or ln[0] == 35:        # empty or '#' comment
+            continue
+        toks := split_ws(ln)
+        cmd := toks[0]
+        if cmd == "put":
+            kv_insert(&st, toks[1], toks[2])
+        elif cmd == "get":
+            match kv_lookup(st, toks[1]):
+                Some(v):
+                    println(v)
+                _:
+                    println("NOT FOUND")
+        elif cmd == "del":
+            if kv_delete(&st, toks[1]):
+                println("DELETED")
+            else:
+                println("NOT FOUND")
+        elif cmd == "scan":
+            lo := ""
+            hi := ""
+            if len(toks) > 1:
+                lo = toks[1]
+            if len(toks) > 2:
+                hi = toks[2]
+            rows := []string
+            scan_rec(st, st.root, lo, hi, &rows)
+            for k := 0; k < len(rows); k += 1:
+                println(rows[k])
+        elif cmd == "verify":
+            verify(st)
+        else:
+            die_kv("unknown command '" + cmd + "'")
+    store_flush(store_path, st)
+
+# run one script against the in-memory map; the same output shape
+fn run_map(script: string):
+    m := []string: string
+    ls := script_lines(script)
+    for i := 0; i < len(ls); i += 1:
+        ln := ls[i]
+        if ln == "" or ln[0] == 35:
+            continue
+        toks := split_ws(ln)
+        cmd := toks[0]
+        if cmd == "put":
+            m[toks[1]] = toks[2]
+        elif cmd == "get":
+            if toks[1] in m:
+                println(m[toks[1]])
+            else:
+                println("NOT FOUND")
+        elif cmd == "del":
+            if toks[1] in m:
+                delete m[toks[1]]
+                println("DELETED")
+            else:
+                println("NOT FOUND")
+        elif cmd == "scan":
+            lo := ""
+            hi := ""
+            if len(toks) > 1:
+                lo = toks[1]
+            if len(toks) > 2:
+                hi = toks[2]
+            rows := map_scan(m, lo, hi)
+            for k := 0; k < len(rows); k += 1:
+                println(rows[k])
+        else:
+            die_kv("unknown command '" + cmd + "'")
+
+fn script_lines(s: string) -> [string]:
+    return strings.lines(s)
+
+fn main():
+    av := cli.argv()
+    if len(av) < 1:
+        die("usage: tycho-kv init|put|get|del|scan|batch <file> [args] | --map batch <file> <script>")
+    i := 0
+    mapmode := false
+    if av[i] == "--map":
+        mapmode = true
+        i = i + 1
+    if i >= len(av):
+        die("usage: see above")
+    cmd := av[i]
+    if mapmode:
+        if cmd != "batch":
+            die("--map only supports batch")
+        run_map(io.read(av[i + 2]))
+        return
+    path := av[i + 1]
+    if cmd == "init":
+        if io.exists(path):
+            die_kv(path + " already exists")
+        st := store_new()
+        store_flush(path, st)
+    elif cmd == "put":
+        st := store_load(path)
+        kv_insert(&st, av[i + 2], av[i + 3])
+        store_flush(path, st)
+    elif cmd == "get":
+        st := store_load(path)
+        match kv_lookup(st, av[i + 2]):
+            Some(v):
+                println(v)
+            _:
+                println("NOT FOUND")
+    elif cmd == "del":
+        st := store_load(path)
+        if kv_delete(&st, av[i + 2]):
+            println("DELETED")
+            store_flush(path, st)
+        else:
+            println("NOT FOUND")
+    elif cmd == "scan":
+        st := store_load(path)
+        lo := ""
+        hi := ""
+        if i + 2 < len(av):
+            lo = av[i + 2]
+        if i + 3 < len(av):
+            hi = av[i + 3]
+        rows := []string
+        scan_rec(st, st.root, lo, hi, &rows)
+        for k := 0; k < len(rows); k += 1:
+            println(rows[k])
+    elif cmd == "batch":
+        run_btree(path, io.read(av[i + 2]))
+    else:
+        die("unknown command: " + cmd)

@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -373,6 +373,17 @@ vm-check: tychoc
 # See tools/tycho-scheme/run.sh.
 scheme-check: tychoc
 	@sh tools/tycho-scheme/run.sh
+
+# kv-check: the gate for tycho-kv, the persistent B+ tree KV store in
+# tools/tycho-kv/. Fifth of the same shape as the tool lanes: nothing else
+# RUNS a tool under tools/ (step [9] tools-check only --emit-c's them), so
+# this is what executes the store. The differential (B+ tree vs the naive
+# map backend over the same command scripts, byte-identical) is the point.
+#
+# ~2s, measured 2026-08-03. In `make ci` as step [3i/15].
+# See tools/tycho-kv/run.sh.
+kv-check: tychoc
+	@sh tools/tycho-kv/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the

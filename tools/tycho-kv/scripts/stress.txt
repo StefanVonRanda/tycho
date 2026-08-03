@@ -1,0 +1,492 @@
+put k066 v0
+put k187 v1
+put k101 v2
+put k193 v3
+put k111 v4
+put k121 v5
+put k013 v6
+put k002 v7
+put k064 v8
+put k044 v9
+put k136 v10
+put k170 v11
+put k128 v12
+put k076 v13
+put k158 v14
+put k167 v15
+put k045 v16
+put k130 v17
+put k030 v18
+put k003 v19
+put k159 v20
+put k015 v21
+put k042 v22
+put k126 v23
+put k186 v24
+put k162 v25
+put k047 v26
+put k110 v27
+put k005 v28
+put k194 v29
+put k037 v30
+put k122 v31
+put k012 v32
+put k036 v33
+put k153 v34
+put k069 v35
+put k061 v36
+put k195 v37
+put k032 v38
+put k172 v39
+put k171 v40
+put k060 v41
+put k010 v42
+put k144 v43
+put k160 v44
+put k052 v45
+put k125 v46
+put k106 v47
+put k073 v48
+put k113 v49
+put k105 v50
+put k095 v51
+put k103 v52
+put k145 v53
+put k043 v54
+put k000 v55
+put k161 v56
+put k192 v57
+put k016 v58
+put k080 v59
+put k102 v60
+put k038 v61
+put k156 v62
+put k176 v63
+put k135 v64
+put k078 v65
+put k115 v66
+put k019 v67
+put k014 v68
+put k177 v69
+put k146 v70
+put k179 v71
+put k065 v72
+put k084 v73
+put k165 v74
+put k046 v75
+put k104 v76
+put k079 v77
+put k054 v78
+put k196 v79
+put k085 v80
+put k118 v81
+put k109 v82
+put k133 v83
+put k142 v84
+put k033 v85
+put k018 v86
+put k140 v87
+put k123 v88
+put k175 v89
+put k063 v90
+put k083 v91
+put k148 v92
+put k100 v93
+put k155 v94
+put k072 v95
+put k027 v96
+put k184 v97
+put k112 v98
+put k051 v99
+put k174 v100
+put k004 v101
+put k029 v102
+put k183 v103
+put k099 v104
+put k098 v105
+put k131 v106
+put k124 v107
+put k198 v108
+put k134 v109
+put k178 v110
+put k120 v111
+put k034 v112
+put k048 v113
+put k169 v114
+put k138 v115
+put k149 v116
+put k132 v117
+put k127 v118
+put k021 v119
+put k081 v120
+put k077 v121
+put k009 v122
+put k082 v123
+put k164 v124
+put k119 v125
+put k089 v126
+put k068 v127
+put k053 v128
+put k090 v129
+put k094 v130
+put k041 v131
+put k093 v132
+put k116 v133
+put k199 v134
+put k157 v135
+put k025 v136
+put k180 v137
+put k147 v138
+put k074 v139
+put k058 v140
+put k152 v141
+put k017 v142
+put k049 v143
+put k092 v144
+put k075 v145
+put k141 v146
+put k020 v147
+put k096 v148
+put k031 v149
+put k137 v150
+put k117 v151
+put k011 v152
+put k067 v153
+put k088 v154
+put k091 v155
+put k024 v156
+put k097 v157
+put k182 v158
+put k190 v159
+put k086 v160
+put k181 v161
+put k039 v162
+put k168 v163
+put k087 v164
+put k185 v165
+put k040 v166
+put k001 v167
+put k071 v168
+put k150 v169
+put k114 v170
+put k056 v171
+put k107 v172
+put k191 v173
+put k166 v174
+put k050 v175
+put k143 v176
+put k197 v177
+put k154 v178
+put k129 v179
+put k059 v180
+put k055 v181
+put k023 v182
+put k007 v183
+put k008 v184
+put k108 v185
+put k151 v186
+put k022 v187
+put k139 v188
+put k173 v189
+put k026 v190
+put k188 v191
+put k035 v192
+put k057 v193
+put k062 v194
+put k070 v195
+put k189 v196
+put k006 v197
+put k028 v198
+put k163 v199
+scan
+del k066
+del k193
+del k013
+del k044
+del k128
+del k167
+del k030
+del k015
+del k186
+del k110
+del k037
+del k036
+del k061
+del k172
+del k010
+del k052
+del k073
+del k095
+del k043
+del k192
+del k102
+del k176
+del k115
+del k177
+del k065
+del k046
+del k054
+del k118
+del k142
+del k140
+del k063
+del k100
+del k027
+del k051
+del k029
+del k098
+del k198
+del k120
+del k169
+del k132
+del k081
+del k082
+del k089
+del k090
+del k093
+del k157
+del k147
+del k152
+del k092
+del k020
+del k137
+del k067
+del k024
+del k190
+del k039
+del k185
+del k071
+del k056
+del k166
+del k197
+del k059
+del k007
+del k151
+del k173
+del k035
+del k070
+del k028
+scan
+put k066 NEW0
+put k187 NEW1
+put k101 NEW2
+put k193 NEW3
+put k111 NEW4
+put k121 NEW5
+put k013 NEW6
+put k002 NEW7
+put k064 NEW8
+put k044 NEW9
+put k136 NEW10
+put k170 NEW11
+put k128 NEW12
+put k076 NEW13
+put k158 NEW14
+put k167 NEW15
+put k045 NEW16
+put k130 NEW17
+put k030 NEW18
+put k003 NEW19
+scan a k050 z
+scan k050 k060
+del k066
+del k187
+del k101
+del k193
+del k111
+del k121
+del k013
+del k002
+del k064
+del k044
+del k136
+del k170
+del k128
+del k076
+del k158
+del k167
+del k045
+del k130
+del k030
+del k003
+del k159
+del k015
+del k042
+del k126
+del k186
+del k162
+del k047
+del k110
+del k005
+del k194
+del k037
+del k122
+del k012
+del k036
+del k153
+del k069
+del k061
+del k195
+del k032
+del k172
+del k171
+del k060
+del k010
+del k144
+del k160
+del k052
+del k125
+del k106
+del k073
+del k113
+del k105
+del k095
+del k103
+del k145
+del k043
+del k000
+del k161
+del k192
+del k016
+del k080
+del k102
+del k038
+del k156
+del k176
+del k135
+del k078
+del k115
+del k019
+del k014
+del k177
+del k146
+del k179
+del k065
+del k084
+del k165
+del k046
+del k104
+del k079
+del k054
+del k196
+del k085
+del k118
+del k109
+del k133
+del k142
+del k033
+del k018
+del k140
+del k123
+del k175
+del k063
+del k083
+del k148
+del k100
+del k155
+del k072
+del k027
+del k184
+del k112
+del k051
+del k174
+del k004
+del k029
+del k183
+del k099
+del k098
+del k131
+del k124
+del k198
+del k134
+del k178
+del k120
+del k034
+del k048
+del k169
+del k138
+del k149
+del k132
+del k127
+del k021
+del k081
+del k077
+del k009
+del k082
+del k164
+del k119
+del k089
+del k068
+del k053
+del k090
+del k094
+del k041
+del k093
+del k116
+del k199
+del k157
+del k025
+del k180
+del k147
+del k074
+del k058
+del k152
+del k017
+del k049
+del k092
+del k075
+del k141
+del k020
+del k096
+del k031
+del k137
+del k117
+del k011
+del k067
+del k088
+del k091
+del k024
+del k097
+del k182
+del k190
+del k086
+del k181
+del k039
+del k168
+del k087
+del k185
+del k040
+del k001
+del k071
+del k150
+del k114
+del k056
+del k107
+del k191
+del k166
+del k050
+del k143
+del k197
+del k154
+del k129
+del k059
+del k055
+del k023
+del k007
+del k008
+del k108
+del k151
+del k022
+del k139
+del k173
+del k026
+del k188
+del k035
+del k057
+del k062
+del k070
+del k189
+del k006
+del k028
+del k163
+scan
