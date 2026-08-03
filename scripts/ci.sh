@@ -223,6 +223,8 @@ step "[3g/13] make vm-check  (tycho-vm: asm deterministic, dis round-trips byte-
 make -s vm-check
 step "[3h/14] make scheme-check  (tycho-scheme: fib/closures/ho/sort vs golden byte-identically on two runs; 5 error cases die non-zero with empty stdout)"
 make -s scheme-check
+step "[3i/15] make kv-check  (tycho-kv: 3 command scripts byte-identical B+ tree vs map backend; reloads reproduce; golden locked)"
+make -s kv-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc

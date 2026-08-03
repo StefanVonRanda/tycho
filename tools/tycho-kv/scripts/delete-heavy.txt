@@ -1,0 +1,211 @@
+put k073 v
+put k086 v
+put k082 v
+put k023 v
+put k001 v
+put k042 v
+put k057 v
+put k040 v
+put k076 v
+put k069 v
+put k025 v
+put k094 v
+put k009 v
+put k041 v
+put k088 v
+put k083 v
+put k074 v
+put k091 v
+put k067 v
+put k095 v
+put k079 v
+put k075 v
+put k006 v
+put k072 v
+put k004 v
+put k071 v
+put k063 v
+put k062 v
+put k020 v
+put k065 v
+put k089 v
+put k060 v
+put k029 v
+put k056 v
+put k059 v
+put k090 v
+put k016 v
+put k084 v
+put k014 v
+put k010 v
+put k085 v
+put k044 v
+put k058 v
+put k098 v
+put k077 v
+put k026 v
+put k012 v
+put k032 v
+put k048 v
+put k054 v
+put k045 v
+put k036 v
+put k018 v
+put k000 v
+put k093 v
+put k053 v
+put k081 v
+put k055 v
+put k052 v
+put k005 v
+put k017 v
+put k099 v
+put k015 v
+put k080 v
+put k031 v
+put k064 v
+put k049 v
+put k043 v
+put k096 v
+put k047 v
+put k087 v
+put k039 v
+put k021 v
+put k024 v
+put k034 v
+put k078 v
+put k003 v
+put k027 v
+put k033 v
+put k097 v
+put k022 v
+put k035 v
+put k046 v
+put k068 v
+put k066 v
+put k028 v
+put k007 v
+put k037 v
+put k070 v
+put k051 v
+put k002 v
+put k008 v
+put k011 v
+put k019 v
+put k061 v
+put k050 v
+put k092 v
+put k013 v
+put k038 v
+put k030 v
+scan
+del k073
+del k086
+del k082
+del k023
+del k001
+del k042
+del k057
+del k040
+del k076
+del k069
+scan
+del k025
+del k094
+del k009
+del k041
+del k088
+del k083
+del k074
+del k091
+del k067
+del k095
+scan
+del k079
+del k075
+del k006
+del k072
+del k004
+del k071
+del k063
+del k062
+del k020
+del k065
+scan
+del k089
+del k060
+del k029
+del k056
+del k059
+del k090
+del k016
+del k084
+del k014
+del k010
+scan
+del k085
+del k044
+del k058
+del k098
+del k077
+del k026
+del k012
+del k032
+del k048
+del k054
+scan
+del k045
+del k036
+del k018
+del k000
+del k093
+del k053
+del k081
+del k055
+del k052
+del k005
+scan
+del k017
+del k099
+del k015
+del k080
+del k031
+del k064
+del k049
+del k043
+del k096
+del k047
+scan
+del k087
+del k039
+del k021
+del k024
+del k034
+del k078
+del k003
+del k027
+del k033
+del k097
+scan
+del k022
+del k035
+del k046
+del k068
+del k066
+del k028
+del k007
+del k037
+del k070
+del k051
+scan
+del k002
+del k008
+del k011
+del k019
+del k061
+del k050
+del k092
+del k013
+del k038
+del k030
+scan
