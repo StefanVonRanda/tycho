@@ -18,7 +18,7 @@
 #
 # ---------------------------------------------------------------------------
 # THIS IS THE FAST LANE, NOT THE AUTHORITY. `make test` still runs `tests/run.sh`,
-# and phase 4 of `docs/internals/plan-prunner-DONE.md` decided that deliberately
+# and phase 4 of the prunner plan decided that deliberately
 # rather than for lack of agreement: this program is compiled BY THE COMPILER IT
 # TESTS, so a tychoc regression in string comparison, in `os.run`'s exit code, or
 # in the `parallel for` fan-out lands inside the judge and can turn every verdict
@@ -111,7 +111,7 @@
 # ---------------------------------------------------------------------------
 # WHAT HAPPENS WHEN A JOB DIES MID-RUN.
 #
-# Measured, not assumed (`docs/internals/plan-prunner-DONE.md` phase 4). A runtime abort inside one
+# Measured, not assumed (the prunner plan). A runtime abort inside one
 # `parallel for` iteration terminates the WHOLE PROCESS: the `tycho:` message
 # goes to stderr, the exit status is 1, and no report is printed at all. The
 # other fifteen chunks do not carry on and no summary is emitted -- so the

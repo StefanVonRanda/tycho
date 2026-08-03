@@ -1,4 +1,4 @@
-# Three-clause `for init; cond; post:` (docs/internals/plan-loops-cleanup-DONE.md phase 4).
+# Three-clause `for init; cond; post:` (the loops-cleanup plan).
 #
 # The loop variable is bound by the init clause and scoped to the loop, by the
 # same vars_mark/vars_restore mechanism `for i in range(...)` uses

@@ -62,7 +62,7 @@ class Gen:
     def emit(self, ind, s):
         self.out.append("    " * ind + s)
 
-    # `range()` was DELETED from the language on 2026-07-29 (docs/internals/plan-loops-cleanup-DONE.md phase 7):
+    # `range()` was DELETED from the language on 2026-07-29 (the loops-cleanup plan):
     # the counting loop is now three-clause `for i := 0; i < N; i += 1:` and the
     # parallel counting loop is `parallel for i in 0..<N:`. This generator kept
     # emitting `for i in range(...)` and every generated program was therefore
@@ -397,7 +397,7 @@ class Gen:
         # element-wise array arithmetic (docs/spec/12-aggregates.md:209-270) and the
         # bare `for:` loop. Both SHIPPED WITH NO GENERATOR: measured 2026-07-30 over
         # 200 seeds, 0 programs contained an element-wise use site and 0 contained a
-        # bare `for:` (docs/internals/plan-loops-cleanup-DONE.md phases 19 and 36).
+        # bare `for:` (the loops-cleanup plan).
         kinds += ["arr_arith", "arr_arith", "bare_loop", "bare_loop"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])

@@ -14,7 +14,7 @@ These are documentation drifts. A separate class — a divergence *between the t
 compilers* — is a compiler bug, not a documentation correction. One was found
 while drafting this specification (the `tychoc0` `inout`-exclusivity fail-open)
 and has been **fixed** (`compiler/tychoc0.ty` `check_call_args`; locked by
-`tests/reject/inout_alias.ty`); it is recorded in `docs/internals/spec-plan.md §6a`.
+`tests/reject/inout_alias.ty`).
 
 | # | Reference said | Correction (spec governs) | Reference location (now correct) | Fixed in |
 |---|---|---|---|---|

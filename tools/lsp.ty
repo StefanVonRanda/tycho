@@ -254,7 +254,7 @@ fn digits_to_int(s: string) -> int:
 
 # ---- JSON-RPC transport -----------------------------------------------------
 fn crlf() -> string:
-    # `"\r\n"` IS a string literal since docs/internals/plan-friction-DONE.md phase 2, so this is no longer forced.
+    # `"\r\n"` IS a string literal since the friction plan, so this is no longer forced.
     # The reason this comment used to give for keeping it -- `scripts/frontparity.sh`
     # feeds `tools/*.ty` to the FROZEN `tychoc0`, whose lexer rejects `\r` -- EXPIRED
     # on 2026-07-29 when that lane was retired; nothing builds `tychoc0` now, so
@@ -1167,7 +1167,7 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # editors/vscode/syntaxes/tycho.tmLanguage.json:42 -- and without them the LSP
 # painted `parallel` in a `parallel for j in 0..<n:` header as a VARIABLE while
 # the tree-sitter grammar painted it a keyword, in the same buffer
-# (docs/internals/plan-loops-cleanup-DONE.md phase 29). All three are hard
+# (the loops-cleanup plan). All three are hard
 # tokens in the compiler's lexer:
 # src/tychoc.c:174 (or_return), :181 (parallel), :182 (select).
 # The four soft ones already here are NOT drift and stay: `handle` is a hard

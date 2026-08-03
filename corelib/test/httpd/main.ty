@@ -19,7 +19,7 @@ fn b(x: bool) -> int:
 # is void so `or_return` cannot short-circuit out of it, and every call here is on
 # loopback and must succeed -- so these three collapse the Result to the value the
 # assertions already print. Each was a hand-written four-line `match` until
-# core:result landed (docs/internals/plan-option-result-DONE.md phase 2).
+# core:result landed (the option-result plan).
 fn n_of(r: Result(int, net.NetErr)) -> int:
     return result.unwrap_or(r, -1)
 
@@ -33,7 +33,7 @@ fn rq(r: Result(httpd.Request, httpd.ReqErr)) -> httpd.Request:
 # the assertion the whole conversion exists for: "Malformed", "Closed" and
 # "Timeout" were ALL `method == ""` before 2026-07-26.
 #
-# One arm per cause, since docs/internals/plan-friction-DONE.md phase 3. This function was `is_ok` + `err_or`
+# One arm per cause, since the friction plan. This function was `is_ok` + `err_or`
 # plus four `e == httpd.X` comparisons, because `Err(httpd.Timeout)` did not parse.
 # The old note here said this could be written HERE and not in corelib/httpd
 # itself because no runner fed corelib/test/ to the frozen compiler/tychoc0.ty.
@@ -51,7 +51,7 @@ fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
 
 fn main():
     # ---- pure parsing (no socket): a request with headers + body ----
-    nl := "\r\n"                                 # a literal since docs/internals/plan-friction-DONE.md phase 2
+    nl := "\r\n"                                 # a literal since the friction plan
     raw := "POST /submit?id=7 HTTP/1.1" + nl + "Host: localhost" + nl + "Content-Type: application/json" + nl + "Content-Length: 13" + nl + nl + "{\"a\":\"hello\"}"
     p := rq(httpd.parse_request(raw))
     println("method = " + p.method)

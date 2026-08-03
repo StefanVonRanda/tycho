@@ -53,7 +53,7 @@ cheapest gate that can actually redden for your change.** Running a broader one
 `make test-fast` runs the identical 560 fixtures through `tools/prunner/main.ty`,
 a Tycho program with a bounded worker pool: **473 s → 62 s, 7.6x**, and its report
 is byte-identical to `tests/run.sh`'s over the whole corpus, unsorted
-(`docs/internals/plan-prunner-DONE.md` phases 2 and 4). Both were measured on a
+(the prunner plan). Both were measured on a
 16-core box; width is
 `ncpu()`, narrowable only by launching with `TYCHO_THREADS=N`.
 
@@ -128,7 +128,7 @@ the same in prose. **Nothing replaces them**: a change that silently narrows wha
 A ten-phase plan in this repo spent most of its wall-clock waiting on `make ci`
 runs that could not have failed — phases that edited only Markdown, each
 re-running a nineteen-minute suite. The evidence is in
-`docs/internals/plan-friction-DONE.md` and in `plan.md`'s "Gate ladder" section.
+the friction plan and in `plan.md`'s "Gate ladder" section.
 The gates are good; running all of them every time is not using them, it is
 avoiding thinking about which one applies.
 
@@ -143,230 +143,34 @@ say so rather than changing anything in the repo.
 ## Citations
 
 `path:line` references are load-bearing here and `scripts/check_citations.py`
-gates them. Two things that bite every time:
+gates them: every `path:N` must name a real file and a line range inside it,
+and every `@token` anchor must appear on exactly one line of that range. The
+rules that bite:
 
-- A **bare** `:N` binds to the **previously named path in the same document**.
-  Name the path in evidence blocks, or the gate resolves your citation against
-  whatever file you happened to mention last. Four separate phases have reddened
-  the gate on their own write-ups this way.
+- **A bare `:N` binds to the previously named path in the same document.** Name
+  the path in evidence blocks, or the gate resolves your citation against
+  whatever file you happened to mention last.
 - **Repo-relative, never absolute.** `src/tychoc.c:402` — never that same path
-  with the checkout's absolute prefix in front of it. (Spelling the absolute form
-  here would itself redden the gate, which is the point.) An earlier version of this file
-  said "write full paths", which is satisfied by an absolute path — and an
-  absolute path used to be skipped by the gate entirely, so it looked careful
-  while being checked by nothing. 187 such refs accumulated before anyone
-  noticed. Absolute paths are now a hard failure with a message naming the
-  relative form; the wording here is the reason they existed.
-- Inside a `> Provenance:` block, a **single-line** ref must be anchored
-  `path:N@token`; a **range** stays bare, deliberately — a range has no single
+  with the checkout's absolute prefix in front of it. An absolute path is a
+  hard failure that names the relative form.
+- **Inside a `> Provenance:` block, a single-line ref must be anchored
+  `path:N@token`; a range stays bare, deliberately** — a range has no single
   subject token and forcing one produces a false anchor. Do not "fix" the
-  exemption.
-- **An anchor must name one line.** If the token appears on more than one line
-  of the cited range it identifies none of them: the region can drift inside
-  itself and the check still passes. That is a hard failure. Fix it by anchoring
-  a token that occurs once, by tightening the range to its construct, or by
-  dropping the anchor — a bare range is honest, a false anchor is not.
-- **Citing a definition? Write `` `path@SYMBOL` ``, with no line number.** A
-  region needs an address; a definition has a name, and its line number is only
-  a record of how much prose sits above it. `` `corelib/signal/signal.ty@shutdown_requested` ``
-  is checked by finding the token in that file, so it survives every insertion
-  and still reddens on a rename or a deletion — the only two events that make it
-  wrong. The `ARCHIVED` constant's refs were repointed three times across two
-  phases before this existed, and not one repair carried information.
-  - **The check is deliberately weak, and knowing that is the point:** it proves
-    the symbol is still spelled that way *somewhere* in that file, not that the
-    definition is still there. Uniqueness is **not** required, unlike a line
-    anchor — a symbol appears at its definition and at every call site, and
-    demanding one occurrence would reject every symbol anyone actually calls.
-  - **Use it for a definition, not for a region.** Pointing at a loop body or a
-    table still wants `` `path:N-M` ``; there is no name to use.
-  - **"Definition" was the case, not the property — a line whose identity is a
-    distinctive token counts too.** What makes the symbol form right is that the
-    target *has a name of its own*, so the line number carries nothing the name
-    does not. A region fails that test because it has no name. The ilp32 recipe's
-    `@echo "ilp32: ASan lane SKIPPED for ilp32 …"` passes it: `SKIPPED` is a word
-    in an echo string rather than a definition, and it is still what every
-    citation of that line is *about*. So `` `Makefile@SKIPPED` `` is correct, and
-    so is `` `Makefile@TYCHO_NO_ASAN` `` for the recipe's last line. Two
-    conditions, both the writer's judgement rather than the gate's: the token must
-    be **what the citation is about**, and it must be **distinctive in its file**
-    (`grep -c SKIPPED Makefile` answers 1 as of 2026-08-02).
-  - **What that widening does not sanction, and what it costs.** It does *not*
-    license picking a word out of a region and citing it as a symbol — that is the
-    false anchor the range exemption exists to prevent, one grammar over. And
-    because the check is file-wide existence with no uniqueness requirement, an
-    ordinary English word can be kept alive by an unrelated new occurrence: delete
-    the ilp32 echo while some other recipe gains its own "SKIPPED" message and the
-    citation passes while pointing at nothing. A symbol like `shutdown_requested`
-    cannot collide that way; a message word can. That is a real loss against the
-    line form, and it is the smaller one — the line form's measured behaviour on
-    this exact citation was twelve mechanical repointings in eight days and one
-    silent error (its companion bare `:N` drifted onto a **blank** line and no
-    pass could see it, because a bare `:N` in a source file names no path).
-  - **Converting correct old-form refs is not work.** 22 live refs would qualify
-    (37 counting frozen archives, of 218 anchored). They are not wrong and there
-    is no sweep to do — write the new form for new definition citations, and
-    convert an old one when it next breaks.
-
-### The bare-ref count is not a backlog
-
-The gate's green line reports thousands of bare refs against a couple of hundred
-anchored ones, and that ratio has twice been mistaken for work to do. It is
-split on that line now so it cannot be again, into four buckets: the frozen
-`docs/internals/plan-*-DONE.md` set, where every rule in the gate already
-refuses to demand an edit; the live plan's own evidence; the deliberately-exempt
-`> Provenance:` ranges; and reachable narrative prose. Only the last is a bucket
-any policy could act on, and it is much the smaller half.
-
-**The reachable ones stay bare.** Requiring anchors on them is the hand sweep
-this repo has declined three times with measurements each time (`FRICTION.md`:
-11 of 15 spot-checked refs drifting again four days after a repair pass). And
-the one construct where anchoring is mandatory is already at 100% — zero of its
-single-line refs are bare — so there is no second context left to name.
-
-**Anchoring more is not anchoring better**, and the gate measures the
-difference: `python3 scripts/check_citations.py --stats` prints how many anchors
-name a token that recurs within ±25 lines of their range, and how many name one
-recurring anywhere in the file. Those anchors survive a drift by accident, and
-a share of the *mandatory* `> Provenance:` anchors are among them — four of them
-anchor `@parse_value_ctrl` to four different lines of the same function. This is
-**counted, never failed on**: clearing it under gate pressure means inventing a
-replacement token per red, which is how false anchors get made.
-
-### Never copy a figure the gate prints into prose
-
-Run `--stats`; do not quote it. Every count on that line changes when any phase
-adds a citation, so a number typed into a paragraph is stale by the next commit
-and nothing checks it — the same defect as a stale `path:N`, in the documentation
-about stale `path:N`s. This file and the gate's docstring between them carried
-four such figures, and the weak-anchor pair went stale **inside one day**, in the
-commit whose subject was updating it.
-
-The boundary is one question: **can a command produce this number today?**
-
-- **Yes** → name the command, not the number.
-- **No** → it is a one-time measurement that decided something, and it *stays*,
-  with its date or its commit. "45 refs versus 16", "11 of 15 spot-checked refs
-  drifting" are evidence for choices, true of the tree they were taken on.
-  Deleting those destroys the reasoning; being about a past tree is exactly what
-  makes them safe to write down.
-
-**A "no" is not by itself a licence.** This list used to open with "271 record
-lines across 9 of 13 files", and that figure was wrong on the very tree it was
-taken on — the record-line section below withdrew it. No command could produce
-it, and that is exactly why nobody checked it. Non-recomputability is the
-signature of a protected measurement *and* of a number nobody can falsify, and
-from the outside the two are indistinguishable. So the "no" branch carries a
-second obligation: state how it was measured, tightly enough that a reader could
-repeat it. A measurement whose method is unstated is not evidence, and "no
-command produces it" will not save it.
-
-**There is no ratchet and no budget on the bare count, on purpose.** Pressure to
-shrink it would eventually point someone at a before/after record block, whose
-line numbers are *data* — `"was 846, now 848"` is right precisely because it is
-stale, and "repairing" it destroys the evidence.
-
-### A record line is not a citation — recognise it by shape
-
-A **record line** states what a ref *said at a past moment*. Repairing one does
-not fix a stale pointer, it falsifies evidence, and the loss is irreversible
-because the old number exists nowhere else. Two shapes carry that meaning here,
-and both are recognisable without reading the prose around them:
-
-- **A repair log** — two refs joined by an arrow: `` `:494` `` → `` `:494-495` ``.
-- **A before/after table row** — a table row with **two or more ref-bearing
-  cells**, usually with a delta column beside them.
-
-**If a line has either shape, leave every number in it alone.** That includes
-numbers that are provably wrong today; being wrong is what they record.
-
-#### A record protects its numbers, not its anchors
-
-This rule and the anchor rule used to contradict each other, and the
-contradiction was live for hours before anything hit it. The rule above says
-leave *every number* in a record line alone. The anchor rule says an anchored
-ref is never exempt, in a frozen archive or anywhere, because it promised a
-token. A before/after table row carrying `` `:1841@tok` `` satisfies both
-descriptions and they demand opposite things.
-
-**The record rule gave way, and here is the seam it gave way along.** A record
-line records *what a ref said*. The number is that record — it is a quotation of
-a past observation, and the past cannot be edited. An anchor is not a quotation:
-`@token` is a claim that the token is in those lines **in the tree you are
-reading now**. It was never part of what the record recorded; it is a live
-promise that someone bolted onto a dead number. A live promise inside a frozen
-record is still a live promise, so the anchor rule wins on the anchor, and the
-record rule keeps everything it was actually written to protect.
-
-**So the repair is always: drop the anchor, keep the number.** Never repoint the
-number to make an anchor match — that is the falsification the record rule
-exists to prevent. Never leave a failing anchor in place either. A bare number on
-a record line is honest: it says "this is what it said then", which is true.
-
-**Measured before this was written:** 41 anchored refs sit on record lines across
-the tree, 40 of them reaching the gate's content check, and **zero fail it
-today** — the two that did were repaired this way, by dropping their anchors, in
-`docs/internals/plan-signals-DONE.md`'s six-row table. So this is a rule for
-whoever meets the 41st, not a sweep. Nothing needs doing now.
-
-**No marker is inserted, and the distribution is why.** The question was whether
-to tag these blocks explicitly. They are heavily concentrated in frozen
-archives — `docs/internals/plan-postfreeze-rawstring-DONE.md`,
-`docs/internals/plan-front-door-DONE.md` and
-`docs/internals/plan-signals-DONE.md`, plus a fourth cluster in
-`docs/internals/frontend-restriction-audit-2026-07-25.md`. The live files hold
-almost none: a couple in `plan.md`, and in `FRICTION.md` — the one file in this
-set a person edits by hand — **none at all**. Tagging them *is itself the hand
-sweep this repo has declined three times*, and nearly every tag would be an edit
-to a frozen record. The shape already marks them; a tag would only restate it,
-at the cost of touching every archive to say so.
-
-**This paragraph used to quote a total, and the total was wrong.** It read "271
-record lines across 9 of 13 files", counted over the twelve archived plans plus
-the live one. The file list asked "which *plans* have record lines" when the rule
-it justifies asks "which *lines* have the record shape" — so it never looked at
-the audits under `docs/internals/`, or at `FRICTION.md`. And the count is not
-reproducible: three later attempts to detect the same two shapes over every
-tracked Markdown file returned three different totals, none of them 271 and none
-of them each other, differing only in how strictly "joined by an arrow" and
-"ref-bearing cell" were read. Run the strictest of them against the commit that
-introduced the sentence and it returns exactly what it returns against this
-tree — the population never moved, so this was not a true measurement that went
-stale. It was wrong when written, which is why it is repaired rather than
-protected.
-
-**The total is withdrawn rather than corrected, because the shapes are semantic
-and no regex settles them.** The proof is this section's own repair-log bullet
-above: a detector implementing it literally — a ref, an arrow, a ref, adjacent —
-does not match that bullet, because the escaping that displays its backticks
-inserts backtick characters between each ref and the arrow. The canonical example
-of the shape fails the literal reading of the rule that describes it. Looser
-readings do worse in the other direction: allowing any arrow anywhere on the line
-counts C pointer dereferences (`e->sval`), function types (`-> Result(T)`),
-before/after line counts and command output, which is how `FRICTION.md` was
-credited with record lines it does not have. A rule that cannot match its own
-example, and whose relaxations match prose, does not define a countable set — any
-number published for it is a number about one unrecorded detector. The no-marker
-decision never needed a total, and it stands on the distribution above.
-
-**No rule *targets* record lines** — none counts, budgets or ratchets them, so
-nothing pushes anyone to sweep one. That is the load-bearing defence, and the
-rule above exists so that a human who goes looking anyway can tell what they are
-holding.
-
-This used to be stated more widely, as "what the gate does about it: nothing,
-deliberately", and that was **disproved**. Widening `SRC_PREFIX` put gate
-pressure on a frozen before/after table without any rule being aimed at record
-lines: the widening made a previously-skipped path reachable, and the ordinary
-anchor content check then fired inside a record. A rule does not have to be about
-record lines to redden one. Expect that again on the next widening, and reach for
-"drop the anchor, keep the number" when it happens.
-
-**The one case that needs a tag is the opposite shape** — see
-`docs/internals/plan-signals-DONE.md`'s `[SUPERSEDED]` note. There the number
-was a *pointer*, not data, and the line reads as ordinary live prose, so nothing
-about its shape warns you. A tag is worth it exactly when the shape does not
-already say "record".
+  exemption. A `> Provenance:` ref that inherits no path at all is a failure.
+- **An anchor must name one line.** A token on more than one line of the cited
+  range identifies none of them; that is a hard failure. Anchor a token that
+  occurs once, tighten the range to its construct, or drop the anchor — a bare
+  range is honest, a false anchor is not.
+- **Citing a definition? Write `` `path@SYMBOL` ``, with no line number.** The
+  gate checks only that the symbol still appears somewhere in that file, so the
+  form survives insertions and reddens on a rename or deletion. Use it for a
+  definition, or for a line whose identity is a distinctive token
+  (`Makefile@SKIPPED`); a region has no name of its own and still wants
+  `` `path:N-M` ``.
+- **Never copy a figure the gate prints into prose.** If a command can produce
+  the number today, name the command instead — the count is stale by the next
+  commit. A one-time measurement that decided something stays, with its date.
+- `compiler/tychoc0.ty` is exempt from the gate: frozen and unfixable.
 
 ## Plans
 
@@ -376,44 +180,14 @@ than pasted into chat. Work discovered outside a phase's scope is appended to
 `plan.md` as a new unchecked phase — never silently absorbed into the phase
 that found it.
 
-### `plan.md` rotates, so never leave "`plan.md` phase N" behind
+### `plan.md` rotates — never leave "`plan.md` phase N" behind
 
-When a plan completes it is archived to `docs/internals/plan-<name>-DONE.md` and
-a new `plan.md` starts numbering again at 1. A comment written as "`plan.md`
-phase N" therefore stops meaning anything the moment the plan it was written
-under is archived: it now resolves against a different document, at a phase
-number that belongs to unrelated work. 167 such references across 43 files
-accumulated before anyone counted them, because the reference carries no line
-number and `scripts/check_citations.py` had nothing to check.
-
-**`scripts/check_citations.py` now gates this**, as a fourth direction with no
-line number involved: outside the live plan and the frozen
-`docs/internals/plan-*-DONE.md` set, carrying one is a hard failure naming the
-archived document you should write instead. It matches optional backticks,
-singular and plural, any case, a reference that wraps onto a continuation
-line, and **both word orders** — the file first, or the phase and its number
-first with the file after them. Five separate surveys of this class each
-under-counted it by missing one of those; the reversed order was the fifth, and
-it was found because the gate's own docstring contained one and passed. What is
-still NOT matched, and is filed rather than shipped: a possessive joining the
-two ("the plan's phase N"). `compiler/tychoc0.ty` is exempt because it is frozen
-and unfixable.
-
-**The rule, in two halves:**
-
-- **Writing:** cite the archived document by name — ``
-  `docs/internals/plan-friction-DONE.md` phase 5 `` — whenever the plan you mean
-  is already archived. Bare "`plan.md` phase N" is only ever correct for the
-  plan that is live *right now*.
-- **Archiving:** the commit that archives a plan rewrites the references that
-  plan created. `git log --diff-filter=A -- docs/internals/plan-*-DONE.md` gives
-  the rotation boundaries (the commit that *adds* `plan-X-DONE.md` is the moment
-  X stopped being live); `git blame` on a citing line dates it into exactly one
-  window. Check the result rather than trusting it: the phase number cited must
-  be a phase that document actually declares.
-
-`docs/internals/plan-*-DONE.md` are exempt in both directions — they are frozen
-records, and inside one of them "`plan.md` phase N" self-refers unambiguously.
+A completed plan is **deleted, not archived**. `plan.md` starts numbering at 1
+again, so "`plan.md` phase N" written in a comment stops meaning anything the
+moment the plan it was written under is gone. The old archives
+(`docs/internals/plan-*-DONE.md`) were pruned on 2026-08-03; what they recorded
+is still in git under the `docs-archive` tag if a decision record is ever
+needed again. Name the feature or the date instead of a phase number.
 
 ### Writing a phase's brief
 

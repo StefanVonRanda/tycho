@@ -64,7 +64,7 @@ make -s ilp32
 # Both lanes above sanitize/rebuild the C tychoc EMITS. Neither -- nor anything
 # else in this file before 2026-07-25 -- ever built src/tychoc.c itself with
 # -fsanitize, so the compiler's OWN memory safety was unmeasured by every gate.
-# That is how docs/internals/plan-front-door-DONE.md phase 37's stack-buffer-overflow WRITE in parse_type_inner,
+# That is how the front-door plan's stack-buffer-overflow WRITE in parse_type_inner,
 # reachable from a valid program, survived 16 phases and a full 1.0 freeze. This
 # lane builds the compiler under ASan+UBSan and compiles the whole corpus with it.
 # tests/generic_many_typaram_names.ty is the in-corpus fixture that makes it
@@ -76,7 +76,7 @@ make -s ilp32
 step "[2c/13] make asan-self  (the COMPILER built with ASan+UBSan, compiling the whole corpus)"
 make -s asan-self
 
-# rtparity joined the sweep on 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 58). It was created by
+# rtparity joined the sweep on 2026-07-30 (the loops-cleanup plan). It was created by
 # batch 9 and sat in NO aggregate lane, so nothing ran it. It is a tests/ lane, not
 # a corelib dogfood, hence 2d rather than a new number; and it costs ~1s (one
 # --emit-c, no cc), so there is no argument for keeping it out. It earns its place
@@ -147,8 +147,8 @@ make -s webserver
 step "[3b/13] make entrypoints  (every entry point in the tree still compiles)"
 make -s entrypoints
 
-# server-check joined the sweep on 2026-07-30 (docs/internals/plan-webserver-gate-DONE.md phase 2). server/main.ty is
-# the largest program in the tree and until docs/internals/plan-webserver-gate-DONE.md phase 1 NOTHING ran it: `make
+# server-check joined the sweep on 2026-07-30 (the webserver-gate plan). server/main.ty is
+# the largest program in the tree and until the webserver-gate plan NOTHING ran it: `make
 # server` builds it and asserts nothing. It sits here, immediately after 3b,
 # because 3b compiles server/main.ty for milliseconds -- so a server that does not
 # build reddens there, with a compile error, instead of surfacing here as

@@ -9,7 +9,7 @@
 # adapt)". That rule was never true of the compiler -- the FIXED and BOUNDED
 # destinations have pushed their element type into each element since 1.6
 # (src/tychoc.c:6283, src/tychoc.c:6295), so `a: [3]u32 = [1, 2, 3]` has always
-# compiled. Only the dynamic `[u32]` was left out; docs/internals/plan-loops-cleanup-DONE.md phase 55 closed that
+# compiled. Only the dynamic `[u32]` was left out; the loops-cleanup plan closed that
 # gap and docs/spec/06-conversions.md:27 now states the rule. `Some([1])`
 # therefore compiles today, so pinning it here was pinning an accident. What
 # this fixture is FOR -- a value that already has a type is not re-typed by an

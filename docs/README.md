@@ -29,7 +29,10 @@ is why:
 - **[`bootstrap.md`](bootstrap.md)** — how Tycho self-hosted: the bootstrap stages,
   which script ran each one, and why the frozen `compiler/tychoc0.ty` is no longer
   built by any gate. History, not a build instruction.
-- **[`internals/`](internals/)** and **[`rfc/`](rfc/)** — historical design records and
+- **[`internals/`](internals/)** — one design note
+  ([`value-semantics-limits.md`](internals/value-semantics-limits.md)) on where the
+  memory model costs. The plan archives that used to live here were pruned
+  2026-08-03 and remain in git under the `docs-archive` tag. **[`rfc/`](rfc/)** —
   resolved proposals. Not user documentation; kept for contributors and provenance.
 
 ## Contributing

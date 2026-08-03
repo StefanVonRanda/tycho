@@ -3,7 +3,7 @@
 #
 # HISTORY: this was `range()`-with-a-negative-step until 2026-07-29. The original
 # regression it caught was tychoc0 hardcoding `i < stop`, so range(3, 0, -1) never
-# ran. Phase 6 of docs/internals/plan-loops-cleanup-DONE.md rewrote the three
+# ran. Phase 6 of the loops-cleanup plan rewrote the three
 # descending sites to `for i := a; i > b; i -= s:` — the same iteration sequences
 # and the SAME golden, which is what makes the rewrite checkable. Note the direction
 # is now spelled by the author in the condition rather than inferred from the sign

@@ -1,5 +1,5 @@
 # Literal adaptation (docs/spec/06-conversions.md 8.1) reaches ARRAY-LITERAL
-# elements whenever the destination is an array type. docs/internals/plan-loops-cleanup-DONE.md phase 55.
+# elements whenever the destination is an array type. the loops-cleanup plan.
 #
 # The fixed-size half already did this -- `d: [3]u32 = [1, 2, 3]` has compiled
 # since 1.6, because src/tychoc.c:6283 pushed the destination's element type

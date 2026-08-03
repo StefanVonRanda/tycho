@@ -8,7 +8,7 @@ package main
 import "core:result"
 import "core:io"
 
-# WHICH failure, one arm per cause -- a NESTED PATTERN (docs/internals/plan-friction-DONE.md phase 3). Before
+# WHICH failure, one arm per cause -- a NESTED PATTERN (the friction plan). Before
 # that this was `is_ok` + `err_or` plus an `e == io.X` chain, because
 # `Err(io.IsDir)` was rejected with `error: expected ')'`.
 fn describe(r: Result(bytes, io.IoErr)) -> string:
@@ -25,7 +25,7 @@ fn main():
     # --- unwrap_or: one line instead of a four-line match ---
     # `rb` / `rmiss` are bound because each Result is used twice below, not
     # because the argument position demands it -- that bug is fixed
-    # (docs/internals/plan-friction-DONE.md phase 1), so both fallbacks are
+    # (the friction plan), so both fallbacks are
     # written inline.
     rb := io.read_bytes(p)
     body := result.unwrap_or(rb, to_bytes(""))

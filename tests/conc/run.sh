@@ -41,7 +41,7 @@ for f in tests/conc/*.ty; do
     # -o writes the C straight into $TMP. HISTORY: this emitted with no -o and
     # then `mv "${f%.ty}.c" "$c"`, i.e. it created tests/conc/<name>.c inside the
     # tree on every run and moved it out again -- the stray-artifact behaviour
-    # docs/internals/plan-loops-cleanup-DONE.md phase 25 removed. `--emit-c` with no -o now writes to stdout
+    # the loops-cleanup plan removed. `--emit-c` with no -o now writes to stdout
     # (src/tychoc.c:12708), which this line's `>/dev/null` swallowed, and all 13
     # fixtures failed with `FAIL <name> (tychoc)`.
     if ! $TYCHOC "$f" --emit-c -o "${c%.c}" >/dev/null 2>"$TMP/$name.log"; then

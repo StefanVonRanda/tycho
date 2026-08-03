@@ -172,7 +172,7 @@
 # WHY THE ROUND TRIP AND NOT A HAND-WRITTEN PARSER. `strings.parse_int` FAILS
 # OPEN: `""` and a leading non-digit both return 0 and it stops silently at the
 # first non-digit (`corelib/strings/strings.ty@parse_int`). That is the
-# `docs/internals/plan-ar-DONE.md` phase 13, carried forward and met here
+# the tycho-ar plan, carried forward and met here
 # exactly where that item predicted it would be met, and it is NOT re-filed. What this program does about it
 # is to BRACKET it rather than replace it: the shape check runs before it, so
 # it never sees a byte it could mis-read, and the round trip runs after it, so
@@ -565,7 +565,7 @@
 #
 # `die` is the only route to stderr in this language -- the builtins are
 # `print`, `println`, `die` and `exit(n)`, with no `eprintln`
-# (`docs/internals/plan-ar-DONE.md` phase 10, carried forward) -- so an error
+# (the tycho-ar plan, carried forward) -- so an error
 # is necessarily fatal. That happens to be right
 # here: a query that does not parse has no partial result worth printing.
 #

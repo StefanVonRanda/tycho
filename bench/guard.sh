@@ -42,7 +42,7 @@ done
 # The workload above cannot see this class at all: neither binary_trees nor maptree
 # contains a loop of the ELIDABLE shape (`for i := 0; i < len(A); i += 1:` over a body
 # that neither rebinds A nor passes it whole to a call), which is how phase 6 of
-# docs/internals/plan-loops-cleanup-DONE.md turned elision off for 223 sites tree-wide
+# the loops-cleanup plan turned elision off for 223 sites tree-wide
 # with every gate staying green. bench/prongB/arr_pipeline.ty does contain it -- its
 # two scan loops, bench/prongB/arr_pipeline.ty:16 and :20.
 #

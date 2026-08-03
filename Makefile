@@ -117,14 +117,14 @@ test: tychoc
 
 # The same 560 fixtures over a bounded worker pool, in Tycho: tools/prunner/main.ty.
 # 7 m 54 s -> 1 m 02 s on a 16-core box, and its report is byte-identical to
-# `tests/run.sh`'s over the whole corpus (docs/internals/plan-prunner-DONE.md phase 2).
+# `tests/run.sh`'s over the whole corpus (the prunner plan).
 #
 # ADVISORY, NOT AUTHORITATIVE, and `test` above is deliberately still the shell
 # script. prunner is compiled by the compiler it tests, so a tychoc regression
 # can land inside its judge and turn every verdict green at once; run.sh scores
 # with cmp/grep/test, which nothing in this repo can break. Use `test-fast` while
 # iterating, `test` to believe the answer. When they disagree, run.sh is right.
-# Width is ncpu(); TYCHO_THREADS=N narrows it (there is no -j -- docs/internals/plan-prunner-DONE.md phase 3).
+# Width is ncpu(); TYCHO_THREADS=N narrows it (there is no -j -- the prunner plan).
 build/prunner: tools/prunner/main.ty tychoc | build
 	@./tychoc tools/prunner/main.ty -o build/prunner
 
@@ -136,7 +136,7 @@ test-fast: build/prunner
 # The COMPILER's own memory safety. Every other sanitizer lane here (including
 # `test` above) sanitizes the C tychoc EMITS; nothing built src/tychoc.c itself
 # with -fsanitize, so tychoc's own execution was unmeasured by every gate -- which
-# is how the parse_type_inner stack-buffer-overflow of docs/internals/plan-front-door-DONE.md phase 37 survived a
+# is how the parse_type_inner stack-buffer-overflow of the front-door plan survived a
 # full 1.0 freeze. This lane builds src/tychoc.c with ASan+UBSan and COMPILES the
 # whole fixture corpus with it (--emit-c; the emitted programs are not run -- that
 # is `test`'s job). Leak detection is deliberately off: tychoc never frees by
@@ -157,7 +157,7 @@ conc: tychoc
 # runtime against the one frozen tychoc0 emitted; that leg is gone. Its docstring
 # advertised `make rtparity` from the day it was written and no such target
 # existed, so nothing in the tree ran it. Under a second (~1s: one --emit-c, no
-# cc). In `make ci` as step [2d/13] since 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 58) -- a
+# cc). In `make ci` as step [2d/13] since 2026-07-30 (the loops-cleanup plan) -- a
 # tests/ lane, so a sub-lane of step 2 rather than a new number. It paid for
 # itself on the way in: it was the only gate that saw phase 53 remove the
 # "tycho: range step is zero" trap from the emitted C.
@@ -181,7 +181,7 @@ rtparity: tychoc
 # environment does not matter. The first two are NOT, and cannot be by a fixture:
 # tychoc is a separate process that has exited before main() runs, and setting
 # LC_ALL for it is INERT -- a C program starts in "C" whatever the environment
-# says (docs/internals/plan-four-found-DONE.md phase 1 ran the fully broken
+# says (the four-found plan ran the fully broken
 # compiler under LC_ALL=da_DK.utf8 and it came out green). Reaching them needs a
 # load-time constructor calling setlocale, which is what this lane LD_PRELOADs.
 #
@@ -530,11 +530,11 @@ hooks:
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs make ci N=0 + fuzz-quick)"
 
 # The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
-# `make tycho-lsp` -- docs/internals/plan-loops-cleanup-DONE.md phase 52 made the plain build remove its own
+# `make tycho-lsp` -- the loops-cleanup plan made the plain build remove its own
 # intermediate (src/tychoc.c:12771). They stay because `--emit-c -o <base>` still
 # writes and KEEPS `<base>.c` (src/tychoc.c:12740-12742), which is how you debug the
 # toolchain itself, and `clean` is where that leftover belongs. Same rationale as the
-# matching .gitignore block; verified 2026-07-30, see docs/internals/plan-loops-cleanup-DONE.md phase 57.
+# matching .gitignore block; verified 2026-07-30, see the loops-cleanup plan.
 clean:
 	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c build/tycho_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c

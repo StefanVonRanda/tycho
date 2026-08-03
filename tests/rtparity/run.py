@@ -132,7 +132,7 @@ EXPECT_MSG_CODEGEN = {
     r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:11743 (the [4] is surface.ty's Inline.slots)
     r"tycho: slice [%",                   # src/tychoc.c:9647, :9666
 }
-# REMOVED 2026-07-30 (docs/internals/plan-loops-cleanup-DONE.md phase 53): r"tycho: range step is zero\n".
+# REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".
 # The oracle was out of date, not the codegen. `range(a, b, step)` went on
 # 2026-07-29 and left the step machinery unreachable; phase 53 deleted the `Stmt`
 # field, the step codegen, this abort and the direction ternary. No construct can

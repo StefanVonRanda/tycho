@@ -1,12 +1,12 @@
 # Limited references for shared/cyclic structures — research spike
 
-> Status: **research spike, not a proposal to build.** Reaches a decision for the
+> **Status: research spike, not a proposal to build.** Reaches a decision for the
 > maintainer. Nothing here changes the compiler. Grounded in primary Hylo sources
-> (cited inline); the prior survey is `docs/internals/hylo-mvs-research.md`.
+> (cited inline).
 
 ## The question
 
-`docs/internals/hylo-mvs-research.md` left one genuinely-open foundation item: would a
+The prior MVS survey left one genuinely-open foundation item: would a
 *limited reference* (Hylo's `remote-parts`) let Tycho express graphs / cyclic structures
 **by reference** instead of the index-into-pool idiom — *without* breaking value semantics?
 Tycho today rejects recursive structs and has no shared mutable reference, so a graph must
@@ -26,7 +26,7 @@ Three distinct mechanisms, not one. They are easy to conflate.
    from functions, lifetime analysis is not needed. Borrow checking is just a disjointness
    check at function call sites." **Tycho already has this**: `let` = immutable-borrow params
    (`src/tychoc.c:3216`, read-only enforced at `:4108`), `inout` = exclusive mutable borrow,
-   `sink` = consuming (shipped, `docs/internals/sink-prototype.md`). `set` ≈ the FFI out-param.
+   `sink` = consuming (shipped). `set` ≈ the FFI out-param.
 
 2. **Projections via subscripts.** A subscript does not *return* a value; it `yield`s a
    *projection* of its arguments, under a **law of exclusivity** (Hylo spec, Projections §8):

@@ -1,4 +1,4 @@
-# Bare `for:` -- an infinite loop, left by `break` or `return` (docs/internals/plan-loops-cleanup-DONE.md phase 4).
+# Bare `for:` -- an infinite loop, left by `break` or `return` (the loops-cleanup plan).
 # It is the condition form with a literal `true`, so `break`, `continue`, the
 # loop arena and the return path are the ones that were already there.
 fn first_over(k: int, lim: int) -> int:
