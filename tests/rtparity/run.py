@@ -117,7 +117,7 @@ EXPECT_MSG_RUNTIME = {
     r"tycho: send on a closed channel\n",
     r"tycho: spawn failed (cannot create thread)\n",
     r"tycho: split with an empty separator\n",
-    r"tycho: stack overflow -- recursion too deep\n",  # the plan-phase-1 guard: deep generated-code recursion fails closed instead of SIGSEGV
+    r"tycho: stack overflow -- recursion too deep\n",  # the `docs/internals/plan-tycho-scheme-DONE.md` phase-1 guard: deep generated-code recursion fails closed instead of SIGSEGV
     r"tycho: string index %",
     r"tycho: string length %",
     r"tycho: task already waited\n",

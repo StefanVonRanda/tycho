@@ -11,7 +11,7 @@
 #   [2] the error cases die non-zero with EMPTY stdout (fail closed, the
 #       interpreter's die() path).
 #   [3] a deep-recursion program is NOT here -- the runtime now turns stack
-#       exhaustion into a clean failure (plan phase 1: the stack-overflow guard
+#       exhaustion into a clean failure (`docs/internals/plan-tycho-scheme-DONE.md` phase 1: the stack-overflow guard
 #       in runtime/tycho_rt.c), and the CRASH tests for that live in
 #       tests/recursion/run.sh's generated-code side. These four programs stay
 #       shallow because their goldens are answers, not crash tests.
