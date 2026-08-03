@@ -118,6 +118,57 @@ printf '=== ep d3\n' >> "$out"
 printf '=== promo d3\n' >> "$out"
 "$CHESS" perft 3 "$PROMO" >> "$out" 2>/dev/null
 
+# ---------------------------------------------------------------------------
+# [3] search: determinism, TT-invariance, and exact tactical probes
+#
+# The search (alpha-beta + the exact-only transposition table) is verified
+# three ways: two runs of `search` must be byte-identical; `search-nott`
+# (the same code with the TT probe disabled) must report the same best line,
+# which is the claim that the TT only cuts transpositions and never changes
+# a result; and three tactical positions are asserted to EXACT values -- the
+# rook taking a free queen (+510 = +500 material + 10 PST), the king or rook
+# grabbing a hanging queen, and the scholar's mate (Qxf7# = 100000). The
+# PST-only eval keeps the quiet-position values approximate (depth-5 from the
+# start ties many moves), which is honest; the probes pin the parts that
+# must be exact.
+# ---------------------------------------------------------------------------
+SCHOLAR="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 0 1"
+RXC2="k7/8/8/8/8/8/1Rq5/K7 w - - 0 1"
+HANGQ="k7/8/8/8/8/8/1q6/KR6 w - - 0 1"
+
+# search_pair <fen> <depth> <label> -- determinism + TT-invariance, and the
+# first run's transcript goes to the golden.
+search_pair() {
+    _fen=$1; _depth=$2; _lbl=$3
+    "$CHESS" search "$_depth" "$_fen" > "$W/s1" 2>"$T/e" || {
+        bad "$_lbl search exited non-zero"; sed 's/^/      /' "$T/e"; return
+    }
+    "$CHESS" search "$_depth" "$_fen" > "$W/s2" 2>/dev/null
+    cmp -s "$W/s1" "$W/s2" || bad "$_lbl search is not deterministic"
+    "$CHESS" search-nott "$_depth" "$_fen" > "$W/sn" 2>/dev/null
+    _t=$(grep '^best' "$W/s1")
+    _n=$(grep '^best' "$W/sn")
+    if [ "$_t" != "$_n" ]; then
+        bad "$_lbl TT changed the answer: search='$_t' nott='$_n'"
+    fi
+    printf '=== search %s d%s\n' "$_lbl" "$_depth" >> "$out"
+    cat "$W/s1" >> "$out"
+}
+
+search_pair "$START"   5 start
+search_pair "$KIWI"    4 kiwipete
+search_pair "$POS3"    5 pos3
+search_pair "$SCHOLAR" 3 scholar
+search_pair "$RXC2"    3 rxc2
+
+# the exact probes
+_g=$("$CHESS" search-nott 3 "$RXC2" 2>/dev/null | grep -E '^b2c2')
+if [ "$_g" != "b2c2 510" ]; then bad "rxc2 probe: got '$_g', want 'b2c2 510'"; fi
+_g=$("$CHESS" search-nott 2 "$HANGQ" 2>/dev/null | grep '^best')
+if [ "$_g" != "best b1b2 510" ]; then bad "hanging-queen probe: got '$_g', want 'best b1b2 510'"; fi
+_g=$("$CHESS" search-nott 3 "$SCHOLAR" 2>/dev/null | grep '^best')
+if [ "$_g" != "best f3f7 100000" ]; then bad "scholar probe: got '$_g', want 'best f3f7 100000'"; fi
+
 if [ "$RECORD" = 1 ]; then
     if [ "$fail" -ne 0 ]; then echo "FAIL: refusing to RECORD from a failed run"; exit 1; fi
     cp "$out" "$golden"; echo "rec  tycho-chess"
@@ -129,7 +180,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-chess: green (24 published/oracle perft totals match; divide transcript at start d5 / kiwipete d4 / pos3 d6 + 3 edge divides == golden)"
+    echo "tycho-chess: green (24 published/oracle perft totals; divides at start d5/kiwipete d4/pos3 d6 + 3 edge divides == golden; 5 search positions deterministic + TT-invariant, 3 tactical probes exact)"
 else
     echo "tycho-chess: FAIL"; exit 1
 fi

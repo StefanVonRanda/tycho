@@ -8,8 +8,13 @@
 # DONE.md's successor): bitboards (an int is a natural 64-square map),
 # move generation, make, and perft -- legal-move counting with EXACT
 # published values for standard positions, so the differential is ground
-# truth, not a naive reference. The search (alpha-beta + a transposition
-# table + a PARALLEL root search via `parallel for`) is phase 2 of this plan.
+# truth, not a naive reference. The search is negamax alpha-beta with a
+# PST-based eval, a quiescence search (captures + checks, depth-capped, with
+# delta pruning), and an EXACT-ONLY transposition table: the TT stores only
+# same-depth exact values, so it can cut transpositions and reorder moves but
+# never change a result -- which is what `make chess-check` asserts (search
+# is deterministic and `search-nott` reports the same best line). The PARALLEL
+# root search via `parallel for` is the remaining milestone of this plan.
 #
 # Design choices, honestly stated:
 #  - boards are VALUES: make returns a new board, no unmake (value
@@ -716,14 +721,392 @@ fn sq_name(sq: int) -> string:
     files := "abcdefgh"
     return substr(files, sq % 8, sq % 8 + 1) + chr(49 + sq / 8)
 
+# ---- search ------------------------------------------------------------------------
+#
+# Negamax alpha-beta with a transposition table. The TT stores ONLY exact
+# entries at the depth they were searched: a probe returns a value only when
+# the stored depth equals the current one, so a hit is the exact minimax value
+# at this depth and window, and the TT can never change a result -- it only
+# cuts transpositions and reorders moves. That is what makes the gate honest:
+# `search` and `search-nott` (the same code with the TT probe disabled) must
+# report the same best move and score, and two runs of `search` must be
+# byte-identical. A depth-preferred or bound-probing TT would be faster and
+# is the standard next refinement; it is also heuristic (a deeper exact entry
+# is not the shallower search's value), so it is deliberately not here.
+
+struct Zob:
+    pieces: [int]
+    castle: [int]
+    epfile: [int]
+    side: int
+
+struct TTEntry:
+    depth: int
+    score: int
+    bf: int
+    bt: int
+
+struct TT:
+    entries: [int: TTEntry]
+
+const MATE = 100000
+
+fn xorshift64(s: inout int) -> int:
+    x := s
+    x = x ^ (x << 13)
+    x = x ^ (x >> 7)
+    x = x ^ (x << 17)
+    s = x
+    return x
+
+fn build_zob() -> Zob:
+    z := Zob([]int, []int, []int, 0)
+    seed := 88172645463325252
+    for i := 0; i < 768; i += 1:
+        push(z.pieces, xorshift64(&seed))
+    for i := 0; i < 4; i += 1:
+        push(z.castle, xorshift64(&seed))
+    for i := 0; i < 8; i += 1:
+        push(z.epfile, xorshift64(&seed))
+    z.side = xorshift64(&seed)
+    return z
+
+# the bitboard holding `side`'s pieces of type `pt`
+fn piece_board(b: Board, side: int, pt: int) -> int:
+    if pt == P_PAWN:
+        return b.pawns[side]
+    if pt == P_KNIGHT:
+        return b.knights[side]
+    if pt == P_BISHOP:
+        return b.bishops[side]
+    if pt == P_ROOK:
+        return b.rooks[side]
+    if pt == P_QUEEN:
+        return b.queens[side]
+    return b.kings[side]
+
+fn popcnt(bb: int) -> int:
+    n := 0
+    for bb != 0:
+        n = n + 1
+        bb = bb & (bb - 1)
+    return n
+
+# a full rehash from the bitboards: ~30 set-bit iterations per node. Cheaper
+# than incremental hashing to GET right; the TT-on/off gate would redden any
+# missed delta, so the simplicity is the point.
+fn board_hash(b: Board, zob: Zob) -> int:
+    h := 0
+    for side := 0; side < 2; side += 1:
+        for pt := 0; pt < 6; pt += 1:
+            bb := piece_board(b, side, pt)
+            for bb != 0:
+                sq := ctz(bb)
+                bb = bb & (bb - 1)
+                h = h ^ zob.pieces[(side * 6 + pt) * 64 + sq]
+    for i := 0; i < 4; i += 1:
+        if (b.castling & (1 << i)) != 0:
+            h = h ^ zob.castle[i]
+    if b.ep >= 0:
+        h = h ^ zob.epfile[b.ep % 8]
+    if b.side == BLACK:
+        h = h ^ zob.side
+    return h
+
+struct PST:
+    pawn: [64]int
+    knight: [64]int
+    bishop: [64]int
+    rook: [64]int
+    queen: [64]int
+    king: [64]int
+
+# the classic simplified-evaluation tables (white-perspective; black mirrors
+# the rank with sq ^ 56). Without them every quiet line scores 0 and the
+# search cannot tell e2e4 from a2a3 -- depth 8 from the start picked a2a3.
+fn build_pst() -> PST:
+    return PST(
+        [0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5, 10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0],
+        [-50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50],
+        [-20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0, -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20],
+        [0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, 0, 0, 0, 5, 5, 0, 0, 0],
+        [-20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0, -10, -5, 0, 5, 5, 5, 5, 0, -5, 0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0, 5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20],
+        [-30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40, -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20, 30, 10, 0, 0, 10, 30, 20])
+
+fn pst_value(pst: PST, pt: int, side: int, sq: int) -> int:
+    s := sq
+    if side == BLACK:
+        s = sq ^ 56
+    if pt == P_PAWN:
+        return pst.pawn[s]
+    if pt == P_KNIGHT:
+        return pst.knight[s]
+    if pt == P_BISHOP:
+        return pst.bishop[s]
+    if pt == P_ROOK:
+        return pst.rook[s]
+    if pt == P_QUEEN:
+        return pst.queen[s]
+    return pst.king[s]
+
+fn evaluate(b: Board, pst: PST) -> int:
+    w := 0
+    b_ := 0
+    bb := b.pawns[0]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        w = w + 100 + pst_value(pst, P_PAWN, WHITE, sq)
+    bb = b.pawns[1]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        b_ = b_ + 100 + pst_value(pst, P_PAWN, BLACK, sq)
+    bb = b.knights[0]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        w = w + 320 + pst_value(pst, P_KNIGHT, WHITE, sq)
+    bb = b.knights[1]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        b_ = b_ + 320 + pst_value(pst, P_KNIGHT, BLACK, sq)
+    bb = b.bishops[0]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        w = w + 330 + pst_value(pst, P_BISHOP, WHITE, sq)
+    bb = b.bishops[1]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        b_ = b_ + 330 + pst_value(pst, P_BISHOP, BLACK, sq)
+    bb = b.rooks[0]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        w = w + 500 + pst_value(pst, P_ROOK, WHITE, sq)
+    bb = b.rooks[1]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        b_ = b_ + 500 + pst_value(pst, P_ROOK, BLACK, sq)
+    bb = b.queens[0]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        w = w + 900 + pst_value(pst, P_QUEEN, WHITE, sq)
+    bb = b.queens[1]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        b_ = b_ + 900 + pst_value(pst, P_QUEEN, BLACK, sq)
+    bb = b.kings[0]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        w = w + pst_value(pst, P_KING, WHITE, sq)
+    bb = b.kings[1]
+    for bb != 0:
+        sq := ctz(bb)
+        bb = bb & (bb - 1)
+        b_ = b_ + pst_value(pst, P_KING, BLACK, sq)
+    return w - b_
+
+# eval from the side-to-move's perspective (negamax leaf value)
+fn eval_side(b: Board, pst: PST) -> int:
+    if b.side == WHITE:
+        return evaluate(b, pst)
+    return -evaluate(b, pst)
+
+# quiescence: at a depth-0 leaf, keep searching captures (and ALL moves when
+# in check) until quiet, with a stand-pat cutoff. Without this the last-ply
+# eval sees a pawn capture and stops one ply short of the recapture -- the
+# horizon effect that made depth-6-from-start report -100 for every move
+# (3...Nxf7 "won" a pawn the king recaptured a ply later).
+fn quiesce(tt: inout TT, b: Board, tab: Tables, zob: Zob, pst: PST, qd: int, alpha: int, beta: int) -> int:
+    in_chk := in_check(b, tab, b.side)
+    legal := legal_moves(b, tab)
+    if len(legal) == 0:
+        if in_chk:
+            return -MATE
+        return 0
+    stand := eval_side(b, pst)
+    if stand >= beta:
+        return stand
+    if stand > alpha:
+        alpha = stand
+    order_moves(&legal, b, pst)
+    for i := 0; i < len(legal); i += 1:
+        m := legal[i]
+        if not in_chk:
+            if m.promo == 0:
+                v := victim_value(b, m)
+                if v == 0:
+                    continue
+                # delta prune: even winning the victim plus a promotion/pawn
+                # margin cannot raise alpha -- skip the subtree.
+                if stand + v + 200 <= alpha:
+                    continue
+            if qd >= 8:
+                continue
+        else:
+            if qd >= 12:
+                continue
+        nb := make_move(b, m, tab)
+        score := -quiesce(&tt, nb, tab, zob, pst, qd + 1, -beta, -alpha)
+        if score > alpha:
+            alpha = score
+        if alpha >= beta:
+            break
+    return alpha
+
+# legal moves (the perft legality filter: make, then king-safety)
+fn legal_moves(b: Board, tab: Tables) -> [Move]:
+    moves := gen_moves(b, tab)
+    legal := []Move
+    for i := 0; i < len(moves); i += 1:
+        nb := make_move(b, moves[i], tab)
+        if not in_check(nb, tab, b.side):
+            push(legal, moves[i])
+    return legal
+
+# capture value of a move, for ordering: 0 = quiet, else the victim's value.
+# EP captures have nothing on the target square; count them as a pawn victim.
+fn victim_value(b: Board, m: Move) -> int:
+    if m.promo != 0:
+        return 0
+    p := piece_at(b, m.to)
+    if p == -1:
+        if m.to == b.ep:
+            return 100
+        return 0
+    if p == P_PAWN:
+        return 100
+    if p == P_KNIGHT:
+        return 320
+    if p == P_BISHOP:
+        return 330
+    if p == P_ROOK:
+        return 500
+    if p == P_QUEEN:
+        return 900
+    return 0
+
+# PST-aware ordering score: captures by victim value, then quiets by the
+# moving piece's positional gain. Without an ordering for QUIET moves the
+# alpha-beta degenerates to ~full search -- measured 16x per ply from the
+# start (d3 116ms -> d4 1.9s -> d5 26s -> d6 3min); with it the branching
+# collapses to the sqrt-shape alpha-beta is supposed to have.
+fn move_score(b: Board, m: Move, pst: PST) -> int:
+    s := victim_value(b, m)
+    p := piece_at(b, m.from)
+    s = s + pst_value(pst, p, b.side, m.to) - pst_value(pst, p, b.side, m.from)
+    if m.promo != 0:
+        s = s + 800
+    return s
+
+fn order_moves(legal: inout [Move], b: Board, pst: PST):
+    n := len(legal)
+    for i := 1; i < n; i += 1:
+        k := legal[i]
+        kv := move_score(b, k, pst)
+        j := i - 1
+        for j >= 0 and move_score(b, legal[j], pst) < kv:
+            legal[j + 1] = legal[j]
+            j = j - 1
+        legal[j + 1] = k
+
+# negamax with alpha-beta; `use_tt` selects the exact-only TT probe
+fn search(tt: inout TT, b: Board, tab: Tables, zob: Zob, pst: PST, depth: int, alpha: int, beta: int, use_tt: bool) -> int:
+    if use_tt:
+        h := board_hash(b, zob)
+        if h in tt.entries:
+            e := tt.entries[h]
+            if e.depth == depth:
+                return e.score
+    legal := legal_moves(b, tab)
+    if len(legal) == 0:
+        if in_check(b, tab, b.side):
+            return -MATE
+        return 0
+    if depth == 0:
+        # the leaf value is from the SIDE-TO-MOVE's perspective (negamax);
+        # evaluate() is white-positive, so a black-to-move leaf negates it.
+        # Returning the unnegated eval made every odd-depth-from-white search
+        # report mirrored scores -- caught by the Rxc2 probe (depth 1 said
+        # -500 for winning the queen, depth 2 said +500).
+        return quiesce(&tt, b, tab, zob, pst, 0, alpha, beta)
+    order_moves(&legal, b, pst)
+    best := -MATE - 1
+    olda := alpha
+    bf := 0
+    bt := 0
+    for i := 0; i < len(legal); i += 1:
+        nb := make_move(b, legal[i], tab)
+        score := -search(&tt, nb, tab, zob, pst, depth - 1, -beta, -alpha, use_tt)
+        if score > best:
+            best = score
+            bf = legal[i].from
+            bt = legal[i].to
+        if best > alpha:
+            alpha = best
+        if alpha >= beta:
+            break
+    # exact only: a node that failed low (best <= olda) is an upper bound and
+    # a node that cut (alpha >= beta) a lower bound -- neither is stored, so
+    # the cache stays exact-only and a probe can never return a wrong value.
+    if use_tt and best > olda and alpha < beta:
+        tt.entries[board_hash(b, zob)] = TTEntry(depth, best, bf, bt)
+    return best
+
+fn search_root(tt: inout TT, b: Board, tab: Tables, zob: Zob, pst: PST, depth: int, use_tt: bool):
+    legal := legal_moves(b, tab)
+    order_moves(&legal, b, pst)
+    best := -MATE - 1
+    bf := 0
+    bt := 0
+    bp := 0
+    for i := 0; i < len(legal); i += 1:
+        nb := make_move(b, legal[i], tab)
+        score := 0
+        if i == 0:
+            score = -search(&tt, nb, tab, zob, pst, depth - 1, -MATE - 1, MATE, use_tt)
+        else:
+            # the open (best, +inf) window: an improving move returns its
+            # EXACT value (the child cannot cut on the open side), so the
+            # root's best score is exact and TT-invariant. A move that fails
+            # high reports a bound <= best and never beats it.
+            score = -search(&tt, nb, tab, zob, pst, depth - 1, -MATE - 1, -best, use_tt)
+        println(sq_name(legal[i].from) + sq_name(legal[i].to) + " " + str(score))
+        if score > best:
+            best = score
+            bf = legal[i].from
+            bt = legal[i].to
+            bp = legal[i].promo
+    println("best " + sq_name(bf) + sq_name(bt) + " " + str(best))
+
 # ---- main --------------------------------------------------------------------------
 
 fn main():
     av := cli.argv()
     tab := build_tables()
     if len(av) < 2:
-        die("usage: tycho-chess perft <depth> [fen]")
-    if av[0] != "perft":
+        die("usage: tycho-chess perft <depth> [fen] | search <depth> [fen] | search-nott <depth> [fen] | eval [fen]")
+    if av[0] == "eval":
+        pst := build_pst()
+        b := empty_board()
+        if len(av) > 1:
+            b = parse_fen(av[1])
+        println("eval " + str(evaluate(b, pst)))
+        return
+    use_tt := true
+    cmd := av[0]
+    if cmd == "search-nott":
+        use_tt = false
+        cmd = "search"
+    if cmd != "perft" and cmd != "search":
         die("unknown command: " + av[0])
     depth := 0
     d := av[1]
@@ -736,4 +1119,10 @@ fn main():
         b = parse_fen(av[2])
     else:
         b = parse_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-    perft_split(b, tab, depth)
+    if cmd == "search":
+        zob := build_zob()
+        pst := build_pst()
+        tt := TT([]int: TTEntry)
+        search_root(&tt, b, tab, zob, pst, depth, use_tt)
+    else:
+        perft_split(b, tab, depth)

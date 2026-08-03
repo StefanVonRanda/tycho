@@ -225,7 +225,7 @@ step "[3h/14] make scheme-check  (tycho-scheme: fib/closures/ho/sort vs golden b
 make -s scheme-check
 step "[3i/15] make kv-check  (tycho-kv: 3 command scripts byte-identical B+ tree vs map backend; reloads reproduce; golden locked)"
 make -s kv-check
-step "[3j/16] make chess-check  (tycho-chess: perft totals vs published values on start/kiwipete/pos3 + ep/promo/castling vs oracle; divide transcript golden)"
+step "[3j/16] make chess-check  (tycho-chess: perft totals vs published values on start/kiwipete/pos3 + ep/promo/castling vs oracle; search deterministic + TT-invariant with exact tactical probes)"
 make -s chess-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"

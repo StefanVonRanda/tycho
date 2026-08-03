@@ -37,9 +37,11 @@ python-chess oracle -- the standard positions' trees never reach a promotion
 or an ep capture, so the published totals alone cannot see those code paths.
 ~3M nodes/sec on this box; the gate runs ~10s.
 
-**Remaining program milestones (phases below):** alpha-beta search with a
-transposition table, then the parallel root search via `parallel for` -- the
-untried dynamic fan-out.
+**Phase 2 (search) is DONE (2026-08-04):** negamax alpha-beta, quiescence,
+PST eval, exact-only transposition table, `search <depth> [fen]` CLI, and the
+search assertions in `make chess-check` (determinism, TT-invariance, three
+exact tactical probes). **Remaining:** the parallel root search via
+`parallel for` -- the untried dynamic fan-out.
 
 Stress points: bitboard manipulation (shifts/masks over int64), move lists
 as arena arrays under millions of nodes, and the concurrency phase. The
@@ -87,24 +89,44 @@ the plan is honest about that.
 (none yet -- the program's own milestones below are next; a finding becomes
 a phase only when a second, independent caller needs it)
 
-### Next program milestone -- alpha-beta search + transposition table
+### Next program milestone -- alpha-beta search + transposition table  [DONE 2026-08-04]
 
-The engine so far is movegen + perft. This milestone adds search: a
-negamax/alpha-beta frame over the existing `make_move`/`in_check`, a
-transposition table keyed on the board state (Zobrist), and a `search`
-CLI command that plays a few ply and reports the best move + score. The
-differential for search is weaker than perft's (no published "best move"
-corpus at this depth) -- the honest check is that search(N) agrees with a
-1-ply-deeper search's reported best move on a handful of quiet positions,
-and that the TT never changes the best move or score for the same depth
-(determinism under table hits). The recursion guard gets its real workout
-if the search depth grows.
+The search shipped in the same commit as the engine: negamax alpha-beta with
+an exact-only transposition table (below), a PST-based eval (the classic
+simplified-evaluation tables), and a quiescence search. `search <depth> [fen]`
+reports per-root scores and the best line; `make chess-check` asserts the
+search properties. Three bugs were caught on the way, all by the differential:
+
+1. **The negamax leaf sign.** `evaluate()` is white-positive; the depth-0 leaf
+   must return the value from the SIDE-TO-MOVE's perspective. Returning the
+   unnegated eval inverted every odd-depth-from-white search -- caught by the
+   Rxc2 probe (depth 1 said -500 for winning a free queen, depth 2 said +500).
+2. **The horizon effect (not a search bug, a missing quiescence).** At depth 6
+   from the start every move scored -100: the last ply's eval "won" a pawn
+   (3...Nxf7) one ply short of the recapture. Quiescence (captures + checks,
+   stand-pat cutoff, delta pruning, depth caps) fixed it.
+3. **No quiet-move ordering = no pruning.** order_captures only lifted
+   captures; in capture-free positions the alpha-beta degenerated to ~full
+   search -- measured 16x per ply (d3 116ms -> d4 1.9s -> d5 26s -> d6 3min).
+   PST-aware move ordering collapsed it to the sqrt-shape (d6 3.1s).
+
+The TT is deliberately EXACT-ONLY and same-depth: bound entries are never
+stored, so a probe returns only the true minimax value at that depth and the
+TT provably cannot change a result -- it cuts transpositions and reorders
+moves. The gate asserts exactly that (`search` twice is byte-identical and
+`search-nott` reports the same best line) plus three exact tactical probes:
+the rook taking a free queen (+510), a hanging queen (+510), and the
+scholar's mate (Qxf7# = 100000). The PST-only eval keeps quiet-position
+values approximate (depth-5 from the start ties many moves at 0) -- honest,
+and the probes pin the parts that must be exact.
 
 ### Next program milestone -- parallel root search
 
 The first `parallel for` with dynamic fan-out: the root's moves are searched
 in parallel tasks, each a full search of one root move, results merged. The
 probe the store's pscan deferred: can `parallel for` scale a dynamic work
-set, and do the shared read-only tables (attack tables, TT) stay safe under
-concurrent search? Determinism is the gate: parallel search must report the
-same best move as serial search.
+set, and do the shared read-only tables (attack tables, Zobrist, PST, TT)
+stay safe under concurrent search? Determinism is the gate: parallel search
+must report the same best move as serial search. The TT is the concurrency
+question -- its map is written per node, so the parallel phase must either
+share it read-only after a warmup or give each task its own and merge.
