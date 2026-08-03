@@ -121,7 +121,9 @@ smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a gre
   `Option`/`Result`, struct-of-arrays, newtypes, typed FFI handles.
 - **Language:** generics (monomorphized — structs/enums/fns, `where` constraints,
   recursive + nested), pattern `match`, expression-valued `if`/`match`, closures
-  (downward value-capture), UFCS methods, f-strings, `or_return`, compound assignment,
+  (capture by value at creation -- upward closures ship; the Scheme interpreter
+  in tools/tycho-scheme returns capturing closures and mutates captured
+  bindings via explicit set! semantics), UFCS methods, f-strings, `or_return`, compound assignment,
   slices, destructuring, bidirectional type inference, Odin-style packages.
 - **Concurrency:** `spawn`/`Task`/`wait` (affine + implicit join), `parallel for`,
   lock-free channels, `select`, a bounded spawn cap (fork-bomb fails closed).
