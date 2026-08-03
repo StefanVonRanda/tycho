@@ -169,6 +169,39 @@ if [ "$_g" != "best b1b2 510" ]; then bad "hanging-queen probe: got '$_g', want 
 _g=$("$CHESS" search-nott 3 "$SCHOLAR" 2>/dev/null | grep '^best')
 if [ "$_g" != "best f3f7 100000" ]; then bad "scholar probe: got '$_g', want 'best f3f7 100000'"; fi
 
+# ---------------------------------------------------------------------------
+# [4] the parallel root search (the plan's `parallel for` probe)
+#
+# search_root_par fans the root moves out over `parallel for`, one full-window
+# search per task, results sent on a channel and merged by (score, index).
+# The claims: the parallel best line equals the serial search's (the parallel
+# per-task full windows make the per-move SCORES exact where the serial root
+# reports bounds, so only the best line is compared), and two runs are
+# byte-identical. The per-task full window is also the honest cost: with no
+# shared best-so-far to prune against, the parallel root is a correctness
+# probe, not a speedup (measured 13s vs 2.8s on kiwipete d4) -- the gate
+# therefore runs it on the fast positions only.
+# ---------------------------------------------------------------------------
+parsearch_pair() {
+    _fen=$1; _depth=$2; _lbl=$3
+    "$CHESS" parsearch "$_depth" "$_fen" > "$W/p1" 2>"$T/e" || {
+        bad "$_lbl parsearch exited non-zero"; sed 's/^/      /' "$T/e"; return
+    }
+    "$CHESS" parsearch "$_depth" "$_fen" > "$W/p2" 2>/dev/null
+    cmp -s "$W/p1" "$W/p2" || bad "$_lbl parsearch is not deterministic"
+    _p=$(grep '^best' "$W/p1")
+    _s=$("$CHESS" search "$_depth" "$_fen" 2>/dev/null | grep '^best')
+    if [ "$_p" != "$_s" ]; then
+        bad "$_lbl parallel != serial: par='$_p' ser='$_s'"
+    fi
+    printf '=== parsearch %s d%s\n' "$_lbl" "$_depth" >> "$out"
+    cat "$W/p1" >> "$out"
+}
+
+parsearch_pair "$START"   5 start
+parsearch_pair "$POS3"    5 pos3
+parsearch_pair "$SCHOLAR" 3 scholar
+
 if [ "$RECORD" = 1 ]; then
     if [ "$fail" -ne 0 ]; then echo "FAIL: refusing to RECORD from a failed run"; exit 1; fi
     cp "$out" "$golden"; echo "rec  tycho-chess"
@@ -180,7 +213,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-chess: green (24 published/oracle perft totals; divides at start d5/kiwipete d4/pos3 d6 + 3 edge divides == golden; 5 search positions deterministic + TT-invariant, 3 tactical probes exact)"
+    echo "tycho-chess: green (24 published/oracle perft totals; divides at start d5/kiwipete d4/pos3 d6 + 3 edge divides == golden; 5 search positions deterministic + TT-invariant, 3 tactical probes exact; 3 parsearch positions parallel==serial, deterministic)"
 else
     echo "tycho-chess: FAIL"; exit 1
 fi
