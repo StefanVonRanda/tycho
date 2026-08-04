@@ -290,7 +290,7 @@ are flagged here so the gap is explicit rather than hidden:
   **Amended 2026-07-29:** nested patterns now DO have a `tests/` fixture —
   `tests/nested_pattern`. It was first written into the postfreeze lane (deleted 2026-07-29), a
   directory held outside the `tychoc0` lanes on purpose, which is what closed the
-  open `FRICTION.md` item "new language syntax can no longer be given a `tests/`
+  open `docs/internals/FRICTION.md` item "new language syntax can no longer be given a `tests/`
   fixture". Later the same day the `tychoc0` lanes were retired outright, the
   constraint that made the directory necessary went with them, and the fixture
   moved to `tests/`, where the main golden loop scores it with the full

@@ -82,7 +82,7 @@ the webserver plan measured the alternatives —
 `parallel for` silently collapses to `min(N, ncpu)` live iterations, and
 accept-on-main-spawn-per-connection serialises completely because the compiler
 emits an implicit join at the handle's scope exit. Both are still open as
-`FRICTION.md` items 3 and 4.
+`docs/internals/FRICTION.md` items 3 and 4.
 
 It is one connection per worker at a time, so N workers means N concurrent
 connections. **Recorded measurements, 2026-07-26**, on loopback, 8 workers,
@@ -273,7 +273,7 @@ the rough edges they closed.)
   `corelib/net/net_shim.c:151-152`). Before this, one client that sent a partial request and closed
   without reading killed the entire server — `SIGPIPE`, signal 13, every worker
   and every in-flight connection gone. The server now survives 100 consecutive
-  hostile disconnects and logs them as `write-failed` (`FRICTION.md:601`);
+  hostile disconnects and logs them as `write-failed` (`docs/internals/FRICTION.md:601`);
   `make server-check` re-runs a 50-disconnect version of that on every CI sweep.
 - **`TCP_NODELAY`** (`corelib/net/net_shim.c:154-155`).
   `httpd.write_response` sends the head and the body as two writes, on purpose,

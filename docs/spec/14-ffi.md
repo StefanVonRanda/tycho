@@ -164,7 +164,7 @@ and there is no separate payload, return the code directly and skip the out-para
 > `src/tychoc.c@ffi_scalar_type`. Written down here because §24.1.1's own shape had
 > been reproduced verbatim from one shim into the other with no spec to copy, and
 > the mirror was doing it again — three cross-referencing comment blocks in
-> `corelib/io/io.ty` deriving by hand what this section now states (FRICTION.md
+> `corelib/io/io.ty` deriving by hand what this section now states (docs/internals/FRICTION.md
 > item 11).
 
 ### 24.2 Linking
