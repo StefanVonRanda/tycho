@@ -1,65 +1,119 @@
 # What comes next
 
-> 2026-08-04: the eight-program testing campaign and the repo-polish turn are
-> both complete and archived — the program plans at
-> `docs/internals/plan-*-DONE.md` (scheme, vm, kv, chess, rsa, kvsrv, sat), the
-> polish at `docs/internals/plan-repo-polish-DONE.md`. The language is declared
-> well tested: eight programs across six axes, zero compiler/runtime defects,
-> six tool-gate lanes, a differential fuzzer, the self-hosting byte-for-byte
-> proof. The repo is polished: README with the evidence-of-exercise section,
-> LICENSE/SECURITY/CONTRIBUTING present, no cloud CI by the owner's explicit
-> decision (`make ci` is the whole gate, run locally).
+> 2026-08-04: three owner-directed optimization phases, each validated against
+> the tree before admission (evidence quoted below). Order as requested:
+> interning, pool iteration, copy diagnostics. The standing build-tool candidate
+> stays shelved; the "second caller" the demand rule asks for is the owner's
+> explicit request.
 
-## The standing candidate
+## Validation — 2026-08-04, all three missing, all three fit
 
-The one axis the tools never touched is systems-y I/O — subprocesses, io
-metadata, a parallel dependency graph. The candidate filed for it: **a build
-tool** (make-like: mtime-based up-to-date checks, a step DAG, parallel
-execution of independent steps via the concurrency model), with a hermetic
-fixture-tree differential (build twice, the second build is a no-op). It
-stays the default if the owner ever wants to resume the campaign.
+Each was checked in the source before being admitted. None needs new syntax or a
+runtime primitive; all three land on surface the language already has.
 
-Until then, the plan is: **nothing pending**. The language is tested, the
-repo is polished, and the demand rule still governs any future finding — a
-finding becomes a phase only when a second, independent caller exists.
+### 1. Hash-consing / interning — missing, fits
 
-## The work -- professional-facing docs
+No user-facing canonicalization exists: the only `intern` hits in the tree are
+the C runtime's internal string-literal interning (emitted into generated code),
+not a facility programs can call. The ingredients exist: generic constraints
+`where hashable(T)` / `where comparable(T)` (`docs/spec/05-generics.md:50-52`,
+in use at `corelib/math/math.ty:7`) and structural deep equality on
+arrays/structs/maps (`docs/spec/03-types.md:449-456`). An intern table is
+index-keyed canonical storage — value semantics' own shape: sharing expressed as
+indices into a table that outlives its users by scope placement. One open
+question is a *generic* hash (core:hash hashers take strings only,
+`corelib/hash/hash.ty:36`), so the phase ships string/`[int]` keys and defers
+generic keys.
 
-2026-08-04, new phase: the README, docs and wiki should read like a
-language project's, not a work site's. The README is restructured to the
-landing-page shape (hero + tagline + links bar + key features + quick
-start + condensed evidence), with the deep content moved to docs: the
-benchmark and memory evidence to a new `docs/performance.md`, the costs
-folded into the FAQ, the thesis already at `docs/thesis.md`. The wiki
-gains its three empty pages (Installing-Tycho, FAQ, Contributing).
+### 2. core:pool live-slot iteration — missing, fits
 
-### Phase A -- README landing page + docs/performance.md  [DONE 2026-08-04]
+The entire public API is `add`/`get`/`set`/`remove`/`alive`/`count`
+(`corelib/pool/pool.ty:45-88`); there is no way to walk live values without
+hand-skipping freed slots. The closure-over-generic pattern is proven
+(`corelib/iter/iter.ty:14`), so collecting live handles is plain library code.
 
-The README is restructured to the landing-page shape: hero + tagline + a
-links bar, a Key Features section, the quick start, a condensed "why"
-pointing at the thesis, the testing campaign (the seven tools table), a
-short performance teaser, the FAQ (with the costs folded in), and the
-build/docs/license sections. The deep content moved out: the benchmark
-tables, the flat-memory JSON evidence and the speed notes to the new
-`docs/performance.md` (indexed in `docs/README.md`), the costs into the
-FAQ. README is now ~240 lines of landing page instead of 294 of research
-writeup.
+### 3. Val-style copy diagnostics — missing, fits
 
-### Phase C -- re-verifiable self-hosting claim + scope callout  [DONE 2026-08-04]
+The compiler already decides every copy — elision on last use
+(`src/tychoc.c:9090`), move for dead locals (`src/tychoc.c:10526`) — and already
+has a first-class warning channel, `warn_at` (`src/tychoc.c:65`), LSP-parsed like
+errors and in production use (`src/tychoc.c:9703`). What is missing is a warning
+when a copy is *unavoidable and observable*: a diagnostic over an existing
+decision, no new mechanism.
 
-The public-facing review flagged the marquee claim as the least verifiable: the
-self-hosting byte-for-byte proof was frozen and not re-runnable. The fix is a
-gate: `compiler/selfhost.sh` (`make selfhost-check`, ci step [3n/20], ~50s)
-re-runs the self-emission chain (stages 2-4 of docs/bootstrap.md) over the
-frozen compiler alone and asserts the byte-identity — corpus-independent, so it
-cannot drift the way the retired fixpoint did. The fixpoint was verified to
-still hold at HEAD before the gate was written. The README also gains a status
-banner (research prototype, pre-1.0) so the landing page cannot overpromise.
+## Phase 1 — `core:intern` (hash-consing / interning)
 
-### Phase B -- wiki: fill the empty pages  [DONE 2026-08-04]
+New package `corelib/intern/`:
 
-The wiki (tycho.wiki, a separate repo) already mirrored the reader docs;
-its three empty pages are filled: Installing-Tycho (prereqs, clone+make,
-platform notes, verifying with the local gate), FAQ (the four README
-questions plus the production-readiness answer Home anchors to), and
-Contributing (condensed from CONTRIBUTING.md). Pushed to the wiki repo.
+- `Interner($K, $V)` with `intern(&i, k) -> Handle` (canonical: first sight adds
+  a node and returns its handle, later sights return the same handle),
+  `get(i, h)`, `count(i)`.
+- Keys `$K` in `{string, [int]}` first; one `[$V]` store, a `[$K: Handle]` map
+  for lookup. May reuse `core:pool` for the store — design freedom, decided in
+  the phase.
+- Test `corelib/test/intern/main.ty` + golden `corelib/test/intern.out`
+  (re-record with `RECORD=1 sh corelib/run.sh`, the convention at
+  `corelib/run.sh:60`; the `.out` must be git-added or `make goldens-check`
+  reddens).
+- `docs/guides/corelib.md` entry for the package.
+
+Gate: `make corelib` (~49s) — the only gate that runs corelib tests. `make
+goldens-check` (~0.07s) for the new golden. Doc gates for the guide.
+NOT `make test`: `tests/run.sh:113` globs `examples/*.ty tests/*.ty` at the top
+level and never descends into `corelib/`, so it cannot redden for this phase.
+No shim, so no shim-check.
+Expected: every existing corelib test green plus the new one; `intern.out`
+locked by the first `RECORD=1` run.
+
+> Phase 1 evidence — 2026-08-04: `make corelib` all green incl. `intern`
+> (48 tests + 1 new); `make goldens-check` ok (418 goldens tracked); doc gates
+> ok (citations + links). One API decision vs the brief: `intern(&i, k, v)`
+> takes the value — a `$V` store has to receive its values from somewhere, and
+> "first sight wins, later sights return the same handle and ignore `v`" is
+> the cache-hit semantics; the two-arg `intern(&i, k)` of the brief cannot
+> name where `$V` comes from without a builder fn. Construction needs explicit
+> empty-literal types, like pool: `intern.Interner([]int, []string: int)`.
+
+## Phase 2 — `core:pool` live-slot iteration
+
+Add to `corelib/pool/pool.ty`: `fn live(p: Pool($T)) -> [Handle]` — live handles
+in insertion order, skipping freed slots. Closure-free, so no new language
+surface; a callback `for_each` can follow if a caller appears.
+
+Extend `corelib/test/pool/main.ty` to exercise `live()`; re-record `pool.out`
+(`RECORD=1 sh corelib/run.sh`) and git-add the delta.
+
+Gate: `make corelib` + `make goldens-check`. NOT `make test` (same non-descend
+reason as Phase 1).
+Expected: `pool.out` changes exactly as the new lines print; all other corelib
+tests untouched.
+
+## Phase 3 — Val-style copy diagnostics
+
+In `src/tychoc.c`, at the by-value argument copy the compiler could not elide
+(heap-bearing local, still live after the call), emit `warn_at` with the fix
+text mirroring the existing die at `src/tychoc.c:9108` — "pass a copy you keep
+(`y := %s`) or make this its last use" — plus the `inout` suggestion. The
+`b := a` assignment-copy site is a separate decision, taken only if cheap.
+
+Behavior contract: warnings go to stderr, which the pass-fixture harness
+discards (`tests/run.sh:78` runs programs with `2>/dev/null`), so the new
+warning cannot redden an existing fixture — but it must not *noise* the corpus
+either: the bar the existing warnings set (`src/tychoc.c:9715` — verified by
+emitting the whole fixture suite and finding zero spurious fires) applies to the
+new one. Add fixtures for the warn case and the elided non-warn case.
+
+Gate: `make test` (full suite, ~8 min; expected 560 fixtures green per
+CLAUDE.md — verify the count on the baseline run and watch it), iterating with
+`make test-fast` (~1 min). NOT the doc gates. `scripts/tools_check.sh` only if
+the LSP's diagnostic shape changes — `warn_at` is already LSP-parsed, so expect
+no change.
+Expected: baseline count green, the two new fixtures green, zero golden drift.
+
+## Not in scope
+
+- Generic-key interning: needs a generic hash (core:hash is string-only today)
+  — a follow-on if a caller appears.
+- Any new syntax, runtime primitive, or reference type: each phase lands on
+  existing surface.
+- The build-tool candidate remains shelved.

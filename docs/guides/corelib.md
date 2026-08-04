@@ -106,6 +106,18 @@ element type instead of a family of per-type siblings.
   *ergonomics*, not memory — pointer-shaped storage still costs ~1.55× C in this model
   (fundamental; see [value-semantics limits](../internals/value-semantics-limits.md)) — what
   it removes is the hand-rolled index-plus-generation bookkeeping.
+- **`intern`** — hash-consing / interning: canonical storage of values keyed by a hashable
+  key. Generic `Interner($K, $V)`: `intern(&i, k, v) -> Handle` returns the canonical handle
+  for key `k` — the first sight stores `v` and mints the handle, every later sight of the
+  same key returns the **same** handle and ignores its `v` (first sight wins, a hit is a
+  cache hit) — plus `get(i, h)` and `count(i)`. Two handles are equal iff their keys were
+  equal at first sight, so interning gives a cheap identity test and one canonical copy of
+  each logical object (a string read from many files, a row seen in many batches). Handles
+  are stable for the interner's lifetime; values are never removed — it is a
+  *canonicalization* table, not a cache, so an unbounded working set leaks by design (use a
+  plain `[K: V]` map for a bounded cache). Keys are `string` and `[int]` today (any hashable
+  map-key type works; there is no generic hash for exotic keys — core:hash hashers take
+  strings only). Create one with `i := intern.Interner([]int, []string: int)`.
 - **`rand`** — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the
   state is an explicit int threaded via `inout` (the `&` marks the `inout` call site,
   [Basics](../reference/basics.md#procedures)): `st := rand.seed(42)`,
