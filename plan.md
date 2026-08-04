@@ -142,6 +142,18 @@ Expected: baseline count green, the two new fixtures green, zero golden drift.
 > call-argument tuple; `.err` locks the warning), elided case
 > `tests/copy_elided.ty` (last-use local at a declaration RHS — moved, no
 > copy, no warning; verified in the emitted C: no `tycho_str_copy` in main).
+>
+> Follow-up (same day): the 611-file sweep did NOT cover the self-hosted
+> compiler — the full-tree sweep (898 .ty files incl. `compiler/tychoc0.ty`,
+> `bench/`, `server/`, `fuzz/`) found the warning firing 15× on tychoc0.ty
+> alone, all at `return type_of(ECall(v, args, ...))` AST-building sites.
+> These are structurally unavoidable: a return value is built in the caller's
+> arena (`_parent`), never the local's, so "make this its last use" can never
+> elide the copy there — non-actionable noise. The warning now also excludes
+> return expressions (`g_in_return`, `src/tychoc.c:8558`); re-sweep of all
+> 898 files: the warning fires only on the warn fixture. `make test` still
+> 589/0; the 21 src/tychoc.c doc citations re-pointed a second time (+8/+9
+> /+10 by region).
 
 ## Not in scope
 
