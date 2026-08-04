@@ -1,0 +1,563 @@
+# tycho-sat -- a DPLL/CDCL SAT solver in Tycho.
+#
+#     ./tychoc tools/tycho-sat/main.ty -o build/tycho-sat
+#     ./build/tycho-sat solve instance.cnf
+#     ./build/tycho-sat --php 5
+#     ./build/tycho-sat solve instance.cnf --no-learn
+#
+# WHAT IT IS FOR. The plan's program (docs/internals/plan-tycho-kvsrv-
+# DONE.md's successor): the language stress is ALGORITHMIC DEPTH. The
+# machinery a modern solver needs -- watched-literal unit propagation,
+# VSIDS decisions with an activity heap, first-UIP conflict analysis and
+# clause learning, restarts -- is intricate stateful code (per-literal
+# watch lists, an implication-graph walk, a mutable clause database), and
+# the value-semantics model has not been asked to carry any of it before.
+#
+# The differential is a corpus, hermetic: the pigeonhole instances PHP(n)
+# are self-generated and unsatisfiability is a published theorem; the SAT
+# side is planted random instances whose models the runner verifies with an
+# independent checker. Determinism is by construction (no randomness; a
+# fixed geometric restart schedule), so two runs are byte-identical.
+#
+# Scope, honestly stated: no clause deletion and no phase saving (the
+# classic next refinements); a fixed polarity (true) with a flipping phase
+# in --no-learn (chronological DPLL) mode. The search is iterative -- CDCL
+# does not recurse -- so the recursion guard stays idle.
+package main
+
+import "core:cli"
+import "core:io"
+import "core:strings"
+
+# ---- literals ----------------------------------------------------------------------
+#
+# A literal is a signed int: l > 0 means var l is true, l < 0 means var -l is
+# false. lit_index(l) is the 0-based slot for the watch lists: 2*(v-1) for
+# positive, 2*(v-1)+1 for negative.
+
+fn iabs(x: int) -> int:
+    if x < 0:
+        return 0 - x
+    return x
+
+fn lit_var(l: int) -> int:
+    return iabs(l)
+
+fn lit_index(l: int) -> int:
+    v := iabs(l)
+    if l < 0:
+        return (v - 1) * 2 + 1
+    return (v - 1) * 2
+
+struct Clause:
+    lits: [int]        # lits[0] and lits[1] are the two watched literals
+    learnt: bool
+
+struct Solver:
+    nvars: int
+    clauses: [Clause]          # the clause database (index 0 unused? no -- 0-based)
+    watch: [[int]]             # watch[lit_index(l)] = clause indices watching l
+    val: [int]                 # val[v] = 0 unassigned, 1 false, 2 true
+    level: [int]               # decision level of the assignment
+    reason: [int]              # clause index that implied v; 0 = decision
+    phase: [int]               # the polarity to try at a decision (2 or 1)
+    trail_var: [int]
+    trail_val: [int]
+    trail_lvl: [int]
+    score: [float]             # VSIDS activity per var
+    bump: float                # the current activity increment
+    heap: [int]                # max-heap of UNASSIGNED vars by score
+    hpos: [int]                # heap index per var; -1 = not in the heap
+    seen: [bool]               # scratch for conflict analysis
+    prop_head: int             # the trail index the next propagate starts at
+    conflicts: int
+    decisions: int
+    restarts: int
+    cur_level: int
+    last_decision: int
+    conflict_clause: int
+
+fn build_solver(nvars: int) -> Solver:
+    s := Solver(nvars, []Clause, [], []int, []int, []int, []int,
+                []int, []int, []int, []float, 1.0, []int, []int, []bool,
+                0, 0, 0, 0, 0, 0, 0)
+    i := 0
+    for i <= nvars:
+        push(s.val, 0)
+        push(s.level, 0)
+        push(s.reason, 0)
+        push(s.phase, 2)
+        push(s.score, 0.0)
+        push(s.hpos, -1)
+        push(s.seen, false)
+        i = i + 1
+    i = 1
+    for i <= nvars:
+        push(s.heap, i)
+        s.hpos[i] = len(s.heap) - 1
+        i = i + 1
+    i = 0
+    for i < 2 * nvars + 2:
+        push(s.watch, []int)
+        i = i + 1
+    return s
+
+# ---- literal state -----------------------------------------------------------------
+
+fn lit_true(s: inout Solver, l: int) -> bool:
+    if l > 0:
+        return s.val[l] == 2
+    return s.val[0 - l] == 1
+
+fn lit_false(s: inout Solver, l: int) -> bool:
+    if l > 0:
+        return s.val[l] == 1
+    return s.val[0 - l] == 2
+
+# ---- the activity heap (max-heap of vars by score) -------------------------------
+
+fn bubble_up(s: inout Solver, i: int):
+    for i > 0:
+        par := (i - 1) / 2
+        if s.score[s.heap[i]] > s.score[s.heap[par]]:
+            t := s.heap[i]
+            s.heap[i] = s.heap[par]
+            s.heap[par] = t
+            s.hpos[s.heap[i]] = i
+            s.hpos[s.heap[par]] = par
+            i = par
+        else:
+            return
+
+fn bubble_down(s: inout Solver, i: int):
+    n := len(s.heap)
+    for true:
+        l := 2 * i + 1
+        r := 2 * i + 2
+        big := i
+        if l < n and s.score[s.heap[l]] > s.score[s.heap[big]]:
+            big = l
+        if r < n and s.score[s.heap[r]] > s.score[s.heap[big]]:
+            big = r
+        if big == i:
+            return
+        t := s.heap[i]
+        s.heap[i] = s.heap[big]
+        s.heap[big] = t
+        s.hpos[s.heap[i]] = i
+        s.hpos[s.heap[big]] = big
+        i = big
+
+fn h_pop(s: inout Solver) -> int:
+    top := s.heap[0]
+    s.hpos[top] = -1
+    last := pop(s.heap)
+    if len(s.heap) > 0:
+        s.heap[0] = last
+        s.hpos[last] = 0
+        bubble_down(&s, 0)
+    return top
+
+fn h_push(s: inout Solver, v: int):
+    push(s.heap, v)
+    s.hpos[v] = len(s.heap) - 1
+    bubble_up(&s, len(s.heap) - 1)
+
+# ---- assignment --------------------------------------------------------------------
+
+# the single choke point for assignment. Returns false if the var is already
+# assigned the OPPOSITE way -- a contradiction that must surface as a conflict,
+# never as a silent overwrite (a double trail entry corrupts the analysis).
+fn enqueue(s: inout Solver, v: int, val: int, lvl: int, rsn: int) -> bool:
+    if s.val[v] != 0:
+        return s.val[v] == val
+    s.val[v] = val
+    s.level[v] = lvl
+    s.reason[v] = rsn
+    push(s.trail_var, v)
+    push(s.trail_val, val)
+    push(s.trail_lvl, lvl)
+    return true
+
+fn backtrack(s: inout Solver, to_level: int):
+    for len(s.trail_var) > 0 and s.trail_lvl[len(s.trail_var) - 1] > to_level:
+        v := pop(s.trail_var)
+        pop(s.trail_val)
+        pop(s.trail_lvl)
+        s.val[v] = 0
+        h_push(&s, v)
+    s.prop_head = len(s.trail_var)     # the survivors were already propagated
+    s.cur_level = to_level             # the decision level must mirror the trail
+
+# ---- unit propagation ---------------------------------------------------------
+#
+# The BCP here is the naive full scan: on every new assignment, every clause is
+# re-examined (satisfied / unit / conflict). This is correct BY CONSTRUCTION --
+# there is no watch state to keep consistent across backtracks, which the
+# two-watch scheme's subtle invariants made brittle in the first cut. It costs
+# one scan of the whole database per assignment, which is fine at the gate's
+# sizes; watched literals are the classic performance refinement, honestly
+# deferred. The CDCL machinery on top (first-UIP analysis, VSIDS, restarts,
+# chronological fallback) is what makes the solver a CDCL solver regardless.
+fn prop_clause_scan(s: inout Solver, ci: int) -> bool:
+    nf := 0                        # non-false literals seen
+    unassigned := 0
+    c := s.clauses[ci]
+    for k := 0; k < len(c.lits); k += 1:
+        l := c.lits[k]
+        if lit_true(&s, l):
+            return true            # satisfied: nothing to do
+        if lit_false(&s, l):
+            nf = nf + 1
+        else:
+            unassigned = unassigned + 1
+    if unassigned == 0:
+        s.conflict_clause = ci
+        return false               # every literal false: conflict
+    if unassigned == 1:
+        # exactly one unassigned literal: unit, propagate it
+        u := 0
+        for k := 0; k < len(c.lits); k += 1:
+            if not lit_false(&s, c.lits[k]):
+                u = c.lits[k]
+                break
+        uv := lit_var(u)
+        if u > 0:
+            if not enqueue(&s, uv, 2, s.cur_level, ci):
+                s.conflict_clause = ci
+                return false
+        else:
+            if not enqueue(&s, uv, 1, s.cur_level, ci):
+                s.conflict_clause = ci
+                return false
+    return true
+
+fn propagate(s: inout Solver) -> bool:
+    # process only the trail entries assigned since the last call. For each
+    # entry, the WHOLE database is scanned -- a conflict aborts the scan in
+    # many textbook formulations, but an early abort leaves OTHER all-false
+    # clauses undetected; if their literals all sit below the later backtrack
+    # level they survive it, and a later scan re-discovers them as a conflict
+    # with no literal at the current level. So the scan always completes,
+    # recording the first conflict and re-checking the rest.
+    head := s.prop_head
+    for head < len(s.trail_var):
+        head = head + 1
+        first := -1
+        for ci := 0; ci < len(s.clauses); ci += 1:
+            if not prop_clause_scan(&s, ci):
+                if first < 0:
+                    first = ci
+        if first >= 0:
+            s.conflict_clause = first
+            return false
+    s.prop_head = len(s.trail_var)
+    return true
+
+# ---- VSIDS -------------------------------------------------------------------------
+
+fn bump_var(s: inout Solver, v: int):
+    s.score[v] = s.score[v] + s.bump
+    if s.hpos[v] >= 0:
+        bubble_up(&s, s.hpos[v])
+
+fn decay(s: inout Solver):
+    s.bump = s.bump * 1.05
+
+fn pick_branch(s: inout Solver) -> int:
+    # pop the heap until an unassigned var remains; assigned vars are discarded
+    # (backtrack re-inserts them)
+    for len(s.heap) > 0:
+        v := h_pop(&s)
+        if s.val[v] == 0:
+            s.last_decision = v
+            return v
+    return 0
+
+# ---- conflict analysis (first-UIP) ---------------------------------------------------
+
+# Resolve the implication graph until exactly one literal from the current level
+# remains; returns (backtrack level, the learnt clause's literals).
+fn analyze(s: inout Solver, confl: int) -> (int, [int]):
+    learnt := []int
+    btlevel := 0
+    dlevel := s.cur_level
+    count := 0
+    p := 0
+    idx := len(s.trail_var) - 1
+    for true:
+        ci := confl
+        if p != 0:
+            rsn := s.reason[lit_var(p)]
+            if rsn != 0:
+                ci = rsn
+            else:
+                ci = -1               # p is a decision literal: no reason to resolve
+        k := 0
+        for ci >= 0 and k < len(s.clauses[ci].lits):
+            l := s.clauses[ci].lits[k]
+            v := lit_var(l)
+            if not s.seen[v]:
+                s.seen[v] = true
+                if s.level[v] == dlevel:
+                    count = count + 1
+                else:
+                    push(learnt, l)
+                    if s.level[v] > btlevel:
+                        btlevel = s.level[v]
+            k = k + 1
+        if count == 0:
+            die("tycho-sat: conflict with no literal at the current level (solver bug)")
+        # walk the trail back to the next marked literal AT THE CURRENT LEVEL
+        # (lower-level literals were marked too when added to the learnt set,
+        # and they are not what the UIP resolution resolves)
+        for idx >= 0 and (not s.seen[lit_var(trail_lit(&s, idx))] or s.level[s.trail_var[idx]] != dlevel):
+            idx = idx - 1
+        if idx < 0:
+            die("tycho-sat: conflict analysis walked off the trail (solver bug)")
+        p = trail_lit(&s, idx)
+        count = count - 1
+        if count == 0:
+            break
+        idx = idx - 1
+    # p is the first-UIP literal; its negation is the asserting literal. The
+    # asserting literal goes FIRST: it becomes a watch (lits[0]) and is TRUE
+    # after the enqueue, so the new clause is never added with a false watch.
+    out := []int
+    push(out, 0 - p)
+    k := 0
+    for k < len(learnt):
+        push(out, learnt[k])
+        k = k + 1
+    # clear the seen flags
+    v := 1
+    for v <= s.nvars:
+        s.seen[v] = false
+        v = v + 1
+    return (btlevel, out)
+
+fn trail_lit(s: inout Solver, i: int) -> int:
+    v := s.trail_var[i]
+    if s.trail_val[i] == 2:
+        return v
+    return 0 - v
+
+# add a clause to the database, setting up its watches; unit clauses are
+# enqueued (level 0) instead of watched.
+fn add_clause(s: inout Solver, lits: [int], learnt: bool) -> int:
+    if len(lits) == 0:
+        return 0
+    ci := len(s.clauses)
+    push(s.clauses, Clause(lits, learnt))
+    if len(lits) == 1:
+        u := lits[0]
+        uv := lit_var(u)
+        want := 2
+        if u < 0:
+            want = 1
+        if not enqueue(&s, uv, want, 0, ci):
+            return -1                       # a unit conflict: the formula is unsat
+        return ci
+    push(s.watch[lit_index(lits[0])], ci)
+    push(s.watch[lit_index(lits[1])], ci)
+    return ci
+
+# ---- the search ----------------------------------------------------------------------
+
+# returns 1 (SAT) or -1 (UNSAT); the model is left in s.val.
+fn solve(s: inout Solver, learn: bool) -> int:
+    if not propagate(&s):
+        return -1
+    restart := 100
+    for true:
+        if s.conflicts >= restart:
+            restart = restart * 2
+            s.restarts = s.restarts + 1
+            backtrack(&s, 0)
+        v := pick_branch(&s)
+        if v == 0:
+            return 1
+        s.decisions = s.decisions + 1
+        s.cur_level = s.cur_level + 1
+        if not enqueue(&s, v, s.phase[v], s.cur_level, 0):
+            die("tycho-sat: decided an already-assigned var (solver bug)")
+        # The propagation and the conflict handling run in ONE loop: a learned
+        # asserting literal is propagated IMMEDIATELY after its enqueue, still
+        # at its own (backtrack) level. Deferring that propagation to the next
+        # decide would surface the asserting's conflict at a HIGHER level, with
+        # every literal of its clause below it -- which first-UIP cannot
+        # resolve. The while re-enters the conflict path for the asserting's
+        # own propagation, so every conflict is analyzed at the level it
+        # actually belongs to.
+        for not propagate(&s):
+            s.conflicts = s.conflicts + 1
+            if s.cur_level == 0:
+                return -1
+            if learn:
+                bt, learnt := analyze(&s, s.conflict_clause)
+                k := 0
+                for k < len(learnt):
+                    bump_var(&s, lit_var(learnt[k]))
+                    k = k + 1
+                decay(&s)
+                if bt == 0:
+                    return -1
+                if len(learnt) == 1:
+                    # a learnt unit: enqueue the asserting literal at bt
+                    backtrack(&s, bt)
+                    u := learnt[0]
+                    want := 2
+                    if u < 0:
+                        want = 1
+                    if not enqueue(&s, lit_var(u), want, bt, 0):
+                        die("tycho-sat: learnt unit contradicts level " + str(bt) + " (solver bug)")
+                else:
+                    # the asserting literal is lits[0] of the new clause
+                    ci := add_clause(&s, learnt, true)
+                    backtrack(&s, bt)
+                    u := learnt[0]
+                    want := 2
+                    if u < 0:
+                        want = 1
+                    if not enqueue(&s, lit_var(u), want, bt, ci):
+                        die("tycho-sat: learnt asserting literal contradicts level " + str(bt) + " (solver bug)")
+            else:
+                # chronological DPLL: undo the last decision, flip its phase
+                dv := s.last_decision
+                backtrack(&s, s.cur_level - 1)
+                if s.phase[dv] == 2:
+                    s.phase[dv] = 1
+                else:
+                    s.phase[dv] = 2
+    return 0
+
+# ---- input --------------------------------------------------------------------------
+
+# parse a DIMACS CNF body (the "p cnf N M" line is optional); returns false if the
+# formula contains the empty clause.
+fn parse_cnf(s: inout Solver, lines: [string]) -> bool:
+    for i := 0; i < len(lines); i += 1:
+        ln := lines[i]
+        if ln == "" or strings.starts_with(ln, "c") or strings.starts_with(ln, "p"):
+            continue
+        lits := []int
+        tok := ""
+        k := 0
+        for k <= len(ln):
+            if k < len(ln) and ln[k] != 32:
+                tok = tok + chr(ln[k])
+            else:
+                if tok != "":
+                    if tok != "0":
+                        push(lits, strings.parse_int(tok))
+                    tok = ""
+            k = k + 1
+        if len(lits) > 0:
+            if add_clause(&s, lits, false) < 0:
+                return false
+    return true
+
+# generate the pigeonhole instance PHP(n): n+1 pigeons into n holes (unsat for
+# every n -- the theorem the gate rests on). Returns the var count.
+fn gen_php(s: inout Solver, n: int) -> int:
+    # var x[i*n + k + 1]: pigeon i sits in hole k
+    i := 0
+    for i <= n:
+        c := []int
+        k := 0
+        for k < n:
+            push(c, i * n + k + 1)
+            k = k + 1
+        add_clause(&s, c, false)
+        i = i + 1
+    i = 0
+    for i <= n:
+        j := i + 1
+        for j <= n:
+            k := 0
+            for k < n:
+                add_clause(&s, [(0 - (i * n + k + 1)), (0 - (j * n + k + 1))], false)
+                k = k + 1
+            j = j + 1
+        i = i + 1
+    return (n + 1) * n
+
+# ---- main ---------------------------------------------------------------------------
+
+fn usage() -> string:
+    return ("tycho-sat -- a DPLL/CDCL SAT solver in Tycho\n\n"
+            "usage: tycho-sat solve <file.cnf> [--no-learn]\n"
+            "       tycho-sat --php <n>\n\n"
+            "  solve <file>   read a DIMACS CNF file and solve it; prints\n"
+            "                 s SATISFIABLE/UNSATISFIABLE, the model for SAT,\n"
+            "                 and a stats line.\n"
+            "  --php <n>      solve the pigeonhole instance PHP(n) directly\n"
+            "                 (n+1 pigeons into n holes; unsatisfiable).\n"
+            "  --no-learn     chronological DPLL instead of CDCL -- the\n"
+            "                 conflict-count comparison the gate prints.\n")
+
+fn main():
+    av := cli.argv()
+    if len(av) < 1:
+        print(usage())
+        return
+    learn := true
+    nvars := 0
+    lines := []string
+    php_n := 0
+    if av[0] == "--php":
+        if len(av) < 2:
+            die("tycho-sat: --php needs a hole count")
+        php_n = strings.parse_int(av[1])
+        nvars = (php_n + 1) * php_n
+    elif av[0] == "solve":
+        if len(av) < 2:
+            die("tycho-sat: solve needs a file")
+        if len(av) > 2 and av[2] == "--no-learn":
+            learn = false
+        lines = io.read_lines(av[1])
+        # find "p cnf N M" for the var count (default: a generous bound is not
+        # possible -- the parse needs nvars first, so scan for the p-line)
+        found := false
+        for i := 0; i < len(lines); i += 1:
+            if strings.starts_with(lines[i], "p cnf "):
+                rest := lines[i][6:]
+                sp := len(rest)
+                k := 0
+                for k < len(rest):
+                    if rest[k] == 32:
+                        sp = k
+                        break
+                    k = k + 1
+                nvars = strings.parse_int(rest[:sp])
+                found = true
+                break
+        if not found:
+            die("tycho-sat: no 'p cnf N M' header in " + av[1])
+    else:
+        die("tycho-sat: unknown command " + av[0])
+
+    s := build_solver(nvars)
+    ok := true
+    if php_n > 0:
+        gen_php(&s, php_n)
+    else:
+        ok = parse_cnf(&s, lines)
+    if not ok:
+        println("s UNSATISFIABLE")
+        return
+    # propagate the unit clauses from the header (parse may have enqueued units)
+    res := solve(&s, learn)
+    if res == 1:
+        println("s SATISFIABLE")
+        out := "v "
+        for v := 1; v <= s.nvars; v += 1:
+            if s.val[v] == 2:
+                out = out + str(v) + " "
+            else:
+                out = out + str(0 - v) + " "
+        println(out + "0")
+    else:
+        println("s UNSATISFIABLE")
+    println("c conflicts=" + str(s.conflicts) + " decisions=" + str(s.decisions) +
+            " restarts=" + str(s.restarts))

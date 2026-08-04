@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -427,6 +427,19 @@ rsa-check: tychoc
 # See tools/tycho-kvsrv/run.sh.
 kvsrv-check: tychoc
 	@sh tools/tycho-kvsrv/run.sh
+
+# sat-check: the gate for tycho-sat, the DPLL/CDCL SAT solver in
+# tools/tycho-sat/. Ninth of the same shape as the tool lanes: nothing else
+# RUNS a tool under tools/, so this is what executes the solver. The
+# differential is a corpus, hermetic: PHP(2..9) must all be UNSAT (the
+# theorem), and planted instances must be SAT with a model the runner's own
+# checker verifies clause by clause. Determinism and the learning-vs-DPLL
+# conflict counts are recorded in the golden.
+#
+# ~4s, measured 2026-08-04. In `make ci` as step [3m/19].
+# See tools/tycho-sat/run.sh.
+sat-check: tychoc
+	@sh tools/tycho-sat/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
