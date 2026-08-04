@@ -71,10 +71,11 @@ Three things the numbers say that the RSS tables cannot:
 3. **Loop scratch peaks near zero.** The per-iteration `arena_reset` keeps a
    loop's live bytes at one iteration's worth: `loop_scratch` bumps 10M
    allocations and peaks at 40 B. Per-statement attribution (`_scrN.name =
-   "proc:line"`, emitted at the S_WHILE/S_FOR/S_FORRANGE codegen sites) shows
-   it: on json, `main:25` bumps 16.4 MiB across 850k allocs with a 344 B
-   peak — the per-iteration reset, now visible per statement instead of folded
-   into the function total.
+   "proc:loopN"`, a per-proc loop counter — stable under re-formatting, emitted
+   at the S_WHILE/S_FOR/S_FORRANGE codegen sites) shows it: on json, a loop
+   labeled `main:loop0` bumps 16.4 MiB across 850k allocs with a 344 B peak —
+   the per-iteration reset, now visible per statement instead of folded into
+   the function total.
 
 **Block size is a memory-only knob.** `TYCHO_BLOCK=<bytes>` overrides the
 64 KiB default per run (read once at startup, `runtime/tycho_rt.c:466`). A

@@ -38,6 +38,10 @@ struct Tok:
 fn is_dig(c: int) -> bool:
     return c >= 48 and c <= 57
 
+fn is_hexdig(c: int) -> bool:
+    # 0-9 a-f A-F (mirrors the lexer's isxdigit for hex literals)
+    return (c >= 48 and c <= 57) or (c >= 97 and c <= 102) or (c >= 65 and c <= 70)
+
 fn is_alp(c: int) -> bool:
     return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
 
@@ -194,6 +198,16 @@ fn lex(src: string) -> [Tok]:
         elif is_dig(c):                               # number (int or float)
             for i < n and is_dig(src[i]):
                 i = i + 1
+            # hex 0x.. / binary 0b.. literals (the lexer's rule): a leading `0`
+            # followed by x/X (hex digits) or b/B (0/1) is ONE token, not `0 x..`.
+            if src[start] == 48 and i < n and (src[i] == 120 or src[i] == 88):
+                i = i + 1
+                for i < n and is_hexdig(src[i]):
+                    i = i + 1
+            elif src[start] == 48 and i < n and (src[i] == 98 or src[i] == 66):
+                i = i + 1
+                for i < n and (src[i] == 48 or src[i] == 49):
+                    i = i + 1
             isflt := false
             if i < n and src[i] == 46 and i + 1 < n and is_dig(src[i + 1]):   # fractional part
                 isflt = true

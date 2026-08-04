@@ -80,6 +80,7 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # a user program's own env reads cannot land here.
 EXPECT_ENV = {
     "TYCHO_ARENA_STATS",
+    "TYCHO_BLOCK",      # block-size override for arena sweeps (2026-08-04, arena-observability phase)
     "TYCHO_MAX_TASKS",
     "TYCHO_THREADS",
 }
@@ -90,6 +91,7 @@ EXPECT_ROWS = {
     "block reuse",
     "bump-alloc",
     "peak live",
+    "recycle",      # free-list hit count + bytes (2026-08-04, arena-observability phase)
     "OS reserved",
 }
 

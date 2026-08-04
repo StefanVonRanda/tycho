@@ -139,3 +139,16 @@ recorded in the bench RESULTS docs before and after.
 > fixture is `tests/map_reserve.ty`.
 >
 > The closing `make ci` (the one full sweep for the chain) runs next.
+
+> Closing-ci findings (the sweep's job): `make ci` reddened twice, both real.
+> (1) **rtparity oracle**: the arena-observability phase added the `TYCHO_BLOCK`
+> env knob and the `recycle` stats row without updating tests/rtparity/run.py
+> — a phase-gate gap (rtparity wasn't in that phase's brief); the oracle now
+> lists both. (2) **tools-check semantic drift (5 files)**: the per-scope
+> arena labels embedded `fn:line`, so the formatter legitimately re-lining a
+> file changed the emitted C and broke the formatter's semantic-preservation
+> byte-compare. The labels now use a per-proc loop counter (`fn:loopN`) —
+> stable under re-formatting, equally per-statement. Also fixed en route: the
+> formatter mangled hex/bin literals (`0xFF` → `0 xFF`) — tychofmt's number
+> scanner never learned `0x`/`0b` (pre-existing since the hex-literal feature,
+> e320580); taught it the lexer's rule. tools-check now 893 files, 0 drift.

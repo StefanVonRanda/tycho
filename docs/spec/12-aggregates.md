@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2016-2017`,`:2033-2034`;
-> `pop`-empty abort `:12465@pop from an empty array`,`:12654@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
+> `pop`-empty abort `:12467@pop from an empty array`,`:12656@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
 > arity `:2151@a tuple has at most 8 elements`,`:2155@a tuple type needs at least two elements`, index `:4823-4831`; destructuring `:3282-3296`,`:6757-6773`;
 > map read (pure `map_get`, no insert) `:5126-5141`; map place insert+zero
-> `:9896-9905`; `keys()` insertion order — the walk `:12623@m.elive[e]` over the append-only entries array `:12578@m->ecount++`; `delete` → `map_del`
+> `:9896-9905`; `keys()` insertion order — the walk `:12625@m.elive[e]` over the append-only entries array `:12580@m->ecount++`; `delete` → `map_del`
 > `:3130-3154`,`:5756-5762`; subscript parse + rules `:3757-3809`, dispatch
 > `:3831-3839`; `or_return` `:5002-5019`.
 
@@ -325,10 +325,10 @@ fixtures lived in `tests/postfreeze/` until the `tychoc0` lanes were retired on
 > `src/tychoc.c:6446@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
 > element type `src/tychoc.c:6514@requires the scalar to have the array's element type`,
 > its literal adaptation `src/tychoc.c:6193-6198`; the fresh spine
-> `src/tychoc.c:9926@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:9910@gen_arith_op`, operands never reordered
-> `src/tychoc.c:9907@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:9930@tycho_ew_len`, and the abort
+> `src/tychoc.c:9927@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:9911@gen_arith_op`, operands never reordered
+> `src/tychoc.c:9908@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:9931@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:2800@arithmetic on arrays of different lengths`;
 > literal-zero divisor `src/tychoc.c:6411@division by zero`.
 

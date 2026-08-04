@@ -393,7 +393,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:10518@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:10519@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:251` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
