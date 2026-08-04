@@ -4,195 +4,261 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tycho — an experimental systems language</title>
-<meta name="description" content="Tycho is an experimental systems language and a research project, built to test one idea: implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope. Transpiles to C.">
-<meta name="theme-color" content="#eceee9">
+<meta name="description" content="Tycho is an experimental systems language built around one idea: implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope, no garbage collector, no manual free. Transpiles to C.">
+<meta name="theme-color" content="#f4f3ee">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tycho-lang.com">
 <meta property="og:title" content="Tycho — an experimental systems language">
-<meta property="og:description" content="A research project testing one idea: implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope, not a runtime. Transpiles to C.">
+<meta property="og:description" content="Implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope, not a runtime. Transpiles to C.">
 <meta property="og:image" content="https://tycho-lang.com/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://tycho-lang.com/og.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20200%20200%27%3E%3Crect%20width%3D%27200%27%20height%3D%27200%27%20fill%3D%27%23eceee9%27%2F%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23111110%27%20stroke-width%3D%279%27%3E%3Ccircle%20cx%3D%27100%27%20cy%3D%27100%27%20r%3D%2730%27%2F%3E%3Ccircle%20cx%3D%27100%27%20cy%3D%27100%27%20r%3D%2758%27%2F%3E%3Ccircle%20cx%3D%27100%27%20cy%3D%27100%27%20r%3D%2786%27%2F%3E%3C%2Fg%3E%3Cg%20fill%3D%27%23111110%27%3E%3Ccircle%20cx%3D%27100%27%20cy%3D%27100%27%20r%3D%2712%27%2F%3E%3Ccircle%20cx%3D%27150%27%20cy%3D%2766%27%20r%3D%2712%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Cstyle%3E.ink%7Bfill:none;stroke:%231c1c2e;stroke-width:4%7D.dot%7Bfill:%231c1c2e%7D@media%20(prefers-color-scheme:dark)%7B.ink%7Bstroke:%23ececf4%7D.dot%7Bfill:%23ececf4%7D%7D%3C/style%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2720%27/%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2738%27/%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2770%27%20cy%3D%2738%27%20r%3D%2711%27/%3E%3Ccircle%20class%3D%27dot%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%274.5%27/%3E%3Ccircle%20class%3D%27dot%27%20cx%3D%2770%27%20cy%3D%2738%27%20r%3D%274%27/%3E%3C/svg%3E">
+<script>
+  /* set theme before first paint to avoid flash */
+  (function(){try{var t=localStorage.getItem('tycho-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t;}catch(e){}})();
+</script>
+<link rel="stylesheet" href="fonts/fonts.css">
 </head>
 <body>
-<!-- Direction: Rehoboam-oracle — stark off-white, pure monochrome, generative particle
-     geometry. A concentric jittery ring (the nested-arena motif) + dithered terrain spray,
-     technical annotation labels, all-monospace. The page is an instrument readout. -->
+<!-- Direction: precision instrument. The brand's Tychonic ring motif (nested orbits =
+     nested arenas) kept as the animated centrepiece, but the page stops being one long
+     terminal dump: monospace is demoted to labels/code, a grotesque display face carries
+     the hierarchy, content moves into bordered instrument panels, and the two animated
+     flourishes each say something about memory — the oracle shows a value returning to
+     main's arena, the dividers are arena-lifetime traces. Monochrome + one vermilion
+     accent, brand ink #1c1c2e on warm paper. -->
 <style>
   :root{
-    --bg:#eceee9; --panel:#e4e6e1; --card:#e7e9e4;
-    --ink:#0d0d0c; --ink-soft:#2c2c2a; --dim:#65665f; --faint:#9a9b92; --line:#d0d2ca;
-    --code-bg:#14150f; --code-fg:#d8d9cf; --code-dim:#7c7d72; --code-line:#2b2c22;
-    --spray:16,16,15;
-  }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#0c0d0b; --panel:#131410; --card:#121309;
-      --ink:#ecedE6; --ink-soft:#c8c9c0; --dim:#8b8c82; --faint:#54554d; --line:#25261f;
-      --code-bg:#08080a; --code-fg:#d8d9cf; --code-dim:#71726a; --code-line:#20211c;
-      --spray:232,232,224;
-    }
-  }
-  :root[data-theme="light"]{
-    --bg:#eceee9; --panel:#e4e6e1; --card:#e7e9e4;
-    --ink:#0d0d0c; --ink-soft:#2c2c2a; --dim:#65665f; --faint:#9a9b92; --line:#d0d2ca;
-    --code-bg:#14150f; --code-fg:#d8d9cf; --code-dim:#7c7d72; --code-line:#2b2c22;
-    --spray:16,16,15;
+    --paper:#f4f3ee; --surface:#fbfaf6; --panel:#efeee7;
+    --ink:#1c1c2e; --ink-soft:#43435a; --dim:#62626f; --faint:#9a9aa8; --line:#dddcd3; --line-strong:#c6c5ba;
+    --accent:#c2431b; --accent-soft:rgba(194,67,27,.12);
+    --code-bg:#17171f; --code-fg:#ececf4; --code-dim:#8b8ba0; --code-line:#262634;
+    --grain:rgba(28,28,46,.035); --shadow:0 1px 2px rgba(28,28,46,.05), 0 10px 28px -14px rgba(28,28,46,.18);
   }
   :root[data-theme="dark"]{
-    --bg:#0c0d0b; --panel:#131410; --card:#121309;
-    --ink:#ecedE6; --ink-soft:#c8c9c0; --dim:#8b8c82; --faint:#54554d; --line:#25261f;
-    --code-bg:#08080a; --code-fg:#d8d9cf; --code-dim:#71726a; --code-line:#20211c;
-    --spray:232,232,224;
+    --paper:#12121a; --surface:#191923; --panel:#1c1c27;
+    --ink:#ececf4; --ink-soft:#c4c4d2; --dim:#9090a2; --faint:#5c5c6c; --line:#2a2a36; --line-strong:#3a3a48;
+    --accent:#f4713c; --accent-soft:rgba(244,113,60,.14);
+    --code-bg:#0d0d13; --code-fg:#e8e8f0; --code-dim:#7e7e92; --code-line:#23232f;
+    --grain:rgba(236,236,244,.04); --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -14px rgba(0,0,0,.55);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){ --paper:#12121a; --surface:#191923; --panel:#1c1c27;
+      --ink:#ececf4; --ink-soft:#c4c4d2; --dim:#9090a2; --faint:#5c5c6c; --line:#2a2a36; --line-strong:#3a3a48;
+      --accent:#f4713c; --accent-soft:rgba(244,113,60,.14);
+      --code-bg:#0d0d13; --code-fg:#e8e8f0; --code-dim:#7e7e92; --code-line:#23232f;
+      --grain:rgba(236,236,244,.04); --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -14px rgba(0,0,0,.55); }
   }
 
   *{box-sizing:border-box}
-  html{-webkit-text-size-adjust:100%; overflow-x:hidden}
+  html{-webkit-text-size-adjust:100%; overflow-x:hidden; scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
   body{
-    margin:0; background:var(--bg); color:var(--ink-soft); overflow-x:hidden;
-    font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
-    font-size:14.5px; line-height:1.62; letter-spacing:.1px;
+    margin:0; background:var(--paper); color:var(--ink-soft); overflow-x:hidden;
+    font-family:"Schibsted Grotesk","Helvetica Neue",Helvetica,sans-serif;
+    font-size:16px; line-height:1.6; letter-spacing:.1px;
     -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
   }
+  /* faint paper grain */
+  body::before{content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    opacity:.5; mix-blend-mode:multiply;}
 
-  .wrap{position:relative; z-index:1; max-width:1000px; margin:0 auto; padding:0 24px 90px}
+  .wrap{position:relative; z-index:1; max-width:1060px; margin:0 auto; padding:0 28px 100px}
   a{color:var(--ink); text-decoration:none; border-bottom:1px solid var(--faint); transition:border-color .15s,color .15s}
   a:hover{border-bottom-color:var(--ink)}
-  a:focus-visible,button:focus-visible{outline:2px solid var(--ink); outline-offset:3px}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:2px}
+  ::selection{background:var(--accent-soft)}
 
-  /* ── technical label primitives ── */
-  .lab{font-size:11px; letter-spacing:2px; text-transform:uppercase}
-  .lab .idx{color:var(--faint)}
-  .rule{height:1px; background:var(--line); border:0; margin:0}
+  /* ── mono instrument voice ── */
+  .lab{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase}
+  code,pre{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace}
+  .inl{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.86em; border:1px solid var(--line); background:var(--panel);
+    padding:1px 6px; color:var(--ink); white-space:nowrap}
 
   /* ── top bar ── */
   .bar{
-    position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px;
-    margin:0 -24px; padding:13px 24px; background:color-mix(in srgb,var(--bg) 90%,transparent);
-    backdrop-filter:blur(7px); border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px;
+    margin:0 -28px; padding:14px 28px; background:color-mix(in srgb,var(--paper) 88%,transparent);
+    backdrop-filter:blur(9px); border-bottom:1px solid var(--line);
   }
-  .bar .brand{display:flex; align-items:center; gap:10px; color:var(--ink); border:0; font-weight:700; letter-spacing:2px; text-transform:uppercase; font-size:13px}
-  .bar .brand .logo{width:20px; height:20px; color:var(--ink); flex:0 0 auto}
-  .bar nav{margin-left:auto; display:flex; align-items:center; gap:20px; font-size:11px; letter-spacing:1.4px; text-transform:uppercase}
-  .bar nav a{color:var(--dim); border:0} .bar nav a:hover{color:var(--ink)}
+  .bar .brand{display:flex; align-items:center; gap:10px; color:var(--ink); border:0; font-weight:700; font-size:15px; letter-spacing:.2px}
+  .bar .brand .logo{width:22px; height:22px; color:var(--ink); flex:0 0 auto}
+  .bar nav{margin-left:auto; display:flex; align-items:center; gap:22px; font-family:"IBM Plex Mono",monospace;
+    font-size:11px; letter-spacing:1.6px; text-transform:uppercase}
+  .bar nav a{color:var(--dim); border:0; padding:3px 0} .bar nav a:hover{color:var(--ink)}
   .themebtn{background:none; border:1px solid var(--line); color:var(--dim); cursor:pointer;
-    font:inherit; font-size:10px; letter-spacing:1.4px; text-transform:uppercase; padding:4px 10px}
-  .themebtn:hover{color:var(--ink); border-color:var(--faint)}
+    font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:1.6px; text-transform:uppercase; padding:5px 11px}
+  .themebtn:hover{color:var(--ink); border-color:var(--line-strong)}
+  .progress{position:absolute; left:0; bottom:-1px; height:2px; width:100%; background:var(--accent); transform:scaleX(0); transform-origin:left}
+  @supports (animation-timeline: scroll()){
+    .progress{animation:prog linear both; animation-timeline:scroll(root)}
+    @keyframes prog{to{transform:scaleX(1)}}
+  }
 
   /* ── hero ── */
-  header.hero{padding:52px 0 20px; display:grid; grid-template-columns:1fr 400px; gap:34px; align-items:center}
-  @media (max-width:820px){ header.hero{grid-template-columns:1fr; gap:8px; padding:40px 0 8px} }
-  .hlabel{display:flex; flex-direction:column; gap:3px; margin-bottom:22px}
-  .hlabel .idx{font-size:11px; letter-spacing:2px; color:var(--faint)}
-  .hlabel .ttl{font-size:12px; letter-spacing:3px; color:var(--ink); font-weight:700}
-  .hlabel .sub{font-size:11px; letter-spacing:1.6px; color:var(--dim); text-transform:uppercase}
+  header.hero{padding:64px 0 8px; display:grid; grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr); gap:44px; align-items:center}
+  @media (max-width:880px){ header.hero{grid-template-columns:1fr; gap:26px; padding:44px 0 8px} }
+  .hlabel{display:flex; flex-direction:column; gap:4px; margin-bottom:22px}
+  .hlabel .idx{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:2.4px; color:var(--accent); font-weight:600}
+  .hlabel .ttl{font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:3.4px; color:var(--ink); font-weight:700}
+  .hlabel .sub{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:1.8px; color:var(--dim); text-transform:uppercase}
   h1{
-    font-size:clamp(27px,4.7vw,44px); line-height:1.07; margin:0 0 20px;
-    font-weight:700; letter-spacing:-.6px; color:var(--ink); text-wrap:balance;
+    font-size:clamp(30px,4.6vw,46px); line-height:1.08; margin:0 0 22px;
+    font-weight:700; letter-spacing:-.7px; color:var(--ink); text-wrap:balance;
   }
-  h1 .box{border:1.5px solid var(--ink); padding:0 7px; white-space:nowrap}
-  .lede{color:var(--ink-soft); font-size:14.5px; max-width:52ch; margin:0 0 26px}
-  .lede b{color:var(--ink); font-weight:700}
-  .lede .sub{color:var(--dim)}
+  h1 .box{border:1.5px solid var(--ink); padding:0 8px; white-space:nowrap; border-radius:2px}
+  .lede{color:var(--ink-soft); font-size:16.5px; line-height:1.62; max-width:56ch; margin:0 0 26px}
+  .lede b{color:var(--ink); font-weight:600}
+  .lede .sub{color:var(--dim); font-size:14.5px}
+  .meta{display:flex; flex-wrap:wrap; gap:8px 26px; margin:24px 0 0; font-family:"IBM Plex Mono",monospace;
+    font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--dim)}
+  .meta code{color:var(--ink); font-weight:600}
 
-  /* oracle canvas cell */
-  .oracle{position:relative; width:100%; aspect-ratio:1/1; max-width:400px; justify-self:end}
-  @media (max-width:820px){ .oracle{max-width:300px; margin:14px auto 0; justify-self:center} }
-  .oracle canvas{display:block; width:100%; height:100%}
-  .oracle .ocap{position:absolute; left:12%; bottom:30%; pointer-events:none}
-  .oracle .ocap b{display:block; font-size:11px; letter-spacing:1.6px; text-transform:uppercase; color:var(--ink); font-weight:700}
-  .oracle .ocap span{display:block; font-size:10px; letter-spacing:1.2px; color:var(--dim); text-transform:uppercase}
+  /* oracle instrument panel */
+  .oracle{position:relative; width:100%; max-width:430px; justify-self:end; border:1px solid var(--line-strong);
+    background:var(--surface); box-shadow:var(--shadow); border-radius:8px; overflow:hidden}
+  @media (max-width:880px){ .oracle{max-width:400px; margin:0 auto} }
+  .ohead{display:flex; align-items:center; gap:9px; padding:9px 13px; border-bottom:1px solid var(--line);
+    font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:1.8px; text-transform:uppercase; color:var(--dim)}
+  .ohead .dot{width:7px; height:7px; border-radius:50%; background:var(--accent); animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .oracle canvas{display:block; width:100%; aspect-ratio:1/1; background:
+    radial-gradient(120% 120% at 50% 42%, transparent 55%, var(--panel) 100%)}
+  .ofoot{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 13px; border-top:1px solid var(--line);
+    font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:var(--dim)}
+  .ofoot b{color:var(--ink); font-weight:600; letter-spacing:1.8px}
 
-  /* code blocks — inverted dark chips */
-  pre{
-    background:var(--code-bg); color:var(--code-fg); border:1px solid var(--code-line);
-    padding:15px 17px; margin:0 0 14px; overflow-x:auto; font-size:13px; line-height:1.6;
-  }
-  code{font:inherit}
-  .k{color:#eeeee6; font-weight:700} .fn{color:#eeeee6} .s{color:#a9ac9c}
-  .c{color:var(--code-dim)} .g{color:#9a9c8e} .out{color:#8f9084}
-
-  .cta{display:flex; flex-wrap:wrap; gap:11px; margin:6px 0 4px}
-  .btn{position:relative; overflow:hidden; border:1.5px solid var(--ink); background:var(--ink); color:var(--bg); padding:9px 20px;
-    font-size:11px; letter-spacing:1.6px; text-transform:uppercase; font-weight:700; border-bottom:1.5px solid var(--ink)}
-  /* dithered-gradient hint: a faint dot field fading in from the trailing edge (echoes the terrain), stronger on hover */
-  .btn::after{content:""; position:absolute; inset:0; pointer-events:none;
-    background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
-    -webkit-mask-image:linear-gradient(90deg, transparent 45%, #000); mask-image:linear-gradient(90deg, transparent 45%, #000);
-    opacity:.16; transition:opacity .18s}
-  .btn:hover::after{opacity:.30}
-  .btn:hover{background:transparent; color:var(--ink)}
-  .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line)}
-  .btn.ghost:hover{border-color:var(--ink)}
-  .verline{color:var(--dim); font-size:12px; letter-spacing:.4px; margin:16px 0 0}
-  .verline code{color:var(--ink); font-weight:700}
-
-  /* dithered terrain divider */
-  .terrain{display:block; width:calc(100% + 48px); margin:26px -24px; height:96px}
+  /* spec strip */
+  .spec{display:grid; grid-template-columns:repeat(5,1fr); margin:34px 0 6px; border-top:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong)}
+  @media (max-width:760px){ .spec{grid-template-columns:repeat(2,1fr)} }
+  .spec .cell{padding:14px 16px; border-left:1px solid var(--line)}
+  .spec .cell:first-child{border-left:0; padding-left:0}
+  @media (max-width:760px){ .spec .cell:nth-child(3){border-left:0; padding-left:0} }
+  .spec .cell b{display:block; color:var(--ink); font-size:15px; font-weight:700; letter-spacing:.2px}
+  .spec .cell b code{font-size:14px; font-weight:600}
+  .spec .cell span{display:block; margin-top:2px; font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:var(--dim)}
 
   /* ── sections ── */
-  section{padding:30px 0 6px; margin-top:26px}
-  .marker{display:flex; align-items:baseline; gap:12px; font-size:11px; letter-spacing:2px;
-    text-transform:uppercase; color:var(--ink); font-weight:700; margin:0 0 18px}
-  .marker .n{color:var(--faint); font-weight:400}
-  /* dithered-gradient tail: a dot strip after the label, fading out to the right */
-  .marker::after{content:""; flex:1; align-self:center; height:6px; margin-left:6px;
-    background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
-    -webkit-mask-image:linear-gradient(90deg, #000, transparent 82%); mask-image:linear-gradient(90deg, #000, transparent 82%);
-    opacity:.20}
-  h2{font-size:clamp(19px,2.7vw,25px); color:var(--ink); font-weight:700; margin:0 0 16px; letter-spacing:-.4px; line-height:1.12; text-wrap:balance}
+  section{padding:58px 0 4px; scroll-margin-top:78px}
+  .marker{display:flex; align-items:baseline; gap:14px; font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:2.2px;
+    text-transform:uppercase; color:var(--ink); font-weight:600; margin:0 0 8px}
+  .marker .n{color:var(--accent); font-weight:600}
+  .marker::after{content:""; flex:1; align-self:center; height:1px; margin-left:4px; background:var(--line)}
+  h2{font-size:clamp(24px,3vw,33px); color:var(--ink); font-weight:700; margin:0 0 20px; letter-spacing:-.5px; line-height:1.12; text-wrap:balance}
+  h3{font-size:16px; color:var(--ink); font-weight:600; margin:0 0 8px; letter-spacing:.1px}
   p{margin:0 0 15px; max-width:64ch}
-  p.muted{color:var(--dim)}
-  strong{color:var(--ink); font-weight:700}
-  .inl{border:1px solid var(--line); background:var(--panel); padding:1px 6px; font-size:.9em; color:var(--ink); white-space:nowrap}
+  p.muted{color:var(--dim); font-size:15px}
+  strong{color:var(--ink); font-weight:600}
 
-  /* pillar bullet points */
-  ul.points{list-style:none; margin:2px 0 18px; padding:0; display:grid; gap:11px}
-  ul.points li{position:relative; padding-left:22px; font-size:14px; color:var(--ink-soft); line-height:1.55; max-width:62ch}
-  ul.points li::before{content:"—"; color:var(--ink); position:absolute; left:0; top:0; font-weight:700}
-  ul.points li b{color:var(--ink); font-weight:700}
-  .codecap{color:var(--dim); font-size:11px; letter-spacing:1px; text-transform:uppercase; margin:4px 0 9px}
+  /* pillar cards */
+  .cards{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:6px 0 24px}
+  @media (max-width:760px){ .cards{grid-template-columns:1fr} }
+  .card{border:1px solid var(--line-strong); background:var(--surface); border-radius:8px; padding:20px 20px 18px; box-shadow:var(--shadow)}
+  .card .idx{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:2px; color:var(--accent); font-weight:600; display:block; margin-bottom:10px}
+  .card h3{margin-bottom:6px}
+  .card p{margin:0; font-size:14.5px; line-height:1.55; color:var(--ink-soft)}
+
+  /* code panels — dark chips */
+  .panel{border:1px solid var(--code-line); border-radius:8px; overflow:hidden; background:var(--code-bg); box-shadow:var(--shadow); margin:0 0 18px}
+  .phead{display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--code-line); border-bottom:1px solid var(--code-line)}
+  .phead .traf{width:8px; height:8px; border-radius:50%; background:var(--accent); opacity:.85}
+  .phead .fn{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:1px; color:var(--code-fg)}
+  .phead .badge{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:1.4px; text-transform:uppercase;
+    color:var(--code-dim); border:1px solid var(--code-line); padding:2px 8px; border-radius:10px; background:rgba(236,236,244,.04)}
+  pre{margin:0; padding:16px 18px; overflow-x:auto; font-size:13px; line-height:1.68; color:var(--code-fg)}
+  code{font:inherit}
+  .k{color:#ffffff; font-weight:600} .fn{color:#dfe1f5} .s{color:#b8c4a8} .c{color:var(--code-dim)} .g{color:#a4a4b8} .out{color:#9a9aae}
+
+  .codecap{font-family:"IBM Plex Mono",monospace; color:var(--dim); font-size:11px; letter-spacing:1px; text-transform:uppercase; margin:2px 0 10px}
   .codecap::before{content:"› "; color:var(--faint)}
 
+  /* split section (02) */
+  .split{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.06fr); gap:38px; align-items:start; margin-top:6px}
+  @media (max-width:880px){ .split{grid-template-columns:1fr; gap:20px} }
+  ul.points{list-style:none; margin:0 0 20px; padding:0; display:grid; gap:14px}
+  ul.points li{position:relative; padding-left:26px; font-size:15.5px; color:var(--ink-soft); line-height:1.6; max-width:56ch}
+  ul.points li::before{content:""; position:absolute; left:2px; top:9px; width:9px; height:9px; border:1.5px solid var(--accent); border-radius:2px}
+  ul.points li b{color:var(--ink); font-weight:600}
+
+  /* language feature groups */
+  .groups{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:8px 0 10px}
+  @media (max-width:760px){ .groups{grid-template-columns:1fr} }
+  .group{border:1px solid var(--line-strong); border-radius:8px; background:var(--surface); overflow:hidden; box-shadow:var(--shadow)}
+  .group .gt{display:flex; align-items:center; gap:8px; padding:11px 16px; border-bottom:1px solid var(--line);
+    font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--dim)}
+  .group .gt::before{content:""; width:6px; height:6px; background:var(--accent); border-radius:1px}
+  ul.feat{list-style:none; margin:0; padding:4px 16px 12px}
+  ul.feat li{padding:11px 0; border-top:1px solid var(--line); font-size:14.5px; color:var(--ink-soft)}
+  ul.feat li:first-child{border-top:0}
+  ul.feat li b{color:var(--ink); font-weight:600; display:block; margin-bottom:1px}
+  ul.feat li span{color:var(--dim); font-size:13.5px}
+
+  /* rigor stats */
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:8px 0 22px}
+  @media (max-width:760px){ .stats{grid-template-columns:repeat(2,1fr)} }
+  .stat{border:1px solid var(--line-strong); border-radius:8px; padding:16px 18px; background:var(--surface); box-shadow:var(--shadow)}
+  .stat b{display:block; font-size:26px; font-weight:700; letter-spacing:-.5px; color:var(--ink); line-height:1.1}
+  .stat span{display:block; margin-top:6px; font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:1.3px; text-transform:uppercase; color:var(--dim)}
+
   /* evidence rows */
-  .ev{border:1px solid var(--line); margin:8px 0 6px; background:var(--card)}
-  .ev .row{display:flex; gap:16px; padding:15px 17px; border-top:1px solid var(--line)}
+  .ev{border:1px solid var(--line-strong); margin:6px 0 20px; background:var(--surface); border-radius:8px; overflow:hidden; box-shadow:var(--shadow)}
+  .ev .row{display:flex; gap:18px; padding:17px 20px; border-top:1px solid var(--line)}
   .ev .row:first-child{border-top:0}
-  .ev .row .tag{color:var(--ink); flex:0 0 auto; width:9ch; font-size:10px; letter-spacing:1.4px; text-transform:uppercase; font-weight:700; padding-top:2px}
-  .ev .row .txt{color:var(--ink-soft); font-size:13.5px; min-width:0}
-  .ev .row .txt b{color:var(--ink)} .ev .row .txt .cmd{color:var(--ink); border-bottom:1px solid var(--faint)}
+  .ev .row .tag{color:var(--accent); flex:0 0 auto; width:10ch; font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600; padding-top:3px}
+  .ev .row .txt{color:var(--ink-soft); font-size:14.5px; min-width:0; line-height:1.62}
+  .ev .row .txt b{color:var(--ink)} .ev .row .txt .cmd{color:var(--ink); font-family:"IBM Plex Mono",monospace; font-size:.9em; border-bottom:1px solid var(--faint)}
+  .ev .row .txt a{border-bottom:1px solid var(--faint)}
 
-  /* feature grid */
-  ul.feat{list-style:none; margin:8px 0 4px; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:0}
-  @media (max-width:600px){ul.feat{grid-template-columns:1fr}}
-  ul.feat li{padding:11px 2px; border-top:1px solid var(--line); display:flex; gap:11px; font-size:13.5px; color:var(--ink-soft)}
-  ul.feat li:nth-child(odd){padding-right:20px}
-  ul.feat li::before{content:"·"; color:var(--ink); flex:0 0 auto; font-weight:700}
-  ul.feat li b{color:var(--ink); font-weight:700}
-  ul.feat li span{color:var(--dim)}
+  /* CTAs */
+  .cta{display:flex; flex-wrap:wrap; gap:12px; margin:8px 0 4px}
+  .btn{display:inline-flex; align-items:center; gap:8px; border:1.5px solid var(--ink); border-radius:6px; background:var(--ink); color:var(--paper);
+    padding:11px 22px; font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:1.8px; text-transform:uppercase; font-weight:600; cursor:pointer; transition:background .15s,color .15s,border-color .15s}
+  .btn:hover{background:var(--accent); border-color:var(--accent); color:#fff}
+  .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line-strong)}
+  .btn.ghost:hover{background:transparent; color:var(--accent); border-color:var(--accent)}
 
-  footer{margin-top:20px; padding-top:24px; border-top:1px solid var(--line); color:var(--dim); font-size:12px}
-  footer .tagline{color:var(--ink-soft); margin-bottom:14px; max-width:60ch; letter-spacing:.3px}
-  footer .meta{display:flex; flex-wrap:wrap; gap:7px 18px; font-size:11px; letter-spacing:.5px; text-transform:uppercase}
-  footer a{color:var(--dim); border:0} footer a:hover{color:var(--ink)}
+  /* arena-trace dividers */
+  .trace{display:block; width:100%; height:64px; margin:44px 0 0}
 
-  .rise{opacity:0; transform:translateY(7px); animation:rise .55s ease forwards}
-  .d1{animation-delay:.05s}.d2{animation-delay:.13s}.d3{animation-delay:.22s}.d4{animation-delay:.31s}.d5{animation-delay:.4s}
+  /* footer */
+  footer{margin-top:64px; padding-top:34px; border-top:1px solid var(--line-strong)}
+  .fgrid{display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:34px}
+  @media (max-width:760px){ .fgrid{grid-template-columns:1fr 1fr; gap:26px} }
+  footer .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700; font-size:15px; margin-bottom:10px; letter-spacing:.2px}
+  footer .fbrand svg{width:20px; height:20px; color:var(--ink)}
+  footer .tagline{color:var(--dim); font-size:14px; max-width:40ch; line-height:1.6}
+  footer .col b{display:block; font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--faint); font-weight:600; margin-bottom:12px}
+  footer .col a{display:block; color:var(--dim); border:0; font-size:14px; padding:3px 0}
+  footer .col a:hover{color:var(--ink)}
+  footer .legal{margin-top:34px; padding-top:18px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px 22px;
+    font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:var(--faint)}
+  footer .legal a{color:var(--faint); border:0} footer .legal a:hover{color:var(--ink)}
+
+  /* reveal */
+  .rise{opacity:0; transform:translateY(10px); animation:rise .6s cubic-bezier(.2,.7,.3,1) forwards}
+  .d1{animation-delay:.05s}.d2{animation-delay:.12s}.d3{animation-delay:.2s}.d4{animation-delay:.28s}.d5{animation-delay:.36s}
   @keyframes rise{to{opacity:1; transform:none}}
+  .rv{opacity:0; transform:translateY(14px); transition:opacity .55s ease, transform .55s cubic-bezier(.2,.7,.3,1); transition-delay:var(--d,0ms)}
+  .rv.in{opacity:1; transform:none}
 
   @media (max-width:640px){
-    .bar{gap:10px; padding:11px 18px; margin:0 -18px}
+    .bar{gap:10px; padding:12px 18px; margin:0 -18px}
     .bar nav{gap:14px}
     .bar nav a[href^="#"]{display:none}
     .wrap{padding:0 18px 70px}
-    .terrain{width:calc(100% + 36px); margin:22px -18px; height:78px}
-    section{padding:24px 0 6px; margin-top:22px}
+    section{padding:44px 0 4px; scroll-margin-top:70px}
     pre{font-size:12px}
+    .trace{height:56px; margin:34px 0 0}
   }
-  @media (prefers-reduced-motion:reduce){ .rise{animation:none; opacity:1; transform:none} }
+  @media (prefers-reduced-motion:reduce){
+    .rise{animation:none; opacity:1; transform:none}
+    .rv{opacity:1; transform:none; transition:none}
+    .ohead .dot{animation:none}
+  }
 </style>
 
 <div class="wrap">
@@ -207,77 +273,107 @@
       </svg>
       <span>Tycho</span>
     </a>
-    <nav>
-      <a href="#mem">How&nbsp;it&nbsp;works</a>
+    <nav aria-label="Sections">
+      <a href="#idea">Idea</a>
+      <a href="#fast">Why&nbsp;fast</a>
       <a href="#lang">Language</a>
-      <a href="#start">Get&nbsp;it</a>
+      <a href="#rigor">Rigor</a>
+      <a href="#start">Start</a>
       <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
       <button class="themebtn" id="tbtn" aria-label="Toggle light/dark theme">Theme</button>
     </nav>
+    <div class="progress" aria-hidden="true"></div>
   </div>
 
-  <header class="hero">
+  <header class="hero" id="top">
     <div class="htext">
       <div class="hlabel rise d1">
         <span class="idx">◇ 001 — SYSTEM</span>
         <span class="ttl">TYCHO</span>
-        <span class="sub">An experimental systems language — transpiles to C</span>
+        <span class="sub">An experimental systems language · transpiles to C</span>
       </div>
-      <h1 class="rise d2">Automatic memory management. No garbage collector, no manual <span class="box">free</span>.</h1>
+      <h1 class="rise d2">Automatic memory management.<br>No garbage collector, no manual <span class="box">free</span>.</h1>
       <p class="lede rise d3">
         A research project testing one idea: <b>implicit hierarchical arenas under value
-        semantics.</b> Each scope owns a memory arena, freed on exit; with no reference type, the
-        compiler places every allocation and free from your code's structure alone.
-        <span class="sub">Builds with a plain <code>cc</code> and <code>make</code>.</span>
+        semantics</b>. Every scope owns a memory arena, freed on exit. There is no reference
+        type, so the compiler can place every allocation and free from your code's structure
+        alone.
       </p>
-      <pre class="rise d4"><code><span class="k">fn</span> <span class="fn">greet</span>(name: <span class="k">string</span>) -> <span class="k">string</span>:
-    <span class="k">return</span> <span class="s">"hello "</span> + name
-
-<span class="k">fn</span> <span class="fn">main</span>():
-    name := <span class="fn">input</span>()
-    <span class="fn">println</span>(<span class="fn">greet</span>(name))</code></pre>
-      <div class="cta rise d5">
+      <div class="cta rise d4">
         <a class="btn" href="#start">Get started</a>
         <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+        <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
       </div>
-      <p class="verline rise d5">Builds from source — a C compiler and <code>make</code>, nothing else. New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a>.</p>
+      <p class="meta rise d5">New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a> — builds with <code>cc</code> and <code>make</code>, nothing else.</p>
     </div>
+
     <div class="oracle rise d3">
+      <div class="ohead"><span class="dot"></span><span>Oracle — nested arena field</span></div>
       <canvas id="oracle" aria-hidden="true"></canvas>
-      <div class="ocap"><b>Nested arenas</b><span>each scope · one region</span></div>
+      <div class="ofoot"><b>Nested arenas</b><span>each ring · one scope</span></div>
     </div>
   </header>
 
-  <canvas class="terrain" id="t1" aria-hidden="true"></canvas>
+  <div class="spec rise d4" aria-label="Key facts">
+    <div class="cell"><b><code>v0.1.0</code></b><span>tagged release</span></div>
+    <div class="cell"><b>cc + make</b><span>whole toolchain</span></div>
+    <div class="cell"><b>no GC</b><span>arenas from scope</span></div>
+    <div class="cell"><b>38</b><span>stdlib packages</span></div>
+    <div class="cell"><b>self-hosting</b><span>compiles itself</span></div>
+  </div>
 
-  <section id="mem">
-    <p class="marker"><span class="n">01</span> How it works</p>
-    <h2>Memory comes from scope, not a runtime.</h2>
-    <ul class="points">
-      <li>Each scope owns a memory <b>arena</b> — allocation is a pointer bump; the whole arena is freed the moment the scope exits.</li>
-      <li>There's <b>no reference type</b>. <span class="inl">b := a</span> copies, so the compiler sees every value's lifetime from the syntax alone.</li>
-      <li>So it inserts every allocation and free for you: <b>no garbage collector, no manual <span class="inl">free</span></b>, nothing to annotate.</li>
-    </ul>
-    <p class="codecap">A string built across a loop lives in main's arena, freed for you on return</p>
-    <pre><code><span class="k">fn</span> <span class="fn">main</span>():
+  <section id="idea">
+    <p class="marker rv"><span class="n">01</span> The idea</p>
+    <h2 class="rv">Memory comes from scope, not a runtime.</h2>
+    <div class="cards">
+      <div class="card rv" style="--d:0ms">
+        <span class="idx">A /</span>
+        <h3>Every scope owns an arena</h3>
+        <p>Allocation is a pointer bump. When the scope exits, the whole arena is freed in one step.</p>
+      </div>
+      <div class="card rv" style="--d:70ms">
+        <span class="idx">B /</span>
+        <h3>No reference type</h3>
+        <p><span class="inl">b := a</span> copies. The compiler sees every value's lifetime from the syntax alone.</p>
+      </div>
+      <div class="card rv" style="--d:140ms">
+        <span class="idx">C /</span>
+        <h3>Compiler-placed memory</h3>
+        <p>Every allocation and free is inserted for you — no GC, no manual <span class="inl">free</span>, nothing to annotate.</p>
+      </div>
+    </div>
+    <p class="codecap rv">A string built across a loop lives in main's arena, freed for you on return</p>
+    <div class="panel rv">
+      <div class="phead"><span class="traf"></span><span class="fn">examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
+      <pre><code><span class="k">fn</span> <span class="fn">main</span>():
     total := <span class="s">""</span>
     <span class="k">for</span> i <span class="k">in</span> <span class="fn">range</span>(1, 6):
         total = total + <span class="fn">str</span>(i)
         <span class="k">if</span> i &lt; 5:
             total = total + <span class="s">", "</span>
     <span class="fn">println</span>(<span class="s">"counted: "</span> + total)   <span class="c"># counted: 1, 2, 3, 4, 5</span></code></pre>
+    </div>
   </section>
 
-  <section id="value">
-    <p class="marker"><span class="n">02</span> Why it stays fast</p>
-    <h2>Value semantics, without the copies you'd expect.</h2>
-    <ul class="points">
-      <li>A value can leave a scope only two ways, both visible in the source: <b>down</b> (passed into a callee) or <b>up</b> (returned to the caller).</li>
-      <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it, it doesn't copy.</li>
-      <li><span class="inl">acc = acc + x</span> in a loop grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n).</li>
-    </ul>
-    <p class="codecap">Both are sound because a value is never aliased — a copy is always independent</p>
-    <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
+  <canvas class="trace" id="tr1" aria-hidden="true"></canvas>
+
+  <section id="fast">
+    <p class="marker rv"><span class="n">02</span> Why it stays fast</p>
+    <h2 class="rv">Value semantics, without the copies you'd expect.</h2>
+    <div class="split">
+      <div>
+        <ul class="points rv">
+          <li>A value can leave a scope only two ways, both visible in the source: <b>down</b> into a callee, or <b>up</b> to the caller.</li>
+          <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it, it doesn't copy.</li>
+          <li><span class="inl">acc = acc + x</span> in a loop grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n).</li>
+        </ul>
+        <p class="muted rv">Where the model helps and where it costs are both measured — as machine-specific ratios, with the workloads that produce them — in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes ↗</a>. Pointer-shaped data like graphs and trees is where value semantics is least free, and the docs are honest about that.</p>
+      </div>
+      <div>
+        <p class="codecap rv">Both moves are sound because a value is never aliased — a copy is always independent</p>
+        <div class="panel rv">
+          <div class="phead"><span class="traf"></span><span class="fn">examples/promote.ty</span><span class="badge">return moves · zero copies</span></div>
+          <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
     name: <span class="k">string</span>
     age: <span class="k">int</span>
 
@@ -290,218 +386,321 @@
     ada := <span class="fn">Person</span>(<span class="s">"Ada"</span>, 36)
     older := <span class="fn">promote</span>(ada)
     <span class="fn">println</span>(<span class="fn">str</span>(ada.age) + <span class="s">" "</span> + <span class="fn">str</span>(older.age))   <span class="c"># 36 37</span></code></pre>
+        </div>
+      </div>
+    </div>
   </section>
-
-  <canvas class="terrain" id="t2" aria-hidden="true"></canvas>
 
   <section id="lang">
-    <p class="marker"><span class="n">03</span> The language</p>
-    <h2>Small, and Go/Odin-shaped.</h2>
-    <p class="muted">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo</a>. What's in the box:</p>
-    <ul class="feat">
-      <li><b>Value semantics</b> <span>— no aliasing, no GC</span></li>
-      <li><b>Generics</b> <span>— <span class="inl">$T</span>, monomorphized</span></li>
-      <li><b>Sum types</b> <span>— <span class="inl">Option</span>/<span class="inl">Result</span>, <span class="inl">match</span></span></li>
-      <li><b>Methods (UFCS)</b> <span>— no classes</span></li>
-      <li><b>Closures</b> <span>— value-capture</span></li>
-      <li><b>Concurrency</b> <span>— spawn, channels, parallel-for</span></li>
-      <li><b>FFI to C</b> <span>— extern fn, handles, bytes</span></li>
-      <li><b>Packages + corelib</b> <span>— import, 36 modules</span></li>
-    </ul>
+    <p class="marker rv"><span class="n">03</span> The language</p>
+    <h2 class="rv">Small, and Go/Odin-shaped.</h2>
+    <p class="muted rv">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
+    <div class="groups">
+      <div class="group rv" style="--d:0ms">
+        <div class="gt">Core</div>
+        <ul class="feat">
+          <li><b>Value semantics</b><span>no aliasing, no GC</span></li>
+          <li><b>Generics</b><span><span class="inl">$T</span>, monomorphized</span></li>
+          <li><b>Sum types</b><span><span class="inl">Option</span> / <span class="inl">Result</span>, <span class="inl">match</span></span></li>
+        </ul>
+      </div>
+      <div class="group rv" style="--d:70ms">
+        <div class="gt">Shape</div>
+        <ul class="feat">
+          <li><b>Methods (UFCS)</b><span>no classes</span></li>
+          <li><b>Closures</b><span>value capture</span></li>
+        </ul>
+      </div>
+      <div class="group rv" style="--d:140ms">
+        <div class="gt">Systems</div>
+        <ul class="feat">
+          <li><b>Concurrency</b><span>spawn, channels, parallel-for</span></li>
+          <li><b>FFI to C</b><span>extern fn, handles, bytes</span></li>
+          <li><b>Packages + corelib</b><span>import, 38 modules</span></li>
+        </ul>
+      </div>
+    </div>
   </section>
 
-  <section id="evidence">
-    <p class="marker"><span class="n">04</span> How it's checked</p>
-    <h2>An experiment, but a heavily-checked one.</h2>
-    <p>
-      Tycho is a research project — an experiment testing one idea — but heavily checked, which is
-      the part most experiments this young skip. It's experimental in <em>scope</em>, not in rigor.
-    </p>
-    <div class="ev">
-      <div class="row"><span class="tag">self-host</span><span class="txt">Two compilers: a reference written in C, and a second one <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits. <span class="cmd">make fixpoint</span> holds it to reproducing its own emitted C <b>byte-for-byte</b>, and to matching the C reference on every test.</span></div>
-      <div class="row"><span class="tag">fuzz</span><span class="txt">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — and checked against a committed golden output.</span></div>
-      <div class="row"><span class="tag">local</span><span class="txt">There's no cloud CI to take on faith. <span class="cmd">make ci</span> runs the whole gate on your own machine.</span></div>
+  <canvas class="trace" id="tr2" aria-hidden="true"></canvas>
+
+  <section id="rigor">
+    <p class="marker rv"><span class="n">04</span> How it's checked</p>
+    <h2 class="rv">An experiment, but a heavily-checked one.</h2>
+    <div class="stats">
+      <div class="stat rv" style="--d:0ms"><b>2</b><span>compilers — C reference + Tycho self-host</span></div>
+      <div class="stat rv" style="--d:70ms"><b>byte-for-byte</b><span>self-emission fixed point</span></div>
+      <div class="stat rv" style="--d:140ms"><b>ASan+UBSan</b><span>differential fuzz both compilers</span></div>
+      <div class="stat rv" style="--d:210ms"><b>make ci</b><span>the whole gate, on your machine</span></div>
     </div>
-    <p class="muted">
-      Where the model helps and where it costs are both measured — as machine-specific ratios,
-      with the workloads that produce them — in the
-      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes</a>.
-      Pointer-shaped data like graphs and trees is where value semantics is least free, and the
-      docs are honest about that, not just about the wins.
+    <div class="ev">
+      <div class="row rv"><span class="tag">self-host</span><span class="txt">Two compilers: a reference written in C, and a frozen compiler <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits. <span class="cmd">make selfhost-check</span> re-proves the fixed point at every commit — the Tycho-built compiler reproduces its own emitted C <b>byte-for-byte</b>.</span></div>
+      <div class="row rv"><span class="tag">fuzz</span><span class="txt">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — and checked against a committed golden output.</span></div>
+      <div class="row rv"><span class="tag">local</span><span class="txt">There's no cloud CI to take on faith. <span class="cmd">make ci</span> runs the whole gate on your own machine.</span></div>
+    </div>
+    <p class="muted rv">
+      It's experimental in <em>scope</em>, not in rigor — the honest caveats live in the
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes ↗</a>.
     </p>
   </section>
 
   <section id="start">
-    <p class="marker"><span class="n">05</span> Try it</p>
-    <h2>A C compiler and make — that's the whole toolchain.</h2>
-    <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
+    <p class="marker rv"><span class="n">05</span> Try it</p>
+    <h2 class="rv">A C compiler and make — that's the whole toolchain.</h2>
+    <div class="panel rv">
+      <div class="phead"><span class="traf"></span><span class="fn">terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
+      <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
 <span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
 <span class="g">$</span> cd tycho
 <span class="g">$</span> make                                  <span class="c"># builds ./tychoc</span>
-<span class="g">$</span> ./tychoc examples/hello.ty && ./examples/hello
+<span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
-    <div class="cta">
+    </div>
+    <div class="cta rv">
       <a class="btn" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
       <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
       <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/tree/main/docs/reference">Reference</a>
     </div>
   </section>
 
-  <canvas class="terrain" id="t3" aria-hidden="true"></canvas>
-
   <footer>
-    <p class="tagline">A research project. The source, the checks, and the honest caveats are all in the repo.</p>
-    <div class="meta">
+    <div class="fgrid">
+      <div>
+        <div class="fbrand">
+          <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+            <circle cx="100" cy="100" r="26"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="74"/>
+            <circle cx="143.3" cy="75" r="16"/>
+            <g fill="currentColor" stroke="none">
+              <circle cx="100" cy="100" r="8"/><circle cx="143.3" cy="75" r="6"/><circle cx="143.3" cy="91" r="3.6"/><circle cx="35.9" cy="137" r="4.2"/>
+            </g>
+          </svg>
+          <span>Tycho</span>
+        </div>
+        <p class="tagline">An experimental systems language. The source, the checks, and the honest caveats are all in the repo.</p>
+      </div>
+      <div class="col">
+        <b>Docs</b>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">Tutorial</a>
+        <a href="https://github.com/StefanVonRanda/tycho/tree/main/docs/reference">Reference</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/bootstrap.md">Bootstrap</a>
+      </div>
+      <div class="col">
+        <b>Guides</b>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">Performance notes</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/from-c-to-arenas.md">malloc → arenas</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/memory-model.md">Memory model</a>
+      </div>
+      <div class="col">
+        <b>Meta</b>
+        <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/RELEASE_NOTES.md">Release notes</a>
+        <a href="https://www.hylo-lang.org/">Value semantics ← Hylo</a>
+      </div>
+    </div>
+    <div class="legal">
       <span>MIT licensed</span>
-      <a href="https://github.com/StefanVonRanda/tycho">github.com/StefanVonRanda/tycho</a>
-      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">Tutorial</a>
-      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/from-c-to-arenas.md">malloc → arenas</a>
-      <a href="https://www.hylo-lang.org/">Value semantics ← Hylo</a>
+      <span>© Stefan Von Randa</span>
+      <span>tycho-lang.com</span>
+      <span>branding: tycho-logo.svg</span>
     </div>
   </footer>
 </div>
 
 <script>
-  (function(){
-    var root=document.documentElement, btn=document.getElementById('tbtn');
-    var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var TAU=6.28318530718;
-    function curTheme(){ return root.getAttribute('data-theme') ||
-      (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); }
-    function ink(){ return curTheme()==='dark'? [236,237,230] : [16,16,15]; }
+(function(){
+  'use strict';
+  var root=document.documentElement, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var TAU=Math.PI*2;
 
-    function mkState(cv){ return {cv:cv, ctx:cv.getContext('2d'), w:0, h:0}; }
-    function sizeState(s){
-      var dpr=Math.min(window.devicePixelRatio||1,2);
-      s.w=s.cv.clientWidth; s.h=s.cv.clientHeight;
-      s.cv.width=Math.max(1,s.w*dpr); s.cv.height=Math.max(1,s.h*dpr);
-      s.ctx.setTransform(dpr,0,0,dpr,0,0);
-    }
-    // FIXED harmonic coefficients -> a coherent, dispersionless traveling wave:
-    //   sum a_k * sin(k*x - k*v*t + p_k).  The crest travels smoothly at speed v,
-    //   so the whole speckle field undulates as one slow wave (not random flicker).
-    function waveCoeffs(kmax, baseAmp){
-      var W=[]; for(var k=1;k<=kmax;k++) W.push({k:k, a:baseAmp/k, p:Math.random()*TAU});
-      return W;
-    }
-    function sample(W, x, v, t){ var s=0; for(var i=0;i<W.length;i++){ var c=W[i]; s+=c.a*Math.sin(c.k*x - c.k*v*t + c.p); } return s; }
+  /* ── theme ── */
+  var tbtn=document.getElementById('tbtn');
+  var mqDark=matchMedia('(prefers-color-scheme: dark)');
+  function setTheme(t, persist){
+    root.dataset.theme=t;
+    var meta=document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.setAttribute('content', t==='dark' ? '#12121a' : '#f4f3ee');
+    if(persist){ try{ localStorage.setItem('tycho-theme', t); }catch(e){} }
+  }
+  function curTheme(){ return root.dataset.theme || (mqDark.matches?'dark':'light'); }
+  tbtn.addEventListener('click', function(){ setTheme(curTheme()==='dark'?'light':'dark', true); if(reduce) drawFrame(0); });
+  mqDark.addEventListener('change', function(){ if(!('tycho-theme' in localStorage)) setTheme(mqDark.matches?'dark':'light', false); });
 
-    // ── undulating dithered terrain: each speck drifts on its OWN slow path
-    //    (vertical bob + horizontal drift + a phase jitter that desyncs neighbours),
-    //    over a gentler shared traveling wave so the field still breathes as one ──
-    var TV=0.5;
-    function mkTerrain(cv){ var s=mkState(cv); s.wave=waveCoeffs(3,1.0); s.parts=null; return s; }
-    // A dithered GRADIENT: gradient value g (1 at the dense/dark centre -> 0 at the
-    // sparse/light edges) drives BOTH the speck density (keep-probability) AND the
-    // darkness (alpha). So the field reads as a smooth gradient rendered in dots:
-    // thick in the centre, dissolving into faint sparse specks at the edges.
-    function buildParts(s){
-      var cap=Math.floor(s.w*3.4), arr=[], guard=cap*4, i=0;
-      while(i<guard && arr.length<cap){
-        i = i + 1;
-        var xn=Math.random();
-        var off=(Math.random()+Math.random()+Math.random()-1.5)*0.34;           // ~gaussian vertical offset (frac h), packed near the ridge
-        var hf=Math.cos((xn-0.5)*Math.PI); if(hf<0){ hf=0; } hf=Math.pow(hf,0.7); // 1 at horizontal centre -> 0 at the L/R edges
-        var vf=Math.exp(-(off/0.16)*(off/0.16));                                 // gaussian falloff away from the ridge line
-        var g=hf*vf;                                                             // the gradient
-        if(Math.random()>g) continue;                                           // DENSITY follows g (dense centre, sparse edges)
-        arr.push({ xn:xn, off:off,
-                   a:0.10+0.80*g,                                               // DARKNESS follows g (dark centre, faint edges)
-                   sz:g>0.55?(Math.random()<0.35?1.5:1.05):(Math.random()<0.5?0.7:0.9),
-                   pj:(Math.random()-0.5)*1.1,                                   // phase jitter: neighbours desync
-                   ay:2+Math.random()*7, wy:0.5+Math.random()*0.8, py:Math.random()*TAU,   // own vertical bob
-                   ax:1+Math.random()*3, wx:0.4+Math.random()*0.7, px:Math.random()*TAU,   // own horizontal drift
-                   sp:Math.random()*TAU });
-      }
-      s.parts=arr;
-    }
-    function drawTerrain(s, time){
-      if(!s.w||!s.parts) return; var ctx=s.ctx, w=s.w, h=s.h, c=ink(), pre='rgba('+c[0]+','+c[1]+','+c[2]+',';
-      ctx.clearRect(0,0,w,h);
-      for(var i=0,P=s.parts;i<P.length;i++){ var q=P[i];
-        var wave=sample(s.wave, q.xn*TAU + q.pj, TV, time);            // shared wave (+ per-speck phase jitter)
-        var x=q.xn*w + q.ax*Math.sin(q.wx*time+q.px);                  // independent horizontal drift
-        var y=h*0.46 + h*0.11*wave + q.off*h + q.ay*Math.sin(q.wy*time+q.py);   // ridge wave + independent vertical bob
-        var al=q.a*(0.74+0.26*Math.sin(time*0.5+q.sp));                // baked gradient alpha + mild shimmer
-        ctx.fillStyle=pre+al.toFixed(3)+')';
-        ctx.fillRect(x, y, q.sz, q.sz);
-      }
-    }
+  /* ── reveal on scroll ── */
+  var rvs=document.querySelectorAll('.rv');
+  if('IntersectionObserver' in window){
+    var rio=new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); rio.unobserve(e.target); } });
+    }, {threshold:.12});
+    rvs.forEach(function(el){ rio.observe(el); });
+  }else{ rvs.forEach(function(el){ el.classList.add('in'); }); }
 
-    // ── oracle: concentric arena rings as THICK dithered speckle bands; each dot
-    //    drifts independently (radial + angular), the band undulating as a wave ──
-    var RV=0.45, oracleRings=null;
-    function buildOracle(){
-      oracleRings=[{br:0.34},{br:0.62},{br:0.92}];
-      oracleRings.forEach(function(ring){
-        ring.wave=waveCoeffs(5,0.02);           // gentle radial undulation (kept subtle)
-        ring.dots=[]; var cap=Math.round(1500*ring.br), guard=cap*4, i=0;
-        var dense=1.18-0.32*ring.br;                                            // inner rings a touch denser/darker (centre-thick)
-        while(i<guard && ring.dots.length<cap){
-          i = i + 1;
-          var rj=(Math.random()+Math.random()+Math.random()-1.5)*0.07;         // radial offset from the core (frac R)
-          var gf=Math.exp(-(rj/0.032)*(rj/0.032));                             // GRADIENT across the band: dense/dark core -> thin/faint edges
-          if(Math.random()>gf*dense) continue;
-          ring.dots.push({ ang:Math.random()*TAU, rj:rj,
-            a:(0.12+0.74*gf)*dense, sz:gf>0.5?1.2:0.85,
-            ar:0.004+Math.random()*0.012, wr:0.4+Math.random()*0.7, pr:Math.random()*TAU,   // own radial drift (frac of R)
-            aa:0.006+Math.random()*0.012, wa:0.3+Math.random()*0.6, pa:Math.random()*TAU,   // own angular drift
-            sp:Math.random()*TAU });
+  /* ── canvas plumbing ── */
+  var PAL={
+    light:{ink:[28,28,46], faint:[154,154,168], accent:[194,67,27]},
+    dark:{ink:[236,236,244], faint:[92,92,108], accent:[244,113,60]}
+  };
+  function col(k,a){ var c=PAL[curTheme()][k]; return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
+  function mkState(cv){ return {cv:cv, ctx:cv.getContext('2d'), w:0, h:0, on:true, ready:false}; }
+  function sizeState(s){
+    var dpr=Math.min(window.devicePixelRatio||1, 2);
+    s.w=s.cv.clientWidth; s.h=s.cv.clientHeight;
+    if(!s.w||!s.h) return;
+    s.cv.width=Math.max(1, Math.round(s.w*dpr)); s.cv.height=Math.max(1, Math.round(s.h*dpr));
+    s.ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function smooth(x){ return x*x*(3-2*x); }
+
+  /* pause off-screen canvases (content-visibility + IntersectionObserver) */
+  var states=[];
+  if('IntersectionObserver' in window){
+    var vio=new IntersectionObserver(function(es){
+      es.forEach(function(e){ var s=states[e.target._i]; if(s) s.on=e.isIntersecting; });
+    }, {rootMargin:'160px'});
+  }
+
+  /* ── oracle: nested arena rings, brand satellite, values ── */
+  function buildOracle(s){
+    var grain=[], n=150;
+    for(var i=0;i<n;i++){
+      var a=Math.random()*TAU, r=Math.pow(Math.random(),0.7);
+      grain.push({x:Math.cos(a)*r, y:Math.sin(a)*r, a:0.04+Math.random()*0.06});
+    }
+    s.grain=grain; s.ready=true;
+  }
+  function drawOracle(s, t){
+    if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h;
+    var cx=w/2, cy=h/2, R=Math.min(w,h)*0.43;
+    ctx.clearRect(0,0,w,h);
+    /* crosshair + grain */
+    ctx.strokeStyle=col('faint',0.16); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(cx-R*1.18,cy); ctx.lineTo(cx+R*1.18,cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx,cy-R*1.18); ctx.lineTo(cx,cy+R*1.18); ctx.stroke();
+    for(var i=0;i<s.grain.length;i++){ var g=s.grain[i];
+      ctx.fillStyle=col('ink',g.a); ctx.fillRect(cx+g.x*R, cy+g.y*R, 1.4, 1.4);
+    }
+    /* rings R0..R2 */
+    var rs=[0.26,0.5,0.74];
+    for(i=0;i<rs.length;i++){
+      var r=R*rs[i]*(1+0.004*Math.sin(t*0.4+i*2.1));
+      ctx.strokeStyle=col('ink', i===1?0.26:0.18); ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,TAU); ctx.stroke();
+      ctx.fillStyle=col('faint',0.9); ctx.font='8.5px "IBM Plex Mono",monospace';
+      ctx.fillText('R'+i, cx+r*0.945, cy-r*0.945+3);
+    }
+    /* satellite: nested scope's arena, orbiting the middle ring */
+    var sa=-0.7+t*0.16;                       /* one revolution ≈ 39s */
+    var sx=cx+Math.cos(sa)*R*0.5, sy=cy+Math.sin(sa)*R*0.5;
+    ctx.strokeStyle=col('ink',0.22); ctx.beginPath(); ctx.arc(sx,sy,R*0.115,0,TAU); ctx.stroke();
+    ctx.fillStyle=col('ink',0.75); ctx.beginPath(); ctx.arc(sx,sy,2.2,0,TAU); ctx.fill();
+    /* static values on rings */
+    ctx.fillStyle=col('ink',0.85); ctx.beginPath(); ctx.arc(cx,cy,3.4,0,TAU); ctx.fill();          /* main */
+    var ov=0.9;
+    ctx.fillStyle=col('ink',0.6); ctx.beginPath(); ctx.arc(cx+Math.cos(ov)*R*0.74, cy+Math.sin(ov)*R*0.74, 2.2,0,TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx+Math.cos(sa+1.2)*R*0.115, sy+Math.sin(sa+1.2)*R*0.115, 1.7,0,TAU); ctx.fill();
+    /* travelling value: returned from the nested scope up to main's arena (the centre) */
+    var cT=t%8;
+    if(cT<5.2){
+      var ph=smooth(Math.max(0,(cT-0.5)/4.2));            /* 0 → 1 along the satellite→centre line */
+      var pr=1-Math.max(0,(cT-4.6))/0.6;                  /* fade out at the end */
+      var a=(cT<0.5? cT/0.5 : 1)*pr*0.95;
+      var vx=sx+(cx-sx)*ph, vy=sy+(cy-sy)*ph;
+      ctx.fillStyle=col('accent',a);
+      ctx.beginPath(); ctx.arc(vx,vy, 3.2-1.1*ph, 0, TAU); ctx.fill();
+    }
+    /* a value on the outer ring blinks out: its scope exited */
+    var fT=t%11;
+    if(fT>8.2){
+      var fa=Math.max(0,1-(fT-8.2)/2.2);
+      ctx.fillStyle=col('ink',0.6*fa);
+      ctx.beginPath(); ctx.arc(cx+Math.cos(2.1)*R*0.74, cy+Math.sin(2.1)*R*0.74, 2.2,0,TAU); ctx.fill();
+    }
+  }
+
+  /* ── arena trace: allocation lifetimes per scope, one value returned up ── */
+  /* lanes: bottom = main, top = innermost scope; blocks appear (alloc) and pop (scope exit) */
+  var LANES=[
+    {y:0.78, label:'main',  blocks:[{t0:0.4,dur:5.5,w:46},{t0:3.8,dur:4.2,w:30},{t0:7.6,dur:6.0,w:38},{t0:12.2,dur:3.6,w:52}]},
+    {y:0.56, label:'fn',    blocks:[{t0:1.8,dur:3.8,w:28},{t0:6.2,dur:5.4,w:40},{t0:10.4,dur:4.4,w:34}]},
+    {y:0.34, label:'fn·inner', blocks:[{t0:2.0,dur:2.6,w:24},{t0:8.4,dur:3.2,w:30}]}
+  ];
+  var LOOP=16;
+  function drawTrace(s, t){
+    if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h;
+    ctx.clearRect(0,0,w,h);
+    var tt=t%LOOP;
+    ctx.font='9px "IBM Plex Mono",monospace';
+    for(var li=0; li<LANES.length; li++){
+      var lane=LANES[li], y=h*lane.y;
+      ctx.strokeStyle=col('faint',0.22); ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(0,y+5); ctx.lineTo(w,y+5); ctx.stroke();
+      ctx.fillStyle=col('faint',0.75); ctx.fillText(lane.label, 6, y+1);
+      for(var b=0;b<lane.blocks.length;b++){
+        var bl=lane.blocks[b];
+        var local=(tt-bl.t0+LOOP)%LOOP;
+        if(local<bl.dur){
+          var a=Math.min(1, local/0.7, (bl.dur-local)/0.7);
+          ctx.fillStyle=col('ink',0.30*a);
+          ctx.fillRect(0.12*w + b*0.24*w, y+3, bl.w, 4);
         }
-      });
+      }
     }
-    function drawOracle(s, time){
-      if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h, c=ink(), pre='rgba('+c[0]+','+c[1]+','+c[2]+',';
-      var cx=w*0.5, cy=h*0.5, R=Math.min(w,h)*0.46;
-      ctx.clearRect(0,0,w,h);
-      ctx.strokeStyle=pre+'0.06)'; ctx.lineWidth=1;
-      [0.22,0.5,0.78,1.0].forEach(function(f){ ctx.beginPath(); ctx.arc(cx,cy,R*f,0,TAU); ctx.stroke(); });
-      oracleRings.forEach(function(ring){
-        for(var i=0,D=ring.dots;i<D.length;i++){ var d=D[i];
-          var ang=d.ang + d.aa*Math.sin(d.wa*time+d.pa);                     // independent angular drift
-          var wob=sample(ring.wave, d.ang, RV, time);                        // shared undulation around the ring
-          var r=R*(ring.br*(1+wob) + d.rj + d.ar*Math.sin(d.wr*time+d.pr));  // + independent radial drift
-          var al=d.a*(0.74+0.26*Math.sin(time*0.5+d.sp));                    // baked gradient alpha + mild shimmer
-          ctx.fillStyle=pre+al.toFixed(3)+')';
-          ctx.fillRect(cx+Math.cos(ang)*r, cy+Math.sin(ang)*r, d.sz, d.sz);
+    /* the returned value: hops from inner scope up to main, then pops */
+    var rt=t%12;
+    if(rt>1.2){
+      var k=Math.min(1,(rt-1.2)/2.6);                       /* hop 1: inner → fn */
+      var a1=Math.min(1,k*2,(1-k)*2+0.2);
+      ctx.fillStyle=col('accent',0.75*a1);
+      ctx.fillRect(0.62*w, h*(0.34+(0.56-0.34)*k)+3, 26, 4);
+      if(rt>5.4){
+        var k2=Math.min(1,(rt-5.4)/2.6);                    /* hop 2: fn → main */
+        var a2=Math.min(1,k2*2,(1-k2)*2+0.2);
+        ctx.fillStyle=col('accent',0.75*a2);
+        ctx.fillRect(0.62*w, h*(0.56+(0.78-0.56)*k2)+3, 26, 4);
+        if(rt>9.6){
+          var a3=Math.max(0,1-(rt-9.6)/1.6);                /* then it lives and pops */
+          ctx.fillStyle=col('accent',0.75*a3);
+          ctx.fillRect(0.62*w, h*0.78+3, 26, 4);
         }
-      });
-      // subtle slowly-orbiting node + radius leader
-      var oang=-0.62+time*0.05, nr=R*0.92, nx=cx+Math.cos(oang)*nr, ny=cy+Math.sin(oang)*nr;
-      ctx.strokeStyle=pre+'0.32)'; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.stroke();
-      ctx.beginPath(); ctx.arc(nx,ny,3,0,TAU); ctx.stroke();
-      ctx.fillStyle=pre+'0.7)'; ctx.beginPath(); ctx.arc(cx,cy,2.2,0,TAU); ctx.fill();
+      }
     }
+  }
 
-    // ── wiring ──
-    var oracleS=null, terrains=[];
-    function initAll(){
-      buildOracle();
-      var o=document.getElementById('oracle'); oracleS=o?mkState(o):null;
-      terrains=[]; ['t1','t2','t3'].forEach(function(id){ var el=document.getElementById(id); if(el) terrains.push(mkTerrain(el)); });
-      sizeAll();
-    }
-    function sizeAll(){ if(oracleS) sizeState(oracleS); terrains.forEach(function(s){ sizeState(s); buildParts(s); }); }
-    function drawFrame(time){ if(oracleS) drawOracle(oracleS,time); terrains.forEach(function(s){ drawTerrain(s,time); }); }
+  /* ── wiring ── */
+  var oracleS=null, traces=[];
+  function initAll(){
+    var o=document.getElementById('oracle'); if(o){ oracleS=mkState(o); buildOracle(oracleS); }
+    ['tr1','tr2'].forEach(function(id){
+      var el=document.getElementById(id); if(!el) return;
+      var s=mkState(el); s.ready=true; traces.push(s);
+    });
+    states=traces.concat(oracleS?[oracleS]:[]);
+    if(vio) states.forEach(function(s,i){ s.cv._i=i; vio.observe(s.cv); });
+    sizeAll();
+  }
+  function sizeAll(){ if(oracleS) sizeState(oracleS); traces.forEach(sizeState); }
+  function drawFrame(time){
+    var t=time*0.001;
+    if(oracleS && oracleS.on) drawOracle(oracleS, t);
+    traces.forEach(function(s){ if(s.on) drawTrace(s, t); });
+  }
+  var raf=null;
+  function loop(ts){ drawFrame(ts); raf=requestAnimationFrame(loop); }
+  function start(){ if(!raf && !reduce) raf=requestAnimationFrame(loop); }
+  function stop(){ if(raf){ cancelAnimationFrame(raf); raf=null; } }
 
-    var raf=null;
-    function loop(ts){ drawFrame(ts*0.001); raf=requestAnimationFrame(loop); }
-    function start(){ if(!raf && !reduce) raf=requestAnimationFrame(loop); }
-    function stop(){ if(raf){ cancelAnimationFrame(raf); raf=null; } }
-
-    function boot(){
-      initAll();
-      if(reduce) drawFrame(0); else start();
-    }
-    if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded',boot);
-    window.addEventListener('load',function(){ sizeAll(); if(reduce) drawFrame(0); });
-
-    var rt; window.addEventListener('resize',function(){ clearTimeout(rt); rt=setTimeout(function(){ sizeAll(); if(reduce) drawFrame(0); },180); });
-    document.addEventListener('visibilitychange',function(){ if(document.hidden) stop(); else start(); });
-    btn.addEventListener('click',function(){ root.setAttribute('data-theme', curTheme()==='dark'?'light':'dark'); if(reduce) drawFrame(0); });
-  })();
+  function boot(){
+    initAll();
+    if(reduce){ drawFrame(0); return; }
+    start();
+  }
+  if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded',boot);
+  window.addEventListener('load', function(){ sizeAll(); if(reduce) drawFrame(0); });
+  var rt;
+  window.addEventListener('resize', function(){ clearTimeout(rt); rt=setTimeout(function(){ sizeAll(); if(reduce) drawFrame(0); },180); });
+  document.addEventListener('visibilitychange', function(){ if(document.hidden) stop(); else start(); });
+})();
 </script>
 
 </body>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<!-- og-card.html: regeneration source for og.png. Screenshot this at 1200x630 with a headless browser:
+     google-chrome --headless=new --window-size=1200,630 --screenshot=og.png http://localhost:PORT/og-card.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{width:1200px; height:630px; background:#f4f3ee; color:#1c1c2e; overflow:hidden;
+    font-family:"Schibsted Grotesk",sans-serif; position:relative}
+  .ring{position:absolute; border:2px solid rgba(28,28,46,.18); border-radius:50%}
+  .ring1{width:430px; height:430px; right:-110px; top:-60px}
+  .ring2{width:300px; height:300px; right:-20px; top:5px; border-color:rgba(28,28,46,.30)}
+  .ring3{width:170px; height:170px; right:45px; top:70px; border-color:rgba(28,28,46,.42)}
+  .dot{position:absolute; border-radius:50%; background:#1c1c2e}
+  .sat{position:absolute; border:2px solid rgba(28,28,46,.42); border-radius:50%; background:#f4f3ee}
+  .k{font-family:"IBM Plex Mono",monospace; font-size:15px; letter-spacing:4px; color:#c2431b; font-weight:600; margin-bottom:22px}
+  h1{font-size:56px; line-height:1.08; font-weight:700; letter-spacing:-1px; color:#1c1c2e; max-width:640px; text-wrap:balance}
+  .sub{margin-top:20px; font-family:"IBM Plex Mono",monospace; font-size:16px; letter-spacing:1.6px; color:#43435a; text-transform:uppercase; max-width:600px; line-height:1.7}
+  .meta{position:absolute; left:60px; bottom:52px; display:flex; gap:30px; font-family:"IBM Plex Mono",monospace; font-size:13px; letter-spacing:2px; color:#62626f; text-transform:uppercase}
+  .meta b{color:#1c1c2e; font-weight:600; display:block; font-size:15px; margin-bottom:3px}
+  .rule{position:absolute; left:60px; right:60px; bottom:120px; height:1px; background:#c6c5ba}
+</style>
+</head>
+<body>
+  <div style="position:absolute; left:60px; top:64px; right:60px">
+    <div class="k">TYCHO — EXPERIMENTAL SYSTEMS LANGUAGE</div>
+    <h1>Automatic memory management.<br>No GC, no manual free.</h1>
+    <div class="sub">Implicit hierarchical arenas under value semantics —<br>memory from lexical scope, transpiles to C.</div>
+  </div>
+  <div class="rule"></div>
+  <div class="meta">
+    <div><b>cc + make</b>whole toolchain</div>
+    <div><b>38</b>stdlib packages</div>
+    <div><b>self-hosting</b>compiles itself</div>
+    <div><b>MIT</b>licensed</div>
+  </div>
+  <div class="ring ring1"></div><div class="ring ring2"></div><div class="ring ring3"></div>
+  <div class="dot" style="width:26px; height:26px; right:128px; top:112px"></div>
+  <div class="dot" style="width:14px; height:14px; right:62px; top:252px"></div>
+  <div class="sat" style="width:56px; height:56px; right:150px; top:236px"></div>
+  <div class="dot" style="width:10px; height:10px; right:196px; top:252px"></div>
+</body>
+</html>
