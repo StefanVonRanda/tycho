@@ -2,3 +2,7 @@ str: get(a)=10 get(b)=20
 str: canonical=true count=2
 arr: get(p)=triplet get(q)=pair
 arr: canonical=true count=2
+st: get(r)=one-two get(s)=three-four
+st: canonical=true count=2
+tu: get(u)=70 get(v)=80
+tu: canonical=true count=2

@@ -12,3 +12,8 @@ sdbm a     = 97
 sdbm ab    = 6363201
 tohex 0    = 00000000
 in_range crc=1 fnv=1
+ghash str  = 1
+ghash int  = 1
+ghash arr  = 1
+ghash tup  = 1
+ghash nest = 1
