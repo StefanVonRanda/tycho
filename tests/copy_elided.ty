@@ -1,0 +1,11 @@
+# The elided non-warn case: `s` is read exactly once (into the call-argument
+# tuple), so move-on-last-use hands off its buffer -- no copy, and the
+# compiler must NOT warn. `make test` builds and runs this; the warning sweep
+# over the corpus asserts the silence.
+fn label(p: (string, string)) -> string:
+    return p.0
+
+fn main():
+    s := "ada"
+    t := label((s, "grace"))     # s is dead after: moved, no copy, no warning
+    print(t)

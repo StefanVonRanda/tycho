@@ -1,0 +1,12 @@
+# A live heap local passed by value inside a call-argument aggregate: the
+# compiler must deep-copy it (the local is still live after the call), and the
+# copy is the by-value argument copy the Val-style diagnostic names. Locked as
+# a warning golden -- a VALID program whose stderr is asserted (tests/warn/).
+fn label(p: (string, string)) -> string:
+    return p.0
+
+fn main():
+    s := "ada"
+    t := label((s, "grace"))     # copies s into the tuple; s is live after
+    print(t)
+    print(s)                     # the second read that keeps s live

@@ -18,9 +18,9 @@ those rules.
 
 > Provenance: entry point `src/tychoc.c:8241@no 'main' procedure` (no `main`),
 > `:8266-8267@'main' must be` (the signature rule); compilation unit
-> `compile_package` `:12965-12970@compile_package`, driver `:13024-13128@int main(`;
+> `compile_package` `:13001-13006@compile_package`, driver `:13060-13164@int main(`;
 > `extern` `parse_extern_fn` `:4043-4113@parse_extern_fn`; the C compiler
-> invocation `:13290@system(cmd)`.
+> invocation `:13326@system(cmd)`.
 
 ## 27. Program structure
 

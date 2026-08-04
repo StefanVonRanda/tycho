@@ -116,6 +116,33 @@ the LSP's diagnostic shape changes — `warn_at` is already LSP-parsed, so expec
 no change.
 Expected: baseline count green, the two new fixtures green, zero golden drift.
 
+> Phase 3 evidence — 2026-08-04: `make test` 589/0 (baseline 588 + the new
+> fixture; the 560 in the brief is stale — the suite grew). Corpus sweep:
+> compiled all 611 files under tests/, tests/warn/, tests/reject/, examples/,
+> corelib tests + examples, tools/ with the new compiler — the warning fires
+> ZERO times outside the warn fixture. warn_at is LSP-parsed
+> (`tools/lsp.ty:385-387`), so no tools-check change. corelib re-run with the
+> new compiler: all green.
+>
+> Three decisions vs the brief, all forced by the corpus sweep:
+> (1) Fires ONLY when the aggregate is a call argument
+> (`g_call_arg_depth`, `src/tychoc.c:8550`): the first cut warned at every
+> construction-arg copy and fired 8 times in the corpus — all deliberate
+> declaration-site copies (`ctor_move.ty:23` "source reused after construction
+> -> deep-copied, so independent", `value_semantics.ty:80` "[inner, inner]
+> must deep-copy"). The brief's own words are "still live after the CALL", so
+> the gate is the call boundary; the declaration-site copy is the `b := a`
+> decision the brief defers. (2) The `inout` suggestion is not in the message:
+> at a construction-arg copy there is no parameter to make `inout`; the site
+> where that advice is real (a by-value heap-struct param mutated in the
+> callee prologue, `src/tychoc.c:11609`) is a different copy the brief's
+> sentence does not name. (3) The `b := a` assignment site stays unwarned —
+> same noise reason as (1); the copy there is the assignment the user wrote.
+> Fixtures: warn case `tests/warn/copy_live.ty` (a live local into a
+> call-argument tuple; `.err` locks the warning), elided case
+> `tests/copy_elided.ty` (last-use local at a declaration RHS — moved, no
+> copy, no warning; verified in the emitted C: no `tycho_str_copy` in main).
+
 ## Not in scope
 
 - Generic-key interning: needs a generic hash (core:hash is string-only today)
