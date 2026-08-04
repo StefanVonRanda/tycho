@@ -229,6 +229,8 @@ step "[3j/16] make chess-check  (tycho-chess: perft totals vs published values o
 make -s chess-check
 step "[3k/17] make rsa-check  (tycho-rsa: textbook vector, 3 python-pow modexp sizes, Miller-Rabin probes incl. Carmichael 561, deterministic keygen invariants + round-trips; 512-bit keygen round-trip)"
 make -s rsa-check
+step "[3l/18] make kvsrv-check  (tycho-kvsrv: HTTP KV round-trips + 405/404 + keep-alive + 4-way concurrent PUT/GET intact through the actor store)"
+make -s kvsrv-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
