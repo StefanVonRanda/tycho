@@ -3,7 +3,9 @@
 # owns a small int->child map, and report (node count, word count) as a byte-identical
 # cross-language checksum. The whole trie is the memory under test: tycho's value-
 # semantic arena map vs C's per-node malloc map vs Go's GC map[byte]*Node. tycho uses
-# native [int: Trie] (no hand-written C). Skips a language whose toolchain is absent.
+# native [int: Trie] (no hand-written C); trie_pool.ty is the same trie in the flat-
+# pool + integer-index idiom (see its header), a second tycho row that must agree on
+# the checksum. Skips a language whose toolchain is absent.
 # NOT wired into `make ci`. See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
@@ -26,10 +28,19 @@ runlang() {                                           # <label> <binary>
 }
 
 printf '%-8s %10s %9s   %s\n' lang peakRSS time 'checksum(nodes words)'
-if ! $TYCHOC "$D/trie.ty" -o "$T/tt" > "$T/terr" 2>&1; then
+# compile each .ty in the scratch dir (a copy alone), not in place: tychoc compiles
+# every .ty beside the entry as one package, and trie.ty + trie_pool.ty would collide.
+cp "$D/trie.ty" "$T/trie.ty"
+if ! $TYCHOC "$T/trie.ty" -o "$T/tt" > "$T/terr" 2>&1; then
     echo "trie: TYCHO BUILD FAILED"; cat "$T/terr"; exit 2
 fi
 runlang tycho "$T/tt"
+mkdir -p "$T/pool"
+cp "$D/trie_pool.ty" "$T/pool/trie_pool.ty"
+if ! $TYCHOC "$T/pool/trie_pool.ty" -o "$T/tp" > "$T/terr" 2>&1; then
+    echo "trie: POOL BUILD FAILED"; cat "$T/terr"; exit 2
+fi
+runlang pool "$T/tp"
 $CC -O3 "$D/trie.c" -o "$T/tc" 2>/dev/null
 runlang C "$T/tc"
 if command -v go >/dev/null 2>&1; then

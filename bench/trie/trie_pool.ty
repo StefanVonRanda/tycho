@@ -1,0 +1,44 @@
+# trie head-to-head, the flat-pool + integer-index idiom: the SAME 150k-word
+# trie as trie.ty (identical LCG, identical checksum), but children are stored
+# as INTEGER INDICES into one flat `[Trie]` pool instead of whole `Trie`
+# values inline in each node's child map. `kids: [int: int]` maps a child char
+# to its node index, so the per-child value slot is an 8-byte int -- C's
+# pointer size -- instead of a 72-byte struct. This is the idiom
+# docs/internals/value-semantics-limits.md names for pointer-shaped data and
+# dijkstra measures at ~1.3x C. The one manual step is `reserve(pool, N)`: a
+# dynamic [Trie] grown by push would otherwise retain every doubling buffer in
+# the arena (measured 60 MiB -- worse than the idiomatic form); reserving the
+# spine once makes it a single allocation.
+package main
+
+struct Trie:
+    kids: [int: int]
+    word: bool
+
+fn main():
+    n := 150000
+    state := 88172645463325252
+    pool := []Trie
+    reserve(pool, 300000)
+    push(pool, Trie([]int: int, false))
+    nwords := 0
+    w := 0
+    for w := 0; w < n; w += 1:
+        state = state * 6364136223846793005 + 1442695040888963407
+        wlen := 3 + ((state & 1073741823) % 5)    # length 3..7
+        idx := 0                                  # the root is node 0
+        j := 0
+        for j := 0; j < wlen; j += 1:
+            state = state * 6364136223846793005 + 1442695040888963407
+            c := 97 + ((state & 1073741823) % 26) # 'a'..'z'
+            if not (c in pool[idx].kids):
+                ni := len(pool)
+                push(pool, Trie([]int: int, false))
+                pool[idx].kids[c] = ni
+                idx = ni
+            else:
+                idx = pool[idx].kids[c]
+        if not pool[idx].word:
+            pool[idx].word = true
+            nwords = nwords + 1
+    print(str(len(pool)) + " " + str(nwords))

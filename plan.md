@@ -84,3 +84,19 @@ locked; fixed point holds.
 > intern now documents any map-key type. 80 citations re-pointed (+10/+30/+34
 > by region — the `hash_keyused` insert at 1442 shifted refs below the usual
 > regions for the first time).
+
+> Trie bench follow-up — 2026-08-04: owner asked whether the trie (the
+> documented standing loss) could improve. Measured first: idiomatic
+> `[int: Trie]` = 58.9 MB (1.56× C), the gap being the 72 B child value inline
+> in each map (the ec=4 value array costs 288 B for a 1-child node). The
+> language's own answer — the flat-pool + integer-index idiom from
+> `docs/internals/value-semantics-limits.md`, already measured at ~1.3× C by
+> dijkstra — was added as `bench/trie/trie_pool.ty`: child indices (8 B, C's
+> pointer size) into one flat `[Trie]` with a single `reserve`, **41.4 MB =
+> 1.10× C**, same checksum, wall below C's. Sharp edge found and documented:
+> the pool WITHOUT reserve is worse (60.1 MiB — the arena retains every
+> doubling buffer), so reserve is load-bearing. run.sh gains the pool row
+> (scratch-dir compile to dodge the same-package collision); RESULTS.md and
+> the bench README row updated. Gates: lane green (all four checksums agree),
+> doc gates ok. Also fixed en route: the hash-phase commit 60e3601 shipped its
+> test sources without the re-recorded goldens (8b9fc88).
