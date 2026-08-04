@@ -214,7 +214,7 @@ dynamic element — `[bool]` is a supported array type — and is rejected only 
 the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
 bool codegen.
 
-> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2193@elem`); the
+> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2216@elem`); the
 > fixed forms test both (`src/tychoc.c:2018-2019`), as does `bounded[N]T`
 > (`src/tychoc.c:1933-1934`). Detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
@@ -388,16 +388,16 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 `reserve` MUST be rejected on a `bounded` value.
 
 > Provenance: the `bounded` branch of `parse_type_inner`,
-> `src/tychoc.c:2061-2078@"bounded"` (capacity `:1866-1875`, element
+> `src/tychoc.c:2084-2101@"bounded"` (capacity `:1866-1875`, element
 > restriction `:1931-1932`); its twin
 > `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
 > deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
 > with the unresolved-name guard at `:11912-11913@[b#`. The affine-element
 > rejection is a type-intern choke point in `src/tychoc.c`
-> (`arrc_sized_b` `src/tychoc.c:885-897@arrc_sized_b`, messages `:788@task_container_err` and `:828@chan_container_err`) and an
+> (`arrc_sized_b` `src/tychoc.c:908-920@arrc_sized_b`, messages `:811@task_container_err` and `:851@chan_container_err`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
 > Rejections: slice `src/tychoc.c:5166-5167`, `pop` `:5817-5818`, `reserve`
-> `:6098@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
+> `:6121@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
 > `:11698-11701`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
@@ -474,4 +474,4 @@ is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is 
 one-byte glyph.)
 
 > Provenance: `src/tychoc.c:6045-6078` (equality/ordering resolver); function-
-> value identity equality `:9157@identity equality`.
+> value identity equality `:9180@identity equality`.

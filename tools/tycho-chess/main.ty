@@ -80,16 +80,16 @@ fn sq_add(sq: int, df: int, dr: int) -> int:
 fn ctz(bb: int) -> int:
     r := 0
     x := bb
-    if (x & 4294967295) == 0:
+    if (x & 0xFFFFFFFF) == 0:
         r = r + 32
         x = x / 4294967296
-    if (x & 65535) == 0:
+    if (x & 0xFFFF) == 0:
         r = r + 16
         x = x / 65536
-    if (x & 255) == 0:
+    if (x & 0xFF) == 0:
         r = r + 8
         x = x / 256
-    if (x & 15) == 0:
+    if (x & 0xF) == 0:
         r = r + 4
         x = x / 16
     if (x & 3) == 0:
@@ -608,10 +608,10 @@ fn gen_moves(b: Board, tab: Tables) -> [Move]:
             if not attacked(b, tab, 4, BLACK) and not attacked(b, tab, 3, BLACK) and not attacked(b, tab, 2, BLACK):
                 push_move(&moves, 4, 2, 0)
     else:
-        if (b.castling & 4) != 0 and (occ & 6917529027641081856) == 0:
+        if (b.castling & 4) != 0 and (occ & 0x6000000000000000) == 0:
             if not attacked(b, tab, 60, WHITE) and not attacked(b, tab, 61, WHITE) and not attacked(b, tab, 62, WHITE):
                 push_move(&moves, 60, 62, 0)
-        if (b.castling & 8) != 0 and (occ & 1008806316530991104) == 0:
+        if (b.castling & 8) != 0 and (occ & 0xE00000000000000) == 0:
             if not attacked(b, tab, 60, WHITE) and not attacked(b, tab, 59, WHITE) and not attacked(b, tab, 58, WHITE):
                 push_move(&moves, 60, 58, 0)
     return moves
