@@ -1986,11 +1986,11 @@ static void tycho_hash_seed_init(void) {
     v0 += v3; v3 = (v3 << 21) | (v3 >> 43); v3 ^= v0; \
     v2 += v1; v1 = (v1 << 17) | (v1 >> 47); v1 ^= v2; v2 = (v2 << 32) | (v2 >> 32); \
 } while (0)
-static uint64_t tycho_siphash13(const unsigned char *in, uint64_t inlen) {
-    uint64_t v0 = UINT64_C(0x736f6d6570736575) ^ tycho_hash_k0;
-    uint64_t v1 = UINT64_C(0x646f72616e646f6d) ^ tycho_hash_k1;
-    uint64_t v2 = UINT64_C(0x6c7967656e657261) ^ tycho_hash_k0;
-    uint64_t v3 = UINT64_C(0x7465646279746573) ^ tycho_hash_k1;
+static uint64_t tycho_siphash13(const unsigned char *in, uint64_t inlen, uint64_t k0, uint64_t k1) {
+    uint64_t v0 = UINT64_C(0x736f6d6570736575) ^ k0;
+    uint64_t v1 = UINT64_C(0x646f72616e646f6d) ^ k1;
+    uint64_t v2 = UINT64_C(0x6c7967656e657261) ^ k0;
+    uint64_t v3 = UINT64_C(0x7465646279746573) ^ k1;
     uint64_t b = inlen << 56;
     uint64_t whole = inlen - (inlen % 8);
     const unsigned char *end = in + whole;
@@ -2008,7 +2008,18 @@ static uint64_t tycho_siphash13(const unsigned char *in, uint64_t inlen) {
 
 static uint64_t tycho_si_hash(const char *s) {        /* keyed SipHash-1-3 */
     tycho_int n = ((const tycho_int *)s)[-1];   /* hash the true bytes (header length), not up to a NUL */
-    return tycho_siphash13((const unsigned char *)s, (uint64_t)n);
+    return tycho_siphash13((const unsigned char *)s, (uint64_t)n, tycho_hash_k0, tycho_hash_k1);
+}
+/* Deterministic (cross-run stable) variants for the PUBLIC `hash(x)` builtin:
+ * fixed keys/seed, never overwritten at startup, so the same value hashes the
+ * same on every run and every machine -- usable for checksums and content
+ * addressing. The MAP's internal hashing stays seeded (hash-flooding defense);
+ * only the user-facing hash(x) is deterministic. */
+#define TYCHO_HASH_DET_K0 UINT64_C(0x736f6d6570736575)   /* the SipHash reference key */
+#define TYCHO_HASH_DET_K1 UINT64_C(0x646f72616e646f6d)
+static uint64_t tycho_si_hash_det(const char *s) {
+    tycho_int n = ((const tycho_int *)s)[-1];
+    return tycho_siphash13((const unsigned char *)s, (uint64_t)n, TYCHO_HASH_DET_K0, TYCHO_HASH_DET_K1);
 }
 
 TychoMapSI tycho_map_si_with_cap(Arena *a, tycho_int cap) {
@@ -2304,6 +2315,12 @@ static uint64_t tycho_ik_hash(tycho_int k) {        /* seeded SplitMix64 finaliz
     x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
     return x ^ (x >> 31);
 }
+static uint64_t tycho_ik_hash_det(tycho_int k) {    /* deterministic twin: fixed seed (the golden ratio gamma) */
+    uint64_t x = ((uint64_t)k ^ UINT64_C(0x9e3779b97f4a7c15)) + UINT64_C(0x9e3779b97f4a7c15);
+    x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
+    return x ^ (x >> 31);
+}
 /* Deep hash of a scalar array, for composite map keys. Order-SENSITIVE (the multiply
  * runs before the xor), seeded from the per-process key, folding each element's hash
  * so equal-by-== arrays hash equal. Composite-element arrays get a generated hash. */
@@ -2312,14 +2329,29 @@ uint64_t tycho_arr_int_hash(TychoArrInt x) {
     for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash(x.data[i]);
     return h;
 }
+uint64_t tycho_arr_int_hash_det(TychoArrInt x) {
+    uint64_t h = TYCHO_HASH_DET_K0;
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash_det(x.data[i]);
+    return h;
+}
 uint64_t tycho_arr_float_hash(TychoArrFloat x) {
     uint64_t h = tycho_hash_k0;
     for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = x.data[i] })._l);
     return h;
 }
+uint64_t tycho_arr_float_hash_det(TychoArrFloat x) {
+    uint64_t h = TYCHO_HASH_DET_K0;
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash_det((tycho_int)((union { double _d; tycho_int _l; }){ ._d = x.data[i] })._l);
+    return h;
+}
 uint64_t tycho_arr_str_hash(TychoArrStr x) {
     uint64_t h = tycho_hash_k0;
     for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_si_hash(x.data[i]);
+    return h;
+}
+uint64_t tycho_arr_str_hash_det(TychoArrStr x) {
+    uint64_t h = TYCHO_HASH_DET_K0;
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_si_hash_det(x.data[i]);
     return h;
 }
 

@@ -38,11 +38,10 @@ fn main():
     println(f"in_range crc={cc} fnv={ff}")                              # in_range crc=1 fnv=1
 
     # ---- hash(x): the generic builtin over any hashable value ----
-    # Seeded per process like map keys (equal values hash equal WITHIN a run;
-    # the value is not stable across runs), so only equality/difference
-    # properties are asserted, never an exact value. Full 64-bit as a signed
-    # int; distinct small ints differ deterministically (SplitMix is a
-    # permutation).
+    # DETERMINISTIC since the deterministic-hash phase: fixed keys/seed, so the
+    # same value hashes the same on every run and every machine (the byte-locked
+    # golden below is the cross-run proof -- a seeded hash would redden it every
+    # run). Equal-by-== values always hash equal. Full 64-bit as a signed int.
     h1 := hash("ab")
     h2 := hash("ab")
     println("ghash str  = " + str(b2i(h1 == h2)))                            # 1
@@ -50,3 +49,4 @@ fn main():
     println("ghash arr  = " + str(b2i(hash([1, 2, 3]) == hash([1, 2, 3]))))  # 1
     println("ghash tup  = " + str(b2i(hash((1, "x")) == hash((1, "x")))))   # 1
     println("ghash nest = " + str(b2i(hash([["a"], ["b"]]) == hash([["a"], ["b"]]))))  # 1
+    println("ghash det  = " + str(hash(7)) + " " + str(hash("ab")) + " " + str(hash((1, "x"))))

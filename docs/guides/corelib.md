@@ -227,8 +227,9 @@ element type instead of a family of per-type siblings.
   there is no `0x00` caveat on the input. Matches published vectors:
   `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. For a hash of
   **any** hashable value (struct/tuple/array, not just a string) use the generic builtin
-  `hash(x)` — the hash the map keys use, seeded per process (equal-by-`==` values hash
-  equal within a run; in-process tables/dedup, not checksums), full 64-bit as a signed
+  `hash(x)` — deterministic (fixed keys/seed: the same value hashes the same on every
+  run and machine, so it doubles as a checksum over composites; the map's internal
+  hashing stays per-process seeded for DoS defense), full 64-bit as a signed
   int ([builtins §29.7](../spec/16-builtins.md#297-maps)).
 - **`md5`** — the MD5 message-digest (RFC 1321): `hex(s)` (32-char lowercase digest) and
   `digest(s)` (16 raw bytes). Pure 32-bit arithmetic — adds masked with `% 4294967296`, the

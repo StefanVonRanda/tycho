@@ -17,3 +17,4 @@ ghash int  = 1
 ghash arr  = 1
 ghash tup  = 1
 ghash nest = 1
+ghash det  = -1407484600305285887 4161509949577623618 5769987616971929652

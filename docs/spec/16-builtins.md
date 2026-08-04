@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9559@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9561@tycho_eprint`; `die` codegen
 > `:9150-9151`.
 
 ## 29.4 Conversions
@@ -159,7 +159,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4792@.name="split"`;
 > `len` magic
 > `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4791@.name="char_at"`, codegen `:9000-9007`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10082@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:10087@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -197,12 +197,15 @@ method sugar; both are **magic**.
 `hash(x)` accepts exactly the map-key types (§5.3.5) — `int`, `string`, their
 newtypes, fieldless enums, and composites of hashable leaves; a bare
 `float`/`bool`/`char`/`bytes` is refused (it is a hashable *leaf* but not a
-legal top-level key). It is **seeded per process like the map keys** (and is
-stable within a run, equal values always hashing equal), so it is for
-in-process tables/dedup — not checksums, which is the deterministic
-`core:hash` string hashers' role. A composite arg gets its per-type hash
-function emitted on demand (`tycho_hash_S_*`/`T*`/`arr_C*`), so hashing a
-struct that is never a map key still works.
+legal top-level key). It is **deterministic** — fixed keys/seed, so the same
+value hashes the same on every run and every machine (equal-by-`==` values
+always hash equal) — which makes it usable as a checksum / content-address
+over composites, not just an in-process table hash. The MAP's internal
+hashing stays per-process seeded (hash-flooding defense); only the
+user-facing `hash(x)` is deterministic. A composite arg gets its per-type hash
+function emitted on demand (`tycho_dhash_S_*`/`T*`/`arr_C*` — the seeded
+`tycho_hash_*` twins stay for map keys), so hashing a struct that is never a
+map key still works.
 
 `m.get` is **method sugar** on a map receiver: `m.get(k)` rewrites to the `m[k]`
 rvalue path and `m.get(k, d)` to the internal default-read node, so the emitted
@@ -274,7 +277,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5233-5247`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10505@_pk > 64`.
+> 64 is `src/tychoc.c:10510@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
