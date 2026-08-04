@@ -9205,18 +9205,20 @@ static int self_rebuild_move(Stmt *s) {
  * the seeded SplitMix64 int hash; string/bytes -> keyed SipHash; float -> hash its
  * bit pattern; a fieldless enum -> its tag; a nested struct -> its own hash. Equal
  * values (by deep ==) always hash equal. */
+static int g_hash_det = 0;   /* deterministic mode for gen_hash / the dhash_* families (the public hash(x)) */
 static char *gen_hash(Type t, const char *v) {
     t = base_of(t);
-    if (t == T_STRING || t == T_BYTES) return sfmt("tycho_si_hash(%s)", v);
-    if (t == T_FLOAT)  return sfmt("tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (%s) })._l)", v);
-    if (enum_fieldless(t)) return sfmt("tycho_ik_hash((tycho_int)((%s)->tag))", v);
-    if (IS_STRUCT(t))  return sfmt("tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
-    if (IS_TUP(t))     return sfmt("tycho_hash_T%d(%s)", TUP_ID(t), v);
-    if (t == T_ARRAY_INT)    return sfmt("tycho_arr_int_hash(%s)", v);
-    if (t == T_ARRAY_STRING) return sfmt("tycho_arr_str_hash(%s)", v);
-    if (t == T_ARRAY_FLOAT)  return sfmt("tycho_arr_float_hash(%s)", v);
-    if (IS_ARRC(t))    return sfmt("tycho_arr_C%d_hash(%s)", ARRC_ID(t), v);   /* composite-element array: generated, order-sensitive */
-    return sfmt("tycho_ik_hash((tycho_int)(%s))", v);   /* int / bool / char */
+    if (t == T_STRING || t == T_BYTES) return sfmt(g_hash_det ? "tycho_si_hash_det(%s)" : "tycho_si_hash(%s)", v);
+    if (t == T_FLOAT)  return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (%s) })._l)"
+                                                       : "tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (%s) })._l)", v);
+    if (enum_fieldless(t)) return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)((%s)->tag))" : "tycho_ik_hash((tycho_int)((%s)->tag))", v);
+    if (IS_STRUCT(t))  return sfmt(g_hash_det ? "tycho_dhash_S_%s(%s)" : "tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
+    if (IS_TUP(t))     return sfmt(g_hash_det ? "tycho_dhash_T%d(%s)" : "tycho_hash_T%d(%s)", TUP_ID(t), v);
+    if (t == T_ARRAY_INT)    return sfmt(g_hash_det ? "tycho_arr_int_hash_det(%s)" : "tycho_arr_int_hash(%s)", v);
+    if (t == T_ARRAY_STRING) return sfmt(g_hash_det ? "tycho_arr_str_hash_det(%s)" : "tycho_arr_str_hash(%s)", v);
+    if (t == T_ARRAY_FLOAT)  return sfmt(g_hash_det ? "tycho_arr_float_hash_det(%s)" : "tycho_arr_float_hash(%s)", v);
+    if (IS_ARRC(t))    return sfmt(g_hash_det ? "tycho_arr_C%d_dhash(%s)" : "tycho_arr_C%d_hash(%s)", ARRC_ID(t), v);   /* composite-element array: generated, order-sensitive */
+    return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)(%s))" : "tycho_ik_hash((tycho_int)(%s))", v);   /* int / bool / char */
 }
 
 static char *gen_eq(Type t, const char *a, const char *b) {
@@ -9658,9 +9660,12 @@ static char *gen_call(Expr *e, const char *arena) {
         /* F5 aggregate: bind the value ONCE (opt/result/tuple renderers read it repeatedly), then recurse via gen_str */
         return sfmt("({ %s_sv = %s; %s; })", c_type(at), a, gen_str(at, arena, "_sv"));
     }
-    if (!strcmp(e->sval, "hash")) {   /* generic hash (see resolve): the map's per-type emitter, 64-bit as signed int */
+    if (!strcmp(e->sval, "hash")) {   /* generic hash (see resolve): DETERMINISTIC (cross-run stable), 64-bit as signed int */
         char *a = gen_expr(e->args[0], arena);
-        return sfmt("((tycho_int)(%s))", gen_hash(e->args[0]->type, a));
+        g_hash_det = 1;
+        char *h = gen_hash(e->args[0]->type, a);
+        g_hash_det = 0;
+        return sfmt("((tycho_int)(%s))", h);
     }
     if (!strcmp(e->sval, "to_float"))    /* int -> double */
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
@@ -12149,10 +12154,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static int tycho_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
         if (struct_keyused(STRUCT_TYPE(i)) || hash_keyused(STRUCT_TYPE(i)))   /* composite map key / hash(x): deep hash */
             fprintf(o, "static uint64_t tycho_hash_S_%s(S_%s v);\n", nm, nm);
+        if (hash_keyused(STRUCT_TYPE(i)))       /* hash(x): the deterministic twin */
+            fprintf(o, "static uint64_t tycho_dhash_S_%s(S_%s v);\n", nm, nm);
     }
     for (int i = 0; i < g_ntuptypes; i++)           /* (4) tuple deep-hash prototypes (composite map keys; emitted before bodies so struct/tuple hashes can reference each other) */
         if (struct_keyused(T_TUP_BASE + i) || hash_keyused(T_TUP_BASE + i))
             fprintf(o, "static uint64_t tycho_hash_T%d(TychoTup%d v);\n", i, i);
+    for (int i = 0; i < g_ntuptypes; i++)
+        if (hash_keyused(T_TUP_BASE + i))
+            fprintf(o, "static uint64_t tycho_dhash_T%d(TychoTup%d v);\n", i, i);
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
         if (type_is_heap(g_opttypes[i].inner) && !has_typaram(T_OPT_BASE + i))
             fprintf(o, "static TychoOpt%d tycho_opt%d_copy(Arena *a, TychoOpt%d v);\n", i, i, i);
@@ -12188,6 +12198,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
             if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i))
                 fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
+            if (hash_keyused(T_ARRC_BASE + i))
+                fprintf(o, "static uint64_t tycho_arr_C%d_dhash(TychoArrC%d);\n", i, i);
             continue;
         }
         if (g_arrtypes[i].size > 0) {                 /* fixed [N]T: only read/copy/eq -- no growth */
@@ -12198,6 +12210,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
             if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i))
                 fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
+            if (hash_keyused(T_ARRC_BASE + i))
+                fprintf(o, "static uint64_t tycho_arr_C%d_dhash(TychoArrC%d);\n", i, i);
             continue;
         }
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_with_cap(Arena*, tycho_int);\n", i, i);
@@ -12212,6 +12226,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
         if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i))   /* composite map key / hash(x): deep hash */
             fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
+        if (hash_keyused(T_ARRC_BASE + i))       /* hash(x): the deterministic twin */
+            fprintf(o, "static uint64_t tycho_arr_C%d_dhash(TychoArrC%d);\n", i, i);
     }
     for (int i = 0; i < g_nmaptypes; i++) {         /* (4) composite-map copy/eq prototypes: a struct/array/tuple FIELD of composite-map type calls these in its copy/eq body, which is emitted before the map family itself (7a') -- without the proto the struct copier sees an implicit declaration */
         if (has_typaram(T_MAPC_BASE + i)) continue;   /* generics: a `[$K: $V]` template map -- transient, never emitted */
@@ -12280,6 +12296,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "    h = h * UINT64_C(1099511628211) ^ %s;\n", gen_hash(sd->fields[j].type, vf));
         }
         fprintf(o, "    return h;\n}\n\n");
+        if (hash_keyused(STRUCT_TYPE(i))) {   /* the deterministic twin for hash(x): fixed seed, det leaves */
+            g_hash_det = 1;
+            fprintf(o, "static uint64_t tycho_dhash_S_%s(S_%s v) {\n", sd->name, sd->name);
+            fprintf(o, "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n");
+            for (int j = 0; j < sd->nfields; j++) {
+                char *vf = sfmt("v.f_%s", sd->fields[j].name);
+                fprintf(o, "    h = h * UINT64_C(1099511628211) ^ %s;\n", gen_hash(sd->fields[j].type, vf));
+            }
+            fprintf(o, "    return h;\n}\n\n");
+            g_hash_det = 0;
+        }
     }
     /* (6c) deep-hash body per tuple used as a (nested) composite map key. Tuple == is
      * inline in gen_eq, but the hash is a function (a stateful FNV fold); element
@@ -12293,6 +12320,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "    h = h * UINT64_C(1099511628211) ^ %s;\n", gen_hash(tup_elem(T_TUP_BASE + i, j), vf));
         }
         fprintf(o, "    return h;\n}\n\n");
+        if (hash_keyused(T_TUP_BASE + i)) {
+            g_hash_det = 1;
+            fprintf(o, "static uint64_t tycho_dhash_T%d(TychoTup%d v) {\n", i, i);
+            fprintf(o, "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n");
+            for (int j = 0; j < tup_n(T_TUP_BASE + i); j++) {
+                char *vf = sfmt("v._%d", j);
+                fprintf(o, "    h = h * UINT64_C(1099511628211) ^ %s;\n", gen_hash(tup_elem(T_TUP_BASE + i, j), vf));
+            }
+            fprintf(o, "    return h;\n}\n\n");
+            g_hash_det = 0;
+        }
     }
     /* (7) composite-array op bodies (typedef already emitted in step 2). Each
      * deep-copies its elements through the same seam as the [string] array. */
@@ -12335,6 +12373,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
                     "    for (tycho_int i = 0; i < xs.len; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
                     "    return h;\n}\n", i, i, "(uint64_t)xs.v[i]");
             }
+            if (hash_keyused(T_ARRC_BASE + i)) {
+                fprintf(o,
+                    "static uint64_t tycho_arr_C%d_dhash(TychoArrC%d xs) {\n"
+                    "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n"
+                    "    for (tycho_int i = 0; i < xs.len; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
+                    "    return h;\n}\n", i, i, "(uint64_t)xs.v[i]");
+            }
             continue;
         }
         if (g_arrtypes[i].size > 0) {             /* fixed-size [N]T (1.6): inline; read/copy/eq only */
@@ -12364,6 +12409,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 fprintf(o,
                     "static uint64_t tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
                     "    uint64_t h = UINT64_C(1469598103934665603);\n"
+                    "    for (tycho_int i = 0; i < %lld; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
+                    "    return h;\n}\n", i, i, (long long)n, "(uint64_t)xs.v[i]");
+            }
+            if (hash_keyused(T_ARRC_BASE + i)) {
+                fprintf(o,
+                    "static uint64_t tycho_arr_C%d_dhash(TychoArrC%d xs) {\n"
+                    "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n"
                     "    for (tycho_int i = 0; i < %lld; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
                     "    return h;\n}\n", i, i, (long long)n, "(uint64_t)xs.v[i]");
             }
@@ -12432,6 +12484,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    uint64_t h = tycho_hash_k0;\n"
                 "    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ %s;\n"
                 "    return h;\n}\n\n", i, i, gen_hash(et, "x.data[i]"));
+        if (hash_keyused(T_ARRC_BASE + i)) {   /* hash(x): the deterministic twin */
+            g_hash_det = 1;
+            fprintf(o,
+                "static uint64_t tycho_arr_C%d_dhash(TychoArrC%d x) {\n"
+                "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n"
+                "    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ %s;\n"
+                "    return h;\n}\n\n", i, i, gen_hash(et, "x.data[i]"));
+            g_hash_det = 0;
+        }
     }
     /* (7a') composite-map ops [string: V] — a parameterized copy of the embedded
      * TychoMapSI (open addressing, NULL-empty slots + backward-shift delete, keyed

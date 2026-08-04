@@ -1,83 +1,103 @@
 # What comes next
 
-> 2026-08-04: the generic-hash phase is complete (60e3601, goldens 8b9fc88) and
-> the trie follow-up is measured and committed (cd2b37d). New owner-directed
-> phase: **the build tool** — the long-shelved standing candidate, un-shelved by
-> the owner's explicit request (the "second caller" the demand rule asks for).
-> Validated before admission: every primitive it needs exists in Tycho today —
-> `core:os.system` (subprocess + exit code), `core:io.mtime` (st_mtime via the
-> io shim), `read_file`/`write_file`, and the concurrency model (`spawn`/`wait`,
-> `channel`/`send`/`recv`) — so the tool is pure Tycho, no new shim.
+> 2026-08-04: the build tool is complete (02a2a0d, golden 9d65fd0). Three
+> owner-directed phases, each verified and committed on its own, in this order:
+> housekeeping, deterministic hash, map memory. The closing `make ci` (one
+> sweep, at the end of the chain — the convention) lands as the final step of
+> phase 3.
 
-## Phase 1 — `tycho-build`: a make-like build tool in Tycho
+## Phase 1 — housekeeping: the value-semantics doc, the clean tree
 
-The last untested axis: systems-y I/O — subprocesses, file metadata, a parallel
-dependency graph. `tools/tycho-build/main.ty`, a make-lite:
+`docs/internals/value-semantics-limits.md` carries the owner's uncommitted edit
+describing `core:pool`'s generational indices and the `arena_recycle` reuse
+story — it has sat in the working tree since before the intern phase. Commit it
+on its own (it documents the pool phase it belongs with), and re-verify the
+tree is otherwise clean.
 
-- **Build-file format**: `target: dep1 dep2` rules + indented recipe lines (each
-  a shell line via `os.system`, run in order, first non-zero exits the rule);
-  `#` comments; the first rule is the default target; a dep that names no rule
-  is a plain source file.
-- **Up-to-date rule** (mtime-based): a target rebuilds iff its output file is
-  missing, or any dep's mtime is newer, or any dep was **rebuilt in this run**
-  (the second-granularity tie-breaker make needs — two files written in the
-  same second would otherwise stall a chain). Recipe-less rules are pass-through
-  groupers (like `all:`), silent.
-- **Parallel execution** via the concurrency model: a bounded worker pool
-  (`spawn` N workers, each looping `recv` on a job channel, `send`ing
-  `(rule, code)` on a done channel), and a scheduler that dispatches newly-ready
-  rules in topological order. Status lines (`build <target>`, `FAILED <target>
-  (exit N)`) print from the scheduler thread in DAG order — deterministic for a
-  fixed starting state; recipe stdout is inherited live (like make -j, parallel
-  interleaving is not ordered). A failed rule skips its dependents; the build
-  exits 1.
-- **CLI**: `tycho-build [buildfile] [target]` (buildfile defaults to
-  `buildfile`, target to the first rule); exit 0 success/no-op, 1 build failure,
-  2 usage/parse/io error.
-- **Hermetic differential** (`tools/tycho-build/run.sh`): a fixture tree built
-  in a temp dir — a chain (`src → out1/out2 → final`) plus an independent
-  branch — and legs for: [1] first build runs everything, build lines locked to
-  `expected.out`, outputs exist; [2] **second build is a NO-OP** (empty stdout,
-  exit 0 — the differential); [3] `touch` a source rebuilds only its
-  dependents; [4] a failing recipe exits 1, prints `FAILED (exit N)`, and its
-  dependents are skipped (outputs absent); [5] two clean builds are
-  byte-identical (determinism); [6] bad buildfile / missing buildfile / unknown
-  target exit 2. No temp path or host detail reaches the golden.
-- **Wiring**: `make build-check` lane + ci step `[3o/21]`, following the
-  ar-check/q-check shape.
+Gate: doc gates only (`check_citations.py`, `check_links.sh`). Nothing else can
+redden — no code moves.
+Expected: one commit, tree clean (modulo later phases).
 
-Gate: `make build-check` (the only lane that runs the tool). The tool is pure
-Tycho over existing corelib (no shim → no shim-check; no golden in the suite →
-no goldens-check). Doc gates for plan.md. `make tools-check` untouched
-(tychofmt + lsp only). `make test` cannot redden — nothing under `tests/`
-changes.
+## Phase 2 — deterministic generic hash
+
+The deferred follow-on from the generic-hash phase. Today `hash(x)` is
+per-process seeded (map-consistent, in-process tables/dedup); there is no
+cross-run hash for any composite value. A deterministic variant:
+
+- **Runtime** (`runtime/tycho_rt.c`): fixed-seed forms of the scalar hashers
+  (`tycho_ik_hash`, `tycho_si_hash` — the seeds are globals) and the array
+  hashers (`tycho_arr_int/str/float_hash`), so a deterministic path exists
+  without touching the map's seeded hashing (DoS defense stays).
+- **Compiler** (`src/tychoc.c`): `gen_hash` gains a deterministic mode for the
+  public `hash(x)`; composite types get fixed-seed generated hashes
+  (`tycho_dhash_S_*/T*/arr_C*`) alongside the seeded map-key ones, gated by the
+  same `hash_keyused` tracker — a `hash()` on a type also used as a map key
+  then emits BOTH families (the map keeps its seeded functions).
+- **Contract**: `hash(x)` switches to deterministic, documented as "equal
+  values hash equal, stable across runs — usable for checksums and content
+  addressing over composites; NOT DoS-hardened (that is the map's seeded
+  internal hashing)". Exact-value test assertions become possible.
+- Tests: `corelib/test/hash/main.ty` gains exact-value assertions (cross-run
+  stability is now testable), intern is unaffected (it never calls `hash`).
+
+Gate: `make corelib` + `make test` (compiler + runtime change) + `make
+selfhost-check` (emitted C changes only for programs using `hash()` on
+composites — the fixed point must re-prove) + doc gates. Citations re-point
+(the 7th shift).
+Expected: hash.out delta is the new exact-value lines; 589+ fixtures green;
+fixed point holds.
+
+## Phase 3 — map memory: the lru and idiomatic-trie gaps
+
+The two biggest remaining losses share one root — the map's storage. lru is
+now the suite's largest gap: **32.6 MB vs C 11.5 (~2.8× C)** on a delete-heavy
+`[int:int]` churn workload (C's edge: backward-shift delete — no tombstones —
+and one allocation per rehash, freed on growth, where the arena retains every
+intermediate). The idiomatic trie (~1.56× C) is the same question at small
+composite scale. A measurement-first phase:
+
+1. **Decompose first** (the observability from the arena phase): run the lru
+   and trie benches with `TYCHO_ARENA_STATS=full` and account the 32.6 MB /
+   57.2 MiB — how much is the live map (four parallel arrays + idx table vs
+   C's two), how much is retained growth intermediates (the arena keeps every
+   doubling buffer, C frees them).
+2. **Pick the levers the numbers support** — candidates, in order of
+   estimated value: backward-shift delete (tombstone-free — removes `elive`
+   and the compaction pass), a `reserve`-style pre-size for maps (kills the
+   retained growth intermediates — the same one-line fix that closed the trie
+   pool), a leaner descriptor. Small-map inline storage is the trie-specific
+   stretch; explicit defer if the lru work lands first.
+3. **Implement + re-measure** against the lru and trie lanes; update
+   `bench/lru/RESULTS.md` / `bench/trie/RESULTS.md` and the README rows.
+4. **Closing `make ci`** — the one full sweep for the whole chain.
+
+Gate: `make test` (~8 min — the map is everywhere) + `make corelib` + `make
+lru`/`sh bench/lru/run.sh` + `sh bench/trie/run.sh` (the target lanes) +
+`make selfhost-check` (map codegen changes) + doc gates. Citations re-point.
+Expected: lru and trie rows move measurably toward C; the decomposition is
+recorded in the bench RESULTS docs before and after.
 
 ## Not in scope
 
-- Dependency discovery / globbing (no wildcards; explicit deps only).
-- Phony-target declaration syntax (a recipe-less rule is the group).
-- Shell-out escaping (recipes are shell lines by design, like make).
-- The trie and the build-tool candidates are both closed; the plan is empty
-  after this phase unless the owner files something new.
+- A map representation that returns memory mid-scope (the arena's high-water
+  behavior is the model, not a bug — `reserve` is the answer).
+- The build-tool candidate is closed; nothing else is pending after phase 3.
 
-> Phase 1 evidence — 2026-08-04: all gates green. `make build-check` all 6
-> legs (first-build golden, no-op differential, touch-only-dependents,
-> failure-skips-dependents, determinism, exit-2 errors), doc gates ok,
-> goldens-check ok. Nothing in `tests/` or `corelib/` moved, so `make test`
-> and `make corelib` cannot redden for this phase.
+> Phase 2 evidence — 2026-08-04: all gates green. `make test` 590/0 (unchanged),
+> `make corelib` all green, `make selfhost-check` green (the fixed point holds —
+> existing emission is unchanged unless `hash()` is used), doc gates ok,
+> goldens-check ok.
 >
-> Implementation notes: the tool is pure Tycho over existing surface —
-> `core:os.system` (recipes), `core:io.mtime` (up-to-date checks), `spawn` +
-> `parallel for` + channels (a bounded worker pool — each fan-out chunk is a
-> worker looping on a job channel, sending `(rule, code)` on a done channel;
-> the scheduler is a spawned task). Three bugs found and fixed during the
-> work, each a real Tycho learning: (1) `while` does not exist (`for cond:`);
-> (2) my post-order DFS reversal was wrong — post-order push is already
-> deps-before-dependents; (3) the scheduler's stall check fired when the
-> build COMPLETED (remaining hit 0 mid-pass) and, before the fix, a stalled
-> scheduler never sent the worker sentinels, hanging the `parallel for` —
-> the sentinel-send is now on both the success and the stall path. Also
-> learned: the tie-breaker is load-bearing — two outputs written in the same
-> second compare equal by mtime, so the rebuilt-in-this-run flag (not mtime)
-> drives chained rebuilds; the touch leg needed a `sleep 1` for the same
-> reason.
+> Implementation: the runtime gained fixed-seed twins — `tycho_ik_hash_det`
+> (SplitMix64 with the golden-ratio seed), `tycho_si_hash_det` (SipHash-1-3 with
+> the reference key, `tycho_siphash13` parameterized by k0/k1), and
+> `tycho_arr_int/str/float_hash_det` — while the map's seeded hashing is
+> untouched (DoS defense stays). The compiler's `gen_hash` gained a
+> `g_hash_det` mode (src/tychoc.c:9207), and composite types used by `hash()`
+> emit a deterministic twin of their hash function (`tycho_dhash_S_*`/`T*`/
+> `arr_C*` — fixed fold seed 0x9e3779b97f4a7c15, det leaves) alongside the
+> seeded map-key ones, gated by the same `hash_keyused`. `hash(x)` now returns
+> the deterministic hash; exact values are locked in the hash.out golden (the
+> byte-locked golden is the cross-run proof — a seeded hash would redden it
+> every run). Docs updated: 16-builtins §29.7, core:hash header, guide. 22
+> citations re-pointed (+2..+61 by region).
