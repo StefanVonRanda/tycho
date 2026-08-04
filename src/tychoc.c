@@ -8541,6 +8541,13 @@ static int g_loop_depth = 0;                           /* lexical loop nesting a
  * rather than in the result arena, which may live in an outer scope. Set at
  * the top of every gen_stmt; the result arena is still threaded explicitly. */
 static const char *g_cur_scope = "&_scope";
+/* Depth of aggregate constructions nested inside a user-proc call's argument
+ * expressions. A deep copy of a live heap local into such an aggregate is the
+ * by-value call-argument copy -- the copy the Val-style diagnostic names. At a
+ * plain declaration (`t := (x, 7)`) the same copy is the assignment the user
+ * wrote, so it stays silent (that site is the separate `b := a` decision).
+ * Nested calls nest the counter, so `f(g((s, 1)))` still sees a call arg. */
+static int g_call_arg_depth = 0;
 
 static int count_reads_e(Expr *e, const char *nm) {
     if (!e) return 0;
@@ -9064,8 +9071,33 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
     if (type_is_heap(t) && is_place(arg)) {
         int self_move = g_self_move_name && arg->kind == E_IDENT
             && !strcmp(arg->sval, g_self_move_name);
-        if (!self_move && !can_move_from(arg, arena))
+        if (!self_move && !can_move_from(arg, arena)) {
+            /* Val-style copy diagnostic: this deep copy is unavoidable AND
+             * observable -- arg is a heap-bearing local still live after this
+             * point (read again somewhere in the proc), so move-on-last-use
+             * cannot hand off its buffer. Gated to fire ONLY when the
+             * aggregate is itself a call argument (g_call_arg_depth): at a
+             * plain declaration the copy is the assignment the user wrote,
+             * and the corpus idiom builds aggregates from live locals there
+             * on purpose (value-semantics fixtures). Only a BARE local gets
+             * the warning: a field/index can never be moved (you cannot take
+             * a part out of a value), a param borrows the caller's buffer,
+             * and inside a loop even a last-use local must copy every
+             * iteration -- in all three the advice below is not actionable,
+             * so the copy stays silent. The same-arena test keeps it honest:
+             * a last-use local in a DIFFERENT arena also cannot be moved,
+             * and "make this its last use" would be wrong advice there.
+             * (Mirrors the sink-param die at sink_arg_into; a warning here,
+             * not a die, because the copy is value-semantics-correct -- the
+             * user just paid for it silently.) */
+            if (arg->kind == E_IDENT && !is_param(arg->sval)
+                && g_loop_depth == 0 && g_call_arg_depth > 0
+                && cv_arena(arg->sval) && !strcmp(cv_arena(arg->sval), arena))
+                warn_at(arg->line, "unavoidable copy of '%s' into this aggregate (it is still live "
+                                   "after this point); make this its last use, or pass a copy you "
+                                   "keep (`y := %s`)", arg->sval, arg->sval);
             v = copy_into(t, arena, v);
+        }
     }
     return v;
 }
@@ -9335,8 +9367,10 @@ static char *gen_call(Expr *e, const char *arena) {
         }
         char *g = sfmt("h_%s", e->sval);
         char *out = sfmt("%s.call(%s.env, %s", g, g, arena);
+        g_call_arg_depth++;
         for (int i = 0; i < e->nargs; i++)
             out = sfmt("%s, %s", out, gen_expr(e->args[i], g_cur_scope));
+        g_call_arg_depth--;
         return sfmt("%s)", out);
     }
     if (e->op == TK_ENUM) {   /* enum constructor: descriptor { tag, payload } */
@@ -9656,6 +9690,7 @@ static char *gen_call(Expr *e, const char *arena) {
         return xc;
     }
     char *out = sfmt("h_%s(%s", e->sval, arena);
+    g_call_arg_depth++;
     for (int i = 0; i < e->nargs; i++) {
         /* arguments are transients (the callee's return value is independently
          * owned in _parent — never an alias of an arg), so build them in the
@@ -9677,6 +9712,7 @@ static char *gen_call(Expr *e, const char *arena) {
             out = sfmt("%s, %s", out, a);
         }
     }
+    g_call_arg_depth--;
     return sfmt("%s)", out);
 }
 

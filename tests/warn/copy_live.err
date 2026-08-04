@@ -1,0 +1,2 @@
+tests/warn/copy_live.ty:10: warning: unavoidable copy of 's' into this aggregate (it is still live after this point); make this its last use, or pass a copy you keep (`y := s`)
+    10 |     t := label((s, "grace"))     # copies s into the tuple; s is live after
