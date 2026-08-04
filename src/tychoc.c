@@ -8548,6 +8548,14 @@ static const char *g_cur_scope = "&_scope";
  * wrote, so it stays silent (that site is the separate `b := a` decision).
  * Nested calls nest the counter, so `f(g((s, 1)))` still sees a call arg. */
 static int g_call_arg_depth = 0;
+/* Depth of a return statement's expression. At a return the value is built in
+ * the caller's arena (`_parent`), never the local's, and the advice "make this
+ * its last use" means deleting the local's OTHER reads elsewhere in the proc
+ * -- not locally actionable, so copies at returns stay silent. Without this
+ * gate the warning fired ~15x on the self-hosted compiler alone, all at
+ * `return type_of(ECall(v, args, ...))` AST-building sites where the copy is
+ * structurally unavoidable and every fire is noise. */
+static int g_in_return = 0;
 
 static int count_reads_e(Expr *e, const char *nm) {
     if (!e) return 0;
@@ -9091,7 +9099,7 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
              * not a die, because the copy is value-semantics-correct -- the
              * user just paid for it silently.) */
             if (arg->kind == E_IDENT && !is_param(arg->sval)
-                && g_loop_depth == 0 && g_call_arg_depth > 0
+                && g_loop_depth == 0 && g_call_arg_depth > 0 && g_in_return == 0
                 && cv_arena(arg->sval) && !strcmp(cv_arena(arg->sval), arena))
                 warn_at(arg->line, "unavoidable copy of '%s' into this aggregate (it is still live "
                                    "after this point); make this its last use, or pass a copy you "
@@ -10930,6 +10938,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * top-level return is byte-identical to before; inside a loop/if it
              * additionally frees the scratch arena that used to leak. */
             char *rf = return_frees();
+            g_in_return++;
             if (!s->expr) {
                 indent(o, ind); fprintf(o, "{ %s return; }\n", rf);
             } else if (ret == T_STRING) {
@@ -11062,6 +11071,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
                                         c_type(ret), v, rf);
             }
+            g_in_return--;
             break;
         }
         case S_IF: {

@@ -474,4 +474,4 @@ is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is 
 one-byte glyph.)
 
 > Provenance: `src/tychoc.c:6045-6078` (equality/ordering resolver); function-
-> value identity equality `:9212@identity equality`.
+> value identity equality `:9220@identity equality`.
