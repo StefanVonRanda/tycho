@@ -1,33 +1,39 @@
 # trie — a prefix-tree head-to-head (memory + wall), and where value semantics *lose*
 
-Insert `N = 150000` deterministic words (a shared LCG, so all three ports build the
+Insert `N = 150000` deterministic words (a shared LCG, so all ports build the
 identical trie) into a prefix tree where **each node owns a small `int -> child` map**,
 and report `(node count, word count)` as a byte-identical cross-language checksum. The
 whole trie is the memory under test. tycho uses native `[int: Trie]` maps (no
-hand-written C); C uses a minimal open-addressing `int -> Node*` map per node; Go uses
-the idiomatic `map[byte]*Node`.
+hand-written C); `trie_pool.ty` is the **same trie in the flat-pool + integer-index
+idiom** (see its header); C uses a minimal open-addressing `int -> Node*` map per node;
+Go uses the idiomatic `map[byte]*Node`.
 
 ## Results
 
 Machine: **AMD Ryzen 7 7735HS** (Zen 3+, x86-64), Linux. Toolchains: tycho via `tychoc`
 (C backend) at `-O3`; C via **gcc 15.2.0** at `-O3`; Go **1.26.2**. Median of 3 runs;
-peak RSS via `bench/peakrss`. All three emit checksum `229005 117013`.
+peak RSS via `bench/peakrss`. All four emit checksum `229005 117013`.
 
-| lang  | peak RSS | wall   | per node | child storage                |
-|-------|---------:|-------:|---------:|------------------------------|
-| tycho |  58.7 MB | ~59 ms | ~250 B   | child **structs by value**   |
-| C     |  37.8 MB | ~45 ms | ~173 B   | child **pointers** (8 B)     |
-| Go    |  33.8 MB | ~66 ms | ~148 B   | `map[byte]*Node` (pointers)  |
+| lang  | peak RSS | wall  | per node | child storage                      |
+|-------|---------:|------:|---------:|------------------------------------|
+| tycho |  58.9 MB | ~62 ms | ~270 B   | child **structs by value**         |
+| pool  |  41.4 MB | ~54 ms | ~190 B   | child **indices** (8 B) into one flat `[Trie]` |
+| C     |  37.8 MB | ~50 ms | ~173 B   | child **pointers** (8 B)           |
+| Go    |  33.9 MB | ~76 ms | ~155 B   | `map[byte]*Node` (pointers)        |
 
-(tycho was 119 MB before its per-node maps moved to a compact indexed-dict layout —
-see below; the value-vs-pointer gap that remains is structural, not tunable. tycho's
-wall is now below Go's.)
+(tycho was 119 MB before its per-node maps moved to a compact indexed-dict layout — see
+below. The **pool** row is the same trie with children stored as indices into a flat
+node array — the idiom `docs/internals/value-semantics-limits.md` recommends for
+pointer-shaped data, the same trick `bench/dijkstra` measures at ~1.3× C. It lands at
+**1.10× C**, wall below C's. The one manual step is `reserve(pool, N)` — a dynamically
+grown pool retains every doubling buffer in the arena and measures *worse* than the
+idiomatic form (60.1 MiB); reserving the spine once makes it a single allocation.)
 
-## Reading it honestly — a residual value-vs-pointer premium
+## Reading it honestly — the idiomatic premium, and the model's measured way out
 
-Unlike the JSON tree (where tycho ≈ C on memory), the trie still costs tycho **~1.55× C
-and ~1.7× Go** on RAM — but the wall is now *below* Go's, and the memory premium is less
-than half what it was (~3.2× C at 119 MB). What closed most of the gap, and what remains:
+The idiomatic `[int: Trie]` costs tycho **~1.55× C and ~1.7× Go** on RAM — the wall is
+below Go's, and the memory premium is less than half what it was (~3.2× C at 119 MB).
+What closed most of the gap, and what remains:
 
 - **The per-node map used to over-allocate value slots.** `[int: Trie]` stored whole `Trie`
   values inline in a power-of-two value array; a 1–2-child node sat in a small table with
@@ -35,21 +41,27 @@ than half what it was (~3.2× C at 119 MB). What closed most of the gap, and wha
   layout removed that: an `int32` index table now points at *dense* value entries sized to
   the live child count, so an empty slot costs 4 B, not 80 B. It also deleted the per-slot
   insertion-order list. That is the 119 → 58.7 MB drop, and the ~40% wall drop with it.
-- **Children are still stored by value, not by reference.** Each live child is a whole
-  `Trie` struct inline (~80 B) where C and Go store an 8 B child *pointer*. That
-  per-live-child difference is what's left — fundamental to value semantics, not a tuning
-  knob. A trie is nothing but child slots.
+- **Children are stored by value, not by reference.** Each live child is a whole `Trie`
+  struct inline (~80 B) where C and Go store an 8 B child *pointer*. That per-live-child
+  difference is the idiomatic form's remaining premium. It is structural for the idiomatic
+  form — and **closable by the language's own idiom**: the pool variant stores an 8 B child
+  *index* (C's pointer size) in each map and one flat `[Trie]` array for the nodes, cutting
+  the premium from ~1.55× C to **~1.10× C** with the same checksum. A trie is nothing but
+  child slots; storing the child's *location* instead of the child is the whole trick, and
+  value semantics allows it without aliasing (indices, not pointers).
 
-The arena reclaims it all correctly and with zero manual management, and the peak is now
-within a small factor of C.
+The arena reclaims all of it correctly and with zero manual management.
 
 **The honest boundary.** Tycho's value-semantic model lands next to C on **value-shaped**
 trees (see `bench/json` — a tagged value tree, tycho 37 MB ≈ C 35 MB) and pays a real
-premium on **pointer-shaped / structurally-shared** structures (this trie), where the
-natural C/Go representation is a node *referenced* by many parents/maps. You *can* write a
-compact tycho trie with a flat node pool and integer-index children — but that is exactly
-the manual memory management the model exists to avoid, so it isn't the idiomatic
-comparison and isn't what's measured here.
+premium on **pointer-shaped / structurally-shared** structures *when written with the
+idiomatic by-value form* (this trie). The model is not trapped by that premium: the
+flat-pool + integer-index idiom — recommended in
+`docs/internals/value-semantics-limits.md`, demonstrated by `bench/dijkstra`, and now
+measured on the trie itself — lands within ~10% of C's memory at C-level wall. The
+idiomatic form stays the write-it-without-thinking default; the pool form is what you
+reach for when the structure is the hot path, exactly as C/Go reach for their node
+allocators.
 
 ## History: value-array capacity tuning, then the compact layout
 
@@ -67,9 +79,13 @@ empty-slot waste — the cap-8-vs-cap-4 tradeoff is gone) and the per-slot order
 
 ## Notes / honest limits
 
-- tycho is ~1.55× C here after the compact indexed-dict layout. The remaining gap is
-  **value-vs-pointer storage**, which is fundamental to value semantics, not a tuning knob.
-  For pointer-shaped / shared structures, see
+- The idiomatic form is ~1.55× C after the compact indexed-dict layout — the
+  value-vs-pointer premium of storing whole children by value. The pool variant
+  (`trie_pool.ty`) closes it to ~1.10× C with one `reserve`, at the cost of the
+  index-threading the idiom requires. For pointer-shaped / shared structures, see
   `docs/internals/value-semantics-limits.md` for the recommended idioms.
+- `reserve` is load-bearing for the pool variant: without it the growing `[Trie]` retains
+  every doubling buffer in the arena (60.1 MiB — *worse* than idiomatic). This is the
+  arena's honest trade: capacity growth is retained until scope exit, so size-once.
 - Single-machine snapshot; absolute numbers vary by CPU/allocator/GC. Run
   `sh bench/trie/run.sh` to reproduce. Not wired into `make ci` (Go is optional).
