@@ -119,9 +119,13 @@
   .fig .fcap{padding:8px 13px; border-top:1px solid var(--line);
     font-size:10.5px; letter-spacing:.6px; line-height:1.55; color:var(--dim)}
   .fig .fcap b{color:var(--ink); font-weight:600}
-  /* hero logo — the brand mark, plain */
+  /* hero logo — the brand mark, plain; the satellite (a nested scope) slowly
+     orbits the rings — the Tychonic system, no JS, killed under reduced motion */
   .logohero{justify-self:end; color:var(--ink); width:100%; max-width:340px}
   .logohero svg{display:block; width:100%; height:auto}
+  .logohero .orbit{transform-box:view-box; transform-origin:100px 100px; animation:orbit 40s linear infinite; will-change:transform}
+  @keyframes orbit{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .logohero .orbit{animation:none} }
   @media (max-width:880px){ .logohero{max-width:270px; margin:0 auto; justify-self:center} }
 
   /* contents */
@@ -314,11 +318,16 @@
     </div>
 
     <div class="logohero rise d3" aria-hidden="true">
-      <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="3.2">
+      <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="2.4">
         <circle cx="100" cy="100" r="26"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="74"/>
-        <circle cx="143.3" cy="75" r="16"/>
+        <g class="orbit">
+          <circle cx="143.3" cy="75" r="16"/>
+          <g fill="currentColor" stroke="none">
+            <circle cx="143.3" cy="75" r="5.5"/><circle cx="143.3" cy="91" r="3.4"/>
+          </g>
+        </g>
         <g fill="currentColor" stroke="none">
-          <circle cx="100" cy="100" r="7"/><circle cx="143.3" cy="75" r="5.5"/><circle cx="143.3" cy="91" r="3.4"/><circle cx="35.9" cy="137" r="4.2"/>
+          <circle cx="100" cy="100" r="7"/><circle cx="35.9" cy="137" r="4.2"/>
         </g>
       </svg>
     </div>
