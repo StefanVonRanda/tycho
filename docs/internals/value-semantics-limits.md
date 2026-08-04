@@ -80,7 +80,20 @@ data-oriented layout high-performance C engines reach for *on purpose*: one cont
 them. So it is a representation worth choosing, not merely a constraint to satisfy — value
 semantics just make it the default rather than the optimization you remember to apply. The cost
 is ergonomic: you index a pool instead of following references, and you cannot delete a single
-node without compacting. For graphs, the same pattern (`[Node]` + `[[int]]` adjacency by
+node without compacting — the packaged answer to that is `core:pool`, below.
+
+**Stale-index protection — generational indices (`core:pool`).** The raw pool's one hazard
+is deletion: removing a node, reusing its slot, and later dereferencing the old index
+silently aliases the new occupant (the ABA problem). The fix — the same design standardized
+across the Rust ecosystem (`slotmap`, `generational-arena`) and every ECS entity store — is
+a **generation counter per slot**: an index is `(slot, generation)`, the generation is
+bumped whenever the slot is reused, and a stale generation is rejected at lookup instead of
+aliased. Cost is one word per slot plus one compare per dereference. Tycho packages this as
+`core:pool` (`corelib/pool/pool.ty`): a `Handle` newtype packs `(generation << 24) | slot`
+so a handle is type-distinct from a raw index, `remove` bumps the slot's generation, and
+`get`/`set`/`remove` die on a stale handle rather than silently reading the new occupant.
+Use the raw `[Node]` pool when it only grows; reach for `core:pool` the moment deletion
+enters. For graphs, the same pattern (`[Node]` + `[[int]]` adjacency by
 index) is the idiomatic Tycho representation. Use it whenever the C/Go version would lean on
 shared pointers.
 
@@ -117,13 +130,20 @@ memory trades away ergonomics, and you choose how far to walk it.
 
 ### 2. Long-lived scope holding transient garbage ("build-and-hold")
 
-An arena reclaims at **scope exit**, not incrementally. A function that builds a large
-transient (parse buffer, intermediate collection) and then keeps working holds that
-transient until it returns — where a GC would reclaim it mid-run. In `bench/json` this is
-the ~2.5 MB input string tycho/C hold to the end while Go's GC drops it (Go's lower peak).
+An arena returns memory at **scope exit**, not incrementally — but dead buffers are reused
+incrementally. The compiler proves when a heap buffer is dead and uniquely owned (a
+reassigned loop-carried local; value semantics guarantees no aliasing) and hands it back to
+the arena via `arena_recycle` (`runtime/tycho_rt.c:178`, emitted by the compiler at
+`src/tychoc.c:12301`); the next same-or-smaller allocation in that arena reuses it instead
+of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
+static value semantics. So transient churn inside one scope recycles, and peak is bounded
+by the largest single transient rather than the sum — but the arena keeps its high-water
+mark until the scope exits, and memory is not returned to the OS mid-scope. In `bench/json`
+this is the ~2.5 MB input string tycho/C hold to the end while Go's GC drops it (Go's lower
+peak).
 
-**Idiom — scope the transient in an inner function/block** so its arena reclaims before the
-long-lived work continues:
+**Idiom — scope the transient in an inner function/block** so its arena is freed (returned
+to the OS) before the long-lived work continues:
 
 ```text
 fn load() -> Doc:
@@ -159,8 +179,8 @@ borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that
 ## Decision guide
 
 - Owned, value-shaped, copied-rarely data, freed in bulk → **the model fits; expect ≈ C.**
-- Shared / pointer-shaped / cyclic structures → **flat pool + index children** (§1), or a
-  different tool if you need fine-grained per-node lifetime.
+- Shared / pointer-shaped / cyclic structures → **flat pool + index children** (§1);
+  `core:pool` (the packaged generational pool) when nodes must be deleted, not just appended.
 - Streaming / long-lived process with heavy transients → **scope transients in inner
   functions** (§2) so arenas reclaim.
 - Known-size or hot maps of large values → **`reserve`, or store handles not structs** (§3).
