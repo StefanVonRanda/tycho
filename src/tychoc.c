@@ -6145,16 +6145,18 @@ static Type resolve_expr_inner(Expr *e) {
                 g_place = 1;                       /* reserve(m[k], n): m[k] is a place here (#2) */
                 Type arrt = resolve_expr(e->args[0]);
                 g_place = 0;
-                if (!is_array(arrt))
-                    die_at(e->line, "reserve's first argument must be an array");
+                if (!is_array(arrt) && !is_map(arrt))
+                    die_at(e->line, "reserve's first argument must be an array or a map");
                 if (IS_BOUNDED(arrt))   /* capacity is fixed at the type; reserve is meaningless */
                     die_at(e->line, "reserve does not apply to a bounded[...] — its capacity is fixed");
                 /* reserve is a capacity hint: the scalar arrays have a runtime
                  * tycho_arr_{int,float,str}_reserve; composite-element arrays get a
-                 * generated tycho_arr_C%d_reserve (emitted with the family). SOA and
+                 * generated tycho_arr_C%d_reserve (emitted with the family). Maps get
+                 * tycho_map_XX_reserve (runtime fast families) or a generated
+                 * tycho_mapc%d_reserve (composite maps). SOA and
                  * other non-array element kinds have no reserve — fail closed. */
-                if (arrt != T_ARRAY_INT && arrt != T_ARRAY_FLOAT && arrt != T_ARRAY_STRING && !IS_ARRC(arrt))
-                    die_at(e->line, "reserve only supports arrays of scalars, structs, tuples, or nested arrays");
+                if (!is_array(arrt) && !is_map(arrt))
+                    die_at(e->line, "reserve only supports arrays of scalars, structs, tuples, or nested arrays, and maps");
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot reserve through this expression");
                 if (!vars_can_mutate(root->sval))
@@ -9545,6 +9547,12 @@ static char *gen_call(Expr *e, const char *arena) {
         const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
         char *arr = gen_lvalue(e->args[0], arena);
         char *n = gen_expr(e->args[1], arena);
+        if (is_map(e->args[0]->type)) {           /* maps: pre-size the entry + index arrays (bench/lru growth waste) */
+            Type mt = e->args[0]->type;
+            if (IS_MAPC(mt))
+                return sfmt("tycho_mapc%d_reserve(%s, &(%s), %s)", MAPC_ID(mt), owner, arr, n);
+            return sfmt("tycho_map_%s_reserve(%s, &(%s), %s)", map_fn(mt), owner, arr, n);
+        }
         return sfmt("tycho_arr_%s_reserve(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, n);
     }
     if (!strcmp(e->sval, "split")) {
@@ -12233,6 +12241,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (has_typaram(T_MAPC_BASE + i)) continue;   /* generics: a `[$K: $V]` template map -- transient, never emitted */
         fprintf(o, "static TychoMapC%d tycho_mapc%d_copy(Arena*, TychoMapC%d);\n", i, i, i);
         fprintf(o, "static int tycho_mapc%d_eq(TychoMapC%d, TychoMapC%d);\n", i, i, i);
+        fprintf(o, "static void tycho_mapc%d_idxput(TychoMapC%d*, tycho_int);\n", i, i);   /* the reserve body calls it */
     }
     for (int i = 0; i < g_nstructs; i++)            /* (4) str() prototypes (F5): forward so recursive/mutual str refs resolve */
         if (!g_structs[i].generic)
@@ -12524,6 +12533,20 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    m.elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n"
             "    m.idx = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
             "    for (tycho_int i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n", i, i, i, ks, ks, ct, ct);
+        fprintf(o,
+            "static void tycho_mapc%d_reserve(Arena *a, TychoMapC%d *m, tycho_int cap) {\n"
+            "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2;\n"
+            "    if (cap <= 0) return;\n"
+            "    if (m->ecap >= ec && m->icap >= ic) return;\n"
+            "    %s *nk = (%s *)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
+            "    %s *nv = (%s *)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
+            "    unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)ec);\n"
+            "    int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
+            "    for (tycho_int i = 0; i < ic; i++) ni[i] = 0;\n"
+            "    for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n"
+            "    m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = ec;\n"
+            "    m->idx = ni; m->icap = ic;\n"
+            "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_mapc%d_idxput(m, e);\n}\n", i, i, ks, ks, ks, ct, ct, ct, i);
         fprintf(o,
             "static tycho_int tycho_mapc%d_find(TychoMapC%d m, %s) {\n"
             "    if (m.icap == 0) return -1; uint64_t mask = (uint64_t)m.icap - 1; tycho_int i = (tycho_int)(%s & mask); int e;\n"

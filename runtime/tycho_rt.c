@@ -2087,6 +2087,22 @@ static tycho_int tycho_map_si_append(Arena *a, TychoMapSI *m, char *k, tycho_int
     m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1;
     return e;
 }
+/* reserve(m, n): pre-size for >= n entries, preserving live entries (see ii). */
+void tycho_map_si_reserve(Arena *a, TychoMapSI *m, tycho_int cap) {
+    if (cap <= 0) return;
+    tycho_int ec = 8; while (ec < cap) ec *= 2;
+    tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
+    if (m->ecap >= ec && m->icap >= ic) return;
+    char **nk = (char **)arena_alloc(a, (size_t)ec * sizeof(char **));
+    tycho_int *nv = (tycho_int *)arena_alloc(a, (size_t)ec * sizeof(tycho_int));
+    unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)ec);
+    int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));
+    for (tycho_int i = 0; i < ic; i++) ni[i] = 0;
+    for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }
+    m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = ec;
+    m->idx = ni; m->icap = ic;
+    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_map_si_idx_put(m, e);
+}
 void tycho_map_si_put(Arena *a, TychoMapSI *m, const char *k, tycho_int v) {
     tycho_int e = tycho_map_si_find(*m, k);
     if (e >= 0) { m->evals[e] = v; return; }
@@ -2229,6 +2245,22 @@ static tycho_int tycho_map_sf_append(Arena *a, TychoMapSF *m, char *k, double v)
     tycho_int e = m->ecount++;
     m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1;
     return e;
+}
+/* reserve(m, n): pre-size for >= n entries, preserving live entries (see ii). */
+void tycho_map_sf_reserve(Arena *a, TychoMapSF *m, tycho_int cap) {
+    if (cap <= 0) return;
+    tycho_int ec = 8; while (ec < cap) ec *= 2;
+    tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
+    if (m->ecap >= ec && m->icap >= ic) return;
+    char **nk = (char **)arena_alloc(a, (size_t)ec * sizeof(char **));
+    double *nv = (double *)arena_alloc(a, (size_t)ec * sizeof(double));
+    unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)ec);
+    int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));
+    for (tycho_int i = 0; i < ic; i++) ni[i] = 0;
+    for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }
+    m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = ec;
+    m->idx = ni; m->icap = ic;
+    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_map_sf_idx_put(m, e);
 }
 void tycho_map_sf_put(Arena *a, TychoMapSF *m, const char *k, double v) {
     tycho_int e = tycho_map_sf_find(*m, k);
@@ -2438,6 +2470,24 @@ static tycho_int tycho_map_ii_append(Arena *a, TychoMapII *m, tycho_int k, tycho
     m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1;
     return e;
 }
+/* reserve(m, n): pre-size the entry + index arrays for >= n entries, copying any
+ * existing live entries and re-hashing the index. A no-op when already large
+ * enough. Kills the retained growth intermediates for a known-size map (bench/lru). */
+void tycho_map_ii_reserve(Arena *a, TychoMapII *m, tycho_int cap) {
+    if (cap <= 0) return;
+    tycho_int ec = 8; while (ec < cap) ec *= 2;
+    tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
+    if (m->ecap >= ec && m->icap >= ic) return;
+    tycho_int *nk = (tycho_int *)arena_alloc(a, (size_t)ec * sizeof(tycho_int));
+    tycho_int *nv = (tycho_int *)arena_alloc(a, (size_t)ec * sizeof(tycho_int));
+    unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)ec);
+    int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));
+    for (tycho_int i = 0; i < ic; i++) ni[i] = 0;
+    for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }
+    m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = ec;
+    m->idx = ni; m->icap = ic;
+    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_map_ii_idx_put(m, e);
+}
 void tycho_map_ii_put(Arena *a, TychoMapII *m, tycho_int k, tycho_int v) {
     tycho_int e = tycho_map_ii_find(*m, k);
     if (e >= 0) { m->evals[e] = v; return; }                /* update existing */
@@ -2576,6 +2626,22 @@ static tycho_int tycho_map_if_append(Arena *a, TychoMapIF *m, tycho_int k, doubl
     tycho_int e = m->ecount++;
     m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1;
     return e;
+}
+/* reserve(m, n): pre-size for >= n entries, preserving live entries (see ii). */
+void tycho_map_if_reserve(Arena *a, TychoMapIF *m, tycho_int cap) {
+    if (cap <= 0) return;
+    tycho_int ec = 8; while (ec < cap) ec *= 2;
+    tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
+    if (m->ecap >= ec && m->icap >= ic) return;
+    tycho_int *nk = (tycho_int *)arena_alloc(a, (size_t)ec * sizeof(tycho_int *));
+    double *nv = (double *)arena_alloc(a, (size_t)ec * sizeof(double));
+    unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)ec);
+    int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));
+    for (tycho_int i = 0; i < ic; i++) ni[i] = 0;
+    for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }
+    m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = ec;
+    m->idx = ni; m->icap = ic;
+    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_map_if_idx_put(m, e);
 }
 void tycho_map_if_put(Arena *a, TychoMapIF *m, tycho_int k, double v) {
     tycho_int e = tycho_map_if_find(*m, k);
