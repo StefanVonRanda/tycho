@@ -23,13 +23,14 @@
 <link rel="stylesheet" href="fonts/fonts.css">
 </head>
 <body>
-<!-- Direction: precision instrument — the original all-monospace readout restored as the
-     voice (IBM Plex Mono throughout: body, labels, code), but structured: numbered
-     sections, bordered instrument panels, a spec strip, grouped features, a rigour
-     table and a columned footer. Flat, sharp-cornered, monochrome + one vermilion
-     accent, brand ink #1c1c2e on warm paper. The two canvases tell the same story as
-     the logo — nested orbits = nested arenas: the oracle shows a value returned up to
-     main; the dividers are labelled arena-lifetime traces. -->
+<!-- Direction: the page as a technical document, not a landing page. Title block,
+     table of contents with dotted leaders, numbered FIGURES and LISTINGS with
+     captions, spec-sheet tables, a running section header in the top bar, and a
+     "END OF DOCUMENT" colophon. All IBM Plex Mono, flat and sharp-cornered,
+     brand ink #1c1c2e on warm paper, one vermilion accent. Two animated figures
+     tell the memory story: FIG. 01 (oracle) is the nested-arena field; FIG. 02
+     (arena lifetimes) is a stack of scope bars where allocations appear, a value
+     is returned to main, and a scope exit frees its whole arena at once. -->
 <style>
   :root{
     --paper:#f4f3ee; --panel:#efeee7;
@@ -67,14 +68,14 @@
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
     opacity:.5; mix-blend-mode:multiply;}
 
-  .wrap{position:relative; z-index:1; max-width:1060px; margin:0 auto; padding:0 28px 90px}
+  .wrap{position:relative; z-index:1; max-width:1060px; margin:0 auto; padding:0 28px 80px}
   a{color:var(--ink); text-decoration:none; border-bottom:1px solid var(--faint); transition:border-color .15s,color .15s}
   a:hover{border-bottom-color:var(--ink)}
   a:focus-visible,button:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
   ::selection{background:var(--accent-soft)}
   code{font:inherit}
 
-  /* ── top bar ── */
+  /* ── top bar (running header) ── */
   .bar{
     position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px;
     margin:0 -28px; padding:14px 28px; background:color-mix(in srgb,var(--paper) 88%,transparent);
@@ -82,6 +83,8 @@
   }
   .bar .brand{display:flex; align-items:center; gap:10px; color:var(--ink); border:0; font-weight:700; font-size:14px; letter-spacing:2px; text-transform:uppercase}
   .bar .brand .logo{width:20px; height:20px; color:var(--ink); flex:0 0 auto}
+  .runsec{font-size:10px; letter-spacing:2.2px; text-transform:uppercase; color:var(--faint); border-left:1px solid var(--line); padding-left:16px; white-space:nowrap}
+  @media (max-width:1100px){ .runsec{display:none} }
   .bar nav{margin-left:auto; display:flex; align-items:center; gap:20px; font-size:11px; letter-spacing:1.6px; text-transform:uppercase}
   .bar nav a{color:var(--dim); border:0; padding:3px 0}
   .bar nav a:hover{color:var(--ink)}
@@ -95,9 +98,9 @@
     @keyframes prog{to{transform:scaleX(1)}}
   }
 
-  /* ── hero ── */
-  header.hero{padding:58px 0 6px; display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr); gap:40px; align-items:center}
-  @media (max-width:880px){ header.hero{grid-template-columns:1fr; gap:24px; padding:40px 0 6px} }
+  /* ── hero / title block ── */
+  header.hero{padding:54px 0 4px; display:grid; grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr); gap:40px; align-items:center}
+  @media (max-width:880px){ header.hero{grid-template-columns:1fr; gap:24px; padding:40px 0 4px} }
   .hlabel{display:flex; flex-direction:column; gap:4px; margin-bottom:20px}
   .hlabel .idx{font-size:11px; letter-spacing:2.4px; color:var(--accent); font-weight:600}
   .hlabel .ttl{font-size:12px; letter-spacing:3.4px; color:var(--ink); font-weight:700}
@@ -113,54 +116,69 @@
   .meta{display:flex; flex-wrap:wrap; gap:8px 26px; margin:22px 0 0; font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--dim)}
   .meta code{color:var(--ink); font-weight:600}
 
-  /* oracle instrument panel */
-  .oracle{position:relative; width:100%; max-width:420px; justify-self:end; border:1px solid var(--line-strong); background:var(--panel)}
-  @media (max-width:880px){ .oracle{max-width:380px; margin:0 auto} }
-  .ohead{display:flex; align-items:center; gap:9px; padding:9px 13px; border-bottom:1px solid var(--line);
+  /* figures (oracle + arena lifetimes) share a frame */
+  .fig{border:1px solid var(--line-strong); background:var(--panel)}
+  .fig .fhead{display:flex; align-items:center; gap:9px; padding:9px 13px; border-bottom:1px solid var(--line);
     font-size:10px; letter-spacing:1.8px; text-transform:uppercase; color:var(--dim)}
-  .ohead .dot{width:7px; height:7px; border-radius:50%; background:var(--accent); animation:pulse 2.4s ease-in-out infinite}
+  .fig .fhead .dot{width:7px; height:7px; background:var(--accent); animation:pulse 2.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  .oracle canvas{display:block; width:100%; aspect-ratio:1/1; background:
-    radial-gradient(120% 120% at 50% 42%, transparent 55%, var(--paper) 100%)}
-  .ofoot{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 13px; border-top:1px solid var(--line);
-    font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:var(--dim)}
-  .ofoot b{color:var(--ink); font-weight:600; letter-spacing:1.8px}
+  .fig .fhead b{color:var(--ink); font-weight:600}
+  .fig canvas{display:block; width:100%}
+  .fig .fcap{padding:8px 13px; border-top:1px solid var(--line);
+    font-size:10.5px; letter-spacing:.6px; line-height:1.55; color:var(--dim)}
+  .fig .fcap b{color:var(--ink); font-weight:600}
+  .oracle{max-width:420px; justify-self:end}
+  @media (max-width:880px){ .oracle{max-width:380px; margin:0 auto} }
+  .oracle canvas{aspect-ratio:1/1; background:radial-gradient(120% 120% at 50% 42%, transparent 55%, var(--paper) 100%)}
 
-  /* spec strip */
-  .spec{display:grid; grid-template-columns:repeat(5,1fr); margin:30px 0 4px; border-top:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong)}
-  @media (max-width:760px){ .spec{grid-template-columns:repeat(2,1fr)} }
-  .spec .cell{padding:13px 15px; border-left:1px solid var(--line)}
-  .spec .cell:first-child{border-left:0; padding-left:0}
-  @media (max-width:760px){ .spec .cell:nth-child(3){border-left:0; padding-left:0} }
-  .spec .cell b{display:block; color:var(--ink); font-size:14px; font-weight:700; letter-spacing:.4px}
-  .spec .cell span{display:block; margin-top:3px; font-size:9.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim)}
+  /* contents */
+  .contents{border:1px solid var(--line-strong); background:var(--panel); padding:14px 18px 12px; margin:28px 0 0}
+  .contents .chead{display:flex; align-items:center; gap:8px; font-size:10px; letter-spacing:2.4px; color:var(--faint); font-weight:600; margin-bottom:6px}
+  .contents .chead::before{content:""; width:7px; height:7px; background:var(--accent)}
+  .contents a{display:flex; align-items:baseline; gap:10px; border:0; color:var(--dim); padding:4px 0; font-size:12.5px}
+  .contents a:hover{color:var(--ink)}
+  .contents a .n{color:var(--accent); font-weight:600; width:3ch; flex:0 0 auto}
+  .contents a .dots{flex:1; border-bottom:1px dotted var(--line-strong); transform:translateY(-3px); min-width:24px}
+  .contents a .arr{color:var(--faint); flex:0 0 auto}
 
-  /* ── sections ── */
-  section{padding:54px 0 4px; scroll-margin-top:76px}
+  /* spec sheet */
+  .spec{border:1px solid var(--line-strong); background:var(--panel); margin:14px 0 0}
+  .spec .shead{display:flex; align-items:center; gap:8px; padding:9px 14px; border-bottom:1px solid var(--line);
+    font-size:10px; letter-spacing:2.2px; color:var(--dim); font-weight:600}
+  .spec .shead::before{content:""; width:7px; height:7px; background:var(--accent)}
+  .spec .row{display:grid; grid-template-columns:repeat(5,1fr)}
+  @media (max-width:760px){ .spec .row{grid-template-columns:repeat(2,1fr)} }
+  .spec .cell{padding:12px 14px; border-left:1px solid var(--line)}
+  .spec .cell:first-child{border-left:0}
+  @media (max-width:760px){ .spec .cell:nth-child(3){border-left:0} }
+  .spec .cell b{display:block; color:var(--ink); font-size:13.5px}
+  .spec .cell span{display:block; margin-top:2px; font-size:9.5px; letter-spacing:1.4px; text-transform:uppercase; color:var(--dim)}
+
+  /* ── sections / chapters ── */
+  section{padding:50px 0 4px; scroll-margin-top:76px}
   .marker{display:flex; align-items:baseline; gap:13px; font-size:11px; letter-spacing:2.2px;
     text-transform:uppercase; color:var(--ink); font-weight:600; margin:0 0 6px}
   .marker .n{color:var(--accent); font-weight:600}
-  /* dithered tail: a dot strip after the label, fading out to the right */
   .marker::after{content:""; flex:1; align-self:center; height:6px; margin-left:6px;
     background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
     -webkit-mask-image:linear-gradient(90deg, #000, transparent 82%); mask-image:linear-gradient(90deg, #000, transparent 82%);
-    opacity:.22}
-  h2{font-size:clamp(20px,2.8vw,28px); color:var(--ink); font-weight:700; margin:0 0 18px; letter-spacing:-.3px; line-height:1.16; text-wrap:balance}
+    opacity:.24}
+  h2{font-size:clamp(20px,2.8vw,28px); color:var(--ink); font-weight:700; margin:0 0 16px; letter-spacing:-.3px; line-height:1.16; text-wrap:balance}
   p{margin:0 0 14px; max-width:64ch}
   p.muted{color:var(--dim); font-size:13px}
   strong{color:var(--ink); font-weight:700}
-  .inl{border:1px solid var(--line); background:var(--panel); padding:1px 6px; font-size:.9em; color:var(--ink); white-space:nowrap}
+  .inl{border:1px solid var(--line); background:var(--paper); padding:1px 6px; font-size:.9em; color:var(--ink); white-space:nowrap}
 
   /* pillar cards */
   .cards{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:4px 0 22px}
   @media (max-width:760px){ .cards{grid-template-columns:1fr} }
-  .card{border:1px solid var(--line-strong); background:var(--panel); padding:17px 18px 15px}
+  .card{border:1px solid var(--line-strong); background:var(--panel); padding:16px 18px 14px}
   .card .idx{font-size:10px; letter-spacing:2px; color:var(--accent); font-weight:600; display:block; margin-bottom:9px}
-  .card h3{font-size:13px; color:var(--ink); font-weight:700; margin:0 0 6px; text-transform:uppercase; letter-spacing:1.2px}
-  .card p{margin:0; font-size:13px; line-height:1.6; color:var(--ink-soft)}
+  .card h3{font-size:12px; color:var(--ink); font-weight:700; margin:0 0 6px; text-transform:uppercase; letter-spacing:1.2px}
+  .card p{margin:0; font-size:12.5px; line-height:1.62; color:var(--ink-soft)}
 
-  /* code panels — dark chips */
-  .panel{border:1px solid var(--code-line); background:var(--code-bg); margin:0 0 16px; overflow:hidden}
+  /* listings (code panels) */
+  .panel{border:1px solid var(--code-line); background:var(--code-bg); margin:0 0 8px; overflow:hidden}
   .phead{display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--code-line); border-bottom:1px solid var(--code-line)}
   .phead .traf{width:8px; height:8px; background:var(--accent); opacity:.85}
   .phead .fn{font-size:11px; letter-spacing:1px; color:var(--code-fg)}
@@ -168,9 +186,8 @@
     color:var(--code-dim); border:1px solid var(--code-line); padding:2px 8px; background:rgba(236,236,244,.04)}
   pre{margin:0; padding:16px 18px; overflow-x:auto; font-size:12.5px; line-height:1.7; color:var(--code-fg)}
   .k{color:#ffffff; font-weight:600} .fn{color:#dfe1f5} .s{color:#b8c4a8} .c{color:var(--code-dim)} .g{color:#a4a4b8} .out{color:#9a9aae}
-
-  .codecap{color:var(--dim); font-size:11px; letter-spacing:1px; text-transform:uppercase; margin:2px 0 9px}
-  .codecap::before{content:"› "; color:var(--faint)}
+  .codecap{color:var(--dim); font-size:11px; letter-spacing:.4px; margin:0 2px 16px; line-height:1.55}
+  .codecap b{color:var(--ink); font-weight:600}
 
   /* split section (02) */
   .split{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.06fr); gap:34px; align-items:start; margin-top:4px}
@@ -193,36 +210,34 @@
   ul.feat li b{color:var(--ink); font-weight:700; display:block; margin-bottom:1px; letter-spacing:.6px}
   ul.feat li span{color:var(--dim); font-size:12px}
 
-  /* rigour stats */
-  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:6px 0 20px}
-  @media (max-width:760px){ .stats{grid-template-columns:repeat(2,1fr)} }
-  .stat{border:1px solid var(--line-strong); background:var(--panel); padding:15px 17px}
-  .stat b{display:block; font-size:24px; font-weight:700; letter-spacing:-.5px; color:var(--ink); line-height:1.15}
-  .stat span{display:block; margin-top:6px; font-size:9.5px; letter-spacing:1.3px; text-transform:uppercase; color:var(--dim)}
-
-  /* evidence rows */
-  .ev{border:1px solid var(--line-strong); margin:4px 0 18px; background:var(--panel)}
-  .ev .row{display:flex; gap:18px; padding:16px 19px; border-top:1px solid var(--line)}
-  .ev .row:first-child{border-top:0}
-  .ev .row .tag{color:var(--accent); flex:0 0 auto; width:10ch; font-size:10px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600; padding-top:3px}
-  .ev .row .txt{color:var(--ink-soft); font-size:13px; min-width:0; line-height:1.66}
-  .ev .row .txt b{color:var(--ink)} .ev .row .txt .cmd{color:var(--ink); border-bottom:1px solid var(--faint)}
+  /* spec sheet for rigour */
+  .spec2{border:1px solid var(--line-strong); background:var(--panel); margin:4px 0 18px}
+  .spec2 .row{display:grid; grid-template-columns:150px 1fr; border-top:1px solid var(--line)}
+  .spec2 .row:first-child{border-top:0}
+  @media (max-width:640px){ .spec2 .row{grid-template-columns:110px 1fr} }
+  .spec2 .row .k{padding:12px 16px; font-size:10px; letter-spacing:1.8px; text-transform:uppercase; color:var(--accent); font-weight:600; border-right:1px solid var(--line)}
+  .spec2 .row .v{padding:12px 16px; font-size:12.5px; color:var(--ink-soft); line-height:1.65; min-width:0}
+  .spec2 .row .v b{color:var(--ink)}
+  .spec2 .row .v .cmd{color:var(--ink); border-bottom:1px solid var(--faint)}
 
   /* CTAs */
   .cta{display:flex; flex-wrap:wrap; gap:11px; margin:6px 0 4px}
-  .btn{display:inline-flex; align-items:center; gap:8px; border:1.5px solid var(--ink); background:var(--ink); color:var(--paper);
+  .btn{position:relative; overflow:hidden; display:inline-flex; align-items:center; gap:8px; border:1.5px solid var(--ink); background:var(--ink); color:var(--paper);
     padding:10px 20px; font-size:11px; letter-spacing:1.8px; text-transform:uppercase; font-weight:700; cursor:pointer; transition:background .15s,color .15s,border-color .15s}
+  .btn::after{content:""; position:absolute; inset:0; pointer-events:none;
+    background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
+    -webkit-mask-image:linear-gradient(90deg, transparent 45%, #000); mask-image:linear-gradient(90deg, transparent 45%, #000);
+    opacity:.16; transition:opacity .18s}
+  .btn:hover::after{opacity:.3}
   .btn:hover{background:var(--accent); border-color:var(--accent); color:#fff}
   .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line-strong)}
   .btn.ghost:hover{background:transparent; color:var(--accent); border-color:var(--accent)}
 
-  /* arena-lifetime trace figure */
-  .tracefig{margin:46px 0 0}
-  .trace{display:block; width:100%; height:118px; border:1px solid var(--line); background:var(--panel)}
-  .tracecap{color:var(--dim); font-size:11px; letter-spacing:.4px; margin:7px 2px 0}
-  .tracecap b{color:var(--ink); font-weight:600}
+  /* arena-lifetime figure */
+  .trace{height:172px}
+  .trace figcaption{display:none}
 
-  /* footer */
+  /* footer / colophon */
   footer{margin-top:58px; padding-top:30px; border-top:1px solid var(--line-strong)}
   .fgrid{display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:32px}
   @media (max-width:760px){ .fgrid{grid-template-columns:1fr 1fr; gap:24px} }
@@ -247,16 +262,15 @@
     .bar{gap:10px; padding:12px 18px; margin:0 -18px}
     .bar nav{gap:14px}
     .bar nav a[href^="#"]{display:none}
-    .wrap{padding:0 18px 70px}
-    section{padding:42px 0 4px; scroll-margin-top:70px}
+    .wrap{padding:0 18px 60px}
+    section{padding:40px 0 4px; scroll-margin-top:70px}
     pre{font-size:11.5px}
-    .trace{height:100px}
-    .tracefig{margin:36px 0 0}
+    .trace{height:150px}
   }
   @media (prefers-reduced-motion:reduce){
     .rise{animation:none; opacity:1; transform:none}
     .rv{opacity:1; transform:none; transition:none}
-    .ohead .dot{animation:none}
+    .fig .fhead .dot{animation:none}
   }
 </style>
 
@@ -272,6 +286,7 @@
       </svg>
       <span>Tycho</span>
     </a>
+    <span class="runsec" id="runsec" aria-hidden="true">Contents</span>
     <nav aria-label="Sections">
       <a href="#idea">Idea</a>
       <a href="#fast">Why&nbsp;fast</a>
@@ -287,7 +302,7 @@
   <header class="hero" id="top">
     <div class="htext">
       <div class="hlabel rise d1">
-        <span class="idx">◇ 001 — SYSTEM</span>
+        <span class="idx">DOC. NO. 001 — MEMORY MODEL</span>
         <span class="ttl">TYCHO</span>
         <span class="sub">An experimental systems language · transpiles to C</span>
       </div>
@@ -306,23 +321,35 @@
       <p class="meta rise d5">New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a> — builds with <code>cc</code> and <code>make</code>, nothing else.</p>
     </div>
 
-    <div class="oracle rise d3">
-      <div class="ohead"><span class="dot"></span><span>Oracle — nested arena field</span></div>
+    <div class="fig oracle rise d3">
+      <div class="fhead"><span class="dot"></span><b>FIG. 01</b><span>— nested arena field</span></div>
       <canvas id="oracle" aria-hidden="true"></canvas>
-      <div class="ofoot"><b>Nested arenas</b><span>each ring · one scope</span></div>
+      <div class="fcap"><b>Nested arenas.</b> Each ring is one scope's arena; values return to the centre (main).</div>
     </div>
   </header>
 
+  <nav class="contents rise d4" aria-label="Contents">
+    <div class="chead">Contents</div>
+    <a href="#idea"><span class="n">01</span>The idea<span class="dots"></span><span class="arr">→</span></a>
+    <a href="#fast"><span class="n">02</span>Why it stays fast<span class="dots"></span><span class="arr">→</span></a>
+    <a href="#lang"><span class="n">03</span>The language<span class="dots"></span><span class="arr">→</span></a>
+    <a href="#rigor"><span class="n">04</span>How it's checked<span class="dots"></span><span class="arr">→</span></a>
+    <a href="#start"><span class="n">05</span>Try it<span class="dots"></span><span class="arr">→</span></a>
+  </nav>
+
   <div class="spec rise d4" aria-label="Key facts">
-    <div class="cell"><b><code>v0.1.0</code></b><span>tagged release</span></div>
-    <div class="cell"><b>cc + make</b><span>whole toolchain</span></div>
-    <div class="cell"><b>no GC</b><span>arenas from scope</span></div>
-    <div class="cell"><b>38</b><span>stdlib packages</span></div>
-    <div class="cell"><b>self-hosting</b><span>compiles itself</span></div>
+    <div class="shead">Spec — at a glance</div>
+    <div class="row">
+      <div class="cell"><b><code>v0.1.0</code></b><span>tagged release</span></div>
+      <div class="cell"><b>cc + make</b><span>whole toolchain</span></div>
+      <div class="cell"><b>no GC</b><span>arenas from scope</span></div>
+      <div class="cell"><b>38</b><span>stdlib packages</span></div>
+      <div class="cell"><b>self-hosting</b><span>compiles itself</span></div>
+    </div>
   </div>
 
   <section id="idea">
-    <p class="marker rv"><span class="n">01</span> The idea</p>
+    <p class="marker rv"><span class="n">§01</span> The idea</p>
     <h2 class="rv">Memory comes from scope, not a runtime.</h2>
     <div class="cards">
       <div class="card rv" style="--d:0ms">
@@ -341,9 +368,8 @@
         <p>Every allocation and free is inserted for you — no GC, no manual <span class="inl">free</span>, nothing to annotate.</p>
       </div>
     </div>
-    <p class="codecap rv">A string built across a loop lives in main's arena, freed for you on return</p>
     <div class="panel rv">
-      <div class="phead"><span class="traf"></span><span class="fn">examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
+      <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
       <pre><code><span class="k">fn</span> <span class="fn">main</span>():
     total := <span class="s">""</span>
     <span class="k">for</span> i <span class="k">in</span> <span class="fn">range</span>(1, 6):
@@ -352,15 +378,17 @@
             total = total + <span class="s">", "</span>
     <span class="fn">println</span>(<span class="s">"counted: "</span> + total)   <span class="c"># counted: 1, 2, 3, 4, 5</span></code></pre>
     </div>
+    <p class="codecap rv"><b>Listing 01.</b> The string built inside the loop lives in main's arena — the compiler frees it for you on return.</p>
+
+    <div class="fig rv">
+      <div class="fhead"><span class="dot"></span><b>FIG. 02</b><span>— arena lifetimes</span></div>
+      <canvas class="trace" id="tr1" aria-hidden="true"></canvas>
+      <div class="fcap"><b>Arena lifetimes.</b> A block is one allocation. A value built in the innermost scope is returned to main's arena, outliving the scope that built it; when a scope exits, its whole arena is freed at once.</div>
+    </div>
   </section>
 
-  <div class="tracefig">
-    <canvas class="trace" id="tr1" aria-hidden="true"></canvas>
-    <p class="tracecap"><b>Arena lifetimes:</b> each block is one allocation; a scope's lane empties when it exits; the highlighted block is a value returned up to main.</p>
-  </div>
-
   <section id="fast">
-    <p class="marker rv"><span class="n">02</span> Why it stays fast</p>
+    <p class="marker rv"><span class="n">§02</span> Why it stays fast</p>
     <h2 class="rv">Value semantics, without the copies you'd expect.</h2>
     <div class="split">
       <div>
@@ -372,9 +400,8 @@
         <p class="muted rv">Where the model helps and where it costs are both measured — as machine-specific ratios, with the workloads that produce them — in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes ↗</a>. Pointer-shaped data like graphs and trees is where value semantics is least free, and the docs are honest about that.</p>
       </div>
       <div>
-        <p class="codecap rv">Both moves are sound because a value is never aliased — a copy is always independent</p>
         <div class="panel rv">
-          <div class="phead"><span class="traf"></span><span class="fn">examples/promote.ty</span><span class="badge">return moves · zero copies</span></div>
+          <div class="phead"><span class="traf"></span><span class="fn">LISTING 02 — examples/promote.ty</span><span class="badge">return moves · zero copies</span></div>
           <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
     name: <span class="k">string</span>
     age: <span class="k">int</span>
@@ -389,12 +416,13 @@
     older := <span class="fn">promote</span>(ada)
     <span class="fn">println</span>(<span class="fn">str</span>(ada.age) + <span class="s">" "</span> + <span class="fn">str</span>(older.age))   <span class="c"># 36 37</span></code></pre>
         </div>
+        <p class="codecap rv"><b>Listing 02.</b> <span class="inl">return</span> moves the value into the caller's arena; the copy <span class="inl">q := p</span> stays independent.</p>
       </div>
     </div>
   </section>
 
   <section id="lang">
-    <p class="marker rv"><span class="n">03</span> The language</p>
+    <p class="marker rv"><span class="n">§03</span> The language</p>
     <h2 class="rv">Small, and Go/Odin-shaped.</h2>
     <p class="muted rv">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
     <div class="groups">
@@ -424,24 +452,14 @@
     </div>
   </section>
 
-  <div class="tracefig">
-    <canvas class="trace" id="tr2" aria-hidden="true"></canvas>
-    <p class="tracecap"><b>Arena lifetimes:</b> each block is one allocation; a scope's lane empties when it exits; the highlighted block is a value returned up to main.</p>
-  </div>
-
   <section id="rigor">
-    <p class="marker rv"><span class="n">04</span> How it's checked</p>
+    <p class="marker rv"><span class="n">§04</span> How it's checked</p>
     <h2 class="rv">An experiment, but a heavily-checked one.</h2>
-    <div class="stats">
-      <div class="stat rv" style="--d:0ms"><b>2</b><span>compilers — C reference + Tycho self-host</span></div>
-      <div class="stat rv" style="--d:70ms"><b>byte-for-byte</b><span>self-emission fixed point</span></div>
-      <div class="stat rv" style="--d:140ms"><b>ASan+UBSan</b><span>differential fuzz both compilers</span></div>
-      <div class="stat rv" style="--d:210ms"><b>make ci</b><span>the whole gate, on your machine</span></div>
-    </div>
-    <div class="ev">
-      <div class="row rv"><span class="tag">self-host</span><span class="txt">Two compilers: a reference written in C, and a frozen compiler <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits. <span class="cmd">make selfhost-check</span> re-proves the fixed point at every commit — the Tycho-built compiler reproduces its own emitted C <b>byte-for-byte</b>.</span></div>
-      <div class="row rv"><span class="tag">fuzz</span><span class="txt">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — and checked against a committed golden output.</span></div>
-      <div class="row rv"><span class="tag">local</span><span class="txt">There's no cloud CI to take on faith. <span class="cmd">make ci</span> runs the whole gate on your own machine.</span></div>
+    <div class="spec2 rv">
+      <div class="row"><span class="k">Compilers</span><span class="v">Two: a reference written in C, and a frozen compiler <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits.</span></div>
+      <div class="row"><span class="k">Fixpoint</span><span class="v"><span class="cmd">make selfhost-check</span> re-proves it at every commit — the Tycho-built compiler reproduces its own emitted C <b>byte-for-byte</b>.</span></div>
+      <div class="row"><span class="k">Sanitizers</span><span class="v">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — against a committed golden.</span></div>
+      <div class="row"><span class="k">Gate</span><span class="v"><span class="cmd">make ci</span> runs the whole check suite on your own machine — there's no cloud CI to take on faith.</span></div>
     </div>
     <p class="muted rv">
       It's experimental in <em>scope</em>, not in rigor — the honest caveats live in the
@@ -450,10 +468,10 @@
   </section>
 
   <section id="start">
-    <p class="marker rv"><span class="n">05</span> Try it</p>
+    <p class="marker rv"><span class="n">§05</span> Try it</p>
     <h2 class="rv">A C compiler and make — that's the whole toolchain.</h2>
     <div class="panel rv">
-      <div class="phead"><span class="traf"></span><span class="fn">terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
+      <div class="phead"><span class="traf"></span><span class="fn">LISTING 03 — terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
       <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
 <span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
 <span class="g">$</span> cd tycho
@@ -462,6 +480,7 @@
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
     </div>
+    <p class="codecap rv"><b>Listing 03.</b> The success-criterion demo: ask for a name, greet it.</p>
     <div class="cta rv">
       <a class="btn" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
       <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
@@ -508,7 +527,7 @@
       <span>MIT licensed</span>
       <span>© Stefan Von Randa</span>
       <span>tycho-lang.com</span>
-      <span>branding: tycho-logo.svg</span>
+      <span>■ end of document</span>
     </div>
   </footer>
 </div>
@@ -541,8 +560,10 @@
     rvs.forEach(function(el){ rio.observe(el); });
   }else{ rvs.forEach(function(el){ el.classList.add('in'); }); }
 
-  /* ── scroll-spy for the bar nav ── */
+  /* ── scroll-spy: nav + running section header ── */
   var secLinks=document.querySelectorAll('.bar nav a[href^="#"]');
+  var runsec=document.getElementById('runsec');
+  var SECLABEL={idea:'§01 — The idea', fast:'§02 — Why it stays fast', lang:'§03 — The language', rigor:'§04 — How it\'s checked', start:'§05 — Try it'};
   if('IntersectionObserver' in window && secLinks.length){
     var sio=new IntersectionObserver(function(es){
       es.forEach(function(e){
@@ -550,6 +571,7 @@
         secLinks.forEach(function(a){ a.removeAttribute('aria-current'); });
         var link=document.querySelector('.bar nav a[href="#'+e.target.id+'"]');
         if(link) link.setAttribute('aria-current','true');
+        if(runsec) runsec.textContent=SECLABEL[e.target.id]||'Contents';
       });
     }, {rootMargin:'-35% 0px -60% 0px'});
     document.querySelectorAll('section[id]').forEach(function(sec){ sio.observe(sec); });
@@ -579,7 +601,7 @@
     }, {rootMargin:'160px'});
   }
 
-  /* ── oracle: nested arena rings, brand satellite, values ── */
+  /* ── FIG. 01 oracle: nested arena rings, brand satellite, values ── */
   function buildOracle(s){
     var grain=[], n=150;
     for(var i=0;i<n;i++){
@@ -637,65 +659,77 @@
     }
   }
 
-  /* ── arena-lifetime trace: labelled scope lanes, allocations, one return ──
-     top lane = innermost scope; blocks fade in (alloc) and out (scope exit);
-     every loop one accent block hops inner → fn → main, labelled "return". */
-  var TR_LOOP=16;
-  var TR_LANES=[
-    {label:'fn · inner', y:0.24},
-    {label:'fn', y:0.52},
-    {label:'main', y:0.78}
-  ];
+  /* ── FIG. 02 arena lifetimes: a stack of scope bars ──
+     top bar = innermost scope, bottom = main (root). Blocks appear (allocations).
+     Every 9s loop: a highlighted value is RETURNED down the stack to main (accent
+     block + dashed track + arrowheads), then the innermost scope EXITS (accent
+     flash on its bar): its whole arena is freed at once. */
+  var TR_LOOP=9, TR_X0=150, TR_BARH=26, TR_GAP=16, TR_TOP=16;
+  var TR_BARS=[{label:'FN · INNER'},{label:'FN'},{label:'MAIN'}];
   var TR_BLOCKS=[
-    {lane:0, at:1.0, dur:6.5, x:0.18, w:34},
-    {lane:0, at:4.2, dur:3.8, x:0.64, w:26},
-    {lane:1, at:2.2, dur:7.0, x:0.30, w:40},
-    {lane:1, at:7.8, dur:4.0, x:0.72, w:30},
-    {lane:2, at:3.2, dur:8.5, x:0.22, w:48},
-    {lane:2, at:5.8, dur:6.0, x:0.50, w:34},
-    {lane:2, at:11.0,dur:4.0, x:0.78, w:28}
+    {b:0, at:0.6, dur:3.0, xf:0.12, w:22},
+    {b:0, at:2.6, dur:5.0, xf:0.55, w:26},
+    {b:1, at:1.0, dur:5.5, xf:0.24, w:30},
+    {b:1, at:4.2, dur:3.6, xf:0.70, w:24},
+    {b:2, at:1.4, dur:6.5, xf:0.18, w:36},
+    {b:2, at:3.6, dur:4.8, xf:0.55, w:28}
   ];
-  /* return event: hopped lane, window start, window end (t within the loop) */
-  var TR_RETURN=[[0,9.4,10.4],[1,10.4,11.4],[2,11.4,13.0]];
-  var LX=104; /* left gutter for lane labels */
+  var TR_RETURN=[[0,4.8,5.8],[1,5.8,6.8],[2,6.8,8.0]];  /* bar, from, to */
   function drawTrace(s, t){
     if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h;
     ctx.clearRect(0,0,w,h);
-    var tt=t%TR_LOOP, x0=LX, x1=w-8, laneW=x1-x0;
-    ctx.font='9px "IBM Plex Mono",monospace';
-    ctx.fillStyle=col('faint',0.85); ctx.fillText('time →', 6, h-4);
-    for(var li=0;li<TR_LANES.length;li++){
-      var L=TR_LANES[li], y=h*L.y;
-      ctx.strokeStyle=col('faint',0.25); ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(x0,y+4); ctx.lineTo(x1,y+4); ctx.stroke();
-      ctx.fillStyle=col('ink',0.45); ctx.fillText(L.label, 6, y+3);
+    var tt=t%TR_LOOP, regX=TR_X0, regW=w-TR_X0-12;
+    ctx.font='9.5px "IBM Plex Mono",monospace';
+    ctx.fillStyle=col('faint',0.85); ctx.fillText('time →', 8, h-6);
+    var barY=function(i){ return TR_TOP+i*(TR_BARH+TR_GAP); };
+    /* scope bars */
+    for(var i=0;i<3;i++){
+      var y=barY(i);
+      ctx.fillStyle=col('ink',0.05); ctx.fillRect(8,y,regX+regW-8,TR_BARH);
+      ctx.strokeStyle=col('ink',0.30); ctx.lineWidth=1;
+      ctx.strokeRect(8,y,regX+regW-8,TR_BARH);
+      ctx.fillStyle=col('ink',0.55); ctx.fillText(TR_BARS[i].label, 14, y+17);
     }
     /* allocations */
     for(var b=0;b<TR_BLOCKS.length;b++){
-      var B=TR_BLOCKS[b], y=h*TR_LANES[B.lane].y;
+      var B=TR_BLOCKS[b], y=barY(B.b);
       var local=(tt-B.at+TR_LOOP)%TR_LOOP;
       if(local<B.dur){
-        var a=Math.min(1, local/0.6, (B.dur-local)/0.6);
-        ctx.fillStyle=col('ink',0.34*a);
-        ctx.fillRect(x0+B.x*laneW, y+2, B.w, 4);
+        var a=Math.min(1, local/0.35, (B.dur-local)/0.35);
+        ctx.fillStyle=col('ink',0.55*a);
+        ctx.fillRect(regX+B.xf*regW, y+7, B.w, 12);
       }
     }
-    /* returned value hops up the lanes */
-    for(var hh=0;hh<TR_RETURN.length;hh++){
-      var H=TR_RETURN[hh];
-      if(tt>=H[1] && tt<H[2]){
-        var y=h*TR_LANES[H[0]].y;
-        var a=Math.min(1,(tt-H[1])/0.5,(H[2]-tt)/0.6);
-        ctx.fillStyle=col('accent',0.85*a);
-        ctx.fillRect(x0+0.55*laneW, y+1, 24, 5);
-        ctx.fillStyle=col('accent',0.95*a);
-        ctx.fillText('↑ return', x0+0.55*laneW+30, y+2);
+    /* return: dashed track down to main + accent block hopping bar to bar */
+    var inReturn=tt>=4.8&&tt<8.0;
+    if(inReturn){
+      var ax=regX+0.62*regW, y0=barY(0)+TR_BARH/2, y1=barY(2)+TR_BARH/2;
+      ctx.strokeStyle=col('accent',0.5); ctx.lineWidth=1;
+      ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(ax,y0); ctx.lineTo(ax,y1); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle=col('accent',0.7);
+      ctx.beginPath(); ctx.moveTo(ax-3,y1+2); ctx.lineTo(ax+3,y1+2); ctx.lineTo(ax,y1+6); ctx.closePath(); ctx.fill();
+      for(var hh=0;hh<TR_RETURN.length;hh++){
+        var H=TR_RETURN[hh];
+        if(tt>=H[1]&&tt<H[2]){
+          var y=barY(H[0]);
+          var a=Math.min(1,(tt-H[1])/0.35,(H[2]-tt)/0.45);
+          ctx.fillStyle=col('accent',0.9*a);
+          ctx.fillRect(ax-14, y+3, 28, 20);
+          ctx.fillStyle=col('accent',0.95*a);
+          ctx.fillText('RETURN', ax+18, y+17);
+          ctx.fillStyle=col('accent',0.8*a);
+          ctx.beginPath(); ctx.moveTo(ax-3,y+21); ctx.lineTo(ax+3,y+21); ctx.lineTo(ax,y+25); ctx.closePath(); ctx.fill();
+        }
       }
     }
-    /* inner scope exits: annotate as its last block dies */
-    if(tt>=8.2 && tt<9.3){
-      ctx.fillStyle=col('ink',0.5*(1-(tt-8.2)/1.1));
-      ctx.fillText('scope exit', x0+0.64*laneW+32, h*0.24+2);
+    /* innermost scope exits: accent flash on its bar */
+    if(tt>=7.6&&tt<8.4){
+      var y=barY(0), a=1-(tt-7.6)/0.8;
+      ctx.strokeStyle=col('accent',0.7*a); ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(8,y+TR_BARH); ctx.lineTo(regX+regW,y+TR_BARH); ctx.stroke();
+      ctx.fillStyle=col('ink',0.6*a); ctx.fillText('EXIT', regX+0.55*regW+34, y+17);
     }
   }
 
@@ -703,10 +737,7 @@
   var oracleS=null, traces=[];
   function initAll(){
     var o=document.getElementById('oracle'); if(o){ oracleS=mkState(o); buildOracle(oracleS); }
-    ['tr1','tr2'].forEach(function(id){
-      var el=document.getElementById(id); if(!el) return;
-      var s=mkState(el); s.ready=true; traces.push(s);
-    });
+    var t1=document.getElementById('tr1'); if(t1){ var s=mkState(t1); s.ready=true; traces.push(s); }
     states=traces.concat(oracleS?[oracleS]:[]);
     if(vio) states.forEach(function(s,i){ s.cv._i=i; vio.observe(s.cv); });
     sizeAll();
