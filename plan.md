@@ -1,102 +1,83 @@
 # What comes next
 
-> 2026-08-04: the arena-observability phase is complete (325bc6b). New
-> owner-directed phase: the generic hash the intern phase deferred. Verified
-> before admission: intern with struct keys ALREADY canonicalizes — the map
-> hashes composite keys natively (`map_of` accepts any hashable composite,
-> `gen_hash` emits the per-type hash) — so the gap is not intern itself but the
-> *public* facility: no program can hash a struct/tuple/array today; `core:hash`
-> hashers take strings only.
+> 2026-08-04: the generic-hash phase is complete (60e3601, goldens 8b9fc88) and
+> the trie follow-up is measured and committed (cd2b37d). New owner-directed
+> phase: **the build tool** — the long-shelved standing candidate, un-shelved by
+> the owner's explicit request (the "second caller" the demand rule asks for).
+> Validated before admission: every primitive it needs exists in Tycho today —
+> `core:os.system` (subprocess + exit code), `core:io.mtime` (st_mtime via the
+> io shim), `read_file`/`write_file`, and the concurrency model (`spawn`/`wait`,
+> `channel`/`send`/`recv`) — so the tool is pure Tycho, no new shim.
 
-## Phase 1 — `hash(x)` builtin + intern generic keys
+## Phase 1 — `tycho-build`: a make-like build tool in Tycho
 
-1. **`hash(x)` builtin** (`src/tychoc.c`): resolve inline next to `str` (arity 1,
-   arg type must be a legal map-key type — the `where hashable(T)` set: int,
-   string, newtypes over them, fieldless enums, composites of hashable leaves;
-   bare float/bool/char/bytes rejected, matching `map_of`), returns `int`
-   (the map's full 64-bit hash as a signed int). Codegen via `gen_hash`
-   (`src/tychoc.c:9178`) — the same per-type emitter the map keys use, so
-   equal-by-`==` values hash equal by construction. **Seeded per process like
-   map keys** — documented as in-process use (tables/dedup), not checksums
-   (that is `fnv1a_32`/`djb2`/`sdbm`/`crc32`'s role); a deterministic variant
-   would mean duplicating three generated hash families plus new runtime
-   hashers — wide surface, no in-process caller. Add `hash` to
-   `is_pure_builtin` (a discarded `hash(x)` warns like `len(x)`).
-   Emission: `tycho_hash_S_*/T*/arr_C*` are gated on `struct_keyused` (map-key
-   use only) — a `hash()` on a type never used as a map key needs its hash
-   function emitted, so add a parallel `hash_keyused` tracker (arg types
-   recorded at resolve, reachability via the existing `struct_in_key`) and OR
-   it into the five prototype/body gates.
-2. **intern generic keys**: works today (verified — `Point(1,2)` keys
-   canonicalize); extend `corelib/test/intern/main.ty` with struct and tuple
-   keys, update the package header and the corelib guide (drop the
-   "string/[int] keys first" scoping).
-3. **Docs**: `hash(x)` entry in `docs/spec/16-builtins.md` (29.x); `core:hash`
-   header gains the generic sibling; guide `hash` + `intern` entries updated.
-4. **Tests**: generic-hash assertions in `corelib/test/hash/main.ty`
-   (equal→equal across string/struct/tuple/array, inequality on distinct ints —
-   deterministic, SplitMix is a permutation; on full 64-bit values, so
-   collision-free per run), a reject fixture for a non-hashable arg
-   (`tests/reject/`), the intern struct/tuple keys.
+The last untested axis: systems-y I/O — subprocesses, file metadata, a parallel
+dependency graph. `tools/tycho-build/main.ty`, a make-lite:
 
-Gate: `make test` (~8 min — compiler change; existing emission is unchanged
-unless `hash()` is used, `hash_keyused` is empty then, so fixtures stay
-byte-identical) + `make corelib` (hash + intern tests) + `make goldens-check`
-(re-recorded/added goldens) + `make selfhost-check` (compiler changed) + doc
-gates. The 21+ `src/tychoc.c` citations shift again (5th time) — re-point
-mechanically.
-Expected: 589 fixtures green plus the new reject fixture; hash + intern goldens
-locked; fixed point holds.
+- **Build-file format**: `target: dep1 dep2` rules + indented recipe lines (each
+  a shell line via `os.system`, run in order, first non-zero exits the rule);
+  `#` comments; the first rule is the default target; a dep that names no rule
+  is a plain source file.
+- **Up-to-date rule** (mtime-based): a target rebuilds iff its output file is
+  missing, or any dep's mtime is newer, or any dep was **rebuilt in this run**
+  (the second-granularity tie-breaker make needs — two files written in the
+  same second would otherwise stall a chain). Recipe-less rules are pass-through
+  groupers (like `all:`), silent.
+- **Parallel execution** via the concurrency model: a bounded worker pool
+  (`spawn` N workers, each looping `recv` on a job channel, `send`ing
+  `(rule, code)` on a done channel), and a scheduler that dispatches newly-ready
+  rules in topological order. Status lines (`build <target>`, `FAILED <target>
+  (exit N)`) print from the scheduler thread in DAG order — deterministic for a
+  fixed starting state; recipe stdout is inherited live (like make -j, parallel
+  interleaving is not ordered). A failed rule skips its dependents; the build
+  exits 1.
+- **CLI**: `tycho-build [buildfile] [target]` (buildfile defaults to
+  `buildfile`, target to the first rule); exit 0 success/no-op, 1 build failure,
+  2 usage/parse/io error.
+- **Hermetic differential** (`tools/tycho-build/run.sh`): a fixture tree built
+  in a temp dir — a chain (`src → out1/out2 → final`) plus an independent
+  branch — and legs for: [1] first build runs everything, build lines locked to
+  `expected.out`, outputs exist; [2] **second build is a NO-OP** (empty stdout,
+  exit 0 — the differential); [3] `touch` a source rebuilds only its
+  dependents; [4] a failing recipe exits 1, prints `FAILED (exit N)`, and its
+  dependents are skipped (outputs absent); [5] two clean builds are
+  byte-identical (determinism); [6] bad buildfile / missing buildfile / unknown
+  target exit 2. No temp path or host detail reaches the golden.
+- **Wiring**: `make build-check` lane + ci step `[3o/21]`, following the
+  ar-check/q-check shape.
+
+Gate: `make build-check` (the only lane that runs the tool). The tool is pure
+Tycho over existing corelib (no shim → no shim-check; no golden in the suite →
+no goldens-check). Doc gates for plan.md. `make tools-check` untouched
+(tychofmt + lsp only). `make test` cannot redden — nothing under `tests/`
+changes.
 
 ## Not in scope
 
-- A deterministic (cross-run) generic hash: needs the duplicate hash families
-  — follow-on if a caller needs cross-run composite checksums.
-- Hash of bare float/bool/char/bytes (not map-key types; a float hashes as a
-  composite leaf).
-- The build-tool candidate remains shelved.
+- Dependency discovery / globbing (no wildcards; explicit deps only).
+- Phony-target declaration syntax (a recipe-less rule is the group).
+- Shell-out escaping (recipes are shell lines by design, like make).
+- The trie and the build-tool candidates are both closed; the plan is empty
+  after this phase unless the owner files something new.
 
-> Phase 1 evidence — 2026-08-04: all gates green. `make test` 590/0 (589 +
-> `reject/hash_float`), `make corelib` all green (hash + intern tests updated),
-> `make goldens-check` ok, `make selfhost-check` green (existing emission is
-> unchanged — `hash_keyused` is empty unless a program calls `hash()` — so the
-> fixed point holds), doc gates ok.
+> Phase 1 evidence — 2026-08-04: all gates green. `make build-check` all 6
+> legs (first-build golden, no-op differential, touch-only-dependents,
+> failure-skips-dependents, determinism, exit-2 errors), doc gates ok,
+> goldens-check ok. Nothing in `tests/` or `corelib/` moved, so `make test`
+> and `make corelib` cannot redden for this phase.
 >
-> The key finding from admission: intern with generic keys ALREADY worked — the
-> map hashes composite keys natively — so the phase's real deliverable is the
-> public `hash(x)` builtin, and the intern half is the extended test + docs.
-> `hash(x)` resolve `src/tychoc.c:5947-5960` (arity 1, arg must satisfy the
-> map-key rule, records composite args), codegen `:9661-9663` via `gen_hash`
-> (`:9208` — the map's own per-type emitter), `is_pure_builtin` gets `hash`
-> (a discarded call warns). Type-emission gate `hash_keyused`
-> (`:1450-1454`) OR'd into the ten hash-function gates, so a `hash()` on a
-> struct that is never a map key still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
->
-> Seeded-vs-deterministic decided SEEDED (the map's own contract): deterministic
-> would mean duplicating three generated hash families + new runtime hashers,
-> for a facility whose documented role is in-process tables/dedup — the
-> deterministic string hashers remain the checksum path. Tests assert only
-> properties that hold regardless of seed: equal→equal (string/struct/tuple/
-> array/nested), inequality on distinct small ints (deterministic — SplitMix is
-> a permutation on the full 64-bit), the reject case
-> (`tests/reject/hash_float.ty`). Docs: 16-builtins §29.7 gains `hash(x)` with
-> the map-key contract; core:hash + intern headers and the guide updated —
-> intern now documents any map-key type. 80 citations re-pointed (+10/+30/+34
-> by region — the `hash_keyused` insert at 1442 shifted refs below the usual
-> regions for the first time).
-
-> Trie bench follow-up — 2026-08-04: owner asked whether the trie (the
-> documented standing loss) could improve. Measured first: idiomatic
-> `[int: Trie]` = 58.9 MB (1.56× C), the gap being the 72 B child value inline
-> in each map (the ec=4 value array costs 288 B for a 1-child node). The
-> language's own answer — the flat-pool + integer-index idiom from
-> `docs/internals/value-semantics-limits.md`, already measured at ~1.3× C by
-> dijkstra — was added as `bench/trie/trie_pool.ty`: child indices (8 B, C's
-> pointer size) into one flat `[Trie]` with a single `reserve`, **41.4 MB =
-> 1.10× C**, same checksum, wall below C's. Sharp edge found and documented:
-> the pool WITHOUT reserve is worse (60.1 MiB — the arena retains every
-> doubling buffer), so reserve is load-bearing. run.sh gains the pool row
-> (scratch-dir compile to dodge the same-package collision); RESULTS.md and
-> the bench README row updated. Gates: lane green (all four checksums agree),
-> doc gates ok. Also fixed en route: the hash-phase commit 60e3601 shipped its
-> test sources without the re-recorded goldens (8b9fc88).
+> Implementation notes: the tool is pure Tycho over existing surface —
+> `core:os.system` (recipes), `core:io.mtime` (up-to-date checks), `spawn` +
+> `parallel for` + channels (a bounded worker pool — each fan-out chunk is a
+> worker looping on a job channel, sending `(rule, code)` on a done channel;
+> the scheduler is a spawned task). Three bugs found and fixed during the
+> work, each a real Tycho learning: (1) `while` does not exist (`for cond:`);
+> (2) my post-order DFS reversal was wrong — post-order push is already
+> deps-before-dependents; (3) the scheduler's stall check fired when the
+> build COMPLETED (remaining hit 0 mid-pass) and, before the fix, a stalled
+> scheduler never sent the worker sentinels, hanging the `parallel for` —
+> the sentinel-send is now on both the success and the stall path. Also
+> learned: the tie-breaker is load-bearing — two outputs written in the same
+> second compare equal by mtime, so the rebuilt-in-this-run flag (not mtime)
+> drives chained rebuilds; the touch leg needed a `sleep 1` for the same
+> reason.

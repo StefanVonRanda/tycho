@@ -1,0 +1,294 @@
+# tycho-build -- a make-like build tool in Tycho. Import with nothing; it is a
+# program, run as `./build/tycho-build [buildfile] [target]`.
+#
+# The last untested systems axis (subprocesses, file metadata, a parallel
+# dependency graph), and the first tool that composes the concurrency model
+# with core:os. Every primitive is existing surface: `os.system` (run a shell
+# line, get its exit code), `io.mtime` (st_mtime via the io shim), and a
+# bounded worker pool expressed with `spawn` + `parallel for` + channels.
+#
+# BUILD-FILE FORMAT (make-lite):
+#   target: dep1 dep2          -- a rule; deps are other rules or plain files
+#       recipe line            -- indented shell lines, run in order, first
+#       recipe line               non-zero exit fails the rule
+#   # comment                  -- blank lines and '#' lines are skipped
+# The FIRST rule is the default target. A recipe-less rule is a pass-through
+# group (like `all:`): it never runs anything, and it is rebuilt (for its
+# dependents) iff any of its deps was rebuilt in this run.
+#
+# UP-TO-DATE RULE: a target rebuilds iff its output file is missing, or any
+# dep's mtime is newer, or any dep was REBUILT IN THIS RUN -- the tie-breaker
+# make needs, because st_mtime has one-second granularity and two files
+# written in the same second would otherwise stall a chain. Output mtimes are
+# never compared directly against each other, only dep-vs-target.
+#
+# PARALLEL EXECUTION: a scheduler task owns the DAG; a `parallel for` fan-out
+# is the worker pool, pulling rule indices off a jobs channel and reporting
+# (rule, exit-code) on a done channel. The scheduler dispatches every
+# newly-ready rule in topological order and prints `build <target>` at
+# dispatch -- so for a fixed starting state the STATUS lines come out in DAG
+# order (deterministic). Recipe stdout/stderr is inherited live, like make:
+# with parallel branches its interleaving is not ordered (same caveat as
+# `make -j`). A failed rule skips its dependents and the build exits 1; a
+# fully up-to-date build prints NOTHING and exits 0 (the no-op differential).
+#
+# CLI: `tycho-build [buildfile] [target]` -- buildfile defaults to `buildfile`,
+# target to the first rule. Exit: 0 ok/no-op, 1 build failure, 2 usage/parse/
+# io error.
+package main
+
+import "core:os"
+import "core:io"
+import "core:strings"
+
+struct Rule:
+    target: string
+    deps: [string]
+    recipes: [string]
+
+struct Done:                # a worker's completion report
+    idx: int
+    code: int
+
+# --- parsing ----------------------------------------------------------------
+
+fn parse(text: string) -> Result([Rule], string):
+    ls := strings.lines(text)
+    rules := []Rule
+    ri := -1
+    for i := 0; i < len(ls); i += 1:
+        raw := ls[i]
+        if raw == "":
+            continue
+        if raw[0] == 35:                 # '#'
+            continue
+        if raw[0] == 32 or raw[0] == 9:  # ' ' or '\t': an indented recipe line
+            if ri < 0:
+                return Err("recipe line before any rule: " + raw)
+            push(rules[ri].recipes, strings.trim(raw))
+            continue
+        col := find(raw, ":")
+        if col < 0:
+            return Err("expected 'target: deps' or an indented recipe, got: " + raw)
+        tgt := strings.trim(raw[0:col])
+        if tgt == "":
+            return Err("empty target name in: " + raw)
+        deps := []string
+        rest := strings.trim(raw[col + 1:])
+        if rest != "":
+            toks := split(rest, " ")
+            for t in toks:
+                if t != "":
+                    push(deps, t)
+        push(rules, Rule(tgt, deps, []string))
+        ri = len(rules) - 1
+    if len(rules) == 0:
+        return Err("no rules in the buildfile")
+    return Ok(rules)
+
+# --- filesystem -------------------------------------------------------------
+
+fn mtime_or(p: string) -> int:            # st_mtime seconds, -1 if missing
+    match io.mtime(p):
+        Ok(t):
+            return t
+        Err(_):
+            return -1
+
+fn run_rule(r: Rule) -> int:              # run a rule's recipes; first non-zero wins
+    for line in r.recipes:
+        c := os.system(line)
+        if c != 0:
+            return c
+    return 0
+
+# --- the DAG ----------------------------------------------------------------
+
+# DFS from `want`; returns "" (ok) or a cycle message. Post-order push, so
+# reversing gives deps-before-dependents.
+fn visit(i: int, rules: [Rule], by_name: [string: int], color: inout [int], order: inout [int]) -> string:
+    if color[i] == 1:
+        return "dependency cycle involving " + rules[i].target
+    if color[i] == 2:
+        return ""
+    color[i] = 1
+    for d in rules[i].deps:
+        di := by_name.get(d, -1)
+        if di >= 0:
+            m := visit(di, rules, by_name, &color, &order)
+            if m != "":
+                return m
+    color[i] = 2
+    push(order, i)
+    return ""
+
+fn closure(want: int, rules: [Rule], by_name: [string: int]) -> Result([int], string):
+    color := []int
+    for i := 0; i < len(rules); i += 1:
+        push(color, 0)
+    order := []int
+    m := visit(want, rules, by_name, &color, &order)
+    if m != "":
+        return Err(m)
+    return Ok(order)                        # post-order push = deps before dependents, already topological
+
+# The scheduler: owns the DAG, dispatches ready rules in topo order (printing
+# their `build` lines), consumes completions, and returns the build's exit code.
+fn scheduler(jobs: Channel(int), done: Channel(Done), rules: [Rule], by_name: [string: int], topo: [int], nworkers: int) -> int:
+    st := []int                              # 0 pending, 1 up-to-date, 2 built, 3 failed, 4 skipped, 5 dispatched
+    for i := 0; i < len(rules); i += 1:
+        push(st, 0)
+    rebuilt := []bool                        # was this rule rebuilt in THIS run?
+    for i := 0; i < len(rules); i += 1:
+        push(rebuilt, false)
+    remaining := len(topo)
+    in_flight := 0
+    for remaining > 0:
+        # dispatch pass: every rule whose deps are all terminal, in topo order
+        for k := 0; k < len(topo); k += 1:
+            r := topo[k]
+            if st[r] != 0:
+                continue
+            ready := true
+            for d in rules[r].deps:
+                di := by_name.get(d, -1)
+                if di >= 0 and (st[di] == 0 or st[di] == 5):
+                    ready = false
+                    break
+            if not ready:
+                continue
+            failed_dep := false
+            for d in rules[r].deps:
+                di := by_name.get(d, -1)
+                if di >= 0 and st[di] == 3:
+                    failed_dep = true
+                    break
+            if failed_dep:
+                st[r] = 4                   # skipped: a dep failed
+                remaining -= 1
+                continue
+            if len(rules[r].recipes) == 0:  # pass-through group: never runs
+                any := false
+                for d in rules[r].deps:
+                    di := by_name.get(d, -1)
+                    if di >= 0 and rebuilt[di]:
+                        any = true
+                        break
+                rebuilt[r] = any
+                st[r] = 2
+                remaining -= 1
+                continue
+            # the rebuild decision
+            tm := mtime_or(rules[r].target)
+            need := tm < 0
+            if not need:
+                for d in rules[r].deps:
+                    di := by_name.get(d, -1)
+                    dm := -1
+                    if di >= 0:
+                        if rebuilt[di]:
+                            need = true
+                            break
+                        dm = mtime_or(d)    # a rule dep's output IS its target file
+                    else:
+                        dm = mtime_or(d)
+                    if dm > tm:
+                        need = true
+                        break
+            if need:
+                println("build " + rules[r].target)
+                send(jobs, r)
+                st[r] = 5
+                in_flight += 1
+            else:
+                st[r] = 1
+                remaining -= 1
+        if remaining == 0:
+            break                       # all rules terminal (no st==5 left): done
+        if in_flight == 0:
+            eprint("tycho-build: internal error: stalled with work remaining\n")
+            for i := 0; i < nworkers; i += 1:      # retire the pool so the parallel for can end
+                send(jobs, -1)
+            return 1
+        match recv(done):
+            Some(d):
+                in_flight -= 1
+                if d.code == 0:
+                    st[d.idx] = 2
+                    rebuilt[d.idx] = true
+                else:
+                    st[d.idx] = 3
+                    println("FAILED " + rules[d.idx].target + " (exit " + str(d.code) + ")")
+                remaining -= 1
+            None:
+                return 1                   # done channel closed prematurely
+    for i := 0; i < nworkers; i += 1:      # retire the pool
+        send(jobs, -1)
+    for k := 0; k < len(topo); k += 1:
+        if st[topo[k]] == 3:
+            return 1
+    return 0
+
+# --- entry ------------------------------------------------------------------
+
+fn main():
+    argv := args()
+    if len(argv) > 3:
+        eprint("usage: tycho-build [buildfile] [target]\n")
+        exit(2)
+    buildfile := "buildfile"
+    if len(argv) > 1:
+        buildfile = argv[1]
+    want_name := ""
+    if len(argv) > 2:
+        want_name = argv[2]
+    text := io.read(buildfile)          # "" on failure
+    if text == "":
+        eprint("tycho-build: cannot read " + buildfile + "\n")
+        exit(2)
+    rules := []Rule
+    match parse(text):
+        Ok(rs):
+            rules = rs
+        Err(msg):
+            eprint("tycho-build: " + buildfile + ": " + msg + "\n")
+            exit(2)
+    by_name := []string: int
+    for i := 0; i < len(rules); i += 1:
+        if rules[i].target in by_name:
+            eprint("tycho-build: duplicate target " + rules[i].target + "\n")
+            exit(2)
+        by_name[rules[i].target] = i
+    want := 0
+    if want_name != "":
+        wi := by_name.get(want_name, -1)
+        if wi < 0:
+            eprint("tycho-build: no such target " + want_name + "\n")
+            exit(2)
+        want = wi
+    topo := []int
+    match closure(want, rules, by_name):
+        Ok(t):
+            topo = t
+        Err(msg):
+            eprint("tycho-build: " + msg + "\n")
+            exit(2)
+    jobs := channel(int, 64)
+    done := channel(Done, 64)
+    nw := 8
+    if ncpu() < nw:
+        nw = ncpu()
+    sched := spawn scheduler(jobs, done, rules, by_name, topo, nw)
+    # the worker pool: each fan-out chunk is a worker, looping until a -1
+    parallel for w in 0..<nw:
+        running := true
+        for running:
+            select:
+                recv(jobs, idx):
+                    if idx == -1:
+                        running = false
+                    else:
+                        code := run_rule(rules[idx])
+                        send(done, Done(idx, code))
+    code := wait(sched)
+    exit(code)

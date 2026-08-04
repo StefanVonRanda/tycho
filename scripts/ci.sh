@@ -235,6 +235,8 @@ step "[3m/19] make sat-check  (tycho-sat: PHP(2..9) all UNSAT; planted instances
 make -s sat-check
 step "[3n/20] make selfhost-check  (the frozen tychoc0 compiled by itself emits byte-identical C -- the self-hosting fixed point re-proven at HEAD)"
 make -s selfhost-check
+step "[3o/21] make build-check  (tycho-build: first-build dispatch golden, second-build no-op differential, touch-rebuilds-only-dependents, failed recipe skips dependents, determinism, exit-2 errors)"
+make -s build-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc

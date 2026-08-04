@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check selfhost-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check selfhost-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -299,6 +299,14 @@ goldens-check:
 # See tools/tycho-ar/run.sh.
 ar-check: tychoc
 	@sh tools/tycho-ar/run.sh
+
+# build-check: the gate for tycho-build, the make-like build tool in
+# tools/tycho-build/. Same shape as ar-check -- a batch program gates against a
+# recorded golden plus behavior legs: first-build dispatch order, the
+# second-build no-op differential, touch-rebuilds-only-dependents, a failed
+# recipe skipping its dependents, determinism, and exit-2 errors.
+build-check: tychoc
+	@sh tools/tycho-build/run.sh
 
 # q-check: the gate for tycho-q, the SQL-ish query tool in tools/tycho-q/.
 # Same shape and same reasoning as ar-check above -- a batch program, so it gates
