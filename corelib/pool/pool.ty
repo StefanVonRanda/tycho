@@ -87,3 +87,15 @@ fn remove(p: inout Pool($T), h: Handle):
 # Number of live values.
 fn count(p: Pool($T)) -> int:
     return len(p.slots) - len(p.free)
+
+# All live handles, in ascending slot-index order (the order the slots were
+# first allocated; a reused slot keeps its old position), skipping freed slots.
+# The one way to walk a pool: add() reuses freed slots, so a raw index walk
+# would stumble over holes and stale generations -- this yields exactly the
+# handles get() will accept.
+fn live(p: Pool($T)) -> [Handle]:
+    out := []
+    for i := 0; i < len(p.slots); i += 1:
+        if p.slots[i].used:
+            push(out, pack(i, p.slots[i].gen))
+    return out
