@@ -1442,6 +1442,16 @@ static int struct_keyused(Type st) {
         if (mapkey_composite(g_maptypes[i].key) && struct_in_key(st, g_maptypes[i].key)) return 1;
     return 0;
 }
+/* hash() arg types seen at resolve (the generic `hash(x)` builtin). The map-key
+ * emitter gates its per-type hash functions on struct_keyused; a type hashed via
+ * hash() but never used as a map key needs those same functions, so this tracker
+ * ORs into the emission gates. Empty unless a program actually calls hash(). */
+static Type g_hashargs[64]; static int g_nhashargs = 0;
+static int hash_keyused(Type st) {
+    for (int i = 0; i < g_nhashargs; i++)
+        if (mapkey_composite(g_hashargs[i]) && struct_in_key(st, g_hashargs[i])) return 1;
+    return 0;
+}
 /* a map key expression as the runtime stores it: a fieldless-enum key passes its TAG */
 static char *key_rt(Type mt, char *kexpr) {
     return IS_ENUM(map_key(mt)) ? sfmt("((%s)->tag)", kexpr) : kexpr;
@@ -5929,6 +5939,26 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "str(x) can't stringify a %s", type_name(at_));
                 return e->type = T_STRING;
             }
+            /* hash(x): a generic hash over any hashable value — the map-key set,
+             * exactly what `where hashable(T)` accepts (int, string, newtypes over
+             * them, fieldless enums, composites of hashable leaves; a bare
+             * float/bool/char/bytes is NOT a legal map key). Codegen reuses the
+             * map's per-type emitter (gen_hash), so equal-by-== values hash equal
+             * by construction; per-process seeded like map keys. Returns the map's
+             * full 64-bit hash as a signed int. Composite arg types are recorded
+             * so their hash functions get emitted (hash_keyused). */
+            if (!strcmp(e->sval, "hash")) {
+                if (e->nargs != 1) die_at(e->line, "hash(x) takes one argument");
+                Type at_ = resolve_expr(e->args[0]);
+                int key_ok = at_ == T_STRING || at_ == T_INT ||
+                             (IS_NEWTYPE(at_) && (nt_under(at_) == T_INT || nt_under(at_) == T_STRING)) ||
+                             enum_fieldless(at_) || (mapkey_composite(at_) && key_hashable(at_));
+                if (!key_ok)
+                    die_at(e->line, "hash(x) can't hash a %s (hashable = the map-key types: int, string, "
+                                   "their newtypes, fieldless enums, and composites of those)", type_name(at_));
+                if (mapkey_composite(at_) && g_nhashargs < 64) g_hashargs[g_nhashargs++] = at_;
+                return e->type = T_INT;
+            }
             if (!strcmp(e->sval, "to_float")) {   /* int/u32/u64/f32 -> float, or unwrap a float newtype */
                 if (e->nargs != 1) die_at(e->line, "to_float(n) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
@@ -7161,7 +7191,7 @@ static int is_pure_builtin(const char *n) {
     if (!n) return 0;
     static const char *pure[] = { "str", "substr", "chr", "split", "keys", "find", "char_at",
         "map_get", "map_has", "map_set", "map_del", "sqrt", "pow", "floor", "fabs",
-        "to_float", "to_int", "to_char", "to_str", "to_bool", "is_null", "len", 0 };
+        "to_float", "to_int", "to_char", "to_str", "to_bool", "is_null", "len", "hash", 0 };
     for (int i = 0; pure[i]; i++) if (!strcmp(n, pure[i])) return 1;
     return 0;
 }
@@ -9627,6 +9657,10 @@ static char *gen_call(Expr *e, const char *arena) {
         if (b == T_INT || is_sized_int(b)) return sfmt("tycho_int_to_str(%s, %s)", arena, a);   /* int + signed sized (i8/i16/i32/i64) */
         /* F5 aggregate: bind the value ONCE (opt/result/tuple renderers read it repeatedly), then recurse via gen_str */
         return sfmt("({ %s_sv = %s; %s; })", c_type(at), a, gen_str(at, arena, "_sv"));
+    }
+    if (!strcmp(e->sval, "hash")) {   /* generic hash (see resolve): the map's per-type emitter, 64-bit as signed int */
+        char *a = gen_expr(e->args[0], arena);
+        return sfmt("((tycho_int)(%s))", gen_hash(e->args[0]->type, a));
     }
     if (!strcmp(e->sval, "to_float"))    /* int -> double */
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
@@ -12113,11 +12147,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (type_is_heap(STRUCT_TYPE(i)))
             fprintf(o, "static S_%s tycho_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
         fprintf(o, "static int tycho_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
-        if (struct_keyused(STRUCT_TYPE(i)))   /* composite map key: deep hash (paired with tycho_eq_S_) */
+        if (struct_keyused(STRUCT_TYPE(i)) || hash_keyused(STRUCT_TYPE(i)))   /* composite map key / hash(x): deep hash */
             fprintf(o, "static uint64_t tycho_hash_S_%s(S_%s v);\n", nm, nm);
     }
     for (int i = 0; i < g_ntuptypes; i++)           /* (4) tuple deep-hash prototypes (composite map keys; emitted before bodies so struct/tuple hashes can reference each other) */
-        if (struct_keyused(T_TUP_BASE + i))
+        if (struct_keyused(T_TUP_BASE + i) || hash_keyused(T_TUP_BASE + i))
             fprintf(o, "static uint64_t tycho_hash_T%d(TychoTup%d v);\n", i, i);
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
         if (type_is_heap(g_opttypes[i].inner) && !has_typaram(T_OPT_BASE + i))
@@ -12152,7 +12186,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, tycho_int, %s);\n", i, i, ct);
             fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
-            if (struct_keyused(T_ARRC_BASE + i))
+            if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i))
                 fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
             continue;
         }
@@ -12162,7 +12196,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, tycho_int, %s);\n", i, i, ct);
             fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
-            if (struct_keyused(T_ARRC_BASE + i))
+            if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i))
                 fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
             continue;
         }
@@ -12176,7 +12210,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, tycho_int, %s);\n", i, i, ct);
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
         fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
-        if (struct_keyused(T_ARRC_BASE + i))   /* composite map key: deep hash */
+        if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i))   /* composite map key / hash(x): deep hash */
             fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
     }
     for (int i = 0; i < g_nmaptypes; i++) {         /* (4) composite-map copy/eq prototypes: a struct/array/tuple FIELD of composite-map type calls these in its copy/eq body, which is emitted before the map family itself (7a') -- without the proto the struct copier sees an implicit declaration */
@@ -12237,7 +12271,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * matters (the multiply runs before the xor). */
     for (int i = 0; i < g_nstructs; i++) {
         if (g_structs[i].generic) continue;
-        if (!struct_keyused(STRUCT_TYPE(i))) continue;
+        if (!struct_keyused(STRUCT_TYPE(i)) && !hash_keyused(STRUCT_TYPE(i))) continue;
         StructDef *sd = &g_structs[i];
         fprintf(o, "static uint64_t tycho_hash_S_%s(S_%s v) {\n", sd->name, sd->name);
         fprintf(o, "    uint64_t h = tycho_hash_k0;\n");
@@ -12251,7 +12285,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * inline in gen_eq, but the hash is a function (a stateful FNV fold); element
      * access is ._0/._1. Same seeded fold as the struct hash. */
     for (int i = 0; i < g_ntuptypes; i++) {
-        if (!struct_keyused(T_TUP_BASE + i)) continue;
+        if (!struct_keyused(T_TUP_BASE + i) && !hash_keyused(T_TUP_BASE + i)) continue;
         fprintf(o, "static uint64_t tycho_hash_T%d(TychoTup%d v) {\n", i, i);
         fprintf(o, "    uint64_t h = tycho_hash_k0;\n");
         for (int j = 0; j < tup_n(T_TUP_BASE + i); j++) {
@@ -12294,7 +12328,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    if (x.len != y.len) return 0;\n"
                 "    for (tycho_int i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
                 "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.v[i]", "y.v[i]"));
-            if (struct_keyused(T_ARRC_BASE + i)) {
+            if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i)) {
                 fprintf(o,
                     "static uint64_t tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
                     "    uint64_t h = UINT64_C(1469598103934665603);\n"
@@ -12326,7 +12360,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static int tycho_arr_C%d_eq(TychoArrC%d x, TychoArrC%d y) {\n"
                 "    for (tycho_int i = 0; i < %lld; i++) if (!(%s)) return 0;\n"
                 "    return 1;\n}\n\n", i, i, i, (long long)n, gen_eq(et, "x.v[i]", "y.v[i]"));
-            if (struct_keyused(T_ARRC_BASE + i)) {
+            if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i)) {
                 fprintf(o,
                     "static uint64_t tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
                     "    uint64_t h = UINT64_C(1469598103934665603);\n"
@@ -12392,7 +12426,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (x.len != y.len) return 0;\n"
             "    for (tycho_int i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
-        if (struct_keyused(T_ARRC_BASE + i))   /* composite-element array used as a (nested) map key: order-sensitive deep hash */
+        if (struct_keyused(T_ARRC_BASE + i) || hash_keyused(T_ARRC_BASE + i))   /* composite-element array: map key or hash(x): order-sensitive deep hash */
             fprintf(o,
                 "static uint64_t tycho_arr_C%d_hash(TychoArrC%d x) {\n"
                 "    uint64_t h = tycho_hash_k0;\n"

@@ -2,6 +2,15 @@
 # use `hash.fnv1a_32(s)`. For hash tables, checksums, and dedup -- NOT for
 # security (use core:sha256 for that).
 #
+# The four string hashers below are DETERMINISTIC (fixed seeds; matches published
+# vectors) and 32-bit, so they double as checksums. For a hash of ANY hashable
+# value -- a struct, tuple, or array, not just a string -- the generic builtin
+# `hash(x)` is the sibling: it is the hash the map keys use (per-process SEEDED,
+# so stable within a run and equal-by-== values always hash equal, but not
+# stable across runs -- use it for in-process tables and dedup, not checksums),
+# returns the full 64-bit hash as a signed int, and accepts exactly the
+# map-key types (docs/spec/16-builtins.md 29.7).
+#
 # All are 32-bit and return a non-negative int in [0, 2^32). The word math runs
 # in the `u32` type -- multiplies and adds wrap at 2^32 natively (C `unsigned
 # int`), shifts are `>> <<` -- and each function converts back to `int` with

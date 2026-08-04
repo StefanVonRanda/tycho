@@ -2,6 +2,10 @@ package main
 
 import "core:intern"
 
+struct Pt:
+    x: int
+    y: int
+
 fn main():
     # string keys
     i := intern.Interner([]int, []string: int)
@@ -18,3 +22,19 @@ fn main():
     p2 := intern.intern(&j, [1, 2, 3], "again")
     println("arr: get(p)=" + intern.get(j, p) + " get(q)=" + intern.get(j, q))
     println("arr: canonical=" + str(p == p2) + " count=" + str(intern.count(j)))
+
+    # struct keys (generic hashable keys: the map hashes composites natively)
+    k := intern.Interner([]string, []Pt: int)
+    r := intern.intern(&k, Pt(1, 2), "one-two")
+    s := intern.intern(&k, Pt(3, 4), "three-four")
+    r2 := intern.intern(&k, Pt(1, 2), "again")
+    println("st: get(r)=" + intern.get(k, r) + " get(s)=" + intern.get(k, s))
+    println("st: canonical=" + str(r == r2) + " count=" + str(intern.count(k)))
+
+    # tuple keys
+    t := intern.Interner([]int, [](int, string): int)
+    u := intern.intern(&t, (7, "seven"), 70)
+    v := intern.intern(&t, (8, "eight"), 80)
+    u2 := intern.intern(&t, (7, "seven"), 99)
+    println("tu: get(u)=" + str(intern.get(t, u)) + " get(v)=" + str(intern.get(t, v)))
+    println("tu: canonical=" + str(u == u2) + " count=" + str(intern.count(t)))

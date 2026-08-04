@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9529@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9559@tycho_eprint`; `die` codegen
 > `:9150-9151`.
 
 ## 29.4 Conversions
@@ -127,7 +127,7 @@ serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is t
 only spelling — `n.to_char()` is not.
 
 > Provenance: conversion magic `src/tychoc.c:5650-5706`; `chr` and `to_char` `Sig`
-> `:4775@.name="to_char"`, their shared codegen `:9190-9192`;
+> `:4785@.name="to_char"`, their shared codegen `:9190-9192`;
 > `is_null`/`to_ptr` `Sig` `:4531-4532`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1057-1061` /
 > `sized_conv_target` `:1046-1056`, resolved inline at `:5666-5672`. The abort
@@ -156,10 +156,10 @@ literally the same bounds-checked call — so neither is faster or safer than th
 other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 [§5.2.5](03-types.md#525-string) for why the wart exists.
 
-> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4782@.name="split"`;
+> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4792@.name="split"`;
 > `len` magic
-> `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4781@.name="char_at"`, codegen `:9000-9007`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10048@tycho_str_get`), tychoc0
+> `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4791@.name="char_at"`, codegen `:9000-9007`
+> (`tycho_str_get`, the same call `s[i]` emits at `:10082@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -192,6 +192,17 @@ method sugar; both are **magic**.
 | `keys(m)` | `[K: V] -> [K]` | magic | The map's live keys as an array, for iteration; a newtype key stays wrapped. |
 | `m.get(k)` | `([K: V], K) -> V` | magic | Value for `k`, or the value-type **zero** on a miss. Desugars to the `m[k]` rvalue read. |
 | `m.get(k, d)` | `([K: V], K, V) -> V` | magic | Value for `k`, or the default `d` if absent. |
+| `hash(x)` | `K -> int` for any map-key type `K` | magic | The hash the map keys use, exposed: equal-by-`==` values hash equal; returns the full 64-bit hash as a signed `int`. |
+
+`hash(x)` accepts exactly the map-key types (§5.3.5) — `int`, `string`, their
+newtypes, fieldless enums, and composites of hashable leaves; a bare
+`float`/`bool`/`char`/`bytes` is refused (it is a hashable *leaf* but not a
+legal top-level key). It is **seeded per process like the map keys** (and is
+stable within a run, equal values always hashing equal), so it is for
+in-process tables/dedup — not checksums, which is the deterministic
+`core:hash` string hashers' role. A composite arg gets its per-type hash
+function emitted on demand (`tycho_hash_S_*`/`T*`/`arr_C*`), so hashing a
+struct that is never a map key still works.
 
 `m.get` is **method sugar** on a map receiver: `m.get(k)` rewrites to the `m[k]`
 rvalue path and `m.get(k, d)` to the internal default-read node, so the emitted
@@ -210,7 +221,10 @@ user-callable.)
 > Provenance: `keys` `src/tychoc.c:5764-5769`; `m.get` sugar `:5258-5271`,
 > `:5126-5141`; `map_*` removal (parse error) `:2473-2474`, tychoc0
 > `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
-> form).
+> form). `hash` resolve `src/tychoc.c:5947-5960`, codegen `:9661-9663`,
+> `gen_hash` `src/tychoc.c:9208@gen_hash`; its type-emission gate is `hash_keyused`
+> `src/tychoc.c:1450-1454`, OR'd into the hash-function gates so a `hash()` on
+> a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
 ## 29.8 Type builtins
 
@@ -231,7 +245,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7854@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7884@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -256,11 +270,11 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 `ncpu` is the sole `Sig` builtin here.
 
 > Provenance: `wait` `src/tychoc.c:5588-5595`; `channel` `:5596-5606`; `send`
-> `:5607-5615`; `recv` `:5616-5621`; `close` `:5622-5632`; `ncpu` `Sig` `:4774@.name="ncpu"`;
+> `:5607-5615`; `recv` `:5616-5621`; `close` `:5622-5632`; `ncpu` `Sig` `:4784@.name="ncpu"`;
 > task/channel method sugar `:5233-5247`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10471@_pk > 64`.
+> 64 is `src/tychoc.c:10505@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -348,10 +362,10 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:4776@.name="die"`, codegen `:9150-9151`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:4786@.name="die"`, codegen `:9150-9151`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:4506-4538` or the
-> `resolve_expr` magic block (`case E_CALL:` `:5491@case E_CALL:`, running
-> through `reserve` at `:6109@"reserve"`).
+> `resolve_expr` magic block (`case E_CALL:` `:5501@case E_CALL:`, running
+> through `reserve` at `:6139@"reserve"`).

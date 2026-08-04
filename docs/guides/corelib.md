@@ -117,9 +117,9 @@ element type instead of a family of per-type siblings.
   each logical object (a string read from many files, a row seen in many batches). Handles
   are stable for the interner's lifetime; values are never removed — it is a
   *canonicalization* table, not a cache, so an unbounded working set leaks by design (use a
-  plain `[K: V]` map for a bounded cache). Keys are `string` and `[int]` today (any hashable
-  map-key type works; there is no generic hash for exotic keys — core:hash hashers take
-  strings only). Create one with `i := intern.Interner([]int, []string: int)`.
+  plain `[K: V]` map for a bounded cache). Keys are any map-key type — `string`, `[int]`,
+  a struct, a tuple; the map hashes composites natively, so generic keys need no separate
+  hash. Create one with `i := intern.Interner([]int, []string: int)`.
 - **`rand`** — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the
   state is an explicit int threaded via `inout` (the `&` marks the `inout` call site,
   [Basics](../reference/basics.md#procedures)): `st := rand.seed(42)`,
@@ -225,7 +225,11 @@ element type instead of a family of per-type siblings.
   same way `core:rand` is — values never leave `[0, 2^32)` and shifts/masks use `* / %` so no
   signed 64-bit overflow (only `^` among the bit-operators). Hashing only reads bytes, so
   there is no `0x00` caveat on the input. Matches published vectors:
-  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`.
+  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. For a hash of
+  **any** hashable value (struct/tuple/array, not just a string) use the generic builtin
+  `hash(x)` — the hash the map keys use, seeded per process (equal-by-`==` values hash
+  equal within a run; in-process tables/dedup, not checksums), full 64-bit as a signed
+  int ([builtins §29.7](../spec/16-builtins.md#297-maps)).
 - **`md5`** — the MD5 message-digest (RFC 1321): `hex(s)` (32-char lowercase digest) and
   `digest(s)` (16 raw bytes). Pure 32-bit arithmetic — adds masked with `% 4294967296`, the
   32-bit NOT is `4294967295 - x`, and the left-rotate uses `* / +` (disjoint halves), all

@@ -138,8 +138,8 @@ is unaffected. They are **not** reserved:
   resolved as a call; none is reserved ([§29](16-builtins.md)).
 
 > Provenance: contextual dispatch at `src/tychoc.c:4378-4387` (top level),
-> `:3343@"const"`/`:3359@"delete"` (`const`/`delete`), `:2092@soa [Struct]`/`:2580@soa []Struct` (`soa`),
-> `:3929@"where"` (`where`), `:3895@"sink"` (`sink`), `:3615@"range"` (`range`, refusal only).
+> `:3353@"const"`/`:3369@"delete"` (`const`/`delete`), `:2102@soa [Struct]`/`:2590@soa []Struct` (`soa`),
+> `:3939@"where"` (`where`), `:3905@"sink"` (`sink`), `:3625@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -364,7 +364,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:434-435`, its per-piece bound `:611@rn + 2 >= (int)sizeof rbuf`,`:614@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:618@unterminated raw string literal`; adjacent join `:2288-2300`; `const` string fold
 > `:4317-4321`; codegen pastes the escaped text into a C string literal
-> `:9929@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1168@strlen(s)`.
+> `:9963@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1168@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
