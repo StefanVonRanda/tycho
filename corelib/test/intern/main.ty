@@ -1,0 +1,20 @@
+package main
+
+import "core:intern"
+
+fn main():
+    # string keys
+    i := intern.Interner([]int, []string: int)
+    a := intern.intern(&i, "alpha", 10)
+    b := intern.intern(&i, "beta", 20)
+    a2 := intern.intern(&i, "alpha", 999)      # hit: same handle, 999 dropped
+    println("str: get(a)=" + str(intern.get(i, a)) + " get(b)=" + str(intern.get(i, b)))
+    println("str: canonical=" + str(a == a2) + " count=" + str(intern.count(i)))
+
+    # [int] keys
+    j := intern.Interner([]string, [][int]: int)
+    p := intern.intern(&j, [1, 2, 3], "triplet")
+    q := intern.intern(&j, [4, 5], "pair")
+    p2 := intern.intern(&j, [1, 2, 3], "again")
+    println("arr: get(p)=" + intern.get(j, p) + " get(q)=" + intern.get(j, q))
+    println("arr: canonical=" + str(p == p2) + " count=" + str(intern.count(j)))

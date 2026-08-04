@@ -1,0 +1,46 @@
+# core:intern -- hash-consing / interning: canonical storage of values keyed by
+# a hashable key. Import with `import "core:intern"`.
+#
+# The classic use: you meet the same logical object many times (a string read
+# from many files, a row seen in many batches) and want one canonical copy plus
+# a cheap identity test. `intern(&i, k, v)` returns the canonical `Handle` for
+# key `k`: the FIRST sight stores `v` and mints a handle; every later sight of
+# the same `k` returns the SAME handle and ignores its `v` (the first sight
+# wins -- a hit is a cache hit, and the value you would have stored is dropped).
+# `get(i, h)` reads the stored value back; two handles are equal iff their keys
+# were equal at first sight. Handles are stable for the interner's lifetime;
+# values are never removed (that is the point of canonicalization -- the store
+# outlives its users, see docs/internals/value-semantics-limits.md).
+#
+# HONEST SCOPE: `intern` is a *canonicalization* table, not a cache with
+# eviction -- an interned key is held forever. If the working set is bounded and
+# unbounded interning would leak, use a plain `[K: V]` map instead. Keys are
+# `string` and `[int]` today: the map key type `[$K: int]` needs a hashable `$K`
+# (any legal map key type per docs/spec/03-types.md), so any hashable composite
+# key works, but core:hash only hashers strings, so a *custom* generic hash for
+# exotic key types is not provided.
+package intern
+
+type Handle = int            # index into `nodes`; type-distinct from a raw int
+
+struct Interner($K, $V):
+    nodes: [$V]              # the canonical store, append-only
+    lookup: [$K: int]        # key -> node index
+
+# Canonical handle for key `k`. First sight stores `v` and mints the handle;
+# later sights of the same key return the same handle and ignore `v`.
+fn intern(i: inout Interner($K, $V), k: $K, v: $V) -> Handle where hashable(K):
+    if k in i.lookup:
+        return Handle(i.lookup[k])
+    h := len(i.nodes)
+    push(i.nodes, v)
+    i.lookup[k] = h
+    return Handle(h)
+
+# Read the canonical value behind a handle (a copy, like every read in Tycho).
+fn get(i: Interner($K, $V), h: Handle) -> $V where hashable(K):
+    return i.nodes[to_int(h)]
+
+# Number of interned values (== number of distinct keys ever seen).
+fn count(i: Interner($K, $V)) -> int:
+    return len(i.nodes)
