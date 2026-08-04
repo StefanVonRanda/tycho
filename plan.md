@@ -88,6 +88,12 @@ reason as Phase 1).
 Expected: `pool.out` changes exactly as the new lines print; all other corelib
 tests untouched.
 
+> Phase 2 evidence — 2026-08-04: `make corelib` all green; `pool.out` delta is
+> exactly the new `live:` line; `make goldens-check` ok; doc gates ok. `live()`
+> returns handles in ascending slot-index order (a reused slot keeps its old
+> position) — the brief's "insertion order" is exact until a slot is reused;
+> documented in the fn header. Guide pool bullet updated with `live(p)`.
+
 ## Phase 3 — Val-style copy diagnostics
 
 In `src/tychoc.c`, at the by-value argument copy the compiler could not elide
