@@ -79,10 +79,16 @@ detail is in [`docs/thesis.md`](thesis.md) and
 
 ## What is live, and what is not — 2026-07-26
 
-**Nothing on this page is a gate any more.** `tychoc0` was frozen on 2026-07-26
-and cut out of CI: thirteen of the nineteen steps that compared the two compilers
-were removed, and `scripts/ci.sh` builds no `tychoc0` binary. Conformance is now
-stated against the specification and locked by recorded fixtures — see
+**Most of this page is not a gate any more — one claim is, and the rest is not.**
+`tychoc0` was frozen on 2026-07-26 and cut out of CI: thirteen of the nineteen
+steps that compared the two compilers were removed, and `scripts/ci.sh` builds no
+`tychoc0` binary. The one exception is the SELF-EMISSION fixed point (stages 2-4
+below): `compiler/selfhost.sh` — in `make ci` as `selfhost-check` — re-runs the
+chain A, B, C over `tychoc0.ty` alone and asserts the byte-identity, because it
+involves only the frozen compiler and its own frozen source and cannot drift the
+way the corpus differential did. Everything else here is history: the corpus
+differential died with the loop-syntax change, and conformance is now stated
+against the specification and locked by recorded fixtures — see
 [Appendix E.1](spec/appendix-e-conformance.md#e1-the-conformance-oracle).
 
 The harness scripts survive **unreferenced, on purpose**, so the method behind the

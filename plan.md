@@ -45,6 +45,17 @@ tables, the flat-memory JSON evidence and the speed notes to the new
 FAQ. README is now ~240 lines of landing page instead of 294 of research
 writeup.
 
+### Phase C -- re-verifiable self-hosting claim + scope callout  [DONE 2026-08-04]
+
+The public-facing review flagged the marquee claim as the least verifiable: the
+self-hosting byte-for-byte proof was frozen and not re-runnable. The fix is a
+gate: `compiler/selfhost.sh` (`make selfhost-check`, ci step [3n/20], ~50s)
+re-runs the self-emission chain (stages 2-4 of docs/bootstrap.md) over the
+frozen compiler alone and asserts the byte-identity — corpus-independent, so it
+cannot drift the way the retired fixpoint did. The fixpoint was verified to
+still hold at HEAD before the gate was written. The README also gains a status
+banner (research prototype, pre-1.0) so the landing page cannot overpromise.
+
 ### Phase B -- wiki: fill the empty pages  [DONE 2026-08-04]
 
 The wiki (tycho.wiki, a separate repo) already mirrored the reader docs;

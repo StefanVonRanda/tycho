@@ -233,6 +233,8 @@ step "[3l/18] make kvsrv-check  (tycho-kvsrv: HTTP KV round-trips + 405/404 + ke
 make -s kvsrv-check
 step "[3m/19] make sat-check  (tycho-sat: PHP(2..9) all UNSAT; planted instances SAT with runner-verified models; deterministic; learning comparison recorded)"
 make -s sat-check
+step "[3n/20] make selfhost-check  (the frozen tychoc0 compiled by itself emits byte-identical C -- the self-hosting fixed point re-proven at HEAD)"
+make -s selfhost-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc

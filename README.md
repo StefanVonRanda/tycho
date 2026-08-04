@@ -7,6 +7,13 @@
 
 # Tycho
 
+> **Status: a research prototype, not a production language.** Tycho is an
+> experiment testing one idea — implicit arenas under value semantics — and it
+> is pre-1.0: no stability guarantees, no security audit, no package ecosystem,
+> and no Windows. It is, however, heavily tested for its age (see
+> [The testing campaign](#the-testing-campaign)). Use it to learn and to
+> experiment; don't build anything where a compromise would matter.
+
 **An experimental systems language with automatic memory management from lexical
 scope.** Tycho tests one idea: implicit hierarchical arenas under value
 semantics. Every scope owns a memory arena, freed when the scope exits; with no
@@ -109,8 +116,9 @@ one. **The strongest evidence is that Tycho compiles itself**: besides the C
 reference transpiler there is a second transpiler written in Tycho,
 `compiler/tychoc0.ty`, and its codegen runs on the same implicit arenas it
 emits — built three ways, the last two emitted byte-identical C. That proof is
-done and frozen; see `docs/internals/plan-repo-polish-DONE.md` for the
-campaign's record.
+frozen but re-verifiable: `make selfhost-check` re-runs the self-emission fixed
+point at HEAD and asserts the byte-identity still holds. See
+`docs/internals/plan-repo-polish-DONE.md` for the campaign's record.
 
 ## Performance
 
