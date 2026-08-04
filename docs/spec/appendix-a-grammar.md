@@ -29,6 +29,7 @@ terminals — `soa`, `channel`, `None`, `Some`, `Ok`, `Err`, and the builtin nam
 — are **contextual identifiers** ([§3.7](01-lexical.md#37-contextual-identifiers)),
 not reserved: they are keywords only in the positions shown here.
 
+<!-- BEGIN GENERATED: scripts/gen_grammar.sh — do not edit by hand; run `make spec-check` -->
 ### A.2 Lexical grammar (§3)
 
 Terminals produced by the lexer and consumed by the phrase grammar are
@@ -186,7 +187,8 @@ Primary ::= INT | FLOAT | STR | CHAR
           | IDENT                                       /* variable, or nullary enum variant */
 Lambda  ::= "fn" "(" LambdaParams? ")" ( "->" Type )? ":" Expr
 LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
-```<!-- END GENERATED -->
+```
+<!-- END GENERATED -->
 
 **Note — `RawPiece` ([§3.9.4](01-lexical.md#394-string-literals)).** The
 `RawElem` production above says which *bytes* a backtick-delimited piece may
