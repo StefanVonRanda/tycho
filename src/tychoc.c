@@ -8467,7 +8467,8 @@ static char *gen_expr(Expr *e, const char *arena);
 static char *gen_lvalue(Expr *e, const char *arena);   /* C lvalue for a place (with array-element projection) */
 static char *return_frees(void);                       /* arena_free()s for every live scope at a return */
 static Type g_gen_ret = T_VOID;                        /* return type of the proc being emitted (for or_return) */
-static const char *g_cur_proc_name = "?";              /* current proc name, for per-scope arena labels ("fn:line") */
+static const char *g_cur_proc_name = "?";
+static int g_loop_lbl = 0;   /* per-proc loop counter for the labels -- STABLE under re-formatting, unlike a line number */              /* current proc name, for per-scope arena labels ("fn:loopN") */
 
 static int g_blk = 0;   /* unique-name counter for block subarenas / literals */
 
@@ -11337,7 +11338,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
         case S_WHILE: {
             int id = g_blk++;
             indent(o, ind); fprintf(o, "{\n");
-            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, s->line);
+            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, s->expr);
             char *c = cond_unwrap(gen_expr(s->expr, scope));
             indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
@@ -11368,7 +11369,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * storage must not be the per-iteration scratch that arena_reset
              * recycles. An if-body decl is placed the same way. */
             gen_stmt(o, s->els[0], ind + 1, scope, ret);
-            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, s->line);
+            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, s->expr);
             char *c = cond_unwrap(gen_expr(s->expr, scope));
             indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
@@ -11456,7 +11457,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* no `step` local: the loop always advances by 1 (the loops-cleanup plan). */
             char *ss = sfmt("&_scr%d", id);
             indent(o, ind); fprintf(o, "{\n");
-            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, s->line);
+            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, NULL);   /* bounds eval once, pre-loop */
             indent(o, ind + 1); fprintf(o, "tycho_int _stop%d = %s;\n", id, stop);
             /* `_stepN`, its `tycho: range step is zero` abort and the `_stepN > 0 ? ... : ...`
@@ -11575,6 +11576,7 @@ static void gen_proc(FILE *o, Proc *pr) {
      * proc inherits it through arena_child, so allocations report per function. */
     indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent); _scope.name = \"%s\";\n", pr->name);
     g_cur_proc_name = pr->name;
+    g_loop_lbl = 0;
     g_gen_ret = pr->ret;
     g_proc_body = pr->body; g_proc_nbody = pr->nbody;   /* for move-on-last-use read counts */
     g_loop_depth = 0;

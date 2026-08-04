@@ -20,7 +20,7 @@ those rules.
 > `:8298-8299@'main' must be` (the signature rule); compilation unit
 > `compile_package` `:13129-13134@compile_package`, driver `:13188-13292@int main(`;
 > `extern` `parse_extern_fn` `:4053-4123@parse_extern_fn`; the C compiler
-> invocation `:13456@system(cmd)`.
+> invocation `:13458@system(cmd)`.
 
 ## 27. Program structure
 
