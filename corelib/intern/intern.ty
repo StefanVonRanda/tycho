@@ -14,11 +14,10 @@
 #
 # HONEST SCOPE: `intern` is a *canonicalization* table, not a cache with
 # eviction -- an interned key is held forever. If the working set is bounded and
-# unbounded interning would leak, use a plain `[K: V]` map instead. Keys are
-# `string` and `[int]` today: the map key type `[$K: int]` needs a hashable `$K`
-# (any legal map key type per docs/spec/03-types.md), so any hashable composite
-# key works, but core:hash only hashers strings, so a *custom* generic hash for
-# exotic key types is not provided.
+# unbounded interning would leak, use a plain `[K: V]` map instead. Keys are any
+# map-key type -- `string`, `[int]`, a struct, a tuple (the map hashes composites
+# natively, so no separate hash is needed): `Interner($K, $V)` requires only
+# `where hashable(K)`, the map-key predicate.
 package intern
 
 type Handle = int            # index into `nodes`; type-distinct from a raw int

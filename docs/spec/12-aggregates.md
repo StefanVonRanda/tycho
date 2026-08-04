@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2016-2017`,`:2033-2034`;
-> `pop`-empty abort `:12370@pop from an empty array`,`:12536@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
-> arity `:2141@a tuple has at most 8 elements`,`:2145@a tuple type needs at least two elements`, index `:4823-4831`; destructuring `:3282-3296`,`:6757-6773`;
+> `pop`-empty abort `:12404@pop from an empty array`,`:12570@pop from an empty array`; `reserve` `:5827-5853`,`:9052-9058`; tuple
+> arity `:2151@a tuple has at most 8 elements`,`:2155@a tuple type needs at least two elements`, index `:4823-4831`; destructuring `:3282-3296`,`:6757-6773`;
 > map read (pure `map_get`, no insert) `:5126-5141`; map place insert+zero
-> `:9896-9905`; `keys()` insertion order — the walk `:12505@m.elive[e]` over the append-only entries array `:12460@m->ecount++`; `delete` → `map_del`
+> `:9896-9905`; `keys()` insertion order — the walk `:12539@m.elive[e]` over the append-only entries array `:12494@m->ecount++`; `delete` → `map_del`
 > `:3130-3154`,`:5756-5762`; subscript parse + rules `:3757-3809`, dispatch
 > `:3831-3839`; `or_return` `:5002-5019`.
 
@@ -210,8 +210,8 @@ may appear inside any array indirectly (e.g. a `struct` field of a `[Struct]`
 element).
 
 > Provenance: dynamic `[T]` admits `bool` because it tests `void` alone —
-> `src/tychoc.c:2216@elem`, and its diagnostic now states that as the whole rule
-> instead of an allow-list (`src/tychoc.c:2217@void`; the loops-cleanup plan). The fixed forms test both:
+> `src/tychoc.c:2226@elem`, and its diagnostic now states that as the whole rule
+> instead of an allow-list (`src/tychoc.c:2227@void`; the loops-cleanup plan). The fixed forms test both:
 > `src/tychoc.c:1999-2000` (`[$N]T`) and `src/tychoc.c:2018-2019` (`[N]T`);
 > `bounded[N]T` at `src/tychoc.c:1933-1934`. Pinned both ways by
 > `tests/bool_array.ty` (accepts, with a golden) and
@@ -319,18 +319,18 @@ fixtures lived in `tests/postfreeze/` until the `tychoc0` lanes were retired on
 > Provenance: two-array arm `src/tychoc.c:6123-6153`, broadcast arm
 > `src/tychoc.c:6182-6208`; per-element-type operator set
 > `src/tychoc.c:1197@elem_arith_ok`; fixed-length mismatch
-> `src/tychoc.c:6429@on a fixed array requires the same static length`; mixed
-> kinds `src/tychoc.c:6421@cannot mix a fixed array and a growable array`;
-> `bounded`/`[$N]T` `src/tychoc.c:6411@IS_BOUNDED`; element-type mismatch
-> `src/tychoc.c:6414@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
-> element type `src/tychoc.c:6482@requires the scalar to have the array's element type`,
+> `src/tychoc.c:6459@on a fixed array requires the same static length`; mixed
+> kinds `src/tychoc.c:6451@cannot mix a fixed array and a growable array`;
+> `bounded`/`[$N]T` `src/tychoc.c:6441@IS_BOUNDED`; element-type mismatch
+> `src/tychoc.c:6444@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
+> element type `src/tychoc.c:6512@requires the scalar to have the array's element type`,
 > its literal adaptation `src/tychoc.c:6193-6198`; the fresh spine
-> `src/tychoc.c:9879@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:9863@gen_arith_op`, operands never reordered
-> `src/tychoc.c:9860@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:9883@tycho_ew_len`, and the abort
+> `src/tychoc.c:9913@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:9897@gen_arith_op`, operands never reordered
+> `src/tychoc.c:9894@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:9917@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:2702@arithmetic on arrays of different lengths`;
-> literal-zero divisor `src/tychoc.c:6379@division by zero`.
+> literal-zero divisor `src/tychoc.c:6409@division by zero`.
 
 ---
 

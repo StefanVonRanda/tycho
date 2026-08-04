@@ -1,84 +1,86 @@
 # What comes next
 
-> 2026-08-04: the three owner-directed optimization phases are complete —
-> `core:intern` (9686567), `core:pool live()` (f9a2a2c), copy diagnostics
-> (e289dbe + the return-site fix 95c3d43). New owner-directed phase: arena
-> memory observability — close the three gaps the runtime names in its own
-> comments (recycle hits uncounted, per-scope attribution deferred, block size
-> never swept) and publish the numbers the existing `TYCHO_ARENA_STATS`
-> instrument can already produce.
+> 2026-08-04: the arena-observability phase is complete (325bc6b). New
+> owner-directed phase: the generic hash the intern phase deferred. Verified
+> before admission: intern with struct keys ALREADY canonicalizes — the map
+> hashes composite keys natively (`map_of` accepts any hashable composite,
+> `gen_hash` emits the per-type hash) — so the gap is not intern itself but the
+> *public* facility: no program can hash a struct/tuple/array today; `core:hash`
+> hashers take strings only.
 
-## Phase 1 — arena observability: counters, per-scope labels, block knob, measured numbers
+## Phase 1 — `hash(x)` builtin + intern generic keys
 
-The arena runtime (`runtime/tycho_rt.c`) says, in comments, exactly what it
-cannot yet tell us: recycle hits are not counted (`arena_alloc`'s recycle path
-returns before the stats counters — `st_alloc_calls` counts bumps only),
-per-scope attribution is "deferred (ponytail: global first)", and the 64 KiB
-block size is never swept. Three small changes + one measurement pass:
+1. **`hash(x)` builtin** (`src/tychoc.c`): resolve inline next to `str` (arity 1,
+   arg type must be a legal map-key type — the `where hashable(T)` set: int,
+   string, newtypes over them, fieldless enums, composites of hashable leaves;
+   bare float/bool/char/bytes rejected, matching `map_of`), returns `int`
+   (the map's full 64-bit hash as a signed int). Codegen via `gen_hash`
+   (`src/tychoc.c:9178`) — the same per-type emitter the map keys use, so
+   equal-by-`==` values hash equal by construction. **Seeded per process like
+   map keys** — documented as in-process use (tables/dedup), not checksums
+   (that is `fnv1a_32`/`djb2`/`sdbm`/`crc32`'s role); a deterministic variant
+   would mean duplicating three generated hash families plus new runtime
+   hashers — wide surface, no in-process caller. Add `hash` to
+   `is_pure_builtin` (a discarded `hash(x)` warns like `len(x)`).
+   Emission: `tycho_hash_S_*/T*/arr_C*` are gated on `struct_keyused` (map-key
+   use only) — a `hash()` on a type never used as a map key needs its hash
+   function emitted, so add a parallel `hash_keyused` tracker (arg types
+   recorded at resolve, reachability via the existing `struct_in_key`) and OR
+   it into the five prototype/body gates.
+2. **intern generic keys**: works today (verified — `Point(1,2)` keys
+   canonicalize); extend `corelib/test/intern/main.ty` with struct and tuple
+   keys, update the package header and the corelib guide (drop the
+   "string/[int] keys first" scoping).
+3. **Docs**: `hash(x)` entry in `docs/spec/16-builtins.md` (29.x); `core:hash`
+   header gains the generic sibling; guide `hash` + `intern` entries updated.
+4. **Tests**: generic-hash assertions in `corelib/test/hash/main.ty`
+   (equal→equal across string/struct/tuple/array, inequality on distinct ints —
+   deterministic, SplitMix is a permutation; on full 64-bit values, so
+   collision-free per run), a reject fixture for a non-hashable arg
+   (`tests/reject/`), the intern struct/tuple keys.
 
-1. **Recycle counters** (`runtime/tycho_rt.c`): count every alloc request vs
-   the requests served from the free lists (tiny + large), and the bytes
-   recycled; print `recycle: N of M allocs from free lists (X%), Y of Z
-   bytes` in the stats dump. The answer to "how much does FBIP reuse save?"
-   becomes an instrumented number instead of a bench-RSS delta.
-2. **Per-scope labels** (`src/tychoc.c`): stamp each loop scratch arena
-   (`_scr%d = arena_child(...)` at the S_WHILE/S_FOR/S_FORRANGE emit sites,
-   `src/tychoc.c:11292,11323,11411`) with `"<proc>:<line>"` so residency
-   reports per statement, not per function. Bump `TYCHO_NLBL` 1024 → 4096
-   (per-scope labels multiply the label count; the dump already reports lost
-   attributions honestly if the table still fills).
-3. **Block-size knob** (`runtime/tycho_rt.c`): `TYCHO_BLOCK=<bytes>` env
-   override, read once in the constructor like `TYCHO_ARENA_STATS`, applied in
-   `arena_new`. Makes block-size sweeps rebuild-free.
-4. **Measure and publish**: run the standalone bench programs (all of
-   `bench/*.ty`, `bench/{interp,gcscan,json,window,trie,dijkstra,lru}/`) with
-   `TYCHO_ARENA_STATS=full` at the default block size; a block-size mini-sweep
-   (`TYCHO_BLOCK=8192/65536/262144` on interp + json + lru) for peak live and
-   wall; write the numbers into a new "Arena internals, measured" section of
-   `docs/performance.md`.
-
-Gate: `make test` (~8 min — the runtime is embedded in every generated
-program and the compiler emits the new stamps, so the full suite is the
-reddening lane) + `make corelib` + `make selfhost-check` (the emitted-C shape
-changes; the fixed point must re-prove) + doc gates for the performance doc.
-The 21 `src/tychoc.c` citations in the docs will shift again — re-point them
-mechanically (this is the third such shift; unavoidable while the edits land
-above cited regions).
-Expected: suite count unchanged (589), selfhost byte-identity holds, and the
-perf doc gains a measured table where the recycle rate, block reuse and
-per-scope residency are real numbers.
+Gate: `make test` (~8 min — compiler change; existing emission is unchanged
+unless `hash()` is used, `hash_keyused` is empty then, so fixtures stay
+byte-identical) + `make corelib` (hash + intern tests) + `make goldens-check`
+(re-recorded/added goldens) + `make selfhost-check` (compiler changed) + doc
+gates. The 21+ `src/tychoc.c` citations shift again (5th time) — re-point
+mechanically.
+Expected: 589 fixtures green plus the new reject fixture; hash + intern goldens
+locked; fixed point holds.
 
 ## Not in scope
 
-- Changing the block size default: the sweep reports, it does not retune.
-  Retuning is a follow-on if a workload shows a clear winner.
-- Any change to arena allocation policy (the recycle heuristics themselves).
+- A deterministic (cross-run) generic hash: needs the duplicate hash families
+  — follow-on if a caller needs cross-run composite checksums.
+- Hash of bare float/bool/char/bytes (not map-key types; a float hashes as a
+  composite leaf).
 - The build-tool candidate remains shelved.
 
-> Phase 1 evidence — 2026-08-04: all four sub-items landed, all gates green.
-> `make test` 589/0 (unchanged), `make corelib` all green,
-> `make selfhost-check` green (the emitted-C shape changed — the per-scope
-> stamps — and the fixed point still holds), doc gates ok.
+> Phase 1 evidence — 2026-08-04: all gates green. `make test` 590/0 (589 +
+> `reject/hash_float`), `make corelib` all green (hash + intern tests updated),
+> `make goldens-check` ok, `make selfhost-check` green (existing emission is
+> unchanged — `hash_keyused` is empty unless a program calls `hash()` — so the
+> fixed point holds), doc gates ok.
 >
-> (1) Recycle counters: `st_alloc_reqs`/`st_recycle_hits`/`st_recycle_bytes`
-> in `arena_alloc` (`runtime/tycho_rt.c:589`), printed as a `recycle:` line in
-> the dump. First numbers, default block size: held-tree workloads recycle ~0%
-> (interp/json/gcscan/trie — the working set is live), loop-carried rebuilds
-> 4.5–16.7% (strarr_build 1.0M/22.0M, optstr_build 16.7%, structarr_build
-> 9.1%), lru 18% of its 89 allocs. The "how much does FBIP save" question now
-> has an instrumented answer per workload.
-> (2) Per-scope labels: `_scr%d.name = "proc:line"` at the three loop-arena
-> emit sites (`src/tychoc.c:11293,11324,11412`); `TYCHO_NLBL` 1024→4096.
-> json shows `main:25` bumping 16.4 MiB across 850k allocs at a 344 B peak —
-> the per-iteration reset, visible per statement. interp has no loops (pure
-> recursion), so it shows function rows only — expected.
-> (3) `TYCHO_BLOCK=<bytes>` env override, read once at startup
-> (`runtime/tycho_rt.c:466`), applied in `arena_new`; sweeps are now rebuild-
-> free. Block sweep (8/64/256 KiB on interp+json+lru): peak LIVE identical
-> across sizes, slack ≤4% either way, wall flat — 64 KiB not retuned.
-> (4) `docs/performance.md` gains "Arena internals, measured": the internals
-> table, the three readings (tight at scale — 0.1–1.3% slack, 99.8% block
-> reuse; recycle is workload-shaped; loop scratch peaks near zero), the block
-> sweep table, the `TYCHO_BLOCK` note.
-> Citations re-pointed a fourth time (runtime +27, src/tychoc.c +1/+2) — 29
-> refs; the two wide 15-program ranges survived by luck and were left alone.
+> The key finding from admission: intern with generic keys ALREADY worked — the
+> map hashes composite keys natively — so the phase's real deliverable is the
+> public `hash(x)` builtin, and the intern half is the extended test + docs.
+> `hash(x)` resolve `src/tychoc.c:5947-5960` (arity 1, arg must satisfy the
+> map-key rule, records composite args), codegen `:9661-9663` via `gen_hash`
+> (`:9208` — the map's own per-type emitter), `is_pure_builtin` gets `hash`
+> (a discarded call warns). Type-emission gate `hash_keyused`
+> (`:1450-1454`) OR'd into the ten hash-function gates, so a `hash()` on a
+> struct that is never a map key still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
+>
+> Seeded-vs-deterministic decided SEEDED (the map's own contract): deterministic
+> would mean duplicating three generated hash families + new runtime hashers,
+> for a facility whose documented role is in-process tables/dedup — the
+> deterministic string hashers remain the checksum path. Tests assert only
+> properties that hold regardless of seed: equal→equal (string/struct/tuple/
+> array/nested), inequality on distinct small ints (deterministic — SplitMix is
+> a permutation on the full 64-bit), the reject case
+> (`tests/reject/hash_float.ty`). Docs: 16-builtins §29.7 gains `hash(x)` with
+> the map-key contract; core:hash + intern headers and the guide updated —
+> intern now documents any map-key type. 80 citations re-pointed (+10/+30/+34
+> by region — the `hash_keyused` insert at 1442 shifted refs below the usual
+> regions for the first time).
