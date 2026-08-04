@@ -1,0 +1,236 @@
+# tycho-kvsrv -- a concurrent HTTP key-value server in Tycho.
+#
+#     ./tychoc tools/tycho-kvsrv/main.ty -o build/tycho-kvsrv
+#     ./build/tycho-kvsrv --port 8080
+#     curl -X PUT -d hello http://127.0.0.1:8080/kv/alpha
+#     curl http://127.0.0.1:8080/kv/alpha
+#
+# WHAT IT IS FOR. The plan's program (docs/internals/plan-tycho-rsa-DONE.md's
+# successor): the stress is networking plus the shared-state concurrency
+# question the kv store's pscan probed only read-only.
+#
+# THE SHARED-STATE ANSWER. The language has no shared mutable storage and no
+# lock machinery -- race freedom is by construction. So the store is an
+# ACTOR: one task owns the map, and the connection handlers reach it through
+# channels. The channel topology is forced by the affine rules (a Channel
+# cannot be a struct field, a container element, or a return value): ONE
+# shared command channel whose payload carries the worker id, plus one NAMED
+# reply channel per worker, passed as spawn arguments -- every channel has
+# exactly one receiver, so nothing can race. The worker count is a named
+# constant (4), the same constraint pscan hit (no arrays of Task/Channel
+# handles); the worker pool is tycho-httpd's recursive fan-out over the one
+# shared listening fd, and each worker serves its accepted connection inline.
+#
+# Scope, honestly stated: the store is IN-MEMORY (no persistence -- the B+
+# tree lives in the tycho-kv tool, not a corelib). No URL decoding (keys must
+# be URL-safe); the gate uses plain keys. The worker count is fixed at
+# compile time by the named reply channels -- a --workers flag would need
+# channel arrays, which the language forbids.
+package main
+
+import "core:net"
+import "core:httpd"
+import "core:cli"
+import "core:strings"
+
+const NWORKERS = 4
+const DEF_HOST = "127.0.0.1"
+const DEF_PORT = 0                     # 0 = pick a free port
+const DEF_IDLE_MS = 5000
+
+# ---- the store actor ---------------------------------------------------------------
+#
+# op: 0 GET, 1 PUT, 2 DELETE. wid routes the reply to the right worker's
+# named channel.
+
+struct Cmd:
+    op: int
+    key: string
+    value: string
+    wid: int
+
+struct Res:
+    status: int
+    body: string
+
+fn store_reply(r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int, res: Res):
+    if wid == 0:
+        send(r0, res)
+    elif wid == 1:
+        send(r1, res)
+    elif wid == 2:
+        send(r2, res)
+    else:
+        send(r3, res)
+
+fn store(cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res)) -> int:
+    m := []string: string
+    for true:
+        match recv(cmd):
+            Some(c):
+                if c.op == 0:                        # GET
+                    if c.key in m:
+                        store_reply(r0, r1, r2, r3, c.wid, Res(200, m[c.key]))
+                    else:
+                        store_reply(r0, r1, r2, r3, c.wid, Res(404, ""))
+                elif c.op == 1:                      # PUT
+                    m[c.key] = c.value
+                    store_reply(r0, r1, r2, r3, c.wid, Res(200, "ok"))
+                else:                                # DELETE (idempotent)
+                    delete m[c.key]
+                    store_reply(r0, r1, r2, r3, c.wid, Res(200, "ok"))
+            None:
+                return 0
+    return 0
+
+# ---- the worker pool -----------------------------------------------------------------
+
+fn recv_res(ch: Channel(Res)) -> Res:
+    match recv(ch):
+        Some(v):
+            return v
+        None:
+            return Res(500, "store closed")
+
+fn worker_recv(r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int) -> Res:
+    if wid == 0:
+        return recv_res(r0)
+    if wid == 1:
+        return recv_res(r1)
+    if wid == 2:
+        return recv_res(r2)
+    return recv_res(r3)
+
+# one request/response round-trip through the store actor.
+fn kv_request(cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int, op: int, key: string, value: string) -> Res:
+    send(cmd, Cmd(op, key, value, wid))
+    return worker_recv(r0, r1, r2, r3, wid)
+
+# the key of a /kv/<key> path, or "" if it is not a well-formed kv path.
+fn kv_key(p: string) -> string:
+    if not strings.starts_with(p, "/kv/"):
+        return ""
+    key := p[4:]
+    # strip a query string, reject an empty key or an embedded '/'
+    k := ""
+    for i := 0; i < len(key); i += 1:
+        if key[i] == 63:             # '?'
+            break
+        if key[i] == 47:             # '/'
+            return ""
+        k = k + chr(key[i])
+    return k
+
+fn route(req: httpd.Request, cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int) -> httpd.Response:
+    key := kv_key(req.path)
+    if key == "":
+        return httpd.text_response(404, "not found")
+    if req.method == "GET":
+        res := kv_request(cmd, r0, r1, r2, r3, wid, 0, key, "")
+        if res.status == 200:
+            return httpd.text_response(200, res.body)
+        return httpd.text_response(404, "not found")
+    if req.method == "PUT":
+        kv_request(cmd, r0, r1, r2, r3, wid, 1, key, to_str(req.body))
+        return httpd.text_response(200, "ok")
+    if req.method == "DELETE":
+        kv_request(cmd, r0, r1, r2, r3, wid, 2, key, "")
+        return httpd.text_response(200, "ok")
+    return httpd.text_response(405, "method not allowed")
+
+# serve one connection: keep-alive until the client asks to close, the idle
+# deadline expires, or the peer hangs up.
+fn handle_connection(conn: int, cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int, idle_ms: int) -> int:
+    served := 0
+    for true:
+        match httpd.read_request(conn):
+            Ok(req):
+                served = served + 1
+                res := route(req, cmd, r0, r1, r2, r3, wid)
+                _ := httpd.write_response(conn, res)
+                if httpd.connection_close(req):
+                    net.close_fd(conn)
+                    return served
+            Err(e):
+                if e == httpd.Malformed:
+                    _ := httpd.write_response(conn, httpd.text_response(400, "bad request"))
+                elif e == httpd.TooLarge:
+                    _ := httpd.write_response(conn, httpd.text_response(431, "request too large"))
+                net.close_fd(conn)
+                return served
+    return served
+
+fn accept_loop(srv: int, cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int, idle_ms: int) -> int:
+    served := 0
+    fails := 0
+    for true:
+        match net.accept(srv):
+            Ok(conn):
+                fails = 0
+                net.set_read_timeout_ms(conn, idle_ms)
+                served = served + handle_connection(conn, cmd, r0, r1, r2, r3, wid, idle_ms)
+            Err(e):
+                fails = fails + 1
+                if fails > 100:
+                    return served
+    return served
+
+# the recursive fan-out: worker k spawns worker k+1 into a frame-local before
+# its own accept loop, so the pool lives as long as the daemon.
+fn worker(srv: int, cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int, remaining: int, idle_ms: int) -> int:
+    if remaining > 1:
+        peer := spawn worker(srv, cmd, r0, r1, r2, r3, wid + 1, remaining - 1, idle_ms)
+        n := accept_loop(srv, cmd, r0, r1, r2, r3, wid, idle_ms)
+        return n + wait(peer)
+    return accept_loop(srv, cmd, r0, r1, r2, r3, wid, idle_ms)
+
+# ---- main ---------------------------------------------------------------------------
+
+fn usage() -> string:
+    return ("tycho-kvsrv -- a concurrent HTTP key-value server in Tycho\n\n"
+            "usage: tycho-kvsrv [options]\n\n"
+            "  --host ADDR      address to bind               (default: " + DEF_HOST + ")\n"
+            "  --port N         port to bind, 0 = pick free   (default: " + str(DEF_PORT) + ")\n"
+            "  --idle-ms N      keep-alive idle timeout, ms   (default: " + str(DEF_IDLE_MS) + ")\n"
+            "  --help, -h       this text\n\n"
+            "Routes: GET/PUT/DELETE /kv/<key>.\n")
+
+fn main():
+    av := cli.argv()
+    valued := ["host", "port", "idle-ms"]
+    boolean := ["help", "h"]
+    c := cli.parse_spec(av, valued, boolean)
+    if cli.flag(c, "help") or cli.flag(c, "h"):
+        print(usage())
+        return
+    host := cli.get(c, "host", DEF_HOST)
+    port := strings.parse_int(cli.get(c, "port", str(DEF_PORT)))
+    idle := strings.parse_int(cli.get(c, "idle-ms", str(DEF_IDLE_MS)))
+    if port < 0 or port > 65535:
+        die("tycho-kvsrv: --port must be 0..65535")
+    if idle < 0:
+        die("tycho-kvsrv: --idle-ms must be non-negative")
+
+    match net.listen(host, port):
+        Ok(srv):
+            real := port
+            match net.port_of(srv):
+                Ok(p):
+                    real = p
+                Err(e):
+                    die("tycho-kvsrv: port_of failed")
+            # the banner is the runner's readiness signal: printed AFTER the
+            # socket is listening and BEFORE the fan-out, so a connect in that
+            # window is queued by the kernel, not refused.
+            eprint("tycho-kvsrv: listening on http://" + host + ":" + str(real) + "/ workers=" + str(NWORKERS) + "\n")
+            cmd := channel(Cmd, 16)
+            r0 := channel(Res, 16)
+            r1 := channel(Res, 16)
+            r2 := channel(Res, 16)
+            r3 := channel(Res, 16)
+            st := spawn store(cmd, r0, r1, r2, r3)
+            # worker 0's accept loop runs here, in main's frame; the store's
+            # handle stays live beside it, so the daemon never returns.
+            worker(srv, cmd, r0, r1, r2, r3, 0, NWORKERS, idle)
+        Err(e):
+            die("tycho-kvsrv: listen failed on " + host + ":" + str(port))

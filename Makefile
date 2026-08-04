@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check rsa-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -413,6 +413,20 @@ chess-check: tychoc
 # See tools/tycho-rsa/run.sh.
 rsa-check: tychoc
 	@sh tools/tycho-rsa/run.sh
+
+# kvsrv-check: the gate for tycho-kvsrv, the concurrent HTTP key-value
+# server in tools/tycho-kvsrv/. Eighth of the same shape as the tool lanes;
+# a daemon cannot run to completion, so this follows the server/run.sh
+# pattern -- start with --port 0, poll the stderr banner for the bound port,
+# drive it with a raw-socket python client. Asserts the round-trips
+# (PUT/GET/DELETE, 404 on a missing key), the 405/404 paths, keep-alive
+# (two requests, one connection), and the concurrency probe (4 parallel
+# clients PUT distinct keys, all 4 come back intact through the actor store).
+#
+# ~2s, measured 2026-08-04. In `make ci` as step [3l/18].
+# See tools/tycho-kvsrv/run.sh.
+kvsrv-check: tychoc
+	@sh tools/tycho-kvsrv/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
