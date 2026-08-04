@@ -227,6 +227,8 @@ step "[3i/15] make kv-check  (tycho-kv: 3 command scripts byte-identical B+ tree
 make -s kv-check
 step "[3j/16] make chess-check  (tycho-chess: perft totals vs published values on start/kiwipete/pos3 + ep/promo/castling vs oracle; search deterministic + TT-invariant with exact tactical probes)"
 make -s chess-check
+step "[3k/17] make rsa-check  (tycho-rsa: textbook vector, 3 python-pow modexp sizes, Miller-Rabin probes incl. Carmichael 561, deterministic keygen invariants + round-trips; 512-bit keygen round-trip)"
+make -s rsa-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc

@@ -6,34 +6,55 @@
 > this?* A finding becomes a phase only when a second, independent caller
 > exists.
 
-## The program -- (to be chosen)
+## The program -- RSA in pure Tycho  (tools/tycho-rsa/)
 
-The last program (tycho-chess) finished with a question rather than a
-finding: its parallel root search worked but paid the full-window cost,
-because the language has no shared mutable state for a lazy-SMP alpha.
-The next program should pick a stress axis the engine did not touch.
+RSA key generation, encryption/decryption and sign/verify built on
+`core:bignum` (which has add/sub/mul/divmod but NOT modular exponentiation,
+GCD or primality — those are the work). The language stress is arithmetic
+depth: four programs in, none has done real numeric computation, and bignum
+is the least-exercised corelib (its test is 2^100 by doubling).
 
-Candidates, honestly scored:
+The differential is GROUND TRUTH, in the perft sense: RSA has exact published
+vectors. The gate asserts: the textbook key (p=61, q=53, n=3233, e=17,
+d=2753: encrypt 65 → 2790), modexp values cross-checked against python's
+pow() at 256/512/2048-bit sizes, and a deterministic-seeded keygen whose
+output (n, e, d, p, q), structural invariants (n = p·q, e·d ≡ 1 mod φ,
+p/q prime) and an encrypt→decrypt round-trip are all golden-locked.
 
-- **RSA / modular bignum arithmetic.** core: bignum exists (`corelib/test/
-  bignum` has 2^100 by doubling); a real RSA keygen + sign + verify walks
-  big-int multiply, modular exponentiation, GCD/extended-Euclid, and
-  primality testing (Miller-Rabin) -- a deep arithmetic workout with exact
-  published test vectors (RSA-encrypt a message, compare against known
-  ciphertexts). No concurrency, no I/O; a pure-compute stress.
-- **An HTTP key-value server.** tycho-httpd and the weblog example exist; a
-  second server over core:net (concurrent request handling, a shared store,
-  keep-alive) would stress the conc model the chess engine only touched via
-  `parallel for`, and the server-check lane pattern already exists. Risks:
-  overlapping the existing examples' territory, and the "second program to
-  want it" bar for any finding is met more easily here (two net programs).
-- **A CHIP-8 interpreter.** a tiny ISA (35 opcodes), a display buffer, a
-  timer -- the tycho-vm already proved the VM shape, so this would mostly
-  re-prove it; weak stress.
+Scope, honestly sized: raw RSA (textbook) — no PKCS#1 padding, noted as a
+deliberate omission (padding is a protocol layer, not arithmetic).
 
-The plan's default is RSA: it exercises arithmetic depth rather than
-machinery the language has already shown, and its differential (published
-test vectors) is ground truth in the perft sense.
+## Phases
+
+### Phase 1 -- the arithmetic: modexp, gcd, modular inverse, Miller-Rabin  [DONE 2026-08-04]
+
+Built on core:bignum, which had add/sub/mul/divmod and nothing else:
+`modexp` (square-and-multiply over the Big exponent's bits, low bit = lowest
+limb's low bit since BASE = 10^9 is even), `gcd` (Euclid), `inv_mod`
+(iterative extended Euclid), `is_prime` (trial division by the first 15
+primes, then Miller-Rabin with the first 12 as witnesses -- probabilistic at
+our sizes, honestly stated: the gate's round-trip is the final arbiter, not
+is_prime). The language held: no findings. The only tax was qualification
+(the corelib types are `bignum.Big`, not `Big`).
+
+### Phase 2 -- keygen + the gate  [DONE 2026-08-04]
+
+`gen_key` (two distinct half-size primes, e = 65537, d = e^-1 mod phi,
+retrying the pair until gcd(e, phi) == 1), keygen deterministic via
+`rand.seed` with a fixed constant so the whole selfcheck transcript is a
+reproducible golden. `make rsa-check` (ci step [3k/17], ~4s) asserts: the
+textbook vector (p=61 q=53 n=3233 e=17 d=2753: encrypt 65 -> 2790), modexp
+cross-checked against python 3 pow() at 256/512/2048 bits, Miller-Rabin
+probes (97 prime, 91 composite, 561 -- the Carmichael number, which passes
+Fermat but must fail MR), and the deterministic keygen with n == p*q,
+e*d == 1 mod phi, p/q prime, and encrypt->decrypt + sign->verify round-trips
+-- all golden-locked -- plus a 512-bit keygen round-trip through the CLI
+(mul/divmod at 16 limbs). Measured: 256-bit keygen in the selfcheck ~0.2s;
+512-bit 1.8s; 1024-bit 8.3s -- schoolbook O(n^2) scaling, as expected from
+core:bignum's mag_mul.
+
+**No findings to file** -- the arithmetic-stress axis the plan predicted
+(real numeric computation on core:bignum) held without a language change.
 
 ## Findings
 

@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check q-check vm-check scheme-check kv-check chess-check rsa-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -399,6 +399,20 @@ kv-check: tychoc
 # See tools/tycho-chess/run.sh.
 chess-check: tychoc
 	@sh tools/tycho-chess/run.sh
+
+# rsa-check: the gate for tycho-rsa, the pure-Tycho RSA implementation on
+# core:bignum in tools/tycho-rsa/. Seventh of the same shape as the tool
+# lanes: nothing else RUNS a tool under tools/, so this is what executes the
+# arithmetic. The ground-truth differential is the point: the textbook RSA
+# vector, modexp cross-checked against python pow() at 256/512/2048 bits,
+# Miller-Rabin probes (incl. the Carmichael number 561), and a
+# deterministic-seeded keygen whose invariants and round-trips are asserted
+# and golden-locked, plus a 512-bit keygen round-trip through the CLI.
+#
+# ~4s, measured 2026-08-04. In `make ci` as step [3k/17].
+# See tools/tycho-rsa/run.sh.
+rsa-check: tychoc
+	@sh tools/tycho-rsa/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the
