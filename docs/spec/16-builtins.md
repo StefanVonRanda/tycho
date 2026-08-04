@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9561@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9569@tycho_eprint`; `die` codegen
 > `:9150-9151`.
 
 ## 29.4 Conversions
@@ -159,7 +159,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4792@.name="split"`;
 > `len` magic
 > `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4791@.name="char_at"`, codegen `:9000-9007`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10087@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:10095@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -176,7 +176,7 @@ rejected — so they may grow or shrink the value in the owning arena.
 | `len(a)` | `[T] -> int` | magic | Element count. Also accepts `string`, `bytes`, a map, or a `soa`. |
 | `push(a, v)` | `([T], T) -> void` | magic | Append `v` in place; `a` MUST be a mutable array (or `soa`) place. Grounds a still-pending array type to `[typeof(v)]`. |
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
-| `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`); also accepts a map place `m[k]`. |
+| `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays, so a known-size workload skips the retained growth intermediates (the lru bench's one-line fix; entries survive a later re-size). |
 
 > Provenance: `len` `src/tychoc.c:5708-5714`; `push` `:5771-5805`; `pop`
 > `:5806-5826`; `reserve` `:5827-5853`.
@@ -225,7 +225,7 @@ user-callable.)
 > `:5126-5141`; `map_*` removal (parse error) `:2473-2474`, tychoc0
 > `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
 > form). `hash` resolve `src/tychoc.c:5947-5960`, codegen `:9661-9663`,
-> `gen_hash` `src/tychoc.c:9208@gen_hash`; its type-emission gate is `hash_keyused`
+> `gen_hash` `src/tychoc.c:9210@gen_hash`; its type-emission gate is `hash_keyused`
 > `src/tychoc.c:1450-1454`, OR'd into the hash-function gates so a `hash()` on
 > a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
@@ -248,7 +248,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7884@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7886@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -277,7 +277,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5233-5247`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10510@_pk > 64`.
+> 64 is `src/tychoc.c:10518@_pk > 64`.
 
 ## 29.10 Filesystem and time
 

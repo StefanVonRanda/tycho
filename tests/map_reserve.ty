@@ -1,36 +1,24 @@
-# reserve(m[k], n): capacity hint reaching INTO a map value (#2). m[k] is a place for
-# reserve too, so a count-then-fill build can size each posting list once. Behavior is
-# identical to not reserving (a hint, not a length): same contents, same len. Covers
-# [int]/[float]/[string]-valued maps, fresh + existing keys.
+# reserve(m, n): pre-size a MAP's entry + index arrays so a known-size workload
+# skips the retained growth intermediates (the lru bench's fix). Entries must
+# survive a later re-size; a tombstone must be reclaimed; the composite (mapc)
+# family must reserve too. (Sibling: map_reserve_map.ty tests reserve(m[k], n)
+# -- reserving the array VALUE inside a map.)
 fn main():
-    # [string: [int]]: reserve, then fill exactly n -> no regrow, right contents
-    idx := []string: [int]
-    reserve(idx["a"], 4)
-    i := 0
-    for i := 0; i < 4; i += 1:
-        push(idx["a"], i * 10)
-    a := idx.get("a", []int)
-    println(str(len(a)) + ":" + str(a[0]) + "," + str(a[3]))   # 4:0,30
-
-    # reserve smaller than what we push (hint only): still correct, list grows past it
-    reserve(idx["b"], 1)
-    push(idx["b"], 1)
-    push(idx["b"], 2)
-    push(idx["b"], 3)
-    println(str(len(idx.get("b", []int))))                # 3
-
-    # [int: [string]]: reserve a string-list map value
-    sm := []int: [string]
-    reserve(sm[7], 2)
-    push(sm[7], "x")
-    push(sm[7], "y")
-    s := sm.get(7, []string)
-    println(s[0] + s[1] + ":" + str(len(s)))                   # xy:2
-
-    # [string: [float]]: reserve a float-list map value
-    fm := []string: [float]
-    reserve(fm["g"], 3)
-    push(fm["g"], 1.5)
-    push(fm["g"], 2.5)
-    fl := fm.get("g", []float)
-    println(str(to_int(fl[0] + fl[1])) + ":" + str(len(fl)))   # 4:2
+    m := []int: int
+    reserve(m, 1000)
+    m[1] = 10
+    m[2] = 20
+    reserve(m, 10000)          # re-size: entries must survive
+    s := []string: int
+    reserve(s, 100)
+    s["k"] = 5
+    delete s["k"]              # tombstone + churn
+    s["j"] = 6
+    c := []string: string      # composite map (emitted mapc reserve)
+    reserve(c, 100)
+    c["a"] = "x"
+    c["b"] = "y"
+    reserve(c, 1000)
+    print(str(m.get(1, -1)) + " " + str(m.get(2, -1)) + " " + str(len(m)) + " | ")
+    print(str(s.get("k", -1)) + " " + str(s.get("j", -1)) + " " + str(len(s)) + " | ")
+    print(c.get("a", "") + c.get("b", "") + " " + str(len(c)))

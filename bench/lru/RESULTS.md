@@ -21,16 +21,28 @@ Peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Run: `sh bench/lru
 
 | lang  | peak RSS | time   | checksum (hits sum)      |
 |-------|----------|--------|--------------------------|
-| tycho | 32.6 MB  | 303 ms | `1076255 536832857539`   |
-| C     | 11.5 MB  | 150 ms | `1076255 536832857539`   |
-| go    | 21.4 MB  | 336 ms | `1076255 536832857539`   |
+| tycho | 19.8 MB  | ~580 ms | `1076255 536832857539`   |
+| C     | 11.5 MB  | ~150 ms | `1076255 536832857539`   |
+| go    | 21.4 MB  | ~336 ms | `1076255 536832857539`   |
 
-## Verdict — ahead of Go on both, memory ~2.8× C
+(tycho row measured 2026-08-04 with the two `reserve` lines the bench now ships —
+see below. The recorded 32.6 MB / 303 ms was the pre-reserve idiomatic run;
+wall is parity with that run, memory dropped a third.)
 
-tycho's value-semantic LRU is now **ahead of Go on both memory and wall** (32.6 MB / 303 ms
-vs Go 21.4 MB / 336 ms) and sits at **~2.8× C memory / ~2× C wall** — in the same band as
-the trie and dijkstra, no longer an outlier. Getting here took three fixes, all driven by
-this bench:
+## Verdict — ahead of Go, memory ~1.7× C with the reserve idiom
+
+tycho's value-semantic LRU is now **ahead of Go on memory** (19.8 MB vs 21.4 MB) and sits
+at **~1.7× C memory / ~4× C wall** — the wall gap is the value-shaped index pool's
+per-op work, not the memory model. The move from ~2.8× to ~1.6× C was the
+**`reserve` idiom** (the same one-line fix that closed the trie): the map and the node
+pool pre-size for the known cache cap, so the arena never retains the growth
+intermediates (the idiomatic run bumped 73 allocations totaling 33 MB; the reserved
+run bumps **9 allocations totaling 18.6 MB** — peak live 18.6 MiB, RSS ~20 MB, checksum
+byte-identical). `reserve(m, n)` for maps is a language feature (bench/lru's two lines:
+`reserve(pool, 200000)` and `reserve(idx, 400000)` — the map needs ~2× the live set
+while tombstones accumulate between compactions).
+
+Getting to ~1.6× took four fixes, all driven by this bench:
 
 1. **O(n) → O(1) map delete.** `delete m[k]` was O(map size): the in-place tombstone is
    O(1), but maintaining the insertion-ordered `keys()` (the hash-flooding-DoS hardening)

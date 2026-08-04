@@ -101,3 +101,41 @@ recorded in the bench RESULTS docs before and after.
 > byte-locked golden is the cross-run proof — a seeded hash would redden it
 > every run). Docs updated: 16-builtins §29.7, core:hash header, guide. 22
 > citations re-pointed (+2..+61 by region).
+
+> Phase 3 evidence — 2026-08-04: all gates green. `make test` 591/0 (+ the new
+> map_reserve fixture; the pre-existing map_reserve fixture tests the m[k]
+> value-reserve and was renamed map_reserve_map), `make corelib` green,
+> `make selfhost-check` green, both target lanes green (`sh bench/lru/run.sh`
+> tycho 19.8 MB, checksum byte-identical; trie unchanged), doc gates ok,
+> goldens-check ok.
+>
+> Decomposition first (as planned): the idiomatic lru was 33.0 MiB over 73
+> allocations — the pool and map grow by doubling and the arena retains every
+> intermediate (C frees them on rehash). The array pool's growth already
+> recycles its spines, so the map's growth (no recycle, and recycle wouldn't
+> help anyway — doubling never reuses the half-size chunk) is the waste. The
+> lever the numbers picked: **`reserve(m, n)` for maps** — pre-size the entry +
+> index arrays, preserving live entries on a re-size, shipped for the four
+> runtime fast families (`tycho_map_{ii,if,si,sf}_reserve`) and the emitted
+> composite `tycho_mapc%d_reserve`. The bench's two reserve lines
+> (`reserve(pool, 200000)` + `reserve(idx, 400000)` — the map needs ~2× the
+> live set while tombstones accumulate between compactions) drop the lru to
+> 18.6 MiB peak live / ~20 MB RSS over 9 allocations, **~1.7× C, ahead of Go**,
+> wall at parity, checksum byte-identical. `reserve` on a map now resolves
+> (previously "first argument must be an array"); the 16-builtins reserve row
+> documents both.
+>
+> Deferred, with the measured reason: (a) tombstone headroom — the map holds
+> ~2.6× the live set under churn; backward-shift ENTRY delete would remove the
+> headroom but breaks the keys() insertion-order contract (order-preserving
+> compaction is why the tombstone scheme exists); (b) the idiomatic trie's
+> small-map gap (separate layout work, per the plan's explicit defer). 37
+> citations re-pointed.
+>
+> One incident worth recording: I initially overwrote the pre-existing
+> tests/map_reserve fixture (it tests `reserve(m[k], n)`, the array-inside-map
+> form) with my map test — caught by `git status` showing a tracked file as
+> modified, restored, and the original renamed `map_reserve_map`. The new
+> fixture is `tests/map_reserve.ty`.
+>
+> The closing `make ci` (the one full sweep for the chain) runs next.

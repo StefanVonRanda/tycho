@@ -85,7 +85,9 @@ fn main():
     nops := 5000000
     state := 88172645463325252
     pool := []Node
+    reserve(pool, 200000)
     idx := []int: int
+    reserve(idx, 400000)
     meta := [-1, -1, 0]
     hits := 0
     sum := 0
