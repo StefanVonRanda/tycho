@@ -124,6 +124,28 @@ On the allocation-heavy tree workloads Tycho uses the least memory of the five �
 counting, only lexical arenas and value semantics. Memory is the thesis metric,
 and it is reached with zero manual management.
 
+**Eight programs that tested the language.** The tools under
+[`tools/`](tools/) are not demos — they are full programs written against the
+language, each with a ground-truth differential that a bug cannot pass. The
+testing campaign ran them all on the shipped compiler, and the language held:
+no compiler or runtime defect was filed by any of them.
+
+| program | what it stresses | its ground-truth gate |
+| --- | --- | --- |
+| `tycho-scheme` | a Scheme interpreter *and* a bytecode compiler (defunctionalized closures) | the same six programs run byte-identically on both; `make scheme-check` |
+| `tycho-vm` | a bytecode assembler/disassembler/VM | `dis` round-trips `asm` byte-for-byte; 10 runtime traps; `make vm-check` |
+| `tycho-kv` | a persistent B+ tree store | every command script byte-identical against a naive map backend; `make kv-check` |
+| `tycho-chess` | bitboards, perft, alpha-beta search | published perft totals (start, Kiwipete, Position 3); `make chess-check` |
+| `tycho-rsa` | RSA keygen/sign/verify on `core:bignum` | the textbook vector plus python `pow()` as the oracle; `make rsa-check` |
+| `tycho-kvsrv` | a concurrent HTTP key-value server | a daemon gate: 4 parallel clients, every write intact; `make kvsrv-check` |
+| `tycho-sat` | a DPLL/CDCL SAT solver | the pigeonhole theorem (PHP(2..9) unsat) and planted instances whose models the runner verifies clause by clause; `make sat-check` |
+
+The differentials are the point: an engine with a move-generator bug, a
+solver with an unsound analysis, or a store that drops a concurrent write
+cannot pass them. The campaign did produce one language change — hex
+integer literals, filed by the chess engine's castling masks and shipped —
+and no other finding needed one.
+
 **On speed and scope.** Tycho runs in C's class: it is faster than hand-written C
 on the allocation-heavy tree workloads (binary-trees, tree-rewrite) and on the
 JSON parser, and it trails C and Rust on the flat array-pipeline (per-element

@@ -38,10 +38,27 @@ placeholder spelling for the conversion-function family. None is a marker.
 Nothing to fix; the scan is the phase's deliverable and its own finding
 (a naive `grep XXX` over this tree is noise, not debt).
 
-### Phase 2 -- add a LICENSE  [not started]
+### Phase 2 -- LICENSE / SECURITY / CONTRIBUTING  [DONE 2026-08-04 -- already present]
 
-### Phase 3 -- GitHub Actions CI running `make ci`  [not started]
+The phase's premise was wrong: the survey that motivated it missed that
+`LICENSE` (MIT, "The Tycho Authors", 2026), `SECURITY.md` and
+`CONTRIBUTING.md` all already exist and are complete -- the README's License
+section links all three. CONTRIBUTING covers the local gate, the frozen
+tychoc0 rule, the arena-model rule, feature-work scope and code style.
+Nothing to add.
 
-### Phase 4 -- README: the seven tools as evidence of exercise  [not started]
+### Phase 3 -- README: the seven tools as evidence of exercise  [DONE 2026-08-04]
 
-### Phase 5 -- CONTRIBUTING.md: the gates, the citations, the demand rule  [not started]
+Added the "Eight programs that tested the language" subsection under The
+evidence: the seven tool programs with the axis each stressed and its
+ ground-truth gate, plus the one finding the campaign did produce (hex
+literals, filed by the chess engine's castling masks).
+
+### Phase 4 -- the CI decision  [AWAITS THE OWNER]
+
+The one real gap is GitHub Actions, and it is a decision, not a task: the
+repo's README and CONTRIBUTING both document "no cloud CI -- that's on
+purpose; `make ci` runs the whole gate locally" as a principled stance, so
+adding a workflow would also mean rewriting that claim in three places. The
+owner's call: keep the local-only stance, or add a workflow that runs
+`make ci` on push so the rigor is visible as a green checkmark.
