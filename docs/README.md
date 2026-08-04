@@ -26,6 +26,9 @@ is why:
   a conformance suite. For implementers and edge-case reasoning.
 - **[`architecture.md`](architecture.md)** — how the project is built, what each
   verification gate proves, what's shipped, and the decided non-goals.
+- **[`performance.md`](performance.md)** — the measurements behind the README's
+  claims: the cross-language memory tables, the flat-memory JSON parser, and the
+  honest costs.
 - **[`bootstrap.md`](bootstrap.md)** — how Tycho self-hosted: the bootstrap stages,
   which script ran each one, and why the frozen `compiler/tychoc0.ty` is no longer
   built by any gate. History, not a build instruction.

@@ -7,13 +7,17 @@
 
 # Tycho
 
-**Tycho is an experimental systems language built to test one idea: implicit
-hierarchical arenas under value semantics.** Each scope owns a memory arena,
-freed when the scope exits; with no reference type in the language, the compiler
-sees every value's lifetime from the syntax alone and inserts every allocation
-and free itself. The payoff is automatic memory management — no garbage collector,
-no manual `free` — from lexical scope rather than a runtime. It transpiles to C
-and builds with `cc` and `make`.
+**An experimental systems language with automatic memory management from lexical
+scope.** Tycho tests one idea: implicit hierarchical arenas under value
+semantics. Every scope owns a memory arena, freed when the scope exits; with no
+reference type in the language, the compiler sees every value's lifetime from
+the syntax alone and inserts every allocation and free itself. No garbage
+collector, no manual `free`, no borrow checker. It transpiles to C and builds
+with `cc` and `make`.
+
+[Docs](docs/README.md) · [Tutorial](docs/tutorial.md) ·
+[Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
+[Spec](docs/spec/) · [Performance](docs/performance.md)
 
 ```
 fn greet(name: string) -> string:
@@ -25,20 +29,25 @@ fn main():
     println(greet(name))
 ```
 
-It's a research project — an experiment testing that one idea — but a heavily-checked
-one, and that's the part most experiments this young skip. Every example is built twice,
-native and sanitized, and checked against a committed golden; a fuzzer applies the same
-differential to random programs under ASan/UBSan, and feeds malformed input in to prove
-the compiler fails closed rather than crashing. No cloud CI to take on faith — `make ci`
-runs the whole gate locally. Experimental in *scope*, not in rigor.
+## Key features
 
-Tycho also compiles itself: `compiler/tychoc0.ty` is a transpiler for Tycho written in
-Tycho, and compiled by itself it reproduces its own emitted C **byte-for-byte**. That
-proof is done. As of **2026-07-26 `tychoc0` is frozen** — preserved unchanged as the
-artifact that demonstrated self-hosting, gated by nothing, and no longer updated. It
-compiles the language as it stood on that date, so it and `tychoc` will accept and reject
-different programs from here on. `tychoc` is the reference implementation; the
-[spec](docs/spec/) is normative.
+- **No GC, no manual `free`.** A value can leave a scope in exactly two ways,
+  both visible in the source — *down*, passed to a callee, or *up*, returned to
+  the caller — so the compiler places every allocation from the syntax alone.
+  The payoff is automatic memory management from lexical scope, not a runtime.
+- **Value semantics.** `b := a` copies; there is no shared mutable storage, so
+  data races are inexpressible inside Tycho (copy-in/copy-out concurrency, no
+  annotations).
+- **One dependency-free C file.** The transpiler is `src/tychoc.c`; the only
+  toolchain is `cc` and `make`.
+- **Concurrency, generics, closures, FFI.** `spawn`/`wait` tasks, bounded
+  channels, `parallel for`, monomorphized generics, closures, UFCS, and a
+  C-interop boundary — all shipping.
+- **Heavily tested.** Every example is built twice — native and sanitized — and
+  checked against a committed golden; a fuzzer applies the same differential to
+  random programs under ASan/UBSan and feeds malformed input to prove the
+  compiler fails closed. The language compiled itself byte-for-byte once, and
+  eight full programs (below) ran on it with zero compiler or runtime defects.
 
 ## Quick start
 
@@ -53,82 +62,34 @@ what is your name: Ada
 hello Ada
 ```
 
-New here? The **[tutorial](docs/tutorial.md)** goes from this to a real program in about
-an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)** explains the memory
-model from C you already know. Full build details are under [Trying it](#trying-it). The
-syntax is Python/Nim-flavored and the semantics Go/Odin-like; the value-semantics core
-comes from **[Hylo](https://www.hylo-lang.org/)**.
+New here? The **[tutorial](docs/tutorial.md)** goes from this to a real program
+in about an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)**
+explains the memory model from C you already know. Full build details are under
+[Trying it](#trying-it). The syntax is Python/Nim-flavored and the semantics
+Go/Odin-like; the value-semantics core comes from
+**[Hylo](https://www.hylo-lang.org/)**.
 
-## The thesis
+## Why arenas and value semantics
 
 The arena is an old idea, and a fast one: a bump allocator hands out memory by
-incrementing a pointer, and frees everything at once when its scope ends. Game engines, request
-handlers, and region systems have used it for decades. The catch has always
-been knowing *when* a value is allowed to outlive its arena — in a language with
-pointers, that needs whole-program alias analysis, which is the hard part.
+incrementing a pointer, and frees everything at once when its scope ends. The
+catch has always been knowing *when* a value may outlive its arena — in a
+language with pointers, that needs whole-program alias analysis, which is the
+hard part. Value semantics removes the question: no reference type means a value
+escapes only by being passed down or returned up, so every allocation can be
+placed from the syntax alone. Two optimizations keep it from being slow — a
+returned value is built in the caller's arena (a move, not a copy), and
+`acc = acc + x` in a loop grows one buffer in place instead of reallocating
+each step — both sound because the value is provably un-aliased. The full
+argument, with the measurements and the places it costs, is
+**[docs/thesis.md](docs/thesis.md)**.
 
-Value semantics removes the question. Tycho has no reference type: you cannot
-store or return a pointer into another value's memory, and `b := a` copies. So a
-value can leave a scope in exactly two ways, both visible in the source —
-**down**, passed as an argument to a callee, or **up**, returned to the caller —
-and the compiler can place every allocation from the syntax alone, with no
-whole-program analysis and no annotations to write. That is the whole thesis, and
-the rest of the language follows from it; the full argument, with the measurements and the places it
-costs, is in **[docs/thesis.md](docs/thesis.md)**.
+## The testing campaign
 
-Two optimizations keep value semantics from being slow. A value built locally and
-returned is allocated in the caller's arena from the start, so `return` is a move,
-not a copy. And `acc = acc + x` in a loop grows one buffer in place instead of
-reallocating each step — the textbook O(n²) string build becomes O(n). Both are
-sound *because* the value is provably un-aliased; neither is visible in your code.
-
-## The evidence
-
-The programs behind these numbers run in CI on `tychoc`, their output
-checked byte-for-byte against a golden. The figures themselves are measured and machine-specific, so the cross-language
-*ratios* are the claim, not the absolute times.
-
-**Self-hosting proof.** The strongest evidence for the thesis is that Tycho
-compiles itself on it. Besides the C reference transpiler (`src/tychoc.c`), there
-is a second transpiler written in Tycho — `compiler/tychoc0.ty` — and its codegen
-runs on the same implicit arenas it emits. Built three ways, the last two emitted
-**byte-identical** C, and the self-hosted build reproduced the C transpiler's
-output across every test and example. A compiler is the hostile case for any
-allocator: thousands of small, short-lived, deeply-recursive AST nodes. It managed
-its own memory with no GC and no leaks
-([docs/guides/memory-model.md](docs/guides/memory-model.md)).
-
-That result stands as recorded; it is **not re-run**. `tychoc0` was frozen on
-2026-07-26 and no gate builds it, so it is a snapshot of the language on that date,
-not a second implementation of Tycho today — expect it to accept and reject
-different programs than `tychoc` does. See the header of `compiler/tychoc0.ty`.
-
-**A real program at flat memory.** [`examples/json.ty`](examples/json.ty) is a
-220-line recursive-descent JSON parser over a recursive `Json` sum type — real
-recursion, zero `malloc`/`free`/refcount/GC in the source. Parsing **5,000,000**
-documents in a loop holds at a **flat 10 MB**: each document's tree is reclaimed
-when its loop iteration's arena resets. Clean under ASan + LeakSanitizer.
-
-**Head-to-head, five languages** ([bench/prongB/RESULTS.md](bench/prongB/RESULTS.md)).
-Peak resident memory (MB) — every binary computes the same checksum; lower is better:
-
-| workload         | tycho |  C | Rust | Go (GC) | Koka (Perceus) |
-| ---------------- | ----: | -: | ---: | ------: | -------------: |
-| binary-trees     |  **13** | 33 |   33 |      36 |             14 |
-| tree-rewrite     |   **6** | 13 |    9 |      22 |              7 |
-| array-pipeline   |     6 |  3 |    3 |       6 |             14 |
-| string-pipeline  |     1 |  1 |    2 |       3 |              2 |
-
-On the allocation-heavy tree workloads Tycho uses the least memory of the five —
-40% of C's on binary-trees, half on tree-rewrite — with no GC and no reference
-counting, only lexical arenas and value semantics. Memory is the thesis metric,
-and it is reached with zero manual management.
-
-**Eight programs that tested the language.** The tools under
-[`tools/`](tools/) are not demos — they are full programs written against the
-language, each with a ground-truth differential that a bug cannot pass. The
-testing campaign ran them all on the shipped compiler, and the language held:
-no compiler or runtime defect was filed by any of them.
+The tools under [`tools/`](tools/) are not demos — they are full programs
+written against the language, each with a ground-truth differential that a bug
+cannot pass. The campaign ran all of them on the shipped compiler, and the
+language held: no compiler or runtime defect was filed by any of them.
 
 | program | what it stresses | its ground-truth gate |
 | --- | --- | --- |
@@ -140,84 +101,73 @@ no compiler or runtime defect was filed by any of them.
 | `tycho-kvsrv` | a concurrent HTTP key-value server | a daemon gate: 4 parallel clients, every write intact; `make kvsrv-check` |
 | `tycho-sat` | a DPLL/CDCL SAT solver | the pigeonhole theorem (PHP(2..9) unsat) and planted instances whose models the runner verifies clause by clause; `make sat-check` |
 
-The differentials are the point: an engine with a move-generator bug, a
-solver with an unsound analysis, or a store that drops a concurrent write
-cannot pass them. The campaign did produce one language change — hex
-integer literals, filed by the chess engine's castling masks and shipped —
-and no other finding needed one.
+The differentials are the point: an engine with a move-generator bug, a solver
+with an unsound analysis, or a store that drops a concurrent write cannot pass
+them. The campaign produced one language change — hex integer literals, filed
+by the chess engine's castling masks and shipped — and no other finding needed
+one. **The strongest evidence is that Tycho compiles itself**: besides the C
+reference transpiler there is a second transpiler written in Tycho,
+`compiler/tychoc0.ty`, and its codegen runs on the same implicit arenas it
+emits — built three ways, the last two emitted byte-identical C. That proof is
+done and frozen; see `docs/internals/plan-repo-polish-DONE.md` for the
+campaign's record.
 
-**On speed and scope.** Tycho runs in C's class: it is faster than hand-written C
-on the allocation-heavy tree workloads (binary-trees, tree-rewrite) and on the
-JSON parser, and it trails C and Rust on the flat array-pipeline (per-element
-bounds checks, not the memory model). It is *not* a bid to be the fastest language
-— absolute wall times are machine-, governor-, and toolchain-specific, so the
-cross-language *ratios* are the claim, not the times. Measured on an AMD Ryzen 7
-7735HS (16 threads), Debian; full toolchains and per-workload timings are in
-RESULTS.md.
+## Performance
 
-## What it costs
-
-Value semantics is not free, and the costs are structural.
-
-**No shared mutable references.** Every binding is an independent copy; there are no
-pointers, and recursive structs are rejected (recursive *enums* like the `Json` tree
-above are fine — they nest through a boxed payload). You can't build a shared-mutable
-**graph**, **doubly-linked list**, or **observer** the pointer way; the idiom is a
-**flat node pool** — hold all nodes in one array and link them by integer index — which
-is also the cache-friendly layout data-oriented engines choose on purpose. See
-[docs/guides/arrays-structs.md](docs/guides/arrays-structs.md).
-
-**Pointer-shaped data costs more, measured.** Storing children by value, a
-recursive trie is ~1.55× C's memory (halved by the compact indexed-dict map
-layout) and a fixed-capacity LRU ~2.8× (no sharing). The flat-pool idiom above
-brings the graph analog to ~1.3× C. Arenas reclaim at
-*scope exit*, not incrementally, so a long-lived scope holds its transients until
-it returns — scope them in an inner function. The full loss column, with the idiom
-for each case, is in
-[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md).
-
-**Generics are monomorphized over a fixed constraint set.** Generic functions,
-structs, and enums (including recursive, e.g. `enum Tree($T)`) take `$T`, but the
-only constraints are the built-in predicates (`numeric` / `comparable` /
-`has_str`) and type sets (`where T: int | float`). No user-defined traits, no
-higher-kinded types, no variance. See [docs/guides/generics.md](docs/guides/generics.md).
+On the allocation-heavy tree workloads Tycho uses the least memory of five
+languages measured head-to-head — 40% of C's on binary-trees, half on
+tree-rewrite — with no GC and no reference counting, only lexical arenas and
+value semantics. A 220-line recursive JSON parser holds a flat 10 MB across
+5,000,000 documents in a loop. The tables, the measurements, and the honest
+costs are in **[docs/performance.md](docs/performance.md)**.
 
 ## FAQ
 
-**"No GC and no borrow checker — how is it memory-safe?"** There is no reference
-type, so a dangling pointer is *inexpressible* — the bug that escape analysis
-exists to prevent can't be written. Memory frees per scope; values that outlive their scope
-are copied up. `Option` removes null, `Result` removes exceptions, indexing is
-bounds-checked, and copy-in/copy-out concurrency removes data races inside
-Tycho (concurrent FFI calls can still race). Every
-test runs under ASan + UBSan, plus LeakSanitizer and ThreadSanitizer.
+**"No GC and no borrow checker — how is it memory-safe?"** There is no
+reference type, so a dangling pointer is *inexpressible* — the bug that escape
+analysis exists to prevent can't be written. Memory frees per scope; values that
+outlive their scope are copied up. `Option` removes null, `Result` removes
+exceptions, indexing is bounds-checked, and copy-in/copy-out concurrency removes
+data races inside Tycho (concurrent FFI calls can still race). Every test runs
+under ASan + UBSan, plus LeakSanitizer and ThreadSanitizer.
 
-**"Where's the package manager?"** There isn't one, on purpose. A package is a
-directory of `.ty` files you import by path; the corelib lives under `core:`. Adding
-third-party code is a deliberate manual act — vendor the source — never a one-line
-command that pulls a transitive graph you've never read.
+**"What does value semantics cost?"** No shared mutable references: you can't
+build a shared-mutable graph, doubly-linked list, or observer the pointer way —
+the idiom is a flat node pool (all nodes in one array, linked by integer index),
+which is also the cache-friendly layout data-oriented engines choose on purpose.
+Pointer-shaped data costs more measured — a recursive trie ~1.55× C's memory, a
+fixed-capacity LRU ~2.8×; the flat-pool idiom brings the graph analog to ~1.3×
+C. Arenas reclaim at scope exit, not incrementally. The full loss column is in
+[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md).
 
 **"Deep-copying every value must be slow."** "Copied on assignment" is the
-*semantic model*, not the generated code. The transpiler drops the copy wherever a
-value is provably un-aliased — returns build in the caller's arena, `acc = acc + x`
-grows in place, `b := a` becomes a move when `a` is dead. A copy happens only when
-a value genuinely escapes to two live owners — exactly when a GC or refcount would
-also work. Measured, not asserted: see the tables above.
+*semantic model*, not the generated code. The transpiler drops the copy wherever
+a value is provably un-aliased — returns build in the caller's arena,
+`acc = acc + x` grows in place, `b := a` becomes a move when `a` is dead. A copy
+happens only when a value genuinely escapes to two live owners — exactly when a
+GC or refcount would also work. Measured, not asserted: see the performance
+tables.
+
+**"Where's the package manager?"** There isn't one, on purpose. A package is a
+directory of `.ty` files you import by path; the corelib lives under `core:`.
+Adding third-party code is a deliberate manual act — vendor the source — never a
+one-line command that pulls a transitive graph you've never read.
 
 ## Trying it
 
-[Quick start](#quick-start) above is the 30-second version; here's the rest.
+`./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`,
+removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails,
+as the evidence); `-o name` names the output, `--emit-c` stops at the C (writing
+it to stdout unless `-o` names a file) — that is how you keep the C. The
+transpiler is one dependency-free C file. The only optional extras are
+`pkg-config` plus a library for the FFI-backed corelib modules (like
+`core:http`) and a Go toolchain for the cross-language benchmarks — both skip
+cleanly when absent.
 
-`./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`, removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails, as the evidence);
-`-o name` names the output, `--emit-c` stops at the C (writing it to stdout
-unless `-o` names a file) — that is how you keep the C. The transpiler is one
-dependency-free C file. The only optional extras are `pkg-config` plus a library for the
-FFI-backed corelib modules (like `core:http`) and a Go toolchain for the cross-language
-benchmarks — both skip cleanly when absent.
-
-**Core library.** `corelib/` is Tycho's core library, imported as `core:<name>`. The
-transpiler finds it beside its own binary, so there's no setup (`TYCHO_CORELIB`
-overrides). A file with an `import` is a *package* — give it its own directory:
+**Core library.** `corelib/` is Tycho's core library, imported as
+`core:<name>`. The transpiler finds it beside its own binary, so there's no
+setup (`TYCHO_CORELIB` overrides). A file with an `import` is a *package* —
+give it its own directory:
 
 ```
 mysite/main.ty:
@@ -247,30 +197,29 @@ verifies the whole tree.
 | `make ci` | The full local gate — no cloud CI. |
 | `make clean` | Remove build artifacts. |
 
-`make test` builds every `examples/*.ty` and `tests/*.ty` twice — native `-O2` and
-`-fsanitize=address,undefined` — runs both on the same stdin, and asserts: exit 0,
-no sanitizer report, **byte-identical output** between the builds, and a match
-against the committed golden `tests/<name>.out`. Byte-identity catches UB the
-optimizer and sanitizer disagree on; the golden catches a miscompile that's
+`make test` builds every `examples/*.ty` and `tests/*.ty` twice — native `-O2`
+and `-fsanitize=address,undefined` — runs both on the same stdin, and asserts:
+exit 0, no sanitizer report, **byte-identical output** between the builds, and a
+match against the committed golden `tests/<name>.out`. Byte-identity catches UB
+the optimizer and sanitizer disagree on; the golden catches a miscompile that's
 self-consistently wrong. LeakSanitizer is on — every scope frees its arena at
 exit, so a leak means a real missing free. Goldens are rewritten only by `make
 test-update`, never by a normal run.
 
 `make bench` guards the *performance* claims the way `make test` guards
-correctness: each `bench/*.ty` asserts one metric against a generous bound. The
-in-place append holds ~1.5 MB where the un-optimized path is ~825 MB at the same
-N, so a 32 MB bound sits firmly between working and broken.
+correctness: each `bench/*.ty` asserts one metric against a generous bound.
 
-**Platform notes.** Builds and self-hosts on any unix-like OS — developed and gated
-on Debian (x86-64), and benchmarked on macOS (Apple Silicon). No native Windows, but
-WSL is fine. On macOS, `xcode-select --install`; Apple's AddressSanitizer ships no LeakSanitizer,
-so that half of the sanitizer build is skipped there (the rest still runs).
+**Platform notes.** Builds and self-hosts on any unix-like OS — developed and
+gated on Debian (x86-64), and benchmarked on macOS (Apple Silicon). No native
+Windows, but WSL is fine. On macOS, `xcode-select --install`; Apple's
+AddressSanitizer ships no LeakSanitizer, so that half of the sanitizer build is
+skipped there (the rest still runs).
 
 ## Documentation
 
-New to Tycho? **Start with the [tutorial](docs/tutorial.md)** — a guided first hour
-that ends with a small real program and the one idea that makes the language tick.
-[`docs/`](docs/README.md) is the full index; the map:
+New to Tycho? **Start with the [tutorial](docs/tutorial.md)** — a guided first
+hour that ends with a small real program and the one idea that makes the
+language tick. [`docs/`](docs/README.md) is the full index; the map:
 
 - **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
 - **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
@@ -279,6 +228,7 @@ that ends with a small real program and the one idea that makes the language tic
   The source of truth; every example compiles on both transpilers.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
   work, and where it doesn't, with measured numbers.
+- **[Performance](docs/performance.md)** — the measurements behind the claims.
 - **Design notes** ([`docs/guides/`](docs/guides)) — the rationale behind each
   subsystem (memory model, concurrency, FFI, generics, maps). The reference says
   *what*; these say *why*.
@@ -287,8 +237,8 @@ that ends with a small real program and the one idea that makes the language tic
 
 ## License
 
-Tycho is licensed under the **[MIT License](LICENSE)** — do whatever you want with
-it. AI was used in building this proof-of-concept. It's experimental software
-provided "as is", without warranty; security notes are in
+Tycho is licensed under the **[MIT License](LICENSE)** — do whatever you want
+with it. AI was used in building this proof-of-concept. It's experimental
+software provided "as is", without warranty; security notes are in
 [SECURITY.md](SECURITY.md), and how to build, test, or contribute is in
 [CONTRIBUTING.md](CONTRIBUTING.md).
