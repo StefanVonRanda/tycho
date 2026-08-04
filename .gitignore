@@ -185,6 +185,9 @@ gmon.out
 # the tycho-kvsrv daemon gate's transcript golden (tools/tycho-kvsrv/expected.out)
 # is tracked too, same line, same reason; the runner works in a `mktemp -d`.
 !/tools/tycho-kvsrv/*.out
+# the tycho-sat corpus-gate transcript golden (tools/tycho-sat/expected.out)
+# is tracked too, same line, same reason; the runner works in a `mktemp -d`.
+!/tools/tycho-sat/*.out
 
 # Claude Code session state (locks, worktrees) — never publish
 /.claude/

@@ -231,6 +231,8 @@ step "[3k/17] make rsa-check  (tycho-rsa: textbook vector, 3 python-pow modexp s
 make -s rsa-check
 step "[3l/18] make kvsrv-check  (tycho-kvsrv: HTTP KV round-trips + 405/404 + keep-alive + 4-way concurrent PUT/GET intact through the actor store)"
 make -s kvsrv-check
+step "[3m/19] make sat-check  (tycho-sat: PHP(2..9) all UNSAT; planted instances SAT with runner-verified models; deterministic; learning comparison recorded)"
+make -s sat-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc

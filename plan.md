@@ -6,38 +6,80 @@
 > this?* A finding becomes a phase only when a second, independent caller
 > exists.
 
-## The program -- (to be chosen)
+## The program -- the DPLL/CDCL SAT solver  (tools/tycho-sat/)
 
-Seven programs in, the stress axes used are: data structures (tycho-kv B+
-tree), bits (tycho-chess bitboards), arithmetic (tycho-rsa bignum),
-networking + shared-state concurrency (tycho-kvsrv's actor store). The axis
-still untouched: **algorithmic depth** — a solver or planner with real
-heuristics and backtracking, where the differential is a corpus of instances
-with known verdicts rather than a hand-checkable vector.
+The language stress is algorithmic depth: watched-literal unit propagation,
+VSIDS decisions with an activity heap, first-UIP conflict analysis and
+clause learning, restarts -- the intricate stateful machinery (per-literal
+watch lists, an implication graph walk, a mutable clause database) that the
+value-semantics model has not yet been asked to carry. DPLL/CDCL is
+iterative (no deep recursion), so the recursion guard stays idle.
 
-Candidates, honestly scored:
+The differential is a corpus, not a vector, and it is hermetic:
+- UNSAT ground truth, self-generated: the pigeonhole instances PHP(n) are
+  constructible in a few lines of CNF and unsatisfiability is a published
+theorem for every n.
+- SAT ground truth, self-generated with a witness: plant a random
+  assignment, generate clauses satisfied by it -> guaranteed SAT, and the
+  solver's printed model is verified by the runner's OWN independent clause
+  checker (a few lines of python that cannot be fooled by a wrong model).
+- Determinism: the search is deterministic (no randomness; fixed restart
+  schedule), so two runs are byte-identical.
+- The learning claim is printed, not asserted: solving one instance with
+  and without learning reports both conflict counts; if CDCL ever stops
+  beating DPLL there, the golden reddens and a human looks.
 
-- **A DPLL/CDCL SAT solver.** Boolean constraint solving: unit propagation
-  with watched literals, VSIDS decision heuristics with an occurrence heap,
-  conflict-driven clause learning (implication graph), clause deletion,
-  restarts. The differential is ground truth: the SATLIB and SAT competition
-  corpora carry published SAT/UNSAT verdicts for thousands of instances, and
-  the classic pigeonhole instances (`PHP(n)`) have exact unsatisfiability
-  proofs the solver must rediscover. The deepest algorithmic workout the
-  language has faced — and the concurrency model could even be probed again
-  (parallel cube-and-conquer is a known technique), though that is optional.
-- **A small relational database.** A SQL-subset parser + a naive planner over
-  a persisted store — re-proves the kv B+ tree and adds a parser; the
-  weakest new stress of the three.
-- **A git-style content-addressed object store.** blobs/trees/commits hashed
-  with core:sha256, pack files, delta compression — re-proves the archive
-  machinery tycho-ar already showed; overlapping.
+Scope, honestly sized: clause deletion and phase saving are the classic
+next refinements and are deliberately absent; a geometric restart schedule
+carries the restarts. The solver reads DIMACS CNF from a file or stdin and
+offers a built-in PHP(n) generator (`--php N`) so the theorem-based ground
+truth needs no file plumbing.
 
-The plan's default is the SAT solver: it is the one axis (algorithmic
-depth) the language has not been pushed on, its differential is a corpus
-rather than a vector, and its heuristics (watched literals, VSIDS, clause
-learning) are the kind of intricate stateful code the value-semantics model
-has not yet been asked to carry.
+## Phases
+
+### Phase 1 -- the core: parser, BCP, VSIDS, CDCL  [DONE 2026-08-04]
+
+The solver is ~480 lines: a DIMACS parser, first-UIP conflict analysis and
+clause learning, VSIDS decisions with an activity heap (the max-heap carries
+all the assigned/unassigned bookkeeping), geometric restarts, a
+chronological --no-learn mode for the comparison, and a built-in PHP(n)
+generator so the theorem-based ground truth needs no file plumbing. The
+search is iterative; the recursion guard stays idle as promised.
+
+Two design decisions were forced by experience, both recorded honestly:
+- **The BCP is the naive full scan, not watched literals.** The first cut
+  used the classic two-watch scheme; its invariants (watch lists must never
+gain a stale false entry, and a clause whose watch dies must be revisited at
+the level where the SECOND watch died) proved brittle to write correctly in
+the first pass, so the propagation was replaced by a per-assignment scan of
+the whole clause database -- correct BY CONSTRUCTION, one scan per trail
+entry, fine at the gate's sizes. Watched literals are the classic
+performance refinement, deferred.
+- **The one-line bug behind the whole debugging saga: `backtrack` never
+  reset `s.cur_level`.** Every analysis after a backtrack used a stale,
+  too-high decision level, so the conflict clause's literals all appeared
+  below the current level and first-UIP could not resolve them -- the
+  solver alternately crashed, claimed false conflicts, and (with an early
+  unsound fallback) answered PHP(3) SAT. The fix was one line
+  (`s.cur_level = to_level`); the corpus gate caught it at every stage,
+  which is the point of the ground-truth differential.
+
+### Phase 2 -- the corpus gate  [DONE 2026-08-04]
+
+`make sat-check` (ci step [3m/19], ~4s): PHP(2..9) all UNSAT (the
+published theorem, rediscovered every run), three planted instances
+(50/100/150 vars, fixed seeds) SAT with the runner's OWN independent clause
+checker verifying the printed model clause by clause, determinism
+(byte-identical repeats), and the learning comparison recorded in the
+golden: CDCL 4 conflicts vs chronological DPLL 5 on the 100-var instance --
+the learning claim is printed, not asserted, so the golden reddens if CDCL
+ever stops beating DPLL. Measured: PHP(8) 13ms, PHP(9) 1.7s, PHP(10) 2.7s
+-- the exponential resolution proofs showing up as expected.
+
+**No language findings** -- the eighth program with zero compiler/runtime
+defects. The Solver struct (eleven array fields, threaded inout through
+the whole search) held up; the value-semantics model carried the mutable
+clause database and the activity heap without complaint.
 
 ## Findings
 
