@@ -391,6 +391,28 @@ static TokVec lex(const char *src) {
             if (isdigit((unsigned char)c) || lead_dot) {
                 const char *s = p;
                 while (isdigit((unsigned char)*p)) p++;   /* integer part (empty for .5) */
+                /* `0x`/`0X` (hex) and `0b`/`0B` (binary) prefixes, accepted
+                 * only when the integer part is exactly the single digit `0`
+                 * -- so `10x` still lexes as an int followed by an identifier,
+                 * the same tie-break as C/Go. A prefixed literal is ALWAYS an
+                 * integer: there is no hexadecimal-float form, so the float
+                 * checks below are skipped for it (docs/spec/01-lexical.md 3.9). */
+                int litbase = 10;
+                const char *digits = s;
+                int prefixed = 0;
+                if (p - s == 1 && *s == '0' &&
+                    (*p == 'x' || *p == 'X' || *p == 'b' || *p == 'B')) {
+                    int is_hex = (*p == 'x' || *p == 'X');
+                    prefixed = 1;
+                    litbase = is_hex ? 16 : 2;
+                    digits = ++p;
+                    while (is_hex ? isxdigit((unsigned char)*p)
+                                  : (*p == '0' || *p == '1')) p++;
+                    if (p == digits)
+                        die_at(line, is_hex
+                            ? "a hex literal needs at least one digit after `0x`"
+                            : "a binary literal needs digits 0 or 1 after `0b`");
+                }
                 /* a '.' immediately followed by a digit makes it a float (D.D);
                  * an `e`/`E` exponent (optionally signed) does too, with or
                  * without a fractional part (1e10, 1.5e-3, 2E8). A bare trailing
@@ -398,12 +420,12 @@ static TokVec lex(const char *src) {
                  * 1e+) is NOT consumed -- the 'e...' lexes as a separate ident.
                  * No leading-dot form. */
                 int is_float = 0;
-                if (*p == '.' && isdigit((unsigned char)p[1])) {
+                if (!prefixed && *p == '.' && isdigit((unsigned char)p[1])) {
                     is_float = 1;
                     p++;
                     while (isdigit((unsigned char)*p)) p++;
                 }
-                if (*p == 'e' || *p == 'E') {
+                if (!prefixed && (*p == 'e' || *p == 'E')) {
                     const char *eq = p + 1;
                     if (*eq == '+' || *eq == '-') eq++;
                     if (isdigit((unsigned char)*eq)) {
@@ -450,10 +472,11 @@ static TokVec lex(const char *src) {
                     int64_t v = 0;      /* fixed 64-bit, not `long`: on an ILP32 host a
                                          * `long` accumulator would reject every literal
                                          * above 2^31 that tycho `int` must represent. */
-                    for (const char *q = s; q < p; q++) {
+                    for (const char *q = digits; q < p; q++) {
                         int d = *q - '0';
-                        if (v > (INT64_MAX - d) / 10) die_at(line, "integer literal out of range");
-                        v = v * 10 + d;
+                        if (litbase == 16 && d > 9) d = (*q | 32) - 'a' + 10;  /* lowercase-fold */
+                        if (v > (INT64_MAX - d) / litbase) die_at(line, "integer literal out of range");
+                        v = v * litbase + d;
                     }
                     tv_push(&out, (Tok){TK_INT, NULL, v, line, 0, tcol});
                 }

@@ -1,0 +1,4 @@
+# §3.9.1 (docs/spec/01-lexical.md): a literal larger than 2^63-1 is
+# rejected, in any base. 16 F's is 2^64-1.
+fn main():
+    a := 0xFFFFFFFFFFFFFFFF

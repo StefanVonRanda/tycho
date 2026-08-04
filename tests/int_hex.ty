@@ -1,0 +1,28 @@
+# Hex (`0x`/`0X`) and binary (`0b`/`0B`) integer literals — §3.9.1
+# (docs/spec/01-lexical.md). Locks the values, the mixed-case prefixes and
+# digits, the 2^63-1 ceiling (a 16-F literal must be rejected), and the
+# composition with the rest of the language: adaptation to a float context,
+# a fixed-array length, a bounded capacity, and a `parallel for` `0x0..<N`
+# bound (the zero check is on the VALUE, not the spelling).
+
+fn main():
+    println(str(0xFF))                      # 255
+    println(str(0b1010))                    # 10
+    println(str(0XAb))                      # 171 -- uppercase prefix, mixed digits
+    println(str(0B11))                      # 3
+    println(str(0x0))                       # 0
+    println(str(0x6000000000000000))        # the white/black kingside castling masks
+    println(str(0xE00000000000000))         # 1008806316530991104 -- queenside
+    println(str(0xFFFFFFFF))                # 4294967295 -- the ctz mask
+    println(str(0x7FFFFFFFFFFFFFFF))        # 2^63 - 1, the largest literal
+    println(str(-0x10))                     # -16: negation is a separate unary operator
+    println(str(0x10 * 0b10))               # 16 * 2 = 32
+    println(str(0xFF + 1))                  # wraps into 256
+    f: float = 0x1                          # int literal adapts to a float context
+    println(str(f * 2.0))                   # 2
+    a: [0xA]int = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # fixed-array length as a hex literal
+    println(str(len(a)))
+    p := 0
+    parallel for i in 0x0..<3:              # the parallel-for bound is the literal ZERO
+        p += i
+    println(str(p))                         # 0 + 1 + 2 = 3
