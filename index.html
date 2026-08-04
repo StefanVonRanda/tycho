@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tycho — an experimental systems language</title>
 <meta name="description" content="Tycho is an experimental systems language built around one idea: implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope, no garbage collector, no manual free. Transpiles to C.">
-<meta name="theme-color" content="#f4f3ee">
+<meta name="theme-color" content="#eceee9">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tycho-lang.com">
 <meta property="og:title" content="Tycho — an experimental systems language">
@@ -26,32 +26,30 @@
 <!-- Direction: the page as a technical document, not a landing page. Title block,
      table of contents with dotted leaders, numbered FIGURES and LISTINGS with
      captions, spec-sheet tables, a running section header in the top bar, and a
-     "END OF DOCUMENT" colophon. All IBM Plex Mono, flat and sharp-cornered,
-     brand ink #1c1c2e on warm paper, one vermilion accent. Two animated figures
-     tell the memory story: FIG. 01 (oracle) is the nested-arena field; FIG. 02
-     (arena lifetimes) is a stack of scope bars where allocations appear, a value
-     is returned to main, and a scope exit frees its whole arena at once. -->
+     "END OF DOCUMENT" colophon. All IBM Plex Mono, flat and sharp-cornered, in the
+     original warm-olive monochrome (bg #eceee9 / ink #0d0d0c, no accent colour).
+     Two animated figures tell the memory story: FIG. 01 (oracle) is the
+     nested-arena field; FIG. 02 (arena lifetimes) is a stack of scope bars where
+     allocations appear, a value is returned to main, and a scope exit frees its
+     whole arena at once. -->
 <style>
   :root{
-    --paper:#f4f3ee; --panel:#efeee7;
-    --ink:#1c1c2e; --ink-soft:#43435a; --dim:#62626f; --faint:#9a9aa8; --line:#dddcd3; --line-strong:#c6c5ba;
-    --accent:#c2431b; --accent-soft:rgba(194,67,27,.12);
-    --code-bg:#17171f; --code-fg:#ececf4; --code-dim:#8b8ba0; --code-line:#262634;
-    --grain:rgba(28,28,46,.035);
+    --paper:#eceee9; --panel:#e4e6e1;
+    --ink:#0d0d0c; --ink-soft:#2c2c2a; --dim:#65665f; --faint:#9a9b92; --line:#d0d2ca; --line-strong:#bcc0b6;
+    --code-bg:#14150f; --code-fg:#d8d9cf; --code-dim:#7c7d72; --code-line:#2b2c22;
+    --grain:rgba(13,13,12,.05);
   }
   :root[data-theme="dark"]{
-    --paper:#12121a; --panel:#1c1c27;
-    --ink:#ececf4; --ink-soft:#c4c4d2; --dim:#9090a2; --faint:#5c5c6c; --line:#2a2a36; --line-strong:#3a3a48;
-    --accent:#f4713c; --accent-soft:rgba(244,113,60,.14);
-    --code-bg:#0d0d13; --code-fg:#e8e8f0; --code-dim:#7e7e92; --code-line:#23232f;
-    --grain:rgba(236,236,244,.04);
+    --paper:#0c0d0b; --panel:#131410;
+    --ink:#ecede6; --ink-soft:#c8c9c0; --dim:#8b8c82; --faint:#54554d; --line:#25261f; --line-strong:#34382e;
+    --code-bg:#08080a; --code-fg:#d8d9cf; --code-dim:#71726a; --code-line:#20211c;
+    --grain:rgba(232,233,225,.04);
   }
   @media (prefers-color-scheme: dark){
-    :root:not([data-theme]){ --paper:#12121a; --panel:#1c1c27;
-      --ink:#ececf4; --ink-soft:#c4c4d2; --dim:#9090a2; --faint:#5c5c6c; --line:#2a2a36; --line-strong:#3a3a48;
-      --accent:#f4713c; --accent-soft:rgba(244,113,60,.14);
-      --code-bg:#0d0d13; --code-fg:#e8e8f0; --code-dim:#7e7e92; --code-line:#23232f;
-      --grain:rgba(236,236,244,.04); }
+    :root:not([data-theme]){ --paper:#0c0d0b; --panel:#131410;
+      --ink:#ecede6; --ink-soft:#c8c9c0; --dim:#8b8c82; --faint:#54554d; --line:#25261f; --line-strong:#34382e;
+      --code-bg:#08080a; --code-fg:#d8d9cf; --code-dim:#71726a; --code-line:#20211c;
+      --grain:rgba(232,233,225,.04); }
   }
 
   *{box-sizing:border-box}
@@ -71,8 +69,7 @@
   .wrap{position:relative; z-index:1; max-width:1060px; margin:0 auto; padding:0 28px 80px}
   a{color:var(--ink); text-decoration:none; border-bottom:1px solid var(--faint); transition:border-color .15s,color .15s}
   a:hover{border-bottom-color:var(--ink)}
-  a:focus-visible,button:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
-  ::selection{background:var(--accent-soft)}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--ink); outline-offset:3px}
   code{font:inherit}
 
   /* ── top bar (running header) ── */
@@ -88,28 +85,23 @@
   .bar nav{margin-left:auto; display:flex; align-items:center; gap:20px; font-size:11px; letter-spacing:1.6px; text-transform:uppercase}
   .bar nav a{color:var(--dim); border:0; padding:3px 0}
   .bar nav a:hover{color:var(--ink)}
-  .bar nav a[aria-current="true"]{color:var(--ink); border-bottom:1px solid var(--accent)}
+  .bar nav a[aria-current="true"]{color:var(--ink); border-bottom:1px solid var(--ink)}
   .themebtn{background:none; border:1px solid var(--line); color:var(--dim); cursor:pointer;
     font:inherit; font-size:10px; letter-spacing:1.6px; text-transform:uppercase; padding:5px 11px}
   .themebtn:hover{color:var(--ink); border-color:var(--line-strong)}
-  .progress{position:absolute; left:0; bottom:-1px; height:2px; width:100%; background:var(--accent); transform:scaleX(0); transform-origin:left}
-  @supports (animation-timeline: scroll()){
-    .progress{animation:prog linear both; animation-timeline:scroll(root)}
-    @keyframes prog{to{transform:scaleX(1)}}
-  }
 
   /* ── hero / title block ── */
   header.hero{padding:54px 0 4px; display:grid; grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr); gap:40px; align-items:center}
   @media (max-width:880px){ header.hero{grid-template-columns:1fr; gap:24px; padding:40px 0 4px} }
   .hlabel{display:flex; flex-direction:column; gap:4px; margin-bottom:20px}
-  .hlabel .idx{font-size:11px; letter-spacing:2.4px; color:var(--accent); font-weight:600}
+  .hlabel .idx{font-size:11px; letter-spacing:2.4px; color:var(--faint); font-weight:600}
   .hlabel .ttl{font-size:12px; letter-spacing:3.4px; color:var(--ink); font-weight:700}
   .hlabel .sub{font-size:11px; letter-spacing:1.8px; color:var(--dim); text-transform:uppercase}
   h1{
     font-size:clamp(26px,3.8vw,38px); line-height:1.14; margin:0 0 20px;
     font-weight:700; letter-spacing:-.4px; color:var(--ink); text-wrap:balance;
   }
-  .tok{color:var(--accent); border-bottom:2px solid var(--accent); padding-bottom:2px; white-space:nowrap}
+  .tok{color:var(--ink); border-bottom:2px solid var(--ink); padding-bottom:2px; white-space:nowrap}
   .lede{color:var(--ink-soft); font-size:14px; line-height:1.72; max-width:58ch; margin:0 0 24px}
   .lede b{color:var(--ink); font-weight:700}
   .lede .sub{color:var(--dim); font-size:12.5px}
@@ -120,7 +112,7 @@
   .fig{border:1px solid var(--line-strong); background:var(--panel)}
   .fig .fhead{display:flex; align-items:center; gap:9px; padding:9px 13px; border-bottom:1px solid var(--line);
     font-size:10px; letter-spacing:1.8px; text-transform:uppercase; color:var(--dim)}
-  .fig .fhead .dot{width:7px; height:7px; background:var(--accent); animation:pulse 2.4s ease-in-out infinite}
+  .fig .fhead .dot{width:7px; height:7px; background:var(--ink); animation:pulse 2.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .fig .fhead b{color:var(--ink); font-weight:600}
   .fig canvas{display:block; width:100%}
@@ -134,10 +126,10 @@
   /* contents */
   .contents{border:1px solid var(--line-strong); background:var(--panel); padding:14px 18px 12px; margin:28px 0 0}
   .contents .chead{display:flex; align-items:center; gap:8px; font-size:10px; letter-spacing:2.4px; color:var(--faint); font-weight:600; margin-bottom:6px}
-  .contents .chead::before{content:""; width:7px; height:7px; background:var(--accent)}
+  .contents .chead::before{content:""; width:7px; height:7px; background:var(--ink)}
   .contents a{display:flex; align-items:baseline; gap:10px; border:0; color:var(--dim); padding:4px 0; font-size:12.5px}
   .contents a:hover{color:var(--ink)}
-  .contents a .n{color:var(--accent); font-weight:600; width:3ch; flex:0 0 auto}
+  .contents a .n{color:var(--ink); font-weight:600; width:3ch; flex:0 0 auto}
   .contents a .dots{flex:1; border-bottom:1px dotted var(--line-strong); transform:translateY(-3px); min-width:24px}
   .contents a .arr{color:var(--faint); flex:0 0 auto}
 
@@ -145,7 +137,7 @@
   .spec{border:1px solid var(--line-strong); background:var(--panel); margin:14px 0 0}
   .spec .shead{display:flex; align-items:center; gap:8px; padding:9px 14px; border-bottom:1px solid var(--line);
     font-size:10px; letter-spacing:2.2px; color:var(--dim); font-weight:600}
-  .spec .shead::before{content:""; width:7px; height:7px; background:var(--accent)}
+  .spec .shead::before{content:""; width:7px; height:7px; background:var(--ink)}
   .spec .row{display:grid; grid-template-columns:repeat(5,1fr)}
   @media (max-width:760px){ .spec .row{grid-template-columns:repeat(2,1fr)} }
   .spec .cell{padding:12px 14px; border-left:1px solid var(--line)}
@@ -158,7 +150,7 @@
   section{padding:50px 0 4px; scroll-margin-top:76px}
   .marker{display:flex; align-items:baseline; gap:13px; font-size:11px; letter-spacing:2.2px;
     text-transform:uppercase; color:var(--ink); font-weight:600; margin:0 0 6px}
-  .marker .n{color:var(--accent); font-weight:600}
+  .marker .n{color:var(--ink); font-weight:600}
   .marker::after{content:""; flex:1; align-self:center; height:6px; margin-left:6px;
     background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
     -webkit-mask-image:linear-gradient(90deg, #000, transparent 82%); mask-image:linear-gradient(90deg, #000, transparent 82%);
@@ -167,20 +159,20 @@
   p{margin:0 0 14px; max-width:64ch}
   p.muted{color:var(--dim); font-size:13px}
   strong{color:var(--ink); font-weight:700}
-  .inl{border:1px solid var(--line); background:var(--paper); padding:1px 6px; font-size:.9em; color:var(--ink); white-space:nowrap}
+  .inl{border:1px solid var(--line); background:var(--panel); padding:1px 6px; font-size:.9em; color:var(--ink); white-space:nowrap}
 
   /* pillar cards */
   .cards{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:4px 0 22px}
   @media (max-width:760px){ .cards{grid-template-columns:1fr} }
   .card{border:1px solid var(--line-strong); background:var(--panel); padding:16px 18px 14px}
-  .card .idx{font-size:10px; letter-spacing:2px; color:var(--accent); font-weight:600; display:block; margin-bottom:9px}
+  .card .idx{font-size:10px; letter-spacing:2px; color:var(--dim); font-weight:600; display:block; margin-bottom:9px}
   .card h3{font-size:12px; color:var(--ink); font-weight:700; margin:0 0 6px; text-transform:uppercase; letter-spacing:1.2px}
   .card p{margin:0; font-size:12.5px; line-height:1.62; color:var(--ink-soft)}
 
   /* listings (code panels) */
   .panel{border:1px solid var(--code-line); background:var(--code-bg); margin:0 0 8px; overflow:hidden}
   .phead{display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--code-line); border-bottom:1px solid var(--code-line)}
-  .phead .traf{width:8px; height:8px; background:var(--accent); opacity:.85}
+  .phead .traf{width:8px; height:8px; background:var(--code-fg); opacity:.55}
   .phead .fn{font-size:11px; letter-spacing:1px; color:var(--code-fg)}
   .phead .badge{margin-left:auto; font-size:9.5px; letter-spacing:1.4px; text-transform:uppercase;
     color:var(--code-dim); border:1px solid var(--code-line); padding:2px 8px; background:rgba(236,236,244,.04)}
@@ -194,7 +186,7 @@
   @media (max-width:880px){ .split{grid-template-columns:1fr; gap:18px} }
   ul.points{list-style:none; margin:0 0 18px; padding:0; display:grid; gap:13px}
   ul.points li{position:relative; padding-left:24px; font-size:13.5px; color:var(--ink-soft); line-height:1.65; max-width:56ch}
-  ul.points li::before{content:""; position:absolute; left:2px; top:8px; width:8px; height:8px; border:1.5px solid var(--accent)}
+  ul.points li::before{content:""; position:absolute; left:2px; top:8px; width:8px; height:8px; border:1.5px solid var(--ink)}
   ul.points li b{color:var(--ink); font-weight:700}
 
   /* language feature groups */
@@ -203,7 +195,7 @@
   .group{border:1px solid var(--line-strong); background:var(--panel)}
   .group .gt{display:flex; align-items:center; gap:9px; padding:10px 15px; border-bottom:1px solid var(--line);
     font-size:10px; letter-spacing:2.2px; text-transform:uppercase; color:var(--dim); font-weight:600}
-  .group .gt::before{content:""; width:7px; height:7px; background:var(--accent)}
+  .group .gt::before{content:""; width:7px; height:7px; background:var(--ink)}
   ul.feat{list-style:none; margin:0; padding:3px 15px 11px}
   ul.feat li{padding:10px 0; border-top:1px solid var(--line); font-size:13px; color:var(--ink-soft)}
   ul.feat li:first-child{border-top:0}
@@ -215,7 +207,7 @@
   .spec2 .row{display:grid; grid-template-columns:150px 1fr; border-top:1px solid var(--line)}
   .spec2 .row:first-child{border-top:0}
   @media (max-width:640px){ .spec2 .row{grid-template-columns:110px 1fr} }
-  .spec2 .row .k{padding:12px 16px; font-size:10px; letter-spacing:1.8px; text-transform:uppercase; color:var(--accent); font-weight:600; border-right:1px solid var(--line)}
+  .spec2 .row .k{padding:12px 16px; font-size:10px; letter-spacing:1.8px; text-transform:uppercase; color:var(--ink); font-weight:600; border-right:1px solid var(--line)}
   .spec2 .row .v{padding:12px 16px; font-size:12.5px; color:var(--ink-soft); line-height:1.65; min-width:0}
   .spec2 .row .v b{color:var(--ink)}
   .spec2 .row .v .cmd{color:var(--ink); border-bottom:1px solid var(--faint)}
@@ -229,9 +221,9 @@
     -webkit-mask-image:linear-gradient(90deg, transparent 45%, #000); mask-image:linear-gradient(90deg, transparent 45%, #000);
     opacity:.16; transition:opacity .18s}
   .btn:hover::after{opacity:.3}
-  .btn:hover{background:var(--accent); border-color:var(--accent); color:#fff}
+  .btn:hover{background:transparent; color:var(--ink)}
   .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line-strong)}
-  .btn.ghost:hover{background:transparent; color:var(--accent); border-color:var(--accent)}
+  .btn.ghost:hover{background:transparent; color:var(--ink); border-color:var(--ink)}
 
   /* arena-lifetime figure */
   .trace{height:172px}
@@ -296,7 +288,6 @@
       <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
       <button class="themebtn" id="tbtn" aria-label="Toggle light/dark theme">Theme</button>
     </nav>
-    <div class="progress" aria-hidden="true"></div>
   </div>
 
   <header class="hero" id="top">
@@ -544,7 +535,7 @@
   function setTheme(t, persist){
     root.dataset.theme=t;
     var meta=document.querySelector('meta[name="theme-color"]');
-    if(meta) meta.setAttribute('content', t==='dark' ? '#12121a' : '#f4f3ee');
+    if(meta) meta.setAttribute('content', t==='dark' ? '#0c0d0b' : '#eceee9');
     if(persist){ try{ localStorage.setItem('tycho-theme', t); }catch(e){} }
   }
   function curTheme(){ return root.dataset.theme || (mqDark.matches?'dark':'light'); }
@@ -579,8 +570,8 @@
 
   /* ── canvas plumbing ── */
   var PAL={
-    light:{ink:[28,28,46], faint:[154,154,168], accent:[194,67,27]},
-    dark:{ink:[236,236,244], faint:[92,92,108], accent:[244,113,60]}
+    light:{ink:[13,13,12], faint:[154,155,146]},
+    dark:{ink:[236,237,230], faint:[84,85,77]}
   };
   function col(k,a){ var c=PAL[curTheme()][k]; return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
   function mkState(cv){ return {cv:cv, ctx:cv.getContext('2d'), w:0, h:0, on:true, ready:false}; }
@@ -647,7 +638,7 @@
       var pr=1-Math.max(0,(cT-4.6))/0.6;                  /* fade out at the end */
       var a=(cT<0.5? cT/0.5 : 1)*pr*0.95;
       var vx=sx+(cx-sx)*ph, vy=sy+(cy-sy)*ph;
-      ctx.fillStyle=col('accent',a);
+      ctx.fillStyle=col('ink',a);
       ctx.beginPath(); ctx.arc(vx,vy, 3.2-1.1*ph, 0, TAU); ctx.fill();
     }
     /* a value on the outer ring blinks out: its scope exited */
@@ -661,8 +652,8 @@
 
   /* ── FIG. 02 arena lifetimes: a stack of scope bars ──
      top bar = innermost scope, bottom = main (root). Blocks appear (allocations).
-     Every 9s loop: a highlighted value is RETURNED down the stack to main (accent
-     block + dashed track + arrowheads), then the innermost scope EXITS (accent
+     Every 9s loop: a highlighted value is RETURNED down the stack to main (ink
+     block + dashed track + arrowheads), then the innermost scope EXITS (ink
      flash on its bar): its whole arena is freed at once. */
   var TR_LOOP=9, TR_X0=150, TR_BARH=26, TR_GAP=16, TR_TOP=16;
   var TR_BARS=[{label:'FN · INNER'},{label:'FN'},{label:'MAIN'}];
@@ -700,34 +691,34 @@
         ctx.fillRect(regX+B.xf*regW, y+7, B.w, 12);
       }
     }
-    /* return: dashed track down to main + accent block hopping bar to bar */
+    /* return: dashed track down to main + highlighted block hopping bar to bar */
     var inReturn=tt>=4.8&&tt<8.0;
     if(inReturn){
       var ax=regX+0.62*regW, y0=barY(0)+TR_BARH/2, y1=barY(2)+TR_BARH/2;
-      ctx.strokeStyle=col('accent',0.5); ctx.lineWidth=1;
+      ctx.strokeStyle=col('ink',0.55); ctx.lineWidth=1;
       ctx.setLineDash([3,3]);
       ctx.beginPath(); ctx.moveTo(ax,y0); ctx.lineTo(ax,y1); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle=col('accent',0.7);
+      ctx.fillStyle=col('ink',0.75);
       ctx.beginPath(); ctx.moveTo(ax-3,y1+2); ctx.lineTo(ax+3,y1+2); ctx.lineTo(ax,y1+6); ctx.closePath(); ctx.fill();
       for(var hh=0;hh<TR_RETURN.length;hh++){
         var H=TR_RETURN[hh];
         if(tt>=H[1]&&tt<H[2]){
           var y=barY(H[0]);
           var a=Math.min(1,(tt-H[1])/0.35,(H[2]-tt)/0.45);
-          ctx.fillStyle=col('accent',0.9*a);
+          ctx.fillStyle=col('ink',0.9*a);
           ctx.fillRect(ax-14, y+3, 28, 20);
-          ctx.fillStyle=col('accent',0.95*a);
+          ctx.fillStyle=col('ink',0.95*a);
           ctx.fillText('RETURN', ax+18, y+17);
-          ctx.fillStyle=col('accent',0.8*a);
+          ctx.fillStyle=col('ink',0.8*a);
           ctx.beginPath(); ctx.moveTo(ax-3,y+21); ctx.lineTo(ax+3,y+21); ctx.lineTo(ax,y+25); ctx.closePath(); ctx.fill();
         }
       }
     }
-    /* innermost scope exits: accent flash on its bar */
+    /* innermost scope exits: ink flash on its bar */
     if(tt>=7.6&&tt<8.4){
       var y=barY(0), a=1-(tt-7.6)/0.8;
-      ctx.strokeStyle=col('accent',0.7*a); ctx.lineWidth=2;
+      ctx.strokeStyle=col('ink',0.7*a); ctx.lineWidth=2;
       ctx.beginPath(); ctx.moveTo(8,y+TR_BARH); ctx.lineTo(regX+regW,y+TR_BARH); ctx.stroke();
       ctx.fillStyle=col('ink',0.6*a); ctx.fillText('EXIT', regX+0.55*regW+34, y+17);
     }
