@@ -202,3 +202,6 @@ dist/
 
 # the agent instructions live on disk but are not part of the repo
 /CLAUDE.md
+# the tycho-build tool's dispatch-order golden (tools/tycho-build/expected.out) is
+# tracked too, same shape as the other tool lanes.
+!/tools/tycho-build/*.out
