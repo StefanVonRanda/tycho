@@ -330,7 +330,9 @@ static void tycho_cap_check(tycho_int n, size_t elem) {
  * every counter is atomic. g_arena_stats is set once by a constructor (before
  * main, before any thread) and only read after, so it's a plain int. */
 static int g_arena_stats = 0;
+static size_t g_block_override = 0;   /* TYCHO_BLOCK env; 0 = TYCHO_BLOCK_DEFAULT */
 static atomic_size_t st_live, st_peak_live, st_alloc_calls, st_alloc_bytes,
+                     st_alloc_reqs, st_recycle_hits, st_recycle_bytes,
                      st_os_bytes, st_os_blocks, st_block_gets,
                      st_arenas, st_arena_frees;
 
@@ -358,7 +360,7 @@ static size_t st_chain_off(HBlock *b) { size_t s = 0; for (; b; b = b->next) s +
  * claimed with a CAS, so no lock is taken on the alloc path. A label that finds
  * no free slot within the probe window is counted in st_lbl_lost and REPORTED --
  * a truncated profile that says so beats a tidy one that lies. */
-#define TYCHO_NLBL 1024              /* power of two; ~1k allocating functions */
+#define TYCHO_NLBL 4096             /* power of two; ~1k allocating functions, x4 for per-scope labels */
 #define TYCHO_LBL_PROBE 24
 typedef struct { _Atomic(const char *) key; atomic_size_t live, peak, bytes, calls; } StLbl;
 static StLbl st_lbl[TYCHO_NLBL];
@@ -412,20 +414,26 @@ static int st_cmp(const void *x, const void *y) {   /* by peak, descending */
 }
 
 static void stats_dump(void) {
-    char live[32], bump[32], os[32];
+    char live[32], bump[32], os[32], rc_b[32], rc_byte[32];
     size_t gets = atomic_load(&st_block_gets), osbl = atomic_load(&st_os_blocks);
     size_t reuse = gets - osbl;   /* every block_get either mallocs or reuses a pooled block */
+    size_t reqs = atomic_load(&st_alloc_reqs), hits = atomic_load(&st_recycle_hits);
+    size_t hitb = atomic_load(&st_recycle_bytes), allocb = atomic_load(&st_alloc_bytes);
     st_fmt(atomic_load(&st_peak_live), live, sizeof live);
     st_fmt(atomic_load(&st_alloc_bytes), bump, sizeof bump);
     st_fmt(atomic_load(&st_os_bytes), os, sizeof os);
+    st_fmt(hitb, rc_b, sizeof rc_b);
+    st_fmt(allocb, rc_byte, sizeof rc_byte);
     fprintf(stderr,
         "\n[tycho arena stats]\n"
         "  peak live:   %s   (working-set high-water)\n"
         "  bump-alloc:  %s over %zu allocations\n"
+        "  recycle:     %zu of %zu allocs from free lists (%.1f%%), %s of %s bytes\n"
         "  OS reserved: %s over %zu blocks\n"
         "  block reuse: %zu of %zu requests from pool (%.1f%%)\n"
         "  arenas:      %zu created, %zu freed\n",
         live, bump, (size_t)atomic_load(&st_alloc_calls),
+        hits, reqs, reqs ? 100.0 * (double)hits / (double)reqs : 0.0, rc_b, rc_byte,
         os, osbl,
         reuse, gets, gets ? 100.0 * (double)reuse / (double)gets : 0.0,
         (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_arena_frees));
@@ -458,6 +466,10 @@ __attribute__((constructor)) static void stats_init(void) {
     const char *e = getenv("TYCHO_ARENA_STATS");
     /* 1 = summary + the top TYCHO_LBL_SHOW functions; "full"/"all" = every function. */
     if (e && *e && *e != '0') { g_arena_stats = (*e == 'f' || *e == 'a') ? 2 : 1; atexit(stats_dump); }
+    /* TYCHO_BLOCK: override the default block size (bytes). A measurement knob so
+     * the block-size question is a sweep, not a rebuild; 0/absent = default. */
+    const char *bs = getenv("TYCHO_BLOCK");
+    if (bs && *bs) { char *end; long v = strtol(bs, &end, 10); if (end != bs && v > 0) g_block_override = (size_t)v; }
 }
 
 /* Global block free-list. Arenas are created/reset/freed per block scope, call,
@@ -518,7 +530,7 @@ Arena arena_new(size_t blocksz) {
     if (g_arena_stats) atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed);
     Arena a;
     a.head = NULL;
-    a.blocksz = blocksz ? blocksz : TYCHO_BLOCK_DEFAULT;
+    a.blocksz = blocksz ? blocksz : (g_block_override ? g_block_override : TYCHO_BLOCK_DEFAULT);
     a.bkt = NULL;                            /* lazily allocated on first tiny recycle */
     a.freelist = NULL;
     a.nfree = 0;
@@ -577,6 +589,7 @@ static int arena_owns(Arena *a, const void *p) {
 void *arena_alloc(Arena *a, size_t n) {
     n = (n + 7u) & ~(size_t)7u;             /* 8-byte align (max align of Tycho types: tycho_int/double/ptr) */
     size_t k = n >> 3;                       /* 8-byte size class */
+    if (g_arena_stats) atomic_fetch_add_explicit(&st_alloc_reqs, 1, memory_order_relaxed);
     /* reuse a recycled buffer first. Tiny objects: O(1) exact-class pop from the
      * segregated list -- no scan, no cap. Larger objects: best-fit in [n, 2n] over
      * the capped `freelist` (a huge recycled buffer is never wasted on a tiny
@@ -584,14 +597,28 @@ void *arena_alloc(Arena *a, size_t n) {
      * lists are empty for any arena that never recycles, so this is one predictable
      * branch on the hot path. */
     if (k < TYCHO_NBKT) {
-        if (a->bkt && a->bkt[k]) { FreeNode *fn = a->bkt[k]; a->bkt[k] = fn->next; return (void *)fn; }
+        if (a->bkt && a->bkt[k]) {
+            FreeNode *fn = a->bkt[k]; a->bkt[k] = fn->next;
+            if (g_arena_stats) {
+                atomic_fetch_add_explicit(&st_recycle_hits, 1, memory_order_relaxed);
+                atomic_fetch_add_explicit(&st_recycle_bytes, n, memory_order_relaxed);
+            }
+            return (void *)fn;
+        }
     } else if (a->freelist) {
         FreeNode **link = &a->freelist, **best = NULL; size_t bestsz = (size_t)-1;
         for (; *link; link = &(*link)->next)
             if ((*link)->size >= n && (*link)->size <= 2u * n && (*link)->size < bestsz) {
                 best = link; bestsz = (*link)->size;
             }
-        if (best) { FreeNode *fn = *best; *best = fn->next; a->nfree--; return (void *)fn; }
+        if (best) {
+            FreeNode *fn = *best; *best = fn->next; a->nfree--;
+            if (g_arena_stats) {
+                atomic_fetch_add_explicit(&st_recycle_hits, 1, memory_order_relaxed);
+                atomic_fetch_add_explicit(&st_recycle_bytes, n, memory_order_relaxed);
+            }
+            return (void *)fn;
+        }
     }
     if (!a->head || a->head->off + n > a->head->cap) {
         size_t cap = n > a->blocksz ? n : a->blocksz;

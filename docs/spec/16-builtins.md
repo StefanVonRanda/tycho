@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9528@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9529@tycho_eprint`; `die` codegen
 > `:9150-9151`.
 
 ## 29.4 Conversions
@@ -131,7 +131,7 @@ only spelling — `n.to_char()` is not.
 > `is_null`/`to_ptr` `Sig` `:4531-4532`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1057-1061` /
 > `sized_conv_target` `:1046-1056`, resolved inline at `:5666-5672`. The abort
-> both share is `runtime/tycho_rt.c:1320@out of byte range`. Conformance:
+> both share is `runtime/tycho_rt.c:1347@out of byte range`. Conformance:
 > `tests/char_to_char.ty`, `tests/abort/chr_oob.ty`.
 
 ## 29.5 Strings
@@ -159,7 +159,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4782@.name="split"`;
 > `len` magic
 > `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4781@.name="char_at"`, codegen `:9000-9007`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10047@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:10048@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -260,7 +260,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5233-5247`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10470@_pk > 64`.
+> 64 is `src/tychoc.c:10471@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
