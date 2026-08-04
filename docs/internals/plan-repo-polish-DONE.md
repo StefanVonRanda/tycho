@@ -33,7 +33,7 @@ every `.ty`, `.md`, `.c`, `.sh` and `.py` file (including `src/tychoc.c` and
 phase are all substring false positives: `\uXXXX` -- the JSON escape
 notation, which contains `XXX` -- appears seven times in
 `corelib/json/json.ty`, once in `corelib/test/json/main.ty` and once in a
-`FRICTION.md` record line; `to_XXX` in `tests/sized_family.ty:2` is the
+`docs/internals/FRICTION.md` record line; `to_XXX` in `tests/sized_family.ty:2` is the
 placeholder spelling for the conversion-function family. None is a marker.
 Nothing to fix; the scan is the phase's deliverable and its own finding
 (a naive `grep XXX` over this tree is noise, not debt).
