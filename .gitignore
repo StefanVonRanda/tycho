@@ -199,3 +199,6 @@ dist/
 # (tools/tycho-chess/expected.out) is tracked too, same line, same reason as
 # the four above; the runner builds the binary into a `mktemp -d`.
 !/tools/tycho-chess/*.out
+
+# the agent instructions live on disk but are not part of the repo
+/CLAUDE.md
