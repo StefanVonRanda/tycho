@@ -82,16 +82,16 @@ fn ctz(bb: int) -> int:
     x := bb
     if (x & 0xFFFFFFFF) == 0:
         r = r + 32
-        x = x / 4294967296
+        x = x / 0x100000000
     if (x & 0xFFFF) == 0:
         r = r + 16
-        x = x / 65536
+        x = x / 0x10000
     if (x & 0xFF) == 0:
         r = r + 8
-        x = x / 256
+        x = x / 0x100
     if (x & 0xF) == 0:
         r = r + 4
-        x = x / 16
+        x = x / 0x10
     if (x & 3) == 0:
         r = r + 2
         x = x / 4
@@ -601,10 +601,10 @@ fn gen_moves(b: Board, tab: Tables) -> [Move]:
                         t = sq_add(t, df, dr)
     # castling
     if us == WHITE:
-        if (b.castling & 1) != 0 and (occ & 96) == 0:
+        if (b.castling & 1) != 0 and (occ & 0x60) == 0:
             if not attacked(b, tab, 4, BLACK) and not attacked(b, tab, 5, BLACK) and not attacked(b, tab, 6, BLACK):
                 push_move(&moves, 4, 6, 0)
-        if (b.castling & 2) != 0 and (occ & 14) == 0:
+        if (b.castling & 2) != 0 and (occ & 0xE) == 0:
             if not attacked(b, tab, 4, BLACK) and not attacked(b, tab, 3, BLACK) and not attacked(b, tab, 2, BLACK):
                 push_move(&moves, 4, 2, 0)
     else:
@@ -661,9 +661,9 @@ fn make_move(b: Board, m: Move, tab: Tables) -> Board:
     # castling rights: the king moved, or the rook moved/captured
     if ptype == P_KING:
         if us == WHITE:
-            nb.castling = nb.castling & ~3
+            nb.castling = nb.castling & ~0x3
         else:
-            nb.castling = nb.castling & ~12
+            nb.castling = nb.castling & ~0xC
     if from == 0 or to == 0:
         nb.castling = nb.castling & ~2
     if from == 7 or to == 7:
