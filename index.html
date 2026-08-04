@@ -28,10 +28,10 @@
      captions, spec-sheet tables, a running section header in the top bar, and a
      "END OF DOCUMENT" colophon. All IBM Plex Mono, flat and sharp-cornered, in the
      original warm-olive monochrome (bg #eceee9 / ink #0d0d0c, no accent colour).
-     Two animated figures tell the memory story: FIG. 01 (oracle) is the
-     nested-arena field; FIG. 02 (arena lifetimes) is a stack of scope bars where
-     allocations appear, a value is returned to main, and a scope exit frees its
-     whole arena at once. -->
+     The hero shows the plain brand mark; one animated figure, FIG. 01 (arena
+     lifetimes), tells the memory story: a stack of scope bars where allocations
+     appear, a value is returned to main, and a scope exit frees its whole arena
+     at once. -->
 <style>
   :root{
     --paper:#eceee9; --panel:#e4e6e1;
@@ -108,7 +108,7 @@
   .meta{display:flex; flex-wrap:wrap; gap:8px 26px; margin:22px 0 0; font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--dim)}
   .meta code{color:var(--ink); font-weight:600}
 
-  /* figures (oracle + arena lifetimes) share a frame */
+  /* figure frame (arena lifetimes) */
   .fig{border:1px solid var(--line-strong); background:var(--panel)}
   .fig .fhead{display:flex; align-items:center; gap:9px; padding:9px 13px; border-bottom:1px solid var(--line);
     font-size:10px; letter-spacing:1.8px; text-transform:uppercase; color:var(--dim)}
@@ -119,9 +119,10 @@
   .fig .fcap{padding:8px 13px; border-top:1px solid var(--line);
     font-size:10.5px; letter-spacing:.6px; line-height:1.55; color:var(--dim)}
   .fig .fcap b{color:var(--ink); font-weight:600}
-  .oracle{max-width:420px; justify-self:end}
-  @media (max-width:880px){ .oracle{max-width:380px; margin:0 auto} }
-  .oracle canvas{aspect-ratio:1/1; background:radial-gradient(120% 120% at 50% 42%, transparent 55%, var(--paper) 100%)}
+  /* hero logo — the brand mark, plain */
+  .logohero{justify-self:end; color:var(--ink); width:100%; max-width:340px}
+  .logohero svg{display:block; width:100%; height:auto}
+  @media (max-width:880px){ .logohero{max-width:270px; margin:0 auto; justify-self:center} }
 
   /* contents */
   .contents{border:1px solid var(--line-strong); background:var(--panel); padding:14px 18px 12px; margin:28px 0 0}
@@ -312,10 +313,14 @@
       <p class="meta rise d5">New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a> — builds with <code>cc</code> and <code>make</code>, nothing else.</p>
     </div>
 
-    <div class="fig oracle rise d3">
-      <div class="fhead"><span class="dot"></span><b>FIG. 01</b><span>— nested arena field</span></div>
-      <canvas id="oracle" aria-hidden="true"></canvas>
-      <div class="fcap"><b>Nested arenas.</b> Each ring is one scope's arena; values return to the centre (main).</div>
+    <div class="logohero rise d3" aria-hidden="true">
+      <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="3.2">
+        <circle cx="100" cy="100" r="26"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="74"/>
+        <circle cx="143.3" cy="75" r="16"/>
+        <g fill="currentColor" stroke="none">
+          <circle cx="100" cy="100" r="7"/><circle cx="143.3" cy="75" r="5.5"/><circle cx="143.3" cy="91" r="3.4"/><circle cx="35.9" cy="137" r="4.2"/>
+        </g>
+      </svg>
     </div>
   </header>
 
@@ -372,7 +377,7 @@
     <p class="codecap rv"><b>Listing 01.</b> The string built inside the loop lives in main's arena — the compiler frees it for you on return.</p>
 
     <div class="fig rv">
-      <div class="fhead"><span class="dot"></span><b>FIG. 02</b><span>— arena lifetimes</span></div>
+      <div class="fhead"><span class="dot"></span><b>FIG. 01</b><span>— arena lifetimes</span></div>
       <canvas class="trace" id="tr1" aria-hidden="true"></canvas>
       <div class="fcap"><b>Arena lifetimes.</b> A block is one allocation. A value built in the innermost scope is returned to main's arena, outliving the scope that built it; when a scope exits, its whole arena is freed at once.</div>
     </div>
@@ -582,8 +587,6 @@
     s.cv.width=Math.max(1, Math.round(s.w*dpr)); s.cv.height=Math.max(1, Math.round(s.h*dpr));
     s.ctx.setTransform(dpr,0,0,dpr,0,0);
   }
-  function smooth(x){ return x*x*(3-2*x); }
-
   /* pause off-screen canvases */
   var states=[];
   if('IntersectionObserver' in window){
@@ -592,65 +595,7 @@
     }, {rootMargin:'160px'});
   }
 
-  /* ── FIG. 01 oracle: nested arena rings, brand satellite, values ── */
-  function buildOracle(s){
-    var grain=[], n=150;
-    for(var i=0;i<n;i++){
-      var a=Math.random()*TAU, r=Math.pow(Math.random(),0.7);
-      grain.push({x:Math.cos(a)*r, y:Math.sin(a)*r, a:0.04+Math.random()*0.06});
-    }
-    s.grain=grain; s.ready=true;
-  }
-  function drawOracle(s, t){
-    if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h;
-    var cx=w/2, cy=h/2, R=Math.min(w,h)*0.43;
-    ctx.clearRect(0,0,w,h);
-    /* crosshair + grain */
-    ctx.strokeStyle=col('faint',0.16); ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(cx-R*1.18,cy); ctx.lineTo(cx+R*1.18,cy); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx,cy-R*1.18); ctx.lineTo(cx,cy+R*1.18); ctx.stroke();
-    for(var i=0;i<s.grain.length;i++){ var g=s.grain[i];
-      ctx.fillStyle=col('ink',g.a); ctx.fillRect(cx+g.x*R, cy+g.y*R, 1.4, 1.4);
-    }
-    /* rings R0..R2 */
-    var rs=[0.26,0.5,0.74];
-    for(i=0;i<rs.length;i++){
-      var r=R*rs[i]*(1+0.004*Math.sin(t*0.4+i*2.1));
-      ctx.strokeStyle=col('ink', i===1?0.26:0.18); ctx.lineWidth=1;
-      ctx.beginPath(); ctx.arc(cx,cy,r,0,TAU); ctx.stroke();
-      ctx.fillStyle=col('faint',0.9); ctx.font='8.5px "IBM Plex Mono",monospace';
-      ctx.fillText('R'+i, cx+r*0.945, cy-r*0.945+3);
-    }
-    /* satellite: nested scope's arena, orbiting the middle ring */
-    var sa=-0.7+t*0.16;                       /* one revolution ≈ 39s */
-    var sx=cx+Math.cos(sa)*R*0.5, sy=cy+Math.sin(sa)*R*0.5;
-    ctx.strokeStyle=col('ink',0.22); ctx.beginPath(); ctx.arc(sx,sy,R*0.115,0,TAU); ctx.stroke();
-    ctx.fillStyle=col('ink',0.75); ctx.beginPath(); ctx.arc(sx,sy,2.2,0,TAU); ctx.fill();
-    /* static values on rings */
-    ctx.fillStyle=col('ink',0.85); ctx.beginPath(); ctx.arc(cx,cy,3.4,0,TAU); ctx.fill();          /* main */
-    var ov=0.9;
-    ctx.fillStyle=col('ink',0.6); ctx.beginPath(); ctx.arc(cx+Math.cos(ov)*R*0.74, cy+Math.sin(ov)*R*0.74, 2.2,0,TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(sx+Math.cos(sa+1.2)*R*0.115, sy+Math.sin(sa+1.2)*R*0.115, 1.7,0,TAU); ctx.fill();
-    /* travelling value: returned from the nested scope up to main's arena (the centre) */
-    var cT=t%8;
-    if(cT<5.2){
-      var ph=smooth(Math.max(0,(cT-0.5)/4.2));            /* 0 → 1 along the satellite→centre line */
-      var pr=1-Math.max(0,(cT-4.6))/0.6;                  /* fade out at the end */
-      var a=(cT<0.5? cT/0.5 : 1)*pr*0.95;
-      var vx=sx+(cx-sx)*ph, vy=sy+(cy-sy)*ph;
-      ctx.fillStyle=col('ink',a);
-      ctx.beginPath(); ctx.arc(vx,vy, 3.2-1.1*ph, 0, TAU); ctx.fill();
-    }
-    /* a value on the outer ring blinks out: its scope exited */
-    var fT=t%11;
-    if(fT>8.2){
-      var fa=Math.max(0,1-(fT-8.2)/2.2);
-      ctx.fillStyle=col('ink',0.6*fa);
-      ctx.beginPath(); ctx.arc(cx+Math.cos(2.1)*R*0.74, cy+Math.sin(2.1)*R*0.74, 2.2,0,TAU); ctx.fill();
-    }
-  }
-
-  /* ── FIG. 02 arena lifetimes: a stack of scope bars ──
+  /* ── FIG. 01 arena lifetimes: a stack of scope bars ──
      top bar = innermost scope, bottom = main (root). Blocks appear (allocations).
      Every 9s loop: a highlighted value is RETURNED down the stack to main (ink
      block + dashed track + arrowheads), then the innermost scope EXITS (ink
@@ -725,18 +670,16 @@
   }
 
   /* ── wiring ── */
-  var oracleS=null, traces=[];
+  var traces=[];
   function initAll(){
-    var o=document.getElementById('oracle'); if(o){ oracleS=mkState(o); buildOracle(oracleS); }
     var t1=document.getElementById('tr1'); if(t1){ var s=mkState(t1); s.ready=true; traces.push(s); }
-    states=traces.concat(oracleS?[oracleS]:[]);
+    states=traces;
     if(vio) states.forEach(function(s,i){ s.cv._i=i; vio.observe(s.cv); });
     sizeAll();
   }
-  function sizeAll(){ if(oracleS) sizeState(oracleS); traces.forEach(sizeState); }
+  function sizeAll(){ traces.forEach(sizeState); }
   function drawFrame(time){
     var t=time*0.001;
-    if(oracleS && oracleS.on) drawOracle(oracleS, t);
     traces.forEach(function(s){ if(s.on) drawTrace(s, t); });
   }
   var raf=null;
