@@ -1,0 +1,115 @@
+# core:utf8 -- Unicode validation and codepoint iteration over Tycho strings.
+# Import with `import "core:utf8"`.
+#
+# A Tycho string is a byte buffer (immutable); it may hold arbitrary bytes.
+# This package gives the text view: validate a whole string, decode one
+# codepoint at a byte offset, encode a codepoint to its bytes, and count
+# codepoints. The iteration idiom:
+#
+#   at := 0
+#   for at < len(s):
+#       cp, w := utf8.decode(s, at)    # (-1, 0) on an invalid sequence
+#       ... use cp ...
+#       at = at + w
+#
+# Validation is strict: overlong forms, UTF-16 surrogates, code points above
+# U+10FFFF, stray continuation bytes, and truncated sequences are all
+# rejected. Case mapping, normalization and the full Unicode tables are out of
+# scope (validation + iteration is the core).
+package utf8
+
+# Is every byte sequence in `s` a well-formed UTF-8 encoding?
+fn valid(s: string) -> bool:
+    at := 0
+    for at < len(s):
+        cp, w := decode(s, at)
+        if cp < 0:
+            return false
+        at = at + w
+    return true
+
+# Decode the codepoint starting at byte offset `at`. Returns (codepoint,
+# width-in-bytes), or (-1, 0) when `at` is out of range or the sequence is
+# malformed. `at` is a BYTE offset (strings are bytes; iterate via the
+# returned width).
+fn decode(s: string, at: int) -> (int, int):
+    if at < 0 or at >= len(s):
+        return (-1, 0)
+    b0 := s[at]
+    if b0 < 128:
+        return (b0, 1)
+    if b0 < 192:                       # stray continuation byte
+        return (-1, 0)
+    if b0 < 224:                       # 2-byte form
+        if at + 1 >= len(s):
+            return (-1, 0)
+        b1 := s[at + 1]
+        if b1 < 128 or b1 >= 192:
+            return (-1, 0)
+        cp := ((b0 & 31) << 6) | (b1 & 63)
+        if cp < 128:                   # overlong
+            return (-1, 0)
+        return (cp, 2)
+    if b0 < 240:                       # 3-byte form
+        if at + 2 >= len(s):
+            return (-1, 0)
+        b1 := s[at + 1]
+        b2 := s[at + 2]
+        if b1 < 128 or b1 >= 192 or b2 < 128 or b2 >= 192:
+            return (-1, 0)
+        cp := ((b0 & 15) << 12) | ((b1 & 63) << 6) | (b2 & 63)
+        if cp < 2048:                  # overlong
+            return (-1, 0)
+        if cp >= 55296 and cp <= 57343:   # UTF-16 surrogate
+            return (-1, 0)
+        return (cp, 3)
+    if b0 < 248:                       # 4-byte form
+        if at + 3 >= len(s):
+            return (-1, 0)
+        b1 := s[at + 1]
+        b2 := s[at + 2]
+        b3 := s[at + 3]
+        if b1 < 128 or b1 >= 192 or b2 < 128 or b2 >= 192 or b3 < 128 or b3 >= 192:
+            return (-1, 0)
+        cp := ((b0 & 7) << 18) | ((b1 & 63) << 12) | ((b2 & 63) << 6) | (b3 & 63)
+        if cp < 65536:                 # overlong
+            return (-1, 0)
+        if cp > 1114111:               # beyond U+10FFFF
+            return (-1, 0)
+        return (cp, 4)
+    return (-1, 0)                     # 0xF8..0xFF never start a sequence
+
+# Encode one codepoint to its UTF-8 bytes; "" for an invalid codepoint
+# (negative, a UTF-16 surrogate, or above U+10FFFF).
+fn encode(cp: int) -> string:
+    if cp < 0 or cp > 1114111 or (cp >= 55296 and cp <= 57343):
+        return ""
+    out := []int
+    if cp < 128:
+        push(out, cp)
+    elif cp < 2048:
+        push(out, 192 + (cp >> 6))
+        push(out, 128 + (cp & 63))
+    elif cp < 65536:
+        push(out, 224 + (cp >> 12))
+        push(out, 128 + ((cp >> 6) & 63))
+        push(out, 128 + (cp & 63))
+    else:
+        push(out, 240 + (cp >> 18))
+        push(out, 128 + ((cp >> 12) & 63))
+        push(out, 128 + ((cp >> 6) & 63))
+        push(out, 128 + (cp & 63))
+    return to_str(to_bytes(out))
+
+# Number of codepoints in `s`; -1 if `s` is not valid UTF-8. Named `count`, not
+# `len`: a package-level `len` would shadow the builtin inside this package.
+fn count(s: string) -> int:
+    n := 0
+    at := 0
+    for at < len(s):
+        cp, w := decode(s, at)
+        if cp < 0:
+            return -1
+        n = n + 1
+        at = at + w
+    return n
