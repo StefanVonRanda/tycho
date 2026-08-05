@@ -165,8 +165,9 @@ element type instead of a family of per-type siblings.
   response handle, or null on a transport failure (`ok`/`is_null`). `status(r)` (e.g. 200),
   `body(r)` (arena-copied), `release(r)` (the handle is C-owned). Convenience: `get_body(url)`
   / `get_status(url)` do the request and free the handle. The body is arena-copied via the
-  FFI string-return, so a binary body with interior `0x00` truncates — this is for text
-  APIs. Tests are skipped where libcurl is absent.
+  FFI string-return, so a binary body with interior `0x00` truncates — `body(r)` is for text
+  APIs; `body_bytes(r)` is the binary-safe sibling (the full byte length, interior NULs
+  preserved — used by tycho-fetch). Tests are skipped where libcurl is absent.
 - **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.ty`
   demo promoted to a reusable module). The document is a value-semantic tree, the
   `Json` enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`, objects as parallel
