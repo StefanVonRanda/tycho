@@ -163,3 +163,37 @@ Expected: the README's status banner flips from research prototype to 1.0.
   validation/iteration, image codecs and timezone until a caller appears,
   and a `vendor:` named collection root (Odin-style) until a real multi-entry
   or nested-layout project needs it.
+
+> Phase 1 evidence — 2026-08-04: all six packages shipped, each verified and
+> committed on its own: 1.1 core:testing (check/eq/report + exit-code
+> contract), 1.2 core:toml (recursive Value enum, tables as parallel
+> key/value arrays; dotted keys, [table], [[array-of-tables]], escapes incl
+> \uXXXX, int/float/bool, arrays, ISO datetimes as strings; fail-closed),
+> 1.3 core:log (leveled, threaded state, stdout/stderr), 1.4 core:sqlite
+> (direct FFI over libsqlite3, no shim — the dbquery pattern; open/close/
+> exec/query/params, rows as [[string]], sqlite's own messages), 1.5
+> core:utf8 (valid/decode/encode/count, strict rejection of overlong/
+> surrogate/truncated), 1.6 core:zip (reader/writer over core:compress's new
+> raw-deflate path; CRC-32 in-package; the writer's output verified
+> byte-exactly by Python's zipfile during development). Each package: test +
+> golden + guide entry. Gates: make corelib all green (46 packages), goldens-
+> check ok, shim-check 12 ok / 1 skipped (the compress shim grew raw
+> deflate), doc gates ok.
+>
+> Learnings recorded (several are real language sharp edges a package author
+> hits daily): a package-level `len` SHADOWS the builtin inside its own
+> package (utf8.decode called utf8.len recursively until the stack guard
+> fired — the API became `count`); two `_` bindings in one multi-payload
+> pattern collide in the emitted C (compiler bug surfaced — use named
+> bindings); there is no bare `pass` and no `defer`; arithmetic refuses
+> int/float mixing (use to_float); `or_return` requires a Result-returning
+> fn (main() can't); a newtype-of-array blocks push (dropped the Row
+> aliases — query returns [[string]]); the null pointer is `null`, not
+> ptr(0); the typed empty of [[string]] is [][string]; FFI out-params must
+> be `inout ptr`; lines can't continue with a trailing `+`; consts don't
+> cross package boundaries (levels exposed as functions). The two-`_`
+> compiler bug is the one finding worth a follow-up fix in src/tychoc.c.
+>
+> History note: on the owner's instruction the Co-Authored-By trailer was
+> stripped from all 111 commits that carried it (including this session's);
+> the pre-rewrite state is preserved in refs/original.
