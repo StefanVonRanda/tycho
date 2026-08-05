@@ -30,10 +30,18 @@ stage="dist/${name}"
 echo ">> building compiler + tools"
 make -s tychoc tools
 
+# the version MUST match the compiler's constant (the changelog discipline)
+ver="$(./tychoc --version | awk '{print $2}')"
+if [ "v$ver" != "$version" ]; then
+    echo "!! version mismatch: src/tychoc.c says $ver, release.sh was given $version" >&2
+    echo "   bump TYCHO_VERSION in src/tychoc.c and CHANGELOG.md together" >&2
+    exit 2
+fi
+
 echo ">> staging $stage"
 rm -rf "$stage"
 mkdir -p "$stage"
-cp tychoc tychofmt tycho-lsp "$stage"/
+cp tychoc tychofmt tycho-lsp tycho-debug "$stage"/
 cp -r corelib "$stage"/
 cp README.md LICENSE "$stage"/
 # a couple of runnable examples so `./tychoc examples/hello.ty` works out of the box

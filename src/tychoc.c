@@ -31,6 +31,12 @@
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
 
+/* The compiler's version, one source of truth: `tychoc --version` prints it,
+ * CHANGELOG.md records each release's changes against it, and the release
+ * tarballs are built with scripts/release.sh v<same>. Bump it here and in
+ * CHANGELOG.md together. */
+#define TYCHO_VERSION "1.0.0"
+
 /* ------------------------------------------------------------------ util */
 
 static const char *g_srcname = "<input>";
@@ -13312,6 +13318,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--print-deps")) { print_deps = 1; g_pkgdeps_names_only = 1; }
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--native")) native = 1;
+        else if (!strcmp(argv[i], "--version")) { printf("tychoc %s\n", TYCHO_VERSION); return 0; }
         else if (!strcmp(argv[i], "-g")) debug = 1;
         else if (!strcmp(argv[i], "--cc") && i + 1 < argc) cc = argv[++i];
         /* FFI Stage 3: linker/include ergonomics. -L/-I accept both attached
@@ -13333,7 +13340,7 @@ int main(int argc, char **argv) {
     if (!input) {
         fprintf(stderr, "usage: tychoc file.ty [-o name] [--emit-c] [-g] [--bundle] [--native] [--cc <compiler>]\n"
                         "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n"
-                        "                     [--print-shims] [--print-deps]\n"
+                        "                     [--print-shims] [--print-deps] [--version]\n"
                         "  --emit-c with -o writes <name>.c; with no -o it writes the C to stdout.\n"
                         "  --print-shims lists the <pkg>_shim.c files this program needs, one per line,\n"
                         "  transitively -- what a lane linking the emitted C by hand must pass to cc.\n"

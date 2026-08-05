@@ -4,7 +4,7 @@ Where the project stands: how it's built, what each verification gate proves, wh
 shipped, and what's a decided non-goal. Everything here is checked against the
 transpilers and gates, not asserted from memory.
 
-Tycho is an **experimental proof-of-concept** that tests one claim: value semantics
+Tycho tests one claim: value semantics
 makes hierarchical arena allocation fully implicit, with no whole-program analysis. It
 transpiles to C and is MIT-licensed. For the argument itself see [thesis.md](thesis.md);
 for an honest accounting of where the model wins and loses see

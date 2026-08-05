@@ -276,3 +276,55 @@ Expected: the README's status banner flips from research prototype to 1.0.
 > `make test` was NOT run and cannot redden: the compiler is untouched (-g
 > emission is pinned by tools-check's line-info leg), and tests/run.sh never
 > descends into tools/.
+
+> Phase 4 evidence — 2026-08-05: 1.0 promotion landed, closing `make ci`
+> GREEN. Four parts:
+>
+> (1) VERSIONING. `TYCHO_VERSION "1.0.0"` in src/tychoc.c (the single source
+> of truth), `tychoc --version` prints it, and CHANGELOG.md records releases
+> against it (1.0.0 entry covering phases 1-4; [0.1.0] noted as the
+> pre-1.0 release). scripts/release.sh now verifies the version it is given
+> against `tychoc --version` (mismatch = exit 2, so the tarball and the
+> compiler can never disagree) and ships tycho-debug in the tarball.
+>
+> (2) STABILITY STATEMENT. The README banner flips from "research prototype,
+> pre-1.0: no stability guarantees" to the 1.0 contract: stable = the
+> language surface and the spec (bugs in them are regressions); not stable =
+> performance tuning/benches, internal implementation details (emitted C
+> shape, arena sizes), and the documented sharp edges. ROADMAP, RELEASE_NOTES,
+> CONTRIBUTING and architecture/memory-model guides updated to the same
+> language; the thesis keeps its original framing (it is the historical
+> academic document).
+>
+> (3) SECURITY AUDIT. Reviewed the FFI shims named by the phase and recorded
+> the findings in SECURITY.md. The two ownership conventions verified per
+> shim: `-> string` returns are arena-copied and NOT freed (shim contract:
+> recycled/__thread buffers or handle-owned buffers freed by a paired call —
+> crypto's __thread hex buffer, io's getline buffer, os/http's handle-owned
+> buffers all correct); `bytes` out-params are copied AND freed by the
+> runtime (tls/compress/image correct). core:os shell-out: system/popen via
+> sh -c verbatim — injection is caller-side, documented, with the array-argv
+> form named as the backlog item that removes the class. TLS wrapper:
+> SSL_VERIFY_PEER + system CA + hostname + SNI + TLS1.2 min, fail-closed —
+> sound; residual findings (empty-on-EOF-vs-error, uncapped read max, no
+> ALPN/pinning) recorded as non-memory-safety. Residual risks stated: the
+> FFI boundary stays unsafe by design, no formal third-party audit.
+>
+> (4) API FREEZE. All 46 corelib packages are in the 1.0 surface (each
+> tested three ways + golden-locked), with the caveats inside the surface
+> (non-crypto hashes, NUL caveat, FFI deps' skip-if-absent) and the
+> deprecation path (doc notice + changelog entry + compiler warning; removal
+> only in a major bump, never 1.x). Recorded in docs/guides/corelib.md.
+>
+> Compiler change = citation shift, as the phase-2 note predicted: the
+> version define (+6 lines) and --version flag (+7 above line 13322) moved
+> src/tychoc.c line numbers, and 99 anchored citations across docs/spec,
+> FRICTION.md, asan_self.sh and fuzz/run_parforparity.py were re-anchored
+> mechanically (each token's new line verified before the edit, then the
+> citation gate re-run to zero).
+>
+> Gates: the full `make ci` (the phase's gate and the deferred phase-3
+> confirmation) is GREEN — including the new [3p/22] debug-check step — plus
+> the doc gates. `make test` ran 591/591 under `env -u LD_PRELOAD` (the
+> tmux block-nnp.so shim pollutes the ASan lanes; the tree is not at fault —
+> see CLAUDE.md).

@@ -1,10 +1,9 @@
 # Contributing to Tycho
 
-Thanks for trying Tycho and wanting to help. **Tycho is an experimental
-proof-of-concept** (see the status note in the [README](README.md)), so honestly
-the most useful thing you can send me right now is a **bug report, a repro, or
-some design feedback** — much more than a big feature. Please don't be shy about
-filing an issue.
+Thanks for trying Tycho and wanting to help. **Tycho is 1.0** (see the status note in the [README](README.md)): the language
+surface and the spec are stable, so the most useful thing you can send is a
+**bug report, a repro, or some design feedback** — much more than a big
+feature. Please don't be shy about filing an issue.
 
 ## Reporting bugs and giving feedback
 
@@ -69,7 +68,7 @@ blocks the push if either fails.
 
 ## Where feature work is useful
 
-The language is **feature-complete for its proof-of-concept thesis** — value
+The language surface is **stable at 1.0** — value
 semantics, implicit arenas, concurrency, generics, closures, UFCS, FFI, and the
 `sink` consuming convention all ship in both transpilers. So the feature work I
 find useful now is **ergonomics polish, not new pillars**:

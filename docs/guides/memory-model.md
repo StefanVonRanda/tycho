@@ -13,9 +13,10 @@ parity. The sections below describe the model as it stands; a closing appendix
 sketches, for contributors, how I brought the self-hosted code generator onto
 the model one type family at a time.
 
-This is an experimental, proof-of-concept transpiler. The memory model is the
-central idea it exists to demonstrate, and the cross-language benchmarks below
-are encouraging, but the implementation is young and should be judged that way.
+This is a 1.0 transpiler; the memory model is the central idea it exists to
+demonstrate, and the cross-language benchmarks below are encouraging. The
+stability contract is in the README's status banner; implementation details
+like arena sizes are deliberately not part of it.
 
 ## What `tychoc0` emits
 

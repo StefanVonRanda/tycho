@@ -1,8 +1,9 @@
 # Security policy
 
-**Tycho is experimental, proof-of-concept software** with no stability or security
-guarantees. It has **not** been security-audited. Please don't use it for anything
-where a compromise would actually matter.
+**Tycho is 1.0 software** (see the README's status banner): the language surface
+and the spec are stable. It has undergone the **1.0 security review** recorded
+below — a review of the FFI shims, not a formal third-party audit. Please don't
+use it for anything where a compromise would actually matter.
 
 A few sharp edges are inherent, by design:
 
@@ -15,6 +16,80 @@ A few sharp edges are inherent, by design:
 - The hashes in `core:hash` are **non-cryptographic**; `core:md5` is broken for
   security (use `core:sha256` or a real KDF where it matters).
 
+## 1.0 security review — 2026-08-05
+
+Scope (per the 1.0 promotion plan): the FFI shims' **string/bytes ownership**,
+the **shell-out paths in core:os**, and the **TLS wrapper**. The boundary rules
+they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
+
+### The boundary rules (verified)
+
+1. A `-> string` / `-> Option(string)` return is **copied into the caller's
+   arena at the call site and NOT freed** (`tycho_str_from_c`, src/tychoc.c:9750).
+   The shim contract: the returned pointer must stay valid only until the call
+   returns — recycled buffers are safe, owned buffers must be freed by a paired
+   call (`osx_run_free`, `http_free`) or they leak.
+2. A `bytes` return (the `(unsigned char **out, long *outlen)` out-param form)
+   is **copied into the arena and the C buffer freed** (`tycho_bytes_from_c`).
+   The shim contract: hand over a malloc'd buffer; ownership transfers.
+3. Every C-returned value is deep-copied — a Tycho program never holds a live
+   pointer into C-owned memory.
+
+### Findings
+
+**String/bytes ownership — no defects found; two conventions, each audited:**
+- `core:crypto`: hex returns use a `__thread` recycled buffer (safe under rule
+  1, copy at the call site); secret key material stays in an opaque handle and
+  is wiped with `OPENSSL_cleanse` on free. `cx_key_export_hex` is the one
+  deliberate re-materialization, documented.
+- `core:net` `peer_addr`: `static __thread char buf[INET6_ADDRSTRLEN]` — safe
+  under rule 1; the shim comment records why `__thread` (concurrent workers).
+- `core:io` `read_line`: getline's reused buffer, valid until the next call —
+  safe under rule 1; the contract is documented in the shim header.
+- `core:os` `run`: the captured-output buffer is handle-owned and freed by the
+  paired `osx_run_free`; the Tycho wrapper copies then frees. Correct.
+- `core:http`: body buffers are Resp-owned, freed by `http_free`; the binary
+  `body_bytes` path hands over a COPY because the bytes wrapper frees the
+  pointer it receives (the double-free this avoids is documented in the shim).
+- `core:tls` `read`, `core:compress`, `core:image`: malloc'd bytes out-params —
+  rule 2, freed by the runtime. Correct.
+- The `-> string` truncation at NUL (a Tycho string limitation) is documented
+  per call site; the binary paths exist where it matters.
+
+**core:os shell-out — by design, caller-side, documented:**
+- `os.system` / `os.run` pass the command to `/bin/sh -c` **verbatim** — shell
+  metacharacters are live, so a command built from untrusted input is injectable.
+  This is documented in the package header ("Never build cmd from untrusted
+  input without quoting it yourself; there is no array-argv form yet"). The
+  shim does no quoting and no escaping; the in-tree callers that interpolate
+  paths quote them (e.g. tycho-debug's `shq`). An array-argv form is the
+  backlog item that removes the class.
+- `os.run` captures stdout only; stderr passes through to the parent —
+  documented. Wait-status decoding maps a signal death to `128+signum`, never a
+  bare confusion with a real exit code (spawn failure is `-1`).
+
+**TLS wrapper — verification chain sound:**
+- `SSL_VERIFY_PEER` + the system CA store + `SSL_set1_host` (hostname check) +
+  SNI + a TLS 1.2 minimum — the correct combination for a verified client.
+- Fail-closed: any resolve/connect/handshake/verification failure yields a NULL
+  handle, so a caller that forgets to check gets no connection, not an insecure
+  one.
+- Residual, non-memory-safety findings: `read` returns empty on BOTH clean EOF
+  and error (a caller cannot distinguish them — documented); `read`'s `max` is
+  caller-controlled with no cap (an int64 > INT_MAX truncates at the `SSL_read`
+  cast — low severity, the caller is the program itself); no ALPN or
+  certificate pinning (feature choices, not defects).
+
+### Residual risks
+
+- **The FFI boundary stays unsafe by design** — type-level checks only; a wrong
+  `extern` signature can corrupt memory.
+- **Shell-out is injection-prone by design** — the caller owns quoting.
+- **Non-cryptographic hashes** and the **NUL caveat** (sharp edges above).
+- This review covered the shims the 1.0 plan named; it is not a formal
+  third-party audit, and the fuzzer + sanitizer lanes in `make ci` keep running
+  over both the compiler and the programs it emits.
+
 ## Reporting a vulnerability
 
 If you find a memory-safety or other security issue in the **transpiler or
@@ -26,8 +101,8 @@ opening a public issue:
   under the repository's **Security** tab), or
 - contact the maintainer directly.
 
-Include a minimal `.ty` (or input) that reproduces it, plus your platform. Since
-this is a pre-1.0 research project, expect a best-effort reply from me, not an SLA.
+Include a minimal `.ty` (or input) that reproduces it, plus your platform.
+Expect a best-effort reply, not an SLA.
 
 Routine miscompiles and crashes that aren't security-sensitive are fine to file
 as ordinary [bug reports](.github/ISSUE_TEMPLATE/bug_report.md).
