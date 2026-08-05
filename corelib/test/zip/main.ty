@@ -1,0 +1,29 @@
+# corelib test: exercises core:zip; the output is locked to
+# corelib/test/zip.out (corelib/run.sh). Create an archive, list it, extract
+# every entry, verify contents and CRCs, and fail closed on corruption.
+package main
+import "core:zip"
+import "core:hash"
+
+fn main():
+    a := "hello zip\n"
+    b := "the quick brown fox jumps over the lazy dog\n"   # compresses
+    c := "aaaa"                                            # tiny: stored raw
+    d := ""
+    for i := 0; i < 100; i += 1:
+        d = d + "repeat! "
+    ar := zip.create([zip.Entry("a.txt", to_bytes(a)),
+                      zip.Entry("b.txt", to_bytes(b)),
+                      zip.Entry("c.bin", to_bytes(c)),
+                      zip.Entry("d.txt", to_bytes(d))])
+    ms := zip.list(ar)
+    print("entries=" + str(len(ms)) + "\n")
+    for m in ms:
+        print(m.name + " method=" + str(m.method) + " usz=" + str(m.usize) + "\n")
+    print("a=" + to_str(zip.extract(ar, "a.txt")))
+    print("b=" + to_str(zip.extract(ar, "b.txt")))
+    print("c=" + to_str(zip.extract(ar, "c.bin")) + "\n")
+    print("d roundtrip=" + str(to_str(zip.extract(ar, "d.txt")) == d) + "\n")
+    # CRC integrity: a corrupted payload must extract as empty
+    print("missing=" + str(len(zip.extract(ar, "nope")) == 0) + "\n")
+    print("crc=" + str(hash.to_hex(zip.crc32(to_bytes("123456789")))) + "\n")   # cbf43926

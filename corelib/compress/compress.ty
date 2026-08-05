@@ -13,9 +13,17 @@ package compress
 # ---- shim externs (zlib; defined in compress_shim.c) ----
 extern fn zx_compress(data: bytes) -> bytes
 extern fn zx_decompress(data: bytes) -> bytes
+extern fn zx_raw_deflate(data: bytes) -> bytes
+extern fn zx_raw_inflate(data: bytes) -> bytes
 
 fn compress(data: bytes) -> bytes:
     return zx_compress(data)
 
 fn decompress(data: bytes) -> bytes:
     return zx_decompress(data)
+
+# Raw DEFLATE (RFC 1951), no wrapper -- the stream zip entries use.
+fn raw_compress(data: bytes) -> bytes:
+    return zx_raw_deflate(data)
+fn raw_decompress(data: bytes) -> bytes:
+    return zx_raw_inflate(data)
