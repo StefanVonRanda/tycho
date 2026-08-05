@@ -17,6 +17,51 @@
 #include <sys/stat.h>            /* stat(2) + S_ISDIR -- iox_stat_kind */
 #include <fcntl.h>               /* open(2) + O_RDONLY -- iox_read_at */
 #include <unistd.h>              /* pread(2) + close(2) -- iox_read_at */
+#ifdef _WIN32
+#include <io.h>                 /* _lseeki64 -- the pread/pwrite stand-ins */
+#include <direct.h>             /* _mkdir -- the one-arg Windows mkdir */
+#include <fcntl.h>              /* O_RDWR/O_CREAT are the same, but keep _O_BINARY honest */
+/* mingw-w64 has none of getline(3)/pread(2)/pwrite(2) and a one-arg mkdir.
+ * The getline stand-in is fgets-free: read one byte at a time into a doubling
+ * buffer, strip the trailing newline (and a preceding \r -- the CRLF
+ * convention). pread/pwrite keep the contract "read/write at an absolute
+ * offset without disturbing the file position" via _lseeki64 + save/restore. */
+static ssize_t ty_getline(char **bufp, size_t *capp, FILE *f) {
+    size_t n = 0;
+    for (;;) {
+        if (n + 2 > *capp) {
+            size_t nc = *capp ? *capp * 2 : 256;
+            char *nb = realloc(*bufp, nc);
+            if (!nb) return -1;               /* fail closed: caller sees EOF */
+            *bufp = nb; *capp = nc;
+        }
+        int c = fgetc(f);
+        if (c == EOF) { if (n == 0) return -1; (*bufp)[n] = '\0'; return (ssize_t)n; }
+        if (c == '\n') { if (n > 0 && (*bufp)[n-1] == '\r') n--; (*bufp)[n] = '\0'; return (ssize_t)n; }
+        (*bufp)[n++] = (char)c;
+    }
+}
+static ssize_t ty_pread(int fd, void *buf, size_t n, long long off) {
+    long long pos = _lseeki64(fd, 0, SEEK_CUR);
+    if (pos < 0) return -1;
+    if (_lseeki64(fd, off, SEEK_SET) < 0) return -1;
+    ssize_t r = read(fd, buf, n);
+    _lseeki64(fd, pos, SEEK_SET);
+    return r;
+}
+static ssize_t ty_pwrite(int fd, const void *buf, size_t n, long long off) {
+    long long pos = _lseeki64(fd, 0, SEEK_CUR);
+    if (pos < 0) return -1;
+    if (_lseeki64(fd, off, SEEK_SET) < 0) return -1;
+    ssize_t r = write(fd, buf, n);
+    _lseeki64(fd, pos, SEEK_SET);
+    return r;
+}
+#define getline(b, c, f)  ty_getline((b), (c), (f))
+#define pread(fd, b, n, o)  ty_pread((fd), (b), (n), (o))
+#define pwrite(fd, b, n, o) ty_pwrite((fd), (b), (n), (o))
+#define mkdir(p, m) _mkdir(p)   /* mingw's mkdir takes one argument */
+#endif
 /* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
  * emitted program; this shim is a separate translation unit, so it defines the
  * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
@@ -88,10 +133,18 @@ void iox_close_lines(void *p) {
 #define TY_RF_DIR  2
 #define TY_RF_ERR  3
 
-/* Map a failed fopen/fread errno onto the status codes above. */
-static tycho_int ty_rf_errno(void) {
+/* Map a failed fopen/fread errno onto the status codes above. `path` lets a
+ * failure that the platform refuses to classify be asked of the kernel: on
+ * Windows, fopen/open of a DIRECTORY fails with EACCES (not POSIX's EISDIR),
+ * so an EACCES is re-checked by stat -- a directory is TY_RF_DIR, anything
+ * else stays a real permission/other error. */
+static tycho_int ty_rf_errno(const char *path) {
     if (errno == ENOENT || errno == ENOTDIR) return TY_RF_MISS;
     if (errno == EISDIR) return TY_RF_DIR;
+    if (errno == EACCES && path) {
+        struct stat st;
+        if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) return TY_RF_DIR;
+    }
     return TY_RF_ERR;
 }
 
@@ -102,7 +155,7 @@ void iox_read_file(const char *path, tycho_int *status,
     *status = TY_RF_ERR;
     errno = 0;
     FILE *f = fopen(path, "rb");
-    if (!f) { *status = ty_rf_errno(); return; }      /* fail closed: empty result */
+    if (!f) { *status = ty_rf_errno(path); return; }      /* fail closed: empty result */
     size_t cap = 4096, len = 0, n;
     unsigned char *buf = malloc(cap);
     if (!buf) { fclose(f); return; }
@@ -117,7 +170,7 @@ void iox_read_file(const char *path, tycho_int *status,
         }
     }
     if (ferror(f)) {                                 /* a directory reaches here on glibc */
-        *status = ty_rf_errno();
+        *status = ty_rf_errno(path);
         free(buf);
         fclose(f);
         return;
@@ -185,9 +238,9 @@ void iox_read_at(const char *path, tycho_int off, tycho_int n, tycho_int *status
     if (off < 0 || n < 0) return;                    /* fail closed, before open(2) */
     errno = 0;
     int fd = open(path, O_RDONLY);
-    if (fd < 0) { *status = ty_rf_errno(); return; }
+    if (fd < 0) { *status = ty_rf_errno(path); return; }
     struct stat st;
-    if (fstat(fd, &st) != 0) { *status = ty_rf_errno(); close(fd); return; }
+    if (fstat(fd, &st) != 0) { *status = ty_rf_errno(path); close(fd); return; }
     if (S_ISDIR(st.st_mode)) { *status = TY_RF_DIR; close(fd); return; }
     if (!S_ISREG(st.st_mode)) { close(fd); return; }  /* fifo/socket/device: TY_RF_ERR */
     tycho_int size = (tycho_int)st.st_size;
@@ -202,7 +255,7 @@ void iox_read_at(const char *path, tycho_int off, tycho_int n, tycho_int *status
         ssize_t r = pread(fd, buf + got, (size_t)(want - got), (off_t)(off + got));
         if (r < 0) {
             if (errno == EINTR) continue;             /* a signal, not a failure */
-            *status = ty_rf_errno();
+            *status = ty_rf_errno(path);
             free(buf);
             close(fd);
             return;
@@ -239,7 +292,7 @@ void iox_read_at(const char *path, tycho_int off, tycho_int n, tycho_int *status
 tycho_int iox_stat_kind(const char *path) {
     struct stat st;
     errno = 0;
-    if (stat(path, &st) != 0) return ty_rf_errno();   /* ENOENT/ENOTDIR -> MISS */
+    if (stat(path, &st) != 0) return ty_rf_errno(path);   /* ENOENT/ENOTDIR -> MISS */
     return S_ISDIR(st.st_mode) ? TY_RF_DIR : TY_RF_OK;
 }
 
@@ -279,7 +332,7 @@ tycho_int iox_stat_mtime(const char *path, tycho_int *mtime) {
     struct stat st;
     *mtime = 0;
     errno = 0;
-    if (stat(path, &st) != 0) return ty_rf_errno();   /* ENOENT/ENOTDIR -> MISS */
+    if (stat(path, &st) != 0) return ty_rf_errno(path);   /* ENOENT/ENOTDIR -> MISS */
     *mtime = (tycho_int)st.st_mtime;
     return TY_RF_OK;
 }
@@ -341,7 +394,7 @@ tycho_int iox_stat_size(const char *path, tycho_int *size) {
     struct stat st;
     *size = 0;
     errno = 0;
-    if (stat(path, &st) != 0) return ty_rf_errno();   /* ENOENT/ENOTDIR -> MISS */
+    if (stat(path, &st) != 0) return ty_rf_errno(path);   /* ENOENT/ENOTDIR -> MISS */
     if (S_ISDIR(st.st_mode)) return TY_RF_DIR;
     if (!S_ISREG(st.st_mode)) return TY_RF_ERR;       /* fifo/socket/device: no length */
     *size = (tycho_int)st.st_size;
@@ -375,7 +428,7 @@ tycho_int iox_make_dir(const char *path) {
     if (mkdir(path, 0777) == 0) return TY_RF_OK;
     if (errno == EEXIST)                                  /* who is in the way? */
         return iox_stat_kind(path) == TY_RF_DIR ? TY_RF_DIR : TY_FS_EXISTS;
-    return ty_rf_errno();
+    return ty_rf_errno(path);
 }
 
 /* remove(3) ONE entry: unlink(2) for a non-directory, rmdir(2) for a directory.
@@ -393,8 +446,22 @@ tycho_int iox_make_dir(const char *path) {
  * the property that keeps this from being `rm -rf` in a shim. */
 tycho_int iox_remove(const char *path) {
     errno = 0;
+#ifdef _WIN32
+    /* Windows remove() is unlink()-only: a directory needs _rmdir. stat once
+     * to know which -- then the errno mapping above handles the rest
+     * (ENOTEMPTY stays a real error, ENOENT is the already-gone answer). */
+    struct stat st;
+    if (stat(path, &st) != 0) return ty_rf_errno(path);
+    if (S_ISDIR(st.st_mode)) {
+        if (_rmdir(path) == 0) return TY_RF_OK;
+        return ty_rf_errno(path);
+    }
     if (remove(path) == 0) return TY_RF_OK;
-    return ty_rf_errno();
+    return ty_rf_errno(path);
+#else
+    if (remove(path) == 0) return TY_RF_OK;
+    return ty_rf_errno(path);
+#endif
 }
 
 /* Write ALL of `data` (datalen bytes) to `path`, truncating it first. Same
@@ -418,12 +485,12 @@ void iox_write_at(const char *path, tycho_int off,
     if (off < 0 || datalen < 0) return;            /* fail closed, before open(2) */
     errno = 0;
     int fd = open(path, O_RDWR | O_CREAT, 0644);   /* create if absent, like write_bytes */
-    if (fd < 0) { *status = ty_rf_errno(); return; }
+    if (fd < 0) { *status = ty_rf_errno(path); return; }
     if (datalen > 0 && data) {
         ssize_t w = pwrite(fd, data, (size_t)datalen, (off_t)off);
-        if (w != (ssize_t)datalen) { *status = ty_rf_errno(); close(fd); return; }  /* partial: error, fail closed */
+        if (w != (ssize_t)datalen) { *status = ty_rf_errno(path); close(fd); return; }  /* partial: error, fail closed */
     }
-    if (close(fd) != 0) { *status = ty_rf_errno(); return; }
+    if (close(fd) != 0) { *status = ty_rf_errno(path); return; }
     *status = TY_RF_OK;
 }
 
@@ -432,12 +499,12 @@ void iox_write_bytes(const char *path, const unsigned char *data,
     *status = TY_RF_ERR;
     errno = 0;
     FILE *f = fopen(path, "wb");
-    if (!f) { *status = ty_rf_errno(); return; }       /* fail closed: nothing written */
+    if (!f) { *status = ty_rf_errno(path); return; }       /* fail closed: nothing written */
     if (datalen > 0 && data && fwrite(data, 1, (size_t)datalen, f) != (size_t)datalen) {
-        *status = ty_rf_errno();                        /* partial write: an error */
+        *status = ty_rf_errno(path);                        /* partial write: an error */
         fclose(f);
         return;
     }
-    if (fclose(f) != 0) { *status = ty_rf_errno(); return; }
+    if (fclose(f) != 0) { *status = ty_rf_errno(path); return; }
     *status = TY_RF_OK;
 }

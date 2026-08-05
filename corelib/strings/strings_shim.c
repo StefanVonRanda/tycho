@@ -89,13 +89,20 @@ typedef int64_t tycho_int;
 /* The "C" LC_NUMERIC handle, built ONCE. pthread_once and not a plain lazy
  * assignment because a Tycho task is a pthread (runtime/tycho_rt.c spawn/wait),
  * so two tasks can reach parse_float at the same time; a bare `if (!h) h = ...`
- * is a data race that also leaks a locale handle. */
+ * is a data race that also leaks a locale handle.
+ *
+ * Windows (mingw-w64) has no POSIX locale API at any version, and the
+ * TY_HAVE_STRTOD_L list above already excludes it -- so on Windows the whole
+ * handle stays 0 and strx_parse_double takes the localeconv fallback, which
+ * is correct under any locale (its header argues why). */
+#ifdef TY_HAVE_STRTOD_L
 static locale_t       ty_c_numeric;
 static pthread_once_t ty_c_numeric_once = PTHREAD_ONCE_INIT;
 
 static void ty_c_numeric_init(void) {
     ty_c_numeric = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);   /* 0 on failure */
 }
+#endif
 
 /* Fallback: plain strtod over a copy whose '.' has become the running locale's
  * decimal separator. Sets *whole (did it consume every byte) and *range (ERANGE).

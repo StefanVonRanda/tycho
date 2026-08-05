@@ -11,6 +11,57 @@
 #define _DEFAULT_SOURCE          /* glibc: struct tm .tm_gmtoff + setenv/unsetenv */
 #endif
 #include <time.h>
+#include <stdlib.h>    /* malloc/free -- the _WIN32 env shims below */
+#include <string.h>    /* strlen/memcpy -- the same */
+#ifdef _WIN32
+/* mingw has no localtime_r; localtime_s is the same call with swapped args and
+ * a returned errno. The POSIX wrapper's contract -- NULL on failure -- holds. */
+static struct tm *ty_localtime_r(const time_t *t, struct tm *out) {
+    return localtime_s(out, t) == 0 ? out : NULL;
+}
+static struct tm *ty_gmtime_r(const time_t *t, struct tm *out) {
+    return gmtime_s(out, t) == 0 ? out : NULL;
+}
+#define localtime_r(t, o) ty_localtime_r((t), (o))
+#define gmtime_r(t, o)    ty_gmtime_r((t), (o))
+/* setenv/unsetenv are POSIX; mingw has _putenv_s. The shim only ever calls
+ * setenv with overwrite=1, so the flag is ignored. unsetenv maps to an empty
+ * value (Windows has no removal semantics worth the difference here). */
+static int ty_setenv(const char *name, const char *val, int ov) {
+    (void)ov;
+    size_t n = strlen(name), v = strlen(val);
+    char *e = malloc(n + v + 2);
+    if (!e) return -1;
+    memcpy(e, name, n); e[n] = '=';
+    memcpy(e + n + 1, val, v); e[n + v + 1] = '\0';
+    int r = _putenv(e);        /* mingw's _putenv duplicates the string */
+    free(e);
+    return r;
+}
+static int ty_unsetenv(const char *name) {
+    size_t n = strlen(name);
+    char *e = malloc(n + 2);
+    if (!e) return -1;
+    memcpy(e, name, n); e[n] = '='; e[n + 1] = '\0';
+    int r = _putenv(e);
+    free(e);
+    return r;
+}
+#define setenv(n, v, o) ty_setenv((n), (v), (o))
+#define unsetenv(n)     ty_unsetenv((n))
+/* glibc's struct tm has tm_gmtoff; mingw's does not. The offset is the
+ * difference between a local and a UTC interpretation of the same instant --
+ * mktime() normalises both, so the subtraction is the offset in seconds
+ * (the classic portable formulation; DST edges resolve to one of the two
+ * valid answers, which is all an offset lookup promises). */
+static long ty_gmtoff(const time_t *t) {
+    struct tm lt, ut;
+    if (!localtime_r(t, &lt)) return 0;
+    if (!gmtime_r(t, &ut)) return 0;
+    return (long)(mktime(&lt) - mktime(&ut));
+}
+#define tm_gmtoff ty_gmtoff_placeholder   /* the shim must not touch tm_gmtoff */
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -32,7 +83,11 @@ tycho_int dtx_local_offset(tycho_int secs) {
     time_t t = (time_t)secs;
     struct tm lt;
     if (!localtime_r(&t, &lt)) return 0;   /* fail closed: unknown -> UTC */
+#ifdef _WIN32
+    return ty_gmtoff(&t);
+#else
     return (tycho_int)lt.tm_gmtoff;
+#endif
 }
 
 /* UTC offset at `secs` for an EXPLICIT POSIX TZ string, DST-aware. A POSIX rule
@@ -51,7 +106,11 @@ tycho_int dtx_offset_at(const char *tz, tycho_int secs) {
     time_t t = (time_t)secs;
     struct tm lt;
     tycho_int off = 0;
+#ifdef _WIN32
+    if (localtime_r(&t, &lt)) off = (tycho_int)ty_gmtoff(&t);
+#else
     if (localtime_r(&t, &lt)) off = (tycho_int)lt.tm_gmtoff;
+#endif
     if (saved) { setenv("TZ", saved, 1); free(saved); } else { unsetenv("TZ"); }
     tzset();                                  /* restore the process zone exactly once */
     return off;

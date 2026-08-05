@@ -130,6 +130,13 @@ wine-smoke:
 wine-test:
 	@sh scripts/wine_test.sh
 
+# wine-corelib: phase 4's manual lane — every corelib test that can link on
+# this box, cross-compiled under mingw and run under Wine vs the Linux goldens.
+# NOT a gate, NOT a Windows verdict; skips carry their reasons (MSYS2-only
+# library links and POSIX-only test mechanisms are parked for phase 6).
+wine-corelib:
+	@sh scripts/wine_corelib.sh
+
 # Differential test suite: every examples/*.ty and tests/*.ty built both
 # native -O2 and under -fsanitize=address,undefined, run on matching stdin,
 # asserting exit 0, clean sanitizers, and byte-identical output. See

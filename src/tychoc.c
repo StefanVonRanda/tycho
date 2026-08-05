@@ -4739,6 +4739,7 @@ static void add_pkg_deps(const char *dir) {
     char *path = sfmt("%s/deps", dir);
     FILE *f = fopen(path, "r");
     if (!f) return;
+    int win_sec = 0;   /* inside a `_WIN32:` section: raw link flags, Windows-only */
     char line[512];
     while (fgets(line, sizeof line, f)) {
         char *s = line;
@@ -4746,6 +4747,19 @@ static void add_pkg_deps(const char *dir) {
         char *e = s + strlen(s);
         while (e > s && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t')) *--e = 0;
         if (!*s || *s == '#') continue;
+        if (!strcmp(s, "_WIN32:")) { win_sec = 1; continue; }
+        if (win_sec) {
+#ifdef _WIN32
+            /* RAW linker flags for the Windows build (e.g. -lws2_32, -lpcre2-posix):
+             * appended to the cc line verbatim -- system libs are not pkg-config
+             * packages, so pkg-config never sees them. Never listed by
+             * --print-deps either: they are not probe-able names (the corelib
+             * skip-probe probes pkg-config only). A non-Windows compiler skips
+             * the whole section, so a deps file can carry both. */
+            g_pkgdeps = g_pkgdeps ? sfmt("%s %s", g_pkgdeps, s) : sfmt("%s", s);
+#endif
+            continue;
+        }
         char *name = sfmt("%s", s);
         int seen = 0;
         for (int i = 0; i < g_npkgnames; i++) if (!strcmp(g_pkgnames[i], name)) { seen = 1; break; }
