@@ -115,4 +115,27 @@ printf 'garbage line\n' > "$T/bad"
 printf 'a: b\nb: a\n    touch a\n' > "$T/cyc"
 "$T/tb" "$T/cyc" >/dev/null 2>&1;   [ $? -eq 2 ] || { echo "FAIL [6] cycle"; fail=1; }
 
-[ "$fail" -eq 0 ] && echo "tycho-build: all green (6 legs)" || { echo "tycho-build: FAIL"; exit 1; }
+# [7] vendored dependencies through the build tool: fetch two packages with
+# tycho-fetch (local file:// tarballs), then build a project whose entry
+# imports "vendor/greet", which itself imports "../util" -- the whole
+# Go/Odin-style vendoring story end to end.
+if ! "$TYCHOC" "$D/../tycho-fetch/main.ty" --shim tools/tycho_shim.c -o "$T/tf" >"$T/tf.log" 2>&1; then
+    echo "FAIL [7] tycho-fetch build"; cat "$T/tf.log"; fail=1
+fi
+mkdir -p "$T/vend/g-src" "$T/vend/u-src"
+printf 'package greet\nimport "../util"\nfn hello():\n    print(util.msg() + "\\n")\n' > "$T/vend/g-src/greet.ty"
+printf 'package util\nfn msg() -> string:\n    return "from vendored util"\n' > "$T/vend/u-src/util.ty"
+( cd "$T/vend" && tar -czf g.tar.gz g-src && tar -czf u.tar.gz u-src )
+printf 'package main\nimport "vendor/greet"\nfn main():\n    greet.hello()\n' > "$T/vend/main.ty"
+printf 'app: main.ty\n    %s main.ty -o app\n' "$PWD/tychoc" > "$T/vend/buildfile"
+( cd "$T/vend" && "$T/tf" "file://$PWD/g.tar.gz" greet && "$T/tf" "file://$PWD/u.tar.gz" util ) > "$T/vend/fetch.log" 2>&1 \
+    || { echo "FAIL [7] tycho-fetch"; cat "$T/vend/fetch.log"; fail=1; }
+[ -f "$T/vend/vendor/greet/greet.ty" ] && [ -f "$T/vend/vendor/util/util.ty" ] \
+    || { echo "FAIL [7] vendored files missing"; fail=1; }
+( cd "$T/vend" && "$T/tb" buildfile ) > "$T/vend/build.out" 2>&1 \
+    || { echo "FAIL [7] vendored build"; cat "$T/vend/build.out"; fail=1; }
+[ -x "$T/vend/app" ] || { echo "FAIL [7] app not built"; fail=1; }
+out=$("$T/vend/app")
+[ "$out" = "from vendored util" ] || { echo "FAIL [7] app output: '$out'"; fail=1; }
+
+[ "$fail" -eq 0 ] && echo "tycho-build: all green (7 legs)" || { echo "tycho-build: FAIL"; exit 1; }

@@ -19,6 +19,7 @@ extern fn http_get(url: string) -> ptr
 extern fn http_post(url: string, body: string, content_type: string) -> ptr
 extern fn http_status(resp: ptr) -> int
 extern fn http_body(resp: ptr) -> string
+extern fn http_body_bytes(resp: ptr) -> bytes
 extern fn http_free(resp: ptr)
 
 # Perform a GET. Returns a response handle, or null on a transport failure.
@@ -44,6 +45,13 @@ fn body(resp: ptr) -> string:
     if is_null(resp):
         return ""
     return http_body(resp)
+
+# The response body as BYTES: the full byte length, interior NULs preserved
+# (body() truncates at the first NUL -- this is the binary-safe sibling).
+fn body_bytes(resp: ptr) -> bytes:
+    if is_null(resp):
+        return to_bytes([]int)
+    return http_body_bytes(resp)
 
 # Free a response handle (C-owned memory; call exactly once).
 fn release(resp: ptr):

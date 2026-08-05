@@ -109,7 +109,39 @@ default (or at `TYCHO_CORELIB` if set) rather than relative to the importer. The
 corelib is documented in [corelib.md](corelib.md).
 
 Only the `core:` collection is exposed today; I haven't done arbitrary named roots
-(Odin's wider `collection:` mechanism).
+(Odin's wider `collection:` mechanism). Vendoring needs none -- see below.
+
+## Vendoring (Go/Odin style)
+
+Third-party packages are **vendored**: you keep a `vendor/` directory in your
+project, and the compiler resolves `import "vendor/name"` the same way it
+resolves any non-`core:` path — **relative to the importing package's own
+directory**, independent of the current working directory or where the entry
+file lives (`resolve_pkg_dir`, §28.4). No registry, no version resolution:
+`vendor/` is just a directory, and the code in it is the code that builds.
+
+The shape that keeps the `../` chains at depth one:
+
+```
+myproj/
+  main.ty            # import "vendor/greet"
+  vendor/
+    greet/greet.ty   # import "../util"  -- relative to greet's own dir
+    util/util.ty
+```
+
+A vendored package imports its siblings with a relative path (`../util`),
+resolved against **its own** directory — so the vendor tree stays flat (one
+package per top-level entry) and moves as a unit. Vendored packages mix
+freely with `core:` imports. `tycho-fetch <url> <name>` downloads a package
+tarball (the single-top-directory shape) into `vendor/<name>` and prints the
+sha256 of the downloaded bytes; `git clone` / `cp` into `vendor/` work just
+as well — the compiler never cares how the files got there.
+
+A named `vendor:` collection root (Odin's `collection:` spelling) is
+deliberately not added: importer-relative paths already implement the model,
+and a second resolution rule waits until a real multi-entry project feels the
+`../` chains.
 
 ## Both transpilers
 

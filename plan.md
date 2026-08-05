@@ -197,3 +197,32 @@ Expected: the README's status banner flips from research prototype to 1.0.
 > History note: on the owner's instruction the Co-Authored-By trailer was
 > stripped from all 111 commits that carried it (including this session's);
 > the pre-rewrite state is preserved in refs/original.
+
+> Phase 2 evidence — 2026-08-04: all three pieces landed, gates green
+> (make corelib incl. the http test, shim-check, goldens-check, doc gates,
+> tools-check, and make build-check now 7 legs).
+>
+> The re-scoped plan held: the compiler needed NO change (verified again —
+> the vendored project compiles and runs). (1) packages.md gains a
+> "Vendoring" section documenting the vendor/ convention, the
+> importer-relative rule (cwd-independent), the flat-vendor shape that keeps
+> ../ chains at depth one, mixed core:+vendor, and the corrected "only the
+> core: collection" note — a named vendor: root explicitly deferred. (2)
+> `tools/tycho-fetch/main.ty` — a standalone tool (its own directory, like
+> tycho-ar/tycho-build, because importing core:* needs a package header which
+> would pull every tools/*.ty into the compile — the repo documents that
+> trap); `tycho-fetch <url> <name>` downloads via core:http, prints the
+> sha256, unpacks the tarball into vendor/<name> (tar does the extraction —
+> a shell step like the build tool's recipes; the tarball must have a single
+> top-level directory), fail-closed on HTTP errors, unsafe names (no ../),
+> existing dest, and malformed tarballs. (3) build-check gains leg [7]: the
+> whole story end to end — fetch two packages from local file:// tarballs,
+> build a project whose entry imports "vendor/greet" which imports "../util",
+> run the binary. The fetch test is fully offline.
+>
+> One real corelib gap found and fixed en route: `http.body` truncates at the
+> first NUL (the FFI string return), so binary downloads were impossible —
+> core:http gains `body_bytes(r) -> bytes` (a shim that hands over a
+> malloc'd copy, matching the bytes-from-C convention where the wrapper
+> frees; returning the Resp's own buffer double-freed — found and fixed).
+> tycho-fetch uses it, which is its integration test.

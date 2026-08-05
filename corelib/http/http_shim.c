@@ -79,6 +79,21 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
     curl_easy_cleanup(c);
     return r;
 }
+/* Binary-safe body: the full byte length including interior NULs, crossed as
+ * (ptr, len) so the Tycho side builds a `bytes` value. The wrapper FREES the
+ * pointer it receives (the bytes-from-C convention, like the compress shim),
+ * so this hands over a malloc'd COPY -- never the Resp's own buffer, which
+ * http_free also frees. */
+void http_body_bytes(void *resp, const unsigned char **out, tycho_int *outlen) {
+    Resp *r = (Resp *)resp;
+    *out = NULL; *outlen = 0;
+    if (!r || r->len <= 0) return;
+    unsigned char *copy = (unsigned char *)malloc((size_t)r->len);
+    if (!copy) return;
+    memcpy(copy, r->body, (size_t)r->len);
+    *out = copy;
+    *outlen = (tycho_int)r->len;
+}
 
 void *http_get(const char *url) { return perform(url, NULL, NULL); }
 void *http_post(const char *url, const char *body, const char *ctype) { return perform(url, body ? body : "", ctype); }

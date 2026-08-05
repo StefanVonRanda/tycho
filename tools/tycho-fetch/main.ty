@@ -1,0 +1,93 @@
+# tycho-fetch -- vendor a package tarball into ./vendor/<name>. A standalone
+# tool (its own directory, like tycho-ar / tycho-build) because importing
+# core:* needs a `package` header, which would pull every tools/*.ty into
+# the compile -- the repo documents that exact trap in tools/tycho-ar.
+#
+#   ./build/tycho-fetch <url> <name>
+#
+# Downloads the URL (core:http handles http/https/file), prints the sha256 of
+# the downloaded bytes (compare against the publisher's), and unpacks the
+# tarball into vendor/<name>/. The tarball must have a SINGLE top-level
+# directory (the standard archive shape -- GitHub codeload, crates.io);
+# --strip-components=1 removes it. `tar` does the extraction (a shell step,
+# like the build tool's recipes); everything else is Tycho. Fail-closed: a
+# non-200 response, an unwritable vendor/, a tarball without the single-top-
+# dir shape, or an unsafe <name> (not a plain directory name) all die with a
+# message and leave no half-vendored state.
+#
+# Run from the project root: vendor/ lands next to the entry program, so
+# `import "vendor/name"` resolves (importer-relative, cwd-independent).
+package main
+
+import "core:http"
+import "core:sha256"
+import "core:io"
+
+fn main():
+    a := args()
+    if len(a) < 3:
+        println("usage: tycho-fetch <url> <name>")
+        println("  vendor a package tarball into vendor/<name>")
+        println("  the tarball must have a single top-level directory")
+        exit(2)
+    url := a[1]
+    name := a[2]
+    if not safe_name(name):
+        die("tycho-fetch: <name> must be a plain directory name (letters, digits, '.', '_', '-')")
+    r := http.get(url)
+    st := http.status(r)
+    body := http.body_bytes(r)
+    http.release(r)
+    # file:// URLs have no HTTP status line (libcurl reports 0); accept 200,
+    # or 0 with a non-empty body (a successful file:// download). Anything
+    # else -- or an empty 0 (missing file, failed request) -- fails closed.
+    if st != 200 and (st != 0 or len(body) == 0):
+        die("tycho-fetch: " + url + " -> HTTP " + str(st))
+    sha := sha256.hex(to_str(body))
+    println("tycho-fetch: " + url)
+    println("  sha256 : " + sha)
+    if not io.exists("vendor"):
+        if not mkdir("vendor"):
+            die("tycho-fetch: cannot create vendor/")
+    arch := "vendor/.fetch-" + name + ".tar.gz"
+    if not write_bin(arch, body):
+        die("tycho-fetch: cannot write " + arch)
+    dest := "vendor/" + name
+    if io.exists(dest):
+        _ := io.remove(arch)
+        die("tycho-fetch: " + dest + " already exists -- remove it first")
+    if not mkdir(dest):
+        _ := io.remove(arch)
+        die("tycho-fetch: cannot create " + dest)
+    if tycho_run("tar -xf '" + arch + "' -C '" + dest + "' --strip-components=1 >/dev/null 2>&1") != 0:
+        _ := io.remove(arch)
+        die("tycho-fetch: " + url + " is not a tarball with a single top-level directory")
+    _ := io.remove(arch)
+    println("  vendored " + name + " -> " + dest)
+
+extern fn tycho_run(cmd: string) -> int        # system(cmd); raw wait status, 0 == ok
+
+# a vendored package name must be one safe path component: no separators, no '..'
+fn safe_name(name: string) -> bool:
+    if len(name) == 0 or name == "." or name == "..":
+        return false
+    for i := 0; i < len(name); i += 1:
+        c := name[i]
+        if not ((c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57)
+                or c == 46 or c == 95 or c == 45):
+            return false
+    return true
+
+fn mkdir(p: string) -> bool:
+    match io.make_dir(p):
+        Ok(ok):
+            return ok
+        Err(_):
+            return false
+
+fn write_bin(p: string, b: bytes) -> bool:
+    match io.write_bytes(p, b):
+        Ok(ok):
+            return ok
+        Err(_):
+            return false
