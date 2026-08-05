@@ -137,6 +137,12 @@ wine-test:
 wine-corelib:
 	@sh scripts/wine_corelib.sh
 
+# wine-tools: phase 5's manual lane — every tools/ tool cross-compiled under
+# mingw (the Windows build proof) plus representative runs under Wine. NOT a
+# gate, NOT a Windows verdict; the full lane fixture suites are CI's.
+wine-tools:
+	@sh scripts/wine_tools.sh
+
 # Differential test suite: every examples/*.ty and tests/*.ty built both
 # native -O2 and under -fsanitize=address,undefined, run on matching stdin,
 # asserting exit 0, clean sanitizers, and byte-identical output. See
