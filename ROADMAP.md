@@ -1,12 +1,13 @@
 # Roadmap
 
-Tycho is an experimental proof-of-concept, and this is a direction, not a promise of
-dates. Day-to-day work is tracked in [GitHub issues](https://github.com/StefanVonRanda/tycho/issues);
-this file is the high-level shape.
+Tycho is 1.0 — the language surface and the spec are stable, and this file is
+a direction, not a promise of dates. Day-to-day work is tracked in [GitHub
+issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
+high-level shape.
 
 ## Where it is
 
-The language, the self-hosted compiler, and the 36-package core library are
+The language, the self-hosted compiler, and the 46-package core library are
 feature-complete for the thesis they exist to prove. The current strength is the
 correctness harness — an adversarial fuzzer, sanitizer lanes over both the compiler and
 the programs it emits, and a golden-locked test suite, all green in a local gate

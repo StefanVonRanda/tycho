@@ -7,12 +7,16 @@
 
 # Tycho
 
-> **Status: a research prototype, not a production language.** Tycho is an
-> experiment testing one idea — implicit arenas under value semantics — and it
-> is pre-1.0: no stability guarantees, no security audit, no package ecosystem,
-> and no Windows. It is, however, heavily tested for its age (see
-> [The testing campaign](#the-testing-campaign)). Use it to learn and to
-> experiment; don't build anything where a compromise would matter.
+> **Status: 1.0 — the language surface and the spec are stable.** Tycho is an
+> experiment testing one idea — implicit arenas under value semantics — and at
+> 1.0 the contract is: the **language surface** (syntax, semantics, the
+> standard-library API) and the **spec** are stable, and bugs in them are
+> regressions. What is deliberately **not** part of the contract: performance
+> tuning and the benches (they move every release), internal implementation
+> details (the emitted C shape, arena sizes), and the areas the spec or
+> [SECURITY.md](SECURITY.md) mark as sharp edges. The full deprecation path is
+> in [docs/guides/corelib.md](docs/guides/corelib.md); versioning is `tychoc
+> --version` + [CHANGELOG.md](CHANGELOG.md).
 
 **An experimental systems language with automatic memory management from lexical
 scope.** Tycho tests one idea: implicit hierarchical arenas under value
@@ -246,7 +250,6 @@ language tick. [`docs/`](docs/README.md) is the full index; the map:
 ## License
 
 Tycho is licensed under the **[MIT License](LICENSE)** — do whatever you want
-with it. AI was used in building this proof-of-concept. It's experimental
-software provided "as is", without warranty; security notes are in
-[SECURITY.md](SECURITY.md), and how to build, test, or contribute is in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+with it. AI was used in building this language. It is provided "as is",
+without warranty; security notes are in [SECURITY.md](SECURITY.md), and how
+to build, test, or contribute is in [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -5,9 +5,9 @@ Draft release notes. Edit this before publishing, then:
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->
 
-Tycho is an experimental proof-of-concept — see the [README](README.md) for what that
-means. This release is offered as prebuilt binaries so you can try the language without
-building from source.
+Tycho 1.0 — the language surface and the spec are stable (see the
+[README](README.md) for the full contract). This release ships prebuilt
+binaries so you can try the language without building from source.
 
 ## Install
 

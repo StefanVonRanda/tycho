@@ -528,3 +528,30 @@ Every module also has a small, readable **usage example** at
 output), as opposed to the assertion-style tests above. `make corelib-examples`
 (→ `examples/corelib/run.sh`) validates them the same three ways against
 `examples/corelib/<name>.out`, with the same dependency skip, and is part of `make ci`.
+
+## The 1.0 API surface
+
+As of 1.0, **every package in `corelib/` is in the stable surface** — all 46
+are tested three ways and golden-locked by `make corelib` and
+`make corelib-examples`, and the API freeze means:
+
+- **Stable.** The public functions of every package keep their names,
+  signatures, and semantics. A bug in them is a regression to fix, not a
+  reason to break the API.
+- **Caveats inside the surface stay:** `core:hash` is non-cryptographic and
+  `core:md5` is broken for security (use `core:sha256`), the codecs' `0x00`
+  caveat holds, and the FFI-backed packages (`core:http`, `core:tls`,
+  `core:crypto`, `core:image`, `core:sqlite`, `core:compress`) need their
+  external library present at build time (the skip-if-absent convention above).
+- **New packages still arrive only through the demand gate** — a real program
+  that needs them — and they join the surface the day they ship, with their
+  test + golden + this guide entry.
+
+**Deprecation path.** A package or function is deprecated by (1) a `deprecated:`
+notice in its doc comment, (2) an entry in `CHANGELOG.md` naming the
+replacement, and (3) a `warning:` on use emitted by the compiler where the
+surface allows it. Deprecated members keep working for the current major
+version. **Removal is a breaking change**: it happens only in a major version
+bump, is recorded in `CHANGELOG.md` and `RELEASE_NOTES.md`, and ships with the
+migration spelled out. Nothing in the 1.0 surface may be removed in a 1.x
+release.
