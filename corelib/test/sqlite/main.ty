@@ -1,0 +1,66 @@
+# corelib test: exercises core:sqlite over an in-memory database (the lane
+# skips when libsqlite3 is absent -- see the deps skip in corelib/run.sh).
+# Output locked to corelib/test/sqlite.out.
+package main
+import "core:sqlite"
+
+fn exec_or_die(d: inout sqlite.Db, sql: string) -> int:
+    match sqlite.exec(&d, sql):
+        Ok(n):
+            return n
+        Err(m):
+            print("exec error: " + m + "\n")
+            exit(1)
+            return -1
+
+fn execp_or_die(d: inout sqlite.Db, sql: string, p: [string]) -> int:
+    match sqlite.exec_params(&d, sql, p):
+        Ok(n):
+            return n
+        Err(m):
+            print("exec error: " + m + "\n")
+            exit(1)
+            return -1
+
+fn query_or_die(d: inout sqlite.Db, sql: string) -> [[string]]:
+    match sqlite.query(&d, sql):
+        Ok(rs):
+            return rs
+        Err(m):
+            print("query error: " + m + "\n")
+            exit(1)
+            return [][string]
+
+fn main():
+    db := sqlite.Db(null)
+    match sqlite.open(":memory:"):
+        Ok(d):
+            db = d
+        Err(m):
+            print("open error: " + m + "\n")
+            exit(1)
+    exec_or_die(&db, "CREATE TABLE users(id INTEGER, name TEXT, age INTEGER)")
+    execp_or_die(&db, "INSERT INTO users VALUES (?, ?, ?)", ["1", "ada", "36"])
+    execp_or_die(&db, "INSERT INTO users VALUES (?, ?, ?)", ["2", "alan", "41"])
+    n := exec_or_die(&db, "UPDATE users SET age = 37 WHERE name = 'ada'")
+    print("changed=" + str(n) + "\n")
+    rows := query_or_die(&db, "SELECT id, name, age FROM users ORDER BY id")
+    print("rows=" + str(len(rows)) + "\n")
+    for r in rows:
+        print(r[0] + " " + r[1] + " " + r[2] + "\n")
+    sub := [][string]
+    match sqlite.query_params(&db, "SELECT name FROM users WHERE age >= ?", ["40"]):
+        Ok(rs):
+            sub = rs
+        Err(m):
+            print("query error: " + m + "\n")
+            exit(1)
+    print("seniors=" + str(len(sub)) + " " + sub[0][0] + "\n")
+    bad := false
+    match sqlite.query(&db, "SELECT * FROM nosuchtable"):
+        Err(_):
+            bad = true
+        Ok(_):
+            bad = false
+    print("bad=" + str(bad) + "\n")
+    sqlite.close(&db)

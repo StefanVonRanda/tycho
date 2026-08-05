@@ -297,6 +297,13 @@ element type instead of a family of per-type siblings.
   strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with
   trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables
   or multi-line strings.
+- **`sqlite`** — a thin wrapper over libsqlite3, bound directly (no
+  hand-written shim — the `extern "sqlite3"` forms name the pkg-config
+  dependency, so the package and its test skip where sqlite3 is absent):
+  `open(path)` (or `":memory:"`), `close(&db)`, `exec(&db, sql)` (change
+  count), `query(&db, sql)` / `query_params(&db, sql, params)` → `[[string]]`
+  (every column read as text), `errmsg(db)`. Parameters bind as text and
+  coerce; fail-closed with sqlite's own messages.
 - **`log`** — a leveled logger, state threaded like `core:rand`'s:
   `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
   msg)` — each prints `[level] message`, dropping messages below the logger's
