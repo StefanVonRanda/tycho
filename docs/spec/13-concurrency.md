@@ -7,7 +7,7 @@ thread boundary, so the concurrency constructs need no `Sendable` marker, no
 lifetime annotations, and no lock machinery in the language.
 
 > Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:528-841`
-> (channel ring `:759-935`, ordering via the cell `seq` release/acquire `:914@c->seq, c->pos + 1, memory_order_release`,`:926@memory_order_acquire) - (pos + 1)`).
+> (channel ring `:759-935`, ordering via the cell `seq` release/acquire `:953@c->seq, c->pos + 1, memory_order_release`,`:965@memory_order_acquire) - (pos + 1)`).
 > The ordering guarantees below (channel delivery order, `select` arm order,
 > happens-before, cross-thread `wait`) were pinned from that runtime.
 
@@ -147,14 +147,14 @@ The fail-closed rules of §22 are unchanged inside such a body: `break`,
 an early exit can never cross a chunk boundary.
 
 > Provenance: `0..<N` parsed at `src/tychoc.c:3351-3376`; parallel-only refusal
-> `src/tychoc.c:3606@par_here`; literal-zero refusal `src/tychoc.c:3609@ival != 0`;
-> any other loop shape under `parallel` refused at `src/tychoc.c:3485@S_FORRANGE`
+> `src/tychoc.c:3617@par_here`; literal-zero refusal `src/tychoc.c:3620@ival != 0`;
+> any other loop shape under `parallel` refused at `src/tychoc.c:3496@S_FORRANGE`
 > (it is the only node the chunker accepts). Chunk fan-out `K = min(ncpu(), N)`
-> `src/tychoc.c:10038-10039`, capped at 64 by `src/tychoc.c:10525@_pk > 64`
-> (the chunk-handle array `src/tychoc.c:10526@_pts[64]` is the reason for the
+> `src/tychoc.c:10038-10039`, capped at 64 by `src/tychoc.c:10542@_pk > 64`
+> (the chunk-handle array `src/tychoc.c:10543@_pts[64]` is the reason for the
 > number); each chunk is a real OS thread,
-> `runtime/tycho_rt.c:740@pthread_create`. A capture is deep-copied only when
-> `src/tychoc.c:10536@type_is_heap(ct)` holds, and `type_is_heap`
+> `runtime/tycho_rt.c:755@pthread_create`. A capture is deep-copied only when
+> `src/tychoc.c:10553@type_is_heap(ct)` holds, and `type_is_heap`
 > (`src/tychoc.c:1318-1340`) has no channel arm, so a `Channel(T)` capture is
 > passed by value — one queue shared by every chunk.
 

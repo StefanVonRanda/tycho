@@ -164,12 +164,19 @@ static void *xmalloc(size_t n) {
  * and the guard appends ".0" to text that already had a fraction -- which is
  * exactly how `1,5` became `1,5.0`. The guard is correct because of the
  * conversion above it; changing one without the other reintroduces the bug. */
+#ifndef _WIN32
 static locale_t c_numeric_handle(void) {
     static locale_t h;      /* tychoc is single-threaded: no pthread_once needed, */
     static int tried;       /* unlike the runtime twin, whose callers are tasks.  */
     if (!tried) { tried = 1; h = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0); }
     return h;               /* 0 on failure -- callers take the fallback leg */
 }
+#endif
+
+/* Windows has no POSIX newlocale/uselocale (mingw exposes only the MSVC-style
+ * _locale_t/_create_locale), so c_numeric_handle does not exist there and the
+ * two callers below take their localeconv-based fallback legs instead -- the
+ * same legs they take on any POSIX host where newlocale fails. */
 
 /* The ambient LC_NUMERIC separator, which may be several bytes; "." when it is
  * already the C one. Fallback legs only. */
@@ -180,6 +187,7 @@ static const char *ambient_decimal_point(void) {
 
 /* READ. Parse the float literal [s, end) as C would. */
 static double c_strtod(const char *s, const char *end) {
+#ifndef _WIN32
     locale_t h = c_numeric_handle();
     if (h) {
         locale_t prev = uselocale(h);
@@ -187,6 +195,7 @@ static double c_strtod(const char *s, const char *end) {
         uselocale(prev);            /* prev may be LC_GLOBAL_LOCALE; that is legal */
         return v;
     }
+#endif
     const char *dp = ambient_decimal_point();
     if (dp[0] == '.' && dp[1] == '\0') return strtod(s, NULL);
     size_t dplen = strlen(dp), n = 0;
@@ -203,14 +212,16 @@ static double c_strtod(const char *s, const char *end) {
  * the caller's, and the comment above says why the two belong together).
  * Returns the length. %.17g round-trips a double exactly. */
 static int c_dtoa(char *b, size_t bs, double v) {
-    locale_t h = c_numeric_handle();
     int m;
+#ifndef _WIN32
+    locale_t h = c_numeric_handle();
     if (h) {
         locale_t prev = uselocale(h);
         m = snprintf(b, bs, "%.17g", v);
         uselocale(prev);
         return m;
     }
+#endif
     m = snprintf(b, bs, "%.17g", v);
     const char *dp = ambient_decimal_point();
     size_t dplen = strlen(dp);
@@ -4432,18 +4443,24 @@ static int dir_exists(const char *p) {
 }
 
 /* Directory containing the running tychoc binary. Tries /proc/self/exe (Linux),
- * then argv[0]. Returns "." when no directory component is known. Computed once. */
+ * then argv[0] (Windows has no /proc; argv0 is the exe path). Returns "." when
+ * no directory component is known. Computed once. */
 static const char *exe_dir(void) {
     static char dirbuf[PATH_MAX];
     static int computed = 0;
     if (computed) return dirbuf[0] ? dirbuf : NULL;
     computed = 1;
     char buf[PATH_MAX];
+#ifndef _WIN32
     ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
     if (n > 0) buf[n] = '\0';
-    else if (g_argv0) { strncpy(buf, g_argv0, sizeof buf - 1); buf[sizeof buf - 1] = '\0'; }
+    else
+#endif
+    if (g_argv0) { strncpy(buf, g_argv0, sizeof buf - 1); buf[sizeof buf - 1] = '\0'; }
     else { dirbuf[0] = '\0'; return NULL; }
     char *slash = strrchr(buf, '/');
+    char *bs = strrchr(buf, '\\');          /* Windows separators */
+    if (bs && (!slash || bs > slash)) slash = bs;
     if (!slash) strcpy(dirbuf, ".");
     else { *slash = '\0'; strcpy(dirbuf, buf[0] ? buf : "/"); }
     return dirbuf;
@@ -12986,8 +13003,17 @@ static char **g_pkg_seen;   static int g_npkg_seen   = 0, g_pkg_seen_cap = 0;   
 static char *g_pkg_active[64];  static int g_npkg_active = 0;   /* on the current DFS path */
 
 static char *canon_dir(const char *dir) {
+#ifndef _WIN32
     char *r = realpath(dir, NULL);
     return r ? r : xstrndup(dir, strlen(dir));
+#else
+    /* Windows: realpath(dir, NULL) is a POSIX form mingw does not declare;
+     * _fullpath wants a caller buffer (MAX_PATH from <limits.h>). */
+    char *r = malloc(PATH_MAX + 1);
+    if (r && _fullpath(r, dir, PATH_MAX + 1)) return r;
+    free(r);
+    return xstrndup(dir, strlen(dir));
+#endif
 }
 
 /* Scan a lexed file's header for its import paths. The grammar puts every
