@@ -1,0 +1,11 @@
+entries=4
+a.txt method=0 usz=10
+b.txt method=0 usz=44
+c.bin method=0 usz=4
+d.txt method=8 usz=800
+a=hello zip
+b=the quick brown fox jumps over the lazy dog
+c=aaaa
+d roundtrip=true
+missing=true
+crc=cbf43926

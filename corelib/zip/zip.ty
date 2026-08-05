@@ -1,0 +1,220 @@
+# core:zip -- a ZIP archive reader and writer. Import with `import "core:zip"`.
+#
+#   entries := zip.list(archive)                 # [Entry] metadata, in order
+#   body := zip.extract(archive, "a.txt")        # the stored/deflated bytes
+#   out := zip.create([Entry("a.txt", data1), Entry("b.bin", data2)])
+#
+# The reader walks the central directory (names, methods, sizes, CRCs) and
+# extracts an entry by seeking its local header -- an entry that is missing,
+# corrupt, or whose stored CRC does not match the inflated bytes yields EMPTY
+# bytes (fail-closed; nothing is guessed). Method 0 (stored) and 8 (deflate)
+# are supported; anything else extracts as empty. The writer emits a
+# standards-shaped archive (local headers + central directory + EOCD, CRC-32
+# computed here, deflate via core:compress's raw stream, DOS time/date fields
+# zeroed). Entry names are treated as NAMES, not paths -- extracting never
+# touches the filesystem, so there is no traversal hazard here.
+#
+# The whole archive is `bytes` in and out; a caller that wants files uses
+# core:io. Multi-disk archives and zip64 are out of scope.
+package zip
+
+import "core:compress"
+
+struct Entry:
+    name: string
+    data: bytes
+
+struct Meta:                      # one central-directory entry (list())
+    name: string
+    method: int                   # 0 stored, 8 deflate
+    usize: int                    # uncompressed size
+    csize: int                    # compressed size
+    crc: int
+
+# --- little-endian readers --------------------------------------------------
+
+fn le16(b: bytes, at: int) -> int:
+    return b[at] | (b[at + 1] << 8)
+fn le32(b: bytes, at: int) -> int:
+    return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at + 3] << 24)
+
+# CRC-32 (IEEE 802.3), bit-by-bit, in u32 like core:hash's.
+fn crc32(b: bytes) -> int:
+    crc := to_u32(4294967295)
+    for i := 0; i < len(b); i += 1:
+        crc = crc ^ to_u32(b[i])
+        for k := 0; k < 8; k += 1:
+            if (crc & 1) == 1:
+                crc = (crc >> 1) ^ to_u32(3988292384)
+            else:
+                crc = crc >> 1
+    return to_int(crc ^ to_u32(4294967295))
+
+# --- reading ----------------------------------------------------------------
+
+# The entries of an archive, in central-directory order (insertion order).
+fn list(b: bytes) -> [Meta]:
+    out := []Meta
+    # find the EOCD: scan backwards from the end for the 0x06054b50 signature
+    eocd := find_eocd(b)
+    if eocd < 0:
+        return out
+    n := le16(b, eocd + 10)
+    cd_off := le32(b, eocd + 16)
+    pos := cd_off
+    for i := 0; i < n; i += 1:
+        if pos + 46 > len(b) or le32(b, pos) != 33639248:   # 0x02014b50
+            return out
+        method := le16(b, pos + 10)
+        crc := le32(b, pos + 16)
+        csize := le32(b, pos + 20)
+        usize := le32(b, pos + 24)
+        nlen := le16(b, pos + 28)
+        elen := le16(b, pos + 30)
+        clen := le16(b, pos + 32)
+        if pos + 46 + nlen + elen + clen > len(b):
+            return out
+        name := to_str(b[pos + 46:pos + 46 + nlen])
+        push(out, Meta(name, method, usize, csize, crc))
+        pos = pos + 46 + nlen + elen + clen
+    return out
+
+fn find_eocd(b: bytes) -> int:
+    # the EOCD signature is at least 22 bytes from the end; scan back
+    i := len(b) - 22
+    for i >= 0:
+        if le32(b, i) == 101010256:      # 0x06054b50
+            return i
+        i = i - 1
+    return -1
+
+# The bytes of one entry: seek its local header, read the data, inflate if
+# method 8, and verify the CRC. Empty on any inconsistency (fail-closed).
+fn extract(b: bytes, name: string) -> bytes:
+    for e in list(b):
+        if e.name == name:
+            return entry_body(b, e)
+    return to_bytes([]int)
+
+fn entry_body(b: bytes, e: Meta) -> bytes:
+    # walk the central directory again to find this entry's local offset
+    eocd := find_eocd(b)
+    if eocd < 0:
+        return to_bytes([]int)
+    n := le16(b, eocd + 10)
+    cd_off := le32(b, eocd + 16)
+    pos := cd_off
+    off := -1
+    for i := 0; i < n; i += 1:
+        if pos + 46 > len(b) or le32(b, pos) != 33639248:
+            return to_bytes([]int)
+        nlen := le16(b, pos + 28)
+        elen := le16(b, pos + 30)
+        clen := le16(b, pos + 32)
+        nm := to_str(b[pos + 46:pos + 46 + nlen])
+        if nm == e.name:
+            off = le32(b, pos + 42)
+            break
+        pos = pos + 46 + nlen + elen + clen
+    if off < 0:
+        return to_bytes([]int)
+    if off + 30 > len(b) or le32(b, off) != 67324752:   # 0x04034b50
+        return to_bytes([]int)
+    nlen := le16(b, off + 26)
+    elen := le16(b, off + 28)
+    start := off + 30 + nlen + elen
+    if start + e.csize > len(b):
+        return to_bytes([]int)
+    raw := b[start:start + e.csize]
+    data := to_bytes([]int)
+    if e.method == 0:
+        data = raw
+    elif e.method == 8:
+        data = compress.raw_decompress(raw)
+    else:
+        return to_bytes([]int)
+    if len(data) != e.usize or crc32(data) != e.crc:
+        return to_bytes([]int)
+    return data
+
+# --- writing ----------------------------------------------------------------
+
+fn create(entries: [Entry]) -> bytes:
+    out := []int
+    offs := []int                          # local header offsets, for the CD
+    cdatas := []string                      # per-entry compressed bytes
+    methods := []int
+    crcs := []int
+    for e in entries:
+        push(offs, len(out))
+        cdata := compress.raw_compress(e.data)
+        method := 8
+        if len(cdata) >= len(e.data):      # deflate did not help: store raw
+            method = 0
+            cdata = e.data
+        push(cdatas, to_str(cdata))
+        push(methods, method)
+        push(crcs, crc32(e.data))
+        # local file header
+        push32(&out, 67324752)              # 0x04034b50
+        push16(&out, 20)                    # version needed
+        push16(&out, 0)                     # flags
+        push16(&out, method)
+        push16(&out, 0)                     # dos time
+        push16(&out, 0)                     # dos date
+        push32(&out, crc32(e.data))
+        push32(&out, len(cdata))
+        push32(&out, len(e.data))
+        push16(&out, len(e.name))
+        push16(&out, 0)                     # extra len
+        push_str(&out, e.name)
+        push_bytes(&out, cdata)
+    cd_start := len(out)
+    for i := 0; i < len(entries); i += 1:
+        e := entries[i]
+        cdata := cdatas[i]
+        method := methods[i]
+        c := crcs[i]
+        push32(&out, 33639248)              # 0x02014b50
+        push16(&out, 20)                    # version made by
+        push16(&out, 20)                    # version needed
+        push16(&out, 0)                     # flags
+        push16(&out, method)
+        push16(&out, 0)
+        push16(&out, 0)
+        push32(&out, c)
+        push32(&out, len(cdata))
+        push32(&out, len(e.data))
+        push16(&out, len(e.name))
+        push16(&out, 0)
+        push16(&out, 0)
+        push16(&out, 0)
+        push16(&out, 0)
+        push32(&out, 0)
+        push32(&out, offs[i])
+        push_str(&out, e.name)
+    cd_size := len(out) - cd_start
+    push32(&out, 101010256)                 # 0x06054b50
+    push16(&out, 0)
+    push16(&out, 0)
+    push16(&out, len(entries))
+    push16(&out, len(entries))
+    push32(&out, cd_size)
+    push32(&out, cd_start)
+    push16(&out, 0)
+    return to_bytes(out)
+
+fn push16(b: inout [int], v: int):
+    push(b, v & 255)
+    push(b, (v >> 8) & 255)
+fn push32(b: inout [int], v: int):
+    push(b, v & 255)
+    push(b, (v >> 8) & 255)
+    push(b, (v >> 16) & 255)
+    push(b, (v >> 24) & 255)
+fn push_str(b: inout [int], s: string):
+    for i := 0; i < len(s); i += 1:
+        push(b, s[i])
+fn push_bytes(b: inout [int], by: bytes):
+    for i := 0; i < len(by); i += 1:
+        push(b, by[i])

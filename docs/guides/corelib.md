@@ -297,6 +297,12 @@ element type instead of a family of per-type siblings.
   strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with
   trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables
   or multi-line strings.
+- **`zip`** — a ZIP archive reader and writer over core:compress's raw
+  deflate: `list(bytes)` (names, methods, sizes, CRCs), `extract(bytes, name)`
+  (fail-closed: missing/corrupt entries or a CRC mismatch yield empty), and
+  `create([Entry(name, data)])` (stored or deflated, CRC-32 computed here).
+  Entries are names, not paths — extracting never touches the filesystem.
+  The writer's output is read back byte-exactly by Python's zipfile.
 - **`sqlite`** — a thin wrapper over libsqlite3, bound directly (no
   hand-written shim — the `extern "sqlite3"` forms name the pkg-config
   dependency, so the package and its test skip where sqlite3 is absent):

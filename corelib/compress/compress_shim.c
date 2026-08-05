@@ -86,3 +86,42 @@ void zx_decompress(const unsigned char *data, tycho_int len, unsigned char **out
     *out = buf;
     inflateEnd(&s);
 }
+
+/* Raw DEFLATE (RFC 1951) -- no gzip/zlib wrapper. windowBits -15. Used by
+ * core:zip, whose entries are raw deflate streams. Same fail-closed shape. */
+void zx_raw_deflate(const unsigned char *data, tycho_int len, unsigned char **out, tycho_int *outlen) {
+    *out = NULL; *outlen = 0;
+    if (len < 0) return;
+    z_stream s; memset(&s, 0, sizeof s);
+    if (deflateInit2(&s, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY) != Z_OK) return;
+    uLong cap = deflateBound(&s, (uLong)len) + 64;
+    unsigned char *buf = (unsigned char *)malloc(cap);
+    if (!buf) { deflateEnd(&s); return; }
+    s.next_in = (Bytef *)data; s.avail_in = (uInt)len;
+    s.next_out = buf; s.avail_out = (uInt)cap;
+    if (deflate(&s, Z_FINISH) != Z_STREAM_END) { free(buf); deflateEnd(&s); return; }
+    *outlen = (tycho_int)s.total_out; *out = buf; deflateEnd(&s);
+}
+
+void zx_raw_inflate(const unsigned char *data, tycho_int len, unsigned char **out, tycho_int *outlen) {
+    *out = NULL; *outlen = 0;
+    if (len < 0) return;
+    z_stream s; memset(&s, 0, sizeof s);
+    if (inflateInit2(&s, -15) != Z_OK) return;
+    size_t cap = (len > 0 ? (size_t)len * 4u : 64u) + 64u;
+    unsigned char *buf = (unsigned char *)malloc(cap);
+    if (!buf) { inflateEnd(&s); return; }
+    s.next_in = (Bytef *)data; s.avail_in = (uInt)len;
+    s.next_out = buf; s.avail_out = (uInt)cap;
+    for (;;) {
+        int rc = inflate(&s, Z_NO_FLUSH);
+        if (rc == Z_STREAM_END) break;
+        if (rc != Z_OK) { free(buf); inflateEnd(&s); return; }
+        if (s.avail_out == 0) {
+            size_t ncap = cap * 2u; unsigned char *nb = (unsigned char *)realloc(buf, ncap);
+            if (!nb) { free(buf); inflateEnd(&s); return; }
+            buf = nb; s.next_out = buf + s.total_out; s.avail_out = (uInt)(ncap - s.total_out); cap = ncap;
+        }
+    }
+    *outlen = (tycho_int)s.total_out; *out = buf; inflateEnd(&s);
+}
