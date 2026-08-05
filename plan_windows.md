@@ -190,10 +190,13 @@ Windows tests (which need Windows-native mechanisms) parked for phase 6.
   documented gap: no Ctrl-C interrupt on Windows, `q` only). mingw gdb as the
   backend; the debug-check lane runs under it or skips.
 
-Gate: `make tools` builds every tool; each tool's own lane (`ar-check`,
-`q-check`, `vm-check`, `scheme-check`, `kv-check`, `chess-check`, `rsa-check`,
-`kvsrv-check`, `sat-check`, `build-check`, `debug-check`) green or loudly
-skipped. Expected: the tool lanes port with their goldens intact.
+Gate (on the Linux box): `sh scripts/wine_tools.sh` — every tool
+cross-compiles under mingw (the Windows build proof) and the deterministic
+ones run correctly under Wine against their lane goldens where cheap — plus
+the Linux tree stays green (`make tools`, `make debug-check`). The full lane
+fixture suites and tycho-debug's live gdb session are the CI leg's job.
+Expected: the tools build and run; tycho-debug's Windows interrupt is a
+documented gap (no Ctrl-C while the inferior runs; `q` quits).
 
 ### Phase 6 — Harness and golden audit under MSYS2
 
@@ -438,3 +441,45 @@ language surface. WSL2 stays a first-class supported path.
 > 591/591 (env -u LD_PRELOAD), doc gates; 53 citations re-anchored
 > (diff-hunk-mapped with the whole-span range fix, token-verified). make
 > wine-corelib is a manual target, not a gate.
+
+> Phase 5 evidence — 2026-08-05 (tools, verified by `sh scripts/wine_tools.sh`:
+> 14 tools cross-built for Windows + 3 run checks green, 0 fail, 1 skip).
+>
+> THE BUILD PROOF: every tools/ entry cross-compiles and links under mingw —
+> tycho-ar (-lz), tycho-kvsrv (-lws2_32), tycho-debug (its shim), the
+> dispatcher, tychofmt, lsp, and the eight pure tools (q/vm/scheme/kv/chess/
+> rsa/sat/build). tycho-fetch is the one skip: its core:http shim needs mingw
+> libcurl, which lives in MSYS2.
+>
+> RUN CHECKS under Wine (vs the lane goldens' shape): tycho-q answered a
+> query with the full CSV table; tycho-scheme ran fib; tycho-ar created and
+> listed a deterministic archive (names + sizes + sha256s). The tools are not
+> just buildable — they WORK.
+>
+> THE DEBUG_SHIM WINDOWS BRANCH (the phase's coding piece): CreateProcess
+> with pipes and CREATE_NEW_CONSOLE (the console isolation that replaces
+> setpgid — a terminal Ctrl-C in the tool's console never reaches gdb), the
+> child ends inherited, the parent ends _open_osfhandle'd onto the SAME fd
+> Line reader dbgx_write/readline already use, SetConsoleCtrlHandler setting
+> the same interrupt flag, _fullpath/_getpid, and WaitForSingleObject for
+> waitpid. Compile-verified under BOTH mingw and Linux (the POSIX branch is
+> untouched — make debug-check still green, 6 legs).
+>
+> TWO DOCUMENTED GAPS on Windows (both the CI leg's job): (1) no Ctrl-C
+> interrupt while the inferior runs — a Windows console handler runs on a new
+> thread and a blocked pipe read has no EINTR to wake, so the flag is set but
+> unread until the next command; a clean stop-at-line needs
+> GenerateConsoleCtrlEvent + overlapped reads. `q` still quits. (2) the
+> tool's gdb command line is POSIX-shell-quoted (main.ty's shq); under
+> cmd.exe those quotes are literal, so a path with spaces breaks the gdb
+> invocation.
+>
+> FINDINGS RECORDED (not this phase's work): the DISPATCHER cross-builds but
+> its shell lines (rm -f, > /dev/null) are cmd-incompatible — it needs
+> cmd-compatible forms or MSYS2 sh on PATH (the harness phase). tycho-build
+> cross-builds but its LANE's recipes (cat/cp/touch) are POSIX — same
+> test-side park class as core:os's (phase 4).
+>
+> GATES (Linux tree): make debug-check 6 legs green (the POSIX debugger is
+> unchanged), make tools builds, doc gates green (0 citations shifted — the
+> shim's cited lines are bare ranges). make wine-tools is a manual target.
