@@ -208,9 +208,14 @@ documented gap (no Ctrl-C while the inferior runs; `q` quits).
   level (normalize before compare), not by re-recording goldens per platform.
 - The fuzz lanes (Python — portable) and the editors lanes.
 
-Gate: `make ci` (N=0) green on the Windows box with only the named skips.
-Expected: the goldens are platform-identical; any that cannot be are
-re-recorded deliberately with the reason in the commit.
+Gate (the Linux box, done): the golden drift AUDIT — every byte-compared
+golden scanned for Windows-hostile content (CRLF, absolute paths, platform
+strings), the Linux-only lanes enumerated to skip loudly, and the remaining
+runnable lane (ffi) added to the wine coverage. The VERDICT — `make ci`
+(N=0) green under MSYS2 sh/make on a real Windows environment — is the CI
+leg's, by definition; the four wine lanes plus wine-ffi are its Linux
+approximation. Expected: the goldens are platform-identical; any that cannot
+be are re-recorded deliberately with the reason in the commit.
 
 ### Phase 7 — Close: full sweep, release, and documentation
 
@@ -483,3 +488,48 @@ language surface. WSL2 stays a first-class supported path.
 > GATES (Linux tree): make debug-check 6 legs green (the POSIX debugger is
 > unchanged), make tools builds, doc gates green (0 citations shifted — the
 > shim's cited lines are bare ranges). make wine-tools is a manual target.
+
+> Phase 6 evidence (the Linux half) — 2026-08-05: the golden audit is DONE,
+> the ffi lane gained wine coverage, and the verdict itself is the CI leg's.
+>
+> THE GOLDEN DRIFT AUDIT (scanned every tests/*.out, tests/conc/*.out,
+> tests/pkg/*.out, corelib/test/*.out, examples/*/expected.out,
+> tools/*/expected.out): the goldens are byte-clean for Windows — no CRLF
+> drift (the binary-stdio fix of phase 2 made emitted output LF; the one
+> golden containing \\r is corelib/test/httpd.out's intentional HTTP \\r\\n in
+> raw response lines, and httpd passes byte-identical under Wine anyway), no
+> absolute /tmp paths, no platform strings (linux/x86_64/uname), no drive
+> letters. The only path-looking golden (corelib/test/path.out) is pure
+> string-math output (forward-slash normalization) — platform-stable. The
+> phase-6 expectation "goldens platform-identical" is essentially ALREADY
+> MET, verified two ways: the wine lanes and this scan.
+>
+> THE ONE REAL FIND: the FFI fixture's boundary used C `long`, which is
+> 32-bit on Windows but 64-bit on Linux — so `ffi_read(null)` returned
+> 4294967295 (0xFFFFFFFF, upper bits unspecified) instead of -1 under Wine.
+> Fixed: tests/ffi/demo.c's extern-facing `long` -> `int64_t` (tycho_int's
+> width). Linux-identical (long == int64_t there; make ffi still green,
+> ASan-clean under env -u LD_PRELOAD) and Windows-correct (the wine-ffi
+> golden is byte-identical).
+>
+> THE FFI LANE UNDER WINE (scripts/wine_ffi.sh, 10/10): the golden over a
+> mingw-built libffidemo.a (byte-identical), the --shim leg (triple=42), the
+> package-scoped extern (tri6=42), the sized-int ABI values (5032704
+> 8589934592 -5), and the compiler-side REJECTIONS through the MINGW compiler
+> (the four affine handle bans, the shell-injection refusals -- driven with
+> -o, because the guard lives at link-line construction which --emit-c skips
+> -- and the inout-string out-param ban). The one leg that cannot run here is
+> the ASan/UBSan recompile: mingw ASan is experimental -- the CI's job.
+>
+> THE LINUX-ONLY LANES (skip loudly on Windows, with reasons): locale-check
+> (its LD_PRELOAD setlocale constructor is Linux-only), asan-self, ilp32,
+> conc's ASan/TSan legs (TSan has no Windows-target support in gcc at all),
+> and the ffi lane's ASan leg (above). The editors lanes are node/tree-sitter
+> based -- portable, not Linux-only.
+>
+> THE PARK LIST, consolidated (the phase-6 golden-audit inputs, all recorded
+> with their reasons in the phase-4/5 evidence): os/datetime/signal corelib
+> tests (POSIX-shell mechanisms and POSIX-TZ sign), tycho-build's lane recipes
+> (cat/cp/touch), the dispatcher's cmd-incompatible shell lines (rm -f, >
+> /dev/null), and tycho-fetch (mingw curl). Each needs a Windows-native test
+> variant in the CI leg.
