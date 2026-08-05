@@ -21,10 +21,10 @@
 ## Why it is feasible at all — the assessment in one screen
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
-  `dirent` (opendir/readdir/closedir, `src/tychoc.c:4440@opendir`), `popen`
-  (`src/tychoc.c:13241@popen`), `realpath`, `access`, `vasprintf`
-  (`src/tychoc.c:98@vasprintf`), and `newlocale/uselocale`
-  (`src/tychoc.c:193@uselocale`). mingw-w64 provides no POSIX
+  `dirent` (opendir/readdir/closedir, `src/tychoc.c:4445@opendir`), `popen`
+  (`src/tychoc.c:13246@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:103@vasprintf`), and `newlocale/uselocale`
+  (`src/tychoc.c:198@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
   master 2026-08-05: only the MSVC-style `_locale_t` API) -- the compiler and
   runtime already have localeconv-based fallback legs, so this costs a guard,
@@ -137,10 +137,18 @@ evidence of the port, never a Windows verdict.
   binary naming, shim discovery (`--print-shims`), pkg-config `deps` flags.
 - `-g`/`#line` under mingw gdb (DWARF is supported; verify stepping).
 - The `--version`/usage output (no change expected).
+- **The compiler's own binary stdio** (found this phase): `src/tychoc.c` needs
+  the same `_setmode` binary-mode fix as the runtime — the CRT's text mode
+  would CRLF the diagnostics goldens and the `--print-shims` output that
+  shells splice onto cc lines.
 
-Gate: `make test` on the Windows box (or `test-fast`), `make tools-check`.
-Expected: the 591 fixtures pass under mingw; any fixture that reddens on
-Windows only (path separators, line endings) is parked for Phase 6's golden
+Gate (on the Linux box): `sh scripts/wine_test.sh` — the whole plain corpus
+(examples + tests + pkg packages + abort + diag) cross-compiled and run under
+Wine against the Linux goldens, byte-for-byte — plus `--print-shims`/
+`--print-deps` parity and the `-g`/DWARF line-table check, and the Linux tree
+stays green (`make test`, `make tools-check`). Expected: the corpus passes
+under mingw; any fixture that reddens only for Windows-environment reasons
+(paths, shell-out, POSIX-only assertions) is PARKED for phase 6's golden
 audit rather than patched ad hoc.
 
 ### Phase 4 — Corelib shims
@@ -328,3 +336,46 @@ language surface. WSL2 stays a first-class supported path.
 > re-anchored 14 citations (diff-hunk-mapped, token-verified, gate re-run
 > to zero). `make wine-smoke` is a manual target, not a gate and not in
 > make ci.
+
+> Phase 3 evidence — 2026-08-05 (toolchain verification on the Linux box via
+> scripts/wine_test.sh; the definitive make-test-on-Windows pass stays the
+> windows CI leg).
+>
+> CORPUS UNDER WINE: 318 fixtures (plain corpus + examples, 15 package
+> programs, 17 runtime aborts, 23 diagnostics goldens) — **317 byte-identical
+> to the Linux goldens, 1 park item**. The abort fixtures all die cleanly
+> with a 'tycho:' message; the 23 diagnostics goldens match the MINGW
+> compiler's stderr byte-for-byte (which is what the compiler binary-stdio
+> fix this phase was FOR).
+>
+> THE ONE PARK ITEM: tests/float_str_locale — its `rt=` column asserts
+> `rt=1` from the runtime roundtrip test hook, which returns -1 on Windows
+> BY DESIGN (the hook needs newlocale, absent from mingw-w64 at every
+> version — phase 1/2). The float formatting itself (1.5 = 1.5) is correct
+> under Wine; only the POSIX-only assertion differs. Phase 6: split the
+> fixture or give it a Windows-aware golden.
+>
+> TOOLCHAIN: `--print-shims` and `--print-deps` output is IDENTICAL between
+> the Linux and mingw compilers (transitive shim closure + pkg-config names
+> are pure compiler-side). The pkg-config RESOLUTION cannot run under Wine
+> (the Linux-side pkg-config binary is unreachable from cmd.exe) — the same
+> environment class as the cc invocation; on a real MSYS2 host pkg-config
+> exists. `-g`: the emitted C's `#line` directives map into the DWARF line
+> table — Debian's gdb-mingw-w64 (a NATIVE Linux cross-gdb) resolves
+> `info line prog.ty:13` to the right address and accepts a `prog.ty:13`
+> breakpoint. Live STEPPING under gdb cannot be driven from the Linux side
+> (the cross-gdb cannot exec a PE; the wine exec dance is unreliable) — that
+> half is the CI leg's job on real Windows.
+>
+> COMPILER FIX (this phase): src/tychoc.c gains the same _WIN32 binary
+> stdout/stderr `_setmode` as the runtime — without it the diagnostics
+> goldens and `--print-shims`/`-deps` output would carry CRLF on Windows.
+>
+> SHELL-OUT FINDING (recorded for phases 4/5): os.system on Windows runs
+> cmd.exe, not sh — `rm -f`, `> /dev/null`, tar pipelines and the build
+> tool's recipes need the MSYS2 sh or cmd-compatible forms. None of the
+> plain corpus fixtures shell out, so nothing reddened for it here.
+>
+> GATES (Linux tree): make test 591/591, tools-check ok, goldens-check ok,
+> doc gates ok (117 citations re-anchored, diff-hunk-mapped and
+> token-verified). make wine-test is a manual target, not a gate.

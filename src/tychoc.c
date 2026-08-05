@@ -26,7 +26,12 @@
 #include <inttypes.h>
 #include <dirent.h>
 #include <unistd.h>
-#include <locale.h>    /* newlocale/uselocale: the "C" LC_NUMERIC float literals are read and written in */
+#include <locale.h>
+#ifdef _WIN32
+#include <io.h>         /* _setmode/_fileno: binary stdout/stderr (the CRT's */
+#include <fcntl.h>      /* text mode adds \r to every \n -- diag goldens,    */
+#endif                  /* --print-shims output spliced onto cc lines, and     */
+                        /* --version would all see different bytes than POSIX) */    /* newlocale/uselocale: the "C" LC_NUMERIC float literals are read and written in */
 #include <float.h>     /* DBL_MAX/FLT_MAX: the float- and f32-literal overflow tests. NOT math.h/isinf -- tychoc links without -lm */
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
@@ -13322,6 +13327,10 @@ static char *c_escape_path(const char *p) {
 }
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+#endif
     g_argv0 = argv[0];
     const char *input = NULL;
     const char *out   = NULL;
