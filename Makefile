@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check selfhost-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check selfhost-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -48,8 +48,14 @@ tychofmt: tychoc tools/tychofmt.ty
 tycho-lsp: tychoc tools/lsp.ty tools/lsp_shim.c
 	./tychoc tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
 
-# build the whole daily-driver toolchain (driver + formatter + language server)
-tools: tycho tychofmt tycho-lsp
+# tycho-debug -- the gdb adapter (compiles with -g, drives a gdb MI session).
+# A standalone package (tools/tycho-debug/) because importing core:* needs a
+# package header; its spawn/pipe/signal companion is tools/tycho-debug/debug_shim.c.
+tycho-debug: tychoc tools/tycho-debug/main.ty tools/tycho-debug/debug_shim.c
+	./tychoc tools/tycho-debug/main.ty --shim tools/tycho-debug/debug_shim.c -o tycho-debug
+
+# build the whole daily-driver toolchain (driver + formatter + language server + debugger)
+tools: tycho tychofmt tycho-lsp tycho-debug
 
 # regression guard for the tooling: formatter idempotence + semantic preservation
 # (emit-C identical before/after) and an LSP JSON-RPC smoke test. Part of `make ci`.
@@ -307,6 +313,28 @@ ar-check: tychoc
 # recipe skipping its dependents, determinism, and exit-2 errors.
 build-check: tychoc
 	@sh tools/tycho-build/run.sh
+
+# debug-check: the gate for tycho-debug, the gdb adapter in tools/tycho-debug/.
+# Same shape and same reasoning as ar/q/vm-check above -- a batch-ish program,
+# so it gates behaviorally rather than with a golden (the transcript includes
+# gdb's own output, which drifts across gdb versions): build the tool, run
+# scripted sessions over fixtures the runner writes, and assert breakpoint
+# set + hit on the right source line, stripped-C-name locals, print, step,
+# clean quit, run-to-completion with the program's own output, a Ctrl-C
+# interrupt of a running inferior, fail-closed refusals, and the `tycho debug`
+# dispatcher wrapper end to end. SKIPS loudly when gdb is absent (an external
+# dependency like sqlite3/libpng, not a tool bug).
+#
+# It is the only lane that RUNS tycho-debug: scripts/tools_check.sh sweeps
+# every .ty in the tree with `--emit-c`, so a syntax error already reddens
+# step [9], but scripts/entrypoints.sh globs examples/*/ plus server/main.ty
+# and never looks under tools/. Without this the debugger could stop breaking,
+# stop stepping, or hang on Ctrl-C with every other gate green.
+#
+# ~6s, measured 2026-08-05. In `make ci` as step [3p/22].
+# See tools/tycho-debug/run.sh.
+debug-check: tychoc
+	@sh tools/tycho-debug/run.sh
 
 # q-check: the gate for tycho-q, the SQL-ish query tool in tools/tycho-q/.
 # Same shape and same reasoning as ar-check above -- a batch program, so it gates
@@ -638,7 +666,7 @@ hooks:
 # toolchain itself, and `clean` is where that leftover belongs. Same rationale as the
 # matching .gitignore block; verified 2026-07-30, see the loops-cleanup plan.
 clean:
-	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c build/tycho_rt_embed.h
+	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c
 	rm -f examples/arrays examples/arrays.c

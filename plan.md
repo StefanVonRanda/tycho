@@ -226,3 +226,53 @@ Expected: the README's status banner flips from research prototype to 1.0.
 > malloc'd copy, matching the bytes-from-C convention where the wrapper
 > frees; returning the Resp's own buffer double-freed — found and fixed).
 > tycho-fetch uses it, which is its integration test.
+
+> Phase 3 evidence — 2026-08-05: the gdb adapter landed, all gates green
+> (tools-check incl. the emit-c of the new tool and the changed dispatcher,
+> debug-check 6 legs, build-check 7 legs, doc gates, goldens-check).
+>
+> DECISION — gdb adapter over a built-in debugger, per the phase's "decided in
+> the phase": `tools/tycho-debug/` (its own directory, the tycho-ar trap),
+> `tycho-debug [-b line]... <program.ty> [args...]`, wrapped as `tycho debug`
+> in the dispatcher (TYCHODEBUG env, same pattern as TYCHOFMT). The tool
+> compiles with `-g` itself (absolute path, so breakpoints resolve from any
+> cwd), spawns gdb in MI mode over two pipes (a small fork/pipe/signal shim,
+> debug_shim.c — core:os is system/popen only and can't express a live
+> session), and runs a REPL: b/r/n/s/c/p/loc/bt/l/`$ <gdb>`/q, Ctrl-D quits,
+> Ctrl-C interrupts. Breakpoints are by source line; locals are shown with the
+> `h_` prefix stripped and arena machinery (`_parent`, `_scope`, `_t`,
+> `_scr*`) hidden; `p` and `$` use the raw emitted C names. `-g` line info is
+> single-file only, so a `package` build is refused up front with the
+> compiler's own explanation.
+>
+> The interrupt design was probed empirically on gdb 17.2 and the naive route
+> rejected: `-gdb-set mi-async on` makes the FIRST -exec-run miss every
+> breakpoint and swallow the inferior's output, and in sync mode gdb does not
+> read commands while the inferior runs (so MI `-exec-interrupt` sits
+> unprocessed in the pipe). Working design: gdb in its own process group
+> (setpgid in the shim), the tool's SIGINT handler sets a sig_atomic_t flag,
+> a blocked read EINTRs, and the tool sends SIGINT to the INFERIOR's pid
+> (parsed from `=thread-group-started`; killed via the shim) — gdb is the
+> tracer, so it intercepts the signal, stops the inferior at its CURRENT
+> source line, and reports `*stopped`. One consequence: core:signal is NOT
+> dogfooded (its API is socket-shutdown-specific; a debugger frontend needs a
+> raw SIGINT flag + kill, which live in the shim) — documented in the tool
+> header and debugging.md.
+>
+> Gaps recorded: the debuggee's stdin is not forwarded (a program that reads
+> stdin can't be debugged interactively), a Ctrl-C before gdb reports the
+> inferior pid is dropped (press again), and `next` across a loop-duplicated
+> exit line can land on the loop body (faithful to the emitted C; the -g
+> model documents debugging at the generated-C level for such cases).
+>
+> Lane: `make debug-check` ([3p/22] in ci) — behavioral, no golden, because
+> the transcript carries gdb's own output (addresses, thread noise) that
+> drifts across gdb versions; asserts breakpoint set + hit on the right line,
+> stripped locals, print, step, clean quit, run-to-completion with the
+> program's own output, a real Ctrl-C interrupt of a running inferior, three
+> fail-closed refusals, and the `tycho debug` wrapper end to end. SKIPS
+> loudly when gdb is absent (an external dep like sqlite3/libpng).
+>
+> `make test` was NOT run and cannot redden: the compiler is untouched (-g
+> emission is pinned by tools-check's line-info leg), and tests/run.sh never
+> descends into tools/.

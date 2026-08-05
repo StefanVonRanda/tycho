@@ -44,6 +44,49 @@ lldb ./program
 (`-g` alone still produces a runnable binary on macOS; the `.dSYM` step is only
 needed for source-level stepping.)
 
+## `tycho debug` — the gdb adapter
+
+`tycho debug` (the `tycho-debug` tool in `tools/tycho-debug/`) wraps the raw
+gdb workflow: it compiles the program with `-g` itself, starts gdb, and drives
+an interactive session that breaks by **source line** and shows locals under
+their Tycho names (the `h_` prefix is stripped; arena machinery is hidden):
+
+```sh
+tycho debug program.ty [args...]
+tycho debug -b 7 -b 12 program.ty     # pre-set breakpoints
+```
+
+```text
+tycho-debug: debugging program.ty  (q quits, h for help)
+tycho-debug> b 7
+breakpoint 1 at program.ty:7
+tycho-debug> r
+[breakpoint 1 hit]
+  at program.ty:7  (main)
+tycho-debug> loc
+  x = 41
+  y = 42
+tycho-debug> p h_x         # raw C names for expressions
+41
+tycho-debug> n
+[stepped]
+  at program.ty:8  (main)
+```
+
+Commands: `b <line>` break, `r` run, `n` next, `s` step, `c` continue,
+`p <expr>` print a C expression, `loc` locals, `bt` backtrace, `l` source
+around the current line, `$ <gdb cmd>` raw gdb passthrough, `q` quit. Ctrl-C
+interrupts the running program (the tool forwards SIGINT to the inferior);
+Ctrl-D quits.
+
+It is a gdb adapter, not a re-implementation: expressions are the emitted C
+names (`h_x`, `*h_x` for an `inout`), and `$` hands anything gdb understands
+straight through. It needs `gdb` on `PATH`; `TYCHOC` selects the compiler and
+`TYCHODEBUG` the debugger binary, same as `TYCHOFMT` does for the formatter.
+The debugger is itself a Tycho program (`make tycho-debug`), dogfooding
+core:os + core:strings over a small fork/pipe/signal shim (`debug_shim.c`);
+it is gated by `make debug-check`.
+
 ## What the frames look like
 
 The emitted C is faithful but not idiomatic, so a few things read differently
@@ -105,7 +148,8 @@ Reading it:
   package build merges several `.ty` files into one unit and drops per-file
   identity, so `-g` is skipped there (with a note on stderr) rather than
   emitting wrong file/line pairs. Debug a package by reducing the failing path
-  to a single file, or debug at the generated-C level without `-g`.
+  to a single file, or debug at the generated-C level without `-g`. `tycho
+  debug` refuses a `package` build up front with this same explanation.
 - **Synthesized glue is unmapped.** The program entry point, arena bootstrap,
   and other compiler-generated scaffolding have no `.ty` line; a `#line`
   directive only anchors real statements, so stepping through the glue shows the
