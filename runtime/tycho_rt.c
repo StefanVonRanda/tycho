@@ -49,12 +49,14 @@
 #include <math.h>
 #include <dirent.h>
 #ifdef _WIN32
-#include <windows.h>    /* GetActiveProcessorCount for tycho_ncpu */
+#include <windows.h>    /* GetActiveProcessorCount (tycho_ncpu), the stack guard's vectored handler */
+#include <io.h>         /* _setmode/_fileno: binary stdout/stderr so \n stays \n (goldens are LF) */
+#include <fcntl.h>      /* _O_BINARY for the same */
 #endif
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
 #include <signal.h>    /* the stack-overflow guard (sigaltstack/sigaction) */
 #ifndef _WIN32
-#include <ucontext.h>  /* the faulting SP for the same guard; Windows has none (the SEH port is the phase-2 stack-guard work) */
+#include <ucontext.h>  /* the faulting SP for the guard's SIGSEGV heuristic (Windows has no ucontext; the guard uses the distinct EXCEPTION_STACK_OVERFLOW code instead) */
 #endif
 #include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
 #include <stdatomic.h> /* lock-free channel fast path (CC-5) */
@@ -70,29 +72,35 @@ _Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");
 
 #define TYCHO_BLOCK_DEFAULT (1u << 16)
 
-#ifndef _WIN32
-/* gap: the SEH port of this guard (GetCurrentThreadStackLimits +
- * gap: AddVectoredExceptionHandler on EXCEPTION_STACK_OVERFLOW) is the
- * gap: phase-2 stack-guard work; until then Windows deep recursion dies
- * gap: with the plain access violation instead of the clean one-liner. */
 /* ---- stack-overflow guard: generated-code recursion fails closed ---------- */
 /* The compiler fails closed on pathologically nested INPUT (its own recursion
  * gate, tests/recursion/); nothing guarded the C stack of generated code, so
  * deep recursion in a Tycho program died with SIGSEGV, no diagnostic, no
  * cleanup. Two measured victims: the Scheme interpreter at ~5k levels, the
  * json walker at ~100k nests. This guard turns stack exhaustion into a clean
- * failure: a SIGSEGV handler on an alternate signal stack (zero steady-state
- * cost -- it runs only when the main stack is already exhausted) checks the
- * FAULTING stack pointer against the thread's recorded stack region; past the
- * bottom, it prints one line and _exits(1). Any other SIGSEGV is re-raised
- * with the default disposition, so a real bug (null deref, wild write) still
- * crashes as a real crash, debugger-visible, exit 139.
+ * failure, per platform:
  *
- * Thread-local bounds: pthread_getattr_np (a GNU extension, exposed by the
- * _GNU_SOURCE above) is the one reliable way to learn a thread's stack
+ *   POSIX: a SIGSEGV handler on an alternate signal stack (zero steady-state
+ *   cost -- it runs only when the main stack is already exhausted) checks the
+ *   FAULTING stack pointer against the thread's recorded stack region; past
+ *   the bottom, it prints one line and _exits(1). Any other SIGSEGV is
+ *   re-raised with the default disposition, so a real bug (null deref, wild
+ *   write) still crashes as a real crash, debugger-visible, exit 139.
+ *
+ *   Windows: EXCEPTION_STACK_OVERFLOW is a DISTINCT exception code, so no
+ *   bounds recording or SP comparison is needed. A vectored exception handler
+ *   (runs before any SEH dispatch, on the faulting thread) prints the same
+ *   one line and exits on that code alone; anything else returns
+ *   EXCEPTION_CONTINUE_SEARCH and a real fault still crashes as a real crash.
+ *   The handler runs on the just-committed guard page, so it touches only a
+ *   fixed message and WriteFile/ExitProcess -- nothing that needs real stack.
+ *
+ * Thread-local bounds (POSIX): pthread_getattr_np (a GNU extension, exposed by
+ * the _GNU_SOURCE above) is the one reliable way to learn a thread's stack
  * region. macOS has pthread_get_stackaddr_np in the system headers. Any
  * other platform leaves the bounds zero and the guard inert: it never
  * falsely claims an overflow, it simply falls back to the old SIGSEGV death. */
+#ifndef _WIN32
 
 typedef struct { uintptr_t hi; uintptr_t lo; } TychoStackBounds;
 static __thread TychoStackBounds g_stack_bounds = {0, 0};
@@ -179,6 +187,31 @@ __attribute__((constructor)) static void tycho_stack_guard_init(void) {
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, NULL);
+}
+#else
+/* Windows vectored handler. AddVectoredExceptionHandler(1, ...) puts it FIRST
+ * in the exception dispatch chain, before any frame-based SEH, and it runs on
+ * the faulting thread -- main or a spawned task alike. */
+static LONG WINAPI tycho_veh_handler(PEXCEPTION_POINTERS ep) {
+    if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_STACK_OVERFLOW) {
+        static const char msg[] = "tycho: stack overflow -- recursion too deep\n";
+        HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+        DWORD w;
+        WriteFile(err, msg, sizeof(msg) - 1, &w, NULL);
+        ExitProcess(1);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+static void tycho_stack_guard_thread_init(void) { }   /* no per-thread state: the exception code names the fault */
+static void tycho_stack_guard_thread_fini(void) { }
+__attribute__((constructor)) static void tycho_stack_guard_init(void) {
+    /* Binary stdout/stderr: the CRT's text mode translates \n to \r\n, so
+     * every golden and every pipe would see different bytes than the POSIX
+     * builds. stdin stays text mode: a CRLF input then reads as LF, matching
+     * POSIX. */
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+    AddVectoredExceptionHandler(1, tycho_veh_handler);
 }
 #endif
 
@@ -726,13 +759,9 @@ static tycho_int tycho_max_tasks(void) {
 static void *tycho_task_trampoline(void *p) {
     typedef struct { void *(*fn)(void *); void *arg; } TaskStart;
     TaskStart *start = (TaskStart *)p;
-#ifndef _WIN32
-    tycho_stack_guard_thread_init();   /* per-thread bounds AND altstack */
-#endif
+    tycho_stack_guard_thread_init();   /* per-thread bounds + altstack (POSIX); no-op (Windows) */
     void *r = start->fn(start->arg);
-#ifndef _WIN32
-    tycho_stack_guard_thread_fini();   /* ASan: clear before thread destroy */
-#endif
+    tycho_stack_guard_thread_fini();   /* ASan: clear before thread destroy (POSIX); no-op (Windows) */
     return r;
 }
 

@@ -33,13 +33,13 @@
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:755@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:784@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
-  (`runtime/tycho_rt.c:59@sysconf` — mingw shims, a few lines), and **the one
+  (`runtime/tycho_rt.c:61@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
   `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:52-53`,
-  `:158@sigaltstack`). The per-platform pattern already exists
-  (`runtime/tycho_rt.c:112@__APPLE__`); Windows gets a third branch via
+  `:166@sigaltstack`). The per-platform pattern already exists
+  (`runtime/tycho_rt.c:120@__APPLE__`); Windows gets a third branch via
   `GetCurrentThreadStackLimits` + `AddVectoredExceptionHandler` catching
   `EXCEPTION_STACK_OVERFLOW` (~60-100 lines). Estimate: 2-3 days.
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`
@@ -94,21 +94,42 @@ Expected: the first phase commits are the small portability shims above.
 
 - winpthreads threading: verify `pthread_create`/`mutex`/`cond`/`once`/`self`
   under `-pthread` — the whole `core:conc` model (spawn, channels, parallel
-  for) must work as-is.
-- Clock/timer/park shims: `clock_gettime`, `nanosleep`, `sched_yield`,
-  `getpid`, `sysconf(_SC_NPROCESSORS_ONLN)`.
-- **The stack-overflow guard**: third platform branch (after the existing
-  `__APPLE__` one at `runtime/tycho_rt.c:102`) — `GetCurrentThreadStackLimits`
-  for bounds, `AddVectoredExceptionHandler` for the fault, and the native
-  `EXCEPTION_STACK_OVERFLOW` code. Deep recursion must keep failing closed
-  with the clean one-line error, never a silent crash.
-- The float-to-string locale guard (`newlocale`/`uselocale`) and `__thread`
-  (mingw gcc supports it).
-- `list_dir` (runtime `opendir`/`readdir`).
+  for) must work as-is. (Phase 1 already proved this COMPILES and LINKS;
+  phase 2 proves it RUNS.)
+- Clock/timer/park: `clock_gettime`, `nanosleep`, `sched_yield`, `getpid`
+  are all provided by winpthreads — verified in the installed headers, so
+  the "shims" bullet is a verification task, not a writing task. Only
+  `sysconf` needed a branch (done in phase 1: `GetActiveProcessorCount`).
+- **The stack-overflow guard**: the Windows branch does NOT need stack-bounds
+  recording or an SP comparison — `EXCEPTION_STACK_OVERFLOW` is a distinct
+  exception code, so a vectored handler (`AddVectoredExceptionHandler`)
+  catches that code alone, prints the same one-line message, and exits;
+  everything else returns `EXCEPTION_CONTINUE_SEARCH` and crashes normally.
+  Deep recursion must keep failing closed with the clean one-line error,
+  never a silent crash.
+- **Binary stdout/stderr on Windows** (discovered in phase 2's conc
+  verification): the CRT's text mode translates `\n` to `\r\n`, so every
+  golden would mismatch. The runtime sets stdout/stderr to `_O_BINARY` at
+  startup (`_setmode`); stdin stays text mode so a CRLF input reads as LF,
+  matching POSIX.
+- The float-to-string locale guard (the localeconv fallback legs — Windows
+  has no `newlocale` at any version, phase 1) and `__thread` (mingw gcc
+  supports it).
+- `list_dir` (mingw's `dirent`).
 
-Gate: `make conc` (native + ASan + TSan vs goldens — ASan/TSan legs may
-skip on mingw, say so) and `make recursion` (deep input fails closed). Expected:
-conc green under winpthreads; recursion green via the SEH guard.
+Gate (this phase, on the Linux box): `sh scripts/wine_smoke.sh` — the
+cross-compiled fixtures must be byte-identical to the Linux goldens under
+Wine (conc suite, clock, floats, iobuiltins) and the deep-recursion fixtures
+must fail closed on the main thread AND in a spawned task — plus the Linux
+tree stays green (`make conc`, `make recursion`, `make test`). The ASan/TSan
+conc legs: TSan has no Windows-target support in gcc and mingw ASan is
+experimental — both are SKIPS on the Windows side. Expected: conc green under
+winpthreads; recursion green via the vectored handler.
+
+DEFERRED by owner decision (2026-08-05, "we'll rerun it later under proper
+windows"): the definitive pass — these exact fixtures on a real Windows
+scheduler — lands on the windows-latest CI leg in phase 6/7. Wine smoke is
+evidence of the port, never a Windows verdict.
 
 ### Phase 3 — Compiler + emitted-C toolchain verification
 
@@ -262,3 +283,48 @@ language surface. WSL2 stays a first-class supported path.
 > examples/hello.ty --emit-c -o build/hello-mingw`; `x86_64-w64-mingw32-gcc -O3
 > -fwrapv -pthread -o build/hello-mingw.exe build/hello-mingw.c -lm`;
 > `WINEPATH='Z:\usr\x86_64-w64-mingw32\lib' wine64 ./build/hello-mingw.exe`.
+
+> Phase 2 evidence — 2026-08-05 (the runtime port, verified by
+> `sh scripts/wine_smoke.sh` on the Linux box; definitive pass deferred to
+> the windows CI leg per the owner's decision).
+>
+> THE CODE: the runtime's guard section now has two platform branches. POSIX
+> unchanged (sigaltstack + SIGSEGV + SP-vs-bounds). Windows: a vectored
+> exception handler (`AddVectoredExceptionHandler`) catches the distinct
+> `EXCEPTION_STACK_OVERFLOW` code — no bounds recording, no SP comparison,
+> which is SIMPLER than the POSIX heuristic — prints the same one-line
+> message via WriteFile and ExitProcess(1) (nothing that needs real stack;
+> the handler runs on the just-committed guard page); anything else returns
+> EXCEPTION_CONTINUE_SEARCH and crashes as a real crash. Plus the binary-
+> stdio fix discovered this phase: `_setmode(_fileno(stdout/stderr),
+> _O_BINARY)` in the same constructor — without it the CRT's text mode
+> turns every `\n` into `\r\n` and NO golden matches (first observed in the
+> phase-1 workers test; fixed and re-verified). No per-thread state is
+> needed on Windows, so the task trampoline's init/fini calls are no-ops.
+>
+> VERIFIED UNDER WINE (scripts/wine_smoke.sh, 16 checks, all green):
+>   byte-identical to the Linux goldens: the whole conc positive suite
+>   (basic, chan, chancap1, workers, parfor, select, select_parfor,
+>   implicit — spawn/wait, channels, backpressure, parallel-for reductions,
+>   select), plus clock (winpthreads timers + the park ladder), floats (the
+>   localeconv fallback + Windows CRT %.15g), and iobuiltins (list_dir via
+>   mingw dirent).
+>   the stack guard: 2M-deep recursion fails closed on the main thread AND
+>   in a spawned task — exit 1, empty stdout, "tycho: stack overflow --
+>   recursion too deep" on stderr, identical to POSIX — and the modestly
+>   nested controls run (f(1000) -> 500501, spawned deep(1000) -> 0), so the
+>   guard is not trigger-happy.
+>   hello runs interactively with bare-LF output.
+>
+> NOT VERIFIED (the CI leg's job): the guard under a real Windows kernel
+> (Wine's stack/exception semantics are an approximation), and the conc
+> goldens under the real Windows scheduler. TSan has no Windows-target
+> support in gcc and mingw ASan is experimental — those conc legs are skips
+> on the Windows side.
+>
+> GATES (Linux tree): make conc 38/38, make recursion all green (both the
+> compiler-input gate and the generated-code guard leg), make test 591/591
+> (env -u LD_PRELOAD), goldens-check, doc gates. The runtime line shifts
+> re-anchored 14 citations (diff-hunk-mapped, token-verified, gate re-run
+> to zero). `make wine-smoke` is a manual target, not a gate and not in
+> make ci.
