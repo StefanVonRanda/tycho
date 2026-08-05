@@ -294,6 +294,11 @@ element type instead of a family of per-type siblings.
   msg)` — each prints `[level] message`, dropping messages below the logger's
   level; `to_stderr` selects stderr over stdout. No timestamps (they would make
   output non-deterministic); prepend your own.
+- **`utf8`** — Unicode validation and codepoint iteration over byte strings:
+  `valid(s)` (strict — rejects overlong, surrogates, truncated), `decode(s, at)`
+  → `(codepoint, width)` at a byte offset (the iteration idiom), `encode(cp)` →
+  its UTF-8 bytes, `count(s)` → codepoints or -1. No case mapping or full
+  tables — validation + iteration is the core.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins, and **the
   first corelib module to compose others** (imports `core:strings` for line splitting; it also
   imported `core:path` for the old `exists`, which the `stat`-backed one no longer needs).

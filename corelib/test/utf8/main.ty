@@ -1,0 +1,33 @@
+# corelib test: exercises core:utf8; the output is locked to
+# corelib/test/utf8.out (corelib/run.sh). Validation, decode/encode round
+# trips, codepoint counting, and the strict rejections (overlong, surrogate,
+# truncated, stray continuation).
+package main
+import "core:utf8"
+
+fn b(bits: [int]) -> string:
+    return to_str(to_bytes(bits))
+
+fn main():
+    # valid: ASCII, 2/3/4-byte forms, mixed
+    print(str(utf8.valid("hello")) + " " + str(utf8.valid("")) + " ")
+    print(str(utf8.valid(b([0xC3, 0xA9]))) + " ")                 # é
+    print(str(utf8.valid(b([0xE4, 0xB8, 0xAD]))) + " ")           # 中
+    print(str(utf8.valid(b([0xF0, 0x9F, 0x98, 0x80]))) + "\n")    # 😀
+    # invalid: stray continuation, truncated, overlong, surrogate, > U+10FFFF
+    print(str(utf8.valid(b([0x80]))) + " " + str(utf8.valid(b([0xC3]))))
+    print(" " + str(utf8.valid(b([0xC0, 0xAF]))) + " " + str(utf8.valid(b([0xED, 0xA0, 0x80]))))
+    print(" " + str(utf8.valid(b([0xF4, 0x90, 0x80, 0x80]))) + "\n")
+    # decode: codepoint + width
+    cp, w := utf8.decode(b([0xE4, 0xB8, 0xAD, 0x61]), 0)
+    print(str(cp) + " " + str(w) + " ")
+    cp2, w2 := utf8.decode("a", 0)
+    print(str(cp2) + " " + str(w2) + " ")
+    cp3, w3 := utf8.decode(b([0x80]), 0)
+    print(str(cp3) + " " + str(w3) + "\n")
+    # encode: round-trips, and the byte shapes
+    print(str(utf8.encode(233)) + " " + str(utf8.encode(0x4E2D)) + " ")
+    print(str(utf8.encode(0x1F600)) + " ")
+    print("[" + utf8.encode(-1) + "][" + utf8.encode(0xD800) + "]\n")
+    # len counts codepoints; -1 on invalid
+    print(str(utf8.count("aé中😀")) + " " + str(utf8.count(b([0x80]))) + "\n")
