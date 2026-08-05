@@ -1,0 +1,484 @@
+# core:toml -- a TOML (v1.0 subset) parser. Import with `import "core:toml"`.
+#
+#   t := toml.parse(text) or_return      # Result(Value, string); the root is a table
+#   match toml.get(t, "server.host"):
+#       Some(toml.TStr(h)): ...
+#
+# `parse(s) -> Result(Value, string)` returns Err(what-was-wrong) on any
+# malformed input (fail-closed; nothing is guessed). The document is a
+# recursive value tree: `Value` is an enum with TStr/TInt/TFloat/TBool/TArr/
+# TTable, and a table is a pair of parallel keys/values arrays (the same shape
+# core:json's object uses -- iteration order is the insertion order). `get(t,
+# "a.b.c")` walks dotted paths and returns `Option(Value)` (None on a missing
+# key or a path that crosses a non-table).
+#
+# SUPPORTED: bare and quoted keys, dotted keys, `[table]` and
+# `[[array-of-tables]]` headers, basic strings (the common escapes and \uXXXX
+# via core:utf8), literal strings, integers (decimal, 0x/0o/0b, underscore
+# separators), floats (with exponents), booleans, and arrays of scalars /
+# nested arrays (trailing comma allowed). An ISO-8601 datetime is detected and
+# returned as TStr (its exact representation is out of scope). NOT supported:
+# inline tables (`{a = 1}`) and multi-line strings -- pre-process, or this
+# package grows them on demand.
+package toml
+
+import "core:strings"
+import "core:utf8"
+
+enum Value:
+    TStr(string)
+    TInt(int)
+    TFloat(float)
+    TBool(bool)
+    TArr([Value])
+    TTable([string], [Value])        # parallel keys/values, insertion order
+
+# --- table accessors --------------------------------------------------------
+
+# Walk a dotted path (`"a.b.c"`) down from a table; None on a missing key or
+# a path that crosses a non-table value.
+fn get(t: Value, path: string) -> Option(Value):
+    parts := split(path, ".")
+    cur := t
+    for i := 0; i < len(parts); i += 1:
+        if parts[i] == "":
+            return None
+        match cur:
+            TTable(ks, vs):
+                idx := index_of(ks, parts[i])
+                if idx < 0:
+                    return None
+                if i + 1 == len(parts):
+                    return Some(vs[idx])
+                cur = vs[idx]
+            _:
+                return None
+    return None
+
+# An empty table value (a fresh root / section).
+fn empty_table() -> Value:
+    return TTable([]string, []Value)
+
+fn index_of(ks: [string], k: string) -> int:
+    for i := 0; i < len(ks); i += 1:
+        if ks[i] == k:
+            return i
+    return -1
+
+# The table's keys, in insertion order.
+fn keys(t: Value) -> [string]:
+    match t:
+        TTable(ks, vs):
+            return ks
+        _:
+            return []string
+
+# --- writing helpers (parse-side) -------------------------------------------
+
+# Set tbl[path] = v inside a table value, creating intermediate tables for
+# dotted keys.
+fn assign(tbl: Value, path: [string], v: Value) -> Value:
+    ks := []string
+    vs := []Value
+    match tbl:
+        TTable(k, vv):
+            ks = k
+            vs = vv
+        _:
+            ks = []string
+            vs = []Value
+    if len(path) == 1:
+        idx := index_of(ks, path[0])
+        if idx >= 0:
+            vs[idx] = v
+        else:
+            push(ks, path[0])
+            push(vs, v)
+        return TTable(ks, vs)
+    sub := TTable([]string, []Value)
+    idx := index_of(ks, path[0])
+    if idx >= 0:
+        match vs[idx]:
+            TTable(k2, v2):
+                sub = vs[idx]
+            _:
+                sub = TTable([]string, []Value)
+    sub = assign(sub, path[1:], v)
+    if idx >= 0:
+        vs[idx] = sub
+    else:
+        push(ks, path[0])
+        push(vs, sub)
+    return TTable(ks, vs)
+
+# Place `tbl` at root[path...], creating intermediate tables. For an array
+# section ([[..]]) the leaf is an array-of-tables: append instead.
+fn place(root: Value, path: [string], tbl: Value, is_arr: bool) -> Value:
+    ks := []string
+    vs := []Value
+    match root:
+        TTable(k, vv):
+            ks = k
+            vs = vv
+        _:
+            ks = []string
+            vs = []Value
+    if len(path) == 1:
+        idx := index_of(ks, path[0])
+        if is_arr:
+            arr := []Value
+            if idx >= 0:
+                match vs[idx]:
+                    TArr(e):
+                        arr = e
+                    _:
+                        arr = []Value
+            push(arr, tbl)
+            if idx >= 0:
+                vs[idx] = TArr(arr)
+            else:
+                push(ks, path[0])
+                push(vs, TArr(arr))
+            return TTable(ks, vs)
+        if idx >= 0:
+            vs[idx] = tbl
+        else:
+            push(ks, path[0])
+            push(vs, tbl)
+        return TTable(ks, vs)
+    sub := TTable([]string, []Value)
+    idx := index_of(ks, path[0])
+    if idx >= 0:
+        match vs[idx]:
+            TTable(k2, v2):
+                sub = vs[idx]
+            _:
+                sub = TTable([]string, []Value)
+    sub = place(sub, path[1:], tbl, is_arr)
+    if idx >= 0:
+        vs[idx] = sub
+    else:
+        push(ks, path[0])
+        push(vs, sub)
+    return TTable(ks, vs)
+
+# --- scalar parsers ---------------------------------------------------------
+
+fn parse_value(tok: string) -> Result(Value, string):
+    if len(tok) == 0:
+        return Err("empty value")
+    c := tok[0]
+    if c == 34:                    # '"' basic string
+        return parse_basic(tok)
+    if c == 39:                    # "'" literal string
+        if len(tok) < 2 or tok[len(tok) - 1] != 39:
+            return Err("unterminated literal string")
+        return Ok(TStr(tok[1:len(tok) - 1]))
+    if c == 91:                    # '[' array
+        return parse_array(tok)
+    if tok == "true":
+        return Ok(TBool(true))
+    if tok == "false":
+        return Ok(TBool(false))
+    if len(tok) >= 10 and is_date_head(tok):
+        return Ok(TStr(tok))       # ISO-8601 datetime, kept as a string
+    if is_num_start(c) or c == 43 or c == 45:
+        return parse_number(tok)
+    return Err("cannot parse value: " + tok)
+
+fn is_date_head(t: string) -> bool:       # YYYY-MM-DD
+    for i := 0; i < 10; i += 1:
+        if i == 4 or i == 7:
+            if t[i] != 45:
+                return false
+        elif t[i] < 48 or t[i] > 57:
+            return false
+    return true
+
+fn is_num_start(c: int) -> bool:
+    return (c >= 48 and c <= 57) or c == 120 or c == 88   # digit, x, X
+
+fn parse_basic(t: string) -> Result(Value, string):
+    out := ""
+    i := 1
+    for i < len(t):
+        c := t[i]
+        if c == 34:
+            return Ok(TStr(out))
+        if c == 92:                # backslash escape
+            i = i + 1
+            if i >= len(t):
+                return Err("unterminated escape in string")
+            e := t[i]
+            if e == 110:
+                out = out + "\n"
+            elif e == 116:
+                out = out + "\t"
+            elif e == 114:
+                out = out + "\r"
+            elif e == 98:
+                out = out + chr(8)
+            elif e == 102:
+                out = out + chr(12)
+            elif e == 92 or e == 34:
+                out = out + chr(e)
+            elif e == 117:          # \uXXXX
+                if i + 4 >= len(t):
+                    return Err("short \\u escape")
+                cp := 0
+                for k := 0; k < 4; k += 1:
+                    d := hex_digit(t[i + 1 + k])
+                    if d < 0:
+                        return Err("bad \\u escape")
+                    cp = cp * 16 + d
+                out = out + utf8.encode(cp)
+                i = i + 4
+            else:
+                return Err("unsupported escape \\" + chr(e))
+        else:
+            out = out + chr(c)
+        i = i + 1
+    return Err("unterminated basic string")
+
+fn hex_digit(c: int) -> int:
+    if c >= 48 and c <= 57:
+        return c - 48
+    if c >= 97 and c <= 102:
+        return c - 97 + 10
+    if c >= 65 and c <= 70:
+        return c - 65 + 10
+    return -1
+
+fn parse_number(t: string) -> Result(Value, string):
+    neg := false
+    i := 0
+    if t[0] == 43:
+        i = 1
+    elif t[0] == 45:
+        neg = true
+        i = 1
+    if i < len(t) and t[i] == 48 and i + 1 < len(t) and (t[i + 1] == 120 or t[i + 1] == 88 or t[i + 1] == 111 or t[i + 1] == 79 or t[i + 1] == 98 or t[i + 1] == 66):
+        base := 16
+        if t[i + 1] == 111 or t[i + 1] == 79:
+            base = 8
+        elif t[i + 1] == 98 or t[i + 1] == 66:
+            base = 2
+        v := 0
+        seen := false
+        j := i + 2
+        for j < len(t):
+            if t[j] == 95:
+                j = j + 1
+                continue
+            d := -1
+            if base == 16:
+                d = hex_digit(t[j])
+            elif base == 8:
+                if t[j] >= 48 and t[j] <= 55:
+                    d = t[j] - 48
+            else:
+                if t[j] == 48 or t[j] == 49:
+                    d = t[j] - 48
+            if d < 0:
+                return Err("bad base-" + str(base) + " integer: " + t)
+            v = v * base + d
+            seen = true
+            j = j + 1
+        if not seen:
+            return Err("empty base-" + str(base) + " integer")
+        if neg:
+            v = -v
+        return Ok(TInt(v))
+    # decimal int or float: fold with float arithmetic when a '.' or exponent
+    # appears, else exact int arithmetic.
+    is_float := false
+    for k := i; k < len(t); k += 1:
+        c := t[k]
+        if c == 46 or c == 101 or c == 69:
+            is_float = true
+            break
+        if (c < 48 or c > 57) and c != 95:
+            return Err("bad number: " + t)
+    if is_float:
+        acc := 0.0
+        sign := 1.0
+        frac := 0.1
+        exp_sign := 1
+        exp := 0
+        mode := 0
+        if neg:
+            sign = -1.0
+        seen := false
+        for i < len(t):
+            c := t[i]
+            if c == 95:
+                i = i + 1
+                continue
+            if c == 46:
+                mode = 1
+                i = i + 1
+                continue
+            if c == 101 or c == 69:
+                mode = 2
+                i = i + 1
+                if i < len(t) and (t[i] == 43 or t[i] == 45):
+                    if t[i] == 45:
+                        exp_sign = -1
+                    i = i + 1
+                continue
+            if c >= 48 and c <= 57:
+                seen = true
+                if mode == 0:
+                    acc = acc * 10.0 + to_float(c - 48)
+                elif mode == 1:
+                    acc = acc + to_float(c - 48) * frac
+                    frac = frac / 10.0
+                else:
+                    exp = exp * 10 + (c - 48)
+                i = i + 1
+                continue
+            return Err("bad float: " + t)
+        if not seen:
+            return Err("empty number")
+        v := acc * sign
+        e := 1.0
+        k := 0
+        for k < exp:
+            e = e * 10.0
+            k = k + 1
+        if exp_sign < 0:
+            v = v / e
+        else:
+            v = v * e
+        return Ok(TFloat(v))
+    iv := 0
+    seen2 := false
+    for i < len(t):
+        if t[i] == 95:
+            i = i + 1
+            continue
+        if t[i] < 48 or t[i] > 57:
+            return Err("bad number: " + t)
+        iv = iv * 10 + (t[i] - 48)
+        seen2 = true
+        i = i + 1
+    if not seen2:
+        return Err("empty number")
+    if neg:
+        iv = -iv
+    return Ok(TInt(iv))
+
+fn parse_array(t: string) -> Result(Value, string):
+    body := strings.trim(t[1:len(t) - 1])
+    if body == "":
+        return Ok(TArr([]Value))
+    if body[len(body) - 1] == 44:      # trailing comma
+        body = strings.trim(body[0:len(body) - 1])
+    items := split(body, ",")
+    arr := []Value
+    for it in items:
+        it2 := strings.trim(it)
+        if it2 == "":
+            return Err("empty array element")
+        match parse_value(it2):
+            Ok(v):
+                push(arr, v)
+            Err(m):
+                return Err(m)
+    return Ok(TArr(arr))
+
+# --- the document parser ----------------------------------------------------
+
+fn strip_comment(ln: string) -> string:   # drop an unquoted # ... comment
+    instr := false
+    for i := 0; i < len(ln); i += 1:
+        c := ln[i]
+        if c == 34 or c == 39:
+            instr = not instr
+        elif c == 35 and not instr:
+            return ln[0:i]
+    return ln
+
+fn split_path(body: string) -> [string]:  # "a.b.c" -> segments
+    toks := split(body, ".")
+    out := []string
+    for t in toks:
+        t2 := strings.trim(t)
+        if t2 != "":
+            push(out, t2)
+    return out
+
+fn find_key_eq(ln: string) -> int:        # index of the separator '=' outside quotes
+    instr := false
+    for i := 0; i < len(ln); i += 1:
+        c := ln[i]
+        if c == 34 or c == 39:
+            instr = not instr
+        elif c == 61 and not instr:
+            return i
+    return -1
+
+fn parse_key(key: string) -> [string]:    # split + strip quotes from segments
+    parts := split(key, ".")
+    out := []string
+    for p in parts:
+        p2 := strings.trim(p)
+        if p2 == "":
+            continue
+        if len(p2) >= 2 and ((p2[0] == 34 and p2[len(p2) - 1] == 34) or (p2[0] == 39 and p2[len(p2) - 1] == 39)):
+            p2 = p2[1:len(p2) - 1]
+        push(out, p2)
+    return out
+
+fn parse(s: string) -> Result(Value, string):
+    ls := strings.lines(s)
+    root := TTable([]string, []Value)
+    cur := TTable([]string, []Value)
+    cur_path := []string            # where cur lives under root (empty = root)
+    cur_arr := false                # is cur's section a [[array-of-tables]]?
+    cur_dirty := false              # has the current section been written to?
+    for i := 0; i < len(ls); i += 1:
+        ln := ls[i]
+        ln = strip_comment(ln)
+        ln = strings.trim(ln)
+        if ln == "":
+            continue
+        if ln[0] == 91:             # '[' a header
+            is_arr := len(ln) >= 2 and ln[1] == 91
+            body := ln
+            if is_arr:
+                body = ln[2:len(ln) - 2]
+            else:
+                body = ln[1:len(ln) - 1]
+            path := split_path(body)
+            if len(path) == 0:
+                return Err("empty table header")
+            if len(cur_path) > 0 or cur_dirty:
+                if len(cur_path) == 0:
+                    root = cur                       # root-level section: cur IS the root
+                else:
+                    root = place(root, cur_path, cur, cur_arr)
+            cur = TTable([]string, []Value)
+            cur_path = path
+            cur_arr = is_arr
+            cur_dirty = false
+            continue
+        eq := find_key_eq(ln)
+        if eq < 0:
+            return Err("expected 'key = value' or a [header], got: " + ln)
+        key := strings.trim(ln[0:eq])
+        val := strings.trim(ln[eq + 1:])
+        kp := parse_key(key)
+        if len(kp) == 0:
+            return Err("empty key in: " + ln)
+        match parse_value(val):
+            Ok(v):
+                cur = assign(cur, kp, v)
+                cur_dirty = true
+            Err(m):
+                return Err(m)
+    if len(cur_path) == 0:
+        root = cur
+    else:
+        root = place(root, cur_path, cur, cur_arr)
+    return Ok(root)

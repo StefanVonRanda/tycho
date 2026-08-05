@@ -1,0 +1,86 @@
+# corelib test: exercises core:toml; the output is locked to
+# corelib/test/toml.out (corelib/run.sh). Scalars, dotted keys, [table],
+# [[array-of-tables]], comments, escapes, numbers, and fail-closed errors.
+package main
+import "core:toml"
+
+fn unwrap_int(v: Option(toml.Value)) -> int:        # value or -999
+    match v:
+        Some(toml.TInt(x)):
+            return x
+        _:
+            return -999
+fn unwrap_str(v: Option(toml.Value)) -> string:
+    match v:
+        Some(toml.TStr(s)):
+            return s
+        _:
+            return "?"
+fn unwrap_float2(v: Option(toml.Value)) -> int:     # int(2*f) or -999
+    match v:
+        Some(toml.TFloat(f)):
+            return to_int(f * 2)
+        _:
+            return -999
+fn unwrap_len(v: Option(toml.Value)) -> int:        # array length or -999
+    match v:
+        Some(toml.TArr(a)):
+            return len(a)
+        _:
+            return -999
+
+fn main():
+    lines := ["# a comment", "title = \"tycho\\u0041\"", "count = 42",
+        "ratio = 1.5", "on = true", "hex = 0xFF", "oct = 0o17", "bin = 0b1010",
+        "big = 1_000_000", "lit = 'no \\\\ escapes'", "tags = [\"a\", \"b\", \"c\"]",
+        "nums = [1, 2, 3,]", "when = 2026-08-04T12:00:00Z", "[server]",
+        "host = \"localhost\"", "port = 8080", "[server.details]", "threads = 4",
+        "[[user]]", "name = \"ada\"", "[[user]]", "name = \"alan\""]
+    doc := ""
+    for l in lines:
+        doc = doc + l + "\n"
+    t := toml.empty_table()
+    match toml.parse(doc):
+        Ok(tt):
+            t = tt
+        Err(m):
+            print("parse error: " + m + "\n")
+            exit(1)
+    print("title=" + unwrap_str(toml.get(t, "title")) + "\n")          # escape \u0041 -> A
+    print("count=" + str(unwrap_int(toml.get(t, "count"))) + "\n")
+    print("ratio=" + str(unwrap_float2(toml.get(t, "ratio"))) + "\n")  # 3
+    print("on=" + str(unwrap_int(toml.get(t, "on")) == -999) + "\n")   # bool is not an int
+    print("hex=" + str(unwrap_int(toml.get(t, "hex"))) + "\n")         # 255
+    print("oct=" + str(unwrap_int(toml.get(t, "oct"))) + "\n")         # 15
+    print("bin=" + str(unwrap_int(toml.get(t, "bin"))) + "\n")         # 10
+    print("big=" + str(unwrap_int(toml.get(t, "big"))) + "\n")         # 1000000
+    print("lit=" + unwrap_str(toml.get(t, "lit")) + "\n")              # literal, no escapes
+    print("tags=" + str(unwrap_len(toml.get(t, "tags"))) + "\n")       # 3
+    print("nums=" + str(unwrap_len(toml.get(t, "nums"))) + "\n")       # 3 (trailing comma)
+    print("when=" + unwrap_str(toml.get(t, "when")) + "\n")            # ISO kept as string
+    print("host=" + unwrap_str(toml.get(t, "server.host")) + "\n")    # dotted path
+    print("port=" + str(unwrap_int(toml.get(t, "server.port"))) + "\n")
+    print("threads=" + str(unwrap_int(toml.get(t, "server.details.threads"))) + "\n")
+    print("users=" + str(unwrap_len(toml.get(t, "user"))) + "\n")      # 2 array-of-tables
+    missing := false
+    match toml.get(t, "nope"):
+        None:
+            missing = true
+        Some(_):
+            missing = false
+    print("missing=" + str(missing) + "\n")
+    cross := false
+    match toml.get(t, "server.host.x"):
+        None:
+            cross = true
+        Some(_):
+            cross = false
+    print("cross=" + str(cross) + "\n")
+    # fail-closed: a bad line is an Err, and a bad doc yields no partial value
+    bad_err := false
+    match toml.parse("a = 1\nnot a key value line\n"):
+        Err(_):
+            bad_err = true
+        Ok(_):
+            bad_err = false
+    print("bad=" + str(bad_err) + "\n")
