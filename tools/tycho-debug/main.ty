@@ -1,0 +1,557 @@
+# tycho-debug -- a gdb adapter for Tycho programs. A standalone tool (its own
+# directory, like tycho-ar / tycho-build) because importing core:* needs a
+# `package` header, which would pull every tools/*.ty into the compile.
+#
+#   tycho-debug [-b <line>]... <program.ty> [args...]
+#
+# The compiler's `-g` output maps the generated C back to the .ty source
+# (`#line` directives + -O0 -g; see docs/guides/debugging.md), so a scripted
+# gdb session can break by SOURCE line, step, and read locals under their
+# emitted C names. This tool compiles the program with -g, starts gdb in MI
+# mode over two pipes (the debug_shim.c companion), and runs an interactive
+# REPL in front of it:
+#
+#   b <line>   set a breakpoint on that source line      r   run
+#   n          next (step over)                          s   step into
+#   c          continue                                   bt  backtrace
+#   p <expr>   print a C expression (locals are h_x)      loc user locals
+#   l          show source around the current line        $ <gdb cmd> passthrough
+#   q          quit
+#
+# Ctrl-C interrupts the running program: the tool's SIGINT handler sets a flag
+# (the shim), a blocked read surfaces EINTR, and the tool sends SIGINT to the
+# INFERIOR -- gdb is the tracer, so it intercepts the signal, stops the
+# inferior at its current source line, and reports *stopped. gdb itself lives
+# in its own process group (setpgid in the shim) so the terminal Ctrl-C never
+# reaches it, and MI is deliberately left in its DEFAULT synchronous mode:
+# probed on gdb 17.2, `-gdb-set mi-async on` makes the first -exec-run miss
+# every breakpoint and swallow the inferior's output, while the sync mode hits
+# breakpoints and delivers @ output. -exec-interrupt is therefore never used
+# (gdb does not read commands while the inferior runs in sync mode anyway).
+#
+# The `-g` line info is SINGLE-FILE ONLY (a package build drops per-file
+# identity), so a file with a `package` header is refused up front with the
+# compiler's own explanation instead of silently debugging with no line map.
+#
+# Documented gaps: the debuggee's stdin is not forwarded (a program that reads
+# stdin cannot be debugged interactively), and a Ctrl-C that lands before gdb
+# has reported the inferior's pid is dropped (press Ctrl-C again).
+package main
+
+import "core:os"
+import "core:strings"
+
+# ---- FFI: the spawn/pipe/signal shim (debug_shim.c) ----
+extern fn dbgx_spawn(cmd: string) -> ptr
+extern fn dbgx_write(h: ptr, s: string) -> int
+extern fn dbgx_readline(h: ptr) -> Option(string)
+extern fn dbgx_interrupted(h: ptr) -> int
+extern fn dbgx_stdin() -> ptr
+extern fn dbgx_close(h: ptr)
+extern fn dbgx_abs(p: string) -> Option(string)
+extern fn dbgx_pid() -> int
+extern fn dbgx_kill(pid: int, sig: int) -> int
+
+# the one session handle: gdb pipe handle + the last stop's source line + the
+# running inferior's pid (for Ctrl-C) + the absolute .ty path
+struct Sess:
+    g: ptr
+    cur: int
+    pid: int
+    src: string
+    bin: string          # the -g compiled binary, removed at quit
+
+fn compiler() -> string:
+    c := getenv("TYCHOC")
+    if c == "":
+        return "tychoc"
+    return c
+
+# shell-quote ONE argument for the sh -c command lines (os.system builds)
+fn shq(s: string) -> string:
+    return "'" + strings.replace(s, "'", "'\\''") + "'"
+
+# C-escape a string for embedding inside an MI quoted argument
+fn c_quote(s: string) -> string:
+    out := []int
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 34 or c == 92:       # " or \
+            push(out, 92)
+        push(out, c)
+    return to_str(to_bytes(out))
+
+# unescape the C-string body of an MI ~"..." / @ record / quoted value
+fn unescape_c(s: string) -> string:
+    out := []int
+    i := 0
+    for i < len(s):
+        c := s[i]
+        if c == 92:                  # backslash escape
+            i = i + 1
+            if i >= len(s):
+                break
+            e := s[i]
+            if e == 110:
+                push(out, 10)        # \n
+            elif e == 114:
+                push(out, 13)        # \r
+            elif e == 116:
+                push(out, 9)         # \t
+            elif e == 34:
+                push(out, 34)        # \"
+            elif e == 92:
+                push(out, 92)        # \\
+            elif e == 39:
+                push(out, 39)        # \'
+            elif e == 48:
+                push(out, 48)        # \0 kept literal (never in a line)
+            else:
+                push(out, e)
+        else:
+            push(out, c)
+        i = i + 1
+    return to_str(to_bytes(out))
+
+# split `s` on `sep` at nesting depth 0 (quotes and {} [] () honored)
+fn split_top(s: string, sep: int) -> [string]:
+    out := []string
+    depth := 0
+    inq := false
+    start := 0
+    i := 0
+    for i < len(s):
+        c := s[i]
+        if inq:
+            if c == 92:
+                i = i + 1             # skip the escaped char
+            elif c == 34:
+                inq = false
+        else:
+            if c == 34:
+                inq = true
+            elif c == 123 or c == 91 or c == 40:
+                depth = depth + 1
+            elif c == 125 or c == 93 or c == 41:
+                depth = depth - 1
+            elif c == sep and depth == 0:
+                push(out, substr(s, start, i))
+                start = i + 1
+        i = i + 1
+    push(out, substr(s, start, len(s)))
+    return out
+
+# the value half of one `key=value` pair (unquotes a quoted value)
+fn pair_value(p: string) -> string:
+    eq := find(p, "=")
+    if eq < 0:
+        return ""
+    v := substr(p, eq + 1, len(p))
+    if len(v) >= 2 and v[0] == 34 and v[len(v) - 1] == 34:
+        return unescape_c(substr(v, 1, len(v) - 1))
+    return v
+
+# split an MI record/`{...}` blob into its key=value pairs (drops non-pairs)
+fn rec_fields(rec: string) -> [string]:
+    parts := split_top(rec, 44)        # ','
+    out := []string
+    for p in parts:
+        if find(p, "=") > 0:
+            push(out, p)
+    return out
+
+# the `key` field of a pair list; "" when absent
+fn field(parts: [string], key: string) -> string:
+    for p in parts:
+        eq := find(p, "=")
+        if eq > 0 and substr(p, 0, eq) == key:
+            return pair_value(p)
+    return ""
+
+# strip the outer {} of a brace blob and return its inner pairs
+fn blob_fields(blob: string) -> [string]:
+    v := blob
+    if len(v) >= 2 and v[0] == 123:    # {
+        v = substr(v, 1, len(v) - 1)
+    return rec_fields(v)
+
+fn base_name(p: string) -> string:
+    parts := split(p, "/")
+    return parts[len(parts) - 1]
+
+# Tycho `x` lowers to C `h_x` (docs/guides/debugging.md); show the .ty name
+fn strip_h(name: string) -> string:
+    if strings.starts_with(name, "h_") and len(name) > 2:
+        return substr(name, 2, len(name))
+    return name
+
+# a `package` header means -g line info was skipped by the compiler (single-file
+# only) -- refuse up front rather than debugging with no source map
+fn is_package_file(src: string) -> bool:
+    lines := split(src, "\n")
+    for ln in lines:
+        t := strings.trim(ln)
+        if t == "":
+            continue
+        if strings.starts_with(t, "#"):
+            continue
+        w := split(t, " ")
+        if len(w) >= 2 and w[0] == "package":
+            return true
+        return false
+    return false
+
+fn all_digits(s: string) -> bool:
+    if len(s) == 0:
+        return false
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c < 48 or c > 57:
+            return false
+    return true
+
+fn usage():
+    println("tycho-debug - debug a Tycho program under gdb")
+    println("usage: tycho-debug [-b <line>]... <program.ty> [args...]")
+    println("  compiles <program.ty> with -g, then drives an interactive gdb session")
+    println("  -b <line>    pre-set a breakpoint on that source line (repeatable)")
+    println("  commands: b <line>  r  n  s  c  p <expr>  loc  bt  l  $ <gdb>  q  h")
+
+fn help():
+    println("  b <line>   break on a source line (prog.ty:<line>)")
+    println("  r          run the program")
+    println("  n          next -- step over")
+    println("  s          step into")
+    println("  c          continue")
+    println("  p <expr>   print a C expression (locals are h_x; inout are *h_x)")
+    println("  loc        show the current function's locals (h_ stripped)")
+    println("  bt         backtrace")
+    println("  l          show source around the current line")
+    println("  $ <cmd>    pass a command straight to gdb")
+    println("  q          quit  (Ctrl-D also quits; Ctrl-C interrupts the program)")
+
+# ---- the gdb session ------------------------------------------------------
+
+# Ctrl-C: the tool's handler set the flag; stop the running inferior by
+# SIGINT-ing IT (gdb is the tracer, so it intercepts the signal and reports
+# the stop at the current source line).
+fn interrupt(s: inout Sess):
+    if s.pid > 0:
+        dbgx_kill(s.pid, 2)            # SIGINT
+
+# send one MI command, print stream records as they arrive, return the payload
+# of the terminal ^done record ("" for none). `is_exec`: the inferior may be
+# left running (r/n/s/c) -- a Ctrl-C then interrupts it, and the call blocks
+# until the *stopped record (gdb answers an exec command with ^running + a
+# prompt and stops LATER, so the first prompt is not the end of an exec
+# command).
+fn mi(s: inout Sess, mi_cmd: string, is_exec: bool) -> string:
+    if dbgx_write(s.g, mi_cmd + "\n") < 0:
+        die("tycho-debug: cannot talk to gdb")
+    done := ""
+    saw_stopped := false
+    saw_error := false
+    for true:
+        line := ""
+        eof := false
+        match dbgx_readline(s.g):
+            Some(l):
+                line = l
+            None:
+                if dbgx_interrupted(s.g) == 0:
+                    die("tycho-debug: gdb exited unexpectedly")
+                eof = true
+        # a Ctrl-C that landed while we were reading -- consume it here, and
+        # if the inferior may be running, interrupt it
+        if eof:
+            if is_exec:
+                interrupt(&s)
+            continue
+        if dbgx_interrupted(s.g) != 0:
+            if is_exec:
+                interrupt(&s)
+        if strings.trim(line) == "(gdb)":
+            if is_exec and not saw_stopped and not saw_error:
+                continue        # the inferior is still running; wait for the stop
+            return done
+        if strings.starts_with(line, "+"):
+            continue            # immediate replies (+interrupt, +exit): ignore
+        kind := line[0]
+        if kind == 42:                           # *stopped / *running
+            if strings.starts_with(line, "*stopped"):
+                saw_stopped = true
+                show_stopped(&s, line)
+        elif kind == 61:                         # = async notify
+            if strings.starts_with(line, "=thread-group-started"):
+                p := field(rec_fields(line), "pid")
+                if p != "":
+                    s.pid = strings.parse_int(p)   # the inferior pid, for Ctrl-C
+            elif strings.starts_with(line, "=thread-group-exited"):
+                s.pid = 0
+        elif kind == 94:                         # ^done / ^error / ^running
+            if strings.starts_with(line, "^done"):
+                done = substr(line, 6, len(line))
+            elif strings.starts_with(line, "^error"):
+                saw_error = true
+                println("error: " + field(rec_fields(substr(line, 7, len(line))), "msg"))
+        elif kind == 126 or kind == 64 or kind == 38:   # ~ console / @ target / & log
+            if len(line) >= 2:
+                println(unescape_c(substr(line, 1, len(line) - 1)))
+        else:
+            # anything else is the inferior's raw stdout (gdb 17 passes it
+            # through without the @ prefix; older gdb wraps it -- both print)
+            println(line)
+    return done
+
+# format a *stopped record: the reason + the frame's source position
+fn show_stopped(s: inout Sess, rec: string):
+    parts := rec_fields(rec)
+    reason := field(parts, "reason")
+    if reason == "breakpoint-hit":
+        println("[breakpoint " + field(parts, "bkptno") + " hit]")
+    elif reason == "end-stepping-range":
+        println("[stepped]")
+    elif reason == "exited-normally":
+        println("[program exited normally]")
+        s.pid = 0
+        return
+    elif reason == "exited":
+        println("[program exited: code " + field(parts, "exit-code") + "]")
+        s.pid = 0
+        return
+    elif reason == "signal-received":
+        println("[stopped by " + field(parts, "signal-name") + "]")
+    elif reason == "interrupt":
+        println("[interrupted]")
+    elif reason == "function-finished":
+        println("[returned]")
+    elif reason == "":
+        println("[stopped]")
+    else:
+        println("[stopped: " + reason + "]")
+    fb := field(parts, "frame")
+    if fb == "":
+        return
+    fparts := blob_fields(fb)
+    fn_ := field(fparts, "func")
+    f := field(fparts, "file")
+    ln := field(fparts, "line")
+    if f == s.src or f == "":
+        if ln != "":
+            s.cur = strings.parse_int(ln)
+        println("  at " + base_name(s.src) + ":" + ln + "  (" + strip_h(fn_) + ")")
+    else:
+        println("  at " + f + ":" + ln + "  (" + fn_ + ")")   # runtime glue: no .ty line
+
+# ---- commands -------------------------------------------------------------
+
+fn cmd_break(s: inout Sess, rest: string):
+    if not all_digits(rest):
+        println("break: source line expected, e.g.  b 7")
+        return
+    payload := mi(&s, "-break-insert " + s.src + ":" + rest, false)
+    if payload == "":
+        return
+    bk := field(rec_fields(payload), "bkpt")
+    num := ""
+    if bk != "":
+        num = field(blob_fields(bk), "number")
+    println("breakpoint " + num + " at " + base_name(s.src) + ":" + rest)
+
+fn cmd_print(s: inout Sess, expr: string):
+    if expr == "":
+        println("print: expression expected, e.g.  p h_x   (locals are h_ + name)")
+        return
+    payload := mi(&s, "-data-evaluate-expression \"" + c_quote(expr) + "\"", false)
+    if payload == "":
+        return
+    println(field(rec_fields(payload), "value"))
+
+fn cmd_locals(s: inout Sess):
+    payload := mi(&s, "-stack-list-variables --all-values", false)
+    if payload == "":
+        return
+    vs := field(rec_fields(payload), "variables")
+    if vs == "":
+        println("(no locals)")
+        return
+    items := split_top(substr(vs, 1, len(vs) - 1), 44)
+    shown := 0
+    for it in items:
+        vparts := blob_fields(it)
+        name := field(vparts, "name")
+        if name == "":
+            continue
+        if strings.starts_with(name, "_"):
+            continue                   # arena machinery: _parent _scope _t _scr* ...
+        println("  " + strip_h(name) + " = " + field(vparts, "value"))
+        shown = shown + 1
+    if shown == 0:
+        println("(no user locals)")
+
+fn cmd_list(lines: [string], cur: int):
+    if cur < 1:
+        println("list: not stopped at a source line yet -- run first")
+        return
+    lo := cur - 4
+    if lo < 0:
+        lo = 0
+    hi := cur + 4
+    if hi >= len(lines):
+        hi = len(lines) - 1
+    for i := lo; i <= hi; i += 1:
+        mark := "  "
+        if i == cur - 1:
+            mark = "->"
+        println(mark + " " + str(i + 1) + "  " + lines[i])
+
+fn cmd_quit(s: inout Sess):
+    dbgx_write(s.g, "-gdb-exit\n")
+    running := true
+    for running:
+        match dbgx_readline(s.g):
+            Some(_):
+                running = true
+            None:
+                running = false
+    dbgx_close(s.g)
+    os.system("rm -f " + shq(s.bin))          # the temp debuggee binary
+    exit(0)
+
+# first word of the line, and everything after it
+fn split_cmd(line: string) -> (string, string):
+    t := strings.trim(line)
+    sp := find(t, " ")
+    if sp < 0:
+        return (t, "")
+    return (substr(t, 0, sp), strings.trim(substr(t, sp + 1, len(t))))
+
+# ---- the REPL -------------------------------------------------------------
+
+fn repl(s: inout Sess, src_lines: [string]):
+    println("tycho-debug: debugging " + base_name(s.src) + "  (q quits, h for help)")
+    last := ""
+    for true:
+        print("tycho-debug> ")
+        line := ""
+        eof := false
+        match dbgx_readline(dbgx_stdin()):
+            Some(l):
+                line = l
+            None:
+                if dbgx_interrupted(dbgx_stdin()) == 0:
+                    eof = true
+        if eof:
+            println("")
+            cmd_quit(&s)
+            return
+        if dbgx_interrupted(dbgx_stdin()) != 0:
+            println("")              # Ctrl-C at the prompt: clear the line
+            continue
+        t := strings.trim(line)
+        if t == "":
+            t = last
+        if t == "":
+            continue
+        last = t
+        cmd, rest := split_cmd(t)
+        if cmd == "q" or cmd == "quit":
+            cmd_quit(&s)
+            return
+        elif cmd == "h" or cmd == "help" or cmd == "?":
+            help()
+        elif cmd == "b" or cmd == "break":
+            cmd_break(&s, rest)
+        elif cmd == "r" or cmd == "run":
+            mi(&s, "-exec-run", true)
+        elif cmd == "n" or cmd == "next":
+            mi(&s, "-exec-next", true)
+        elif cmd == "s" or cmd == "step":
+            mi(&s, "-exec-step", true)
+        elif cmd == "c" or cmd == "continue":
+            mi(&s, "-exec-continue", true)
+        elif cmd == "p" or cmd == "print":
+            cmd_print(&s, rest)
+        elif cmd == "loc" or cmd == "locals":
+            cmd_locals(&s)
+        elif cmd == "bt" or cmd == "backtrace":
+            mi(&s, "-interpreter-exec console \"bt\"", false)
+        elif cmd == "l" or cmd == "list":
+            cmd_list(src_lines, s.cur)
+        elif cmd == "$":
+            mi(&s, "-interpreter-exec console \"" + c_quote(rest) + "\"", false)
+        else:
+            println("tycho-debug: unknown command '" + cmd + "'  (h for help)")
+
+# ---- main -----------------------------------------------------------------
+
+fn main():
+    a := args()
+    bpoints := []string
+    i := 1
+    prog := ""
+    for i < len(a):
+        if a[i] == "-b" and i + 1 < len(a):
+            push(bpoints, a[i + 1])
+            i = i + 2
+        elif a[i] == "-h" or a[i] == "--help":
+            usage()
+            return
+        else:
+            prog = a[i]
+            i = i + 1
+            break
+    if prog == "":
+        usage()
+        exit(2)
+    abs := ""
+    match dbgx_abs(prog):
+        Some(p):
+            abs = p
+        None:
+            die("tycho-debug: no such file: " + prog)
+    src_text := read_file(abs)
+    if is_package_file(src_text):
+        die("tycho-debug: " + prog + " is a package build -- the -g line info is " +
+            "single-file only, so source breakpoints would not work. Reduce the " +
+            "failing path to a single file (see docs/guides/debugging.md).")
+    src_lines := split(src_text, "\n")
+    # compile with -g: #line directives + -O0 -g (stderr passes through so a
+    # compile error is visible; the "built ..." line is suppressed)
+    bin := "/tmp/.tycho_dbg_" + str(dbgx_pid())
+    cc := compiler()
+    if os.system(cc + " " + shq(abs) + " -g -o " + bin + " >/dev/null") != 0:
+        die("tycho-debug: compile failed: " + prog)
+    # gdb on PATH?
+    if os.system("command -v gdb >/dev/null 2>&1") != 0:
+        die("tycho-debug: gdb not found on PATH -- install gdb (the -g output needs it)")
+    gdbline := "gdb -q --interpreter=mi2 --args " + bin
+    j := i
+    for j < len(a):
+        gdbline = gdbline + " " + shq(a[j])
+        j = j + 1
+    g := dbgx_spawn(gdbline)
+    if is_null(g):
+        die("tycho-debug: cannot start gdb")
+    # drain the startup banner to the first prompt
+    up := true
+    for up:
+        match dbgx_readline(g):
+            Some(l):
+                if strings.trim(l) == "(gdb)":
+                    up = false
+            None:
+                die("tycho-debug: gdb did not start")
+    # session setup: no paging, no confirm prompts. MI stays in its default
+    # SYNC mode on purpose -- see the header comment (mi-async on misses
+    # breakpoints on the first run; probed on gdb 17.2).
+    s := Sess(g, 0, 0, abs, bin)
+    mi(&s, "-gdb-set pagination off", false)
+    mi(&s, "-gdb-set confirm off", false)
+    # don't try to show the source line under a frame -- the generated .c is
+    # deleted after the build, so a stop in runtime glue would print a
+    # "No such file or directory" warning; the tool formats locations itself
+    mi(&s, "-gdb-set print frame-info short-location", false)
+    for b in bpoints:
+        cmd_break(&s, b)
+    repl(&s, src_lines)

@@ -52,6 +52,10 @@ gmon.out
 /tycho-lsp
 /tycho-lsp.c
 
+# The compiled `tycho-debug` gdb adapter (`make tycho-debug`) + its `--emit-c` C
+/tycho-debug
+/tycho-debug.c
+
 # The compiled static web server (built by `make server` from server/main.ty).
 # server/main.ty and server/www/ ARE tracked; the binary is not. Also catch the
 # form built next to its source: a plain `./tychoc server/main.ty` still leaves

@@ -238,6 +238,18 @@ make -s selfhost-check
 step "[3o/21] make build-check  (tycho-build: first-build dispatch golden, second-build no-op differential, touch-rebuilds-only-dependents, failed recipe skips dependents, determinism, exit-2 errors)"
 make -s build-check
 
+# 3p for the same reason 3e-3o are: a tool under tools/ that nothing else runs --
+# step [9] tools-check `--emit-c`s every .ty in the tree, so tycho-debug failing
+# to COMPILE already reddens there, and [3b] entrypoints never looks under
+# tools/. What no lane did was RUN it: before this step the gdb adapter could
+# stop setting breakpoints, stop stepping, or hang on Ctrl-C with `make ci`
+# green. It is a behavioral lane rather than a golden lane on purpose: the
+# transcript includes gdb's own output, which drifts across gdb versions. It
+# SKIPS loudly when gdb is absent (an external dependency like sqlite3/libpng),
+# and it also exercises the `tycho debug` dispatcher command end to end.
+step "[3p/22] make debug-check  (tycho-debug: scripted sessions -- breakpoint set + hit on the right source line, stripped-C-name locals, print, step, clean quit, run-to-completion with program output, Ctrl-C interrupt of a running inferior, fail-closed refusals, tycho debug wrapper)"
+make -s debug-check
+
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
 

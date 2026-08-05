@@ -6,8 +6,9 @@
 #   tycho check <file.ty>             front-end only: parse/type, no cc (fast)
 #   tycho watch <file.ty>             re-check whenever the file changes
 #   tycho fmt   <file.ty> [-w]        format to stdout, or safely in-place with -w
+#   tycho debug <file.ty> [args...]   compile with -g and debug under gdb
 #
-# Set TYCHOC/TYCHOFMT to pick the compiler/formatter. Shell-out + sleep come from
+# Set TYCHOC/TYCHOFMT/TYCHODEBUG to pick the compiler/formatter/debugger. Shell-out + sleep come from
 # tools/tycho_shim.c (libc system()/usleep() the FFI can't name directly); build
 # this with:  tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
 
@@ -27,6 +28,13 @@ fn formatter() -> string:
     if f == "":
         return "tychofmt"
     return f
+
+# the debugger to invoke (TYCHODEBUG override, else "tycho-debug" off PATH)
+fn debugger() -> string:
+    d := getenv("TYCHODEBUG")
+    if d == "":
+        return "tycho-debug"
+    return d
 
 # output binary name for `build`: drop the directory and a trailing ".ty"
 fn out_name(file: string) -> string:
@@ -57,7 +65,8 @@ fn usage():
     println("  tycho check <file.ty>             parse/type only, no cc (fast)")
     println("  tycho watch <file.ty>             re-check on change")
     println("  tycho fmt   <file.ty> [-w]        format to stdout (-w: safe in-place write)")
-    println("  (TYCHOC/TYCHOFMT override compiler/formatter; defaults 'tychoc'/'tychofmt')")
+    println("  tycho debug <file.ty> [args...]   compile with -g and debug under gdb")
+    println("  (TYCHOC/TYCHOFMT/TYCHODEBUG override compiler/formatter/debugger)")
 
 fn cmd_run(a: [string], cc: string):
     file := a[2]
@@ -130,6 +139,12 @@ fn cmd_fmt(a: [string], cc: string):
         die("tycho fmt -w: failed to replace " + file)
     println("formatted " + file)
 
+fn cmd_debug(a: [string], cc: string):
+    # hand off to tycho-debug (compile with -g + drive gdb); everything after
+    # `debug` is forwarded, including -b flags and the debuggee's args
+    if tycho_run(debugger() + " " + join_from(a, 2)) != 0:
+        die("tycho debug: session ended with an error")
+
 fn cmd_watch(a: [string], cc: string):
     file := a[2]
     println("watching " + file + " (Ctrl-C to stop)")
@@ -159,6 +174,8 @@ fn main():
         cmd_watch(a, cc)
     elif cmd == "fmt":
         cmd_fmt(a, cc)
+    elif cmd == "debug":
+        cmd_debug(a, cc)
     else:
         println("tycho: unknown command '" + cmd + "'")
         usage()
