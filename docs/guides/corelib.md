@@ -283,6 +283,12 @@ element type instead of a family of per-type siblings.
   nested pattern itself: those packages are also compiled by the frozen
   `compiler/tychoc0.ty`. Pure computation: no shim, no allocation, nothing
   aborts.
+- **`testing`** — a unit-test framework, state threaded like `core:rand`'s:
+  `t := testing.new("name")`, then `check(&t, cond, msg)` and generic
+  `eq(&t, got, want, msg)` (comparable scalars — int/float/string/char; for a
+  composite compare with `==` and pass the message), and
+  `exit(testing.report(t))` — prints `ok name (N checks)` or the failing checks
+  plus `FAIL name (N of M checks failed)` and returns 0/1 for the exit code.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins, and **the
   first corelib module to compose others** (imports `core:strings` for line splitting; it also
   imported `core:path` for the old `exists`, which the `stat`-backed one no longer needs).
