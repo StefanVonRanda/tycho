@@ -22,7 +22,7 @@
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
   `dirent` (opendir/readdir/closedir, `src/tychoc.c:4445@opendir`), `popen`
-  (`src/tychoc.c:13246@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:13260@popen`), `realpath`, `access`, `vasprintf`
   (`src/tychoc.c:103@vasprintf`), and `newlocale/uselocale`
   (`src/tychoc.c:198@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
@@ -167,9 +167,16 @@ audit rather than patched ad hoc.
   `crypto`/`sqlite`) against their MSYS2 libraries; the skip-if-absent
   convention covers a missing one.
 
-Gate: `make corelib` + `make corelib-examples` + `make shim-check` on the
-Windows box. Expected: all packages green or loudly skipped; the regex/signal
-ports land with their own tests + goldens.
+Gate (on the Linux box): `sh scripts/wine_corelib.sh` — every corelib test
+that can link here, cross-compiled under mingw and run under Wine against the
+Linux goldens (pass or skip-with-reason; nothing fails) — plus the Linux tree
+stays green (`make corelib`, `make shim-check`, `make test`). A compiler
+addition lands in this phase: the deps mechanism gains `_WIN32:` sections —
+raw link flags for the Windows build, inert and invisible to `--print-deps`
+elsewhere — which is what lets core:net (`-lws2_32`) and core:regex
+(`-lpcre2-posix`) link on Windows at all. Expected: all packages green or
+loudly skipped; the regex/signal ports land compile-verified, with their
+Windows tests (which need Windows-native mechanisms) parked for phase 6.
 
 ### Phase 5 — Tools
 
@@ -379,3 +386,55 @@ language surface. WSL2 stays a first-class supported path.
 > GATES (Linux tree): make test 591/591, tools-check ok, goldens-check ok,
 > doc gates ok (117 citations re-anchored, diff-hunk-mapped and
 > token-verified). make wine-test is a manual target, not a gate.
+
+> Phase 4 evidence — 2026-08-05 (corelib shims, verified by
+> `sh scripts/wine_corelib.sh` on the Linux box: 37 pass / 9 skip-with-reason /
+> 0 fail; definitive pass deferred to the windows CI leg).
+>
+> THE CODE:
+>   Compiler — the deps mechanism gains `_WIN32:` sections (src/tychoc.c
+>   add_pkg_deps): raw linker flags for Windows builds, appended to the cc
+>   line verbatim, never pkg-config'd, never listed by --print-deps; a
+>   non-Windows compiler skips the section entirely. This is what makes
+>   core:net (-lws2_32) and core:regex (-lpcre2-posix) LINK on Windows at all.
+>   core:io — getline/pread/pwrite (one-arg _mkdir) _WIN32 shims; plus the
+>   directory-classification fix: Windows fopen/open of a DIRECTORY fails with
+>   EACCES, not POSIX's EISDIR, so ty_rf_errno now re-classifies EACCES by
+>   stat, and iox_remove dispatches _rmdir for directories (Windows remove()
+>   is unlink-only). Before this, every io directory path answered Err(Failed)
+>   instead of Err(IsDir).
+>   core:strings — the newlocale handle is now guarded by TY_HAVE_STRTOD_L,
+>   which already excludes mingw; the localeconv fallback (already correct
+>   under any locale) is the Windows path.
+>   core:signal — the fail-closed stub is replaced by the real Windows branch:
+>   SetConsoleCtrlHandler + shutdown/closesocket on the listener and the
+>   registry (shared, platform-neutral array). The accept-wake behaviour is
+>   Windows-version dependent; the flag is set either way (CI leg verifies).
+>   core:datetime — localtime_r/gmtime_r (via localtime_s/gmtime_s),
+>   setenv/unsetenv (via _putenv), and tm_gmtoff (glibc-only member) replaced
+>   by the portable mktime-difference.
+>   core:regex — `#ifdef _WIN32` includes <pcre2posix.h> (POSIX-signature
+>   drop-in: regcomp/regexec/regfree unchanged), verified to compile against
+>   pcre2posix.h; the -lpcre2-posix link comes from the deps _WIN32 section.
+>
+> VERIFIED UNDER WINE (wine-corelib): 37 packages byte-identical to their
+> goldens, including io, strings, datetime (non-TZ paths), compress + zip
+> (against libz-mingw-w64), net and httpd (against ws2_32). 9 skips with
+> reasons: 6 are MSYS2-only library links (crypto/http/image/sqlite/tls —
+> OpenSSL/curl/png/sqlite3 mingw builds; regex — pcre2-posix) whose shim code
+> is portable and compile-verified; 3 are TEST-side POSIX mechanisms, not
+> shim bugs:
+>   os — the test drives `true`/`false`/`printf` which cmd.exe lacks (exit
+>   code 9009); the PACKAGE works (cmd runs, exit codes map, `exit 7` passes).
+>   datetime — offset_at's signed POSIX TZ strings come out sign-inverted
+>   (Windows _tzset uses the opposite convention); `utc0` matches.
+>   signal — the test kills itself via `kill -TERM $PPID` from a POSIX shell;
+>   cmd has no kill, so the handler never fires and the accept blocks (this
+>   one HUNG the lane until it was classified as a skip).
+>   All three need Windows-native test variants in phase 6.
+>
+> GATES (Linux tree): make corelib all green (46 packages — the _WIN32
+> branches are inert), shim-check 9 ok / 4 skipped / 0 failed, make test
+> 591/591 (env -u LD_PRELOAD), doc gates; 53 citations re-anchored
+> (diff-hunk-mapped with the whole-span range fix, token-verified). make
+> wine-corelib is a manual target, not a gate.

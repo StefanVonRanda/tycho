@@ -3,7 +3,19 @@
  * compiler discovers <pkg>/<pkg>_shim.c). A compiled pattern is a malloc'd
  * regex_t* handed to tycho as an opaque `ptr`; tycho never dereferences it and
  * frees it via rx_free (FFI memory is NOT arena-managed). */
+#ifdef _WIN32
+/* mingw-w64 has no POSIX <regex.h> at any version. pcre2-posix (the PCRE2
+ * project's POSIX compatibility layer) provides the SAME API -- regex_t,
+ * regcomp/regexec/regerror/regfree with POSIX signatures -- so this shim
+ * compiles unchanged against it; the link flag -lpcre2-posix comes from the
+ * package's `deps` file `_WIN32:` section. Where pcre2 is not installed the
+ * test skips (the corelib skip convention); where it is, the semantics are
+ * PCRE2's for patterns both engines accept, which is the documented
+ * Windows divergence from glibc's regexec. */
+#include <pcre2posix.h>
+#else
 #include <regex.h>
+#endif
 #include <stdlib.h>
 #include <stdint.h>
 /* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
