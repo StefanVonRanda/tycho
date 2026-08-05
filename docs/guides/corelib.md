@@ -289,6 +289,11 @@ element type instead of a family of per-type siblings.
   composite compare with `==` and pass the message), and
   `exit(testing.report(t))` — prints `ok name (N checks)` or the failing checks
   plus `FAIL name (N of M checks failed)` and returns 0/1 for the exit code.
+- **`log`** — a leveled logger, state threaded like `core:rand`'s:
+  `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
+  msg)` — each prints `[level] message`, dropping messages below the logger's
+  level; `to_stderr` selects stderr over stdout. No timestamps (they would make
+  output non-deterministic); prepend your own.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins, and **the
   first corelib module to compose others** (imports `core:strings` for line splitting; it also
   imported `core:path` for the old `exists`, which the `stat`-backed one no longer needs).

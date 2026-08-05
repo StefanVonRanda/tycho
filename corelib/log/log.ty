@@ -1,0 +1,66 @@
+# core:log -- a leveled logger. Import with `import "core:log"`.
+#
+# Tycho has no globals, so the logger state is an explicit value threaded
+# through `inout` (the same shape as core:rand's state):
+#
+#   l := log.init(log.Info, false)     # level + to_stderr
+#   log.debug(&l, "entering")          # suppressed below the level
+#   log.info(&l, "loaded " + str(n))
+#   log.error(&l, "boom")
+#
+# Each call prints `[LEVEL] message` on its own line; the level is the
+# lowercase name. Timestamps are deliberately NOT added (they would make
+# output non-deterministic); prepend clock()-based text yourself when a log
+# needs one. `debug` is 0, `info` 1, `warn` 2, `error` 3 -- a logger at level
+# N prints messages with level >= N only.
+package log
+
+const Debug = 0
+const Info = 1
+const Warn = 2
+const Error = 3
+
+# A `const` does not cross a package boundary here (the decimal package
+# documents the same limit), so the levels are readable as calls:
+# `log.init(log.level_info(), false)`.
+fn level_debug() -> int:
+    return Debug
+fn level_info() -> int:
+    return Info
+fn level_warn() -> int:
+    return Warn
+fn level_error() -> int:
+    return Error
+
+struct Logger:
+    level: int       # messages below this level are dropped
+    to_stderr: bool  # false = stdout, true = stderr (eprint)
+
+fn init(level: int, to_stderr: bool) -> Logger:
+    return Logger(level, to_stderr)
+
+fn line(l: inout Logger, level: int, msg: string):
+    if level < l.level:
+        return
+    tag := ""
+    if level == Debug:
+        tag = "debug"
+    elif level == Warn:
+        tag = "warn"
+    elif level == Error:
+        tag = "error"
+    else:
+        tag = "info"
+    if l.to_stderr:
+        eprint("[" + tag + "] " + msg + "\n")
+    else:
+        print("[" + tag + "] " + msg + "\n")
+
+fn debug(l: inout Logger, msg: string):
+    line(&l, Debug, msg)
+fn info(l: inout Logger, msg: string):
+    line(&l, Info, msg)
+fn warn(l: inout Logger, msg: string):
+    line(&l, Warn, msg)
+fn error(l: inout Logger, msg: string):
+    line(&l, Error, msg)

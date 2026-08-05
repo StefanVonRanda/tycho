@@ -1,0 +1,20 @@
+# corelib test: exercises core:log; the output is locked to
+# corelib/test/log.out (corelib/run.sh). Level filtering, both destinations,
+# and the exit-code contract.
+package main
+import "core:log"
+
+fn main():
+    l := log.init(log.level_info(), false)
+    log.debug(&l, "suppressed below Info")
+    log.info(&l, "loaded")
+    log.warn(&l, "watch out")
+    log.error(&l, "boom")
+    # a logger at Error drops everything below Error
+    quiet := log.init(log.level_error(), false)
+    log.info(&quiet, "also suppressed")
+    log.error(&quiet, "only this")
+    # stderr destination
+    err := log.init(log.level_warn(), true)
+    log.debug(&err, "stderr suppressed")
+    log.warn(&err, "to stderr")
