@@ -91,26 +91,38 @@ core:image is PNG (libpng), core:raster is BMP/QOI. JPEG via libjpeg FFI and
 a pure-Tycho GIF are real, but no program in-tree needs them yet; attach to
 this phase only if a caller appears.
 
-## Phase 2 — `vendor:` dependency story (Go/Odin style)
+## Phase 2 — Vendored dependencies (Go/Odin style)
 
 Vendor your dependencies — no central registry, no version resolution. The
-compiler already resolves `core:X` via `TYCHO_CORELIB` and everything else
-relative (`src/tychoc.c:13178`); the new surface:
+mechanism is ALREADY COMPLETE and verified end-to-end: `import "PATH"`
+resolves relative to the importing package's own directory (cwd-independent),
+so `import "vendor/foo"` from the entry and `import "../bar"` from inside a
+vendored package compile and run as-is, mixed with `core:` imports;
+multi-package merge, name mangling, visibility and cycle detection are all
+spec'd and gated. tycho-build needs nothing — its recipes are shell lines; the
+compiler resolves the imports. So the phase is documentation + one
+convenience command, NOT compiler surface:
 
-- **`import "vendor:pkg"`** resolution: a `vendor/` directory convention
-  (TYCHO_VENDOR-style env override mirroring TYCHO_CORELIB, defaulting to a
-  `vendor/` dir beside the entry program), so a vendored package is imported
-  by name and compiled exactly like a corelib package.
-- **The fetch tool**: `tycho fetch <url-or-name> <dest>` — download a
-  vendorable package tree into `vendor/` (the fetch dogfood exists at
-  examples/fetch), with checksum verification.
-- **tycho-build integration**: the build tool resolves `vendor:` deps the way
-  it resolves file deps, and a `vendor` manifest (a buildfile target or a
-  `deps` line — decided in the phase) pins what a project vendors.
+- **Document the vendoring convention** in `docs/guides/packages.md`: the
+  `vendor/` directory pattern, the importer-relative resolution rule, the
+  flat-vendor convention that keeps `../` chains at depth one, and the
+  current "only the `core:` collection is exposed today" note corrected (the
+  relative-import story works today, undocumented).
+- **`tycho fetch <url> <name>`**: download a package tree and unpack it into
+  `vendor/<name>`, with checksum verification. The HTTP + io + path + sha256
+  pieces are proven by examples/fetch; the tool is a small addition to the
+  `tycho` dispatcher, dogfooding core:http/core:io/core:path/core:sha256.
+- **A tycho-build leg**: build-check gains a vendored-project fixture (entry
+  + two vendored packages, one importing the other) proving the whole story
+  builds through the build tool.
 
-Gate: `make test` (compiler import-resolution change) + `make selfhost-check`
-(the import path table changes) + `make build-check` (tycho-build integration)
-+ doc gates. Citations re-point (the resolution code shifts).
+Explicitly NOT in scope, deferred until a real caller: a `vendor:` named
+collection root (Odin's `collection:` mechanism). Relative imports cover the
+story; the demand-gate says a second resolution rule waits for a real
+multi-entry or nested-layout project to feel the `../` pain.
+
+Gate: `make build-check` (the new leg) + doc gates. No compiler change, so no
+`make test` / `make selfhost-check` / citation shift.
 
 ## Phase 3 — Debugger
 
@@ -148,4 +160,6 @@ Expected: the README's status banner flips from research prototype to 1.0.
 
 - A REPL (owner decision), native Windows (deferred; WSL is the supported
   path), a package registry (vendoring is the model), Unicode tables beyond
-  validation/iteration, and image codecs/timezone until a caller appears.
+  validation/iteration, image codecs and timezone until a caller appears,
+  and a `vendor:` named collection root (Odin-style) until a real multi-entry
+  or nested-layout project needs it.
