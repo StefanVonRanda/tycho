@@ -1,0 +1,120 @@
+# core:sqlite -- a thin wrapper over libsqlite3, bound directly (no hand-written
+# shim: the `extern "sqlite3"` forms name the pkg-config dependency, so the
+# package compiles where sqlite3 is installed and its test is skipped where it
+# is not). Import with `import "core:sqlite"`.
+#
+#   db := sqlite.open("app.db") or_return
+#   defer sqlite.close(&db)
+#   sqlite.exec(&db, "CREATE TABLE IF NOT EXISTS t(x INTEGER)") or_return
+#   rows := sqlite.query(&db, "SELECT x FROM t") or_return   # [[string]]
+#
+# Scope: `open`/`close`, `exec` (a statement with no result rows, reporting the
+# change count), `query` (SELECT -- every column read as TEXT and returned as
+# `[[string]]`; ints/floats are coerced by SQLite's text conversion), and
+# `errmsg` for the last error. Parameter binding via `exec_params` /
+# `query_params`: parameters are bound as text (SQLite coerces `1` to INTEGER
+# contextually); the `?`/`?N`/`:name` placeholder forms all work. In-memory
+# databases are just `sqlite.open(":memory:")`. Fail-closed: every call that
+# can fail returns `Result(_, string)` with sqlite's own message.
+package sqlite
+
+struct Db:
+    h: ptr                      # the sqlite3* handle; 0 = closed
+
+# --- the sqlite3 C surface (direct FFI, pkg-config name "sqlite3") ----------
+
+extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
+extern "sqlite3" fn sqlite3_close(db: ptr) -> int
+extern "sqlite3" fn sqlite3_exec(db: ptr, sql: string, cb: ptr, arg: ptr, errmsg: inout ptr) -> int
+extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: inout ptr, tail: ptr) -> int
+extern "sqlite3" fn sqlite3_bind_text(st: ptr, i: int, s: string, n: int, dtor: ptr) -> int
+extern "sqlite3" fn sqlite3_step(st: ptr) -> int
+extern "sqlite3" fn sqlite3_column_count(st: ptr) -> int
+extern "sqlite3" fn sqlite3_column_text(st: ptr, i: int) -> string
+extern "sqlite3" fn sqlite3_changes(db: ptr) -> int
+extern "sqlite3" fn sqlite3_finalize(st: ptr) -> int
+extern "sqlite3" fn sqlite3_errmsg(db: ptr) -> string
+extern "sqlite3" fn sqlite3_free(p: ptr)
+
+# --- the wrapper ------------------------------------------------------------
+
+fn open(path: string) -> Result(Db, string):
+    db := Db(null)
+    if sqlite3_open(path, &db.h) != 0:
+        msg := errmsg(db)
+        sqlite3_close(db.h)
+        return Err(msg)
+    return Ok(db)
+
+fn close(d: inout Db):
+    if d.h != null:
+        sqlite3_close(d.h)
+        d.h = null
+
+# The sqlite error message for the database's last failure ("" if none).
+fn errmsg(d: Db) -> string:
+    if d.h == null:
+        return ""
+    return sqlite3_errmsg(d.h)
+
+# Run a statement that returns no rows; Ok(the change count).
+fn exec(d: inout Db, sql: string) -> Result(int, string):
+    em := null
+    if sqlite3_exec(d.h, sql, null, null, &em) != 0:
+        msg := errmsg(d)
+        if em != null:
+            sqlite3_free(em)
+        return Err(msg)
+    return Ok(sqlite3_changes(d.h))
+
+# Prepare, bind, run. `params` binds ?1..?N as text; empty for none.
+fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
+    st := null
+    if sqlite3_prepare_v2(d.h, sql, -1, &st, null) != 0:
+        return Err(errmsg(d))
+    for i := 0; i < len(params); i += 1:
+        if sqlite3_bind_text(st, i + 1, params[i], -1, to_ptr(-1)) != 0:   # SQLITE_TRANSIENT
+            sqlite3_finalize(st)
+            return Err(errmsg(d))
+    return Ok(st)
+
+# SELECT (or any statement producing rows): every column read as text,
+# returned as [[string]].
+fn query(d: inout Db, sql: string) -> Result([[string]], string):
+    return query_params(&d, sql, []string)
+
+fn query_params(d: inout Db, sql: string, params: [string]) -> Result([[string]], string):
+    match run_stmt(&d, sql, params):
+        Err(m):
+            return Err(m)
+        Ok(st):
+            rows := [][string]
+            ncols := sqlite3_column_count(st)
+            for:
+                r := sqlite3_step(st)
+                if r == 100:                 # SQLITE_ROW
+                    row := []string
+                    for c := 0; c < ncols; c += 1:
+                        push(row, sqlite3_column_text(st, c))
+                    push(rows, row)
+                elif r == 101:               # SQLITE_DONE
+                    break
+                else:
+                    m := errmsg(d)
+                    sqlite3_finalize(st)
+                    return Err(m)
+            sqlite3_finalize(st)
+            return Ok(rows)
+
+# A parameterized statement with no result rows (INSERT/UPDATE with a ? or
+# :name placeholder); Ok(the change count).
+fn exec_params(d: inout Db, sql: string, params: [string]) -> Result(int, string):
+    match run_stmt(&d, sql, params):
+        Err(m):
+            return Err(m)
+        Ok(st):
+            r := sqlite3_step(st)
+            sqlite3_finalize(st)
+            if r != 101:                     # SQLITE_DONE
+                return Err(errmsg(d))
+            return Ok(sqlite3_changes(d.h))
