@@ -1,0 +1,5 @@
+ok   passing (4 checks)
+      FAIL: deliberate failure
+      FAIL: eq fails (got 1, want 2)
+FAIL failing (2 of 3 checks failed)
+0 1
