@@ -21,21 +21,25 @@
 ## Why it is feasible at all — the assessment in one screen
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
-  `dirent` (opendir/readdir/closedir, `src/tychoc.c:4429@opendir`), `popen`
-  (`src/tychoc.c:13215@popen`), `realpath`, `access`, `vasprintf`
+  `dirent` (opendir/readdir/closedir, `src/tychoc.c:4440@opendir`), `popen`
+  (`src/tychoc.c:13241@popen`), `realpath`, `access`, `vasprintf`
   (`src/tychoc.c:98@vasprintf`), and `newlocale/uselocale`
-  (`src/tychoc.c:185@uselocale`). mingw-w64 provides all but `vasprintf`
-  (10-line fallback) and `newlocale` on versions before v8 (small shim).
+  (`src/tychoc.c:193@uselocale`). mingw-w64 provides no POSIX
+  `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
+  master 2026-08-05: only the MSVC-style `_locale_t` API) -- the compiler and
+  runtime already have localeconv-based fallback legs, so this costs a guard,
+  not a shim. `vasprintf` is present in mingw 15.2; a 10-line fallback if ever
+  absent.
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:740@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:755@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
-  (`runtime/tycho_rt.c:54@sysconf` — mingw shims, a few lines), and **the one
+  (`runtime/tycho_rt.c:59@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
   `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:52-53`,
-  `:148@sigaltstack`). The per-platform pattern already exists
-  (`runtime/tycho_rt.c:102@__APPLE__`); Windows gets a third branch via
+  `:158@sigaltstack`). The per-platform pattern already exists
+  (`runtime/tycho_rt.c:112@__APPLE__`); Windows gets a third branch via
   `GetCurrentThreadStackLimits` + `AddVectoredExceptionHandler` catching
   `EXCEPTION_STACK_OVERFLOW` (~60-100 lines). Estimate: 2-3 days.
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`
@@ -73,9 +77,9 @@ Windows. This phase is the one-day spike that confirms or kills the estimate.
 - Install MSYS2 + mingw-w64 gcc + winpthreads + pkg-config + make + sh + tar
   + the dev libraries (openssl, libcurl, zlib, libpng, sqlite3).
 - `make` the compiler (`src/tychoc.c` + the runtime embed) under mingw gcc.
-  Fix what reddens: the `vasprintf` fallback, the `newlocale`/`uselocale`
-  shim if the installed mingw predates v8, `dirent`/`realpath`/`access`
-  details.
+  Fix what reddens: `newlocale`/`uselocale` (absent from mingw-w64 at
+  every version -- route to the existing localeconv fallback legs),
+  `dirent`/`realpath`/`access` details.
 - Compile and run `examples/hello.ty` end to end: the transpiler's cc line
   (`cc -O3 -fwrapv -pthread ... -lm`) must work on mingw gcc unchanged; fix
   or parameterize it here if not.
@@ -232,7 +236,8 @@ language surface. WSL2 stays a first-class supported path.
 >   channel free path uses plain free()).
 >
 > CORRECTIONS TO THE ASSESSMENT: (1) "mingw-w64 v8+ provides newlocale" is
-> WRONG for the Debian mingw 15.2 build — it has only the MSVC-style _locale_t;
+> WRONG for mingw-w64 at ANY version (verified against upstream master's
+> locale.h, 2026-08-05) — only the MSVC-style _locale_t exists;
 > the fallback legs are what make the port small, and the locale-check LANE
 > (LD_PRELOAD setlocale) is Linux-only either way. (2) winpthreads is a
 > DYNAMIC dll (libwinpthread-1.dll) — present system-wide in MSYS2, but a
