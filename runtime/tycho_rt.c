@@ -48,9 +48,14 @@
 #include <limits.h>    /* size/width limits (INT64_MIN for the div-overflow guard comes from <stdint.h>) */
 #include <math.h>
 #include <dirent.h>
+#ifdef _WIN32
+#include <windows.h>    /* GetActiveProcessorCount for tycho_ncpu */
+#endif
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
 #include <signal.h>    /* the stack-overflow guard (sigaltstack/sigaction) */
-#include <ucontext.h>  /* the faulting SP for the same guard */
+#ifndef _WIN32
+#include <ucontext.h>  /* the faulting SP for the same guard; Windows has none (the SEH port is the phase-2 stack-guard work) */
+#endif
 #include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
 #include <stdatomic.h> /* lock-free channel fast path (CC-5) */
 #include <sched.h>     /* sched_yield in the spin-escalation ladder */
@@ -65,6 +70,11 @@ _Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");
 
 #define TYCHO_BLOCK_DEFAULT (1u << 16)
 
+#ifndef _WIN32
+/* gap: the SEH port of this guard (GetCurrentThreadStackLimits +
+ * gap: AddVectoredExceptionHandler on EXCEPTION_STACK_OVERFLOW) is the
+ * gap: phase-2 stack-guard work; until then Windows deep recursion dies
+ * gap: with the plain access violation instead of the clean one-liner. */
 /* ---- stack-overflow guard: generated-code recursion fails closed ---------- */
 /* The compiler fails closed on pathologically nested INPUT (its own recursion
  * gate, tests/recursion/); nothing guarded the C stack of generated code, so
@@ -170,6 +180,7 @@ __attribute__((constructor)) static void tycho_stack_guard_init(void) {
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, NULL);
 }
+#endif
 
 typedef struct HBlock HBlock;
 struct HBlock { HBlock *next; size_t cap; size_t off; };
@@ -715,9 +726,13 @@ static tycho_int tycho_max_tasks(void) {
 static void *tycho_task_trampoline(void *p) {
     typedef struct { void *(*fn)(void *); void *arg; } TaskStart;
     TaskStart *start = (TaskStart *)p;
+#ifndef _WIN32
     tycho_stack_guard_thread_init();   /* per-thread bounds AND altstack */
+#endif
     void *r = start->fn(start->arg);
+#ifndef _WIN32
     tycho_stack_guard_thread_fini();   /* ASan: clear before thread destroy */
+#endif
     return r;
 }
 
@@ -794,6 +809,30 @@ static void tycho_task_finish(HTask *t) {
  * for parking). The 1ms timed wait makes the check-then-park race harmless
  * (worst case one extra retry), never a lost wakeup. Capacity rounds up to a
  * power of two (still bounded; blocking threshold may exceed the request). */
+/* C11 aligned_alloc is not in mingw's stdlib.h. Allocate n+63+8, align the
+ * payload up to 64, stash the malloc'd pointer 8 bytes before the payload
+ * (the +8 guarantees room for the stash even when malloc already aligned);
+ * ty_aligned_free64 recovers it. The channel free path uses plain free() on
+ * both platforms. */
+static void *ty_aligned_alloc64(size_t n) {
+#ifdef _WIN32
+    unsigned char *p = malloc(n + 63 + 8);
+    if (!p) return NULL;
+    uintptr_t a = ((uintptr_t)p + 63) & ~(uintptr_t)63;
+    ((uintptr_t *)a)[-1] = (uintptr_t)p;
+    return (void *)a;
+#else
+    return aligned_alloc(64, n);
+#endif
+}
+static void ty_aligned_free64(void *aligned) {
+#ifdef _WIN32
+    free((void *)((uintptr_t *)aligned)[-1]);
+#else
+    free(aligned);
+#endif
+}
+
 typedef struct __attribute__((aligned(64))) {
     _Atomic tycho_int seq;     /* Vyukov sequence: ==pos -> sender may claim; ==pos+1 -> receiver may */
     tycho_int  pos;            /* the claim ticket, stashed between claim and commit (cell-exclusive) */
@@ -832,7 +871,7 @@ static HChan *tycho_chan_new(tycho_int cap) {
     while (c2 < cap) c2 <<= 1;
     HChan *ch = (HChan *)malloc(sizeof(HChan));
     if (!ch) tycho_oom();
-    ch->cells = (HCell *)aligned_alloc(64, (size_t)c2 * sizeof(HCell));   /* HCell is aligned(64) */
+    ch->cells = (HCell *)ty_aligned_alloc64((size_t)c2 * sizeof(HCell));
     if (!ch->cells) tycho_oom();
     for (tycho_int i = 0; i < c2; i++) {
         atomic_store_explicit(&ch->cells[i].seq, i, memory_order_relaxed);
@@ -997,7 +1036,7 @@ static void tycho_chan_close(HChan *ch) {
 
 static void tycho_chan_free(HChan *ch) {
     for (tycho_int i = 0; i < ch->cap; i++) arena_free(&ch->cells[i].arena);
-    free(ch->cells);
+    ty_aligned_free64(ch->cells);
     pthread_mutex_destroy(&ch->mu);
     pthread_cond_destroy(&ch->cv);
     free(ch);
@@ -1010,8 +1049,13 @@ static void tycho_chan_free(HChan *ch) {
 static long tycho_ncpu(void) {
     const char *e = getenv("TYCHO_THREADS");
     if (e && *e) { long v = atol(e); if (v >= 1) return v; }
+#ifdef _WIN32
+    /* Windows has no sysconf; processor count from the system API. */
+    return (long)GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+#else
     long n = sysconf(_SC_NPROCESSORS_ONLN);
     return n > 0 ? n : 1;
+#endif
 }
 
 /* Allocate a string with `n` data bytes: an 8-byte length header sits just
@@ -1431,12 +1475,18 @@ char *tycho_bool_to_str(Arena *a, tycho_int b) {
  * guard appends ".0" to a string that already had a fraction -- which is exactly
  * the `1,5.0` above. The guard is correct because of the conversion above it;
  * changing one without the other reintroduces the bug. */
+#ifndef _WIN32
+/* Windows has no POSIX newlocale/uselocale (only the MSVC-style _locale_t);
+ * ty_c_numeric stays 0 there and tycho_float_to_str takes the
+ * ty_fix_decimal_point fallback below -- the same leg as any POSIX host
+ * where newlocale fails. */
 static locale_t       ty_c_numeric;
 static pthread_once_t ty_c_numeric_once = PTHREAD_ONCE_INIT;
 
 static void ty_c_numeric_init(void) {
     ty_c_numeric = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);   /* 0 on failure */
 }
+#endif
 
 /* Fallback path only: rewrite the running locale's decimal separator (which may
  * be several bytes) to a single '.' in place. Returns the new length. %g emits at
@@ -1459,12 +1509,15 @@ static int ty_fix_decimal_point(char *s, int n) {
 char *tycho_float_to_str(Arena *a, double x) {
     char tmp[64];
     int m;
+#ifndef _WIN32
     pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
     if (ty_c_numeric) {
         locale_t prev = uselocale(ty_c_numeric);
         m = snprintf(tmp, sizeof tmp, "%.15g", x);
         uselocale(prev);                             /* prev may be LC_GLOBAL_LOCALE; that is legal */
-    } else {
+    } else
+#endif
+    {
         m = snprintf(tmp, sizeof tmp, "%.15g", x);
         m = ty_fix_decimal_point(tmp, m);
     }
@@ -1512,6 +1565,7 @@ tycho_int tycho_test_make_locale_hostile(void) {
 }
 
 tycho_int tycho_test_float_roundtrip(double x) {
+#ifndef _WIN32
     pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
     if (!ty_c_numeric) return -1;
     Arena a  = arena_new(0);
@@ -1521,6 +1575,9 @@ tycho_int tycho_test_float_roundtrip(double x) {
     uselocale(prev);
     arena_free(&a);
     return (back == x && signbit(back) == signbit(x)) ? 1 : (x != x && back != back) ? 1 : 0;
+#else
+    return -1;   /* no newlocale on Windows: the roundtrip check is untestable */
+#endif
 }
 
 /* --- [int] arrays ---------------------------------------------------------
