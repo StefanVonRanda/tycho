@@ -289,6 +289,14 @@ element type instead of a family of per-type siblings.
   composite compare with `==` and pass the message), and
   `exit(testing.report(t))` — prints `ok name (N checks)` or the failing checks
   plus `FAIL name (N of M checks failed)` and returns 0/1 for the exit code.
+- **`toml`** — a TOML v1.0-subset parser: `parse(s) -> Result(Value, string)`
+  (fail-closed), a recursive `Value` enum (TStr/TInt/TFloat/TBool/TArr/TTable;
+  tables are parallel keys/values arrays), and `get(t, "a.b.c") -> Option(Value)`
+  / `keys(t)`. Supports bare + quoted + dotted keys, `[table]` and
+  `[[array-of-tables]]`, basic strings with escapes and \uXXXX, literal
+  strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with
+  trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables
+  or multi-line strings.
 - **`log`** — a leveled logger, state threaded like `core:rand`'s:
   `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
   msg)` — each prints `[level] message`, dropping messages below the logger's
