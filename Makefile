@@ -123,6 +123,13 @@ demo: tychoc
 wine-smoke:
 	@sh scripts/wine_smoke.sh
 
+# wine-test: phase 3's manual lane — the whole fixture corpus (plain + pkg +
+# abort + diag) cross-compiled and run under Wine against the Linux goldens.
+# NOT a gate, NOT a Windows verdict; its value is the park list (fixtures that
+# redden only for Windows-environment reasons, audited in phase 6).
+wine-test:
+	@sh scripts/wine_test.sh
+
 # Differential test suite: every examples/*.ty and tests/*.ty built both
 # native -O2 and under -fsanitize=address,undefined, run on matching stdin,
 # asserting exit 0, clean sanitizers, and byte-identical output. See
