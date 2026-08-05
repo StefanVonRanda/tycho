@@ -1,154 +1,151 @@
 # What comes next
 
-> 2026-08-04: the build tool is complete (02a2a0d, golden 9d65fd0). Three
-> owner-directed phases, each verified and committed on its own, in this order:
-> housekeeping, deterministic hash, map memory. The closing `make ci` (one
-> sweep, at the end of the chain — the convention) lands as the final step of
-> phase 3.
+> 2026-08-04: the three-phase optimization chain (housekeeping, deterministic
+> hash, map memory) is complete and the closing `make ci` is green. New
+> owner-directed agenda for making Tycho day-to-day usable, in this order:
+> (1) a batteries-included corelib, (2) a vendor-based dependency story
+> (Go/Odin style — vendor your dependencies), (3) a debugger, (4) 1.0
+> promotion. Explicitly NOT on the agenda: a REPL (the owner never reaches for
+> one) and native Windows (deferred, WSL suffices). The corelib demand-gate is
+> waived for Phase 1 by the owner's explicit batteries-included instruction;
+> every package still ships with its test + golden + corelib guide entry per
+> the established convention.
 
-## Phase 1 — housekeeping: the value-semantics doc, the clean tree
+## Phase 1 — Batteries-included corelib
 
-`docs/internals/value-semantics-limits.md` carries the owner's uncommitted edit
-describing `core:pool`'s generational indices and the `arena_recycle` reuse
-story — it has sat in the working tree since before the intern phase. Commit it
-on its own (it documents the pool phase it belongs with), and re-verify the
-tree is otherwise clean.
+Sub-phases, each verified and committed on its own, in this order. Probed
+against a Go/Odin stdlib baseline: these are the missing pieces real programs
+touch every day. The corelib structure convention holds for each: a
+`corelib/<name>/<name>.ty` package (plus `<name>_shim.c` when FFI is needed,
+with a pkg-config `deps` manifest and the skip-if-absent convention),
+`corelib/test/<name>/main.ty` + golden (re-record with
+`RECORD=1 sh corelib/run.sh`), and a `docs/guides/corelib.md` entry.
 
-Gate: doc gates only (`check_citations.py`, `check_links.sh`). Nothing else can
-redden — no code moves.
-Expected: one commit, tree clean (modulo later phases).
+Gate per sub-phase: `make corelib` + `make goldens-check` + doc gates. NOT
+`make test` (tests/run.sh never descends into corelib — it cannot redden).
+A new shim adds `make shim-check`. Expected per sub-phase: all existing
+corelib tests green + the new one; the new golden locked.
 
-## Phase 2 — deterministic generic hash
+### 1.1 `core:testing` — unit-test framework (the daily-dev gap)
 
-The deferred follow-on from the generic-hash phase. Today `hash(x)` is
-per-process seeded (map-consistent, in-process tables/dedup); there is no
-cross-run hash for any composite value. A deterministic variant:
+No test framework exists: the harness is golden-output-based, and a unit-test
+package is what day-to-day development actually uses. Library-first (no new
+syntax): an `assert(cond, msg)` / `assert_eq(a, b)` family collecting failures
+into a `Test` state (threaded like core:rand's state — no globals), and a
+`run()`/`report()` that prints pass/fail per test and exits non-zero on any
+failure. Design freedom on the exact shapes (e.g. a `test_case(name, fn())`
+registration vs a returned list) — decided in the phase.
 
-- **Runtime** (`runtime/tycho_rt.c`): fixed-seed forms of the scalar hashers
-  (`tycho_ik_hash`, `tycho_si_hash` — the seeds are globals) and the array
-  hashers (`tycho_arr_int/str/float_hash`), so a deterministic path exists
-  without touching the map's seeded hashing (DoS defense stays).
-- **Compiler** (`src/tychoc.c`): `gen_hash` gains a deterministic mode for the
-  public `hash(x)`; composite types get fixed-seed generated hashes
-  (`tycho_dhash_S_*/T*/arr_C*`) alongside the seeded map-key ones, gated by the
-  same `hash_keyused` tracker — a `hash()` on a type also used as a map key
-  then emits BOTH families (the map keeps its seeded functions).
-- **Contract**: `hash(x)` switches to deterministic, documented as "equal
-  values hash equal, stable across runs — usable for checksums and content
-  addressing over composites; NOT DoS-hardened (that is the map's seeded
-  internal hashing)". Exact-value test assertions become possible.
-- Tests: `corelib/test/hash/main.ty` gains exact-value assertions (cross-run
-  stability is now testable), intern is unaffected (it never calls `hash`).
+### 1.2 `core:toml` — config parsing
 
-Gate: `make corelib` + `make test` (compiler + runtime change) + `make
-selfhost-check` (emitted C changes only for programs using `hash()` on
-composites — the fixed point must re-prove) + doc gates. Citations re-point
-(the 7th shift).
-Expected: hash.out delta is the new exact-value lines; 589+ fixtures green;
-fixed point holds.
+The common config format for real programs; nothing exists. Pure Tycho (like
+core:json/csv): `toml.parse(s) -> Result(Table, string)` covering tables,
+dotted keys, arrays, arrays-of-tables, and the scalar set (string/int/float/
+bool/datetime-iso), fail-closed on malformed input, plus the basic
+`get`/`keys` accessors. Exact surface mirrors core:json's shape where
+sensible.
 
-## Phase 3 — map memory: the lru and idiomatic-trie gaps
+### 1.3 `core:log` — leveled logging
 
-The two biggest remaining losses share one root — the map's storage. lru is
-now the suite's largest gap: **32.6 MB vs C 11.5 (~2.8× C)** on a delete-heavy
-`[int:int]` churn workload (C's edge: backward-shift delete — no tombstones —
-and one allocation per rehash, freed on growth, where the arena retains every
-intermediate). The idiomatic trie (~1.56× C) is the same question at small
-composite scale. A measurement-first phase:
+A leveled logger (debug/info/warn/error), state threaded explicitly (no
+globals): `log.init(&st, level, dest)`, `log.info(&st, ...)`, timestamps via
+the existing clock, stderr/stdout destinations. Pure Tycho over core:io + the
+clock builtin.
 
-1. **Decompose first** (the observability from the arena phase): run the lru
-   and trie benches with `TYCHO_ARENA_STATS=full` and account the 32.6 MB /
-   57.2 MiB — how much is the live map (four parallel arrays + idx table vs
-   C's two), how much is retained growth intermediates (the arena keeps every
-   doubling buffer, C frees them).
-2. **Pick the levers the numbers support** — candidates, in order of
-   estimated value: backward-shift delete (tombstone-free — removes `elive`
-   and the compaction pass), a `reserve`-style pre-size for maps (kills the
-   retained growth intermediates — the same one-line fix that closed the trie
-   pool), a leaner descriptor. Small-map inline storage is the trie-specific
-   stretch; explicit defer if the lru work lands first.
-3. **Implement + re-measure** against the lru and trie lanes; update
-   `bench/lru/RESULTS.md` / `bench/trie/RESULTS.md` and the README rows.
-4. **Closing `make ci`** — the one full sweep for the whole chain.
+### 1.4 `core:sqlite` — SQL database
 
-Gate: `make test` (~8 min — the map is everywhere) + `make corelib` + `make
-lru`/`sh bench/lru/run.sh` + `sh bench/trie/run.sh` (the target lanes) +
-`make selfhost-check` (map codegen changes) + doc gates. Citations re-point.
-Expected: lru and trie rows move measurably toward C; the decomposition is
-recorded in the bench RESULTS docs before and after.
+The dbquery bench proves the FFI pattern; package it. `corelib/sqlite/` with
+`sqlite_shim.c` over libsqlite3 (deps manifest names `sqlite3`, pkg-config,
+skip-if-absent). Scope: `open`/`close`, `exec` (no results), `query` (SELECT →
+rows as `[[string]]` or a typed row struct — decided in the phase), error
+reporting (the sqlite error message), parameter binding for the common cases.
+A small real fixture (create/insert/select/join) in the test.
+
+### 1.5 `core:utf8` — Unicode validation and iteration
+
+Strings are bytes today; text processing needs a codepoint view. Pure Tycho:
+`utf8.valid(s)`, `utf8.decode(s, at) -> (cp, width)` (fail-closed on a
+truncated/invalid sequence), `utf8.encode(cp) -> string`, `utf8.len(s)`
+(codepoint count), and a rune-wise iteration idiom. Full Unicode tables
+(case mapping, normalization) deferred — validation + iteration is the
+batteries-included core.
+
+### 1.6 `core:zip` — archive reader/writer
+
+Deployment needs archives; only gzip/zlib exists. Pure Tycho over
+core:compress: `zip.list(bytes) -> [Entry]`, `zip.extract(bytes, name) ->
+bytes` (fail-closed on a corrupt/truncated archive, no path traversal —
+entries are names, not paths), `zip.create(entries) -> bytes`. Reader first,
+writer second, inside the same sub-phase.
+
+### 1.7 `core:timezone` (rich datetime) — deferred
+
+The roadmap names "richer date/time"; a timezone database is a large,
+data-heavy package. Held until a real program needs it (the one item where
+the demand-gate is NOT waived — it is the roadmap's own example of a gated
+add).
+
+### 1.8 image codecs (JPEG/GIF) — deferred
+
+core:image is PNG (libpng), core:raster is BMP/QOI. JPEG via libjpeg FFI and
+a pure-Tycho GIF are real, but no program in-tree needs them yet; attach to
+this phase only if a caller appears.
+
+## Phase 2 — `vendor:` dependency story (Go/Odin style)
+
+Vendor your dependencies — no central registry, no version resolution. The
+compiler already resolves `core:X` via `TYCHO_CORELIB` and everything else
+relative (`src/tychoc.c:13178`); the new surface:
+
+- **`import "vendor:pkg"`** resolution: a `vendor/` directory convention
+  (TYCHO_VENDOR-style env override mirroring TYCHO_CORELIB, defaulting to a
+  `vendor/` dir beside the entry program), so a vendored package is imported
+  by name and compiled exactly like a corelib package.
+- **The fetch tool**: `tycho fetch <url-or-name> <dest>` — download a
+  vendorable package tree into `vendor/` (the fetch dogfood exists at
+  examples/fetch), with checksum verification.
+- **tycho-build integration**: the build tool resolves `vendor:` deps the way
+  it resolves file deps, and a `vendor` manifest (a buildfile target or a
+  `deps` line — decided in the phase) pins what a project vendors.
+
+Gate: `make test` (compiler import-resolution change) + `make selfhost-check`
+(the import path table changes) + `make build-check` (tycho-build integration)
++ doc gates. Citations re-point (the resolution code shifts).
+
+## Phase 3 — Debugger
+
+`-g` already emits `#line` mapping and compiles (verified by tools-check's
+line-info leg). The pragmatic route: a **gdb adapter** — the compiler's `-g`
+output drives a scripted gdb session (breakpoints by source line, `next`,
+locals via the emitted C names), wrapped in a `tycho debug <program>` command
+in the dispatcher — rather than a from-scratch debugger. A minimal built-in
+(breakpoint/step/locals over the runtime) is the alternative; decided in the
+phase. The debugger itself is a Tycho tool (tools/tycho-debug/), dogfooding
+core:os + core:signal.
+
+Gate: `make tools-check` (the tool's lane) + `make test` (if any `-g`
+emission changes) + `make build-check` if the dispatcher changes + doc gates.
+
+## Phase 4 — 1.0 promotion
+
+The last bit of prep, after 1–3 settle:
+
+- **Versioning**: a version constant in the compiler, `--version`, and the
+  changelog discipline (each phase's changes recorded against it).
+- **Stability statement**: replace the README's "pre-1.0: no stability
+  guarantees" with the 1.0 contract — what is stable (the language surface,
+  the spec), what is not (performance tuning, benches).
+- **Security audit**: the README names "no security audit" as a pre-1.0
+  caveat; close it — a review of the FFI shims (string ownership, the
+  shell-out paths in core:os, the TLS wrapper) with the findings recorded.
+- **API freeze decision**: which corelib packages are in the 1.0 surface and
+  what the deprecation path is.
+
+Gate: the full `make ci` as the closing sweep, plus the doc gates.
+Expected: the README's status banner flips from research prototype to 1.0.
 
 ## Not in scope
 
-- A map representation that returns memory mid-scope (the arena's high-water
-  behavior is the model, not a bug — `reserve` is the answer).
-- The build-tool candidate is closed; nothing else is pending after phase 3.
-
-> Phase 2 evidence — 2026-08-04: all gates green. `make test` 590/0 (unchanged),
-> `make corelib` all green, `make selfhost-check` green (the fixed point holds —
-> existing emission is unchanged unless `hash()` is used), doc gates ok,
-> goldens-check ok.
->
-> Implementation: the runtime gained fixed-seed twins — `tycho_ik_hash_det`
-> (SplitMix64 with the golden-ratio seed), `tycho_si_hash_det` (SipHash-1-3 with
-> the reference key, `tycho_siphash13` parameterized by k0/k1), and
-> `tycho_arr_int/str/float_hash_det` — while the map's seeded hashing is
-> untouched (DoS defense stays). The compiler's `gen_hash` gained a
-> `g_hash_det` mode (src/tychoc.c:9207), and composite types used by `hash()`
-> emit a deterministic twin of their hash function (`tycho_dhash_S_*`/`T*`/
-> `arr_C*` — fixed fold seed 0x9e3779b97f4a7c15, det leaves) alongside the
-> seeded map-key ones, gated by the same `hash_keyused`. `hash(x)` now returns
-> the deterministic hash; exact values are locked in the hash.out golden (the
-> byte-locked golden is the cross-run proof — a seeded hash would redden it
-> every run). Docs updated: 16-builtins §29.7, core:hash header, guide. 22
-> citations re-pointed (+2..+61 by region).
-
-> Phase 3 evidence — 2026-08-04: all gates green. `make test` 591/0 (+ the new
-> map_reserve fixture; the pre-existing map_reserve fixture tests the m[k]
-> value-reserve and was renamed map_reserve_map), `make corelib` green,
-> `make selfhost-check` green, both target lanes green (`sh bench/lru/run.sh`
-> tycho 19.8 MB, checksum byte-identical; trie unchanged), doc gates ok,
-> goldens-check ok.
->
-> Decomposition first (as planned): the idiomatic lru was 33.0 MiB over 73
-> allocations — the pool and map grow by doubling and the arena retains every
-> intermediate (C frees them on rehash). The array pool's growth already
-> recycles its spines, so the map's growth (no recycle, and recycle wouldn't
-> help anyway — doubling never reuses the half-size chunk) is the waste. The
-> lever the numbers picked: **`reserve(m, n)` for maps** — pre-size the entry +
-> index arrays, preserving live entries on a re-size, shipped for the four
-> runtime fast families (`tycho_map_{ii,if,si,sf}_reserve`) and the emitted
-> composite `tycho_mapc%d_reserve`. The bench's two reserve lines
-> (`reserve(pool, 200000)` + `reserve(idx, 400000)` — the map needs ~2× the
-> live set while tombstones accumulate between compactions) drop the lru to
-> 18.6 MiB peak live / ~20 MB RSS over 9 allocations, **~1.7× C, ahead of Go**,
-> wall at parity, checksum byte-identical. `reserve` on a map now resolves
-> (previously "first argument must be an array"); the 16-builtins reserve row
-> documents both.
->
-> Deferred, with the measured reason: (a) tombstone headroom — the map holds
-> ~2.6× the live set under churn; backward-shift ENTRY delete would remove the
-> headroom but breaks the keys() insertion-order contract (order-preserving
-> compaction is why the tombstone scheme exists); (b) the idiomatic trie's
-> small-map gap (separate layout work, per the plan's explicit defer). 37
-> citations re-pointed.
->
-> One incident worth recording: I initially overwrote the pre-existing
-> tests/map_reserve fixture (it tests `reserve(m[k], n)`, the array-inside-map
-> form) with my map test — caught by `git status` showing a tracked file as
-> modified, restored, and the original renamed `map_reserve_map`. The new
-> fixture is `tests/map_reserve.ty`.
->
-> The closing `make ci` (the one full sweep for the chain) runs next.
-
-> Closing-ci findings (the sweep's job): `make ci` reddened twice, both real.
-> (1) **rtparity oracle**: the arena-observability phase added the `TYCHO_BLOCK`
-> env knob and the `recycle` stats row without updating tests/rtparity/run.py
-> — a phase-gate gap (rtparity wasn't in that phase's brief); the oracle now
-> lists both. (2) **tools-check semantic drift (5 files)**: the per-scope
-> arena labels embedded `fn:line`, so the formatter legitimately re-lining a
-> file changed the emitted C and broke the formatter's semantic-preservation
-> byte-compare. The labels now use a per-proc loop counter (`fn:loopN`) —
-> stable under re-formatting, equally per-statement. Also fixed en route: the
-> formatter mangled hex/bin literals (`0xFF` → `0 xFF`) — tychofmt's number
-> scanner never learned `0x`/`0b` (pre-existing since the hex-literal feature,
-> e320580); taught it the lexer's rule. tools-check now 893 files, 0 drift.
+- A REPL (owner decision), native Windows (deferred; WSL is the supported
+  path), a package registry (vendoring is the model), Unicode tables beyond
+  validation/iteration, and image codecs/timezone until a caller appears.
