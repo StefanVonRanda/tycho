@@ -143,6 +143,12 @@ wine-corelib:
 wine-tools:
 	@sh scripts/wine_tools.sh
 
+# wine-ffi: phase 6's manual lane — the FFI lane's runnable legs under mingw
+# + Wine (golden, --shim, pkgext, sized ints, the compiler-side rejections).
+# NOT a gate, NOT a Windows verdict; the ASan leg is the CI's.
+wine-ffi:
+	@sh scripts/wine_ffi.sh
+
 # Differential test suite: every examples/*.ty and tests/*.ty built both
 # native -O2 and under -fsanitize=address,undefined, run on matching stdin,
 # asserting exit 0, clean sanitizers, and byte-identical output. See
