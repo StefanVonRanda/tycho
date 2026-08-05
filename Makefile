@@ -114,6 +114,15 @@ demo: tychoc
 	@echo "--- running examples/hello (type a name) ---"
 	@./examples/hello
 
+# wine-smoke: the manual Linux-box verification lane for the native-Windows port
+# (plan_windows.md). Cross-compiles selected fixtures with the mingw-w64 compiler
+# and runs them under Wine against the Linux goldens -- concurrency, timers,
+# floats, list_dir, and the stack-overflow guard. NOT a gate, and NOT a Windows
+# verdict: Wine is an approximation; the definitive pass is the windows CI leg.
+# Skips loudly when mingw/wine are absent. See scripts/wine_smoke.sh.
+wine-smoke:
+	@sh scripts/wine_smoke.sh
+
 # Differential test suite: every examples/*.ty and tests/*.ty built both
 # native -O2 and under -fsanitize=address,undefined, run on matching stdin,
 # asserting exit 0, clean sanitizers, and byte-identical output. See

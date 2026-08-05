@@ -364,7 +364,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:434-435`, its per-piece bound `:628@rn + 2 >= (int)sizeof rbuf`,`:631@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:635@unterminated raw string literal`; adjacent join `:2288-2300`; `const` string fold
 > `:4317-4321`; codegen pastes the escaped text into a C string literal
-> `:10000@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1212@strlen(s)`.
+> `:10000@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1241@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

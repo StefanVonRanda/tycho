@@ -7,7 +7,7 @@ thread boundary, so the concurrency constructs need no `Sendable` marker, no
 lifetime annotations, and no lock machinery in the language.
 
 > Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:528-841`
-> (channel ring `:759-935`, ordering via the cell `seq` release/acquire `:953@c->seq, c->pos + 1, memory_order_release`,`:965@memory_order_acquire) - (pos + 1)`).
+> (channel ring `:759-935`, ordering via the cell `seq` release/acquire `:982@c->seq, c->pos + 1, memory_order_release`,`:994@memory_order_acquire) - (pos + 1)`).
 > The ordering guarantees below (channel delivery order, `select` arm order,
 > happens-before, cross-thread `wait`) were pinned from that runtime.
 
@@ -153,7 +153,7 @@ an early exit can never cross a chunk boundary.
 > `src/tychoc.c:10038-10039`, capped at 64 by `src/tychoc.c:10542@_pk > 64`
 > (the chunk-handle array `src/tychoc.c:10543@_pts[64]` is the reason for the
 > number); each chunk is a real OS thread,
-> `runtime/tycho_rt.c:755@pthread_create`. A capture is deep-copied only when
+> `runtime/tycho_rt.c:784@pthread_create`. A capture is deep-copied only when
 > `src/tychoc.c:10553@type_is_heap(ct)` holds, and `type_is_heap`
 > (`src/tychoc.c:1318-1340`) has no channel arm, so a `Channel(T)` capture is
 > passed by value — one queue shared by every chunk.
