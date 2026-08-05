@@ -1,0 +1,20 @@
+# corelib test: exercises core:testing; the output is locked to
+# corelib/test/testing.out (corelib/run.sh). A passing test, a failing one,
+# generic eq over int/string, and the exit-code contract.
+package main
+import "core:testing"
+
+fn main():
+    pass := testing.new("passing")
+    testing.check(&pass, 1 + 1 == 2, "arithmetic")
+    testing.eq(&pass, 2 + 2, 4, "eq int")
+    testing.eq(&pass, "ab" + "c", "abc", "eq string")
+    testing.eq(&pass, 1.5 + 1.5, 3.0, "eq float")
+    r := testing.report(pass)
+    fail := testing.new("failing")
+    testing.check(&fail, false, "deliberate failure")
+    testing.eq(&fail, 1, 2, "eq fails")
+    testing.check(&fail, true, "this one passes")
+    r2 := testing.report(fail)
+    # the exit-code contract: a fully passing test reports 0, a failing one 1
+    print(str(r) + " " + str(r2) + "\n")
