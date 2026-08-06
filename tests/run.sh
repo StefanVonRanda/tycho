@@ -40,6 +40,22 @@ RECORD="${RECORD:-0}"
 # 32-bit-`long` data model. The 32-bit ASan runtime is not shipped under multilib,
 # so that lane is skipped here; ASan coverage stays in the 64-bit `make test`.
 NO_ASAN="${TYCHO_NO_ASAN:-0}"
+# Windows/MSYS2: mingw gcc ships no ASan/UBSan runtime (plan_windows.md phase 2
+# -- "mingw ASan is experimental"), so the sanitizer legs cannot link
+# (-lasan/-lubsan absent) and every fixture would redden on a leg that is a SKIP
+# by design. Force TYCHO_NO_ASAN=1 unless the caller explicitly set it to 0, and
+# name native binaries with .exe (MSYS2's exec machinery resolves extensionless
+# names unreliably for winpthread-linked PE files).
+case "$(uname -s)" in
+    *MSYS*|*MINGW*|*CYGWIN*)
+        IS_WINDOWS=1
+        if [ "$NO_ASAN" = 0 ]; then
+            echo "run.sh: Windows -- forcing TYCHO_NO_ASAN=1 (no mingw -lasan/-lubsan; sanitizer legs are the CI's job)"
+            NO_ASAN=1
+        fi
+        EXE=".exe" ;;
+    *) IS_WINDOWS=0; EXE="" ;;
+esac
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 # Leak detection requires LeakSanitizer, which Apple's arm64/x86_64 ASan does
@@ -62,38 +78,57 @@ note() { echo "FAIL  $1  ($2)"; }
 # run_one <entry.ty> <name> <golden.out> <stdin>
 run_one() {
     hi="$1"; name="$2"; g="$3"; in="$4"
-    c="$TMP/$name.c"
-    nat="$TMP/$name.native"
-    san="$TMP/$name.asan"
+    # Per-fixture temp dir: Windows/MSYS2 exec fails (127) once a directory
+    # holds ~500+ entries (observed under Prism/Defender; the whole-corpus run
+    # crosses the threshold mid-way). Each fixture's ~8 files stay in their own
+    # subdir; the trap still clears the base $TMP at exit.
+    d="$TMP/$name"
+    mkdir -p "$d"
+    c="$d/$name.c"
+    nat="$d/$name.native$EXE"
+    san="$d/$name.asan$EXE"
     ok=1
 
-    if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
-        note "$name" "transpile"; sed 's/^/      /' "$TMP/$name.log"; ok=0
-    elif ! $CC -O2 -fwrapv -std=c11 -o "$nat" "$c" -lm 2>"$TMP/$name.log"; then
-        note "$name" "native cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
+    if ! "$TYCHOC" "$hi" --emit-c -o "$d/$name" >"$d/$name.log" 2>&1; then
+        note "$name" "transpile"; sed 's/^/      /' "$d/$name.log"; ok=0
+    elif ! $CC -O2 -fwrapv -std=c11 -o "$nat" "$c" -lm 2>"$d/$name.log"; then
+        note "$name" "native cc"; sed 's/^/      /' "$d/$name.log"; ok=0
     elif [ "$NO_ASAN" = 0 ] && ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
-               -std=c11 -o "$san" "$c" -lm 2>"$TMP/$name.log"; then
-        note "$name" "sanitizer cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
+               -std=c11 -o "$san" "$c" -lm 2>"$d/$name.log"; then
+        note "$name" "sanitizer cc"; sed 's/^/      /' "$d/$name.log"; ok=0
     else
-        "$nat" <"$in" >"$TMP/$name.nout" 2>/dev/null; nrc=$?
+        "$nat" <"$in" >"$d/$name.nout" 2>/dev/null; nrc=$?
+        # Windows/MSYS2 flake (observed under Prism emulation): under sustained
+        # process churn exec of a PE intermittently fails with 127 -- transient,
+        # never a real exit code. Retry once; on Linux this never triggers.
+        if [ "$nrc" -eq 127 ] && [ "$IS_WINDOWS" = 1 ]; then
+            # the emulator's startup heap-corruption crash (0xC0000374, observed
+            # under Prism on ARM64 Windows) is a per-attempt race; retry with
+            # backoff.
+            for _try in 1 2; do
+                sleep 2
+                "$nat" <"$in" >"$d/$name.nout" 2>/dev/null; nrc=$?
+                [ "$nrc" -eq 0 ] && break
+            done
+        fi
         [ "$nrc" -eq 0 ] || { note "$name" "native exit $nrc"; ok=0; }
         if [ "$NO_ASAN" = 0 ]; then
-            "$san" <"$in" >"$TMP/$name.sout" 2>"$TMP/$name.serr"; src=$?
+            "$san" <"$in" >"$d/$name.sout" 2>"$d/$name.serr"; src=$?
             if [ "$src" -ne 0 ]; then
-                note "$name" "sanitizer exit $src"; sed 's/^/      /' "$TMP/$name.serr"; ok=0
-            elif grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' "$TMP/$name.serr"; then
-                note "$name" "sanitizer report"; sed 's/^/      /' "$TMP/$name.serr"; ok=0
+                note "$name" "sanitizer exit $src"; sed 's/^/      /' "$d/$name.serr"; ok=0
+            elif grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' "$d/$name.serr"; then
+                note "$name" "sanitizer report"; sed 's/^/      /' "$d/$name.serr"; ok=0
             fi
-            if [ "$ok" -eq 1 ] && ! cmp -s "$TMP/$name.nout" "$TMP/$name.sout"; then
+            if [ "$ok" -eq 1 ] && ! cmp -s "$d/$name.nout" "$d/$name.sout"; then
                 note "$name" "native vs sanitizer output differ"
-                diff "$TMP/$name.nout" "$TMP/$name.sout" | head | sed 's/^/      /'; ok=0
+                diff "$d/$name.nout" "$d/$name.sout" | head | sed 's/^/      /'; ok=0
             fi
         fi
     fi
 
     # record mode: if the build/run was clean, (over)write the golden and stop.
     if [ "$RECORD" = 1 ]; then
-        if [ "$ok" -eq 1 ]; then cp "$TMP/$name.nout" "$g"; echo "rec   $name"; recorded=$((recorded + 1))
+        if [ "$ok" -eq 1 ]; then cp "$d/$name.nout" "$g"; echo "rec   $name"; recorded=$((recorded + 1))
         else fail=$((fail + 1)); fails="$fails $name"; fi
         return
     fi
@@ -101,21 +136,59 @@ run_one() {
     # (d) golden comparison
     if [ "$ok" -eq 1 ] && [ ! -f "$g" ]; then
         note "$name" "no golden — run 'make test-update'"; ok=0
-    elif [ "$ok" -eq 1 ] && ! cmp -s "$TMP/$name.nout" "$g"; then
+    elif [ "$ok" -eq 1 ] && ! cmp -s "$d/$name.nout" "$g"; then
         note "$name" "output != golden ($g)"
-        diff "$g" "$TMP/$name.nout" | head | sed 's/^/      /'; ok=0
+        diff "$g" "$d/$name.nout" | head | sed 's/^/      /'; ok=0
     fi
 
     if [ "$ok" -eq 1 ]; then echo "ok    $name"; pass=$((pass + 1))
     else fail=$((fail + 1)); fails="$fails $name"; fi
 }
 
-for hi in examples/*.ty tests/*.ty; do
-    [ -e "$hi" ] || continue
-    name="$(basename "$hi" .ty)"
+# A single fixture: resolve name/stdin/golden and run the full check.
+run_fixture() {
+    hi="$1"; name="$(basename "$hi" .ty)"
     in="tests/$name.in"; [ -f "$in" ] || in=/dev/null
-    run_one "$hi" "$name" "tests/$name.out" "$in"
-done
+    gold="tests/$name.out"
+    # Windows-aware golden: the float_str_locale rt= column is untestable on
+    # Windows (the roundtrip hook needs newlocale, absent from mingw at every
+    # version -- plan_windows.md phase 3); a `<golden>.win` sibling records the
+    # rt=-1 rendering. Only ever selected on Windows.
+    if [ "$IS_WINDOWS" = 1 ] && [ -f "tests/$name.out.win" ]; then gold="tests/$name.out.win"; fi
+    run_one "$hi" "$name" "$gold" "$in"
+}
+
+# Windows single-fixture mode: the chunked loop below spawns a fresh shell per
+# fixture (see the MSYS2 exec flake note there); this mode runs exactly one and
+# exits with its verdict. The fixture's own ok/FAIL line has already printed.
+# Explicit name/gold/in may be passed (the pkg loop); the default derivation
+# handles tests/*.ty paths.
+if [ "${1:-}" = "--one" ]; then
+    if [ "$#" -ge 5 ]; then
+        run_one "$2" "$3" "$4" "$5"
+    else
+        run_fixture "$2"
+    fi
+    exit $((fail > 0))
+fi
+
+# Windows/MSYS2 exec flake (Prism emulation): thread-using PEs intermittently
+# fail to exec (exit 127, no stderr) after ~100+ spawns from one shell -- the
+# full corpus crosses that mid-way. A fresh shell per fixture keeps churn per
+# shell at ~10 spawns and dodges it entirely (verified: a fresh child shell
+# execs the PE fine even after the parent has churned).
+if [ "$IS_WINDOWS" = 1 ]; then
+    for hi in examples/*.ty tests/*.ty; do
+        [ -e "$hi" ] || continue
+        if sh "$0" --one "$hi"; then pass=$((pass + 1))
+        else fail=$((fail + 1)); fails="$fails $(basename "$hi" .ty)"; fi
+    done
+else
+    for hi in examples/*.ty tests/*.ty; do
+        [ -e "$hi" ] || continue
+        run_fixture "$hi"
+    done
+fi
 
 # Package programs: each tests/pkg/<name>/ is one multi-file package program
 # whose entry is main.ty (the compiler merges the whole directory and follows
@@ -129,7 +202,14 @@ for d in tests/pkg/*/; do
         note "pkg_$name" "no main.ty"; fail=$((fail + 1)); fails="$fails pkg_$name"; continue
     fi
     in="tests/pkg/$name.in"; [ -f "$in" ] || in=/dev/null
-    run_one "$entry" "pkg_$name" "tests/pkg/$name.out" "$in"
+    gold="tests/pkg/$name.out"
+    if [ "$IS_WINDOWS" = 1 ] && [ -f "tests/pkg/$name.out.win" ]; then gold="tests/pkg/$name.out.win"; fi
+    if [ "$IS_WINDOWS" = 1 ]; then
+        if sh "$0" --one "$d/main.ty" "pkg_$name" "$gold" "$in"; then pass=$((pass + 1))
+        else fail=$((fail + 1)); fails="$fails pkg_$name"; fi
+    else
+        run_one "$entry" "pkg_$name" "$gold" "$in"
+    fi
 done
 
 # HISTORY: two "post-freeze" loops used to sit here, one for tests/postfreeze/*.ty
