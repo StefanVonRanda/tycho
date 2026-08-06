@@ -6843,6 +6843,15 @@ static void pf_scan_body(Stmt **body, int n, int loopdepth) {
     for (int i = 0; i < n; i++) pf_scan_stmt(body[i], loopdepth);
     g_pf_nloc = save;   /* block locals go out of scope */
 }
+/* `_` in a pattern is a DISCARD, the same symbol the catch-all arm uses: it
+ * occupies a payload slot (the arity check counts it) but binds nothing -- not
+ * referenceable in the arm body, not emitted. Before this guard a pattern like
+ * `Sized(_, _)` emitted two C locals named h__ (the h_ prefix + the literal _),
+ * a conflicting-declaration error in the generated C. */
+static int bind_is_discard(const char *n) {
+    return n && !strcmp(n, "_");
+}
+
 static void pf_scan_stmt(Stmt *s, int loopdepth) {
     switch (s->kind) {
         case S_RETURN:
@@ -6932,8 +6941,10 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
             pf_scan_expr(s->expr);
             for (int a = 0; a < s->narms; a++) {
                 int save = g_pf_nloc;
-                for (int b = 0; b < s->arms[a].nbinds; b++) pf_add_local(s->arms[a].binds[b]);
-                for (int b = 0; b < s->arms[a].nsubbinds; b++) pf_add_local(s->arms[a].subbinds[b]);
+                for (int b = 0; b < s->arms[a].nbinds; b++)
+                    if (!bind_is_discard(s->arms[a].binds[b])) pf_add_local(s->arms[a].binds[b]);
+                for (int b = 0; b < s->arms[a].nsubbinds; b++)
+                    if (!bind_is_discard(s->arms[a].subbinds[b])) pf_add_local(s->arms[a].subbinds[b]);
                 pf_scan_body(s->arms[a].body, s->arms[a].nbody, loopdepth);
                 g_pf_nloc = save;
             }
@@ -7310,7 +7321,8 @@ static void match_arm_payload(MatchArm *arm, Type pt, const char *tag, SideCov *
     Variant *var = &ed->variants[vi];
     if (arm->nsubbinds != var->npayload)
         die_at(arm->sub_line, "%s binds %d value(s), got %d", var->raw, var->npayload, arm->nsubbinds);
-    for (int b = 0; b < arm->nsubbinds; b++) vars_push(arm->subbinds[b], var->payload[b], 1);
+    for (int b = 0; b < arm->nsubbinds; b++)
+        if (!bind_is_discard(arm->subbinds[b])) vars_push(arm->subbinds[b], var->payload[b], 1);
     arm->sub_vi = vi;
     if (!sc->cov) { sc->ncov = ed->nvariants; sc->cov = (int *)calloc((size_t)sc->ncov, sizeof(int)); }
     if (sc->cov[vi]) die_at(arm->sub_line, "duplicate %s(%s) arm", tag, var->raw);
@@ -7588,7 +7600,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
                                    "match it in its own match, or rename the binding",
                                    arm->binds[b], type_name(var->payload[b]));
                     int m = vars_mark();
-                    for (int b = 0; b < arm->nbinds; b++) vars_push(arm->binds[b], var->payload[b], 1);
+                    for (int b = 0; b < arm->nbinds; b++)
+                        if (!bind_is_discard(arm->binds[b])) vars_push(arm->binds[b], var->payload[b], 1);
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
@@ -10512,6 +10525,7 @@ static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val
             indent(o, ind + 1);
             fprintf(o, "E_%s_%s *_p%d = &%s->u.%s;\n", ed->name, var->name, bid, val, var->name);
             for (int b = 0; b < a->nsubbinds; b++) {
+                if (bind_is_discard(a->subbinds[b])) continue;   /* no binding, no local */
                 char *field = sfmt("_p%d->f%d", bid, b);
                 int borrow = type_is_heap(var->payload[b])
                     && !block_mutates(a->body, a->nbody, a->subbinds[b]);
@@ -10528,13 +10542,20 @@ static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val
     int bind = ind + (nref ? 1 : 0);
     if (nref) { indent(o, ind); fprintf(o, "else {\n"); }
     if (plain) {
-        int borrow = type_is_heap(pt) && !block_mutates(plain->body, plain->nbody, plain->binds[0]);
-        indent(o, bind);
-        fprintf(o, "%sh_%s = %s;\n", c_type(pt), plain->binds[0],
-                borrow ? val : copy_into(pt, scope, val));
-        int m = cv_mark(); cv_push(plain->binds[0], borrow ? NULL : scope);
-        gen_block(o, plain->body, plain->nbody, bind, scope, ret);
-        cv_restore(m);
+        /* a discard plain arm (Err(_)) still RUNS its body; only the binding
+         * is skipped -- the body must not be lost, or the tag case falls into
+         * the exhaustiveness trap below */
+        if (!bind_is_discard(plain->binds[0])) {
+            int borrow = type_is_heap(pt) && !block_mutates(plain->body, plain->nbody, plain->binds[0]);
+            indent(o, bind);
+            fprintf(o, "%sh_%s = %s;\n", c_type(pt), plain->binds[0],
+                    borrow ? val : copy_into(pt, scope, val));
+            int m = cv_mark(); cv_push(plain->binds[0], borrow ? NULL : scope);
+            gen_block(o, plain->body, plain->nbody, bind, scope, ret);
+            cv_restore(m);
+        } else {
+            gen_block(o, plain->body, plain->nbody, bind, scope, ret);
+        }
     } else if (wildarm) {
         gen_block(o, wildarm->body, wildarm->nbody, bind, scope, ret);
     } else {
@@ -11319,6 +11340,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         fprintf(o, "E_%s_%s *_p%d = &_m%d->u.%s;\n",
                                 en, var->name, bid, mid, var->name);
                         for (int b = 0; b < arm->nbinds; b++) {
+                            if (bind_is_discard(arm->binds[b])) continue;   /* no binding, no local */
                             char *field = sfmt("_p%d->f%d", bid, b);
                             /* borrow the scrutinee's payload instead of deep-
                              * copying it, unless this binding is mutated in

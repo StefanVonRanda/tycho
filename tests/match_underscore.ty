@@ -1,0 +1,40 @@
+# Multi-payload patterns may discard with `_` -- and TWO discards in one pattern
+# must not collide in the emitted C. Regression: each `_` emitted a C local
+# named h__ (the h_ prefix + the literal _), so `Sized(_, _)` declared h__ twice
+# with conflicting types and the generated C failed to compile. A discard now
+# occupies its payload slot (the arity check counts it) but binds nothing: no
+# local is emitted, and referencing `_` in the arm body is an error (see
+# tests/reject/match_underscore_use.ty).
+enum M:
+    Nope
+    Sized(int, string)
+
+fn main():
+    r := Sized(1, "x")
+    match r:
+        Sized(_, _):
+            println("sized")
+        Nope:
+            println("nope")
+    # mixed: one discard, one real binding
+    match r:
+        Sized(_, s):
+            println(s)
+        Nope:
+            println("nope")
+    # the binding half of the same pattern still carries its value
+    match r:
+        Sized(x, _):
+            println(str(x))
+        Nope:
+            println("nope")
+    # a PLAIN binding that is a discard (Err(_) style): the arm's body must
+    # still run -- regression, the whole arm body was once skipped with it
+    match boom():
+        Ok(v):
+            println("ok")
+        Err(_):
+            println("plain-skip")
+
+fn boom() -> Result(int, string):
+    return Err("boom")
