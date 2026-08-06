@@ -21,6 +21,14 @@ N="${1:-200}"
 case "$N" in
     *[!0-9]*|"") printf 'ci.sh: FUZZ_N must be a non-negative integer, got "%s"\n' "$N" >&2; exit 2 ;;
 esac
+# Windows/MSYS2: the Linux-only lanes cannot run -- no gcc -m32 multilib
+# (ilp32), no mingw ASan/UBSan runtime (asan-self, the fuzz differential), no
+# LD_PRELOAD (locale-check self-skips). They skip loudly by name, per
+# plan_windows.md phase 6/7 ("skip loudly with their reasons").
+case "$(uname -s)" in
+    *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;;
+    *) IS_WINDOWS=0 ;;
+esac
 
 bar() { printf '================================================================\n'; }
 step() { printf '\n>>> %s\n' "$1"; }
@@ -59,7 +67,11 @@ make -s test
 # truncates and reddens. tests/int64_width.ty is the in-glob fixture that makes it
 # non-vacuous (every value there exceeds 2^31).
 step "[2b/13] make ilp32  (fixture suite rebuilt under -m32: Tycho int stays 64-bit off LP64)"
-make -s ilp32
+if [ "$IS_WINDOWS" = 1 ]; then
+    echo "SKIP ilp32 (Windows: mingw gcc has no -m32 multilib; int64 width is asserted by tests/int64_width.ty in step 2)"
+else
+    make -s ilp32
+fi
 
 # Both lanes above sanitize/rebuild the C tychoc EMITS. Neither -- nor anything
 # else in this file before 2026-07-25 -- ever built src/tychoc.c itself with
@@ -74,7 +86,11 @@ make -s ilp32
 # or run. ~14s total, so it runs every time with no subsetting. See
 # scripts/asan_self.sh.
 step "[2c/13] make asan-self  (the COMPILER built with ASan+UBSan, compiling the whole corpus)"
-make -s asan-self
+if [ "$IS_WINDOWS" = 1 ]; then
+    echo "SKIP asan-self (Windows: mingw ASan is experimental -- no -lasan/-lubsan; the compiler's own memory safety is the CI's job)"
+else
+    make -s asan-self
+fi
 
 # rtparity joined the sweep on 2026-07-30 (the loops-cleanup plan). It was created by
 # batch 9 and sat in NO aggregate lane, so nothing ran it. It is a tests/ lane, not
@@ -257,16 +273,20 @@ step "[5/13] make ffi  (extern fn vs golden, ASan-clean, handle/injection bans)"
 make -s ffi
 
 if [ "$N" -gt 0 ]; then
-    step "[6/13] make fuzz N=$N  (random programs: tychoc native -O2 vs tychoc ASan/UBSan)"
-    python3 fuzz/run.py "$N"
-    step "[7/13] make fuzz-reject N=$N  (malformed input: tychoc must fail closed)"
-    python3 fuzz/run_reject.py "$N"
-    # leak lane is the slowest (sequential ASan+LeakSanitizer) and leak bugs
-    # surface fast (seeds <50), so cap it to keep `make ci` practical;
-    # `make fuzz-leak N=...` runs a deeper sweep.
-    LN="$N"; [ "$LN" -gt 150 ] && LN=150
-    step "[8/13] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
-    python3 fuzz/run_leak.py "$LN"
+    if [ "$IS_WINDOWS" = 1 ]; then
+        step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- plan_windows.md phase 2)"
+    else
+        step "[6/13] make fuzz N=$N  (random programs: tychoc native -O2 vs tychoc ASan/UBSan)"
+        python3 fuzz/run.py "$N"
+        step "[7/13] make fuzz-reject N=$N  (malformed input: tychoc must fail closed)"
+        python3 fuzz/run_reject.py "$N"
+        # leak lane is the slowest (sequential ASan+LeakSanitizer) and leak bugs
+        # surface fast (seeds <50), so cap it to keep `make ci` practical;
+        # `make fuzz-leak N=...` runs a deeper sweep.
+        LN="$N"; [ "$LN" -gt 150 ] && LN=150
+        step "[8/13] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
+        python3 fuzz/run_leak.py "$LN"
+    fi
 else
     step "[6/13] fuzz lanes skipped (N=0)"
 fi

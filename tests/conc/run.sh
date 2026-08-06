@@ -22,6 +22,14 @@ trap 'rm -rf "$TMP"' EXIT
 # sanitizer binary at exit there. Gate by OS (see tests/run.sh).
 case "$(uname -s)" in Darwin) TYCHO_LSAN=0 ;; *) TYCHO_LSAN=1 ;; esac
 export ASAN_OPTIONS=detect_leaks=$TYCHO_LSAN
+# Windows/MSYS2: mingw gcc ships no ASan/TSan runtime (plan_windows.md phase 2
+# -- TSan has no Windows-target support in gcc at all), so the asan/tsan
+# variants are SKIPPED loudly and only the native leg runs. Native binaries get
+# a .exe suffix (MSYS2 exec quirk with winpthread-linked PE files).
+case "$(uname -s)" in
+    *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; EXE=".exe" ;;
+    *) IS_WINDOWS=0; EXE="" ;;
+esac
 # Portable resource bound for the abort fixtures (esp. the spawn fork-bomb).
 # GNU `timeout` and `ulimit -v` (RLIMIT_AS) are Linux-only — macOS ships
 # neither. `ulimit -t` (CPU seconds) is portable; with TYCHO_MAX_TASKS pinning
@@ -50,10 +58,25 @@ for f in tests/conc/*.ty; do
     ok=1
     for variant in "-O3 -fwrapv:nat" "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv:asan" "-fsanitize=thread -g -O1 -fwrapv:tsan"; do
         flags=${variant%:*}; tag=${variant#*:}
-        if ! $CC $flags -pthread -o "$TMP/$name.$tag" "$c" -lm 2>"$TMP/$name.cc"; then
+        if [ "$IS_WINDOWS" = 1 ] && [ "$tag" != "nat" ]; then
+            echo "SKIP $name ($tag cc -- mingw gcc ships no sanitizer runtime; plan_windows.md phase 2)"
+            continue
+        fi
+        if ! $CC $flags -pthread -o "$TMP/$name.$tag$EXE" "$c" -lm 2>"$TMP/$name.cc"; then
             note "$name" "$tag cc"; sed 's/^/      /' "$TMP/$name.cc"; ok=0; break
         fi
-        if ! "$TMP/$name.$tag" >"$TMP/$name.got" 2>"$TMP/$name.err"; then
+        "$TMP/$name.$tag$EXE" >"$TMP/$name.got" 2>"$TMP/$name.err"; rc=$?
+        # Windows/MSYS2 flake (Prism emulation): under sustained process churn
+        # exec of a PE intermittently returns 127. Retry once (Windows only).
+        if [ "$rc" -ne 0 ] && [ "$IS_WINDOWS" = 1 ]; then
+            # Prism startup heap-corruption race (0xC0000374): retry with backoff
+            for _try in 1 2; do
+                sleep 2
+                "$TMP/$name.$tag$EXE" >"$TMP/$name.got" 2>"$TMP/$name.err"; rc=$?
+                [ "$rc" -eq 0 ] && break
+            done
+        fi
+        if [ "$rc" -ne 0 ]; then
             note "$name" "$tag run"; sed 's/^/      /' "$TMP/$name.err"; ok=0; break
         fi
         if [ -s "$TMP/$name.err" ]; then
@@ -83,7 +106,11 @@ for f in tests/conc/abort/*.ty; do
     # Bound every abort run by memory + CPU, and pin a low task cap so the
     # spawn fork-bomb (recursive spawn) hits the bounded-concurrency ceiling fast
     # instead of exhausting host threads. Harmless to the non-spawn fixtures.
-    ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab" )  >/dev/null 2>"$TMP/ab.err";  rc=$?
+    ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab$EXE" )  >/dev/null 2>"$TMP/ab.err";  rc=$?
+    if [ "$rc" -eq 127 ] && [ "$IS_WINDOWS" = 1 ]; then
+        sleep 1
+        ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab$EXE" )  >/dev/null 2>"$TMP/ab.err";  rc=$?
+    fi
     if [ $rc -eq 0 ] || ! grep -q "$want" "$TMP/ab.err"; then
         note "$name" "tychoc expected runtime die '$want'"; fail=$((fail+1))
     else

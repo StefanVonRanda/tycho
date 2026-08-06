@@ -21,6 +21,14 @@ fail=0
 for entry in corelib/test/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
+    # core:signal's test kills itself with `kill -TERM $PPID` from a POSIX
+    # shell; cmd.exe has no kill, so on Windows the handler never fires and the
+    # accept blocks forever -- the phase-4 documented hang. Skip loudly; the
+    # Windows-native variant is the CI leg's job (plan_windows.md phase 4/6).
+    if [ "$name" = "signal" ] && [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" -ne 0 ]; then
+        echo "skip signal (test mechanism is POSIX kill -TERM; cmd.exe has no kill -- plan_windows.md phase 4)"
+        continue
+    fi
     golden="corelib/test/$name.out"
     # FFI SKIP: tychoc auto-discovers each imported module's <mod>_shim.c and its
     # `deps`, and links both itself -- the build below is a plain `tychoc -o`. So
@@ -56,7 +64,17 @@ for entry in corelib/test/*/main.ty; do
         if [ -n "$missing" ]; then echo "skip $name (missing dependency:$missing)"; continue; fi
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
-    "$T/c" > "$T/co" 2>&1
+    "$T/c" > "$T/co" 2>&1; rc=$?
+    # Windows/MSYS2 flake (Prism emulation): under sustained process churn exec
+    # of a PE intermittently returns 127. Retry with backoff (Windows only); the
+    # Prism startup heap-corruption race (0xC0000374) is per-attempt.
+    if [ "$rc" -eq 127 ] && [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" -ne 0 ]; then
+        for _try in 1 2 3; do
+            sleep 2
+            "$T/c" > "$T/co" 2>&1; rc=$?
+            [ "$rc" -eq 0 ] && break
+        done
+    fi
     if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; continue; fi
     if [ ! -f "$golden" ]; then echo "FAIL $name (no golden -- run RECORD=1)"; fail=1; continue; fi
     if ! cmp -s "$T/co" "$golden"; then echo "FAIL $name (output != golden)"; diff "$golden" "$T/co" | head | sed 's/^/      /'; fail=1; continue; fi

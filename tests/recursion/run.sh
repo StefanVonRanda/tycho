@@ -27,14 +27,16 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 LIMV=1500000   # virtual-memory ceiling (KiB ~= 1.5 GB), Linux only
 TMO=30         # wall-clock / CPU ceiling (s)
 # GNU `timeout` and `ulimit -v` (RLIMIT_AS) are Linux-only — macOS ships
-# neither. `ulimit -t` (CPU seconds) is portable and, with the compilers'
-# recursion cap firing at <100 MB here, bounds the runaway O(n^2) copy on macOS
-# too. Add a real wall-clock timeout only where one exists.
-if command -v timeout >/dev/null 2>&1; then TO="timeout $TMO"
+# neither, and Windows' cmd.exe has its own `timeout` that must not be picked up
+# (it lacks --version; the probe rejects it). `ulimit -t` (CPU seconds) is
+# portable, but fails on MSYS2 where there is no CPU-time rlimit — silenced; the
+# compiler's recursion cap bounds the runaway O(n^2) copy there instead. Add a
+# real wall-clock timeout only where one exists.
+if command -v timeout >/dev/null 2>&1 && timeout --version >/dev/null 2>&1; then TO="timeout $TMO"
 elif command -v gtimeout >/dev/null 2>&1; then TO="gtimeout $TMO"
 else TO=""; fi
 if ( ulimit -v "$LIMV" ) 2>/dev/null; then AS_CAP="ulimit -v $LIMV"; else AS_CAP=":"; fi
-run() { ( ulimit -t "$TMO"; $AS_CAP; $TO "$@" ); }
+run() { ( ulimit -t "$TMO" 2>/dev/null; $AS_CAP; $TO "$@" ); }
 
 py() { python3 - "$@"; }
 

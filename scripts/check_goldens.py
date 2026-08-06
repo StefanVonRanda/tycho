@@ -130,6 +130,7 @@ Usage:  python3 scripts/check_goldens.py [-v]
 """
 
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -249,19 +250,23 @@ def scan(path, tracked):
             # (d) a loop variable anywhere: take the enclosing glob's directory
             lv = re.match(r'^\$\{?([A-Za-z_][A-Za-z0-9_]*)[%#]', tok) or VARROOT.match(tok)
             if lv and lv.group(1) in loopvars and "/" not in tok.rstrip(tok.split(".")[-1]):
-                d = os.path.dirname(loopvars[lv.group(1)])
-                tok = os.path.join(d, "*." + tok.rsplit(".", 1)[1])
+                d = posixpath.dirname(loopvars[lv.group(1)])
+                tok = posixpath.join(d, "*." + tok.rsplit(".", 1)[1])
 
-            d, b = os.path.split(tok)
+            d, b = posixpath.split(tok)
             if "$" in d or "@" in d:
                 yield n, tok, None          # unresolvable directory -> reported as a gap
                 continue
             if "$" in b or "@" in b:
-                tok = os.path.join(d, "*." + b.rsplit(".", 1)[1])
+                tok = posixpath.join(d, "*." + b.rsplit(".", 1)[1])
                 is_glob = True
             else:
                 is_glob = "*" in b or "?" in b
-            yield n, os.path.normpath(os.path.join(base, tok)), is_glob
+            # posixpath, not os.path: the resolved pattern is compared against
+            # `git ls-files` paths (always forward slashes). os.path.join/
+            # normpath produce backslashes on Windows and every glob comparison
+            # would fail (the goldens-check FAIL wall on the first Windows run).
+            yield n, posixpath.normpath(posixpath.join(base, tok)), is_glob
 
 
 def main():
@@ -371,7 +376,10 @@ def _glob_match(pat, p):
 
 def _disk_glob(pat):
     import glob as _g
-    return [p for p in _g.glob(pat) if os.path.isfile(p)]
+    # Normalize to forward slashes: glob.glob returns os.sep paths, and on
+    # Windows those backslashes never match the git ls-files set (always
+    # forward slashes) -- every disk match would report "NOT tracked".
+    return sorted(p.replace(os.sep, "/") for p in _g.glob(pat) if os.path.isfile(p))
 
 
 if __name__ == "__main__":
