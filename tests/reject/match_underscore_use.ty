@@ -1,0 +1,11 @@
+# `_` in a pattern is a DISCARD, not a binding: referencing it in the arm body
+# is an error -- it never existed as a variable. (The arm-level `_` wildcard
+# already bound nothing; this closes the same hole one level down.)
+enum M:
+    Sized(int, string)
+
+fn main():
+    r := Sized(1, "x")
+    match r:
+        Sized(_, _):
+            println(_)
