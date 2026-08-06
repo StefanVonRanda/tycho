@@ -173,9 +173,11 @@ place-assignment, or a `return`. In that position:
   expression ([§6.5](04-inference.md#65-branch-unification-for-value-if--match)).
   For the `:=` and typed `x : T =` forms this is **strict** type equality: the
   branches must already synthesize the identical concrete type, and a bare
-  `None`/`Ok`/`Err` branch (type not yet fixed) is rejected. Numeric-literal
-  adaptation and bare-sum-constructor fixing apply only in the `x =` /
-  place-assignment / `return` tail positions, where a destination type flows in.
+  `None`/`Ok`/`Err` branch is rejected — its type is fixed only by a destination
+  type, and neither the `:=` nor the typed form flows one into the branches.
+  Numeric-literal adaptation and bare-sum-constructor fixing apply only in the
+  `x =` / place-assignment / `return` tail positions, where a destination type
+  flows in.
 
 The value lands in the destination's storage exactly as a returned value does; it
 introduces no new aliasing. A branch that diverges (e.g. `return`s) instead of

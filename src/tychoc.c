@@ -7364,7 +7364,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 for (int i = 0; i < nt; i++) {
                     Type ti = tails[i]->type;
                     if (ti == T_NONE || ti == T_OK_PARTIAL || ti == T_ERR_PARTIAL)
-                        die_at(tails[i]->line, "cannot infer the type of this branch — annotate the binding (x : T = if/match ...)");
+                        die_at(tails[i]->line, "cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return");
                     if (ti == T_VOID)
                         die_at(tails[i]->line, "a value if/match branch must produce a value, not void");
                     if (t == T_VOID) t = ti;
