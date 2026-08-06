@@ -13256,7 +13256,15 @@ static const char *cc_safe_name(const char *s, const char *what) {
  * library, or NULL on failure. The result is spliced onto the cc line. */
 static char *pkg_config_flags(const char *name) {
     cc_safe_name(name, "--pkg");   /* name reaches the shell below; reject metacharacters */
-    char *cmd = sfmt("pkg-config --cflags --libs %s 2>/dev/null", name);
+    char *cmd;
+#ifdef _WIN32
+    /* _popen on Windows runs cmd.exe, which has no /dev/null; the POSIX
+     * redirect made every resolution fail (rc!=0, no flags) and the cc line
+     * linked without -lz/-lssl/... -- verified on real Windows 2026-08-06. */
+    cmd = sfmt("pkg-config --cflags --libs %s 2>nul", name);
+#else
+    cmd = sfmt("pkg-config --cflags --libs %s 2>/dev/null", name);
+#endif
     FILE *p = popen(cmd, "r");
     if (!p) return NULL;
     char buf[4096];
