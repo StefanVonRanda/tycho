@@ -14,11 +14,22 @@
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* glibc: expose getaddrinfo + struct addrinfo */
 #endif
-#include <openssl/ssl.h>
+#ifndef _WIN32
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
+#else
+/* Windows: the socket surface lives in Winsock (ws2_32, via the deps `_WIN32:`
+ * section); winsock2.h must precede any header that pulls in windows.h.
+ * `close` is POSIX; mingw spells it `_close` (unistd.h, which declares it,
+ * is not available). */
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>        /* _close */
+#define close _close
+#endif
+#include <openssl/ssl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
