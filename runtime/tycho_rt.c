@@ -198,7 +198,13 @@ static LONG WINAPI tycho_veh_handler(PEXCEPTION_POINTERS ep) {
         HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
         DWORD w;
         WriteFile(err, msg, sizeof(msg) - 1, &w, NULL);
-        ExitProcess(1);
+        /* TerminateProcess, not ExitProcess: the handler runs on the just-committed
+         * guard page, and ExitProcess's CRT teardown needs more stack than the
+         * exhausted thread has -- it faults with a second AV and the process dies
+         * 0xC0000005 (139) instead of the fail-closed exit 1. TerminateProcess skips
+         * all teardown and needs no stack. Verified on real Windows (2026-08-06);
+         * Wine's stack/exception semantics did not expose this. */
+        TerminateProcess(GetCurrentProcess(), 1);
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
