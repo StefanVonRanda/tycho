@@ -17,6 +17,18 @@
 #include <sys/stat.h>            /* stat(2) + S_ISDIR -- iox_stat_kind */
 #include <fcntl.h>               /* open(2) + O_RDONLY -- iox_read_at */
 #include <unistd.h>              /* pread(2) + close(2) -- iox_read_at */
+/* Every open(2) below MUST carry this. The MSVCRT open() defaults to TEXT
+ * mode, which turns \n into \r\n on write and back on read -- on the byte
+ * offsets iox_read_at/iox_write_at exist to address, that silently shifts
+ * every byte after the first newline in a page and hands back a structure
+ * whose string slots decode as NULL. It corrupted the tycho-kv B+ tree store
+ * (same file size, contents shifted one byte from the first \n onward) and
+ * crashed the next open of that store in tycho_str_copy(s=0x0). The fopen
+ * calls in this file already say "rb"/"wb"; open(2) had no such marker.
+ * POSIX has no text mode, so the flag does not exist there and is 0. */
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
 #ifdef _WIN32
 #include <io.h>                 /* _lseeki64 -- the pread/pwrite stand-ins */
 #include <direct.h>             /* _mkdir -- the one-arg Windows mkdir */
@@ -237,7 +249,7 @@ void iox_read_at(const char *path, tycho_int off, tycho_int n, tycho_int *status
     *status = TY_RF_ERR;
     if (off < 0 || n < 0) return;                    /* fail closed, before open(2) */
     errno = 0;
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_BINARY);
     if (fd < 0) { *status = ty_rf_errno(path); return; }
     struct stat st;
     if (fstat(fd, &st) != 0) { *status = ty_rf_errno(path); close(fd); return; }
@@ -484,7 +496,7 @@ void iox_write_at(const char *path, tycho_int off,
     *status = TY_RF_ERR;
     if (off < 0 || datalen < 0) return;            /* fail closed, before open(2) */
     errno = 0;
-    int fd = open(path, O_RDWR | O_CREAT, 0644);   /* create if absent, like write_bytes */
+    int fd = open(path, O_RDWR | O_CREAT | O_BINARY, 0644);   /* create if absent, like write_bytes */
     if (fd < 0) { *status = ty_rf_errno(path); return; }
     if (datalen > 0 && data) {
         ssize_t w = pwrite(fd, data, (size_t)datalen, (off_t)off);
