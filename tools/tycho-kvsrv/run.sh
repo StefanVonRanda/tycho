@@ -65,6 +65,10 @@ fi
 out="$T/all.out"
 python3 - "$port" > "$out" 2>"$T/client.err" <<'PYEOF'
 import socket, sys, threading
+# Native-Windows python3 (what MSYS2 puts on PATH) opens stdout in TEXT mode,
+# turning every \n into \r\n so this transcript stops matching its LF golden
+# -- a diff whose two sides look identical. Force LF.
+sys.stdout.reconfigure(newline="\n")
 port = int(sys.argv[1])
 
 def raw(method, path, body=b"", keep=False, times=1):
