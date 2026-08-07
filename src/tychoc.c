@@ -7635,7 +7635,17 @@ static void resolve_stmt(Stmt *s, Type ret) {
                             die_at(arm->line, "'%s' is not an int constant (match arms for %s are literals)",
                                    arm->variant, type_name(st));
                         arm->variant = NULL;      /* normalized for codegen */
+                        /* pch[0] MUST be cleared here too: the arm came from the
+                         * bare-const-name shape (`OP_LOAD:`), which never went
+                         * through the pattern-list parser that NULLs pch, so it
+                         * is whatever the allocator last left there. The loop
+                         * below reads pch[k] to test for a range high end, and
+                         * on garbage it either walks a wild pointer or reports
+                         * "'<garbage>' is not an int constant". glibc usually
+                         * hands back zeroed pages so this stayed latent on
+                         * Linux; Windows reuses dirty heap and it fires. */
                         arm->pn = 1; arm->pkind[0] = 0; arm->pcname[0] = NULL;
+                        arm->pch[0] = NULL;
                         arm->plo[0] = arm->phi[0] = c->ival;
                     }
                     for (int k = 0; k < arm->pn; k++) {
