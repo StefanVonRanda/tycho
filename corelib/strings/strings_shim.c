@@ -194,8 +194,15 @@ double strx_parse_double(const char *s, tycho_int *status) {
  * instead of silently testing nothing under "C".
  */
 tycho_int strx_test_make_locale_hostile(void) {
+    /* The Windows CRT rejects every POSIX name here (setlocale returns NULL),
+     * so without the Windows-style names this returned 0 on Windows and the
+     * test above failed loudly -- by its own design, rather than quietly
+     * testing "C". Mirrors the same list in runtime/tycho_rt.c. */
     static const char *cands[] = { "", "da_DK.UTF-8", "da_DK.utf8", "da_DK",
-                                   "de_DE.UTF-8", "fr_FR.UTF-8", NULL };
+                                   "de_DE.UTF-8", "fr_FR.UTF-8",
+                                   "Danish_Denmark.1252",
+                                   "German_Germany.1252",
+                                   "French_France.1252", NULL };
     for (int i = 0; cands[i]; i++) {
         if (!setlocale(LC_NUMERIC, cands[i])) continue;
         struct lconv *lc = localeconv();
