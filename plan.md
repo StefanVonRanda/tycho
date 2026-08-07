@@ -6,7 +6,10 @@
 > (1) a batteries-included corelib, (2) a vendor-based dependency story
 > (Go/Odin style — vendor your dependencies), (3) a debugger, (4) 1.0
 > promotion. Explicitly NOT on the agenda: a REPL (the owner never reaches for
-> one) and native Windows (deferred, WSL suffices). The corelib demand-gate is
+> one) and native Windows (deferred, WSL suffices — **that deferral was
+> retired on 2026-08-07**: the native Windows port ran as its own track in
+> `plan_windows.md` and MSYS2/mingw is now a supported path; see the README's
+> platform notes). The corelib demand-gate is
 > waived for Phase 1 by the owner's explicit batteries-included instruction;
 > every package still ships with its test + golden + corelib guide entry per
 > the established convention.
@@ -158,8 +161,10 @@ Expected: the README's status banner flips from research prototype to 1.0.
 
 ## Not in scope
 
-- A REPL (owner decision), native Windows (deferred; WSL is the supported
-  path), a package registry (vendoring is the model), Unicode tables beyond
+- A REPL (owner decision), ~~native Windows (deferred; WSL is the supported
+  path)~~ — **retired 2026-08-07**, the port landed on its own track and MSYS2
+  is supported alongside WSL2 — a package registry (vendoring is the model),
+  Unicode tables beyond
   validation/iteration, image codecs and timezone until a caller appears,
   and a `vendor:` named collection root (Odin-style) until a real multi-entry
   or nested-layout project needs it.

@@ -222,10 +222,21 @@ test-update`, never by a normal run.
 correctness: each `bench/*.ty` asserts one metric against a generous bound.
 
 **Platform notes.** Builds and self-hosts on any unix-like OS — developed and
-gated on Debian (x86-64), and benchmarked on macOS (Apple Silicon). No native
-Windows, but WSL is fine. On macOS, `xcode-select --install`; Apple's
-AddressSanitizer ships no LeakSanitizer, so that half of the sanitizer build is
-skipped there (the rest still runs).
+gated on Debian (x86-64), and benchmarked on macOS (Apple Silicon). On macOS,
+`xcode-select --install`; Apple's AddressSanitizer ships no LeakSanitizer, so
+that half of the sanitizer build is skipped there (the rest still runs).
+
+**Windows** has two supported paths. **WSL2** is the zero-setup one and behaves
+exactly like Linux. **Native Windows is MSYS2 + mingw-w64** — MSVC is not a
+supported C target. The compiler, the runtime, the corelib and the tools build
+and run there, and `make ci` runs under MSYS2's `sh` with the lanes that cannot
+exist on Windows skipping loudly and naming their reason: the sanitizer lanes
+(mingw ships no ASan/UBSan, and gcc has no TSan for a Windows target), the
+32-bit lane (`gcc -m32`), the `LD_PRELOAD` locale lane, and the fuzzer. The
+last recorded Windows run and its residual failures are in
+[CHANGELOG.md](CHANGELOG.md); the behavioural gaps that survive the port are
+listed in [SECURITY.md](SECURITY.md). Release tarballs are built per platform
+by `scripts/release.sh` (`--mingw` cross-builds the Windows one).
 
 ## Documentation
 

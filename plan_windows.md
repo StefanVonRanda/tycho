@@ -533,3 +533,78 @@ language surface. WSL2 stays a first-class supported path.
 > (cat/cp/touch), the dispatcher's cmd-incompatible shell lines (rm -f, >
 > /dev/null), and tycho-fetch (mingw curl). Each needs a Windows-native test
 > variant in the CI leg.
+
+> Phase 6/7 harness evidence — 2026-08-07 (commit b115336, recorded here after
+> the fact; the run itself was on a real Windows VM: ARM64 Windows 11 running
+> the x86-64 MSYS2/mingw toolchain under **Prism emulation**).
+>
+> THE HARNESS GAPS the plan predicted, all landed as LOUD skips naming their
+> reason: ci.sh skips ilp32/asan-self/fuzz; tests/run.sh sets TYCHO_NO_ASAN=1
+> on Windows, names binaries `.exe`, gives each fixture its own temp dir,
+> retries with backoff, chunks `--one`, and selects a `<golden>.win` when one
+> exists (`float_str_locale.out.win` carries rt=-1, the newlocale-less
+> rendering phase 3 parked); tests/conc + tests/ffi skip their asan/tsan legs;
+> tests/recursion probes for GNU timeout (cmd.exe's is a different program);
+> corelib/run.sh retries and skips the signal test. One real harness BUG, not
+> a skip: check_goldens.py built patterns with `os.path`, so on Windows every
+> resolved path had backslashes and matched none of git's forward-slash paths
+> — every golden reported NOT tracked. Fixed with posixpath.
+>
+> THE RUN, stated as measured, not as a verdict: goldens-check / entrypoints /
+> spec-check / docs-fences / check-links / shim-check green; `make test`
+> 589/591; `make corelib` 43 ok / 2 fail (datetime's POSIX-TZ sign, time's
+> timing bound) / 1 skip (signal); `make conc` 34/38. The 2 + 4 test/conc reds
+> are ONE class — the emulator's startup heap-corruption race (0xC0000374 ->
+> bash 127), which is why the runner retries.
+>
+> **The phase-7 gate is therefore NOT met.** Its wording is "the full `make ci`
+> on Windows, green". What exists is a run with a short, classified residual
+> list on an EMULATED Windows box. Nothing here has been run on non-emulated
+> x86-64 Windows, so the emulator class is unseparated from a real port bug by
+> measurement — it is separated only by its signature (a startup crash before
+> main, at a rate that retries clear). That is the honest state.
+
+> Phase 7 close (the Linux half) — 2026-08-07.
+>
+> RELEASE. `scripts/release.sh --mingw` shipped the compiler and corelib only,
+> with a comment deferring the tools to "when they cross-compile" — phase 5
+> proved they do. It now cross-builds `tychofmt.exe`, `tycho-lsp.exe` and
+> `tycho-debug.exe` too (parity with the native leg, which ships the same three
+> beside tychoc and no dispatcher). Method: the NATIVE compiler emits the C
+> (target-neutral, its `_WIN32` branches are compile-time) and mingw links it,
+> with `--print-shims` supplying the corelib shims and the explicit `--shim`
+> file appended by hand — it is not in that list, the same trap wine_tools.sh
+> documents. Then a Wine smoke test of the STAGED layout: the packaged
+> tychoc.exe must find `corelib/` beside itself with no TYCHO_CORELIB and emit
+> C (it stops at --emit-c because there is no Windows `cc` under Wine); it
+> skips loudly, saying the tarball is unrun, when wine64 is absent.
+>
+> RAN, both legs, on this Linux box: `sh scripts/release.sh v1.0.0 --mingw` ->
+> compiler + 3 tools built, Wine smoke test ok, tarball + sha256 written; and
+> `sh scripts/release.sh v1.0.0` (the native leg, to prove it was not
+> disturbed) -> its own smoke test ok. NOT run: the tools' Windows *behaviour*
+> — they are built and packaged, and only tychoc.exe was executed.
+>
+> DOCS. README's platform note flips from "No native Windows, but WSL is fine"
+> to the two supported paths (WSL2 zero-setup, native MSYS2 + mingw-w64, MSVC
+> out of scope) with the loud-skip lane list and pointers to CHANGELOG (the
+> run) and SECURITY.md (the gaps). SECURITY.md's sharp-edge list gains the
+> surviving Windows behavioural gaps: signal's version-dependent accept-wake,
+> datetime's mirrored POSIX-TZ sign, the newlocale-less float(str) path,
+> core:os through cmd.exe, tycho-debug's Ctrl-C. corelib.md's 1.0 API surface
+> says the surface and every signature are identical on Windows and names the
+> three packages whose BEHAVIOUR differs. plan.md's "native Windows (deferred,
+> WSL suffices)" is struck in both places it appears, dated. CHANGELOG gains an
+> [Unreleased] section carrying the port, the recorded run with its residuals,
+> the release change, and the two post-1.0 compiler commits (the pattern-discard
+> fix and the branch-type diagnostic), which had never been recorded.
+>
+> NOT DONE, and it is the phase's own gate: the full `make ci` on Windows,
+> green. It needs the box, not this one. The park list above is unchanged —
+> os/datetime/signal test variants, tycho-build's lane recipes, the
+> dispatcher's cmd-incompatible shell lines, tycho-fetch's mingw curl.
+>
+> GATES (this box): doc gates (check_citations.py, check_links.sh) green; both
+> release legs ran. `make test` was NOT run and cannot redden — no compiler,
+> runtime, corelib or fixture changed; the diff is Markdown plus the mingw
+> branch of a release script that no gate calls.

@@ -11,9 +11,10 @@
 #   gh release create <version> dist/tycho-*.tar.gz dist/tycho-*.sha256 --notes-file RELEASE_NOTES.md
 #
 # There is no hosted CI by policy, so releases are built and published by hand, one
-# platform per machine. The --mingw leg cross-builds the compiler with
-# x86_64-w64-mingw32-gcc (the windows port's phases 1 and 5; the tools join the
-# tarball when they compile under mingw -- see plan_windows.md).
+# platform per machine. The --mingw leg cross-builds the compiler AND the three
+# shipped tools with x86_64-w64-mingw32-gcc (the windows port, phases 1/5/7 --
+# see plan_windows.md), and smoke-tests the staged layout under Wine when Wine is
+# installed. The dispatcher (`tycho`) is not shipped on either platform.
 set -eu
 
 version="${1:-}"
@@ -53,13 +54,55 @@ if [ "$mingw" -eq 1 ]; then
     "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o "$stage/tychoc.exe" 2>"$root/dist-mingw-build.log" \
         || { echo "!! mingw build failed (see dist-mingw-build.log)" >&2; rm -f "$root/dist-mingw-build.log"; exit 1; }
     rm -f "$root/dist-mingw-build.log"
-    # compiler + corelib only for now: the tools join when they cross-compile
-    # (plan_windows.md phases 3/5). The mingw compiler emits Windows programs;
-    # its cc invocation must point at a Windows-side mingw gcc (--cc).
+    # The tools the native leg ships, cross-built the same way phase 5 proved:
+    # the NATIVE compiler emits the C (the emitted C is target-neutral; its
+    # _WIN32 branches are compile-time), then mingw links it. --print-shims
+    # lists the corelib shims an import pulled in; the explicit --shim file is
+    # not in that list and is appended by hand.
+    echo ">> cross-building the tools"
+    for spec in "tychofmt tools/tychofmt.ty -" \
+                "tycho-lsp tools/lsp.ty tools/lsp_shim.c" \
+                "tycho-debug tools/tycho-debug/main.ty tools/tycho-debug/debug_shim.c"; do
+        # shellcheck disable=SC2086
+        set -- $spec; tname="$1"; tentry="$2"; tshim="$3"
+        shimarg=""; [ "$tshim" != "-" ] && shimarg="--shim $tshim"
+        # shellcheck disable=SC2086
+        ./tychoc "$tentry" $shimarg --emit-c -o "$stage/$tname" >/dev/null \
+            || { echo "!! $tname failed to emit C" >&2; exit 1; }
+        # shellcheck disable=SC2086
+        tshims="$(./tychoc "$tentry" $shimarg --print-shims | tr '\n' ' ')"
+        [ "$tshim" != "-" ] && tshims="$tshims $tshim"
+        # shellcheck disable=SC2086
+        "$MINGWCC" -O2 -fwrapv -pthread -o "$stage/$tname.exe" "$stage/$tname.c" $tshims -lm \
+            2>"$root/dist-mingw-build.log" \
+            || { echo "!! $tname failed to link under mingw (see dist-mingw-build.log)" >&2; exit 1; }
+        rm -f "$stage/$tname.c" "$root/dist-mingw-build.log"
+        echo "   ok $tname.exe"
+    done
+    # The mingw compiler emits Windows programs; its cc invocation must point at
+    # a Windows-side mingw gcc (--cc), which is why the tarball is MSYS2's job to
+    # complete -- see the Windows section of README.md.
     cp -r corelib "$stage"/
     cp README.md LICENSE "$stage"/
     mkdir -p "$stage"/examples
     cp examples/hello.ty "$stage"/examples/ 2>/dev/null || true
+
+    # Smoke test under Wine when it is here: the staged compiler must find the
+    # corelib BESIDE ITSELF (no TYCHO_CORELIB), same property the native leg
+    # asserts. It stops at --emit-c because there is no Windows cc under Wine.
+    if command -v wine64 >/dev/null 2>&1; then
+        echo ">> smoke-testing the packaged layout under Wine"
+        tmp="$(mktemp -d)"
+        printf 'fn main():\n    println("release ok")\n' > "$tmp/t.ty"
+        ( cd "$stage" && env -u LD_PRELOAD WINEDEBUG=-all wine64 ./tychoc.exe "$tmp/t.ty" --emit-c -o "$tmp/t" >/dev/null 2>&1 ) \
+            && grep -q "release ok" "$tmp/t.c" \
+            || { echo "!! the staged Windows compiler failed its Wine smoke test" >&2; rm -rf "$tmp"; exit 1; }
+        rm -rf "$tmp"
+        echo "   ok tychoc.exe emitted C under Wine with corelib beside it"
+    else
+        echo ">> SKIP the Wine smoke test (wine64 not on PATH) -- the tarball is"
+        echo "   built but unrun; verify it on a Windows box before publishing"
+    fi
 else
     os="$(uname -s | tr '[:upper:]' '[:lower:]')"
     name="tycho-${version}-${os}-${arch}"
