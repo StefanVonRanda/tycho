@@ -15,6 +15,26 @@ extern fn tycho_read_line() -> string          # one stdin line (through \n); ""
 extern fn tycho_read_n(n: int) -> string       # exactly n stdin bytes (the JSON body)
 extern fn tycho_write(s: string) -> int        # write to stdout + flush
 extern fn tycho_run(cmd: string) -> int        # run the compiler on a buffer (diagnostics)
+extern fn tycho_is_windows() -> int            # 1 under _WIN32: picks the null device + temp root
+extern fn tycho_pkg_mirror(dir: string, mir: string) -> int   # copy dir/*.ty into a fresh mir, no shell
+
+# tycho_run is system(), so on Windows the command goes to cmd.exe, where
+# "/dev/null" is a filename and not a sink. A native PE also resolves the
+# "/tmp/..." constants below to C:\tmp, which need not exist. Both are silent:
+# the redirect fails, the compiler writes nothing, and every compiler-backed
+# feature (diagnostics, --symbols -> hover/completion/symbols/inlay/sighelp)
+# returns empty while the server still answers requests and looks healthy.
+fn null_dev() -> string:
+    if tycho_is_windows() == 1:
+        return "nul"
+    return "/dev/null"
+
+# Make the temp root the "/tmp/..." constants name actually exist. On POSIX it
+# always does; on Windows that path is C:\tmp and a fresh box has no such
+# directory, so the first write_file silently fails.
+fn ensure_tmp_root():
+    if tycho_is_windows() == 1:
+        tycho_run("if not exist C:\\tmp mkdir C:\\tmp")
 
 # ---- JSON (from examples/json.ty) -------------------------------------------
 enum Json:
@@ -344,7 +364,7 @@ fn pkg_mirror(path: string, text: string) -> string:
     mir := "/tmp/.tycholsp_pkg"
     dir := path_dir(path)
     base := path_base(path)
-    tycho_run("rm -rf " + shq(mir) + " && mkdir -p " + shq(mir) + " && cp " + shq(dir) + "/*.ty " + shq(mir) + "/ 2>/dev/null; true")
+    tycho_pkg_mirror(dir, mir)                          # native: cmd.exe has no rm/mkdir -p/cp
     active := mir + "/" + base
     write_file(active, text)                            # live buffer wins over the on-disk copy
     return active
@@ -370,7 +390,7 @@ fn diagnose(uri: string, text: string, cc: string):
         tmp = pkg_mirror(path, text)
     else:
         write_file(tmp, text)
-    tycho_run(cc + " " + tmp + " --emit-c -o /tmp/.tycholsp_out > /dev/null 2> " + errf)
+    tycho_run(cc + " " + tmp + " --emit-c -o /tmp/.tycholsp_out > " + null_dev() + " 2> " + errf)
     errtext := read_file(errf)
     diags := ""
     nd := 0
@@ -484,7 +504,7 @@ fn doc_get(uris: [string], arr: [string], uri: string) -> string:
 # run `tychoc --symbols` on the buffer; "" if it doesn't parse (hover falls back)
 fn compute_syms(text: string, cc: string) -> string:
     write_file("/tmp/.tycholsp_doc.ty", text)
-    tycho_run(cc + " /tmp/.tycholsp_doc.ty --symbols > /tmp/.tycholsp_syms.txt 2>/dev/null")
+    tycho_run(cc + " /tmp/.tycholsp_doc.ty --symbols > /tmp/.tycholsp_syms.txt 2>" + null_dev())
     return read_file("/tmp/.tycholsp_syms.txt")
 
 # --- cross-package symbols (project index) -----------------------------------
@@ -516,7 +536,7 @@ fn compute_projs(uri: string, text: string, cc: string) -> string:
     path := uri_to_path(uri)
     if path == "":
         return ""
-    tycho_run(cc + " " + path + " --symbols > /tmp/.tycholsp_proj.txt 2>/dev/null")
+    tycho_run(cc + " " + path + " --symbols > /tmp/.tycholsp_proj.txt 2>" + null_dev())
     return read_file("/tmp/.tycholsp_proj.txt")
 
 # the qualifier `q` in `q.member` when the cursor sits in the member position
@@ -1275,6 +1295,7 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
     send_result(id, "{\"data\":[" + data + "]}")
 
 fn main():
+    ensure_tmp_root()                                   # Windows: C:\tmp need not exist yet
     cc := compiler()
     uris := []string
     texts := []string
