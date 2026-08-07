@@ -15,6 +15,20 @@ A few sharp edges are inherent, by design:
   decoded NUL byte is dropped. They are exact for text and non-NUL binary.
 - The hashes in `core:hash` are **non-cryptographic**; `core:md5` is broken for
   security (use `core:sha256` or a real KDF where it matters).
+- **Native Windows (MSYS2/mingw) keeps a few behavioural gaps** the POSIX build
+  does not have, and they are part of the sharp-edge list rather than the
+  stability contract: `core:signal`'s Windows handler is
+  `SetConsoleCtrlHandler` and whether it wakes a blocked `accept` is
+  Windows-version dependent — the flag is set either way, so a program that
+  polls it is portable and one that relies on the wake is not;
+  `core:datetime`'s `offset_at` reads a signed POSIX `TZ` string with the
+  opposite sign convention (Windows `_tzset`), so a program that sets `TZ`
+  itself gets the mirrored offset (UTC and fixed-offset paths are unaffected);
+  mingw has no `newlocale`, so `float(str)` under a comma-decimal locale falls
+  back to the `localeconv` path and rejects what glibc would accept; `core:os`
+  shells out through `cmd.exe`, which has neither `true`/`false` nor `kill`;
+  and `tycho-debug` cannot interrupt a running inferior with Ctrl-C (`q` still
+  quits). **WSL2 has none of these** — it is the Linux build.
 
 ## 1.0 security review — 2026-08-05
 

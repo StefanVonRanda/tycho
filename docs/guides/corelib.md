@@ -546,6 +546,15 @@ are tested three ways and golden-locked by `make corelib` and
 - **New packages still arrive only through the demand gate** — a real program
   that needs them — and they join the surface the day they ship, with their
   test + golden + this guide entry.
+- **The surface is the same on native Windows (MSYS2/mingw)**, and so is every
+  signature: the FFI-backed packages link MSYS2's mingw builds of the same
+  libraries (the Windows-only linker flags come from a `_WIN32:` section of the
+  package's `deps` manifest, appended verbatim and never pkg-config'd), and the
+  pure-Tycho packages are unchanged. Three packages *behave* differently there
+  — `core:signal`, `core:datetime`'s POSIX-`TZ` offsets, and `core:os`'s
+  shell-out through `cmd.exe`; each difference is spelled out in
+  [SECURITY.md](../../SECURITY.md). WSL2 is the Linux build and has none of
+  them.
 
 **Deprecation path.** A package or function is deprecated by (1) a `deprecated:`
 notice in its doc comment, (2) an entry in `CHANGELOG.md` naming the
