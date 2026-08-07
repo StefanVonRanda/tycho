@@ -1598,8 +1598,17 @@ char *tycho_float_to_str(Arena *a, double x) {
  * -1 if the "C" handle could not be built, because then neither leg is trustworthy
  * and a golden should say so rather than score it. */
 tycho_int tycho_test_make_locale_hostile(void) {
+    /* The POSIX names are all rejected by the Windows CRT (setlocale returns
+     * NULL for every one of them, measured on Windows 11 26200 / mingw-w64),
+     * so without the Windows-style names below this hook returned 0 there and
+     * the hostile-locale half of tests/float_{lit,str}_locale.ty silently
+     * tested nothing -- the fixture ran its second block in the "C" locale
+     * while its golden said hostile=1. */
     static const char *cands[] = { "", "da_DK.UTF-8", "da_DK.utf8", "da_DK",
-                                   "de_DE.UTF-8", "fr_FR.UTF-8", NULL };
+                                   "de_DE.UTF-8", "fr_FR.UTF-8",
+                                   "Danish_Denmark.1252",
+                                   "German_Germany.1252",
+                                   "French_France.1252", NULL };
     for (int i = 0; cands[i]; i++) {
         if (!setlocale(LC_NUMERIC, cands[i])) continue;
         struct lconv *lc = localeconv();
