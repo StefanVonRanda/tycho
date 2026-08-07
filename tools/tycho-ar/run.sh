@@ -55,6 +55,24 @@ TYCHOC=./tychoc
 export TYCHO_CORELIB="$PWD/corelib"
 RECORD="${RECORD:-0}"
 golden=tools/tycho-ar/expected.out
+
+# A filename containing a newline is not representable on Windows. MSYS2 stores
+# one by mapping the byte into a Unicode private-use plane, but tycho-ar is a
+# NATIVE program reading the directory through the narrow (ANSI) API, so the
+# name comes back as "new?line.txt" and the stat that follows fails -- the tool
+# is behaving correctly about a name the platform cannot hold. The fixture drops
+# that ONE member there and selects a `.win` golden, the same mechanism
+# tests/run.sh uses for float_str_locale.out.win. Every other awkward name (the
+# dotfile, the embedded space, the NUL payload, the deep path, the empty file,
+# the multichunk file) is still exercised on both platforms.
+case "$(uname -s)" in
+    *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;;
+    *) IS_WINDOWS=0 ;;
+esac
+if [ "$IS_WINDOWS" = 1 ]; then
+    echo "tycho-ar: SKIP the newline-in-name member (Windows filenames cannot contain \\n); using $golden.win"
+    golden="$golden.win"
+fi
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
@@ -75,8 +93,10 @@ printf 'hello, archive\n'          > "$tree/a.txt"
 : > "$tree/empty"
 printf 'dotfile\n'                 > "$tree/.hidden"
 printf 'spaced out\n'              > "$tree/with space.txt"
-printf 'newline in the name\n'     > "$tree/new
+if [ "$IS_WINDOWS" = 0 ]; then
+    printf 'newline in the name\n' > "$tree/new
 line.txt"
+fi
 printf '%b' 'A\000B\000C\000'      > "$tree/sub/nul.bin"
 printf 'deep\n'                    > "$tree/sub/deep/d.txt"
 # 4000 x 38 bytes = 152000, so it spans three 64 KiB hashing chunks and
