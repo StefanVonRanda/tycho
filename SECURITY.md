@@ -21,9 +21,19 @@ A few sharp edges are inherent, by design:
   `SetConsoleCtrlHandler` and whether it wakes a blocked `accept` is
   Windows-version dependent — the flag is set either way, so a program that
   polls it is portable and one that relies on the wake is not;
-  `core:datetime`'s `offset_at` reads a signed POSIX `TZ` string with the
-  opposite sign convention (Windows `_tzset`), so a program that sets `TZ`
-  itself gets the mirrored offset (UTC and fixed-offset paths are unaffected);
+  `core:datetime`'s `local_offset` reads the SYSTEM zone through the CRT and
+  ignores the `TZ` environment variable, and it did not track DST across the
+  instants measured — on a box set to Pacific it answered `-28800` for both a
+  January and a July timestamp under three different `TZ` settings, where the
+  POSIX build tracked each one. Use `offset_at` with an explicit POSIX rule
+  when the answer has to be reproducible; that path parses the rule itself on
+  Windows and was checked against the POSIX build over 108 (zone, instant)
+  pairs, all identical. **Non-ASCII filenames do not survive**: the emitted
+  program uses the narrow (ANSI) CRT and directory APIs, so on the usual
+  code page 1252 a path like `日本語.txt` is written to disk under a mojibake
+  name and `read_dir` cannot return it — round-tripping inside one Tycho
+  program works, but the name on disk is not the name you asked for and any
+  other program sees the corruption. ASCII paths are unaffected.
   mingw has no `newlocale`, so `float(str)` under a comma-decimal locale falls
   back to the `localeconv` path and rejects what glibc would accept; `core:os`
   shells out through `cmd.exe`, which has neither `true`/`false` nor `kill`;

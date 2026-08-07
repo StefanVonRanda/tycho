@@ -246,7 +246,16 @@ typedef int64_t tycho_int;
 /* The SYSTEM local timezone's UTC offset at `secs`, DST-aware. Reads the process
  * timezone (the TZ env var, else the OS default) via localtime_r. The exact value
  * is host-dependent, so a test must not hard-code it -- use offset_at for a
- * reproducible zone. */
+ * reproducible zone.
+ *
+ * gap: the two sentences above hold on POSIX only. On Windows the CRT reads TZ
+ * once at startup, so this ignores a TZ set later by the program, and it did not
+ * track DST across the instants measured -- on a box set to Pacific it answered
+ * -28800 for both a January and a July timestamp under three different TZ
+ * values, where the POSIX build tracked each. dtx_offset_at below does NOT share
+ * the defect: it parses the POSIX rule itself on Windows. Making this one agree
+ * means resolving the zone through GetTimeZoneInformationForYear rather than the
+ * CRT. Recorded in SECURITY.md. */
 tycho_int dtx_local_offset(tycho_int secs) {
     time_t t = (time_t)secs;
     struct tm lt;
