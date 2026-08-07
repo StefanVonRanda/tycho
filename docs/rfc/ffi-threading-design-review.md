@@ -61,7 +61,7 @@ heavy: every `spawn` is one OS thread via `pthread_create`
 full deep-copy of captures per chunk (`src/tychoc.c:4119-4132`), there is no
 thread pool or work-stealing (`docs/guides/concurrency.md:137-139`), spawning is
 unbounded, and a panic/abort in any task `exit(1)`s the whole process
-(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:921-936`).
+(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:931-946`).
 
 **Top recommendations (ranked, both areas):**
 
@@ -92,7 +92,7 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2554` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:8547-8616`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:8557-8626`. Each
   `extern "Lib"` adds `-lLib` (`:5001` `add_link`). `--link/--shim/--pkg`
   passthrough at `:8563-8567`. Auto-discovered `<pkg>_shim.c` + `deps`
   pkg-config at `:8355-8358`, `:2902-2927`, `:8614-8616`.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8355-8358`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8365-8368`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 

@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9625@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4510-4514`,`:4519-4520`,`:4529-4530`; `eprint` codegen `:9635@tycho_eprint`; `die` codegen
 > `:9150-9151`.
 
 ## 29.4 Conversions
@@ -131,7 +131,7 @@ only spelling — `n.to_char()` is not.
 > `is_null`/`to_ptr` `Sig` `:4531-4532`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1057-1061` /
 > `sized_conv_target` `:1046-1056`, resolved inline at `:5666-5672`. The abort
-> both share is `runtime/tycho_rt.c:1426@out of byte range`. Conformance:
+> both share is `runtime/tycho_rt.c:1436@out of byte range`. Conformance:
 > `tests/char_to_char.ty`, `tests/abort/chr_oob.ty`.
 
 ## 29.5 Strings
@@ -159,7 +159,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4522-4523`, `split` `:4834@.name="split"`;
 > `len` magic
 > `:5708-5714`; `char_at` `Sig` `src/tychoc.c:4833@.name="char_at"`, codegen `:9000-9007`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10151@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:10161@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -225,7 +225,7 @@ user-callable.)
 > `:5126-5141`; `map_*` removal (parse error) `:2473-2474`, tychoc0
 > `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
 > form). `hash` resolve `src/tychoc.c:5947-5960`, codegen `:9661-9663`,
-> `gen_hash` `src/tychoc.c:9266@gen_hash`; its type-emission gate is `hash_keyused`
+> `gen_hash` `src/tychoc.c:9276@gen_hash`; its type-emission gate is `hash_keyused`
 > `src/tychoc.c:1450-1454`, OR'd into the hash-function gates so a `hash()` on
 > a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
@@ -248,7 +248,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7941@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5216-5232`; `defaultable` predicate `:7951@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -275,9 +275,9 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > Provenance: `wait` `src/tychoc.c:5588-5595`; `channel` `:5596-5606`; `send`
 > `:5607-5615`; `recv` `:5616-5621`; `close` `:5622-5632`; `ncpu` `Sig` `:4826@.name="ncpu"`;
 > task/channel method sugar `:5233-5247`. `ncpu()`'s value is
-> `runtime/tycho_rt.c:847-852` (`TYCHO_THREADS` first, else
+> `runtime/tycho_rt.c:847-862` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10582@_pk > 64`.
+> 64 is `src/tychoc.c:10592@_pk > 64`.
 
 ## 29.10 Filesystem and time
 

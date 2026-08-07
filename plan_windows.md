@@ -22,7 +22,7 @@
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
   `dirent` (opendir/readdir/closedir, `src/tychoc.c:4445@opendir`), `popen`
-  (`src/tychoc.c:13290@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:13300@popen`), `realpath`, `access`, `vasprintf`
   (`src/tychoc.c:103@vasprintf`), and `newlocale/uselocale`
   (`src/tychoc.c:198@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
@@ -45,7 +45,7 @@
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`
   (`corelib/os/os_shim.c:25-28`), `core:net` has a real Winsock2 path
   (`corelib/net/net_shim.c:31-40`). The rest split into small ports (`core:io`
-  — `getline` at `corelib/io/io_shim.c:46`, `pread` at `:141`), one big port
+  — `getline` at `corelib/io/io_shim.c:59`, `pread` at `:141`), one big port
   (`core:regex` — POSIX `regcomp`/`regexec` at `corelib/regex/regex_shim.c:20, corelib/regex/regex_shim.c:26`
   don't exist on Windows; PCRE2 behind the same API, or a documented gap),
   one redesign (`core:signal` — the `sigaction`-based socket-shutdown design
