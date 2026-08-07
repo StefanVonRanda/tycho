@@ -30,6 +30,7 @@
 #define O_BINARY 0
 #endif
 #ifdef _WIN32
+#include <windows.h>           /* GetFileAttributesExA -- the UTC file time */
 #include <io.h>                 /* _lseeki64 -- the pread/pwrite stand-ins */
 #include <direct.h>             /* _mkdir -- the one-arg Windows mkdir */
 #include <fcntl.h>              /* O_RDWR/O_CREAT are the same, but keep _O_BINARY honest */
@@ -346,6 +347,27 @@ tycho_int iox_stat_mtime(const char *path, tycho_int *mtime) {
     errno = 0;
     if (stat(path, &st) != 0) return ty_rf_errno(path);   /* ENOENT/ENOTDIR -> MISS */
     *mtime = (tycho_int)st.st_mtime;
+#ifdef _WIN32
+    /* MSVCRT's stat() runs the file time through the CURRENT local timezone and
+     * DST state rather than the one in force when the file was written, so
+     * st_mtime is not a UTC epoch: a file stamped 1416470400 reads back as
+     * 1416474000 (an hour out) on a box whose zone is presently on the other
+     * side of a DST boundary. Measured on Windows 11 26200, zone "Pacific
+     * Standard Time". That hour reached the wire as a wrong Last-Modified
+     * header, which then broke If-Modified-Since -- the 304 never fired.
+     * The Win32 file time is a plain 100ns count from 1601-01-01 UTC with no
+     * timezone in it, so take that when it is available and keep the stat()
+     * result as the fallback. */
+    {
+        WIN32_FILE_ATTRIBUTE_DATA fad;
+        if (GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) {
+            unsigned long long t =
+                ((unsigned long long)fad.ftLastWriteTime.dwHighDateTime << 32)
+                | fad.ftLastWriteTime.dwLowDateTime;
+            *mtime = (tycho_int)((long long)(t / 10000000ULL) - 11644473600LL);
+        }
+    }
+#endif
     return TY_RF_OK;
 }
 
