@@ -124,7 +124,7 @@ instead of seven labels with a shared body).
 - Ranges emit as **consecutive case labels** (`case 48: case 49: ... case 57:`).
   Unrolling, not GNU `case 48 ... 57:`: the ranges in the tree are all small
   (7–10 values), and unrolling is portable under any dialect. (The repo
-  compiles with plain `cc`, no `-std` — `src/tychoc.c:13006` — so GNU case
+  compiles with plain `cc`, no `-std` — `src/tychoc.c:13016` — so GNU case
   ranges would work, but there is no reason to depend on them.)
 - The table-vs-binary-search decision is **cc's**, not ours: at `-O2`, GCC and
   Clang lower a dense switch to a jump table and a sparse one to a binary
@@ -180,7 +180,7 @@ per-compare figure assumed. Neither number is a reason to build for speed.
   subject and variant arms on a scalar subject are distinct errors; the
   dup/overlap check (D3); the `_` rule (D2); string/bytes/float subjects
   refused with the demand-gated reason (D1).
-- **Codegen** (`src/tychoc.c:10019`) — the switch emission (D6). The
+- **Codegen** (`src/tychoc.c:10029`) — the switch emission (D6). The
   `S_MATCH` statement and value forms both flow through it, so the value
   form (`x := match c: ...`) works without separate work.
 - **Spec** — §14.3 (`docs/spec/10-statements.md:32-60`), the statements

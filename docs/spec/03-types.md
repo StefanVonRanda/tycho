@@ -409,7 +409,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > a return type) and `tests/fixarr_aggregate.ty` for the `[N]T` twin. The
 > inline element is emitted inside the by-value containment DFS — `[N]T` and
 > `bounded[N]T` are ordered with the struct/tuple/Option bodies rather than with
-> the pointer-shaped arrays (`src/tychoc.c:11099-11189`, with `inline_arrc`/
+> the pointer-shaped arrays (`src/tychoc.c:11109-11199`, with `inline_arrc`/
 > `needs_body_first` at `:11091-11097`; tychoc0's `comp_dep_types`
 > `compiler/tychoc0.ty:10241-10268` and `emit_comp_body` `:10278-10302`) — which is what makes an aggregate element compile; the
 > infinite-type rejection falls out of the same DFS
@@ -474,4 +474,4 @@ is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is 
 one-byte glyph.)
 
 > Provenance: `src/tychoc.c:6045-6078` (equality/ordering resolver); function-
-> value identity equality `:9311@identity equality`.
+> value identity equality `:9321@identity equality`.
