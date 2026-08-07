@@ -55,9 +55,22 @@ done
 # ---------------------------------------------------------------------------
 # [2] planted instances: SAT with a model the runner verifies itself
 # ---------------------------------------------------------------------------
-python3 - "$SAT" >> "$out" <<'PYEOF'
+python3 - "$SAT" "$T" >> "$out" <<'PYEOF'
 import random, subprocess, sys
+# Native-Windows python3 (which is what MSYS2 puts on PATH here) opens stdout
+# in TEXT mode, so every \n it prints becomes \r\n and the transcript stops
+# matching an LF golden -- a diff where both sides look identical. Force LF.
+sys.stdout.reconfigure(newline="\n")
 SAT = sys.argv[1]
+# The CNF must land in the SAME real directory the shell names below.
+# A literal "/tmp/..." does not: python3 here is a NATIVE Windows build
+# under MSYS2, so it resolves "/tmp" to C:\\tmp, while the shell handing
+# "/tmp/..." to the native solver as an argv gets MSYS2's path conversion
+# to C:\\msys64\\tmp -- two different directories for one spelling, so the
+# solver read nothing and the transcript lost its "s SATISFIABLE"/"v"/
+# "c conflicts=" lines. Taking the run's own $T as an argv makes both
+# sides agree (MSYS2 converts it once, identically, for each program).
+OUTDIR = sys.argv[2]
 def planted(seed, nv, nc, ratio):
     random.seed(seed)
     model = {v: random.choice([True, False]) for v in range(1, nv + 1)}
@@ -101,7 +114,7 @@ def run(path, nv):
 ok = True
 for seed, nv, nc in [(7, 50, 200), (11, 100, 400), (13, 150, 600)]:
     model, cls = planted(seed, nv, nc, 0.85)
-    p = "/tmp/plant_%d_%d.cnf" % (seed, nv)
+    p = "%s/plant_%d_%d.cnf" % (OUTDIR, seed, nv)
     with open(p, "w") as f:
         f.write("p cnf %d %d\n" % (nv, len(cls)))
         for c in cls:
@@ -114,21 +127,21 @@ rc=$?
 if [ "$rc" -ne 0 ]; then
     bad "planted-instance section failed"; sed 's/^/      /' "$T/client.err" 2>/dev/null
 fi
-"$SAT" solve /tmp/plant_11_100.cnf >> "$out" 2>/dev/null
+"$SAT" solve "$T/plant_11_100.cnf" >> "$out" 2>/dev/null
 
 # ---------------------------------------------------------------------------
 # [3] determinism + [4] the learning comparison
 # ---------------------------------------------------------------------------
-a=$("$SAT" solve /tmp/plant_11_100.cnf 2>/dev/null | md5sum)
-b=$("$SAT" solve /tmp/plant_11_100.cnf 2>/dev/null | md5sum)
+a=$("$SAT" solve "$T/plant_11_100.cnf" 2>/dev/null | md5sum)
+b=$("$SAT" solve "$T/plant_11_100.cnf" 2>/dev/null | md5sum)
 if [ "$a" = "$b" ]; then
     printf 'determinism: ok\n' >> "$out"
 else
     bad "solve is not deterministic"
     printf 'determinism: FAIL\n' >> "$out"
 fi
-cdl=$("$SAT" solve /tmp/plant_11_100.cnf 2>/dev/null | sed -n 's/^c conflicts=\([0-9]*\).*/\1/p')
-dpl=$("$SAT" solve /tmp/plant_11_100.cnf --no-learn 2>/dev/null | sed -n 's/^c conflicts=\([0-9]*\).*/\1/p')
+cdl=$("$SAT" solve "$T/plant_11_100.cnf" 2>/dev/null | sed -n 's/^c conflicts=\([0-9]*\).*/\1/p')
+dpl=$("$SAT" solve "$T/plant_11_100.cnf" --no-learn 2>/dev/null | sed -n 's/^c conflicts=\([0-9]*\).*/\1/p')
 printf 'learning comparison (planted 100 vars): CDCL %s conflicts vs chronological-DPLL %s\n' "$cdl" "$dpl" >> "$out"
 
 # ---------------------------------------------------------------------------
