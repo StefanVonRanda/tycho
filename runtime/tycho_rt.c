@@ -1993,7 +1993,16 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
 }
 
 /* list_dir(path): the directory's entries (excluding "." and ".."), or an empty
- * array if it can't be opened. Order is the filesystem's (sort if you need it). */
+ * array if it can't be opened. Order is the filesystem's (sort if you need it).
+ *
+ * gap: on Windows this is the NARROW (ANSI) opendir/readdir, so a filename
+ * outside the active code page (1252 by default) comes back lossily -- measured
+ * on Windows 11 26200: a file created as 日本語.txt lands on disk under a
+ * mojibake name and readdir yields "???.txt", which then fails to stat. ASCII is
+ * unaffected. Fixing it means either an application manifest setting
+ * activeCodePage=UTF-8 (Windows 10 1903+, needs a resource on the emitted cc
+ * line) or moving the toolchain to UCRT64 and the wide APIs -- both change what
+ * the port targets, so neither is done here. Recorded in SECURITY.md. */
 TychoArrStr tycho_list_dir(Arena *a, const char *path) {
     TychoArrStr r = tycho_arr_str_with_cap(a, 8);
     DIR *d = opendir(path);
