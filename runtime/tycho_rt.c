@@ -848,12 +848,22 @@ static void tycho_task_finish(HTask *t) {
  * payload up to 64, stash the malloc'd pointer 8 bytes before the payload
  * (the +8 guarantees room for the stash even when malloc already aligned);
  * ty_aligned_free64 recovers it. The channel free path uses plain free() on
- * both platforms. */
+ * both platforms.
+ *
+ * The alignment MUST start from p+8, not p: aligning up from p leaves a == p
+ * whenever malloc already returned a 64-aligned block, and the stash write at
+ * a[-1] then lands 8 bytes BEFORE the allocation, corrupting the allocator's
+ * metadata. msvcrt returns a 64-aligned pointer ~25% of the time (measured:
+ * 501/2000), so this smashed the heap on roughly one channel in four and
+ * surfaced as STATUS_HEAP_CORRUPTION (0xC0000374) at the free in
+ * tycho_chan_free. The +8 in the size request is what makes p+8 safe to
+ * align from -- worst case a == p+8+63 and a+n == p+n+63+8, exactly the
+ * block. Linux takes the aligned_alloc branch and never saw this. */
 static void *ty_aligned_alloc64(size_t n) {
 #ifdef _WIN32
     unsigned char *p = malloc(n + 63 + 8);
     if (!p) return NULL;
-    uintptr_t a = ((uintptr_t)p + 63) & ~(uintptr_t)63;
+    uintptr_t a = ((uintptr_t)p + 8 + 63) & ~(uintptr_t)63;
     ((uintptr_t *)a)[-1] = (uintptr_t)p;
     return (void *)a;
 #else
