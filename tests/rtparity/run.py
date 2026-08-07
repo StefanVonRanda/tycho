@@ -179,7 +179,15 @@ def die(msg):
 
 def emitted_c(tmp):
     """Compile the probe with tychoc; return the emitted C."""
-    tychoc = os.environ.get("TYCHOC", os.path.join(ROOT, "tychoc"))
+    # On Windows the built compiler is tychoc.exe. Probe for the suffix rather
+    # than branching on os.name: MSYS2's python reports os.name == "posix" even
+    # though `make` produced a .exe, so the name test would miss it there. Same
+    # class of Windows-only harness bug as the posixpath one in check_goldens.py.
+    tychoc = os.environ.get("TYCHOC")
+    if not tychoc:
+        tychoc = os.path.join(ROOT, "tychoc")
+        if not os.access(tychoc, os.X_OK) and os.access(tychoc + ".exe", os.X_OK):
+            tychoc += ".exe"
     if not os.access(tychoc, os.X_OK):
         die("no %s -- run 'make' first" % tychoc)
 
