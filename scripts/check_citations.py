@@ -101,8 +101,18 @@ def where_at(on):
 
 
 def main():
-    mds = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
-                         capture_output=True, text=True, check=True).stdout.split()
+    # Filter in Python rather than passing `*.md` as a pathspec. Handing a
+    # wildcard to git THROUGH subprocess loses it on Windows: measured on
+    # Windows 11 26200, `git ls-files '*.md'` from the MSYS2 shell answers 126
+    # files, and the identical argv through subprocess answers 8 -- the
+    # top-level ones. The checker then reported `ok` over 8 anchored and 6 bare
+    # citations instead of 134 and 812, which is the dangerous failure: a gate
+    # that passes because it checked almost nothing. Same class as the
+    # posixpath bug in check_goldens.py (b115336).
+    mds = [f for f in subprocess.run(["git", "ls-files"], cwd=ROOT,
+                                     capture_output=True, text=True,
+                                     check=True).stdout.split()
+           if f.endswith(".md")]
     fails, n_bare, n_anchored, n_prov = [], 0, 0, 0
     n_bare_prov = 0
     n_sym, n_sym_src = 0, 0
