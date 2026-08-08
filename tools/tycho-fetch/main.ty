@@ -59,13 +59,31 @@ fn main():
     if not mkdir(dest):
         _ := io.remove(arch)
         die("tycho-fetch: cannot create " + dest)
-    if tycho_run("tar -xf '" + arch + "' -C '" + dest + "' --strip-components=1 >/dev/null 2>&1") != 0:
+    if tycho_run("tar -xf " + shq(arch) + " -C " + shq(dest) + " --strip-components=1 >" + null_dev() + " 2>&1") != 0:
         _ := io.remove(arch)
         die("tycho-fetch: " + url + " is not a tarball with a single top-level directory")
     _ := io.remove(arch)
     println("  vendored " + name + " -> " + dest)
 
 extern fn tycho_run(cmd: string) -> int        # system(cmd); raw wait status, 0 == ok
+extern fn tycho_is_windows() -> int            # 1 under _WIN32: null device + quoting style
+
+# The extract step is the tool's OWN shell-out, not user text, so it has to be
+# spelled for the shell that will parse it. On Windows that is cmd.exe, where
+# "/dev/null" is an ordinary filename and a single quote is a literal character
+# -- so the redirect failed, the quoted paths reached tar WITH the quotes in
+# them, and every fetch died as "not a tarball with a single top-level
+# directory". (The buildfile RECIPES that tycho-build runs are a different
+# thing: those are the user's text and stay verbatim.)
+fn null_dev() -> string:
+    if tycho_is_windows() == 1:
+        return "nul"
+    return "/dev/null"
+
+fn shq(s: string) -> string:
+    if tycho_is_windows() == 1:
+        return "\"" + s + "\""
+    return "'" + s + "'"
 
 # a vendored package name must be one safe path component: no separators, no '..'
 fn safe_name(name: string) -> bool:
