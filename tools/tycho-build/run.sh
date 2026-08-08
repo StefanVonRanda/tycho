@@ -33,6 +33,16 @@ D=tools/tycho-build
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 RECORD="${RECORD:-0}"
 fail=0
+# Leg [7] shells out three ways that are POSIX-shaped: a file:// URL built from
+# $PWD, a buildfile recipe that names the compiler by path, and an output binary
+# with no suffix. Under MSYS2 $PWD is the POSIX view (/c/...), which libcurl -- a
+# native DLL -- cannot open; the recipe reaches cmd.exe, which cannot execute a
+# name written with forward slashes; and the linker appends .exe. cygpath -m
+# gives the mixed form (C:/...) that a file: URL and the CRT both accept, and
+# cygpath -w the backslash form cmd needs to START a program.
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; EXE=".exe" ;; *) IS_WINDOWS=0; EXE="" ;; esac
+url_of() { if [ "$IS_WINDOWS" = 1 ]; then echo "file:///$(cygpath -m "$1")"; else echo "file://$1"; fi; }
+native() { if [ "$IS_WINDOWS" = 1 ]; then cygpath -w "$1"; else echo "$1"; fi; }
 
 "$TYCHOC" "$D/main.ty" -o "$T/tb" >"$T/build.log" 2>&1 || { echo "FAIL (tool build)"; cat "$T/build.log"; exit 2; }
 
@@ -127,15 +137,15 @@ printf 'package greet\nimport "../util"\nfn hello():\n    print(util.msg() + "\\
 printf 'package util\nfn msg() -> string:\n    return "from vendored util"\n' > "$T/vend/u-src/util.ty"
 ( cd "$T/vend" && tar -czf g.tar.gz g-src && tar -czf u.tar.gz u-src )
 printf 'package main\nimport "vendor/greet"\nfn main():\n    greet.hello()\n' > "$T/vend/main.ty"
-printf 'app: main.ty\n    %s main.ty -o app\n' "$PWD/tychoc" > "$T/vend/buildfile"
-( cd "$T/vend" && "$T/tf" "file://$PWD/g.tar.gz" greet && "$T/tf" "file://$PWD/u.tar.gz" util ) > "$T/vend/fetch.log" 2>&1 \
+printf 'app: main.ty\n    %s main.ty -o app%s\n' "$(native "$PWD/tychoc")" "$EXE" > "$T/vend/buildfile"
+( cd "$T/vend" && "$T/tf" "$(url_of "$PWD/g.tar.gz")" greet && "$T/tf" "$(url_of "$PWD/u.tar.gz")" util ) > "$T/vend/fetch.log" 2>&1 \
     || { echo "FAIL [7] tycho-fetch"; cat "$T/vend/fetch.log"; fail=1; }
 [ -f "$T/vend/vendor/greet/greet.ty" ] && [ -f "$T/vend/vendor/util/util.ty" ] \
     || { echo "FAIL [7] vendored files missing"; fail=1; }
 ( cd "$T/vend" && "$T/tb" buildfile ) > "$T/vend/build.out" 2>&1 \
     || { echo "FAIL [7] vendored build"; cat "$T/vend/build.out"; fail=1; }
-[ -x "$T/vend/app" ] || { echo "FAIL [7] app not built"; fail=1; }
-out=$("$T/vend/app")
+[ -x "$T/vend/app$EXE" ] || { echo "FAIL [7] app not built"; fail=1; }
+out=$("$T/vend/app$EXE")
 [ "$out" = "from vendored util" ] || { echo "FAIL [7] app output: '$out'"; fail=1; }
 
 [ "$fail" -eq 0 ] && echo "tycho-build: all green (7 legs)" || { echo "tycho-build: FAIL"; exit 1; }

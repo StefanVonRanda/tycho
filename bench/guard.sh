@@ -9,6 +9,18 @@
 # 0.60x gate cleanly separates them with margin for noise.
 set -eu
 cd "$(dirname "$0")/.."
+# bench/peakrss.c, which every bench lane times through, is built on fork(2) +
+# wait4(2) + getrusage(2) and <sys/resource.h>, none of which mingw has: the
+# build stops at "fatal error: sys/resource.h: No such file or directory"
+# (measured 2026-08-08). A Windows peakrss wants CreateProcess +
+# GetProcessMemoryInfo + WaitForSingleObject -- worth writing if Windows perf
+# numbers are ever wanted, but this lane is a wall-clock RATIO gate (tycho must
+# come in under 0.60x C) and a ratio measured inside a VM is noise, not a
+# regression signal. Correctness is what the port claims; this asserts speed.
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*)
+    echo "bench-guard: SKIP (Windows: bench/peakrss.c is fork/wait4/getrusage-based, and a wall-clock ratio gate does not survive a VM anyway)"
+    exit 0 ;;
+esac
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cc -O2 -o "$T/pk" bench/peakrss.c
 GATE_NUM=60   # tycho must be < GATE_NUM/100 of C's wall (i.e. < 0.60x C)

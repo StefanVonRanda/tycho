@@ -31,6 +31,21 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 
+# tychoc0 is FROZEN and predates the Windows port: it emits its own miniature
+# runtime as string literals, and that copy carries the POSIX-only
+# `sysconf(_SC_NPROCESSORS_ONLN)` spelling of tycho_ncpu with no _WIN32 branch
+# and no <windows.h> (compiler/tychoc0.ty:10688 -- the live runtime grew its
+# branch in phase 1, runtime/tycho_rt.c:1099). Stage B's C therefore does not
+# COMPILE under mingw: "'_SC_NPROCESSORS_ONLN' undeclared", measured
+# 2026-08-08. Nothing about the Windows port turns on this -- the fixed point
+# is a property of the frozen compiler and its own frozen source, and the Linux
+# lane proves it at every HEAD. Making it run here means editing a frozen
+# artifact, which is an owner decision and not a port chore.
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*)
+    echo "selfhost: SKIP (Windows: frozen tychoc0 emits POSIX-only C -- compiler/tychoc0.ty:10688 has no _WIN32 tycho_ncpu; un-freezing it is an owner decision)"
+    exit 0 ;;
+esac
+
 if ! "$TYCHOC" "$H" -o "$T/A" >"$T/build.log" 2>&1; then
     echo "FAIL: tychoc could not build compiler/tychoc0.ty"; sed 's/^/      /' "$T/build.log"
     echo "selfhost: FAIL"; exit 1

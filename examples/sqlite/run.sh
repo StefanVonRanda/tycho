@@ -32,6 +32,8 @@ RECORD="${RECORD:-0}"
 golden=expected.out
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
+# mingw gcc ships no sanitizer runtime -- see the SKIP at the sanitizer leg below
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
 
 # (1) C reference compiler: direct sqlite3_* bindings, NO --shim; --pkg links libsqlite3.
 if ! "$TYCHOC" demo.ty -o "$T/c" --pkg sqlite3 >"$T/c.log" 2>&1; then
@@ -46,6 +48,8 @@ fi
 # (Before 2026-07-29 this sanitized tychoc0's C; see the header.)
 if ! "$TYCHOC" demo.ty --emit-c -o "$T/san_src" >"$T/emit.log" 2>&1; then
     echo "FAIL: tychoc --emit-c"; sed 's/^/      /' "$T/emit.log"; fail=1
+elif [ "$IS_WINDOWS" = 1 ]; then
+    echo "SKIP sqlite ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; plan_windows.md phase 2)"
 elif ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -std=c11 \
         "$T/san_src.c" -o "$T/san" $LIBS 2>"$T/san.log"; then
     echo "FAIL: sanitizer cc"; sed 's/^/      /' "$T/san.log"; fail=1
@@ -59,4 +63,5 @@ if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden -- run RE
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
-[ "$fail" -eq 0 ] && echo "sqlite: green (tychoc ASan-clean, matches golden -- real libsqlite3 via --pkg, ZERO hand-written shim; the tychoc0 leg was retired 2026-07-29)" || { echo "sqlite: FAIL"; exit 1; }
+if [ "$IS_WINDOWS" = 1 ]; then SAN="ASan SKIPPED (no mingw runtime)"; else SAN="ASan-clean"; fi
+[ "$fail" -eq 0 ] && echo "sqlite: green (tychoc $SAN, matches golden -- real libsqlite3 via --pkg, ZERO hand-written shim; the tychoc0 leg was retired 2026-07-29)" || { echo "sqlite: FAIL"; exit 1; }

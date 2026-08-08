@@ -21,6 +21,8 @@ golden=examples/raytrace/expected.out
 SRC=examples/raytrace/main.ty
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
+# mingw gcc ships no sanitizer runtime -- see the SKIP at the sanitizer leg below
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
 
 # (1) C reference compiler
 if ! "$TYCHOC" "$SRC" -o "$T/c" >"$T/c.log" 2>&1; then
@@ -30,7 +32,9 @@ else
 fi
 
 # (2) ASan/UBSan over the emitted C (the render must be leak-free too)
-if ! { "$TYCHOC" "$SRC" --emit-c -o "$T/a" >/dev/null 2>&1 && \
+if [ "$IS_WINDOWS" = 1 ]; then
+    echo "SKIP raytrace ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; plan_windows.md phase 2)"
+elif ! { "$TYCHOC" "$SRC" --emit-c -o "$T/a" >/dev/null 2>&1 && \
        $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 "$T/a.c" -o "$T/asan" -lm 2>"$T/a.log"; }; then
     echo "FAIL: sanitizer cc"; sed 's/^/      /' "$T/a.log"; fail=1
 else
@@ -49,4 +53,5 @@ if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden -- run RE
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
-[ "$fail" -eq 0 ] && echo "raytrace: green (float-heavy Vec3 value semantics; tychoc == ASan; valid QOI)" || { echo "raytrace: FAIL"; exit 1; }
+if [ "$IS_WINDOWS" = 1 ]; then SAN="ASan SKIPPED (no mingw runtime)"; else SAN="ASan"; fi
+[ "$fail" -eq 0 ] && echo "raytrace: green (float-heavy Vec3 value semantics; tychoc + $SAN; valid QOI)" || { echo "raytrace: FAIL"; exit 1; }

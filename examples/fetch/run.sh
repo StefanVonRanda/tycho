@@ -75,9 +75,20 @@ SHIM="$("$TYCHOC" examples/fetch/main.ty --print-shims)" \
     || { echo "fetch: FAIL (tychoc --print-shims)"; exit 1; }
 RECORD="${RECORD:-0}"
 golden=examples/fetch/expected.out
-URL="file://$PWD/examples/fetch/fixture.json"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
+# mingw gcc ships no sanitizer runtime -- see the SKIP at the sanitizer leg below
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
+# The fixture is fetched over file://, so the URL needs a path the NATIVE program
+# can open. Under MSYS2 $PWD is the POSIX view (/c/tycho), which libcurl -- a
+# native Windows DLL -- cannot resolve: the request came back "no response" and
+# the lane read as a core:http failure. cygpath -m gives the mixed form
+# (C:/tycho) that both a file: URL and the CRT accept.
+if [ "$IS_WINDOWS" = 1 ]; then
+    URL="file:///$(cygpath -m "$PWD")/examples/fetch/fixture.json"
+else
+    URL="file://$PWD/examples/fetch/fixture.json"
+fi
 
 # (1) C reference compiler (auto-discovers the core:http shim + deps)
 if ! "$TYCHOC" examples/fetch/main.ty -o "$T/c" >"$T/c.log" 2>&1; then
@@ -93,6 +104,8 @@ fi
 # the header.)
 if ! "$TYCHOC" examples/fetch/main.ty --emit-c -o "$T/san_src" >"$T/emit.log" 2>&1; then
     echo "FAIL: tychoc --emit-c"; sed 's/^/      /' "$T/emit.log"; fail=1
+elif [ "$IS_WINDOWS" = 1 ]; then
+    echo "SKIP fetch ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; plan_windows.md phase 2)"
 elif ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 "$T/san_src.c" $SHIM -o "$T/san" -lm $DEPF 2>"$T/san.log"; then
     echo "FAIL: sanitizer cc"; sed 's/^/      /' "$T/san.log"; fail=1
 else
@@ -131,4 +144,5 @@ if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden -- run RE
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
-[ "$fail" -eq 0 ] && echo "fetch: green (http+json+sha256+io+path compose; tychoc+ASan; real libcurl via file://; the tychoc0 leg was retired 2026-07-29)" || { echo "fetch: FAIL"; exit 1; }
+if [ "$IS_WINDOWS" = 1 ]; then SAN="ASan SKIPPED (no mingw runtime)"; else SAN="ASan"; fi
+[ "$fail" -eq 0 ] && echo "fetch: green (http+json+sha256+io+path compose; tychoc+$SAN; real libcurl via file://; the tychoc0 leg was retired 2026-07-29)" || { echo "fetch: FAIL"; exit 1; }

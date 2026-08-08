@@ -52,6 +52,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 fail=0
+# The shutdown cases below need a POSIX signal delivered to the server -- see
+# the SKIP at case 1.
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
 
 if ! "$TYCHOC" server/main.ty -o "$T/tycho-httpd" >"$T/build.log" 2>&1; then
     echo "FAIL: tychoc could not build server/main.ty"; sed 's/^/      /' "$T/build.log"; exit 1
@@ -588,6 +591,23 @@ sys.exit(1 if fails else 0)
 PY
 [ $? -eq 0 ] || fail=1
 
+if [ "$IS_WINDOWS" = 1 ]; then
+  # Six shutdown cases and the access-log tail, every one driven by a POSIX
+  # signal to the server process. MSYS2's `kill` cannot deliver one to a NATIVE
+  # PE -- it terminates the process -- so the graceful path never runs, the
+  # "stopped after N requests" line is never printed, and the lane then BLOCKS
+  # waiting for a wind-down that cannot happen. Measured 2026-08-08: the run sat
+  # 43 minutes with tycho-httpd still alive before it was killed by hand, which
+  # is worse than a red -- a hang stops the whole sweep at step [3d/13].
+  # Same class as corelib's signal test (plan_windows.md phase 4). A Windows
+  # variant wants GenerateConsoleCtrlEvent against the server's console rather
+  # than kill; core:signal already arms SetConsoleCtrlHandler at the far end.
+  # NOTE the body below is deliberately NOT re-indented: it carries unindented
+  # heredoc terminators (`PY`), which only work at column 0.
+  echo "  SKIP shutdown cases 1-6 + access-log tail (Windows: MSYS2 kill terminates a native PE instead of signalling it -- plan_windows.md phase 4)"
+  kill -9 "$SRV" 2>/dev/null       # the server the concurrency case left running
+  SRV=""
+else
 # ---- shutdown case 1 of 2: SIGTERM is a CLEAN shutdown ----------------------
 # This block asserted wait status 143 until the signals plan -- that is, it
 # asserted the server was KILLED, that server/main.ty's last line was
@@ -967,6 +987,8 @@ if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/parked.err
 else
     echo "  FAIL SIGTERM with parked readers: wait status $rc, want 0 (137 = it waited out SO_RCVTIMEO)"; fail=1
     tail -n 3 "$T/parked.err" | sed 's/^/      /'
+fi
+
 fi
 
 # ---- the command line -------------------------------------------------------

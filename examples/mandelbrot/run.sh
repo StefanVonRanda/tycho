@@ -21,6 +21,8 @@ golden=examples/mandelbrot/expected.out
 SRC=examples/mandelbrot/main.ty
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
+# mingw gcc ships no sanitizer runtime -- see the SKIP at the sanitizer leg below
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
 
 # (1) C reference compiler
 if ! "$TYCHOC" "$SRC" -o "$T/c" >"$T/c.log" 2>&1; then
@@ -30,7 +32,9 @@ else
 fi
 
 # (2) ThreadSanitizer: the parallel-for reduction must be data-race-free
-if ! { "$TYCHOC" "$SRC" --emit-c -o "$T/t" >/dev/null 2>&1 && \
+if [ "$IS_WINDOWS" = 1 ]; then
+    echo "SKIP mandelbrot TSan leg (gcc has no Windows-target ThreadSanitizer at all; plan_windows.md phase 2)"
+elif ! { "$TYCHOC" "$SRC" --emit-c -o "$T/t" >/dev/null 2>&1 && \
        $CC -fsanitize=thread -g -O1 -pthread "$T/t.c" -o "$T/tsan" -lm 2>"$T/t.log"; }; then
     echo "FAIL: TSan cc"; sed 's/^/      /' "$T/t.log"; fail=1
 else
@@ -39,7 +43,9 @@ else
 fi
 
 # (3) ASan/UBSan over the emitted C
-if ! { "$TYCHOC" "$SRC" --emit-c -o "$T/a" >/dev/null 2>&1 && \
+if [ "$IS_WINDOWS" = 1 ]; then
+    echo "SKIP mandelbrot ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; plan_windows.md phase 2)"
+elif ! { "$TYCHOC" "$SRC" --emit-c -o "$T/a" >/dev/null 2>&1 && \
        $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -pthread "$T/a.c" -o "$T/asan" -lm 2>"$T/a.log"; }; then
     echo "FAIL: ASan cc"; sed 's/^/      /' "$T/a.log"; fail=1
 else
@@ -52,4 +58,5 @@ if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden -- run RE
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
-[ "$fail" -eq 0 ] && echo "mandelbrot: green (float in a parallel-for reduction; tychoc == TSan == ASan; deterministic)" || { echo "mandelbrot: FAIL"; exit 1; }
+if [ "$IS_WINDOWS" = 1 ]; then SAN="TSan+ASan SKIPPED (no mingw runtime)"; else SAN="TSan == ASan"; fi
+[ "$fail" -eq 0 ] && echo "mandelbrot: green (float in a parallel-for reduction; tychoc + $SAN; deterministic)" || { echo "mandelbrot: FAIL"; exit 1; }
