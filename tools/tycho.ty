@@ -8,12 +8,55 @@
 #   tycho fmt   <file.ty> [-w]        format to stdout, or safely in-place with -w
 #   tycho debug <file.ty> [args...]   compile with -g and debug under gdb
 #
-# Set TYCHOC/TYCHOFMT/TYCHODEBUG to pick the compiler/formatter/debugger. Shell-out + sleep come from
-# tools/tycho_shim.c (libc system()/usleep() the FFI can't name directly); build
-# this with:  tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
+# Set TYCHOC/TYCHOFMT/TYCHODEBUG to pick the compiler/formatter/debugger. Shell-out, sleep and the
+# file operations come from tools/tycho_shim.c (libc calls the FFI can't name
+# directly); build this with:  tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
 
 extern fn tycho_run(cmd: string) -> int        # system(cmd); raw wait status, 0 == ok
 extern fn tycho_sleep_ms(ms: int) -> int       # usleep(ms*1000)
+extern fn tycho_is_windows() -> int            # 1 under _WIN32: null device, temp root, .exe suffix
+extern fn tycho_remove(path: string) -> int    # unlink one file (cmd.exe has no `rm`)
+extern fn tycho_copy(src: string, dst: string) -> int      # byte copy (cmd.exe has no `cp`)
+extern fn tycho_rename(src: string, dst: string) -> int    # atomic replace (cmd.exe has no `mv`)
+extern fn tycho_files_equal(a: string, b: string) -> int   # 1 same / 0 differ / -1 unreadable (no `diff`)
+
+# tycho_run is system(), so on Windows every command goes to cmd.exe. Three of
+# this tool's assumptions are POSIX-only there, and all three fail SILENTLY:
+# "/dev/null" is an ordinary filename and not a sink, "/tmp/..." resolves to
+# C:\tmp which a fresh box does not have, and a linked program without a ".exe"
+# suffix is not something cmd will start. The shell commands the tool used to
+# spell (`rm -f`, `cp`, `mv`, `diff -q`) are gone too -- they moved into
+# tools/tycho_shim.c, which does the work natively on both platforms.
+fn null_dev() -> string:
+    if tycho_is_windows() == 1:
+        return "nul"
+    return "/dev/null"
+
+# Where the throwaway build/check artifacts live. Drive-anchored on Windows so
+# the path does not depend on which drive the current directory sits on.
+fn tmp_dir() -> string:
+    if tycho_is_windows() == 1:
+        return "C:/tmp"
+    return "/tmp"
+
+# Make tmp_dir() exist. POSIX /tmp always does; on Windows it is C:\tmp and a
+# fresh box has none, so the first redirect there would write nothing.
+fn ensure_tmp_root():
+    if tycho_is_windows() == 1:
+        tycho_run("if not exist C:\\tmp mkdir C:\\tmp")
+
+# The suffix a linked program has to carry to be startable. mingw's linker
+# appends ".exe" itself when the -o name has no extension, which would leave
+# every "built <name>" line naming a file that does not exist -- so ask for it
+# explicitly instead, and print what is actually on disk.
+fn with_exe(name: string) -> string:
+    if tycho_is_windows() != 1:
+        return name
+    n := len(name)
+    if n > 4:
+        if substr(name, n - 4, n) == ".exe":
+            return name
+    return name + ".exe"
 
 # the compiler to invoke (TYCHOC override, else "tychoc" off PATH)
 fn compiler() -> string:
@@ -70,13 +113,17 @@ fn usage():
 
 fn cmd_run(a: [string], cc: string):
     file := a[2]
-    exe := "/tmp/.tycho_run_bin"
-    # build to a throwaway temp; tychoc emits <exe> and the transpiled <exe>.c
-    if tycho_run(cc + " " + file + " -o " + exe + " > /dev/null") != 0:
-        tycho_run("rm -f " + exe + " " + exe + ".c")
+    ensure_tmp_root()
+    exe := with_exe(tmp_dir() + "/.tycho_run_bin")
+    # build to a throwaway temp; tychoc emits <exe>, and <exe>.c survives a cc
+    # failure on purpose (src/tychoc.c:13555) -- so clean both, either way
+    if tycho_run(cc + " " + file + " -o " + exe + " > " + null_dev()) != 0:
+        tycho_remove(exe)
+        tycho_remove(exe + ".c")
         die("tycho run: build failed: " + file)
     code := tycho_run(exe + " " + join_from(a, 3))
-    tycho_run("rm -f " + exe + " " + exe + ".c")   # delete the generated binary + transpiled C
+    tycho_remove(exe)                              # the generated binary
+    tycho_remove(exe + ".c")                       # and its transpiled C, if a failure left one
     if code != 0:
         die("tycho run: program exited non-zero")
 
@@ -86,7 +133,8 @@ fn cmd_build(a: [string], cc: string):
     if len(a) >= 5:
         if a[3] == "-o":
             out = a[4]
-    if tycho_run(cc + " " + file + " -o " + out + " > /dev/null") != 0:
+    out = with_exe(out)                            # an explicit -o gets it too: cmd needs the suffix
+    if tycho_run(cc + " " + file + " -o " + out + " > " + null_dev()) != 0:
         die("tycho build: failed: " + file)
     println("built " + out)
 
@@ -94,7 +142,8 @@ fn cmd_check(a: [string], cc: string):
     file := a[2]
     # --emit-c runs the whole front-end (parse + type + codegen) but skips cc;
     # the throwaway C goes to a temp, errors land on stderr (inherited -> shown).
-    if tycho_run(cc + " " + file + " --emit-c -o /tmp/.tycho_check > /dev/null") != 0:
+    ensure_tmp_root()
+    if tycho_run(cc + " " + file + " --emit-c -o " + tmp_dir() + "/.tycho_check > " + null_dev()) != 0:
         die("tycho check: " + file + " has errors")
     println("ok: " + file)
 
@@ -119,23 +168,28 @@ fn cmd_fmt(a: [string], cc: string):
     if not write:
         tycho_run(fmtr + " " + file)                          # preview to stdout
         return
-    tmp := file + ".tychofmt~"                                # sibling temp -> same FS -> atomic mv
+    tmp := file + ".tychofmt~"                                # sibling temp -> same FS -> atomic rename
     if tycho_run(fmtr + " " + file + " > " + tmp) != 0:
-        tycho_run("rm -f " + tmp)
+        tycho_remove(tmp)
         die("tycho fmt -w: formatter failed on " + file)
-    chk := "/tmp/.tychofmt_check.ty"
-    tycho_run("cp " + file + " " + chk)
-    if tycho_run(cc + " " + chk + " --emit-c -o /tmp/.tychofmt_a > /dev/null 2>&1") != 0:
-        tycho_run("rm -f " + tmp)
+    ensure_tmp_root()
+    chk := tmp_dir() + "/.tychofmt_check.ty"
+    ca := tmp_dir() + "/.tychofmt_a"
+    cb := tmp_dir() + "/.tychofmt_b"
+    tycho_copy(file, chk)
+    if tycho_run(cc + " " + chk + " --emit-c -o " + ca + " > " + null_dev() + " 2>&1") != 0:
+        tycho_remove(tmp)
         die("tycho fmt -w: " + file + " does not compile -- fix it first (preview with: tycho fmt " + file + ")")
-    tycho_run("cp " + tmp + " " + chk)
-    if tycho_run(cc + " " + chk + " --emit-c -o /tmp/.tychofmt_b > /dev/null 2>&1") != 0:
-        tycho_run("rm -f " + tmp)
+    tycho_copy(tmp, chk)
+    if tycho_run(cc + " " + chk + " --emit-c -o " + cb + " > " + null_dev() + " 2>&1") != 0:
+        tycho_remove(tmp)
         die("tycho fmt -w: REFUSED -- formatted output does not compile; " + file + " left unchanged")
-    if tycho_run("diff -q /tmp/.tychofmt_a.c /tmp/.tychofmt_b.c > /dev/null 2>&1") != 0:
-        tycho_run("rm -f " + tmp)
+    # anything but a proven-identical pair refuses: 0 is "differs", -1 is "one of
+    # them could not be read", and neither is grounds for overwriting the source
+    if tycho_files_equal(ca + ".c", cb + ".c") != 1:
+        tycho_remove(tmp)
         die("tycho fmt -w: REFUSED -- formatting would change the program; " + file + " left unchanged")
-    if tycho_run("mv " + tmp + " " + file) != 0:
+    if tycho_rename(tmp, file) != 0:
         die("tycho fmt -w: failed to replace " + file)
     println("formatted " + file)
 
@@ -148,13 +202,14 @@ fn cmd_debug(a: [string], cc: string):
 fn cmd_watch(a: [string], cc: string):
     file := a[2]
     println("watching " + file + " (Ctrl-C to stop)")
+    ensure_tmp_root()
     last := ""
     for true:
         cur := read_file(file)
         if cur != last:
             last = cur
             println("--- change detected, checking ---")
-            tycho_run(cc + " " + file + " --emit-c -o /tmp/.tycho_check > /dev/null")
+            tycho_run(cc + " " + file + " --emit-c -o " + tmp_dir() + "/.tycho_check > " + null_dev())
         tycho_sleep_ms(300)
 
 fn main():

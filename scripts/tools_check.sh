@@ -1,5 +1,5 @@
 #!/bin/sh
-# Regression guard for the daily-driver tooling (tychofmt + tycho-lsp).
+# Regression guard for the daily-driver tooling (tychofmt + tycho-lsp + tycho).
 # Run by `make tools-check` and as a step in `make ci`.
 #
 #   FORMATTER  (1) idempotent: fmt(fmt(x)) == fmt(x) on every tracked .ty;
@@ -8,9 +8,13 @@
 #                  can't skew the diff (checked on the files that compile).
 #   LSP        scripted JSON-RPC smoke: initialize replies; a clean buffer
 #              publishes [] diagnostics; a broken buffer publishes a diagnostic.
+#   DISPATCHER `tycho check/run/build/fmt` end to end: exit statuses, argv
+#              forwarding, the binary existing under the name the tool printed,
+#              and `fmt -w` refusing a format that would change the program.
 #
 # A formatter that changed a program, or stopped being idempotent, or an LSP that
-# stopped answering, fails the build.
+# stopped answering, or a dispatcher command that silently does nothing, fails
+# the build.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
@@ -288,6 +292,72 @@ elif grep -q 'tycho_str_copy(_parent, h_d)' "$TMP/brh/main.c"; then
 else
     echo "    bytes field NOT re-homed -- copy_into missing T_BYTES (dangling UAF!)"; fail=1
 fi
+
+echo ">>> dispatcher: tools/tycho.ty -- check / run / build / fmt"
+# The dispatcher had no lane of its own: `make debug-check` leg 6 drives `tycho
+# debug` and nothing drove run/build/check/fmt, which is how five commands could
+# be broken on Windows at once (cmd.exe has no /dev/null, no rm/cp/mv/diff, and
+# will not start a program whose name carries no .exe) without a red anywhere.
+# Every leg asserts an OBSERVABLE: an exit status, a file that must exist under
+# the name the tool printed, or a source file that must be byte-identical.
+make -s tycho >/dev/null 2>&1 || { echo "    dispatcher build FAILED"; fail=1; }
+bin() { if [ -x "$1" ]; then echo "$1"; else echo "$1.exe"; fi; }   # mingw links <name>.exe
+TY=$(bin "$PWD/tycho"); CCA=$(bin "$PWD/tychoc"); FMTA=$(bin "$PWD/tychofmt")
+D="$TMP/disp"; mkdir -p "$D"
+printf 'fn main():\n    println("hi " + str(len(args())))\n' > "$D/prog.ty"
+printf 'fn main():\n    x := \n'                             > "$D/bad.ty"
+printf 'fn main():\n    exit(3)\n'                           > "$D/nz.ty"
+printf 'fn main():\n        println("x")\n'                  > "$D/messy.ty"
+
+# [1] check: accepts a good file, rejects a broken one with a non-zero status
+TYCHOC="$CCA" "$TY" check "$D/prog.ty" >"$D/c1.out" 2>&1; rc1=$?
+TYCHOC="$CCA" "$TY" check "$D/bad.ty"  >"$D/c2.out" 2>&1; rc2=$?
+if [ "$rc1" -eq 0 ] && grep -q '^ok: ' "$D/c1.out" && [ "$rc2" -ne 0 ]; then
+    echo "    [1] check: ok on good, non-zero on broken"
+else echo "    [1] check WRONG (rc=$rc1/$rc2)"; sed 's/^/      /' "$D/c1.out" "$D/c2.out" | head -6; fail=1; fi
+
+# [2] run: forwards argv, propagates a non-zero exit, and leaves no temp behind
+out=$(TYCHOC="$CCA" "$TY" run "$D/prog.ty" one two 2>&1); rc1=$?
+TYCHOC="$CCA" "$TY" run "$D/nz.ty" >"$D/r2.out" 2>&1; rc2=$?
+litter=$(ls /tmp/.tycho_run_bin* "C:/tmp/.tycho_run_bin"* 2>/dev/null | head -3)
+if [ "$rc1" -eq 0 ] && [ "$out" = "hi 3" ] && [ "$rc2" -ne 0 ] && [ -z "$litter" ]; then
+    echo "    [2] run: argv forwarded, exit propagated, temp cleaned"
+else echo "    [2] run WRONG (rc=$rc1/$rc2 out='$out' litter='$litter')"; sed 's/^/      /' "$D/r2.out" | head -4; fail=1; fi
+
+# [3] build: the binary must exist under the name the tool PRINTED and must run.
+# The printed name is the assertion -- on Windows the linker appends .exe, so a
+# tool that prints the bare name is naming a file nobody can start.
+out=$(TYCHOC="$CCA" "$TY" build "$D/prog.ty" -o "$D/built" 2>&1); rc=$?
+named=$(printf '%s\n' "$out" | sed -n 's/^built //p')
+if [ "$rc" -eq 0 ] && [ -n "$named" ] && [ -x "$named" ] && [ "$("$named")" = "hi 1" ]; then
+    echo "    [3] build: printed name exists and runs ($(basename "$named"))"
+else echo "    [3] build WRONG (rc=$rc named='$named')"; printf '%s\n' "$out" | sed 's/^/      /' | head -4; fail=1; fi
+
+# [4] fmt: preview goes to stdout and does not touch the file; -w rewrites it
+# and removes its sibling temp
+before=$(cat "$D/messy.ty")
+prev=$(TYCHOFMT="$FMTA" "$TY" fmt "$D/messy.ty" 2>&1)
+still=$(cat "$D/messy.ty")
+TYCHOFMT="$FMTA" TYCHOC="$CCA" "$TY" fmt -w "$D/messy.ty" >"$D/f2.out" 2>&1; rc=$?
+after=$(cat "$D/messy.ty")
+if [ "$prev" = "$after" ] && [ "$still" = "$before" ] && [ "$rc" -eq 0 ] \
+   && [ "$after" != "$before" ] && [ ! -f "$D/messy.ty.tychofmt~" ]; then
+    echo "    [4] fmt: preview is read-only, -w installed it, no temp left"
+else echo "    [4] fmt WRONG (rc=$rc)"; sed 's/^/      /' "$D/f2.out" | head -4; fail=1; fi
+
+# [5] fmt -w REFUSES when the formatter would change the program, and leaves the
+# source byte-identical. Driven by a FAKE formatter that emits a different (but
+# compilable) program, because the real one never does -- which is exactly why
+# this leg exists: it is the only thing that proves the refusal can fire at all.
+printf 'fn main():\n    println("fn main():")\n    println("    println(\\"DIFFERENT\\")")\n' > "$D/fake.ty"
+"$CCA" "$D/fake.ty" -o "$D/fakefmt" >"$D/fake.log" 2>&1 || { echo "    [5] fake formatter build failed"; sed 's/^/      /' "$D/fake.log"; fail=1; }
+FF=$(bin "$D/fakefmt")
+sum_before=$(cat "$D/prog.ty")
+TYCHOFMT="$FF" TYCHOC="$CCA" "$TY" fmt -w "$D/prog.ty" >"$D/f5.out" 2>&1; rc=$?
+if [ "$rc" -ne 0 ] && grep -q 'REFUSED' "$D/f5.out" && [ "$(cat "$D/prog.ty")" = "$sum_before" ] \
+   && [ ! -f "$D/prog.ty.tychofmt~" ]; then
+    echo "    [5] fmt -w refuses a semantics-changing format, source untouched"
+else echo "    [5] fmt -w DID NOT REFUSE (rc=$rc) -- it may have rewritten the source"; sed 's/^/      /' "$D/f5.out" | head -4; fail=1; fi
 
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"
