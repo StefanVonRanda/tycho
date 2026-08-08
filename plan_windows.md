@@ -564,6 +564,70 @@ language surface. WSL2 stays a first-class supported path.
 > measurement — it is separated only by its signature (a startup crash before
 > main, at a rate that retries clear). That is the honest state.
 
+> Phase 7 GATE MET — 2026-08-08, on a native x86-64 Windows 11 26200 guest
+> (WinBoat/podman over KVM, MSYS2 + mingw-w64 gcc 16.1.0, gdb 17.2). Not the
+> emulated ARM64 box of 2026-08-07.
+>
+> THE GATE: `make ci` exit 0, from a CLEAN CHECKOUT at d24c53f with an empty
+> working tree, 114 skips each printing its reason. Nine sweeps were needed —
+> every one died one step further along than the last, which is what the plan
+> predicted the long tail would feel like. The order they fell in: `site` (no
+> -lasan/-lubsan) -> `fetch` (a file:// URL built from an MSYS $PWD that
+> libcurl cannot open) -> `server-check` (HUNG, 43 minutes) -> `selfhost`
+> (frozen tychoc0 emits POSIX-only C) -> `build-check` (leg 7's URL, recipe and
+> .exe) -> `bench-guard` (peakrss is fork/wait4/getrusage) -> `corelib time`
+> (a real contract bug, below) -> green.
+>
+> SIX PORT DEFECTS, not harness noise, each measured both ways on the box:
+>   THE DISPATCHER (tools/tycho.ty) was entirely broken — all five commands
+>   died at their first shell-out, each reporting a misleading cause. It also
+>   had NO lane: `make debug-check` leg 6 drove `tycho debug` and nothing drove
+>   run/build/check/fmt, which is how five commands stayed broken with nothing
+>   red. scripts/tools_check.sh gained five legs.
+>   TYCHO-DEBUG was dead in all 6 legs while SHIPPING in the release tarball:
+>   the same shell-outs, plus _fullpath's backslashes never matching gdb's
+>   forward slashes (every stop fell to the glue branch), plus _fullpath
+>   succeeding for a file that does not exist so the fail-closed refusal never
+>   fired.
+>   CORE:TIME broke its documented "at least the requested duration": 199 ms
+>   for a 200 ms sleep, 1 in 60 under contention and 0 in 60 idle — invisible
+>   outside a full sweep. Now deadline-based against the clock the caller
+>   measures with.
+>   TYCHO-FETCH's tar line was sh-only, so every fetch failed while blaming the
+>   tarball.
+>   CHECK_CITATIONS.PY PASSED BY NOT LOOKING — `git ls-files "*.md"` through
+>   subprocess yields 8 files on Windows where the shell yields 126, so the
+>   gate reported ok over 8 anchored + 6 bare citations instead of 134 + 812.
+>   It reported CI GREEN in sweep 8 while checking almost nothing; that is the
+>   most dangerous thing found in this whole port.
+>   NINE LANES carried POSIX assumptions. The server one HUNG rather than
+>   failing — MSYS2's kill terminates a native PE instead of signalling it, so
+>   the lane waited forever for a graceful wind-down that cannot happen.
+>
+> THE PACKAGED TOOLS ARE NOW RUN. Phase 7's Linux half built them and executed
+> only tychoc.exe under Wine. Staged the release layout on Windows and drove
+> all four: a full build with corelib beside the compiler and no
+> TYCHO_CORELIB, a core:strings import out of that corelib, tychofmt.exe
+> idempotent, tycho-lsp.exe answering a framed initialize, tycho-debug.exe
+> setting and hitting a breakpoint under real gdb. Caveat: these were built
+> NATIVELY, not cross-linked, so this tests the packaged shape and the tools'
+> behaviour, not the exact bytes `release.sh --mingw` emits.
+>
+> WHAT IS STILL NOT COVERED, and what "green" does not mean. 114 skips is not
+> 114 passes. Not exercised on Windows at all: the sanitizer legs (mingw ships
+> no ASan/UBSan runtime; gcc has no Windows-target TSan), the fuzz lanes,
+> ilp32, locale-check, asan-self, selfhost (the FROZEN compiler/tychoc0.ty
+> emits POSIX-only C at :10688 -- un-freezing it is an owner decision, not a
+> port chore), bench-guard (peakrss.c is fork/wait4/getrusage, and a
+> wall-clock ratio gate does not survive a VM), core:signal's test,
+> server/run.sh's six shutdown cases, and tycho-ar's newline-in-filename
+> member. The two BEHAVIOURAL gaps in SECURITY.md are unchanged: non-ASCII
+> filenames mojibake through the narrow CRT, and local_offset ignores TZ.
+> ONE BOX, ONE TOOLCHAIN: x86-64 mingw64 gcc 16.1.0 in a VM. No UCRT64, no
+> native ARM64, no second gcc, no bare metal. The 2026-08-07 ARM64 run had a
+> different failure set entirely, which is the standing argument against
+> reading one green sweep as a platform guarantee.
+
 > Phase 7 close (the Linux half) — 2026-08-07.
 >
 > RELEASE. `scripts/release.sh --mingw` shipped the compiler and corelib only,

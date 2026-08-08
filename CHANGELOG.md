@@ -21,16 +21,56 @@ says `1.0.0`, so these ship the next time it is bumped.
   `tests/ffi`, `tests/recursion`, `corelib/run.sh`; `check_goldens.py` moved
   to `posixpath` so goldens resolve against git's forward-slash paths).
   MSVC is not a supported C target; WSL2 remains the zero-setup path.
-- **The recorded Windows run — 2026-08-07, ARM64 Windows 11 under Prism
-  emulation (MSYS2/mingw x86-64).** Green: `goldens-check`, `entrypoints`,
-  `spec-check`, `docs-fences`, `check-links`, `shim-check`. Residual, each
-  classified rather than fixed: `make test` 589/591 and `make conc` 34/38
-  (the 2 + 4 are one class — the emulator's startup heap-corruption race,
-  `0xC0000374`, which the runner retries with backoff), and `make corelib` 43
-  ok / 2 fail / 1 skip (`datetime` and `time` — the POSIX-`TZ` sign
-  convention and a timing bound; `signal`'s test needs a POSIX `kill`). **No
-  full-green `make ci` on Windows has been recorded**, and none on a
-  non-emulated x86-64 Windows box.
+- **`make ci` is green on native Windows — 2026-08-08, x86-64 Windows 11
+  26200 under KVM, MSYS2 + mingw-w64 gcc 16.1.0, gdb 17.2.** Exit 0 from a
+  clean checkout with an empty working tree, and **114 skips**, every one of
+  them printing its reason. Green means nothing reddened, not that everything
+  ran: the sanitizer legs (mingw ships no ASan/UBSan runtime and gcc has no
+  Windows-target TSan), the fuzz lanes, `ilp32`, `locale-check`, `asan-self`,
+  `selfhost-check`, `bench-guard`, `core:signal`'s test, `server/run.sh`'s six
+  shutdown cases and `tycho-ar`'s newline-in-filename member do not execute
+  there. The prior recorded run (2026-08-07, ARM64 under Prism emulation) was
+  `make test` 589/591, `conc` 34/38, `corelib` 43 ok / 2 fail; the residuals it
+  could not separate from emulator noise are resolved below.
+- **Six port defects the sweep found, each measured before and after.**
+  - *The `tycho` dispatcher was entirely broken on Windows.* `tycho_run` is
+    `system()`, which is cmd.exe there: `> /dev/null` is a path and not a sink,
+    so `run`, `build`, `check`, `watch` and `fmt` all died at their first
+    shell-out — each reporting a misleading cause (`check` said "has errors"
+    about a file that compiles). `rm -f`/`cp`/`mv`/`diff -q` moved into
+    `tools/tycho_shim.c` as native calls, `MoveFileEx` keeps `fmt -w`'s atomic
+    install, and the file comparison returns 1/0/**−1** so an unreadable file
+    cannot compare equal and fail open. The five commands had no lane of their
+    own; `scripts/tools_check.sh` gained one.
+  - *`tycho-debug` was dead on Windows*, all 6 legs, while shipping in the
+    release tarball. Three causes: the same cmd.exe shell-outs; `_fullpath`
+    answers in backslashes while gdb reports forward slashes, so every stop
+    took the "runtime glue" branch (whole path, raw `h_main`, no source line);
+    and `_fullpath` succeeds for a file that does not exist, so the "no such
+    file" refusal never fired.
+  - *`core:time` violated its own contract.* `sleep_ms(200)` read back 199 —
+    winpthreads wakes a timer tick before the observing clock crosses the mark.
+    1 in 60 under CPU contention, 0 in 60 idle, which is why it surfaced only
+    inside a full sweep. The Windows branch now sleeps against a deadline read
+    from the same `CLOCK_MONOTONIC` the caller measures with.
+  - *`tycho-fetch`'s `tar` line was spelled for `sh`*, so cmd handed `tar`
+    paths with the quotes still in them and every fetch died as "not a tarball
+    with a single top-level directory" — naming the wrong cause.
+  - *`check_citations.py` passed by not looking.* `git ls-files "*.md"` through
+    `subprocess` returns 8 files on Windows where the shell returns 126, so the
+    gate reported ok over 8 anchored and 6 bare citations instead of 134 and
+    812. It filters by suffix in Python now; both platforms print the identical
+    summary. Same class as the `posixpath` bug in `check_goldens.py`.
+  - *Nine CI lanes carried POSIX assumptions* — five sanitizer legs, the server
+    shutdown cases (which **hung** the sweep for 43 minutes rather than failing
+    it), `selfhost`, `bench-guard`, and leg 7's `file://`/recipe/`.exe` paths.
+- **The packaged Windows tools are now run, not just built.** The
+  `release.sh --mingw` layout was previously smoke-tested only as far as
+  `tychoc.exe --emit-c` under Wine. Staged and exercised on Windows: a full
+  build with `corelib/` found beside the compiler and no `TYCHO_CORELIB`, a
+  `core:strings` import resolved from that corelib, `tychofmt.exe` formatting
+  idempotently, `tycho-lsp.exe` answering a framed `initialize`, and
+  `tycho-debug.exe` setting and hitting a breakpoint under real gdb.
 - **`scripts/release.sh --mingw` now ships the tools.** The Windows tarball
   carries `tychofmt.exe`, `tycho-lsp.exe` and `tycho-debug.exe` beside
   `tychoc.exe` (parity with the native leg), and the staged layout is
