@@ -38,7 +38,6 @@
 # has reported the inferior's pid is dropped (press Ctrl-C again).
 package main
 
-import "core:os"
 import "core:strings"
 
 # ---- FFI: the spawn/pipe/signal shim (debug_shim.c) ----
@@ -51,6 +50,51 @@ extern fn dbgx_close(h: ptr)
 extern fn dbgx_abs(p: string) -> Option(string)
 extern fn dbgx_pid() -> int
 extern fn dbgx_kill(pid: int, sig: int) -> int
+extern fn dbgx_is_windows() -> int             # 1 under _WIN32: null device, temp root, .exe, quoting
+extern fn dbgx_run(cmd: string) -> int         # system(), first token separator-fixed on Windows
+extern fn dbgx_remove(path: string) -> int     # unlink one file (cmd.exe has no `rm`)
+
+# The three shell-outs below reach cmd.exe on Windows, where "/dev/null" is an
+# ordinary filename, "/tmp/..." resolves to C:\tmp (which a fresh box lacks),
+# `command -v` does not exist, and a linked program with no ".exe" is not
+# something that can be started. Each failure is silent in the shell and loud in
+# the wrong place: the compile step reported "compile failed" for source that
+# compiles fine, which is what reddened all 6 legs of `make debug-check`.
+fn null_dev() -> string:
+    if dbgx_is_windows() == 1:
+        return "nul"
+    return "/dev/null"
+
+# Where the temp debuggee binary lives. Drive-anchored on Windows so it does not
+# depend on which drive the current directory sits on.
+fn tmp_dir() -> string:
+    if dbgx_is_windows() == 1:
+        return "C:/tmp"
+    return "/tmp"
+
+fn ensure_tmp_root():
+    if dbgx_is_windows() == 1:
+        dbgx_run("if not exist C:\\tmp mkdir C:\\tmp")
+
+# mingw's linker appends ".exe" to an extensionless -o name, so without this the
+# tool asks gdb to debug a path that does not exist.
+fn with_exe(name: string) -> string:
+    if dbgx_is_windows() != 1:
+        return name
+    n := len(name)
+    if n > 4:
+        if substr(name, n - 4, n) == ".exe":
+            return name
+    return name + ".exe"
+
+# Is gdb usable? `command -v` is a POSIX shell builtin cmd.exe does not have,
+# and its cmd equivalent `where` is an EXTERNAL program in System32 -- so a PATH
+# that does not carry System32 makes the probe answer "no gdb" when gdb is right
+# there (measured). Running gdb itself needs no builtin and no second directory,
+# answers non-zero on both shells when it is absent (sh 127, cmd 9009), and
+# tests that it actually starts rather than that a file exists.
+fn gdb_probe() -> string:
+    return "gdb --version >" + null_dev() + " 2>&1"
 
 # the one session handle: gdb pipe handle + the last stop's source line + the
 # running inferior's pid (for Ctrl-C) + the absolute .ty path
@@ -67,8 +111,13 @@ fn compiler() -> string:
         return "tychoc"
     return c
 
-# shell-quote ONE argument for the sh -c command lines (os.system builds)
+# Quote ONE argument for the shell that will parse the line: sh on POSIX,
+# cmd.exe on Windows (dbgx_run is system(), and dbgx_spawn runs `cmd.exe /c`).
+# cmd treats a single quote as an ordinary character, so the POSIX spelling
+# handed gdb and the compiler paths with literal quotes IN them.
 fn shq(s: string) -> string:
+    if dbgx_is_windows() == 1:
+        return "\"" + strings.replace(s, "\"", "\\\"") + "\""
     return "'" + strings.replace(s, "'", "'\\''") + "'"
 
 # C-escape a string for embedding inside an MI quoted argument
@@ -175,8 +224,20 @@ fn blob_fields(blob: string) -> [string]:
         v = substr(v, 1, len(v) - 1)
     return rec_fields(v)
 
+# One separator spelling. dbgx_abs is realpath on POSIX and _fullpath on
+# Windows, and _fullpath answers in BACKSLASHES, while gdb reports the frame's
+# file with forward slashes -- so the two never compared equal on Windows and
+# every stop took the "runtime glue" branch below: gdb's whole path instead of
+# the basename, the raw C name (h_main) instead of the .ty name, and s.cur left
+# at 0 so `l` listed the wrong region.
+# gap: this normalizes separators, not case -- a drive letter in a different
+# case on the two sides would still miss, which degrades to the glue branch
+# (a longer location line), not to wrong line numbers.
+fn norm_sep(p: string) -> string:
+    return strings.replace(p, "\\", "/")
+
 fn base_name(p: string) -> string:
-    parts := split(p, "/")
+    parts := split(norm_sep(p), "/")
     return parts[len(parts) - 1]
 
 # Tycho `x` lowers to C `h_x` (docs/guides/debugging.md); show the .ty name
@@ -336,7 +397,7 @@ fn show_stopped(s: inout Sess, rec: string):
     fn_ := field(fparts, "func")
     f := field(fparts, "file")
     ln := field(fparts, "line")
-    if f == s.src or f == "":
+    if norm_sep(f) == norm_sep(s.src) or f == "":
         if ln != "":
             s.cur = strings.parse_int(ln)
         println("  at " + base_name(s.src) + ":" + ln + "  (" + strip_h(fn_) + ")")
@@ -415,7 +476,7 @@ fn cmd_quit(s: inout Sess):
             None:
                 running = false
     dbgx_close(s.g)
-    os.system("rm -f " + shq(s.bin))          # the temp debuggee binary
+    dbgx_remove(s.bin)                        # the temp debuggee binary
     exit(0)
 
 # first word of the line, and everything after it
@@ -518,12 +579,13 @@ fn main():
     src_lines := split(src_text, "\n")
     # compile with -g: #line directives + -O0 -g (stderr passes through so a
     # compile error is visible; the "built ..." line is suppressed)
-    bin := "/tmp/.tycho_dbg_" + str(dbgx_pid())
+    ensure_tmp_root()
+    bin := with_exe(tmp_dir() + "/.tycho_dbg_" + str(dbgx_pid()))
     cc := compiler()
-    if os.system(cc + " " + shq(abs) + " -g -o " + bin + " >/dev/null") != 0:
+    if dbgx_run(cc + " " + shq(abs) + " -g -o " + bin + " >" + null_dev()) != 0:
         die("tycho-debug: compile failed: " + prog)
     # gdb on PATH?
-    if os.system("command -v gdb >/dev/null 2>&1") != 0:
+    if dbgx_run(gdb_probe()) != 0:
         die("tycho-debug: gdb not found on PATH -- install gdb (the -g output needs it)")
     gdbline := "gdb -q --interpreter=mi2 --args " + bin
     j := i

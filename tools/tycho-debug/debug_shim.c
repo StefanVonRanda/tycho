@@ -196,9 +196,10 @@ static void dbgx_install_sigint(void) {
  * pipes are inherited; the parent ends become fds via _open_osfhandle, so the
  * Line reader and dbgx_write work unchanged.
  *
- * gap: the tool's `cmd` string is POSIX-shell-quoted (main.ty's shq); under
- * cmd.exe those single quotes are literal, so a path with spaces breaks the
- * gdb invocation. The cmd-compatible quoting pass is the CI leg's job. */
+ * The `cmd` string reaching here is quoted for THIS shell: main.ty's shq emits
+ * cmd.exe double quotes on Windows and sh single quotes elsewhere. It used to
+ * emit only the POSIX form, so single quotes arrived literal and a quoted path
+ * reached gdb with the quotes still in it. */
 void *dbgx_spawn(const char *cmd) {
     if (!cmd) return NULL;
     HANDLE in_r, in_w, out_r, out_w;
@@ -315,6 +316,11 @@ const char *dbgx_abs(const char *p) {
     if (!p) return NULL;
     static char buf[4096];
 #ifdef _WIN32
+    /* _fullpath resolves the STRING and succeeds for a path that does not
+     * exist, where realpath fails -- so on Windows the tool sailed past its
+     * "no such file" refusal and reported a compile failure instead, for any
+     * missing program. Check existence to keep realpath's contract. */
+    if (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES) return NULL;
     return _fullpath(buf, p, sizeof buf) ? buf : NULL;
 #else
     return realpath(p, buf) ? buf : NULL;
@@ -327,6 +333,53 @@ tycho_int dbgx_pid(void) {
 #else
     return (tycho_int)getpid();
 #endif
+}
+
+/* 1 under _WIN32, else 0 -- picks the null device, the temp root, the .exe
+ * suffix and the argument-quoting style in main.ty. */
+tycho_int dbgx_is_windows(void) {
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+/* Run a command line through the shell; the raw status, 0 == ok. Replaces the
+ * tool's three `os.system` calls, which reach cmd.exe VERBATIM on Windows (that
+ * is core:os's documented contract, SECURITY.md) -- and cmd cannot execute a
+ * command NAME written with forward slashes, which is what $TYCHOC is. The
+ * compile step therefore failed for every program, and the tool reported
+ * "compile failed" for source that compiles fine: all 6 legs of `make
+ * debug-check` were red on Windows.
+ *
+ * Only the first token is rewritten; arguments keep their forward slashes,
+ * which the CRT takes. Same shape as tools/lsp_shim.c:62 and
+ * tools/tycho_shim.c. gap: a command NAME containing a space still needs
+ * quoting this does not add. */
+tycho_int dbgx_run(const char *cmd) {
+    if (!cmd) return -1;
+#ifdef _WIN32
+    {
+        char *copy = _strdup(cmd);
+        if (copy) {
+            for (char *q = copy; *q && *q != ' ' && *q != '\t'; q++)
+                if (*q == '/') *q = '\\';
+            tycho_int r = (tycho_int)system(copy);
+            free(copy);
+            return r;
+        }
+    }
+#endif
+    return (tycho_int)system(cmd);
+}
+
+/* Delete one file (the temp debuggee binary at quit). Was `rm -f`, which
+ * cmd.exe does not have. 0 on success, -1 otherwise -- the caller is a cleanup
+ * path and ignores it, exactly as `rm -f` swallowed a missing file. */
+tycho_int dbgx_remove(const char *path) {
+    if (!path) return -1;
+    return remove(path) == 0 ? 0 : -1;
 }
 
 /* Deliver a signal to a PID. The debugger's Ctrl-C path uses this on the

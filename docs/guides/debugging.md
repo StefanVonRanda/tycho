@@ -84,8 +84,10 @@ names (`h_x`, `*h_x` for an `inout`), and `$` hands anything gdb understands
 straight through. It needs `gdb` on `PATH`; `TYCHOC` selects the compiler and
 `TYCHODEBUG` the debugger binary, same as `TYCHOFMT` does for the formatter.
 The debugger is itself a Tycho program (`make tycho-debug`), dogfooding
-core:os + core:strings over a small fork/pipe/signal shim (`debug_shim.c`);
-it is gated by `make debug-check`.
+core:strings over a small spawn/pipe/signal shim (`debug_shim.c`); it is gated
+by `make debug-check`. Its shell-outs go through the shim rather than core:os
+because `os.system` reaches cmd.exe verbatim on Windows, which cannot execute a
+command name written with forward slashes.
 
 ## What the frames look like
 
