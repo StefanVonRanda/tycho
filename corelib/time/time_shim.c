@@ -34,8 +34,7 @@
 typedef int64_t tycho_int;
 #endif
 
-void tmx_sleep_ns(tycho_int ns) {
-    if (ns <= 0) return;                                   /* (1) non-positive: return now */
+static void tmx_nanosleep(tycho_int ns) {
     struct timespec req, rem;
     req.tv_sec  = (time_t)(ns / 1000000000);
     req.tv_nsec = (long)  (ns % 1000000000);
@@ -43,4 +42,38 @@ void tmx_sleep_ns(tycho_int ns) {
         if (errno != EINTR) return;                        /* EINVAL is impossible above; fail open */
         req = rem;                                         /* (2) finish the remainder */
     }
+}
+
+void tmx_sleep_ns(tycho_int ns) {
+    if (ns <= 0) return;                                   /* (1) non-positive: return now */
+#ifdef _WIN32
+    /* Semantics (2) is "at least the requested duration", and on Windows
+     * nanosleep alone does not deliver it AS THE CALLER MEASURES IT: winpthreads
+     * wakes on a timer tick that can land just before the observing clock
+     * crosses the mark, so `sleep_ms(200)` reads back 199. Measured on Windows
+     * 11 26200 under 12 spinners: 1 of 60 sleeps came back at 199 ms; idle, 0 of
+     * 60 and a minimum of exactly 200. That one is enough to redden
+     * corelib/test/time (sleep_ms_at_least) at random, which it did in a full
+     * `make ci` sweep on 2026-08-08.
+     *
+     * So sleep against a DEADLINE read from the same clock the caller measures
+     * with -- clock_gettime(CLOCK_MONOTONIC), which is what the runtime's
+     * clock() builtin uses (runtime/tycho_rt.c:1380) and therefore what
+     * time.elapsed_ms sees. Re-sleeping the remainder until that clock agrees
+     * makes the contract true by construction in the domain it is asserted in,
+     * whatever the timer granularity underneath. */
+    struct timespec t0;
+    if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0) { tmx_nanosleep(ns); return; }
+    for (;;) {
+        struct timespec now;
+        tycho_int elapsed;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return;
+        elapsed = (tycho_int)(now.tv_sec - t0.tv_sec) * 1000000000
+                + (tycho_int)(now.tv_nsec - t0.tv_nsec);
+        if (elapsed >= ns) return;
+        tmx_nanosleep(ns - elapsed);
+    }
+#else
+    tmx_nanosleep(ns);
+#endif
 }
