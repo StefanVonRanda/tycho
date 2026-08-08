@@ -229,14 +229,33 @@ that half of the sanitizer build is skipped there (the rest still runs).
 **Windows** has two supported paths. **WSL2** is the zero-setup one and behaves
 exactly like Linux. **Native Windows is MSYS2 + mingw-w64** — MSVC is not a
 supported C target. The compiler, the runtime, the corelib and the tools build
-and run there, and `make ci` runs under MSYS2's `sh` with the lanes that cannot
-exist on Windows skipping loudly and naming their reason: the sanitizer lanes
-(mingw ships no ASan/UBSan, and gcc has no TSan for a Windows target), the
-32-bit lane (`gcc -m32`), the `LD_PRELOAD` locale lane, and the fuzzer. The
-last recorded Windows run and its residual failures are in
-[CHANGELOG.md](CHANGELOG.md); the behavioural gaps that survive the port are
-listed in [SECURITY.md](SECURITY.md). Release tarballs are built per platform
-by `scripts/release.sh` (`--mingw` cross-builds the Windows one).
+and run there, and `make ci` is **green on native x86-64 Windows 11 under
+MSYS2 + mingw-w64 gcc** (2026-08-08; the run is recorded in
+[CHANGELOG.md](CHANGELOG.md)).
+
+Read that green with its scope. It is **one box, one toolchain**, and it
+carries 49 Windows-specific skips, each printing its reason: the sanitizer
+lanes (mingw ships no ASan/UBSan runtime, and gcc has no TSan for a Windows
+target at all), the fuzzer, the 32-bit lane, the `LD_PRELOAD` locale lane, the
+self-hosting fixed point (the frozen bootstrap compiler emits POSIX-only C),
+the perf gate, and every lane that needs a POSIX signal delivered to a process
+— `core:signal`'s test and the HTTP server's six shutdown cases — because
+MSYS2's `kill` terminates a native Windows program instead of signalling it.
+**Green there means nothing reddened, not that everything ran.**
+
+The one hole worth naming: for a long time the Windows-only code paths were the
+newest code in the tree and the only code with no memory-safety checking at
+all. Installing MSYS2's **clang64** toolchain closes most of that — 60 corpus
+fixtures under ASan+UBSan and the 13-program concurrency suite under UBSan all
+come back clean (2026-08-08) — but ASan itself does not work on threaded
+programs with that toolchain, so the channel and allocator paths have UBSan
+coverage only. That is not parity with Linux, where everything runs under
+ASan/UBSan/TSan and a fuzz campaign.
+
+The behavioural gaps that survive the port — non-ASCII filenames, `TZ`
+handling, `core:os` through `cmd.exe`, the debugger's Ctrl-C — are listed in
+[SECURITY.md](SECURITY.md). Release tarballs are built per platform by
+`scripts/release.sh` (`--mingw` cross-builds the Windows one).
 
 ## Documentation
 

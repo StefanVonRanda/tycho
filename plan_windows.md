@@ -627,6 +627,31 @@ language surface. WSL2 stays a first-class supported path.
 > native ARM64, no second gcc, no bare metal. The 2026-08-07 ARM64 run had a
 > different failure set entirely, which is the standing argument against
 > reading one green sweep as a platform guarantee.
+>
+> SANITIZERS ON WINDOWS, measured 2026-08-08 and NOT wired into a lane. The
+> gap that mattered most above -- the _WIN32 branches being the newest code in
+> the tree AND the only code with no memory-safety coverage -- is mostly
+> closable today. mingw64 gcc has ZERO ASan libraries (`ls /mingw64/lib/libasan*`
+> -> nothing, and `gcc -fsanitize=address` fails at `cannot find -lasan`), but
+> MSYS2 ships a clang64 toolchain: `pacman -S mingw-w64-clang-x86_64-clang
+> mingw-w64-clang-x86_64-compiler-rt` installs clang 22 with a working
+> compiler-rt. Against tychoc's --emit-c output, with the lanes' own flags
+> (-fsanitize=... -fno-sanitize-recover=all -g -O1 -fwrapv; the -fwrapv is the
+> language's overflow contract and omitting it produces false UBSan reports on
+> deliberate wrapping):
+>   60 plain corpus fixtures, ASan+UBSan -> 60 clean, 0 findings.
+>   the 13-program conc suite, UBSan only  -> 13 clean, 0 findings.
+> THE LIMIT: ASan does not work on threaded programs with this toolchain.
+> tests/conc/basic under ASan exits 139 with an EMPTY stderr -- no report, so
+> it is ASan's own machinery failing, not a finding; the same program is
+> correct under no sanitizer, under UBSan alone, and under mingw gcc. Isolated
+> by building it four ways. So the channel/allocator paths -- exactly where
+> 44fcbf4's heap corruption lived -- have UBSan coverage only, and the bug
+> class that actually bit this port is still the one ASan would catch.
+> Also unproven: clang64 is not the shipping toolchain, so a fault specific to
+> mingw gcc's codegen would not appear here. Wiring this into `make ci` was
+> considered and NOT done: it makes clang64 a prerequisite of the Windows CI
+> box, which is the owner's call, and the run above is reproducible by hand.
 
 > Phase 7 close (the Linux half) — 2026-08-07.
 >
