@@ -16,11 +16,17 @@ set -u
 cd "$(dirname "$0")/.." || exit 2
 MINGWCC="$(command -v x86_64-w64-mingw32-gcc || true)"
 MINGWAR="$(command -v x86_64-w64-mingw32-ar || true)"
-command -v wine64 >/dev/null 2>&1 || { echo "SKIP: wine64 not on PATH"; exit 0; }
+# Wine 9.0 merged wine64 into a single 64-bit `wine`, and Arch/CachyOS ships
+# wine 11.x with no wine64 binary at all -- so a bare `command -v wine64` made
+# this lane SKIP on every modern Wine while printing a reason that read like a
+# missing install. Prefer wine64 when it exists (older split installs), else
+# wine. Measured 2026-08-09 on this box: wine-11.14, no wine64.
+WINE="$(command -v wine64 || command -v wine || true)"
+[ -n "$WINE" ] || { echo "SKIP: neither wine64 nor wine on PATH"; exit 0; }
 [ -n "$MINGWCC" ] || { echo "SKIP: x86_64-w64-mingw32-gcc not on PATH"; exit 0; }
 export LD_PRELOAD=
 FILTER="${WINE_FFI_FILTER:-}"
-T="$(mktemp -d)"; trap 'rm -rf "$T"; pkill -f "wine64.*/tmp/tmp\." 2>/dev/null; pkill wineserver 2>/dev/null' EXIT
+T="$(mktemp -d)"; trap 'rm -rf "$T"; pkill -f "wine.*/tmp/tmp\." 2>/dev/null; pkill wineserver 2>/dev/null' EXIT
 fail=0; pass=0
 
 mkdir -p build
@@ -30,8 +36,8 @@ if [ ! -x build/tychoc-mingw.exe ]; then
         || { echo "FAIL: mingw compiler build"; exit 2; }
 fi
 CORELIB="Z:\\$(pwd | sed 's|^/||; s|/|\\|g')\\corelib"
-E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB wine64 ./build/tychoc-mingw.exe"
-W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\\\usr\\\\x86_64-w64-mingw32\\\\lib wine64"
+E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB $WINE ./build/tychoc-mingw.exe"
+W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\\\usr\\\\x86_64-w64-mingw32\\\\lib $WINE"
 
 # <label> <entry.ty> <extra-shims...> <extra-libs...> -- run under wine, diff vs <expected>
 run_exe() {

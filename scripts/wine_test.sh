@@ -19,7 +19,13 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 MINGWCC="$(command -v x86_64-w64-mingw32-gcc || true)"
-command -v wine64 >/dev/null 2>&1 || { echo "SKIP: wine64 not on PATH"; exit 0; }
+# Wine 9.0 merged wine64 into a single 64-bit `wine`, and Arch/CachyOS ships
+# wine 11.x with no wine64 binary at all -- so a bare `command -v wine64` made
+# this lane SKIP on every modern Wine while printing a reason that read like a
+# missing install. Prefer wine64 when it exists (older split installs), else
+# wine. Measured 2026-08-09 on this box: wine-11.14, no wine64.
+WINE="$(command -v wine64 || command -v wine || true)"
+[ -n "$WINE" ] || { echo "SKIP: neither wine64 nor wine on PATH"; exit 0; }
 [ -n "$MINGWCC" ] || { echo "SKIP: x86_64-w64-mingw32-gcc not on PATH"; exit 0; }
 export LD_PRELOAD=
 FILTER="${WINE_TEST_FILTER:-}"
@@ -38,8 +44,8 @@ fi
 # the mingw compiler finds corelib next to its own exe via argv0; under wine
 # that is the repo build/ dir, so point it at the real corelib explicitly
 CORELIB="Z:\\$(pwd | sed 's|^/||; s|/|\\|g')\\corelib"
-E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB wine64 ./build/tychoc-mingw.exe"
-W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\usr\\x86_64-w64-mingw32\\lib wine64"
+E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB $WINE ./build/tychoc-mingw.exe"
+W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\usr\\x86_64-w64-mingw32\\lib $WINE"
 CCF="-O3 -fwrapv -pthread"          # the transpiler's own Windows cc line
 
 # one positive fixture: emit + cc + wine-run + golden cmp

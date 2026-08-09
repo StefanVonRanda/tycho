@@ -90,17 +90,22 @@ if [ "$mingw" -eq 1 ]; then
     # Smoke test under Wine when it is here: the staged compiler must find the
     # corelib BESIDE ITSELF (no TYCHO_CORELIB), same property the native leg
     # asserts. It stops at --emit-c because there is no Windows cc under Wine.
-    if command -v wine64 >/dev/null 2>&1; then
+    # Wine 9.0 merged wine64 into a single 64-bit `wine`; Arch/CachyOS ships
+    # wine 11.x with no wine64 at all, so testing only for wine64 shipped an
+    # UNRUN tarball on a box that could have run it. Prefer wine64 (older split
+    # installs), else wine.
+    WINE="$(command -v wine64 || command -v wine || true)"
+    if [ -n "$WINE" ]; then
         echo ">> smoke-testing the packaged layout under Wine"
         tmp="$(mktemp -d)"
         printf 'fn main():\n    println("release ok")\n' > "$tmp/t.ty"
-        ( cd "$stage" && env -u LD_PRELOAD WINEDEBUG=-all wine64 ./tychoc.exe "$tmp/t.ty" --emit-c -o "$tmp/t" >/dev/null 2>&1 ) \
+        ( cd "$stage" && env -u LD_PRELOAD WINEDEBUG=-all "$WINE" ./tychoc.exe "$tmp/t.ty" --emit-c -o "$tmp/t" >/dev/null 2>&1 ) \
             && grep -q "release ok" "$tmp/t.c" \
             || { echo "!! the staged Windows compiler failed its Wine smoke test" >&2; rm -rf "$tmp"; exit 1; }
         rm -rf "$tmp"
         echo "   ok tychoc.exe emitted C under Wine with corelib beside it"
     else
-        echo ">> SKIP the Wine smoke test (wine64 not on PATH) -- the tarball is"
+        echo ">> SKIP the Wine smoke test (neither wine64 nor wine on PATH) -- the tarball is"
         echo "   built but unrun; verify it on a Windows box before publishing"
     fi
 else

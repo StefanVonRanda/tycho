@@ -28,7 +28,13 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 MINGWCC="$(command -v x86_64-w64-mingw32-gcc || true)"
-command -v wine64 >/dev/null 2>&1 || { echo "SKIP: wine64 not on PATH -- windows Wine smoke skipped"; exit 0; }
+# Wine 9.0 merged wine64 into a single 64-bit `wine`, and Arch/CachyOS ships
+# wine 11.x with no wine64 binary at all -- so a bare `command -v wine64` made
+# this lane SKIP on every modern Wine while printing a reason that read like a
+# missing install. Prefer wine64 when it exists (older split installs), else
+# wine. Measured 2026-08-09 on this box: wine-11.14, no wine64.
+WINE="$(command -v wine64 || command -v wine || true)"
+[ -n "$WINE" ] || { echo "SKIP: neither wine64 nor wine on PATH -- windows Wine smoke skipped"; exit 0; }
 [ -n "$MINGWCC" ] || { echo "SKIP: x86_64-w64-mingw32-gcc not on PATH -- windows Wine smoke skipped"; exit 0; }
 export LD_PRELOAD=                       # the tmux block-nnp.so shim breaks wine
 
@@ -43,12 +49,12 @@ if [ ! -x build/tychoc-mingw.exe ]; then
         || { echo "FAIL: mingw compiler build"; exit 2; }
 fi
 WINEDLL='Z:\usr\x86_64-w64-mingw32\lib'   # libwinpthread-1.dll lives here on Debian
-W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=$WINEDLL wine64"
+W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=$WINEDLL $WINE"
 
 # cross-compile fixture $1.ty -> $T/$1.exe; run under wine; diff vs $2
 smoke() {
     name="$1"; src="$2"; golden="$3"
-    env -u LD_PRELOAD WINEDEBUG=-all wine64 ./build/tychoc-mingw.exe "$src" --emit-c -o "$T/$name" >/dev/null 2>&1 \
+    env -u LD_PRELOAD WINEDEBUG=-all $WINE ./build/tychoc-mingw.exe "$src" --emit-c -o "$T/$name" >/dev/null 2>&1 \
         || { echo "FAIL $name (emit)"; fail=1; return; }
     "$MINGWCC" -O3 -fwrapv -pthread -o "$T/$name.exe" "$T/$name.c" -lm 2>/dev/null \
         || { echo "FAIL $name (cc)"; fail=1; return; }
@@ -75,7 +81,7 @@ printf 'fn deep(n: int) -> int:\n    if n <= 0:\n        return 0\n    return de
 printf 'fn f(n: int) -> int:\n    if n <= 0:\n        return 1\n    return n + f(n - 1)\nfn main():\n    print(str(f(1000)))\n' > "$T/prog_ok_big.ty"
 printf 'fn deep(n: int) -> int:\n    if n <= 0:\n        return 0\n    return deep(n - 1)\nfn tm() -> int:\n    return deep(1000)\nfn main():\n    t := spawn tm()\n    print(str(t.wait()))\n' > "$T/prog_ok_spawn.ty"
 for n in prog_big prog_small prog_spawn; do
-    env -u LD_PRELOAD WINEDEBUG=-all wine64 ./build/tychoc-mingw.exe "$T/$n.ty" --emit-c -o "$T/$n" >/dev/null 2>&1
+    env -u LD_PRELOAD WINEDEBUG=-all $WINE ./build/tychoc-mingw.exe "$T/$n.ty" --emit-c -o "$T/$n" >/dev/null 2>&1
     "$MINGWCC" -O3 -fwrapv -pthread -o "$T/$n.exe" "$T/$n.c" -lm 2>/dev/null
     $W "$T/$n.exe" >"$T/$n.out" 2>"$T/$n.err"; rc=$?
     if [ "$rc" -eq 0 ] || [ "$rc" -ge 128 ]; then echo "FAIL $n (exit $rc -- must fail closed 1-127)"; fail=1
@@ -84,7 +90,7 @@ for n in prog_big prog_small prog_spawn; do
     else echo "FAIL $n (no diagnostic on stderr)"; fail=1; fi
 done
 for n in prog_ok_big prog_ok_spawn; do
-    env -u LD_PRELOAD WINEDEBUG=-all wine64 ./build/tychoc-mingw.exe "$T/$n.ty" --emit-c -o "$T/$n" >/dev/null 2>&1
+    env -u LD_PRELOAD WINEDEBUG=-all $WINE ./build/tychoc-mingw.exe "$T/$n.ty" --emit-c -o "$T/$n" >/dev/null 2>&1
     "$MINGWCC" -O3 -fwrapv -pthread -o "$T/$n.exe" "$T/$n.c" -lm 2>/dev/null
     out=$($W "$T/$n.exe" 2>/dev/null); rc=$?
     [ "$rc" -eq 0 ] && [ -n "$out" ] && echo "ok    $n (ran, printed $out)" || { echo "FAIL $n (rc=$rc out='$out')"; fail=1; }
