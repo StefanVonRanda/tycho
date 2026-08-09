@@ -40,7 +40,7 @@
  * CHANGELOG.md records each release's changes against it, and the release
  * tarballs are built with scripts/release.sh v<same>. Bump it here and in
  * CHANGELOG.md together. */
-#define TYCHO_VERSION "1.0.0"
+#define TYCHO_VERSION "0.5.0"
 
 /* ------------------------------------------------------------------ util */
 

@@ -126,15 +126,22 @@ Two further terms are used, always explicitly and collected in
 
 ### 1.5 Versioning
 
-This specification defines **Tycho 1.0**, which is the first *frozen* version of
-the language. Subsequent releases are named by year under a date-based scheme
-(e.g. `Tycho 2027`), following the project's stated versioning direction. A
-release names the language version it specifies; a conforming implementation
-states which version it implements.
+This specification defines **Tycho 0.5**. It was ratified on 2026-07-13 under the
+name *Tycho 1.0* and renamed on 2026-08-09 when the project was demoted to 0.5;
+no technical content changed with the rename.
 
-Within a frozen version, this document is normative and stable; corrections that
-change observable behavior are issued as errata against a named version, never
-silently.
+**0.5 is NOT a frozen version.** The freeze was the substance of the 1.0 claim,
+and it is withdrawn with it: until 1.0, a change to observable behavior is issued
+as a changelog entry against a named version rather than as an erratum, and there
+is no deprecation window. The document remains normative — the implementation is
+gated against it, so a divergence is a bug in one of the two, not a licence to
+ignore the spec.
+
+From 1.0 onward the original scheme applies: the version is frozen, subsequent
+releases are named by year (e.g. `Tycho 2027`), a release names the language
+version it specifies, a conforming implementation states which version it
+implements, and corrections that change observable behavior are issued as errata
+against a named version, never silently.
 
 ## 2. Notation
 

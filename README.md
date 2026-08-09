@@ -7,16 +7,23 @@
 
 # Tycho
 
-> **Status: 1.0 — the language surface and the spec are stable.** Tycho is an
-> experiment testing one idea — implicit arenas under value semantics — and at
-> 1.0 the contract is: the **language surface** (syntax, semantics, the
-> standard-library API) and the **spec** are stable, and bugs in them are
-> regressions. What is deliberately **not** part of the contract: performance
-> tuning and the benches (they move every release), internal implementation
-> details (the emitted C shape, arena sizes), and the areas the spec or
-> [SECURITY.md](SECURITY.md) mark as sharp edges. The full deprecation path is
-> in [docs/guides/corelib.md](docs/guides/corelib.md); versioning is `tychoc
-> --version` + [CHANGELOG.md](CHANGELOG.md).
+> **Status: 0.5 — pre-1.0. No stability guarantees yet.** Tycho is an
+> experiment testing one idea — implicit arenas under value semantics. It was
+> labelled 1.0 on 2026-08-05 and **demoted to 0.5 on 2026-08-09**, before any
+> release was ever tagged: 1.0 is a promise not to break people, and that
+> promise had never been tested because nothing had shipped and nobody outside
+> this repo had written a line of Tycho. The engineering is not what was in
+> doubt — see [Architecture](docs/architecture.md) for what each gate proves —
+> the *contract* was.
+>
+> Until 1.0, expect the language surface and the corelib API to change with a
+> changelog entry and no deprecation window. What is already dependable in
+> practice: the [spec](docs/spec/) is normative and the implementation is gated
+> against it. What is explicitly not: performance tuning and the benches,
+> internal implementation details (the emitted C shape, arena sizes), and the
+> areas the spec or [SECURITY.md](SECURITY.md) mark as sharp edges.
+> [ROADMAP.md](ROADMAP.md#what-1-0-requires) lists what 1.0 now requires.
+> Versioning is `tychoc --version` + [CHANGELOG.md](CHANGELOG.md).
 
 **An experimental systems language with automatic memory management from lexical
 scope.** Tycho tests one idea: implicit hierarchical arenas under value

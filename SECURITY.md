@@ -1,8 +1,10 @@
 # Security policy
 
-**Tycho is 1.0 software** (see the README's status banner): the language surface
-and the spec are stable. It has undergone the **1.0 security review** recorded
-below — a review of the FFI shims, not a formal third-party audit. Please don't
+**Tycho is 0.5 — pre-1.0 software** (see the README's status banner): the
+language surface and the corelib API can still change. It has undergone the
+internal security review recorded below — a review of the FFI shims, performed
+by the author, **not a formal third-party audit**. An external review is one of
+the conditions for 1.0 ([ROADMAP](ROADMAP.md#what-1-0-requires)). Please don't
 use it for anything where a compromise would actually matter.
 
 A few sharp edges are inherent, by design:

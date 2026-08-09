@@ -5,9 +5,14 @@ Draft release notes. Edit this before publishing, then:
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->
 
-Tycho 1.0 — the language surface and the spec are stable (see the
-[README](README.md) for the full contract). This release ships prebuilt
-binaries so you can try the language without building from source.
+Tycho 0.5 — pre-1.0, no stability guarantees (see the [README](README.md) for
+what that means in practice). This release ships prebuilt binaries so you can
+try the language without building from source.
+
+It was labelled 1.0 for four days and demoted before anything was ever tagged:
+the engineering was not in doubt, but 1.0 is a promise not to break people and
+nothing had shipped to anyone. [ROADMAP.md](ROADMAP.md#what-1-0-requires) lists
+what 1.0 now requires.
 
 ## Install
 

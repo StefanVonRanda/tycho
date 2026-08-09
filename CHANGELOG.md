@@ -7,8 +7,21 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 
 ## [Unreleased]
 
-Landed since 1.0.0, against no version constant yet — `TYCHO_VERSION` still
-says `1.0.0`, so these ship the next time it is bumped.
+Landed since the 0.5.0 entry below, against no tag — nothing has ever been
+released, so "since 0.5.0" means "since the work that entry describes".
+
+- **Demoted from 1.0.0 to 0.5.0.** `TYCHO_VERSION` in `src/tychoc.c` now reads
+  `0.5.0`, and every document that promised a stable surface says pre-1.0
+  instead. Nothing about the implementation changed and nothing regressed: the
+  demotion is about the promise, not the code. 1.0 says "I will not break you",
+  and that had never been tested — `git tag` showed only `v0.1.0`, the
+  `[1.0.0]` entry below describes a release that was never cut, and no one
+  outside this repo has written a line of Tycho. Withdrawn with the number: the
+  corelib API freeze (`docs/guides/corelib.md`) and the spec's "first frozen
+  version" (`docs/spec/00-conventions.md` §1.5). The spec stays normative and
+  the implementation stays gated against it. `ROADMAP.md` gains "What 1.0
+  requires" — the conditions, so the number is earned next time rather than
+  declared.
 
 - **Native Windows support (MSYS2 + mingw-w64).** The port ran as its own
   track: the compiler and runtime (SEH stack guard, binary stdio,
@@ -140,9 +153,9 @@ says `1.0.0`, so these ship the next time it is bumped.
   branch unification. The message now states the rule and names the tails
   that do flow one in (an assignment or a return).
 
-## [1.0.0] — 2026-08-05
+## [0.5.0] — 2026-08-05  (recorded at the time as 1.0.0; never tagged)
 
-The 1.0 promotion. The language surface and the spec are now the stability
+The promotion that was later withdrawn — see [Unreleased]. The language surface and the spec are now the stability
 contract (see the README's status banner); what follows is the last chain of
 work that landed ahead of it.
 

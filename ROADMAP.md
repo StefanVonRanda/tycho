@@ -1,9 +1,9 @@
 # Roadmap
 
-Tycho is 1.0 — the language surface and the spec are stable, and this file is
-a direction, not a promise of dates. Day-to-day work is tracked in [GitHub
+Tycho is **0.5 — pre-1.0**, and this file is a direction, not a promise of
+dates. Day-to-day work is tracked in [GitHub
 issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
-high-level shape.
+high-level shape. What 1.0 now requires is [below](#what-1-0-requires).
 
 ## Where it is
 
@@ -76,6 +76,116 @@ in the tree (~16k lines) and `scripts/asan_self.sh` still feeds it to `tychoc` a
 test program. What ended is the claim that it is *continuously checked* — not the
 artifact, and not the result. Every retired lane keeps its file with a header recording
 what it proved and when it stopped running.
+
+## What 1.0 requires
+
+The number was declared on 2026-08-05 and withdrawn on 2026-08-09. What was
+wrong with it is worth stating precisely, because it decides the list: **the
+engineering was never the problem.** Two platforms green under `make ci`, a
+200-seed adversarial fuzzer with zero findings, sanitizer lanes over the
+compiler and the programs it emits, 46 corelib packages each tested three ways
+and golden-locked, and a normative spec the implementation is gated against —
+that is a stronger evidence base than most languages have at 1.x.
+
+What was missing is that **1.0 is a promise not to break people, and there were
+no people.** `git tag` showed `v0.1.0` and nothing else; the `[1.0.0]` changelog
+entry described a release that was never cut. A freeze nobody has pulled on is
+not a freeze, it is a guess about which parts matter.
+
+So the conditions below are mostly about contact with reality, not about
+building more.
+
+### 1. Someone other than the author has written a real program
+
+The blocking one, and nothing else on this list substitutes for it. Every
+ergonomic finding in [docs/internals/FRICTION.md](docs/internals/FRICTION.md)
+came from the author dogfooding against a program he also designed. That
+catches a lot — the file is unusually honest about its own defeats — but it
+cannot catch what only a stranger's mental model produces.
+
+Concretely: **three non-trivial programs by two people who did not write the
+compiler**, each with its friction written down. Until then the API freeze is
+guesswork about which parts of the surface people actually reach for.
+
+### 2. The daily papercuts are gone
+
+These are ergonomic, not soundness — which is exactly why they must be fixed
+*before* a freeze rather than after, since fixing them later is a breaking
+change. All were recorded by the project itself, in `plan.md`'s phase-1
+learnings and in FRICTION:
+
+- a package-level `len` **shadows the builtin** inside its own package (this
+  cost a stack-guard trip in `core:utf8`, and the API became `count`)
+- no `defer`, and no bare `pass`/no-op statement
+- **no expression line continuation** — a trailing `+` does not continue a line
+- consts do not cross package boundaries, so levels ship as functions
+- `or_return` requires a `Result`-returning function, which `main()` is not
+- a newtype-of-array blocks `push`
+- an aggregate capturing a still-live binding warns until you write the copy by
+  hand (`arg := hostile`)
+- the typed empty is `[]string`, which nobody guesses first
+
+Each is small. Together they are what "the language is unpleasant on day two"
+is made of.
+
+### 3. The expressiveness gaps close, or become documented refusals
+
+Checked on 2026-08-09 rather than inherited from the FRICTION entry:
+
+| Gap | State |
+|---|---|
+| `Result(void, E)` not expressible | **open** — `error: unknown type 'void'` |
+| no comparator-taking sort | **open** — `sort.by_key` takes a derived `int` key only, so sorting by a string key means inventing an int |
+| an enum cannot be tested for its variant without binding a payload | open (FRICTION §5, 2026-08-01) |
+| two error types cannot share an `or_return` chain | open (FRICTION §6) |
+| `core:iter` unusable for a fallible pipeline stage | open (FRICTION §7) |
+| `core:decimal` has no `div` | **closed** — `decimal.div` exists |
+| `[string]` cannot cross the FFI | open by design — it forced `core:os`'s builder-handle API; either lift it or write down that it never lifts |
+
+"Documented refusal" is a legitimate answer for any row. An undecided row is
+not.
+
+### 4. `core:net` gets a readiness call, or the cap becomes a stated limit
+
+`corelib/net/net_shim.c` has 12 exports and not one is `poll`/`select`/`epoll`
+or `O_NONBLOCK`, so a server's worker count is a hard ceiling on concurrent
+connections. This was refused once with a number — ~283 lines across 4 files
+plus a redesign of `core:httpd`'s blocking read surface — and that refusal is
+defensible. What is not defensible at 1.0 is leaving it implicit: either it
+lands, or the README says "N workers means N concurrent connections" where
+people will read it before they build on it.
+
+### 5. Windows is at parity or its differences are non-goals
+
+`make ci` is green there, which is real. One measured behavioural difference
+remains: a thread parked in `recv` on an accepted connection is not released by
+the shutdown handler as it is on Linux, so a Windows server winds down within
+its idle timeout rather than within a millisecond
+([SECURITY.md](SECURITY.md)). Decide whether that is a bug to fix or a
+documented platform limit; do not ship a freeze with it undecided.
+
+### 6. A release actually ships, and the support policy is exercised once
+
+Tag it, build the tarballs for each platform, publish, and then **deprecate one
+thing through the full path** — doc notice, changelog entry, compiler warning,
+removal in the next major. A deprecation policy that has never been run is
+prose, not a process.
+
+### 7. An external security review
+
+[SECURITY.md](SECURITY.md) says plainly that there has been no third-party
+audit. The internal review was real and found real things — the FFI ownership
+conventions were checked per shim, and the shell-injection class it flagged was
+closed on 2026-08-09 by `core:os`'s argv path — but the FFI boundary is unsafe
+by design and nobody outside the project has looked at it. 1.0 invites people
+to build on that boundary.
+
+### What is explicitly NOT required
+
+More features, more corelib packages, more benchmarks, or a package manager.
+The language is feature-complete for the thesis it exists to prove. Adding
+surface before anyone has used the existing surface is how the freeze gets
+guessed wrong a second time.
 
 ## Non-goals
 

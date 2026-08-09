@@ -1,9 +1,12 @@
 # Contributing to Tycho
 
-Thanks for trying Tycho and wanting to help. **Tycho is 1.0** (see the status note in the [README](README.md)): the language
-surface and the spec are stable, so the most useful thing you can send is a
-**bug report, a repro, or some design feedback** — much more than a big
-feature. Please don't be shy about filing an issue.
+Thanks for trying Tycho and wanting to help. **Tycho is 0.5 — pre-1.0** (see the
+status note in the [README](README.md)): the language surface and the corelib API
+can still change, so the most useful thing you can send is a **bug report, a
+repro, or some design feedback** — much more than a big feature. Feedback on
+ergonomics is worth more than usual right now: what 1.0 is waiting on is real
+programs written by someone other than the author. Please don't be shy about
+filing an issue.
 
 ## Reporting bugs and giving feedback
 

@@ -545,15 +545,20 @@ output), as opposed to the assertion-style tests above. `make corelib-examples`
 (→ `examples/corelib/run.sh`) validates them the same three ways against
 `examples/corelib/<name>.out`, with the same dependency skip, and is part of `make ci`.
 
-## The 1.0 API surface
+## The corelib surface (pre-1.0 — NOT frozen)
 
-As of 1.0, **every package in `corelib/` is in the stable surface** — all 46
-are tested three ways and golden-locked by `make corelib` and
-`make corelib-examples`, and the API freeze means:
+**The 1.0 API freeze recorded here on 2026-08-05 was withdrawn on 2026-08-09**
+with the project's demotion to 0.5. All 46 packages are still tested three ways
+and golden-locked by `make corelib` and `make corelib-examples` — that has not
+changed and is what makes the surface worth relying on in practice. What changed
+is the promise:
 
-- **Stable.** The public functions of every package keep their names,
-  signatures, and semantics. A bug in them is a regression to fix, not a
-  reason to break the API.
+- **Not frozen.** A public function may change name, signature, or semantics
+  before 1.0, with a `CHANGELOG.md` entry and no deprecation window. In practice
+  changes are additive — `core:os`'s `exec`/`exec_out` are the most recent, and
+  nothing has been removed — but "in practice" is not a contract.
+- **Still a regression, not a licence.** A bug in a package's documented
+  behavior is a bug to fix, not an excuse to redesign the API around it.
 - **Caveats inside the surface stay:** `core:hash` is non-cryptographic and
   `core:md5` is broken for security (use `core:sha256`), the codecs' `0x00`
   caveat holds, and the FFI-backed packages (`core:http`, `core:tls`,
@@ -572,11 +577,17 @@ are tested three ways and golden-locked by `make corelib` and
   [SECURITY.md](../../SECURITY.md). WSL2 is the Linux build and has none of
   them.
 
-**Deprecation path.** A package or function is deprecated by (1) a `deprecated:`
-notice in its doc comment, (2) an entry in `CHANGELOG.md` naming the
-replacement, and (3) a `warning:` on use emitted by the compiler where the
+**Deprecation path — the shape it will take AT 1.0**, stated now so it is not
+invented under pressure later. A package or function is deprecated by (1) a
+`deprecated:` notice in its doc comment, (2) an entry in `CHANGELOG.md` naming
+the replacement, and (3) a `warning:` on use emitted by the compiler where the
 surface allows it. Deprecated members keep working for the current major
 version. **Removal is a breaking change**: it happens only in a major version
 bump, is recorded in `CHANGELOG.md` and `RELEASE_NOTES.md`, and ships with the
-migration spelled out. Nothing in the 1.0 surface may be removed in a 1.x
+migration spelled out. Nothing in the frozen surface may be removed in a minor
 release.
+
+Before 1.0 none of that binds: a removal needs the changelog entry and nothing
+else. Which packages are in the frozen surface is a decision 1.0 has to make,
+not one inherited from this list — see
+[ROADMAP.md](../../ROADMAP.md#what-1-0-requires).

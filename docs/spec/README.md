@@ -1,6 +1,8 @@
 # The Tycho language specification
 
-> **Status: ratified — Tycho 1.0 (2026-07-13).** The formal specification of the
+> **Status: ratified — Tycho 0.5 (ratified 2026-07-13 as "1.0"; renamed
+> 2026-08-09 with the project's demotion to 0.5, no technical content changed).**
+> The formal specification of the
 > Tycho language: the normative contract a conforming implementation must satisfy
 > ([the roadmap](../../ROADMAP.md)).
 >
