@@ -1,0 +1,15 @@
+# The other side of tests/reject/result_void_ok_arg.ty: `Ok()` where the payload
+# is a real type. A payload-less Ok knows one thing about its Result -- that the
+# ok half is void -- so it fits exactly the Results whose ok half IS void, and
+# an `int` one is not among them.
+#
+#   error: declared type Result(int, string) but value is Ok(); Ok() is only a Result(void, E)
+fn f() -> Result(int, string):
+    return Ok()
+
+fn main():
+    match f():
+        Ok(v):
+            println(str(v))
+        Err(e):
+            println(e)

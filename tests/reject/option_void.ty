@@ -1,0 +1,19 @@
+# The void permission is granted to Result's ok SLOT, not to everything
+# underneath it: `Result(Option(void), E)` is refused, because parse_type_inner
+# clears the flag on entry and Option's inner type parses one level down.
+#
+# Without that clearing, one `Result(` would have licensed `void` at any depth
+# beneath it -- `Result([void], E)`, `Result((void, int), E)`, and so on -- each
+# of which reaches codegen as a C `void` field or parameter.
+#
+#   error: 'void' is a type only as a Result's ok payload, as in Result(void, string)
+fn f() -> Result(Option(void), string):
+    return Err("x")
+
+fn main():
+    r := f()
+    match r:
+        Ok(_):
+            println("ok")
+        Err(e):
+            println(e)

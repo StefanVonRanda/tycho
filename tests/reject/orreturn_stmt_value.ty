@@ -1,0 +1,22 @@
+# A bare `f() or_return` statement is legal ONLY when the ok payload is void.
+# With a real payload it silently drops the value the callee produced, which is
+# the class of bug the "a bare expression has no effect" rule exists to catch.
+#
+# The parser accepts the SHAPE (an or_return over a call) because the payload
+# type is not known there; the resolver names the type it would have discarded.
+# tests/result_void.ty holds the accepted half.
+#
+#   error: `or_return` here produces int, which this statement discards -- bind it (x := ... or_return)
+fn f() -> Result(int, string):
+    return Ok(1)
+
+fn g() -> Result(int, string):
+    f() or_return
+    return Ok(2)
+
+fn main():
+    match g():
+        Ok(v):
+            println(str(v))
+        Err(e):
+            println(e)

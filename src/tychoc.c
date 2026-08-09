@@ -1735,8 +1735,8 @@ static const char *type_name(Type t) {
         /* Every tag of the base enum (T_VOID..T_UNBOUND) is now cased above except T_PENDING, so it is the only thing that can land here.
          * It is UNREACHABLE: a T_PENDING never escapes as an expression's
          * resolved type -- resolve_expr dies with a dedicated message at the
-         * first use that needs the type (:4592), pend_ground rejects a pending
-         * grounding type BEFORE its two type_name calls (:4396), and
+         * first use that needs the type (:4617), pend_ground rejects a pending
+         * grounding type BEFORE its two type_name calls (:4421), and
          * resolve_block audits any still-pending decl at block end. Verified
          * empirically: an instrumented build over all 370 tests/, tests/reject/,
          * examples/, corelib/ and compiler/ sources plus 7 targeted pending
@@ -2187,8 +2187,16 @@ static Type parse_type(Parser *ps) {
     ps->depth--;
     return t;
 }
+/* `void` is spellable in exactly ONE position: Result's ok payload. This flag is
+ * the permission, and it is ONE LEVEL DEEP -- parse_type_inner snapshots and
+ * clears it on entry, so `Result(void, E)` passes but `Result(Option(void), E)`
+ * and `Result([void], E)` die on the same message as everywhere else. Set it
+ * immediately before the parse_type call that may accept a void; never leave it
+ * set across anything. */
+static int g_void_ok = 0;
 static Type parse_type_inner(Parser *ps) {
     Tok *t = cur(ps);
+    int void_ok = g_void_ok; g_void_ok = 0;
     if (t->kind == TK_DOLLAR) {          /* generics: `$T` introduces a type parameter into scope */
         ps->p++;
         Tok *nm = eat(ps, TK_IDENT, "a type-parameter name after '$'");
@@ -2328,6 +2336,12 @@ static Type parse_type_inner(Parser *ps) {
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
+    if (t->kind == TK_IDENT && !strcmp(t->text, "void")) {   /* the type with no values; see g_void_ok */
+        if (!void_ok)
+            die_at(t->line, "'void' is a type only as a Result's ok payload, as in Result(void, string)");
+        ps->p++;
+        return T_VOID;
+    }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Option")) {   /* Option(T) */
         ps->p++;
         eat(ps, TK_LPAREN, "'(' after Option");
@@ -2347,11 +2361,12 @@ static Type parse_type_inner(Parser *ps) {
     if (t->kind == TK_IDENT && !strcmp(t->text, "Result")) {   /* Result(T, E) */
         ps->p++;
         eat(ps, TK_LPAREN, "'(' after Result");
+        g_void_ok = 1;                 /* the ok payload, and nothing else in the language, may be void */
         Type ok = parse_type(ps);
         eat(ps, TK_COMMA, "',' between Result's ok and error types");
         Type err = parse_type(ps);
         eat(ps, TK_RPAREN, "')'");
-        if (ok == T_VOID || err == T_VOID) die_at(t->line, "Result's types cannot be void");
+        if (err == T_VOID) die_at(t->line, "a Result's error type cannot be void -- Err always carries a value");   /* defensive: `Result(int, void)` already died above, on the ok-payload-only message */
         return res_of(ok, err);
     }
     if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name */
@@ -2718,11 +2733,16 @@ static Expr *parse_primary(Parser *ps) {
             eat(ps, TK_RPAREN, "')'");
             return e;
         }
-        if (!strcmp(t->text, "Ok") || !strcmp(t->text, "Err")) {   /* Ok(v) / Err(e) */
+        if (!strcmp(t->text, "Ok") || !strcmp(t->text, "Err")) {   /* Ok(v) / Err(e), and `Ok()` for a Result(void, E) */
             int isok = !strcmp(t->text, "Ok");
             eat(ps, TK_LPAREN, isok ? "'(' after Ok" : "'(' after Err");
             Expr *e = new_expr(isok ? E_OK : E_ERR, t->line);
-            e->lhs = parse_expr(ps);
+            if (at(ps, TK_RPAREN)) {   /* `Ok()`: a void payload carries nothing. lhs stays NULL, and every reader of an E_OK checks it */
+                if (!isok) die_at(t->line, "Err() carries no value -- a Result's error type cannot be void");
+                e->lhs = NULL;
+            } else {
+                e->lhs = parse_expr(ps);
+            }
             eat(ps, TK_RPAREN, "')'");
             return e;
         }
@@ -3674,7 +3694,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:9942), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:9987), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -3916,7 +3936,12 @@ static Stmt *parse_stmt(Parser *ps) {
      * much would have had one. */
     if (e->kind == E_SPAWN)
         die_at(t->line, "a `spawn` must be bound to a task handle -- write `t := spawn f(args)`, because the implicit join at scope exit needs a handle to wait on (a Task cannot be discarded)");
-    if (e->kind != E_CALL)
+    /* `f(x) or_return` on its own IS a statement when f's ok payload is void: there is
+     * no value to bind, and the effect -- propagate the error, otherwise fall through --
+     * is the entire point. The payload type is not known at parse time, so accept the
+     * SHAPE here (an or_return over a call) and let resolve_stmt's S_EXPR case reject
+     * a non-void one, where it can name the type in the message. */
+    if (e->kind != E_CALL && !(e->kind == E_ORRETURN && e->lhs && e->lhs->kind == E_CALL))
         die_at(t->line, "a statement must be a declaration, assignment, or call -- a bare expression has no effect");
     Stmt *s = new_stmt(S_EXPR, t->line);
     s->expr = e;
@@ -4389,7 +4414,7 @@ static void parse_struct(Parser *ps) {
      * typedef and fails at cc with no tycho-level diagnostic.
      * `handle_find` belongs here too (14-ffi.md §25): a handle shares the ONE
      * type namespace with struct/enum/newtype, and parse_handle already tests
-     * all four (:3616). Omitting it here made the rule one-directional --
+     * all four (:3636). Omitting it here made the rule one-directional --
      * `struct H` after `handle H` was accepted and RAN on tychoc while
      * `handle H` after `struct H` was rejected. */
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
@@ -5418,6 +5443,7 @@ static Type resolve_expr_inner(Expr *e) {
             return e->type = opt_of(inner);
         }
         case E_OK: case E_ERR: {   /* one half of a Result; context fixes the rest */
+            if (!e->lhs) return e->type = T_OK_PARTIAL;   /* `Ok()`: the known half IS void; context supplies the error type */
             Type inner = resolve_expr(e->lhs);
             const char *w = e->kind == E_OK ? "Ok" : "Err";
             if (inner == T_VOID || inner == T_NONE || inner == T_OK_PARTIAL || inner == T_ERR_PARTIAL)
@@ -6804,7 +6830,7 @@ static Type resolve_exp(Expr *e, Type want) {
     /* AUDIT: Some(x)/Ok(x)/Err(x) checked against a matching Option/Result — push the
      * expected inner type into the payload so a bare None/Ok/Err at ANY nesting depth
      * is fixed from context (Some(None) : Option(Option(int)), Ok(None), Some(Ok(1))).
-     * Without this the synthesis-only E_SOME (:4371) dies on a bare payload. Swift. */
+     * Without this the synthesis-only E_SOME (:4396) dies on a bare payload. Swift. */
     if (e->kind == E_SOME && IS_OPT(want)) {
         Type in = resolve_exp(e->lhs, opt_inner(want));
         if (in != opt_inner(want))
@@ -6813,6 +6839,13 @@ static Type resolve_exp(Expr *e, Type want) {
     }
     if ((e->kind == E_OK || e->kind == E_ERR) && IS_RES(want)) {
         Type half = e->kind == E_OK ? res_ok(want) : res_err(want);
+        if (!e->lhs) {   /* `Ok()` -- only a Result whose ok payload is void accepts it */
+            if (half != T_VOID)
+                die_at(e->line, "declared type %s but value is Ok(); Ok() is only a Result(void, E)", type_name(want));
+            return e->type = want;
+        }
+        if (half == T_VOID && e->kind == E_OK)
+            die_at(e->line, "%s carries no ok value -- write Ok(), not Ok(x)", type_name(want));
         Type in = resolve_exp(e->lhs, half);
         if (in != half)
             die_at(e->line, "declared type %s but value is %s(%s)", type_name(want),
@@ -6845,7 +6878,7 @@ static Type resolve_exp(Expr *e, Type want) {
     /* Ok(v)/Err(e): the value fixes one of Result's two params; `want` must be a
      * Result whose matching half equals that value's type, and it supplies the
      * other half. The chosen type is written onto the node for codegen. */
-    if (t == T_OK_PARTIAL  && IS_RES(want) && res_ok(want)  == e->lhs->type) return e->type = want;
+    if (t == T_OK_PARTIAL  && IS_RES(want) && res_ok(want)  == (e->lhs ? e->lhs->type : T_VOID)) return e->type = want;   /* a payload-less `Ok()` knows its half is void */
     if (t == T_ERR_PARTIAL && IS_RES(want) && res_err(want) == e->lhs->type) return e->type = want;
     return t;
 }
@@ -6918,10 +6951,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6549),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6575),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:6830). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:6863). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7194,10 +7227,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * :7271/:7858). Every chunk proc is handed the SAME capture values, and the
+     * :7304/:7858). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at :4533 which sets
+     * required value, and it matches the lambda-lift twin at :4558 which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -7418,6 +7451,13 @@ static int side_total(SideCov *sc, Type pt) {
 static void match_arm_payload(MatchArm *arm, Type pt, const char *tag, SideCov *sc) {
     if (sc->plain)
         die_at(arm->line, "duplicate %s arm", tag);   /* an unrefined arm already took this side */
+    if (pt == T_VOID) {   /* a void ok payload binds nothing: a bare `Ok:` arm, exactly like a fieldless enum variant */
+        if (arm->nbinds != 0 || arm->sub)
+            die_at(arm->line, "%s carries no value here -- write a bare `%s:` arm", tag, tag);
+        arm->sub_vi = -1;
+        sc->plain = arm->line ? arm->line : 1;
+        return;
+    }
     if (!arm->sub) {
         if (arm->nbinds != 1)
             die_at(arm->line, "%s(x) binds exactly one value", tag);
@@ -7982,6 +8022,10 @@ static void resolve_stmt(Stmt *s, Type ret) {
                                            "nothing (to change a map, use `m[k] = v` or `delete m[k]`)", dn);
             }
             Type et = resolve_expr(s->expr);
+            /* the other half of the parser's or_return-statement shape check: the payload
+             * must really be void, or the statement silently drops a value the caller asked for */
+            if (!g_value_ctrl && s->expr && s->expr->kind == E_ORRETURN && et != T_VOID)
+                die_at(s->line, "`or_return` here produces %s, which this statement discards -- bind it (x := ... or_return)", type_name(et));
             if (!g_value_ctrl && IS_TASK(et))   /* CC-2: a discarded handle could never be waited */
                 die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");
             /* A discarded Result silently swallows the error path. Not fatal (the no-side-effects
@@ -8023,6 +8067,7 @@ static char *type_mangle_ident(Type t) {
     if (t == T_STRING) return "string";
     if (t == T_BOOL)   return "bool";
     if (t == T_CHAR)   return "char";
+    if (t == T_VOID)   return "void";   /* reachable only as Result's ok payload; without this it took the `t0` fallback */
     if (IS_STRUCT(t))  return g_structs[STRUCT_ID(t)].name;
     if (IS_ENUM(t))    return g_enums[ENUM_ID(t)].name;
     if (is_array(t)) {
@@ -8417,7 +8462,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:6868: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:6901: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8575,7 +8620,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10808), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10856), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8605,12 +8650,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12764) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12815) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:10895) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:10943) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -8627,7 +8672,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3554-3559) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3574-3579) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -10169,6 +10214,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("(%s){ 1, %s }", c_type(e->type), alias_arg(inner, arena, e->lhs, NULL, 0));
         }
         case E_OK:    /* designated init: errv auto-zeroes, dodging -Wmissing-field-initializers */
+            if (!e->lhs) return sfmt("(%s){ .ok = 1 }", c_type(e->type));   /* `Ok()`: the placeholder okv zeroes with errv */
             return sfmt("(%s){ .ok = 1, .okv = %s }", c_type(e->type),
                         alias_arg(res_ok(e->type), arena, e->lhs, NULL, 0));
         case E_ERR:
@@ -10678,7 +10724,9 @@ static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val
         /* a discard plain arm (Err(_)) still RUNS its body; only the binding
          * is skipped -- the body must not be lost, or the tag case falls into
          * the exhaustiveness trap below */
-        if (!bind_is_discard(plain->binds[0])) {
+        if (pt == T_VOID) {   /* a bare `Ok:` on a void payload: nothing to bind, and binds[0] does not exist */
+            gen_block(o, plain->body, plain->nbody, bind, scope, ret);
+        } else if (!bind_is_discard(plain->binds[0])) {
             int borrow = type_is_heap(pt) && !block_mutates(plain->body, plain->nbody, plain->binds[0]);
             indent(o, bind);
             fprintf(o, "%sh_%s = %s;\n", c_type(pt), plain->binds[0],
@@ -11985,8 +12033,11 @@ static void emit_aggregate(FILE *o, Type t) {
         if (needs_body_first(okt))  emit_aggregate(o, okt);
         if (needs_body_first(errt)) emit_aggregate(o, errt);
         g_res_color[id] = 2;
+        /* a void ok payload still gets an `okv`, as a one-byte placeholder: `void okv;`
+         * is not C, and dropping the field would fork every .okv reader (Ok construction,
+         * the match side, or_return's value, the copy body) on a type test. */
         if (o) fprintf(o, "struct TychoRes%d_ { char ok; %sokv; %serrv; };\n",
-                       id, c_type(okt), c_type(errt));
+                       id, okt == T_VOID ? "char " : c_type(okt), c_type(errt));
     } else {   /* IS_TUP: embeds every element by value */
         int id = TUP_ID(t);
         if (g_tup_color[id] == 2) return;

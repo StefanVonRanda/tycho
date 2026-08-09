@@ -4,10 +4,13 @@
 # not: `[bytes]`, `[(int, int)]` and `[[string: int]]` all compile and none of
 # them appears in that list. the loops-cleanup plan.
 #
-# This is the one of the three void guards a program can actually reach. The two
-# in the type parser (src/tychoc.c:2035, src/tychoc.c:2352) are defensive: no
-# spelling of a type yields T_VOID, because parse_type_inner's only
-# `return T_VOID` (src/tychoc.c:2161) sits after a die_at.
+# This guard is reached through a VALUE, not through a type annotation, and that
+# is still true now that `void` is spellable. `[void]` never gets here: the
+# spelling is licensed one level deep, for a Result's ok payload only, so the
+# element type dies first on `'void' is a type only as a Result's ok payload`
+# (tests/reject/option_void.ty is the same refusal for `Option(void)`). What
+# reaches this line is an element whose TYPE is void because the expression
+# produces nothing -- a call to a procedure with no return type, below.
 #
 #   error: an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
 fn nothing():

@@ -1,0 +1,113 @@
+# `Result(void, E)` — a fallible operation with nothing to hand back.
+#
+# `void` is spellable in exactly one position, Result's ok payload, and it is a
+# type with NO VALUES: it is constructed by a zero-argument `Ok()` and matched by
+# a bare `Ok:` arm, the same shape a fieldless enum variant already had. There is
+# no `void` expression, so `Ok(void)` is not a spelling and nothing can bind one.
+#
+# Before this, the workaround was a one-field `Unit` struct threaded through
+# every caller. Two things had to change to retire it: `void` entered the type
+# grammar (permission is one level deep, so `Result(Option(void), E)` still
+# dies), and the bind-vector sentinel moved off T_VOID to T_UNBOUND, or binding a
+# generic parameter to void would have read as "not yet bound".
+#
+# The `or_return` STATEMENT form is part of the feature, not a bonus: with no
+# value to bind there is no `x := f() or_return` to write, so a bare
+# `f() or_return` is accepted exactly when the ok payload is void
+# (tests/reject/orreturn_stmt_value.ty holds the other side of that line).
+
+enum Fault:
+    Io
+    Bad(string)
+
+struct Job:
+    name: string
+    done: Result(void, string)
+
+fn touch(x: int) -> Result(void, string):
+    if x < 0:
+        return Err("neg")
+    return Ok()
+
+fn faulty(x: int) -> Result(void, Fault):
+    if x == 0:
+        return Err(Io)
+    if x < 0:
+        return Err(Bad("negative"))
+    return Ok()
+
+# the statement form: propagate, or fall through with nothing bound
+fn chain(x: int) -> Result(void, string):
+    touch(x) or_return
+    touch(x - 1) or_return
+    return Ok()
+
+fn nested(x: int) -> Result(Result(void, string), string):
+    if x < 0:
+        return Err("outer")
+    return Ok(touch(x))
+
+fn wrap(r: Result(void, string)) -> string:
+    match r:
+        Ok:
+            return "ok"
+        Err(e):
+            return "err " + e
+
+fn main():
+    println(wrap(touch(1)))
+    println(wrap(touch(-1)))
+    println(wrap(chain(5)))
+    println(wrap(chain(0)))
+
+    # a `_` wildcard covering the Ok side
+    match touch(2):
+        Err(e):
+            println("e " + e)
+        _:
+            println("wild")
+
+    # an enum error under a void ok payload, including a nested pattern
+    match faulty(0):
+        Ok:
+            println("f ok")
+        Err(Io):
+            println("f io")
+        Err(Bad(m)):
+            println("f bad " + m)
+    match faulty(-2):
+        Ok:
+            println("f ok")
+        Err(Io):
+            println("f io")
+        Err(Bad(m)):
+            println("f bad " + m)
+    match faulty(3):
+        Ok:
+            println("f ok")
+        Err(Io):
+            println("f io")
+        Err(Bad(m)):
+            println("f bad " + m)
+
+    # stored in a struct field and in an array, then read back out
+    j := Job("build", touch(4))
+    println(j.name + " " + wrap(j.done))
+    xs := [touch(1), touch(-3)]
+    for r in xs:
+        println(wrap(r))
+
+    # two void payloads compare equal on the tag alone
+    a := touch(1)
+    b := touch(2)
+    if a == b:
+        println("eq")
+    else:
+        println("ne")
+
+    # Result(Result(void, E), E): the inner one is an ordinary ok payload
+    match nested(9):
+        Ok(inner):
+            println("inner " + wrap(inner))
+        Err(e):
+            println("outer " + e)

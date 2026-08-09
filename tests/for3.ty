@@ -2,7 +2,7 @@
 #
 # The loop variable is bound by the init clause and scoped to the loop, by the
 # same vars_mark/vars_restore mechanism `for i in range(...)` uses
-# (src/tychoc.c:7238) -- the last block here is the proof.
+# (src/tychoc.c:7271) -- the last block here is the proof.
 #
 # All three clauses are required; `for:` (tests/for_bare.ty) is the only
 # degenerate form.

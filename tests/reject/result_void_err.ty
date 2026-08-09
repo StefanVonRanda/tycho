@@ -1,0 +1,20 @@
+# A Result's ERROR type may not be void. `Err` always carries a value -- that is
+# the whole reason a Result is not a bool -- so the asymmetry with the ok payload
+# is deliberate, not an oversight.
+#
+# It is refused by the permission flag rather than by the guard beside `res_of`:
+# the flag is cleared after the ok slot is parsed, so `void` in the error slot is
+# an ordinary out-of-position `void` and gets that message. The guard on `err`
+# stays as a defensive backstop.
+#
+#   error: 'void' is a type only as a Result's ok payload, as in Result(void, string)
+fn f() -> Result(int, void):
+    return Ok(1)
+
+fn main():
+    r := f()
+    match r:
+        Ok(v):
+            println(str(v))
+        _:
+            println("err")

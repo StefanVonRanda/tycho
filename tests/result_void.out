@@ -1,0 +1,13 @@
+ok
+err neg
+ok
+err neg
+wild
+f io
+f bad negative
+f ok
+build ok
+ok
+err neg
+eq
+inner ok

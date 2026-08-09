@@ -1,0 +1,14 @@
+# `Ok(x)` on a void payload. void is a type with NO VALUES, so there is nothing
+# `x` could be -- including a literal that happens to be cheap to write. The
+# message names the one spelling that works instead of only refusing this one.
+#
+#   error: Result(void, string) carries no ok value -- write Ok(), not Ok(x)
+fn f() -> Result(void, string):
+    return Ok(1)
+
+fn main():
+    match f():
+        Ok:
+            println("ok")
+        Err(e):
+            println(e)
