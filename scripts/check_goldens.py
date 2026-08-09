@@ -327,6 +327,28 @@ def main():
                                   "-- a fresh clone fails with `no golden`" % (r, n, pat))
                 rows.append((r, n, pat, 1, 0 if ok else 1))
 
+    # Windows sibling goldens. A `<golden>.win` is selected in place of the
+    # golden on Windows only (tests/run.sh:157, corelib/run.sh:33) -- and it
+    # ends `.win`, not `.out`/`.err`, so the token scan above never saw one.
+    # Three existed and NONE of them was covered: tests/float_str_locale.out.win,
+    # tools/tycho-ar/expected.out.win and corelib/test/os.out.win. They are the
+    # goldens on the platform whose harness is thinnest, which is the worst place
+    # to have a check that silently covers nothing. Derived from the resolved set
+    # rather than parsed, so a new sibling is picked up the day it is written.
+    win_rows = 0
+    for p in sorted(goldens):
+        w = p + ".win"
+        if not os.path.exists(w):
+            continue
+        r, n = goldens[p]
+        goldens.setdefault(w, (r, n))
+        win_rows += 1
+        if w not in tracked:
+            errors.append("%s:%d: %s exists but is NOT tracked by git -- a fresh "
+                          "clone fails with `no golden` ON WINDOWS ONLY, where "
+                          "this sibling is the golden that gets selected" % (r, n, w))
+        rows.append((r, n, w, 1, 0 if w in tracked else 1))
+
     # Second assertion: tracked is not enough -- .gitignore must also be willing
     # to take the file back, or `RECORD=1` over a deleted golden writes an
     # invisible one and the first assertion goes on passing.
