@@ -291,10 +291,15 @@ which disturbs no file offset. Five semantics are normative for the three:
 
 ### 32.22 `os`
 
-Run external commands via a **libc-only shim** (`os_shim.c`, `popen`/`system`; no
-`deps`). Core tier. `system(cmd)` runs `cmd` through `/bin/sh -c` returning its
-exit code; `run(cmd)` also captures stdout into `Output{code, out}`. `cmd` is a
-shell line — quote untrusted input yourself. `docs/guides/corelib.md:298-304`.
+Run external commands via a **libc-only shim** (`os_shim.c`, `popen`/`system`/
+`posix_spawnp`; no `deps`). Core tier. `system(cmd)` runs `cmd` through
+`/bin/sh -c` returning its exit code; `run(cmd)` also captures stdout into
+`Output{code, out}`. `cmd` is a shell line — quote untrusted input yourself.
+`exec(argv)` and `exec_out(argv)` take a `[string]` and start **no shell**
+(`posix_spawnp`; `CreateProcess` on Windows, where the vector is joined by the
+`CommandLineToArgvW` quoting rules), so arguments are never re-interpreted by a
+shell; they fail closed with `-1` on an empty argv, a build failure, or an
+unspawnable program. `docs/guides/corelib.md:298-304`.
 
 ### 32.23 `regex`
 

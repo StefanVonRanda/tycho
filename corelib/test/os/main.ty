@@ -6,6 +6,7 @@
 
 package main
 import "core:os"
+import "core:strings"          # trim: cmd.exe's `echo` appends CRLF, /bin/sh's printf does not
 
 fn main():
     # system(): exit code only. These commands write nothing to stdout, so they
@@ -24,3 +25,54 @@ fn main():
     # a non-zero exit with no output.
     r3 := os.run("false")
     println("out3=[" + r3.out + "] code=" + str(r3.code))
+
+    # ---- exec()/exec_out(): the argv path, no shell between here and the kernel.
+    #
+    # THE CALLEE IS PLATFORM-PICKED, and picked by PROBING rather than by any
+    # build-time switch (the language has no conditional compilation). POSIX
+    # guarantees /bin/sh at an absolute path; a native Windows binary cannot
+    # resolve that path at all, and there cmd.exe is what PATH is guaranteed to
+    # find. The probe below is itself the first assertion -- it is an exec call,
+    # so a platform where exec is broken lands in neither branch cleanly.
+    posix := os.exec(["/bin/sh", "-c", "exit 0"]) == 0
+    println("posix=" + str(posix))
+
+    if posix:
+        println("e_exit7=" + str(os.exec(["/bin/sh", "-c", "exit 7"])))
+        e := os.exec_out(["/bin/sh", "-c", "printf hello"])
+        println("e_out=[" + e.out + "] code=" + str(e.code))
+
+        # THE SECURITY PROPERTY, asserted rather than assumed. Through os.run
+        # this same text is two commands and the second one runs; through exec
+        # it is one ORDINARY ARGUMENT and printf emits it verbatim. Both halves
+        # are checked, so the test fails if exec ever grows a shell underneath.
+        # (`arg` is the explicit copy the compiler asks for when an aggregate
+        # captures a binding that is still live -- `hostile` is used twice)
+        hostile := "; printf INJECTED"
+        si := os.run("printf %s '' " + hostile)
+        println("sh_arg=[" + si.out + "]")
+        arg := hostile
+        ei := os.exec_out(["/bin/sh", "-c", "printf %s \"$1\"", "sh", arg])
+        println("e_arg=[" + ei.out + "]")
+
+        # an argument carrying spaces stays exactly one argument.
+        es := os.exec_out(["/bin/sh", "-c", "printf %s \"$1\"", "sh", "a b c"])
+        println("e_space=[" + es.out + "]")
+    else:
+        # Windows. cmd.exe is the CALLEE, never an interposed shell -- exec
+        # spawns it directly with CreateProcess, so the argv below is what it
+        # receives. The round-trip-a-hostile-argument assertion has no Windows
+        # half: it needs a program that echoes argv WITHOUT re-parsing it, and
+        # Windows guarantees none (cmd's own `echo` re-parses, which is the
+        # documented callee-side caveat in os_shim.c). The quoting algorithm is
+        # checked directly against CommandLineToArgvW instead -- see the shim.
+        println("e_exit7=" + str(os.exec(["cmd", "/c", "exit 7"])))
+        w := os.exec_out(["cmd", "/c", "echo hello"])
+        println("e_out=[" + strings.trim(w.out) + "] code=" + str(w.code))
+
+    # fail closed, three ways: an empty argv, and a program that does not exist,
+    # both -1 -- and never a fallback to the shell. Identical on both platforms.
+    println("e_empty=" + str(os.exec([]string)))
+    println("e_nosuch=" + str(os.exec(["/nonexistent/prog"])))
+    en := os.exec_out(["/nonexistent/prog"])
+    println("e_nosuch_out=[" + en.out + "] code=" + str(en.code))

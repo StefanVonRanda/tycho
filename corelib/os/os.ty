@@ -12,9 +12,34 @@
 #                             Output.code is the same exit code as system(). On a
 #                             spawn failure: code -1, out "".
 #
-# SECURITY: cmd is handed to `/bin/sh -c` verbatim -- it IS a shell line, so shell
-# metacharacters are active. Never build cmd from untrusted input without quoting
-# it yourself; there is no array-argv form yet (add on demand).
+#   os.exec(argv) -> int      Run argv[0] with NO shell, inheriting stdout/stderr.
+#                             Same exit-code contract as system(). -1 if the
+#                             program could not be spawned OR the argv was
+#                             refused (see below).
+#
+#   os.exec_out(argv) -> Output   The same, CAPTURING stdout. -1 / "" on refusal.
+#
+# SECURITY -- WHICH PAIR TO REACH FOR. `system`/`run` hand cmd to `/bin/sh -c`
+# verbatim (cmd.exe on Windows): it IS a shell line, so metacharacters are
+# active and a command built from untrusted input is an injection. `exec`/
+# `exec_out` take the argument VECTOR and hand it to posix_spawnp, so there is
+# no shell to interpret anything -- `argv[1]` of `"; rm -rf /"` is one ordinary
+# argument to the program, not a second command. Prefer exec/exec_out for
+# anything whose arguments are not a compile-time constant.
+#
+# exec/exec_out FAIL CLOSED and never silently degrade to the shell: an empty
+# argv, an argv over 4096 entries, or any allocation failure while building it
+# returns -1 / Output(-1, "") . A dropped argument would not be a smaller
+# command, it would be a different one.
+#
+# PLATFORM: both are implemented on POSIX (posix_spawnp) and on Windows
+# (CreateProcess, never cmd.exe). Windows has no execve, so the vector is joined
+# into one command line by the CommandLineToArgvW quoting rules and the callee
+# splits it back -- asserted by round-tripping it through the real splitter in
+# corelib/os/os_argv_quotecheck.c, a `make shim-check` leg. The residue is
+# callee-side: a program that parses its command line by its own rules (cmd.exe
+# itself, a .bat/.cmd file) can still read it differently, so do not hand a
+# batch file untrusted argv.
 package os
 
 struct Output:
@@ -27,6 +52,11 @@ extern fn osx_run(cmd: string) -> ptr          # opaque result handle; null only
 extern fn osx_run_code(r: ptr) -> int
 extern fn osx_run_out(r: ptr) -> string
 extern fn osx_run_free(r: ptr)
+extern fn osx_argv_new() -> ptr                # opaque argv builder; null on allocation failure
+extern fn osx_argv_push(h: ptr, s: string) -> int
+extern fn osx_argv_free(h: ptr)
+extern fn osx_exec(h: ptr) -> int
+extern fn osx_exec_out(h: ptr) -> ptr          # same OsRun handle shape osx_run returns
 
 # Run cmd, inheriting stdout/stderr; return its exit code.
 fn system(cmd: string) -> int:
@@ -39,4 +69,42 @@ fn run(cmd: string) -> Output:
         return Output(-1, "")
     res := Output(osx_run_code(r), osx_run_out(r))   # both accessors copy out of the handle...
     osx_run_free(r)                                  # ...before it is freed
+    return res
+
+# Build the C-side argv vector from a Tycho [string]. Returns a handle, or null
+# if the builder refused any entry -- in which case NOTHING is left allocated.
+# A [string] cannot cross the FFI (docs/spec/14-ffi.md crosses only [int] and
+# [float]), so the vector is pushed one string at a time; that is the whole
+# reason the handle exists. Public only because a package cannot mark a
+# top-level fn internal -- callers want exec/exec_out below.
+fn argv_of(argv: [string]) -> ptr:
+    h := osx_argv_new()
+    if is_null(h):
+        return h
+    for i := 0; i < len(argv); i += 1:
+        if osx_argv_push(h, argv[i]) == 0:
+            osx_argv_free(h)                         # fail closed: a partial argv is never run
+            return null
+    return h
+
+# Run argv with no shell, inheriting stdout/stderr; return its exit code.
+fn exec(argv: [string]) -> int:
+    h := argv_of(argv)
+    if is_null(h):
+        return -1
+    code := osx_exec(h)
+    osx_argv_free(h)
+    return code
+
+# Run argv with no shell, capturing stdout; return Output{code, out}.
+fn exec_out(argv: [string]) -> Output:
+    h := argv_of(argv)
+    if is_null(h):
+        return Output(-1, "")
+    r := osx_exec_out(h)
+    osx_argv_free(h)                                 # the argv is done the moment the child is reaped
+    if is_null(r):
+        return Output(-1, "")
+    res := Output(osx_run_code(r), osx_run_out(r))
+    osx_run_free(r)
     return res

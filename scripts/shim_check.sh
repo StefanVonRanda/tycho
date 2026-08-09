@@ -84,6 +84,35 @@ for shim in corelib/*/*_shim.c; do
     fi
 done
 
+# The Windows argv quoter, checked against the real splitter. os.exec's whole
+# security property on Windows is that osx_win_cmdline's output survives
+# CommandLineToArgvW unchanged -- one argument in, the same one argument out,
+# metacharacters inert. corelib/test/os asserts that round trip on POSIX by
+# reading a hostile argument back out of `printf`; Windows guarantees no
+# program that echoes argv without re-parsing it, so the claim is made against
+# the splitter directly. This is a BUILD AND RUN, not a syntax check, because a
+# quoting bug compiles perfectly.
+QC=corelib/os/os_argv_quotecheck.c
+if [ -f "$QC" ]; then
+    case "$(uname -s)" in
+        *MSYS*|*MINGW*|*CYGWIN*)
+            if qout="$($CC -std=c11 -Wall -Wextra -I corelib/os "$QC" -o "${TMPDIR:-/tmp}/os_argv_quotecheck.exe" -lshell32 2>&1)" \
+               && qout="$("${TMPDIR:-/tmp}/os_argv_quotecheck.exe" 2>&1)"; then
+                echo "ok   $QC (argv round-trips CommandLineToArgvW)"
+                ok=$((ok + 1))
+            else
+                echo "FAIL $QC"
+                echo "$qout" | sed 's/^/       /'
+                fail=$((fail + 1))
+            fi
+            ;;
+        *)
+            echo "skip $QC (Windows-only: needs CommandLineToArgvW)"
+            skipped=$((skipped + 1))
+            ;;
+    esac
+fi
+
 echo "shim-check: $ok ok, $skipped skipped, $fail failed"
 [ "$fail" -eq 0 ] || {
     echo "shim-check: a shim does not compile standalone under -std=c11." >&2

@@ -4,12 +4,9 @@ exit7=7
 out=[hello] code=0
 out2=[a-b-c]
 out3=[] code=1
-posix=true
+posix=false
 e_exit7=7
 e_out=[hello] code=0
-sh_arg=[INJECTED]
-e_arg=[; printf INJECTED]
-e_space=[a b c]
 e_empty=-1
 e_nosuch=-1
 e_nosuch_out=[] code=-1

@@ -83,11 +83,33 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
 **core:os shell-out — by design, caller-side, documented:**
 - `os.system` / `os.run` pass the command to `/bin/sh -c` **verbatim** — shell
   metacharacters are live, so a command built from untrusted input is injectable.
-  This is documented in the package header ("Never build cmd from untrusted
-  input without quoting it yourself; there is no array-argv form yet"). The
-  shim does no quoting and no escaping; the in-tree callers that interpolate
-  paths quote them (e.g. tycho-debug's `shq`). An array-argv form is the
-  backlog item that removes the class.
+  This is documented in the package header. The shim does no quoting and no
+  escaping; the in-tree callers that interpolate paths quote them (e.g.
+  tycho-debug's `shq`).
+- **`os.exec` / `os.exec_out` (added 2026-08-09) remove the class, on both
+  platforms.** They take a `[string]` argv and start no shell: `posix_spawnp`
+  on POSIX, `CreateProcess` with no `cmd.exe` anywhere on Windows.
+  - *POSIX* is asserted end to end in `corelib/test/os/main.ty`: the same
+    hostile text yields `INJECTED` through `os.run` and the literal
+    `; printf INJECTED` through `exec_out`, so the test reddens if a shell is
+    ever reintroduced underneath. Run under `-fsanitize=address,undefined`
+    with `detect_leaks=1`, exit 0.
+  - *Windows* has no `execve`, so the vector is joined into one command line by
+    the `CommandLineToArgvW` quoting rules (the CRT's own `_spawnvp` is not used
+    — its joiner has historically mishandled trailing backslashes). The join is
+    round-tripped through the real splitter in
+    `corelib/os/os_argv_quotecheck.c`, a `make shim-check` leg that builds and
+    RUNS on Windows and skips loudly elsewhere: 9 cases including embedded
+    quotes, trailing backslashes, an empty argument and
+    `; rm -rf / & echo x | y > z`, all splitting back to the input vector.
+    Measured on Windows 11 26200, mingw gcc 16.1.0.
+  - **Residual, callee-side and not fixable here:** a program that parses its
+    own command line by rules other than `CommandLineToArgvW`'s — `cmd.exe`
+    itself, a `.bat`/`.cmd` file, a hand-rolled splitter — can still read the
+    line differently. Do not pass untrusted argv to a batch file. Batch files
+    are not refused by extension; the callee is a PATH-searched name that
+    `CreateProcess` resolves, so it cannot be classified beforehand (`gap:` in
+    `os_shim.c`).
 - `os.run` captures stdout only; stderr passes through to the parent —
   documented. Wait-status decoding maps a signal death to `128+signum`, never a
   bare confusion with a real exit code (spawn failure is `-1`).

@@ -358,8 +358,24 @@ element type instead of a family of per-type siblings.
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the
   shell won't start); `os.run(cmd)` additionally captures stdout into `Output{code, out}`.
   `cmd` is a `/bin/sh -c` line — shell metacharacters are active, so quote untrusted input
-  yourself (no array-argv form yet). The stdout-capture read loop lives in `os_shim.c`, so
+  yourself. The stdout-capture read loop lives in `os_shim.c`, so
   Tycho only ever receives the finished, NUL-terminated string.
+  **`os.exec(argv)` / `os.exec_out(argv)`** are the array-argv pair and take a
+  `[string]`: no shell is started at all (`posix_spawnp`), so an argument of
+  `"; rm -rf /"` is one ordinary argument rather than a second command — prefer
+  them whenever the arguments are not compile-time constants. Same exit-code
+  contract; `exec_out` captures stdout. They **fail closed** with `-1` on an
+  empty argv, more than 4096 entries, an allocation failure mid-build, or a
+  program that cannot be spawned — never a silent fallback to the shell. A
+  `[string]` cannot cross the FFI (§24.1 crosses only `[int]`/`[float]`), so the
+  vector is pushed into an opaque builder one string at a time. Implemented on
+  both platforms — `posix_spawnp` on POSIX, `CreateProcess` (never `cmd.exe`) on
+  Windows, where the vector is joined by the `CommandLineToArgvW` quoting rules
+  and round-tripped through the real splitter as a `make shim-check` leg
+  (`corelib/os/os_argv_quotecheck.c`). What remains is callee-side: a program
+  that parses its own command line by other rules — `cmd.exe`, a `.bat`/`.cmd`
+  file — can still read it differently, so don't hand a batch file untrusted
+  argv.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
   no `deps`, nothing to install). Every fallible TCP call returns
   **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
