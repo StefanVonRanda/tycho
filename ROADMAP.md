@@ -41,8 +41,16 @@ Foundation before feature breadth. In rough priority:
 Between the 2026-07-26 freeze and 2026-07-29, `tychoc0` was still **built and run** by
 two hand-run lanes (`compiler/fixpoint.sh`, `scripts/frontparity.sh`) and by fourteen
 other non-gated runners. None of them was in `make ci` — the earlier claim that "no gate
-builds or runs it" was true only of `make ci` itself, not of the tree. As of 2026-07-29
-nothing builds it at all.
+builds or runs it" was true only of `make ci` itself, not of the tree.
+
+**"Nothing builds it at all" was written here on 2026-07-29 and was not true until
+2026-08-09.** `make selfhost-check` — `make ci` step [3n/20], ~50s of every sweep — went
+on building `tychoc0` three ways to re-assert the self-emission fixed point. It was
+retired on 2026-08-09 by owner decision, and the sentence is now accurate: no lane builds
+`tychoc0`. `compiler/selfhost.sh` is kept unrun with a header recording what it proved.
+`tychoc0.ty` is still COMPILED by every sweep as ASan/UBSan input to
+`scripts/asan_self.sh` — it remains the compiler's hardest test program — but the
+byte-identity of its own emission is no longer checked anywhere.
 
 **Why.** The three-clause `for i := 0; i < n; i += 1:` and bare `for:` replace
 `for i in range(...)`, and the `range` builtin is deleted. This is a *breaking* change.

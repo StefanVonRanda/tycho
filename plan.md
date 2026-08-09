@@ -7,15 +7,19 @@
 > corelib work (`core:timezone`, JPEG/GIF), which is parked.
 >
 > **2 and 3 landed 2026-08-09** — see the evidence block at the bottom of this
-> file. What that leaves before a release can be cut: `make selfhost-check` is
-> still `make ci` step [3n/20] and still builds `tychoc0` at every HEAD (~50s),
-> which contradicts both `ROADMAP.md:45` ("nothing builds it at all") and the
-> ruling above; it has not been removed, because deleting a gate is the
-> owner's call and the ruling was about effort, not about what the lane
-> proves. Item 6 (`core:net` has no `poll`/`select`/`O_NONBLOCK` in any of its
-> 12 exports, so worker count is a hard concurrency cap) is untouched and was
+> file. `make selfhost-check` was retired the same day on the owner's explicit
+> instruction ("we're done with it"): it was `make ci` step [3n/20], ~50s of
+> every sweep, and the last thing in the tree that BUILT `tychoc0` — which is
+> what finally makes `ROADMAP.md`'s "nothing builds it at all" true.
+> `compiler/selfhost.sh` is kept unrun with a tombstone header.
+>
+> Item 6 (`core:net` has no `poll`/`select`/`O_NONBLOCK` in any of its 12
+> exports, so worker count is a hard concurrency cap) is untouched and was
 > refused once before with a number: ~283 lines across 4 files plus a redesign
 > of `core:httpd`'s read surface.
+>
+> Branch workflow dropped on the same instruction — work commits straight to
+> `main` and is pushed there.
 
 > 2026-08-04: the three-phase optimization chain (housekeeping, deterministic
 > hash, map memory) is complete and the closing `make ci` is green. New

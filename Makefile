@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check selfhost-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -511,16 +511,6 @@ kvsrv-check: tychoc
 # See tools/tycho-sat/run.sh.
 sat-check: tychoc
 	@sh tools/tycho-sat/run.sh
-
-# selfhost-check: RE-PROVES the self-hosting fixed point at HEAD -- the frozen
-# compiler/tychoc0.ty, compiled by itself, emits byte-identical C. The old
-# fixpoint lane was retired because its CORPUS differential could not survive
-# the loop-syntax change; this lane runs only the self-emission chain (stages
-# 2-4 of docs/bootstrap.md), which involves only the frozen compiler and its
-# own frozen source and cannot drift. ~50s, measured 2026-08-04.
-# In `make ci` as step [3n/20]. See compiler/selfhost.sh.
-selfhost-check: tychoc
-	@sh compiler/selfhost.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
 # built by tychoc + ASan and run against a local file:// fixture (so the

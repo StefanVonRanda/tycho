@@ -120,8 +120,10 @@ one. **The strongest evidence is that Tycho compiles itself**: besides the C
 reference transpiler there is a second transpiler written in Tycho,
 `compiler/tychoc0.ty`, and its codegen runs on the same implicit arenas it
 emits — built three ways, the last two emitted byte-identical C. That proof is
-frozen but re-verifiable: `make selfhost-check` re-runs the self-emission fixed
-point at HEAD and asserts the byte-identity still holds. See
+frozen, and as of 2026-08-09 no gate re-runs it: the `selfhost-check` lane was
+retired, so nothing in the tree builds `tychoc0` any more. The result stands as
+a fact about the commit that proved it, and `compiler/selfhost.sh` is kept —
+unrun — so it can be re-checked by hand. See
 `docs/internals/plan-repo-polish-DONE.md` for the campaign's record.
 
 ## Performance

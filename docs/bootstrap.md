@@ -79,14 +79,16 @@ detail is in [`docs/thesis.md`](thesis.md) and
 
 ## What is live, and what is not — 2026-07-26
 
-**Most of this page is not a gate any more — one claim is, and the rest is not.**
+**None of this page is a gate any more — updated 2026-08-09.**
 `tychoc0` was frozen on 2026-07-26 and cut out of CI: thirteen of the nineteen
-steps that compared the two compilers were removed, and `scripts/ci.sh` builds no
-`tychoc0` binary. The one exception is the SELF-EMISSION fixed point (stages 2-4
-below): `compiler/selfhost.sh` — in `make ci` as `selfhost-check` — re-runs the
-chain A, B, C over `tychoc0.ty` alone and asserts the byte-identity, because it
-involves only the frozen compiler and its own frozen source and cannot drift the
-way the corpus differential did. Everything else here is history: the corpus
+steps that compared the two compilers were removed. One exception survived until
+2026-08-09 — the SELF-EMISSION fixed point (stages 2-4 below), run by
+`compiler/selfhost.sh` as `make ci`'s `selfhost-check`. That lane is retired too,
+by owner decision, and nothing in the tree builds a `tychoc0` binary now. The
+script is kept, unrun, with a header recording what it proved; `tychoc0.ty` is
+still COMPILED by every sweep, as ASan/UBSan input to `scripts/asan_self.sh`, but
+the byte-identity of its own emission is no longer re-asserted. Everything else
+here is history: the corpus
 differential died with the loop-syntax change, and conformance is now stated
 against the specification and locked by recorded fixtures — see
 [Appendix E.1](spec/appendix-e-conformance.md#e1-the-conformance-oracle).

@@ -76,6 +76,17 @@ says `1.0.0`, so these ship the next time it is bumped.
   `tychoc.exe` (parity with the native leg), and the staged layout is
   smoke-tested under Wine — the packaged compiler must find `corelib/` beside
   itself and emit C — skipping loudly when Wine is absent.
+- **`make selfhost-check` retired; nothing builds `tychoc0` now.** It was
+  `make ci` step [3n/20] and cost ~50s of every sweep re-asserting that the
+  frozen compiler's own emission reproduces itself. `ROADMAP.md` has claimed
+  since 2026-07-29 that "nothing builds it at all"; that sentence is true as of
+  this change and was not before. `compiler/selfhost.sh` is kept unrun, with a
+  header recording what it proved — the same treatment `compiler/fixpoint.sh`
+  and `scripts/frontparity.sh` got. What is given up: the byte-identity is no
+  longer re-checked at each HEAD. What is not: `compiler/tychoc0.ty` is still
+  compiled by every sweep as ASan/UBSan **input** to `scripts/asan_self.sh`, so
+  the largest Tycho source in the tree still exercises the compiler, and
+  self-hosting remains a fact about the commit that proved it.
 - **`core:os` gains `exec` / `exec_out` — an argv no shell parses.** They take
   a `[string]` and start no shell: `posix_spawnp` on POSIX, `CreateProcess`
   with no `cmd.exe` anywhere on Windows. This closes the injection class

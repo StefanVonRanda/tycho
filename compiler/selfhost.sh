@@ -1,4 +1,24 @@
 #!/bin/sh
+# RETIRED 2026-08-09 -- owner decision: "we're done with it". This file is kept
+# as the record of what it proved, the same way compiler/fixpoint.sh and
+# scripts/frontparity.sh are; nothing runs it. `make selfhost-check` is gone,
+# and with it the last thing in the tree that BUILT compiler/tychoc0.ty --
+# which finally makes ROADMAP.md's "as of 2026-07-29 nothing builds it at all"
+# true. It was step [3n/20] of `make ci` and cost ~50s of every sweep.
+#
+# WHAT IS GIVEN UP, stated plainly: the byte-identity below is no longer
+# re-asserted at each HEAD. It was never a check on today's compiler -- the
+# chain runs the FROZEN compiler against its own FROZEN source, so the only
+# thing that could redden it is tychoc changing how it compiles tychoc0.ty.
+# That half is still covered: scripts/asan_self.sh feeds compiler/tychoc0.ty to
+# tychoc as INPUT under ASan/UBSan, so the largest single Tycho source in the
+# tree is still compiled by every sweep. What is gone is the assertion that the
+# RESULT of that compile reproduces itself.
+#
+# WHAT STAYS TRUE: self-hosting is a fact about the commit that proved it, and
+# retiring the lane does not undo it. Run this script by hand to re-check.
+#
+# ---- original header ----
 # selfhost-check: RE-PROVE the self-hosting fixed point at HEAD.
 #
 # The marquee claim in the README is that Tycho compiles itself: the frozen

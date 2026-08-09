@@ -249,9 +249,7 @@ step "[3l/18] make kvsrv-check  (tycho-kvsrv: HTTP KV round-trips + 405/404 + ke
 make -s kvsrv-check
 step "[3m/19] make sat-check  (tycho-sat: PHP(2..9) all UNSAT; planted instances SAT with runner-verified models; deterministic; learning comparison recorded)"
 make -s sat-check
-step "[3n/20] make selfhost-check  (the frozen tychoc0 compiled by itself emits byte-identical C -- the self-hosting fixed point re-proven at HEAD)"
-make -s selfhost-check
-step "[3o/21] make build-check  (tycho-build: first-build dispatch golden, second-build no-op differential, touch-rebuilds-only-dependents, failed recipe skips dependents, determinism, exit-2 errors)"
+step "[3n/20] make build-check  (tycho-build: first-build dispatch golden, second-build no-op differential, touch-rebuilds-only-dependents, failed recipe skips dependents, determinism, exit-2 errors)"
 make -s build-check
 
 # 3p for the same reason 3e-3o are: a tool under tools/ that nothing else runs --
@@ -263,7 +261,7 @@ make -s build-check
 # transcript includes gdb's own output, which drifts across gdb versions. It
 # SKIPS loudly when gdb is absent (an external dependency like sqlite3/libpng),
 # and it also exercises the `tycho debug` dispatcher command end to end.
-step "[3p/22] make debug-check  (tycho-debug: scripted sessions -- breakpoint set + hit on the right source line, stripped-C-name locals, print, step, clean quit, run-to-completion with program output, Ctrl-C interrupt of a running inferior, fail-closed refusals, tycho debug wrapper)"
+step "[3o/21] make debug-check  (tycho-debug: scripted sessions -- breakpoint set + hit on the right source line, stripped-C-name locals, print, step, clean quit, run-to-completion with program output, Ctrl-C interrupt of a running inferior, fail-closed refusals, tycho debug wrapper)"
 make -s debug-check
 
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
