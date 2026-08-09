@@ -128,6 +128,24 @@ learnings and in FRICTION:
 Each is small. Together they are what "the language is unpleasant on day two"
 is made of.
 
+**Re-probed against the compiler on 2026-08-09** rather than trusted from the
+phase-1 notes, because two entries turned out to be wrong:
+
+| Papercut | State |
+|---|---|
+| package-level `len` shadows the builtin | **open, and the worst of them** — a package defining `fn len(s: string) -> int: return 7` gets `7` for a 4-character string from its own code, silently. No diagnostic, wrong answer. |
+| no bare `pass` | open — `a statement must be a declaration, assignment, or call` |
+| no expression line continuation | open — a trailing `+` gives `expected an expression` |
+| no `defer` | open |
+| `or_return` from `main()` | open, but the diagnostic names the rule |
+| newtype-of-array blocks `push` | open — `push's first argument must be an array or soa` for `type Row = [string]` |
+| aggregate capturing a live binding warns | open |
+| ~~typed empty is `[]string`~~ | **not a defect** — both `xs : [string] = []` and `xs := []string` compile. It is a learning-curve item, not a language gap. |
+| consts across package boundaries | not re-probed |
+
+Priority inside the list is `len` shadowing: it is the only one that produces a
+wrong answer instead of an error message.
+
 ### 3. The expressiveness gaps close, or become documented refusals
 
 Checked on 2026-08-09 rather than inherited from the FRICTION entry:
@@ -141,6 +159,13 @@ Checked on 2026-08-09 rather than inherited from the FRICTION entry:
 | `core:iter` unusable for a fallible pipeline stage | open (FRICTION §7) |
 | `core:decimal` has no `div` | **closed** — `decimal.div` exists |
 | `[string]` cannot cross the FFI | open by design — it forced `core:os`'s builder-handle API; either lift it or write down that it never lifts |
+
+Two corrections from the same 2026-08-09 probe: testing an enum variant is
+**mitigated** — since the pattern-discard fix, `match e: A(_): ...` binds
+nothing and reads fine, so the gap is now stylistic rather than structural; and
+`Result(void, E)` fails at the type name itself (`unknown type 'void'`) even
+though the compiler uses "void" in its own diagnostics, so the fix is a spelling
+decision as much as a type-system one.
 
 "Documented refusal" is a legitimate answer for any row. An undecided row is
 not.
