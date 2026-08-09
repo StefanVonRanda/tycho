@@ -220,6 +220,14 @@ tycho_int sigx_on_shutdown(tycho_int fd) {
     return 1;
 }
 
+/* POSIX stubs for the two Windows test hooks below. They exist ONLY so that
+ * one shared corelib/test/signal/main.ty links on both platforms: the test
+ * picks its branch at run time, so both call sites are emitted and the linker
+ * needs both symbols even on the platform that never reaches one. Returning 0
+ * is the honest answer -- "this did not happen" -- and the test never asks. */
+tycho_int sigx_win_isolate_console(void) { return 0; }
+tycho_int sigx_win_raise_break(void)     { return 0; }
+
 #else
 
 /* Windows. No sigaction and no POSIX shutdown-wakes-accept guarantee:
@@ -258,6 +266,44 @@ tycho_int sigx_on_shutdown(tycho_int fd) {
     sigx_fd = (sig_atomic_t)fd;
     if (!SetConsoleCtrlHandler(sigx_ctrl_handler, TRUE)) return 0;
     return 1;
+}
+
+/* ---- Windows test support -- NOT part of core:signal's surface -------------
+ *
+ * These two exist so this package's own test can deliver a REAL console
+ * control event to itself. They are deliberately absent from signal.ty: the
+ * portable API is on_shutdown/shutdown_requested and nothing else. The test
+ * declares the externs itself (corelib/test/signal/main.ty) -- the symbols are
+ * linked because the test imports core:signal, so no test-only shim mechanism
+ * is needed in the corelib harness.
+ *
+ * WHY A PRIVATE CONSOLE. GenerateConsoleCtrlEvent's group 0 means "everything
+ * attached to MY console". Under `make ci` that console is shared with the
+ * harness shell, so a bare break would Ctrl-Break the sweep itself. A process
+ * cannot join a new process group after creation -- CREATE_NEW_PROCESS_GROUP
+ * is a creation flag -- but it CAN leave its console and allocate a fresh one,
+ * and then group 0 is a group of exactly one: this process. Redirected stdout
+ * survives, because the harness gives the test a FILE handle rather than a
+ * console handle, and Free/AllocConsole does not touch it. That is what makes
+ * the golden readable after the switch. */
+tycho_int sigx_win_isolate_console(void) {
+    FreeConsole();                       /* may legitimately fail if there is none */
+    if (!AllocConsole()) return 0;
+    /* RE-ARM. Measured 2026-08-09 on Windows 11 26200: with the handler
+     * registered before this call and not after, CTRL_BREAK killed the process
+     * (exit 130) instead of reaching sigx_ctrl_handler -- the registration does
+     * not follow the process to a newly allocated console. Registering again
+     * here is idempotent for an already-registered handler, so a caller that
+     * armed first and isolated second ends up armed on the console that will
+     * actually deliver the event. */
+    return SetConsoleCtrlHandler(sigx_ctrl_handler, TRUE) ? 1 : 0;
+}
+
+/* Raise CTRL_BREAK on this process's own console. CTRL_BREAK and not CTRL_C:
+ * MSDN gives no way to direct a CTRL_C_EVENT at a specific group, and a new
+ * process group starts with Ctrl-C disabled. The handler treats them alike. */
+tycho_int sigx_win_raise_break(void) {
+    return GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, 0) ? 1 : 0;
 }
 
 #endif

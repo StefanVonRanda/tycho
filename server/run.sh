@@ -599,9 +599,25 @@ if [ "$IS_WINDOWS" = 1 ]; then
   # waiting for a wind-down that cannot happen. Measured 2026-08-08: the run sat
   # 43 minutes with tycho-httpd still alive before it was killed by hand, which
   # is worse than a red -- a hang stops the whole sweep at step [3d/13].
-  # Same class as corelib's signal test (plan_windows.md phase 4). A Windows
-  # variant wants GenerateConsoleCtrlEvent against the server's console rather
-  # than kill; core:signal already arms SetConsoleCtrlHandler at the far end.
+  # Same class as corelib's signal test (plan_windows.md phase 4) -- except
+  # that half is no longer open: as of 2026-08-09 corelib/test/signal delivers
+  # a real CTRL_BREAK on Windows and passes there against the unchanged Linux
+  # golden, so the DELIVERY mechanism is proven and core:signal's
+  # SetConsoleCtrlHandler end is proven to receive it.
+  #
+  # WHAT STILL BLOCKS THIS LANE, specifically, so the next attempt does not
+  # rediscover it. The corelib test signals ITSELF, so it can step onto a
+  # private console first (sigx_win_isolate_console) and raise CTRL_BREAK at
+  # group 0 with nothing else attached. This lane signals a SEPARATE process,
+  # and group 0 here is the console the harness shell is sitting on -- so the
+  # same call would Ctrl-Break the sweep. Targeting a single process instead
+  # needs it to be a process-group leader, and CREATE_NEW_PROCESS_GROUP is a
+  # CreationFlag: bash cannot set it after the fact. So the variant needs a
+  # small launcher (spawn with CREATE_NEW_PROCESS_GROUP, report the pid) plus
+  # a sender (GenerateConsoleCtrlEvent at that pid), and a second obstacle
+  # underneath: MSYS2's `$!` is an MSYS pid, NOT the Windows pid the console
+  # API wants, so all six call sites below need the mapping too.
+  # gap: unwritten. Six cases + the access-log tail stay skipped until it is.
   # NOTE the body below is deliberately NOT re-indented: it carries unindented
   # heredoc terminators (`PY`), which only work at column 0.
   echo "  SKIP shutdown cases 1-6 + access-log tail (Windows: MSYS2 kill terminates a native PE instead of signalling it -- plan_windows.md phase 4)"

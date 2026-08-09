@@ -21,15 +21,23 @@ fail=0
 for entry in corelib/test/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
-    # core:signal's test kills itself with `kill -TERM $PPID` from a POSIX
-    # shell; cmd.exe has no kill, so on Windows the handler never fires and the
-    # accept blocks forever -- the phase-4 documented hang. Skip loudly; the
-    # Windows-native variant is the CI leg's job (plan_windows.md phase 4/6).
-    if [ "$name" = "signal" ] && [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" -ne 0 ]; then
-        echo "skip signal (test mechanism is POSIX kill -TERM; cmd.exe has no kill -- plan_windows.md phase 4)"
-        continue
-    fi
+    # core:signal's test was SKIPPED here on Windows until 2026-08-09 -- its
+    # mechanism was `kill -TERM $PPID`, and MSYS2's kill terminates a native PE
+    # rather than signalling it, so the handler never fired and the accept
+    # blocked forever (the phase-4 documented hang). The test now picks its
+    # delivery per platform and raises a real CTRL_BREAK on a private console
+    # on Windows; its output there is byte-identical to the Linux golden, so it
+    # needs no `.win` sibling and no skip.
     golden="corelib/test/$name.out"
+    # Windows-aware golden, the same `<golden>.win` convention tests/run.sh:157
+    # already uses. Only ever selected on Windows, and only when the sibling
+    # exists -- a package with one platform-independent output keeps one golden.
+    # core:os is the first user: exec/exec_out are POSIX-only and fail closed
+    # with -1 there (os_shim.c's `gap:` note), and cmd.exe renders the shell
+    # contrast line differently from /bin/sh.
+    if [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" -ne 0 ] && [ -f "corelib/test/$name.out.win" ]; then
+        golden="corelib/test/$name.out.win"
+    fi
     # FFI SKIP: tychoc auto-discovers each imported module's <mod>_shim.c and its
     # `deps`, and links both itself -- the build below is a plain `tychoc -o`. So
     # this lane needs no shim list and no cc flags. The one thing it does need is
