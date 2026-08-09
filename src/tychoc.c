@@ -831,8 +831,8 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
         * op producing one is cast back to its C type (trunc_ctype) to hold the
         * width invariant. i32/i64 map to C int/long long and wrap natively (-fwrapv). */
        T_U8, T_U16, T_I8, T_I16, T_I32, T_I64,
-       T_PENDING /* B-3 (bidirectional inference): a bare `xs := []` / `x := None` decl, awaiting its
-                  * first grounding use in the same block; never survives resolve */ };
+       T_PENDING, /* B-3 (bidirectional inference): a bare `xs := []` / `x := None` decl, awaiting its first grounding use in the same block; never survives resolve */
+       T_UNBOUND /* the "not yet bound" cell of a generic BIND VECTOR (new_binds). Never a value's type, never spellable, never reaches codegen. It WAS T_VOID, which was sound only while `void` was unspellable: once `Result(void, E)` could be written, binding a type parameter to void read as "still unbound" */ };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
  * >= 64, so the upper bound is what keeps an array type from looking like a
@@ -1068,7 +1068,7 @@ static char *typaram_name(Type t) { return g_typarams[(int)(t - T_TYPARAM_BASE)]
  * typaram_of above). Every such vector used to be a fixed `Type binds[256]` local,
  * which a valid program with more than 256 distinct names overran (each individual
  * generic staying well under TYCHO_MAX_TYPARAMS): ASan reported a stack-buffer-
- * overflow WRITE at the `for (i < g_ntyparams) binds[i] = T_VOID` init loop. Raising
+ * overflow WRITE at the `for (i < g_ntyparams) binds[i] = T_UNBOUND` init loop. Raising
  * 256 would only move the cliff, so allocate at the table's current length instead.
  * `g_typarams` only ever grows and a vector is only ever indexed by an id interned
  * BEFORE it was allocated, so `g_ntyparams` at allocation time covers every index
@@ -1077,7 +1077,7 @@ static char *typaram_name(Type t) { return g_typarams[(int)(t - T_TYPARAM_BASE)]
 static Type *new_binds(void) {
     int n = g_ntyparams > 0 ? g_ntyparams : 1;
     Type *b = (Type *)xmalloc((size_t)n * sizeof(Type));
-    for (int i = 0; i < n; i++) b[i] = T_VOID;   /* T_VOID == unbound */
+    for (int i = 0; i < n; i++) b[i] = T_UNBOUND;
     return b;
 }
 static char *g_cur_typarams[16];
@@ -1731,8 +1731,8 @@ static const char *type_name(Type t) {
         case T_MAP_SF:       return "[string: float]";
         case T_MAP_II:       return "[int: int]";
         case T_MAP_IF:       return "[int: float]";
-        /* Every tag of the base enum (T_VOID..T_PENDING) is now cased above
-         * except T_PENDING, so T_PENDING is the only thing that can land here.
+        case T_UNBOUND:      return "(unbound)";   /* a bind-vector sentinel, named honestly rather than called void */
+        /* Every tag of the base enum (T_VOID..T_UNBOUND) is now cased above except T_PENDING, so it is the only thing that can land here.
          * It is UNREACHABLE: a T_PENDING never escapes as an expression's
          * resolved type -- resolve_expr dies with a dedicated message at the
          * first use that needs the type (:4592), pend_ground rejects a pending
@@ -1968,11 +1968,11 @@ static void check_pkg_private(const char *qualifier, const char *name, int line)
 static char *type_mangle_ident(Type t);   /* fwd: defined with the Stage-1 generics helpers */
 
 /* Generics (structs): substitute type parameters in a type — stamps out a struct
- * instance's concrete field types. binds is indexed by typaram id; T_VOID = unbound. */
+ * instance's concrete field types. binds is indexed by typaram id; T_UNBOUND = unbound. */
 static int struct_instantiate(int tmpl, Type *binds);   /* mutually recursive with subst_type (recursive generic types) */
 static int enum_instantiate(int tmpl, Type *binds);
 static Type subst_type(Type t, Type *binds) {
-    if (IS_TYPARAM(t)) { Type b = binds[(int)(t - T_TYPARAM_BASE)]; return b == T_VOID ? t : b; }
+    if (IS_TYPARAM(t)) { Type b = binds[(int)(t - T_TYPARAM_BASE)]; return b == T_UNBOUND ? t : b; }
     /* a bare *generic template* type is a deferred self/recursive reference (e.g. the
      * `LL($T)` inside `struct LL($T)`): concretize it now with the current bindings.
      * struct_instantiate dedups via struct_find BEFORE registering, so a type that
@@ -2044,7 +2044,7 @@ static int type_has_sizeparam(Type t) {
 static int match_type(Type pat, Type concrete, Type *binds) {
     if (IS_TYPARAM(pat)) {
         int id = (int)(pat - T_TYPARAM_BASE);
-        if (binds[id] != T_VOID && binds[id] != concrete) return 0;
+        if (binds[id] != T_UNBOUND && binds[id] != concrete) return 0;
         binds[id] = concrete; return 1;
     }
     if (is_array(pat) && is_array(concrete)) {
@@ -5979,7 +5979,7 @@ static Type resolve_expr_inner(Expr *e) {
                                t->fields[i].name, t->name, type_name(at_));
                 }
                 for (int i = 0; i < t->ntyparams; i++)
-                    if (binds[(int)(t->typarams[i] - T_TYPARAM_BASE)] == T_VOID)
+                    if (binds[(int)(t->typarams[i] - T_TYPARAM_BASE)] == T_UNBOUND)
                         die_at(e->line, "type parameter $%s of %s is not fixed by any field value",
                                typaram_name(t->typarams[i]), t->name);
                 sid = struct_instantiate(sid, binds);
@@ -6020,7 +6020,7 @@ static Type resolve_expr_inner(Expr *e) {
                             die_at(e->line, "%s payload %d does not fit a %s argument", gv->name, i + 1, type_name(at_));
                     }
                     for (int i = 0; i < gt->ntyparams; i++)
-                        if (binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] == T_VOID)
+                        if (binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] == T_UNBOUND)
                             die_at(e->line, "type parameter $%s of %s is not fixed by any payload value; supply it explicitly, e.g. %s$(int)",
                                    typaram_name(gt->typarams[i]), gt->name, e->sval);
                     eid = enum_instantiate(eid, binds);   /* eid now names the concrete instance; the tail below re-resolves against it */
@@ -8121,7 +8121,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
      * instead of a deep "cannot add string and int" inside the substituted body. */
     for (int c = 0; c < gt->ncon; c++) {
         Type ct = binds[(int)(gt->con_tp[c] - T_TYPARAM_BASE)];
-        if (ct == T_VOID) continue;
+        if (ct == T_UNBOUND) continue;   /* this `where` names a parameter no argument fixed */
         if (gt->con_nset[c] > 0) {   /* type-set `T: a | b | ...`: ct's base must be one of the listed types */
             int inset = 0;
             for (int j = 0; j < gt->con_nset[c]; j++)

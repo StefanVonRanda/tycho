@@ -180,6 +180,67 @@ The last bit of prep, after 1–3 settle:
 Gate: the full `make ci` as the closing sweep, plus the doc gates.
 Expected: the README's status banner flips from research prototype to 1.0.
 
+## Phase 5 — `Result(void, E)` (ROADMAP order-of-work item 3)
+
+Set 2026-08-09. Three commits, each verified on its own. The ROADMAP's table
+recommended "re-sentinel `T_VOID` → `T_UNBOUND`" and said that buys the
+expected spelling. **Probing says the re-sentinel is necessary but not
+sufficient**: `void` is not in the type grammar at all today, so the checks at
+`src/tychoc.c@Option(void) is not a type` and its two neighbours are
+defensive-unreachable, and the `T_VOID`/unbound collision is purely latent —
+it bites the moment `void` becomes spellable. Both halves are in scope here.
+
+Surface decided by the owner, 2026-08-09: **zero-arg `Ok()`**, matched by a
+bare `Ok:` arm, like a fieldless enum variant. `void` is a type with no values
+— it is NOT spellable as an expression, and `Ok(void)` is not accepted.
+
+### 5.1 Re-sentinel `T_VOID` → `T_UNBOUND`
+
+Add `T_UNBOUND` to the type enum and use it as the bind-vector's "not yet
+bound" value. Sites: `new_binds`, `subst_type`, `match_type`, and the two
+post-match unbound checks in the generic-instantiation paths. Every bind
+vector in the tree comes from `new_binds()` — no `calloc`ed one to miss.
+Pure refactor, no behaviour change intended.
+
+- Gate: `make test`. **Baseline measured 2026-08-09 before any edit: 595
+  passed, 0 failed** (`make test-fast`, byte-identical corpus). CLAUDE.md's
+  "560 fixtures" is stale prose, not the number to compare against.
+- The two source edits are deliberately **line-count-neutral** (12 changed,
+  12 changed), so no `src/tychoc.c:N` citation anywhere in the tree moves and
+  `check_citations.py` stays green with no re-anchoring. Worth the awkward
+  long comment lines: the ROADMAP prices a re-anchor at 50-110 anchors.
+
+### 5.2 `void` as Result's ok payload
+
+- Parser: `void` in type position, permitted **only** as Result's first type
+  argument (one-level permission flag, cleared on entry to `parse_type_inner`
+  so `Option(void)` inside a `Result(...)` still dies).
+- `Ok()` with an empty argument list parses to `E_OK` with `lhs == NULL`;
+  `Err()` stays an error (a Result's error type may not be void).
+- Resolver: `Ok()` checks against `Result(void, E)`; a bare `Ok:` match arm is
+  the only accepted Ok pattern when the payload is void, and `Ok(x)` on one is
+  an error.
+- Codegen: the `okv` field is emitted as a `char` placeholder for a void
+  payload, `Ok()` initialises it to 0, `gen_match_side` binds nothing.
+  `type_mangle_ident(T_VOID)` becomes `"void"` (it was the `t0` fallback).
+- Fixtures: one runnable fixture + golden, plus reject fixtures for
+  `Option(void)`, `Result(int, void)`, `Ok(x)` on a void payload, `x := f()`
+  binding a void or_return, and bare `void` in an ordinary type position.
+- Gates: `make test` (expect 560 + the new fixtures), then
+  `sh scripts/tools_check.sh` and `make editors-check` — the new fixtures put
+  the token `void` in type position in front of every parser in the tree.
+
+### 5.3 Docs
+
+Spec chapter for Result, `docs/internals/FRICTION.md`, `ROADMAP.md` (strike
+item 3 and correct the "re-sentinel buys the spelling" claim), CHANGELOG.
+
+- Gates: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`,
+  `sh scripts/spec_check.sh`, `make docs-fences`. **Not `make test`** — no
+  compiled artifact changes.
+
+Closing sweep: one `make ci` after 5.3, not per sub-phase.
+
 ## Not in scope
 
 - A REPL (owner decision), ~~native Windows (deferred; WSL is the supported

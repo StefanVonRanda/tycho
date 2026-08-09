@@ -5,7 +5,7 @@
 # distinct `$N` names while every individual generic stays well under the
 # 16-parameter cap, so it is VALID. Before the fix tychoc held those vectors in
 # fixed `Type binds[256]` / `int64_t sizebinds[256]` stack locals and overran them
-# (ASan: stack-buffer-overflow WRITE at the `binds[i] = T_VOID` init loop, and a
+# (ASan: stack-buffer-overflow WRITE at the `binds[i] = T_UNBOUND` init loop, and a
 # READ in match_type for the `$N` side). The tail exercises every site that builds
 # such a vector: a generic fn call, a UFCS generic, a generic struct literal and a
 # generic struct in type position, a generic enum constructor and a generic enum in
