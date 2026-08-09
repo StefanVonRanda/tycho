@@ -241,6 +241,39 @@ item 3 and correct the "re-sentinel buys the spelling" claim), CHANGELOG.
 
 Closing sweep: one `make ci` after 5.3, not per sub-phase.
 
+> **5.1 evidence — 2026-08-09, `3a67bbe`.** Six sentinel sites, all reached from
+> the single `new_binds()`; `type_name` gained a `T_UNBOUND` case so a leaked
+> sentinel reads `(unbound)` instead of masquerading as `void`. Both edits
+> line-count-neutral (12/12), so `check_citations.py` stayed green with no
+> re-anchoring. `make test`: 595 passed, 0 failed — identical to the baseline.
+>
+> **5.2 evidence — 2026-08-09.** Surface as decided: `void` in type position
+> licensed one level deep for Result's ok slot only; zero-arg `Ok()`; bare `Ok:`
+> arm; `char okv` placeholder in the emitted C (a `void okv;` field is not C, and
+> dropping the field would fork every `.okv` reader).
+>
+> **Found mid-phase and NOT in the brief: `f() or_return` was not a statement**,
+> so a void-payload Result had no propagation form at all — `x := f() or_return`
+> has nothing to bind. Admitted exactly when the ok payload is void: the parser
+> accepts the shape (or_return over a call), the resolver enforces the payload
+> type, since only the resolver knows it. `docs/internals/FRICTION.md` §4 had
+> already recorded these two as one defect with three sightings, which is why
+> they are closed in one commit rather than split.
+>
+> Fixtures: `tests/result_void.ty` + golden, and nine rejects, each verified to
+> exit non-zero with the intended message. `make test`: 605 passed, 0 failed
+> (595 + 10).
+>
+> **The citation re-anchor cost, measured.** 84 stale citations. Re-anchored
+> mechanically from a difflib old→new line map over `git show HEAD:src/tychoc.c`
+> (script kept in the session scratchpad, not committed): 87 files rewritten, 0
+> needing a human. Three classes the map does not reach were fixed by hand and
+> are worth knowing about for the next compiler change: bare `:N` continuations
+> on a line in a SOURCE file (`src/tychoc.c:9702, :9666` — the gate's SRCCITE
+> requires a path, so the second ref is unpoliced and drifts silently), the same
+> in `.ty` fixture comments, and `src/tychoc.c`'s own `(:4592)`-style
+> self-references. `compiler/tychoc0.ty` is exempt and was left alone.
+
 ## Not in scope
 
 - A REPL (owner decision), ~~native Windows (deferred; WSL is the supported

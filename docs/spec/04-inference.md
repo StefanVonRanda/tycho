@@ -10,7 +10,7 @@ deliberate design property, not a limitation to be lifted
 non-goal).
 
 > Provenance: synthesis `resolve_expr`, checking `resolve_exp(e, want)`
-> (`src/tychoc.c:4885-6257`, `:6264-6373`); declaration handling `:6961-7036`.
+> (`src/tychoc.c:4910-6283`, `:6290-6399`); declaration handling `:6994-7069`.
 
 ## 6.1 Synthesis and checking
 
@@ -47,7 +47,10 @@ following groundings occur:
 5. **Elide a lambda's types.** A lambda checked against a function type `T` may
    omit its parameter and return type annotations, taking them from `T`.
 6. **Fix a bare sum constructor.** A bare `None`, `Ok(v)`, or `Err(e)` takes its
-   missing type parameter from `T` (an `Option`/`Result`).
+   missing type parameter from `T` (an `Option`/`Result`). A payload-less `Ok()`
+   already knows its half — the ok payload is `void`
+   ([§5.3.6](03-types.md#536-enums-option-result)) — so it takes only the error
+   type from `T`, and fails if `T`'s ok payload is anything but `void`.
 7. **Check a tuple literal element-wise.** A tuple literal checked against a tuple
    type of the same arity checks **each element** against the corresponding element
    type, so an `Ok`/`Err`/`None`/`[]` element grounds inside a tuple exactly as it
@@ -91,9 +94,9 @@ precedent — Go, Swift, and Odin all reject a bare `nil`/`None` declaration out
 / `None` pending convenience, so Tycho keeps it and documents the `Result` limit
 instead.)
 
-> Provenance: pending deferral `src/tychoc.c:7001-7013`, grounding `pend_ground`
-> `:4827-4854`; rejection of ungrounded `None` / immediate rejection of bare
-> `Ok`/`Err` `:7021-7026`.
+> Provenance: pending deferral `src/tychoc.c:7034-7046`, grounding `pend_ground`
+> `:4852-4879`; rejection of ungrounded `None` / immediate rejection of bare
+> `Ok`/`Err` `:7054-7059`.
 
 ## 6.5 Branch unification for value `if` / `match`
 

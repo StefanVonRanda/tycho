@@ -5,17 +5,19 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3108-3578` (`parse_if` `:3024@parse_if`,
-> `parse_match` `:3130@parse_match`, `for` `:3245-3446`, `select` `:3189-3225`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3128-3598` (`parse_if` `:3044@parse_if`,
+> `parse_match` `:3150@parse_match`, `for` `:3265-3466`, `select` `:3209-3245`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks
 
 A block is an indentation-delimited sequence of one or more statements
 ([§3.4](01-lexical.md#34-indentation-indent--dedent)). Each block is a scope
-([§12.3](08-declarations.md#123-scope-and-shadowing)). The only bare-expression
-statement permitted is a call; a bare variable, index, field, or `or_return`
-expression is rejected as having no effect.
+([§12.3](08-declarations.md#123-scope-and-shadowing)). The bare-expression
+statements permitted are a call, and a call followed by `or_return` when the
+callee's ok payload is `void` ([§5.3.6](03-types.md#536-enums-option-result));
+a bare variable, index or field expression is rejected as having no effect, and
+so is an `or_return` over any other payload type, which would drop a value.
 
 ## 14.2 `if` / `elif` / `else`
 
@@ -146,16 +148,16 @@ the implementation **does not diagnose it**, at compile time or at run time.
 bought is a single loop form that says its own direction and amount in the
 source instead of inferring them from the sign of a step expression.
 
-> Provenance: bare `for:` `src/tychoc.c:3593@TK_COLON`; the three-clause header
-> scan and its five required-clause refusals `src/tychoc.c:3279-3328`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:3644@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:7248-7253`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:10722-10725` with the
-> label at `src/tychoc.c:11588@_post%d`; the `range()` refusal
-> `src/tychoc.c:3727@was removed: write`. There is no step in the implementation
+> Provenance: bare `for:` `src/tychoc.c:3613@TK_COLON`; the three-clause header
+> scan and its five required-clause refusals `src/tychoc.c:3299-3348`; `init`
+> parsed by `parse_stmt` itself `src/tychoc.c:3664@parse_stmt`; loop scoping and
+> the post clause resolved outside the body block `src/tychoc.c:7281-7286`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:10770-10773` with the
+> label at `src/tychoc.c:11636@_post%d`; the `range()` refusal
+> `src/tychoc.c:3747@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1555-1561`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:10895-10899`).
+> (`src/tychoc.c:10943-10947`).
 >
 > **Amended 2026-07-30 (the loops-cleanup plan).** This note previously read "The step
 > codegen and its zero-step guards still exist but are unreachable: every

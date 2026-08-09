@@ -95,7 +95,7 @@ Type      ::= "$" IDENT                                        /* type parameter
             | "(" Type ( "," Type )+ ")"                       /* tuple, 2..8 elements */
             | "[" ArrayOrMap
             | "Option" "(" Type ")"
-            | "Result" "(" Type "," Type ")"
+            | "Result" "(" ( Type | "void" ) "," Type ")"   /* void: ok payload only */
             | "Channel" "(" Type ")"
             | QualName TypeArgs?                               /* struct/enum/newtype/handle */
             | PrimType
@@ -128,7 +128,7 @@ MultiAssign    ::= IDENT ( "," IDENT )+ "=" Expr NEWLINE
 PlaceAssign    ::= Place "=" ( Expr | ValueCtrl ) NEWLINE
 CompoundAssign ::= Place CompoundOp "=" Expr NEWLINE
 CompoundOp     ::= "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>"
-ExprStmt       ::= Call NEWLINE
+ExprStmt       ::= ( Call | Call "or_return" ) NEWLINE   /* or_return form: ok payload must be void */
 If          ::= "if" Expr ":" NEWLINE Block
                 ( "elif" Expr ":" NEWLINE Block )*
                 ( "else" ":" NEWLINE Block )?
@@ -181,7 +181,7 @@ Primary ::= INT | FLOAT | STR | CHAR
           | "channel" "(" Type "," Expr ")"             /* only as a declaration RHS */
           | "spawn" Call                                /* spawn a direct call */
           | Lambda
-          | "None" | "Some" "(" Expr ")" | "Ok" "(" Expr ")" | "Err" "(" Expr ")"
+          | "None" | "Some" "(" Expr ")" | "Ok" "(" Expr? ")" | "Err" "(" Expr ")"
           | IDENT "$" "(" Type ( "," Type )* ")" ( "(" ArgList? ")" )?  /* explicit type args */
           | IDENT "(" ArgList? ")"                      /* named call */
           | IDENT                                       /* variable, or nullary enum variant */
@@ -201,7 +201,7 @@ escape either, so it cannot contain a backtick; one is written by joining a
 `StrPiece`, so it joins with adjacent pieces of either kind, and there is no
 `` f`…` `` interpolated raw form.
 
-> Provenance: `src/tychoc.c:402-448`; adjacent join `:2288-2300`;
+> Provenance: `src/tychoc.c:402-448`; adjacent join `:2296-2308`;
 > [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
 > `tests/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 

@@ -210,6 +210,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §18.7 | user-defined subscripts | `tests/subscript` |
 | §19.1–19.3 | enums, `Option`, `Result`; construction | `tests/enums`, `tests/options`, `tests/results`, `reject/genenum_bare_nullary`, `reject/sum_ctor_payload_mismatch` |
 | §19.x | `or_return` propagation | `tests/or_return`, `tests/or_return_option`, `tests/or_return_frees` |
+| §5.3.6 | `Result(void, E)`: `Ok()`, a bare `Ok:` arm, the `or_return` statement form | `tests/result_void`, `reject/void_not_a_type`, `reject/option_void`, `reject/result_void_err`, `reject/result_void_ok_arg`, `reject/ok_empty_nonvoid`, `reject/err_empty`, `reject/result_void_bind`, `reject/result_void_arm_binds`, `reject/orreturn_stmt_value` |
 
 ### §23–24 Concurrency & FFI
 

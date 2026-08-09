@@ -29,6 +29,7 @@ variable of the same name is unaffected).
 | `package`, `import`, `extern`, `const`, `subscript` | top-level declaration leader |
 | `const`, `delete` | statement leader (when followed by an identifier) |
 | `soa`, `where`, `channel`, `Option`, `Result`, `Channel` | type / expression position |
+| `void` | a `Result`'s ok payload, and nowhere else ([§5.3.6](03-types.md#536-enums-option-result)). Not a primitive type keyword: `int`/`float`/`bool`/`string`/… are lexed as keywords, `void` is an ordinary identifier the type parser recognises in that one slot, so a variable named `void` is still legal |
 | `sink` | parameter modifier |
 | `yield` | `subscript` body |
 | `free` | `handle` body |

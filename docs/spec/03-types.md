@@ -14,8 +14,8 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:538-559`; C lowering `c_type`
-> `:1343-1383`; equality/ordering `:6045-6078`; newtype decl `parse_typedecl`
-> `:4105-4124`.
+> `:1343-1383`; equality/ordering `:6071-6104`; newtype decl `parse_typedecl`
+> `:4130-4149`.
 
 ## 5.1 The type-identity model
 
@@ -214,7 +214,7 @@ dynamic element — `[bool]` is a supported array type — and is rejected only 
 the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
 bool codegen.
 
-> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2310@elem`); the
+> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2318@elem`); the
 > fixed forms test both (`src/tychoc.c:2018-2019`), as does `bounded[N]T`
 > (`src/tychoc.c:1933-1934`). Detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
@@ -322,6 +322,43 @@ variants `Some(T)` and `None`; `Result(T, E)` is the built-in enum with variants
 `or_return` for `Option`/`Result` (§19). Recursive payloads are
 permitted (they are arena-allocated, hence finite).
 
+**`Result(void, E)`.** A `Result`'s ok payload MAY be `void`, for an operation
+that either fails with a reason or succeeds with nothing to report. `void` is a
+type with **no values**, so:
+
+- it is constructed by a zero-argument `Ok()`, and `Ok(x)` is an error;
+- it is matched by a **bare `Ok:` arm**, the same shape a fieldless enum variant
+  uses, and `Ok(x)` as an arm is an error;
+- nothing can bind one: `x := f() or_return` on such a `Result` is rejected as
+  binding a void value, and the statement form `f() or_return` is what replaces
+  it ([§4.3.1](02-grammar.md#431-simple-statements));
+- a `Result`'s ERROR type may NOT be `void` — `Err` always carries a value.
+
+`void` is spellable in **no other position**, and the permission does not nest:
+`Result(Option(void), E)`, `Result([void], E)` and `Result((void, int), E)` are
+all rejected, as is a `void` parameter, field, element or return annotation.
+
+```tycho
+fn touch(x: int) -> Result(void, string):
+    if x < 0:
+        return Err("negative")
+    return Ok()
+
+fn chain(x: int) -> Result(void, string):
+    touch(x) or_return          # propagate the error; bind nothing
+    return Ok()
+
+fn report(r: Result(void, string)) -> string:
+    match r:
+        Ok:                     # no binding: there is no value here
+            return "done"
+        Err(e):
+            return e
+```
+
+`Ok(1)` at that return type is rejected — `Result(void, string) carries no ok
+value -- write Ok(), not Ok(x)` — and so is an `Ok(v)` arm against it.
+
 ### 5.3.7 `soa`
 
 `soa [S]` is a **struct-of-arrays** collection whose element type `S` MUST be a
@@ -388,7 +425,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 `reserve` MUST be rejected on a `bounded` value.
 
 > Provenance: the `bounded` branch of `parse_type_inner`,
-> `src/tychoc.c:2195-2212@"bounded"` (capacity `:1866-1875`, element
+> `src/tychoc.c:2203-2220@"bounded"` (capacity `:1866-1875`, element
 > restriction `:1931-1932`); its twin
 > `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
 > deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
@@ -396,9 +433,9 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > rejection is a type-intern choke point in `src/tychoc.c`
 > (`arrc_sized_b` `src/tychoc.c:1003-1015@arrc_sized_b`, messages `:912@task_container_err` and `:952@chan_container_err`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
-> Rejections: slice `src/tychoc.c:5166-5167`, `pop` `:5817-5818`, `reserve`
-> `:6316@reserve does not apply to a bounded`, over-long literal `:6023-6026`. The full-push trap is emitted at
-> `:11698-11701`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
+> Rejections: slice `src/tychoc.c:5191-5192`, `pop` `:5843-5844`, `reserve`
+> `:6342@reserve does not apply to a bounded`, over-long literal `:6049-6052`. The full-push trap is emitted at
+> `:11746-11749`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
 > `tests/reject/bounded_nonconst_cap.ty`,
@@ -409,8 +446,8 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > a return type) and `tests/fixarr_aggregate.ty` for the `[N]T` twin. The
 > inline element is emitted inside the by-value containment DFS — `[N]T` and
 > `bounded[N]T` are ordered with the struct/tuple/Option bodies rather than with
-> the pointer-shaped arrays (`src/tychoc.c:11109-11199`, with `inline_arrc`/
-> `needs_body_first` at `:11091-11097`; tychoc0's `comp_dep_types`
+> the pointer-shaped arrays (`src/tychoc.c:11157-11247`, with `inline_arrc`/
+> `needs_body_first` at `:11139-11145`; tychoc0's `comp_dep_types`
 > `compiler/tychoc0.ty:10241-10268` and `emit_comp_body` `:10278-10302`) — which is what makes an aggregate element compile; the
 > infinite-type rejection falls out of the same DFS
 > (`tests/reject/inline_arr_self_elem.ty`).
@@ -439,7 +476,7 @@ Unwrapping to the underlying value uses the base-specific `to_int`/`to_float`/
 `to_str`/`to_bool` or the generic `to_under` (§8). A newtype over `int` or
 `string` is a valid map key carrying its wrapped identity (§5.3.5).
 
-> Provenance: underlying restriction `src/tychoc.c:4117-4119`; its twin
+> Provenance: underlying restriction `src/tychoc.c:4142-4144`; its twin
 > `newtype_under_ok` `compiler/tychoc0.ty:3126-3139`, called from
 > `parse_newtype` `:3141-3154`. Fixtures: `tests/reject/newtype_under_option.ty`
 > and its eleven siblings (`_result`, `_enum`, `_soa`, `_newtype`, `_ptr`,
@@ -473,5 +510,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6045-6078` (equality/ordering resolver); function-
-> value identity equality `:9444@identity equality`.
+> Provenance: `src/tychoc.c:6071-6104` (equality/ordering resolver); function-
+> value identity equality `:9489@identity equality`.

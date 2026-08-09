@@ -167,34 +167,45 @@ Testing an enum variant is **mitigated** — since the pattern-discard fix,
 `match e: A(_): ...` binds nothing and reads fine, so the gap is stylistic
 rather than structural.
 
-`Result(void, E)` was **recorded as "not expressible", which overstates it.**
-A unit payload works today, with no compiler change — probed and run:
+`Result(void, E)` was recorded as "not expressible", which overstated it: a
+one-field `Unit` struct worked with no compiler change, so the gap was
+boilerplate rather than a wall. **CLOSED 2026-08-09**, in two commits.
 
 ```tycho
-struct Unit:
-    _u: int
-
-fn touch(x: int) -> Result(Unit, string):
+fn touch(x: int) -> Result(void, string):
     if x < 0:
         return Err("neg")
-    return Ok(Unit(0))
+    return Ok()
 ```
 
-So the gap is the boilerplate, not a wall. What blocks the spelling everyone
-will actually type is **`T_VOID` being overloaded**: it is both the no-return
-type and the sentinel for *unbound generic type parameter*
-(`src/tychoc.c:1080`, `b[i] = T_VOID;   /* T_VOID == unbound */`). Writing
-`Result(void, string)` would bind the payload parameter to the value the binder
-reads as "not yet bound". 91 `T_VOID` uses in total; 8 look like the sentinel.
+The blocker named here was **`T_VOID` being overloaded**: it was both the
+no-return type and the sentinel for *unbound generic type parameter*, so
+binding a payload parameter to void would have read as "not yet bound". The
+recommendation below — re-sentinel to `T_UNBOUND` — was right, and it was
+**necessary but not sufficient**, which the table's "Buys" column had wrong.
+`void` was not in the type grammar at all: `parse_type_inner` had no `void`
+branch, so the three `== T_VOID` guards inside it were defensive-unreachable
+and the collision was purely latent. Re-sentinelling cleared the trap; the
+spelling still had to be built on top of it.
 
-Four ways out, with the recommendation:
+What shipped, with the surface chosen by the owner: `void` is spellable in
+exactly one position, a `Result`'s ok payload, and it is a type with **no
+values** — constructed by a zero-argument `Ok()`, matched by a bare `Ok:` arm,
+never bindable. The permission is one level deep, so `Result(Option(void), E)`
+is still refused. The `or_return` STATEMENT form (`f() or_return`, previously
+rejected as a bare expression with no effect) came with it and is not optional:
+with no value to bind there is no `x := f() or_return` to write, so without it
+the feature would have had no usable propagation form. Spec:
+[§5.3.6](docs/spec/03-types.md#536-enums-option-result).
+
+The four options as they were tabled, for the record:
 
 | Option | Cost | Buys |
 |---|---|---|
-| **Re-sentinel `T_VOID` → `T_UNBOUND`** *(recommended)* | ~8 sites, plus reading the other 83 for conflation | the expected spelling; also removes a latent trap that any future use of `void` as a real type would hit again |
-| New `T_UNIT` type | full compiler surface — codegen, eq, copy, `str` | cleanest semantics, most work |
-| Ship `Unit` in corelib | tiny | removes the boilerplate, leaves the wart visible |
-| Document the workaround | none | honest, closes nothing |
+| **Re-sentinel `T_VOID` → `T_UNBOUND`** *(taken)* | 6 sites, all reached from the single `new_binds()` — the estimate of ~8 was close | it cleared the latent trap. It did NOT buy "the expected spelling": that was the type grammar, the `Ok()` constructor, the bare `Ok:` arm, the `char okv` placeholder in the emitted C, and the `or_return` statement form — a second commit |
+| New `T_UNIT` type | full compiler surface — codegen, eq, copy, `str` | not taken: same result, more surface |
+| Ship `Unit` in corelib | tiny | not taken: removes the boilerplate, leaves the wart visible |
+| Document the workaround | none | not taken |
 
 An earlier note in this file called this "a spelling decision as much as a
 type-system one", inferred from the compiler using the word "void" in its own
@@ -247,7 +258,10 @@ every one costs a citation re-anchor (~50-110 anchors move) and a full `make ci`
 
 1. ~~`len` shadowing~~ — **closed**, `b267d2b`. The only silent-wrong-answer item.
 2. ~~expression line continuation~~ — **closed**, `621bf64`.
-3. `Result(void, E)` — re-sentinel `T_VOID`, per the table above. Compiler.
+3. ~~`Result(void, E)`~~ — **closed**, `3a67bbe` (re-sentinel) and the commit
+   after it (the spelling). The re-anchor cost the table above warned about was
+   real: the first commit was written line-count-neutral and moved zero
+   citations; the second moved 87 files' worth.
 4. `core:sort` comparator — corelib only. **No compiler change, so no citation
    shift and no `make ci` requirement** — cheapest item on the list, and it is
    ordered after 3 only because 3 was already scoped.

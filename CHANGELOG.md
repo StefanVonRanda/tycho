@@ -10,6 +10,28 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 Landed since the 0.5.0 entry below, against no tag — nothing has ever been
 released, so "since 0.5.0" means "since the work that entry describes".
 
+- **`Result(void, E)`, for an operation that either fails with a reason or
+  succeeds with nothing to report.** `void` is now spellable as a `Result`'s ok
+  payload — and in no other position — as a type with no values: constructed by
+  a zero-argument `Ok()`, matched by a bare `Ok:` arm, never bindable. The
+  permission does not nest, so `Result(Option(void), E)` is still refused, and a
+  `Result`'s error type still may not be void. Retires the one-field `Unit`
+  struct that fallible-but-valueless helpers carried, and with it the
+  meaningless `Ok(0)` at the end of every validator.
+
+  Shipped with it, because the feature is unusable without it: **`f() or_return`
+  is now a statement** when the ok payload is void. It was previously rejected
+  as a bare expression with no effect, which left a void-payload `Result` no
+  propagation form at all — `x := f() or_return` has nothing to bind. Over any
+  other payload type it is still an error, now naming the type it would have
+  dropped. `docs/internals/FRICTION.md` §4 recorded these as one defect with
+  three independent sightings; they are closed together.
+
+  Internally, the generic bind vector's "not yet bound" sentinel moved off
+  `T_VOID` to its own `T_UNBOUND`. That collision was latent rather than live —
+  `void` was not in the type grammar at all — but it is what would have made
+  binding a type parameter to `void` read as unbound.
+
 - **Demoted from 1.0.0 to 0.5.0.** `TYCHO_VERSION` in `src/tychoc.c` now reads
   `0.5.0`, and every document that promised a stable surface says pre-1.0
   instead. Nothing about the implementation changed and nothing regressed: the
