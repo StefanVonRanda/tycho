@@ -153,7 +153,7 @@ Checked on 2026-08-09 rather than inherited from the FRICTION entry:
 
 | Gap | State |
 |---|---|
-| `Result(void, E)` not expressible | **open** — `error: unknown type 'void'` |
+| `Result(void, E)` not expressible | **open, and recorded too harshly** — see below |
 | no comparator-taking sort | **open** — `sort.by_key` takes a derived `int` key only, so sorting by a string key means inventing an int |
 | an enum cannot be tested for its variant without binding a payload | open (FRICTION §5, 2026-08-01) |
 | two error types cannot share an `or_return` chain | open (FRICTION §6) |
@@ -161,12 +161,45 @@ Checked on 2026-08-09 rather than inherited from the FRICTION entry:
 | `core:decimal` has no `div` | **closed** — `decimal.div` exists |
 | `[string]` cannot cross the FFI | open by design — it forced `core:os`'s builder-handle API; either lift it or write down that it never lifts |
 
-Two corrections from the same 2026-08-09 probe: testing an enum variant is
-**mitigated** — since the pattern-discard fix, `match e: A(_): ...` binds
-nothing and reads fine, so the gap is now stylistic rather than structural; and
-`Result(void, E)` fails at the type name itself (`unknown type 'void'`) even
-though the compiler uses "void" in its own diagnostics, so the fix is a spelling
-decision as much as a type-system one.
+Two corrections from the same 2026-08-09 probe.
+
+Testing an enum variant is **mitigated** — since the pattern-discard fix,
+`match e: A(_): ...` binds nothing and reads fine, so the gap is stylistic
+rather than structural.
+
+`Result(void, E)` was **recorded as "not expressible", which overstates it.**
+A unit payload works today, with no compiler change — probed and run:
+
+```tycho
+struct Unit:
+    _u: int
+
+fn touch(x: int) -> Result(Unit, string):
+    if x < 0:
+        return Err("neg")
+    return Ok(Unit(0))
+```
+
+So the gap is the boilerplate, not a wall. What blocks the spelling everyone
+will actually type is **`T_VOID` being overloaded**: it is both the no-return
+type and the sentinel for *unbound generic type parameter*
+(`src/tychoc.c:1080`, `b[i] = T_VOID;   /* T_VOID == unbound */`). Writing
+`Result(void, string)` would bind the payload parameter to the value the binder
+reads as "not yet bound". 91 `T_VOID` uses in total; 8 look like the sentinel.
+
+Four ways out, with the recommendation:
+
+| Option | Cost | Buys |
+|---|---|---|
+| **Re-sentinel `T_VOID` → `T_UNBOUND`** *(recommended)* | ~8 sites, plus reading the other 83 for conflation | the expected spelling; also removes a latent trap that any future use of `void` as a real type would hit again |
+| New `T_UNIT` type | full compiler surface — codegen, eq, copy, `str` | cleanest semantics, most work |
+| Ship `Unit` in corelib | tiny | removes the boilerplate, leaves the wart visible |
+| Document the workaround | none | honest, closes nothing |
+
+An earlier note in this file called this "a spelling decision as much as a
+type-system one", inferred from the compiler using the word "void" in its own
+diagnostics. That was wrong — diagnostic text is not evidence about the type
+system — and the sentinel collision is why.
 
 "Documented refusal" is a legitimate answer for any row. An undecided row is
 not.
@@ -205,6 +238,30 @@ conventions were checked per shim, and the shell-injection class it flagged was
 closed on 2026-08-09 by `core:os`'s argv path — but the FFI boundary is unsafe
 by design and nobody outside the project has looked at it. 1.0 invites people
 to build on that boundary.
+
+### Order of work
+
+Set 2026-08-09, cheapest-and-safest first, so each step is verifiable before the
+next depends on it. Compiler changes are ordered late within each group because
+every one costs a citation re-anchor (~50-110 anchors move) and a full `make ci`.
+
+1. ~~`len` shadowing~~ — **closed**, `b267d2b`. The only silent-wrong-answer item.
+2. ~~expression line continuation~~ — **closed**, `621bf64`.
+3. `Result(void, E)` — re-sentinel `T_VOID`, per the table above. Compiler.
+4. `core:sort` comparator — corelib only. **No compiler change, so no citation
+   shift and no `make ci` requirement** — cheapest item on the list, and it is
+   ordered after 3 only because 3 was already scoped.
+5. `pass`, then `defer`. Both are real keywords and cost the full surface:
+   parser, spec chapter, `appendix-b-keywords`, the grammar appendix,
+   `tychofmt`, `tycho-lsp`, `editors/`, fixtures, goldens. `defer` additionally
+   interacts with arena scope exit and wants its own design pass — it is the
+   largest item on this page and should not be started casually.
+6. Then the remaining 1.0 conditions: `core:net` readiness (§4), the Windows
+   parked-`recv` decision (§5), and shipping 0.5.0 plus one exercised
+   deprecation (§6).
+
+Item 1 — real programs by other people — is not sequenced here because it is not
+a task this list can complete. It gates the freeze, not the work.
 
 ### What is explicitly NOT required
 
