@@ -286,6 +286,37 @@ typedef struct {
     int  n, cap;
 } TokVec;
 
+/* Does a line ending on this token CONTINUE onto the next physical line?
+ *
+ * Only tokens that cannot END an expression qualify, which is what makes the
+ * rule unambiguous: a trailing `+` is never a complete statement, so joining
+ * cannot change the meaning of any program that compiled before. Brackets
+ * already join lines (see bracket_depth), so `(1 +\n2)` worked; what did not
+ * was the unparenthesised form, and `x := a + b +` reported "expected an
+ * expression" pointing at the NEXT line.
+ *
+ * DELIBERATELY EXCLUDED, each for a reason:
+ *   TK_COLON      opens a block -- `fn main():` must end its line
+ *   TK_RPAREN/RBRACKET, TK_IDENT, literals   can all end an expression
+ *   TK_ARROW      `-> T` completes a signature line
+ *   TK_NOT/TK_TILDE/TK_AMP  prefix-only; a line ending on one is a syntax
+ *                 error either way, and joining would only move the message
+ * TK_MINUS and TK_STAR are included even though they are also prefix
+ * operators: neither can be the LAST token of a well-formed line. */
+static int tok_continues_line(TokKind k) {
+    switch (k) {
+        case TK_PLUS: case TK_MINUS: case TK_STAR: case TK_SLASH: case TK_PERCENT:
+        case TK_PIPE: case TK_CARET: case TK_SHL: case TK_SHR:
+        case TK_EQ: case TK_EQEQ: case TK_NEQ:
+        case TK_LT: case TK_GT: case TK_LE: case TK_GE:
+        case TK_AND: case TK_OR:
+        case TK_COMMA: case TK_COLONEQ:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 static void tv_push(TokVec *t, Tok tok) {
     if (t->n == t->cap) {
         t->cap = t->cap ? t->cap * 2 : 64;
@@ -358,6 +389,10 @@ static TokVec lex(const char *src) {
     indent_stack[0] = 0;
     int line = 0;
     int bracket_depth = 0;   /* (...) / [...] nesting: >0 joins physical lines (implicit continuation) */
+    /* Continuation state. `pend` means the previous line ended on an operator;
+     * `pend_col` is that line's own indent. The join is NOT decided there --
+     * see the retraction at the top of the loop for why it cannot be. */
+    int pend = 0, pend_col = 0, cont = 0;
 
     const char *p = src;
     while (*p) {
@@ -373,7 +408,35 @@ static TokVec lex(const char *src) {
             if (*p == ' ') ws_sp = 1; else ws_tab = 1;
             col++; p++;
         }
-        if (ws_sp && ws_tab && bracket_depth == 0)
+        /* THE JOIN IS DECIDED HERE, not on the line that ended with the operator,
+         * because it depends on THIS line's indentation and that is not readable
+         * yet when the previous line ends. A continuation must be indented DEEPER
+         * than the line it continues.
+         *
+         * That condition is not decoration -- it is what keeps a truncated line a
+         * truncated line. `tests/diag/caret_expr.ty` is exactly that program:
+         *
+         *     x := 1 +
+         *     print(str(x))
+         *
+         * with both lines at the same indent. Joining them parses as
+         * `x := 1 + print(str(x))` and reports "unknown variable 'x'" on the
+         * WRONG line, about a variable that is merely being defined. The locked
+         * golden asserts the good message -- "expected an expression" with a
+         * caret under the `+` -- and a deeper-indent requirement keeps it, while
+         * still joining every continuation anyone actually writes.
+         *
+         * The NEWLINE was already emitted for the previous line; retract it now
+         * that the join is known. */
+        cont = 0;
+        if (pend) {
+            if (col > pend_col && *p != '\n' && *p != '\0' && *p != '#') {
+                if (out.n > 0 && out.v[out.n - 1].kind == TK_NEWLINE) out.n--;
+                cont = 1;
+            }
+            pend = 0;
+        }
+        if (ws_sp && ws_tab && bracket_depth == 0 && !cont)
             die_at(line, "mixed tabs and spaces in indentation; use one consistently");
 
         /* blank or comment-only line: skip without touching indentation */
@@ -383,10 +446,13 @@ static TokVec lex(const char *src) {
             continue;
         }
 
-        /* emit INDENT / DEDENT for this logical line -- only at bracket depth 0.
+        /* emit INDENT / DEDENT for this logical line -- only at bracket depth 0,
+         * and only when the previous line did not end on an operator.
          * Inside (...) / [...] a physical line is a continuation (Python-style
-         * implicit line-join), so its leading whitespace is not indentation. */
-        if (bracket_depth == 0) {
+         * implicit line-join), so its leading whitespace is not indentation; a
+         * line continued by a trailing operator is the same case, and must be
+         * treated the same or its indentation becomes a spurious INDENT. */
+        if (bracket_depth == 0 && !cont) {
             if (col > indent_stack[sp]) {
                 if (sp + 1 >= 256) die_at(line, "indentation too deep");
                 indent_stack[++sp] = col;
@@ -714,8 +780,21 @@ static TokVec lex(const char *src) {
             p += len;
         }
 
-        if (bracket_depth == 0)   /* inside (...) / [...] : join lines, emit no NEWLINE */
+        /* A line ending on a binary operator continues onto the next one: emit no
+         * NEWLINE, and tell the next iteration to skip its indentation handling.
+         * Checked on the LAST token actually emitted, so a comment tail does not
+         * defeat it (`x := a +   # why` continues, because the comment is not a
+         * token). At bracket depth > 0 the join already happens for every line. */
+        if (bracket_depth == 0)
             tv_push(&out, (Tok){TK_NEWLINE, NULL, 0, line, 0, (int)(p - ls) + 1});
+        /* Record the candidate; the next line's indent decides whether it joins. */
+        pend = bracket_depth == 0 && out.n > 1 && tok_continues_line(out.v[out.n - 2].kind);
+        /* The anchor is the indent of the LOGICAL line -- the first physical line
+         * of the statement -- and it stays put while the statement continues. If
+         * each continuation re-anchored on itself, a chain would have to descend
+         * a staircase: `1 +` / `    2 +` / `        3`. Anchoring once means every
+         * following line only has to be deeper than the statement's own indent. */
+        if (!cont) pend_col = col;
         if (*p == '#') while (*p && *p != '\n') p++;
         if (*p == '\n') p++;
     }

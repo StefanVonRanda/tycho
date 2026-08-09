@@ -89,6 +89,24 @@ released, so "since 0.5.0" means "since the work that entry describes".
   `tychoc.exe` (parity with the native leg), and the staged layout is
   smoke-tested under Wine — the packaged compiler must find `corelib/` beside
   itself and emit C — skipping loudly when Wine is absent.
+- **A line ending on an operator continues onto the next one.** Brackets
+  already joined lines, so `(1 +\n2)` worked; the unparenthesised form reported
+  `expected an expression` pointing at the FOLLOWING line, which reads as a bug
+  in the next statement rather than a missing operand. Now a physical line whose
+  last token cannot end an expression — arithmetic, comparison, bitwise or
+  logical operator, `,`, `=`, `:=` — joins the next line **when that line is
+  indented strictly deeper than the statement's first line**. `:` is excluded;
+  it opens a block. Because only tokens that cannot end an expression qualify,
+  no previously-accepted program changes meaning.
+  **The deeper-indent condition exists because the naive rule degraded a
+  diagnostic the project had deliberately locked.** `tests/diag/caret_expr.ty`
+  is `x := 1 +` followed by `print(str(x))` at equal indent: joining them parses
+  as `x := 1 + print(str(x))` and reports `unknown variable 'x'` on the wrong
+  line, about a variable that is merely being defined. The golden caught it; the
+  indent condition keeps the original `expected an expression` with its caret,
+  and still joins every continuation anyone writes. Spec §3.2 rewritten — it had
+  claimed there was no implicit line joining at all, which was already false for
+  brackets. Fixture: `tests/line_continuation.ty`.
 - **A procedure that shadows a builtin now warns.** Declaring `fn len(...)` in
   a package is legal and stays legal (spec §3.7 makes builtins ordinary
   identifiers on purpose), but it silently took over every unqualified call to

@@ -30,9 +30,36 @@ tokens followed by exactly one `NEWLINE` terminal. A **blank line** (only
 whitespace) and a **comment-only line** (only whitespace then a comment)
 produce no tokens and do not affect indentation (§3.4).
 
-There is no line-continuation character and no implicit line joining: every
-statement occupies whole logical lines, and multi-line constructs are expressed
-through indented blocks (§3.4), not through bracket-spanning continuations.
+There is no line-continuation **character** (no trailing backslash). A logical
+line may still span several physical lines, by two implicit joins:
+
+1. **Bracket depth.** While any `(` or `[` is open, a physical line boundary
+   produces no `NEWLINE` and the next line's leading whitespace is not
+   indentation. This has always been the case.
+2. **A trailing operator.** A physical line whose last token cannot *end* an
+   expression — an arithmetic, comparison, bitwise, or logical operator, `,`,
+   `=`, or `:=` — joins the line that follows, provided that line is indented
+   **strictly deeper** than the first physical line of the statement. The
+   continuation's leading whitespace is not indentation.
+
+Only tokens that cannot end an expression qualify, so no program that was
+accepted before either join can change meaning. `:` is excluded: it opens a
+block and must end its line.
+
+**The deeper-indent condition is normative, and it is what preserves the
+diagnostic for a truncated line.** Given
+
+```text
+x := 1 +
+print(str(x))
+```
+
+at equal indent, the `+` does *not* join, and the program is rejected where the
+operand is missing rather than being parsed as `x := 1 + print(str(x))` and
+rejected later, on the wrong line, for an unrelated reason.
+
+Multi-line *constructs* are still expressed through indented blocks (§3.4);
+these joins are for a single over-long expression.
 
 ## 3.3 Comments
 
@@ -44,7 +71,7 @@ A comment begins with `#` and runs to the end of the line. Comments do not
 nest, and there is no block-comment form. A `#` inside a string or character
 literal is an ordinary byte, not a comment.
 
-> Provenance: a comment-only line is skipped without touching the indent stack `src/tychoc.c:380@*p == '#') {`; the token loop stops at `#` `:406@*p != '\n' && *p != '#'`; the trailing comment is consumed at `:719@if (*p == '#') while`.
+> Provenance: a comment-only line is skipped without touching the indent stack `src/tychoc.c:443@*p == '#') {`; the token loop stops at `#` `:472@*p != '\n' && *p != '#'`; the trailing comment is consumed at `:798@if (*p == '#') while`.
 
 ## 3.4 Indentation (`INDENT` / `DEDENT`)
 
@@ -80,7 +107,7 @@ lines:
 A block in the phrase grammar is therefore `INDENT Stmt+ DEDENT` ([§4](02-grammar.md)).
 
 > Provenance: `src/tychoc.c:224-260` (measure + INDENT/DEDENT),
-> `:391@indentation too deep` (depth bound), `:527-528` (EOF flush).
+> `:457@indentation too deep` (depth bound), `:527-528` (EOF flush).
 
 ## 3.5 Tokens
 
@@ -148,8 +175,8 @@ is unaffected. They are **not** reserved:
   a conforming implementation must not change which procedure is *selected*.
 
 > Provenance: contextual dispatch at `src/tychoc.c:4378-4387` (top level),
-> `:3375@"const"`/`:3391@"delete"` (`const`/`delete`), `:2124@soa [Struct]`/`:2612@soa []Struct` (`soa`),
-> `:4005@"where"` (`where`), `:3971@"sink"` (`sink`), `:3647@"range"` (`range`, refusal only).
+> `:3454@"const"`/`:3470@"delete"` (`const`/`delete`), `:2203@soa [Struct]`/`:2691@soa []Struct` (`soa`),
+> `:4084@"where"` (`where`), `:4050@"sink"` (`sink`), `:3726@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -181,8 +208,8 @@ literal (§3.9.5). The **only** range operator is `..<`; `..` alone is not a
 token, and the `range(…)` form it replaced is gone (§14.4). Operator precedence and associativity are
 defined with the expression grammar in [§4.5](02-grammar.md#45-operator-precedence-and-associativity).
 
-> Provenance: `src/tychoc.c:477-513`. `::` is lexed at `:680@TK_COLONCOLON` but no grammar
-> production consumes it; `..<` at `:678@TK_DOTLT`, tested after `...` so maximal munch holds; `;` at `:703@TK_SEMI`.
+> Provenance: `src/tychoc.c:477-513`. `::` is lexed at `:746@TK_COLONCOLON` but no grammar
+> production consumes it; `..<` at `:744@TK_DOTLT`, tested after `...` so maximal munch holds; `;` at `:769@TK_SEMI`.
 
 ## 3.9 Literals
 
@@ -283,8 +310,8 @@ never reaches a C string literal, whereas a string literal's text is carried as
 every escape is exactly two characters. `\0` has the same asymmetry, and for the
 same reason.
 
-> Provenance: `src/tychoc.c:452-477`; the `\x` arm `:658@case 'x'`; the escape
-> table `:656-657@case '0'`; the fixed-width refusal `:660@two hex digits`.
+> Provenance: `src/tychoc.c:452-477`; the `\x` arm `:724@case 'x'`; the escape
+> table `:723-724@case '0'`; the fixed-width refusal `:726@two hex digits`.
 > Conformance: `tests/char_hex_escape.ty`, `tests/reject/hex_escape_one_digit.ty`,
 > `tests/reject/hex_escape_in_string.ty`.
 
@@ -369,12 +396,12 @@ Concatenating two string literals with `+` also folds to one literal in a
 is a single four-byte literal and not a run-time concatenation.
 
 > Provenance: quoted piece `src/tychoc.c:319-400`; escape set `:373-382`;
-> control-byte rejection `:389-391`; per-piece length bound `:522@char buf[4096]`,`:528@bn + 2 >= (int)sizeof buf`;
+> control-byte rejection `:389-391`; per-piece length bound `:588@char buf[4096]`,`:594@bn + 2 >= (int)sizeof buf`;
 > raw piece `:402-448`, its re-escape table `:430-433`, its control-byte
-> rejection `:434-435`, its per-piece bound `:633@rn + 2 >= (int)sizeof rbuf`,`:636@rn + 1 >= (int)sizeof rbuf`,
-> its unterminated diagnostic `:640@unterminated raw string literal`; adjacent join `:2288-2300`; `const` string fold
+> rejection `:434-435`, its per-piece bound `:699@rn + 2 >= (int)sizeof rbuf`,`:702@rn + 1 >= (int)sizeof rbuf`,
+> its unterminated diagnostic `:706@unterminated raw string literal`; adjacent join `:2288-2300`; `const` string fold
 > `:4317-4321`; codegen pastes the escaped text into a C string literal
-> `:10086@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
+> `:10165@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
@@ -392,7 +419,7 @@ Because the desugaring wraps each hole in `str(…)`, a hole expression MUST be 
 a type accepted by `str` (the numeric and string scalars); other hole types are
 rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 
-> Provenance: lexing — the identifier scanner declines the `f` of `f"…"` `src/tychoc.c:507@!(c == 'f' && p[1] == '"')`, the string scanner takes it `:319-400`;
+> Provenance: lexing — the identifier scanner declines the `f` of `f"…"` `src/tychoc.c:573@!(c == 'f' && p[1] == '"')`, the string scanner takes it `:319-400`;
 > desugar `interp_join` / `desugar_interp`, `:2179-2233`.
 
 ### 3.9.6 Boolean and pointer literals

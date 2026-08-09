@@ -117,7 +117,7 @@ learnings and in FRICTION:
 - ~~a package-level `len` **shadows the builtin** inside its own package~~ —
   **closed 2026-08-09**, see the probe table below
 - no `defer`, and no bare `pass`/no-op statement
-- **no expression line continuation** — a trailing `+` does not continue a line
+- ~~**no expression line continuation**~~ — **closed 2026-08-09**
 - consts do not cross package boundaries, so levels ship as functions
 - `or_return` requires a `Result`-returning function, which `main()` is not
 - a newtype-of-array blocks `push`
@@ -135,7 +135,7 @@ phase-1 notes, because two entries turned out to be wrong:
 |---|---|
 | package-level `len` shadows the builtin | **closed 2026-08-09** — still legal (§3.7 permits it on purpose), but the compiler now warns at the declaration and names the consequence, so the wrong answer is no longer silent. Fixture `tests/warn/shadow_builtin.ty`. |
 | no bare `pass` | open — `a statement must be a declaration, assignment, or call` |
-| no expression line continuation | open — a trailing `+` gives `expected an expression` |
+| no expression line continuation | **closed 2026-08-09** — a line ending on an operator joins the next, when that line is indented deeper. The deeper-indent condition is what keeps a truncated line a truncated line: `tests/diag/caret_expr.ty` caught the naive version degrading its own diagnostic. Fixture `tests/line_continuation.ty`. |
 | no `defer` | open |
 | `or_return` from `main()` | open, but the diagnostic names the rule |
 | newtype-of-array blocks `push` | open — `push's first argument must be an array or soa` for `type Row = [string]` |

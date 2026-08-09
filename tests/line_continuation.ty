@@ -1,0 +1,57 @@
+# A line ending on a binary operator continues onto the next physical line.
+#
+# Brackets already joined lines (`(1 +\n2)` has always worked, see the lexer's
+# bracket_depth), so this closes the unparenthesised case: before 2026-08-09
+# `x := a +` reported "expected an expression" pointing at the NEXT line, which
+# reads as a bug in the following statement rather than a missing operand.
+#
+# The rule is deliberately narrow: only tokens that CANNOT END an expression
+# continue. That is what makes it safe -- a trailing `+` was never a complete
+# statement, so no program that compiled before can change meaning.
+#
+# The continuation's indentation is NOT indentation: like a bracketed
+# continuation, its leading whitespace is ignored, which is why the cases below
+# indent theirs inconsistently on purpose.
+
+fn add3(a: int, b: int, c: int) -> int:
+    return a + b + c
+
+fn main():
+    # arithmetic, continued at a deeper indent
+    x := 1 +
+            2 +
+        3
+    println(str(x))
+
+    # a comparison operator, and a comment after the operator: the comment is
+    # not a token, so the continuation still sees `<` as the last one
+    small := x <      # keep going
+        100
+    println(str(small))
+
+    # `and` / `or` are words, but they are operators here
+    both := small and
+        x > 0
+    println(str(both))
+
+    # a trailing comma inside a call argument list -- brackets already joined
+    # this one; it is here so the two mechanisms are exercised together
+    s := add3(1,
+              2,
+              3)
+    println(str(s))
+
+    # `:=` itself continues, so the value may start on the next line
+    y :=
+        x * 2
+    println(str(y))
+
+    # a line that ends on a VALUE still terminates: these are two statements,
+    # not one continued expression
+    a := 5
+    b := 6
+    println(str(a + b))
+
+    # a block header still ends its line -- `:` is excluded from the rule
+    if a < b:
+        println("lt")
