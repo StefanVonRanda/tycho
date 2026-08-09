@@ -76,6 +76,46 @@ says `1.0.0`, so these ship the next time it is bumped.
   `tychoc.exe` (parity with the native leg), and the staged layout is
   smoke-tested under Wine — the packaged compiler must find `corelib/` beside
   itself and emit C — skipping loudly when Wine is absent.
+- **`core:os` gains `exec` / `exec_out` — an argv no shell parses.** They take
+  a `[string]` and start no shell: `posix_spawnp` on POSIX, `CreateProcess`
+  with no `cmd.exe` anywhere on Windows. This closes the injection class
+  `SECURITY.md` had carried as its one open backlog item; `system`/`run` keep
+  their documented shell semantics and nothing is deprecated. A `[string]`
+  cannot cross the FFI (`docs/spec/14-ffi.md` crosses only `[int]`/`[float]`),
+  so argv is pushed into an opaque builder one string at a time. Fail closed
+  with `-1` on an empty argv, over 4096 entries, an allocation failure
+  mid-build, or a program that cannot be spawned. Windows joins the vector by
+  the `CommandLineToArgvW` quoting rules, round-tripped through the real
+  splitter by `corelib/os/os_argv_quotecheck.c` — a new `make shim-check` leg
+  that builds and RUNS on Windows (9 cases: embedded quotes, trailing
+  backslashes, an empty argument, shell metacharacters) and skips loudly
+  elsewhere. Residual and callee-side: a program that parses its own command
+  line by other rules — `cmd.exe`, a `.bat` file — can still read it
+  differently.
+- **The last two Windows skips are gone.** `corelib/test/signal` was skipped
+  because MSYS2's `kill` terminates a native PE instead of signalling it; it
+  now steps onto a private console and raises a real `CTRL_BREAK`, and its
+  output there is byte-identical to the Linux golden. `make corelib` on
+  Windows has **zero skips**. `server/run.sh`'s six shutdown cases and the
+  access-log tail run there too, through `server/winsignal.c`, which launches
+  the server with `CREATE_NEW_PROCESS_GROUP` so the event can target it alone
+  — group 0 would Ctrl-Break the sweep's own console — and reports the
+  **Windows** pid, since `$!` is an MSYS pid and the console API will not take
+  it. One measured behavioural gap stays and is recorded in `SECURITY.md`: a
+  thread parked in `recv` on an accepted connection is not released by the
+  handler's `shutdown()` as it is on Linux, so a Windows server winds down
+  within its idle timeout rather than within a millisecond.
+- **`goldens-check` never saw the `.win` siblings.** A `<golden>.win` ends
+  `.win`, not `.out`/`.err`, so the token scan matched none — three existed
+  and all three went unchecked, on the platform whose harness is thinnest. The
+  gate now derives them from the resolved set: 432 files where it reported
+  429.
+- **The Wine lanes skipped on every modern Wine.** Five lanes and
+  `release.sh` guarded on `command -v wine64`; Wine 9.0 merged it into a
+  single `wine`, so the guard was false on any current install and each lane
+  exited 0 saying "wine64 not on PATH". `release.sh` had it worst — the same
+  test decided whether the staged Windows tarball got its smoke test, so it
+  shipped unrun from a box that could have run it.
 - **Compiler: a pattern discard binds nothing.** `Sized(_, _)` emitted one C
   local per binding named `h__`, so two discards in one pattern declared the
   same name twice and the generated C failed to compile. `_` in a pattern is

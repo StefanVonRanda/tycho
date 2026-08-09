@@ -1,5 +1,22 @@
 # What comes next
 
+> 2026-08-09: owner-set agenda, in this order — (2) close the Windows lanes,
+> (3) `core:os` array-argv, then (6) `core:net` readiness. **No release until
+> 2 and 3 are done.** Two items were struck: continuing to check against the
+> frozen `tychoc0` ("we're wasting time"), and the deferred demand-gated
+> corelib work (`core:timezone`, JPEG/GIF), which is parked.
+>
+> **2 and 3 landed 2026-08-09** — see the evidence block at the bottom of this
+> file. What that leaves before a release can be cut: `make selfhost-check` is
+> still `make ci` step [3n/20] and still builds `tychoc0` at every HEAD (~50s),
+> which contradicts both `ROADMAP.md:45` ("nothing builds it at all") and the
+> ruling above; it has not been removed, because deleting a gate is the
+> owner's call and the ruling was about effort, not about what the lane
+> proves. Item 6 (`core:net` has no `poll`/`select`/`O_NONBLOCK` in any of its
+> 12 exports, so worker count is a hard concurrency cap) is untouched and was
+> refused once before with a number: ~283 lines across 4 files plus a redesign
+> of `core:httpd`'s read surface.
+
 > 2026-08-04: the three-phase optimization chain (housekeeping, deterministic
 > hash, map memory) is complete and the closing `make ci` is green. New
 > owner-directed agenda for making Tycho day-to-day usable, in this order:
@@ -333,3 +350,46 @@ Expected: the README's status banner flips from research prototype to 1.0.
 > the doc gates. `make test` ran 591/591 under `env -u LD_PRELOAD` (the
 > tmux block-nnp.so shim pollutes the ASan lanes; the tree is not at fault —
 > see CLAUDE.md).
+
+> Windows lanes + `core:os` argv evidence — 2026-08-09. Five commits on
+> `os-argv-and-windows-lanes`, each verified on BOTH boxes: this Linux host and
+> the WinBoat VM (podman `ghcr.io/dockur/windows`, Windows 11 26200.8037,
+> MSYS2 + mingw-w64 gcc 16.1.0, gdb 17.2, repo at `/c/tycho` with `origin`
+> pointing at the host share). The VM is reachable over ssh on
+> `127.0.0.1:2222`; two things a future session should not rediscover —
+> OpenSSH-on-Windows hands the command line to **cmd.exe**, which shreds shell
+> quoting (ship the script as base64 and decode inside bash), and `gcc`/`gdb`
+> exist only under `MSYSTEM=MINGW64`, not plain MSYS.
+>
+> ITEM 3, `core:os` argv. `exec(argv)`/`exec_out(argv)` over `posix_spawnp`
+> and `CreateProcess`. A `[string]` cannot cross the FFI at all, so argv goes
+> through an opaque builder — the NUL-joined-blob alternative is the defect
+> `http.body_bytes` exists to work around. `posix_spawnp` and NOT fork+execvp
+> because a Tycho program is threaded and the arena allocator is not
+> async-signal-safe. The POSIX security property is asserted BOTH ways in
+> `corelib/test/os` so it can fail; the Windows quoter is asserted against the
+> real `CommandLineToArgvW` in a new `shim-check` leg, because Windows
+> guarantees no program that echoes argv without re-parsing it.
+>
+> ITEM 2, the Windows lanes. `make corelib` on Windows now has ZERO skips
+> (`corelib/test/signal` raises a real CTRL_BREAK on a private console), and
+> `server/run.sh` reports `server: OK` there with one loud skip. Two defects
+> found in the harness itself along the way, both of the same class — a check
+> that silently covered nothing: `goldens-check` never scanned a single
+> `.win` golden, and all five Wine lanes plus `release.sh` guarded on a
+> `wine64` binary that modern Wine no longer ships.
+>
+> THREE THINGS MEASURED, each of which cost a round:
+>   * A console control handler does NOT follow a process to a newly allocated
+>     console. Registered before the switch and not after, CTRL_BREAK killed
+>     the test at exit 130 instead of reaching the handler.
+>   * A thread parked in `recv` on an accepted connection is not released by
+>     `shutdown()` on Windows as it is on Linux. `server/run.sh`'s 3s watchdog
+>     fired on CORRECT behaviour; Windows gets 15s against an 8s idle.
+>     `closesocket()` would release it but reintroduces the recycled-fd hazard
+>     `signal_shim.c`'s registry header rejects with measurements.
+>   * MSYS2's `$!` is an MSYS pid, not the Windows pid the console API takes.
+>
+> NOT DONE: the EMFILE window cannot be forced on Windows (Python's `resource`
+> is POSIX-only, no RLIMIT_NOFILE equivalent) and skips loudly. `make ci` on
+> the Windows box has not been re-run since the ARM64 sweep of 2026-08-08.
