@@ -3892,6 +3892,42 @@ static Stmt **parse_arm_inline(Parser *ps, int value, int *count) {
     return body;
 }
 
+/* Does `n` name a builtin that a same-named package procedure would SHADOW?
+ *
+ * §3.7 makes this legal on purpose: builtins lex as TK_IDENT, so they stay
+ * legal procedure names. What was not intended is that it happens SILENTLY.
+ * Measured 2026-08-09: a package declaring `fn len(s: string) -> int` gets its
+ * own `len` for every unqualified call inside that package, so a 4-character
+ * string reports whatever that function returns -- a wrong ANSWER, with no
+ * diagnostic anywhere. core:utf8 hit exactly this: `utf8.decode` called
+ * `utf8.len` and recursed until the stack guard fired, and the package's API
+ * was renamed to `count` to escape it.
+ *
+ * DELIBERATELY CONSERVATIVE. This is the union of the two lists the compiler
+ * already keeps -- is_ufcs_builtin and is_pure_builtin -- plus the I/O names,
+ * which are the ones a package author actually collides with. A builtin
+ * missing from here means no warning, which is exactly today's behaviour; a
+ * name wrongly present would warn about a legal declaration, which is worse.
+ * Extend it when a new builtin lands, not speculatively. */
+static int shadows_builtin(const char *n) {
+    if (!n) return 0;
+    static const char *bs[] = {
+        /* is_ufcs_builtin */
+        "str", "substr", "chr", "split", "keys", "find", "char_at", "len",
+        "push", "pop", "reserve", "map_get", "map_has", "map_set", "map_del",
+        "sqrt", "pow", "floor", "fabs", "to_float", "to_int", "to_str", "to_bool",
+        "to_bytes", "to_ptr", "to_u8", "to_u16", "to_u32", "to_u64",
+        "to_i8", "to_i16", "to_i32", "to_i64", "to_f32", "is_null",
+        /* is_pure_builtin adds */
+        "to_char", "hash",
+        /* I/O and process, from the spec's builtin appendix */
+        "print", "println", "eprint", "eprintln", "input", "read_all",
+        "write_file", "list_dir", "getenv", "args", "die", "now", "clock",
+        "ncpu", "zero", "channel", "send", "recv", "close", 0 };
+    for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
+    return 0;
+}
+
 static Proc *parse_fn(Parser *ps) {
     g_ncur_typarams = 0;                  /* fresh `$T` scope for this function */
     g_ncur_sizeparams = 0;                /* fresh `$N` size-param scope (const generics 1.6B) */
@@ -3907,6 +3943,14 @@ static Proc *parse_fn(Parser *ps) {
         die_at(cur(ps)->line, "'%s' is a reserved keyword and cannot be used as a procedure name", cur(ps)->text);
     }
     Tok *nameT = eat(ps, TK_IDENT, "a procedure name");
+    /* Legal (§3.7), but say so: every unqualified call to this name inside this
+     * package now reaches THIS procedure and not the builtin, and nothing else
+     * in the compiler will mention it again. */
+    if (shadows_builtin(nameT->text))
+        warn_at(nameT->line, "`%s` shadows the builtin of the same name inside this package -- "
+                             "every unqualified `%s(...)` here calls this procedure, not the builtin "
+                             "(a self-call recurses). Rename it unless that is what you meant.",
+                nameT->text, nameT->text);
     eat(ps, TK_LPAREN, "'('");
 
     Proc *pr = (Proc *)xmalloc(sizeof(Proc));

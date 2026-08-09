@@ -137,9 +137,19 @@ is unaffected. They are **not** reserved:
   `to_int`, `wait`, `send`, `recv`, `close`, …) is an ordinary identifier
   resolved as a call; none is reserved ([§29](16-builtins.md)).
 
+  A procedure declared with a builtin's name is therefore legal, and it
+  **shadows** that builtin for every unqualified call inside its own package —
+  including calls from the procedure itself, which recurse. This is permitted
+  behavior, not a diagnostic-free one: an implementation is expected to warn at
+  the declaration, because the failure mode is a wrong answer rather than an
+  error. `core:utf8` hit it (its `decode` called the package's own `len` and
+  recursed to the stack guard) and renamed the entry point to `count`.
+  Non-normative for conformance — a warning is quality of implementation — but
+  a conforming implementation must not change which procedure is *selected*.
+
 > Provenance: contextual dispatch at `src/tychoc.c:4378-4387` (top level),
 > `:3375@"const"`/`:3391@"delete"` (`const`/`delete`), `:2124@soa [Struct]`/`:2612@soa []Struct` (`soa`),
-> `:3961@"where"` (`where`), `:3927@"sink"` (`sink`), `:3647@"range"` (`range`, refusal only).
+> `:4005@"where"` (`where`), `:3971@"sink"` (`sink`), `:3647@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -364,7 +374,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:434-435`, its per-piece bound `:633@rn + 2 >= (int)sizeof rbuf`,`:636@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:640@unterminated raw string literal`; adjacent join `:2288-2300`; `const` string fold
 > `:4317-4321`; codegen pastes the escaped text into a C string literal
-> `:10042@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
+> `:10086@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

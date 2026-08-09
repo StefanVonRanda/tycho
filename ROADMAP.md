@@ -114,8 +114,8 @@ These are ergonomic, not soundness — which is exactly why they must be fixed
 change. All were recorded by the project itself, in `plan.md`'s phase-1
 learnings and in FRICTION:
 
-- a package-level `len` **shadows the builtin** inside its own package (this
-  cost a stack-guard trip in `core:utf8`, and the API became `count`)
+- ~~a package-level `len` **shadows the builtin** inside its own package~~ —
+  **closed 2026-08-09**, see the probe table below
 - no `defer`, and no bare `pass`/no-op statement
 - **no expression line continuation** — a trailing `+` does not continue a line
 - consts do not cross package boundaries, so levels ship as functions
@@ -133,7 +133,7 @@ phase-1 notes, because two entries turned out to be wrong:
 
 | Papercut | State |
 |---|---|
-| package-level `len` shadows the builtin | **open, and the worst of them** — a package defining `fn len(s: string) -> int: return 7` gets `7` for a 4-character string from its own code, silently. No diagnostic, wrong answer. |
+| package-level `len` shadows the builtin | **closed 2026-08-09** — still legal (§3.7 permits it on purpose), but the compiler now warns at the declaration and names the consequence, so the wrong answer is no longer silent. Fixture `tests/warn/shadow_builtin.ty`. |
 | no bare `pass` | open — `a statement must be a declaration, assignment, or call` |
 | no expression line continuation | open — a trailing `+` gives `expected an expression` |
 | no `defer` | open |
@@ -143,8 +143,9 @@ phase-1 notes, because two entries turned out to be wrong:
 | ~~typed empty is `[]string`~~ | **not a defect** — both `xs : [string] = []` and `xs := []string` compile. It is a learning-curve item, not a language gap. |
 | consts across package boundaries | not re-probed |
 
-Priority inside the list is `len` shadowing: it is the only one that produces a
-wrong answer instead of an error message.
+Priority inside the list was `len` shadowing, because it was the only one that
+produced a wrong answer instead of an error message. It is closed; the rest are
+worked top to bottom by cost.
 
 ### 3. The expressiveness gaps close, or become documented refusals
 

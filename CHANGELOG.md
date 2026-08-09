@@ -89,6 +89,18 @@ released, so "since 0.5.0" means "since the work that entry describes".
   `tychoc.exe` (parity with the native leg), and the staged layout is
   smoke-tested under Wine — the packaged compiler must find `corelib/` beside
   itself and emit C — skipping loudly when Wine is absent.
+- **A procedure that shadows a builtin now warns.** Declaring `fn len(...)` in
+  a package is legal and stays legal (spec §3.7 makes builtins ordinary
+  identifiers on purpose), but it silently took over every unqualified call to
+  that name inside the package — so a package's own 4-character string could
+  report whatever its `len` returned, with nothing on stderr. It was the only
+  entry on the 1.0 papercut list that produced a wrong *answer* rather than an
+  error. `core:utf8` hit it: `decode` called the package's own `len` and
+  recursed to the stack guard, which is why that API is `count` today. The
+  warning fires at the declaration and names the consequence; which procedure
+  gets selected is unchanged, so no program changes behavior. Spec §3.7 records
+  that an implementation is expected to warn. Fixture:
+  `tests/warn/shadow_builtin.ty`.
 - **`make selfhost-check` retired; nothing builds `tychoc0` now.** It was
   `make ci` step [3n/20] and cost ~50s of every sweep re-asserting that the
   frozen compiler's own emission reproduces itself. `ROADMAP.md` has claimed

@@ -1,0 +1,19 @@
+# Declaring a procedure whose name is a builtin is LEGAL (spec §3.7: builtins
+# lex as TK_IDENT, so they stay legal procedure names) -- but it silently takes
+# over every unqualified call to that name in the package, and until 2026-08-09
+# nothing said so. That is the one papercut on the 1.0 list that produced a
+# WRONG ANSWER rather than an error: core:utf8's `decode` called `utf8.len`,
+# reached its own `len` instead of the builtin, and recursed until the stack
+# guard fired -- which is why that package's API is `count` today.
+#
+# The program below is valid and runs; the warning is the assertion. Note the
+# call in `four` reaches THIS `len`, not the builtin, so it prints 7 and not 4 --
+# the wrong answer, made visible. Locked as a warning golden (tests/warn/).
+fn len(s: string) -> int:
+    return 7
+
+fn four(s: string) -> int:
+    return len(s)                # the shadow, not the builtin
+
+fn main():
+    print(str(four("abcd")))     # 7, not 4
