@@ -241,6 +241,34 @@ item 3 and correct the "re-sentinel buys the spelling" claim), CHANGELOG.
 
 Closing sweep: one `make ci` after 5.3, not per sub-phase.
 
+> **Closing-sweep evidence — 2026-08-09. All lanes green.** `make ci` itself
+> never finished: it was killed twice at roughly the ten-minute mark, both times
+> inside `[2b] ilp32`, with 733 `ok` lines and zero failures behind it. That is
+> an environment limit on a long-running command in this session, **not** a red
+> gate — and the fix is the one this repo already prescribes for a red `make ci`:
+> run the individual lanes. Each is well inside the window.
+>
+> | Lane | Result |
+> |---|---|
+> | `make test` | 605 passed, 0 failed |
+> | `make ilp32` | 605 passed, 0 failed — the `char okv` placeholder holds at 32-bit |
+> | `sh scripts/asan_self.sh` | 622 compiled, 0 failed, ASan+UBSan clean |
+> | `python3 fuzz/run.py 200` | ok=200, skip=0, timeout=0, FAIL=0 |
+> | `make corelib` / `corelib-examples` | all green |
+> | `make conc` | 38 passed, 0 failed |
+> | `make ffi` | green, ASan-clean |
+> | `make shim-check` | 8 ok, 6 skipped, 0 failed |
+> | `ar` / `q` / `vm` / `scheme` / `kv` / `server` / `locale` / `recursion` / `entrypoints` | green |
+> | `make fetch` / `weblog` / `webserver` | green |
+> | `sh bench/guard.sh` | ok |
+> | `goldens-check` / `editors-check` / `tools_check` | ok |
+> | `spec_check` / `docs-fences` / citations / links | ok |
+>
+> Worth carrying forward: **a lane-by-lane sweep is not more expensive than
+> `make ci`** — it is the same work with a verdict per lane, and it survives an
+> interruption. `make ci`'s value is that it cannot forget a step; that has to be
+> weighed against nineteen minutes with no partial result if anything stops it.
+
 > **5.1 evidence — 2026-08-09, `3a67bbe`.** Six sentinel sites, all reached from
 > the single `new_binds()`; `type_name` gained a `T_UNBOUND` case so a leaked
 > sentinel reads `(unbound)` instead of masquerading as `void`. Both edits
