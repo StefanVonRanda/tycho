@@ -20,7 +20,18 @@ A few sharp edges are inherent, by design:
   stability contract: `core:signal`'s Windows handler is
   `SetConsoleCtrlHandler` and whether it wakes a blocked `accept` is
   Windows-version dependent — the flag is set either way, so a program that
-  polls it is portable and one that relies on the wake is not;
+  polls it is portable and one that relies on the wake is not. Measured
+  2026-08-09 on Windows 11 26200, and it is the sharper half of that gap: a
+  thread parked in `recv` on an ACCEPTED connection is **not** released by the
+  handler's `shutdown()` the way it is on Linux, so shutting down costs one
+  `SO_RCVTIMEO` per parked reader rather than milliseconds
+  (`server/run.sh`'s parked-reader case needs a 15s bound there against 3s on
+  Linux, with an 8s idle timeout). `closesocket()` would release it — the
+  listener already gets both — but a connection fd is churned by its worker,
+  and closing one hands the number back out while another thread may still be
+  blocked on it, which is the hazard `signal_shim.c`'s registry header rejects
+  with measurements. A server on Windows therefore winds down within its idle
+  timeout, not within a millisecond;
   `core:datetime`'s `local_offset` reads the SYSTEM zone through the CRT and
   ignores the `TZ` environment variable, and it did not track DST across the
   instants measured — on a box set to Pacific it answered `-28800` for both a

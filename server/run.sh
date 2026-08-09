@@ -46,18 +46,79 @@ command -v python3 >/dev/null 2>&1 || { echo "server: SKIP (python3 not installe
 T="$(mktemp -d)"
 SRV=""
 cleanup() {
-    [ -n "$SRV" ] && kill -TERM "$SRV" 2>/dev/null
+    [ -n "$SRV" ] && srv_kill
     [ -n "$SRV" ] && wait "$SRV" 2>/dev/null
     rm -rf "$T"
 }
 trap cleanup EXIT INT TERM
 fail=0
-# The shutdown cases below need a POSIX signal delivered to the server -- see
-# the SKIP at case 1.
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
+
+# ---- signalling the server, on either platform ------------------------------
+#
+# The shutdown cases need a real signal delivered to the server process. On
+# POSIX that is `kill`. On Windows it is NOT: MSYS2's kill cannot signal a
+# native PE, it TERMINATES it, so until 2026-08-09 the graceful path never ran
+# and the lane BLOCKED waiting for a wind-down that could not happen (measured
+# 2026-08-08: 43 minutes, which is worse than a red -- a hang stops the sweep).
+#
+# The Windows mechanism is a console control event, and it needs two things
+# neither bash nor the corelib signal test's trick can provide here. First, the
+# server must be a process-GROUP LEADER, or the event can only be sent to group
+# 0 -- every process on this console, the harness shell included, which would
+# Ctrl-Break the sweep itself. CREATE_NEW_PROCESS_GROUP is a CreationFlag, so
+# it has to happen at spawn: server/winsignal.c does it. Second, the console
+# API wants a WINDOWS pid, and `$!` is an MSYS pid -- different numbers for the
+# same process -- so the launcher writes the real one to a file.
+#
+# The four helpers below are exactly today's `kill` calls on POSIX, so the
+# Linux lane is unchanged line for line; only Windows takes another path.
+# SIGTERM and SIGINT both map to CTRL_BREAK there, which is faithful:
+# signal_shim.c's handler treats the console events alike, and its POSIX half
+# installs the same handler for both signals.
+WINSIG=""
+SRVWIN=""
+
+# srv_start <stderr-file> <args...>  -- launch $T/tycho-httpd, set SRV (and,
+# on Windows, SRVWIN). The caller redirects stdout itself, as before.
+srv_start() {
+    _err="$1"; shift
+    if [ "$IS_WINDOWS" = 1 ]; then
+        rm -f "$T/winpid"
+        "$WINSIG" spawn "$T/winpid" "$HTTPD" "$@" >/dev/null 2>"$_err" &
+        SRV=$!
+        # the launcher writes the pid before it waits; give it a bounded moment
+        _i=0
+        while [ ! -s "$T/winpid" ] && [ "$_i" -lt 100 ]; do sleep 0.1; _i=$((_i + 1)); done
+        SRVWIN="$(cat "$T/winpid" 2>/dev/null)"
+        [ -n "$SRVWIN" ] || { echo "  FAIL winsignal spawn never reported a pid"; fail=1; }
+    else
+        "$HTTPD" "$@" >/dev/null 2>"$_err" &
+        SRV=$!
+    fi
+}
+
+srv_sig()   { if [ "$IS_WINDOWS" = 1 ]; then "$WINSIG" break "$SRVWIN" 2>/dev/null
+              else kill -"$1" "$SRV" 2>/dev/null; fi; }
+srv_kill()  { if [ "$IS_WINDOWS" = 1 ]; then "$WINSIG" kill "$SRVWIN" 2>/dev/null
+              else kill -KILL "$SRV" 2>/dev/null; fi; }
+srv_alive() { if [ "$IS_WINDOWS" = 1 ]; then "$WINSIG" alive "$SRVWIN" 2>/dev/null
+              else kill -0 "$SRV" 2>/dev/null; fi; }
 
 if ! "$TYCHOC" server/main.ty -o "$T/tycho-httpd" >"$T/build.log" 2>&1; then
     echo "FAIL: tychoc could not build server/main.ty"; sed 's/^/      /' "$T/build.log"; exit 1
+fi
+# the Windows linker appends .exe; ask the filesystem rather than the platform
+HTTPD="$T/tycho-httpd"
+[ -f "$HTTPD.exe" ] && HTTPD="$HTTPD.exe"
+
+if [ "$IS_WINDOWS" = 1 ]; then
+    WINSIG="$T/winsignal.exe"
+    if ! ${CC:-cc} -std=c11 -O2 -o "$WINSIG" server/winsignal.c >"$T/winsig.log" 2>&1; then
+        echo "server: SKIP (cannot build server/winsignal.c -- no console-event sender)"
+        sed 's/^/      /' "$T/winsig.log"
+        exit 0
+    fi
 fi
 
 # The document root is a COPY of server/www, so the runner can add a case the
@@ -72,9 +133,8 @@ mkdir -p "$T/www/emptydir" "$T/www/.hidden"
 # but it belongs beside emptydir -- both exist to make an empty thing testable.
 : > "$T/www/empty.txt"
 
-"$T/tycho-httpd" --root "$T/www" --host 127.0.0.1 --port 0 \
-                 --workers 4 --idle-ms 500 >/dev/null 2>"$T/srv.err" &
-SRV=$!
+srv_start "$T/srv.err" --root "$T/www" --host 127.0.0.1 --port 0 \
+          --workers 4 --idle-ms 500
 
 # ---- the conversation -------------------------------------------------------
 python3 - "$T/srv.err" "$T/www" server/www <<'PY'
@@ -591,39 +651,17 @@ sys.exit(1 if fails else 0)
 PY
 [ $? -eq 0 ] || fail=1
 
-if [ "$IS_WINDOWS" = 1 ]; then
-  # Six shutdown cases and the access-log tail, every one driven by a POSIX
-  # signal to the server process. MSYS2's `kill` cannot deliver one to a NATIVE
-  # PE -- it terminates the process -- so the graceful path never runs, the
-  # "stopped after N requests" line is never printed, and the lane then BLOCKS
-  # waiting for a wind-down that cannot happen. Measured 2026-08-08: the run sat
-  # 43 minutes with tycho-httpd still alive before it was killed by hand, which
-  # is worse than a red -- a hang stops the whole sweep at step [3d/13].
-  # Same class as corelib's signal test (plan_windows.md phase 4) -- except
-  # that half is no longer open: as of 2026-08-09 corelib/test/signal delivers
-  # a real CTRL_BREAK on Windows and passes there against the unchanged Linux
-  # golden, so the DELIVERY mechanism is proven and core:signal's
-  # SetConsoleCtrlHandler end is proven to receive it.
-  #
-  # WHAT STILL BLOCKS THIS LANE, specifically, so the next attempt does not
-  # rediscover it. The corelib test signals ITSELF, so it can step onto a
-  # private console first (sigx_win_isolate_console) and raise CTRL_BREAK at
-  # group 0 with nothing else attached. This lane signals a SEPARATE process,
-  # and group 0 here is the console the harness shell is sitting on -- so the
-  # same call would Ctrl-Break the sweep. Targeting a single process instead
-  # needs it to be a process-group leader, and CREATE_NEW_PROCESS_GROUP is a
-  # CreationFlag: bash cannot set it after the fact. So the variant needs a
-  # small launcher (spawn with CREATE_NEW_PROCESS_GROUP, report the pid) plus
-  # a sender (GenerateConsoleCtrlEvent at that pid), and a second obstacle
-  # underneath: MSYS2's `$!` is an MSYS pid, NOT the Windows pid the console
-  # API wants, so all six call sites below need the mapping too.
-  # gap: unwritten. Six cases + the access-log tail stay skipped until it is.
-  # NOTE the body below is deliberately NOT re-indented: it carries unindented
-  # heredoc terminators (`PY`), which only work at column 0.
-  echo "  SKIP shutdown cases 1-6 + access-log tail (Windows: MSYS2 kill terminates a native PE instead of signalling it -- plan_windows.md phase 4)"
-  kill -9 "$SRV" 2>/dev/null       # the server the concurrency case left running
-  SRV=""
-else
+# ---- shutdown cases 1-6 + the access-log tail -------------------------------
+# These ran on POSIX only until 2026-08-09: every one drives the server with a
+# real signal, and MSYS2's kill cannot deliver one to a native PE -- it
+# TERMINATES it, so the graceful path never ran and the lane BLOCKED waiting
+# for a wind-down that could not happen (measured 2026-08-08: 43 minutes, worse
+# than a red because a hang stops the whole sweep). They now run on both
+# platforms through srv_sig/srv_kill/srv_alive; see the header of those helpers
+# for why Windows needs a launcher and a second pid.
+#
+# NOTE the body below is deliberately NOT indented: it carries unindented
+# heredoc terminators (`PY`), which only work at column 0.
 # ---- shutdown case 1 of 2: SIGTERM is a CLEAN shutdown ----------------------
 # This block asserted wait status 143 until the signals plan -- that is, it
 # asserted the server was KILLED, that server/main.ty's last line was
@@ -654,9 +692,9 @@ else
 # The other three watchdogs (server/run.sh:512, server/run.sh:586,
 # server/run.sh:632) were written this way from the start; this one was the
 # outlier.
-( sleep 10; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+( sleep 10; srv_kill ) >/dev/null 2>&1 &
 WD=$!
-kill -TERM "$SRV" 2>/dev/null
+srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
 kill "$WD" 2>/dev/null
@@ -718,9 +756,8 @@ fi
 # both remaining cases; there is only one process to kill per case, and the first
 # one is already gone.
 respawn() {  # respawn <errfile> [idle-ms]; sets SRV
-    "$T/tycho-httpd" --root "$T/www" --host 127.0.0.1 --port 0 \
-                     --workers 4 --idle-ms "${2:-500}" >/dev/null 2>"$1" &
-    SRV=$!
+    srv_start "$1" --root "$T/www" --host 127.0.0.1 --port 0 \
+              --workers 4 --idle-ms "${2:-500}"
     i=0
     while [ "$i" -lt 500 ]; do                   # the banner, not a fixed sleep
         grep -q '^tycho-httpd: serving ' "$1" 2>/dev/null && return 0
@@ -737,7 +774,7 @@ respawn() {  # respawn <errfile> [idle-ms]; sets SRV
 # test. This is where the second half of that pair gets its only real exercise:
 # an operator's Ctrl-C must wind the server down exactly as SIGTERM does.
 respawn "$T/int.err"
-kill -INT "$SRV" 2>/dev/null
+srv_sig INT
 wait "$SRV" 2>/dev/null
 rc=$?
 SRV=""
@@ -755,7 +792,7 @@ fi
 # above comes from the handler core:signal installed and not from something the
 # process would have done on the way out of any signal at all.
 respawn "$T/kill.err"
-kill -KILL "$SRV" 2>/dev/null
+srv_kill
 wait "$SRV" 2>/dev/null
 rc=$?
 SRV=""
@@ -809,10 +846,15 @@ respawn "$T/emfile.err" 200
 # `out=$(sh server/run.sh)` does, blocks until the longest sleep expires rather
 # than until the script exits. Measured: 4.4s per run direct, 34.5s per run
 # captured, entirely the orphan. Closing its stdout costs nothing and removes it.
-( sleep 15; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+( sleep 15; srv_kill ) >/dev/null 2>&1 &
 WD=$!
 python3 - "$SRV" "$(port_of "$T/emfile.err")" <<'PY'
-import resource, socket, sys, time
+import socket, sys, time
+try:
+    import resource                      # POSIX only -- absent on Windows, where
+except ImportError:                      # the IMPORT is the failure, not prlimit
+    print("  skip transient-accept: no `resource` module (Windows -- RLIMIT_NOFILE"
+          " has no equivalent, so the EMFILE window cannot be forced)"); sys.exit(0)
 pid, port = int(sys.argv[1]), int(sys.argv[2])
 if not hasattr(resource, "prlimit"):
     print("  skip transient-accept: resource.prlimit unavailable (needs Linux)"); sys.exit(0)
@@ -880,12 +922,12 @@ wait "$WD" 2>/dev/null
 # that has been through the EMFILE window. `kill -0` FIRST, or this passes
 # vacuously against a server that already drained: a dead pid takes the signal
 # without complaint and `wait` hands back the exit status it had anyway.
-if ! kill -0 "$SRV" 2>/dev/null; then
+if ! srv_alive; then
     echo "  FAIL after EMFILE: server was already gone before SIGTERM (the pool drained)"; fail=1
 fi
-( sleep 10; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+( sleep 10; srv_kill ) >/dev/null 2>&1 &
 WD=$!
-kill -TERM "$SRV" 2>/dev/null
+srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
 kill "$WD" 2>/dev/null
@@ -929,9 +971,9 @@ time.sleep(60)
 PY
 DRIP=$!
 sleep 1
-( sleep 10; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+( sleep 10; srv_kill ) >/dev/null 2>&1 &
 WD=$!
-kill -TERM "$SRV" 2>/dev/null
+srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
 kill "$WD" 2>/dev/null
@@ -988,9 +1030,23 @@ while [ "$i" -lt 250 ]; do
     [ -f "$T/parked.ready" ] && break
     i=$((i + 1)); sleep 0.02
 done
-( sleep 3; kill -KILL "$SRV" 2>/dev/null ) >/dev/null 2>&1 &
+# THE BOUND IS PLATFORM-DEPENDENT, and the difference is the assertion.
+# POSIX: shutdown(fd, SHUT_RDWR) on a registered connection wakes the thread
+# parked in recv(2) at once, so 3s is a CLIFF -- the pre-batch-A behaviour
+# waited out SO_RCVTIMEO and misses it by orders of magnitude.
+# WINDOWS: it does not. A thread blocked in recv on a connected socket is not
+# released by shutdown() there, so the wind-down costs one idle timeout (8s
+# here) and a 3s watchdog would fire on CORRECT behaviour. closesocket() would
+# release it -- it is what the listener already gets -- but a connection fd is
+# churned by its worker, and closing one hands the number back out while
+# another thread may still be blocked on it: the hazard signal_shim.c's
+# registry header rejects with measurements. So the Windows bound is above the
+# idle timeout, and what it asserts is "it exits 0 without the watchdog", not
+# "it exits 0 promptly". Recorded as a behavioural difference in SECURITY.md.
+if [ "$IS_WINDOWS" = 1 ]; then PARKWD=15; else PARKWD=3; fi
+( sleep "$PARKWD"; srv_kill ) >/dev/null 2>&1 &
 WD=$!
-kill -TERM "$SRV" 2>/dev/null
+srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
 kill "$WD" 2>/dev/null
@@ -999,30 +1055,29 @@ kill "$PARK" 2>/dev/null
 wait "$PARK" 2>/dev/null
 SRV=""
 if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/parked.err"; then
-    echo "  ok   SIGTERM with 4 parked keep-alive readers: exit 0 well inside the 3s watchdog (idle is 8s)"
+    echo "  ok   SIGTERM with 4 parked keep-alive readers: exit 0 inside the ${PARKWD}s watchdog (idle is 8s)"
 else
-    echo "  FAIL SIGTERM with parked readers: wait status $rc, want 0 (137 = it waited out SO_RCVTIMEO)"; fail=1
+    echo "  FAIL SIGTERM with parked readers: wait status $rc, want 0 (watchdog was ${PARKWD}s)"; fail=1
     tail -n 3 "$T/parked.err" | sed 's/^/      /'
 fi
 
-fi
 
 # ---- the command line -------------------------------------------------------
-"$T/tycho-httpd" --help >"$T/help.out" 2>&1
+"$HTTPD" --help >"$T/help.out" 2>&1
 rc=$?
 if [ "$rc" -eq 0 ] && grep -q '^  --port N ' "$T/help.out"; then
     echo "  ok   --help: exit 0, documents --port"
 else
     echo "  FAIL --help: exit $rc"; sed 's/^/      /' "$T/help.out"; fail=1
 fi
-"$T/tycho-httpd" --bogus >"$T/bogus.out" 2>&1
+"$HTTPD" --bogus >"$T/bogus.out" 2>&1
 rc=$?
 if [ "$rc" -eq 1 ] && grep -q '^tycho-httpd: unknown option: --bogus$' "$T/bogus.out"; then
     echo "  ok   --bogus: exit 1, names the option"
 else
     echo "  FAIL --bogus: exit $rc"; sed 's/^/      /' "$T/bogus.out"; fail=1
 fi
-"$T/tycho-httpd" --port 70000 >"$T/range.out" 2>&1
+"$HTTPD" --port 70000 >"$T/range.out" 2>&1
 rc=$?
 if [ "$rc" -eq 1 ] && grep -q '^tycho-httpd: --port must be 0..65535$' "$T/range.out"; then
     echo "  ok   --port 70000: exit 1, out of range"
