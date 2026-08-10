@@ -10,6 +10,31 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 Landed since the 0.5.0 entry below, against no tag — nothing has ever been
 released, so "since 0.5.0" means "since the work that entry describes".
 
+- **DEPRECATED: `sort.by_key(xs, key)`** — use `sort.sort_by(xs, cmp)`. The
+  rewrite is mechanical: `by_key(xs, k)` is
+  `sort_by(xs, fn(a, b) -> int: k(a) - k(b))`. It keeps working for all of 0.x
+  and is **removed in 1.0**. Calling it warns.
+
+  This is the deprecation policy in `docs/guides/corelib.md` run end to end for
+  the first time, which is the point — a policy that has never been executed is
+  prose. Step (3), the compiler warning, is now a general mechanism rather than
+  a one-off: a `# deprecated: <text>` comment line **directly above** a `fn`
+  marks it, and every call site warns with that text. Locked by
+  `tests/warn/deprecated.ty`.
+
+- **`core:net`'s concurrency ceiling is now stated rather than implied.** There
+  is no `poll`/`select`/`epoll`/`O_NONBLOCK` in any of its 12 exports, so a
+  server's worker count is a hard limit on concurrent connections and one slow
+  client occupies one worker. Written into the corelib guide instead of being
+  fixed: readiness polling was costed at ~283 lines across 4 files plus a
+  redesign of `core:httpd`'s read surface, and adding it later is additive.
+
+- **The Windows parked-`recv` difference is a documented platform limit.** A
+  thread parked in `recv` is not released by the shutdown handler as it is on
+  Linux, so a Windows server winds down within its idle timeout rather than a
+  millisecond. Nothing is lost or corrupted. Recorded in the README's platform
+  notes; the measurement stays in `SECURITY.md`.
+
 - **`pass`, the no-op statement.** A block cannot be empty, so a `match` arm or
   an `if` branch with nothing to do had to bind something nobody reads — `ok :=
   sz`, `_ := 0` — because a declaration is a legal statement where a bare

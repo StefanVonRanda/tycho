@@ -10,7 +10,7 @@
 # refusal is not about the expression being wrong -- both an array and a channel
 # source are scalar handles, so the parser needs a name it can re-read rather than
 # an eval-once temp a channel cannot safely be aliased into. Refused at
-# src/tychoc.c:3432.
+# src/tychoc.c:3478.
 fn build() -> [int]:
     a := []int
     push(a, 1)

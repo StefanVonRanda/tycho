@@ -252,6 +252,13 @@ the perf gate, and every lane that needs a POSIX signal delivered to a process
 MSYS2's `kill` terminates a native Windows program instead of signalling it.
 **Green there means nothing reddened, not that everything ran.**
 
+**One measured behavioural difference, and it is a documented platform limit,
+not a bug to be fixed.** A thread parked in `recv` on an accepted connection is
+not released by the shutdown handler as it is on Linux, so a Windows server
+winds down within its idle timeout rather than within a millisecond. Nothing is
+lost or corrupted — the wind-down is slower, and only that. Decided 2026-08-10;
+[SECURITY.md](SECURITY.md) carries the measurement.
+
 The one hole worth naming: for a long time the Windows-only code paths were the
 newest code in the tree and the only code with no memory-safety checking at
 all. Installing MSYS2's **clang64** toolchain closes most of that — 60 corpus

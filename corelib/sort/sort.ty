@@ -106,6 +106,7 @@ fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]:
         width = width + width
     return a
 
+# deprecated: use sort_by(xs, cmp) -- by_key(xs, k) is sort_by(xs, fn(a, b) -> int: k(a) - k(b)). Removed in 1.0.
 fn by_key(xs: [$T], key: fn($T) -> int) -> [$T]:    # sort elements by a derived int key, ascending, stable
     out := xs
     for i := 1; i < len(out); i += 1:

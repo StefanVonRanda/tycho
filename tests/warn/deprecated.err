@@ -1,0 +1,2 @@
+tests/warn/deprecated.ty:21: warning: `double` is deprecated: use twice(n) instead -- double(n) is twice(n). Removed in 1.0.
+    21 |     println(str(double(2)) + " " + str(twice(2)) + " " + str(triple(2)))

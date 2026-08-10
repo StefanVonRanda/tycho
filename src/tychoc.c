@@ -73,6 +73,51 @@ static void die_at(int line, const char *fmt, ...) {
     exit(1);
 }
 
+/* DEPRECATION, the mechanism docs/guides/corelib.md's policy names: a
+ * `# deprecated: <text>` comment line DIRECTLY above a `fn` marks it, and every
+ * call site gets a warning. Two tables: notes found while lexing one file, and
+ * the (mangled name -> text) map the resolver reads. */
+typedef struct { int line; char *msg; } DNote;
+static DNote *g_dnotes; static int g_ndnotes, g_dnotes_cap;
+typedef struct { char *name; char *msg; } Deprec;
+static Deprec *g_deprecs; static int g_ndeprecs, g_deprecs_cap;
+
+static void *xrealloc(void *p, size_t n);
+
+static void dnote_scan(const char *p, int line) {
+    const char *m = p;
+    while (*m && *m != '\n' && !(m[0] == 'd' && !strncmp(m, "deprecated:", 11))) m++;
+    if (!*m || *m == '\n') return;
+    m += 11;
+    while (*m == ' ' || *m == '\t') m++;
+    const char *e = m;
+    while (*e && *e != '\n') e++;
+    while (e > m && (e[-1] == ' ' || e[-1] == '\r')) e--;
+    if (e == m) return;
+    if (g_ndnotes >= g_dnotes_cap) {
+        g_dnotes_cap = g_dnotes_cap ? g_dnotes_cap * 2 : 8;
+        g_dnotes = (DNote *)xrealloc(g_dnotes, (size_t)g_dnotes_cap * sizeof *g_dnotes);
+    }
+    char *t = (char *)malloc((size_t)(e - m) + 1);
+    memcpy(t, m, (size_t)(e - m)); t[e - m] = 0;
+    g_dnotes[g_ndnotes].line = line; g_dnotes[g_ndnotes].msg = t; g_ndnotes++;
+}
+static const char *dnote_above(int line) {
+    for (int i = 0; i < g_ndnotes; i++) if (g_dnotes[i].line == line - 1) return g_dnotes[i].msg;
+    return NULL;
+}
+static void deprec_add(const char *name, const char *msg) {
+    if (g_ndeprecs >= g_deprecs_cap) {
+        g_deprecs_cap = g_deprecs_cap ? g_deprecs_cap * 2 : 8;
+        g_deprecs = (Deprec *)xrealloc(g_deprecs, (size_t)g_deprecs_cap * sizeof *g_deprecs);
+    }
+    g_deprecs[g_ndeprecs].name = (char *)name; g_deprecs[g_ndeprecs].msg = (char *)msg; g_ndeprecs++;
+}
+static const char *deprec_find(const char *name) {
+    for (int i = 0; i < g_ndeprecs; i++) if (!strcmp(g_deprecs[i].name, name)) return g_deprecs[i].msg;
+    return NULL;
+}
+
 /* Like die_at but non-fatal: a `<file>:<line>: warning: ...` diagnostic (+ source
  * snippet) that the language server parses the same way it parses errors. */
 __attribute__((format(printf, 2, 3)))
@@ -441,6 +486,7 @@ static TokVec lex(const char *src) {
 
         /* blank or comment-only line: skip without touching indentation */
         if (*p == '\n' || *p == '\0' || *p == '#') {
+            if (*p == '#') dnote_scan(p, line);   /* a `deprecated:` doc line, for the fn below it */
             while (*p && *p != '\n') p++;
             if (*p == '\n') p++;
             continue;
@@ -2333,7 +2379,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2162) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2208) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2657,7 +2703,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2036): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2082): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3705,7 +3751,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10003), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10064), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -4058,6 +4104,10 @@ static Proc *parse_fn(Parser *ps) {
         die_at(cur(ps)->line, "'%s' is a reserved keyword and cannot be used as a procedure name", cur(ps)->text);
     }
     Tok *nameT = eat(ps, TK_IDENT, "a procedure name");
+    {   /* a `# deprecated: ...` line directly above marks this fn; call sites warn */
+        const char *dn = dnote_above(nameT->line);
+        if (dn) deprec_add(pkg_mangle(nameT->text), dn);
+    }
     /* Legal (§3.7), but say so: every unqualified call to this name inside this
      * package now reaches THIS procedure and not the builtin, and nothing else
      * in the compiler will mention it again. */
@@ -6410,6 +6460,17 @@ static Type resolve_expr_inner(Expr *e) {
                     e->args = na; e->nargs = nfixed + 1;
                 }
             }
+            {   /* the deprecation policy's third step, a warning on use. BEFORE the
+                 * generic rewrite below: instantiate_generic replaces e->sval with a
+                 * per-instance name (`sort__by_key__arr_int`), which matches nothing. */
+                const char *dm = deprec_find(e->sval);
+                if (dm) {   /* say `sort.by_key`, the spelling written, not the mangled `sort__by_key` */
+                    char *shown = sfmt("%s", e->sval);
+                    char *sep = strstr(shown, "__");
+                    if (sep) { *sep = '.'; memmove(sep + 1, sep + 2, strlen(sep + 2) + 1); }
+                    warn_at(e->line, "`%s` is deprecated: %s", shown, dm);
+                }
+            }
             { Proc *gt = generic_find(e->sval);   /* generics: infer type args, intern instance, rewrite e->sval */
               if (gt && !e->qual && !e->lhs) instantiate_generic(gt, e);
               else if (e->ntypeargs > 0) die_at(e->line, "explicit type arguments given, but '%s' is not a generic function", e->sval); }
@@ -6965,10 +7026,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6589),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6650),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:6877). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:6938). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8478,7 +8539,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:6915: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:6976: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8636,7 +8697,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10872), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10933), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8653,7 +8714,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * a post that assigns anything but i all keep `tycho_arr_*_get`. The body guard
  * is the SAME `stmts_unsafe` S_FORRANGE uses, run over the body WITHOUT its
  * last element: the post clause lives there (see the `els`/`body` note at
- * src/tychoc.c:1565) and assigns i, so including it would report unsafe every
+ * src/tychoc.c:1611) and assigns i, so including it would report unsafe every
  * time. Returns the array's name, or NULL when the shape is not certain.
  *
  * WHAT THIS BUYS, MEASURED -- read before "improving" it. At -O3, the level
@@ -8666,12 +8727,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12832) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12893) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:10959) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11020) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -8688,7 +8749,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3585-3590) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3631-3636) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

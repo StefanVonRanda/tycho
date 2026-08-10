@@ -93,7 +93,8 @@ element type instead of a family of per-type siblings.
   orders the keys — generic over any comparable key type (int/float/string/char). The way
   to order data by a derived value: keep it in parallel arrays, argsort one, and walk every
   array through the permutation. All stable. Plus `by_key(xs, key)`: sort an array by a
-  derived int key (a fn/closure). When the order needs more than one key, mixed
+  derived int key (a fn/closure) — **deprecated since 0.5.0, removed in 1.0**:
+  it is `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`. When the order needs more than one key, mixed
   directions, or a type with no `comparable` instance, `sort_by(xs, cmp)` takes a
   three-way compare `fn($T, $T) -> int` — bottom-up merge, stable, so equal elements
   keep their input order under a descending compare too.
@@ -380,7 +381,14 @@ element type instead of a family of per-type siblings.
   file — can still read it differently, so don't hand a batch file untrusted
   argv.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
-  no `deps`, nothing to install). Every fallible TCP call returns
+  no `deps`, nothing to install). **Every call blocks, by design and by omission: there
+  is no `poll`, `select`, `epoll` or `O_NONBLOCK` anywhere in the package's 12 exports.**
+  A server's worker count is therefore a hard ceiling on concurrent connections — N
+  workers serve N connections, and one slow client occupies one worker for the whole of
+  its request. Size the pool for the concurrency you need, and put a timeout on the
+  socket. Stated as a limit rather than fixed, 2026-08-10: readiness polling was costed
+  at ~283 lines across 4 files plus a redesign of `core:httpd`'s blocking read surface,
+  and adding it later is additive rather than breaking. Every fallible TCP call returns
   **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
   `peer_addr(fd)` gives `Result(string, …)` — the connected peer's address as text
   (`getpeername` + `inet_ntop`), the other half of `port_of`'s `getsockname` and the
@@ -580,11 +588,17 @@ is the promise:
   [SECURITY.md](../../SECURITY.md). WSL2 is the Linux build and has none of
   them.
 
-**Deprecation path — the shape it will take AT 1.0**, stated now so it is not
-invented under pressure later. A package or function is deprecated by (1) a
-`deprecated:` notice in its doc comment, (2) an entry in `CHANGELOG.md` naming
-the replacement, and (3) a `warning:` on use emitted by the compiler where the
-surface allows it. Deprecated members keep working for the current major
+**Deprecation path — RUN ONCE, on `sort.by_key`, 2026-08-10.** Stated ahead of
+1.0 so it is not invented under pressure, and then exercised so it is a process
+rather than prose. A package or function is deprecated by (1) a `deprecated:`
+notice in its doc comment, (2) an entry in `CHANGELOG.md` naming the
+replacement, and (3) a `warning:` on use emitted by the compiler.
+
+Step (3) is now mechanical: a `# deprecated: <text>` comment line **directly
+above** a `fn` marks it, and every call site warns with `<text>`. The
+immediately-above rule is what makes "which function does this notice belong
+to" answerable without tracking comment blocks. Locked by
+`tests/warn/deprecated.ty`. Deprecated members keep working for the current major
 version. **Removal is a breaking change**: it happens only in a major version
 bump, is recorded in `CHANGELOG.md` and `RELEASE_NOTES.md`, and ships with the
 migration spelled out. Nothing in the frozen surface may be removed in a minor

@@ -54,10 +54,10 @@ fn is_two_op(s: string) -> bool:
     return s == "->" or s == ":=" or s == "==" or s == "!=" or s == "<=" or s == ">=" or s == "<<" or s == ">>" or s == "+=" or s == "-=" or s == "*=" or s == "/=" or s == "%=" or s == "&=" or s == "|=" or s == "^="
 
 # The one 3-char lexeme this formatter needs to keep whole: `..<`, the half-open
-# counting range of `parallel for i in 0..<N:` (src/tychoc.c:482). Lexed as three
+# counting range of `parallel for i in 0..<N:` (src/tychoc.c:528). Lexed as three
 # separate KOps it still ROUND-TRIPS (stage 1 is lossless either way), but stage 2
 # would re-space the tail: sep_needs_space suppresses the space around a `.`, not
-# around a `<`, so `0..<N` came out `0..< N`. `...` (TK_ELLIPSIS, src/tychoc.c:481)
+# around a `<`, so `0..<N` came out `0..< N`. `...` (TK_ELLIPSIS, src/tychoc.c:527)
 # is deliberately NOT here -- it is all dots, so the `.` rule already tightens it.
 fn is_three_op(s: string) -> bool:
     return s == "..<"
@@ -172,7 +172,7 @@ fn lex(src: string) -> [Tok]:
                 i = i + 1
             push(toks, Tok(KChar, substr(src, start, i), sl, sc))
             col = col + (i - start)
-        elif c == 96:                                 # raw string `...` (src/tychoc.c:402-448)
+        elif c == 96:                                 # raw string `...` (src/tychoc.c:447-494)
             # No escape is interpreted, so a backslash does NOT skip the next byte
             # (the `"..."` branch above must, this one must not), and there is no
             # escape for a backtick: the first one closes. An embedded newline is

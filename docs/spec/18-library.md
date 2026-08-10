@@ -144,7 +144,8 @@ change the element type — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, so
 
 Stable index-permutation sorting (pure Tycho): `argsort(keys)` /
 `argsort_desc(keys)` return the permutation ordering any comparable key type;
-`by_key(xs, key)` sorts by a derived int key (a `fn`/closure).
+`by_key(xs, key)` sorts by a derived int key (a `fn`/closure); **deprecated since
+0.5.0**, it is `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`.
 `docs/guides/corelib.md:91-95`.
 
 ### 32.9 `rand`

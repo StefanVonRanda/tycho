@@ -216,24 +216,28 @@ system — and the sentinel collision is why.
 "Documented refusal" is a legitimate answer for any row. An undecided row is
 not.
 
-### 4. `core:net` gets a readiness call, or the cap becomes a stated limit
+### 4. ~~`core:net` gets a readiness call, or the cap becomes a stated limit~~ — **CLOSED 2026-08-10, as a stated limit**
 
 `corelib/net/net_shim.c` has 12 exports and not one is `poll`/`select`/`epoll`
 or `O_NONBLOCK`, so a server's worker count is a hard ceiling on concurrent
-connections. This was refused once with a number — ~283 lines across 4 files
-plus a redesign of `core:httpd`'s blocking read surface — and that refusal is
-defensible. What is not defensible at 1.0 is leaving it implicit: either it
-lands, or the README says "N workers means N concurrent connections" where
-people will read it before they build on it.
+connections. That refusal was defensible and stands; what was not defensible
+was leaving it implicit. It is now written where someone reaches for the
+package — `docs/guides/corelib.md`'s `net` entry says N workers serve N
+connections and one slow client occupies one worker for its whole request.
 
-### 5. Windows is at parity or its differences are non-goals
+Readiness polling stays un-built: ~283 lines across 4 files plus a redesign of
+`core:httpd`'s blocking read surface, and adding it later is **additive, not
+breaking**, so it does not gate the freeze.
 
-`make ci` is green there, which is real. One measured behavioural difference
-remains: a thread parked in `recv` on an accepted connection is not released by
-the shutdown handler as it is on Linux, so a Windows server winds down within
-its idle timeout rather than within a millisecond
-([SECURITY.md](SECURITY.md)). Decide whether that is a bug to fix or a
-documented platform limit; do not ship a freeze with it undecided.
+### 5. ~~Windows is at parity or its differences are non-goals~~ — **CLOSED 2026-08-10, as a documented limit**
+
+`make ci` is green there. The one measured behavioural difference — a thread
+parked in `recv` is not released by the shutdown handler as it is on Linux, so a
+Windows server winds down within its idle timeout rather than within a
+millisecond — is a **documented platform limit**, not a bug to fix. Nothing is
+lost or corrupted; the wind-down is slower and only that. It is stated in the
+README's platform notes, and the measurement stays in
+[SECURITY.md](SECURITY.md).
 
 ### 6. A release actually ships, and the support policy is exercised once
 

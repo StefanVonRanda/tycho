@@ -4,8 +4,8 @@ This chapter defines how a Tycho source file is decomposed into a stream of
 **tokens**. The token stream — including the synthetic layout tokens `NEWLINE`,
 `INDENT`, and `DEDENT` — is the input to the phrase grammar ([§4](02-grammar.md)).
 
-> Provenance: the lexer is `src/tychoc.c:211-530` (`lex`), the token kinds
-> `:114-130` (`TokKind`), the keyword table `:165-207` (`keyword`).
+> Provenance: the lexer is `src/tychoc.c:256-576` (`lex`), the token kinds
+> `:159-175` (`TokKind`), the keyword table `:210-252` (`keyword`).
 
 ## 3.1 Source text
 
@@ -71,7 +71,7 @@ A comment begins with `#` and runs to the end of the line. Comments do not
 nest, and there is no block-comment form. A `#` inside a string or character
 literal is an ordinary byte, not a comment.
 
-> Provenance: a comment-only line is skipped without touching the indent stack `src/tychoc.c:443@*p == '#') {`; the token loop stops at `#` `:472@*p != '\n' && *p != '#'`; the trailing comment is consumed at `:798@if (*p == '#') while`.
+> Provenance: a comment-only line is skipped without touching the indent stack `src/tychoc.c:488@*p == '#') {`; the token loop stops at `#` `:518@*p != '\n' && *p != '#'`; the trailing comment is consumed at `:844@if (*p == '#') while`.
 
 ## 3.4 Indentation (`INDENT` / `DEDENT`)
 
@@ -106,8 +106,8 @@ lines:
 
 A block in the phrase grammar is therefore `INDENT Stmt+ DEDENT` ([§4](02-grammar.md)).
 
-> Provenance: `src/tychoc.c:224-260` (measure + INDENT/DEDENT),
-> `:457@indentation too deep` (depth bound), `:527-528` (EOF flush).
+> Provenance: `src/tychoc.c:269-305` (measure + INDENT/DEDENT),
+> `:503@indentation too deep` (depth bound), `:573-574` (EOF flush).
 
 ## 3.5 Tokens
 
@@ -139,7 +139,7 @@ keywords. `or_return` is matched as a single word (it is not `or` followed by
 `_return`).
 
 > Provenance: the complete reserved set is exactly `keyword()`,
-> `src/tychoc.c:165-207`. There is no `while` keyword (the loop keyword is
+> `src/tychoc.c:210-252`. There is no `while` keyword (the loop keyword is
 > `for`, §4); there is no `char` or `void` type keyword (the `char` type arises
 > only from character literals and inference, and `void` is the implicit
 > no-return type).
@@ -174,9 +174,9 @@ is unaffected. They are **not** reserved:
   Non-normative for conformance — a warning is quality of implementation — but
   a conforming implementation must not change which procedure is *selected*.
 
-> Provenance: contextual dispatch at `src/tychoc.c:4414-4423` (top level),
-> `:3475@"const"`/`:3501@"delete"` (`const`/`delete`), `:2212@soa [Struct]`/`:2707@soa []Struct` (`soa`),
-> `:4120@"where"` (`where`), `:4086@"sink"` (`sink`), `:3757@"range"` (`range`, refusal only).
+> Provenance: contextual dispatch at `src/tychoc.c:4464-4473` (top level),
+> `:3521@"const"`/`:3547@"delete"` (`const`/`delete`), `:2258@soa [Struct]`/`:2753@soa []Struct` (`soa`),
+> `:4170@"where"` (`where`), `:4136@"sink"` (`sink`), `:3803@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -208,8 +208,8 @@ literal (§3.9.5). The **only** range operator is `..<`; `..` alone is not a
 token, and the `range(…)` form it replaced is gone (§14.4). Operator precedence and associativity are
 defined with the expression grammar in [§4.5](02-grammar.md#45-operator-precedence-and-associativity).
 
-> Provenance: `src/tychoc.c:477-513`. `::` is lexed at `:746@TK_COLONCOLON` but no grammar
-> production consumes it; `..<` at `:744@TK_DOTLT`, tested after `...` so maximal munch holds; `;` at `:769@TK_SEMI`.
+> Provenance: `src/tychoc.c:523-559`. `::` is lexed at `:792@TK_COLONCOLON` but no grammar
+> production consumes it; `..<` at `:790@TK_DOTLT`, tested after `...` so maximal munch holds; `;` at `:815@TK_SEMI`.
 
 ## 3.9 Literals
 
@@ -218,7 +218,7 @@ chains) is limited to a fixed depth; a more deeply nested expression is rejected
 (`expression nesting too deep`) — a fail-closed guard, the expression-level
 counterpart to the indentation-depth bound (§3.4).
 
-> Provenance: `src/tychoc.c:2627-2633`.
+> Provenance: `src/tychoc.c:2673-2679`.
 
 ### 3.9.1 Integer literals
 
@@ -250,7 +250,7 @@ relying on defined wraparound — §30). An integer literal adapts to
 a `float`, `u32`, `u64`, or `f32` context by the literal-adaptation rules of the
 type system (§8); it does not change the literal's syntax.
 
-> Provenance: `src/tychoc.c:299-306` (accumulation + overflow check).
+> Provenance: `src/tychoc.c:344-351` (accumulation + overflow check).
 
 ### 3.9.2 Float literals
 
@@ -281,8 +281,8 @@ Two disambiguation rules are normative:
   float, but for a different reason: the `.` is not followed by a digit, so no
   fractional part forms and it tokenizes as `INT(1) "." IDENT(e5)`.
 
-> Provenance: `src/tychoc.c:269-294`; the leading-dot predicate is
-> `tok_postfixable`, `:160-163`.
+> Provenance: `src/tychoc.c:314-339`; the leading-dot predicate is
+> `tok_postfixable`, `:205-208`.
 
 ### 3.9.3 Character literals
 
@@ -310,8 +310,8 @@ never reaches a C string literal, whereas a string literal's text is carried as
 every escape is exactly two characters. `\0` has the same asymmetry, and for the
 same reason.
 
-> Provenance: `src/tychoc.c:452-477`; the `\x` arm `:724@case 'x'`; the escape
-> table `:723-724@case '0'`; the fixed-width refusal `:726@two hex digits`.
+> Provenance: `src/tychoc.c:498-523`; the `\x` arm `:770@case 'x'`; the escape
+> table `:769-770@case '0'`; the fixed-width refusal `:772@two hex digits`.
 > Conformance: `tests/char_hex_escape.ty`, `tests/reject/hex_escape_one_digit.ty`,
 > `tests/reject/hex_escape_in_string.ty`.
 
@@ -395,13 +395,13 @@ Concatenating two string literals with `+` also folds to one literal in a
 `const` ([§12.2](08-declarations.md#122-constants)), so `const TERM = "\r\n" + "\r\n"`
 is a single four-byte literal and not a run-time concatenation.
 
-> Provenance: quoted piece `src/tychoc.c:319-400`; escape set `:373-382`;
-> control-byte rejection `:389-391`; per-piece length bound `:588@char buf[4096]`,`:594@bn + 2 >= (int)sizeof buf`;
-> raw piece `:402-448`, its re-escape table `:430-433`, its control-byte
-> rejection `:434-435`, its per-piece bound `:699@rn + 2 >= (int)sizeof rbuf`,`:702@rn + 1 >= (int)sizeof rbuf`,
-> its unterminated diagnostic `:706@unterminated raw string literal`; adjacent join `:2297-2309`; `const` string fold
-> `:4353-4357`; codegen pastes the escaped text into a C string literal
-> `:10226@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
+> Provenance: quoted piece `src/tychoc.c:364-445`; escape set `:418-427`;
+> control-byte rejection `:434-436`; per-piece length bound `:634@char buf[4096]`,`:640@bn + 2 >= (int)sizeof buf`;
+> raw piece `:447-494`, its re-escape table `:475-478`, its control-byte
+> rejection `:479-480`, its per-piece bound `:745@rn + 2 >= (int)sizeof rbuf`,`:748@rn + 1 >= (int)sizeof rbuf`,
+> its unterminated diagnostic `:752@unterminated raw string literal`; adjacent join `:2343-2355`; `const` string fold
+> `:4403-4407`; codegen pastes the escaped text into a C string literal
+> `:10287@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
@@ -419,8 +419,8 @@ Because the desugaring wraps each hole in `str(…)`, a hole expression MUST be 
 a type accepted by `str` (the numeric and string scalars); other hole types are
 rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 
-> Provenance: lexing — the identifier scanner declines the `f` of `f"…"` `src/tychoc.c:573@!(c == 'f' && p[1] == '"')`, the string scanner takes it `:319-400`;
-> desugar `interp_join` / `desugar_interp`, `:2180-2242`.
+> Provenance: lexing — the identifier scanner declines the `f` of `f"…"` `src/tychoc.c:619@!(c == 'f' && p[1] == '"')`, the string scanner takes it `:364-445`;
+> desugar `interp_join` / `desugar_interp`, `:2226-2288`.
 
 ### 3.9.6 Boolean and pointer literals
 
