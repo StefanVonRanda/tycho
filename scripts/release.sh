@@ -17,18 +17,32 @@
 # installed. The dispatcher (`tycho`) is not shipped on either platform.
 set -eu
 
-version="${1:-}"
-if [ -z "$version" ]; then
+usage() {
     echo "usage: scripts/release.sh <version> [--mingw]   (e.g. v0.1.1)" >&2
-    exit 2
-fi
+}
+
+version="${1:-}"
 mingw=0
-[ "${2:-}" = "--mingw" ] && mingw=1
+case "$#:${2:-}" in
+    1:) ;;
+    2:--mingw) mingw=1 ;;
+    *) usage; exit 2 ;;
+esac
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+case "$(uname -s)" in
+    *MSYS*|*MINGW*|*CYGWIN*) PATH="/usr/bin:$PATH"; EXE=".exe" ;;
+    *) EXE="" ;;
+esac
+export PATH
 arch="$(uname -m)"
+
+# Build first: a clean checkout has no ./tychoc, and a previous build may carry
+# an older version than src/tychoc.c.
+echo ">> building native compiler"
+make -s tychoc
 
 # the version MUST match the compiler's constant (the changelog discipline)
 ver="$(./tychoc --version | awk '{print $2}')"
@@ -98,7 +112,7 @@ if [ "$mingw" -eq 1 ]; then
     if [ -n "$WINE" ]; then
         echo ">> smoke-testing the packaged layout under Wine"
         tmp="$(mktemp -d)"
-        printf 'fn main():\n    println("release ok")\n' > "$tmp/t.ty"
+        printf 'package main\nimport "core:strings"\nfn main():\n    println(strings.to_upper("release ok"))\n' > "$tmp/t.ty"
         ( cd "$stage" && env -u LD_PRELOAD WINEDEBUG=-all "$WINE" ./tychoc.exe "$tmp/t.ty" --emit-c -o "$tmp/t" >/dev/null 2>&1 ) \
             && grep -q "release ok" "$tmp/t.c" \
             || { echo "!! the staged Windows compiler failed its Wine smoke test" >&2; rm -rf "$tmp"; exit 1; }
@@ -113,13 +127,13 @@ else
     name="tycho-${version}-${os}-${arch}"
     stage="dist/${name}"
 
-    echo ">> building compiler + tools"
-    make -s tychoc tools
+    echo ">> building tools"
+    make -s tychofmt tycho-lsp tycho-debug
 
     echo ">> staging $stage"
     rm -rf "$stage"
     mkdir -p "$stage"
-    cp tychoc tychofmt tycho-lsp tycho-debug "$stage"/
+    cp "tychoc$EXE" "tychofmt$EXE" "tycho-lsp$EXE" "tycho-debug$EXE" "$stage"/
     cp -r corelib "$stage"/
     cp README.md LICENSE "$stage"/
     # a couple of runnable examples so `./tychoc examples/hello.ty` works out of the box
@@ -129,14 +143,18 @@ else
     echo ">> smoke-testing the packaged layout (corelib found beside the binary)"
     tmp="$(mktemp -d)"
     tar -C dist -cf - "$name" | tar -C "$tmp" -xf -
-    printf 'fn main():\n    println("release ok")\n' > "$tmp/t.ty"
-    ( cd "$tmp/$name" && ./tychoc "$tmp/t.ty" -o "$tmp/t" ) && "$tmp/t" | grep -q "release ok" \
+    printf 'package main\nimport "core:strings"\nfn main():\n    println(strings.to_upper("release ok"))\n' > "$tmp/t.ty"
+    ( cd "$tmp/$name" && "./tychoc$EXE" "$tmp/t.ty" -o "$tmp/t" ) && "$tmp/t$EXE" | grep -q "RELEASE OK" \
         || { echo "!! packaged compiler failed its smoke test" >&2; rm -rf "$tmp"; exit 1; }
     rm -rf "$tmp"
 fi
 
+# Keep archive metadata independent of the build time. This spelling works with
+# both BSD touch (macOS) and GNU touch (Linux).
+find "$stage" -exec env TZ=UTC0 touch -t 202311142213.20 {} +
+
 echo ">> compressing"
-tar -C dist -czf "dist/${name}.tar.gz" "$name"
+tar -C dist -cf - "$name" | gzip -n > "dist/${name}.tar.gz"
 rm -rf "$stage"
 ( cd dist && { sha256sum "${name}.tar.gz" 2>/dev/null || shasum -a 256 "${name}.tar.gz"; } > "${name}.tar.gz.sha256" )
 

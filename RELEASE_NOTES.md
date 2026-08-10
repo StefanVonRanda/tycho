@@ -1,6 +1,8 @@
 <!--
 Draft release notes. Edit this before publishing, then:
-  scripts/release.sh <version>          # builds dist/tycho-<version>-<os>-<arch>.tar.gz
+  make ci
+  make release-check                    # builds twice; smoke-tests and compares the native tarballs
+  scripts/release.sh <version> --mingw  # builds and smoke-tests the Windows tarball
   gh release create <version> dist/tycho-*.tar.gz dist/*.sha256 --notes-file RELEASE_NOTES.md
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->

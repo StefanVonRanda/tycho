@@ -89,7 +89,7 @@ long tycho_is_windows(void) {
 
 /* Mirror the .ty files of `dir` into `mir`, replacing whatever was there.
  *
- * This was a shell one-liner: `rm -rf M && mkdir -p M && cp D/*.ty M/ 2>/dev/null; true`.
+ * This was a shell one-liner that recreated M and copied every .ty file from D.
  * system() is cmd.exe on Windows, which has none of rm/mkdir -p/cp, does not
  * take `;`, and reads a leading `/` as a switch -- so the mirror was never
  * built there and every package-aware LSP answer (sibling resolution against a
@@ -97,7 +97,7 @@ long tycho_is_windows(void) {
  * on both platforms instead of maintaining two spellings of the same command.
  *
  * Only regular *.ty files one level deep are copied -- the same set the old
- * `cp D/*.ty M/` glob matched, so no recursion and no subdirectories. Returns 0
+ * The old copy glob matched only D's .ty files, so no recursion and no subdirectories. Returns 0
  * on success, non-zero if the mirror directory could not be made. A file that
  * cannot be read is skipped, exactly as the old `2>/dev/null` swallowed it. */
 #include <dirent.h>

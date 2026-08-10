@@ -21,10 +21,10 @@
  * find its own value there afterwards -- a handler that clobbers errno corrupts
  * the error reporting of code that never called it.
  *
- * The handler shuts down TWO things: the listening socket, which releases every
- * thread parked in accept(2), and every accepted connection published in the
- * registry below, which releases every thread parked in recv(2). The listener
- * alone is not enough; see the registry's header for the measurement.
+ * The handler shuts down TWO things: the listening socket, which asks the kernel
+ * to release threads parked in accept(2), and every accepted connection in the
+ * registry below, which releases every thread parked in recv(2). Portable servers
+ * still use bounded accept_wait; see the registry's header for the measurement.
  *
  * WHY `shutdown` AND NOT `close`. Measured, not argued: with four accept loops on
  * one listener and a process-directed SIGTERM, `shutdown(fd, SHUT_RDWR)` released
@@ -34,10 +34,10 @@
  * still blocked on it. The table is in plan.md's phase 1 evidence.
  *
  * PORTABILITY, recorded honestly: `shutdown` on a LISTENING socket waking a
- * blocked `accept` is a Linux behaviour, not a POSIX guarantee, and pending
- * connections still in the backlog are dropped rather than drained. Both are
- * acceptable for a shutdown path. This tree is POSIX-only in practice and Linux
- * tested; Windows is out of scope, so the whole file is guarded like core:net's.
+ * blocked `accept` is a Linux behaviour, not a POSIX guarantee. The server uses
+ * net.accept_wait with a 100ms ceiling, so clean shutdown no longer depends on
+ * that wakeup; shutdown remains the fast path and still drops queued connections.
+ * Windows has its own handler below, guarded like core:net's platform path.
  */
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* glibc: expose sigaction + sigemptyset */
@@ -146,8 +146,8 @@ static volatile sig_atomic_t sigx_conns[SIGX_MAX_SLOTS]; /* 0 = empty, else fd+1
  * interrupted thread against. The loop is bounded and branch-only apart from the
  * shutdown() calls, which is why running it in handler context is affordable.
  *
- * THE LISTENER GOES FIRST, deliberately: it releases the accept loops, and the
- * connection shutdowns then land on workers that are already winding down. The
+ * THE LISTENER GOES FIRST, deliberately: it requests an accept wakeup, and the
+ * connection shutdowns then land on workers that are winding down. The
  * flag goes first of all, so any thread woken by either shutdown finds it set. */
 static void sigx_handler(int sig) {
     (void)sig;

@@ -35,7 +35,8 @@ esac
 # neither. `ulimit -t` (CPU seconds) is portable; with TYCHO_MAX_TASKS pinning
 # the task cap the aborts die on their own well inside it. Add a real wall-clock
 # timeout only where one exists.
-if command -v timeout >/dev/null 2>&1; then TO="timeout 15"
+if [ "$IS_WINDOWS" = 1 ]; then TO="/usr/bin/timeout 15"
+elif command -v timeout >/dev/null 2>&1; then TO="timeout 15"
 elif command -v gtimeout >/dev/null 2>&1; then TO="gtimeout 15"
 else TO=""; fi
 if ( ulimit -v 1500000 ) 2>/dev/null; then AS_CAP="ulimit -v 1500000"; else AS_CAP=":"; fi

@@ -49,7 +49,11 @@ econf="$root/docs/spec/appendix-e-conformance.md"
 missing=$(
     grep -oE '`(tests/[A-Za-z0-9_/.]+|reject/[A-Za-z0-9_]+|abort/[A-Za-z0-9_]+|corelib/test/[A-Za-z0-9_]+|examples/[A-Za-z0-9_/.]+)`' "$econf" \
     | tr -d '`' | sort -u | while read -r p; do
-        case "$p" in reject/*|abort/*) rel="tests/$p" ;; *) rel="$p" ;; esac
+        if [ "${p#reject/}" != "$p" ] || [ "${p#abort/}" != "$p" ]; then
+            rel="tests/$p"
+        else
+            rel="$p"
+        fi
         if [ ! -e "$root/$rel" ] && [ ! -e "$root/$rel.ty" ] && [ ! -d "$root/$rel" ]; then
             echo "$p"
         fi

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Local CI gate for tycho. NO GitHub Actions, no cloud -- this runs on your machine.
 # It is the single source of truth for "is the tree green": build, golden +
-# sanitizer tests, and a fuzz campaign. Exits nonzero on the FIRST failure so it
+# sanitizer tests, and a fuzz campaign. Exits nonzero when any lane fails, so it
 # composes into hooks and `make ci`.
 #
 # ONE COMPILER. Until 2026-07-26 thirteen of these steps asserted that tychoc and
@@ -17,9 +17,15 @@
 set -eu
 cd "$(dirname "$0")/.."
 N="${1:-200}"
+LANE="${2:-main}"
+[ "$#" -le 2 ] || { echo "ci.sh: usage: scripts/ci.sh [FUZZ_N]" >&2; exit 2; }
 # Fail-closed: a non-numeric FUZZ_N must abort, not silently skip the fuzz.
 case "$N" in
     *[!0-9]*|"") printf 'ci.sh: FUZZ_N must be a non-negative integer, got "%s"\n' "$N" >&2; exit 2 ;;
+esac
+case "$LANE" in
+    main|platform|corelib|apps|rest|fuzz-main|fuzz-reject|fuzz-leak) ;;
+    *) printf 'ci.sh: unknown internal lane "%s"\n' "$LANE" >&2; exit 2 ;;
 esac
 # Windows/MSYS2: the Linux-only lanes cannot run -- no gcc -m32 multilib
 # (ilp32), no mingw ASan/UBSan runtime (asan-self, the fuzz differential), no
@@ -29,10 +35,28 @@ case "$(uname -s)" in
     *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;;
     *) IS_WINDOWS=0 ;;
 esac
+case "$(uname -s):$(uname -m)" in
+    Linux:x86_64|Linux:i?86) ILP32_HOST=1 ;;
+    *) ILP32_HOST=0 ;;
+esac
 
 bar() { printf '================================================================\n'; }
 step() { printf '\n>>> %s\n' "$1"; }
+run_lanes() {
+    pids=""
+    for child in "$@"; do
+        sh "$0" "$N" "$child" &
+        pids="$pids $!"
+    done
+    failed=0
+    for pid in $pids; do
+        if ! wait "$pid"; then failed=1; fi
+    done
+    return "$failed"
+}
 
+if [ "$LANE" = main ]; then
+ci_started=$(date +%s)
 bar
 printf ' tycho local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
@@ -61,14 +85,32 @@ make -s goldens-check
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
+run_lanes platform corelib apps rest
+if [ "$N" -gt 0 ]; then
+    if [ "$IS_WINDOWS" = 1 ]; then
+        step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- plan_windows.md phase 2)"
+    else
+        run_lanes fuzz-main fuzz-reject fuzz-leak
+    fi
+else
+    step "[6/13] fuzz lanes skipped (N=0)"
+fi
+
+bar
+printf ' CI GREEN -- tree is good (%ss)\n' "$(( $(date +%s) - ci_started ))"
+bar
+exit 0
+fi
+
 # `make test` above runs on this LP64 host, where long == int64 hides every width
 # bug. This lane re-runs the SAME fixture suite under `gcc -m32` (ILP32: 32-bit
 # long, 32-bit pointers), so anything that lowered Tycho `int` to a 32-bit C type
 # truncates and reddens. tests/int64_width.ty is the in-glob fixture that makes it
 # non-vacuous (every value there exceeds 2^31).
+if [ "$LANE" = platform ]; then
 step "[2b/13] make ilp32  (fixture suite rebuilt under -m32: Tycho int stays 64-bit off LP64)"
-if [ "$IS_WINDOWS" = 1 ]; then
-    echo "SKIP ilp32 (Windows: mingw gcc has no -m32 multilib; int64 width is asserted by tests/int64_width.ty in step 2)"
+if [ "$ILP32_HOST" = 0 ]; then
+    echo "SKIP ilp32 (host is not Linux x86; int64 width is asserted by tests/int64_width.ty in step 2)"
 else
     make -s ilp32
 fi
@@ -122,7 +164,9 @@ make -s rtparity
 # and the skip prints its reason so it can never be mistaken for a pass. ~1.5s.
 step "[2e/13] make locale-check  (both locale fixtures compiled AND run under a comma-decimal LC_ALL forced by an LD_PRELOAD constructor)"
 make -s locale-check
+fi
 
+if [ "$LANE" = corelib ]; then
 step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch/weblog/webserver dogfoods vs goldens)"
 make -s corelib
 make -s corelib-examples
@@ -148,7 +192,9 @@ make -s fetch
 # like the four above they are safe here unconditionally.
 make -s weblog
 make -s webserver
+fi
 
+if [ "$LANE" = apps ]; then
 # Step 3 above builds corelib, corelib-examples, site, raytrace, mandelbrot,
 # fetch, weblog and webserver -- and NOTHING else in the tree with an entry point.
 # Four runners remain outside it: examples/sqlite (deliberately -- it needs
@@ -263,32 +309,32 @@ make -s build-check
 # and it also exercises the `tycho debug` dispatcher command end to end.
 step "[3o/21] make debug-check  (tycho-debug: scripted sessions -- breakpoint set + hit on the right source line, stripped-C-name locals, print, step, clean quit, run-to-completion with program output, Ctrl-C interrupt of a running inferior, fail-closed refusals, tycho debug wrapper)"
 make -s debug-check
+fi
 
+if [ "$LANE" = rest ]; then
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
 
 step "[5/13] make ffi  (extern fn vs golden, ASan-clean, handle/injection bans)"
 make -s ffi
-
-if [ "$N" -gt 0 ]; then
-    if [ "$IS_WINDOWS" = 1 ]; then
-        step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- plan_windows.md phase 2)"
-    else
-        step "[6/13] make fuzz N=$N  (random programs: tychoc native -O2 vs tychoc ASan/UBSan)"
-        python3 fuzz/run.py "$N"
-        step "[7/13] make fuzz-reject N=$N  (malformed input: tychoc must fail closed)"
-        python3 fuzz/run_reject.py "$N"
-        # leak lane is the slowest (sequential ASan+LeakSanitizer) and leak bugs
-        # surface fast (seeds <50), so cap it to keep `make ci` practical;
-        # `make fuzz-leak N=...` runs a deeper sweep.
-        LN="$N"; [ "$LN" -gt 150 ] && LN=150
-        step "[8/13] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
-        python3 fuzz/run_leak.py "$LN"
-    fi
-else
-    step "[6/13] fuzz lanes skipped (N=0)"
 fi
 
+if [ "$LANE" = fuzz-main ]; then
+    step "[6/13] make fuzz N=$N  (random programs: tychoc native -O2 vs tychoc ASan/UBSan)"
+    python3 fuzz/run.py "$N"
+fi
+if [ "$LANE" = fuzz-reject ]; then
+    step "[7/13] make fuzz-reject N=$N  (malformed input: tychoc must fail closed)"
+    python3 fuzz/run_reject.py "$N"
+fi
+if [ "$LANE" = fuzz-leak ]; then
+    # Leak bugs surface fast, so cap this sequential lane; make fuzz-leak runs deeper.
+    LN="$N"; [ "$LN" -gt 150 ] && LN=150
+    step "[8/13] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
+    python3 fuzz/run_leak.py "$LN"
+fi
+
+if [ "$LANE" = rest ]; then
 step "[9/13] make tools-check  (formatter idempotence + semantic preservation + LSP smoke)"
 sh scripts/tools_check.sh
 
@@ -323,7 +369,4 @@ make -s docs-fences
 
 step "[13/13] make check-links  (every relative Markdown link resolves to a real file; every provenance citation still resolves)"
 make -s check-links
-
-bar
-printf ' CI GREEN -- tree is good\n'
-bar
+fi

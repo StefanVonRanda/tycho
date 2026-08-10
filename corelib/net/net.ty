@@ -188,3 +188,14 @@ fn udp_send(fd: int, host: string, port: int, data: bytes) -> int:
 
 fn udp_read(fd: int, max: int) -> bytes:
     return netx_udp_read(fd, max)
+
+# Wait at most `ms` for one connection. Timeout is not a listener failure.
+# Existing accept() stays blocking; servers that need bounded shutdown use this.
+extern fn netx_accept_wait(fd: int, ms: int) -> int
+fn accept_wait(fd: int, ms: int) -> Result(int, NetErr):
+    conn := netx_accept_wait(fd, ms)
+    if conn == -2:
+        return Err(Timeout)
+    if conn < 0:
+        return Err(Failed)
+    return Ok(conn)

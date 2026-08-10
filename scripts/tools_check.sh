@@ -17,6 +17,7 @@
 # the build.
 set -u
 cd "$(dirname "$0")/.." || exit 2
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) FIND=/usr/bin/find ;; *) FIND=find ;; esac
 
 make -s tychoc tychofmt tycho-lsp || { echo "tools build failed"; exit 1; }
 TYCHOC=./tychoc; FMT=./tychofmt; LSP=./tycho-lsp
@@ -26,7 +27,7 @@ fail=0
 
 echo ">>> formatter: idempotence + semantic preservation"
 nfiles=0; ncomp=0; idemfail=0; semfail=0
-for f in $(find . -name '*.ty' -not -path './editors/*' -not -path '*/node_modules/*' -not -path './fuzz/findings/*'); do
+for f in $("$FIND" . -name '*.ty' -not -path './editors/*' -not -path '*/node_modules/*' -not -path './fuzz/findings/*'); do
     nfiles=$((nfiles + 1))
     "$FMT" "$f" > "$TMP/a.ty" 2>/dev/null
     "$FMT" "$TMP/a.ty" > "$TMP/b.ty" 2>/dev/null

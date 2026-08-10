@@ -6,9 +6,9 @@
 #   signal.on_shutdown(fd) -> bool
 #                             Install a SIGTERM and SIGINT handler whose ONLY
 #                             action is shutdown(fd, SHUT_RDWR) on the listening
-#                             socket `fd`. Every thread blocked in net.accept(fd)
-#                             is released with Err(Failed) and the program winds
-#                             down through the path it already has. Returns false
+#                             socket `fd`. Linux wakes blocking net.accept calls;
+#                             portable servers use net.accept_wait so they also
+#                             check the shutdown flag on a bounded timer. Returns false
 #                             if the handler could not be installed -- fail closed,
 #                             the default disposition (die on SIGTERM) stays.
 #   signal.shutdown_requested() -> bool
@@ -57,13 +57,13 @@
 # each on the POSIX async-signal-safe list; see the header of signal_shim.c for
 # the per-call argument.
 #
-# WHAT IT COSTS. `shutdown` on a LISTENING socket waking a blocked accept() is a
-# Linux behaviour, not a POSIX guarantee, and connections still sitting in the
-# backlog are dropped rather than drained. It was chosen over the alternatives by
-# measurement, not preference: with four accept loops on one listener it released
-# 4/4 in the same millisecond, where close(fd) released 1/4 and handed the fd
-# number back out to a later open() while three threads were still blocked on it.
-# The table is in plan.md's phase 1 evidence.
+# WHAT IT COSTS. `shutdown` waking a blocked accept() is Linux behaviour, not a
+# POSIX guarantee. The server therefore uses net.accept_wait with a 100ms ceiling;
+# Linux still gets the immediate wakeup, while macOS winds down on that timer.
+# The bounded wait costs at most ten idle wakeups per worker each second.
+# Connections still in the backlog are dropped. close(fd) remains unsafe: it
+# released only 1/4 Linux accept loops and let the fd number be reused while three
+# threads still referenced it. The table is in plan.md's phase 1 evidence.
 #
 # ORDER MATTERS: call on_shutdown AFTER net.listen, with the listening fd, and
 # BEFORE the accept loops start. The fd is registered before the handler is, so a

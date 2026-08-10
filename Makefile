@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -149,23 +149,16 @@ wine-tools:
 wine-ffi:
 	@sh scripts/wine_ffi.sh
 
-# Differential test suite: every examples/*.ty and tests/*.ty built both
-# native -O2 and under -fsanitize=address,undefined, run on matching stdin,
-# asserting exit 0, clean sanitizers, and byte-identical output. See
-# tests/run.sh and docs/thesis.md §3.
+# Differential test suite: every examples/*.ty and tests/*.ty built both native
+# -O2 and under ASan/UBSan, run on matching stdin, and scored by shell/cmp/grep.
+# Positive fixtures use a bounded worker pool; TYCHO_THREADS=1 is the sequential
+# oracle and RECORD=1 stays sequential. See tests/run.sh and docs/thesis.md §3.
 test: tychoc
 	@sh tests/run.sh
 
-# The same 560 fixtures over a bounded worker pool, in Tycho: tools/prunner/main.ty.
-# 7 m 54 s -> 1 m 02 s on a 16-core box, and its report is byte-identical to
-# `tests/run.sh`'s over the whole corpus (the prunner plan).
-#
-# ADVISORY, NOT AUTHORITATIVE, and `test` above is deliberately still the shell
-# script. prunner is compiled by the compiler it tests, so a tychoc regression
-# can land inside its judge and turn every verdict green at once; run.sh scores
-# with cmp/grep/test, which nothing in this repo can break. Use `test-fast` while
-# iterating, `test` to believe the answer. When they disagree, run.sh is right.
-# Width is ncpu(); TYCHO_THREADS=N narrows it (there is no -j -- the prunner plan).
+# The same corpus through a Tycho-written judge. Kept as concurrency dogfood,
+# not authority: a compiler regression can land inside its own judge. `test`
+# above remains the answer to believe; both use TYCHO_THREADS=N for width.
 build/prunner: tools/prunner/main.ty tychoc | build
 	@./tychoc tools/prunner/main.ty -o build/prunner
 
@@ -678,6 +671,18 @@ bench-guard: tychoc
 # The single "is the tree green" command. N defaults to 200 (override: make ci N=500 for a deeper sweep).
 ci:
 	@sh scripts/ci.sh $(N)
+
+# Build the current-version tarball twice, smoke-test it, and require byte-identical output.
+release-check: tychoc
+	@set -eu; \
+	  version="$$(./tychoc --version | awk '{print $$2}')"; \
+	  os="$$(uname -s | tr '[:upper:]' '[:lower:]')"; \
+	  archive="dist/tycho-v$$version-$$os-$$(uname -m).tar.gz"; \
+	  first="$$(mktemp)"; trap 'rm -f "$$first"' EXIT HUP INT TERM; \
+	  sh scripts/release.sh "v$$version"; cp "$$archive" "$$first"; \
+	  sh scripts/release.sh "v$$version"; \
+	  cmp -s "$$first" "$$archive" || { echo "release-check: archives differ" >&2; exit 1; }; \
+	  echo "release-check: byte-identical archives"
 
 # Activate the local git pre-push gate (.githooks/pre-push: make ci N=0 + fuzz-quick).
 hooks:

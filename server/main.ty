@@ -852,33 +852,31 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
 
 # ---- the worker pool -------------------------------------------------------
 
-# WHY THE ERR ARM IS NOT `running = false`, AND WHY THAT NEEDED NO ERRNO.
+# WHY THIS LOOP USES accept_wait, NOT blocking accept.
 #
-# Until this plan's batch A it was: any Err at all retired the loop. Correct for
-# the one failure that actually happens here -- the shutdown handler releasing the
-# listener -- and wrong for every other one, because net.accept collapses every
-# errno to Err(Failed) (corelib/net/net.ty:121-125 over
-# corelib/net/net_shim.c:162-167, which returns -1 and nothing else). A single
-# transient EMFILE therefore retired that worker permanently and silently, and the
-# server kept advertising a worker count it no longer had.
+# signal.on_shutdown calls shutdown() on the listener. Linux wakes every thread
+# blocked in accept(), but POSIX does not promise that and macOS leaves workers
+# parked. A clean shutdown cannot depend on a Linux-only wakeup.
 #
-# The obvious fix is to carry errno across the shim -- an `inout status` on
-# netx_accept the way netx_read already has one (corelib/net/net.ty:102), plus
-# NetErr variants, plus the spec entry for them. That is NOT what this does,
-# because the server does not need to know WHICH error it got. It needs to know
-# one bit: is this the shutdown, or is it not? That bit already has an API.
-# signal.shutdown_requested() (corelib/signal/signal.ty:64-65) reads the flag the
-# handler sets, and corelib/signal/signal_shim.c:81-83 sets that flag BEFORE it calls
-# shutdown(fd) -- so any accept released by the shutdown, or interrupted by EINTR
-# on the way to it, observes the flag already true. The discriminator is exact for
-# the case that matters and costs no FFI surface at all.
+# net.accept_wait bounds that wait at 100ms. Its shim makes the listener
+# nonblocking before select(), so two workers woken for one arrival cannot leave
+# the loser stuck in accept(). Accepted sockets are put back in blocking mode.
 #
-# The flag is a `volatile sig_atomic_t` read from a thread other than the one the
-# handler ran on, which is not by itself a cross-thread ordering guarantee. That
-# is what the retry cap underneath is really insuring: if a worker ever did read a
-# stale 0, it retries, the next accept on a shut-down listener fails at once
-# (phase 1 measured EINVAL there), and the flag is re-read every time round. The
-# wind-down is guaranteed by the cap even if the fast path were ever missed.
+# Timeout is not a listener failure. It is the ordinary idle result and gives
+# each worker a chance to read signal.shutdown_requested(); no traffic is needed
+# to release the pool after SIGTERM or SIGINT.
+# shutdown() remains the fast wakeup on kernels that support it; the timeout is
+# the portable ceiling when they do not. The handler still releases accepted
+# connections immediately, so parked readers do not wait for their idle timer.
+# This bounds shutdown without changing the blocking net.accept contract.
+#
+# Failed remains distinct. A transient EMFILE, ENFILE, ECONNABORTED or EPROTO is
+# retried with ACCEPT_BACKOFF_MS, while MAX_ACCEPT_FAILS retires a permanently
+# broken loop instead of spinning forever and making wait() hang forever.
+#
+# Existing net.accept callers keep their blocking contract. Only this server,
+# which needs bounded cross-platform shutdown, opts into the timed form. The
+# server harness exercises both the connection path and every shutdown path.
 fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
     served := 0
     running := true
@@ -889,7 +887,7 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
         # "or_return requires the enclosing function to return a Result, but it
         # returns int"). A match is the only tool, and it costs the same two
         # branches the sentinel test cost -- with the fd unreachable on failure.
-        match net.accept(srv):
+        match net.accept_wait(srv, 100):
             Ok(conn):
                 fails = 0
                 # REGISTER FIRST, RETIRE BEFORE CLOSE. The signal handler shuts
@@ -924,6 +922,8 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
                 # handler would then shutdown() a stranger's connection.
                 signal.retire_conn(slot)
                 net.close_fd(conn)
+            Err(Timeout):
+                running = not signal.shutdown_requested()
             Err(e):
                 if signal.shutdown_requested():
                     running = false                # the listener was shut down

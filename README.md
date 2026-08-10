@@ -211,11 +211,12 @@ verifies the whole tree.
 | `make` | Build the `./tychoc` transpiler. |
 | `./tychoc f.ty` | Transpile to C, compile to native `f`; the intermediate `f.c` is removed on success, kept on a `cc` failure. |
 | `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
-| `make test` | Run the test suite (below). |
+| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). |
 | `make bench` | Run the performance guard (below). |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer. |
 | `make corelib` | Build + validate the standard library three ways. |
-| `make ci` | The full local gate — no cloud CI. |
+| `make ci` | The full local gate; independent lanes run in parallel — no cloud CI. |
+| `make release-check` | Build and smoke-test the current-version tarball twice; require byte-identical archives. |
 | `make clean` | Remove build artifacts. |
 
 `make test` builds every `examples/*.ty` and `tests/*.ty` twice — native `-O2`

@@ -33,7 +33,7 @@
 # THE GOLDEN IS DETERMINISTIC ONLY BECAUSE THE FIXTURE IS BUILT HERE. Every
 # fixture file is written by this script from a literal or a counted loop --
 # never from /dev/urandom, never copied out of the tree -- and every one is
-# stamped `touch -d @1700000000`, because mtime is a header field and `t`
+# stamped at Unix epoch 1700000000, because mtime is a header field and `t`
 # prints it. A fixture with a real mtime would make the golden a record of the
 # minute it was recorded.
 #
@@ -66,8 +66,8 @@ golden=tools/tycho-ar/expected.out
 # dotfile, the embedded space, the NUL payload, the deep path, the empty file,
 # the multichunk file) is still exercised on both platforms.
 case "$(uname -s)" in
-    *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;;
-    *) IS_WINDOWS=0 ;;
+    *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; FIND=/usr/bin/find ;;
+    *) IS_WINDOWS=0; FIND=find ;;
 esac
 if [ "$IS_WINDOWS" = 1 ]; then
     echo "tycho-ar: SKIP the newline-in-name member (Windows filenames cannot contain \\n); using $golden.win"
@@ -108,7 +108,7 @@ while [ "$i" -lt 4000 ]; do
     printf 'multichunk line %04d ----------------\n' "$i"
     i=$((i + 1))
 done > "$tree/sub/multichunk.txt"
-find "$tree" -exec touch -d @1700000000 {} + || { echo "FAIL: touch -d @EPOCH unsupported"; exit 1; }
+"$FIND" "$tree" -exec env TZ=UTC0 touch -t 202311142213.20 {} + || { echo "FAIL: portable mtime stamp"; exit 1; }
 
 # A second, one-member tree for the damage legs. One member means the first
 # header IS the only header, so the offsets parsed below are unambiguous, and
@@ -116,7 +116,7 @@ find "$tree" -exec touch -d @1700000000 {} + || { echo "FAIL: touch -d @EPOCH un
 tiny="$T/tiny"
 mkdir -p "$tiny/xx"
 printf 'twelve bytes' > "$tiny/xx/a.txt"       # exactly 12 bytes, and the path
-find "$tiny" -exec touch -d @1700000000 {} +   # `xx/a.txt` is exactly 8
+"$FIND" "$tiny" -exec env TZ=UTC0 touch -t 202311142213.20 {} +   # `xx/a.txt` is exactly 8
 
 # ---------------------------------------------------------------------------
 # [1] create twice, byte-identical

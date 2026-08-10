@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <unistd.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -67,7 +68,18 @@ long tycho_is_windows(void) {
 /* Delete one file. 0 on success, -1 if it could not be removed (including
  * "was not there", which every caller here treats as success anyway -- they
  * are all cleanup paths that used `rm -f`). */
-long tycho_remove(char *path) { return remove(path) == 0 ? 0 : -1; }
+long tycho_remove(char *path) {
+#ifdef _WIN32
+    for (int tries = 0; tries < 20; tries++) {
+        if (remove(path) == 0) return 0;
+        if (errno != EACCES) return -1;
+        Sleep(10);
+    }
+    return -1;
+#else
+    return remove(path) == 0 ? 0 : -1;
+#endif
+}
 
 /* Copy src's bytes over dst, truncating dst. 0 on success, -1 on any read or
  * write failure -- including a short write, so a full disk fails the caller

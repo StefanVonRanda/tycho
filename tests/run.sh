@@ -158,9 +158,9 @@ run_fixture() {
     run_one "$hi" "$name" "$gold" "$in"
 }
 
-# Windows single-fixture mode: the chunked loop below spawns a fresh shell per
-# fixture (see the MSYS2 exec flake note there); this mode runs exactly one and
-# exits with its verdict. The fixture's own ok/FAIL line has already printed.
+# Worker mode: the pool below spawns a fresh shell per fixture; this mode runs
+# exactly one and exits with its verdict. The fixture's own ok/FAIL line has
+# already printed.
 # Explicit name/gold/in may be passed (the pkg loop); the default derivation
 # handles tests/*.ty paths.
 if [ "${1:-}" = "--one" ]; then
@@ -172,45 +172,86 @@ if [ "${1:-}" = "--one" ]; then
     exit $((fail > 0))
 fi
 
-# Windows/MSYS2 exec flake (Prism emulation): thread-using PEs intermittently
-# fail to exec (exit 127, no stderr) after ~100+ spawns from one shell -- the
-# full corpus crosses that mid-way. A fresh shell per fixture keeps churn per
-# shell at ~10 spawns and dodges it entirely (verified: a fresh child shell
-# execs the PE fine even after the parent has churned).
-if [ "$IS_WINDOWS" = 1 ]; then
-    for hi in examples/*.ty tests/*.ty; do
-        [ -e "$hi" ] || continue
-        if sh "$0" --one "$hi"; then pass=$((pass + 1))
-        else fail=$((fail + 1)); fails="$fails $(basename "$hi" .ty)"; fi
-    done
-else
+# RECORD mode stays sequential because it writes the goldens. Normal runs keep
+# the shell/cmp/grep oracle but spread positive fixtures over bounded workers;
+# each worker owns its temp directory, and reports are replayed in fixture order.
+if [ "$RECORD" = 1 ]; then
     for hi in examples/*.ty tests/*.ty; do
         [ -e "$hi" ] || continue
         run_fixture "$hi"
     done
-fi
-
-# Package programs: each tests/pkg/<name>/ is one multi-file package program
-# whose entry is main.ty (the compiler merges the whole directory and follows
-# its imports). Golden is tests/pkg/<name>.out — same native-vs-ASan + golden
-# discipline as single files.
-for d in tests/pkg/*/; do
-    [ -d "$d" ] || continue
-    name="$(basename "$d")"
-    entry="$d/main.ty"
-    if [ ! -f "$entry" ]; then
-        note "pkg_$name" "no main.ty"; fail=$((fail + 1)); fails="$fails pkg_$name"; continue
-    fi
-    in="tests/pkg/$name.in"; [ -f "$in" ] || in=/dev/null
-    gold="tests/pkg/$name.out"
-    if [ "$IS_WINDOWS" = 1 ] && [ -f "tests/pkg/$name.out.win" ]; then gold="tests/pkg/$name.out.win"; fi
-    if [ "$IS_WINDOWS" = 1 ]; then
-        if sh "$0" --one "$d/main.ty" "pkg_$name" "$gold" "$in"; then pass=$((pass + 1))
-        else fail=$((fail + 1)); fails="$fails pkg_$name"; fi
-    else
+    for d in tests/pkg/*/; do
+        [ -d "$d" ] || continue
+        name="$(basename "$d")"
+        entry="$d/main.ty"
+        if [ ! -f "$entry" ]; then
+            note "pkg_$name" "no main.ty"; fail=$((fail + 1)); fails="$fails pkg_$name"; continue
+        fi
+        in="tests/pkg/$name.in"; [ -f "$in" ] || in=/dev/null
+        gold="tests/pkg/$name.out"
         run_one "$entry" "pkg_$name" "$gold" "$in"
+    done
+else
+    test_jobs="${TYCHO_THREADS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}"
+    case "$test_jobs" in ''|*[!0-9]*|0) echo "tests: TYCHO_THREADS must be a positive integer" >&2; exit 2 ;; esac
+
+    job_count=0
+    job_file="$TMP/jobs"
+    : >"$job_file"
+    queue_positive() {
+        job_count=$((job_count + 1))
+        index="$job_count"; name="$2"
+        printf '%s\n' "$name" >"$TMP/job.$index.name"
+        printf '%s\0%s\0%s\0%s\0%s\0' "$index" "$1" "$2" "$3" "$4" >>"$job_file"
+    }
+
+    for hi in examples/*.ty tests/*.ty; do
+        [ -e "$hi" ] || continue
+        name="$(basename "$hi" .ty)"
+        gold="tests/$name.out"
+        if [ "$IS_WINDOWS" = 1 ] && [ -f "tests/$name.out.win" ]; then gold="tests/$name.out.win"; fi
+        queue_positive "$hi" "$name" "$gold" "$(if [ -f "tests/$name.in" ]; then echo "tests/$name.in"; else echo /dev/null; fi)"
+    done
+    # Package programs: each directory is one multi-file program whose entry is
+    # main.ty and whose golden lives beside the package directory.
+    for d in tests/pkg/*/; do
+        [ -d "$d" ] || continue
+        name="$(basename "$d")"
+        entry="$d/main.ty"
+        if [ ! -f "$entry" ]; then
+            job_count=$((job_count + 1)); index="$job_count"
+            printf 'FAIL  pkg_%s  (no main.ty)\n' "$name" >"$TMP/job.$index.out"
+            printf '1\n' >"$TMP/job.$index.status"
+            printf 'pkg_%s\n' "$name" >"$TMP/job.$index.name"
+            continue
+        fi
+        in="tests/pkg/$name.in"; [ -f "$in" ] || in=/dev/null
+        gold="tests/pkg/$name.out"
+        if [ "$IS_WINDOWS" = 1 ] && [ -f "tests/pkg/$name.out.win" ]; then gold="tests/pkg/$name.out.win"; fi
+        queue_positive "$entry" "pkg_$name" "$gold" "$in"
+    done
+    if [ -s "$job_file" ]; then
+        xargs -0 -n 5 -P "$test_jobs" sh -c '
+            driver=$1; tmp=$2; index=$3; shift 3
+            {
+                if sh "$driver" --one "$@"; then code=0; else code=$?; fi
+                printf "%s\n" "$code" >"$tmp/job.$index.status"
+            } >"$tmp/job.$index.out" 2>&1
+        ' sh "$0" "$TMP" <"$job_file"
     fi
-done
+
+    index=1
+    while [ "$index" -le "$job_count" ]; do
+        cat "$TMP/job.$index.out"
+        name="$(cat "$TMP/job.$index.name")"
+        if [ "$(cat "$TMP/job.$index.status")" -eq 0 ]; then
+            pass=$((pass + 1))
+        else
+            fail=$((fail + 1)); fails="$fails $name"
+        fi
+        index=$((index + 1))
+    done
+fi
 
 # HISTORY: two "post-freeze" loops used to sit here, one for tests/postfreeze/*.ty
 # and one for tests/postfreeze/abort/*.ty. That directory existed only because the

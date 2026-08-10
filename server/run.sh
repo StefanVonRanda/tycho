@@ -52,7 +52,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 fail=0
-case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
+case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; SORT=/usr/bin/sort ;; *) IS_WINDOWS=0; SORT=sort ;; esac
 
 # ---- signalling the server, on either platform ------------------------------
 #
@@ -724,10 +724,10 @@ fi
 chk() {  # chk <name> <expected-count-test> <actual>
     if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$3', want '$2'"; fail=1; fi
 }
-workers=$(sed -n 's/^\(w[0-9][0-9]*\) .*/\1/p' "$T/srv.err" | sort -u | tr '\n' ' ')
+workers=$(sed -n 's/^\(w[0-9][0-9]*\) .*/\1/p' "$T/srv.err" | "$SORT" -u | tr '\n' ' ')
 chk "access log: every worker served (w1..w4)" "w1 w2 w3 w4 " "$workers"
 
-peers=$(sed -n 's/^w[0-9][0-9]* \([^ ]*\) .*/\1/p' "$T/srv.err" | sort -u | tr '\n' ' ')
+peers=$(sed -n 's/^w[0-9][0-9]* \([^ ]*\) .*/\1/p' "$T/srv.err" | "$SORT" -u | tr '\n' ' ')
 chk "access log: peer address on every line (net.peer_addr)" "127.0.0.1 " "$peers"
 
 for code in 200 206 301 400 403 404 405 408 416 431; do

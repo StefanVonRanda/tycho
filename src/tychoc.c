@@ -3480,24 +3480,24 @@ static Expr *hoist_place_leg(Expr *sub, int line) {
  * before the assignment) and rewrite the place to use it, so the index runs
  * once. Pure indices are untouched, so the common `a[i] += e` is byte-identical.
  *
- * `compound` also hoists the ARGUMENTS of a user subscript in the place
- * (`g.edge(f()).weight += 1`, spec §13.4 single-evaluation). A subscript call is
- * inlined to its yielded place at resolve time, so its argument ends up inside
- * the place expression and, without this, is emitted twice — the read took
- * nodes[0] and the store went to nodes[1]. Only the compound path needs it: a
- * plain `place = rhs` evaluates the place once, and leaving it alone keeps the
- * emitted C for that form unchanged. */
-static void hoist_index_calls(Expr *place, int line, int compound) {
+ * The ARGUMENTS of a user subscript are hoisted too: a plain assignment needs
+ * the place sequenced before its RHS, while a compound assignment additionally
+ * needs the inlined yielded place evaluated only once. C does not guarantee
+ * evaluation order between an assignment's place and RHS, so leaving the call
+ * inline lets the host compiler choose the wrong order.
+ *
+ * Pure indices stay inline. */
+static void hoist_index_calls(Expr *place, int line) {
     Expr *chain[32]; int nc = 0;
     for (Expr *cur = place; cur; ) {
-        if (cur->kind == E_INDEX || (compound && cur->kind == E_CALL)) {
+        if (cur->kind == E_INDEX || cur->kind == E_CALL) {
             if (nc >= 32) die_at(line, "assignment place too deeply nested (max 32 indices)");
             chain[nc++] = cur;
         }
         if (cur->kind == E_INDEX || cur->kind == E_FIELD || cur->kind == E_TUPIDX) cur = cur->lhs;
         /* a subscript call in the place: `g.edge(i)` keeps its receiver in ->qual
          * (a bare ident -- no legs under it), `a.b.edge(i)` in ->lhs->lhs. */
-        else if (compound && cur->kind == E_CALL)
+        else if (cur->kind == E_CALL)
             cur = (cur->lhs && cur->lhs->kind == E_FIELD) ? cur->lhs->lhs : NULL;
         else break;
     }
@@ -3950,7 +3950,7 @@ static Stmt *parse_stmt(Parser *ps) {
          * inline and the C compiler picks the order (tychoc got RHS-first), which
          * diverged from tychoc0 on `arr[f()] = g()`. Hoisting the index into a
          * pending temp sequences it first, matching tychoc0. Pure indices untouched. */
-        hoist_index_calls(e, t->line, 0);
+        hoist_index_calls(e, t->line);
         eat(ps, TK_NEWLINE, "newline");
         return s;
     }
@@ -3965,7 +3965,7 @@ static Stmt *parse_stmt(Parser *ps) {
         Expr *rhs = parse_expr(ps);
         eat(ps, TK_NEWLINE, "newline");
         if (e->kind == E_INDEX || e->kind == E_FIELD || e->kind == E_TUPIDX)
-            hoist_index_calls(e, t->line, 1);   /* single-eval a side-effecting index / subscript argument */
+            hoist_index_calls(e, t->line);   /* single-eval a side-effecting index / subscript argument */
         Expr *b = new_expr(E_BINOP, t->line);
         b->op = op; b->lhs = e; b->rhs = rhs;
         if (e->kind == E_IDENT) {

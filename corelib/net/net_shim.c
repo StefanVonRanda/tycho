@@ -362,3 +362,56 @@ void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *
     *out = buf;
     *outlen = n;
 }
+
+/* Wait up to `ms` for one connection. The listener is made nonblocking before
+ * select so two workers woken for one arrival cannot leave the loser stuck in
+ * accept. Accepted sockets are forced back to blocking mode for net.read.
+ * Returns -2 on timeout, -1 on failure, or the connected fd. */
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/select.h>
+#endif
+#include <limits.h>
+static int ty_set_nonblocking(int fd, int on) {
+#ifndef _WIN32
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) return 0;
+    flags = on ? flags | O_NONBLOCK : flags & ~O_NONBLOCK;
+    return fcntl(fd, F_SETFL, flags) == 0;
+#else
+    u_long mode = on ? 1 : 0;
+    return ioctlsocket((SOCKET)fd, FIONBIO, &mode) == 0;
+#endif
+}
+
+tycho_int netx_accept_wait(tycho_int fd, tycho_int ms) {
+    if (fd < 0 || ms < 0 || ms > INT_MAX) return -1;
+#ifndef _WIN32
+    if (fd >= FD_SETSIZE) return -1;
+#endif
+    if (!ty_set_nonblocking((int)fd, 1)) return -1;
+    fd_set ready;
+    FD_ZERO(&ready);
+    FD_SET((int)fd, &ready);
+    struct timeval tv;
+    tv.tv_sec = (long)(ms / 1000);
+    tv.tv_usec = (long)((ms % 1000) * 1000);
+#ifdef _WIN32
+    int selected = select(0, &ready, NULL, NULL, &tv);
+#else
+    int selected = select((int)fd + 1, &ready, NULL, NULL, &tv);
+#endif
+    if (selected == 0) return -2;
+    if (selected < 0) return -1;
+    tycho_int conn = netx_accept(fd);
+    if (conn < 0) {
+#ifndef _WIN32
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return -2;
+#else
+        if (WSAGetLastError() == WSAEWOULDBLOCK) return -2;
+#endif
+        return -1;
+    }
+    if (!ty_set_nonblocking((int)conn, 0)) { TY_CLOSE((int)conn); return -1; }
+    return conn;
+}

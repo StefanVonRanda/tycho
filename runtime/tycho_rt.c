@@ -41,6 +41,9 @@
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 #endif
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,7 +59,11 @@
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
 #include <signal.h>    /* the stack-overflow guard (sigaltstack/sigaction) */
 #ifndef _WIN32
+#if defined(__APPLE__)
+#include <sys/ucontext.h> /* the faulting SP; <ucontext.h> exposes deprecated routines and now requires _XOPEN_SOURCE */
+#else
 #include <ucontext.h>  /* the faulting SP for the guard's SIGSEGV heuristic (Windows has no ucontext; the guard uses the distinct EXCEPTION_STACK_OVERFLOW code instead) */
+#endif
 #endif
 #include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
 #include <stdatomic.h> /* lock-free channel fast path (CC-5) */
@@ -73,33 +80,19 @@ _Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");
 #define TYCHO_BLOCK_DEFAULT (1u << 16)
 
 /* ---- stack-overflow guard: generated-code recursion fails closed ---------- */
-/* The compiler fails closed on pathologically nested INPUT (its own recursion
- * gate, tests/recursion/); nothing guarded the C stack of generated code, so
- * deep recursion in a Tycho program died with SIGSEGV, no diagnostic, no
- * cleanup. Two measured victims: the Scheme interpreter at ~5k levels, the
- * json walker at ~100k nests. This guard turns stack exhaustion into a clean
- * failure, per platform:
+/* Generated Tycho recursion used to die with a silent SIGSEGV. This guard
+ * turns an exhausted C stack into one diagnostic and exit 1.
  *
- *   POSIX: a SIGSEGV handler on an alternate signal stack (zero steady-state
- *   cost -- it runs only when the main stack is already exhausted) checks the
- *   FAULTING stack pointer against the thread's recorded stack region; past
- *   the bottom, it prints one line and _exits(1). Any other SIGSEGV is
- *   re-raised with the default disposition, so a real bug (null deref, wild
- *   write) still crashes as a real crash, debugger-visible, exit 139.
+ * POSIX records each thread's stack bounds and handles SIGSEGV (plus SIGBUS on
+ * macOS) on an alternate stack. A faulting SP near the lower bound is an
+ * overflow; other faults are re-raised with the default disposition.
  *
- *   Windows: EXCEPTION_STACK_OVERFLOW is a DISTINCT exception code, so no
- *   bounds recording or SP comparison is needed. A vectored exception handler
- *   (runs before any SEH dispatch, on the faulting thread) prints the same
- *   one line and exits on that code alone; anything else returns
- *   EXCEPTION_CONTINUE_SEARCH and a real fault still crashes as a real crash.
- *   The handler runs on the just-committed guard page, so it touches only a
- *   fixed message and WriteFile/ExitProcess -- nothing that needs real stack.
+ * Windows has a distinct EXCEPTION_STACK_OVERFLOW code, so its vectored
+ * handler needs neither bounds nor an SP heuristic.
  *
- * Thread-local bounds (POSIX): pthread_getattr_np (a GNU extension, exposed by
- * the _GNU_SOURCE above) is the one reliable way to learn a thread's stack
- * region. macOS has pthread_get_stackaddr_np in the system headers. Any
- * other platform leaves the bounds zero and the guard inert: it never
- * falsely claims an overflow, it simply falls back to the old SIGSEGV death. */
+ * pthread_getattr_np supplies Linux bounds; macOS supplies
+ * pthread_get_stackaddr_np. Unknown POSIX platforms leave the bounds zero and
+ * retain the operating system's normal fault handling. */
 #ifndef _WIN32
 
 typedef struct { uintptr_t hi; uintptr_t lo; } TychoStackBounds;
@@ -125,12 +118,20 @@ static void tycho_record_stack_bounds(void) {
 #endif
 }
 
-static char g_altstack[32 * 1024] __attribute__((aligned(16)));
+static __thread char g_altstack[32 * 1024] __attribute__((aligned(16)));
+static __thread stack_t g_previous_altstack;
+static __thread int g_previous_altstack_valid;
 
-static void tycho_segv_handler(int sig, siginfo_t *si, void *uctx) {
+static void tycho_fault_handler(int sig, siginfo_t *si, void *uctx) {
     uintptr_t sp = 0;
     ucontext_t *uc = (ucontext_t *)uctx;
-#if defined(__x86_64__)
+#if defined(__APPLE__) && defined(__x86_64__)
+    sp = (uintptr_t)uc->uc_mcontext->__ss.__rsp;
+#elif defined(__APPLE__) && defined(__i386__)
+    sp = (uintptr_t)uc->uc_mcontext->__ss.__esp;
+#elif defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+    sp = (uintptr_t)uc->uc_mcontext->__ss.__sp;
+#elif defined(__x86_64__)
     sp = (uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
 #elif defined(__i386__)
     sp = (uintptr_t)uc->uc_mcontext.gregs[REG_ESP];
@@ -150,8 +151,8 @@ static void tycho_segv_handler(int sig, siginfo_t *si, void *uctx) {
     }
     /* not a stack overflow: restore the default disposition and re-raise, so
      * the fault is a real crash (core dump, exit 139, debugger-visible) */
-    signal(SIGSEGV, SIG_DFL);
-    raise(SIGSEGV);
+    signal(sig, SIG_DFL);
+    raise(sig);
 }
 
 /* sigaltstack is PER-THREAD: the handler must run on an alternate stack that
@@ -163,30 +164,29 @@ static void tycho_stack_guard_thread_init(void) {
     tycho_record_stack_bounds();
     stack_t ss; memset(&ss, 0, sizeof ss);
     ss.ss_sp = g_altstack; ss.ss_size = sizeof g_altstack;
-    sigaltstack(&ss, NULL);
+    g_previous_altstack_valid = sigaltstack(&ss, &g_previous_altstack) == 0;
 }
 
-/* ASan's thread-destroy path munmaps whatever altstack is CURRENT on the
- * exiting thread, assuming it is ASan's own. Ours is a static buffer, so that
- * munmap fails with EINVAL and ASan reports "failed to deallocate ... Failed
- * to munmap" on every spawned task under -fsanitize=address. Clearing the
- * altstack before the task's fn returns leaves destroy nothing to unmap.
- * Native builds do not need this (no munmap-at-destroy) and skip the syscall. */
+/* ASan installs its own per-thread altstack before the task trampoline and
+ * expects that same mapping back at thread teardown. Restore the stack saved
+ * above before the task returns; leaving Tycho's TLS buffer active makes ASan
+ * try to munmap storage it does not own. */
 static void tycho_stack_guard_thread_fini(void) {
-#if defined(__SANITIZE_ADDRESS__)
-    stack_t ss; memset(&ss, 0, sizeof ss);
-    ss.ss_flags = SS_DISABLE;
-    sigaltstack(&ss, NULL);
+#if defined(__SANITIZE_ADDRESS__) || __has_feature(address_sanitizer)
+    if (g_previous_altstack_valid) sigaltstack(&g_previous_altstack, NULL);
 #endif
 }
 
 __attribute__((constructor)) static void tycho_stack_guard_init(void) {
     tycho_stack_guard_thread_init();
     struct sigaction sa; memset(&sa, 0, sizeof sa);
-    sa.sa_sigaction = tycho_segv_handler;
+    sa.sa_sigaction = tycho_fault_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, NULL);
+#if defined(__APPLE__)
+    sigaction(SIGBUS, &sa, NULL);
+#endif
 }
 #else
 /* Windows vectored handler. AddVectoredExceptionHandler(1, ...) puts it FIRST
