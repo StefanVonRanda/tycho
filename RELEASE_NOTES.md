@@ -21,8 +21,11 @@ Download the tarball for your platform below, verify it, and unpack it:
 ```
 tar xzf tycho-<version>-<os>-<arch>.tar.gz
 cd tycho-<version>-<os>-<arch>
-./tychoc examples/hello.ty && ./hello
+./tychoc examples/hello.ty && ./examples/hello
 ```
+
+`tychoc` writes the binary beside its source unless you pass `-o`, so the
+program built from `examples/hello.ty` is `examples/hello`.
 
 The core library ships inside the tarball, beside the compiler, so there's nothing to
 configure. You still need a C compiler (`cc`) on your `PATH` — Tycho transpiles to C. Each
