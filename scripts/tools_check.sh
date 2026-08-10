@@ -41,6 +41,27 @@ for f in $(find . -name '*.ty' -not -path './editors/*' -not -path '*/node_modul
 done
 echo "    $nfiles files checked  (compilable=$ncomp)  idempotence-fails=$idemfail  semantic-fails=$semfail"
 
+# Spelling, not just stability: `- 1` was idempotent AND semantically identical, so
+# the two checks above passed it for as long as it was wrong.
+echo ">>> formatter: canonical spellings"
+cat > "$TMP/sp.ty" <<'SP'
+fn main():
+    a := -1
+    b := 3 - 1
+    c := -a - b
+    d := 1 - -2
+    e := -(a + b)
+    g := [-1, -2]
+    h := -3.5
+    println(str(a + b + c + d + e + g[0]) + str(h))
+SP
+"$FMT" "$TMP/sp.ty" > "$TMP/sp.out" 2>/dev/null
+if cmp -s "$TMP/sp.ty" "$TMP/sp.out"; then
+    echo "    unary minus binds to its operand; binary minus keeps its spaces; \`- -2\` stays two lexemes"
+else
+    echo "  SPELLING DRIFT:"; diff "$TMP/sp.ty" "$TMP/sp.out" | head -10; fail=1
+fi
+
 echo ">>> lsp: scripted JSON-RPC smoke"
 python3 - "$LSP" <<'PY' || fail=1
 import subprocess, json, os, sys

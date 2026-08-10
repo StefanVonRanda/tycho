@@ -352,6 +352,10 @@ fn sep_needs_space(reals: [Tok], i: int) -> bool:
         return false                              # empty `[]` then a type: []int, []K
     if pt == "&" and (i < 2 or not is_operand(reals[i - 2])):
         return false                              # prefix inout `&x` (not binary `a & b`)
+    # prefix negation `-x` (not binary `a - b`). Value tokens only: `- -1` must not glue into `--1`.
+    if pt == "-" and (i < 2 or not is_operand(reals[i - 2])):
+        if c.kind == KInt or c.kind == KFloat or c.kind == KIdent or c.kind == KStr or c.kind == KFStr or c.kind == KChar or ct == "(" or ct == "[":
+            return false
     return true
 
 # format one non-blank line: canonical 4-space indent + content re-spaced by
