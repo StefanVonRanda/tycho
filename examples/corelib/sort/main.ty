@@ -5,6 +5,19 @@ package main
 import "core:sort"
 import "core:arrays"
 
+struct Person:
+    team: string
+    age: int
+    name: string
+
+# team ascending, then age DESCENDING -- no single comparable key expresses this
+fn team_then_oldest(x: Person, y: Person) -> int:
+    if x.team < y.team:
+        return -1
+    if x.team > y.team:
+        return 1
+    return y.age - x.age
+
 fn main():
     names := ["charlie", "alice", "bob"]
     ages := [30, 25, 28]
@@ -17,3 +30,11 @@ fn main():
 
     oldest := sort.argsort_desc(ages)
     println("oldest       = " + names[oldest[0]])                # charlie
+
+    # sort_by when the order needs two keys in opposite directions
+    staff := [Person("eng", 30, "charlie"), Person("ops", 25, "alice"), Person("eng", 42, "bob")]
+    ranked := sort.sort_by(staff, team_then_oldest)
+    line := ""
+    for i := 0; i < len(ranked); i += 1:
+        line = line + ranked[i].team + "/" + ranked[i].name + " "
+    println("ranked       = " + line)                            # eng/bob eng/charlie ops/alice

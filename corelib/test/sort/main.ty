@@ -1,6 +1,27 @@
-# corelib test: core:sort (argsort family + by_key). All sorts stable, inputs unmutated.
+# corelib test: core:sort (argsort family + by_key + sort_by). All sorts stable, inputs unmutated.
 package main
 import "core:sort"
+
+struct Row:
+    dept: string
+    pay: int
+    name: string
+
+# dept ascending, then pay DESCENDING -- two keys, opposite directions
+fn dept_then_pay(x: Row, y: Row) -> int:
+    if x.dept < y.dept:
+        return -1
+    if x.dept > y.dept:
+        return 1
+    if x.pay > y.pay:
+        return -1
+    if x.pay < y.pay:
+        return 1
+    return 0
+
+# first character only, descending -- so "b1"/"b2" tie and their order is the test
+fn first_desc(x: string, y: string) -> int:
+    return to_int(char_at(y, 0)) - to_int(char_at(x, 0))
 
 fn jn(xs: [int]) -> string:
     r := ""
@@ -35,3 +56,18 @@ fn main():
     println("bykey=" + jn(bk))                        # bykey=45,60,10,90 (10/90 tie on key 1600: stable keeps 10 first)
     empty := []int                                         # generic argsort needs a typed empty (can't infer $T from bare [])
     println("edge=" + str(len(sort.argsort(empty))) + str(len(sort.argsort([5]))))   # edge=01
+    # sort_by: the order the other entry points cannot express -- a struct (no
+    # `comparable` instance) ordered by two keys in opposite directions.
+    rows := [Row("eng", 3, "ann"), Row("ops", 5, "bo"), Row("eng", 9, "cy"), Row("eng", 3, "dee")]
+    by := sort.sort_by(rows, dept_then_pay)
+    out := ""
+    for i := 0; i < len(by); i += 1:
+        out = out + by[i].dept + str(by[i].pay) + by[i].name + " "
+    println("bytwo=" + out)                           # eng9cy eng3ann eng3dee ops5bo -- ann before dee is the stability
+    println("rows0=" + rows[0].name)                  # rows0=ann (input untouched)
+    # stability under a DESCENDING compare, with ties told apart -- a total-by-index
+    # comparator would pass every int test above and reverse these
+    tags := ["b1", "a1", "b2", "a2"]
+    ds := sort.sort_by(tags, first_desc)
+    println("desc3=" + str(ds))                       # desc3=[b1, b2, a1, a2]
+    println("edge2=" + str(len(sort.sort_by(empty, fn(x: int, y: int) -> int: x - y))) + str(len(sort.sort_by([5], fn(x: int, y: int) -> int: x - y))))

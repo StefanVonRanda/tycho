@@ -93,7 +93,10 @@ element type instead of a family of per-type siblings.
   orders the keys — generic over any comparable key type (int/float/string/char). The way
   to order data by a derived value: keep it in parallel arrays, argsort one, and walk every
   array through the permutation. All stable. Plus `by_key(xs, key)`: sort an array by a
-  derived int key (a fn/closure).
+  derived int key (a fn/closure). When the order needs more than one key, mixed
+  directions, or a type with no `comparable` instance, `sort_by(xs, cmp)` takes a
+  three-way compare `fn($T, $T) -> int` — bottom-up merge, stable, so equal elements
+  keep their input order under a descending compare too.
 - **`pool`** — a generational node pool for pointer-shaped data (graphs, trees,
   doubly-linked structures). Value semantics forbids a shared-mutable pointer graph, so the
   idiom is to hold every node in one array and link by integer index; `pool` packages that

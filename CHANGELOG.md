@@ -10,6 +10,19 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 Landed since the 0.5.0 entry below, against no tag — nothing has ever been
 released, so "since 0.5.0" means "since the work that entry describes".
 
+- **`core:sort` gains `sort_by(xs, cmp)`.** A three-way compare
+  `fn($T, $T) -> int`, so an order can use several keys, mixed directions, or a
+  type with no `comparable` instance — none of which fit `asc`/`desc`/`argsort`
+  (values, one direction) or `by_key` (an `int` key, and no order-preserving
+  injection of a string into one). Bottom-up merge, stable: equal elements keep
+  their input order under a descending compare, which a total-by-index
+  comparator would silently reverse.
+
+- **`tychofmt` no longer writes `-1` as `- 1`.** Prefix negation is told from
+  binary subtraction by what precedes it. Its two existing gates could not catch
+  this: `- 1` is idempotent and emits identical C, so the formatter now also
+  asserts canonical spellings.
+
 - **`Result(void, E)`, for an operation that either fails with a reason or
   succeeds with nothing to report.** `void` is now spellable as a `Result`'s ok
   payload — and in no other position — as a type with no values: constructed by

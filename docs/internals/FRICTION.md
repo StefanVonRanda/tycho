@@ -1647,7 +1647,23 @@ toward-zero, since `corelib/decimal/decimal.ty@rescale` already truncates toward
 zero and a second policy must not silently disagree with it. It ranks second
 rather than first because the failure is loud: a caller who hits it knows.
 
-### 3. `core:sort` has no comparator-taking sort at all
+### 3. ~~`core:sort` has no comparator-taking sort at all~~ — **CLOSED 2026-08-10**
+
+`corelib/sort/sort.ty@sort_by` takes `cmp: fn($T, $T) -> int`. Bottom-up merge,
+stable, the ~35 lines this item said already existed — lifted from
+`tools/tycho-q/main.ty@merge_sort` and made generic over the element instead of
+over an index.
+
+The stability point was the one worth testing, not the sorting: the test orders
+`"b1", "a1", "b2", "a2"` by first character descending, and a total-by-index
+comparator passes every other case here and returns `b2, b1` on that one.
+Flipping `<= 0` to `< 0` in the merge was run on purpose and reverses both that
+case and the two-key struct case.
+
+`tools/tycho-q/main.ty@merge_sort` still exists and is untouched — converting it
+to the corelib call is separate cleanup.
+
+The original text follows.
 
 Read against the signatures, not assumed. `corelib/sort/sort.ty@by_key` takes
 `key: fn($T) -> int` — **the key is an `int`**, so it can express no order that

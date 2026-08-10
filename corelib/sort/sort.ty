@@ -12,6 +12,8 @@ package sort
 # argsort/argsort_desc are generic over the key type (any comparable -- int,
 # float, string, char). All sorts are stable (equal keys keep their original
 # order) and return new arrays; inputs are never mutated.
+# When the order needs more than one key, mixed directions, or a type with no
+# `comparable` instance, use sort.sort_by(xs, cmp) and write the compare.
 
 fn argsort(keys: [$T]) -> [int] where comparable(T):        # ascending, stable
     ord := []int
@@ -60,6 +62,49 @@ fn desc(xs: [$T]) -> [$T] where comparable(T):      # sort the VALUES descending
             j = j - 1
         out[j + 1] = cur
     return out
+
+# The general one: any order you can write as a three-way compare -- several keys,
+# mixed directions, a type with no `comparable` instance. cmp(a, b) returns <0, 0, >0.
+# Bottom-up merge, O(n log n), where every other sort here is insertion sort.
+fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]:
+    a := xs
+    b := xs
+    n := len(a)
+    width := 1
+    for width < n:
+        lo := 0
+        for lo < n:
+            mid := lo + width
+            hi := lo + width + width
+            if mid > n:
+                mid = n
+            if hi > n:
+                hi = n
+            i := lo
+            j := mid
+            k := lo
+            for k < hi:
+                take_left := false
+                if i >= mid:
+                    take_left = false
+                elif j >= hi:
+                    take_left = true
+                else:
+                    # `<= 0`, not `< 0`: on a tie the left run holds the earlier
+                    # input elements, so taking it first is what makes this stable.
+                    take_left = (cmp(a[i], a[j]) <= 0)
+                if take_left:
+                    b[k] = a[i]
+                    i = i + 1
+                else:
+                    b[k] = a[j]
+                    j = j + 1
+                k = k + 1
+            lo = lo + width + width
+        for t := 0; t < n; t += 1:
+            a[t] = b[t]
+        width = width + width
+    return a
 
 fn by_key(xs: [$T], key: fn($T) -> int) -> [$T]:    # sort elements by a derived int key, ascending, stable
     out := xs

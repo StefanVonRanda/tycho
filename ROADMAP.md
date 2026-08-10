@@ -262,9 +262,9 @@ every one costs a citation re-anchor (~50-110 anchors move) and a full `make ci`
    after it (the spelling). The re-anchor cost the table above warned about was
    real: the first commit was written line-count-neutral and moved zero
    citations; the second moved 87 files' worth.
-4. `core:sort` comparator — corelib only. **No compiler change, so no citation
-   shift and no `make ci` requirement** — cheapest item on the list, and it is
-   ordered after 3 only because 3 was already scoped.
+4. ~~`core:sort` comparator~~ — **closed**, `sort.sort_by(xs, cmp)`. The gate
+   prediction held exactly: corelib only, no citation moved, `make corelib` and
+   `make corelib-examples` were the whole verification.
 5. `pass`, then `defer`. Both are real keywords and cost the full surface:
    parser, spec chapter, `appendix-b-keywords`, the grammar appendix,
    `tychofmt`, `tycho-lsp`, `editors/`, fixtures, goldens. `defer` additionally
