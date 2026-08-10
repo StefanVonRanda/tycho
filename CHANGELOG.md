@@ -5,10 +5,13 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
-## [Unreleased]
+## [0.5.0] — 2026-08-10
 
-Landed since the 0.5.0 entry below, against no tag — nothing has ever been
-released, so "since 0.5.0" means "since the work that entry describes".
+**The first release ever cut.** Everything below ships in it. The section was
+split in two until 2026-08-10 — an `[Unreleased]` block on top of a `[0.5.0]`
+block dated 2026-08-05 that was never tagged — which would have shipped a
+changelog that did not describe its own artifact. The 08-05 block is a draft,
+not history, so the two are merged here under the date this actually shipped.
 
 - **DEPRECATED: `sort.by_key(xs, key)`** — use `sort.sort_by(xs, cmp)`. The
   rewrite is mechanical: `by_key(xs, k)` is
@@ -256,11 +259,12 @@ released, so "since 0.5.0" means "since the work that entry describes".
   branch unification. The message now states the rule and names the tails
   that do flow one in (an assignment or a return).
 
-## [0.5.0] — 2026-08-05  (recorded at the time as 1.0.0; never tagged)
+### Earlier in the 0.5.0 cycle (recorded 2026-08-05, at the time as 1.0.0)
 
-The promotion that was later withdrawn — see [Unreleased]. The language surface and the spec are now the stability
-contract (see the README's status banner); what follows is the last chain of
-work that landed ahead of it.
+The promotion that was later withdrawn. The language surface and the spec are
+**not** a stability contract at 0.5 — the README's status banner says so, and
+`ROADMAP.md` lists what 1.0 would require. What follows is the chain of work
+that landed before the version number was corrected.
 
 - **Batteries-included corelib (phase 1).** Six new packages, each with a test
   + golden + guide entry: `core:testing` (assert/eq/report unit-test state),
