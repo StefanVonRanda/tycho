@@ -51,17 +51,20 @@ then a fuzz smoke, and blocks the push if any of them fails. That setting is
 all until you run it — which is exactly how a red citation gate reached `main`
 on 2026-08-10.
 
-The sweep is not as long as it looks: **`make ci` measured 499s on a 16-core
-box, 2026-08-10** — the full thirteen steps including 200 fuzz seeds. `N=0`, the
-hook's setting, skips the fuzz lanes and is faster still. If you are running it
-under something that watches its output, redirect to a log
-(`make ci > ci.log 2>&1`) rather than piping it — a pipeline dies with whatever
-is reading it, and you lose the partial result.
+The sweep is not as long as it looks: **`make ci` measured 495–499s across four
+runs on a 16-core box, 2026-08-10** — all thirteen steps including 200 fuzz
+seeds. `N=0`, the hook's setting, is **274s**. It parallelises (`run_lanes`
+forks each lane group), which is why the whole sweep costs barely more than
+`make test` alone.
 
-While you are still finding problems, run the lanes individually — `make test`,
-`make corelib`, `make ilp32`, … — since each prints its own verdict and the sum
-is no slower than the sweep. Use `make ci` to confirm what you already believe.
-The one to never skip is the cheapest:
+So do not run the lanes one at a time hoping to save time — the sum is far
+slower than the sweep. Run a single lane when you are ITERATING on one failure
+and want its verdict in seconds; run `make ci` to cover the tree. If something
+is watching its output, redirect to a log (`make ci > ci.log 2>&1`) rather than
+piping it — a pipeline dies with whatever is reading it and you lose the partial
+result.
+
+The one gate to never skip is the cheapest:
 
 ```
 make check-links     # relative links + every path:line citation, under a second
@@ -97,10 +100,12 @@ refs are stale.
 
 ## Where feature work is useful
 
-The language surface is **stable at 1.0** — value
-semantics, implicit arenas, concurrency, generics, closures, UFCS, FFI, and the
-`sink` consuming convention all ship in both transpilers. So the feature work I
-find useful now is **ergonomics polish, not new pillars**:
+The language surface is **feature-complete but not frozen** — value semantics,
+implicit arenas, concurrency, generics, closures, UFCS, FFI, and the `sink`
+consuming convention are all in. Pre-1.0 means they can still change; what a
+freeze is waiting on is in
+[ROADMAP.md](ROADMAP.md#what-1-0-requires). So the feature work I find useful
+now is **ergonomics polish, not new pillars**:
 
 - **User-defined projections** — yielding subscripts that generalize the built-in
   `&m[k]` (zero-copy views into part of a value). This is the one
