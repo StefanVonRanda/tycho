@@ -42,9 +42,30 @@ make ci              # build · test · ilp32 · asan-self · corelib + examples
 make ci N=0          # same, skipping the (slow) fuzz lanes for a quick check
 ```
 
-A change is "green" iff `make ci` passes. You can also install the local
-pre-push hook (`make hooks`), which runs `make ci N=0` plus a fuzz smoke and
-blocks the push if either fails.
+A change is "green" iff `make ci` passes.
+
+**Run `make hooks` once after you clone.** It points `core.hooksPath` at
+`.githooks/`, so `git push` runs the citation/link gate, then `make ci N=0`,
+then a fuzz smoke, and blocks the push if any of them fails. That setting is
+**per-clone git config and is not tracked**, so a fresh clone has no hooks at
+all until you run it — which is exactly how a red citation gate reached `main`
+on 2026-08-10.
+
+If the full sweep does not complete on your machine — it is minutes long, and
+some environments kill a long-running command — the hook will block every push.
+Bypassing the hook every time is not the answer; run the lanes individually
+instead (`make test`, `make corelib`, `make ilp32`, …), each of which prints its
+own verdict and none of which is slower than the sweep. The one to never skip is
+the cheapest:
+
+```
+make check-links     # relative links + every path:line citation, under a second
+```
+
+`path:line` refs are load-bearing in this tree and drift on any insertion into a
+cited file. `scripts/reanchor_citations.py` remaps them mechanically after you
+move lines yourself — read its header first, it is the wrong tool when only some
+refs are stale.
 
 ## Two rules that will surprise you
 
