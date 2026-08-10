@@ -247,11 +247,11 @@
   },
   {
     "type": "char",
-    "named": true
+    "named": false
   },
   {
     "type": "char",
-    "named": false
+    "named": true
   },
   {
     "type": "chr",
@@ -400,6 +400,10 @@
   },
   {
     "type": "parallel",
+    "named": false
+  },
+  {
+    "type": "pass",
     "named": false
   },
   {

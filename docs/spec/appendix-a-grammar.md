@@ -109,7 +109,7 @@ QualName  ::= IDENT ( "." IDENT )?                            /* Name or pkg.Nam
 PrimType  ::= "int" | "float" | "bool" | "string" | "ptr" | "bytes"
             | "u32" | "u64" | "f32"
 Block ::= INDENT Stmt+ DEDENT
-Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue
+Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue | PassStmt
         | Select | Match | If | ParallelFor | For
         | MultiDecl | MultiAssign
         | Decl | TypedDecl | Assign | PlaceAssign | CompoundAssign
@@ -120,6 +120,7 @@ Return         ::= "return" ( Expr ( "," Expr )* )? NEWLINE
                  | "return" ValueCtrl
 Break          ::= "break" NEWLINE
 Continue       ::= "continue" NEWLINE
+PassStmt       ::= "pass" NEWLINE                       /* the no-op; contextual, see App. B */
 Decl           ::= IDENT ":=" ( Expr | ValueCtrl ) NEWLINE
 TypedDecl      ::= IDENT ":" Type "=" ( Expr | ValueCtrl ) NEWLINE
 Assign         ::= IDENT "=" ( Expr | ValueCtrl ) NEWLINE
@@ -201,7 +202,7 @@ escape either, so it cannot contain a backtick; one is written by joining a
 `StrPiece`, so it joins with adjacent pieces of either kind, and there is no
 `` f`…` `` interpolated raw form.
 
-> Provenance: `src/tychoc.c:402-448`; adjacent join `:2296-2308`;
+> Provenance: `src/tychoc.c:402-448`; adjacent join `:2297-2309`;
 > [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
 > `tests/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 

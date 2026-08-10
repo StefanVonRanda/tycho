@@ -10,6 +10,19 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 Landed since the 0.5.0 entry below, against no tag — nothing has ever been
 released, so "since 0.5.0" means "since the work that entry describes".
 
+- **`pass`, the no-op statement.** A block cannot be empty, so a `match` arm or
+  an `if` branch with nothing to do had to bind something nobody reads — `ok :=
+  sz`, `_ := 0` — because a declaration is a legal statement where a bare
+  expression is not. `pass` says it instead.
+
+  It is **contextual, not reserved**: significant only when it is the whole
+  statement. `pass` was already a variable name in `corelib/test/testing` and
+  `tools/prunner`, and reserving it would have broken the runner that scores
+  `make test-fast`, so `pass := 0` and `pass = pass + 1` still mean what they
+  did. Used where a value is required — a value `if`/`match` branch tail — it is
+  refused with a message naming the fix, unless a variable of that name is in
+  scope, in which case it is that variable.
+
 - **`core:sort` gains `sort_by(xs, cmp)`.** A three-way compare
   `fn($T, $T) -> int`, so an order can use several keys, mixed directions, or a
   type with no `comparable` instance — none of which fit `asc`/`desc`/`argsort`

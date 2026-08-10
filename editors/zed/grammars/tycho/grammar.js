@@ -35,7 +35,7 @@ module.exports = grammar({
     keyword: ($) =>
       choice(
         "fn", "if", "elif", "else", "for", "while", "in", "match", "select",
-        "parallel", "spawn", "return", "break", "continue", "or_return",
+        "parallel", "spawn", "return", "break", "continue", "or_return", "pass",
         "struct", "enum", "type", "import", "package", "extern", "inout", "soa",
         "and", "or", "not",
       ),

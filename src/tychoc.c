@@ -1805,6 +1805,7 @@ typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
                S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL, S_MASSIGN,
                S_BREAK, S_CONTINUE,
                S_CONST, /* `const NAME = <literal>` local: folded at use, no runtime storage */
+               S_PASS, /* `pass`: the no-op. Exists so a block that must not be empty can say so */
                S_SELECT /* select over channel recv arms + default/closed (CC-5) */ } StmtKind;
 
 typedef struct Stmt Stmt;
@@ -2332,7 +2333,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2161) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2162) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2656,7 +2657,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2035): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2036): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3484,6 +3485,16 @@ static Stmt *parse_stmt(Parser *ps) {
         return s;
     }
 
+    /* `pass`: the no-op statement, for a block with nothing to do. Contextual like
+     * `const`/`delete` -- a keyword only when it is the WHOLE statement, so the
+     * `pass := 0` counters in corelib/test/testing and tools/prunner still parse. */
+    if (t->kind == TK_IDENT && !strcmp(t->text, "pass")
+        && (peek(ps, 1)->kind == TK_NEWLINE || peek(ps, 1)->kind == TK_DEDENT || peek(ps, 1)->kind == TK_EOF)) {
+        ps->p++;
+        accept(ps, TK_NEWLINE);
+        return new_stmt(S_PASS, t->line);
+    }
+
     /* `delete m[k]` -> m = map_del(m, k) (B5.2). `delete` is contextual: it is a
      * keyword only when an identifier (the map variable) follows, so a variable
      * named `delete` elsewhere is unaffected. */
@@ -3694,7 +3705,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:9987), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10003), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5543,6 +5554,9 @@ static Type resolve_expr_inner(Expr *e) {
             }
             const char *sg = suggest_var(e->sval);
             if (!sg) sg = suggest_fn(e->sval);
+            /* `pass` is a statement, not an expression; here it can only be a value branch's tail */
+            if (!strcmp(e->sval, "pass"))
+                die_at(e->line, "`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement");
             if (sg) die_at(e->line, "unknown variable '%s'; did you mean '%s'?", e->sval, sg);
             die_at(e->line, "unknown variable '%s'", e->sval);
         }
@@ -6951,10 +6965,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6575),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6589),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:6863). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:6877). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7017,6 +7031,7 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
                 die_at(s->line, "break cannot apply to a parallel for (chunks cannot stop each other)");
             return;
         case S_CONTINUE: return;
+        case S_PASS: return;
         case S_CONST: pf_add_local(s->name); return;   /* folded at use; track the name so a use isn't flagged as captured */
         case S_DECL:
             if (s->ctrl) { pf_add_local(s->name); pf_scan_stmt(s->ctrl, loopdepth); return; }   /* value if/match decl: loop-local, scan branch tails */
@@ -7669,6 +7684,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
         }
         case S_BREAK:
         case S_CONTINUE:
+        case S_PASS:
             break;   /* nothing to type-check; outside-a-loop use is caught at codegen */
         case S_IF: {
             if (resolve_expr(s->expr) != T_BOOL)
@@ -8462,7 +8478,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:6901: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:6915: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8620,7 +8636,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10856), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10872), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8650,12 +8666,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12815) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12832) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:10943) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:10959) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -8672,7 +8688,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3574-3579) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3585-3590) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -11560,6 +11576,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_CONST: break;   /* a const is folded at each use; it emits no runtime storage */
+        case S_PASS: break;    /* the no-op: it exists to give a block a body, and emits none */
         case S_BREAK:
         case S_CONTINUE: {
             if (g_loop_depth == 0)

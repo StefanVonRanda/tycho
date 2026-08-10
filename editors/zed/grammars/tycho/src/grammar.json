@@ -144,6 +144,10 @@
         },
         {
           "type": "STRING",
+          "value": "pass"
+        },
+        {
+          "type": "STRING",
           "value": "struct"
         },
         {

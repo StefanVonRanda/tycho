@@ -116,7 +116,7 @@ learnings and in FRICTION:
 
 - ~~a package-level `len` **shadows the builtin** inside its own package~~ —
   **closed 2026-08-09**, see the probe table below
-- no `defer`, and no bare `pass`/no-op statement
+- no `defer` — ~~and no bare `pass`/no-op statement~~, **closed 2026-08-10**
 - ~~**no expression line continuation**~~ — **closed 2026-08-09**
 - consts do not cross package boundaries, so levels ship as functions
 - `or_return` requires a `Result`-returning function, which `main()` is not
@@ -134,7 +134,7 @@ phase-1 notes, because two entries turned out to be wrong:
 | Papercut | State |
 |---|---|
 | package-level `len` shadows the builtin | **closed 2026-08-09** — still legal (§3.7 permits it on purpose), but the compiler now warns at the declaration and names the consequence, so the wrong answer is no longer silent. Fixture `tests/warn/shadow_builtin.ty`. |
-| no bare `pass` | open — `a statement must be a declaration, assignment, or call` |
+| no bare `pass` | **closed 2026-08-10** — `pass` is the no-op statement. CONTEXTUAL, not reserved: significant only as a whole statement, because `pass` was already a variable name in `corelib/test/testing` and `tools/prunner` and reserving it would have broken the runner that scores `make test-fast`. Fixtures `tests/pass_stmt.ty`, `tests/reject/pass_as_value.ty`. |
 | no expression line continuation | **closed 2026-08-09** — a line ending on an operator joins the next, when that line is indented deeper. The deeper-indent condition is what keeps a truncated line a truncated line: `tests/diag/caret_expr.ty` caught the naive version degrading its own diagnostic. Fixture `tests/line_continuation.ty`. |
 | no `defer` | open |
 | `or_return` from `main()` | open, but the diagnostic names the rule |
@@ -265,7 +265,12 @@ every one costs a citation re-anchor (~50-110 anchors move) and a full `make ci`
 4. ~~`core:sort` comparator~~ — **closed**, `sort.sort_by(xs, cmp)`. The gate
    prediction held exactly: corelib only, no citation moved, `make corelib` and
    `make corelib-examples` were the whole verification.
-5. `pass`, then `defer`. Both are real keywords and cost the full surface:
+5. ~~`pass`~~ — **closed 2026-08-10**, and it was NOT a real keyword: two files
+   already used the name, so it is contextual like `const`/`delete`. Cost was the
+   predicted surface minus the lexer: parser, spec, `appendix-b-keywords`, the
+   grammar appendix, `tycho-lsp`, `editors/` (both grammars, zed regenerated),
+   fixtures, goldens. `tychofmt` needed nothing — `pass` is one token on a line.
+   Then `defer`. It costs the full surface:
    parser, spec chapter, `appendix-b-keywords`, the grammar appendix,
    `tychofmt`, `tycho-lsp`, `editors/`, fixtures, goldens. `defer` additionally
    interacts with arena scope exit and wants its own design pass — it is the

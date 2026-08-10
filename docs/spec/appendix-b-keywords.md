@@ -30,6 +30,7 @@ variable of the same name is unaffected).
 | `const`, `delete` | statement leader (when followed by an identifier) |
 | `soa`, `where`, `channel`, `Option`, `Result`, `Channel` | type / expression position |
 | `void` | a `Result`'s ok payload, and nowhere else ([§5.3.6](03-types.md#536-enums-option-result)). Not a primitive type keyword: `int`/`float`/`bool`/`string`/… are lexed as keywords, `void` is an ordinary identifier the type parser recognises in that one slot, so a variable named `void` is still legal |
+| `pass` | a whole statement, and only then — the no-op ([§14.1](10-statements.md#141-blocks)). `pass := 0` and `pass = pass + 1` stay ordinary code, which is why it is not reserved: two files in this tree already used the name |
 | `sink` | parameter modifier |
 | `yield` | `subscript` body |
 | `free` | `handle` body |

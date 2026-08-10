@@ -1,0 +1,50 @@
+# `pass` — the no-op statement, for a block that must exist but has nothing to do.
+#
+# It is CONTEXTUAL, not a reserved word: significant only when it is the whole
+# statement. `pass` was already a variable name in two files in this tree
+# (corelib/test/testing and tools/prunner, both counting passes), so reserving it
+# would have broken the parallel test runner that scores `make test-fast`. The
+# `pass := 0` counter below is the regression guard for that.
+#
+# Before this the workaround was to bind something nobody reads -- `ok := sz`,
+# `_ := 0` -- because a declaration is a legal statement where a bare expression
+# is not (docs/internals/FRICTION.md, "smaller than they looked once written down").
+
+fn classify(n: int) -> string:
+    match n:
+        0:
+            pass                     # this case is deliberately handled by falling through
+        1 | 2:
+            return "small"
+        _:
+            return "big"
+    return "zero"
+
+fn nop():
+    pass                             # a whole function body
+
+fn main():
+    pass := 0                        # still an ordinary variable name
+    for i := 0; i < 4; i += 1:
+        if i == 1:
+            pass                     # ... and a no-op branch in the same program
+        else:
+            pass = pass + 1
+    println(str(pass))
+
+    nop()
+    println(classify(0) + " " + classify(2) + " " + classify(9))
+
+    # a `pass` variable read where a value is required still resolves as a variable
+    v := if pass > 0:
+        pass
+    else:
+        0
+    println(str(v))
+
+    match 7:
+        7:
+            pass
+        _:
+            println("unreachable")
+    println("done")
