@@ -241,10 +241,24 @@ README's platform notes, and the measurement stays in
 
 ### 6. A release actually ships, and the support policy is exercised once
 
-Tag it, build the tarballs for each platform, publish, and then **deprecate one
-thing through the full path** — doc notice, changelog entry, compiler warning,
-removal in the next major. A deprecation policy that has never been run is
-prose, not a process.
+**The deprecation half is DONE, 2026-08-10.** `sort.by_key` is deprecated
+through the full path — a `deprecated:` notice in its doc comment, a
+`CHANGELOG.md` entry naming `sort_by` as the replacement, a compiler warning at
+every call site, and removal scheduled for 1.0. Step three stopped being
+special-cased on the way: a `# deprecated: <text>` line directly above a `fn`
+marks it, so the next deprecation costs one comment
+(`tests/warn/deprecated.ty`).
+
+**Tarballs are built and verified, 2026-08-10, and NOT published** — the owner's
+call. `dist/tycho-v0.5.0-linux-x86_64.tar.gz` and the `mingw64` cross-build,
+both with matching `.sha256`, and the native one extracted and exercised: the
+shipped `tychoc` reports `0.5.0`, finds `corelib` beside itself with no
+`TYCHO_CORELIB`, and compiles and runs a `core:sort` program.
+
+What remains is the outward step, and only that: `git tag v0.5.0`, push it, and
+`gh release create v0.5.0 dist/tycho-v0.5.0-*.tar.gz dist/tycho-v0.5.0-*.sha256
+--notes-file RELEASE_NOTES.md`. Nothing is blocking it; it has not been done
+because publishing is a decision, not a build step.
 
 ### 7. An external security review
 
