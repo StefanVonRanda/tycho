@@ -116,7 +116,8 @@ learnings and in FRICTION:
 
 - ~~a package-level `len` **shadows the builtin** inside its own package~~ —
   **closed 2026-08-09**, see the probe table below
-- no `defer` — ~~and no bare `pass`/no-op statement~~, **closed 2026-08-10**
+- ~~no `defer`~~ — **refused 2026-08-10** (see the probe table); ~~and no bare
+  `pass`/no-op statement~~, **closed 2026-08-10**
 - ~~**no expression line continuation**~~ — **closed 2026-08-09**
 - consts do not cross package boundaries, so levels ship as functions
 - `or_return` requires a `Result`-returning function, which `main()` is not
@@ -136,7 +137,7 @@ phase-1 notes, because two entries turned out to be wrong:
 | package-level `len` shadows the builtin | **closed 2026-08-09** — still legal (§3.7 permits it on purpose), but the compiler now warns at the declaration and names the consequence, so the wrong answer is no longer silent. Fixture `tests/warn/shadow_builtin.ty`. |
 | no bare `pass` | **closed 2026-08-10** — `pass` is the no-op statement. CONTEXTUAL, not reserved: significant only as a whole statement, because `pass` was already a variable name in `corelib/test/testing` and `tools/prunner` and reserving it would have broken the runner that scores `make test-fast`. Fixtures `tests/pass_stmt.ty`, `tests/reject/pass_as_value.ty`. |
 | no expression line continuation | **closed 2026-08-09** — a line ending on an operator joins the next, when that line is indented deeper. The deeper-indent condition is what keeps a truncated line a truncated line: `tests/diag/caret_expr.ty` caught the naive version degrading its own diagnostic. Fixture `tests/line_continuation.ty`. |
-| no `defer` | open |
+| no `defer` | **refused 2026-08-10, documented.** Not a papercut: this language has three cleanup mechanisms already and `defer` would be a fourth. Memory is arena-freed at scope exit; a `handle` runs its declared `free:` at scope exit (RAII, affine, §25); a channel/task handle is affine with an implicit join. `core:io` is path-based and opens nothing. The tree's `close(` calls are overwhelmingly CHANNEL closes, not resource cleanup. Already found once and filed anyway — `docs/internals/plan-tycho-vm-DONE.md:27-32`, whose own verdict was "nothing needs it; it was filed because the probe surprised me, which is not a reason." |
 | `or_return` from `main()` | open, but the diagnostic names the rule |
 | newtype-of-array blocks `push` | open — `push's first argument must be an array or soa` for `type Row = [string]` |
 | aggregate capturing a live binding warns | open |
@@ -270,11 +271,16 @@ every one costs a citation re-anchor (~50-110 anchors move) and a full `make ci`
    predicted surface minus the lexer: parser, spec, `appendix-b-keywords`, the
    grammar appendix, `tycho-lsp`, `editors/` (both grammars, zed regenerated),
    fixtures, goldens. `tychofmt` needed nothing — `pass` is one token on a line.
-   Then `defer`. It costs the full surface:
-   parser, spec chapter, `appendix-b-keywords`, the grammar appendix,
-   `tychofmt`, `tycho-lsp`, `editors/`, fixtures, goldens. `defer` additionally
-   interacts with arena scope exit and wants its own design pass — it is the
-   largest item on this page and should not be started casually.
+   ~~Then `defer`~~ — **refused 2026-08-10, and the refusal is the point.** This
+   page called it "the largest item on this page" and priced the full keyword
+   surface. That was scoping a feature nobody had asked what it was for. An
+   arena-scoped language with RAII handles has no work for it: memory is
+   arena-freed at scope exit, a `handle` runs its declared `free:` at scope exit,
+   and channel/task handles are affine with an implicit join. **This was already
+   found once** and filed anyway — `docs/internals/plan-tycho-vm-DONE.md:27-32`
+   ends "nothing needs it; it was filed because the probe surprised me, which is
+   not a reason." Leaving the row open is what made it get re-scoped; it is a
+   documented refusal now.
 6. Then the remaining 1.0 conditions: `core:net` readiness (§4), the Windows
    parked-`recv` decision (§5), and shipping 0.5.0 plus one exercised
    deprecation (§6).
