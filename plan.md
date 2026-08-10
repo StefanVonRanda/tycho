@@ -242,11 +242,19 @@ item 3 and correct the "re-sentinel buys the spelling" claim), CHANGELOG.
 Closing sweep: one `make ci` after 5.3, not per sub-phase.
 
 > **Closing-sweep evidence — 2026-08-09. All lanes green.** `make ci` itself
-> never finished: it was killed twice at roughly the ten-minute mark, both times
-> inside `[2b] ilp32`, with 733 `ok` lines and zero failures behind it. That is
-> an environment limit on a long-running command in this session, **not** a red
-> gate — and the fix is the one this repo already prescribes for a red `make ci`:
-> run the individual lanes. Each is well inside the window.
+> was killed twice at roughly the ten-minute mark, both times inside
+> `[2b] ilp32`, with 733 `ok` lines and zero failures behind it, so the lanes
+> below were run individually instead.
+>
+> **CORRECTED 2026-08-10: that was not an environment limit, and this block said
+> it was.** `make ci` completes here in **499s** — the whole sweep, 200 fuzz
+> seeds, `CI GREEN`. The two kills ended the *tool call* that was watching it,
+> not the sweep: it was piped through `tail`, so it died with the pipeline.
+> Launched detached (`setsid nohup make ci > log 2>&1 &`) and polled from the
+> log, it runs to green. **The sweep was never the problem; how it was invoked
+> was.** Anything downstream of the old claim — that the full gate cannot run
+> here, that a pre-push hook would block every push — was wrong for the same
+> reason.
 >
 > | Lane | Result |
 > |---|---|
@@ -264,10 +272,13 @@ Closing sweep: one `make ci` after 5.3, not per sub-phase.
 > | `goldens-check` / `editors-check` / `tools_check` | ok |
 > | `spec_check` / `docs-fences` / citations / links | ok |
 >
-> Worth carrying forward: **a lane-by-lane sweep is not more expensive than
-> `make ci`** — it is the same work with a verdict per lane, and it survives an
-> interruption. `make ci`'s value is that it cannot forget a step; that has to be
-> weighed against nineteen minutes with no partial result if anything stops it.
+> Worth carrying forward, with the correction applied: **a lane-by-lane sweep is
+> not more expensive than `make ci`** — it is the same work with a verdict per
+> lane, so it stays the right tool while you are still finding things. But
+> `make ci` cannot forget a step, and at 499s the "nineteen minutes with no
+> partial result" this block used to weigh against it was itself wrong: the
+> measured figure in CLAUDE.md's gate table is stale on the high side, and
+> redirecting to a log gives you the partial result anyway.
 
 > **5.1 evidence — 2026-08-09, `3a67bbe`.** Six sentinel sites, all reached from
 > the single `new_binds()`; `type_name` gained a `T_UNBOUND` case so a leaked

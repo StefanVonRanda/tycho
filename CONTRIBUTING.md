@@ -51,12 +51,17 @@ then a fuzz smoke, and blocks the push if any of them fails. That setting is
 all until you run it — which is exactly how a red citation gate reached `main`
 on 2026-08-10.
 
-If the full sweep does not complete on your machine — it is minutes long, and
-some environments kill a long-running command — the hook will block every push.
-Bypassing the hook every time is not the answer; run the lanes individually
-instead (`make test`, `make corelib`, `make ilp32`, …), each of which prints its
-own verdict and none of which is slower than the sweep. The one to never skip is
-the cheapest:
+The sweep is not as long as it looks: **`make ci` measured 499s on a 16-core
+box, 2026-08-10** — the full thirteen steps including 200 fuzz seeds. `N=0`, the
+hook's setting, skips the fuzz lanes and is faster still. If you are running it
+under something that watches its output, redirect to a log
+(`make ci > ci.log 2>&1`) rather than piping it — a pipeline dies with whatever
+is reading it, and you lose the partial result.
+
+While you are still finding problems, run the lanes individually — `make test`,
+`make corelib`, `make ilp32`, … — since each prints its own verdict and the sum
+is no slower than the sweep. Use `make ci` to confirm what you already believe.
+The one to never skip is the cheapest:
 
 ```
 make check-links     # relative links + every path:line citation, under a second
