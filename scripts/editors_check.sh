@@ -3,7 +3,7 @@
 # Run by `make editors-check` and as a step in `make ci`.
 #
 # Until 2026-07-29 NOTHING in any gate parsed either grammar, so both could rot
-# silently: scripts/tools_check.sh:29@editors excludes ./editors/* from the formatter
+# silently: scripts/tools_check.sh:30@editors excludes ./editors/* from the formatter
 # sweep by name, and no other step in scripts/ci.sh mentions the directory. The
 # concrete damage that found this: editors/zed/README.md carried a "parses all
 # 462 committed .ty files" claim for hundreds of files past the truth (813), and

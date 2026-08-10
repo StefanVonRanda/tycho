@@ -22,6 +22,14 @@ WHAT IT WILL NOT DO. A citation whose line landed inside a CHANGED hunk has no
 correct answer -- the text it named is gone. Those are reported and left alone
 for a human. Dry-run is the default; `--apply` writes.
 
+WHEN IT IS SAFE TO RUN. Immediately after YOU moved lines in <path>, while the
+rest of the tree is still anchored to <ref>. It rewrites EVERY citation to that
+path, so pointing it at a tree where only some refs are stale will shift the
+correct ones too and break them. Seen 2026-08-10: a pulled commit moved one line
+of `scripts/tools_check.sh`, two refs went stale, and a dry run offered to
+rewrite two further files whose refs were already right. Two lines by hand was
+the correct fix. **Read the dry run before `--apply`; it is not a formality.**
+
 LIMITATION, measured rather than assumed. The "changed hunk" guard above is NOT
 a reliable safety net, because difflib aligns on text, not identity. Deleting
 `src/tychoc.c:9760` -- a line whose exact text occurs 5 times in the file --
