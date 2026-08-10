@@ -37,6 +37,9 @@ gate() {   # gate "<label>" <make args...>
     fi
 }
 
+# Sub-second, so it runs BEFORE the minutes-long sweep: the cheapest gate in the
+# tree should not be the one you discover was red after twenty minutes of lanes.
+gate "make check-links (links + path:line citations)" check-links
 gate "make ci N=0 (all deterministic lanes)" ci N=0
 gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 

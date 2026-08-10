@@ -79,6 +79,12 @@ make -s tychoc
 # structural trap, not that one lane's mistake. `make test` cannot redden for
 # this -- it reads the golden off the working tree, which is exactly the copy
 # that exists.
+# Sub-second, and FIRST for that reason: `path:line` citations are load-bearing
+# here and were policed by nothing automated until 2026-08-10 -- `make check-links`
+# existed and no lane called it, so a red citation gate rode a push to `main`.
+step "[1a/13] make check-links  (relative links + every path:line citation resolves)"
+make -s check-links
+
 step "[1b/13] make goldens-check  (every golden a run.sh names is tracked by git -- the fresh-clone check)"
 make -s goldens-check
 
