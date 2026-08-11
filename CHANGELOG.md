@@ -13,6 +13,13 @@ block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
 not history, so the two are merged here under the date this actually shipped.
 
+- **`tools/tycho-ar` stops carrying its own integer parser.** `parse_uint` now
+  shares `strings.parse_int_checked`'s lexical rule and keeps only the domain
+  rule that belongs to the archive format — non-negative, and capped far below
+  int64 so a forged length cannot drive a huge allocation. Not a straight swap:
+  `parse_int_checked` accepts a leading `-` and the full int64 range, so
+  replacing the call outright would have widened what a header field accepts.
+
 - **`compress.decompress` says why it failed.** It returned bare `bytes`, empty
   on any failure — so a corrupt stream, a truncated one and a legitimately empty
   payload were the *same answer*. An archive can hold a zero-byte member, so for

@@ -1373,6 +1373,30 @@ is a shim return value, a signature and the call sites. This ranks third only
 because the workaround exists; for a caller without an out-of-band length there is
 no workaround at all.
 
+### 4. ~~`strings.parse_int` fails open, so no format parser can use it~~ — **ALREADY FIXED; the last duplicate is gone 2026-08-10**
+
+`strings.parse_int_checked(s) -> Result(int, IntErr)` exists and has since before
+this was re-read — `EmptyInput`, `Garbage`, `OutOfRange`, with ten cases in
+`corelib/test/strings`. The entry asked for `parse_int_strict`; the same thing
+shipped under a different name and the entry was never struck. `parse_int` is
+untouched, as the entry wanted.
+
+What remained was the entry's other half: the hand-rolled copies. `server/main.ty`
+had already been converted. `tools/tycho-ar/main.ty@parse_uint` was the last one,
+and it is now a thin wrapper — **not a straight swap**, because a straight swap
+would have WEAKENED it: `parse_int_checked` accepts a leading `-` and the whole
+int64 range, and an archive length field is non-negative and must stay far below
+int64 so a forged length cannot drive a huge allocation. The split is the one
+parser-safety asks for: the LEXICAL rule is shared, the DOMAIN rule stays with
+the format that owns it.
+
+Checked at the boundaries, including the entry's own case — `"1x4"` is `-1`, not
+`1` — plus empty, leading junk, trailing space, negative, at-cap, over-cap and
+int64 overflow. A `gap:` in the source records that the lane forges a damaged
+header but not a negative or over-cap one.
+
+The original text follows.
+
 ### 4. `strings.parse_int` fails open, so no format parser can use it
 
 `corelib/strings/strings.ty@parse_int` returns 0 for `""`, 0 for a leading

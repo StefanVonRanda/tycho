@@ -325,6 +325,7 @@ import "core:io"
 import "core:path"
 import "core:sha256"
 import "core:sort"
+import "core:strings"
 
 const MAGIC   = "TYAR1\n"
 const MFOOTER = "\nTYAR-M\n"
@@ -524,18 +525,26 @@ struct Entry:
 # silent 1 -- a wrong length that parses is exactly how a reader ends up hashing
 # the wrong span. Returns -1 for anything that is not a non-empty run of ASCII
 # digits, and for anything absurdly large.
+# The LEXICAL half is core:strings' now (`parse_int_checked`, which post-dates
+# the hand-rolled loop this replaced): empty, a non-digit anywhere, and an
+# out-of-int64 value are its Err cases. What stays here is the DOMAIN half, which
+# is this format's and not the parser's: a header field is non-negative, and is
+# capped well below int64 so a forged length cannot be used to drive a huge
+# allocation. Still -1 for every rejection, so the five call sites are unchanged.
 fn parse_uint(s: string) -> int:
-    if len(s) == 0:
+    n := 0
+    match strings.parse_int_checked(s):
+        Ok(v): n = v
+        _: return -1
+    if n < 0:                                # "-5" parses; a length field cannot be negative
         return -1
-    v := 0
-    for i := 0; i < len(s); i += 1:
-        c := s[i]
-        if c < 48 or c > 57:
-            return -1
-        v = v * 10 + (c - 48)
-        if v > 1000000000000000000:
-            return -1
-    return v
+    if n > 1000000000000000000:              # absurd length: refuse before it reaches a slice
+        return -1
+    # gap: run.sh forges a DAMAGED header (leg 4b/4c) and proves refusal, but no
+    # leg forges a NEGATIVE or an over-cap length, so these two lines are covered
+    # by reading and by a scratch probe, not by the lane. Both were checked by
+    # hand 2026-08-10 -- "-5" and 1000000000000000001 each return -1.
+    return n
 
 # 64 lowercase hex digits, the shape `sha256.hex` produces. Checked so a damaged
 # digest field is a parse error rather than a mismatch reported against garbage.
