@@ -162,23 +162,22 @@ worked top to bottom by cost.
 
 ### 3. The expressiveness gaps close, or become documented refusals
 
-Checked on 2026-08-09 rather than inherited from the FRICTION entry:
+**Re-probed against the tree on 2026-08-11** with one compiled program per row,
+not inherited from the 2026-08-09 pass. Six of the seven rows had gone stale:
+five closed by commits that landed after the check, and the sixth was recorded
+against the wrong mechanism.
 
 | Gap | State |
 |---|---|
-| `Result(void, E)` not expressible | **open, and recorded too harshly** — see below |
-| no comparator-taking sort | **open** — `sort.by_key` takes a derived `int` key only, so sorting by a string key means inventing an int |
-| an enum cannot be tested for its variant without binding a payload | open (FRICTION §5, 2026-08-01) |
-| two error types cannot share an `or_return` chain | open (FRICTION §6) |
-| `core:iter` unusable for a fallible pipeline stage | open (FRICTION §7) |
-| `core:decimal` has no `div` | **closed** — `decimal.div` exists |
-| `[string]` cannot cross the FFI | open by design — it forced `core:os`'s builder-handle API; either lift it or write down that it never lifts |
+| `Result(void, E)` not expressible | **closed 2026-08-09** — `3a67bbe` (`T_VOID` → `T_UNBOUND`) then `72340be` (the spelling). Probe: `fn touch(x: int) -> Result(void, string)` returning `Ok()`/`Err("neg")` compiles and runs. The stated limit still holds exactly — `Result(Option(void), E)`, `fn g(x: void)` and `v : void = 0` are each refused with *"'void' is a type only as a Result's ok payload"*. See below |
+| no comparator-taking sort | **closed 2026-08-11** — `4b81a8a` added `corelib/sort/sort.ty:69`, `fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]`. Probe: sorting a `[Emp]` by its `name` field through a comparator gave `amy,zoe`, and `sort.asc` on `["pear","apple","fig"]` gave `[apple, fig, pear]` — the row's own complaint, sorting by a string key, needs no invented int in either form |
+| an enum cannot be tested for its variant without binding a payload | **closed 2026-08-11** — `810c8c3` (`is` for user enums) and `2fe0f6b` (`is` for Option/Result). Probe: `s is Circle`/`s is Square`/`s is Dot` on a payload-carrying enum gave `true false false`, and `o is Some`/`r is Ok`/`r is Err` all answer, including on a `Result(void, E)`. The 2026-08-09 note called this "mitigated, stylistic"; `is` closed it structurally instead |
+| two error types cannot share an `or_return` chain | **closed — and the row named the wrong mechanism.** `b289a44` triaged it as WRONG MECHANISM: `corelib/result/result.ty:120@map_err` already bridged, and `1185f1a` added `map_err_with` (`:133`) for the cause-preserving case. Probe: one `fn chain(k) -> Result(int, string)` whose first leg is a `Result(string, IoErr)` bridged by `result.map_err_with(read_it(k), ioerr_to_str) or_return` and whose second leg is a native `Result(int, string)` — both legs propagate through the same chain, the IoErr path surfacing as `missing key bad`. There was never a language gap here, only a missing combinator |
+| `core:iter` unusable for a fallible pipeline stage | **closed 2026-08-11** — `9d2a6f9` added `corelib/iter/iter.ty:27@try_map` and `:42@try_filter`; `66cc04e` flipped predicates to `bool`. Probe: `try_map` over `["1","2","3"]` gave `[1, 2, 3]` and over `["1","-2","3"]` short-circuited to `not positive: -2`; `try_filter` kept `[2, 3, 4]` and propagated `overflow guard` |
+| `core:decimal` has no `div` | **closed** — `4251339`, confirmed by `7bff57b`. `corelib/decimal/decimal.ty:116` is `fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr)`. Probe: `div(10, 3, 4, 0)` gave `3.3333` |
+| `[string]` cannot cross the FFI | **OPEN — the only one left.** Confirmed at the source, not inferred: `src/tychoc.c:4383-4387@ffi_arr_ptr_ctype` returns non-NULL for `T_ARRAY_INT` and `T_ARRAY_FLOAT` and nothing else, so `[string]` falls through to the rejection at `src/tychoc.c:4446`. Probe: `extern fn my_exec(argv: [string]) -> int` dies with *"parameter 'argv' must be int/char/float/bool/string/ptr/bytes, [int]/[float], or a handle"*. Sizing below |
 
-Two corrections from the same 2026-08-09 probe.
-
-Testing an enum variant is **mitigated** — since the pattern-discard fix,
-`match e: A(_): ...` binds nothing and reads fine, so the gap is stylistic
-rather than structural.
+One correction carried forward from 2026-08-09, and one new one.
 
 `Result(void, E)` was recorded as "not expressible", which overstated it: a
 one-field `Unit` struct worked with no compiler change, so the gap was
@@ -224,6 +223,66 @@ An earlier note in this file called this "a spelling decision as much as a
 type-system one", inferred from the compiler using the word "void" in its own
 diagnostics. That was wrong — diagnostic text is not evidence about the type
 system — and the sentinel collision is why.
+
+#### A gap the `void` work left behind, found by this probe
+
+`Result(void, E)` is expressible, but **`core:result`'s own combinators cannot be
+instantiated at it.** `result.is_ok(touch(1))`, where `touch` returns
+`Result(void, string)`, is rejected: `corelib/result/result.ty:71` is
+`Ok(v): return true`, and with the ok payload bound to `void` that arm has no
+value to bind. `is_err` (`:76`) has the same shape, and every combinator taking
+`Result($T, $E)` is a candidate. The `is` operator is the working substitute —
+`touch(1) is Ok` compiles and answers `true` — so this is boilerplate, not a
+wall, exactly as the original `Result(void, E)` row was.
+
+Two defects, one probe. The diagnostic also **names the wrong file**: an
+eleven-line `main.ty` reports `./main.ty:71`, which is the line inside
+`corelib/result/result.ty`, not the user's file. A reader sent to line 71 of an
+eleven-line file has been told nothing. Filed in `plan.md`; it changes no
+decision here.
+
+#### Sizing `[string]` across the FFI — both answers, with costs
+
+Neither is chosen here. The row has been undecided since it was filed; these are
+the two real prices.
+
+**Lifting it is small — smaller than the row's "open by design" implies.** The
+blocker is not representation. `runtime/tycho_rt.c:1854` is
+`typedef struct { char **data; tycho_int len; tycho_int cap; } TychoArrStr;`, and
+`runtime/tycho_rt.c:1108` records that a Tycho string is NUL-terminated and its
+pointer is a valid C `char *` with the header hidden behind it. So a `[string]`'s
+`.data` **is already a `char **` of ordinary C strings** — no marshalling, no
+copy, no ownership transfer. The change is one branch in
+`src/tychoc.c@ffi_arr_ptr_ctype` returning `"const char *const *"` for
+`T_ARRAY_STRING`; both call-emit sites (`src/tychoc.c:9833` and
+`src/tychoc.c:10179`) are already generic over that function's result and would
+emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `810c8c3`
+(`is`): one resolver branch, one codegen path already written, a fixture.
+
+Three things that must be decided with it, not after:
+
+1. **`(ptr, len)`, not a NULL-terminated argv.** It would follow the
+   `[int]`/`[float]` convention already at `src/tychoc.c:9836`. A callee wanting
+   `execv` semantics appends its own `NULL`. Promising argv-shape instead means
+   the emitter allocates a terminated copy, and that is a different, larger change.
+2. **Borrow for the call; the callee must not retain.** Same contract
+   `[int]`/`[float]` carry today. Nobody frees, because nothing was allocated.
+3. **The return direction stays refused.** `[string]` *out* of C has no length
+   header to reconstruct — the same reason `src/tychoc.c:4441-4442` bans a
+   `char **` out-param. Lifting the parameter direction does not lift this one,
+   and saying so is part of the change.
+
+**Writing the refusal down is cheaper and buys less.** The shape is §4 and §5
+above, both closed on 2026-08-10 as stated limits: a paragraph in
+`docs/spec/14-ffi.md` and the `os` entry in `docs/guides/corelib.md`, naming the
+permitted set and the reason, plus a pointer to the builder-handle pattern that
+already works — `corelib/os/os.ty:55-58` is `osx_argv_new` / `osx_argv_push` /
+`osx_argv_free` / `osx_exec`, four shims and a push loop. Cost: one doc commit
+and the two doc gates. What it does not buy: every future extern taking a string
+vector pays those four shims again.
+
+The asymmetry worth noticing is that the refusal was defensible when the cost of
+lifting was unknown. It is now measured, and it is one branch.
 
 "Documented refusal" is a legitimate answer for any row. An undecided row is
 not.

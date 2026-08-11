@@ -2757,6 +2757,49 @@ validate commit hashes, so this had to be checked by hand.
   - Verify: `tests/reject/` fixture per family with `# expect:`; `make test`.
     Not `make ci`.
 
+- [ ] **Phase 16 — `core:result`'s combinators cannot be instantiated at
+  `Result(void, E)`, and the diagnostic names the wrong file**
+
+  Found while re-probing ROADMAP condition 3 on 2026-08-11. Two defects, one
+  eleven-line probe. Not fixed there: that phase was sizing only.
+
+  - `result.is_ok(touch(1))`, where `touch() -> Result(void, string)`, dies with
+    `Ok carries no value here -- write a bare `Ok:` arm`.
+    `corelib/result/result.ty:71` is `Ok(v): return true` and `:76` is
+    `Ok(v): return false`; with the ok payload bound to `void` neither arm has a
+    value to bind. Every combinator taking `Result($T, $E)` is a candidate —
+    enumerate them, do not fix the two the probe happened to hit.
+  - The diagnostic reports `./main.ty:71` for an eleven-line `main.ty`. The line
+    number is `corelib/result/result.ty`'s; the filename is the user's. A reader
+    sent to line 71 of an eleven-line file has been told nothing. This is the
+    worse of the two — it misleads for any generic instantiation failure in a
+    corelib body, not only this one.
+  - `touch(1) is Ok` compiles and answers, so there is a working substitute and
+    this is boilerplate rather than a wall. Closing it as accepted-cost is a
+    legitimate answer for the first defect. It is not one for the second.
+  - Done when: the filename in a generic-instantiation diagnostic names the file
+    the line belongs to; and the combinator set is either instantiable at a void
+    ok payload or documented as not being so.
+  - Verify: `make corelib` for the combinator change; `make test` only if
+    `src/tychoc.c` moves for the filename fix. Not `make ci`.
+
+- [ ] **Phase 17 — decide `[string]` across the FFI: lift it, or write the refusal**
+
+  ROADMAP condition 3's last open row, sized on 2026-08-11 but deliberately not
+  decided — the owner picks. Both prices are in `ROADMAP.md` under "Sizing
+  `[string]` across the FFI". Do not start this phase without that decision.
+
+  - Lifting measured smaller than the row's "open by design" implied:
+    `runtime/tycho_rt.c:1854` makes a `[string]`'s `.data` already a `char **` of
+    NUL-terminated C strings, so one branch in `src/tychoc.c@ffi_arr_ptr_ctype`
+    feeds two call-emit sites that are already generic over it.
+  - If lifting: the `(ptr, len)` convention, the borrow-not-retain contract, and
+    the still-refused return direction are decided *with* it, not after.
+  - If refusing: a paragraph in `docs/spec/14-ffi.md` and the `os` entry in
+    `docs/guides/corelib.md`, in the shape ROADMAP §4 and §5 used on 2026-08-10.
+  - Verify: lifting → `make test` plus an `extern` fixture; refusing → the two
+    doc gates only. Not `make ci` either way.
+
 ## Out of scope
 
 `make ci` and standalone `make test` are not run as ritual — each phase runs only
