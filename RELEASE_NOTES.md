@@ -11,10 +11,13 @@ Tycho 0.6 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
-**This release breaks source compatibility with 0.5.** Six changes refuse or
+**This release breaks source compatibility with 0.5.** Several changes refuse or
 re-shape code that compiled before, and every migration is mechanical. Read the
 BREAKING CHANGES section of [CHANGELOG.md](CHANGELOG.md) before upgrading — it
-states each one as "what you wrote" → "what you write".
+states each one as "what you wrote" → "what you write", and it is the list, not
+this paragraph. One more behaviour change is filed outside that section because
+it refuses nothing: f-string holes now evaluate left to right, so a program whose
+interpolations have side effects can observe a different order.
 
 ## Install
 
