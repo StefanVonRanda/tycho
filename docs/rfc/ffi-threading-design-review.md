@@ -92,10 +92,10 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2625` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:8775-8844`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:8777-8846`. Each
   `extern "Lib"` adds `-lLib` (`:5136` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:8781-8785`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:8563-8566`, `:2992-3017`, `:8832-8834`.
+  passthrough at `:8783-8787`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:8565-8568`, `:2992-3017`, `:8834-8836`.
 - String return is arena-copied so Tycho never holds a foreign pointer
   (`src/tychoc.c:6167-6174`, `tycho_str_from_c`, NULL→`""`).
 
@@ -207,7 +207,7 @@ Ranked by value / effort.
   compiler treats `Db` as distinct from `ptr` and from other handles (fixes the
   wrong-handle hazard, pain point 3a), and emits the named free at scope exit
   for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing
-  task/channel finalizer mechanism (`src/tychoc.c:6555-6565`) that already runs
+  task/channel finalizer mechanism (`src/tychoc.c:6555-6566`) that already runs
   destructor calls at scope end.
 - *Why.* Turns the most dangerous FFI primitive into something the compiler can
   reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8573-8576`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8575-8578`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 

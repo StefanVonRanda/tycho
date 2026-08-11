@@ -1,0 +1,297 @@
+# Regression: `sig_find` returns a pointer INTO the growable `g_sigs` table.
+# Resolving a call's arguments can instantiate a generic, which appends to
+# `g_sigs` and reallocs it -- leaving the callee's `Sig *` dangling for the
+# inout/arity/type checks that follow. This forces 200 distinct
+# instantiations inside the arguments of `print`/`str`, crossing several
+# realloc boundaries whatever capacity the table starts at. Before the fix
+# the freed slot read back garbage: "argument 1 of 'print' is inout".
+# The fat generic bodies are load-bearing: instantiating them allocates enough
+# to overwrite the freed slot before it is read. Trim them and this goes silent.
+
+fn tag(x: $T) -> int:
+    a0 := x
+    a1 := x
+    a2 := x
+    a3 := x
+    a4 := x
+    a5 := x
+    a6 := x
+    a7 := x
+    a8 := x
+    a9 := x
+    a10 := x
+    a11 := x
+    a12 := x
+    a13 := x
+    a14 := x
+    a15 := x
+    a16 := x
+    a17 := x
+    a18 := x
+    a19 := x
+    a20 := x
+    a21 := x
+    a22 := x
+    a23 := x
+    a24 := x
+    a25 := x
+    a26 := x
+    a27 := x
+    a28 := x
+    a29 := x
+    a30 := x
+    a31 := x
+    a32 := x
+    a33 := x
+    a34 := x
+    a35 := x
+    a36 := x
+    a37 := x
+    a38 := x
+    a39 := x
+    return 1
+
+fn tag2(y: $U) -> int:
+    b0 := y
+    b1 := y
+    b2 := y
+    b3 := y
+    b4 := y
+    b5 := y
+    b6 := y
+    b7 := y
+    b8 := y
+    b9 := y
+    b10 := y
+    b11 := y
+    b12 := y
+    b13 := y
+    b14 := y
+    b15 := y
+    b16 := y
+    b17 := y
+    b18 := y
+    b19 := y
+    b20 := y
+    b21 := y
+    b22 := y
+    b23 := y
+    b24 := y
+    b25 := y
+    b26 := y
+    b27 := y
+    b28 := y
+    b29 := y
+    b30 := y
+    b31 := y
+    b32 := y
+    b33 := y
+    b34 := y
+    b35 := y
+    b36 := y
+    b37 := y
+    b38 := y
+    b39 := y
+    return 1
+
+struct S0:
+    v: int
+
+struct S1:
+    v: int
+
+struct S2:
+    v: int
+
+struct S3:
+    v: int
+
+struct S4:
+    v: int
+
+struct S5:
+    v: int
+
+struct S6:
+    v: int
+
+struct S7:
+    v: int
+
+struct S8:
+    v: int
+
+struct S9:
+    v: int
+
+struct S10:
+    v: int
+
+struct S11:
+    v: int
+
+struct S12:
+    v: int
+
+struct S13:
+    v: int
+
+struct S14:
+    v: int
+
+struct S15:
+    v: int
+
+struct S16:
+    v: int
+
+struct S17:
+    v: int
+
+struct S18:
+    v: int
+
+struct S19:
+    v: int
+
+struct S20:
+    v: int
+
+struct S21:
+    v: int
+
+struct S22:
+    v: int
+
+struct S23:
+    v: int
+
+struct S24:
+    v: int
+
+struct S25:
+    v: int
+
+struct S26:
+    v: int
+
+struct S27:
+    v: int
+
+struct S28:
+    v: int
+
+struct S29:
+    v: int
+
+struct S30:
+    v: int
+
+struct S31:
+    v: int
+
+struct S32:
+    v: int
+
+struct S33:
+    v: int
+
+struct S34:
+    v: int
+
+struct S35:
+    v: int
+
+struct S36:
+    v: int
+
+struct S37:
+    v: int
+
+struct S38:
+    v: int
+
+struct S39:
+    v: int
+
+struct S40:
+    v: int
+
+struct S41:
+    v: int
+
+struct S42:
+    v: int
+
+struct S43:
+    v: int
+
+struct S44:
+    v: int
+
+struct S45:
+    v: int
+
+struct S46:
+    v: int
+
+struct S47:
+    v: int
+
+struct S48:
+    v: int
+
+struct S49:
+    v: int
+
+fn main():
+    print(str(tag(S0(0)) + tag([S0(0)]) + tag2(S0(0)) + tag2([S0(0)])) + "\n")
+    print(str(tag(S1(0)) + tag([S1(0)]) + tag2(S1(0)) + tag2([S1(0)])) + "\n")
+    print(str(tag(S2(0)) + tag([S2(0)]) + tag2(S2(0)) + tag2([S2(0)])) + "\n")
+    print(str(tag(S3(0)) + tag([S3(0)]) + tag2(S3(0)) + tag2([S3(0)])) + "\n")
+    print(str(tag(S4(0)) + tag([S4(0)]) + tag2(S4(0)) + tag2([S4(0)])) + "\n")
+    print(str(tag(S5(0)) + tag([S5(0)]) + tag2(S5(0)) + tag2([S5(0)])) + "\n")
+    print(str(tag(S6(0)) + tag([S6(0)]) + tag2(S6(0)) + tag2([S6(0)])) + "\n")
+    print(str(tag(S7(0)) + tag([S7(0)]) + tag2(S7(0)) + tag2([S7(0)])) + "\n")
+    print(str(tag(S8(0)) + tag([S8(0)]) + tag2(S8(0)) + tag2([S8(0)])) + "\n")
+    print(str(tag(S9(0)) + tag([S9(0)]) + tag2(S9(0)) + tag2([S9(0)])) + "\n")
+    print(str(tag(S10(0)) + tag([S10(0)]) + tag2(S10(0)) + tag2([S10(0)])) + "\n")
+    print(str(tag(S11(0)) + tag([S11(0)]) + tag2(S11(0)) + tag2([S11(0)])) + "\n")
+    print(str(tag(S12(0)) + tag([S12(0)]) + tag2(S12(0)) + tag2([S12(0)])) + "\n")
+    print(str(tag(S13(0)) + tag([S13(0)]) + tag2(S13(0)) + tag2([S13(0)])) + "\n")
+    print(str(tag(S14(0)) + tag([S14(0)]) + tag2(S14(0)) + tag2([S14(0)])) + "\n")
+    print(str(tag(S15(0)) + tag([S15(0)]) + tag2(S15(0)) + tag2([S15(0)])) + "\n")
+    print(str(tag(S16(0)) + tag([S16(0)]) + tag2(S16(0)) + tag2([S16(0)])) + "\n")
+    print(str(tag(S17(0)) + tag([S17(0)]) + tag2(S17(0)) + tag2([S17(0)])) + "\n")
+    print(str(tag(S18(0)) + tag([S18(0)]) + tag2(S18(0)) + tag2([S18(0)])) + "\n")
+    print(str(tag(S19(0)) + tag([S19(0)]) + tag2(S19(0)) + tag2([S19(0)])) + "\n")
+    print(str(tag(S20(0)) + tag([S20(0)]) + tag2(S20(0)) + tag2([S20(0)])) + "\n")
+    print(str(tag(S21(0)) + tag([S21(0)]) + tag2(S21(0)) + tag2([S21(0)])) + "\n")
+    print(str(tag(S22(0)) + tag([S22(0)]) + tag2(S22(0)) + tag2([S22(0)])) + "\n")
+    print(str(tag(S23(0)) + tag([S23(0)]) + tag2(S23(0)) + tag2([S23(0)])) + "\n")
+    print(str(tag(S24(0)) + tag([S24(0)]) + tag2(S24(0)) + tag2([S24(0)])) + "\n")
+    print(str(tag(S25(0)) + tag([S25(0)]) + tag2(S25(0)) + tag2([S25(0)])) + "\n")
+    print(str(tag(S26(0)) + tag([S26(0)]) + tag2(S26(0)) + tag2([S26(0)])) + "\n")
+    print(str(tag(S27(0)) + tag([S27(0)]) + tag2(S27(0)) + tag2([S27(0)])) + "\n")
+    print(str(tag(S28(0)) + tag([S28(0)]) + tag2(S28(0)) + tag2([S28(0)])) + "\n")
+    print(str(tag(S29(0)) + tag([S29(0)]) + tag2(S29(0)) + tag2([S29(0)])) + "\n")
+    print(str(tag(S30(0)) + tag([S30(0)]) + tag2(S30(0)) + tag2([S30(0)])) + "\n")
+    print(str(tag(S31(0)) + tag([S31(0)]) + tag2(S31(0)) + tag2([S31(0)])) + "\n")
+    print(str(tag(S32(0)) + tag([S32(0)]) + tag2(S32(0)) + tag2([S32(0)])) + "\n")
+    print(str(tag(S33(0)) + tag([S33(0)]) + tag2(S33(0)) + tag2([S33(0)])) + "\n")
+    print(str(tag(S34(0)) + tag([S34(0)]) + tag2(S34(0)) + tag2([S34(0)])) + "\n")
+    print(str(tag(S35(0)) + tag([S35(0)]) + tag2(S35(0)) + tag2([S35(0)])) + "\n")
+    print(str(tag(S36(0)) + tag([S36(0)]) + tag2(S36(0)) + tag2([S36(0)])) + "\n")
+    print(str(tag(S37(0)) + tag([S37(0)]) + tag2(S37(0)) + tag2([S37(0)])) + "\n")
+    print(str(tag(S38(0)) + tag([S38(0)]) + tag2(S38(0)) + tag2([S38(0)])) + "\n")
+    print(str(tag(S39(0)) + tag([S39(0)]) + tag2(S39(0)) + tag2([S39(0)])) + "\n")
+    print(str(tag(S40(0)) + tag([S40(0)]) + tag2(S40(0)) + tag2([S40(0)])) + "\n")
+    print(str(tag(S41(0)) + tag([S41(0)]) + tag2(S41(0)) + tag2([S41(0)])) + "\n")
+    print(str(tag(S42(0)) + tag([S42(0)]) + tag2(S42(0)) + tag2([S42(0)])) + "\n")
+    print(str(tag(S43(0)) + tag([S43(0)]) + tag2(S43(0)) + tag2([S43(0)])) + "\n")
+    print(str(tag(S44(0)) + tag([S44(0)]) + tag2(S44(0)) + tag2([S44(0)])) + "\n")
+    print(str(tag(S45(0)) + tag([S45(0)]) + tag2(S45(0)) + tag2([S45(0)])) + "\n")
+    print(str(tag(S46(0)) + tag([S46(0)]) + tag2(S46(0)) + tag2([S46(0)])) + "\n")
+    print(str(tag(S47(0)) + tag([S47(0)]) + tag2(S47(0)) + tag2([S47(0)])) + "\n")
+    print(str(tag(S48(0)) + tag([S48(0)]) + tag2(S48(0)) + tag2([S48(0)])) + "\n")
+    print(str(tag(S49(0)) + tag([S49(0)]) + tag2(S49(0)) + tag2([S49(0)])) + "\n")

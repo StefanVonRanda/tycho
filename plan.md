@@ -848,7 +848,7 @@ or an explicit "open, refused because …".
     not apply. Reserving follows `in`, the language's other binary-operator
     keyword.
   - **A bad variant name is a compile error naming both**, reusing the match
-    arm's wording verbatim (`src/tychoc.c:7909@is not a variant of`):
+    arm's wording verbatim (`src/tychoc.c:7911@is not a variant of`):
 
     ```
     tests/reject/enum_is_unknown_variant.ty:10: error: 'VFloat' is not a variant of Value
@@ -912,6 +912,129 @@ or an explicit "open, refused because …".
     right test, with a fixture covering all four and a `tests/reject/` case for a
     name that is neither.
   - Verify: `make test`, which was **622** at this phase.
+
+- [x] **`sig_find`'s `Sig *` dangles across argument resolution (live bug on `main`)**
+  - Symptom: `./tychoc tools/tycho-vm/main.ty` died with
+    `tools/tycho-vm/main.ty:967: error: argument 1 of 'print' is inout; pass it
+    as '&variable'`. The claim is false — `print` is declared
+    `.params={ T_STRING }, .nparams=1` with no inout at `src/tychoc.c:5077`.
+    `make ci` was red at `[3g] vm-check`.
+  - Mechanism: `sig_find` (`src/tychoc.c@sig_find`) returns `&g_sigs[i]`, a
+    pointer INTO the growable table. The E_CALL resolver took that pointer and
+    held it live across `resolve_exp(e->args[i], s->params[i])`, which can
+    instantiate a generic and append to `g_sigs` — realloc'ing it and leaving
+    the pointer dangling for every later `s->inout[i]`, `s->params[i]`,
+    `s->builtin` and `s->ret` read.
+  - Why it surfaced when it did: `17c47c4` changed only `corelib/`
+    (`io.set_mtime` + one `extern fn`). `src/tychoc.c` is byte-identical across
+    that boundary. Two extra sigs pushed the table over a doubling boundary that
+    the same argument loop happened to straddle — the defect was latent, and a
+    corelib addition merely exposed it.
+  - Fix: snapshot the index and re-derive after each append-capable call, the
+    idiom this file already uses for the same hazard at `src/tychoc.c:5373` and
+    `src/tychoc.c:5490`. Chosen over copying the `Sig` by value because the
+    index stays correct if a `Sig` is ever legitimately mutated in place, and
+    because it costs two lines rather than a ~280-byte struct copy per call.
+
+### Evidence
+
+**Realloc proof** (temporary `fprintf` around the call, since removed; the
+diagnosis was NOT taken on trust):
+
+```
+DBG line 967: 'print' arg 0: g_sigs 0x5589da9c2c70(cap 128) -> 0x5589da9def10(cap 256), s=0x5589da9c2c70 DANGLING
+```
+
+The base pointer moves during the argument loop and `s` still names the freed
+block. `print` is table index 0, so `s` is literally the old base.
+
+**Caller audit** — every `sig_find(` call site and every other pointer into
+`g_sigs`, checked for the same pattern. The question asked at each: is the
+pointer held across a call that can append to `g_sigs`? The only appenders
+reachable during resolution are `instantiate_generic`, `resolve_parfor` and
+`resolve_program`.
+
+| Site | Verdict |
+|---|---|
+| `src/tychoc.c:6551` (E_CALL) | **EXPOSED — fixed.** Held across `resolve_exp` |
+| `:5479` (E_SPAWN) | Clear. `resolve_expr(c)` runs BEFORE `sig_find`; already stores an index |
+| `:5640`, `:5643` (fn-as-value) | Clear. Only `note_fnval` (appends to `g_fnval`) and `funcc_of` intervene; neither mentions `g_sigs` |
+| `:5916`, `:5919`, `:5925` (UFCS on qualified) | Clear. Derefs are immediate; `ufcs_generic`/`type_pkg_prefix` do not touch `g_sigs` |
+| `:5995`, `:5998`, `:6004` (UFCS on field) | Clear, same shape |
+| `:6064`, `:6076`, `:8378`, `:8636`, `:8642` | Clear. Truthiness test only, never dereferenced |
+| `:6506` (variadic probe) | Clear. All derefs before any append-capable call |
+| `:7447` (`Sig *sg`, parallel-for) | Clear. Unused after `resolve_block`; already carries `sg_id` as an index |
+| `:8668` (`main` lookup) | Clear. NULL-tested immediately, never used again |
+| `:9807`, `:10115`, `:13346`, `:13386` | Clear. Emit phase. Generic-instance bodies are all resolved in `gen_program`'s dedicated pre-pass loop, which finishes before any emit loop, so `gen_expr` cannot reach `instantiate_generic` |
+| `:10459`, `:13309`, `:10974`, `:10984` | Clear. Index-based (`g_sigs[g_spawn[i]]`, `g_sigs[pf->sig]`), not pointers |
+
+**Regression fixture** — `tests/generic_sig_realloc.ty`. 200 distinct generic
+instantiations inside the arguments of `print`/`str`, which crosses at least one
+realloc boundary whatever capacity the table starts at (instantiations added
+exceed the headroom of any plausible starting cap). Honest limits, measured
+rather than asserted:
+
+- The *mechanism* reproduces deterministically. Instrumented on the unfixed
+  compiler, the fixture crossed `cap 64 -> 128` inside `print`'s argument loop
+  with the pointer stale.
+- The *symptom* is allocator-dependent, and the first version of this fixture
+  was theatre: it crossed the boundary and still read back
+  `s->nparams=1 inout0=0`, compiling clean on the broken compiler. Two changes
+  made it redden — targeting `print` (table index 0, where the first
+  post-realloc allocation lands) rather than `println` (index 1, ~280 bytes
+  further into the freed block), and fattening the generic bodies so
+  instantiation allocates enough to overwrite the freed slot before it is read.
+  With both, the unfixed compiler reports `stale s->nparams=21866 inout0=21866`
+  and dies with the production error message.
+- So: this fixture reddens today and its comment says which property is
+  load-bearing, but a future allocator or a trimmed body could make it silent
+  while still crossing the boundary. `make vm-check` remains the lane that
+  caught this for real.
+
+**Negative control.** Fix reverted (`git stash`), rebuilt:
+`./tychoc tools/tycho-vm/main.ty` → `error: argument 1 of 'print' is inout`, and
+`./tychoc tests/generic_sig_realloc.ty` → the same error at its line 254.
+Restored and rebuilt: both compile clean, and the fixture's output matches its
+golden.
+
+**Gates.** `make vm-check` green (was the red lane). `make check-links` green —
+after `python3 scripts/reanchor_citations.py --apply`, which the two inserted
+lines staled: 39 anchored citations reported, 116 files remapped, 0 needing a
+human; the re-run reports 138 anchored, 836 bare, 181 source→doc, 259
+source→source, 192 `path@SYMBOL` all resolving. **`make test`: 623 passed, 0
+failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent loss.
+`make corelib` not run and not needed: the only `corelib/` file touched is
+`corelib/net/net_shim.c`, and only a `path:line` inside a comment.
+
+- [ ] **The gate table sends a corelib-only change to a lane that cannot redden for it**
+  - The bug above was introduced by `17c47c4`, a commit that changed **only**
+    `corelib/`. `CLAUDE.md`'s gate table (and its contributor-facing copy in
+    `CONTRIBUTING.md`) says: "**A `corelib/` change** → `make corelib`, plus
+    `make corelib-examples` … **Not `make test`, which cannot redden for it**".
+    That rule is correct about `make test` and incomplete about everything else.
+  - What it misses: a corelib change alters the compiler's global state — here,
+    two extra `Sig` entries — in a way that can break an unrelated **consumer
+    program**. `make corelib` builds `corelib/test/<pkg>/main.ty`, and
+    `make corelib-examples` builds `examples/corelib/**`. Neither compiles
+    `tools/tycho-vm/main.ty`. `make vm-check` is "**the only lane that runs
+    anything under `tools/tycho-vm/`**" — by the table's own words — and it is
+    not in the corelib row. So the commit was, by the book, correctly gated, and
+    shipped a red `make ci` anyway.
+  - This is a gap in the routing table, not in the lanes. Every tool lane
+    (`vm-check`, `kv-check`, `q-check`, `ar-check`, `scheme-check`) has the same
+    exposure, and `scripts/entrypoints.sh` — which does compile every entry point
+    in the tree for milliseconds — is listed only under its own row.
+  - Scope: `CLAUDE.md`'s "The rule" section and the trimmed copy under
+    "Which gate for which change" in `CONTRIBUTING.md`. **They will drift; both
+    must be edited.** Deliberately NOT fixed by the phase that found it.
+  - Candidate fix to evaluate, not to assume: add `sh scripts/entrypoints.sh` to
+    the corelib row as the cheap consumer-compile check. Verify first that it
+    actually reddens for this class — recompile `tools/tycho-vm/main.ty` at
+    `17c47c4` under it and confirm a red, rather than asserting it.
+  - Done when: both files name a lane that compiles the tree's consumer programs
+    for a corelib-only change, and that lane is shown to redden at `17c47c4`.
+  - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`
+    only — the phase edits Markdown. **Do not run `make test` or `make ci`.**
 
 ## Out of scope
 

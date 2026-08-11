@@ -6,7 +6,7 @@ of each operator, the **evaluation order**, and the expression-valued control
 forms.
 
 > Provenance: binary-op resolver `src/tychoc.c:6162-6418`; short-circuit
-> lowering `:9528-9554`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
+> lowering `:9530-9556`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
 > closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
 > "probed" were resolved by running both compilers (spec-plan.md §6a).
 
@@ -65,8 +65,8 @@ mismatches, and literal adaptation of a broadcast scalar — is
 > Provenance: array ⊕ array arm `src/tychoc.c:6287-6317`; broadcast arm
 > `src/tychoc.c:6346-6372`; the per-element-type operator set
 > `src/tychoc.c:1345@elem_arith_ok`; the arms an array operand still falls
-> through to — shift `src/tychoc.c:6770@shift operators require integer operands`,
-> modulo/bitwise `src/tychoc.c:6877@modulo / bitwise operators`.
+> through to — shift `src/tychoc.c:6772@shift operators require integer operands`,
+> modulo/bitwise `src/tychoc.c:6879@modulo / bitwise operators`.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
@@ -107,8 +107,8 @@ the result takes the **left** operand's type. So `x << n` is well-typed for a
 (sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
 
 > Provenance: the shift arm accepts any two integers and returns the left type —
-> `src/tychoc.c:6267-6273`, result at `src/tychoc.c:6686@lt`. The bitwise arm is
-> the one that requires a match: `src/tychoc.c:6845@rt`. Exhaustively pinned by
+> `src/tychoc.c:6267-6273`, result at `src/tychoc.c:6688@lt`. The bitwise arm is
+> the one that requires a match: `src/tychoc.c:6847@rt`. Exhaustively pinned by
 > `fuzz/run_typeparity.py`, whose shift clause encodes this rule over the full
 > operand matrix.
 
