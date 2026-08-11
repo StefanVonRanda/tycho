@@ -563,7 +563,7 @@ or an explicit "open, refused because …".
     is closed as intended-and-documented.
   - Verify: `make check-links` only, if the change is Markdown.
 
-- [ ] **Phase 11 — the one-paragraph slice warning in `docs/spec/03-types.md`**
+- [x] **Phase 11 — the one-paragraph slice warning in `docs/spec/03-types.md`**
   - Entry #5 asked for prose beside the `b[i:j]` row at
     `docs/spec/03-types.md:139` saying in words that a clamping slice cannot be
     used as a bounds check. Phase 1 answered the entry in corelib instead and
@@ -571,6 +571,31 @@ or an explicit "open, refused because …".
   - Done when: the row's neighbourhood says it, and points at
     `strings.slice_bytes` / `strings.slice_str` for the failing-closed version.
   - Verify: `sh scripts/spec_check.sh` and `make check-links`. Not `make test`.
+  - **Evidence (2026-08-11).** `docs/spec/03-types.md:139` is the right row —
+    the brief's citation held. Behaviour re-verified against today's `./tychoc`
+    rather than trusting `124dc2f`'s record:
+
+        bytes  b[2:10] len = 3
+        string s[2:10] len = 3
+        bytes  b[-3:2] len = 2
+        bytes  b[4:1]  len = 0
+        tycho: slice [2:10] out of bounds (len 5)     # xs := [1,2,3,4,5]
+
+    stdout stops before the array line and the process exits 1, so the array
+    slice aborts where the two buffer slices clamp — start below zero to `0`,
+    stop past the end to `len`, inverted to empty. **Not a bug**: `16.6` already
+    declares the divergence normative and gives the reason (a buffer slice is
+    `substr`, which clamps by definition; an array slice has no function form),
+    and `corelib/strings/strings.ty:356-369` was written against the same
+    reading. So it is documented as deliberate, not filed.
+  - The paragraph sits directly under the `bytes` operator table, where the
+    clamping row is, and names the abort's exact diagnostic so a reader can
+    recognise it. `docs/spec/18-library.md` §32.4 gained `slice_bytes` /
+    `slice_str` in its list — the pointer had nowhere to land, since the spec
+    did not mention either function anywhere before today.
+  - Gates: `make check-links` ok (119 files), `sh scripts/spec_check.sh` exit 0
+    (11 runnable examples, all pass). No fence was added, so the example count
+    is unchanged.
 
 - [x] **Phase 12 — the false "no stderr channel" claim is still load-bearing in
       `tools/tycho-ar/main.ty`** (*found by phase 2*)

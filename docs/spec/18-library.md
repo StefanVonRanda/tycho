@@ -115,7 +115,11 @@ String utilities (pure Tycho): `to_upper`, `to_lower`, `starts_with`,
 `ends_with`, `contains`, `repeat(s, n)`, `trim`, `parse_int`, `is_space`,
 `lines`, `replace`, `count(s, sub)`, `strip_prefix`/`strip_suffix`,
 `pad_left`/`pad_right(s, width, pad)`, `reverse`, `capitalize`,
-`split_once(s, sep) -> (before, after)`. (`split`/`find`/`substr`/`len`/`chr` are
+`split_once(s, sep) -> (before, after)`; and the fail-closed slices
+`slice_bytes(b, start, stop)` / `slice_str(s, start, stop)`, both
+`-> Result(_, SliceErr)`, for callers that need the bounds checked rather than
+clamped ([§5.2.6](03-types.md#526-bytes)).
+(`split`/`find`/`substr`/`len`/`chr` are
 builtins.) `docs/guides/corelib.md:66-72`.
 
 ### 32.5 `path`

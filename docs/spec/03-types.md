@@ -141,6 +141,21 @@ the same meanings, because it is the same buffer:
 | `b + 'c'` | `bytes` | appends the char's single byte; one-directional, like `string + char` ([§13.2](09-expressions.md#132-operators)) |
 | `a == b`, `a != b` | `bool` | byte-wise, by the length headers |
 
+**A `bytes` slice is not a bounds check.** The clamp in the `b[i:j]` row is
+silent: on a 5-byte `bytes`, `b[2:10]` is three bytes and `b[7:9]` is zero, and
+neither form reports that the requested range did not exist. An **array** slice
+written the same way aborts instead — `[1,2,3,4,5][2:10]` dies
+`tycho: slice [2:10] out of bounds (len 5)`
+([§16.6](12-aggregates.md#166-slices-xsab)). The two MUST differ: a `bytes` or
+`string` slice is exactly `substr` (§29), the function form, which clamps by
+definition, while an array slice has no such equivalent. A program therefore
+MUST NOT infer from a slice that returned normally that its bounds were in
+range. Where the range is itself the thing being verified — a parser reading a
+fixed-width field, say — `strings.slice_bytes(b, start, stop)` and
+`strings.slice_str(s, start, stop)` ([§32.4](18-library.md#324-strings)) take
+the same two bounds and return `Result(_, SliceErr)`, refusing what the clamp
+would have repaired.
+
 There is **no implicit conversion between `string` and `bytes`** in either
 direction: `b + "s"` and `s + b` are type errors. The boundary is crossed only by
 `to_bytes` / `to_str`, both zero-cost reinterprets (§8). Arithmetic other than
