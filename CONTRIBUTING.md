@@ -75,6 +75,34 @@ cited file. `scripts/reanchor_citations.py` remaps them mechanically after you
 move lines yourself — read its header first, it is the wrong tool when only some
 refs are stale.
 
+### Which gate for which change
+
+`make ci` covers everything and is the honest default. When you are iterating
+and want a verdict in seconds instead of minutes, this is the narrowest gate
+that can actually fail for what you touched. The **"cannot redden for"** notes
+are the important column: several changes are invisible to the gate you would
+reach for first.
+
+| You changed | Run | Notes |
+|---|---|---|
+| Markdown, comments, a `path:line` citation | `make check-links` | <1s. Nothing else can tell you more — none of it reaches a compiled artifact |
+| a fixture under `docs/spec/`, or moved a `tests/` directory | `sh scripts/spec_check.sh` | ~6s. Also checks Appendix A against §3/§4, and that every `tests/…` path in Appendix E resolves |
+| added a `run.sh`, or recorded a new golden | `make goldens-check` | ~0.1s. Asserts every golden a runner names is **tracked by git**. `.gitignore` ignores `*.out` broadly, so a new golden is green on your disk and absent from a fresh clone — `make test` reads the copy that exists and cannot redden for it |
+| `src/tychoc.c`, `runtime/tycho_rt.c`, or any `.ty` fixture | `make test` | ~8 min |
+| anything under `corelib/` | `make corelib` | ~49s. **`make test` cannot redden for it** — `tests/run.sh` globs the top level only and never descends into `corelib/`. Add `make corelib-examples` (~44s) if the package has a worked example |
+| a corelib `<pkg>_shim.c` | `make shim-check` | <1s. **`make corelib` cannot redden for it**: the real build appends the shim with no `-std`, so a missing feature-test macro compiles there and fails only here |
+| how a float is read or written as text | `make locale-check` | ~1.5s. **`make test` cannot redden for the compiler sites** — it runs in the `"C"` locale, and an `LC_ALL=` prefix is inert because a C program stays in `"C"` until something calls `setlocale`. This lane forces it with an `LD_PRELOAD` constructor |
+| `tools/tycho-ar/` · `-q/` · `-vm/` · `-kv/` · `-scheme/` | `make ar-check` · `q-check` · `vm-check` · `kv-check` · `scheme-check` | 1–4s each, and **each is the only lane that runs its tool** |
+| `server/`, or the `core:net` accept/recv/send path | `make server-check` | ~7s, starts the server for real |
+| `examples/weblog/`, `examples/webserver/` | `make weblog webserver` | ~4s. **The only lanes that run either program** — `entrypoints` compiles them and asserts nothing |
+| `tools/tychofmt.ty`, `tools/lsp.ty` | `sh scripts/tools_check.sh` | ~1 min |
+
+`make test-fast` runs the same fixtures over a worker pool and is much quicker —
+**use it to iterate, not as your gate.** It is compiled by the compiler it tests,
+so a single `tychoc` regression can land inside the judge and turn every verdict
+green at once. `tests/run.sh` scores with `cmp`, `grep` and `test`, which nothing
+in this repo can break; when the two disagree, it is right by definition.
+
 ## Two rules that will surprise you
 
 1. **There is one maintained compiler, and `compiler/tychoc0.ty` is not it.**
