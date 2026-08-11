@@ -415,7 +415,7 @@ or an explicit "open, refused because …".
   — nothing under `src/` or `tests/` changed, and its corpus never descends into
   `corelib/`.
 
-- [ ] **Phase 6b — the `core:decimal` worked example never mentions `div`**
+- [x] **Phase 6b — the `core:decimal` worked example never mentions `div`**
   - Found by phase 6, out of its scope. `examples/corelib/decimal/main.ty` has
     no `div`, no `half_up`/`toward_zero` and no `DivErr`: grep for `div` in it
     returns nothing. So the one place a reader goes to see the package used
@@ -425,6 +425,49 @@ or an explicit "open, refused because …".
   - Done when: the example demonstrates `div` at both modes and the
     `Err(DivByZero)` path, with its golden re-recorded.
   - Verify: `make corelib-examples` (~44s). Not `make corelib`, not `make test`.
+  - **Done 2026-08-11.** Three `println`s and one four-line `show` helper appended
+    to `examples/corelib/decimal/main.ty`, continuing the shopkeeper narrative that
+    was already there (`0.1 + 0.2`, `19.99 x 3`, `change`) rather than replacing it:
+    the same `subtotal` of `59.97` is now split eight ways.
+  - **The two modes had to differ on the SAME division, or the argument looks
+    decorative.** `59.97 / 8` is exactly `7.49625`, so at scale 2
+    `decimal.half_up()` gives `7.50` and `decimal.toward_zero()` gives `7.49` — one
+    cent apart, on screen, side by side. `59.97 / 0` prints
+    `refused (divide by zero)` through the helper's `Err` arm, so the zero divisor
+    is handled and visible rather than unwrapped away.
+  - Signature re-verified at the source: `corelib/decimal/decimal.ty:116` is
+    `fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr)`
+    — the brief's line number is right. Note `mode` is a plain `int`;
+    `decimal.half_up()` and `decimal.toward_zero()` (`:97`, `:100`) are functions
+    returning one, not an enum.
+  - Golden `examples/corelib/decimal.out` is **+3 / −0**, a pure append — the three
+    new lines and nothing else, because no existing line's arithmetic changed.
+  - Evidence:
+    ```
+    $ make corelib-examples
+    ok   decimal
+    corelib examples: 36 ok, 1 SKIPPED -- image(missing: libpng)
+    $ make goldens-check
+    goldens-check: ok
+    $ make check-links
+    link check: ok · citation check: ok
+    ```
+
+- [ ] **Phase 14 — a qualified nested pattern does not count toward exhaustiveness**
+  - Found by phase 6b, out of its scope, not folded into it. The helper was first
+    written `Err(decimal.DivByZero):` — the only variant of `decimal.DivErr`
+    (`corelib/decimal/decimal.ty:105-106`) — and the compiler refused:
+    ```
+    examples/corelib/decimal/main.ty:9: error: match on a Result must cover both Ok and Err
+    ```
+    An UNQUALIFIED nested pattern does count: `corelib/test/result/main.ty@why`
+    covers all three `Local` variants with no `_` arm and compiles. So the gap is
+    specifically the qualified spelling — the one a caller of another package must
+    use — and it forces either an unrefined `Err(e)` with an unused binder or a `_`
+    fallback that silently absorbs variants added later. The example took the first.
+  - Done when: a qualified nested pattern is counted, with a `tests/` fixture — or
+    the limit is written down where a caller will meet it.
+  - Verify: `make test`.
 
 - [x] **Phase 6c — triage tycho-q #5, #6, #7 against the source (no fixes)**
   - Dispatched out of plan order, because five of the eight entries worked in

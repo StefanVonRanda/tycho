@@ -2,6 +2,14 @@
 package main
 import "core:decimal"
 
+# div is the one operation with a policy in it: an exact quotient may not exist,
+# so the caller states the scale AND the rounding mode, and a zero divisor is an
+# Err rather than an abort. Unwrapping it is this example's only helper.
+fn show(r: Result(decimal.Decimal, decimal.DivErr)) -> string:
+    match r:
+        Ok(d): return decimal.to_str(d)
+        Err(e): return "refused (divide by zero)"      # DivByZero is DivErr's only variant
+
 fn main():
     a := decimal.from_str("0.1")
     b := decimal.from_str("0.2")
@@ -13,3 +21,8 @@ fn main():
 
     paid := decimal.from_str("100.00")
     println("change    = " + decimal.to_str(decimal.sub(paid, subtotal)))
+
+    eight := decimal.from_int(8)
+    println("59.97/8 up= " + show(decimal.div(subtotal, eight, 2, decimal.half_up())))
+    println("59.97/8 tz= " + show(decimal.div(subtotal, eight, 2, decimal.toward_zero())))
+    println("59.97/0   = " + show(decimal.div(subtotal, decimal.from_int(0), 2, decimal.half_up())))
