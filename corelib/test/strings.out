@@ -40,3 +40,13 @@ strip=[x][file]
 pad=[007][7..]
 rc=cba,Hello
 split=[k][v=w][nosep][]
+sb in  =ok:3:BCD
+sb full=ok:5:ABCDE
+sb zero=ok:0:
+sb past=OutOfBounds
+sb far =OutOfBounds
+sb neg =OutOfBounds
+sb inv =Inverted
+ss in  =ok:2:BC
+ss past=OutOfBounds
+ss inv =Inverted

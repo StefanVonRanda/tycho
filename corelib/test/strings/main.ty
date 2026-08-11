@@ -98,6 +98,34 @@ fn main():
     nb, na := strings.split_once("nosep", "=")
     println("split=[" + bf + "][" + af + "][" + nb + "][" + na + "]")   # split=[k][v=w][nosep][]
 
+    # ---- slice_bytes / slice_str: the FAILING-CLOSED slice ------------------
+    # The language's b[a:z] CLAMPS, so it cannot be used as a bounds check: on a
+    # 5-byte buffer b[2:10] is three bytes and nothing says so. These two say so.
+    bb := to_bytes([65, 66, 67, 68, 69])                       # "ABCDE"
+    println("sb in  =" + sb(bb, 1, 4))                         # sb in  =ok:3:BCD
+    println("sb full=" + sb(bb, 0, 5))                         # sb full=ok:5:ABCDE
+    println("sb zero=" + sb(bb, 5, 5))                         # sb zero=ok:0:
+    println("sb past=" + sb(bb, 2, 10))                        # sb past=OutOfBounds  (b[2:10] clamps to 3)
+    println("sb far =" + sb(bb, 7, 9))                         # sb far =OutOfBounds  (b[7:9]  clamps to 0)
+    println("sb neg =" + sb(bb, 0 - 1, 2))                     # sb neg =OutOfBounds
+    println("sb inv =" + sb(bb, 3, 1))                         # sb inv =Inverted
+    println("ss in  =" + ss("ABCDE", 1, 3))                    # ss in  =ok:2:BC
+    println("ss past=" + ss("ABCDE", 2, 10))                   # ss past=OutOfBounds
+    println("ss inv =" + ss("ABCDE", 3, 1))                    # ss inv =Inverted
+
+# ---- slice helpers: render the Result as one word, never a clamped value ----
+fn sb(b: bytes, a: int, z: int) -> string:
+    match strings.slice_bytes(b, a, z):
+        Ok(v): return "ok:" + str(len(v)) + ":" + to_str(v)
+        Err(strings.Inverted): return "Inverted"
+        Err(strings.OutOfBounds): return "OutOfBounds"
+
+fn ss(s: string, a: int, z: int) -> string:
+    match strings.slice_str(s, a, z):
+        Ok(v): return "ok:" + str(len(v)) + ":" + v
+        Err(strings.Inverted): return "Inverted"
+        Err(strings.OutOfBounds): return "OutOfBounds"
+
 # ---- parse_float helpers ----------------------------------------------------
 # The test hook lives in corelib/strings/strings_shim.c and is deliberately NOT
 # exported by core:strings -- no library function should move a process-wide

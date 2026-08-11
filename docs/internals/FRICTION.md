@@ -1430,6 +1430,37 @@ specified. What is missing is the warning beside it, one paragraph in
 `docs/spec/03-types.md` saying in words that a clamping slice cannot be used as a
 bounds check.
 
+**Re-probed 2026-08-11: every claim above reproduces.** A five-byte `bytes`, one
+program, one run:
+
+```
+len(b)=5
+b[2:10] len=3        <- three bytes, no diagnostic
+b[7:9]  len=0        <- entirely past the end, no diagnostic
+b[-3:2] len=2        <- negative start clamps to 0
+t[2:10] len=3        <- the identical string slice, identical clamp
+t[7:9]  len=0
+```
+
+and the array half of the "hazard is the spelling" claim, same shapes, same
+syntax, different outcome — `a := [1,2,3,4,5]; a[2:10]` dies:
+
+```
+tycho: slice [2:10] out of bounds (len 5)
+exit=1
+```
+
+**Answered 2026-08-11, in corelib rather than in prose.**
+`corelib/strings/strings.ty@slice_bytes` and `@slice_str` take the same
+`(start, stop)` the language does — `strings.slice_bytes(d, p, p + 8)` reads like
+`d[p:p + 8]` — and return `Result(_, SliceErr)`: `OutOfBounds` when `start < 0`
+or `stop > len`, `Inverted` when `start > stop`. Clamping stays the default and
+no existing caller moves; this is the opt-in a format parser wants, so the
+`len(...)`-of-what-came-back test `tools/tycho-ar/main.ty@parse` hand-rolls at
+every read has a name now. Locked by ten lines in `corelib/test/strings.out`
+(`sb past=OutOfBounds` is the `b[2:10]` case above). The one-paragraph spec
+warning is still unwritten and still worth writing.
+
 ### 6. There is no `eprintln`, and the missing channel removed a feature
 
 The builtins are `println`, `die` (stderr, then exit 1) and `exit(n)`. **A

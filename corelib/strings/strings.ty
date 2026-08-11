@@ -353,6 +353,42 @@ fn capitalize(s: string) -> string:          # first byte to uppercase, rest unc
         return chr(c - 32) + substr(s, 1, len(s))
     return s
 
+# ---- slice_bytes / slice_str: the slice that FAILS CLOSED --------------------
+#
+# WHY THESE EXIST. `x[a:z]` CLAMPS for `string` and for `bytes`
+# (docs/spec/03-types.md:139) -- on a 5-byte buffer `b[2:10]` is three bytes and
+# `b[7:9]` is zero, neither of which says anything went wrong. An ARRAY slice
+# with the same spelling aborts instead. So the hazard is the spelling: a format
+# parser that treats `data[p:p + 8]` as its own bounds check reads a short field,
+# compares it against the real one, gets the right answer by accident, and then
+# hashes a prefix. `tools/tycho-ar/main.ty@parse` tests `len(...)` of every slice
+# it takes against what it asked for, by hand, for exactly this reason.
+#
+# These take the same (start, stop) the language does, so `slice_bytes(d, p, p+8)`
+# reads like `d[p:p+8]` -- and refuses anything the clamp would have silently
+# repaired. Clamping stays the default; this is the opt-in for a parser.
+#
+# The errors are payload-free, so both spellings work: `==` for a one-line test
+# and a nested pattern (`Err(Inverted):`) for a `match`.
+enum SliceErr:
+    OutOfBounds        # start or stop outside [0, len(x)]
+    Inverted           # start > stop (an empty slice the caller did not mean)
+
+fn slice_ok(n: int, start: int, stop: int) -> Result(void, SliceErr):
+    if start < 0 or stop > n:
+        return Err(OutOfBounds)
+    if start > stop:
+        return Err(Inverted)
+    return Ok()
+
+fn slice_bytes(b: bytes, start: int, stop: int) -> Result(bytes, SliceErr):
+    slice_ok(len(b), start, stop) or_return
+    return Ok(b[start:stop])
+
+fn slice_str(s: string, start: int, stop: int) -> Result(string, SliceErr):
+    slice_ok(len(s), start, stop) or_return
+    return Ok(s[start:stop])
+
 fn split_once(s: string, sep: string) -> (string, string):
     # split at the FIRST sep: (before, after). If sep is absent, (s, "").
     i := find(s, sep)
