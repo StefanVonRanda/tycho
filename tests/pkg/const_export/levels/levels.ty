@@ -1,0 +1,15 @@
+package levels
+
+# Exported: a const is visible to an importer as `levels.NAME`, folded at each
+# use exactly as a local const is. No export keyword -- the visibility rule the
+# language already had applies, so a leading underscore stays package-private.
+const DEBUG = 10
+const INFO = 20
+const WARN = 30
+const LABEL = "levels"
+const SCALE = 1.5
+
+const _INTERNAL = 99          # package-private, and stays so
+
+fn threshold() -> int:
+    return _INTERNAL          # its own package can still read it

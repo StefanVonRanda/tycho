@@ -1,4 +1,4 @@
-# Locks the exact text of the `range()` removal diagnostic (src/tychoc.c:3468).
+# Locks the exact text of the `range()` removal diagnostic (src/tychoc.c:3475).
 # The message must name BOTH replacements and substitute the loop variable, so
 # it can be copy-pasted: the three-clause `for` for a sequential count, and
 # `parallel for i in 0..<N:` for a parallel one. Same discipline as

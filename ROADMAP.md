@@ -119,7 +119,12 @@ learnings and in FRICTION:
 - ~~no `defer`~~ — **refused 2026-08-10** (see the probe table); ~~and no bare
   `pass`/no-op statement~~, **closed 2026-08-10**
 - ~~**no expression line continuation**~~ — **closed 2026-08-09**
-- consts do not cross package boundaries, so levels ship as functions
+- ~~consts do not cross package boundaries, so levels ship as functions~~ —
+  **closed 2026-08-10**: `pkg.NAME` reads an exported const, folded at the use
+  site. No export keyword; the leading-underscore rule already there does the
+  privacy. One position remains open and is marked `gap:` in the source — a
+  qualified const as a fixed-array length, which needs sizes resolved after
+  parsing
 - ~~`or_return` requires a `Result`-returning function, which `main()` is not~~ —
   **closed 2026-08-10**: `fn main() -> Result(void, string)` is a second legal shape
 - ~~a newtype-of-array blocks `push`~~ — **closed 2026-08-10**, and it was worse

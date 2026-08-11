@@ -1,0 +1,11 @@
+# Exporting consts did not export the private ones. A leading underscore is the
+# visibility rule the language already had, and it applies unchanged -- which is
+# why the feature needed no export keyword and no new syntax.
+#
+#   error: 'levels._INTERNAL' is package-private
+package main
+import "levels"
+
+fn main():
+    println(str(levels.PUBLIC))
+    println(str(levels._INTERNAL))

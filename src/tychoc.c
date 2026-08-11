@@ -2354,6 +2354,13 @@ static Type parse_type_inner(Parser *ps) {
             int64_t fixn;
             if (size_is_int) { fixn = cur(ps)->ival; ps->p++; }
             else {
+                /* gap: an imported package's const (`[lvl.CAP]int`) is NOT accepted here,
+                 * only an unqualified one. Not an oversight to patch in place: this runs at
+                 * PARSE time, and the imported package may not be parsed yet, so
+                 * consts_find would return NULL or not depending on file order -- an
+                 * intermittent failure, worse than the clean refusal below. Supporting it
+                 * means resolving a fixed-array size at RESOLVE time. Exported consts work
+                 * in expression position (2026-08-10); this position is the remainder. */
                 Expr *cf = consts_find(pkg_mangle(cur(ps)->text));
                 if (!cf || cf->kind != E_INT)
                     die_at(cur(ps)->line, "a fixed-size array length must be an integer literal or an int `const` -- '%s' is not", cur(ps)->text);
@@ -3765,7 +3772,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10105), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10125), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5737,9 +5744,22 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->lhs->kind == E_IDENT && is_imported_pkg(e->lhs->sval)) {
                 check_pkg_private(e->lhs->sval, e->sval, e->line);
                 char *q = sfmt("%s%s", pkg_prefix_for(e->lhs->sval), e->sval);
+                {   /* `pkg.NAME` may be an exported CONST. Consts are already registered
+                     * package-mangled, so the lookup is the same one a local const gets --
+                     * fold this node into the literal, exactly as resolve_expr's E_IDENT
+                     * arm does, and nothing reaches codegen. Tried BEFORE the variant
+                     * lookup because a const and a variant cannot share a name (parse_const
+                     * rejects the collision). */
+                    Expr *k = consts_find(q);
+                    if (k) {
+                        e->kind = k->kind; e->ival = k->ival; e->fval = k->fval;
+                        e->sval = k->sval; e->lhs = NULL; e->rhs = NULL;
+                        return e->type = lit_type(k);
+                    }
+                }
                 int evi, eid = variant_find(q, &evi);
                 if (eid < 0)
-                    die_at(e->line, "package '%s' has no variant '%s'", e->lhs->sval, e->sval);
+                    die_at(e->line, "package '%s' has no variant or const '%s'", e->lhs->sval, e->sval);
                 if (g_enums[eid].variants[evi].npayload != 0)
                     die_at(e->line, "%s.%s carries a payload — write %s.%s(...)",
                            e->lhs->sval, e->sval, e->lhs->sval, e->sval);
@@ -7052,10 +7072,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6676),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6696),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:6964). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:6984). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8566,7 +8586,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7002: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7022: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8734,7 +8754,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10974), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10994), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8764,12 +8784,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12934) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12954) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11061) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11081) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -8786,7 +8806,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3645-3650) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3652-3657) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

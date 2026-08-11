@@ -1,0 +1,4 @@
+package levels
+
+const PUBLIC = 1
+const _INTERNAL = 99

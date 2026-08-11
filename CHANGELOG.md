@@ -13,6 +13,20 @@ block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
 not history, so the two are merged here under the date this actually shipped.
 
+- **Top-level `const`s cross package boundaries.** `pkg.NAME` reads an exported
+  constant, **folded to its literal at the use site** exactly as an unqualified
+  const is — no runtime global is emitted, so the reference costs nothing. A
+  package that wanted to publish a level had to ship it as a function before
+  this, because `levels.DEBUG` resolved as an enum variant and died "has no
+  variant".
+
+  No export keyword and no new syntax: the leading-underscore rule the language
+  already had does the privacy, so `pkg._NAME` is refused unchanged. One
+  position is deliberately left out and marked `gap:` in the source — a
+  qualified const as a fixed-array length (`[pkg.CAP]int`), because an array
+  length is resolved while parsing, when the imported package may not be parsed
+  yet; accepting it there would fail or not depending on file order.
+
 - **The live-copy warning no longer suggests a no-op.** It told you to "pass a
   copy you keep (`y := s`)". Measured on the emitted C: that spelling silences
   the warning and emits the *same* two copies, while making the value's last use

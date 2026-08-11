@@ -2,7 +2,7 @@
 # `0..<N` exists so `parallel for` keeps a statically-shaped iteration space to
 # chunk across threads; accepting it in a plain `for` would make it `range()`
 # under a new name and leave the three-clause form with nothing to do
-# (plan.md's Pre-flight, phase 5). Refused at src/tychoc.c:3437 with
+# (plan.md's Pre-flight, phase 5). Refused at src/tychoc.c:3444 with
 #
 #     error: `0..<N` counts only in a `parallel for` --
 #            write `for i := 0; i < N; i += 1:` for a sequential count

@@ -174,9 +174,9 @@ is unaffected. They are **not** reserved:
   Non-normative for conformance — a warning is quality of implementation — but
   a conforming implementation must not change which procedure is *selected*.
 
-> Provenance: contextual dispatch at `src/tychoc.c:4478-4487` (top level),
-> `:3535@"const"`/`:3561@"delete"` (`const`/`delete`), `:2258@soa [Struct]`/`:2767@soa []Struct` (`soa`),
-> `:4184@"where"` (`where`), `:4150@"sink"` (`sink`), `:3817@"range"` (`range`, refusal only).
+> Provenance: contextual dispatch at `src/tychoc.c:4485-4494` (top level),
+> `:3542@"const"`/`:3568@"delete"` (`const`/`delete`), `:2258@soa [Struct]`/`:2774@soa []Struct` (`soa`),
+> `:4191@"where"` (`where`), `:4157@"sink"` (`sink`), `:3824@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -218,7 +218,7 @@ chains) is limited to a fixed depth; a more deeply nested expression is rejected
 (`expression nesting too deep`) — a fail-closed guard, the expression-level
 counterpart to the indentation-depth bound (§3.4).
 
-> Provenance: `src/tychoc.c:2673-2679`.
+> Provenance: `src/tychoc.c:2680-2686`.
 
 ### 3.9.1 Integer literals
 
@@ -400,8 +400,8 @@ is a single four-byte literal and not a run-time concatenation.
 > raw piece `:447-494`, its re-escape table `:475-478`, its control-byte
 > rejection `:479-480`, its per-piece bound `:745@rn + 2 >= (int)sizeof rbuf`,`:748@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:752@unterminated raw string literal`; adjacent join `:2343-2355`; `const` string fold
-> `:4417-4421`; codegen pastes the escaped text into a C string literal
-> `:10328@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
+> `:4424-4428`; codegen pastes the escaped text into a C string literal
+> `:10348@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
