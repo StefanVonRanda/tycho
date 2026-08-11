@@ -265,8 +265,11 @@ element type instead of a family of per-type siblings.
   `mod`/`pow`, `abs`/`neg`/`cmp`/`is_zero`.
 - **`decimal`** — arbitrary-precision base-10 fixed point, composed on `core:bignum` (a `Big`
   coefficient × 10⁻ˢᶜᵃˡᵉ), so decimal fractions are **exact** (`0.1 + 0.2 == 0.3`):
-  `from_str`/`to_str`, `add`/`sub`/`mul` (exact), `cmp`, `neg`/`abs`, `rescale` (truncating).
-  Division is deferred (needs a rounding policy).
+  `from_int`/`from_str`/`to_str`, `add`/`sub`/`mul` (exact), `cmp`, `neg`/`abs`/`is_zero`,
+  `rescale` (truncating). Division exists and takes its policy from the caller:
+  `div(a, b, scale, mode) -> Result(Decimal, DivErr)`, where `mode` is `half_up()` (ties away
+  from zero) or `toward_zero()` (agrees with `rescale`) — there is no default, because there
+  is no correct one. A zero divisor, a negative scale and an unknown mode are each an `Err`.
 - **`crypto`** — the security-grade module, a C-shim over OpenSSL `libcrypto` (see
   [C-shim modules](#c-shim-ffi-backed-modules); needs the OpenSSL dev package). Where the
   pure-Tycho `sha256`/`md5` are for non-adversarial integrity, this is what you reach for

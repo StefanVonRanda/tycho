@@ -361,12 +361,70 @@ or an explicit "open, refused because …".
   replacement and the file now contains zero NUL bytes. Neither doc gate checks
   for control bytes in Markdown — filed below.
 
-- [ ] **Phase 6 — tycho-q #2 `core:decimal` has no `div`**
+- [x] **Phase 6 — tycho-q #2 `core:decimal` has no `div`**
   - Scope: `corelib/decimal/`. NOTE: ROADMAP's probe table already claims
     "`decimal.div` exists" — re-probe first, this may be closed already.
   - Done when: division exists with a documented rounding rule and a fixture, or
     the entry is struck as already fixed.
   - Verify: `make corelib` and `make q-check`.
+
+  **The note was right and the FRICTION entry was wrong.** `div` was implemented
+  2026-08-02 by commit `4251339`; FRICTION entry 2's banner still read
+  "[STILL OPEN, checked 2026-08-01]" and entry 1's banner still said "there is
+  still no `decimal.div`". **No code was written this phase** — `corelib/` is
+  byte-identical to its parent commit. The deliverable is the three stale
+  documents.
+
+  **Re-probe, not a source read** (`/tmp/decprobe/main.ty`, compiled with
+  `./tychoc`, run):
+
+  ```
+  1/3  @5 half_up = 0.33333
+  2/3  @2 half_up = 0.67
+  2/3  @2 trunc   = 0.66
+  -2/3 @2 half_up = -0.67
+  1/0  @2         = Err(DivByZero)
+  1/2  @-1        = Err(BadScale -1)
+  1/2  @2 mode 9  = Err(BadMode 9)
+  ```
+
+  So the design questions the brief asked me to decide were already decided, in
+  the shape the finding asked for: the scale is an explicit **argument**, not
+  inherited; the rounding mode is an explicit argument with **no default**
+  (`HALF_UP` ties away from zero, `TOWARD_ZERO` matches `rescale`); and a zero
+  divisor is `Err(DivByZero)`, which is the `Result` direction of FRICTION 3, 7
+  and 8 rather than a sentinel.
+
+  **Negative control — the fixture can fail.** `corelib/decimal/decimal.ty:127`
+  `>= 0` → `> 0` (half-up stops rounding exact ties up). `make corelib` went
+  from `corelib: all green` to `corelib: FAIL`, and the divergence is exactly
+  the two tie cases, nothing else:
+
+  ```
+  14,15c14,15
+  < div_modes=0.67 0.66 1 0        > div_modes=0.67 0.66 0 0
+  < div_scale0=4 3                 > div_scale0=3 3
+  ```
+
+  Restored; `git diff --stat corelib/` is empty and `make corelib` is
+  `all green` again.
+
+  **Gates:** `make corelib` all green · `make q-check` green (35-query
+  transcript == golden, division by zero refused with empty stdout) ·
+  `check_citations.py` ok · `check_links.sh` ok (119 files). `make test` NOT run
+  — nothing under `src/` or `tests/` changed, and its corpus never descends into
+  `corelib/`.
+
+- [ ] **Phase 6b — the `core:decimal` worked example never mentions `div`**
+  - Found by phase 6, out of its scope. `examples/corelib/decimal/main.ty` has
+    no `div`, no `half_up`/`toward_zero` and no `DivErr`: grep for `div` in it
+    returns nothing. So the one place a reader goes to see the package used
+    shows only the exact operations, which is the half of `core:decimal` that
+    needed no explanation. The rounding-mode choice and the zero-divisor `Err`
+    are the parts a caller gets wrong.
+  - Done when: the example demonstrates `div` at both modes and the
+    `Err(DivByZero)` path, with its golden re-recorded.
+  - Verify: `make corelib-examples` (~44s). Not `make corelib`, not `make test`.
 
 - [ ] **Phase 7 — tycho-q #5 an enum cannot be asked which variant it is**
   - Scope: `src/tychoc.c`. The entry notes the pattern-discard fix mitigated it;

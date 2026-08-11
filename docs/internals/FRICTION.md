@@ -1753,7 +1753,11 @@ rather than padded.
 > against both fixtures. Two spellings are refused rather than rounded (`1e3`,
 > `-0.0`), for the stated reason that the same text is already refused in a query
 > literal and in a CSV cell. **Finding 2 is untouched by any of this and remains
-> open**: there is still no `decimal.div`.
+> open**: there is still no `decimal.div`. *(That last clause was true when it was
+> written and stopped being true the next day — `decimal.div` landed 2026-08-02 in
+> commit `4251339`, and finding 2 is closed. Left in place because the sentence it
+> qualifies — that nothing in the `core:json` work depended on division — is still
+> the point.)*
 >
 > **Re-probed 2026-08-11 along the axis the title claims — "input it cannot
 > represent" — and the round trip is faithful on all five.** Measured, not
@@ -1821,14 +1825,35 @@ programmer; this one is paid by the person reading the output.**
 
 ### 2. `core:decimal` has no `div`, so the ordinary averaging query has no answer
 
-> **[STILL OPEN, checked 2026-08-01.]** Unchanged and re-read, not assumed:
-> `corelib/decimal/decimal.ty` still has no division, and its header still gives
-> the same reason. Two plans have now closed `core:json` around it without
-> needing it — the lexeme route means a JSON float reaches `core:decimal` exactly
-> and never needs dividing to get there — so this is narrower than it looked
-> from item 1, not broader. It is carried in the live plan as the `decimal.div`
-> phase, and the fix is still `div(a, b, scale, mode)` with both the scale and
-> the rounding mode named by the **caller**.
+> **[CLOSED 2026-08-11 — fixed 2026-08-02 by commit `4251339`; this banner had
+> gone stale for nine days.]** The finding below is left verbatim. `div` landed
+> in exactly the shape the finding asked for and nothing here re-litigated it:
+> `corelib/decimal/decimal.ty@div` is
+> `div(a, b, scale, mode) -> Result(Decimal, DivErr)`, with **both** the target
+> scale and the rounding mode named by the caller and no default for either.
+> `corelib/decimal/decimal.ty:91-92` gives the two modes the finding demanded —
+> `HALF_UP` and `TOWARD_ZERO` — and the second is there for the stated reason,
+> that `corelib/decimal/decimal.ty@rescale` already truncates toward zero and a
+> lone half-up policy would silently disagree with it. Because a `const` does not
+> cross a package boundary here, both are also readable as calls
+> (`corelib/decimal/decimal.ty@half_up`), which is what `tools/tycho-q` writes.
+> A zero divisor is `Err(DivByZero)`, not the process abort the finding called
+> "not an error message"; a negative scale and an unknown mode are errors too.
+> One bignum long division does the work, so no float touches the path.
+>
+> **`tycho-q`'s exact-only `/` is gone with it.** `tools/tycho-q/main.ty:240-253`
+> records the change: the query the finding said had no answer now has one, and
+> the zero divisor it had to pre-check is an `Err` it can attribute to a row.
+>
+> **Re-probed 2026-08-11 before this banner was written**, because the entry had
+> already been re-read once and pronounced open while the code existed:
+> `1/3` at scale 5 half-up is `0.33333`, `2/3` at scale 2 is `0.67` half-up and
+> `0.66` toward zero, `-2/3` is `-0.67` (ties away from zero on the magnitude,
+> sign reapplied after), and the three refusals return `Err(DivByZero)`,
+> `Err(BadScale -1)` and `Err(BadMode 9)` rather than aborting. The fixture that
+> pins all of this is `corelib/test/decimal/main.ty:67-94`, and breaking the
+> half-up comparison in `div` on purpose reddens `make corelib` — recorded under
+> the phase in `plan.md`.
 
 `corelib/decimal/decimal.ty` has `from_int`, `from_str`, `add`, `sub`, `mul`,
 `cmp`, `rescale`, `to_str`, `neg`, `abs` and `is_zero`. **No division.** The
