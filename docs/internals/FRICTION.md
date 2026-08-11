@@ -2273,3 +2273,103 @@ shrank them. Padding this list would make the seven above harder to act on.
   the comparator sort, the closure and the JSON reader. This matches what the two
   re-scorings above found and continues to contradict the picture the older half
   of this file paints.
+
+## Adversarial pass over the surface that shipped 2026-08-11 (head `e6014db`)
+
+Not a program being written — a hunt. Every feature that landed on 2026-08-11
+had roughly one happy-path fixture and one reject fixture, so the combinations
+no fixture covers were probed directly: ~45 programs, compiled with `./tychoc`
+and run. One real defect came out (`struct Ok` and its four siblings declaring
+cleanly and being unreachable — fixed in the same commit as this entry, see
+`tests/reject/struct_named_ok.ty`). The rest of what turned up is below.
+
+### 8. `iter.try_map` has no `Result(void, E)` shape, and says so from inside corelib
+
+A callback answering `Result(void, E)` is the natural spelling for "walk these
+and stop at the first failure, I want no values back" — validate each row, chmod
+each path, `set_mtime` each extracted file. `try_map` cannot express it, because
+its `$U` becomes `void` and its accumulator has no element type:
+
+```
+fn check(x: int) -> Result(void, string):
+    if x < 0:
+        return Err("neg")
+    return Ok()
+fn main():
+    r := iter.try_map([1, 2], check)
+```
+
+```
+corelib/iter/iter.ty:30: error: cannot infer the type of 'out' from this use
+    30 |         push(out, f(v) or_return)
+./main.ty:8: note: required from here -- this call instantiated the generic
+     8 |     r := iter.try_map([1,2], check)
+```
+
+**The `note:` is the day's other feature working exactly as intended** — without
+`be325b4` this was a bare corelib line and nothing else. It is still a message
+about `out`, a local the caller has never heard of, for a problem that is "there
+is no `try_each`". The workaround is a hand-written loop with `or_return`, three
+lines, which is what `try_map` existed to remove. **Not fixed here: adding
+`try_each` is a design decision about the package's shape, not a defect.**
+
+### 9. `[string]` across the FFI truncates an element at its first NUL, silently
+
+A Tycho string carries a length and may hold a NUL; the `(const char *const *,
+long)` ABI carries a count of pointers and nothing per element. So the callee's
+`strlen` and Tycho's `len` disagree, with no diagnostic:
+
+```
+ns := ["a" + chr(0) + "c", "", "ee" + chr(200)]
+println("nul lensum=" + str(p_lensum(ns)))      # 4  -- C sees 1 + 0 + 3
+println("nul len(tycho)=" + str(len(ns[0])))    # 3  -- Tycho sees "a\0c"
+```
+
+This is inherent to the ABI that was chosen, and the alternative (marshalling a
+length array) would give up the "nothing is copied" property that is the whole
+point of the borrow. `bytes` already crosses as `(ptr, len)` and is the right
+tool for a NUL-bearing payload. **Recorded, not fixed**: the gap is that
+`docs/spec/14-ffi.md` describes the element as "an ordinary NUL-terminated C
+string" without saying that a Tycho string which is not one is silently cut.
+
+### What did not go wrong, which is also data
+
+- **`is` is single-eval and short-circuits correctly.** `make(&c) is VB` on a
+  call with an `inout` side effect calls once; `a is Some and boom(&c) is Some`
+  leaves the counter at 0 when the left side is false. Codegen emits
+  `gen_expr(e->lhs)` exactly once (`src/tychoc.c@TK_IS`).
+- **`is` inside a generic body substitutes per instantiation, and refuses the
+  wrong enum at the call site that caused it.** `fn isFirst(v: $T) -> bool:
+  return v is A1` instantiated at `B2` gives "'A1' is not a variant of B" plus
+  the `required from here` note. `v is Some` in a generic works at `Option(int)`
+  and `Option(string)` from one body.
+- **The uppercase-binding rule has no holes worth finding.** Probed at: match
+  arm binder, tuple destructuring, `for` loop variable, `keys()` loop variable,
+  lambda parameter, `:=`, and a `spawn` task binding — all refused with the same
+  message. A struct FIELD and an `extern fn` parameter name may still be
+  uppercase, and neither is a binding.
+- **`[string]` over the FFI is right everywhere else probed.** Empty array, empty
+  string elements, a 2000-element array built by `push` in a loop, an array
+  literal written inline, a `[string]` read out of a struct field, and the same
+  array passed to two parameters of one extern (the callee sees one pointer, not
+  two copies — `p_two` returned `1303`). A `bounded[4]string` is refused at the
+  call, which is right: it stores in `.v`, not `.data`.
+- **`Result(void, E)` composes.** Three `or_return` steps in a chain stop at the
+  failing one; `result.is_ok`/`is_err`/`err_or` and `r is Ok`/`r is Err` all
+  answer at a void payload.
+- **`try_map` short-circuits at the first, last and only element, and returns
+  `Ok([])` for an empty input.** Nested `try_map` inside `try_map` over `[[int]]`
+  propagates the inner `Err` unchanged.
+- **`io.set_mtime` behaves at every edge probed.** A directory is `Ok` (as
+  documented), a symlink follows to its target, a missing path and `""` are both
+  `Err(NotFound)`, a mode-444 file the caller owns is `Ok` (POSIX: the owner may
+  always set times), and a negative or year-2100 stamp round-trips through
+  `io.mtime`.
+- **Operand and argument evaluation order is NOT left-to-right, and that is
+  correct.** `str(bump(&c)) + "|" + str(c)` prints `1|0` and `pair(bump(&e), e)`
+  prints `1,0`, while the f-string spelling prints `1|1`. This looked like the
+  same defect `680d30d` had just fixed; it is not.
+  `docs/spec/09-expressions.md:168` makes argument and operand order
+  *unspecified* deliberately, and `docs/spec/appendix-f-impl-defined.md:14` lists
+  the f-string holes as the named exception. The feature that shipped is exactly
+  as narrow as it says it is.

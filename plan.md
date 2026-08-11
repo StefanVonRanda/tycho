@@ -334,6 +334,113 @@ site is either implemented or written down as a refusal with its cost.
   that lasts until the next compiler phase; anchoring them as they are
   re-pointed is what makes the repair hold.
 
+- [x] **Phase 7 — adversarially exercise the surface that shipped 2026-08-11**
+
+  A hunt, not a build: every feature that landed that day had roughly one
+  happy-path fixture and one reject fixture, so the combinations no fixture
+  covers were probed directly. ~45 `.ty` programs written in `/tmp`, compiled
+  with `./tychoc` and run.
+
+  **Probed, no defect found** (detail and outputs in
+  `docs/internals/FRICTION.md`, "Adversarial pass over the surface that shipped
+  2026-08-11"): `is` single-eval on a side-effecting call, `is` under
+  `and`/`or`/`not` short-circuit, `is` in a generic body substituting to two
+  different enums and to `Option(int)`/`Option(string)`, `is` precedence against
+  `==`; the uppercase-binding rule at seven binding forms; `[string]` over the
+  FFI at empty, empty-element, 2000-element, push-built, struct-field, literal,
+  same-array-twice and `bounded[N]string`; `Result(void, E)` through an
+  `or_return` chain and through `result.is_ok`/`is_err`/`err_or`/`is`;
+  `try_map` at first/last/only/empty and nested in itself; f-string ordering
+  with `inout` side effects, nested f-strings, `or_return` inside one;
+  `io.set_mtime` on a directory, a symlink, a missing path, `""`, a mode-444
+  file, and negative and year-2100 stamps.
+
+  **One defect found and fixed here.** `bdf0a00` refused `Ok`/`Err`/`Some`/
+  `None` as a `fn` or `const` name because the constructor wins at every use
+  site and the declaration would be unreachable. The same argument holds for a
+  `struct`, an `enum`, a `type`, a `handle` and an enum VARIANT, and none of the
+  five was guarded — each declared cleanly and failed only at its first use,
+  with a diagnostic about the builtin and no mention of the declaration:
+
+  ```
+  struct Ok:
+      v: int
+  fn main():
+      o := Ok(1)
+      println(str(o.v))     # error: '.v' on a non-struct value
+  ```
+
+  A variant was the worst of the five: `match e: Ok:` matched it while `e := Ok`
+  reported "'Ok' ... as a value it is a constructor: Ok(x)". Half of it worked.
+
+  Fix: `is_builtin_ctor(nameT->text)` added to the four type-declaration guards
+  and the variant-registration guard — `src/tychoc.c@parse_handle`,
+  `src/tychoc.c@parse_struct`, `src/tychoc.c@parse_enum`,
+  `src/tychoc.c@parse_typedecl`, and the variant loop inside the last. Six
+  lines changed, six removed: **line-neutral, so no citation re-anchoring**.
+
+  Fixtures: `tests/reject/struct_named_ok.ty`,
+  `tests/reject/enum_named_none.ty`, `tests/reject/variant_named_ok.ty`,
+  `tests/reject/newtype_named_err.ty`, `tests/reject/handle_named_some.ty`.
+
+  > Negative control, run before the fixtures were trusted: with
+  > `git stash push src/tychoc.c` and a rebuild, all five compiled clean
+  > (`built /tmp/hunt/nc` × 5). With the fix they are refused with
+  > `'Ok' is already defined` and its three siblings. Nothing in the tree
+  > declared any of the four names — grepped over every `*.ty` before editing.
+
+  Spec: `docs/spec/12-aggregates.md` already said the variant namespace is
+  shared by `fn`, `const`, `struct`, `enum`, `type` and `handle`, then spelled
+  the builtin-constructor rule for `fn` and `const` only. Widened to name all
+  six plus a variant.
+
+  **The one that looked like a defect and is not.** `str(bump(&c)) + "|" +
+  str(c)` prints `1|0` and `pair(bump(&e), e)` prints `1,0`, while the f-string
+  spelling prints `1|1`. `docs/spec/09-expressions.md:168` makes argument and
+  operand order *unspecified* deliberately and
+  `docs/spec/appendix-f-impl-defined.md:14` names the f-string holes as the
+  exception, so `680d30d` is exactly as narrow as it claims.
+
+  Gates: `make test` (639 baseline, +5 reject fixtures), `check-links`,
+  `check_citations.py`, `scripts/entrypoints.sh`. Not `make corelib` — nothing
+  under `corelib/` changed. Not `make ci`.
+
+- [ ] **Phase 8 — `core:iter` has no `try_each`, and the refusal is a message
+      about a corelib local** *(discovered by Phase 7, filed not absorbed)*
+
+  `iter.try_map` cannot take a callback returning `Result(void, E)` — `$U`
+  becomes `void` and the accumulator has no element type. Minimal repro:
+
+  ```
+  fn check(x: int) -> Result(void, string):
+      if x < 0:
+          return Err("neg")
+      return Ok()
+  fn main():
+      r := iter.try_map([1, 2], check)
+  ```
+  ```
+  corelib/iter/iter.ty:30: error: cannot infer the type of 'out' from this use
+  ./main.ty:8: note: required from here -- this call instantiated the generic
+  ```
+
+  The `note:` is `be325b4` working. The message is still about `out`, a local
+  the caller has never seen, for a problem that is "there is no `try_each`".
+  Not absorbed into Phase 7: adding a function is a decision about the
+  package's shape, and the alternative (refuse `void` in `try_map` with a
+  message naming `try_each`) is only worth writing once `try_each` exists.
+
+- [ ] **Phase 9 — `docs/spec/14-ffi.md` does not say a `[string]` element is
+      truncated at an embedded NUL** *(discovered by Phase 7)*
+
+  The spec calls each element "an ordinary NUL-terminated C string" and stops
+  there. A Tycho string carries a length and may hold a NUL, so `len(s)` and the
+  callee's `strlen` disagree with no diagnostic — probed at `["a" + chr(0) +
+  "c"]`, where Tycho says 3 and C says 1. The behaviour is right (the borrow
+  copies nothing, which is the point) and `bytes` is the tool for a NUL-bearing
+  payload; what is missing is the sentence saying so. Doc-only, so the two doc
+  gates and nothing else.
+
 ## Out of scope
 
 `plan_windows.md` is a separate track and is not touched by this plan.
