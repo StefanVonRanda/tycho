@@ -142,6 +142,115 @@ site is either implemented or written down as a refusal with its cost.
     refs, each verified to shift by exactly +7 (the text at the old line in
     `HEAD` and the new line in the working copy is identical) and fixed by hand.
 
+- [x] **Phase 3 — harden `scripts/check_citations.py`: commit hashes are
+      citations too** *(requested directly during this plan, not discovered by
+      Phase 1 or 2)*
+
+  Two blind spots were named: unvalidated commit hashes in prose, and bare
+  `path:N-M` ranges that stay in bounds while pointing at unrelated code.
+  Sized both before building; built one, declined the other with numbers.
+
+  - **Sizing (a) — commit hashes.** 63 distinct backticked hex runs of 7–40
+    characters across the tracked tree, 113 occurrences. 14 of them are decimal
+    measurements (`15777800`, `4294967295`, `9223372036854775807`) and fall out
+    on the "needs both a digit and an `a-f` letter" rule. The remaining 49 are
+    **all exactly 7 characters** and, at the time of writing, **49/49 resolve**
+    via `git cat-file`. Unbackticked hex is a minefield by contrast: 52 hashy
+    bare tokens, of which the CRC/FNV/sha vectors in `corelib/test/hash.out`,
+    `corelib/test/md5.out` and `tools/tycho-ar/main.ty` pass every shape test a
+    hash would. The one bare form with unambiguous intent is the word `commit`
+    in front — 4 sites tree-wide, 0 false positives.
+  - **Sizing (b) — single-line refs vs ranges.** 290 bare single-line refs and
+    552 bare ranges. Range widths: min 2, median 8, p90 39, max 481. Requiring
+    an anchor on every single-line ref tree-wide is therefore a **flag day, not
+    a migration**: 290 hand edits, many in `docs/spec/` where the cited line has
+    no token that occurs once.
+  - **Sizing (c) — ranges.** "Points at unrelated code" is not mechanically
+    decidable and is not pretended otherwise. What is detectable: width. 107
+    ranges are 25+ lines, 18 are 100+, and the widest (`src/tychoc.c:3236-3716`,
+    cited from three spec chapters) is an honest citation of a whole declaration
+    parser. Width is a report, never a verdict.
+  - **Built:** commit-hash validation as a hard failure. Backticked at exactly
+    7, or any width after the word `commit`/`commits`; one batched
+    `git cat-file --batch-check` for the whole tree, so the cost is one
+    subprocess, not one per hash. `.out`/`.err` goldens and `compiler/tychoc0.ty`
+    are excluded with the existing skip sets. Every occurrence is named, not
+    just the first. Skips loudly and passes on a shallow clone.
+  - **Built:** `--report`, advisory, attached to no verdict — it lists the 290
+    un-anchored single-line refs and the 18 wide ranges. Not wired into
+    `make check-links`.
+  - **Declined, with reasons:** tree-wide mandatory anchoring (290-ref flag
+    day); any range-drift heuristic beyond width (undecidable); scanning
+    unmarked hex (the digest vectors above make it uncheckable).
+  - **The width-7 pin is a measured decision, not a guess.** The first version
+    accepted 7–12 backticked and the cry-wolf test immediately reddened on a
+    backticked CRC32. Every fixed-width digest in this tree is even (CRC32 8,
+    FNV 8/16, md5 32, sha256 64), so pinning the backticked form to git's
+    default 7 excludes all of them by construction. The cost is that an 8–12
+    character hash in bare backticks is unchecked; `commit <hash>` covers it.
+  - **REAL DEFECT FOUND, and fixed.** `Makefile` and `bench/guard.sh` both
+    attributed the 5x tree-alloc perf regression to a commit that resolves to
+    nothing anywhere in this repository (6ff7aa1, written unmarked here so this
+    file does not redden its own gate). Corrected to `4a5c64c` — "MM-9
+    (hierc0): parity — arena-place string elements + recycle, bucketed
+    freelist", on `main`, and the fix commit `665af34` is literally titled
+    "recover MM-9's 5x tree-alloc regression". Identification by the named
+    ticket and the named symptom, not by hash similarity.
+  - **Proof it can fail.** Clean tree: `make check-links` exit 0. Injecting the
+    brief's exact defect — 9bcc93b for `9cbbd3b`, a transposition, written once
+    backticked in `ROADMAP.md` and once after the word "commit" in
+    `CHANGELOG.md` (both spellings unmarked in this bullet, or this file would
+    redden its own gate) — produced `STALE  ROADMAP.md:400 ... is not a commit
+    in this repository (git cat-file says: missing)` and the matching
+    `CHANGELOG.md:662` line, then `FAILED (2 stale citation(s) above)`, exit 1.
+    Each site is named separately, so a hash repeated in two files reports
+    twice. Reverted: green. **The gate then caught this very bullet** on its
+    first draft, which is the check proving itself a third time.
+  - **Proof it does not cry wolf.** A paragraph carrying a sha256, an md5, a
+    CRC32, an FNV, a UUID, a `#rrggbb`, a `0xdeadbeef`, a `127.0.0.1:8080`, and
+    two decimal measurements passed with **zero** failures while still picking up
+    the one real hash beside them (54 → 55 checked). Breaking only that hash in
+    the same paragraph reddened. The shallow-clone path was proved by cloning
+    this repo `--depth 1` with the stale 6ff7aa1 still present: `commit-hash
+    check: SKIPPED`, exit 0.
+  - **Runtime.** `make check-links` 0.861 / 0.870 / 0.842 s before, 1.019 /
+    1.017 / 1.038 s after — +0.16 s for reading every tracked file once.
+    `check_citations.py` alone is 0.532 s. `CONTRIBUTING.md`'s "under a second"
+    for the whole target was corrected to `~1s`; `CLAUDE.md`'s gate row now
+    carries both figures.
+  - **Docs.** `CLAUDE.md`'s Citations section (authoritative) and
+    `CONTRIBUTING.md`'s tracked copy were updated together, both with the
+    "never backtick a bare digest" rule and the 8–12 gap.
+  - **Gates:** `make check-links` → both ok, 55 commit hashes resolve.
+    `sh scripts/entrypoints.sh` → ok (75 entry points), run because `Makefile`
+    was touched. `make test`, `make corelib` and `make ci` deliberately NOT run:
+    none can redden for a doc gate, a comment and a Markdown edit.
+  - **Comment budget:** +106 lines in `scripts/check_citations.py`, 11 of them
+    comment lines.
+
+- [ ] **Phase 4 — decide what to do about the 290 un-anchored single-line
+      refs** *(discovered by Phase 3, out of its scope, not absorbed)*
+
+  `python3 scripts/check_citations.py --report` lists them. Each proves a line
+  exists and nothing more, which is exactly how `ROADMAP.md`'s `` `:133` ``
+  silently re-pointed from `map_err_with` to `map_err`. Anchoring all 290 is a
+  flag day and was declined. The affordable question this phase should answer:
+  is there a *subset* — refs into `src/tychoc.c` and `runtime/tycho_rt.c`, the
+  two files that move most — worth anchoring by hand, and can
+  `scripts/reanchor_citations.py` propose an anchor mechanically for the ones
+  whose cited line already contains a token occurring once in the range? Size
+  that subset before touching anything.
+
+- [ ] **Phase 5 — `bench/prongB/RESULTS.md` writes output checksums that read
+      as commit hashes** *(discovered by Phase 3, deliberately not guessed at)*
+
+  `411c91a9` and `67f39fca` appear as bare parenthesised 8-hex tokens meaning
+  "byte-identical output"; neither resolves to any object. A reader cannot tell
+  them from a short commit hash, and the new gate cannot check them either way.
+  Label them at the source (`crc=…` or `out-sha=…`) so the ambiguity is gone.
+  Not done here: it edits a benchmark record whose provenance belongs to
+  whoever measured it.
+
 ## Out of scope
 
 `plan_windows.md` is a separate track and is not touched by this plan.

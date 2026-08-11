@@ -1,6 +1,6 @@
 #!/bin/sh
 # Wall-time regression guard for `make ci`. CHECKSUM tests can't catch a perf
-# regression: commit 6ff7aa1 (MM-9) silently 5x'd tree-alloc wall time while every
+# regression: commit 4a5c64c (MM-9) silently 5x'd tree-alloc wall time while every
 # golden/fuzz/fixpoint check stayed green, because it bloated the per-call scope
 # Arena. This asserts the thesis claim directly -- on allocation-heavy tree
 # workloads tycho's bump-allocate + bulk-free must comfortably BEAT hand-written

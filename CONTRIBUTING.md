@@ -71,13 +71,29 @@ result.
 The one gate to never skip is the cheapest:
 
 ```
-make check-links     # relative links + every path:line citation, under a second
+make check-links     # relative links, every path:line citation, every commit hash — ~1s
 ```
 
 `path:line` refs are load-bearing in this tree and drift on any insertion into a
 cited file. `scripts/reanchor_citations.py` remaps them mechanically after you
 move lines yourself — read its header first, it is the wrong tool when only some
 refs are stale.
+
+**A commit hash is a citation too, and the gate resolves it.** Write it
+backticked at git's default seven characters (`` `9cbbd3b` ``) or introduced by
+the word `commit` (`commit 9cbbd3b`); either form must name a commit in this
+repository. A wrong-but-plausible hash — one transposition away from the one you
+meant — is exactly what this catches. Two things follow:
+
+- **Do not backtick a bare digest.** A checksum, a CRC, a hash of program
+  output: give it a label (`sha=cbf43926`) rather than lone backticks. Seven
+  characters is the only width checked, so the even-width digests (CRC32 8,
+  md5 32, sha256 64) are already safe, but the rule keeps it that way.
+- An 8-to-12 character hash in bare backticks is **not** checked. Write
+  `commit <hash>` if you want it verified at that width.
+
+On a shallow clone the hash check skips itself loudly and passes: there is no
+history to resolve against, and that is the checkout's doing, not the tree's.
 
 ### Which gate for which change
 
@@ -89,7 +105,7 @@ reach for first.
 
 | You changed | Run | Notes |
 |---|---|---|
-| Markdown, comments, a `path:line` citation | `make check-links` | <1s. Nothing else can tell you more — none of it reaches a compiled artifact |
+| Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~1s. Nothing else can tell you more — none of it reaches a compiled artifact |
 | a fixture under `docs/spec/`, or moved a `tests/` directory | `sh scripts/spec_check.sh` | ~6s. Also checks Appendix A against §3/§4, and that every `tests/…` path in Appendix E resolves |
 | added a `run.sh`, or recorded a new golden | `make goldens-check` | ~0.1s. Asserts every golden a runner names is **tracked by git**. `.gitignore` ignores `*.out` broadly, so a new golden is green on your disk and absent from a fresh clone — `make test` reads the copy that exists and cannot redden for it |
 | `src/tychoc.c`, `runtime/tycho_rt.c`, or any `.ty` fixture | `make test` | ~8 min |

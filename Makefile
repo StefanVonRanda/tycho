@@ -665,7 +665,7 @@ fuzz-leak: tychoc
 
 # Wall-time regression guard: asserts tycho beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/
-# fuzz/golden lanes can't (they check output, not speed -- see commit 6ff7aa1). In CI.
+# fuzz/golden lanes can't (they check output, not speed -- see commit 4a5c64c). In CI.
 bench-guard: tychoc
 	@sh bench/guard.sh
 

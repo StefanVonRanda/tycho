@@ -26,6 +26,16 @@ The rules, in brief:
   * `compiler/tychoc0.ty` is exempt from being checked: frozen and unfixable.
   * A dotted-decimal `127.0.0.1:8080` is not a citation and never overwrites
     the paragraph's inherited path.
+  * A COMMIT HASH written as a citation -- backticked, or after the word
+    `commit`/`commits` -- must resolve to a commit in this repository. Digests
+    are kept out by construction: 7..12 hex characters, needing both a digit
+    and an `a-f` letter, which no md5/sha/CRC-width run reaches and no decimal
+    measurement satisfies. Skipped loudly on a shallow clone.
+
+`--report` adds an advisory listing of drift-prone refs (un-anchored
+single-line refs, and very wide ranges). It changes no verdict: tree-wide
+mandatory anchoring is a 290-ref flag day, and "this range points at unrelated
+code" is not mechanically decidable at all.
 """
 
 import re
@@ -78,7 +88,71 @@ DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
 SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)'
                      r':(\d+)(?:-(\d+))?(?:@([A-Za-z0-9_]+))?')
 
+# A COMMIT HASH AS THIS TREE WRITES ONE. Backticked at git's default width of
+# exactly 7, or any width after the word `commit`. Seven is the discriminator
+# that keeps a bare backticked digest out: every fixed-width digest in this
+# tree is even -- CRC32 8, FNV 8/16, md5 32, sha256 64 -- and a backticked
+# `cbf43926` reddened this gate until the width was pinned. An 8..12-char
+# backticked hash is therefore NOT checked; write `commit <hash>` for that.
+HASH_TICK = re.compile(r'`([0-9a-f]{7})`')
+HASH_WORD = re.compile(r'\bcommits?\s+((?<![0-9a-zA-Z])[0-9a-f]{7,12}'
+                       r'(?:\s*,\s*[0-9a-f]{7,12})*(?![0-9a-zA-Z]))')
+
+# A range this wide is reported, never failed: the widest here really is a
+# whole declaration parser.
+REPORT_WIDE = 100
+
 _cache = {}
+
+
+def hashy(tok):
+    """-> True for a hash-shaped token: a decimal measurement has no `a-f`
+    letter, and an English word has no digit."""
+    return (any(c.isdigit() for c in tok)
+            and any(c in "abcdef" for c in tok))
+
+
+def commit_hashes(files, fails):
+    """-> number of distinct hashes checked, or -1 if the history is absent."""
+    seen = {}
+    for f in files:
+        if f in SKIP_CITER or f.endswith(SKIP_SUFFIX):
+            continue
+        fp = os.path.join(ROOT, f)
+        if not os.path.isfile(fp):
+            continue
+        for ln, line in enumerate(open(fp, errors="replace"), 1):
+            hits = [(m.group(1), m.group(0)) for m in HASH_TICK.finditer(line)]
+            for m in HASH_WORD.finditer(line):
+                hits += [(h.strip(), m.group(0).strip())
+                         for h in m.group(1).split(",")]
+            for tok, raw in hits:
+                if hashy(tok):
+                    seen.setdefault(tok, []).append((f, ln, raw))
+    if not seen:
+        return 0
+    # A SHALLOW CLONE HAS NO HISTORY, so every hash would look wrong. Skipping
+    # loudly beats a gate that reddens for the checkout rather than the tree.
+    shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"],
+                             cwd=ROOT, capture_output=True, text=True)
+    if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+        return -1
+    out = subprocess.run(["git", "cat-file", "--batch-check"], cwd=ROOT,
+                         input="\n".join(seen) + "\n",
+                         capture_output=True, text=True).stdout.split("\n")
+    for tok, verdict in zip(seen, out):
+        parts = verdict.split()
+        kind = parts[1] if len(parts) > 1 else "missing"
+        if kind == "commit":
+            continue
+        for f, ln, raw in seen[tok]:
+            fails.append(
+                "%s:%d  %s -> '%s' is not a commit in this repository "
+                "(git cat-file says: %s). A hash nobody can resolve cites "
+                "nothing, and a wrong-but-plausible one cites the wrong thing "
+                "silently. Confirm it with `git cat-file -t <hash>`."
+                % (f, ln, raw, tok, kind))
+    return len(seen)
 
 
 def lines_of(path):
@@ -116,6 +190,7 @@ def main():
     fails, n_bare, n_anchored, n_prov = [], 0, 0, 0
     n_bare_prov = 0
     n_sym, n_sym_src = 0, 0
+    drift_single, drift_wide = [], []
     for md in mds:
         cur = None
         cur_ln = 0          # the line `cur` was named on (see the header)
@@ -232,6 +307,12 @@ def main():
                             % (where, cur, a, src[a - 1].strip()[:70] or "(blank)"))
                     elif prov:
                         n_bare_prov += 1
+                    if b == a:
+                        drift_single.append((md, ln, m.group(0).strip("`"),
+                                             cur, a, src[a - 1].strip()[:60]))
+                    elif b - a + 1 >= REPORT_WIDE:
+                        drift_wide.append((b - a + 1, md, ln,
+                                           m.group(0).strip("`"), cur))
                     continue
                 n_anchored += 1
                 if prov and b == a:
@@ -341,15 +422,34 @@ def main():
                     if a < 1 or b < a or b > len(dl):
                         fails.append("%s -> %s has %d lines: OUT OF BOUNDS"
                                      % (where, doc, len(dl)))
+    n_hash = commit_hashes(srcs, fails)
+    if n_hash == -1:
+        print("commit-hash check: SKIPPED (shallow clone -- no history to "
+              "resolve a hash against; nothing here is at fault)")
+    if "--report" in sys.argv:
+        # ADVISORY ONLY. Neither list is a defect: it is where drift hides.
+        print("--- drift-prone refs (advisory; no verdict attached) ---")
+        print("%d un-anchored single-line refs. Each proves a line EXISTS, not "
+              "that it still says what the citing text claims. `path:N@token` "
+              "is the form that reddens on drift:" % len(drift_single))
+        for md, ln, raw, cur, a, txt in drift_single:
+            print("    %s:%d  `%s`  %s:%d reads: %s"
+                  % (md, ln, raw, cur, a, txt or "(blank)"))
+        print("%d ranges of %d+ lines. A wide range is often honest (a whole "
+              "parser); it is also where a re-point goes unnoticed:"
+              % (len(drift_wide), REPORT_WIDE))
+        for w, md, ln, raw, cur in sorted(drift_wide, reverse=True):
+            print("    %4d lines  %s:%d  `%s`" % (w, md, ln, raw))
+        print("--- end advisory ---")
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the "
               "mandatory `> Provenance:` single-line refs), %d bare (bounds "
               "only, %d exempt `> Provenance:` ranges), %d source->doc "
               "(existence), %d source->source (bounds), %d source->source "
               "anchored (content-checked), %d `path@SYMBOL` definition refs "
-              "(%d of them from source)"
+              "(%d of them from source), %d distinct commit hashes"
               % (n_anchored, n_prov, n_bare, n_bare_prov, n_doc, n_src,
-                 n_src_anch, n_sym + n_sym_src, n_sym_src))
+                 n_src_anch, n_sym + n_sym_src, n_sym_src, max(n_hash, 0)))
     if fails:
         for f in fails:
             print("STALE  " + f)
@@ -358,8 +458,10 @@ def main():
     print("citation check: ok (%d anchored contain the token they name and each "
           "names one line, %d bare in bounds, %d source->doc citations resolve, "
           "%d source->source in bounds, %d source->source anchored, "
-          "%d `path@SYMBOL` definition refs name a symbol still in their file)"
-          % (n_anchored, n_bare, n_doc, n_src, n_src_anch, n_sym + n_sym_src))
+          "%d `path@SYMBOL` definition refs name a symbol still in their file, "
+          "%d commit hashes resolve)"
+          % (n_anchored, n_bare, n_doc, n_src, n_src_anch, n_sym + n_sym_src,
+             max(n_hash, 0)))
     return 0
 
 
