@@ -572,7 +572,7 @@ or an explicit "open, refused because …".
     `strings.slice_bytes` / `strings.slice_str` for the failing-closed version.
   - Verify: `sh scripts/spec_check.sh` and `make check-links`. Not `make test`.
 
-- [ ] **Phase 12 — the false "no stderr channel" claim is still load-bearing in
+- [x] **Phase 12 — the false "no stderr channel" claim is still load-bearing in
       `tools/tycho-ar/main.ty`** (*found by phase 2*)
   - `tools/tycho-ar/main.ty:222-224`, under the banner "WHY `t` PRINTS NOTHING
     BUT MEMBER LINES", asserts "There is no `eprintln`. The builtins are
@@ -589,6 +589,40 @@ or an explicit "open, refused because …".
     change — this is a comment, not a code phase.
   - Verify: `python3 scripts/check_citations.py` and `make check-links`. **Not
     `make ar-check`** unless a line of code moves, and none should.
+  - **Evidence (2026-08-11).** The builtin is real and predates the comment:
+
+    > Provenance: `src/tychoc.c:5084@eprint`
+
+        g_sigs[g_nsigs++] = (Sig){ .name="eprint", .ret=T_VOID, .params={ T_STRING }, .nparams=1, .builtin=1 };
+
+    The brief for this phase put that declaration five lines earlier; the
+    citation gate disagreed and was right, which is the second brief in this
+    chain to mis-cite a range. It landed in `61fa0dc` (2026-06-14, "hierc0 parity for the loop-progress
+    warning (+ eprint primitive)"), before the rename, which is why
+    `git log -S'.name="eprint"' -- src/tychoc.c` bottoms out at `39d75be`
+    (2026-06-22) — that commit moved the file from `src/hierc.c`.
+    `grep -rln eprint --include='*.ty' .` reports 13 files calling it.
+  - Two sites corrected in `tools/tycho-ar/main.ty`, both comment-only:
+    - the `t` header (was `:222-224`, now `:218-232`) — the false premise is
+      gone and the all-or-nothing listing is stated as a decision: `tar t`
+      streams and discovers damage partway, so one verification pass before any
+      output closes that window. stdout-is-data still holds and is kept.
+    - the `set_mtime` note (was `:767-770`, now `:765-768`) — the "no
+      non-terminating way to report" clause is replaced by the real reason,
+      consistency with every other partial failure in `x`.
+  - The claim had propagated into `docs/internals/FRICTION.md`; that copy is
+    corrected too, and #6's entry now records the header as fixed rather than
+    still-wrong.
+  - Comments-only: the −2 line shift broke `plan.md:811`'s
+    `:471@m.mtime` anchor, caught by the gate; four refs in this file and two
+    in FRICTION.md were re-anchored. `python3 scripts/check_citations.py` ok
+    (141 anchored, 908 bare, 181 source→doc), `make check-links` ok (119 files),
+    `make ar-check` green (create twice byte-identical; `t` == golden; `diff -r`
+    empty; extracted mtimes == archived; five refusals still refuse).
+  - **No bug found.** `cmd_t`'s only stdout write is `println(line)` at
+    `tools/tycho-ar/main.ty:707`, one line per member, so no diagnostic has ever
+    been able to reach the machine-readable listing. The false comment cost
+    reasoning, not correctness.
 
 - [x] **Phase 13 — `docs/spec/18-library.md` §33.3 still documents the OLD
       `decompress` signature** (*found by phase 3*)
@@ -799,7 +833,7 @@ or an explicit "open, refused because …".
     `x` is worthless if `c` stored a zero. It stores the real `st_mtime` and dies
     rather than guessing:
 
-    > Provenance: `tools/tycho-ar/main.ty:444-448`
+    > Provenance: `tools/tycho-ar/main.ty:442-446`
 
         match io.mtime(abs):
             Ok(t):
@@ -807,10 +841,10 @@ or an explicit "open, refused because …".
             Err(e):
                 die("tycho-ar: cannot stat " + abs)
 
-    and `mt` reaches the header through `tools/tycho-ar/main.ty:464@Member` and
-    `tools/tycho-ar/main.ty:471@m.mtime`. So the field was populated all along and
+    and `mt` reaches the header through `tools/tycho-ar/main.ty:462@Member` and
+    `tools/tycho-ar/main.ty:469@m.mtime`. So the field was populated all along and
     only the extractor was missing.
-  - The extract half is five lines at `tools/tycho-ar/main.ty:771-775`, placed
+  - The extract half is five lines at `tools/tycho-ar/main.ty:769-773`, placed
     AFTER the write because the write stamps the file with now. **A failed
     `set_mtime` is fatal, not a warning** — matching every other partial failure
     in this program (`io.write` failing is `die`, an unreadable file is `die`).
@@ -1449,6 +1483,40 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     skip behaviour it had never described, and the `corelib` row in
     `CONTRIBUTING.md` (tracked) gained one clause saying the examples lane skips
     and reports the same way. Changed together, per the standing rule.
+
+- [ ] **`tools/tycho-q/main.ty` carries the same false stderr claim, and names
+      tycho-ar as its source** (*found by the tycho-ar stderr phase, 2026-08-11*)
+  - `tools/tycho-q/main.ty:566-570`: "`die` is the only route to stderr in this
+    language -- the builtins are `print`, `println`, `die` and `exit(n)`, with no
+    `eprintln` (**the tycho-ar plan, carried forward**) -- so an error is
+    necessarily fatal." Every clause of the premise is false; `eprint` has
+    shipped since `61fa0dc` (2026-06-14). The parenthesis is the point: this is
+    the tycho-ar comment propagating between tools, so a third copy is likely.
+  - The conclusion it supports is still sound on its own — "a query that does not
+    parse has no partial result worth printing" needs no language limitation —
+    so this is the same shape of fix, not a behaviour change.
+  - Done when: the premise is gone, the conclusion stands on its own reason, and
+    a tree-wide grep for the claim (`grep -rn 'no eprintln\|only route to
+    stderr' --include='*.ty' .`) is empty.
+  - Verify: `python3 scripts/check_citations.py` and `make check-links`. Add
+    `make q-check` **only if a line of code moves**, which it should not.
+
+- [ ] **Should `x` warn rather than die on a failed `set_mtime`?** (*found by the
+      tycho-ar stderr phase, 2026-08-11*)
+  - `66ce390` made a failed `io.set_mtime` fatal, and its stated reasoning cited
+    the now-deleted "there is no eprintln" comment. With the false premise
+    removed the decision needs re-judging on its merits, which is a behaviour
+    change and deliberately was not made in the comment phase.
+  - **The assessment, so this is decided rather than re-derived:** leave it
+    fatal. `x`'s contract is that exit 0 means the tree is fully restored; a
+    warned-past wrong mtime makes exit 0 mean "restored, mostly", and the only
+    consumer that could act on the warning is a human reading a terminal.
+    `tools/tycho-ar/run.sh` asserts extracted mtimes equal archived mtimes, so
+    downgrading to a warning would also need that assertion weakened — which is
+    the tell that the fatal version is the one the gate believes in.
+  - So the likely outcome is **close as won't-do**, recorded here because the
+    justification changed even though the behaviour should not.
+  - If it is changed anyway: `make ar-check`, and the golden moves.
 
 ## Out of scope
 

@@ -1498,9 +1498,9 @@ So the "removed a feature" half does not stand: **`t`'s all-or-nothing interface
 was a choice, not a consequence.** Nothing prevented a per-member note on stderr
 beside a clean listing on stdout. The interface is still defensible on its own
 merits — one verification pass before any output is a stronger promise than
-`tar t`'s partial listing — but it must be argued as a decision, and the same
-false premise is still written into `tools/tycho-ar/main.ty:222-224` as the
-reason for it.
+`tar t`'s partial listing — but it must be argued as a decision. It now is:
+the header comment at `tools/tycho-ar/main.ty:218-232` was rewritten on
+2026-08-11 to drop the false premise and state the decision.
 
 **What is genuinely true is only the heading's first four words.** There is no
 `eprintln`, confirmed: `eprintln("x")` gives
@@ -1600,8 +1600,8 @@ and the directory round trip (`dir_back`). Three of the four flip when the shim
 is stubbed to a no-op, which is what makes them a test.
 
 **The caller followed the same day.** `tycho-ar`'s `x` now calls it
-(`tools/tycho-ar/main.ty:771-775`), fatally rather than with a warning, since
-that program has no non-terminating way to report one. The gate needed the same
+(`tools/tycho-ar/main.ty:769-773`), fatally rather than with a warning, matching
+every other partial failure in that program. The gate needed the same
 work: `diff -r` does not compare mtimes, so the round-trip leg was green over the
 hole and would have stayed green over a broken restore. `tools/tycho-ar/run.sh`
 leg 3b compares the times themselves, and was confirmed to fail — naming all

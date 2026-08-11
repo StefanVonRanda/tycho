@@ -219,19 +219,17 @@
 # WHY `t` PRINTS NOTHING BUT MEMBER LINES
 # ===========================================================================
 #
-# There is no `eprintln`. The builtins are `println`, `die` (stderr, then exit 1)
-# and `exit(n)`, so the only way to write to stderr is to terminate. A warning
-# that does not terminate can only go to stdout -- and `t`'s stdout IS its data.
-#
-# The consequence is an interface decision, not a workaround: `t` IS ALL OR
-# NOTHING. It verifies the framing, the paths, the footers, the payload digests
-# and the trailer count for EVERY member before printing a single line; then it
-# prints one line per member and nothing else. There is no summary line, no
-# "listed 8 of 9", no "member 3 looks damaged" -- because every one of those
-# would be a diagnostic sharing a stream with the listing, and a consumer reading
-# `t`'s output cannot tell a diagnostic from a filename. A bad archive exits
-# nonzero with the reason on stderr and an empty stdout, which is a signal a
-# caller can actually act on.
+# `t` IS ALL OR NOTHING, by decision. It verifies the framing, the paths, the
+# footers, the payload digests and the trailer count for EVERY member before
+# printing a single line; then it prints one line per member and nothing else.
+# No summary line, no "listed 8 of 9", no "member 3 looks damaged". `tar t`
+# streams its listing and discovers damage partway through, so a consumer has
+# already acted on names from an archive that turns out to be bad; one
+# verification pass before any output closes that window. Diagnostics do have
+# their own stream -- `eprint` writes to stderr without terminating -- but `t`'s
+# stdout IS its data, and a consumer parsing it should never have to decide
+# whether a line is a filename. A bad archive exits nonzero with the reason on
+# stderr and an empty stdout, which is a signal a caller can actually act on.
 #
 # `t` does NOT inflate. Its checks stop at `csha`, which is where the evidence
 # stops being free; `x` does the remaining two because it is producing the bytes
@@ -765,9 +763,9 @@ fn cmd_x(archive: string, dest: string):
         if not io.write(targets[i], to_str(raw)):
             die("tycho-ar: cannot write " + targets[i])
         # THE MTIME, put back last -- the write above stamped the file with now.
-        # FATAL rather than a warning, like every other partial failure here: `x`
-        # has no non-terminating way to report one (no eprintln, and stdout is
-        # its status line), so continuing would restore a wrong time in silence.
+        # FATAL rather than a warning, like every other partial failure here:
+        # `x` either restores a file completely or dies, so exit 0 means every
+        # mtime is the archived one and not the time of extraction.
         match io.set_mtime(targets[i], e.mtime):
             Ok(_):
                 continue
