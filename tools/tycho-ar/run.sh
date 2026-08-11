@@ -287,8 +287,45 @@ if [ "$fail" -eq 0 ]; then
     refuses_x "truncated archive" "$T/trunc.tyar" "$T/truncdest" "truncated (no trailer"
 fi
 
+# ---------------------------------------------------------------------------
+# [5] A GENUINE set_mtime FAILURE: warn on stderr, keep going, exit nonzero.
+#
+# The lever is real, not a stub. `/dev/null` is mode 666 and owned by root, so a
+# member target that is a symlink to it ACCEPTS the write and REFUSES the
+# utimensat -- POSIX grants explicit times only to the owner (EPERM). Probed
+# first and SKIPPED if this host can stamp /dev/null anyway (running as root, a
+# platform without it): a leg that cannot fail would prove nothing. `m_aaa`
+# sorts before `m_zzz`, so finding `m_zzz` on disk afterwards is the proof that
+# extraction CONTINUED past the failure rather than dying at it.
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip empty; extracted mtimes == archived mtimes; traversal, absolute path, flipped payload, forged csha and truncation all refused)"
+    mt="$T/mtree"; mkdir -p "$mt"
+    printf 'first\n' > "$mt/m_aaa.txt"
+    printf 'last\n'  > "$mt/m_zzz.txt"
+    "$AR" c "$T/m.tyar" "$mt" >/dev/null 2>&1 || bad "mtime warn: create failed"
+    md="$T/mdest"; mkdir -p "$md"
+    ln -s /dev/null "$md/m_aaa.txt" 2>/dev/null
+    # The probe must ask for an EXPLICIT time, as `set_mtime` does. A bare
+    # `touch` is UTIME_NOW, which write permission alone is enough for, and it
+    # answers a different question -- it passed here and skipped the leg.
+    if [ ! -L "$md/m_aaa.txt" ] || env TZ=UTC0 touch -t 202311142213.20 "$md/m_aaa.txt" 2>/dev/null; then
+        echo "tycho-ar: SKIP the set_mtime-warning leg (this host can stamp /dev/null)"
+        rm -f "$md/m_aaa.txt"
+    else
+        "$AR" x "$T/m.tyar" "$md" >"$T/m.out" 2>"$T/m.err"
+        rc=$?
+        [ "$rc" -ne 0 ] || bad "mtime warn: x exited 0 despite a failed set_mtime"
+        grep -q 'cannot set mtime' "$T/m.err" || bad "mtime warn: no warning on stderr"
+        if grep -q 'cannot set mtime' "$T/m.out"; then
+            bad "mtime warn: the warning went to stdout"
+        fi
+        grep -q '2 files extracted' "$T/m.out" || bad "mtime warn: x did not report both members"
+        [ "$(cat "$md/m_zzz.txt" 2>/dev/null)" = "last" ] ||
+            bad "mtime warn: extraction stopped at the failing member"
+    fi
+fi
+
+if [ "$fail" -eq 0 ]; then
+    echo "tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip empty; extracted mtimes == archived mtimes; a failed set_mtime warns on stderr and exits nonzero without stopping; traversal, absolute path, flipped payload, forged csha and truncation all refused)"
 else
     echo "tycho-ar: FAIL"; exit 1
 fi

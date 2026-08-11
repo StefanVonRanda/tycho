@@ -706,8 +706,10 @@ fn cmd_t(archive: string):
         line := str(e.size) + " " + str(e.mtime) + " " + e.sha + " " + e.rel
         println(line)
 
-# EXTRACT.
-fn cmd_x(archive: string, dest: string):
+# EXTRACT. REPORTS mtime failures, decides nothing about them: the returned list
+# is `main`'s to act on (Go's `archive/tar` split -- the archive layer has no
+# extraction policy). Every other failure here still dies at the failure site.
+fn cmd_x(archive: string, dest: string) -> [string]:
     data := read_archive(archive)
     entries := parse(archive, data)
 
@@ -736,6 +738,7 @@ fn cmd_x(archive: string, dest: string):
     # digested and still do not inflate to what the header claims, which is
     # forgery rather than damage. A damaged archive is caught before any write.
     mkdir_p(dest)
+    mtime_failed := []string
     for i := 0; i < len(entries); i += 1:
         e := entries[i]
         # `decompress` now REPORTS why (corelib/compress, 2026-08-10). It used to
@@ -763,15 +766,15 @@ fn cmd_x(archive: string, dest: string):
         if not io.write(targets[i], to_str(raw)):
             die("tycho-ar: cannot write " + targets[i])
         # THE MTIME, put back last -- the write above stamped the file with now.
-        # FATAL rather than a warning, like every other partial failure here:
-        # `x` either restores a file completely or dies, so exit 0 means every
-        # mtime is the archived one and not the time of extraction.
+        # COLLECTED, not fatal: dying here left a half-extracted tree over a
+        # metadata problem. Extraction continues; `main` decides what it means.
         match io.set_mtime(targets[i], e.mtime):
             Ok(_):
                 continue
             Err(_):
-                die("tycho-ar: cannot set mtime on " + targets[i])
+                push(mtime_failed, targets[i])
     println("tycho-ar: " + dest + ": " + str(len(entries)) + " files extracted")
+    return mtime_failed
 
 fn usage():
     println("usage: tycho-ar c <archive> <dir>")
@@ -803,6 +806,13 @@ fn main():
     elif cmd == "x":
         if len(av) != 3:
             die("tycho-ar: x takes exactly <archive> and <dest> (try --help)")
-        cmd_x(av[1], av[2])
+        # THE ONLY PLACE THE MTIME POLICY LIVES -- tar's and bsdtar's answer:
+        # warn on stderr, keep every member, exit nonzero. `x`'s contract is
+        # unchanged; exit 0 still means the tree came back whole.
+        mtime_failed := cmd_x(av[1], av[2])
+        for i := 0; i < len(mtime_failed); i += 1:
+            eprint("tycho-ar: cannot set mtime: " + mtime_failed[i] + "\n")
+        if len(mtime_failed) > 0:
+            exit(1)
     else:
         die("tycho-ar: unknown command: " + cmd + " (try --help)")

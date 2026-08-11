@@ -38,9 +38,9 @@ or an explicit "open, refused because …".
 > (`6421120`; `entrypoints.sh` is 75, of which 51 are bench — the entry's "~30"
 > was an uncounted estimate).
 >
-> **Remaining: two entries, neither of them blocked work.** The `set_mtime`
-> question is an **open decision for the owner** — one yes/no, nothing broken,
-> argument stated in the entry. Phase 17 is a **new** cosmetic diagnostic-ordering
+> **Remaining: one entry, not blocked work.** The `set_mtime` question was
+> **decided by the owner on 2026-08-11** and implemented — see its entry below.
+> Phase 17 is a **new** cosmetic diagnostic-ordering
 > defect the phase-15 re-probe exposed; filed rather than fixed, per scope lock.
 >
 > **Not re-run, so not asserted:** `make test`'s current count. Evidence blocks
@@ -2597,29 +2597,122 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
   - The entry's "~30 other `.ty` files under `bench/`" was an estimate made
     without counting; the real number is 51.
 
-- [ ] **OPEN DECISION FOR THE OWNER — should `x` warn rather than die on a failed
-      `set_mtime`?** (*found by the tycho-ar stderr phase, 2026-08-11; filed as a
-      likely won't-do by `5b078e8`*)
-  - **This is not work waiting to be done. It is one yes/no the owner owns.**
-    Nothing is broken today; `make ar-check` is green. If the answer is "leave it
-    fatal", tick this entry and no code moves.
-  - **The argument, stated once, in full.** `66ce390` made a failed
-    `io.set_mtime` fatal, and its stated reasoning cited a "there is no eprintln"
-    comment that `5b078e8` then deleted as false. So the *justification* has
-    changed even though the *behaviour* may well be right. On the merits: `x`'s
-    contract is that exit 0 means the tree is fully restored; warning past a
-    wrong mtime makes exit 0 mean "restored, mostly", and the only consumer that
-    could act on the warning is a human reading a terminal.
-  - **The gate half of that argument re-checked against today's `run.sh`, and it
-    still holds.** `tools/tycho-ar/run.sh:171-190` asserts extracted mtimes equal
-    the archived `1700000000`, using two reference files and POSIX `find -newer`,
-    plus a control leg over the source tree so an empty result cannot be vacuous.
-    `tools/tycho-ar/run.sh:291` names it in the success line ("extracted mtimes
-    == archived mtimes"). Downgrading to a warning would require weakening that
-    assertion — which is the tell that the fatal version is the one the gate
-    believes in.
-  - If the owner decides to change it anyway: `make ar-check`, and the golden
-    moves.
+- [x] **DECIDED 2026-08-11 by the owner — `x` warns and continues; the archive
+      layer reports, `main` decides** (*found by the tycho-ar stderr phase,
+      2026-08-11; filed as a likely won't-do by `5b078e8`; resolved after the
+      owner surveyed prior art*)
+  - **The choice, and why.** Go's `archive/tar` ships no extractor at all: the
+    archive layer reports, the caller owns the policy. The owner took that
+    **separation**, with **GNU tar's and bsdtar's default behaviour** as the
+    policy `main` implements — warn on stderr, continue, exit non-zero. So
+    `cmd_x` now collects the members it could not stamp and returns them, and
+    `main` is the only place that decides what that means.
+  - **What this fixes.** The half-extracted tree. Dying at the failure site over
+    a *metadata* problem abandoned every member after it, which is a worse
+    outcome than a wrong timestamp. Extraction now writes all of them.
+  - **`x`'s contract is unchanged: exit 0 still means fully restored.** A failed
+    mtime exits 1. Nothing was softened — the five refusals (traversal, absolute
+    path, flipped payload, forged csha, truncation) and the write/inflate/digest
+    failures all still die where they always did.
+  - **The premise that fell.** `66ce390`'s stated reasoning cited a comment
+    claiming Tycho had no stderr channel; `5b078e8` proved it false (`eprint` is
+    a builtin, `src/tychoc.c@eprint`, shipped 2026-06-14). The warnings use
+    `eprint`, so `t`'s machine-readable stdout stays clean.
+  - **The old gate argument, and why it did not survive.** The entry used to
+    argue that downgrading to a warning would force weakening
+    `tools/tycho-ar/run.sh:171-190`, the leg that asserts extracted mtimes equal
+    the archived `1700000000` via two reference files and POSIX `find -newer`.
+    It did not: that leg is untouched and still green, because a *successful*
+    extract still stamps every file. It is now joined by a leg that asserts the
+    failing case. Nothing moved in the golden, either — the transcript is `t`'s
+    output, which this change does not touch.
+
+### Evidence — the archive layer reports, `main` decides
+
+**The extract path as it stood** (`tools/tycho-ar/main.ty`, before this change):
+`fn cmd_x(archive: string, dest: string):` returned nothing, and its last act per
+member was
+
+```
+        match io.set_mtime(targets[i], e.mtime):
+            Ok(_):
+                continue
+            Err(_):
+                die("tycho-ar: cannot set mtime on " + targets[i])
+```
+
+`die` there is why a metadata failure abandoned every later member.
+
+**The shape now.** `tools/tycho-ar/main.ty@cmd_x` is `-> [string]`; the `Err` arm
+is `push(mtime_failed, targets[i])` and the function ends `return mtime_failed`
+(`tools/tycho-ar/main.ty:771-777`). The policy is in `main` alone
+(`tools/tycho-ar/main.ty:812-816`): `eprint` per failed member, then `exit(1)`
+if the list is non-empty. `println` of the "N files extracted" summary is
+untouched, so stdout still carries only data.
+
+**Control 1 — `66ce390`'s: the mtime-equality leg can still fail.** With the five
+lines of the `set_mtime` match commented out, `make ar-check`:
+
+```
+FAIL: round trip: extracted files do not carry the archived mtime (1700000000)
+      /tmp/tmp.W8u7odNY81/out/with space.txt
+      /tmp/tmp.W8u7odNY81/out/sub/nul.bin
+      ... (8 members listed)
+tycho-ar: FAIL
+make: *** [Makefile:337: ar-check] Error 1
+```
+
+Restored, `make ar-check` is green again (final line below).
+
+**The new leg** is `tools/tycho-ar/run.sh:291-324`. The failure it induces is
+**real, not a stub**: it plants a symlink to `/dev/null` at a member's target
+path. `/dev/null` is mode 666 and owned by root, so the write is accepted and
+the `utimensat` is refused with EPERM — POSIX grants *explicit* times only to the
+owner. Measured directly before the leg was written: explicit times gave
+`r=-1 errno=1 Operation not permitted`, while huge `tv_sec` values
+(`9999999999`, `2^63-1`) all returned `r=0` — the kernel clamps them, so the
+"absurd mtime in a forged header" lever does **not** work here and was dropped.
+The leg probes with `touch -t` and SKIPs loudly if the host can stamp `/dev/null`
+anyway (root, or a platform without it). A bare `touch` is the wrong probe —
+that is `UTIME_NOW`, which write permission alone suffices for; it passed and
+skipped the leg on the first run, and the comment at
+`tools/tycho-ar/run.sh:308-310` records that.
+
+The leg asserts all four required properties: non-zero exit, the warning on
+stderr, **not** on stdout, `2 files extracted` on stdout, and `m_zzz.txt` (which
+sorts after the failing `m_aaa.txt`) present with its content — that last one is
+the proof extraction continued.
+
+**Control 2 — the new leg can fail.** With `exit(1)` in `main` changed to
+`exit(0)` and nothing else touched, `make ar-check`:
+
+```
+FAIL: mtime warn: x exited 0 despite a failed set_mtime
+tycho-ar: FAIL
+make: *** [Makefile:337: ar-check] Error 1
+```
+
+**Gates, all green with the code restored.**
+
+```
+$ make ar-check
+tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip
+empty; extracted mtimes == archived mtimes; a failed set_mtime warns on stderr
+and exits nonzero without stopping; traversal, absolute path, flipped payload,
+forged csha and truncation all refused)
+
+$ sh scripts/entrypoints.sh
+entrypoints: ok (75 entry points compile with tychoc)
+
+$ make check-links
+link check: ok (119 markdown files, no dead relative links; 126 free of raw control bytes)
+
+$ make goldens-check
+44 runners scanned, 25 name a golden, 19 in NO_GOLDEN, 446 golden files checked,
+all tracked by git; goldens-check: ok
+```
+
+No golden was re-recorded: the transcript did not move.
 
 - [x] **Phase 16 — `bench/` is compiled by no gate**
   - Requested directly by the repo owner: "make bench compile every .ty in bench/".
