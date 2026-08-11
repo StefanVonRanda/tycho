@@ -2110,7 +2110,13 @@ every boundary, with no language feature to make it cheaper**, and the pressure
 would be to collapse them into one type carrying fields that are meaningless for
 two thirds of its values.
 
-### 7. ~~`core:iter` is unusable for a fallible pipeline stage~~ — **FIXED 2026-08-11**; the `int`-predicate half stays open
+### 7. ~~`core:iter` is unusable for a fallible pipeline stage~~ — **FIXED 2026-08-11**, both halves
+
+> **Second half fixed 2026-08-11.** `filter`/`count`/`any` take `fn($T) -> bool`
+> and `try_filter`'s `keep` takes `fn($T) -> Result(bool, $E)`; the nonzero-is-true
+> convention is gone. The two diagnostics quoted further down are the OLD
+> behaviour — `iter.filter(xs, fn(x: int) -> bool: x > 1)` is now the spelling
+> that compiles. The paragraphs below are left as filed.
 
 > **Fixed 2026-08-11.** `corelib/iter/iter.ty@try_map` and
 > `corelib/iter/iter.ty@try_filter` ship the fallible siblings, with exactly the

@@ -88,10 +88,10 @@ element type instead of a family of per-type siblings.
   `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len`/`range`
   are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.)
 - **`iter`** — generic higher-order helpers over any `[T]`, each taking a `fn`/closure:
-  `map` (two type variables — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, the only one that may change element type, so `iter.map(nums, to_str)` is a `[string]`), `filter`, `reduce`, `count`, `any`. (Predicates return an int used as a bool.)
+  `map` (two type variables — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, the only one that may change element type, so `iter.map(nums, to_str)` is a `[string]`), `filter`, `reduce`, `count`, `any`. (Predicates return a `bool`; they returned a 0/1 int until 2026-08-11.)
   Fallible stages get two siblings whose callback returns a `Result`:
   `try_map(xs, f: fn($T) -> Result($U, $E)) -> Result([$U], $E)` and
-  `try_filter(xs, keep: fn($T) -> Result(int, $E)) -> Result([$T], $E)`. Both stop at
+  `try_filter(xs, keep: fn($T) -> Result(bool, $E)) -> Result([$T], $E)`. Both stop at
   the **first** `Err` and return it unchanged, so a stage that can fail carries its
   error to the caller instead of unwrapping or picking a sentinel. `reduce`/`count`/`any`
   have no fallible form — write the `for` loop with `or_return` if you need one.

@@ -2,8 +2,8 @@
 # `map` is the one that changes element type (`[$T] -> [$U]`); the rest preserve it.
 # Import with `import "core:iter"`. Each takes a function value (a plain fn or a
 # closure) -- `iter.map(xs, f)` etc. The function argument is first-class, so a
-# CAPTURING closure works (passed downward, never stored). Predicates return an
-# int used as a boolean (non-zero = true).
+# CAPTURING closure works (passed downward, never stored). Predicates return
+# `bool`; they returned a 0/1 `int` until 2026-08-11.
 # `try_map` / `try_filter` are the fallible siblings of `map` / `filter`, for a
 # stage whose callback can fail: the callback returns `Result`, the first `Err`
 # short-circuits and is returned to the caller. Only these two have siblings --
@@ -30,20 +30,20 @@ fn try_map(xs: [$T], f: fn($T) -> Result($U, $E)) -> Result([$U], $E):
         push(out, f(v) or_return)
     return Ok(out)
 
-fn filter(xs: [$T], keep: fn($T) -> int) -> [$T]:   # keep(x) nonzero -> retain x
+fn filter(xs: [$T], keep: fn($T) -> bool) -> [$T]:  # keep(x) true -> retain x
     out := []
     for v in xs:
-        if keep(v) != 0:
+        if keep(v):
             push(out, v)
     return out
 
-# `try_filter` mirrors `filter`; `keep` still answers with an int used as a bool,
-# now wrapped in a Result. Same short-circuit: the first Err is the one returned.
-fn try_filter(xs: [$T], keep: fn($T) -> Result(int, $E)) -> Result([$T], $E):
+# `try_filter` mirrors `filter`; `keep` answers with a bool wrapped in a Result.
+# Same short-circuit: the first Err is the one returned.
+fn try_filter(xs: [$T], keep: fn($T) -> Result(bool, $E)) -> Result([$T], $E):
     out := []
     for v in xs:
         k := keep(v) or_return
-        if k != 0:
+        if k:
             push(out, v)
     return Ok(out)
 
@@ -53,15 +53,15 @@ fn reduce(xs: [$T], init: $T, f: fn($T, $T) -> $T) -> $T:   # left fold: acc = f
         acc = f(acc, v)
     return acc
 
-fn count(xs: [$T], pred: fn($T) -> int) -> int:     # how many satisfy pred(x) nonzero
+fn count(xs: [$T], pred: fn($T) -> bool) -> int:    # how many satisfy pred(x)
     n := 0
     for v in xs:
-        if pred(v) != 0:
+        if pred(v):
             n = n + 1
     return n
 
-fn any(xs: [$T], pred: fn($T) -> int) -> bool:      # true if pred(x) nonzero for some x
+fn any(xs: [$T], pred: fn($T) -> bool) -> bool:     # true if pred(x) for some x
     for v in xs:
-        if pred(v) != 0:
+        if pred(v):
             return true
     return false

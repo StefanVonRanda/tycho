@@ -17,10 +17,8 @@ fn dbl(x: int) -> int:
 fn itos(x: int) -> string:      # a NAMED fn whose result type differs from its argument's
     return str(x)
 
-fn nonempty(s: string) -> int:
-    if len(s) > 0:
-        return 1
-    return 0
+fn nonempty(s: string) -> bool:
+    return len(s) > 0
 
 # The fallible half. The payload carries the offending element, so the golden
 # says WHICH error came out; `999` dies, so walking past the first error kills
@@ -39,24 +37,22 @@ fn half(x: int) -> Result(int, Odd):
         return Err(NotEven(x))
     return Ok(x / 2)
 
-fn keep_even(x: int) -> Result(int, Odd):    # 0/1 like `filter`'s keep, but fallible
+fn keep_even(x: int) -> Result(bool, Odd):   # a bool like `filter`'s keep, but fallible
     if x == 999:
         die("try_filter walked past the first error")
     if x < 0:
         return Err(NotEven(x))
-    if x % 2 == 0:
-        return Ok(1)
-    return Ok(0)
+    return Ok(x % 2 == 0)
 
 fn main():
     xs := [1, 2, 3, 4, 5]
     println("map=" + arrays.join(iter.map(xs, dbl), ","))                          # 2,4,6,8,10
     thr := 10
     println("mapcl=" + arrays.join(iter.map(xs, fn(x: int) -> int: x + thr), ","))  # capturing closure
-    println("filter=" + arrays.join(iter.filter(xs, fn(x: int) -> int: x % 2), ",")) # odds
+    println("filter=" + arrays.join(iter.filter(xs, fn(x: int) -> bool: x % 2 != 0), ",")) # odds
     println("sum=" + str(iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b)))      # 15
     lim := 3
-    println("count!=" + str(iter.count(xs, fn(x: int) -> int: x - lim)) + " any!=2=" + str(b2i(iter.any(xs, fn(x: int) -> int: x - 2))))
+    println("count!=" + str(iter.count(xs, fn(x: int) -> bool: x != lim)) + " any!=2=" + str(b2i(iter.any(xs, fn(x: int) -> bool: x != 2))))
     # string instance (map closure + a named predicate)
     ws := ["hi", "", "yo", ""]
     println("smap=" + arrays.join(iter.map(ws, fn(s: string) -> string: s + "!"), ",") + " scount=" + str(iter.count(ws, nonempty)))

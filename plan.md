@@ -1027,7 +1027,7 @@ or an explicit "open, refused because …".
     `make test` deliberately not run: its corpus never descends into `corelib/`,
     and nothing under `src/` or `tests/` changed.
 
-- [ ] **Phase 15 — `core:iter`'s predicates are `fn($T) -> int` in a language that
+- [x] **Phase 15 — `core:iter`'s predicates are `fn($T) -> int` in a language that
       has `bool`** (*found by phase 6c, deferred by phase 9*)
   - This is half (b) of the phase 9 brief, split out on purpose: phase 9 added
     `try_map`/`try_filter`, which are pure additions and revert cleanly, whereas
@@ -1047,6 +1047,109 @@ or an explicit "open, refused because …".
     saying "an int used as a boolean".
   - Verify: `make corelib` (~49s) and `make corelib-examples` (~44s) — the example
     changes this time — plus `make check-links`. Not `make test`.
+
+  - **Done 2026-08-11.** `filter`/`count`/`any` take `fn($T) -> bool` and test
+    `if keep(v)` / `if pred(v)` directly; `try_filter`'s `keep` became
+    `fn($T) -> Result(bool, $E)` with `if k:` — **decided yes, for consistency**,
+    since leaving it `Result(int, $E)` would have made the fallible sibling the
+    only place in the package still spelling a predicate as an int. The
+    `or_return` chain still types: `k := keep(v) or_return` binds `k: bool` from
+    the `Ok` payload, and the enclosing function still returns
+    `Result([$T], $E)`, which is what `or_return` requires — confirmed by
+    `corelib/iter/iter.ty` compiling under `make corelib`.
+
+  - **Call sites, re-counted tree-wide before editing** (`grep -rn 'core:iter'`
+    over the whole checkout, excluding `.git` and `build`). Only two files
+    import the package; `tools/tycho-q/main.ty:1959` and
+    `docs/internals/FRICTION.md` mention `core:iter` in **prose only** and
+    import nothing. The triage's "five call sites" undercounted — there are
+    **six** predicate arguments plus **two** `try_filter` arguments:
+
+    Line numbers below are the **post-change** ones, since both fixtures lost
+    lines when their 0/1 `if` ladders collapsed to a single `return <cmp>`:
+
+    | # | site (after) | before | after |
+    |---|---|---|---|
+    | 1 | `corelib/test/iter/main.ty:52` | `iter.filter(xs, fn(x: int) -> int: x % 2)` | `fn(x: int) -> bool: x % 2 != 0` |
+    | 2 | `corelib/test/iter/main.ty:55` | `iter.count(xs, fn(x: int) -> int: x - lim)` | `fn(x: int) -> bool: x != lim` |
+    | 3 | `corelib/test/iter/main.ty:55` | `iter.any(xs, fn(x: int) -> int: x - 2)` | `fn(x: int) -> bool: x != 2` |
+    | 4 | `corelib/test/iter/main.ty:58`, fn at `corelib/test/iter/main.ty:20` | `iter.count(ws, nonempty)`, `nonempty -> int` | `nonempty -> bool` |
+    | 5 | `examples/corelib/iter/main.ty:17` | `iter.count(nums, even)`, `even -> int` | `even -> bool` |
+    | 6 | `examples/corelib/iter/main.ty:18`, fn at `examples/corelib/iter/main.ty:11` | `iter.filter(nums, even)` | same fn, now `bool` |
+    | 7 | `corelib/test/iter/main.ty:79`, fn at `corelib/test/iter/main.ty:40` | `iter.try_filter(mixed, keep_even)` | `keep_even -> Result(bool, Odd)` |
+    | 8 | `corelib/test/iter/main.ty:83` | `iter.try_filter(badf, keep_even)` | same |
+
+    Sites 1–3 were rewritten to preserve their exact truth values, so **neither
+    golden moved**: `corelib/test/iter.out` and `examples/corelib/iter.out` are
+    byte-identical to their pre-change versions (`git status --short` lists no
+    `.out` file). `make goldens-check` was run anyway and is ok.
+
+  - **NEGATIVE CONTROL.** All four predicate tests in `corelib/iter/iter.ty` were
+    inverted (`if keep(v):` → `if keep(v) == false:`, and the same for `if k:`
+    and both `if pred(v):`), then `make corelib` re-run. It reddened:
+
+    ```
+    FAIL iter (output != golden)
+          3c3
+          < filter=1,3,5
+          ---
+          > filter=2,4
+          5c5
+          < count!=4 any!=2=1
+          ---
+          > count!=1 any!=2=1
+          13c13
+          < tryfilter ok=2,4
+    ```
+
+    Three assertions flipped — `filter` (odds → evens), `count` (4 → 1) and
+    `tryfilter ok` — proving the fixture reads the new `bool` through `filter`,
+    `count` and `try_filter`. `make corelib` exited `Error 1`. The inversion was
+    reverted and `make corelib` re-run green.
+
+    **One assertion did NOT flip, and that is a real fixture gap, not a pass:**
+    `any!=2=1` is unchanged under inversion. The probe is
+    `iter.any(xs, x != 2)` over `[1,2,3,4,5]`; inverting it asks "is some element
+    `== 2`", which is also true, so `any`'s sense is invisible to this fixture.
+    Filed below as its own phase rather than widened into this one.
+
+  - **Gates** (foreground, one command each; `make test` deliberately NOT run —
+    nothing under `src/` or `tests/` changed and its corpus never descends into
+    `corelib/`):
+    - `make corelib` → `corelib: 45 ok, 1 SKIPPED -- image(missing: libpng)`,
+      with `ok   iter`. The skip is pre-existing (no libpng on this host).
+    - `make corelib-examples` → `corelib examples: 36 ok, 1 SKIPPED -- image(missing: libpng)`
+    - `sh scripts/entrypoints.sh` → `entrypoints: ok (24 entry points compile with tychoc)`
+    - `make goldens-check` → `goldens-check: ok` (446 golden files, all tracked)
+    - `make check-links` → `link check: ok (119 markdown files, no dead relative links; 126 free of raw control bytes)`
+    - `python3 scripts/check_citations.py` → `citation check: ok`
+
+  - **Docs.** `docs/guides/corelib.md:91` lost "(Predicates return an int used as
+    a bool.)"; `docs/guides/corelib.md:94` had `try_filter`'s signature corrected to
+    `Result(bool, $E)` — it was the only other doc stating one of these
+    signatures. `docs/spec/` states **none** of them (`grep -rn 'core:iter'
+    docs/spec/` is empty), so no spec change was needed.
+    `docs/internals/FRICTION.md`'s §7 heading said "the `int`-predicate half
+    stays open", which this phase makes false; it now reads "both halves", with
+    a note that the two diagnostics quoted below it are the old behaviour. The
+    package header `corelib/iter/iter.ty:5-6` and the example header
+    `examples/corelib/iter/main.ty:2` were updated the same way.
+
+- [ ] **`iter.any`'s fixture assertion cannot detect an inverted predicate**
+      (*found by the phase 15 negative control, not absorbed into it*)
+  - `corelib/test/iter/main.ty:59` probes `iter.any(xs, fn(x: int) -> bool: x != 2)`
+    over `xs := [1, 2, 3, 4, 5]`. Both the predicate and its negation are
+    satisfied by some element, so the golden's `any!=2=1` holds whether `any`
+    tests `pred(v)` or `pred(v) == false`. Measured, not argued: inverting all
+    four predicate tests in `corelib/iter/iter.ty` flipped the `filter`,
+    `count` and `tryfilter ok` lines and left this one alone.
+  - `any` is therefore the one function in `core:iter` whose sense is untested.
+    A regression that inverted only `any` would ship green.
+  - Fix: add a second `any` probe whose expected answer is **false** — e.g. a
+    predicate no element satisfies — so the true and false cases are both
+    pinned. That moves `corelib/test/iter.out`.
+  - Verify: `make corelib` (~49s) and `make goldens-check`. Not `make test`,
+    not `make corelib-examples` — the example does not call `any`.
 
 - [x] **`tycho-ar x` still does not restore mtime, and its gate still cannot see that**
   - Found by phase 4, not absorbed into it — phase 4's brief scoped it to the
