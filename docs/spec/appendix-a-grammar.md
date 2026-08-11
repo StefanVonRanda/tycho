@@ -160,7 +160,8 @@ Expr      ::= OrExpr
 OrExpr    ::= AndExpr ( "or" AndExpr )*
 AndExpr   ::= NotExpr ( "and" NotExpr )*
 NotExpr   ::= "not" NotExpr | CmpExpr
-CmpExpr   ::= AddExpr ( ( "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" ) AddExpr )*
+CmpExpr   ::= IsExpr ( ( "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" ) IsExpr )*
+IsExpr    ::= AddExpr ( "is" VariantName )?             /* variant test; does NOT chain */
 AddExpr   ::= MulExpr ( ( "+" | "-" | "|" | "^" ) MulExpr )*
 MulExpr   ::= UnaryExpr ( ( "*" | "/" | "%" | "<<" | ">>" | "&" ) UnaryExpr )*
 UnaryExpr ::= ( "-" | "&" | "~" ) UnaryExpr | Postfix
@@ -202,7 +203,7 @@ escape either, so it cannot contain a backtick; one is written by joining a
 `StrPiece`, so it joins with adjacent pieces of either kind, and there is no
 `` f`…` `` interpolated raw form.
 
-> Provenance: `src/tychoc.c:447-494`; adjacent join `:2344-2356`;
+> Provenance: `src/tychoc.c:448-495`; adjacent join `:2345-2357`;
 > [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
 > `tests/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 

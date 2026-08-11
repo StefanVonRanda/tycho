@@ -28,7 +28,7 @@ Two shapes the arms actually need, both already written as `if`:
   and c <= 57)` — the range is **inclusive** (`<=`, not `<`).
 
 Every ladder subject is `int`: string indexing returns the byte **value as an
-int** (`src/tychoc.c:5449`), so the char-position ladders all compare ints.
+int** (`src/tychoc.c:5476`), so the char-position ladders all compare ints.
 **No ladder in the tree dispatches on `string` or `bytes`.**
 
 ## How `match` works today
@@ -37,7 +37,7 @@ int** (`src/tychoc.c:5449`), so the char-position ladders all compare ints.
   arm: "a match arm `Variant(bindings):` or `Variant:`". A scalar literal dies
   there with that message, which is why `match` on an int is currently a parse
   error.
-- **Resolve** — the `S_MATCH` pass (`src/tychoc.c:7493`) already enforces
+- **Resolve** — the `S_MATCH` pass (`src/tychoc.c:7531`) already enforces
   wildcard-last (`tests/reject/match_wildcard_not_last.ty`), duplicate arms
   (`tests/reject/match_dup_arm.ty`), and exhaustiveness
   (`tests/reject/match_non_exhaustive.ty`) — all enum machinery, all reusable.
@@ -53,7 +53,7 @@ int** (`src/tychoc.c:5449`), so the char-position ladders all compare ints.
 
 - **`int`** — the only type with customers (the table above). Primary.
 - **`char`** — the same machine type as `int` (one byte, `long` in C,
-  `src/tychoc.c:743`). Arm literals are `'a'`-spelled; the byte-value ladders
+  `src/tychoc.c:744`). Arm literals are `'a'`-spelled; the byte-value ladders
   use `int` and stay `int`. No customer for the distinct `char` type today,
   but the cost is zero once the int machinery exists.
 - **`bool`** — a two-value domain, so exhaustiveness is provable (D2).
@@ -124,7 +124,7 @@ instead of seven labels with a shared body).
 - Ranges emit as **consecutive case labels** (`case 48: case 49: ... case 57:`).
   Unrolling, not GNU `case 48 ... 57:`: the ranges in the tree are all small
   (7–10 values), and unrolling is portable under any dialect. (The repo
-  compiles with plain `cc`, no `-std` — `src/tychoc.c:13230` — so GNU case
+  compiles with plain `cc`, no `-std` — `src/tychoc.c:13270` — so GNU case
   ranges would work, but there is no reason to depend on them.)
 - The table-vs-binary-search decision is **cc's**, not ours: at `-O2`, GCC and
   Clang lower a dense switch to a jump table and a sparse one to a binary
@@ -173,14 +173,14 @@ per-compare figure assumed. Neither number is a reason to build for speed.
   (`lit | lit | ...`), and a range (`lit..lit`). The diagnostic widens from
   "a match arm `Variant(bindings):` or `Variant:`" to name the new forms.
   String and float literals stay rejected at parse.
-- **Resolve** (`src/tychoc.c:7493`) — a scalar subject path: subject is
+- **Resolve** (`src/tychoc.c:7531`) — a scalar subject path: subject is
   `int`/`char`/`bool`; arm literals typed against the subject exactly as
   assignment would type them (newtype rules unchanged — a newtype over int
   is its own type and takes its own spellings); literal arms on an enum
   subject and variant arms on a scalar subject are distinct errors; the
   dup/overlap check (D3); the `_` rule (D2); string/bytes/float subjects
   refused with the demand-gated reason (D1).
-- **Codegen** (`src/tychoc.c:10213`) — the switch emission (D6). The
+- **Codegen** (`src/tychoc.c:10251`) — the switch emission (D6). The
   `S_MATCH` statement and value forms both flow through it, so the value
   form (`x := match c: ...`) works without separate work.
 - **Spec** — §14.3 (`docs/spec/10-statements.md:32-60`), the statements

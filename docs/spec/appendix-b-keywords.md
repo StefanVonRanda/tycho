@@ -5,15 +5,22 @@ for the normative definitions.
 
 ## B.1 Reserved words
 
-These 40 words are reserved; none may be used as an identifier.
+These 41 words are reserved; none may be used as an identifier.
 
 ```text
 and     bool    break   bytes   continue elif    else    enum
 f32     false   float   fn      for      handle  i8      i16
-i32     i64     if      in      inout    int     match   not
-null    or      or_return parallel ptr    return  select  spawn
-string  struct  true    type    u8      u16     u32     u64
+i32     i64     if      in      inout    int     is      match
+not     null    or      or_return parallel ptr    return  select
+spawn   string  struct  true    type    u8      u16     u32
+u64
 ```
+
+`is` is the enum variant test ([§19.8](12-aggregates.md#198-is--the-variant-test)).
+It is **reserved**, not contextual: no `.ty` file in this tree used `is` as an
+identifier when it was added, so reserving it broke nothing, and an operator
+keyword shares its position with an ordinary name (`x is y`) in a way that
+`pass`, a whole statement, does not.
 
 Of these, the **type keywords** are `int`, `float`, `bool`, `string`, `ptr`,
 `bytes`, the fixed-width integers `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`,

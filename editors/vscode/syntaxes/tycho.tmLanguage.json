@@ -25,7 +25,7 @@
       "patterns": [{ "name": "constant.character.escape.tycho", "match": "\\\\x[0-9a-fA-F]{2}|\\\\." }]
     },
     {
-      "comment": "raw string `...`: no escapes at all, and it may span lines (src/tychoc.c:447-494), so no nested patterns and no end-of-line anchor",
+      "comment": "raw string `...`: no escapes at all, and it may span lines (src/tychoc.c:448-495), so no nested patterns and no end-of-line anchor",
       "name": "string.quoted.other.raw.tycho",
       "begin": "`",
       "end": "`"
@@ -41,18 +41,18 @@
     },
     { "name": "keyword.control.tycho", "match": "\\b(if|elif|else|for|while|in|match|select|parallel|spawn|return|break|continue|or_return|pass)\\b" },
     { "name": "keyword.other.tycho", "match": "\\b(fn|struct|enum|type|import|package|extern|inout|soa)\\b" },
-    { "name": "keyword.operator.word.tycho", "match": "\\b(and|or|not)\\b" },
+    { "name": "keyword.operator.word.tycho", "match": "\\b(and|or|not|is)\\b" },
     { "name": "constant.language.tycho", "match": "\\b(true|false|null)\\b" },
     { "name": "storage.type.tycho", "match": "\\b(int|float|string|bool|char|ptr|void)\\b" },
     { "name": "support.function.builtin.tycho", "match": "\\b(print|println|str|len|push|pop|split|substr|find|read_file|write_file|read_all|list_dir|args|getenv|input|chr|die|is_null|sqrt|pow|floor|fabs|map_get|map_set|reserve)\\b" },
     {
-      "comment": "`..<` (src/tychoc.c:528) must precede the general operator rule: it is three characters and TextMate takes the first matching pattern, not the longest, so the `<` alternative below would otherwise claim it",
+      "comment": "`..<` (src/tychoc.c:529) must precede the general operator rule: it is three characters and TextMate takes the first matching pattern, not the longest, so the `<` alternative below would otherwise claim it",
       "name": "keyword.operator.range.tycho",
       "match": "\\.\\.<"
     },
     { "name": "keyword.operator.tycho", "match": ":=|->|==|!=|<=|>=|[-+*/%<>=&|^~]" },
     {
-      "comment": "clause separator of `for init; cond; post:` (src/tychoc.c:552); scoped as a separator, like `,`, not as an operator",
+      "comment": "clause separator of `for init; cond; post:` (src/tychoc.c:553); scoped as a separator, like `,`, not as an operator",
       "name": "punctuation.separator.tycho",
       "match": ";"
     }

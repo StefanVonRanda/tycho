@@ -16,12 +16,12 @@ the C boundary, and how — is [§24](14-ffi.md). This chapter
 specifies only *program- and package-level* structure and does not restate
 those rules.
 
-> Provenance: entry point `src/tychoc.c:8631@no 'main' procedure` (no `main`),
-> `:8662@takes no parameters` and `:8665@returns nothing or` (the two signature
+> Provenance: entry point `src/tychoc.c:8669@no 'main' procedure` (no `main`),
+> `:8700@takes no parameters` and `:8703@returns nothing or` (the two signature
 > rules, diagnosed separately); compilation unit
-> `compile_package` `:13564-13569@compile_package`, driver `:13681-13785@int main(`;
-> `extern` `parse_extern_fn` `:4306-4376@parse_extern_fn`; the C compiler
-> invocation `:13906@system(cmd)`.
+> `compile_package` `:13604-13609@compile_package`, driver `:13721-13825@int main(`;
+> `extern` `parse_extern_fn` `:4333-4403@parse_extern_fn`; the C compiler
+> invocation `:13946@system(cmd)`.
 
 ## 27. Program structure
 
@@ -75,7 +75,7 @@ which returns a `[string]` ([§29](16-builtins.md)). The array
 mirrors the process `argv` exactly, so `args()[0]` is the **program name** (the
 path by which the executable was invoked) and the operands follow at
 `args()[1]` onward (`runtime/tycho_rt.c:1361-1366`, wired from the generated
-`main` at `src/tychoc.c:12462`). `args()` is never empty for a normally-launched
+`main` at `src/tychoc.c:12502`). `args()` is never empty for a normally-launched
 program.
 
 ### 27.2 The compilation unit
@@ -86,7 +86,7 @@ definitions into a **single** AST, and emits a **single** C translation unit,
 which is compiled and linked into a **single** executable. There is **no**
 separate compilation, **no** per-package object file, and **no** linker step
 that joins independently-compiled packages (`compile_package`
-`src/tychoc.c:12664-12667`; [packages.md](../guides/packages.md) §"How it builds").
+`src/tychoc.c:12704-12707`; [packages.md](../guides/packages.md) §"How it builds").
 
 A conforming implementation is not required to transpile to C; the single-unit
 merge, however, is observable and normative — it determines name resolution and
@@ -98,7 +98,7 @@ Whether a source file participates in the package system is decided by the
 presence of a `package` declaration. The entry file is compiled in **package
 mode** (the whole directory plus its import graph, §28.5) iff it begins with a
 `package` declaration; a file with no `package` declaration is a **single-file
-program** compiled alone (`src/tychoc.c:12875-12879`). A single-file program has
+program** compiled alone (`src/tychoc.c:12915-12919`). A single-file program has
 the same entry-point rule (§27.1) and is a degenerate one-package unit.
 
 ### 27.3 `extern` declarations
@@ -111,7 +111,7 @@ extern [ "Lib" ] fn name(p: T, …) [ -> T ]
 ```
 
 The following rules are normative (`parse_extern_fn`
-`src/tychoc.c:3976-4051`):
+`src/tychoc.c:4003-4078`):
 
 - An `extern` declaration has **no body**: it ends at the newline after its
   signature (`:3280`), so a following indented block is a parse error.
@@ -136,7 +136,7 @@ form* and its role in program structure.
 
 For a program that is not stopped early (e.g. `--emit-c`, `--symbols`), the
 reference implementation compiles the emitted C and links it into the output
-executable with a single C-compiler invocation (`src/tychoc.c:12910-12924`).
+executable with a single C-compiler invocation (`src/tychoc.c:12950-12964`).
 The invocation has the shape:
 
 ```text
@@ -152,20 +152,20 @@ with these normative properties:
   undefined behavior, which is precisely Tycho's integer-overflow contract
   ([§5.2.1](03-types.md#521-int)): a conforming realization on C MUST compile
   such that signed overflow wraps and never traps or miscompiles
-  (`src/tychoc.c:12915-12917`).
+  (`src/tychoc.c:12955-12957`).
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
-  link with no `"m"` annotation (`:12912`, `:4525`).
+  link with no `"m"` annotation (`:12952`, `:4552`).
 - **`-pthread` is always passed**, supporting the concurrency runtime
   ([§20](13-concurrency.md)).
 - **Optimization / debug:** `-O3` is the portable default; `-g` selects `-O0 -g`
-  (unoptimized with debug info) instead (`:12909`).
+  (unoptimized with debug info) instead (`:12949`).
 - **`-march=native` is opt-in** via `--native`. It is host-CPU-specific and MUST
-  NOT be assumed portable across machines (`:12908`).
-- The default C compiler is `cc`; `--cc <compiler>` overrides it (`:12817`,
-  `:12833`).
+  NOT be assumed portable across machines (`:12948`).
+- The default C compiler is `cc`; `--cc <compiler>` overrides it (`:12857`,
+  `:12873`).
 
 Three CLI options let a program splice additional flags onto this line for FFI
-(`src/tychoc.c:12850-12856`):
+(`src/tychoc.c:12890-12896`):
 
 - **`--link <lib>`** appends a raw `-l<lib>`.
 - **`--pkg <name>`** runs `pkg-config --cflags --libs <name>` and appends the
@@ -201,7 +201,7 @@ are collapsed. A program whose closure declares no `deps` prints nothing and exi
 `extern "Lib"`, `--link`, or `--pkg` — MUST be restricted to a conservative
 character set (`[A-Za-z0-9._+-]`) and rejected otherwise, so compiling an
 untrusted source cannot inject a shell command (`cc_safe_name`
-`src/tychoc.c:12724-12733`). The `extern "Lib"` libraries, the auto-discovered
+`src/tychoc.c:12764-12773`). The `extern "Lib"` libraries, the auto-discovered
 shims, and the `deps` flags are contributed automatically by the sources they
 belong to (§27.3, §28.6); the CLI options above are the manual escape hatch.
 
@@ -224,21 +224,21 @@ A **package** is a *directory* of `.ty` files that all declare the same
 any file of the directory — function, `struct`, `enum`, `handle`, newtype,
 `const`, and enum variant — belongs to that one namespace; the split into files
 is not semantically significant ([packages.md](../guides/packages.md) §"Surface
-syntax"; merge at `src/tychoc.c:12634-12653`).
+syntax"; merge at `src/tychoc.c:12674-12693`).
 
 A package's symbols are reached from another package by a **qualified name**
 `pkg.symbol`, where `pkg` is the importing binding (§28.2). The qualified form
 applies to types, functions, struct/enum constructors, and enum variants alike
-— `geom.Point`, `geom.add`, `geom.Red` (`src/tychoc.c:5280-5292` handles a
+— `geom.Point`, `geom.add`, `geom.Red` (`src/tychoc.c:5307-5319` handles a
 payload-less `pkg.Variant`).
 
 Every non-entry package's `package NAME` MUST equal the final component of the
 import path that reached it — which, for a relative import, is its directory
-name (`src/tychoc.c:12643-12646`, checked against `pkg_basename` of the import
+name (`src/tychoc.c:12683-12686`, checked against `pkg_basename` of the import
 path). The **entry package may be named anything**: its name is taken from the
 entry file's own `package` declaration and is not constrained to the directory
-name (`detect_package` `:12487`, `:12867`; `compile_package` starts the merge at
-that name with an empty prefix, `:12654-12657`).
+name (`detect_package` `:12527`, `:12907`; `compile_package` starts the merge at
+that name with an empty prefix, `:12694-12697`).
 
 ### 28.2 Import declarations
 
@@ -250,14 +250,14 @@ import g "geom"         # aliases the prefix            ->  g.symbol
 ```
 
 The grammar is `"import" IDENT? STRING NEWLINE` (`parse_import_decl`
-`src/tychoc.c:4252-4264`). The plain form `import "PATH"` binds the package
+`src/tychoc.c:4279-4291`). The plain form `import "PATH"` binds the package
 under the **final component** of `PATH` (`import "math/geom"` binds `geom`); the
 aliased form `import ALIAS "PATH"` binds the package under `ALIAS` instead
-(`pkg_prefix_for` `:4345-4354`, `is_imported_pkg` `:4358-4364`).
+(`pkg_prefix_for` `:4372-4381`, `is_imported_pkg` `:4385-4391`).
 
 `package` and `import` are **contextual**: they are special only as the leading
 identifier of a top-level item and remain ordinary identifiers elsewhere, so
-they are not reserved words (`src/tychoc.c:4234-4238`). A bound package name,
+they are not reserved words (`src/tychoc.c:4261-4265`). A bound package name,
 however, is effectively reserved within the file: because a bare `pkg.symbol`
 is disambiguated by treating `pkg` as an imported package first, a program
 SHOULD NOT shadow an imported binding with a local of the same name
@@ -271,8 +271,8 @@ Within the single merged unit (§27.2), every definition carries a
 symbols keep their plain names; every imported package `P` uses the prefix
 `P__`, applied uniformly to every definition and every reference — including the
 generated type families for its arrays, tuples, maps, and helper functions
-(`pkg_mangle` `src/tychoc.c:1714-1716`; `g_cur_pkg_prefix` set per file at
-`:12627`, reset at `:12647`; [packages.md](../guides/packages.md) §"How it builds").
+(`pkg_mangle` `src/tychoc.c:1715-1717`; `g_cur_pkg_prefix` set per file at
+`:12667`, reset at `:12687`; [packages.md](../guides/packages.md) §"How it builds").
 Two identically-named symbols in different packages are therefore distinct after
 mangling. `extern` C symbols are the sole exception and are never prefixed
 (§27.3).
@@ -280,8 +280,8 @@ mangling. `extern` C symbols are the sole exception and are never prefixed
 **Visibility is by a leading underscore.** A top-level symbol whose name begins
 with `_` is **private to its own package**: it is usable from any file *within*
 that package, but a qualified `pkg._name` from another package MUST be rejected
-with a diagnostic (`check_pkg_private` `src/tychoc.c:4366-4373`; enforced at the
-qualified-reference sites `:2117`, `:2943`, `:5284`, `:5549`). Every other top-level
+with a diagnostic (`check_pkg_private` `src/tychoc.c:4393-4400`; enforced at the
+qualified-reference sites `:2118`, `:2944`, `:5311`, `:5576`). Every other top-level
 symbol is exported and visible to importers. There is no visibility keyword;
 the underscore convention is the whole of the rule.
 
@@ -297,7 +297,7 @@ there.
 ### 28.4 Import resolution
 
 An import `PATH` resolves to a package directory as follows (`resolve_pkg_dir`
-`src/tychoc.c:4328-4343`):
+`src/tychoc.c:4355-4370`):
 
 - **`core:` collection.** If `PATH` begins with `core:`, it resolves to
   `<corelib_root>/<rest>` and binds the name `<rest>`'s final component — e.g.
@@ -309,18 +309,18 @@ An import `PATH` resolves to a package directory as follows (`resolve_pkg_dir`
   directory or the entry file's location.
 
 The **corelib root** is determined in order (`corelib_root`
-`src/tychoc.c:4311-4326`): the environment variable `TYCHO_CORELIB` if set and
+`src/tychoc.c:4338-4353`): the environment variable `TYCHO_CORELIB` if set and
 non-empty; otherwise `<exe_dir>/corelib` (next to the compiler binary, so an
 in-tree build needs no configuration); otherwise `<exe_dir>/../share/tycho/corelib`
 (the installed layout); otherwise resolution fails with a diagnostic
-(`:4330-4339`). `core:` is currently the only collection root
+(`:4357-4366`). `core:` is currently the only collection root
 ([packages.md](../guides/packages.md) §"The `core:` collection").
 
 ### 28.5 The multi-file merge
 
 Package mode assembles the program by a **post-order depth-first traversal** of
 the import graph, merging every reachable package's definitions into one AST
-(`merge_pkg` `src/tychoc.c:12596-12660`). For each package directory the
+(`merge_pkg` `src/tychoc.c:12636-12700`). For each package directory the
 implementation MUST:
 
 1. **Enter with cycle and depth checks.** If the directory is already on the
@@ -345,12 +345,12 @@ implementation MUST:
 
 The resulting program is then finiteness-checked, resolved, and code-generated
 as a whole ([§5](03-types.md), [§6](04-inference.md); driver
-`src/tychoc.c:12895-12902`).
+`src/tychoc.c:12935-12942`).
 
 ### 28.6 Package foreign dependencies (`deps` and shims)
 
 A package MAY carry C-backed machinery that is built and linked automatically
-when the package is imported (`merge_pkg` `src/tychoc.c:12600-12603`):
+when the package is imported (`merge_pkg` `src/tychoc.c:12640-12643`):
 
 - **Companion shim.** A co-located `<pkg>/<pkg>_shim.c` is auto-added to the
   link line as a compiled companion source (`add_shim` `:3744-3748`), so a
@@ -374,4 +374,4 @@ tier**: a conforming implementation **MAY** omit them and still conform at the
 diagnosed rather than silently mis-linked. The reference test harness embodies
 this split — it probes the same `deps` and **skips** (rather than fails) a
 package's tests when the external library is unavailable (`corelib/run.sh`, per
-the note at `src/tychoc.c:4551-4553`).
+the note at `src/tychoc.c:4578-4580`).

@@ -5,8 +5,8 @@ in [§4.4–§4.5](02-grammar.md#44-expressions); this chapter defines the meani
 of each operator, the **evaluation order**, and the expression-valued control
 forms.
 
-> Provenance: binary-op resolver `src/tychoc.c:6135-6391`; short-circuit
-> lowering `:9490-9516`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
+> Provenance: binary-op resolver `src/tychoc.c:6162-6418`; short-circuit
+> lowering `:9528-9554`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
 > closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
 > "probed" were resolved by running both compilers (spec-plan.md §6a).
 
@@ -62,17 +62,35 @@ their two length-mismatch rules differ; the whole rule — the kinds, the
 mismatches, and literal adaptation of a broadcast scalar — is
 [§16.8](12-aggregates.md#168-element-wise-arithmetic).
 
-> Provenance: array ⊕ array arm `src/tychoc.c:6260-6290`; broadcast arm
-> `src/tychoc.c:6319-6345`; the per-element-type operator set
-> `src/tychoc.c:1344@elem_arith_ok`; the arms an array operand still falls
-> through to — shift `src/tychoc.c:6732@shift operators require integer operands`,
-> modulo/bitwise `src/tychoc.c:6839@modulo / bitwise operators`.
+> Provenance: array ⊕ array arm `src/tychoc.c:6287-6317`; broadcast arm
+> `src/tychoc.c:6346-6372`; the per-element-type operator set
+> `src/tychoc.c:1345@elem_arith_ok`; the arms an array operand still falls
+> through to — shift `src/tychoc.c:6770@shift operators require integer operands`,
+> modulo/bitwise `src/tychoc.c:6877@modulo / bitwise operators`.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
 values; ordering applies only to the ordered set
 ([§5.5](03-types.md#55-equality-and-ordering)). `x in m` tests map membership;
 `x in xs` is not provided (membership on arrays is a corelib function).
+
+**Variant test** (`is`). `v is V` yields `bool`: `true` iff the enum value `v`
+currently holds variant `V`. The left operand MUST be an enum; anything else is a
+compile error. The right operand is a **variant name**, never an expression, and
+is spelled exactly as a `match` arm spells it — bare `V` for an enum of the
+current package, qualified `pkg.V` for an imported one — with the same rejection
+if the name is not a variant of that enum. It applies uniformly to nullary and
+payload-carrying variants, and binds **no** payload; to read a payload, use
+`match` ([§19.4](12-aggregates.md#194-match)). `is` does **not** chain: `a is X
+is Y` is a compile error, because its result is a `bool` and no `bool` holds a
+variant. It binds tighter than a comparison and looser than every arithmetic
+operator, so `a is X and b is Y` groups as `(a is X) and (b is Y)`.
+
+For a **nullary** variant, `v == V` remains legal and equivalent — `==` is
+structural over the whole value and a nullary variant carries nothing to differ
+in ([§5.5](03-types.md#55-equality-and-ordering)). The two spellings genuinely
+overlap there; `is` is the one that also works for a payload-carrying variant,
+where `V` is not a value and `v == V` is refused.
 
 **Logical** (`and`, `or`, `not`) operate on `bool` and yield `bool`. `and` and
 `or` **short-circuit**: the right operand is evaluated only if the result is not
@@ -89,8 +107,8 @@ the result takes the **left** operand's type. So `x << n` is well-typed for a
 (sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
 
 > Provenance: the shift arm accepts any two integers and returns the left type —
-> `src/tychoc.c:6240-6246`, result at `src/tychoc.c:6648@lt`. The bitwise arm is
-> the one that requires a match: `src/tychoc.c:6807@rt`. Exhaustively pinned by
+> `src/tychoc.c:6267-6273`, result at `src/tychoc.c:6686@lt`. The bitwise arm is
+> the one that requires a match: `src/tychoc.c:6845@rt`. Exhaustively pinned by
 > `fuzz/run_typeparity.py`, whose shift clause encodes this rule over the full
 > operand matrix.
 

@@ -247,11 +247,11 @@
   },
   {
     "type": "char",
-    "named": false
+    "named": true
   },
   {
     "type": "char",
-    "named": true
+    "named": false
   },
   {
     "type": "chr",
@@ -348,6 +348,10 @@
   },
   {
     "type": "int",
+    "named": false
+  },
+  {
+    "type": "is",
     "named": false
   },
   {

@@ -1,9 +1,9 @@
 # Phase 3 (lex ';' and '..<'): ';' is now a TOKEN (TK_SEMI, lexed at
-# src/tychoc.c:552) but has no grammar of its own -- it exists only for the
+# src/tychoc.c:553) but has no grammar of its own -- it exists only for the
 # three-clause `for init; cond; post:` form that phase 4 adds. A C-style
 # statement terminator is therefore still invalid, and must be refused by the
 # PARSER, not by the lexer: the decl statement parses `x := 1` and then demands
-# a newline at src/tychoc.c:3533, so the diagnostic is
+# a newline at src/tychoc.c:3560, so the diagnostic is
 #
 #     error: expected newline
 #

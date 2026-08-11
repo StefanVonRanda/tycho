@@ -1,0 +1,15 @@
+i is VInt   = true
+s is VStr   = true
+p is VPair  = true
+n is VNull  = true
+i is VNull  = false
+n is VInt   = false
+s is VPair  = false
+and: both
+or: short-circuits
+not: p is no VInt
+== still discriminates VNull
+describe = null
+describe = int
+describe = str
+describe = pair

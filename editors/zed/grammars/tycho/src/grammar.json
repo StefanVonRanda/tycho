@@ -189,6 +189,10 @@
         {
           "type": "STRING",
           "value": "not"
+        },
+        {
+          "type": "STRING",
+          "value": "is"
         }
       ]
     },

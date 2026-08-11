@@ -1,0 +1,6 @@
+# `is` only asks an ENUM which variant it holds. A non-enum left operand is a
+# compile error rather than a test that can never be true.
+fn main():
+    x := 3
+    if x is VInt:
+        println("unreachable")

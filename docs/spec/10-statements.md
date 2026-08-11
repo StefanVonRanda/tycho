@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3197-3677` (`parse_if` `:3113@parse_if`,
-> `parse_match` `:3219@parse_match`, `for` `:3334-3535`, `select` `:3278-3314`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3224-3704` (`parse_if` `:3140@parse_if`,
+> `parse_match` `:3246@parse_match`, `for` `:3361-3562`, `select` `:3305-3341`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -149,16 +149,16 @@ the implementation **does not diagnose it**, at compile time or at run time.
 bought is a single loop form that says its own direction and amount in the
 source instead of inferring them from the sign of a step expression.
 
-> Provenance: bare `for:` `src/tychoc.c:3692@TK_COLON`; the three-clause header
-> scan and its five required-clause refusals `src/tychoc.c:3368-3417`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:3743@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:7404-7409`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:10932-10935` with the
-> label at `src/tychoc.c:11799@_post%d`; the `range()` refusal
-> `src/tychoc.c:3826@was removed: write`. There is no step in the implementation
-> at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1601-1607`)
+> Provenance: bare `for:` `src/tychoc.c:3719@TK_COLON`; the three-clause header
+> scan and its five required-clause refusals `src/tychoc.c:3395-3444`; `init`
+> parsed by `parse_stmt` itself `src/tychoc.c:3770@parse_stmt`; loop scoping and
+> the post clause resolved outside the body block `src/tychoc.c:7442-7447`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:10972-10975` with the
+> label at `src/tychoc.c:11839@_post%d`; the `range()` refusal
+> `src/tychoc.c:3853@was removed: write`. There is no step in the implementation
+> at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1602-1608`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:11105-11109`).
+> (`src/tychoc.c:11145-11149`).
 >
 > **Amended 2026-07-30 (the loops-cleanup plan).** This note previously read "The step
 > codegen and its zero-step guards still exist but are unreachable: every

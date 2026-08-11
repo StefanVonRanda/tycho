@@ -1,5 +1,5 @@
 # A fixed-array SIZE mismatch at a call argument: [3]int where [4]int is expected.
-# tychoc rejects (src/tychoc.c:5556 compares interned type ids exactly); tychoc0
+# tychoc rejects (src/tychoc.c:5583 compares interned type ids exactly); tychoc0
 # used to ACCEPT and emit C -- a fail-open that lets a fixed-array bound be violated
 # under the bootstrap compiler. resolve_ginst folded "[3]int"/"[4]int" both to "[int]".
 fn take(a: [4]int) -> int:

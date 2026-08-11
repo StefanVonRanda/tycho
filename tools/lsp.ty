@@ -797,7 +797,7 @@ fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], 
 # literal text is skipped but identifiers inside each `{...}` interpolation hole
 # ARE matched (so rename/references reach `x` in f"got {x}"); `{{`/`}}` are literal
 # braces, holes nest, and a nested "..." string inside a hole is skipped verbatim.
-# A backtick raw literal (src/tychoc.c:447-494) is skipped too, and because it may
+# A backtick raw literal (src/tychoc.c:448-495) is skipped too, and because it may
 # span source lines the `inraw` flag carries the state across the line loop --
 # without it the closing lines of a multi-line raw literal would be scanned as
 # ordinary code and a rename could edit text inside the literal.
@@ -1028,7 +1028,7 @@ fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], 
             out = out + comp_item(f[2], 20, "variant of " + f[1])   # EnumMember
             nd = nd + 1
     add_items_from("print println eprint input read_all read_file write_file list_dir args getenv len push pop range str substr find split chr sqrt pow floor fabs clock now is_null Some Ok Err None", 3, &out, &nd)
-    add_items_from("fn struct enum type import package extern inout if elif else for match return break continue and or not in or_return spawn wait true false soa select", 14, &out, &nd)
+    add_items_from("fn struct enum type import package extern inout if elif else for match return break continue and or not in is or_return spawn wait true false soa select", 14, &out, &nd)
     send_result(id, "{\"isIncomplete\":false,\"items\":[" + out + "]}")
 
 # references: every whole-word use in the buffer (string/comment-aware).
@@ -1192,11 +1192,11 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # src/tychoc.c:219 (or_return), :181 (parallel), :182 (select).
 # The four soft ones already here are NOT drift and stay: `handle` is a hard
 # token too (src/tychoc.c:232), while `const`, `sink`, `where` and `soa` are
-# TK_IDENT matched by text in the parser (src/tychoc.c:3205, :3681, :3715,
+# TK_IDENT matched by text in the parser (src/tychoc.c:3232, :3681, :3715,
 # :1911) -- keywords to a reader, contextual to the lexer, and both grammars
 # highlight them.
 fn sem_is_keyword(w: string) -> bool:
-    return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa" or w == "pass" or w == "parallel" or w == "select" or w == "or_return"
+    return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa" or w == "pass" or w == "parallel" or w == "select" or w == "or_return" or w == "is"
 
 fn sem_is_type(w: string) -> bool:
     return w == "int" or w == "float" or w == "string" or w == "bool" or w == "char" or w == "bytes" or w == "ptr" or w == "void" or w == "u8" or w == "u16" or w == "u32" or w == "u64" or w == "i8" or w == "i16" or w == "i32" or w == "i64" or w == "f32"
@@ -1259,7 +1259,7 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
                 ty = 4
             elif c >= 48 and c <= 57:                # number (digits + a decimal point)
                 # A `.` that starts a `..` pair is NOT part of the number: it opens
-                # `..<` (src/tychoc.c:528) or `...` (src/tychoc.c:527). Without this
+                # `..<` (src/tychoc.c:529) or `...` (src/tychoc.c:528). Without this
                 # guard `0..<N` painted `0..` as one number token -- the digit, and
                 # two thirds of the operator beside it, in the number colour.
                 j := i

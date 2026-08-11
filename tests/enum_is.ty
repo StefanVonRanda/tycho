@@ -1,0 +1,52 @@
+# `v is Variant` -> bool, for nullary AND payload-carrying variants alike.
+# Before this operator only a nullary variant had a value-level discriminator
+# (`v == VNull`); a payload-carrying one needed a whole `match`.
+enum Value:
+    VNull
+    VInt(int)
+    VStr(string)
+    VPair(int, string)
+
+fn describe(v: Value) -> string:
+    if v is VNull:
+        return "null"
+    if v is VInt:
+        return "int"
+    if v is VStr:
+        return "str"
+    return "pair"
+
+fn main():
+    n := VNull
+    i := VInt(7)
+    s := VStr("hi")
+    p := VPair(1, "a")
+
+    # payload-carrying: the case that had no answer without a match
+    println("i is VInt   = " + str(i is VInt))
+    println("s is VStr   = " + str(s is VStr))
+    println("p is VPair  = " + str(p is VPair))
+
+    # nullary: same spelling, so there are not two ways to ask
+    println("n is VNull  = " + str(n is VNull))
+
+    # false cases
+    println("i is VNull  = " + str(i is VNull))
+    println("n is VInt   = " + str(n is VInt))
+    println("s is VPair  = " + str(s is VPair))
+
+    # inside a boolean expression, and under `not`
+    if i is VInt and s is VStr:
+        println("and: both")
+    if n is VNull or i is VStr:
+        println("or: short-circuits")
+    if not (p is VInt):
+        println("not: p is no VInt")
+
+    # `==` on a nullary variant still works and is unchanged
+    if n == VNull:
+        println("== still discriminates VNull")
+
+    # through a function parameter, over every variant
+    for v in [n, i, s, p]:
+        println("describe = " + describe(v))

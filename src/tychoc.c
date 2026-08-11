@@ -308,7 +308,7 @@ typedef enum {
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW, TK_SEMI,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE, TK_HANDLE,
-    TK_BREAK, TK_CONTINUE,
+    TK_BREAK, TK_CONTINUE, TK_IS,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
     TK_DOT, TK_ELLIPSIS, TK_DOTLT, TK_DOTDOT, TK_DOLLAR,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR, TK_KW_BYTES,
@@ -354,7 +354,7 @@ static int tok_continues_line(TokKind k) {
         case TK_PIPE: case TK_CARET: case TK_SHL: case TK_SHR:
         case TK_EQ: case TK_EQEQ: case TK_NEQ:
         case TK_LT: case TK_GT: case TK_LE: case TK_GE:
-        case TK_AND: case TK_OR:
+        case TK_AND: case TK_OR: case TK_IS:
         case TK_COMMA: case TK_COLONEQ:
             return 1;
         default:
@@ -398,6 +398,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "select"))   return TK_SELECT;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
+    if (!strcmp(s, "is"))     return TK_IS;
     if (!strcmp(s, "struct")) return TK_STRUCT;
     if (!strcmp(s, "enum"))   return TK_ENUM;
     if (!strcmp(s, "handle")) return TK_HANDLE;
@@ -2387,7 +2388,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2209) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2210) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2725,7 +2726,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2083): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2084): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3043,13 +3044,39 @@ static Expr *parse_add(Parser *ps) {
     return l;
 }
 
-static Expr *parse_cmp(Parser *ps) {            /* comparison level */
+/* `v is Variant` -> bool. The right side is a variant NAME, not an expression:
+ * parsing it as one would reach a payload-carrying variant's "write V(...)"
+ * rejection. Non-chaining, because the result is a bool and `x is A is B` can
+ * only be a mistake. Binds tighter than a comparison, so `a is X == b is Y`
+ * compares the two bools. */
+static Expr *parse_is(Parser *ps) {
     Expr *l = parse_add(ps);
+    if (at(ps, TK_IS)) {
+        Tok *t = cur(ps); ps->p++;
+        Tok *vn = eat(ps, TK_IDENT, "a variant name after `is`, e.g. `v is VInt`");
+        const char *vqual = NULL, *vname = vn->text;
+        if (accept(ps, TK_DOT)) {   /* qualified `pkg.Variant`, as a match arm spells it */
+            vqual = vn->text;
+            vname = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
+            check_pkg_private(vqual, vname, vn->line);
+        }
+        Expr *e = new_expr(E_BINOP, t->line);
+        e->op = TK_IS; e->lhs = l;
+        e->rhs = new_expr(E_IDENT, vn->line);
+        e->rhs->sval = vqual ? sfmt("%s%s", pkg_prefix_for(vqual), vname) : pkg_mangle(vname);
+        if (at(ps, TK_IS)) die_at(cur(ps)->line, "`is` does not chain -- write `a is X and a is Y`");
+        l = e;
+    }
+    return l;
+}
+
+static Expr *parse_cmp(Parser *ps) {            /* comparison level */
+    Expr *l = parse_is(ps);
     while (at(ps, TK_EQEQ) || at(ps, TK_NEQ) || at(ps, TK_LT) ||
            at(ps, TK_GT)   || at(ps, TK_LE)  || at(ps, TK_GE) || at(ps, TK_IN)) {
         Tok *t = cur(ps); ps->p++;
         Expr *e = new_expr(E_BINOP, t->line);
-        e->op = t->kind; e->lhs = l; e->rhs = parse_add(ps);
+        e->op = t->kind; e->lhs = l; e->rhs = parse_is(ps);
         l = e;
     }
     return l;
@@ -3773,7 +3800,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10126), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10164), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -6643,6 +6670,17 @@ static Type resolve_expr_inner(Expr *e) {
                 return e->type = ot;   /* ~u32 is a u32; ~u8 is a u8 (truncated to its width) */
             }
             Type lt = resolve_expr(e->lhs);
+            if (e->op == TK_IS) {   /* rhs is a variant name, deliberately not resolved as an expression */
+                if (!IS_ENUM(lt))
+                    die_at(e->line, "`is` asks an enum value which variant it holds; %s is not an enum", type_name(lt));
+                EnumDef *ed = &g_enums[ENUM_ID(lt)];
+                int vi = -1;
+                for (int v = 0; v < ed->nvariants; v++)
+                    if (!strcmp(ed->variants[v].name, e->rhs->sval)) { vi = v; break; }
+                if (vi < 0) die_at(e->line, "'%s' is not a variant of %s", e->rhs->sval, ed->name);
+                e->ival = vi;   /* codegen compares the tag against this */
+                return e->type = T_BOOL;
+            }
             Type rt = resolve_expr(e->rhs);
             if (e->op == TK_AND || e->op == TK_OR) {
                 if (lt != T_BOOL || rt != T_BOOL)
@@ -7073,10 +7111,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6697),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6735),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:6985). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7023). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8587,7 +8625,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7023: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7061: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8755,7 +8793,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11018), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11058), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8772,7 +8810,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * a post that assigns anything but i all keep `tycho_arr_*_get`. The body guard
  * is the SAME `stmts_unsafe` S_FORRANGE uses, run over the body WITHOUT its
  * last element: the post clause lives there (see the `els`/`body` note at
- * src/tychoc.c:1611) and assigns i, so including it would report unsafe every
+ * src/tychoc.c:1612) and assigns i, so including it would report unsafe every
  * time. Returns the array's name, or NULL when the shape is not certain.
  *
  * WHAT THIS BUYS, MEASURED -- read before "improving" it. At -O3, the level
@@ -8785,12 +8823,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12978) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13018) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11105) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11145) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -8807,7 +8845,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3653-3658) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3680-3685) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -10595,6 +10633,8 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("%s })", out);
         }
         case E_BINOP: {
+            if (e->op == TK_IS)                /* `v is Variant` -> tag test (index stamped by resolve) */
+                return sfmt("((%s)->tag == %d)", gen_expr(e->lhs, arena), (int)e->ival);
             if (e->op == TK_IN)                /* `k in m` membership -> map has-key */
                 return sfmt("%s(%s, %s)", map_rt(e->rhs->type, "has"),
                             gen_expr(e->rhs, arena), key_rt(e->rhs->type, gen_expr(e->lhs, arena)));

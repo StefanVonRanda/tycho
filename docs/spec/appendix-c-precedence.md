@@ -10,10 +10,11 @@ prefix levels are right-associative.
 | 2 | `-` · `&` (address-of) · `~` | unary prefix | right |
 | 3 | `*` · `/` · `%` · `<<` · `>>` · `&` (bitwise) | binary | left |
 | 4 | `+` · `-` · `\|` · `^` | binary | left |
-| 5 | `==` · `!=` · `<` · `>` · `<=` · `>=` · `in` | binary | left |
-| 6 | `not` | unary prefix | right |
-| 7 | `and` | binary | left |
-| 8 | `or` | binary | left |
+| 5 | `is` | binary, non-associative | — |
+| 6 | `==` · `!=` · `<` · `>` · `<=` · `>=` · `in` | binary | left |
+| 7 | `not` | unary prefix | right |
+| 8 | `and` | binary | left |
+| 9 | `or` | binary | left |
 
 Notes:
 

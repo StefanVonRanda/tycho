@@ -94,7 +94,7 @@ or an explicit "open, refused because …".
 
   - The entry says "the builtins are `println`, `die` and `exit(n)`", so "a
     non-fatal warning is inexpressible". `eprint(s)` is a builtin —
-    `src/tychoc.c:5052@eprint`, runtime `runtime/tycho_rt.c@tycho_eprint`
+    `src/tychoc.c:5079@eprint`, runtime `runtime/tycho_rt.c@tycho_eprint`
     (`fputs(s, stderr)`), specified at `docs/spec/16-builtins.md:74@eprint` as
     "no newline, **no exit**". `git log -L 5051,5051:src/tychoc.c` dates it to
     `61fa0dc`, 2026-06-14 ("+ eprint primitive") — before the entry was written.
@@ -818,6 +818,100 @@ or an explicit "open, refused because …".
     deliberately NUL-bearing scratch file is observed reddening it.
   - Verify: the new gate, plus `sh scripts/check_links.sh`. **Not `make test`** —
     no `.ty` file is involved.
+
+- [x] **FRICTION #5 — an enum could not be asked which variant it holds; added `is`**
+  - Authorised directly by the repo owner ("just add `is`"), so this phase was
+    created after the fact rather than planned.
+  - Scope: `src/tychoc.c` lexer/parser/resolver/codegen, `tools/tychofmt.ty`,
+    `tools/lsp.ty`, `editors/`, `docs/spec/`, three `tests/` fixtures.
+  - **Design, as shipped.** `v is V` -> `bool`, true iff `v` holds variant `V`.
+    Uniform over nullary and payload-carrying variants; binds nothing; does not
+    chain. Precedence sits between the additive and comparison levels, so
+    `a is X and b is Y` groups as `(a is X) and (b is Y)`. The right operand is
+    a variant NAME, not an expression — parsing it as one would hit the
+    payload-carrying variant's "write V(...)" rejection at
+    `src/tychoc.c:5633@carries a payload`, which is the whole gap.
+  - **`is` is a RESERVED word, not contextual.** The grep that decided it, over
+    every `.ty` in the tree with strings and comments stripped:
+
+    ```
+    $ python3 - <<'EOF'   # \bis\b outside strings/comments, all *.ty
+    ...
+    EOF
+    0 hits
+    ```
+
+    and separately `grep -rnE '\.is\b' --include='*.ty' .` -> no output, so no
+    field named `is` either. Nothing in the tree used the name, including the
+    frozen `compiler/tychoc0.ty`. The `pass` precedent (contextual, because two
+    files already used the name — `docs/spec/appendix-b-keywords.md` B.2) did
+    not apply. Reserving follows `in`, the language's other binary-operator
+    keyword.
+  - **A bad variant name is a compile error naming both**, reusing the match
+    arm's wording verbatim (`src/tychoc.c:7909@is not a variant of`):
+
+    ```
+    tests/reject/enum_is_unknown_variant.ty:10: error: 'VFloat' is not a variant of Value
+    tests/reject/enum_is_not_an_enum.ty:5: error: `is` asks an enum value which variant it holds; int is not an enum
+    ```
+
+  - **Cross-package spelling is `match`'s, exactly.** `is` reuses
+    `pkg_prefix_for`/`pkg_mangle`/`check_pkg_private`, so `c is shapes.Circle`
+    works and a bare `c is Circle` on an imported enum is refused with the same
+    message a bare match arm gets (`'Circle' is not a variant of shapes__Shape`).
+    Both observed on a scratch two-package program.
+  - **Emitted C** — the same tag test `match` already emits, for
+    `println("a is VInt  = " + str(a is VInt))`:
+
+    ```c
+    tycho_bool_to_str(&_t, ((h_a)->tag == 1))
+    ```
+
+  - **Negative control.** With `src/tychoc.c` reverted to HEAD and rebuilt, the
+    fixture does not compile at all — every one of its 15 golden lines is lost,
+    not just the `is` ones:
+
+    ```
+    tests/enum_is.ty:11: error: expected ':' before the block
+        11 |     if v is VNull:
+    ```
+
+    Restored, rebuilt, `diff` against the golden clean. Worth recording that the
+    two reject fixtures are NOT a control: they exit non-zero at HEAD too, for
+    the syntax error rather than the semantic one, and `tests/run.sh:291-306`
+    asserts only a non-zero exit with a non-empty diagnostic, never the text.
+  - **`v == VNull` still works** and is deliberately untouched; the overlap for
+    nullary variants is documented in `docs/spec/09-expressions.md` §13.2 rather
+    than removed.
+  - Gates, each run once: `make check-links` ok (136 anchored, 835 bare,
+    190 `path@SYMBOL`) after `scripts/reanchor_citations.py --apply` remapped
+    **101 stale `src/tychoc.c` citations across 116 files, 0 needing a human** —
+    every stale ref was a `src/tychoc.c` one, which is the tool's stated
+    precondition. `sh scripts/spec_check.sh` ok, 10 runnable examples all pass
+    (the new §19.8 example among them). `make editors-check` ok, 940 files.
+    `sh scripts/tools_check.sh` ok. `make goldens-check` ok — it reddened first,
+    correctly, on `tests/enum_is.out` being untracked. **`make test`: 622
+    passed, 0 failed**, against 619/0 before: +1 positive fixture and +2 rejects,
+    no silent loss.
+
+- [ ] **`is` has no answer for `Option` and `Result`, the two enums used most**
+  - Discovered by this phase and deliberately NOT absorbed into it. `v is Some`,
+    `r is Ok`, `r is Err` are all rejected: the resolver's `is` arm requires
+    `IS_ENUM(lt)`, and `Option`/`Result` are not user enums in that sense, so
+    the message a reader gets is "`is` asks an enum value which variant it
+    holds; Option(int) is not an enum" — accurate about the implementation and
+    unhelpful about the language.
+  - Why it matters more than it looks: FRICTION #5's own workaround survey found
+    the gap in `tools/tycho-q/main.ty@kind`, but `Option`/`Result` are where
+    "which variant is this?" is asked most often in this tree, and `or_return`
+    only covers the propagate-it case, not the test-it case.
+  - Scope: the `TK_IS` arm in `resolve_expr`, plus whatever the two types'
+    runtime discriminator is — it is NOT the `->tag` field user enums use, so
+    this is not a one-line widening and must not be guessed at.
+  - Done when: `r is Ok` / `r is Err` / `o is Some` / `o is None` compile to the
+    right test, with a fixture covering all four and a `tests/reject/` case for a
+    name that is neither.
+  - Verify: `make test`, which was **622** at this phase.
 
 ## Out of scope
 
