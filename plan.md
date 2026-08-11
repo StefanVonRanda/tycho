@@ -97,15 +97,15 @@ site is either implemented or written down as a refusal with its cost.
     instantiation site reach the diagnostic — answered yes from source, and
     narrowly. `instantiate_generic` already receives the call `Expr *e` and
     already reports at `e->line` for three other refusals
-    (`src/tychoc.c:8425`, `:8432`, `:8454`), and while it runs, `g_srcname` /
+    (`src/tychoc.c:8433`, `:8440`, `:8462`), and while it runs, `g_srcname` /
     `g_src` still hold the CALLER's file. So the call site was already in hand at
     the one place the `GInst` is built; nothing needed threading through.
   - Cost, measured rather than estimated: **+7 net lines**
     (`git diff --numstat src/tychoc.c` → `45 38`), and four of the five edit
     sites are line-neutral in-place rewrites —
     `src/tychoc.c@GInst` (three fields), the `GInst gi;` construction,
-    and gen_program's instance loop set/clear at `src/tychoc.c:12507` and
-    `:12523`. Only the `die_at` region grew, by factoring the snippet printer out
+    and gen_program's instance loop set/clear at `src/tychoc.c:12515` and
+    `:12531`. Only the `die_at` region grew, by factoring the snippet printer out
     as `src/tychoc.c@src_snippet` so the note can reuse it.
   - Extends `0faccaf` rather than undoing it: that commit's `diag_use_proc(p)`
     call is untouched and still decides the ERROR line's file. The note is a
@@ -167,7 +167,7 @@ site is either implemented or written down as a refusal with its cost.
     no token that occurs once.
   - **Sizing (c) — ranges.** "Points at unrelated code" is not mechanically
     decidable and is not pretended otherwise. What is detectable: width. 107
-    ranges are 25+ lines, 18 are 100+, and the widest (`src/tychoc.c:3236-3716`,
+    ranges are 25+ lines, 18 are 100+, and the widest (`src/tychoc.c:3244-3724`,
     cited from three spec chapters) is an honest citation of a whole declaration
     parser. Width is a report, never a verdict.
   - **Built:** commit-hash validation as a hard failure. Backticked at exactly
@@ -265,11 +265,11 @@ site is either implemented or written down as a refusal with its cost.
   (`runtime/tycho_rt.c@stats_dump`, cited as `:416`), `arena_recycle` (`:548` →
   the body of `block_get`), `TYCHO_BLOCK` (`:466` → `:521`), `g_out`
   (`corelib/crypto/crypto_shim.c:43@g_out`, cited as `:35` and twice as `:36`),
-  pop-on-empty (line 12121 → `src/tychoc.c:12981@pop`), tuple arity (lines 2018
-  and 2014 → `src/tychoc.c:5592@least` and `src/tychoc.c:5593@most`), `or_return`
-  in a `parallel for` (line 6639 → `src/tychoc.c:7146@or_return`), the
-  inout-aliasing rule (line 6150 → `src/tychoc.c:6662@alias`), the 16-parameter
-  cap (line 8075 → `src/tychoc.c:8688@parameters`), `split_once` (line 193, an
+  pop-on-empty (line 12121 → `src/tychoc.c:12989@pop`), tuple arity (lines 2018
+  and 2014 → `src/tychoc.c:5600@least` and `src/tychoc.c:5601@most`), `or_return`
+  in a `parallel for` (line 6639 → `src/tychoc.c:7154@or_return`), the
+  inout-aliasing rule (line 6150 → `src/tychoc.c:6670@alias`), the 16-parameter
+  cap (line 8075 → `src/tychoc.c:8696@parameters`), `split_once` (line 193, an
   unrelated `enum FloatErr`, → `corelib/strings/strings.ty@split_once`),
   `read_request_capped` (line 242 → `corelib/httpd/httpd.ty@read_request_capped`),
   `netx_peer_addr` (line 204 → `corelib/net/net_shim.c@netx_peer_addr`), the
@@ -314,7 +314,7 @@ site is either implemented or written down as a refusal with its cost.
   - `server/README.md:276` cites `docs/internals/FRICTION.md:601` for a
     `write-failed` log line. The string `write-failed` does not occur anywhere in
     `docs/internals/FRICTION.md`.
-  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9415` as `ncpu()`'s
+  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9423` as `ncpu()`'s
     lowering; that line is `collect_append_ops`.
   - `docs/internals/FRICTION.md:1020` quotes a comment it places at
     `corelib/test/io/main.ty:43`; that line is `fn sl(...)`.

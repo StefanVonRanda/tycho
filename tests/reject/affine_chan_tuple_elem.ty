@@ -1,4 +1,4 @@
-# Phase 20: ... nor a tuple member (tychoc: tup_of, src/tychoc.c:893-895).
+# Phase 20: ... nor a tuple member (tychoc: tup_of, src/tychoc.c:901-903).
 fn f(v: (int, Channel(int))) -> int:
     return 1
 

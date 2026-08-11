@@ -69,7 +69,7 @@ module.exports = grammar({
     // covers the raw form with no query change. The backtick form interprets no
     // escapes (hence no /\\./ alternative — a backslash is an ordinary byte) and
     // /[^`]/ matches a newline, so it spans lines like the compiler's scanner
-    // (src/tychoc.c:455-502).
+    // (src/tychoc.c:463-510).
     string: ($) =>
       token(
         choice(
@@ -88,7 +88,7 @@ module.exports = grammar({
     char: ($) => token(seq("'", choice(/\\x[0-9a-fA-F]{2}/, /[^'\\]/, /\\./), "'")),
 
     // `..<` is the half-open counting range of `parallel for i in 0..<N:`
-    // (src/tychoc.c:536). It is listed even though `.` `.` `<` would already
+    // (src/tychoc.c:544). It is listed even though `.` `.` `<` would already
     // lex: tree-sitter takes the longest match, so naming it makes the range one
     // `operator` node instead of three, which is what highlights.scm colours.
     operator: ($) =>
@@ -100,7 +100,7 @@ module.exports = grammar({
       ),
 
     // `;` separates the three clauses of `for init; cond; post:`
-    // (src/tychoc.c:560). Without it 204 corpus files failed to lex.
+    // (src/tychoc.c:568). Without it 204 corpus files failed to lex.
     punctuation: ($) => choice("(", ")", "[", "]", "{", "}", ",", ":", ";"),
   },
 });

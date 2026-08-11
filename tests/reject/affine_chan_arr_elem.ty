@@ -1,5 +1,5 @@
 # Phase 20: an affine Channel(T) may not be a dynamic-array element (spec 03-types.md 5.3.9).
-# tychoc rejects at arrc_sized_b (src/tychoc.c:723-725); tychoc0 at parse_type_d's [T] site.
+# tychoc rejects at arrc_sized_b (src/tychoc.c:731-733); tychoc0 at parse_type_d's [T] site.
 fn f(v: [Channel(int)]) -> int:
     return len(v)
 

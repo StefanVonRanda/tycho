@@ -40,7 +40,7 @@ class Gen:
         # when run.py stopped counting timeouts as skips).
         self.loop_vars = set()
 
-    # The FFI-width type names are reserved words (`src/tychoc.c:249-257`), and
+    # The FFI-width type names are reserved words (`src/tychoc.c:257-265`), and
     # `fresh("i")` walks straight into i8 / i16 / i32 / i64 as the uid counter
     # passes them. Every binding position refuses them with "expected an
     # expression" -- measured on 2026-07-30 for a plain `i8 := 5`, a foreach

@@ -1,5 +1,5 @@
 # 02-grammar.md:137,:170 / 03-types.md:193: a tuple type has 2-8 elements.
-# src/tychoc.c:1822. This one has 9.
+# src/tychoc.c:1830. This one has 9.
 fn mk() -> (int, int, int, int, int, int, int, int, int):
     return (0, 1, 2, 3, 4, 5, 6, 7, 8)
 
