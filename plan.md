@@ -1624,7 +1624,7 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
   Its load-bearing claim (none declares a `package` header) still holds; the
   figure does not.
 
-- [ ] **Phase N — `tests/run.sh`'s reject-lane comment carries a stale fixture
+- [x] **Phase N — `tests/run.sh`'s reject-lane comment carries a stale fixture
       count** (*found by the `# expect:` phase, not absorbed into it*)
   - `tests/run.sh:287` reads "0 of the 249 flat fixtures declare one today".
     `ls tests/reject/*.ty | wc -l` disagrees. The claim the sentence exists to
@@ -1635,6 +1635,36 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
   - Fix shape: name the command instead of the number, or drop the figure.
   - Verify: `make test` only if the edit touches anything but a comment; a
     comment-only edit is covered by reading it. **Not `make ci`.**
+  - **Done 2026-08-11 — the figure was DROPPED, not updated, and the judgement
+    was made first.** The brief offered "keep it as a floor if the script actually
+    enforces one". It does not: `grep -n "floor\|vacuit\|-lt \|-gt \|at least"
+    tests/run.sh` finds nothing of the kind anywhere in the file, and the
+    `package`-header guard is per-fixture (`tests/run.sh:295-298` notes and fails
+    that one fixture), never a minimum over the corpus. So the count was
+    **decorative** — a snapshot of the directory on the day someone wrote it — and
+    `CLAUDE.md`'s "never copy a figure the gate prints into prose" applies exactly
+    as written. The comment now names the command:
+    `` `grep -l '^package [A-Za-z_]' tests/reject/*.ty` prints nothing ``, which is
+    the load-bearing claim and cannot go stale, and says in the same breath that
+    nothing floors the fixture count.
+  - **No floor was invented.** Adding one would be executable behaviour in the
+    lane, would put this phase on the ~8 min `make test`, and is a different
+    decision from fixing a comment — so it is not smuggled in here.
+  - Both numbers re-measured before editing: **283** flat fixtures today (the
+    brief's figure is right; the comment's 249 was wrong twice over, appearing
+    both as "all 249 of its siblings" and as the "0 of the 249" claim), and **0**
+    of them declare a `package` header, so the sentence's real assertion survives
+    intact.
+  - Verified: comment-only, so no gate beyond the doc lane can redden — proven,
+    not assumed, by `git diff` touching only `#` lines and by `sh -n tests/run.sh`
+    → clean. `make test` deliberately NOT run.
+    ```
+    $ sh -n tests/run.sh          # syntax ok
+    $ git diff --stat tests/run.sh
+     tests/run.sh | 12 +++++++-----
+    $ make check-links
+    link check: ok · citation check: ok
+    ```
 
 - [x] **Phase N — `corelib/run.sh`'s dependency SKIP hides a package from its own
       gate, silently** (*filed by the `core:image` phase*)

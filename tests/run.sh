@@ -280,14 +280,16 @@ fi
 # A FLAT fixture here must NOT declare a `package` header. detect_package
 # (src/tychoc.c:12603-12609) turns the entry file's leading `package <name>` into
 # a whole-DIRECTORY compile (src/tychoc.c:13000), so such a fixture would be
-# scored against all 249 of its siblings: it would be "refused" for the FIRST
+# scored against every one of its siblings: it would be "refused" for the FIRST
 # error in sort order rather than for its own defect, and this lane -- which
 # asserts only "nonzero exit + non-empty diagnostic" -- cannot tell the two
 # apart. A deliberately VALID program dropped in here was measured scoring `ok`
-# on a sibling's error. Checked, not assumed: 0 of the 249 flat fixtures declare
-# one today, so this guard is enforcement of the existing arrangement rather
-# than a repair, and it moves no count. The package-mode reject case belongs in
-# the tests/reject/pkg/<name>/ lane below, which gives it its own directory.
+# on a sibling's error. The guard below enforces what already holds and moves no
+# count: `grep -l '^package [A-Za-z_]' tests/reject/*.ty` prints nothing. That is
+# a command and not a figure on purpose -- the figure that used to sit here said
+# 249, went stale, and nothing in this lane floors the fixture count anyway. The
+# package-mode reject case belongs in the tests/reject/pkg/<name>/ lane below,
+# which gives it its own directory.
 for hi in tests/reject/*.ty; do
     [ -e "$hi" ] || continue
     base="$(basename "$hi" .ty)"
