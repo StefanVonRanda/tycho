@@ -5,27 +5,108 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
-## [0.5.0] — 2026-08-10
+## [Unreleased]
 
-**The first release ever cut.** Everything below ships in it. The section was
-split in two until 2026-08-10 — an `[Unreleased]` block on top of a `[0.5.0]`
-block dated 2026-08-05 that was never tagged — which would have shipped a
-changelog that did not describe its own artifact. The 08-05 block is a draft,
-not history, so the two are merged here under the date this actually shipped.
+Nothing yet. **Write new entries here, not under the release heading below** —
+0.5.0 shipped without this block, so the only heading to write under was a
+frozen one, and eight entries landed inside a tagged release that does not
+contain them (see 0.6.0's opening note).
 
-- **`tools/tycho-ar` stops carrying its own integer parser.** `parse_uint` now
-  shares `strings.parse_int_checked`'s lexical rule and keeps only the domain
-  rule that belongs to the archive format — non-negative, and capped far below
-  int64 so a forged length cannot drive a huge allocation. Not a straight swap:
-  `parse_int_checked` accepts a leading `-` and the full int64 range, so
-  replacing the call outright would have widened what a header field accepts.
+## [0.6.0] — 2026-08-11
 
-- **`compress.decompress` says why it failed.** It returned bare `bytes`, empty
-  on any failure — so a corrupt stream, a truncated one and a legitimately empty
-  payload were the *same answer*. An archive can hold a zero-byte member, so for
-  any container format a corrupt member read as an empty one: data loss that
-  looks like data. Now `Result(bytes, ZErr)` with `Corrupt` / `Truncated` /
-  `Failed`, and `raw_decompress` likewise.
+Seventy commits since `v0.5.0`. **Eight of the entries below were written into
+the `[0.5.0]` section after `v0.5.0` was tagged** and are moved here, where they
+belong: `git merge-base --is-ancestor` puts every one of them outside the tag.
+The cause was structural, and the `[Unreleased]` block above is the fix. Read
+`compress.decompress`, `io.read_text`, qualified consts, the newtype-collection
+fix, `or_return` in `main()`, the live-copy remedy, the `[string]`-as-a-value
+diagnostic and the `tycho-ar` parser share as 0.6.0 changes; a `v0.5.0` tarball
+does not contain them.
+
+### BREAKING CHANGES
+
+Six changes refuse or re-shape code that compiled under 0.5.0. All six migrations
+are mechanical, and each is stated as "what you wrote" → "what you write".
+
+- **A binding may not start with an uppercase letter.** Locals, parameters,
+  destructuring targets, loop variables, and `match`/`select` bindings must now
+  begin with a lowercase letter or `_`. The uppercase namespace belongs to
+  compile-time entities — types, enum variants, consts — so it is no longer
+  *expressible* for a binding to shadow a constructor. This is the
+  OCaml/Haskell/Elm/SML approach: the bug class is removed by the grammar rather
+  than diagnosed by a special case. The guard sits at one point, `vars_push` in
+  `src/tychoc.c`, which all ten runtime binding forms reach, and it sits in the
+  resolver rather than the parser deliberately — a bare `Name` in a payload slot
+  is indistinguishable from a binding at parse time, so checking after the
+  pattern is promoted keeps `Err(NotFound)` legal while still refusing a genuine
+  binding.
+
+  ```
+  fn hash(K: int, S: int) -> int:   →   fn hash(k: int, s: int) -> int:
+      A := K + S                            a := k + s
+  ```
+
+  **`const` is exempt and unchanged**: 264 of this tree's 266 const declarations
+  start uppercase and none starts lowercase. Migrating this tree took 16 sites in
+  6 files (md5, sha256, dijkstra, weblog, decimal); md5 and sha256 each keep a
+  one-line note mapping the new names back to RFC 1321 and FIPS 180-4, because
+  that mapping is how a reader checks the algorithm. Specified in
+  `docs/spec/01-lexical.md` §3.5.1.
+
+- **`is` is a reserved keyword.** It is the variant test (below), and it is
+  reserved rather than contextual — an operator keyword shares its position with
+  an ordinary name in `x is y`, which is exactly where a contextual spelling
+  becomes ambiguous. **A variable, parameter or function named `is` no longer
+  compiles.** No `.ty` file in this tree used it, so the migration cost here was
+  zero, but the name is gone from the identifier space. Listed in
+  `docs/spec/appendix-b-keywords.md`.
+
+- **A function may not be named for a constructor, an enum variant or a const.**
+  `fn Ok(...)`, `fn Err(...)`, `fn Some(...)`, `fn None(...)` and any `fn` whose
+  name collides with an enum variant or a const are refused with `'<name>' is
+  already defined`. Previously such a definition compiled and then shadowed the
+  constructor at every use site, which is the same bug class the binding rule
+  above closes, approached from the definition side. Rename the function.
+
+- **`core:iter` predicates return `bool`, not `int`.** Four functions:
+  `filter`, `try_filter`, `count` and `any` took `fn($T) -> int` and treated
+  nonzero as true. A predicate is a question, and `int` let an *arithmetic*
+  result stand in for an answer — `count(xs, fn(x) -> int: x - lim)` reads as a
+  subtraction and counts everything unequal to `lim`, which is almost never what
+  the author meant.
+
+  ```
+  iter.filter(xs, fn(x: int) -> int: x % 2)        →   iter.filter(xs, fn(x: int) -> bool: x % 2 != 0)
+  iter.count(xs, fn(x: int) -> int: x - lim)       →   iter.count(xs, fn(x: int) -> bool: x != lim)
+  ```
+
+  A named predicate changes the same way: `fn even(x: int) -> int` returning
+  `1`/`0` becomes `fn even(x: int) -> bool: return x % 2 == 0`. `map`, `try_map`
+  and `reduce` are unchanged.
+
+- **`image.decode` and `image.encode` return a `Result`.** `decode` answered a
+  0×0 `Image` sentinel for every failure and `encode` answered empty `bytes`, so
+  a truncated file, a JPEG handed to a PNG decoder and a genuinely zero-dimension
+  image were the same value. Now `decode(data: bytes) -> Result(Image, ImgErr)`
+  and `encode(img: Image) -> Result(bytes, ImgErr)`, with `ImgErr` naming the
+  cause: `Empty`, `NotPng`, `Corrupt`, `BadDims`, `ShortPixels`, `Failed`.
+
+  ```
+  img := image.decode(b)          →   img := image.decode(b) or_return
+  if img.width > 0:                   # or match Ok(img): / Err(e):
+  ```
+
+- **`compress.decompress` returns `Result(bytes, ZErr)`.** It returned bare
+  `bytes`, empty on any failure — so a corrupt stream, a truncated one and a
+  legitimately empty payload were the *same answer*. An archive can hold a
+  zero-byte member, so for any container format a corrupt member read as an empty
+  one: data loss that looks like data. Now `Corrupt` / `Truncated` / `Failed`,
+  and `raw_decompress` likewise. `compress` itself still returns bare `bytes`.
+
+  ```
+  out := compress.decompress(b)   →   out := compress.decompress(b) or_return
+  if len(out) == 0: ...
+  ```
 
   The shim always knew which branch it took and discarded it; it now reports a
   status through an `inout int`, the FFI shape `core:io` already used. Callers
@@ -34,12 +115,55 @@ not history, so the two are merged here under the date this actually shipped.
   mismatch — the length check stays, since a payload that inflates cleanly to
   the wrong thing is forgery, not damage), and the worked example.
 
-- **`core:io` gains `read_text(p) -> Result(string, IoErr)`.** `io.read` is
-  fail-open: it answers `""` for a missing file, an unreadable one and a
-  genuinely empty one alike — three different facts flattened into one value.
-  `read_text` keeps them apart, reporting the same `NotFound` / `IsDir` /
-  `Failed` causes `read_bytes` already did. `io.read` is unchanged and not
-  deprecated.
+- **`tycho-ar x` exits non-zero when an mtime could not be restored.** Extraction
+  used to `die` on the first failed `set_mtime`, leaving the archive half
+  unpacked. It now warns per member on stderr, finishes the extraction, and exits
+  1 — so the files are all there and the exit status still says the restore was
+  incomplete. A script that ran `tycho-ar x` and checked `$?` will now see a
+  failure where it previously saw success on a filesystem that refuses
+  timestamps. Exit 0 continues to mean "fully restored".
+
+### Language
+
+- **`is`, the variant test.** `x is VariantName` yields `bool`, for a plain enum
+  and for `Option` and `Result`. It is the tag test `match` already emitted, so
+  it is true for a payload-carrying variant without naming the payload — the
+  point is to *ask* without destructuring, where a `match` with a `_:` arm was
+  the only way to phrase the question. The right-hand side is a variant name and
+  is never resolved as an expression; it binds nothing. `is` does not chain:
+  write `a is X and a is Y`. Precedence sits between additive and comparison.
+
+  ```
+  if v is VNull: ...        o is Some     r is Ok     r is Err
+  ```
+
+  `core:result` now asks with it internally — `is_ok` is `return r is Ok` — and
+  `is_some` was rewritten the same way. Both keep their signatures and their
+  meaning; this is an implementation change, not an API one.
+
+- **A `[string]` may cross the FFI as an extern parameter.** It arrives in C as
+  `(const char *const *, long)` — a pointer and a length, **not** a
+  NULL-terminated `argv` — borrowed for the duration of the call, with nothing
+  copied and nothing to free. An empty array may pass a null pointer with length
+  0. Parameter position only: a `[string]` return is refused, and `inout string`
+  stays refused. Documented in `docs/spec/14-ffi.md`.
+
+  This retires a whole builder protocol. `core:os` used to reach C through
+  `osx_argv_new` / `osx_argv_push` / `osx_argv_free` and a `ptr` handle; it now
+  declares `extern fn osx_exec(argv: [string]) -> int` and passes the array.
+  `os.exec` and `os.exec_out` keep byte-identical signatures — no caller outside
+  corelib changes.
+
+- **f-string interpolations evaluate left to right.** `f"{a()}{b()}{c()}"`
+  printed A, B, C but *called* c, b, a: the holes lowered to arguments of a
+  single `tycho_str_concatN`, and C leaves argument evaluation order
+  unspecified, so gcc chose right to left. Each piece but the last is now bound
+  to a temporary in a braced group, making evaluation follow source order.
+
+  Observable only when a hole carries a call with side effects, which is exactly
+  how it was found: an `io.remove` in one hole ran before the `io.mtime` printed
+  to its left. Bare `+` concatenation and ordinary call arguments remain
+  unspecified — this fixes the construct that *looks* sequential.
 
 - **Top-level `const`s cross package boundaries.** `pkg.NAME` reads an exported
   constant, **folded to its literal at the use site** exactly as an unqualified
@@ -54,15 +178,6 @@ not history, so the two are merged here under the date this actually shipped.
   qualified const as a fixed-array length (`[pkg.CAP]int`), because an array
   length is resolved while parsing, when the imported package may not be parsed
   yet; accepting it there would fail or not depending on file order.
-
-- **The live-copy warning no longer suggests a no-op.** It told you to "pass a
-  copy you keep (`y := s`)". Measured on the emitted C: that spelling silences
-  the warning and emits the *same* two copies, while making the value's last use
-  the aggregate emits one. The warning itself is right — there is an avoidable
-  copy — so it stays, with only the remedy that removes one.
-
-- **`[string]` written where a value goes** now names both working forms
-  (`[]string`, or `xs : [string] = []`) instead of "expected an expression".
 
 - **A newtype over a collection now supports that collection's operations.**
   `type Ids = [int]` was effectively write-only: `len`, indexing, slicing,
@@ -87,7 +202,178 @@ not history, so the two are merged here under the date this actually shipped.
   an `Err` reaching the entry point is *printed* and `has_str` admits no enum,
   so the error is the message; and a value in the ok slot would make the exit
   status ambiguous. Both wrong shapes are refused with a diagnostic that names
-  which half is wrong. Only expressible because `Result(void, E)` landed first.
+  which half is wrong.
+
+### Core library
+
+- **`io.mtime` and `io.set_mtime`.** `mtime(p) -> Result(int, IoErr)` reads a
+  modification time in seconds; `set_mtime(p, secs) -> Result(bool, IoErr)`
+  writes one. `set_mtime` does not create a missing file — that is
+  `Err(NotFound)` — and a directory is fine. The access time is deliberately
+  left alone (`utimensat` with `UTIME_OMIT`), so preserving a timestamp is
+  `io.set_mtime(dst, io.mtime(src) or_return) or_return` and nothing else moves.
+  Closes FRICTION #8; it is what let `tycho-ar` restore mtimes at all.
+
+- **`strings.slice_bytes` and `strings.slice_str`**, returning
+  `Result(_, SliceErr)` with `OutOfBounds` and `Inverted`. A `bytes` or `string`
+  slice **clamps** silently — `b[2:10]` on a 5-byte value yields 3 bytes rather
+  than failing — while an *array* slice aborts. That asymmetry is now written
+  down as the normative rule, and these two are the fail-closed door for code
+  that would rather hear about it: a parser gets a real error instead of a
+  quietly shortened slice that looks like a short record.
+
+- **`iter.try_map` and `iter.try_filter`**, the fallible pipeline stages.
+  `try_map(xs, f: fn($T) -> Result($U, $E)) -> Result([$U], $E)` and
+  `try_filter(xs, keep: fn($T) -> Result(bool, $E)) -> Result([$T], $E)`. Both
+  stop at the first `Err` and return it unchanged, with no partial array — so a
+  parse over a list is `nums := iter.try_map(lines, parse_int) or_return`
+  instead of a hand-rolled loop with an early return. Closes FRICTION q#7.
+
+- **`result.map_err_with(r, f)`**, `fn($E) -> $F`, so the cause survives the
+  translation. `map_err` replaces an error with a *constant* of the new type,
+  which discards whatever the original said; `map_err_with` runs a mapper, so a
+  `ParseErr` can become an `AppErr` that still carries which field failed.
+
+- **`decimal.div(a, b, scale, mode) -> Result(Decimal, DivErr)`**, with
+  `HALF_UP` and `TOWARD_ZERO` (also spelled `decimal.half_up()` /
+  `decimal.toward_zero()`). Three failure causes, not one: `DivByZero`,
+  `BadScale(int)` for a negative scale, and `BadMode(int)` for an unknown mode.
+  Closes FRICTION q#2. A worked example that claimed `DivByZero` was the only
+  cause was corrected with it.
+
+- **The `core:result` combinators work at `Result(void, E)`.** `is_ok`, `is_err`
+  and `err_or` could not be instantiated at a void payload: each bound `v`, and
+  `Ok(v)` is refused where the payload is void while a bare `Ok:` arm is refused
+  everywhere else. Rewritten with `r is Ok` / `r is Err` and an `Err(e):` plus
+  `_:` pair — **no compiler change was needed**, which is the useful part of the
+  finding. `unwrap_or`, `map_err` and `map_err_with` are still out of reach at a
+  void payload, because each must produce or accept the payload itself.
+
+- **`core:io` gains `read_text(p) -> Result(string, IoErr)`.** `io.read` is
+  fail-open: it answers `""` for a missing file, an unreadable one and a
+  genuinely empty one alike — three different facts flattened into one value.
+  `read_text` keeps them apart, reporting the same `NotFound` / `IsDir` /
+  `Failed` causes `read_bytes` already did. `io.read` is unchanged and not
+  deprecated.
+
+- **`tools/tycho-ar` stops carrying its own integer parser.** `parse_uint` now
+  shares `strings.parse_int_checked`'s lexical rule and keeps only the domain
+  rule that belongs to the archive format — non-negative, and capped far below
+  int64 so a forged length cannot drive a huge allocation. Not a straight swap:
+  `parse_int_checked` accepts a leading `-` and the full int64 range, so
+  replacing the call outright would have widened what a header field accepts.
+
+### Diagnostics
+
+Four messages stopped pointing at the wrong place or withholding the answer.
+
+- **A refusal inside a generic names the call site.** An error raised while
+  checking an instantiated template printed only the template's own location, so
+  a user saw `corelib/result/result.ty:125: error: ...` with nothing connecting
+  it to their code. A second line now follows: `./main.ty:9: note: required from
+  here -- this call instantiated the generic`. Which call chose the types is the
+  question a reader actually has.
+
+- **A non-exhaustive `Result` or `Option` match names the uncovered variant.**
+  A match that wrote both sides but covered only some `Err` variants got
+  `match on a Result must cover both Ok and Err`, which is wrong twice over —
+  both sides *were* written. It now reads `non-exhaustive match: missing variant
+  <V> of <E>`, the same wording the plain-enum path already used. The original
+  message survives for a genuinely absent side. `Option`'s partial `Some` side
+  is fixed with it.
+
+- **The binding rule outranks the use-site parse error.** `fn f(Ok: int)` died
+  with `expected '(' after Ok` — a parser complaint about a construct the user
+  never intended — and never named the rule being broken. It now says `'Ok'
+  cannot name a binding -- a local, parameter or pattern binding must start with
+  a lowercase letter or '_'; as a value it is a constructor: Ok(x)`, which names
+  both the rule and the other reading.
+
+- **A corelib diagnostic names the corelib file.** An error inside a generic's
+  substituted body was reported against whatever file was current — typically
+  the user's `./main.ty` — paired with the *template's* line number, so it quoted
+  an innocent line of the wrong file. It now names the template's own file.
+
+- **The live-copy warning no longer suggests a no-op.** It told you to "pass a
+  copy you keep (`y := s`)". Measured on the emitted C: that spelling silences
+  the warning and emits the *same* two copies, while making the value's last use
+  the aggregate emits one. The warning itself is right — there is an avoidable
+  copy — so it stays, with only the remedy that removes one.
+
+- **`[string]` written where a value goes** now names both working forms
+  (`[]string`, or `xs : [string] = []`) instead of "expected an expression".
+
+### Fixed
+
+- **`sig_find`'s pointer dangled across argument resolution — a use-after-free
+  in the compiler.** `sig_find` returns a `Sig *` into the growable `g_sigs`
+  table. Resolving an argument can instantiate a generic, which appends to
+  `g_sigs` and reallocates it, leaving the callee's pointer pointing at freed
+  memory for every check that followed — inout, arity, types. The symptom was a
+  *bogus refusal read out of the freed slot*: a valid program rejected with
+  something like `argument 1 of 'print' is inout`, and the rejection depended on
+  allocator behaviour, so it came and went with unrelated edits.
+
+  The fix re-derives the index rather than holding the pointer: `int si = (int)(s
+  - g_sigs);` once, then `s = &g_sigs[si];` after each `resolve_exp`. Locked by a
+  deterministic fixture, `tests/generic_sig_realloc.ty`, which forces 200
+  distinct instantiations inside `print`/`str` arguments with deliberately fat
+  bodies so it crosses several reallocation boundaries every run — not left to
+  ASan to notice, because a use-after-free that reads plausible garbage is
+  precisely the one a sanitizer-only gate can miss on a lucky allocation.
+
+- **A `bytes` slice's clamping is now specified**, along with the array slice's
+  abort, in the spec and in a worked example — behaviour is unchanged, but the
+  difference between the two was previously implied rather than stated.
+
+### Gates and tooling
+
+Not user-facing API, but the record matters: **eight checks that could not fail
+now can**, and two of them were sitting over live holes.
+
+- **`corelib/run.sh` and `examples/corelib/run.sh` printed all-green while
+  silently skipping.** A package or example whose dependency was missing was
+  counted as passing. Both now count skips and name them —
+  `N ok, M SKIPPED -- image(missing: libpng)`. This is the failure mode where a
+  gate reports success *because* it did not run.
+- **`tycho-ar`'s round-trip gate was green over the mtime hole.** Extraction
+  restored no mtimes and the gate compared with `diff -r`, which ignores them.
+  Leg 3b now compares the timestamps themselves — verified to fail, naming all
+  eight members, with `set_mtime` stubbed out.
+- **Reject fixtures may pin their diagnostic.** A reject fixture scored only on
+  non-zero exit plus non-empty stderr, so a diagnostic that regressed to *wrong
+  but still refusing* passed. An opt-in `# expect: <text>` line now pins the
+  message.
+- **`prunner` scores abort fixtures by their `.err` golden.** `judge_abort`
+  never learned that branch, so `make test-fast` disagreed with `make test` and
+  the `# expect:` fixtures were scored by nothing in the parallel runner.
+- **`bench/` is compiled by a gate.** 51 `.ty` files under `bench/` were
+  compiled by nothing; `scripts/entrypoints.sh` now sweeps them (24 → 75 entry
+  points), so a language-rule change that breaks a bench file reddens instead of
+  waiting to be found by hand.
+- **Raw control bytes are rejected in tracked Markdown.** A literal NUL had
+  landed in two tracked docs and passed every check; `check_links.sh` now
+  rejects 00-08, 0B, 0C and 0E-1F.
+- **Citations are gated in CI and pre-push.** `make check-links` — links plus
+  `path:line` citations — was manual-only and run by neither, and a red citation
+  gate had already ridden a commit onto `main`. Both now call it.
+- **The pre-push hook dropped `make ci N=0`.** ~274s on every push taught
+  bypassing, which is worse than no hook. It keeps the sub-second link and
+  citation gate plus a fuzz smoke test, so it is cheap enough to actually run.
+- A hard-coded fixture count in `tests/run.sh`'s prose was **dropped rather than
+  refreshed** — it was stale by 34 and load-bearing for nothing, and a snapshot
+  count in prose is stale again by the next commit.
+
+## [0.5.0] — 2026-08-10
+
+**The first release ever cut.** Everything below ships in it. The section was
+split in two until 2026-08-10 — an `[Unreleased]` block on top of a `[0.5.0]`
+block dated 2026-08-05 that was never tagged — which would have shipped a
+changelog that did not describe its own artifact. The 08-05 block is a draft,
+not history, so the two are merged here under the date this actually shipped.
+
+Eight entries that were appended here *after* the tag were moved to `[0.6.0]`
+on 2026-08-11; a `v0.5.0` tarball does not contain them.
 
 - **DEPRECATED: `sort.by_key(xs, key)`** — use `sort.sort_by(xs, cmp)`. The
   rewrite is mechanical: `by_key(xs, k)` is

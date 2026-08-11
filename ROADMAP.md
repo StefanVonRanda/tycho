@@ -1,6 +1,6 @@
 # Roadmap
 
-Tycho is **0.5 — pre-1.0**, and this file is a direction, not a promise of
+Tycho is **0.6 — pre-1.0**, and this file is a direction, not a promise of
 dates. Day-to-day work is tracked in [GitHub
 issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
 high-level shape. What 1.0 now requires is [below](#what-1-0-requires).

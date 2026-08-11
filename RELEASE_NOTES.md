@@ -7,14 +7,14 @@ Draft release notes. Edit this before publishing, then:
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->
 
-Tycho 0.5 — pre-1.0, no stability guarantees (see the [README](README.md) for
-what that means in practice). This release ships prebuilt binaries so you can
-try the language without building from source.
+Tycho 0.6 — pre-1.0, no stability guarantees (see the [README](README.md) for
+what that means in practice). Prebuilt binaries are attached, so you can try the
+language without building from source.
 
-It was labelled 1.0 for four days and demoted before anything was ever tagged:
-the engineering was not in doubt, but 1.0 is a promise not to break people and
-nothing had shipped to anyone. [ROADMAP.md](ROADMAP.md#what-1-0-requires) lists
-what 1.0 now requires.
+**This release breaks source compatibility with 0.5.** Six changes refuse or
+re-shape code that compiled before, and every migration is mechanical. Read the
+BREAKING CHANGES section of [CHANGELOG.md](CHANGELOG.md) before upgrading — it
+states each one as "what you wrote" → "what you write".
 
 ## Install
 
@@ -33,27 +33,52 @@ The core library ships inside the tarball, beside the compiler, so there's nothi
 configure. You still need a C compiler (`cc`) on your `PATH` — Tycho transpiles to C. Each
 tarball's SHA-256 is published alongside it.
 
-## What's changed
+## Breaking changes
 
-Since the work recorded on 2026-08-05, when this was briefly labelled 1.0:
+Full detail and migrations in [CHANGELOG.md](CHANGELOG.md); the short form:
 
-- **`Result(void, E)`** — an operation that either fails with a reason or
-  succeeds with nothing to report. `void` is spellable as a `Result`'s ok
-  payload and nowhere else: build it with `Ok()`, match it with a bare `Ok:`
-  arm. Shipped with it, because the feature is unusable without it,
-  `f() or_return` is now a statement when the payload is void.
-- **`pass`** — the no-op statement, for a block with nothing to do. Contextual,
-  not reserved: `pass` stays usable as a variable name.
-- **`sort.sort_by(xs, cmp)`** — a comparator sort, so an order can use several
-  keys, mixed directions, or a type with no `comparable` instance. Stable
-  (bottom-up merge). **`sort.by_key` is deprecated** in favour of it and warns
-  on use; it keeps working for all of 0.x and is removed at 1.0.
-- **A `len` that shadows a builtin now warns** at the declaration instead of
-  silently answering wrong, and **a line ending in an operator continues** onto
-  the next.
-- **`tychofmt` no longer writes `-1` as `- 1`.**
+- **A binding may not start with an uppercase letter.** Locals, parameters,
+  loop variables and pattern bindings must start lowercase or `_`. The
+  uppercase namespace belongs to types, enum variants and consts, so a binding
+  can no longer shadow a constructor. `const` is exempt. Rename the binding.
+- **`is` is now a reserved keyword** (the variant test, below). A variable or
+  function named `is` no longer compiles.
+- **A function may not be named `Ok`, `Err`, `Some`, `None`,** or after any
+  enum variant or const. Rename it.
+- **`core:iter` predicates return `bool`, not `int`** — `filter`, `try_filter`,
+  `count`, `any`. Write `fn(x: int) -> bool: x % 2 != 0` where you wrote
+  `fn(x: int) -> int: x % 2`.
+- **`image.decode`/`encode` and `compress.decompress` return a `Result`**
+  instead of an empty-or-sentinel value, so a corrupt input is no longer
+  indistinguishable from a legitimately empty one. Add `or_return` or a `match`.
+- **`tycho-ar x` exits 1 when an mtime could not be restored.** It now finishes
+  the extraction and warns per member rather than dying part-way; exit 0 still
+  means fully restored.
 
-Two limits are now stated rather than implied, because you will hit them:
+## What's new
+
+- **`is`, the variant test** — `x is VariantName` for an enum, an `Option` or a
+  `Result`, so you can ask without destructuring: `if r is Ok:`, `o is Some`.
+- **A `[string]` may cross the FFI** as an extern parameter, arriving in C as
+  `(const char *const *, long)`. This retired `core:os`'s whole argv-builder
+  protocol; `os.exec` and `os.exec_out` are unchanged for callers.
+- **`io.mtime` / `io.set_mtime`**, **`strings.slice_bytes` / `slice_str`** (a
+  fail-closed slice, where the built-in one clamps), **`iter.try_map` /
+  `try_filter`** (short-circuit on the first `Err`), **`result.map_err_with`**
+  (translate an error and keep the cause), and **`decimal.div`** with rounding
+  modes and three named failure causes.
+- **f-string interpolations evaluate left to right.** They printed in source
+  order but *called* in reverse, because the holes became arguments to one C
+  function and C leaves argument order unspecified. Observable whenever a hole
+  carries a call with a side effect.
+- **A compiler use-after-free is fixed.** A stale pointer into the signature
+  table, dangling after a generic instantiation reallocated it, produced bogus
+  refusals of valid programs that came and went with unrelated edits.
+- **Better diagnostics**: a refusal inside a generic now names the call site
+  that instantiated it, and a non-exhaustive `Result`/`Option` match names the
+  uncovered variant instead of claiming a side was missing.
+
+Two limits remain stated rather than fixed, because you will hit them:
 
 - **`core:net` has no readiness polling.** No `poll`/`select`/`epoll`/
   `O_NONBLOCK` anywhere in the package, so a server's worker count is a hard
@@ -78,8 +103,9 @@ unsafe by design — see [SECURITY.md](SECURITY.md).
 
 ## Status
 
-0.5 is pre-1.0 and there are **no stability guarantees**: anything here may
-change. [ROADMAP.md](ROADMAP.md#what-1-0-requires) lists what 1.0 requires, and
+0.6 is pre-1.0 and there are **no stability guarantees**: anything here may
+change — this release broke source compatibility in six places and the next one
+may too. [ROADMAP.md](ROADMAP.md#what-1-0-requires) lists what 1.0 requires, and
 the blocking item is not engineering — it is that nobody outside this repo has
 written a real program in Tycho yet. If you write one, the friction you hit is
 the most useful thing you can send back.
