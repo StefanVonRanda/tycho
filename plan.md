@@ -184,11 +184,82 @@ or an explicit "open, refused because …".
     `corelib/`, and nothing under `src/` or `tests/` changed, so it could not
     have reddened.
 
-- [ ] **Phase 4 — #8 mtime is captured and cannot be restored**
+- [x] **Phase 4 — #8 mtime is captured and cannot be restored**
   - Scope: `core:io` / `tools/tycho-ar`, or the entry.
   - Done when: mtime is restorable, or the entry states the refusal and why the
     gate is green over the hole.
   - Verify: `make corelib` and `make ar-check`.
+
+    **The entry REPRODUCED.** A probe calling `io.set_mtime` did not compile:
+
+    ```
+    main.ty:12: error: package 'io' has no symbol 'set_mtime'
+        12 |     match io.set_mtime(p, 1416470400):
+    ```
+
+    and `grep -rn "mtime\|utime\|st_mtim" corelib/io/ corelib/os/ corelib/path/`
+    returned **no `utime`/`utimensat` hit at all** — every hit was the read side
+    or a comment. The entry's framing was also checked and held: the archive
+    format really does carry the field (`tools/tycho-ar/main.ty:36`), so this was
+    a missing setter, not a missing format.
+
+    **Closed by adding the write side**, not by redesigning anything:
+    `corelib/io/io_shim.c@iox_set_mtime` (utimensat with `UTIME_OMIT` on atime;
+    `_utime` after a stat on Windows, which has no utimensat) and
+    `corelib/io/io.ty@set_mtime` returning `Result(bool, IoErr)` — the shape
+    `write_bytes` and `make_dir` already use, so no new convention. The same
+    probe after the change:
+
+    ```
+    read mtime ok, nonzero=true
+    set ok
+    --- ground truth (date -r) ---
+    1416470400
+    ```
+
+    `date -r` is the independent check: the epoch the shell reads back is the one
+    Tycho asked for, so the assertion is not the code marking its own homework.
+
+    **Fixture** — two lines in `corelib/test/io/main.ty`, locked into
+    `corelib/test/io.out`, byte-identical over two runs:
+
+    ```
+    set_mtime=did exact=1 set_missing=NotFound made_nothing=1
+    set_dir=did dir_back=1 rm=did
+    ```
+
+    `exact` is an epoch this run did not produce, so a no-op cannot pass it.
+    `set_missing` is the case that MUST fail, and `made_nothing` proves the
+    failure did not create the file on the way past.
+
+    **Negative control.** The shim's `utimensat` call was replaced with
+    `(void)ts;` and the fixture re-run — **three of the four assertions flipped**:
+
+    ```
+    set_mtime=did exact=0 set_missing=did made_nothing=1
+    set_dir=did dir_back=0 rm=did
+    ```
+
+    The shim was restored from a backup and `grep` re-confirmed the real call at
+    `corelib/io/io_shim.c:399` before any gate was run.
+
+    **Gates run and why.** `make corelib` (a corelib change): `corelib: all green
+    (tychoc matches goldens)`. `make shim-check` (touched `io_shim.c`, and it is
+    the only lane that compiles one standalone under `-std=c11` — the lane that
+    would catch a missing feature-test macro for `utimensat`): `shim-check: 8 ok,
+    6 skipped, 0 failed`. `make ar-check` (touched `tools/tycho-ar/main.ty`):
+    `tycho-ar: green (create twice byte-identical; …)`. `make goldens-check`
+    (a golden moved): `goldens-check: ok`. `python3 scripts/check_citations.py`:
+    `citation check: ok`; `sh scripts/check_links.sh`: `link check: ok`.
+    **`make test` not run** — it never descends into `corelib/`, and nothing
+    under `src/` or `tests/` changed, so it could not have reddened.
+
+    **Deliberately NOT done:** `tycho-ar`'s `x` still does not call `set_mtime`.
+    The phase brief forbade a format change and this needs none, but it does need
+    a gate that compares mtimes — filed as its own phase below rather than
+    absorbed here. The now-stale comment in `tools/tycho-ar/main.ty` that said
+    the corelib had "nothing to set one" was corrected in place, since leaving a
+    provably false claim in the tree is worse than the one-line diff.
 
 - [ ] **Phase 5 — tycho-q #1 `core:json` accepts input it cannot represent**
   - Scope: `corelib/json/`.
@@ -338,6 +409,42 @@ or an explicit "open, refused because …".
     if a worked example calls it, plus the two doc gates. Sequence the code change
     before the doc change so the spec never describes something that is not shipped
     — which is exactly how phase 13's bug was born.
+
+- [ ] **`tycho-ar x` still does not restore mtime, and its gate still cannot see that**
+  - Found by phase 4, not absorbed into it — phase 4's brief scoped it to the
+    corelib and explicitly deferred any `tools/tycho-ar` behaviour change.
+  - The blocker is gone: `corelib/io/io.ty@set_mtime` exists as of 2026-08-11, so
+    `x` can now put back the `st_mtime` the member header has carried all along.
+  - Scope: `tools/tycho-ar/main.ty` (the extract path) and `tools/tycho-ar/run.sh`.
+  - Done when: `x` restores each member's mtime, AND the round-trip leg compares
+    them. **The gate change is the load-bearing half** — `diff -r` does not compare
+    mtimes, so `run.sh` is green today over exactly this hole and would stay green
+    over a broken restore. Add an explicit mtime comparison and confirm it CAN
+    fail by stubbing the restore out.
+  - Not a format change: the field is already in the header
+    (`tools/tycho-ar/main.ty:36`).
+  - Verify: `make ar-check`. Not `make corelib` unless the corelib is touched.
+
+- [ ] **f-string interpolations run their side effects RIGHT-TO-LEFT**
+  - Found by phase 4 while writing a fixture, where it produced a wrong golden
+    value: a `println(f"…{io.mtime(d)}…{io.remove(d)}")` printed the mtime as if
+    the file were already gone, because the `remove` ran first. Split into
+    separate statements to get the intended reading; the underlying behaviour was
+    then isolated and is unchanged.
+  - Reproducer — the printed text is left-to-right, the effects are not:
+    ```
+    println(f"{side("A", &acc)}{side("B", &acc)}{side("C", &acc)}")
+    -->  ABC
+         eval order: C,B,A
+    ```
+  - Scope: `src/tychoc.c` (f-string lowering), and `docs/spec/` if the answer is
+    to specify the order rather than change it.
+  - Done when: either the evaluation order is left-to-right and a fixture pins it,
+    or the spec states the order explicitly and a fixture pins THAT. Deciding it
+    is unspecified and leaving it undocumented is not one of the options — this
+    already cost one wrong golden.
+  - Verify: `make test` (this is a `src/tychoc.c` change), plus `sh scripts/spec_check.sh`
+    if a spec example moves.
 
 ## Out of scope
 

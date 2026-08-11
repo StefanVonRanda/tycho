@@ -359,6 +359,25 @@ fn main():
     mtdir := io.mtime("/tmp")
     println(f"mtime_missing={mwhy(mtmiss)} mtime_dir={mwhy(mtdir)}")
 
+    # set_mtime: the write side, added for FRICTION #8 -- an mtime could be READ
+    # and recorded into an archive, and nothing could put it back on extract.
+    # Unlike mtime above this CAN assert an exact epoch, and that is the whole
+    # point: 1416470400 is a value this run did not produce, so `exact` fails if
+    # the call is a no-op that leaves the write-time stamp in place.
+    # set_missing is the case that MUST fail -- setting a time on a path that is
+    # not there is Err(NotFound), not a silent success and not a created file.
+    sdir := "/tmp/tycho_corelib_io_mtdir"
+    _ := io.make_dir(sdir)
+    sm := io.set_mtime(tmp, 1416470400)
+    back := result.unwrap_or(io.mtime(tmp), 0)
+    smmiss := io.set_mtime("/tmp/tycho_corelib_io_absent.xyz", 1416470400)
+    smdir := io.set_mtime(sdir, 1416470400)
+    stillmiss := io.exists("/tmp/tycho_corelib_io_absent.xyz")
+    println(f"set_mtime={fswhy(sm)} exact={b2i(back == 1416470400)} set_missing={fswhy(smmiss)} made_nothing={b2i(not stillmiss)}")
+    dback := result.unwrap_or(io.mtime(sdir), 0)
+    srm := io.remove(sdir)
+    println(f"set_dir={fswhy(smdir)} dir_back={b2i(dback == 1416470400)} rm={fswhy(srm)}")
+
     # ---- read_at: pread(2) at an absolute offset -------------------------------
     # Unlike mtime above, this CAN be asserted exactly: the fixture writes the file
     # it reads, so every case below compares LETTERS, not just a length. 26 bytes,

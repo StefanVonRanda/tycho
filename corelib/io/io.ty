@@ -149,6 +149,9 @@ extern fn iox_stat_kind(path: string) -> int
 # can cross as an `inout`, and the status keeps the return rather than sharing one
 # integer's code space with an epoch second.
 extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
+# utimensat(2): the write side of iox_stat_mtime, same status codes. No `inout` --
+# the epoch second travels IN, so the return carries only the status.
+extern fn iox_set_mtime(path: string, mtime: int) -> int
 # stat(2) a third time, for st_size. Same shape as iox_stat_mtime -- a scalar
 # payload in the `inout`, the status in the return -- but NOT the same directory
 # answer: 2 (directory) is a real status here, not an Ok. See iox_stat_size in
@@ -288,6 +291,30 @@ fn mtime(p: string) -> Result(int, IoErr):
     k := iox_stat_mtime(p, &secs)
     if k == RF_OK:
         return Ok(secs)
+    if k == RF_MISS:
+        return Err(NotFound)
+    return Err(Failed)
+
+# Set when `p` was last modified, in the same whole epoch seconds `mtime` reads
+# back. This is what makes an mtime RESTORABLE: until it existed a program could
+# record one into an archive and had no way to put it back, so every extracted
+# file got the time it was written (FRICTION #8).
+#
+#   Ok(true)        the time is set; `mtime(p)` now returns `secs`
+#   Err(NotFound)   nothing is there -- this does NOT create the file
+#   Err(Failed)     it is there and the time could not be set (not the owner, a
+#                   read-only mount, ...)
+#
+# A DIRECTORY IS Ok, exactly as it is for `mtime` above and for the same reason:
+# a directory's modification time is a real field this module hands out, so
+# refusing to hand it back would be asymmetric for no gain.
+#
+# THE ACCESS TIME IS NOT TOUCHED. See iox_set_mtime in io_shim.c -- the obvious
+# utime(2) spelling would stamp both.
+fn set_mtime(p: string, secs: int) -> Result(bool, IoErr):
+    k := iox_set_mtime(p, secs)
+    if k == RF_OK:
+        return Ok(true)
     if k == RF_MISS:
         return Err(NotFound)
     return Err(Failed)

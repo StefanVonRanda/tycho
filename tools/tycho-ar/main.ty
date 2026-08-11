@@ -307,15 +307,18 @@
 # Each of those is a real archiver feature and each needs a corelib call that
 # does not exist today. They are named here rather than discovered later.
 #
-# AND ONE THAT IS STORED BUT CANNOT BE RESTORED: mtime. Every member header
+# AND ONE THAT IS STORED AND STILL NOT RESTORED: mtime. Every member header
 # carries the real st_mtime, `t` prints it, and `x` DROPS IT -- an extracted file
-# gets the time it was written. `core:io` has `io.mtime` to read one and nothing
-# to set one; grepping `corelib/io/io.ty` and `corelib/io/io_shim.c` for
-# utimensat/utimes/chmod finds nothing. This is a different shape of gap from the
-# four above: those are data the format never captured, this is data the format
-# captured faithfully and the extractor is unable to apply. `diff -r` does not
-# compare mtimes, so the round-trip gate stays green over a hole a user would
-# notice on the first restore. Said here so the green is not read as a promise.
+# gets the time it was written. This is a different shape of gap from the four
+# above: those are data the format never captured, this is data the format
+# captured faithfully and the extractor does not apply. `diff -r` does not compare
+# mtimes, so the round-trip gate stays green over it. Said here so the green is
+# not read as a promise.
+#
+# WHAT CHANGED 2026-08-11: the corelib half is done. `io.set_mtime` exists
+# (`corelib/io/io.ty@set_mtime`), so the reason this was unfixable is gone and
+# what remains is a change to `x` here plus a gate that actually compares mtimes.
+# Until that lands the paragraph above still describes this program exactly.
 
 package main
 

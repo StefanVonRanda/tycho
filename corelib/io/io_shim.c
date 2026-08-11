@@ -33,6 +33,7 @@
 #include <windows.h>           /* GetFileAttributesExA -- the UTC file time */
 #include <io.h>                 /* _lseeki64 -- the pread/pwrite stand-ins */
 #include <direct.h>             /* _mkdir -- the one-arg Windows mkdir */
+#include <sys/utime.h>          /* _utime + struct _utimbuf -- iox_set_mtime */
 #include <fcntl.h>              /* O_RDWR/O_CREAT are the same, but keep _O_BINARY honest */
 /* mingw-w64 has none of getline(3)/pread(2)/pwrite(2) and a one-arg mkdir.
  * The getline stand-in is fgets-free: read one byte at a time into a doubling
@@ -367,6 +368,35 @@ tycho_int iox_stat_mtime(const char *path, tycho_int *mtime) {
             *mtime = (tycho_int)((long long)(t / 10000000ULL) - 11644473600LL);
         }
     }
+#endif
+    return TY_RF_OK;
+}
+
+/* SET the modification time of `path` to `mtime` epoch seconds -- the write side
+ * of iox_stat_mtime, and the same status code space as it.
+ *
+ * ATIME IS LEFT ALONE. utimensat's UTIME_OMIT says "do not touch this one", which
+ * is why it is used here over utime(2): utime's struct carries both times, so
+ * restoring an mtime through it would silently stamp the access time too. Windows
+ * has no utimensat, so there the atime is read back and passed through unchanged.
+ *
+ * A DIRECTORY IS TY_RF_OK, matching iox_stat_mtime and not iox_stat_size: a
+ * directory has a modification time, it is the one iox_stat_mtime handed out, and
+ * an extractor restoring a tree must be able to give it back. */
+tycho_int iox_set_mtime(const char *path, tycho_int mtime) {
+    errno = 0;
+#ifdef _WIN32
+    struct stat st;
+    struct _utimbuf ub;
+    if (stat(path, &st) != 0) return ty_rf_errno(path);
+    ub.actime = (time_t)st.st_atime;
+    ub.modtime = (time_t)mtime;
+    if (_utime(path, &ub) != 0) return ty_rf_errno(path);
+#else
+    struct timespec ts[2];
+    ts[0].tv_sec = 0;             ts[0].tv_nsec = UTIME_OMIT;
+    ts[1].tv_sec = (time_t)mtime; ts[1].tv_nsec = 0;
+    if (utimensat(AT_FDCWD, path, ts, 0) != 0) return ty_rf_errno(path);
 #endif
     return TY_RF_OK;
 }

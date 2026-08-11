@@ -1577,20 +1577,32 @@ So the entry's "load-bearing" was accurate but narrow: one gate, one leg, and
 nothing else in the tree can see the property at all. That is the argument for
 writing it down rather than relying on a reviewer to notice.
 
-### 8. mtime is captured faithfully and cannot be restored — and the gate is green over the hole
+### 8. ~~mtime is captured faithfully and cannot be restored~~ — CLOSED 2026-08-11 in `core:io`
 
-`io.mtime` reads it, every member header carries the real `st_mtime`, `t` prints
-it, and `x` drops it on the floor: there is no `utimensat`, no `utimes` and no
-`chmod` anywhere in `corelib/io/io.ty` or `corelib/io/io_shim.c`. This is a
-different shape from "the format cannot store permission bits" — that is data
-never captured; this is **data captured correctly that the extractor cannot
-apply.**
+**Re-probed and reproduced exactly before the fix.** `io.mtime` read one;
+`io.set_mtime` did not exist — `tychoc` on a probe calling it said
+`error: package 'io' has no symbol 'set_mtime'`, and `utime`/`utimensat` did not
+appear anywhere in `corelib/io/`. The archive format was never the gap: every
+member header does carry a real `st_mtime` (`tools/tycho-ar/main.ty:36`), so this
+was **data captured correctly that the extractor had no call to apply.**
 
-The part worth the rank: **`diff -r` does not compare mtimes**, so the round-trip
-assertion this program is gated by is green over a gap a user meets on their first
-restore. The gate is not wrong, it is narrow, and nothing about running it says so.
-**Cost to fix:** one shim function plus one `core:io` signature; the gate would
-then need an mtime comparison to be worth anything.
+**Closed by the write side of the same stat field**: `corelib/io/io_shim.c@iox_set_mtime`
+plus `corelib/io/io.ty@set_mtime`, which returns `Result(bool, IoErr)` — the shape
+`write_bytes` and `make_dir` already use. `utimensat` with `UTIME_OMIT` on the
+access time, so restoring a modification time does not stamp an access time the
+caller never mentioned; Windows has no `utimensat`, so there the atime is read
+back and passed through. A directory is `Ok`, matching `io.mtime`'s read side.
+
+Fixture: `corelib/test/io/main.ty`, four assertions in `make corelib` — an exact
+epoch the run did not produce (`exact`), `Err(NotFound)` on a path that is not
+there (`set_missing`), that the failing call created nothing (`made_nothing`),
+and the directory round trip (`dir_back`). Three of the four flip when the shim
+is stubbed to a no-op, which is what makes them a test.
+
+**What is NOT closed:** `tycho-ar`'s `x` still does not call it, and `diff -r`
+still does not compare mtimes, so that program's round-trip gate remains green
+over its own hole. That is a `tools/tycho-ar` change, filed separately —
+the corelib could not express the fix before today and now can.
 
 ### Smaller than they looked once written down
 
