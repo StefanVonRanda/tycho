@@ -13,6 +13,13 @@ block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
 not history, so the two are merged here under the date this actually shipped.
 
+- **`core:io` gains `read_text(p) -> Result(string, IoErr)`.** `io.read` is
+  fail-open: it answers `""` for a missing file, an unreadable one and a
+  genuinely empty one alike — three different facts flattened into one value.
+  `read_text` keeps them apart, reporting the same `NotFound` / `IsDir` /
+  `Failed` causes `read_bytes` already did. `io.read` is unchanged and not
+  deprecated.
+
 - **Top-level `const`s cross package boundaries.** `pkg.NAME` reads an exported
   constant, **folded to its literal at the use site** exactly as an unqualified
   const is — no runtime global is emitted, so the reference costs nothing. A

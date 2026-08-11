@@ -94,6 +94,16 @@ fn mwhy(r: Result(int, io.IoErr)) -> string:
         Err(io.IsDir): return "IsDir"
         _: return "Failed"
 
+# The same collapse for read_text's Result(string, ...). A second copy because a
+# Result's OK type is part of its identity -- FRICTION.md's "two error types
+# cannot share an or_return chain" is the same shape seen from the error side.
+fn twhy(r: Result(string, io.IoErr)) -> string:
+    match r:
+        Ok(s): return "Ok"
+        Err(io.NotFound): return "NotFound"
+        Err(io.IsDir): return "IsDir"
+        _: return "Failed"
+
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
     out := ""
     for i := 0; i < len(xs); i += 1:
@@ -430,3 +440,13 @@ fn main():
     szmiss := io.size("/tmp/tycho_corelib_io_absent.xyz")
     szdir := io.size("/tmp")
     println(f"size_missing={mwhy(szmiss)} size_dir={mwhy(szdir)}")
+
+    # read_text: read()'s content WITH the error channel read() lacks. read()
+    # answers "" for a missing file, an unreadable one and a genuinely empty
+    # one -- three different facts flattened into one value. These three lines
+    # are the record that read_text keeps them apart.
+    println(f"text_ok={twhy(io.read_text(ef))} len={len(result.unwrap_or(io.read_text(ef), "x"))}")
+    println(f"text_missing={twhy(io.read_text("/tmp/tycho_corelib_io_absent.xyz"))}")
+    println(f"text_dir={twhy(io.read_text("/tmp"))}")
+    # and read() itself, fail-open, for the contrast the entry above is about
+    println(f"read_missing_len={len(io.read("/tmp/tycho_corelib_io_absent.xyz"))}")

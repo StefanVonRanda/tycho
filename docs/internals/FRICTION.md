@@ -1263,7 +1263,7 @@ needs a streaming deflate, which is a `core:compress` interface plus a shim chan
 and is the larger job. **This ranks first because it is not a missing function; it
 is a missing habit**, and it will reproduce in the next package anyone writes.
 
-### 2. The wrong `string` compiles silently, and there is no wrong-looking output
+### 2. ~~The wrong `string` compiles silently, and there is no wrong-looking output~~ — **the mechanism did not reproduce, 2026-08-10**
 
 **The predicted friction did not materialise, and the real one is worse.** This
 file's existing entry on the split says a `string` is fully byte-safe and that the
@@ -1282,12 +1282,31 @@ gives a digest over a NUL-truncated prefix: no diagnostic, no exception, and an
 output that looks exactly like a digest. In an archiver that is silent corruption
 of the field whose entire job is detecting corruption.
 
-**Cost to fix:** a real distinct type is a language change and is not proposed
-here. What is cheap and would have caught this one: give the hashing and encoding
-entry points a `bytes` arm (`sha256.hex_bytes`, `base64.encode_bytes`) so the
-byte-shaped call site never has to launder through `string` at all, and say in
-`docs/spec/18-library.md` that a `string` argument to a digest means *text*. That
-is a signature and a sentence, not a type system.
+**THE HAZARD ABOVE DOES NOT REPRODUCE — re-probed 2026-08-10, and this entry was
+wrong about its own mechanism.** A 5-byte file `AB\0CD` read three ways:
+
+| path | `len` | digest |
+|---|---|---|
+| `io.read` (text) | 5 | matches `sha256sum` |
+| `io.read_bytes` -> `to_str` | 5 | matches `sha256sum` |
+
+`io.read` does not truncate at an interior NUL, so "reaching for the wrong one
+gives a digest over a NUL-truncated prefix" is not a thing that happens. The
+entry contradicts itself: two paragraphs earlier it says a `string` is fully
+byte-safe and length-headered, which rules out exactly the truncation it then
+asserts.
+
+**The proposed fix is therefore withdrawn**, not built: `sha256.hex_bytes` and
+`base64.encode_bytes` would have added surface against a hazard that is not
+there.
+
+**What the probe DID find, which this entry missed.** The two readers are not
+"one keystroke apart, both plausible" — they have different SHAPES.
+`io.read(p) -> string` has no error channel at all, while
+`io.read_bytes(p) -> Result(bytes, IoErr)` does. You cannot silently swap them;
+the compiler stops you. What `io.read` actually hides is **I/O failure** — a
+missing or unreadable file — and that is a real asymmetry worth its own entry,
+about error reporting rather than about bytes.
 
 ### 3. `compress.decompress` cannot distinguish empty from corrupt
 

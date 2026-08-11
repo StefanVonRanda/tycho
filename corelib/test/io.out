@@ -34,3 +34,7 @@ read_at_missing=NotFound read_at_dir=IsDir
 size=Ok n=26 is26=1 agrees=1
 size_empty=Ok n=0 wrote=1 readlen=0
 size_missing=NotFound size_dir=IsDir
+text_ok=Ok len=0
+text_missing=NotFound
+text_dir=IsDir
+read_missing_len=0

@@ -328,7 +328,10 @@ element type instead of a family of per-type siblings.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins, and **the
   first corelib module to compose others** (imports `core:strings` for line splitting; it also
   imported `core:path` for the old `exists`, which the `stat`-backed one no longer needs).
-  `read(p)` (`""` if missing/unreadable), `write(p, s)` (truncate, returns false if unopenable),
+  `read(p)` — **fail-open**: `""` for a missing file, an unreadable one and a genuinely
+  empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` (same content, with
+  the error channel) or `read_bytes(p)` when the difference matters —
+  `write(p, s)` (truncate, returns false if unopenable),
   `append(p, s)` (read-rewrite, not atomic), `read_lines(p)` / `write_lines(p, lines)`
   (newline-terminated round-trip), `list(p)` (entry basenames), `exists(p)` (**one `stat(2)`**
   since 2026-07-26 — it used to list the parent directory, O(entries) and blind to a leaf under an
