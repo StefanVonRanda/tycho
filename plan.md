@@ -47,7 +47,7 @@ site is either implemented or written down as a refusal with its cost.
 
 ## Phases
 
-- [ ] **Phase 1 — `is_some` asks with `is`, like `is_ok` does**
+- [x] **Phase 1 — `is_some` asks with `is`, like `is_ok` does**
   - Scope: `corelib/result/result.ty` only. Rewrite `is_some` to the one-line
     `return o is Some`. **Leave `some_or` alone** — it returns the payload, so
     its `match` is load-bearing, not ceremony. Grep every `is_some` call site
@@ -62,6 +62,20 @@ site is either implemented or written down as a refusal with its cost.
   - Verify: `make corelib` (~49s), all green. **Not `make test`** — it globs
     `examples/*.ty tests/*.ty` at the top level and never descends into
     `corelib/`, so it cannot redden for this (`tests/run.sh:179`, `:208`).
+  - **Done 2026-08-11.** `corelib/result/result.ty@is_some` is now
+    `return o is Some`, one comment line above it pointing at `is_ok`'s reason.
+    `is_none` does not exist in the package, and `some_or` was left alone as the
+    brief required — it returns the payload, so its `match` is load-bearing.
+  - Call sites, grepped rather than assumed: exactly one,
+    `corelib/test/result/main.ty:208`, plus the golden line
+    `corelib/test/result.out:16` (`is_some   = 1 0`). Neither moved.
+  - Evidence: `make corelib` → `corelib: all green (46 ok, tychoc matches
+    goldens)`, no skip. `make corelib-examples` → `corelib examples: all green
+    (37 ok, tychoc matches goldens)`. `make check-links` → link check ok
+    (119 markdown files) and citation check ok.
+  - Negative control: with the body flipped to `return o is None`, `make corelib`
+    printed `FAIL result (output != golden)` / `corelib: FAIL`, so the golden can
+    genuinely redden for this function. Restored, green again.
 
 - [ ] **Phase 2 — size naming the instantiating call site, then decide**
   - Scope: read `src/tychoc.c`'s generic-instance resolve path — the one

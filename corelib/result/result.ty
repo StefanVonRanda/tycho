@@ -148,7 +148,6 @@ fn some_or(o: Option($T), fallback: $T) -> $T:
         Some(v): return v
         None: return fallback
 
+# `is` (§19.8), not a `match`, for the reason is_ok gives: it names no payload.
 fn is_some(o: Option($T)) -> bool:
-    match o:
-        Some(v): return true
-        None: return false
+    return o is Some
