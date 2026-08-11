@@ -1050,7 +1050,7 @@ or an explicit "open, refused because …".
     (11 runnable examples, unchanged — the new fence is not one), `make
     docs-fences` 50 compiled / 69 skipped / 0 failures.
 
-- [ ] **Phase N — no gate rejects a raw control byte in a tracked Markdown file**
+- [x] **Phase N — no gate rejects a raw control byte in a tracked Markdown file**
   - Found by the `core:json` phase above, not absorbed into it. Writing that
     phase's prose put a literal `0x00` into `docs/internals/FRICTION.md`, and
     again into `plan.md`, from text that meant to *name* the escape `\u0000`.
@@ -1066,6 +1066,51 @@ or an explicit "open, refused because …".
     deliberately NUL-bearing scratch file is observed reddening it.
   - Verify: the new gate, plus `sh scripts/check_links.sh`. **Not `make test`** —
     no `.ty` file is involved.
+
+  **Evidence (2026-08-11).** Wired into `scripts/check_links.sh` rather than
+  added as a lane, per the filing: it is the sub-second doc gate everyone
+  already runs, and it already walks `git ls-files '*.md'`.
+
+  Byte set, as filed: **00-08 0B 0C 0E-1F rejected; TAB, LF and CR legal** — the
+  three that carry meaning in Markdown, and rejecting them would redden the whole
+  tree. DEL (7F) is deliberately NOT rejected: it is not C0, it is not what bit
+  us, and the set stays the one the filing reasoned about. Detection is one
+  `LC_ALL=C tr -d '\11\12\15\40-\377'` per file — deleting every legal byte leaves
+  exactly the rejected set — and `od` runs only for a file that already failed,
+  so the green path never pays for it.
+
+  Scope is `*.md`, not all tracked text. Tracked binaries (the PNG fixtures) are
+  full of NULs by construction, so a whole-tree check would need a binary
+  exclusion list: more machinery than this failure is worth, and `*.md` is both
+  where it happened and the set the host gate already globs.
+
+  **Whole tree passes**, so nothing in it legitimately holds a rejected byte:
+
+      $ time sh scripts/check_links.sh
+      link check: ok (119 markdown files, no dead relative links; 126 free of raw control bytes)
+      sh scripts/check_links.sh  0.45s user 0.14s system 121% cpu 0.488 total
+
+  **Negative control.** A scratch `docs/_ctl_scratch.md` holding
+  `ok tab\there\r\nnow NUL:\x00 and VT:\x0b end`, `git add`ed so `git ls-files`
+  sees it:
+
+      CTRL  docs/_ctl_scratch.md  byte offset 21 (0x00)
+      CTRL  docs/_ctl_scratch.md  byte offset 30 (0x0B)
+      link check: FAILED (dead links or raw control bytes above)
+      exit=1
+
+  Both offsets are correct by hand-count, both bytes are named, and the TAB, CR
+  and LF in the same line were NOT flagged — so the check discriminates rather
+  than rejecting whitespace. Removed and unstaged; re-run returns `exit=0` and
+  the ok line above. The scratch file is not committed.
+
+  **A wrong claim, caught by testing it.** The first draft carried a comment
+  saying `[ ... ] && continue` would abort the loop's subshell under `set -e`
+  and leave the rest of the corpus unchecked. That is false — POSIX exempts a
+  command that is not the final operand of an `&&` list — and
+  `sh -c 'set -eu; printf "a\nb\n" | while read -r x; do [ "$x" = zzz ] && continue; echo "saw $x"; done'`
+  printed both lines and exited 0. The `if` form was kept; the false comment was
+  deleted rather than shipped.
 
 - [x] **FRICTION #5 — an enum could not be asked which variant it holds; added `is`**
   - Authorised directly by the repo owner ("just add `is`"), so this phase was
