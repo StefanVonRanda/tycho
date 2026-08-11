@@ -2038,7 +2038,7 @@ discriminator, and the only way to get one is to build it.** The alternative is
 that decoration at every site, which is where a reader stops being able to see
 which arms actually use their payloads.
 
-### 6. ~~Two error types cannot share an `or_return` chain~~ — **WRONG MECHANISM, corrected 2026-08-11**
+### 6. ~~Two error types cannot share an `or_return` chain~~ — **WRONG MECHANISM, corrected 2026-08-11; CLOSED by `result.map_err_with` the same day**
 
 > **Triage 2026-08-11.** The load-bearing sentence below — "**no function can
 > propagate across the boundary**" — is false, and was false when it was
@@ -2085,6 +2085,15 @@ which arms actually use their payloads.
 > "at every boundary, with no language feature to make it cheaper" — costs one
 > wrapped call per boundary today, and the collapse-into-one-type pressure it
 > predicts does not follow.
+>
+> **CLOSED 2026-08-11 — the function is `result.map_err_with`**, exactly the four
+> lines probed above, sitting beside `map_err` in `corelib/result/result.ty` with
+> the same name shape, the same argument order and the same doc voice. Its
+> regression is `with_pay` in `corelib/test/result/main.ty`, which asserts the
+> **payload**, not the variant: `Err(Sized(9, "nine"))` must arrive as
+> `Err(FromSized(9))` and print `cause 9`. Swapping that one call to plain
+> `map_err(pick(k), Plain)` flips it to `plain` and nothing else — measured — so
+> the assertion is one a constant replacement provably cannot satisfy.
 
 The original text follows.
 

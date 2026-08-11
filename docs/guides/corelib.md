@@ -290,7 +290,7 @@ element type instead of a family of per-type siblings.
   RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).
 - **`result`** — the `Result` / `Option` collapses, generic over `$T` and `$E`:
   `unwrap_or(r, fallback)`, `is_ok(r)`, `is_err(r)`, `err_or(r, fallback)`,
-  `map_err(r, replacement)`, and
+  `map_err(r, replacement)`, `map_err_with(r, f)`, and
   `some_or(o, fallback)` / `is_some(o)` for the `Option` half. `or_return` unwraps a
   `Result` only inside a function that itself returns a compatible `Result`
   (`docs/spec/10-statements.md:75`), so a `main()`, or a handler that returns a
@@ -303,13 +303,16 @@ element type instead of a family of per-type siblings.
   other. `map_err` re-labels the error so `or_return` carries it —
   `req := result.map_err(httpd.read_request(fd), net.Failed) or_return` — at the cost of
   the original cause, so reach for it where the caller's own enum already has a variant
-  that means what happened. A caller who *is* writing one should use a nested pattern instead
+  that means what happened. **`map_err_with(r, f)` is its cause-preserving sibling** —
+  identical job and argument order, except `f` RECEIVES the `Err` payload and builds the
+  replacement from it, so a `Syntax(7)` arrives as `FromParse(7)` rather than as a
+  constant. Use it where the cause carries something the caller still needs (a byte
+  offset, a column name) and `map_err` where it does not, which is the common case.
+  A caller who *is* writing one should use a nested pattern instead
   (`Err(io.IsDir):`, legal since 2026-07-26,
   [§14.3.1](../spec/10-statements.md#1431-nested-patterns)); the corelib's error enums
-  stay payload-free so both spellings keep working. Nothing in `corelib/` may use a
-  nested pattern itself: those packages are also compiled by the frozen
-  `compiler/tychoc0.ty`. Pure computation: no shim, no allocation, nothing
-  aborts.
+  stay payload-free so both spellings keep working. Pure computation: no shim, no
+  allocation, nothing aborts.
 - **`testing`** — a unit-test framework, state threaded like `core:rand`'s:
   `t := testing.new("name")`, then `check(&t, cond, msg)` and generic
   `eq(&t, got, want, msg)` (comparable scalars — int/float/string/char; for a

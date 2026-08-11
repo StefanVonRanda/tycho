@@ -463,7 +463,7 @@ or an explicit "open, refused because …".
     fixtures — or the entry is closed as accepted-cost with the spelling above.
   - Verify: `make test`.
 
-- [ ] **Phase 8 — tycho-q #6 add a cause-preserving `map_err_with` to `core:result`**
+- [x] **Phase 8 — tycho-q #6 add a cause-preserving `map_err_with` to `core:result`**
   - **Re-scoped by the phase 6c triage: this is NOT a language change.** The
     original framing ("no function can propagate across the boundary") was
     disproven by probe. What is left is one gap in `core:result`: `map_err`
@@ -479,6 +479,54 @@ or an explicit "open, refused because …".
     "won't do, with reasons" is a legitimate outcome here.
   - Done when: added with a corelib test, or refused in the entry with reasons.
   - Verify: `make corelib` (~49s). Not `make test`.
+  - **Done 2026-08-11 — ADDED, not refused.** `corelib/result/result.ty@map_err_with`,
+    placed directly after `map_err`, same argument order (`r` first, the mapper
+    second), same doc voice, four code lines. The judgment call the entry asked for:
+    `map_err`'s "WHY A VALUE AND NOT A FUNCTION" argument survives intact and is
+    NOT overturned — it argues that the caller with one target variant in mind
+    should not pay for a named helper, and that stays true and stays the default.
+    What it never covered is an error carrying a payload worth keeping, which is a
+    different caller, so the two coexist and each header points at the other.
+  - **The brief's premise re-verified at the source.** `corelib/result/result.ty:120`
+    is `fn map_err(...)` as claimed, and the FRICTION #6 triage's correction is
+    right: `map_err` already bridges two error enums into one `or_return` chain.
+    The gap really is only the cause.
+  - Evidence:
+    ```
+    $ make corelib
+    ok   result
+    corelib: 45 ok, 1 SKIPPED -- image(missing: libpng)
+    $ make corelib-examples
+    corelib examples: 36 ok, 1 SKIPPED -- image(missing: libpng)
+    $ make check-links
+    link check: ok (119 markdown files, no dead relative links)
+    citation check: ok            # counts elided -- they move every commit
+    ```
+    The `image` SKIP is a missing libpng on this host, present before this phase
+    and unrelated to `core:result`. Golden `corelib/test/result.out` is **+5 / −0**,
+    a pure append.
+  - **Negative control, two of them.** (1) Corelib-side, `Err(e): return Err(e)` —
+    the compiler refuses before any golden is consulted: `corelib/test/result/main.ty:136:
+    error: declared type Result(int, Wrapped) but value is Err(Local)`. A
+    payload-DROPPING body is not even expressible inside the generic: there is no
+    way to build an `$F` without calling `f`. (2) So the payload control was run at
+    the call site, which is the question that matters — `cause_of` switched to plain
+    `result.map_err(pick(k), Plain)`. It compiles, runs, and flips exactly one line:
+    ```
+    30c30
+    < with_pay  = cause 9
+    ---
+    > with_pay  = plain
+    ```
+    `with_ok`, `with_flat`, `with_chain` and `with_early` did **not** move — which is
+    the proof the brief asked for: a fixture asserting only the error VARIANT would
+    have stayed green under plain `map_err`, and only the payload assertion catches it.
+  - **A sixth stale bullet in `docs/guides/corelib.md`, found and removed.** Its
+    `result` bullet still claimed "Nothing in `corelib/` may use a nested pattern
+    itself: those packages are also compiled by the frozen `compiler/tychoc0.ty`."
+    Both halves are dead — the tychoc0 lanes were retired 2026-07-29 and
+    `corelib/result/result.ty:29-34` records the retirement in the very package the
+    bullet describes. Deleted, and `map_err_with` documented in the same bullet.
 
 - [x] **Phase 9 — tycho-q #7 `core:iter` has no fallible stage and spells predicates as `int`**
   - **Confirmed by the phase 6c triage; sizing verified, not argued.** A

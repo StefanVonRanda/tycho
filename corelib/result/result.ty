@@ -122,6 +122,19 @@ fn map_err(r: Result($T, $E), replacement: $F) -> Result($T, $F):
         Ok(v): return Ok(v)
         Err(e): return Err(replacement)
 
+# map_err's sibling, for when the cause is worth keeping. Same job and the same
+# argument order, except `f` RECEIVES the Err payload and builds the replacement
+# from it, so `Syntax(7)` arrives as `FromParse(7)` rather than as a constant.
+# Reach for it when the cause carries something the caller still needs -- a byte
+# offset, a column name; reach for map_err when it does not, which is the common
+# case and the whole reason that one takes a plain value (see its header above).
+#
+#   n := result.map_err_with(parse(s), from_parse) or_return
+fn map_err_with(r: Result($T, $E), f: fn($E) -> $F) -> Result($T, $F):
+    match r:
+        Ok(v): return Ok(v)
+        Err(e): return Err(f(e))
+
 # ---- Option ----------------------------------------------------------------
 # The same collapse for the Option half. io.read_line is the corelib's one
 # Option-returning function; a caller that treats EOF as an empty line wants

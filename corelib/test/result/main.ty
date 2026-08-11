@@ -84,6 +84,31 @@ fn two_types(ok: bool) -> Result(int, io.IoErr):
     n := result.map_err(mk(ok), io.Failed) or_return
     return Ok(n * 3)
 
+# ---- map_err_with: the same bridge, but the CAUSE survives -------------------
+# map_err's replacement is a constant, so `Sized(9, "nine")` and `Worse` arrive
+# indistinguishable. map_err_with runs `to_wrapped` on the payload instead, so the
+# 9 is still there on the other side. That is what `with_pay` below asserts, and
+# it is the assertion plain map_err CANNOT satisfy.
+enum Wrapped:
+    Plain
+    FromSized(int)
+
+fn to_wrapped(e: Local) -> Wrapped:
+    match e:
+        Sized(n, s): return FromSized(n)
+        Nope: return Plain
+        Worse: return Plain
+
+fn cause_of(k: int) -> string:
+    match result.map_err_with(pick(k), to_wrapped):
+        Ok(v): return "ok " + str(v)
+        Err(FromSized(n)): return "cause " + str(n)
+        Err(Plain): return "plain"
+
+fn chain(k: int) -> Result(int, Wrapped):
+    n := result.map_err_with(pick(k), to_wrapped) or_return
+    return Ok(n * 3)
+
 # ---- nested patterns (the friction plan / FRICTION.md:139) -------------------
 #
 # Before 2026-07-26 none of the three arms below could be written:
@@ -193,3 +218,10 @@ fn main():
     println("map_err   = " + str(result.unwrap_or(two_types(false), -1)))        # -1: it returned early
     println("map_why   = " + str(b(result.err_or(two_types(false), io.NotFound) == io.Failed)))
     println("map_thru  = " + result.unwrap_or(result.map_err(mkstr(true), io.Failed), "no"))
+
+    # ---- map_err_with: the payload crosses the boundary, not just the variant ----
+    println("with_ok   = " + cause_of(0))                             # 42, untouched
+    println("with_pay  = " + cause_of(3))                             # cause 9 -- the 9 SURVIVED
+    println("with_flat = " + cause_of(1))                             # a nullary cause maps to Plain
+    println("with_chain= " + str(result.unwrap_or(chain(0), -1)))     # 126: 42 * 3
+    println("with_early= " + str(result.unwrap_or(chain(3), -1)))     # -1: or_return ended it
