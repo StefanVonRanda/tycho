@@ -441,6 +441,104 @@ site is either implemented or written down as a refusal with its cost.
   payload; what is missing is the sentence saying so. Doc-only, so the two doc
   gates and nothing else.
 
+- [x] **Phase 10 — a user's enum variant name leaked into a corelib package and
+      broke it** *(discovered by Phase 7)*
+
+  A user declaring `enum Mine: Syntax(string)` in `main` and importing
+  `core:strings` got an error pointing *inside corelib*, at a line they cannot
+  edit. `corelib` declares `Syntax`, `Garbage`, `EmptyInput`, `OutOfBounds`,
+  `Empty`, `Overflow` and similar — all names a user would plausibly pick.
+
+  **Repro, before the fix.** `main.ty` alone in its own directory:
+
+  ```
+  package main
+  import "core:strings"
+  enum Mine:
+      Syntax(string)
+  fn main():
+      println(str(strings.parse_int("42")))
+  ```
+  ```
+  corelib/strings/strings.ty:227: error: Syntax carries a payload — write Syntax(...)
+     227 |             return Err(Syntax)
+  ```
+
+  **Control**, the same program with the variant renamed `Other(string)`: builds,
+  prints `42`. The trigger was purely the name collision.
+
+  **Mechanism** — not the `raw` fallback the brief hypothesised. It was the
+  lookup *order* in the `E_IDENT` arm of `resolve_expr`, which tried the bare
+  name first and the package-prefixed name only as a fallback. `variant_find`
+  (`src/tychoc@variant_find`) matches the mangled name only, and `main` mangles
+  with an empty prefix — so `main`'s `Syntax` is stored unmangled and won the
+  bare lookup for *every* package's unqualified `Syntax`, including corelib's own.
+  The fix swaps the two, matching what the `E_CALL` arm already did:
+
+  ```
+  int evi, eid = -1;   /* a payload-less enum variant -- OWN package first, as the E_CALL arm below does */
+  if (e->pkg && e->pkg[0]) eid = variant_find(sfmt("%s%s", e->pkg, e->sval), &evi);
+  if (eid < 0) eid = variant_find(e->sval, &evi);   /* main's own, or a builtin ctor (never mangled) */
+  ```
+
+  Line-neutral (3 lines for 3), so no citation re-anchoring was needed;
+  `make check-links` confirms.
+
+  **Caller audit** — every site that resolves a variant by name:
+
+  | site | verdict |
+  |---|---|
+  | `E_IDENT` bare variant, `resolve_expr` | **the bug; fixed** |
+  | `E_CALL` package resolution (`src/tychoc@pkg_done`) | clear — already prefixed-first; the fix copies it |
+  | `E_CALL` constructor lookup | clear — runs *after* the rewrite above, so `e->sval` is already mangled |
+  | `pkg.NAME` field access | clear — looks up the prefixed name only, never bare |
+  | `enum_variant_index` (`src/tychoc@enum_variant_index`) | clear — the `raw` fallback is scoped to an already-known enum type, so it cannot cross a package boundary. Hypothesis disproved |
+  | `is` RHS, parsed at `pkg_mangle` with the four builtin-ctor exemptions | clear — resolved against the LHS's enum type |
+  | match-arm patterns (`arm->variant`, `arm->pcname`, `arm->pch`) | clear — `pkg_mangle`d at parse |
+  | declaration-time duplicate checks | clear — mangled |
+
+  **Fixture** — `tests/pkg/variant_shadow/`: `main` declares payload-carrying
+  `EmptyInput`/`Garbage`/`OutOfBounds`, two sibling packages `lib` and `lib2`
+  each declare all three payload-less and refer to them bare, and main exercises
+  qualified `is`, bare qualified variant values, a match on its own enum, and a
+  bare own-variant value. It reddens without the fix:
+
+  ```
+  tests/pkg/variant_shadow/lib/fault.ty:11: error: EmptyInput carries a payload — write EmptyInput(...)
+  ```
+
+  verified by stashing `src/tychoc.c`, rebuilding, and re-running.
+
+  **Why the fixture uses two local packages rather than `core:strings`:** it
+  cannot import corelib. See the new Phase 11.
+
+  **Gates.** `make check-links` ok. `sh scripts/entrypoints.sh` ok (75).
+  `make goldens-check` ok (it correctly reddened first on the untracked golden;
+  fixed by `git add`, not a re-record). `make corelib` all green (46 ok).
+  `make vm-check` green. `make test` 645 passed, 0 failed — 644 at the previous
+  phase, +1 for the new fixture.
+
+- [ ] **Phase 11 — a `tests/pkg/` fixture cannot import a shim-backed corelib
+      package** *(discovered by Phase 10)*
+
+  `tests/run.sh` compiles a package fixture with `--emit-c` and then its own
+  `cc` line, and has no shim handling at all (`grep -n shim tests/run.sh` is
+  empty). `tychoc` linking directly appends `corelib/<pkg>/<pkg>_shim.c`, so the
+  same program builds by hand and fails in the lane:
+
+  ```
+  undefined reference to `strx_parse_double'
+  ```
+
+  It bites on the *import*, not the call — the whole package is emitted, so
+  `import "core:strings"` alone is enough even if `parse_float` is never called.
+  No existing fixture hits this (`grep -rln 'import "core:' tests/pkg/` named
+  only the Phase 10 fixture before it was restructured), which is why it has
+  stayed hidden. Phase 10 worked around it with two local packages; the fix is
+  to teach `run_one` to append the shims for the corelib packages a fixture
+  imports. Not absorbed into Phase 10: it is a change to the test harness, and
+  it widens what every future `tests/pkg/` fixture may do.
+
 ## Out of scope
 
 `plan_windows.md` is a separate track and is not touched by this plan.

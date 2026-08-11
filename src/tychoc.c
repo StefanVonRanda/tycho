@@ -5653,9 +5653,9 @@ static Type resolve_expr_inner(Expr *e) {
                 e->kind = clit->kind; e->ival = clit->ival; e->fval = clit->fval; e->sval = clit->sval;
                 return e->type = lit_type(clit);
             }
-            int evi, eid = variant_find(e->sval, &evi);   /* a payload-less enum variant? */
-            if (eid < 0 && e->pkg && e->pkg[0])           /* try this package's prefixed variant */
-                eid = variant_find(sfmt("%s%s", e->pkg, e->sval), &evi);
+            int evi, eid = -1;   /* a payload-less enum variant -- OWN package first, as the E_CALL arm below does */
+            if (e->pkg && e->pkg[0]) eid = variant_find(sfmt("%s%s", e->pkg, e->sval), &evi);
+            if (eid < 0) eid = variant_find(e->sval, &evi);   /* main's own, or a builtin ctor (never mangled) */
             if (eid >= 0) {
                 if (g_enums[eid].variants[evi].npayload != 0)
                     die_at(e->line, "%s carries a payload — write %s(...)", e->sval, e->sval);

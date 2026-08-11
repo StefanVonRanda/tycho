@@ -1,0 +1,29 @@
+package main
+
+import "lib"
+import "lib2"
+
+# main declares variants that lib and lib2 also declare, and gives them payloads.
+# Variant names are package-scoped, so each package keeps seeing its own: main's
+# payload-carrying EmptyInput must never reach a sibling package's payload-less one
+# and fail at a line inside that package. The same shadowing over `core:strings`
+# broke parse_int inside corelib; this lane cannot import corelib (no shim linking),
+# so two local packages stand in for it -- the resolution path is identical.
+enum Mine:
+    EmptyInput(string)
+    Garbage(int)
+    OutOfBounds
+
+fn main():
+    println(lib.name(lib.classify(0)) + " " + lib.name(lib.classify(1)) + " " + lib.name(lib.classify(2)))
+    println(lib2.name(lib2.classify(0)) + " " + lib2.name(lib2.classify(1)) + " " + lib2.name(lib2.classify(2)))
+    println(str(lib.classify(0) is lib.EmptyInput))      # qualified cross-package `is`
+    println(str(lib2.classify(2) is lib2.OutOfBounds))
+    println(lib.name(lib.EmptyInput) + " " + lib2.name(lib2.Garbage))   # bare qualified variant values
+    m := EmptyInput("mine")
+    match m:
+        EmptyInput(s): println(s)
+        Garbage(n):    println(str(n))
+        OutOfBounds:   println("main-oob")
+    k := OutOfBounds                                     # bare main variant still resolves
+    println(str(k is OutOfBounds))

@@ -1,0 +1,7 @@
+lib-empty lib-garbage lib-oob
+lib2-empty lib2-garbage lib2-oob
+true
+true
+lib-empty lib2-garbage
+mine
+true

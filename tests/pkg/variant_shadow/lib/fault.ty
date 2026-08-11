@@ -1,0 +1,20 @@
+package lib
+
+# Every variant here is also declared by core:strings AND by main.
+enum Fault:
+    EmptyInput
+    Garbage
+    OutOfBounds
+
+fn classify(n: int) -> Fault:
+    if n == 0:
+        return EmptyInput        # bare in-package variant: must resolve to lib's, not main's
+    if n == 1:
+        return Garbage
+    return OutOfBounds
+
+fn name(f: Fault) -> string:
+    match f:
+        EmptyInput:  return "lib-empty"
+        Garbage:     return "lib-garbage"
+        OutOfBounds: return "lib-oob"
