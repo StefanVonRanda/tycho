@@ -171,6 +171,50 @@ both compilers):
   target and MUST NOT be relied on. A program that needs a particular order MUST
   introduce explicit intermediate bindings.
 
+What that last rule looks like when it bites — a side effect in an operand of
+`+`, and the same side effect in a call argument:
+
+```tycho
+fn side(s: string) -> string:
+    println("call " + s)
+    return s
+
+fn join2(x: string, y: string) -> string:
+    return x + y
+
+fn main():
+    println(side("A") + side("B"))
+    println(join2(side("A"), side("B")))
+```
+
+Both lines print `AB`, and each is free to print `call B` before `call A` or
+after it. On the reference compiler as it stands (gcc, measured 2026-08-11) both
+run **B first**; a different backend, optimisation level or release may run `A`
+first, and every combination is conforming. No `output` fence is paired with the
+example above, deliberately: recording either order would assert what this
+section refuses to guarantee, and a golden over it would be the same mistake a
+program makes when it relies on the order. The value is stable only because
+neither operand's result depends on the other's side effect. A program that
+needs `A` to run first says so, and then the order is a property of the
+statements rather than of the backend:
+
+```tycho
+    x := side("A")
+    y := side("B")
+    println(x + y)
+```
+
+The two pinned exceptions above do not extend to this case. Both were pinned on
+the same two grounds, and an operand list meets neither. A place's index legs
+and an f-string's holes are sequences **no short-circuit can cut across**, so
+sequencing them costs one temporary each and cannot skip an evaluation the
+program expected to skip — whereas an argument may sit inside `f(x, cond and
+g())`, where lifting it would evaluate what the short-circuit exists to avoid.
+And each had an order that was already **visibly** contradicted: the place index
+diverged between the two compilers, and an f-string prints its holes left to
+right while firing them right to left, so its own output disagreed with its
+execution. A bare `+` chain shows the reader no order to contradict.
+
 > **Design decision.** Leaving *argument and operand* order unspecified is
 > deliberate and matches **Swift** and **Odin**. (Go pins left-to-right for
 > function arguments; Tycho emits C and defers order to the C compiler.) Pinning

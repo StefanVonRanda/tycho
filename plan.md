@@ -1001,7 +1001,7 @@ or an explicit "open, refused because …".
     `--apply` rewrote 116 files with 0 needing a human, and `check_citations.py`
     and `check_links.sh` are green after it.
 
-- [ ] **The same right-to-left hazard is still live for plain `+` and call arguments**
+- [x] **The same right-to-left hazard is still live for plain `+` and call arguments**
   - Found by the f-string phase above, not absorbed into it — that phase was
     scoped to f-strings, and this is a different (and spec-sanctioned) case.
   - `a() + b()` on strings, and `f(g(), h())`, still fire right-to-left under gcc.
@@ -1019,6 +1019,36 @@ or an explicit "open, refused because …".
     multi-call string `+` is worth it — a separate question, do not assume yes.
   - Verify: `sh scripts/spec_check.sh` and `make check-links`. **Not `make test`** —
     a spec-prose change cannot redden it.
+  - **Evidence (2026-08-11).** The hazard is still live, probed rather than
+    assumed. The fence now in the spec, run verbatim:
+
+        call B
+        call A
+        AB
+        call B
+        call A
+        AB
+
+    First pair is `side("A") + side("B")`, second is `join2(side("A"),
+    side("B"))` — both fire **B first** and both still print `AB`. The same
+    program's f-string form fires `A` then `B`, which is the pin `680d30d` put
+    in, so the two cases visibly differ today.
+  - **No `output` fence is paired with the example**, so `spec_examples.sh` does
+    not run it and no golden records the order — pinning it is exactly what
+    §13.4 forbids relying on. `docs_fences.sh` still parses and typechecks it
+    (`ok docs/spec/09-expressions.md:177`); the three-line explicit-binding
+    snippet below it is a FRAGMENT and skipped, as intended.
+  - The prose states which two exceptions ARE pinned and why the reasons do not
+    reach an operand list: no short-circuit can cut across a place index or an
+    f-string hole, and both had an order that was already visibly contradicted
+    (a compiler divergence; holes printed left to right but fired right to
+    left). An argument may sit inside `f(x, cond and g())`, where lifting it
+    would evaluate what the short-circuit exists to avoid.
+  - Not done, and deliberately left open: the optional lint for a multi-call
+    string `+`. Nothing here decides it either way.
+  - Gates: `make check-links` ok (119 files), `sh scripts/spec_check.sh` exit 0
+    (11 runnable examples, unchanged — the new fence is not one), `make
+    docs-fences` 50 compiled / 69 skipped / 0 failures.
 
 - [ ] **Phase N — no gate rejects a raw control byte in a tracked Markdown file**
   - Found by the `core:json` phase above, not absorbed into it. Writing that
