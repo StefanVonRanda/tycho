@@ -563,11 +563,11 @@
 #
 #     tycho-q: parse error at byte 21: unexpected token "form" (expected `from`)
 #
-# `die` is the only route to stderr in this language -- the builtins are
-# `print`, `println`, `die` and `exit(n)`, with no `eprintln`
-# (the tycho-ar plan, carried forward) -- so an error
-# is necessarily fatal. That happens to be right
-# here: a query that does not parse has no partial result worth printing.
+# A parse error is fatal by decision, not by limitation: `eprint` writes to
+# stderr without terminating (`src/tychoc.c:5084@eprint`, shipped 2026-06-14),
+# so a non-fatal diagnostic was available and is deliberately unused. A query
+# that does not parse has no partial result worth printing, and stdout IS the
+# result -- a caller parsing rows should never have to decide whether a line is one.
 #
 # ===========================================================================
 # THE `--explain` OUTPUT

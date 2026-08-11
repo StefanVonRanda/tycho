@@ -1484,7 +1484,7 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     `CONTRIBUTING.md` (tracked) gained one clause saying the examples lane skips
     and reports the same way. Changed together, per the standing rule.
 
-- [ ] **`tools/tycho-q/main.ty` carries the same false stderr claim, and names
+- [x] **`tools/tycho-q/main.ty` carries the same false stderr claim, and names
       tycho-ar as its source** (*found by the tycho-ar stderr phase, 2026-08-11*)
   - `tools/tycho-q/main.ty:566-570`: "`die` is the only route to stderr in this
     language -- the builtins are `print`, `println`, `die` and `exit(n)`, with no
@@ -1500,6 +1500,32 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     stderr' --include='*.ty' .`) is empty.
   - Verify: `python3 scripts/check_citations.py` and `make check-links`. Add
     `make q-check` **only if a line of code moves**, which it should not.
+  - **Evidence (2026-08-11).** The brief's range was right for once: the claim
+    is exactly `tools/tycho-q/main.ty:566-570`, five comment lines, replaced by
+    five. The builtin is real:
+
+    > Provenance: `src/tychoc.c:5084@eprint`
+
+        g_sigs[g_nsigs++] = (Sig){ .name="eprint", .ret=T_VOID, .params={ T_STRING }, .nparams=1, .builtin=1 };
+
+    `grep -rln eprint --include='*.ty' .` → 13 files. The rewritten comment
+    states the real reason a parse error is fatal — a query that does not parse
+    has no partial result, and stdout IS the result — and says the non-fatal
+    channel exists and is deliberately unused, so the decision no longer reads
+    as forced.
+  - **The propagation stops here, in `.ty`.** `grep -rn 'no eprintln\|only
+    route to stderr' --include='*.ty' .` is now empty, and
+    `grep -rn eprintln --include='*.ty' tools/ server/ examples/ corelib/` is
+    empty too — no third copy exists. No line of code moved.
+  - **One site left standing, deliberately:** `plan.md:851-854`, the mtime
+    phase's evidence, still argues `x` must die because "there is no
+    `eprintln`". That is a completed phase's record rather than a live comment,
+    and the open entry below ("Should `x` warn rather than die…") already
+    carries the re-judgement, so the record is left as written rather than
+    retconned. Nothing outside `plan.md` repeats it.
+  - Gates: `make check-links` ok (119 markdown files, 142 anchored / 910 bare
+    citations), `make q-check` green — 35-query transcript == golden, both
+    renderers agree under `cmp`, all refusals still refuse with empty stdout.
 
 - [ ] **Should `x` warn rather than die on a failed `set_mtime`?** (*found by the
       tycho-ar stderr phase, 2026-08-11*)
