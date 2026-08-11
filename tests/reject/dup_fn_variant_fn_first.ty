@@ -1,0 +1,13 @@
+# The same collision as dup_fn_variant.ty with the declarations swapped. Order
+# must not matter: the check runs in resolve_program, after every variant is
+# registered, and names the `fn` either way because the fn is the losing side.
+# expect: 'Alpha' is already defined
+fn Alpha() -> int:
+    return 7
+
+enum A:
+    Alpha
+    Beta
+
+fn main():
+    println(str(Alpha()))

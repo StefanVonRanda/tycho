@@ -834,7 +834,7 @@ or an explicit "open, refused because …".
     exit 0 (11 runnable examples, all pass). No compiler behaviour changed, so
     `make test` cannot redden for this and was not run.
 
-- [ ] **Phase 13 — a function name and an enum variant name may silently collide,
+- [x] **Phase 13 — a function name and an enum variant name may silently collide,
       and the variant wins** (*found by phase 10*)
   - `parse_const` rejects a const that collides with a variant
     (`src/tychoc.c:4899-4901` tests `variant_find`), but **no equivalent check
@@ -860,6 +860,86 @@ or an explicit "open, refused because …".
     which was Markdown-only.
   - Verify: a `tests/reject/` fixture with `# expect:` if it becomes an error;
     `make test` if `src/tychoc.c` changes.
+  - **Done 2026-08-11 — it is now an error, at the `fn`, in both orders.** The
+    brief's citation held: `src/tychoc.c:4899-4901` is the const guard and its
+    wording is `'%s' is already defined`, reused verbatim here rather than
+    inventing a second phrasing.
+  - Reproduced first, on today's `./tychoc`, both orders, with the call written
+    `println(str(Alpha()))` so the failure is visible rather than a type error:
+
+        === a (enum first) ===  built, runs, prints `Alpha`
+        === b (fn first)  ===  built, runs, prints `Alpha`
+
+    Both printed the VARIANT's stringification, not `7`. So the report is
+    confirmed and it is not order-dependent: the `-> int` function was
+    unreachable by its own name either way, with no diagnostic.
+  - **Placement: at the `fn`, in `resolve_program`, not at either declaration.**
+    Justified from how the const guard works, not by preference. `parse_const`
+    can test `variant_find` at parse time because variants are registered as
+    they are parsed; a `fn` cannot, because a variant declared *later* in the
+    file is not yet registered — which is exactly order `b`. `parse_fn` also has
+    no unmangled-name slot to defer. The comment already above `parse_const`
+    (`src/tychoc.c:4887-4889`) states the same division for the fn-vs-const case:
+    "Collision with a function name is caught in resolve_program (sigs aren't
+    registered yet at parse time)". So the check joins the two existing
+    `die_dup_proc` conditions there, and the message names the `fn` because the
+    `fn` is the side that loses.
+  - **Line-neutral, deliberately.** `97caa2d` measured one added line staling 90
+    citations. The fix extends two existing conditions in place: `git diff
+    --stat` = `3 insertions(+), 3 deletions(-)`, `wc -l src/tychoc.c` = 14002
+    before and after, so no citation moved and `reanchor_citations.py` was not
+    needed. `make check-links` confirms: 143 anchored, 979 bare in bounds.
+  - After:
+
+        tests/reject/dup_fn_variant.ty:10: error: 'Alpha' is already defined
+        tests/reject/dup_fn_variant_fn_first.ty:5: error: 'Alpha' is already defined
+
+  - **Negative control.** `git stash push src/tychoc.c`, `make tychoc`, then both
+    fixtures through the old binary:
+
+        === dup_fn_variant ===          wrote /tmp/rjnc/out.c
+        === dup_fn_variant_fn_first === wrote /tmp/rjnc/out.c
+
+    The old compiler ACCEPTS both, which is the runner's `tychoc ACCEPTED an
+    invalid program` verdict — the fixtures redden against the old behaviour, so
+    they are not vacuous. `git stash pop` + rebuild restored the errors above.
+  - **No file in the tree had such a collision.** `make test` went 627 → 629
+    (the two new fixtures) with 0 failures, so nothing previously-working was
+    broken and no existing collision was hiding. The only capitalised `fn` in the
+    whole corpus is `fn MAX()`.
+  - `docs/spec/12-aggregates.md` §19.1 gained the rule: it stated that variants
+    are package-scoped and that two enums may not share one, but said nothing
+    about a `fn` or `const` taking a variant's name. It now says the namespace is
+    shared, that both orders are rejected, and quotes the diagnostic.
+  - Gates: `make check-links` ok · `sh scripts/spec_check.sh` exit 0, 11 runnable
+    examples · `sh scripts/entrypoints.sh` ok (24) · `make vm-check` green ·
+    `make test` **629 passed, 0 failed**.
+
+- [ ] **Phase 14 — `fn Ok` / `fn Err` / `fn Some` / `fn None` are still silently
+      shadowed** (*found while doing phase 13*)
+  - The four builtin constructor names are **not** enum variants: they are
+    recognised by their raw token text in `parse_primary`
+    (`src/tychoc.c:2797-2807`), never registered in `g_enums`, so
+    `variant_find("Ok")` is -1 and phase 13's check cannot see them. They are
+    also absent from `shadows_builtin`'s list (`src/tychoc.c:4127-4137`), so not
+    even the §3.7 shadowing warning fires. Probed on the fixed compiler:
+
+        fn Ok(x: int) -> int:   ->  error: str(x) can't stringify a Ok(...)
+        fn None() -> int:       ->  error: calling a value that isn't a function (None)
+
+    Same failure mode as phase 13 — the function is unreachable by its own name
+    and the diagnostic is about something else — but a *different* mechanism,
+    hence a separate phase rather than a widened check.
+  - Note the tension to settle first: §3.7 makes shadowing a builtin legal (with
+    a warning). These four cannot be shadowed at all, so a warning would be a
+    lie; the question is whether the answer is an error or a spec sentence.
+  - Deliberately NOT folded into phase 13: the check needs the *unmangled* name,
+    which `Proc` does not keep (`pr->name` is `pkg_mangle`d at
+    `src/tychoc.c:4177`), so it belongs at the `parse_fn` site and costs added
+    lines — i.e. citation drift phase 13 avoided. Nothing in the corpus declares
+    any of the four, so this is latent, not breaking.
+  - Verify: `tests/reject/` fixtures with `# expect:`; `make test` if
+    `src/tychoc.c` changes; `sh scripts/spec_check.sh` if §3.7 or §19.1 moves.
 
 - [x] **Phase 11 — the one-paragraph slice warning in `docs/spec/03-types.md`**
   - Entry #5 asked for prose beside the `b[i:j]` row at

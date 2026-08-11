@@ -623,6 +623,13 @@ Variant names are **package-scoped**: a variant is written bare (`Circle`, not
 (enums in different packages may reuse a bare name, disambiguated by the package
 qualifier).
 
+A variant name also shares one namespace with the package's `fn`, `const`,
+`struct`, `enum`, `type` and `handle` names: a `fn` (or `const`) MUST NOT take
+the name of a variant in the same package, in either declaration order, and an
+implementation MUST reject the program (`error: 'Name' is already defined`).
+The rule exists because a bare variant wins at the use site, so such a function
+would be silently unreachable by its own name.
+
 ```tycho
 enum Shape:
     Circle(float)            # a variant with a payload

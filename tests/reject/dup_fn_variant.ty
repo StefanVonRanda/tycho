@@ -1,0 +1,14 @@
+# A `fn` may not take the name of an enum variant: the variant wins at every use
+# site, so the function would be unreachable by its own name. Before this was an
+# error the file compiled and `println(str(Alpha()))` printed the VARIANT.
+# Sibling dup_fn_variant_fn_first.ty pins the other declaration order.
+# expect: 'Alpha' is already defined
+enum A:
+    Alpha
+    Beta
+
+fn Alpha() -> int:
+    return 7
+
+fn main():
+    println(str(Alpha()))

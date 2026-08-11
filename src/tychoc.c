@@ -8668,14 +8668,14 @@ static void resolve_program(ProcVec *prog) {
         for (int j = 0; j < pr->nparams; j++)
             check_inout_param_type(pr->line, pr->params[j].type, pr->params[j].is_inout, pr->params[j].name);
         if (pr->generic) {   /* a `$T` template: not a callable Sig -- stash it; instances are made per call */
-            if (sig_find(pr->name) || generic_find(pr->name) || consts_find(pr->name))
+            if (sig_find(pr->name) || generic_find(pr->name) || consts_find(pr->name) || variant_find(pr->name, NULL) >= 0)
                 die_dup_proc(prog, i, pr->name);
             TBL_ENSURE(g_generics, g_ngenerics, g_generics_cap);
             g_generics[g_ngenerics++] = pr;
             continue;
         }
-        if (sig_find(pr->name) || consts_find(pr->name))
-            die_dup_proc(prog, i, pr->name);
+        if (sig_find(pr->name) || consts_find(pr->name) || variant_find(pr->name, NULL) >= 0)
+            die_dup_proc(prog, i, pr->name);   /* a variant wins at the use site, so the fn would be unreachable (parse_const guards the same collision at its own site) */
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         s.is_extern = pr->is_extern;
