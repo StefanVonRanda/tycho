@@ -2985,7 +2985,7 @@ validate commit hashes, so this had to be checked by hand.
   `corelib/os/os.ty:55-58` citation would still have resolved while naming
   something that is no longer there.
 
-- [ ] **Phase 19 — `tools/prunner` never learned the abort `.err` golden, so
+- [x] **Phase 19 — `tools/prunner` never learned the abort `.err` golden, so
       `make test-fast` is red and `make test` is green**
   - Found while running `make test-fast` as the only lane that runs prunner (a
     `core:os` importer). **Not caused by Phase 18** — see the proof below.
@@ -3013,6 +3013,66 @@ validate commit hashes, so this had to be checked by hand.
     compares, matching `tests/run.sh:356-366`.
   - Verify: `make test-fast` (expect 634/0, up from 633/1) against `make test`
     (634/0, the baseline this session was handed). Not `make ci`.
+  - **DONE 2026-08-11.** Two judges diverged, not one. Both fixed in
+    `tools/prunner/main.ty`; `tests/run.sh` and every fixture untouched.
+
+    Reproduced first. `make test-fast`: `FAIL  abort_main_result_err  (died
+    (exit 1) but without a 'tycho:' message)`, `passed: 633   failed: 1`.
+    `./build/prunner --mode=seq` on the same tree: the same single FAIL, the
+    same 633/1 — the judge, not the pool. By hand the fixture builds, exits 1,
+    and its stderr is `step 2 failed\n`, `cmp`-identical to
+    `tests/abort/main_result_err.err` and containing no `tycho:`.
+
+    The two judges, side by side. `tests/run.sh:353-372` runs the binary and
+    then, at `tests/run.sh:356`, tests `[ -f "tests/abort/<name>.err" ]` FIRST:
+    with a golden it is `cmp -s` (`tests/run.sh:362`) and the FAIL reads
+    `stderr differs from $g`; only without one does it fall through to
+    `tests/run.sh:367`'s `grep -q 'tycho:'`. `tools/prunner/main.ty@judge_abort`
+    went straight from "died non-zero" to that grep, with no `-f` test in
+    between, so the one fixture in the newer shape could only ever fail.
+
+    Per-family verdict, every judge in `tests/run.sh` against its counterpart:
+
+    | family | `tests/run.sh` | prunner | verdict |
+    |---|---|---|---|
+    | pos (`examples/*.ty`, `tests/*.ty`, `tests/pkg/`) | `run_one`, tests/run.sh:79-146 | `main.ty@judge_pos` | agrees |
+    | reject (flat) | tests/run.sh:293-320 | `main.ty@judge_reject` | **diverged** — no `# expect:` |
+    | rejectpkg | tests/run.sh:326-338 | `main.ty@judge_reject` | agrees |
+    | abort | tests/run.sh:345-373 | `main.ty@judge_abort` | **diverged** — no `.err` branch |
+    | diag | tests/run.sh:380-398 | `main.ty@judge_diag` | agrees |
+    | warn | tests/run.sh:413-436 | `main.ty@judge_warn` | agrees |
+
+    The second one is the `# expect:` mechanism `d7e39f9` added this session
+    (`tests/run.sh:306-317`): a flat reject fixture may pin WHY it is refused,
+    asserted as a literal substring. 12 fixtures carry one today
+    (`grep -l '^# expect:' tests/reject/*.ty`). prunner scored none of them —
+    a divergence in the FALSE-PASS direction, which is why no count moved and
+    nobody noticed. Now `main.ty@judge_expect`, run only for `kind == "reject"`
+    because the pkg loop has no such branch. Both fixes are golden-optional by
+    construction: `io.exists` on the `.err`, `test -s` on the extracted pattern,
+    so a fixture without either scores exactly as before.
+
+    Whole-corpus agreement, the property CLAUDE.md claims. Both graders run on
+    the fixed tree, `ok`/`FAIL` lines extracted in report order and `diff`ed
+    unsorted: 634 lines each, **zero differing lines**, both summarising
+    `passed: 634   failed: 0`.
+
+    Negative control, both mechanisms at once. With
+    `tests/abort/main_result_err.err` rewritten to `step 3 failed` and
+    `tests/reject/upper_local.ty`'s expect text replaced by
+    `ZZZ_NOT_IN_ANY_DIAGNOSTIC`, BOTH graders printed the same two FAIL lines
+    verbatim — `reject_upper_local  (diagnostic does not contain the expected
+    text: ZZZ_NOT_IN_ANY_DIAGNOSTIC)` and `abort_main_result_err  (stderr
+    differs from tests/abort/main_result_err.err)` — and both scored
+    `passed: 632   failed: 2`. `git checkout` of the two fixtures restored
+    `make test-fast` to 634/0. So prunner is reading the golden and the expect
+    line, not skipping either.
+
+    Gates: `make test-fast` 634/0 · `make test` 634/0, the handed baseline
+    undisturbed (`tests/run.sh` globs only `examples/*.ty tests/*.ty`, so
+    nothing under `tools/` is in its corpus) · `sh scripts/entrypoints.sh` ok,
+    75 entry points, which is what compiles the edited prunner ·
+    `make check-links` ok. `make ci` deliberately not run.
 
 - [ ] **Phase 20 — `corelib/run.sh`'s comment says `os.exec` is POSIX-only; it
       has not been true since the Windows path landed**
@@ -3027,6 +3087,23 @@ validate commit hashes, so this had to be checked by hand.
     round trip has no Windows half — which the same comment also says, correctly.
   - Cost: one comment. Gates: the two doc gates only — it is a shell comment, no
     behaviour. Explicitly NOT `make corelib`.
+
+- [ ] **Phase 21 — prunner's lane table is stale in both columns, found while
+      auditing the judges in Phase 19**
+  - `tools/prunner/main.ty:40-47` is the map of which `tests/run.sh` loop scores
+    which family. Every line range in it is wrong: it cites `tests/run.sh:113-118`
+    for the pos enumeration (that is now inside `run_one`'s Windows retry),
+    `:170-185` for reject (now 293-320), `:210-227` for abort (now 345-373),
+    `:234-252` for diag (now 380-398), `:267-290` for warn (now 413-436). Phase
+    19 corrected only the two the fix touched, in the judge bodies.
+  - The count column is stale too: it totals 560, and both graders report 634
+    today. Per CLAUDE.md's citation rules a figure a gate prints does not belong
+    in prose at all — name the command instead of copying the number.
+  - `scripts/check_citations.py` is green on all of it: the refs are bare ranges
+    inside the file's bounds, so nothing in the gate can notice that a range now
+    points at unrelated code. That is the whole reason this drifted.
+  - Cost: one comment block. Gates: the two doc gates only. Explicitly NOT
+    `make test` or `make test-fast` — no behaviour changes.
 
 ## Out of scope
 

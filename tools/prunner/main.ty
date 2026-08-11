@@ -223,12 +223,14 @@ fn build_jobs() -> [Job]:
         e := "tests/reject/pkg/" + rp[i] + "/main.ty"
         if io.exists(e):
             push(js, Job("rejectpkg", "rejectpkg_" + rp[i], e, "", ""))
-    # tests/run.sh:210-227 -- valid programs whose RUN must die cleanly.
+    # tests/run.sh:345-373 -- valid programs whose RUN must die cleanly. The
+    # `.err` golden is OPTIONAL (tests/run.sh:356); judge_abort tests for it.
     ab := ty_files("tests/abort")
     for i := 0; i < len(ab); i += 1:
         b := strings.strip_suffix(ab[i], ".ty")
-        push(js, Job("abort", "abort_" + b, "tests/abort/" + ab[i], "", ""))
-    # tests/run.sh:234-252 -- exact compiler stderr locked as <name>.err.
+        push(js, Job("abort", "abort_" + b, "tests/abort/" + ab[i],
+                     "tests/abort/" + b + ".err", ""))
+    # tests/run.sh:380-398 -- exact compiler stderr locked as <name>.err.
     dg := ty_files("tests/diag")
     for i := 0; i < len(dg); i += 1:
         b := strings.strip_suffix(dg[i], ".ty")
@@ -312,7 +314,25 @@ fn judge_reject(j: Job, d: string, what: string) -> Verdict:
         return Verdict(0, "tychoc rejected but with no diagnostic")
     return Verdict(1, "")
 
-# tests/run.sh:210-227. Builds, then must die nonzero naming itself.
+# tests/run.sh:306-317, the FLAT reject lane only -- the pkg loop has no such
+# branch. OPT-IN: a fixture may pin WHY it is refused with a `# expect: <text>`
+# line, asserted as a literal substring of the diagnostic; a fixture without one
+# scores exactly as before. `printf %s "$(...)"` reproduces run.sh's own
+# command substitution, trailing newline stripped, so an empty `# expect:` is an
+# empty FILE here just as it is an empty STRING there; and `grep -qFf` matches
+# the pattern from that file, which is `grep -qF -- "$exp"` with no shell
+# quoting between the fixture's text and the match.
+fn judge_expect(j: Job, d: string) -> Verdict:
+    e := d + "/exp"
+    _ := os.run("printf %s \"$(sed -n 's/^# expect: //p' " + j.entry +
+                " | head -1)\" >" + e)
+    if os.run("test -s " + e).code != 0:
+        return Verdict(1, "")
+    if os.run("grep -qFf " + e + " " + d + "/rj.log").code != 0:
+        return Verdict(0, "diagnostic does not contain the expected text: " + io.read(e))
+    return Verdict(1, "")
+
+# tests/run.sh:345-373. Builds, then must die nonzero naming itself.
 fn judge_abort(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/ab >" + d + "/ab.log 2>&1")
     if r.code == 0:
@@ -323,7 +343,15 @@ fn judge_abort(j: Job, d: string) -> Verdict:
     x := os.run(d + "/ab.bin </dev/null >/dev/null 2>" + d + "/ab.err")
     if x.code == 0:
         return Verdict(0, "runtime abort did not fire (exit 0)")
-    # tests/run.sh:221's `grep -q 'tycho:'`, over the file rather than a read of it.
+    # tests/run.sh:356-366 -- a fixture MAY lock its exact stderr instead of the
+    # `tycho:` grep: an `Err` out of `main` prints the PROGRAM's message and
+    # there is no runtime trap to name. No golden on disk means the older shape,
+    # scored by the grep below exactly as before.
+    if io.exists(j.golden):
+        if os.run("cmp -s " + d + "/ab.err " + j.golden).code != 0:
+            return Verdict(0, "stderr differs from " + j.golden)
+        return Verdict(1, "")
+    # tests/run.sh:367's `grep -q 'tycho:'`, over the file rather than a read of it.
     if os.run("grep -q 'tycho:' " + d + "/ab.err 2>/dev/null").code != 0:
         return Verdict(0, "died (exit " + str(x.code) + ") but without a 'tycho:' message")
     return Verdict(1, "")
@@ -371,7 +399,10 @@ fn judge(j: Job, tmp: string) -> Verdict:
         # the same FAIL reason as run.sh, so the two reports stay byte-identical.
         if os.run("grep -q '^package [A-Za-z_]' " + j.entry).code == 0:
             return Verdict(0, "declares a package header -- it would be compiled against every sibling in tests/reject/; move it to tests/reject/pkg/<name>/")
-        return judge_reject(j, d, "program")
+        v := judge_reject(j, d, "program")
+        if v.ok == 0:
+            return v
+        return judge_expect(j, d)
     if j.kind == "rejectpkg":
         return judge_reject(j, d, "package program")
     if j.kind == "abort":
