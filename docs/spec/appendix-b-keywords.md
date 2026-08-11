@@ -16,7 +16,8 @@ spawn   string  struct  true    type    u8      u16     u32
 u64
 ```
 
-`is` is the enum variant test ([§19.8](12-aggregates.md#198-is--the-variant-test)).
+`is` is the variant test, for an enum, an `Option` or a `Result`
+([§19.8](12-aggregates.md#198-is--the-variant-test)).
 It is **reserved**, not contextual: no `.ty` file in this tree used `is` as an
 identifier when it was added, so reserving it broke nothing, and an operator
 keyword shares its position with an ordinary name (`x is y`) in a way that

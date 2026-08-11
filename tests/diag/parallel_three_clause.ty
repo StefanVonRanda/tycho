@@ -1,6 +1,6 @@
 # The diagnostic for `parallel for` over the three-clause loop form, locked
 # byte-for-byte as tests/diag/parallel_three_clause.err. Refused at
-# src/tychoc.c:3359, whose text names both forms `parallel` DOES support.
+# src/tychoc.c:3364, whose text names both forms `parallel` DOES support.
 #
 # Why this fixture exists: tests/reject/*.ty asserts only a nonzero exit and a
 # non-empty diagnostic (see the reject loop in tests/run.sh), so this message

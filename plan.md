@@ -94,7 +94,7 @@ or an explicit "open, refused because …".
 
   - The entry says "the builtins are `println`, `die` and `exit(n)`", so "a
     non-fatal warning is inexpressible". `eprint(s)` is a builtin —
-    `src/tychoc.c:5079@eprint`, runtime `runtime/tycho_rt.c@tycho_eprint`
+    `src/tychoc.c:5084@eprint`, runtime `runtime/tycho_rt.c@tycho_eprint`
     (`fputs(s, stderr)`), specified at `docs/spec/16-builtins.md:74@eprint` as
     "no newline, **no exit**". `git log -L 5051,5051:src/tychoc.c` dates it to
     `61fa0dc`, 2026-06-14 ("+ eprint primitive") — before the entry was written.
@@ -830,7 +830,7 @@ or an explicit "open, refused because …".
     `a is X and b is Y` groups as `(a is X) and (b is Y)`. The right operand is
     a variant NAME, not an expression — parsing it as one would hit the
     payload-carrying variant's "write V(...)" rejection at
-    `src/tychoc.c:5633@carries a payload`, which is the whole gap.
+    `src/tychoc.c:5638@carries a payload`, which is the whole gap.
   - **`is` is a RESERVED word, not contextual.** The grep that decided it, over
     every `.ty` in the tree with strings and comments stripped:
 
@@ -848,7 +848,7 @@ or an explicit "open, refused because …".
     not apply. Reserving follows `in`, the language's other binary-operator
     keyword.
   - **A bad variant name is a compile error naming both**, reusing the match
-    arm's wording verbatim (`src/tychoc.c:7911@is not a variant of`):
+    arm's wording verbatim (`src/tychoc.c:7927@is not a variant of`):
 
     ```
     tests/reject/enum_is_unknown_variant.ty:10: error: 'VFloat' is not a variant of Value
@@ -894,7 +894,7 @@ or an explicit "open, refused because …".
     passed, 0 failed**, against 619/0 before: +1 positive fixture and +2 rejects,
     no silent loss.
 
-- [ ] **`is` has no answer for `Option` and `Result`, the two enums used most**
+- [x] **`is` has no answer for `Option` and `Result`, the two enums used most**
   - Discovered by this phase and deliberately NOT absorbed into it. `v is Some`,
     `r is Ok`, `r is Err` are all rejected: the resolver's `is` arm requires
     `IS_ENUM(lt)`, and `Option`/`Result` are not user enums in that sense, so
@@ -913,11 +913,101 @@ or an explicit "open, refused because …".
     name that is neither.
   - Verify: `make test`, which was **622** at this phase.
 
+### Evidence — `is` for `Option` and `Result`
+
+**Verdict: (a) CONTAINED.** The phase that filed this was right that the
+discriminator is not `->tag`, and wrong that this made it large. Probed with
+`./tychoc /tmp/probe_isopt.ty --emit-c`, both types are **by-value structs whose
+discriminator is a plain leading field**:
+
+```c
+struct TychoOpt0_ { char has; tycho_int val; };
+struct TychoRes0_ { char ok; tycho_int okv; char *errv; };
+```
+
+and `match` branches on exactly that field — no unwrap, no helper, no tag table:
+
+```c
+TychoOpt0 _m1 = h_o;
+if (_m1.has) { tycho_int h_x = _m1.val; ... } else { ... }      /* Some / None */
+TychoRes0 _m2 = h_r;
+if (_m2.ok) { tycho_int h_v = _m2.okv; } else { char *h_e = _m2.errv; }  /* Ok / Err */
+```
+
+`or_return` reads the same field: `if (!_or0.ok) { ... return _rr0; } _or0.okv;`.
+So `is` reuses the discriminator `match` already uses, exactly as `810c8c3` reused
+`->tag` — no representation change, no unification of two mechanisms. Three edits,
+smaller than `810c8c3`'s: an `IS_OPT`/`IS_RES` branch in the `TK_IS` resolver arm
+(`src/tychoc.c@is not a variant of`), a two-way branch in the `TK_IS` codegen
+(`src/tychoc.c:10651-10657`), and the package-mangling exemption for the four
+builtin names in `parse_is` (`src/tychoc.c:3066-3071`) — the same exemption the
+match-arm parser already carries at `src/tychoc.c:3320@"Err"`.
+
+**Design decisions, checked against the source rather than against Rust:**
+
+- Names are `Some`/`None` and `Ok`/`Err`, the constructors' own spellings
+  (`src/tychoc.c:2797-2811`) and the match arms' (`src/tychoc.c:7868-7894`).
+- `is` binds nothing, unchanged: `parse_is` reads one `TK_IDENT` and never an
+  `LPAREN`, so `o is Some(x)` cannot parse as a binding.
+- Wrong family is a **compile error** naming the type and both valid names:
+  ``error: 'Some' is not a variant of Result(int, string); write `Ok` or `Err` ``
+  Pinned by `tests/reject/optres_is_wrong_family.ty`.
+- The four names are never package-qualified, matching the match arm.
+- The non-enum message widened to "`is` asks an enum, Option or Result value
+  which variant it holds; %s is none of those", since the old wording is now
+  false.
+
+**Emitted C for the new form** (from `tests/optres_is.ty --emit-c`):
+
+```c
+tycho_bool_to_str(&_t, ((h_some).has != 0))   /* some is Some */
+tycho_bool_to_str(&_t, ((h_some).has == 0))   /* some is None */
+tycho_bool_to_str(&_t, ((h_ok).ok != 0))      /* ok is Ok    */
+tycho_bool_to_str(&_t, ((h_ok).ok == 0))      /* ok is Err   */
+```
+
+`!= 0` / `== 0` rather than the bare field because the field is a `char` and
+`bool` is emitted as `int` (`src/tychoc.c:1703`).
+
+**`810c8c3` unchanged.** `tests/enum_is.ty` was not touched, and its output
+`cmp`s byte-identical to `tests/enum_is.out`; the emitted C still carries 23
+`->tag ==` tests, the enum arm being untouched.
+
+**Negative control.** `git stash push src/tychoc.c`, `make tychoc`, then:
+
+```
+tests/optres_is.ty:15: error: `is` asks an enum value which variant it holds; Result(int, string) is not an enum
+    15 |     if r is Ok:
+```
+
+The positive fixture stops compiling at the first `is Ok` — `make test` would
+score it `tychoc failed`. `tests/enum_is` stayed byte-identical without the
+patch, confirming the control isolates the new code and not the old.
+**Honest limit:** `tests/reject/optres_is_wrong_family.ty` does NOT redden under
+the control. It still exits non-zero with a diagnostic — the old, wrong one —
+and `tests/run.sh:291-302` scores a reject on exit status and a non-empty
+message only, never on the message's text. The reject fixture pins that the
+program is refused, not that the wording is the family-specific one; the wording
+is pinned only by this evidence block. Restored with `git stash pop`; the
+fixture is byte-identical to its golden again.
+
+**Gates.** `make check-links` ok (reanchored first: 116 files rewritten, 0 needing
+a human, then 138 anchored + 865 bare + 181 source→doc all resolve).
+`sh scripts/spec_check.sh` ok, 11 runnable examples all pass — the new §19.8
+Option/Result example among them, up from 10. `make editors-check` ok, 943 files,
+known-bad set unchanged: **no tooling change was needed**, checked rather than
+assumed — `is` was already reserved and the four names are ordinary identifiers
+to the grammar. `make vm-check` green. `make goldens-check` ok, 446 goldens (it
+reddened first, correctly, on `tests/optres_is.out` being untracked; the fix was
+`git add`, the `.gitignore:124` un-ignore already covering `tests/*.out`).
+**`make test`: 625 passed, 0 failed**, against the 623/0 baseline: +1 positive
+fixture, +1 reject, no silent loss.
+
 - [x] **`sig_find`'s `Sig *` dangles across argument resolution (live bug on `main`)**
   - Symptom: `./tychoc tools/tycho-vm/main.ty` died with
     `tools/tycho-vm/main.ty:967: error: argument 1 of 'print' is inout; pass it
     as '&variable'`. The claim is false — `print` is declared
-    `.params={ T_STRING }, .nparams=1` with no inout at `src/tychoc.c:5077`.
+    `.params={ T_STRING }, .nparams=1` with no inout at `src/tychoc.c:5082`.
     `make ci` was red at `[3g] vm-check`.
   - Mechanism: `sig_find` (`src/tychoc.c@sig_find`) returns `&g_sigs[i]`, a
     pointer INTO the growable table. The E_CALL resolver took that pointer and
@@ -931,8 +1021,8 @@ or an explicit "open, refused because …".
     the same argument loop happened to straddle — the defect was latent, and a
     corelib addition merely exposed it.
   - Fix: snapshot the index and re-derive after each append-capable call, the
-    idiom this file already uses for the same hazard at `src/tychoc.c:5373` and
-    `src/tychoc.c:5490`. Chosen over copying the `Sig` by value because the
+    idiom this file already uses for the same hazard at `src/tychoc.c:5378` and
+    `src/tychoc.c:5495`. Chosen over copying the `Sig` by value because the
     index stays correct if a `Sig` is ever legitimately mutated in place, and
     because it costs two lines rather than a ~280-byte struct copy per call.
 
@@ -956,17 +1046,17 @@ reachable during resolution are `instantiate_generic`, `resolve_parfor` and
 
 | Site | Verdict |
 |---|---|
-| `src/tychoc.c:6551` (E_CALL) | **EXPOSED — fixed.** Held across `resolve_exp` |
-| `:5479` (E_SPAWN) | Clear. `resolve_expr(c)` runs BEFORE `sig_find`; already stores an index |
-| `:5640`, `:5643` (fn-as-value) | Clear. Only `note_fnval` (appends to `g_fnval`) and `funcc_of` intervene; neither mentions `g_sigs` |
-| `:5916`, `:5919`, `:5925` (UFCS on qualified) | Clear. Derefs are immediate; `ufcs_generic`/`type_pkg_prefix` do not touch `g_sigs` |
-| `:5995`, `:5998`, `:6004` (UFCS on field) | Clear, same shape |
-| `:6064`, `:6076`, `:8378`, `:8636`, `:8642` | Clear. Truthiness test only, never dereferenced |
-| `:6506` (variadic probe) | Clear. All derefs before any append-capable call |
-| `:7447` (`Sig *sg`, parallel-for) | Clear. Unused after `resolve_block`; already carries `sg_id` as an index |
-| `:8668` (`main` lookup) | Clear. NULL-tested immediately, never used again |
-| `:9807`, `:10115`, `:13346`, `:13386` | Clear. Emit phase. Generic-instance bodies are all resolved in `gen_program`'s dedicated pre-pass loop, which finishes before any emit loop, so `gen_expr` cannot reach `instantiate_generic` |
-| `:10459`, `:13309`, `:10974`, `:10984` | Clear. Index-based (`g_sigs[g_spawn[i]]`, `g_sigs[pf->sig]`), not pointers |
+| `src/tychoc.c:6556` (E_CALL) | **EXPOSED — fixed.** Held across `resolve_exp` |
+| `:5484` (E_SPAWN) | Clear. `resolve_expr(c)` runs BEFORE `sig_find`; already stores an index |
+| `:5645`, `:5648` (fn-as-value) | Clear. Only `note_fnval` (appends to `g_fnval`) and `funcc_of` intervene; neither mentions `g_sigs` |
+| `:5921`, `:5924`, `:5930` (UFCS on qualified) | Clear. Derefs are immediate; `ufcs_generic`/`type_pkg_prefix` do not touch `g_sigs` |
+| `:6000`, `:6003`, `:6009` (UFCS on field) | Clear, same shape |
+| `:6069`, `:6081`, `:8394`, `:8652`, `:8658` | Clear. Truthiness test only, never dereferenced |
+| `:6511` (variadic probe) | Clear. All derefs before any append-capable call |
+| `:7463` (`Sig *sg`, parallel-for) | Clear. Unused after `resolve_block`; already carries `sg_id` as an index |
+| `:8684` (`main` lookup) | Clear. NULL-tested immediately, never used again |
+| `:9823`, `:10131`, `:13367`, `:13407` | Clear. Emit phase. Generic-instance bodies are all resolved in `gen_program`'s dedicated pre-pass loop, which finishes before any emit loop, so `gen_expr` cannot reach `instantiate_generic` |
+| `:10475`, `:13330`, `:10995`, `:11005` | Clear. Index-based (`g_sigs[g_spawn[i]]`, `g_sigs[pf->sig]`), not pointers |
 
 **Regression fixture** — `tests/generic_sig_realloc.ty`. 200 distinct generic
 instantiations inside the arguments of `print`/`str`, which crosses at least one

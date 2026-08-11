@@ -1,0 +1,16 @@
+some is Some = true
+some is None = false
+none is None = true
+none is Some = false
+ok is Ok    = true
+ok is Err   = false
+err is Err  = true
+err is Ok   = false
+call is Some = true
+call is Err  = true
+and: both present
+or: short-circuits
+not: ok is no Err
+describe ok  = ok
+describe err = err
+payload = 30

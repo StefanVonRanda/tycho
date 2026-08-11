@@ -1,0 +1,55 @@
+# `is` on the two enums the language uses most. Option and Result do NOT carry a
+# user enum's `->tag`: their discriminator is the struct field `match` branches
+# on (`.has` / `.ok`), so `o is Some` lowers to that field test, not a tag compare.
+fn lookup(k: int) -> Option(int):
+    if k > 0:
+        return Some(k * 10)
+    return None
+
+fn parse(s: string) -> Result(int, string):
+    if s == "1":
+        return Ok(1)
+    return Err("bad " + s)
+
+fn describe(r: Result(int, string)) -> string:
+    if r is Ok:
+        return "ok"
+    return "err"
+
+fn main():
+    some := lookup(3)
+    none := lookup(0)
+    ok := parse("1")
+    err := parse("x")
+
+    println("some is Some = " + str(some is Some))
+    println("some is None = " + str(some is None))
+    println("none is None = " + str(none is None))
+    println("none is Some = " + str(none is Some))
+
+    println("ok is Ok    = " + str(ok is Ok))
+    println("ok is Err   = " + str(ok is Err))
+    println("err is Err  = " + str(err is Err))
+    println("err is Ok   = " + str(err is Ok))
+
+    # directly on a call result, with no binding of the payload
+    println("call is Some = " + str(lookup(5) is Some))
+    println("call is Err  = " + str(parse("z") is Err))
+
+    # inside boolean expressions and under `not`, as for a user enum
+    if some is Some and ok is Ok:
+        println("and: both present")
+    if none is Some or err is Err:
+        println("or: short-circuits")
+    if not (ok is Err):
+        println("not: ok is no Err")
+
+    # through a function parameter
+    println("describe ok  = " + describe(ok))
+    println("describe err = " + describe(err))
+
+    # the payload is still reached by match; `is` binds nothing
+    if some is Some:
+        match some:
+            Some(x): println("payload = " + str(x))
+            None: println("unreachable")
