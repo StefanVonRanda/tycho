@@ -8,7 +8,10 @@
 # compiler, the tools, and the core library laid out so the compiler finds corelib
 # beside itself (no TYCHO_CORELIB needed). Publishing is a separate, manual step:
 #
-#   gh release create <version> dist/tycho-*.tar.gz dist/tycho-*.sha256 --notes-file RELEASE_NOTES.md
+#   gh release create <version> dist/tycho-*.tar.gz dist/tycho-*.sha256 --notes-file RELEASE_NOTES.md --prerelease
+#
+# The final line this script prints carries --prerelease automatically while the
+# version is 0.x, and drops it at 1.0.
 #
 # There is no hosted CI by policy, so releases are built and published by hand, one
 # platform per machine. The --mingw leg cross-builds the compiler AND the three
@@ -162,5 +165,10 @@ echo
 echo "built: dist/${name}.tar.gz"
 cat "dist/${name}.tar.gz.sha256"
 echo
+# 0.x is not a stable API, so GitHub must mark the release a pre-release or the
+# tag reads as supported. v0.5.0 shipped without it and was edited afterwards.
+prerel=""
+case "$version" in v0.*) prerel=" --prerelease" ;; esac
+
 echo "publish with:"
-echo "  gh release create ${version} dist/${name}.tar.gz dist/${name}.tar.gz.sha256 --notes-file RELEASE_NOTES.md"
+echo "  gh release create ${version} dist/${name}.tar.gz dist/${name}.tar.gz.sha256 --notes-file RELEASE_NOTES.md${prerel}"
