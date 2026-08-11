@@ -81,12 +81,52 @@ or an explicit "open, refused because …".
   - Entry #5 in `docs/internals/FRICTION.md` updated with the probe output and
     the answer. Not struck — it reproduced.
 
-- [ ] **Phase 2 — #6 There is no `eprintln`**
+- [x] **Phase 2 — #6 There is no `eprintln`**
   - Scope: the builtin table in `src/tychoc.c` (`eprint` is registered there), or
     the entry.
   - Done when: `eprintln(s)` writes to stderr with a newline and has a fixture,
     or the entry is struck.
   - Verify: `make test` — this one touches `src/tychoc.c`, so it is the gate.
+
+  **DONE 2026-08-11 — entry STRUCK, no compiler change. The premise above is
+  wrong twice**: the phase does not touch `src/tychoc.c`, so `make test` was
+  never its gate, and the entry's own load-bearing claim does not reproduce.
+
+  - The entry says "the builtins are `println`, `die` and `exit(n)`", so "a
+    non-fatal warning is inexpressible". `eprint(s)` is a builtin —
+    `src/tychoc.c:5051@eprint`, runtime `runtime/tycho_rt.c@tycho_eprint`
+    (`fputs(s, stderr)`), specified at `docs/spec/16-builtins.md:74@eprint` as
+    "no newline, **no exit**". `git log -L 5051,5051:src/tychoc.c` dates it to
+    `61fa0dc`, 2026-06-14 ("+ eprint primitive") — before the entry was written.
+    Nine non-frozen `.ty` files already call it, `corelib/log/log.ty` included.
+  - **The probe that decided fix-vs-correct** (a `t`-shaped listing: warn on one
+    member, keep listing, exit 0):
+
+    ```
+    $ ./warn 2>/dev/null            # stdout is data only
+    a.txt
+    c.txt
+    $ ./warn 2>&1 >/dev/null        # the warning, on its own channel
+    tycho-ar: BAD.bin: payload digest mismatch, skipped
+    $ ./warn >/dev/null 2>/dev/null; echo $?
+    0
+    ```
+
+    So the "removed a feature" half is false: `t`'s all-or-nothing interface was
+    a choice, not a consequence of a missing channel.
+  - Only the heading's first four words survive: `eprintln("x")` gives
+    `error: unknown procedure 'eprintln'; did you mean 'println'?`, exit 1. The
+    residue is a `+ "\n"` the tree already writes in nine places — sugar, not a
+    channel. Adding the builtin was refused on that basis: it would have cost a
+    Sig row, a codegen row, three spec pages, a fixture and a tree-wide citation
+    reanchor to sweeten a workaround nobody is actually blocked by.
+  - Gates: `make check-links` -> "link check: ok (119 markdown files, no dead
+    relative links)" + "citation check: ok (134 anchored ... 165 `path@SYMBOL`
+    definition refs name a symbol still in their file)". `make test` ->
+    `passed: 618   failed: 0   all green` — run as the brief asked, unchanged
+    from the pre-phase count, and it **could not have moved**: the only files
+    this phase touched are Markdown, and `tests/run.sh` globs `.ty` only. No new
+    golden, so `make goldens-check` has nothing to see.
 
 - [ ] **Phase 3 — #7 gzip byte-determinism is undocumented and load-bearing**
   - Scope: documentation only, unless the probe finds it is not actually
@@ -163,6 +203,24 @@ or an explicit "open, refused because …".
   - Done when: the row's neighbourhood says it, and points at
     `strings.slice_bytes` / `strings.slice_str` for the failing-closed version.
   - Verify: `sh scripts/spec_check.sh` and `make check-links`. Not `make test`.
+
+- [ ] **Phase 12 — the false "no stderr channel" claim is still load-bearing in
+      `tools/tycho-ar/main.ty`** (*found by phase 2*)
+  - `tools/tycho-ar/main.ty:222-224`, under the banner "WHY `t` PRINTS NOTHING
+    BUT MEMBER LINES", asserts "There is no `eprintln`. The builtins are
+    `println`, `die` ... and `exit(n)`, so the only way to write to stderr is to
+    terminate." Phase 2 disproved that with a running probe: `eprint` has
+    shipped since 2026-06-14. This is the *source* of FRICTION #6, and it is
+    worse there than in the friction list, because it is presented as the
+    justification for a shipped interface — a reader auditing `t` is told a
+    language limitation forced a design that was actually chosen.
+  - Out of phase 2's scope, which was the builtin table or the entry.
+  - Done when: the comment states the all-or-nothing listing as a **decision**
+    (one verification pass before any output beats `tar t`'s partial listing) and
+    stops citing a limitation that does not exist. `t`'s behaviour does not
+    change — this is a comment, not a code phase.
+  - Verify: `python3 scripts/check_citations.py` and `make check-links`. **Not
+    `make ar-check`** unless a line of code moves, and none should.
 
 ## Out of scope
 

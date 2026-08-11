@@ -1461,24 +1461,52 @@ every read has a name now. Locked by ten lines in `corelib/test/strings.out`
 (`sb past=OutOfBounds` is the `b[2:10]` case above). The one-paragraph spec
 warning is still unwritten and still worth writing.
 
-### 6. There is no `eprintln`, and the missing channel removed a feature
+### ~~6. There is no `eprintln`, and the missing channel removed a feature~~ — **the channel was never missing; `eprint` has shipped since 2026-06-14, 2026-08-11**
 
-The builtins are `println`, `die` (stderr, then exit 1) and `exit(n)`. **A
-non-fatal warning is inexpressible**: it can only go to stdout, alongside whatever
-the program's actual output is.
+The entry's load-bearing sentence — "the builtins are `println`, `die` (stderr,
+then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — is
+**false, and was false when it was written**. `eprint(s)` is a builtin: registered
+at `src/tychoc.c:5051@eprint`, emitted as `tycho_eprint`, and defined as
+`fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
+`docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
+newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
+("+ eprint primitive"), i.e. before this file existed. Nine non-frozen `.ty`
+files in the tree already call it, `corelib/log/log.ty` among them.
 
-This is normally a nuisance and here it changed an interface. `t` writes its
-listing to stdout, so **its stdout is its data**, and a per-member warning would be
-a diagnostic sharing a stream with the filenames — a consumer cannot tell them
-apart. The resolution was to make `t` all-or-nothing: verify framing, paths,
-footers, payload digests and the trailer count for every member *before* printing a
-single line, then print member lines and nothing else — no summary, no
-"listed 8 of 9", no per-member note. A bad archive gets an empty stdout, a reason
-on stderr and exit 1.
+**The probe that decided this**, a `t`-shaped listing that complains about one
+member on stderr, keeps listing, and exits 0:
 
-That is a defensible interface, and it is **strictly less than `tar t`, which can
-report a bad member and keep listing.** The gap is no longer predicted; it has a
-feature attached to it. **Cost to fix:** one builtin, next to `println`.
+```
+$ cat warn.ty
+fn main():
+    names := ["a.txt", "BAD.bin", "c.txt"]
+    for i := 0; i < len(names); i += 1:
+        if names[i] == "BAD.bin":
+            eprint("tycho-ar: " + names[i] + ": payload digest mismatch, skipped\n")
+            continue
+        println(names[i])
+$ ./warn 2>/dev/null            # stdout: data only, no diagnostic
+a.txt
+c.txt
+$ ./warn 2>&1 >/dev/null        # stderr: the warning, on its own channel
+tycho-ar: BAD.bin: payload digest mismatch, skipped
+$ ./warn >/dev/null 2>/dev/null; echo $?
+0
+```
+
+So the "removed a feature" half does not stand: **`t`'s all-or-nothing interface
+was a choice, not a consequence.** Nothing prevented a per-member note on stderr
+beside a clean listing on stdout. The interface is still defensible on its own
+merits — one verification pass before any output is a stronger promise than
+`tar t`'s partial listing — but it must be argued as a decision, and the same
+false premise is still written into `tools/tycho-ar/main.ty:222-224` as the
+reason for it.
+
+**What is genuinely true is only the heading's first four words.** There is no
+`eprintln`, confirmed: `eprintln("x")` gives
+`error: unknown procedure 'eprintln'; did you mean 'println'?` and exit 1. The
+whole residue is that a warning costs a `+ "\n"` the tree writes today in nine
+places. That is sugar, not a missing channel, and it does not rank on this list.
 
 ### 7. gzip byte-determinism is real, undocumented, and load-bearing
 
