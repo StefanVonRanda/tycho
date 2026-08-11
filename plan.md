@@ -1305,9 +1305,12 @@ or an explicit "open, refused because …".
     package header `corelib/iter/iter.ty:5-6` and the example header
     `examples/corelib/iter/main.ty:2` were updated the same way.
 
-- [ ] **`iter.any`'s fixture assertion cannot detect an inverted predicate**
+- [x] **`iter.any`'s fixture assertion cannot detect an inverted predicate**
       (*found by the phase 15 negative control, not absorbed into it*)
-  - `corelib/test/iter/main.ty:59` probes `iter.any(xs, fn(x: int) -> bool: x != 2)`
+  - The `any` probe was on `corelib/test/iter/main.ty:55`, not `:59` as this entry
+    said — `:59` was the `# float instance (reduce)` comment. Corrected here rather
+    than silently.
+  - `corelib/test/iter/main.ty:55` probed `iter.any(xs, fn(x: int) -> bool: x != 2)`
     over `xs := [1, 2, 3, 4, 5]`. Both the predicate and its negation are
     satisfied by some element, so the golden's `any!=2=1` holds whether `any`
     tests `pred(v)` or `pred(v) == false`. Measured, not argued: inverting all
@@ -1320,6 +1323,64 @@ or an explicit "open, refused because …".
     pinned. That moves `corelib/test/iter.out`.
   - Verify: `make corelib` (~49s) and `make goldens-check`. Not `make test`,
     not `make corelib-examples` — the example does not call `any`.
+  - **Done 2026-08-11.** `any` now pins BOTH answers, and the audit the brief
+    asked for found **three** more blind assertions in the same file, not one.
+  - `any`: `any!=2` replaced by `any>0=1` (the predicate holds for every element)
+    and `any>9=0` (for none). Under an inverted `any` the pair reads `0,1`, so
+    both directions of the sense are now observable — which the single old probe
+    could not do for any choice of *one* predicate over a non-empty array.
+  - **`freduce` and `sum` were blind to fold direction.** `reduce`'s contract is a
+    LEFT fold, `acc = f(acc, x)` (`corelib/iter/iter.ty:50-54`), but `a + b` over
+    `[1,2,3,4,5]` reads 15 for a right fold, for swapped arguments and for a
+    reversed walk alike. `sum=15` is now `foldl=57` on `a * 2 + b`, and
+    `freduce=6.0` is now `freduce=11.0` on `a * 2.0 + b`.
+  - **`scount` was blind to an inverted predicate.** `ws := ["hi", "", "yo", ""]`
+    is a 2/2 split, so `count(ws, nonempty)` read 2 whether `count` tested the
+    predicate or its negation — the same defect as `any`, one line below it, which
+    is why the brief's "one blind assertion usually means siblings" was right.
+    `ws` is now `["hi", "", "yo", "x"]`: `scount=3`, and 1 under inversion. It also
+    moved `smap` and `s2i`, both of which stay meaningful.
+  - Everything else in the file was checked and left alone: `filter` (odds→evens
+    under inversion), `count!=` (4→1), `trymap err=5` and `tryfilter err=-3` (each
+    input has two failing elements plus a `999` that `die`s, so a non-short-circuit
+    implementation reports the wrong one or dies), `tryfilter ok` (2,4→1,3), and
+    the three type-changing `map` lines.
+  - **NEGATIVE CONTROL 1 — the one the phase is named for.** `corelib/iter/iter.ty`
+    `any`, `if pred(v):` → `if pred(v) == false:`, then `make corelib`:
+
+        FAIL iter (output != golden)
+              < count!=4 any>0=1 any>9=0
+              ---
+              > count!=4 any>0=0 any>9=1
+
+    The flipped assertion is line 5's `any>0` / `any>9` pair, which is exactly the
+    one that did NOT move under phase 15's identical mutation. Reverted; green.
+  - **NEGATIVE CONTROL 2 — the sibling fixes, one run, two mutations.** `reduce`
+    `acc = f(acc, v)` → `acc = f(v, acc)` (a right-ish fold) AND `count`
+    `if pred(v):` → `if pred(v) == false:`:
+
+        FAIL iter (output != golden)
+              4,7c4,7
+              < foldl=57          > foldl=30
+              < count!=4 ...      > count!=1 ...
+              < ... scount=3      > ... scount=1
+              < freduce=11.0      > freduce=12.0
+
+    All three previously-blind assertions moved: `foldl` 57→30 and `freduce`
+    11.0→12.0 (the old `a+b` forms would have stayed 15 and 6.0), `scount` 3→1
+    (the old 2/2 split stayed 2). Both mutations reverted — `git diff --stat
+    corelib/iter/iter.ty` is empty — and `make corelib` re-run green.
+  - Golden re-recorded with `RECORD=1 sh corelib/run.sh`, which re-records EVERY
+    package, not just the named one; `git status --short` afterwards showed only
+    `corelib/test/iter.out` modified, so the other 44 re-recorded byte-identically.
+    Four lines moved: `sum=15`→`foldl=57`, `count!=4 any!=2=1`→`count!=4 any>0=1
+    any>9=0`, `smap=hi!,!,yo!,! scount=2`→`smap=hi!,!,yo!,x! scount=3`,
+    `freduce=6.0`→`freduce=11.0`, and `s2i=2,0,2,0`→`s2i=2,0,2,1`.
+  - Gates: `make corelib` → `45 ok, 1 SKIPPED -- image(missing: libpng)` with
+    `ok   iter` (the skip is pre-existing, no libpng on this host) ·
+    `make goldens-check` ok (446 golden files, all tracked) · `make check-links` ok.
+    `make corelib-examples` NOT run: `corelib/iter/iter.ty` is unchanged and
+    `examples/corelib/iter/` was not touched, so it cannot redden.
 
 - [x] **`tycho-ar x` still does not restore mtime, and its gate still cannot see that**
   - Found by phase 4, not absorbed into it — phase 4's brief scoped it to the

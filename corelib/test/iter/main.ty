@@ -50,15 +50,18 @@ fn main():
     thr := 10
     println("mapcl=" + arrays.join(iter.map(xs, fn(x: int) -> int: x + thr), ","))  # capturing closure
     println("filter=" + arrays.join(iter.filter(xs, fn(x: int) -> bool: x % 2 != 0), ",")) # odds
-    println("sum=" + str(iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b)))      # 15
+    # `a*2+b` on purpose: the old `a+b` read 15 for a right fold, swapped args or a reversed walk.
+    println("foldl=" + str(iter.reduce(xs, 0, fn(a: int, b: int) -> int: a * 2 + b)))  # 57 left, 30 swapped, 129 reversed
     lim := 3
-    println("count!=" + str(iter.count(xs, fn(x: int) -> bool: x != lim)) + " any!=2=" + str(b2i(iter.any(xs, fn(x: int) -> bool: x != 2))))
-    # string instance (map closure + a named predicate)
-    ws := ["hi", "", "yo", ""]
+    # BOTH answers: `x > 0` holds for every element, `x > 9` for none, so inverting `any`'s
+    # test turns 1,0 into 0,1. The old `x != 2` over [1,2,3,4,5] read 1 under either sense.
+    println("count!=" + str(iter.count(xs, fn(x: int) -> bool: x != lim)) + " any>0=" + str(b2i(iter.any(xs, fn(x: int) -> bool: x > 0))) + " any>9=" + str(b2i(iter.any(xs, fn(x: int) -> bool: x > 9))))
+    # string instance (map closure + named predicate). 3 non-empty of 4: a 2/2 split read 2 inverted too.
+    ws := ["hi", "", "yo", "x"]
     println("smap=" + arrays.join(iter.map(ws, fn(s: string) -> string: s + "!"), ",") + " scount=" + str(iter.count(ws, nonempty)))
     # float instance (reduce)
     fs := [1.0, 2.0, 3.0]
-    println("freduce=" + str(iter.reduce(fs, 0.0, fn(a: float, b: float) -> float: a + b)))   # 6.0
+    println("freduce=" + str(iter.reduce(fs, 0.0, fn(a: float, b: float) -> float: a * 2.0 + b)))   # 11.0; a+b read 6.0 in any fold order
     # TYPE-CHANGING map: [$T] -> [$U]. `map` was `fn($T) -> $T` until 2026-07-31,
     # which rejected every one of these three. Named fn, closure, and the reverse
     # direction, so a regression to one type variable cannot pass this file.
