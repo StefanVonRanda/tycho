@@ -6,7 +6,7 @@ of each operator, the **evaluation order**, and the expression-valued control
 forms.
 
 > Provenance: binary-op resolver `src/tychoc.c:6167-6423`; short-circuit
-> lowering `:9546-9572`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
+> lowering `:9563-9589`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
 > closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
 > "probed" were resolved by running both compilers (spec-plan.md §6a).
 

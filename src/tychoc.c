@@ -3805,7 +3805,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10182), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10199), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -7608,14 +7608,22 @@ static const char *discarded_map_get(Expr *e) {
  * matched, which is what makes the side exhaustive without an unrefined arm. */
 typedef struct { int plain; int *cov; int ncov; } SideCov;
 
-/* Is this side of the match total? Either its unrefined arm covers it, or the
- * refined arms named every variant of the payload enum. */
-static int side_total(SideCov *sc, Type pt) {
-    if (sc->plain) return 1;
-    if (!sc->cov) return 0;
-    for (int v = 0; v < sc->ncov; v++) if (!sc->cov[v]) return 0;
-    (void)pt;
-    return 1;
+/* Which variant of this side's payload enum is left uncovered? -1 when the side is
+ * total (its unrefined arm covers it, or the refined arms named every variant), -2
+ * when the side has no arm at all. The caller needs that distinction to tell "you
+ * forgot the Err arm" from "your Err arms miss Foo", which one bit cannot carry. */
+static int side_missing(SideCov *sc) {
+    if (sc->plain) return -1;
+    if (!sc->cov) return -2;
+    for (int v = 0; v < sc->ncov; v++) if (!sc->cov[v]) return v;
+    return -1;
+}
+
+/* Refuse a side whose refined arms left variant `mi` uncovered, worded exactly as
+ * the plain-enum exhaustiveness check below words it. */
+static void die_missing_variant(int line, Type pt, int mi) {
+    EnumDef *ed = &g_enums[ENUM_ID(pt)];
+    die_at(line, "non-exhaustive match: missing variant %s of %s", ed->variants[mi].name, ed->name);
 }
 
 /* Check one Ok/Err/Some arm against its payload type `pt`, push what it binds, and
@@ -7888,8 +7896,12 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
-                if (!wild && (!side_total(&some, inner) || !none))
-                    die_at(s->line, "match on an Option must cover both Some and None");
+                if (!wild) {
+                    int ms = side_missing(&some);
+                    if (ms == -2 || !none)
+                        die_at(s->line, "match on an Option must cover both Some and None");
+                    if (ms >= 0) die_missing_variant(s->line, inner, ms);
+                }
                 free(some.cov);
             } else if (IS_RES(st)) {
                 Type okt = res_ok(st), errt = res_err(st);
@@ -7909,8 +7921,13 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
-                if (!wild && (!side_total(&ok, okt) || !side_total(&err, errt)))
-                    die_at(s->line, "match on a Result must cover both Ok and Err");
+                if (!wild) {
+                    int mo = side_missing(&ok), me = side_missing(&err);
+                    if (mo == -2 || me == -2)
+                        die_at(s->line, "match on a Result must cover both Ok and Err");
+                    if (mo >= 0) die_missing_variant(s->line, okt, mo);
+                    if (me >= 0) die_missing_variant(s->line, errt, me);
+                }
                 free(ok.cov); free(err.cov);
             } else if (IS_ENUM(st)) {
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
@@ -8811,7 +8828,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11081), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11098), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8841,12 +8858,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13041) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13058) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11168) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11185) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;

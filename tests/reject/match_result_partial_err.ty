@@ -1,0 +1,20 @@
+# Both `Ok` and `Err` ARE written here; the fault is that the refined `Err` arms
+# name `A` but not `B`. The diagnostic must name that variant, the way the
+# plain-enum path does -- saying "must cover both Ok and Err" here is false and
+# once cost a whole phase spent chasing a bug that did not exist.
+# expect: non-exhaustive match: missing variant B of E
+enum E:
+    A(int)
+    B
+
+fn parse(s: string) -> Result(int, E):
+    if s == "1":
+        return Ok(1)
+    return Err(A(2))
+
+fn main():
+    match parse("1"):
+        Ok(v):
+            println(str(v))
+        Err(A(n)):
+            println(str(n))

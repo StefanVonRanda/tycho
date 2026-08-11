@@ -495,11 +495,12 @@ or an explicit "open, refused because …".
     `variants[v].name` (mangled, `src/tychoc.c:4616`) and against `variants[v].raw`
     (as written, `src/tychoc.c:4617`). Both spellings therefore reach the same `vi`
     and the same `sc->cov` slot in `match_arm_payload` (`src/tychoc.c@match_arm_payload`),
-    which is what `side_total` (`src/tychoc.c:7613-7619`) reads.
+    which is what the side-coverage check reads (`side_total` when this was written,
+    `src/tychoc.c@side_missing` since phase 15).
   - **Caller audit — all five qualified coverage sites verified green in one probe,
     every match wildcard-free:** a plain enum match with `pk.A:` / `pk.B(k):` arms
-    (`src/tychoc.c:7925-7926`), a nested pattern under `Some` (`src/tychoc.c:7880`),
-    one under `Ok`/`Err` (`src/tychoc.c:7903-7905`), `e is pk.A`, and `... is Ok`.
+    (`src/tychoc.c:7942-7943`), a nested pattern under `Some` (`src/tychoc.c:7888`),
+    one under `Ok`/`Err` (`src/tychoc.c:7915-7917`), `e is pk.A`, and `... is Ok`.
     Output: `enum B 1` / `some B 1` / `err A` / `is A` / `is Ok`, exit 0. No site in
     the class mishandles a package prefix.
   - No fixture was added: there is nothing to regress against, and
@@ -518,11 +519,11 @@ or an explicit "open, refused because …".
     ```
     — but both `Ok` and `Err` ARE written. The real fault is a missing variant, and
     the message never names it. The plain-enum path gets this right
-    (`src/tychoc.c:7954`, "non-exhaustive match: missing variant %s of %s").
-  - Mechanism: `side_total` (`src/tychoc.c:7613-7619`) collapses the whole side to
-    one bit and discards which slot of `sc->cov` was clear — it does not even use
-    its `pt` argument (`src/tychoc.c:7617` is `(void)pt;`). The caller
-    (`src/tychoc.c:7912`) therefore has no variant name to print.
+    (`src/tychoc.c:7971`, "non-exhaustive match: missing variant %s of %s").
+  - Mechanism: `side_total`, as it stood at `680d30d`, collapsed the whole side to
+    one bit and discarded which slot of `sc->cov` was clear — it did not even use
+    its `pt` argument (its body ended `(void)pt;`). The caller therefore had no
+    variant name to print.
   - A second, smaller item from the same finding:
     `examples/corelib/decimal/main.ty:11` carries the comment "DivByZero is DivErr's
     only variant", which is false against `corelib/decimal/decimal.ty:105-108`. That
@@ -533,6 +534,38 @@ or an explicit "open, refused because …".
     longer states a false fact about the enum it matches.
   - Verify: `make test`, then `make corelib-examples` for the example (and re-record
     its golden if the arm is refined).
+  - **Part 1 (the diagnostic) — DONE.** `side_total` became `side_missing`
+    (`src/tychoc.c@side_missing`): -1 total, -2 the side has no arm at all, else the
+    index of the first uncovered variant. Both callers now separate the two faults —
+    a whole missing side keeps its old wording, a refined-but-partial side is refused
+    by `die_missing_variant` (`src/tychoc.c@die_missing_variant`), which reuses the
+    plain-enum path's exact wording rather than inventing a third phrasing.
+  - **Option shares the path and was fixed with it.** The `Some` side goes through the
+    same `SideCov`, so `match f():` with only `Some(A(n)):` on an `Option(E)` now says
+    `non-exhaustive match: missing variant B of E`; dropping the `None` arm entirely
+    still says `match on an Option must cover both Some and None`. Both probed.
+  - Evidence, this compiler:
+    ```
+    $ ./tychoc tests/reject/match_result_partial_err.ty --emit-c -o /tmp/p1
+    tests/reject/match_result_partial_err.ty:16: error: non-exhaustive match: missing variant B of E
+    $ ./tychoc tests/reject/match_result_missing_side.ty --emit-c -o /tmp/p2
+    tests/reject/match_result_missing_side.ty:12: error: match on a Result must cover both Ok and Err
+    ```
+    The check was not weakened: a Result whose `Err(A(n))`/`Err(B)` arms cover every
+    variant still compiles and runs (probe printed `b`, exit 0).
+  - **Negative control, run as the gate's own logic.** `git stash push src/tychoc.c`,
+    `make tychoc`, then the `# expect:` grep from `tests/run.sh:313`:
+    `OLD FAIL tests/reject/match_result_partial_err.ty` — the old compiler answered
+    "match on a Result must cover both Ok and Err", exactly the false message this
+    phase removes — while `OLD PASS tests/reject/match_result_missing_side.ty`
+    confirms that fixture pins wording the fix deliberately leaves alone. Stash
+    popped, rebuilt, both green.
+  - Verified: `make test` **627 passed, 0 failed** (625 baseline + the two new reject
+    fixtures); `make vm-check` green; `sh scripts/entrypoints.sh` 24 entry points ok;
+    `make check-links` ok after `scripts/reanchor_citations.py --apply` remapped 117
+    files and reported 4 citations needing a human — all four named `side_total`'s
+    old line range in this file's phase 14/15 evidence and were reworded by hand,
+    since the function they cited no longer exists.
 
 - [x] **Phase 6c — triage tycho-q #5, #6, #7 against the source (no fixes)**
   - Dispatched out of plan order, because five of the eight entries worked in
@@ -1297,7 +1330,7 @@ or an explicit "open, refused because …".
     not apply. Reserving follows `in`, the language's other binary-operator
     keyword.
   - **A bad variant name is a compile error naming both**, reusing the match
-    arm's wording verbatim (`src/tychoc.c:7927@is not a variant of`):
+    arm's wording verbatim (`src/tychoc.c:7944@is not a variant of`):
 
     ```
     tests/reject/enum_is_unknown_variant.ty:10: error: 'VFloat' is not a variant of Value
@@ -1388,14 +1421,14 @@ So `is` reuses the discriminator `match` already uses, exactly as `810c8c3` reus
 `->tag` — no representation change, no unification of two mechanisms. Three edits,
 smaller than `810c8c3`'s: an `IS_OPT`/`IS_RES` branch in the `TK_IS` resolver arm
 (`src/tychoc.c@is not a variant of`), a two-way branch in the `TK_IS` codegen
-(`src/tychoc.c:10651-10657`), and the package-mangling exemption for the four
+(`src/tychoc.c:10668-10674`), and the package-mangling exemption for the four
 builtin names in `parse_is` (`src/tychoc.c:3066-3071`) — the same exemption the
 match-arm parser already carries at `src/tychoc.c:3320@"Err"`.
 
 **Design decisions, checked against the source rather than against Rust:**
 
 - Names are `Some`/`None` and `Ok`/`Err`, the constructors' own spellings
-  (`src/tychoc.c:2797-2811`) and the match arms' (`src/tychoc.c:7868-7894`).
+  (`src/tychoc.c:2797-2811`) and the match arms' (`src/tychoc.c:7876-7906`).
 - `is` binds nothing, unchanged: `parse_is` reads one `TK_IDENT` and never an
   `LPAREN`, so `o is Some(x)` cannot parse as a binding.
 - Wrong family is a **compile error** naming the type and both valid names:
@@ -1500,12 +1533,12 @@ reachable during resolution are `instantiate_generic`, `resolve_parfor` and
 | `:5645`, `:5648` (fn-as-value) | Clear. Only `note_fnval` (appends to `g_fnval`) and `funcc_of` intervene; neither mentions `g_sigs` |
 | `:5921`, `:5924`, `:5930` (UFCS on qualified) | Clear. Derefs are immediate; `ufcs_generic`/`type_pkg_prefix` do not touch `g_sigs` |
 | `:6000`, `:6003`, `:6009` (UFCS on field) | Clear, same shape |
-| `:6069`, `:6081`, `:8394`, `:8652`, `:8658` | Clear. Truthiness test only, never dereferenced |
+| `:6069`, `:6081`, `:8411`, `:8669`, `:8675` | Clear. Truthiness test only, never dereferenced |
 | `:6511` (variadic probe) | Clear. All derefs before any append-capable call |
 | `:7463` (`Sig *sg`, parallel-for) | Clear. Unused after `resolve_block`; already carries `sg_id` as an index |
-| `:8684` (`main` lookup) | Clear. NULL-tested immediately, never used again |
-| `:9823`, `:10131`, `:13367`, `:13407` | Clear. Emit phase. Generic-instance bodies are all resolved in `gen_program`'s dedicated pre-pass loop, which finishes before any emit loop, so `gen_expr` cannot reach `instantiate_generic` |
-| `:10475`, `:13330`, `:10995`, `:11005` | Clear. Index-based (`g_sigs[g_spawn[i]]`, `g_sigs[pf->sig]`), not pointers |
+| `:8701` (`main` lookup) | Clear. NULL-tested immediately, never used again |
+| `:9840`, `:10148`, `:13384`, `:13424` | Clear. Emit phase. Generic-instance bodies are all resolved in `gen_program`'s dedicated pre-pass loop, which finishes before any emit loop, so `gen_expr` cannot reach `instantiate_generic` |
+| `:10492`, `:13347`, `:11012`, `:11022` | Clear. Index-based (`g_sigs[g_spawn[i]]`, `g_sigs[pf->sig]`), not pointers |
 
 **Regression fixture** — `tests/generic_sig_realloc.ty`. 200 distinct generic
 instantiations inside the arguments of `print`/`str`, which crosses at least one

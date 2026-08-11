@@ -92,10 +92,10 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2625` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:8793-8862`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:8810-8879`. Each
   `extern "Lib"` adds `-lLib` (`:5141` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:8799-8803`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:8581-8584`, `:2992-3017`, `:8850-8852`.
+  passthrough at `:8816-8820`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:8598-8601`, `:2992-3017`, `:8867-8869`.
 - String return is arena-copied so Tycho never holds a foreign pointer
   (`src/tychoc.c:6172-6179`, `tycho_str_from_c`, NULL→`""`).
 
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8591-8594`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8608-8611`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 

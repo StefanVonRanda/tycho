@@ -1,0 +1,14 @@
+# A `match` on a Result with no `Err` arm at all is missing a whole SIDE, and the
+# diagnostic says exactly that. Its sibling fixture match_result_partial_err.ty
+# pins the other shape -- both sides written, one variant uncovered -- which used
+# to report this same wrong message.
+# expect: match on a Result must cover both Ok and Err
+fn parse(s: string) -> Result(int, string):
+    if s == "1":
+        return Ok(1)
+    return Err("bad")
+
+fn main():
+    match parse("1"):
+        Ok(v):
+            println(str(v))
