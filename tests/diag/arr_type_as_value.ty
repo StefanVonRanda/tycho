@@ -1,0 +1,12 @@
+# `[string]` is the TYPE spelling; a value needs `[]string`. The old message was
+# "expected an expression" -- true, and useless for the guess everyone makes
+# first. ROADMAP.md rates the typed empty a learning-curve item rather than a
+# language gap; a message that names both working forms is what turns a
+# learning-curve item into a one-time mistake.
+#
+# Restricted to primitive type KEYWORDS, which can never be an expression:
+# `[Foo]` stays a one-element array literal of a variable named Foo.
+fn main():
+    xs := [string]
+    push(xs, "a")
+    println(str(len(xs)))

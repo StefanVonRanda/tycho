@@ -8,9 +8,9 @@ user-extensible — user-defined constraints (traits/typeclasses) are a decided
 non-goal ([§1.1](00-conventions.md)); generics grow only by widening the
 built-in predicate set.
 
-> Provenance: `instantiate_generic` `src/tychoc.c:7610-7700`; constraints
-> `constraint_ok` `:7581-7589`, enforcement `:7633-7650`; parse `parse_fn`
-> `:3768-3806`; type grammar for `$T`/`[$N]T` `:1945-1954`,`:2030-2046`.
+> Provenance: `instantiate_generic` `src/tychoc.c:7624-7714`; constraints
+> `constraint_ok` `:7595-7603`, enforcement `:7647-7664`; parse `parse_fn`
+> `:3782-3820`; type grammar for `$T`/`[$N]T` `:1945-1954`,`:2030-2046`.
 
 ## 7.1 Type parameters
 

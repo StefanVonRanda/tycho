@@ -1,0 +1,2 @@
+tests/diag/arr_type_as_value.ty:10: error: `[string]` is the TYPE, not a value -- for an empty array write `[]string`, or annotate the declaration: `xs : [string] = []`
+    10 |     xs := [string]

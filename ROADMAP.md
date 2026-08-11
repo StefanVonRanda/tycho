@@ -126,7 +126,10 @@ learnings and in FRICTION:
   than `push`: every collection operation refused it
 - an aggregate capturing a still-live binding warns until you write the copy by
   hand (`arg := hostile`)
-- the typed empty is `[]string`, which nobody guesses first
+- ~~the typed empty is `[]string`, which nobody guesses first~~ — **not a
+  language gap** (see the probe table); the DIAGNOSTIC for the wrong guess was
+  fixed 2026-08-10, so `[string]` now names both working forms instead of
+  saying "expected an expression"
 
 Each is small. Together they are what "the language is unpleasant on day two"
 is made of.

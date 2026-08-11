@@ -3,7 +3,7 @@
 # three-clause `for init; cond; post:` form that phase 4 adds. A C-style
 # statement terminator is therefore still invalid, and must be refused by the
 # PARSER, not by the lexer: the decl statement parses `x := 1` and then demands
-# a newline at src/tychoc.c:3511, so the diagnostic is
+# a newline at src/tychoc.c:3525, so the diagnostic is
 #
 #     error: expected newline
 #
