@@ -26,6 +26,28 @@ or an explicit "open, refused because …".
 
 ## Phases
 
+> **Reconciled 2026-08-11.** This file had drifted the same way
+> `docs/internals/FRICTION.md` had: later phases closed things earlier entries
+> had filed, and the earlier entries were never struck. All four unchecked
+> entries were re-probed against the tree rather than read.
+>
+> **Struck, each with the commit and a fresh probe:** phase 7 (`is` on a
+> payload-carrying variant — `810c8c3`, `2fe0f6b`); phase 15 (an uppercase
+> binding is now a compile error, not merely unusable — `9cbbd3b`, and the
+> entry's own table was wrong in two places); "no gate compiles `bench/`"
+> (`6421120`; `entrypoints.sh` is 75, of which 51 are bench — the entry's "~30"
+> was an uncounted estimate).
+>
+> **Remaining: two entries, neither of them blocked work.** The `set_mtime`
+> question is an **open decision for the owner** — one yes/no, nothing broken,
+> argument stated in the entry. Phase 17 is a **new** cosmetic diagnostic-ordering
+> defect the phase-15 re-probe exposed; filed rather than fixed, per scope lock.
+>
+> **Not re-run, so not asserted:** `make test`'s current count. Evidence blocks
+> below dated before `6421120` say `entrypoints: ok (24 …)`; that is correct
+> history, not a stale live figure, and was left alone. The rest of the ticked
+> phases were sampled for contradicted claims, not audited one by one.
+
 - [x] **Phase 1 — #5 `bytes` slices clamp, so a slice is not a bounds check**
   - Scope: `corelib/` bytes/string slicing, or a correction to the entry.
   - Done when: either a bounds-checking accessor exists with a fixture whose
@@ -606,22 +628,34 @@ or an explicit "open, refused because …".
     `make corelib` and `make ci` deliberately not run — a Markdown-only change
     cannot redden any of them.
 
-- [ ] **Phase 7 — tycho-q #5 a payload-carrying variant has no value-level discriminator**
-  - **Re-scoped by the phase 6c triage.** The gap is real but narrower than the
-    entry claimed: `_` binders and `==` on nullary variants already cover the
-    cheap half, so what remains is a way to test a *payload-carrying* variant
-    without a `match`.
-  - **This is a language change — `src/tychoc.c` — and the only one of the
-    three that is.** It needs a new expression form (an `is` operator, or a
-    `tag(v)` accessor yielding an `int`), which touches the lexer, the parser,
-    the resolver's type rules and the C emitter, plus spec text in
-    `docs/spec/02-grammar.md` and `docs/spec/10-statements.md`, plus fixtures.
-    Order of cost: days, not the hour a corelib addition costs. The workaround
-    (`tools/tycho-q/main.ty@kind`, one hand-written function per enum that
-    needs it) is cheap enough that this should stay below both other items.
-  - Done when: a payload-carrying variant can be tested without a `match`, with
-    fixtures — or the entry is closed as accepted-cost with the spelling above.
-  - Verify: `make test`.
+- [x] **Phase 7 — tycho-q #5 a payload-carrying variant has no value-level discriminator**
+  - **CLOSED by `810c8c3` ("feat(compiler): is operator for enum variants") and
+    `2fe0f6b` ("feat(compiler): is for Option and Result").** The entry sized this
+    at "days, a language change"; that is what shipped. `v is Variant` yields a
+    bool for nullary and payload-carrying variants alike, so the workaround this
+    entry defended (`tools/tycho-q/main.ty@kind`, one hand-written function per
+    enum) is no longer the only answer.
+  - Re-probed 2026-08-11 against today's `./tychoc`, with a fresh program rather
+    than the shipped fixture — `enum Shape: Dot / Circle(int) / Rect(int, int)`,
+    two payload-carrying variants, plus one `Option` and one `Result`:
+
+    ```
+    println(str(c is Circle))   # c := Circle(5)          -> true
+    println(str(c is Rect))     #                         -> false
+    println(str(r is Rect))     # r := Rect(2, 3)         -> true
+    println(str(d is Dot))      # d := Dot                -> true
+    println(str(o is Some))     # o: Option(int) = Some(9)-> true
+    println(str(e is Err))      # e: Result(int, string) = Err("bad") -> true
+    ```
+
+    Compiled clean (`built /tmp/probe_is`) and the six lines above are the run's
+    actual stdout. The payload-carrying case — the one the entry said had no
+    answer without a `match` — is the first three.
+  - Shipped fixtures: `tests/enum_is.ty` / `tests/enum_is.out`,
+    `tests/optres_is.ty` / `tests/optres_is.out`, and three reject fixtures
+    (`tests/reject/enum_is_not_an_enum.ty`,
+    `tests/reject/enum_is_unknown_variant.ty`,
+    `tests/reject/optres_is_wrong_family.ty`).
 
 - [x] **Phase 8 — tycho-q #6 add a cause-preserving `map_err_with` to `core:result`**
   - **Re-scoped by the phase 6c triage: this is NOT a language change.** The
@@ -1009,33 +1043,43 @@ or an explicit "open, refused because …".
     11 runnable examples · `make corelib` 45 ok · `make test` **631 passed,
     0 failed** (629 baseline + the two new reject fixtures).
 
-- [ ] **Phase 15 — a PARAMETER or LOCAL may still take a constructor's or a
+- [x] **Phase 15 — a PARAMETER or LOCAL may still take a constructor's or a
       variant's name** (*found while doing phase 14, deliberately left out of it*)
-  - Phase 14 closed `fn` and `const` for the four builtins; phase 13 closed `fn`
-    and `const` for user variants. Neither touched a binding, and a binding is
-    still accepted in both families:
+  - **CLOSED by `9cbbd3b` ("feat(compiler)!: a binding may not start with an
+    uppercase letter").** The entry planned a per-site guard against two specific
+    name families; the shipped rule is broader and lexical, so both families are
+    now *ungrammatical* rather than accepted-then-unusable. `src/tychoc.c:5133`
+    is the single `die_at`.
+  - Re-probed 2026-08-11 against today's `./tychoc`, all four cases the entry
+    tabulated. Every one is now a compile error, exit 1:
 
-        fn f(Ok: int) -> int:   accepted at the declaration; `Ok + 1` inside dies
-                                with "expected '(' after Ok"
-        Ok := 5                 same -- accepted, then `str(Ok)` dies the same way
-        fn f(Red: int)          accepted AND coherent: with `enum A: Red, Blue`,
-        Red := 5                both compile and run, the local winning normally
+    ```
+    fn f(Ok: int) -> int:   p5.ty:1: error: 'Ok' cannot name a binding -- a local,
+        return 1                   parameter or pattern binding must start with a
+                                   lowercase letter or '_'
+    Ok := 5                 p6.ty:2: error: 'Ok' cannot name a binding -- ...
+    fn f(Red: int)          p3.ty:5: error: 'Red' cannot name a binding -- ...
+    Red := 5                p4.ty:6: error: 'Red' cannot name a binding -- ...
+    ```
 
-  - So the two families differ and the fix is not one check. A local shadowing a
-    **user** variant works and may well be intended (verified: `uv_param.ty` and
-    `uv_local.ty` both built and ran). A local shadowing one of the **four
-    builtins** cannot work at all — `parse_primary` matches the raw text before
-    any scope is consulted — so it is the same unreachable-name bug phase 14
-    fixed, one declaration form further down.
-  - Left out of phase 14 on purpose: the guard belongs at the binding sites
-    (`parse_fn`'s parameter loop, `:=`, `for` heads, `match` payload bindings,
-    `inout`/`sink` params), which is several sites rather than two, and the
-    brief scoped phase 14 to the forms the variant check already covered.
-  - Not breaking anything today — nothing in the corpus binds one of the four
-    (`make test` 631 green with the fn/const half landed) — so this is latent.
-  - Verify: enumerate the binding sites first and say how you found them, then a
-    `tests/reject/` fixture per site kind with `# expect:`; `make test`;
-    `sh scripts/spec_check.sh` if §3.7 or §19.1 gains a sentence.
+    `Some`/`None`/`Err` behave identically (`p7.ty:2` for `Some := 5`).
+  - **The entry's table is now wrong in two places, which is why it is struck
+    rather than trimmed.** It claimed `fn f(Ok: int)` was "accepted at the
+    declaration"; it is not — with the body's use removed, the *declaration* is
+    what dies. And it claimed `fn f(Red: int)` / `Red := 5` were "accepted AND
+    coherent"; they are now rejected too, so the case the entry judged "may well
+    be intended" was closed as collateral of the lexical rule.
+  - **Residue checked, and it is not a defect.** A *lowercase* variant is still
+    grammatical and can still be shadowed by a lowercase local — probed with
+    `enum Colour: red, blue` and, separately, a payload-carrying `red(int)`:
+    `c is red` printed `true`, then `red := 5` compiled, ran, and printed `5`.
+    That is ordinary lexical shadowing, identical to a local shadowing a function
+    name (`fn helper()` then `helper := 5` also builds and prints `5`), and it is
+    the case the entry itself blessed as "may well be intended". Nothing
+    unreachable survives: the unreachable-name half was the four uppercase
+    builtins, and those are now rejected at the binding site.
+  - Filed separately, not fixed here: the diagnostic *ordering* wart the probe
+    exposed — see "Phase 17" below.
 
 - [x] **Phase 11 — the one-paragraph slice warning in `docs/spec/03-types.md`**
   - Entry #5 asked for prose beside the `b[i:j]` row at
@@ -2538,37 +2582,44 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     - `make test` → **`passed: 633   failed: 0`**, against a 631 baseline; the
       +2 are exactly the two new reject fixtures
 
-- [ ] **No gate compiles `bench/`** (*found by the uppercase-binding phase,
+- [x] **No gate compiles `bench/`** (*found by the uppercase-binding phase,
       2026-08-11 — out of that phase's scope, so recorded rather than absorbed*)
-  - `bench/dijkstra/dijkstra.ty` had to be compiled by hand, because nothing
-    runs it. `bench/guard.sh` is the only bench lane in `make ci` (`[10]`) and it
-    measures ONE tree-alloc wall-time ratio; it never touches the ~30 other `.ty`
-    files under `bench/`. A language change that rejects a construct those files
-    use is invisible to the whole suite — this phase's rule would have shipped
-    with `bench/dijkstra` uncompilable if the brief had not named it explicitly.
-  - The cheap fix is a compile-only lane: `tychoc` over every `bench/**/*.ty`,
-    asserting nothing about output or speed, in the shape of
-    `scripts/entrypoints.sh`. Seconds, and it closes the hole that matters —
-    "does the corpus still compile" — without pretending to be a perf gate.
-  - Not done here: adding a CI step is out of scope for a language change, and
-    `CLAUDE.md` reserves `make ci` for a phase that changes a CI step.
+  - **CLOSED by `6421120` ("test(bench): compile every .ty under bench/"), which
+    took exactly the cheap fix this entry proposed** — extend
+    `scripts/entrypoints.sh` rather than add a new lane. **Superseded by
+    "Phase 16" below, which is the same work with its own evidence block**; this
+    entry is the filing, that one is the doing. Both are kept so the trail from
+    discovery to fix stays readable.
+  - Re-verified 2026-08-11: `sh scripts/entrypoints.sh` →
+    `entrypoints: ok (75 entry points compile with tychoc)`, exit 0, and
+    `find bench -name '*.ty' | wc -l` → **51**. 75 = the 24 pre-existing entry
+    points + those 51, so every bench file is in the lane and none was excluded.
+  - The entry's "~30 other `.ty` files under `bench/`" was an estimate made
+    without counting; the real number is 51.
 
-- [ ] **Should `x` warn rather than die on a failed `set_mtime`?** (*found by the
-      tycho-ar stderr phase, 2026-08-11*)
-  - `66ce390` made a failed `io.set_mtime` fatal, and its stated reasoning cited
-    the now-deleted "there is no eprintln" comment. With the false premise
-    removed the decision needs re-judging on its merits, which is a behaviour
-    change and deliberately was not made in the comment phase.
-  - **The assessment, so this is decided rather than re-derived:** leave it
-    fatal. `x`'s contract is that exit 0 means the tree is fully restored; a
-    warned-past wrong mtime makes exit 0 mean "restored, mostly", and the only
-    consumer that could act on the warning is a human reading a terminal.
-    `tools/tycho-ar/run.sh` asserts extracted mtimes equal archived mtimes, so
-    downgrading to a warning would also need that assertion weakened — which is
-    the tell that the fatal version is the one the gate believes in.
-  - So the likely outcome is **close as won't-do**, recorded here because the
-    justification changed even though the behaviour should not.
-  - If it is changed anyway: `make ar-check`, and the golden moves.
+- [ ] **OPEN DECISION FOR THE OWNER — should `x` warn rather than die on a failed
+      `set_mtime`?** (*found by the tycho-ar stderr phase, 2026-08-11; filed as a
+      likely won't-do by `5b078e8`*)
+  - **This is not work waiting to be done. It is one yes/no the owner owns.**
+    Nothing is broken today; `make ar-check` is green. If the answer is "leave it
+    fatal", tick this entry and no code moves.
+  - **The argument, stated once, in full.** `66ce390` made a failed
+    `io.set_mtime` fatal, and its stated reasoning cited a "there is no eprintln"
+    comment that `5b078e8` then deleted as false. So the *justification* has
+    changed even though the *behaviour* may well be right. On the merits: `x`'s
+    contract is that exit 0 means the tree is fully restored; warning past a
+    wrong mtime makes exit 0 mean "restored, mostly", and the only consumer that
+    could act on the warning is a human reading a terminal.
+  - **The gate half of that argument re-checked against today's `run.sh`, and it
+    still holds.** `tools/tycho-ar/run.sh:171-190` asserts extracted mtimes equal
+    the archived `1700000000`, using two reference files and POSIX `find -newer`,
+    plus a control leg over the source tree so an empty result cannot be vacuous.
+    `tools/tycho-ar/run.sh:291` names it in the success line ("extracted mtimes
+    == archived mtimes"). Downgrading to a warning would require weakening that
+    assertion — which is the tell that the fatal version is the one the gate
+    believes in.
+  - If the owner decides to change it anyway: `make ar-check`, and the golden
+    moves.
 
 - [x] **Phase 16 — `bench/` is compiled by no gate**
   - Requested directly by the repo owner: "make bench compile every .ty in bench/".
@@ -2674,6 +2725,37 @@ motivating change was mistyped into two files as `9bcc93b`, which
 ("a binding may not start with an uppercase letter"), which is indeed the change
 that migrated `bench/dijkstra/dijkstra.ty`. `check_citations.py` does not
 validate commit hashes, so this had to be checked by hand.
+
+- [ ] **Phase 17 — the uppercase-binding diagnostic loses to an earlier parse
+      error at the use site** (*found by the 2026-08-11 reconciliation while
+      re-probing phase 15 — out of that reconciliation's scope, so filed*)
+  - Real, reproduced, and cosmetic only: both spellings are compile errors either
+    way, so nothing unsafe compiles. What is wrong is *which* error the user is
+    shown, in exactly the case they are most likely to hit.
+  - The binding rule at `src/tychoc.c:5133` fires at the declaration, but only if
+    the body parses that far. When the body *uses* the bound name, the use site
+    dies first with a message that does not mention the rule at all:
+
+    ```
+    fn f(Ok: int) -> int:          Ok := 5
+        return Ok + 1              println(str(Ok))
+
+    p1.ty:2: error: expected '('   p2.ty:3: error: expected '('
+             after Ok                       after Ok
+    ```
+
+    Delete the use and the good diagnostic appears (`p5.ty:1` / `p6.ty:2`:
+    `'Ok' cannot name a binding -- ...`). So the rule is enforced; it is just
+    out-shouted.
+  - Only the four builtin constructors do this. A user variant reports correctly
+    even with the use present, because nothing special-cases its spelling in
+    `parse_primary` — `fn f(Red: int) -> int: return Red + 1` gives the binding
+    error at the declaration line.
+  - Done when: a program binding one of the four and then using it reports the
+    binding rule, not `expected '(' after Ok` — or the entry is closed as
+    accepted-cost with the reasoning written down.
+  - Verify: `tests/reject/` fixture per family with `# expect:`; `make test`.
+    Not `make ci`.
 
 ## Out of scope
 
