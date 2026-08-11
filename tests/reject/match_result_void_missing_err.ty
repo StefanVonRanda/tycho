@@ -1,0 +1,17 @@
+# The exhaustiveness guard for the void ok payload. A bare `Ok:` arm is the ONLY
+# legal Ok arm at `Result(void, E)`, and binding nothing must not be read as
+# covering nothing: the match is still missing its whole Err side and must still
+# be refused. corelib/result's is_ok/err_or now lean on the payload-free arm
+# shapes (`is`, and a `_:` Ok side), so this pins that leaning on them did not
+# buy silence -- a fix that stops the compiler complaining is worse than the bug.
+# Its non-void sibling is match_result_missing_side.ty.
+# expect: match on a Result must cover both Ok and Err
+fn touch(x: int) -> Result(void, string):
+    if x < 0:
+        return Err("neg")
+    return Ok()
+
+fn main():
+    match touch(1):
+        Ok:
+            println("ok")

@@ -57,6 +57,10 @@
 # nothing to import and no shim.
 package result
 
+# AT `Result(void, E)`: is_ok/is_err/err_or work (see is_ok). unwrap_or, map_err
+# and map_err_with cannot -- each hands the ok payload BACK, and there is no void
+# value to hand; both refuse outright, so reach for is_ok/err_or or match inline.
+
 # The Ok payload, or `fallback` if the Result is an Err. The workhorse: it turns
 # a Result back into the plain value a non-Result caller needs, in one line.
 fn unwrap_or(r: Result($T, $E), fallback: $T) -> $T:
@@ -66,15 +70,13 @@ fn unwrap_or(r: Result($T, $E), fallback: $T) -> $T:
 
 # True if the Result is Ok. Use it when only success/failure matters and the
 # payload does not -- `if not result.is_ok(pr)` in place of a sentinel test.
+# `is` (§19.8), not a `match`: an `Ok(v)` arm is refused at a void ok payload and
+# a bare `Ok:` at every other, so a body binding `v` fits no single spelling.
 fn is_ok(r: Result($T, $E)) -> bool:
-    match r:
-        Ok(v): return true
-        Err(e): return false
+    return r is Ok
 
 fn is_err(r: Result($T, $E)) -> bool:
-    match r:
-        Ok(v): return false
-        Err(e): return true
+    return r is Err
 
 # The Err payload, or `fallback` if the Result is Ok. This is how a caller asks
 # WHICH failure happened without writing a `match` at all: compare the answer with
@@ -82,10 +84,11 @@ fn is_err(r: Result($T, $E)) -> bool:
 # a nested pattern -- `Err(net.Timeout):` -- see the header.) `fallback` may be
 # written inline as a qualified variant (`net.Failed`) -- see the HISTORICAL
 # CAVEAT in the header.
+# The Ok side is `_:` rather than `Ok(v)`, per is_ok: it names no payload.
 fn err_or(r: Result($T, $E), fallback: $E) -> $E:
     match r:
-        Ok(v): return fallback
         Err(e): return e
+        _: return fallback
 
 # Re-label a Result's error type, so `or_return` works across a package boundary.
 # The Ok payload passes through untouched; an Err becomes `replacement`.

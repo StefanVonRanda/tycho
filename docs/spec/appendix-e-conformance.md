@@ -217,7 +217,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §19.8, §13.2 | `is` — the variant test: nullary and payload-carrying alike, inside a boolean expression, and the two compile-time rejections | `tests/enum_is`, `reject/enum_is_unknown_variant`, `reject/enum_is_not_an_enum` |
 | §19.8, §19.5, §19.6 | `is` on `Option` and `Result`: all four names, on a call result, and a name from the other family rejected | `tests/optres_is`, `reject/optres_is_wrong_family` |
 | §19.x | `or_return` propagation | `tests/or_return`, `tests/or_return_option`, `tests/or_return_frees` |
-| §5.3.6 | `Result(void, E)`: `Ok()`, a bare `Ok:` arm, the `or_return` statement form | `tests/result_void`, `reject/void_not_a_type`, `reject/option_void`, `reject/result_void_err`, `reject/result_void_ok_arg`, `reject/ok_empty_nonvoid`, `reject/err_empty`, `reject/result_void_bind`, `reject/result_void_arm_binds`, `reject/orreturn_stmt_value` |
+| §5.3.6 | `Result(void, E)`: `Ok()`, a bare `Ok:` arm, the `or_return` statement form | `tests/result_void`, `reject/void_not_a_type`, `reject/option_void`, `reject/result_void_err`, `reject/result_void_ok_arg`, `reject/ok_empty_nonvoid`, `reject/err_empty`, `reject/result_void_bind`, `reject/result_void_arm_binds`, `reject/match_result_void_missing_err`, `reject/orreturn_stmt_value` |
 
 ### §23–24 Concurrency & FFI
 

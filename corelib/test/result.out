@@ -31,3 +31,7 @@ with_pay  = cause 9
 with_flat = plain
 with_chain= 126
 with_early= -1
+void_ok   = 1 0
+void_err  = 0 1
+void_why  = 1
+void_why2 = 1

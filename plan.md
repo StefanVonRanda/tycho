@@ -3389,10 +3389,10 @@ language change, sized and filed as Phase 22 below rather than forced here.
     appears at :424", exit 1; reverted, green again. `git diff` is 31 changed
     lines, every one starting `#`, so `make test-fast` does not apply.
 
-- [ ] **Phase 22 — let a bare `Ok:` / `Some:` arm match a payload-CARRYING
-      variant, so a generic body can be written once** (*filed by Phase 16,
-      2026-08-11, which measured that its own brief's proposed corelib-only fix
-      is impossible*)
+- [x] **Phase 22 — `core:result`'s combinators work at `Result(void, E)`**
+      — *resolved WITHOUT the filed compiler change; see the evidence below*
+      (*filed by Phase 16, 2026-08-11, which measured that its own brief's
+      proposed corelib-only fix is impossible*)
   - The wall: `Ok(v)` is refused when the ok payload is `void`
     (`src/tychoc.c:7659`) and a bare `Ok:` is refused when it is not
     (`src/tychoc.c:7666`). One template body cannot satisfy both, so
@@ -3418,6 +3418,90 @@ language change, sized and filed as Phase 22 below rather than forced here.
     capability.
   - Verify: `make test` (637 at Phase 16), `make corelib`, `sh
     scripts/spec_check.sh` if the spec text moves. Not `make ci`.
+  - **OUTCOME: neither filed option was taken, and no compiler line changed.**
+    The brief asked for (A) a bare `Ok:` matching a payload-carrying variant vs
+    (B) `Ok(_)` accepted at a void payload, and flagged a third: rewrite the
+    combinators with `is`. The third works, so it won. Both walls re-verified at
+    the source first: `src/tychoc.c:7659` (`Ok carries no value here`) and
+    `src/tychoc.c:7666` (`%s(x) binds exactly one value`) — both citations in the
+    brief were correct.
+  - **Why the third option beat both.** `is` already IS the "which variant, bind
+    nothing" question (`docs/spec/12-aggregates.md:830` — "It binds **nothing**"),
+    and `_:` already IS the don't-care arm (`docs/spec/12-aggregates.md:674`).
+    So the payload-free spellings
+    the combinators needed were both already in the language; the wall was that
+    `core:result` was not using them.
+    - *One spelling per meaning*: the third option is the only one that adds
+      none. (A) would give every payload-carrying variant a second way to write
+      `V(_)`; (B) would let `_` match nothing.
+    - *Lets a mistake compile*: (A) silently accepts `VInt:` from someone who
+      meant to bind and forgot the binder — `src/tychoc.c:7965` catches that
+      today. The third option keeps every existing diagnostic.
+    - *Reads better*: `return r is Ok` — one line, against the four-line `match`
+      binding an unread `v`.
+    - *Reject fixtures*: (B) would have required deleting or rewriting
+      `tests/reject/result_void_arm_binds.ty`, which pins `:7659` deliberately.
+      The third option deletes no fixture and adds one.
+    - *Citation drift*: `src/tychoc.c` untouched, so none of the ~90 refs moved.
+  - **STEP 2, the widening property — moot, and better than moot.** Nothing was
+    widened, so the "only WIDENS what is accepted" claim never had to be relied
+    on. Proved no existing behaviour moved instead of asserting it: the rebuilt
+    `corelib/test/result` output diffs against the old golden as `33a34,37` —
+    four ADDED lines and not one changed line, so every pre-existing assertion,
+    including `is_ok`/`is_err`/`err_or` at `int`/`string`/`bytes`/`Pair`/`io.IoErr`,
+    is byte-identical through the rewrite.
+  - **STEP 3, exhaustiveness did not go soft.** Both refusals re-checked at the
+    void payload: a bare `Ok:` with no Err arm gives `match on a Result must
+    cover both Ok and Err`, and `Ok:` + `Err(A(n))` over `enum E: A(int); B`
+    gives `non-exhaustive match: missing variant B of E` — so the payload-free
+    arm still COUNTS toward coverage rather than being read as covering nothing.
+    Pinned by the new `tests/reject/match_result_void_missing_err.ty` with an
+    `# expect:` line; the expect is load-bearing, checked by grepping the real
+    diagnostic for a bogus string and confirming it does not match.
+  - **STEP 4, corelib.** `is_ok`/`is_err` are `return r is Ok`/`is Err`;
+    `err_or` is `Err(e):` plus a `_:` Ok side. Phase 16's "unrescuable
+    regardless" verdict VERIFIED for the other three, and they fail honestly
+    rather than silently: `unwrap_or` refuses at the CALL (`argument 2 of
+    'unwrap_or' is int, which does not fit the parameter pattern` — `fallback:
+    $T` at `$T = void` admits no argument), `map_err`/`map_err_with` refuse in
+    their own `Ok(v)` arm (`Ok carries no value here`). All three hand the ok
+    payload back, so no arm rule could ever have rescued them — (A) would NOT
+    have fixed them either. Documented in the package header.
+  - **NEGATIVE CONTROL** (corelib-only fix, so the corelib change is what got
+    stashed): with `corelib/result/result.ty` reverted, the new fixture fails to
+    build — `corelib/result/result.ty:71: error: Ok carries no value here --
+    write a bare `Ok:` arm`, i.e. the exact wall. Restored: compiles, and the
+    four new assertions print `1 0` / `0 1` / `1` / `1`, matching prediction.
+  - **Gates**: `make check-links` ok (158 anchored, 234 `path@SYMBOL`) —
+    reddened first on a REAL drift my edit caused, `ROADMAP.md:175`'s
+    `result.ty:120@map_err`; fixed to the `path@SYMBOL` form, and its neighbour
+    bare `:133` for `map_err_with` was silently pointing at `map_err` after the
+    shift, so both are now definition refs. `make vm-check` green,
+    `scripts/entrypoints.sh` ok (75), `scripts/spec_check.sh` 11/11,
+    `make corelib` all green (46 ok, no skip), **`make test` 638 passed
+    0 failed** — 637 + exactly the one reject fixture added.
+  - Spec: no normative text changed, because no rule changed. Appendix E's
+    §5.3.6 row gains the new reject fixture.
+
+- [ ] **Phase 23 — two `core:result` leftovers Phase 22 found and deliberately
+      did not absorb** (*filed by Phase 22, 2026-08-11*)
+  - **`is_some` still binds an unread `v`.** `result.is_some` is the same
+    four-line `match` shape `is_ok` had before Phase 22, and `some_or` likewise.
+    This is NOT a bug: `Option(void)` is refused outright
+    (`tests/reject/option_void.ty`), so no instantiation can hit the wall that
+    motivated Phase 22. It is only an inconsistency — the Result half now asks
+    with `is`, the Option half still asks with a `match`. Rewriting `is_some` to
+    `return o is Some` is a one-line change gated by `make corelib`; it was left
+    alone because Phase 22 had no failing case to justify touching it, and a
+    golden-affecting edit with no bug behind it is how scope creeps.
+  - **`map_err` at a void ok payload reports against corelib's source, not the
+    caller's.** The refusal is `corelib/result/result.ty:<n>: error: Ok carries
+    no value here`, which is accurate but points a user at a file they did not
+    write and cannot change, with no note of which call instantiated it. The
+    honest fix is not to make `map_err` work — it cannot, its whole job is
+    handing the ok payload back — but for a generic instantiation failure to
+    name the instantiating call site. That is a compiler diagnostics change,
+    much wider than `core:result`, and worth sizing before it is scheduled.
 
 ## Out of scope
 

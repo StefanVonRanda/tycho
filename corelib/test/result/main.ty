@@ -162,6 +162,14 @@ fn io_why(p: string) -> string:
 # requirement". Two files, one construct, opposite claims, and the wrong one sat
 # in the test that exists to document the construct. tests/result_tuple.ty is this
 # construct's tests/ fixture as of 2026-07-30.
+# `Result(void, E)`: is_ok/is_err/err_or must instantiate here, which they could
+# not while their bodies bound an unread `v`. unwrap_or/map_err/map_err_with stay
+# out of reach by construction -- they hand the ok payload back.
+fn touch(ok: bool) -> Result(void, Local):
+    if ok:
+        return Ok()
+    return Err(Worse)
+
 fn outcome(ok: bool) -> (Result(int, Local), string):
     if ok:
         return (Ok(3), "full")
@@ -225,3 +233,9 @@ fn main():
     println("with_flat = " + cause_of(1))                             # a nullary cause maps to Plain
     println("with_chain= " + str(result.unwrap_or(chain(0), -1)))     # 126: 42 * 3
     println("with_early= " + str(result.unwrap_or(chain(3), -1)))     # -1: or_return ended it
+
+    # ---- Result(void, E): the same three combinators, nothing to hand back ----
+    println("void_ok   = " + str(b(result.is_ok(touch(true)))) + " " + str(b(result.is_ok(touch(false)))))
+    println("void_err  = " + str(b(result.is_err(touch(true)))) + " " + str(b(result.is_err(touch(false)))))
+    println("void_why  = " + str(b(result.err_or(touch(false), Nope) == Worse)))
+    println("void_why2 = " + str(b(result.err_or(touch(true), Nope) == Nope)))   # Ok -> the fallback
