@@ -1599,10 +1599,13 @@ there (`set_missing`), that the failing call created nothing (`made_nothing`),
 and the directory round trip (`dir_back`). Three of the four flip when the shim
 is stubbed to a no-op, which is what makes them a test.
 
-**What is NOT closed:** `tycho-ar`'s `x` still does not call it, and `diff -r`
-still does not compare mtimes, so that program's round-trip gate remains green
-over its own hole. That is a `tools/tycho-ar` change, filed separately —
-the corelib could not express the fix before today and now can.
+**The caller followed the same day.** `tycho-ar`'s `x` now calls it
+(`tools/tycho-ar/main.ty:771-775`), fatally rather than with a warning, since
+that program has no non-terminating way to report one. The gate needed the same
+work: `diff -r` does not compare mtimes, so the round-trip leg was green over the
+hole and would have stayed green over a broken restore. `tools/tycho-ar/run.sh`
+leg 3b compares the times themselves, and was confirmed to fail — naming all
+eight members — with the `set_mtime` call stubbed out.
 
 ### Smaller than they looked once written down
 

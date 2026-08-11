@@ -26,7 +26,9 @@
 #   [3] THE ROUND TRIP IS CLEAN. `diff -r` between the fixture and an extracted
 #       tree is empty, including the empty file, the dotfile, the name with a
 #       space, the name with a NEWLINE in it, the file with interior NULs and a
-#       file larger than the 64 KiB hashing chunk.
+#       file larger than the 64 KiB hashing chunk. [3b] then compares the
+#       MTIMES, which `diff -r` does not look at -- see the leg for why that is
+#       a separate assertion and not a detail of this one.
 #   [4] DAMAGE IS REFUSED, three ways, and a path that escapes is refused
 #       BEFORE the first write.
 #
@@ -153,6 +155,41 @@ if [ "$fail" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# [3b] the round trip RESTORES MTIMES -- which leg 3 cannot see. `diff -r`
+# compares names and contents and says nothing about timestamps, so leg 3 was
+# green over an `x` that dropped the mtime entirely and would stay green over a
+# restore that silently did nothing. This leg is the one that can fail for it.
+#
+# HOW IT COMPARES WITHOUT A GNU `stat`: two reference files, one stamped a
+# second BEFORE the fixture's 1700000000 and one stamped AT it, and POSIX
+# `find -newer`, which compares mtimes. An extracted file has exactly the
+# fixture's time iff it is newer than the first and not newer than the second;
+# anything else -- including "written now", which is what a dropped restore
+# leaves behind -- lands in one of the two halves and is printed. No per-file
+# shell loop, so the member whose name contains a newline is covered like any
+# other. `-type f` because directories are not members and keep today's time.
+if [ "$fail" -eq 0 ]; then
+    : > "$T/ref_before"; : > "$T/ref_at"
+    env TZ=UTC0 touch -t 202311142213.19 "$T/ref_before"
+    env TZ=UTC0 touch -t 202311142213.20 "$T/ref_at"
+    "$FIND" "$T/out" -type f \( ! -newer "$T/ref_before" -o -newer "$T/ref_at" \) \
+        > "$T/mtime.bad" 2>"$T/mtime.err"
+    if [ -s "$T/mtime.bad" ]; then
+        bad "round trip: extracted files do not carry the archived mtime (1700000000)"
+        sed 's/^/      /' "$T/mtime.bad"
+    fi
+    # And the control on the control: the same test over the SOURCE tree, whose
+    # files were stamped by `touch` above, must find nothing. If it does, the
+    # comparison itself is broken and the empty result above proves nothing.
+    "$FIND" "$tree" -type f \( ! -newer "$T/ref_before" -o -newer "$T/ref_at" \) \
+        > "$T/mtime.src" 2>&1
+    if [ -s "$T/mtime.src" ]; then
+        bad "mtime comparison is broken: it rejects the FIXTURE's own timestamps"
+        sed 's/^/      /' "$T/mtime.src"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # [4] damage and escape
 #
 # Every offset here is READ OUT OF THE ARCHIVE, never assumed: the first member
@@ -251,7 +288,7 @@ if [ "$fail" -eq 0 ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip empty; traversal, absolute path, flipped payload, forged csha and truncation all refused)"
+    echo "tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip empty; extracted mtimes == archived mtimes; traversal, absolute path, flipped payload, forged csha and truncation all refused)"
 else
     echo "tycho-ar: FAIL"; exit 1
 fi

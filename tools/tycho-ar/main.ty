@@ -307,18 +307,14 @@
 # Each of those is a real archiver feature and each needs a corelib call that
 # does not exist today. They are named here rather than discovered later.
 #
-# AND ONE THAT IS STORED AND STILL NOT RESTORED: mtime. Every member header
-# carries the real st_mtime, `t` prints it, and `x` DROPS IT -- an extracted file
-# gets the time it was written. This is a different shape of gap from the four
-# above: those are data the format never captured, this is data the format
-# captured faithfully and the extractor does not apply. `diff -r` does not compare
-# mtimes, so the round-trip gate stays green over it. Said here so the green is
-# not read as a promise.
-#
-# WHAT CHANGED 2026-08-11: the corelib half is done. `io.set_mtime` exists
-# (`corelib/io/io.ty@set_mtime`), so the reason this was unfixable is gone and
-# what remains is a change to `x` here plus a gate that actually compares mtimes.
-# Until that lands the paragraph above still describes this program exactly.
+# MTIME IS STORED AND, SINCE 2026-08-11, RESTORED. It used to be the odd one out
+# on this list -- data the format captured faithfully and the extractor dropped,
+# because no corelib call could put a time back. `io.set_mtime`
+# (`corelib/io/io.ty@set_mtime`) closed that, and `x` now stamps every file it
+# writes with the header's time. The gate proves it: `diff -r` does NOT compare
+# mtimes, so the round-trip leg was green over the gap and would have stayed
+# green over a broken restore -- `tools/tycho-ar/run.sh` leg 3b compares the
+# times themselves, and was confirmed to fail with the restore stubbed out.
 
 package main
 
@@ -768,6 +764,15 @@ fn cmd_x(archive: string, dest: string):
         # (`runtime/tycho_rt.c@tycho_write_file`), so NULs survive.
         if not io.write(targets[i], to_str(raw)):
             die("tycho-ar: cannot write " + targets[i])
+        # THE MTIME, put back last -- the write above stamped the file with now.
+        # FATAL rather than a warning, like every other partial failure here: `x`
+        # has no non-terminating way to report one (no eprintln, and stdout is
+        # its status line), so continuing would restore a wrong time in silence.
+        match io.set_mtime(targets[i], e.mtime):
+            Ok(_):
+                continue
+            Err(_):
+                die("tycho-ar: cannot set mtime on " + targets[i])
     println("tycho-ar: " + dest + ": " + str(len(entries)) + " files extracted")
 
 fn usage():

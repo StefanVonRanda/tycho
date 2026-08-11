@@ -781,7 +781,7 @@ or an explicit "open, refused because …".
   - Verify: `make corelib` (~49s) and `make corelib-examples` (~44s) — the example
     changes this time — plus `make check-links`. Not `make test`.
 
-- [ ] **`tycho-ar x` still does not restore mtime, and its gate still cannot see that**
+- [x] **`tycho-ar x` still does not restore mtime, and its gate still cannot see that**
   - Found by phase 4, not absorbed into it — phase 4's brief scoped it to the
     corelib and explicitly deferred any `tools/tycho-ar` behaviour change.
   - The blocker is gone: `corelib/io/io.ty@set_mtime` exists as of 2026-08-11, so
@@ -795,6 +795,63 @@ or an explicit "open, refused because …".
   - Not a format change: the field is already in the header
     (`tools/tycho-ar/main.ty:36`).
   - Verify: `make ar-check`. Not `make corelib` unless the corelib is touched.
+  - **Evidence (2026-08-11).** The create side was checked first, because a fix to
+    `x` is worthless if `c` stored a zero. It stores the real `st_mtime` and dies
+    rather than guessing:
+
+    > Provenance: `tools/tycho-ar/main.ty:444-448`
+
+        match io.mtime(abs):
+            Ok(t):
+                mt = t
+            Err(e):
+                die("tycho-ar: cannot stat " + abs)
+
+    and `mt` reaches the header through `tools/tycho-ar/main.ty:464@Member` and
+    `tools/tycho-ar/main.ty:471@m.mtime`. So the field was populated all along and
+    only the extractor was missing.
+  - The extract half is five lines at `tools/tycho-ar/main.ty:771-775`, placed
+    AFTER the write because the write stamps the file with now. **A failed
+    `set_mtime` is fatal, not a warning** — matching every other partial failure
+    in this program (`io.write` failing is `die`, an unreadable file is `die`).
+    There is no third option here: `x` has no non-terminating way to report
+    anything, since there is no `eprintln` and its stdout is a status line, so
+    "warn and continue" would mean restoring a wrong time in silence — the same
+    defect being fixed.
+  - The load-bearing half is leg 3b in `tools/tycho-ar/run.sh`. It compares the
+    times with two reference files and POSIX `find -newer` (a file has the
+    fixture's 1700000000 iff it is newer than a ref stamped at …19 and not newer
+    than one stamped at …20), so no GNU `stat` and no per-file shell loop — the
+    member whose NAME CONTAINS A NEWLINE is covered like any other. The leg also
+    runs the same test over the source tree, which must find nothing: without
+    that, an empty result could mean the comparison itself is broken.
+  - **NEGATIVE CONTROL — the gate was proven able to fail.** With the
+    `io.set_mtime` call commented out, `make ar-check` exited nonzero and named
+    every member (all eight, including `.hidden` and the newline name):
+
+        FAIL: round trip: extracted files do not carry the archived mtime (1700000000)
+              /tmp/tmp.1DeIZA60O7/out/with space.txt
+              /tmp/tmp.1DeIZA60O7/out/sub/nul.bin
+              /tmp/tmp.1DeIZA60O7/out/sub/multichunk.txt
+              /tmp/tmp.1DeIZA60O7/out/sub/deep/d.txt
+              /tmp/tmp.1DeIZA60O7/out/new
+              line.txt
+              /tmp/tmp.1DeIZA60O7/out/empty
+              /tmp/tmp.1DeIZA60O7/out/a.txt
+              /tmp/tmp.1DeIZA60O7/out/.hidden
+        tycho-ar: FAIL
+        make: *** [Makefile:335: ar-check] Error 1
+        make ar-check exit=2
+
+    `diff -r` in leg 3 stayed silent through that entire run, which is the hole
+    this phase existed to close. The five lines restored:
+
+        tycho-ar: green (create twice byte-identical; t == golden; diff -r round
+        trip empty; extracted mtimes == archived mtimes; traversal, absolute
+        path, flipped payload, forged csha and truncation all refused)
+
+  - The `t` golden did not move and was not re-recorded: nothing on the create
+    side changed, and `expected.out` is `t`'s listing.
 
 - [x] **f-string interpolations run their side effects RIGHT-TO-LEFT**
   - Found by phase 4 while writing a fixture, where it produced a wrong golden
