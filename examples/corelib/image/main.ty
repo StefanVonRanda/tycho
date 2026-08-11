@@ -1,15 +1,42 @@
 # Example: core:image -- encode/decode PNG (RGBA), via libpng.
+# Both directions return a Result: an Err names the cause, so a caller never has
+# to guess from a 0x0 image or an empty buffer.
 package main
 import "core:image"
+
+fn why(e: image.ImgErr) -> string:
+    match e:
+        image.Empty: return "no bytes at all"
+        image.NotPng: return "not a PNG header"
+        image.Corrupt: return "damaged pixel data"
+        image.BadDims: return "bad dimensions"
+        image.ShortPixels: return "too few pixel bytes"
+        image.Failed: return "libpng failed"
+    return "?"
 
 fn main():
     # a 2x2 RGBA image: red, green / blue, white
     px := to_bytes([255,0,0,255,  0,255,0,255,  0,0,255,255,  255,255,255,255])
-    img := image.make(2, 2, px)
 
-    png := image.encode(img)
-    println("encoded PNG  = " + str(len(png) > 0))
+    png := to_bytes("")
+    match image.encode(image.make(2, 2, px)):
+        Ok(b):
+            png = b
+            println("encoded PNG  = true")
+        Err(e):
+            println("encode failed: " + why(e))
 
-    back := image.decode(png)
-    println("decoded dims = " + str(back.width) + "x" + str(back.height))
-    println("roundtrip ok = " + str(to_str(back.pixels) == to_str(px)))
+    match image.decode(png):
+        Ok(back):
+            println("decoded dims = " + str(back.width) + "x" + str(back.height))
+            println("roundtrip ok = " + str(to_str(back.pixels) == to_str(px)))
+        Err(e):
+            println("decode failed: " + why(e))
+
+    # the failures the sentinel used to hide, each with its own cause
+    match image.decode(to_bytes("not a png")):
+        Ok(back): println("garbage decoded?!")
+        Err(e): println("garbage      = " + why(e))
+    match image.encode(image.make(4, 4, to_bytes("abc"))):
+        Ok(b): println("short encoded?!")
+        Err(e): println("short pixels = " + why(e))

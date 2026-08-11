@@ -480,10 +480,24 @@ zlib tuning detail and is not fixed by this spec. Source
 
 PNG decode/encode over **libpng** ≥ 1.6 (simplified `png_image` API; `deps` →
 `libpng`). Images are 8-bit RGBA, row-major, top-to-bottom; a value-semantic
-`Image` struct (`width`, `height`, `pixels: bytes`). `decode(png_bytes) -> Image`
-(a 0×0 Image on any error — check `width > 0`), `encode(img) -> bytes` (empty on
-a bad image), `make(w, h, pixels) -> Image`. The libpng decode handle is freed
-internally (not exposed). Source `corelib/image/image.ty`, `corelib/image/deps`.
+`Image` struct (`width`, `height`, `pixels: bytes`). `decode(png_bytes) ->
+Result(Image, ImgErr)`, `encode(img) -> Result(bytes, ImgErr)`, `make(w, h,
+pixels) -> Image`. One `ImgErr` serves both, with six causes: `Empty` (the input
+has no bytes), `NotPng` (the header did not read — wrong signature, or the data
+stops inside the header), `Corrupt` (the header read, the pixel data did not —
+truncated or damaged), `BadDims` (encode: a width or height ≤ 0, or beyond the
+implementation's bound), `ShortPixels` (encode: fewer than `width*height*4` pixel
+bytes) and `Failed` (libpng or an allocation failed). Decode returns the first
+three and `Failed`; encode returns the last three. **Every failure must be an
+`Err`, never an empty or zero-dimension `Ok`** — the same requirement §33.3 makes
+of `decompress`, for the same reason: a sentinel makes a truncated PNG, a JPEG
+renamed `.png` and an empty file one answer, and the caller who forgets to test
+it gets silence instead of an error. A 0-width or 0-height image is not
+representable in PNG (IHDR rejects a zero dimension), so an `Ok` from `decode`
+always carries `width ≥ 1` and `height ≥ 1`, and an `Ok` from `encode` always
+carries a non-empty buffer; a caller may rely on both. The libpng decode handle
+is freed internally (not exposed). Source `corelib/image/image.ty`,
+`corelib/image/deps`.
 
 ### 33.5 `tls` — openssl
 

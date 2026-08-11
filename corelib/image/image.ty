@@ -7,10 +7,17 @@
 # hands back RGBA regardless of the PNG's internal format. Pixel data crosses as
 # `bytes` (binary-safe).
 #
-#   image.decode(png_bytes) -> Image        Decode; a 0x0 Image on any error
-#                                           (not a PNG / corrupt) -- check width > 0.
-#   image.encode(img)       -> bytes        Encode to PNG; empty bytes on a bad image.
-#   image.make(w, h, pixels) -> Image       Build an Image from w*h*4 RGBA bytes.
+#   image.decode(png_bytes)  -> Result(Image, ImgErr)   Decode; Err says why.
+#   image.encode(img)        -> Result(bytes, ImgErr)   Encode to PNG; Err says why.
+#   image.make(w, h, pixels) -> Image                   Build an Image from w*h*4 RGBA bytes.
+#
+# Both returned a SENTINEL until 2026-08-11 -- a 0x0 Image from decode, empty
+# bytes from encode -- so a truncated PNG, a JPEG renamed .png and an empty file
+# were one answer, and a caller who forgot `width > 0` got silence. That is the
+# conflation core:compress removed from `decompress` the day before (its header
+# has the argument in full). A 0-width image is not representable in PNG -- IHDR
+# rejects a zero dimension -- so Ok never carries one from decode, and encode
+# refuses one with Err(BadDims) rather than emitting an empty buffer.
 package image
 
 struct Image:
@@ -18,28 +25,78 @@ struct Image:
     height: int
     pixels: bytes          # RGBA, row-major, width*height*4 bytes
 
+# Why a decode or an encode failed. One enum for both, the way core:io's IoErr
+# serves read/write/make_dir/remove: each function documents its own subset
+# below. Payload-free, so a caller can test one cause with `==` or match on
+# `Err(image.Corrupt)`.
+enum ImgErr:
+    Empty          # decode: the input has no bytes at all
+    NotPng         # decode: the header did not read -- wrong signature, or the data stops inside it
+    Corrupt        # decode: the header read, the pixel data did not -- truncated or damaged
+    BadDims        # encode: width or height <= 0, or beyond the 100000-pixel bound
+    ShortPixels    # encode: fewer than width*height*4 pixel bytes
+    Failed         # libpng or an allocation failed -- nothing to do with the payload
+
 # ---- shim externs (libpng; defined in image_shim.c) ----
-extern fn imgx_decode(data: bytes) -> ptr        # opaque decoded-image handle; null on failure
+# The fallible pair take `status: inout int`, the FFI shape core:compress's
+# zx_decompress uses: a handle or a `bytes` return cannot also carry a code.
+extern fn imgx_decode(data: bytes, status: inout int) -> ptr   # decoded-image handle; null on failure
 extern fn imgx_width(h: ptr) -> int
 extern fn imgx_height(h: ptr) -> int
 extern fn imgx_pixels(h: ptr) -> bytes           # RGBA copy, width*height*4 bytes
 extern fn imgx_free(h: ptr)
-extern fn imgx_encode(pixels: bytes, w: int, h: int) -> bytes   # RGBA -> PNG bytes
+extern fn imgx_encode(pixels: bytes, w: int, h: int, status: inout int) -> bytes   # RGBA -> PNG bytes
+
+const IMG_OK = 0
+const IMG_EMPTY = 1
+const IMG_NOTPNG = 2
+const IMG_CORRUPT = 3
+const IMG_BADDIMS = 4
+const IMG_SHORTPX = 5
 
 fn make(width: int, height: int, pixels: bytes) -> Image:
     return Image(width, height, pixels)
 
-# Decode PNG bytes to an RGBA Image. On any error (not a PNG, corrupt data) returns
-# a 0x0 Image with empty pixels -- fail closed; check width > 0.
-fn decode(data: bytes) -> Image:
-    h := imgx_decode(data)
+# Shared decode of the shim's status code, so both entry points name a cause the
+# same way. Anything unrecognised is Failed, never a silent success.
+fn _cause(st: int) -> ImgErr:
+    if st == IMG_EMPTY:
+        return Empty
+    if st == IMG_NOTPNG:
+        return NotPng
+    if st == IMG_CORRUPT:
+        return Corrupt
+    if st == IMG_BADDIMS:
+        return BadDims
+    if st == IMG_SHORTPX:
+        return ShortPixels
+    return Failed
+
+# Decode PNG bytes to an RGBA Image.
+#
+#   Ok(img)          decoded; width and height are >= 1 (PNG has no 0-dimension image)
+#   Err(Empty)       the input has no bytes
+#   Err(NotPng)      the header did not read -- wrong signature, or it stops inside the header
+#   Err(Corrupt)     the header read, the pixel data did not -- truncated or damaged
+#   Err(Failed)      an allocation failed
+fn decode(data: bytes) -> Result(Image, ImgErr):
+    st := 0
+    h := imgx_decode(data, &st)
     if is_null(h):
-        return Image(0, 0, to_bytes(""))
+        return Err(_cause(st))
     img := Image(imgx_width(h), imgx_height(h), imgx_pixels(h))   # copy fields out...
     imgx_free(h)                                                  # ...before releasing the handle
-    return img
+    return Ok(img)
 
-# Encode an RGBA Image (width*height*4 pixel bytes) to PNG bytes. Empty bytes on a
-# bad image (dimensions <= 0, or fewer pixels than width*height*4).
-fn encode(img: Image) -> bytes:
-    return imgx_encode(img.pixels, img.width, img.height)
+# Encode an RGBA Image (width*height*4 pixel bytes) to PNG bytes.
+#
+#   Ok(b)              a PNG; len(b) is never 0
+#   Err(BadDims)       width or height <= 0, or beyond the 100000-pixel bound
+#   Err(ShortPixels)   fewer than width*height*4 pixel bytes
+#   Err(Failed)        libpng's writer or an allocation failed
+fn encode(img: Image) -> Result(bytes, ImgErr):
+    st := 0
+    b := imgx_encode(img.pixels, img.width, img.height, &st)
+    if st == IMG_OK:
+        return Ok(b)
+    return Err(_cause(st))

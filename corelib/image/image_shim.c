@@ -7,8 +7,13 @@
  * os.run handle pattern), read out via imgx_width / imgx_height / imgx_pixels and
  * released with imgx_free. encode: RGBA pixels + w + h -> PNG bytes (the bytes
  * out-param convention: the shim mallocs *out, tycho_bytes_from_c copies it into
- * the arena and frees it). Fail closed on any libpng error or bad input -- a null
- * handle from decode, empty bytes from encode/pixels.
+ * the arena and frees it).
+ *
+ * Both fallible entry points take a `status` out-param, the shape
+ * compress_shim.c@zx_decompress uses: a handle or a `bytes` return cannot also
+ * carry a code. Until 2026-08-11 they carried none, so every failure arrived as
+ * one null handle / one empty buffer and the caller could not tell a truncated
+ * PNG from a JPEG from an empty file. The branches below always knew.
  */
 #include <png.h>
 #include <stdlib.h>
@@ -24,21 +29,36 @@ typedef int64_t tycho_int;
 
 typedef struct { tycho_int w, h; unsigned char *rgba; size_t nbytes; } Img;
 
-void *imgx_decode(const unsigned char *data, tycho_int len) {
-    if (len <= 0) return NULL;
+/* Status codes, mirrored by the constants in image.ty. */
+#define IMG_OK       0
+#define IMG_EMPTY    1
+#define IMG_NOTPNG   2
+#define IMG_CORRUPT  3
+#define IMG_BADDIMS  4
+#define IMG_SHORTPX  5
+#define IMG_FAILED   6
+
+void *imgx_decode(const unsigned char *data, tycho_int len, tycho_int *status) {
+    *status = IMG_FAILED;
+    if (len <= 0) { *status = IMG_EMPTY; return NULL; }
     png_image image;
     memset(&image, 0, sizeof image);
     image.version = PNG_IMAGE_VERSION;
-    if (!png_image_begin_read_from_memory(&image, data, (size_t)len)) return NULL;
+    /* The header did not read: wrong signature, or the data stops inside it. */
+    if (!png_image_begin_read_from_memory(&image, data, (size_t)len)) {
+        *status = IMG_NOTPNG; return NULL;
+    }
     image.format = PNG_FORMAT_RGBA;                 /* always hand back 8-bit RGBA */
     size_t nbytes = PNG_IMAGE_SIZE(image);
     unsigned char *buf = (unsigned char *)malloc(nbytes ? nbytes : 1);
     if (!buf) { png_image_free(&image); return NULL; }
+    /* The header read, the pixel data did not: truncated or damaged. */
     if (!png_image_finish_read(&image, NULL, buf, 0, NULL)) {
-        free(buf); png_image_free(&image); return NULL;
+        free(buf); png_image_free(&image); *status = IMG_CORRUPT; return NULL;
     }
     Img *im = (Img *)malloc(sizeof *im);
     if (!im) { free(buf); return NULL; }
+    *status = IMG_OK;
     im->w = (tycho_int)image.width;
     im->h = (tycho_int)image.height;
     im->rgba = buf;
@@ -68,12 +88,15 @@ void imgx_free(void *p) {
 
 /* Encode w*h RGBA pixels (plen must be >= w*h*4) to a PNG in memory. */
 void imgx_encode(const unsigned char *pixels, tycho_int plen, tycho_int w, tycho_int h,
-                 unsigned char **out, tycho_int *outlen) {
+                 tycho_int *status, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
-    if (w <= 0 || h <= 0 || w > 100000 || h > 100000) return;   /* sane bounds, no overflow */
+    *status = IMG_FAILED;
+    if (w <= 0 || h <= 0 || w > 100000 || h > 100000) {         /* sane bounds, no overflow */
+        *status = IMG_BADDIMS; return;
+    }
     tycho_int need = w * h * 4;
-    if (plen < need) return;                                    /* fail closed: not enough pixels */
+    if (plen < need) { *status = IMG_SHORTPX; return; }         /* fail closed: not enough pixels */
     png_image image;
     memset(&image, 0, sizeof image);
     image.version = PNG_IMAGE_VERSION;
@@ -89,4 +112,5 @@ void imgx_encode(const unsigned char *pixels, tycho_int plen, tycho_int w, tycho
     }
     *out = buf;
     *outlen = (tycho_int)nbytes;
+    *status = IMG_OK;
 }

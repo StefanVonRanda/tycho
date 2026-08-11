@@ -639,7 +639,7 @@ or an explicit "open, refused because …".
     `make test` / `make corelib` deliberately not run — Markdown-only change,
     neither can redden for it.
 
-- [ ] **Phase 14 — `core:image` still fails closed to a sentinel, the exact
+- [x] **Phase 14 — `core:image` still fails closed to a sentinel, the exact
       pattern FRICTION #3 removed from `core:compress`** (*found by phase 13*)
   - `corelib/image/image.ty@decode` is `decode(data: bytes) -> Image` returning a
     0×0 `Image` on any error, and `corelib/image/image.ty@encode` returns empty
@@ -657,6 +657,108 @@ or an explicit "open, refused because …".
     if a worked example calls it, plus the two doc gates. Sequence the code change
     before the doc change so the spec never describes something that is not shipped
     — which is exactly how phase 13's bug was born.
+  - **Done 2026-08-11.** The entry was NOT stale: the re-probe reproduced the
+    sentinel on all four inputs before any edit.
+
+    **Host note.** This box has libpng's runtime (`libpng16.so.16`) but no dev
+    package, so `corelib/run.sh`'s dep check SKIPS `image` here and the lane is
+    green without running it. Everything below was run against a static libpng
+    1.6.50 built into `/tmp/pngdev` and selected with `PKG_CONFIG_PATH` — nothing
+    in the repo or on the system was changed. Without that, this phase would have
+    shipped unverified.
+
+    Probe before the change (`corelib/image/image.ty@decode` was `-> Image`,
+    `@encode` was `-> bytes`):
+    ```
+    valid png bytes: 90
+    (a) valid: width=2 height=2 pxlen=16
+    (b) truncated: width=0 height=0 pxlen=0
+    (c) garbage: width=0 height=0 pxlen=0
+    (d) empty: width=0 height=0 pxlen=0
+    encode bad dims -> len=0
+    encode short pixels -> len=0
+    ```
+    Three distinct failures, one answer. Probe after:
+    ```
+    (a) valid: Ok 2x2 pxlen=16
+    (b) truncated@20: Err(NotPng)
+    (b) truncated@40: Err(NotPng)
+    (b) truncated@60: Err(Corrupt)
+    (b) truncated@89: Ok 2x2 pxlen=16
+    (c) garbage: Err(NotPng)
+    (d) empty: Err(Empty)
+    encode 0x0: Err(BadDims)
+    encode short: Err(ShortPixels)
+    ```
+    Two facts that decided the enum. Truncating *inside* the header gives the
+    same branch as garbage (libpng's `png_image_begin_read_from_memory` refuses
+    both), so there is no honest `Truncated` cause to hand out — `NotPng` is
+    worded "the header did not read" for exactly that reason. Truncating *past*
+    the header reaches `png_image_finish_read`, which is the `Corrupt` branch.
+    And `truncated@89` still decodes: the simplified reader does not require
+    IEND, so dropping the last byte is not detectable and is not claimed to be.
+    Causes are the five the shim's branches actually separate, plus `Failed`
+    for allocation — the same unreachable-in-test variant `compress.ZErr` ships.
+
+    A 0×0 image is not representable: PNG's IHDR rejects a zero dimension, so
+    `Ok` from `decode` always carries `width >= 1` and every empty answer is an
+    `Err`. Stated in `corelib/image/image.ty:14-20` and in §33.4.
+
+    Callers — the whole set, from `grep -rn 'core:image' . --exclude-dir=.git`:
+    - `corelib/test/image/main.ty` — rewritten; the three decode failures and
+      both encode failures now assert their named cause.
+    - `examples/corelib/image/main.ty` — rewritten to `match` both Results, and
+      it now shows two failures being named. Golden `examples/corelib/image.out`
+      re-recorded (2 lines added).
+    - `docs/spec/18-library.md` §33.4, `docs/guides/corelib.md`'s `image` bullet
+      — both rewritten. The guide bullet was stale beyond the signature: it said
+      "fail-closed on a non-PNG", which was the bug described as a feature.
+    - `SECURITY.md:91` and `docs/guides/corelib.md:493` mention `core:image` but
+      make no signature claim; unchanged and re-read to confirm.
+    No other consumer exists — no `tools/`, `server/` or top-level example
+    imports it, so no tool lane applies.
+
+    Negative control. `decode`'s `return Err(_cause(st))` replaced by
+    `return Ok(Image(0, 0, to_bytes("")))`, rebuilt, run against the golden:
+    ```
+    5,7c5,7
+    < truncated=Err(Corrupt)
+    < garbage=Err(NotPng)
+    < empty=Err(Empty)
+    ---
+    > truncated=Ok 0x0
+    > garbage=Ok 0x0
+    > empty=Ok 0x0
+    ```
+    Exactly the three must-fail assertions flip; the four happy-path lines do
+    not move, which is the point — the old fixture had only those four and would
+    have passed. Restored and re-verified byte-identical to the golden.
+
+    Gates, each once, in the foreground:
+    ```
+    $ PKG_CONFIG_PATH=/tmp/pngdev/lib/pkgconfig make shim-check
+    ok   corelib/image/image_shim.c
+    shim-check: 9 ok, 5 skipped, 0 failed
+
+    $ PKG_CONFIG_PATH=/tmp/pngdev/lib/pkgconfig make corelib
+    ok   image
+    corelib: all green (tychoc matches goldens)
+
+    $ PKG_CONFIG_PATH=/tmp/pngdev/lib/pkgconfig make corelib-examples
+    ok   image
+    corelib examples: all green
+
+    $ sh scripts/spec_check.sh
+    spec-examples: 11 runnable example(s), all pass
+
+    $ make check-links
+    link check: ok (119 markdown files, no dead relative links)
+
+    $ python3 scripts/check_citations.py
+    citation check: ok (139 anchored ..., 871 bare in bounds, ...)
+    ```
+    `make test` deliberately not run: its corpus never descends into `corelib/`,
+    and nothing under `src/` or `tests/` changed.
 
 - [ ] **Phase 15 — `core:iter`'s predicates are `fn($T) -> int` in a language that
       has `bool`** (*found by phase 6c, deferred by phase 9*)
@@ -1125,6 +1227,52 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     for a corelib-only change, and that lane is shown to redden at `17c47c4`.
   - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`
     only — the phase edits Markdown. **Do not run `make test` or `make ci`.**
+
+- [ ] **Phase N — `tests/reject/` fixtures pin *that* a program is refused, never
+      *why*** (*filed by the `core:image` phase; third independent sighting*)
+  - `tests/run.sh:299-305` scores a reject fixture on two things only: `tychoc`
+    exits non-zero, and `$TMP/rj.log` is non-empty. The message text is never
+    read. A change that makes the compiler refuse a program for the WRONG reason
+    — a parse error where a type error was meant, a diagnostic naming the wrong
+    line or the wrong identifier — passes this lane unchanged.
+  - Evidence, two phases that each hit it and each said so in their own commit
+    rather than fixing it: `810c8c3` and `2fe0f6b`. Read both messages before
+    designing the fix; they describe what their own fixtures could not pin.
+  - Note what the lane DOES check, so the fix does not re-litigate it: the same
+    loop already refuses a fixture carrying a `package` header
+    (`tests/run.sh:295-298`), because a valid program dropped into that directory
+    was measured scoring `ok` on a sibling's diagnostic. So the "is it even
+    failing for its own reason" hole is half-closed already.
+  - Candidate shape, to evaluate rather than assume: an opt-in `# expect: <substring>`
+    comment in the fixture, asserted against `rj.log` when present. Opt-in keeps
+    all 249 existing flat fixtures scoring exactly as they do now, which means the
+    count must not move — state the expected `make test` figure in the brief and
+    check it.
+  - Verify: `make test` (~8 min), which is the lane that owns `tests/run.sh`, plus
+    a deliberate negative control — a fixture whose `expect:` does not match must
+    redden. **Not `make ci`.**
+
+- [ ] **Phase N — `corelib/run.sh`'s dependency SKIP hides a package from its own
+      gate, silently** (*filed by the `core:image` phase*)
+  - `corelib/run.sh:69-72` skips a package whose `deps` do not resolve via
+    pkg-config, printing `skip <name> (missing dependency: ...)`. That is the
+    right behaviour — it is what keeps `make ci` green on a host without libpng —
+    but the verdict line at the end is `corelib: all green`, which is also what a
+    host that ran everything prints. The two are indistinguishable in a log.
+  - Measured on this box 2026-08-11: `image` skipped, because libpng's runtime is
+    installed and its dev package is not. The `core:image` phase would have
+    shipped an unrun fixture and a golden nobody executed, had it not checked
+    `pkg-config --exists libpng` by hand first. `crypto`, `http` and `tls` are in
+    the same position on any such host.
+  - Candidate fix, to evaluate: make the summary count them —
+    `corelib: all green (N ran, M skipped: image tls)` — so a log shows what was
+    not covered. Same question for `examples/corelib/run.sh`, which has the
+    identical shape, and for `make shim-check`, which already prints its skip
+    count and is the model to copy.
+  - Deliberately NOT fixed by the phase that found it: it changes a gate's
+    output, which is a `make ci` step's text.
+  - Verify: `make corelib` and `make corelib-examples`, plus `make shim-check` if
+    its summary is touched. **Not `make test`.**
 
 ## Out of scope
 

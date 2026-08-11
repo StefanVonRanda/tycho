@@ -558,8 +558,13 @@ plus three more:
   gate reddens if it ever stops holding. The compressed *length* is a zlib tuning
   detail — it is not stable across zlib versions and no golden here locks it.
 - **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
-  Image{width, height, pixels}` (8-bit RGBA) and `encode(Image) -> bytes`; fail-closed on a
-  non-PNG. JPEG is a demand-gated follow-up.
+  Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
+  Result(bytes, ImgErr)`. Both said "it went wrong" with a sentinel until 2026-08-11 — a
+  0×0 `Image`, an empty buffer — so a truncated PNG, a JPEG renamed `.png` and an empty
+  file were one answer; now `ImgErr` names which: `Empty`, `NotPng`, `Corrupt` on the
+  decode side, `BadDims`, `ShortPixels` on the encode side, `Failed` for an allocation or
+  a libpng failure. PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`.
+  JPEG is a demand-gated follow-up.
 - **`tls`** — a TLS 1.2/1.3 client over **OpenSSL** (`deps: openssl`). Secure by default:
   `connect(host, port)` verifies the certificate against the system CA store, checks the
   hostname, and sends SNI; failure returns a null handle (never a silent insecure

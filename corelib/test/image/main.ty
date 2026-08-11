@@ -1,10 +1,14 @@
 # corelib test: core:image. Hermetic -- builds an RGBA buffer in memory, encodes to
 # PNG, decodes back, and checks identity (PNG is lossless, so the round-trip is
 # exact). The compressed PNG bytes are libpng-version dependent, so the checks are
-# boolean invariants (produced-a-PNG, signature, dimensions, pixel identity, corrupt
-# handling) which are deterministic everywhere. The output is locked to
-# corelib/test/image.out (corelib/run.sh). The tychoc0 cross-check this line used to
-# claim was retired 2026-07-29.
+# boolean invariants (produced-a-PNG, signature, dimensions, pixel identity, and
+# the NAMED cause of each failure) which are deterministic everywhere. The output
+# is locked to corelib/test/image.out (corelib/run.sh). The tychoc0 cross-check this
+# line used to claim was retired 2026-07-29.
+#
+# The failure cases are the point of this file since 2026-08-11: every one of them
+# was a 0x0 Image or an empty buffer before, so a happy-path-only test passed while
+# the caller could not tell a truncated PNG from a JPEG from an empty file.
 package main
 import "core:image"
 
@@ -12,6 +16,36 @@ fn b2i(b: bool) -> int:
     if b:
         return 1
     return 0
+
+fn why(e: image.ImgErr) -> string:
+    match e:
+        image.Empty: return "Empty"
+        image.NotPng: return "NotPng"
+        image.Corrupt: return "Corrupt"
+        image.BadDims: return "BadDims"
+        image.ShortPixels: return "ShortPixels"
+        image.Failed: return "Failed"
+    return "?"
+
+# Report a decode that MUST fail: "Ok" here is the regression, not a pass.
+fn dec_err(label: string, data: bytes):
+    match image.decode(data):
+        Ok(img): println(label + "=Ok " + str(img.width) + "x" + str(img.height))
+        Err(e): println(label + "=Err(" + why(e) + ")")
+
+fn enc_err(label: string, img: image.Image):
+    match image.encode(img):
+        Ok(b): println(label + "=Ok len=" + str(len(b)))
+        Err(e): println(label + "=Err(" + why(e) + ")")
+
+# First `n` bytes of `b` -- a truncated PNG whose header is intact.
+fn cut(b: bytes, n: int) -> bytes:
+    s := ""
+    i := 0
+    for i < n:
+        s = s + chr(b[i])
+        i = i + 1
+    return to_bytes(s)
 
 fn main():
     # build a 3x2 RGBA image (24 bytes): pixel(x,y) = (x*40, y*80, 100, 255)
@@ -25,7 +59,10 @@ fn main():
         y = y + 1
     img := image.make(3, 2, to_bytes(px))            # 3*2*4 = 24 pixel bytes
 
-    png := image.encode(img)
+    png := to_bytes("")
+    match image.encode(img):
+        Ok(b): png = b
+        Err(e): println("encode unexpectedly failed: " + why(e))
     println("encoded_ok=" + str(b2i(len(png) > 0)))                              # 1
     # PNG signature: 0x89 'P' 'N' 'G' (137 80 78 71). Indexed on the `bytes`
     # directly since the friction plan -- this used to need `sig := to_str(png)`
@@ -33,10 +70,17 @@ fn main():
     # unchanged by the switch, which is the proof the two reads are the same read.
     println("is_png=" + str(b2i(len(png) >= 8 and png[0] == 137 and png[1] == 80 and png[2] == 78 and png[3] == 71)))   # 1
 
-    back := image.decode(png)
-    println("dims=" + str(back.width) + "x" + str(back.height))                  # 3x2
-    println("pixels_match=" + str(b2i(len(back.pixels) == 24 and to_str(back.pixels) == px)))   # 1
+    match image.decode(png):
+        Ok(back):
+            println("dims=" + str(back.width) + "x" + str(back.height))                  # 3x2
+            println("pixels_match=" + str(b2i(len(back.pixels) == 24 and to_str(back.pixels) == px)))   # 1
+        Err(e):
+            println("decode unexpectedly failed: " + why(e))
 
-    # decode garbage -> fail closed (0x0 image, empty pixels)
-    bad := image.decode(to_bytes("this is definitely not a png file"))
-    println("corrupt=" + str(bad.width) + "x" + str(bad.height) + " pxlen=" + str(len(bad.pixels)))   # 0x0 pxlen=0
+    # ---- the must-fail cases, each asserting WHICH cause ----
+    # Truncated past the header: libpng reads IHDR, then runs out of pixel data.
+    dec_err("truncated", cut(png, 60))                                           # Err(Corrupt)
+    dec_err("garbage", to_bytes("this is definitely not a png file"))            # Err(NotPng)
+    dec_err("empty", to_bytes(""))                                               # Err(Empty)
+    enc_err("enc_zero", image.make(0, 0, to_bytes("")))                          # Err(BadDims)
+    enc_err("enc_short", image.make(10, 10, to_bytes("abc")))                    # Err(ShortPixels)
