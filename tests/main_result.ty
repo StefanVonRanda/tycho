@@ -1,0 +1,38 @@
+# `fn main() -> Result(void, string)` — the second legal shape for main, so
+# `or_return` works at the entry point instead of stopping one frame short of it.
+#
+# Before this, main returned nothing, and `or_return` requires the enclosing
+# function to return a Result — so every program hit the one place it could not
+# propagate and had to `match` at the top level instead. ROADMAP.md listed it
+# under the daily papercuts.
+#
+# The error type is `string`, not an enum: main's failure is PRINTED, and
+# `has_str` covers no enum, so the error IS the message. The Err path exits 1
+# and is locked separately in tests/abort/main_result_err.ty — a fixture here
+# must exit 0.
+
+fn parse_len(s: string) -> Result(int, string):
+    if s == "":
+        return Err("empty input")
+    return Ok(len(s))
+
+fn total(a: string, b: string) -> Result(int, string):
+    x := parse_len(a) or_return
+    y := parse_len(b) or_return
+    return Ok(x + y)
+
+fn main() -> Result(void, string):
+    n := parse_len("hello") or_return          # or_return, in main
+    println("len " + str(n))
+
+    t := total("ab", "cde") or_return          # and through a helper that also propagates
+    println("total " + str(t))
+
+    # the Err branch, handled rather than propagated, so this program exits 0
+    match parse_len(""):
+        Ok(v):
+            println("unreachable " + str(v))
+        Err(e):
+            println("caught " + e)
+
+    return Ok()

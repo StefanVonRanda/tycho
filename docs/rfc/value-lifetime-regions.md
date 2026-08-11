@@ -43,7 +43,7 @@ every allocation takes an arena argument, and a return builds into `_parent`
 (`docs/guides/memory-model.md:37-45`), realised in codegen by a single "current
 arena" string that defaults to `&_scope` (`src/tychoc.c:7297`) and a per-proc stack
 of enclosing block arenas freed innermost-first at any exit
-(`src/tychoc.c:8825-8831`, `:8855-8859`).
+(`src/tychoc.c:8835-8841`, `:8865-8869`).
 
 The three exceptions in the tree are the ones that prove the rule, because each is a
 *runtime* object the compiler finalises like a scope, not a user-visible lifetime:
@@ -286,8 +286,8 @@ typedef struct { Arena rgn; Arr_Conn conns; } Server;
 Allocations for elements of `s.conns` target `&s.rgn` instead of the current scope
 string; the deep copy becomes `_c.rgn = arena_new(0);` followed by the existing
 recursive element copy; and the free is one `arena_free(&s.rgn)` emitted into exactly
-the finaliser slot tasks and handles already use (`src/tychoc.c:8848-8850`), which fires at block end, early
-`return`, `break`/`continue` and `or_return` (`src/tychoc.c:8865-8869`). There is a
+the finaliser slot tasks and handles already use (`src/tychoc.c:8858-8860`), which fires at block end, early
+`return`, `break`/`continue` and `or_return` (`src/tychoc.c:8875-8879`). There is a
 genuine simplification available: `inout` on a heap value today threads the caller's
 owning scope to the callee as a hidden parameter so an allocating mutation lands where
 the borrowed value lives (`docs/spec/07-memory-model.md:186-192`). If the value owns

@@ -1,0 +1,7 @@
+# main takes no parameters -- argv arrives through the `args()` builtin. This was
+# already refused; the fixture pins it alongside the two return-shape rejects so
+# the widened signature check still enforces all three.
+#
+#   error: 'main' takes no parameters -- the command line arrives through the `args()` builtin
+fn main(argc: int):
+    println(str(argc))

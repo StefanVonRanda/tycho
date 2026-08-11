@@ -13,6 +13,18 @@ block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
 not history, so the two are merged here under the date this actually shipped.
 
+- **`or_return` works in `main()`.** `fn main() -> Result(void, string):` is a
+  second legal shape for the entry point, so error propagation no longer stops
+  one frame short of where a program starts. On `Ok` the process exits 0; on
+  `Err(msg)` the message is written to stderr — **bare, with no prefix**, the
+  same way `die(msg)` prints a user message — and the process exits 1.
+
+  The error type is `string` and the ok payload is `void`, both deliberately:
+  an `Err` reaching the entry point is *printed* and `has_str` admits no enum,
+  so the error is the message; and a value in the ok slot would make the exit
+  status ambiguous. Both wrong shapes are refused with a diagnostic that names
+  which half is wrong. Only expressible because `Result(void, E)` landed first.
+
 - **DEPRECATED: `sort.by_key(xs, key)`** — use `sort.sort_by(xs, cmp)`. The
   rewrite is mechanical: `by_key(xs, k)` is
   `sort_by(xs, fn(a, b) -> int: k(a) - k(b))`. It keeps working for all of 0.x

@@ -278,8 +278,8 @@ fi
 # that half is gone. The tychoc assertions below are unchanged.
 #
 # A FLAT fixture here must NOT declare a `package` header. detect_package
-# (src/tychoc.c:12455-12461) turns the entry file's leading `package <name>` into
-# a whole-DIRECTORY compile (src/tychoc.c:12852), so such a fixture would be
+# (src/tychoc.c:12465-12471) turns the entry file's leading `package <name>` into
+# a whole-DIRECTORY compile (src/tychoc.c:12862), so such a fixture would be
 # scored against all 249 of its siblings: it would be "refused" for the FIRST
 # error in sort order rather than for its own defect, and this lane -- which
 # asserts only "nonzero exit + non-empty diagnostic" -- cannot tell the two
@@ -339,6 +339,17 @@ for hi in tests/abort/*.ty; do
     "$TMP/ab.bin"  </dev/null >/dev/null 2>"$TMP/ab.err";  rc=$?
     if [ "$rc" -eq 0 ]; then
         note "$name" "runtime abort did not fire (exit 0)"; fail=$((fail + 1)); fails="$fails $name"
+    elif [ -f "tests/abort/$(basename "$hi" .ty).err" ]; then
+        # A fixture MAY lock its exact stderr instead of the `tycho:` grep: an
+        # `Err` out of `main` prints the PROGRAM's message, not a runtime trap,
+        # so there is no `tycho:` to look for. Record with RECORD=1.
+        g="tests/abort/$(basename "$hi" .ty).err"
+        if [ "$RECORD" = 1 ]; then cp "$TMP/ab.err" "$g"; echo "rec   $name"; recorded=$((recorded + 1))
+        elif cmp -s "$TMP/ab.err" "$g"; then echo "ok    $name"; pass=$((pass + 1))
+        else
+            note "$name" "stderr differs from $g"; diff "$g" "$TMP/ab.err" | head | sed 's/^/      /'
+            fail=$((fail + 1)); fails="$fails $name"
+        fi
     elif ! grep -q 'tycho:' "$TMP/ab.err"; then
         note "$name" "died (exit $rc) but without a 'tycho:' message"; sed 's/^/      /' "$TMP/ab.err"
         fail=$((fail + 1)); fails="$fails $name"

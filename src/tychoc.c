@@ -3751,7 +3751,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10064), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10074), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -8605,8 +8605,18 @@ static void resolve_program(ProcVec *prog) {
                     die_at(pr->line, "duplicate parameter '%s'", pr->params[j].name);
             vars_push(pr->params[j].name, pt, mutable);
         }
-        if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
-            die_at(pr->line, "'main' must be 'fn main():' with no return");
+        /* `fn main() -> Result(void, string)` is the second legal shape: it makes
+         * or_return usable at the entry point, which is where a CLI wants it most.
+         * The error type is `string` and not an enum because main's failure is
+         * PRINTED, and has_str covers no enum -- so the error IS the message. */
+        if (!strcmp(pr->name, "main")) {   /* name the fault, not the whole rule */
+            if (pr->nparams != 0)
+                die_at(pr->line, "'main' takes no parameters -- the command line arrives through the `args()` builtin");
+            if (pr->ret != T_VOID
+                && !(IS_RES(pr->ret) && res_ok(pr->ret) == T_VOID && res_err(pr->ret) == T_STRING))
+                die_at(pr->line, "'main' returns nothing or Result(void, string), not %s -- an Err reaching the "
+                       "entry point is printed, so the error type is the message", type_name(pr->ret));
+        }
         g_fn_ret = pr->ret;
         g_dup_base = 0;   /* the top body shares the param scope (same C function): a decl colliding with a param is a redeclaration */
         resolve_block(pr->body, pr->nbody, pr->ret);
@@ -8697,7 +8707,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10933), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10943), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8727,12 +8737,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12893) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12903) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11020) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11030) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -13256,9 +13266,24 @@ static void gen_program(FILE *o, ProcVec *prog) {
     fputs("    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n", o);
     fputs("    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n", o);
     fputs("    Arena _root = arena_new(0);  /* root arena; default block size */\n", o);
-    fputs("    h_main(&_root);\n", o);
-    fputs("    arena_free(&_root);\n", o);
-    fputs("    return 0;\n}\n", o);
+    {   /* `fn main() -> Result(void, string)`: print the Err message, exit 1. The
+         * message is read BEFORE arena_free -- it points into the arena. */
+        Sig *mp = sig_find("main");
+        if (mp && IS_RES(mp->ret)) {
+            fprintf(o, "    %s_r = h_main(&_root);\n", c_type(mp->ret));
+            fputs("    int _st = 0;\n", o);
+            /* the message BARE, no prefix -- `die(msg)` prints it that way and is the
+             * only precedent for a user-originated fatal message. A `tycho:` prefix
+             * would blame the runtime for the program's own error. */
+            fputs("    if (!_r.ok) { tycho_eprint(_r.errv); tycho_eprint(\"\\n\"); _st = 1; }\n", o);
+            fputs("    arena_free(&_root);\n", o);
+            fputs("    return _st;\n}\n", o);
+        } else {
+            fputs("    h_main(&_root);\n", o);
+            fputs("    arena_free(&_root);\n", o);
+            fputs("    return 0;\n}\n", o);
+        }
+    }
 }
 
 /* ---------------------------------------------------------------- main */

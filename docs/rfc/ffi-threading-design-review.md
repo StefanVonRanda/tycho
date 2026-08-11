@@ -92,10 +92,10 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2616` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:8679-8748`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:8689-8758`. Each
   `extern "Lib"` adds `-lLib` (`:5087` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:8685-8689`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:8477-8480`, `:2969-2994`, `:8736-8738`.
+  passthrough at `:8695-8699`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:8477-8480`, `:2969-2994`, `:8746-8748`.
 - String return is arena-copied so Tycho never holds a foreign pointer
   (`src/tychoc.c:6093-6100`, `tycho_str_from_c`, NULL→`""`).
 
