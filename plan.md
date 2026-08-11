@@ -1374,7 +1374,7 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
   - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`
     only — the phase edits Markdown. **Do not run `make test` or `make ci`.**
 
-- [ ] **Phase N — `tests/reject/` fixtures pin *that* a program is refused, never
+- [x] **Phase N — `tests/reject/` fixtures pin *that* a program is refused, never
       *why*** (*filed by the `core:image` phase; third independent sighting*)
   - `tests/run.sh:299-305` scores a reject fixture on two things only: `tychoc`
     exits non-zero, and `$TMP/rj.log` is non-empty. The message text is never
@@ -1397,6 +1397,59 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
   - Verify: `make test` (~8 min), which is the lane that owns `tests/run.sh`, plus
     a deliberate negative control — a fixture whose `expect:` does not match must
     redden. **Not `make ci`.**
+
+  **Evidence (2026-08-11).** The filing's `tests/run.sh:299-305` was right for
+  the pre-edit file, and the `package`-header guard it describes is still at
+  `tests/run.sh:295-298`. Both read before editing; the post-edit line numbers
+  below are the ones on disk now.
+
+  Shipped the filing's candidate shape, opt-in `# expect: <text>`, asserted with
+  `grep -qF` against the captured diagnostic (`tests/run.sh:304-315`). Substring,
+  not an exact golden, and deliberately not a fourth `.err` convention:
+  **`tests/diag/` already does the exact-golden job** (`tests/run.sh:378-396`
+  `cmp`s the whole stderr against
+  `tests/diag/<name>.err`, `RECORD=1` re-records). A fixture that wants the full
+  rendering — message, source snippet, caret, did-you-mean — should *be* a diag
+  fixture. What `tests/reject/` was missing is cheaper and different: pin the
+  REASON without owning the caret column and the line number, which move
+  whenever a fixture gains a line and carry no signal. `grep -rl '^# expect:'
+  tests/` was empty beforehand, so no existing fixture was silently opted in.
+
+  Adopted for the three fixtures whose own commits reported the limitation —
+  `tests/reject/enum_is_not_an_enum.ty`, `tests/reject/enum_is_unknown_variant.ty`
+  (both `810c8c3`) and `tests/reject/optres_is_wrong_family.ty` (`2fe0f6b`).
+  Every other reject fixture is untouched and scores exactly as before.
+
+  **Negative control, run as the full gate, not a stand-in.**
+  `tests/reject/enum_is_unknown_variant.ty`'s expectation was replaced with
+  `# expect: NEGATIVE CONTROL this text is not in any diagnostic` and `make test`
+  run to completion:
+
+      passed: 624   failed: 1
+      failed: reject_enum_is_unknown_variant
+      make: *** [Makefile:157: test] Error 1
+
+  One fixture, the one broken — the other two `# expect:` fixtures passed in that
+  same run, so the check discriminates rather than reddening the lane wholesale.
+  Restored, re-run: `passed: 625   failed: 0`, `all green` — the 625/0 baseline,
+  unmoved, as an opt-in scheme requires.
+
+  **Not fixed here, filed as its own phase below:** the comment at
+  `tests/run.sh:287` still says "0 of the 249 flat fixtures declare one today".
+  Its load-bearing claim (none declares a `package` header) still holds; the
+  figure does not.
+
+- [ ] **Phase N — `tests/run.sh`'s reject-lane comment carries a stale fixture
+      count** (*found by the `# expect:` phase, not absorbed into it*)
+  - `tests/run.sh:287` reads "0 of the 249 flat fixtures declare one today".
+    `ls tests/reject/*.ty | wc -l` disagrees. The claim the sentence exists to
+    make — that the `package`-header guard enforces the arrangement rather than
+    repairing a violation — is still true; only the count rotted, which is
+    exactly the failure `CLAUDE.md`'s "never copy a figure the gate prints into
+    prose" warns about.
+  - Fix shape: name the command instead of the number, or drop the figure.
+  - Verify: `make test` only if the edit touches anything but a comment; a
+    comment-only edit is covered by reading it. **Not `make ci`.**
 
 - [x] **Phase N — `corelib/run.sh`'s dependency SKIP hides a package from its own
       gate, silently** (*filed by the `core:image` phase*)

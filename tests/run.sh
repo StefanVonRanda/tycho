@@ -301,6 +301,18 @@ for hi in tests/reject/*.ty; do
     elif [ ! -s "$TMP/rj.log" ]; then
         note "$name" "tychoc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
     else
+        # OPT-IN: a fixture may pin WHY it is refused with a `# expect: <text>`
+        # line, asserted as a literal substring of the diagnostic. A fixture
+        # without one scores exactly as before. Substring, not an exact golden:
+        # exact is what the tests/diag/ lane below already does, and a caret
+        # column or line number shifts whenever a fixture gains a line -- churn
+        # carrying no signal about the REASON for the refusal.
+        exp="$(sed -n 's/^# expect: //p' "$hi" | head -1)"
+        if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rj.log"; then
+            note "$name" "diagnostic does not contain the expected text: $exp"
+            head -3 "$TMP/rj.log" | sed 's/^/      /'
+            fail=$((fail + 1)); fails="$fails $name"; continue
+        fi
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done

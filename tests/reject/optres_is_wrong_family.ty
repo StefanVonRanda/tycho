@@ -1,6 +1,7 @@
 # `is` with a variant from the other family is a COMPILE error naming the type
 # and the two names that are valid, never a test that is silently always false.
 # A Result holds Ok or Err; `Some` belongs to Option.
+# expect: 'Some' is not a variant of Result(int, string); write `Ok` or `Err`
 fn parse(s: string) -> Result(int, string):
     if s == "1":
         return Ok(1)

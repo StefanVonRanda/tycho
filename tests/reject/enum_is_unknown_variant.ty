@@ -1,6 +1,7 @@
 # `is` against a name that is not a variant of the operand's enum must be a
 # COMPILE error naming both, never a silently-false test. src/tychoc.c@TK_IS
 # reuses the match arm's wording: "'VFloat' is not a variant of Value".
+# expect: 'VFloat' is not a variant of Value
 enum Value:
     VNull
     VInt(int)
