@@ -22,6 +22,32 @@ fn nonempty(s: string) -> int:
         return 1
     return 0
 
+# The fallible half. The payload carries the offending element, so the golden
+# says WHICH error came out; `999` dies, so walking past the first error kills
+# the program instead of quietly producing a different line.
+enum Odd:
+    NotEven(int)
+
+fn which(e: Odd) -> int:
+    match e:
+        NotEven(x): return x
+
+fn half(x: int) -> Result(int, Odd):
+    if x == 999:
+        die("try_map walked past the first error")
+    if x % 2 != 0:
+        return Err(NotEven(x))
+    return Ok(x / 2)
+
+fn keep_even(x: int) -> Result(int, Odd):    # 0/1 like `filter`'s keep, but fallible
+    if x == 999:
+        die("try_filter walked past the first error")
+    if x < 0:
+        return Err(NotEven(x))
+    if x % 2 == 0:
+        return Ok(1)
+    return Ok(0)
+
 fn main():
     xs := [1, 2, 3, 4, 5]
     println("map=" + arrays.join(iter.map(xs, dbl), ","))                          # 2,4,6,8,10
@@ -43,3 +69,21 @@ fn main():
     println("i2s=" + arrays.join(iter.map(xs, itos), ","))                                     # 1,2,3,4,5 as strings
     println("i2f=" + arrays.join(iter.map(xs, fn(x: int) -> float: to_float(x) / 2.0), ","))   # 0.5,...
     println("s2i=" + arrays.join(iter.map(ws, fn(s: string) -> int: len(s)), ","))             # 2,0,2,0
+    # FALLIBLE stages. Each must-fail input has TWO failing elements plus the 999
+    # sentinel, so a swallow-and-continue implementation reports the wrong one or dies.
+    evens := [2, 4, 6]
+    match iter.try_map(evens, half):
+        Ok(hs): println("trymap ok=" + arrays.join(hs, ","))
+        Err(e): println("trymap ok=UNEXPECTED-ERR " + str(which(e)))
+    bad := [2, 5, 4, 7, 999]
+    match iter.try_map(bad, half):
+        Ok(hs): println("trymap err=UNEXPECTED-OK " + arrays.join(hs, ","))
+        Err(e): println("trymap err=" + str(which(e)))
+    mixed := [1, 2, 3, 4]
+    match iter.try_filter(mixed, keep_even):
+        Ok(ks): println("tryfilter ok=" + arrays.join(ks, ","))
+        Err(e): println("tryfilter ok=UNEXPECTED-ERR " + str(which(e)))
+    badf := [2, 3, -3, 4, -7, 999]
+    match iter.try_filter(badf, keep_even):
+        Ok(ks): println("tryfilter err=UNEXPECTED-OK " + arrays.join(ks, ","))
+        Err(e): println("tryfilter err=" + str(which(e)))

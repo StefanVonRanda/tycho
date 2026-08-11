@@ -480,7 +480,7 @@ or an explicit "open, refused because …".
   - Done when: added with a corelib test, or refused in the entry with reasons.
   - Verify: `make corelib` (~49s). Not `make test`.
 
-- [ ] **Phase 9 — tycho-q #7 `core:iter` has no fallible stage and spells predicates as `int`**
+- [x] **Phase 9 — tycho-q #7 `core:iter` has no fallible stage and spells predicates as `int`**
   - **Confirmed by the phase 6c triage; sizing verified, not argued.** A
     corelib change only.
   - Scope: `corelib/iter/iter.ty` (44 lines today), two independent halves —
@@ -494,6 +494,52 @@ or an explicit "open, refused because …".
     re-recorded, and `examples/corelib/iter/main.ty` updated if (b) lands.
   - Verify: `make corelib` (~49s), plus `make corelib-examples` (~44s) only if
     the worked example changed.
+  - **Done 2026-08-11 — half (a) only.** `corelib/iter/iter.ty@try_map` and
+    `corelib/iter/iter.ty@try_filter`, each placed directly after the total
+    sibling it mirrors, same argument names and order, callback returning
+    `Result`. `try_map` is `push(out, f(v) or_return)`; `try_filter` binds
+    `k := keep(v) or_return` and keeps the existing nonzero-is-true convention,
+    because flipping that convention is half (b) and is now Phase 15. No shim:
+    `corelib/iter/` holds `iter.ty` and nothing else. `reduce`/`count`/`any` got
+    **no** fallible sibling — no caller in the tree wants one, and the entry's
+    motivating shape (a query engine's row filter and its projection) is exactly
+    the two that were added.
+  - Evidence:
+    ```
+    $ make corelib
+    corelib: all green (tychoc matches goldens)
+    $ make corelib-examples
+    corelib examples: all green
+    $ make check-links
+    link check: ok (no dead relative links)
+    citation check: ok            # counts elided -- they move every commit
+    ```
+    Four new golden lines in `corelib/test/iter.out`, from two happy-path and two
+    must-fail cases. Each must-fail input carries **two** failing elements plus a
+    `999` whose callback calls `die`, so continuing past the first failure is
+    observable twice over: `[2, 5, 4, 7, 999]` must report `5`, not `7`;
+    `[2, 3, -3, 4, -7, 999]` must report `-3`, not `-7`.
+  - **Negative control, both new functions.** `try_map` rewritten to `match f(v)`
+    with the `Err` arm swallowing and the loop continuing:
+    ```
+    FAIL iter (output != golden)
+          > try_map walked past the first error
+    corelib: FAIL
+    ```
+    exit 1, stderr `try_map walked past the first error`, and the diff lost three
+    golden lines (`trymap err=5`, `tryfilter ok=2,4`, `tryfilter err=-3`) — the
+    program died at the sentinel before reaching them. The same swallow in
+    `try_filter` (its `Err` arm setting `k = 0`) died at its own sentinel and lost
+    `tryfilter err=-3`. Restored, `make corelib` green again.
+    The "first, not later" half was proved separately, because the sentinel kills
+    any continuing implementation before it can report the wrong element: a
+    last-error variant of the same walk, run on `[2, 5, 4, 7]` with no sentinel,
+    printed `last-error variant reports=7` where the golden demands `5`.
+  - `docs/guides/corelib.md`'s `iter` bullet was checked against the source before
+    editing and was **accurate** — five functions, `map`'s two type variables, the
+    int-as-bool predicate note all matched `corelib/iter/iter.ty`. Unlike the
+    `core:json` and `core:decimal` bullets found stale by earlier phases, this one
+    needed only the two new signatures appended.
 
 - [ ] **Phase 10 — enum variant names are PACKAGE-scoped, not enum-scoped**
   - Found by phase 1, not absorbed into it. Adding a second `Result`-returning
@@ -611,6 +657,27 @@ or an explicit "open, refused because …".
     if a worked example calls it, plus the two doc gates. Sequence the code change
     before the doc change so the spec never describes something that is not shipped
     — which is exactly how phase 13's bug was born.
+
+- [ ] **Phase 15 — `core:iter`'s predicates are `fn($T) -> int` in a language that
+      has `bool`** (*found by phase 6c, deferred by phase 9*)
+  - This is half (b) of the phase 9 brief, split out on purpose: phase 9 added
+    `try_map`/`try_filter`, which are pure additions and revert cleanly, whereas
+    this is a **breaking change to three shipped signatures** —
+    `corelib/iter/iter.ty@filter`'s `keep`, and `corelib/iter/iter.ty@count` and
+    `corelib/iter/iter.ty@any`'s `pred`. Mixing the two in one commit would mean
+    a revert of the break also loses the fallible stages.
+  - Blast radius measured by the phase 6c triage and unchanged by phase 9: the
+    int-predicate call sites are all under `corelib/test/iter/` and
+    `examples/corelib/iter/`. Re-count before editing rather than trusting the
+    figure — phase 9 added `try_filter`, whose `keep` returns `Result(int, $E)`
+    and would become `Result(bool, $E)` in the same sweep.
+  - Also decide what `iter.count`'s own body does: it compares `pred(v) != 0`
+    today, which a `bool` makes `if pred(v)`.
+  - Done when: the predicates take `bool`, every caller and both goldens follow,
+    and the package header plus `docs/guides/corelib.md`'s `iter` bullet stop
+    saying "an int used as a boolean".
+  - Verify: `make corelib` (~49s) and `make corelib-examples` (~44s) — the example
+    changes this time — plus `make check-links`. Not `make test`.
 
 - [ ] **`tycho-ar x` still does not restore mtime, and its gate still cannot see that**
   - Found by phase 4, not absorbed into it — phase 4's brief scoped it to the

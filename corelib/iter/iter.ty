@@ -4,6 +4,10 @@
 # closure) -- `iter.map(xs, f)` etc. The function argument is first-class, so a
 # CAPTURING closure works (passed downward, never stored). Predicates return an
 # int used as a boolean (non-zero = true).
+# `try_map` / `try_filter` are the fallible siblings of `map` / `filter`, for a
+# stage whose callback can fail: the callback returns `Result`, the first `Err`
+# short-circuits and is returned to the caller. Only these two have siblings --
+# `reduce`, `count` and `any` had no caller needing one (2026-08-11).
 package iter
 
 # `map` carries TWO type variables on purpose: `$U` is the result element type,
@@ -17,12 +21,31 @@ fn map(xs: [$T], f: fn($T) -> $U) -> [$U]:
         push(out, f(v))
     return out
 
+# `try_map` is `map` with a fallible callback: same arguments, same order, `$E`
+# inferred alongside `$T`/`$U`. The walk STOPS at the first Err and returns it
+# unchanged -- no sentinel element, no partial array, no later error shadowing it.
+fn try_map(xs: [$T], f: fn($T) -> Result($U, $E)) -> Result([$U], $E):
+    out := []
+    for v in xs:
+        push(out, f(v) or_return)
+    return Ok(out)
+
 fn filter(xs: [$T], keep: fn($T) -> int) -> [$T]:   # keep(x) nonzero -> retain x
     out := []
     for v in xs:
         if keep(v) != 0:
             push(out, v)
     return out
+
+# `try_filter` mirrors `filter`; `keep` still answers with an int used as a bool,
+# now wrapped in a Result. Same short-circuit: the first Err is the one returned.
+fn try_filter(xs: [$T], keep: fn($T) -> Result(int, $E)) -> Result([$T], $E):
+    out := []
+    for v in xs:
+        k := keep(v) or_return
+        if k != 0:
+            push(out, v)
+    return Ok(out)
 
 fn reduce(xs: [$T], init: $T, f: fn($T, $T) -> $T) -> $T:   # left fold: acc = f(acc, x)
     acc := init

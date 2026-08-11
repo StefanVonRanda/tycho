@@ -2074,7 +2074,27 @@ every boundary, with no language feature to make it cheaper**, and the pressure
 would be to collapse them into one type carrying fields that are meaningless for
 two thirds of its values.
 
-### 7. `core:iter` is unusable for a fallible pipeline stage — and this entry got *smaller* as it was written
+### 7. ~~`core:iter` is unusable for a fallible pipeline stage~~ — **FIXED 2026-08-11**; the `int`-predicate half stays open
+
+> **Fixed 2026-08-11.** `corelib/iter/iter.ty@try_map` and
+> `corelib/iter/iter.ty@try_filter` ship the fallible siblings, with exactly the
+> arguments and order of `map` / `filter` and a callback returning `Result`. Both
+> short-circuit: the **first** `Err` ends the walk and is returned unchanged, so
+> there is no partial array and no later error shadowing the real one. The
+> fixture is `corelib/test/iter/main.ty`, whose two must-fail inputs each carry
+> two failing elements plus a `999` that calls `die`, so an implementation that
+> continued past the first failure either reports the wrong element or kills the
+> program. Both were observed: swallowing the `Err` in `try_map` reddened `make
+> corelib` with `try_map walked past the first error` on stderr and three golden
+> lines missing; a last-error variant probed separately reports `7` where the
+> golden demands `5`.
+>
+> **Not added, deliberately:** `try_reduce`, `try_count`, `try_any`. No caller in
+> this tree needs them, and the entry's own motivating shape — a query engine's
+> row filter and its projection — is `try_filter` and `try_map`. The second half
+> of this entry, `keep`/`pred` spelled `fn($T) -> int` in a language with `bool`,
+> is untouched: it is a breaking change to a shipped signature and belongs in its
+> own revertible commit.
 
 > **Triage 2026-08-11 — CONFIRMED, unchanged, and correctly sized.** Both
 > diagnostics below reproduce **verbatim** against the compiler at `680d30d`;
