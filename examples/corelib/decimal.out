@@ -4,3 +4,5 @@ change    = 40.03
 59.97/8 up= 7.50
 59.97/8 tz= 7.49
 59.97/0   = refused (divide by zero)
+scale -1  = refused (bad scale -1)
+mode 7    = refused (bad mode 7)

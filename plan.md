@@ -510,7 +510,7 @@ or an explicit "open, refused because …".
     `make vm-check` and `scripts/entrypoints.sh` deliberately NOT run: no file
     outside `plan.md` changed, so none of them can redden.
 
-- [ ] **Phase 15 — a partially covered Ok/Err side reports the wrong thing**
+- [x] **Phase 15 — a partially covered Ok/Err side reports the wrong thing**
   - Discovered while disproving phase 14, out of its scope. This diagnostic is what
     made phase 14 get filed at all: when refined `Err(...)` arms cover SOME but not
     all variants of the error enum, the compiler says
@@ -566,6 +566,25 @@ or an explicit "open, refused because …".
     files and reported 4 citations needing a human — all four named `side_total`'s
     old line range in this file's phase 14/15 evidence and were reworded by hand,
     since the function they cited no longer exists.
+  - **Part 2 (the decimal example) — DONE.** Both errors confirmed at the source
+    before touching anything: `examples/corelib/decimal/main.ty:11` did carry
+    "DivByZero is DivErr's only variant", and `corelib/decimal/decimal.ty:105-108`
+    does declare `DivByZero`, `BadScale(int)` and `BadMode(int)`. The false comment
+    is gone, and `show` now matches the three variants separately instead of
+    labelling all three "divide by zero" — printing the scale and the mode it was
+    given, which is the whole point of them carrying a payload.
+  - The example now EXERCISES all three rather than asserting them: two calls added,
+    `scale -1` and `mode 7`, so each arm is reached by the run and not just written.
+    The golden gained exactly those two lines (`git diff --stat`: 2 insertions,
+    nothing else moved) — recorded from the program's own stdout, and then verified
+    by the gate rather than by the recording:
+    ```
+    scale -1  = refused (bad scale -1)
+    mode 7    = refused (bad mode 7)
+    ```
+  - Verified: `make corelib-examples` → `ok   decimal`, 36 ok, 1 SKIPPED (image,
+    missing libpng — pre-existing on this host, unrelated); `make goldens-check` ok
+    (446 golden files, all tracked); `make check-links` ok.
 
 - [x] **Phase 6c — triage tycho-q #5, #6, #7 against the source (no fixes)**
   - Dispatched out of plan order, because five of the eight entries worked in
