@@ -398,9 +398,9 @@ element type instead of a family of per-type siblings.
   them whenever the arguments are not compile-time constants. Same exit-code
   contract; `exec_out` captures stdout. They **fail closed** with `-1` on an
   empty argv, more than 4096 entries, an allocation failure mid-build, or a
-  program that cannot be spawned — never a silent fallback to the shell. A
-  `[string]` cannot cross the FFI (§24.1 crosses only `[int]`/`[float]`), so the
-  vector is pushed into an opaque builder one string at a time. Implemented on
+  program that cannot be spawned — never a silent fallback to the shell. The
+  vector crosses the FFI as one `[string]` (§24.1), borrowed for the call: the
+  shim appends the `NULL` `execv` wants to a copy it owns. Implemented on
   both platforms — `posix_spawnp` on POSIX, `CreateProcess` (never `cmd.exe`) on
   Windows, where the vector is joined by the `CommandLineToArgvW` quoting rules
   and round-tripped through the real splitter as a `make shim-check` leg

@@ -2883,7 +2883,7 @@ validate commit hashes, so this had to be checked by hand.
 
     **`core:os` was NOT touched** — scope lock respected; filed as Phase 18.
 
-- [ ] **Phase 18 — adopt `[string]` in `core:os` and retire the argv builder shims**
+- [x] **Phase 18 — adopt `[string]` in `core:os` and retire the argv builder shims**
   - Now unblocked by Phase 17: an `extern` may take a `[string]` directly, so the
     builder-handle dance `core:os` was forced into can collapse to one call.
   - What was measured, not assumed: `corelib/os/os.ty:55-58` declares four shims —
@@ -2903,6 +2903,130 @@ validate commit hashes, so this had to be checked by hand.
   - Verify: `make corelib` (46 expected), `make shim-check` (a `<pkg>_shim.c`
     moves, and `make corelib` cannot redden for it), `sh scripts/entrypoints.sh`.
     Not `make test` — nothing outside `corelib/` changes. Not `make ci`.
+
+  **DONE 2026-08-11.** `osx_exec` / `osx_exec_out` now take the `[string]`
+  directly; `osx_argv_new` / `osx_argv_push` / `osx_argv_free` and the Tycho-side
+  `argv_of` push loop are gone. Net of this commit: `corelib/os/os.ty` +7/-32,
+  `corelib/os/os_shim.c` +49/-70.
+
+  **What the builder actually did, and where each part went** (read before
+  deleting, as the brief demanded):
+
+  | Behaviour | Where it lives now |
+  |---|---|
+  | collect the strings | nowhere — the `[string]` *is* the vector; `runtime/tycho_rt.c@TychoArrStr` already holds a `char **` of C strings |
+  | `strdup` each entry (the handle outlived the call) | nowhere, deliberately. §24.1 lends the array for the call's duration, which is exactly as long as the spawn needs. Only the POINTERS are copied |
+  | NULL-terminate for `execv` | `corelib/os/os_shim.c@osx_argv_dup` — one `calloc(n+1)`, freed the instant `posix_spawnp` returns. This is the part that was *not* free |
+  | refuse empty argv | `corelib/os/os_shim.c@osx_argv_ok` |
+  | refuse > 4096 entries (`OSX_ARGV_MAX`) | same |
+  | refuse a null element (was `!s` in the push) | same |
+  | refuse on allocation failure | `osx_argv_dup` returns NULL → -1 |
+  | the `broken` sticky flag | gone, and it has nothing left to do: there is no longer a partially-built state to protect. The argv is whole or it is refused |
+  | Windows `CommandLineToArgvW` quoting | unmoved. `osx_win_quote` never read the handle; `osx_win_cmdline` took `OsArgv *` and now takes `(v, n)` |
+
+  The documented guarantee "a refused entry leaves NOTHING allocated"
+  (`corelib/os/os.ty` header) is preserved and is now structural rather than
+  promised — the single allocation is freed on every path out of the shim.
+
+  **The public API did not change.** `os.system` / `os.run` / `os.exec` /
+  `os.exec_out` keep their signatures. One package-level function was removed:
+  `argv_of(argv: [string]) -> ptr`, which its own comment described as "public
+  only because a package cannot mark a top-level fn internal". `grep -rn
+  'argv_of'` over the tree (excluding the frozen `compiler/tychoc0.ty`) found no
+  caller outside `corelib/os/os.ty` itself.
+
+  **The 9 files importing `core:os`**, and whether they touch the argv path:
+
+  | File | argv path? | Lane |
+  |---|---|---|
+  | `corelib/os/os.ty` | yes — the package | `make corelib` |
+  | `corelib/test/os/main.ty` | yes — `exec`/`exec_out`, 8 calls | `make corelib` |
+  | `corelib/test/signal/main.ty` | yes — one `os.exec` probe (`:82`) | `make corelib` |
+  | `corelib/signal/signal.ty` | no — import only | `make corelib` |
+  | `corelib/net/net.ty` | no — import only | `make corelib` |
+  | `corelib/test/io/main.ty` | no — `os.system` in prose/history only | `make corelib` |
+  | `examples/corelib/os/main.ty` | no — `os.run`, `os.system` | `make corelib-examples` |
+  | `tools/tycho-build/main.ty` | no — `os.system` (`:100`) | `make build-check` |
+  | `tools/prunner/main.ty` | no — `os.run` ×20 | `make test-fast` (advisory) |
+
+  **Negative control, run twice because the first break was too easy.**
+  1. Off-by-one on the length (`i < n - 1` in `osx_argv_dup`, dropping the last
+     entry): `corelib/test/os` FAILED loudly — `posix=false`, `e_exit7=-1`,
+     `e_out=[] code=-1`, and `e_nosuch=139` (SIGSEGV, since a 1-element argv's
+     `argv[0]` became NULL). Restored → green.
+  2. Terminator dropped (`a[n] = v[0]` instead of NULL, so the child sees one
+     EXTRA argument): **`corelib/test/os` PASSED — `diff-exit=0`.** The fixture
+     could not see it. Every assertion in it reads argument *values*, and a
+     callee ignores an argument it was not asked about. So the fixture was
+     strengthened with one line that asks the callee for the argument COUNT
+     (`printf %s $#` → `e_argc=[1]`), the injected break was re-run, and it then
+     FAILED with `e_argc=[2]` and nothing else moving. Restored → green.
+
+  **Windows is UNTESTED and says so.** `osx_win_cmdline` and `osx_spawn_win`
+  changed signature (`OsArgv *` → the borrowed `(v, n)` pair); the quoting
+  algorithm itself is untouched. A `gap:` note sits at the `osx_exec` definition
+  in the `_WIN32` half of `corelib/os/os_shim.c`. `make shim-check` SKIPS
+  `os_argv_quotecheck.c` on Linux, so that edit would have shipped uncompiled —
+  instead the quoter was extracted from `HEAD` and from the working tree, both
+  compiled on Linux under `-std=c11 -Wall -Wextra`, and run over the nine
+  quotecheck cases: **byte-identical output, 9/9**. That covers the joiner; the
+  `CreateProcess` plumbing around it still has no Linux-runnable check.
+
+  **Gates.** `make shim-check` 9 ok / 5 skipped / 0 failed · `make corelib`
+  **all green (46 ok)**, no skip · `make corelib-examples` all green (37 ok) ·
+  `sh scripts/entrypoints.sh` ok (75 entry points) · `make ffi` green ·
+  `make build-check` all green (7 legs) · `python3 scripts/check_citations.py`
+  ok · `sh scripts/check_links.sh` ok. `make test` was **not** run and did not
+  need to be: nothing under `src/` or `tests/` changed.
+
+  Docs corrected in the same commit, because they asserted the builder as a live
+  fact: `docs/guides/corelib.md` ("the vector is pushed into an opaque builder
+  one string at a time") and `ROADMAP.md`'s `[string]` sizing record, whose
+  `corelib/os/os.ty:55-58` citation would still have resolved while naming
+  something that is no longer there.
+
+- [ ] **Phase 19 — `tools/prunner` never learned the abort `.err` golden, so
+      `make test-fast` is red and `make test` is green**
+  - Found while running `make test-fast` as the only lane that runs prunner (a
+    `core:os` importer). **Not caused by Phase 18** — see the proof below.
+  - `tests/run.sh:356` grew a branch: an abort fixture MAY lock its exact stderr
+    in `tests/abort/<name>.err` instead of being grepped for `tycho:`, because an
+    `Err` out of `main` prints the *program's* message and there is no runtime
+    trap to name. `tools/prunner/main.ty@judge_abort` has no such branch — it
+    goes straight from "died non-zero" to `grep -q 'tycho:'` and fails anything
+    that has a `.err` golden instead.
+  - The one fixture in that shape today is `tests/abort/main_result_err.ty`,
+    added by `f7fb994` ("feat(compiler): or_return works in main()", 2026-08-11,
+    an ancestor of this work). Its stderr is `step 2 failed` — no `tycho:`.
+  - Evidence it is not Phase 18's: run by hand, the fixture builds, dies exit 1,
+    and its stderr is byte-identical to `tests/abort/main_result_err.err`
+    (`diff` empty), which is what `tests/run.sh:362`'s `cmp -s` scores — so
+    `make test` passes it. prunner fails it identically at **633 passed / 1
+    failed** in BOTH `make test-fast` (pool) and `./build/prunner --mode=seq`,
+    which is CLAUDE.md's own test for separating the pool from the judge. And
+    the fixture imports no corelib at all.
+  - `make test-fast` has therefore been red since `f7fb994` and will stay red
+    until prunner mirrors the branch. CLAUDE.md already says `tests/run.sh` is
+    right by definition when the two disagree; what is new is that the
+    divergence is real, present, and silent.
+  - Done when: `judge_abort` reads `tests/abort/<name>.err` when it exists and
+    compares, matching `tests/run.sh:356-366`.
+  - Verify: `make test-fast` (expect 634/0, up from 633/1) against `make test`
+    (634/0, the baseline this session was handed). Not `make ci`.
+
+- [ ] **Phase 20 — `corelib/run.sh`'s comment says `os.exec` is POSIX-only; it
+      has not been true since the Windows path landed**
+  - `corelib/run.sh:38-40` explains the `<golden>.out.win` convention with "core:os
+    is the first user: exec/exec_out are POSIX-only and fail closed with -1 there
+    (os_shim.c's `gap:` note)".
+  - `corelib/test/os.out.win` disagrees on its own terms: it records `e_exit7=7`
+    and `e_out=[hello] code=0`, i.e. exec and exec_out both WORKING on Windows.
+    `corelib/os/os_shim.c` has a full `CreateProcessA` implementation behind
+    `#ifdef _WIN32`. The real reason that golden exists is that cmd.exe renders
+    the shell-contrast lines differently and the POSIX-only hostile-argument
+    round trip has no Windows half — which the same comment also says, correctly.
+  - Cost: one comment. Gates: the two doc gates only — it is a shell comment, no
+    behaviour. Explicitly NOT `make corelib`.
 
 ## Out of scope
 

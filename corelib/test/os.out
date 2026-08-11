@@ -10,6 +10,7 @@ e_out=[hello] code=0
 sh_arg=[INJECTED]
 e_arg=[; printf INJECTED]
 e_space=[a b c]
+e_argc=[1]
 e_empty=-1
 e_nosuch=-1
 e_nosuch_out=[] code=-1

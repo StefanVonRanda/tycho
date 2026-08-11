@@ -82,66 +82,40 @@ void        osx_run_free(void *p) { if (p) { OsRun *r = p; free(r->out); free(r)
 
 /* ---- the argv path: run a program with NO shell between caller and kernel ---
  *
- * WHY A BUILDER AND NOT `osx_exec(const char **argv, tycho_int n)`. A Tycho
- * `[string]` cannot cross the FFI at all: `docs/spec/14-ffi.md` §24.1 crosses
- * only the SCALAR arrays `[int]` and `[float]` as a `(const T*, long)` pair and
- * rejects "an array of any other element type". The NUL-joined-blob alternative
- * is worse than it looks -- a Tycho `string` returned to or from C truncates at
- * the first NUL, which is the defect `core:http`'s `body_bytes` was added to
- * work around. So argv is accumulated one `string` at a time behind an opaque
- * handle, the same shape core:http's Resp and core:sqlite's stmt already use.
+ * THE VECTOR IS BORROWED. A Tycho `[string]` crosses as a
+ * `(const char *const *, tycho_int)` pair (docs/spec/14-ffi.md §24.1): the
+ * pointer is the array's own element storage and every element is already a
+ * NUL-terminated C string, so nothing is marshalled, copied or freed. It is
+ * valid only for the duration of the call, which is exactly as long as the
+ * spawn needs it -- neither the strings nor the vector is retained here.
  *
- * OWNERSHIP. Every pushed string is strdup'd here: the caller's `string` is
- * arena memory whose lifetime is not ours, and the vector must stay valid
- * across the spawn. The handle is freed by exactly one paired osx_argv_free.
- *
- * FAIL CLOSED. A push that cannot allocate marks the handle `broken` and every
- * later call refuses -- a half-built argv must never be executed, because a
- * DROPPED argument is not a smaller command, it is a different one (consider
- * `rm -- somefile` losing its `--`). An empty argv is refused for the same
- * reason. Refusal is -1 / NULL, never a fallback to the shell. */
+ * FAIL CLOSED, and the checks are the ones the old builder handle enforced one
+ * push at a time. A DROPPED argument is not a smaller command, it is a
+ * different one (consider `rm -- somefile` losing its `--`), so an empty argv,
+ * an oversized one, a null element or a failed allocation refuses with -1 /
+ * NULL rather than running anything, and never falls back to the shell. */
 #define OSX_ARGV_MAX 4096       /* a bound, so a runaway loop fails instead of swapping */
 
-typedef struct { char **v; size_t n, cap; int broken; } OsArgv;
-
-void *osx_argv_new(void) {
-    OsArgv *a = calloc(1, sizeof *a);
-    if (!a) return NULL;
-    a->cap = 8;
-    a->v = calloc(a->cap, sizeof *a->v);       /* calloc: v[n] is already the NULL terminator */
-    if (!a->v) { free(a); return NULL; }
-    return a;
-}
-
-tycho_int osx_argv_push(void *h, const char *s) {
-    OsArgv *a = h;
-    if (!a || a->broken || !s) return 0;
-    if (a->n >= OSX_ARGV_MAX) { a->broken = 1; return 0; }
-    if (a->n + 2 > a->cap) {                   /* +2: the new entry and the NULL terminator */
-        size_t ncap = a->cap * 2;
-        char **nv = realloc(a->v, ncap * sizeof *nv);
-        if (!nv) { a->broken = 1; return 0; }
-        memset(nv + a->cap, 0, (ncap - a->cap) * sizeof *nv);
-        a->v = nv; a->cap = ncap;
-    }
-    char *copy = strdup(s);
-    if (!copy) { a->broken = 1; return 0; }
-    a->v[a->n++] = copy;
-    a->v[a->n] = NULL;
+static int osx_argv_ok(const char *const *v, tycho_int n) {
+    if (!v || n <= 0 || n > OSX_ARGV_MAX) return 0;
+    for (tycho_int i = 0; i < n; i++) if (!v[i]) return 0;
     return 1;
-}
-
-void osx_argv_free(void *h) {
-    OsArgv *a = h;
-    if (!a) return;
-    for (size_t i = 0; i < a->n; i++) free(a->v[i]);
-    free(a->v);
-    free(a);
 }
 
 #ifndef _WIN32
 
-/* Spawn a->v with no shell. posix_spawnp and not fork+execvp on purpose: a
+/* execv shape from (ptr,len): a NULL-terminated vector this function owns. Only
+ * the POINTERS are copied -- the strings stay the caller's, borrowed. NULL if
+ * the argv is refused or the copy cannot be allocated. */
+static char **osx_argv_dup(const char *const *v, tycho_int n) {
+    if (!osx_argv_ok(v, n)) return NULL;
+    char **a = calloc((size_t)n + 1, sizeof *a);   /* calloc: a[n] is the NULL terminator */
+    if (!a) return NULL;
+    for (tycho_int i = 0; i < n; i++) a[i] = (char *)v[i];
+    return a;
+}
+
+/* Spawn v with no shell. posix_spawnp and not fork+execvp on purpose: a
  * Tycho program is threaded (the scheduler owns worker threads), and between
  * fork() and exec() in a threaded process only async-signal-safe calls are
  * legal -- a rule the arena allocator does not satisfy. posix_spawnp is the
@@ -150,27 +124,29 @@ void osx_argv_free(void *h) {
  * `out` NULL -> stdout is inherited (the osx_system shape); non-NULL -> stdout
  * is captured into a fresh buffer (the osx_run shape). stderr is inherited in
  * both, matching the two shell functions above. */
-static tycho_int osx_spawn(OsArgv *a, char **out) {
+static tycho_int osx_spawn(const char *const *v, tycho_int n, char **out) {
     if (out) *out = NULL;
-    if (!a || a->broken || a->n == 0) return -1;      /* fail closed */
+    char **argv = osx_argv_dup(v, n);
+    if (!argv) return -1;                             /* fail closed */
 
     int fds[2] = { -1, -1 };
     posix_spawn_file_actions_t fa;
     int have_fa = 0;
     if (out) {
-        if (pipe(fds) != 0) return -1;
-        if (posix_spawn_file_actions_init(&fa) != 0) { close(fds[0]); close(fds[1]); return -1; }
+        if (pipe(fds) != 0) { free(argv); return -1; }
+        if (posix_spawn_file_actions_init(&fa) != 0) { free(argv); close(fds[0]); close(fds[1]); return -1; }
         have_fa = 1;
         /* the child writes the pipe as its stdout and holds neither raw end */
         if (posix_spawn_file_actions_adddup2(&fa, fds[1], STDOUT_FILENO) != 0 ||
             posix_spawn_file_actions_addclose(&fa, fds[0]) != 0 ||
             posix_spawn_file_actions_addclose(&fa, fds[1]) != 0) {
-            posix_spawn_file_actions_destroy(&fa); close(fds[0]); close(fds[1]); return -1;
+            posix_spawn_file_actions_destroy(&fa); free(argv); close(fds[0]); close(fds[1]); return -1;
         }
     }
 
     pid_t pid;
-    int rc = posix_spawnp(&pid, a->v[0], have_fa ? &fa : NULL, NULL, a->v, environ);
+    int rc = posix_spawnp(&pid, argv[0], have_fa ? &fa : NULL, NULL, argv, environ);
+    free(argv);                                       /* the spawn is done with it; the strings were never ours */
     if (have_fa) posix_spawn_file_actions_destroy(&fa);
     if (rc != 0) {                                    /* no such program, or no memory */
         if (fds[0] >= 0) { close(fds[0]); close(fds[1]); }
@@ -209,11 +185,11 @@ static tycho_int osx_spawn(OsArgv *a, char **out) {
     return ty_os_decode(st);
 }
 
-tycho_int osx_exec(void *h) { return osx_spawn(h, NULL); }
+tycho_int osx_exec(const char *const *v, tycho_int n) { return osx_spawn(v, n, NULL); }
 
-void *osx_exec_out(void *h) {
+void *osx_exec_out(const char *const *v, tycho_int n) {
     char *out = NULL;
-    tycho_int code = osx_spawn(h, &out);
+    tycho_int code = osx_spawn(v, n, &out);
     if (code < 0 && !out) return NULL;                /* spawn failed: no handle, no output */
     OsRun *r = malloc(sizeof *r);
     if (!r) { free(out); return NULL; }
@@ -294,9 +270,9 @@ static int osx_win_quote(const char *s, char **buf, size_t *cap, size_t *len) {
 /* Join the vector into one writable command line. CreateProcess may MODIFY
  * lpCommandLine in place when lpApplicationName is NULL, so it must not be a
  * literal or a shared buffer. NULL on allocation failure. */
-static char *osx_win_cmdline(OsArgv *a) {
+static char *osx_win_cmdline(const char *const *v, tycho_int n) {
     char *buf = NULL; size_t cap = 0, len = 0;
-    for (size_t i = 0; i < a->n; i++) {
+    for (tycho_int i = 0; i < n; i++) {
         if (i) {                                       /* separator, before the element */
             if (len + 2 > cap) {
                 size_t ncap = cap ? cap * 2 : 128;
@@ -307,7 +283,7 @@ static char *osx_win_cmdline(OsArgv *a) {
             buf[len++] = ' ';
             buf[len] = '\0';
         }
-        if (!osx_win_quote(a->v[i], &buf, &cap, &len)) { free(buf); return NULL; }
+        if (!osx_win_quote(v[i], &buf, &cap, &len)) { free(buf); return NULL; }
     }
     if (!buf) {                                        /* n == 0 is refused by the caller, but never return NULL-as-ok */
         buf = calloc(1, 1);
@@ -317,11 +293,11 @@ static char *osx_win_cmdline(OsArgv *a) {
 
 /* lpApplicationName is NULL so the PATH is searched, matching execvp/
  * posix_spawnp. `out` NULL -> stdout inherited; non-NULL -> captured. */
-static tycho_int osx_spawn_win(OsArgv *a, char **out) {
+static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out) {
     if (out) *out = NULL;
-    if (!a || a->broken || a->n == 0) return -1;       /* fail closed */
+    if (!osx_argv_ok(v, n)) return -1;                 /* fail closed */
 
-    char *cmdline = osx_win_cmdline(a);
+    char *cmdline = osx_win_cmdline(v, n);
     if (!cmdline) return -1;
 
     HANDLE rd = NULL, wr = NULL;
@@ -396,11 +372,14 @@ static tycho_int osx_spawn_win(OsArgv *a, char **out) {
     return (tycho_int)(int)code;                       /* Windows hands back the code directly */
 }
 
-tycho_int osx_exec(void *h) { return osx_spawn_win(h, NULL); }
+/* gap: UNTESTED on Windows -- this file has no Windows CI. The change here is
+ * mechanical (OsArgv* -> the borrowed (v,n) pair); the quoting is unchanged and
+ * still round-tripped by os_argv_quotecheck.c on a Windows host. */
+tycho_int osx_exec(const char *const *v, tycho_int n) { return osx_spawn_win(v, n, NULL); }
 
-void *osx_exec_out(void *h) {
+void *osx_exec_out(const char *const *v, tycho_int n) {
     char *out = NULL;
-    tycho_int code = osx_spawn_win(h, &out);
+    tycho_int code = osx_spawn_win(v, n, &out);
     if (code < 0 && !out) return NULL;
     OsRun *r = malloc(sizeof *r);
     if (!r) { free(out); return NULL; }

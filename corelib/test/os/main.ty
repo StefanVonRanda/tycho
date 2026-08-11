@@ -58,6 +58,13 @@ fn main():
         # an argument carrying spaces stays exactly one argument.
         es := os.exec_out(["/bin/sh", "-c", "printf %s \"$1\"", "sh", "a b c"])
         println("e_space=[" + es.out + "]")
+
+        # THE COUNT, not just the contents: a callee ignores arguments it was not
+        # asked about, so an argv one entry too LONG (a lost NULL terminator on
+        # the shim's execv vector) changes nothing the lines above print. Every
+        # other assertion here passed with that bug injected; this one did not.
+        ec := os.exec_out(["/bin/sh", "-c", "printf %s $#", "sh", "a b c"])
+        println("e_argc=[" + ec.out + "]")
     else:
         # Windows. cmd.exe is the CALLEE, never an interposed shell -- exec
         # spawns it directly with CreateProcess, so the argv below is what it

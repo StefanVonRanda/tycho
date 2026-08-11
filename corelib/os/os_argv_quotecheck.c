@@ -19,20 +19,16 @@
 #include <shellapi.h>
 #include <stdio.h>
 
-static int check(const char *name, const char **args, int n) {
-    void *h = osx_argv_new();
-    if (!h) { printf("FAIL %s (argv_new)\n", name); return 1; }
-    for (int i = 0; i < n; i++)
-        if (!osx_argv_push(h, args[i])) { printf("FAIL %s (push %d)\n", name, i); osx_argv_free(h); return 1; }
-
-    char *line = osx_win_cmdline((OsArgv *)h);
-    if (!line) { printf("FAIL %s (cmdline)\n", name); osx_argv_free(h); return 1; }
+static int check(const char *name, const char *const *args, int n) {
+    /* the vector is the borrowed (ptr,len) pair os.exec now hands the shim */
+    char *line = osx_win_cmdline(args, (tycho_int)n);
+    if (!line) { printf("FAIL %s (cmdline)\n", name); return 1; }
 
     wchar_t wline[8192];
     MultiByteToWideChar(CP_UTF8, 0, line, -1, wline, 8192);
     int wn = 0;
     wchar_t **wargv = CommandLineToArgvW(wline, &wn);
-    if (!wargv) { printf("FAIL %s (CommandLineToArgvW)\n", name); free(line); osx_argv_free(h); return 1; }
+    if (!wargv) { printf("FAIL %s (CommandLineToArgvW)\n", name); free(line); return 1; }
 
     int bad = 0;
     if (wn != n) { printf("FAIL %s: split into %d args, expected %d\n", name, wn, n); bad = 1; }
@@ -47,7 +43,6 @@ static int check(const char *name, const char **args, int n) {
     if (!bad) printf("ok   %-22s line=%s\n", name, line);
     LocalFree(wargv);
     free(line);
-    osx_argv_free(h);
     return bad;
 }
 

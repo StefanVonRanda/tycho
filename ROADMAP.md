@@ -279,8 +279,9 @@ Three things that must be decided with it, not after:
 above, both closed on 2026-08-10 as stated limits: a paragraph in
 `docs/spec/14-ffi.md` and the `os` entry in `docs/guides/corelib.md`, naming the
 permitted set and the reason, plus a pointer to the builder-handle pattern that
-already works — `corelib/os/os.ty:55-58` is `osx_argv_new` / `osx_argv_push` /
-`osx_argv_free` / `osx_exec`, four shims and a push loop. Cost: one doc commit
+already works — `core:os` then declared `osx_argv_new` / `osx_argv_push` /
+`osx_argv_free` / `osx_exec`, four shims and a push loop (retired 2026-08-11
+once the lifting landed; see `corelib/os/os.ty`). Cost: one doc commit
 and the two doc gates. What it does not buy: every future extern taking a string
 vector pays those four shims again.
 

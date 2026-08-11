@@ -52,11 +52,8 @@ extern fn osx_run(cmd: string) -> ptr          # opaque result handle; null only
 extern fn osx_run_code(r: ptr) -> int
 extern fn osx_run_out(r: ptr) -> string
 extern fn osx_run_free(r: ptr)
-extern fn osx_argv_new() -> ptr                # opaque argv builder; null on allocation failure
-extern fn osx_argv_push(h: ptr, s: string) -> int
-extern fn osx_argv_free(h: ptr)
-extern fn osx_exec(h: ptr) -> int
-extern fn osx_exec_out(h: ptr) -> ptr          # same OsRun handle shape osx_run returns
+extern fn osx_exec(argv: [string]) -> int      # [string] crosses as (const char *const *, len), borrowed
+extern fn osx_exec_out(argv: [string]) -> ptr  # same OsRun handle shape osx_run returns
 
 # Run cmd, inheriting stdout/stderr; return its exit code.
 fn system(cmd: string) -> int:
@@ -71,38 +68,16 @@ fn run(cmd: string) -> Output:
     osx_run_free(r)                                  # ...before it is freed
     return res
 
-# Build the C-side argv vector from a Tycho [string]. Returns a handle, or null
-# if the builder refused any entry -- in which case NOTHING is left allocated.
-# A [string] cannot cross the FFI (docs/spec/14-ffi.md crosses only [int] and
-# [float]), so the vector is pushed one string at a time; that is the whole
-# reason the handle exists. Public only because a package cannot mark a
-# top-level fn internal -- callers want exec/exec_out below.
-fn argv_of(argv: [string]) -> ptr:
-    h := osx_argv_new()
-    if is_null(h):
-        return h
-    for i := 0; i < len(argv); i += 1:
-        if osx_argv_push(h, argv[i]) == 0:
-            osx_argv_free(h)                         # fail closed: a partial argv is never run
-            return null
-    return h
-
 # Run argv with no shell, inheriting stdout/stderr; return its exit code.
+# The vector is BORROWED by the shim for the duration of the call and nothing is
+# copied or freed on either side; the shim appends the NULL execv wants to a
+# vector it owns, and refuses (-1) an empty or oversized argv.
 fn exec(argv: [string]) -> int:
-    h := argv_of(argv)
-    if is_null(h):
-        return -1
-    code := osx_exec(h)
-    osx_argv_free(h)
-    return code
+    return osx_exec(argv)
 
 # Run argv with no shell, capturing stdout; return Output{code, out}.
 fn exec_out(argv: [string]) -> Output:
-    h := argv_of(argv)
-    if is_null(h):
-        return Output(-1, "")
-    r := osx_exec_out(h)
-    osx_argv_free(h)                                 # the argv is done the moment the child is reaped
+    r := osx_exec_out(argv)
     if is_null(r):
         return Output(-1, "")
     res := Output(osx_run_code(r), osx_run_out(r))
