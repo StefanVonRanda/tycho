@@ -17,6 +17,8 @@ extern "ffidemo" fn ffi_ptrval(p: ptr) -> int            # echoes a ptr's intege
 extern "ffidemo" fn ffi_isum(xs: [int]) -> int           # [int] param -> (const long*, long)
 extern "ffidemo" fn ffi_favg(xs: [float]) -> float       # [float] param -> (const double*, long)
 extern "ffidemo" fn ffi_iota(n: int) -> [int]            # [int] RETURN via the out-param shim
+extern "ffidemo" fn ffi_sfold(v: [string]) -> int        # [string] param -> (const char *const *, long), borrowed
+extern "ffidemo" fn ffi_spick(v: [string], i: int) -> string   # an element is an ordinary C string
 extern "ffidemo" fn ffi_dscale(xs: [float], k: float) -> [float]   # [float] param AND return
 
 handle FRes:                                             # FFI R2: a typed C handle, freed by ffi_res_close at scope exit
@@ -99,6 +101,9 @@ fn main():
     # Stage R1d -- array RETURN via the out-param shim (and param+return together)
     io := ffi_iota(4)
     println(f"iota=[{io[0]},{io[1]},{io[2]},{io[3]}] iolen={len(io)} empty={len(ffi_iota(0))}")   # [0,1,2,3] 4 0
+    # Stage R1e -- [string] crosses as (const char *const *, long); empty array -> len 0, ptr unread
+    sv := ["alpha", "be", "c"]
+    println(f"sfold={ffi_sfold(sv)} sfold0={ffi_sfold([]string)} spick={ffi_spick(sv, 1)} soob={ffi_spick([]string, 0)}")   # 374 0 be <oob>
     ds := ffi_dscale([1.0, 2.0, 3.0], 10.0)
     println(f"dscale=[{ds[0]},{ds[1]},{ds[2]}] dslen={len(ds)}")   # [10.0,20.0,30.0] 3
     # Stage R2 — a typed handle freed (exactly once) by its destructor at scope exit

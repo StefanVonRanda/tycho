@@ -227,6 +227,8 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §23.1 | channels (Vyukov, capacity, select) | `tests/conc/chan`, `tests/conc/chancap1`, `tests/conc/select`, `reject/send_wrong_type`, `reject/chan_reassign` |
 | §23.x | parallel-for (`0..<N` counting form and foreach); channel-drain | `tests/conc/parfor`, `tests/conc/parfor_dotlt`, `tests/conc/parfor_chan`, `tests/conc/select_parfor`, `parforparity` lane |
 | §24.1 | FFI crossable types (scalars/str/bytes/handles/sized) | `tests/ffi`, `examples/sqlite/demo.ty` |
+| §24.1 | `[string]` param crosses as `(const char *const *, long)`, borrowed; empty array | `tests/ffi` (`ffi_sfold`, `ffi_spick`) |
+| §24.1 | a `[string]` *return* stays rejected | `tests/reject/extern_ret_arr_string.ty` |
 | §24.2 | linking / cc invocation | `tests/ffi/run.sh`, `examples/sqlite` |
 | §25 | typed handle decl: name must not collide with a struct/enum/newtype/handle | `tests/reject/handle_dup_name` |
 

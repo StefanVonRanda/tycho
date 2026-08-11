@@ -17,8 +17,8 @@ is emitted unmangled and it receives no arena argument.
 
 ### 24.1 Crossable types
 
-Only these may appear in an `extern` signature; a **map, struct, or non-scalar
-array** is rejected at the boundary:
+Only these may appear in an `extern` signature; a **map, struct, or any array
+outside the list below** is rejected at the boundary:
 
 - **Scalars** `int`, `char`, `float`, `bool`.
 - **Sized integers.** The whole fixed-width integer family — `u8`/`u16`/`u32`/
@@ -34,8 +34,21 @@ array** is rejected at the boundary:
 - **`bytes`** — crosses as a `(pointer, length)` pair, preserving interior `NUL`s;
   a `bytes`/array returned from C is copied into an arena and the C buffer freed.
 - **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, long)`
-  pair (like `bytes`); an array of any other element type, and any map or struct,
-  is rejected (no flat, self-describing C ABI).
+  pair (like `bytes`), in either direction; an array of any other element type,
+  and any map or struct, is rejected (no flat, self-describing C ABI).
+- **`[string]` — parameter direction only.** It crosses as a
+  `(const char *const *, long)` pair, the same `(ptr, len)` convention as
+  `[int]`/`[float]` and **not** a `NULL`-terminated `argv`; a callee wanting
+  `execv` shape appends its own `NULL`. No marshalling happens: a Tycho string is
+  already a NUL-terminated C `char*`, so the pointer handed over is the array's own
+  element storage. The array is **borrowed for the duration of the call** — the
+  callee may read the strings while it runs, and **must not retain the pointer, any
+  element, or write through either** after returning. Nothing is copied, and nobody
+  frees. This contract is **not enforceable by the implementation**; violating it is
+  undefined behaviour. When the array is empty the pointer may be null and the
+  length is `0`, so a callee must check the length before dereferencing.
+  A `[string]` **return** is rejected: a `char**` out of C carries no length, the
+  same reason an `inout string` out-parameter is rejected below.
 - **`ptr`** — an opaque `void*` Tycho never dereferences; the `null` literal and
   `is_null(p)` apply.
 - **typed `handle`s** — §25.

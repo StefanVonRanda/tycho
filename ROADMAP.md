@@ -175,7 +175,7 @@ against the wrong mechanism.
 | two error types cannot share an `or_return` chain | **closed — and the row named the wrong mechanism.** `b289a44` triaged it as WRONG MECHANISM: `corelib/result/result.ty:120@map_err` already bridged, and `1185f1a` added `map_err_with` (`:133`) for the cause-preserving case. Probe: one `fn chain(k) -> Result(int, string)` whose first leg is a `Result(string, IoErr)` bridged by `result.map_err_with(read_it(k), ioerr_to_str) or_return` and whose second leg is a native `Result(int, string)` — both legs propagate through the same chain, the IoErr path surfacing as `missing key bad`. There was never a language gap here, only a missing combinator |
 | `core:iter` unusable for a fallible pipeline stage | **closed 2026-08-11** — `9d2a6f9` added `corelib/iter/iter.ty:27@try_map` and `:42@try_filter`; `66cc04e` flipped predicates to `bool`. Probe: `try_map` over `["1","2","3"]` gave `[1, 2, 3]` and over `["1","-2","3"]` short-circuited to `not positive: -2`; `try_filter` kept `[2, 3, 4]` and propagated `overflow guard` |
 | `core:decimal` has no `div` | **closed** — `4251339`, confirmed by `7bff57b`. `corelib/decimal/decimal.ty:116` is `fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr)`. Probe: `div(10, 3, 4, 0)` gave `3.3333` |
-| `[string]` cannot cross the FFI | **OPEN — the only one left.** Confirmed at the source, not inferred: `src/tychoc.c:4383-4387@ffi_arr_ptr_ctype` returns non-NULL for `T_ARRAY_INT` and `T_ARRAY_FLOAT` and nothing else, so `[string]` falls through to the rejection at `src/tychoc.c:4446`. Probe: `extern fn my_exec(argv: [string]) -> int` dies with *"parameter 'argv' must be int/char/float/bool/string/ptr/bytes, [int]/[float], or a handle"*. Sizing below |
+| `[string]` cannot cross the FFI | **CLOSED 2026-08-11 — lifted for the PARAMETER direction, refused for the return.** `src/tychoc.c@ffi_arg_arr_ptr_ctype` answers `"const char *const *"` for `T_ARRAY_STRING`; a `[string]` argument now emits `(const char *const *)xs.data, xs.len`, the same `(ptr,len)` convention `[int]`/`[float]` use, **borrowed for the call** (unenforceable — stated in `docs/spec/14-ffi.md` §24.1). The return gate stayed `src/tychoc.c@ffi_arr_ptr_ctype`, which never answers for `T_ARRAY_STRING`, so `-> [string]` still dies (`tests/reject/extern_ret_arr_string.ty`). Fixture: `tests/ffi/main.ty@ffi_sfold`, non-empty and empty. **`core:os` was left alone** — adopting this to drop its four argv shims is filed separately in `plan.md` |
 
 One correction carried forward from 2026-08-09, and one new one.
 
@@ -243,8 +243,11 @@ decision here.
 
 #### Sizing `[string]` across the FFI — both answers, with costs
 
-Neither is chosen here. The row has been undecided since it was filed; these are
-the two real prices.
+**Resolved 2026-08-11: lifting was chosen, and the sizing below held** — with one
+correction found while implementing it. `ffi_arr_ptr_ctype` is also the *return*
+gate, so widening it in place would have made `-> [string]` compile; the branch
+went into a new param-only `ffi_arg_arr_ptr_ctype` instead. The rest of this
+section is kept as the record of the two prices that were weighed.
 
 **Lifting it is small — smaller than the row's "open by design" implies.** The
 blocker is not representation. `runtime/tycho_rt.c:1854` is
@@ -254,21 +257,21 @@ pointer is a valid C `char *` with the header hidden behind it. So a `[string]`'
 `.data` **is already a `char **` of ordinary C strings** — no marshalling, no
 copy, no ownership transfer. The change is one branch in
 `src/tychoc.c@ffi_arr_ptr_ctype` returning `"const char *const *"` for
-`T_ARRAY_STRING`; both call-emit sites (`src/tychoc.c:9833` and
-`src/tychoc.c:10179`) are already generic over that function's result and would
+`T_ARRAY_STRING`; both call-emit sites (`src/tychoc.c@_xa` — the direct-call and
+out-param-return emitters) are already generic over that function's result and would
 emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `810c8c3`
 (`is`): one resolver branch, one codegen path already written, a fixture.
 
 Three things that must be decided with it, not after:
 
 1. **`(ptr, len)`, not a NULL-terminated argv.** It would follow the
-   `[int]`/`[float]` convention already at `src/tychoc.c:9836`. A callee wanting
+   `[int]`/`[float]` convention already at `src/tychoc.c:9844`. A callee wanting
    `execv` semantics appends its own `NULL`. Promising argv-shape instead means
    the emitter allocates a terminated copy, and that is a different, larger change.
 2. **Borrow for the call; the callee must not retain.** Same contract
    `[int]`/`[float]` carry today. Nobody frees, because nothing was allocated.
 3. **The return direction stays refused.** `[string]` *out* of C has no length
-   header to reconstruct — the same reason `src/tychoc.c:4441-4442` bans a
+   header to reconstruct — the same reason `src/tychoc.c:4449-4450` bans a
    `char **` out-param. Lifting the parameter direction does not lift this one,
    and saying so is part of the change.
 

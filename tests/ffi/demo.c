@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>   /* int64_t: the FFI boundary uses Tycho's int64, and C `int64_t` is 32-bit on Windows */
+#include <string.h>   /* strlen: a `[string]` element is an ordinary NUL-terminated C string */
 
 static char buf[256];
 
@@ -99,4 +100,18 @@ void ffi_dscale(const double *xs, int64_t n, double k, double **out, int64_t *ou
     double *p = (double *)malloc(n ? (size_t)n * sizeof(double) : 1);
     for (int64_t i = 0; i < n; i++) p[i] = xs[i] * k;
     *out = p; *outlen = n;
+}
+
+/* `[string]` crosses as (const char *const *, int64_t) — BORROWED for the call, so
+ * neither of these keeps `v` or any v[i] after returning. ffi_sfold mixes each
+ * element's length AND its first byte, so a wrong element pointer, a wrong stride or
+ * a wrong count all change the number; n == 0 must never dereference v (which is
+ * NULL for an empty array). ffi_spick proves an element is a usable C string. */
+int64_t ffi_sfold(const char *const *v, int64_t n) {
+    int64_t s = 0;
+    for (int64_t i = 0; i < n; i++) s += (int64_t)strlen(v[i]) * 10 + (unsigned char)v[i][0];
+    return s;
+}
+const char *ffi_spick(const char *const *v, int64_t n, int64_t i) {
+    return (i >= 0 && i < n) ? v[i] : "<oob>";
 }

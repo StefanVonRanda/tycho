@@ -32,7 +32,7 @@ the correct fix. **Read the dry run before `--apply`; it is not a formality.**
 
 LIMITATION, measured rather than assumed. The "changed hunk" guard above is NOT
 a reliable safety net, because difflib aligns on text, not identity. Deleting
-`src/tychoc.c:9903` -- a line whose exact text occurs 5 times in the file --
+`src/tychoc.c:9911` -- a line whose exact text occurs 5 times in the file --
 produced no DROPPED at all: the matcher realigned against one of the duplicates
 and the citation was silently remapped to a different line that happens to read
 the same. The guard catches a citation into genuinely unique deleted text and
@@ -48,7 +48,7 @@ WHAT IT DOES NOT REACH, so check these by hand afterwards (none is policed by
 check_citations.py either, which is why they drift silently):
 
   1. a bare `:N` continuation after a real citation on the same line of a
-     SOURCE file -- `src/tychoc.c:9845, :9666`. The checker's SRCCITE pattern
+     SOURCE file -- `src/tychoc.c:9853, :9666`. The checker's SRCCITE pattern
      requires a path, so the second ref is unchecked.
   2. the same inside `.ty` fixture comments.
   3. a file's own `(:4592)`-style self-references.
