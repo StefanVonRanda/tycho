@@ -3313,7 +3313,7 @@ language change, sized and filed as Phase 22 below rather than forced here.
     75 entry points, which is what compiles the edited prunner ·
     `make check-links` ok. `make ci` deliberately not run.
 
-- [ ] **Phase 20 — `corelib/run.sh`'s comment says `os.exec` is POSIX-only; it
+- [x] **Phase 20 — `corelib/run.sh`'s comment says `os.exec` is POSIX-only; it
       has not been true since the Windows path landed**
   - `corelib/run.sh:38-40` explains the `<golden>.out.win` convention with "core:os
     is the first user: exec/exec_out are POSIX-only and fail closed with -1 there
@@ -3326,6 +3326,30 @@ language change, sized and filed as Phase 22 below rather than forced here.
     round trip has no Windows half — which the same comment also says, correctly.
   - Cost: one comment. Gates: the two doc gates only — it is a shell comment, no
     behaviour. Explicitly NOT `make corelib`.
+  - DONE 2026-08-11. The brief's `corelib/run.sh:38-40` was right, and the
+    "POSIX-only" claim is false: `corelib/os/os_shim.c:378@osx_spawn_win` is
+    `tycho_int osx_exec(...) { return osx_spawn_win(v, n, NULL); }` inside the
+    `#ifdef _WIN32` half, reaching `CreateProcessA` at
+    `corelib/os/os_shim.c:328@CreateProcessA`. `corelib/test/os.out.win` records
+    `e_exit7=7` and `e_out=[hello] code=0` — exec and exec_out both working —
+    produced by the Windows branch at `corelib/test/os/main.ty:76-78`.
+  - What the golden proves, precisely: 690a718 (2026-08-09) recorded it on a
+    real Windows 11 26200 / mingw VM, its message naming "exec runs cmd /c and
+    returns 7, exec_out captures through the pipe, fail-closed cases all -1".
+    So it was RUN there once. It has not been re-run since 43a1ded's argv
+    refactor two days later, which says so itself at
+    `corelib/os/os_shim.c:375@UNTESTED`; the file `43a1ded` touched
+    `corelib/test/os.out` but not the `.win` sibling, legitimately — the line it
+    added (`e_argc`) sits in the `/bin/sh` branch the Windows run skips. The
+    comment now states that history rather than asserting either extreme.
+  - The real reason the `.win` golden exists is smaller than the old comment
+    said: `posix` at `corelib/test/os/main.ty:37@posix` is a PROBE for `/bin/sh`,
+    not a platform test, so on Windows the file differs only by `posix=false`
+    plus the four shell-contrast/hostile-argument lines that need a `/bin/sh`.
+  - Evidence: `make corelib` → `corelib: all green (46 ok, tychoc matches
+    goldens)`, and that string is only reachable when `nskip` is 0
+    (`corelib/run.sh:109@all green`), so no package was skipped. `make
+    check-links` green, source->source anchored count 15 → 17.
 
 - [x] **Phase 21 — prunner's lane table is stale in both columns, found while
       auditing the judges in Phase 19**

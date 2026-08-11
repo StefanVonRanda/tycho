@@ -35,9 +35,14 @@ for entry in corelib/test/*/main.ty; do
     # Windows-aware golden, the same `<golden>.win` convention tests/run.sh:157
     # already uses. Only ever selected on Windows, and only when the sibling
     # exists -- a package with one platform-independent output keeps one golden.
-    # core:os is the first user: exec/exec_out are POSIX-only and fail closed
-    # with -1 there (os_shim.c's `gap:` note), and cmd.exe renders the shell
-    # contrast line differently from /bin/sh.
+    # core:os is the first user -- NOT because exec is unavailable on Windows:
+    # `corelib/os/os_shim.c:378@osx_spawn_win` wires it to CreateProcessA, and
+    # `corelib/test/os.out.win` records exec and exec_out WORKING there
+    # (`e_exit7=7`), observed on a Windows 11 VM when that path landed (690a718)
+    # and not re-run since the argv refactor -- `corelib/os/os_shim.c:375@gap`
+    # says so itself. The golden differs for a smaller reason: /bin/sh does not
+    # resolve there, so the test prints posix=false and skips the shell-contrast
+    # and hostile-argument lines that need it.
     if [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" -ne 0 ] && [ -f "corelib/test/$name.out.win" ]; then
         golden="corelib/test/$name.out.win"
     fi
