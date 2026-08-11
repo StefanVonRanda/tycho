@@ -235,7 +235,9 @@ test-update: tychoc
 
 # Performance guard: assert the thesis's optimizations still hold (peak RSS
 # stays linear, the inout memo stays O(n)). See bench/run.sh.
-bench: tychoc
+# `entrypoints` first (0.2s): it compiles every .ty under bench/, so a language
+# change that broke a benchmark says so here instead of part-way through a run.
+bench: tychoc entrypoints
 	@sh bench/run.sh
 
 # Head-to-head memory benchmark: the same workloads in Tycho / C / Rust / Go /

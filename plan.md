@@ -2570,6 +2570,111 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     justification changed even though the behaviour should not.
   - If it is changed anyway: `make ar-check`, and the golden moves.
 
+- [x] **Phase 16 — `bench/` is compiled by no gate**
+  - Requested directly by the repo owner: "make bench compile every .ty in bench/".
+  - Scope: `scripts/entrypoints.sh`, the `bench` target in `Makefile`, and the
+    gate table in both `CLAUDE.md` and `CONTRIBUTING.md`.
+  - Done when: every `.ty` under `bench/` is compiled by a lane that is in
+    `make ci`, and a deliberate compile error in a `bench/` file reddens it.
+  - Verify: `sh scripts/entrypoints.sh` green and observed failing;
+    `make check-links`; `sh bench/guard.sh` undisturbed. Not `make test` /
+    `make corelib` / `make ci` — none can redden for a compile sweep over `bench/`.
+
+### Evidence — `bench/` compile sweep
+
+**Classification.** `find bench -name '*.ty'` returns **51** files. Every one of
+them declares its own `main` — there are **0** package/module files compiled only
+as part of another program, so nothing had to be excluded:
+
+| kind | count | handling |
+|---|---|---|
+| standalone entry point, no `package` header | 49 | compiled in place |
+| standalone entry point declaring `package main` | 2 | compiled isolated (below) |
+
+The two are `bench/trie/trie.ty` and `bench/trie/trie_pool.ty`. They are the only
+bench files with a `package` header, and that header is exactly what makes tychoc
+scan the directory and compile every sibling as one unit — `src/tychoc.c:8600-8603`
+says the directory scan "is entered only when the entry file declares a `package`
+header". They are two independent programs both defining `struct Trie`, so in
+place they collide:
+
+```
+FAIL bench/trie/trie_pool.ty
+bench/trie/trie_pool.ty:14: error: 'Trie' is already defined
+```
+
+This is the "a package file compiled standalone may legitimately fail" case.
+They are **not excluded** — each is copied alone into a scratch dir and compiled
+there, which is the same fix `bench/trie/run.sh:31-34` already applies for the
+same reason. Both are also on the fail-closed `MUST` list, so losing either to a
+rename reddens the lane instead of shrinking it.
+
+**Decision: option (a), extend `scripts/entrypoints.sh`.** It already compiles
+with `--emit-c` into a temp dir, already carries the fail-closed `MUST` list and
+vacuity floor, and is already `make ci` step `[3b]`. No reason found that `bench/`
+does not fit it. `make bench` now depends on the `entrypoints` target
+(`Makefile@bench`) so the owner's literal ask holds: `make bench` compiles every
+`.ty` in `bench/` before running anything.
+
+Using `--emit-c -o "$T/…"` is load-bearing, not incidental: `src/tychoc.c:14004-14006`
+records that a plain build of `bench/json/json.ty` **overwrites** the hand-written,
+tracked `bench/json/json.c`. The sweep never writes into the tree.
+
+**Result on the tree as-is — all 51 compile.** Nothing was found broken, so there
+is nothing to fix or to file.
+
+```
+$ time sh scripts/entrypoints.sh
+...
+ok      bench/trie/trie.ty (isolated)
+ok      bench/trie/trie_pool.ty (isolated)
+-----------------------------------------
+entrypoints: ok (75 entry points compile with tychoc)
+sh scripts/entrypoints.sh  0.15s user 0.07s system 100% cpu 0.219 total
+```
+
+**0.219s for 75 entry points**, up from 0.141s for 24 — the 51 bench files cost
+~0.08s. The vacuity floor moved 18 → 70 so a `find` that stops matching `bench/`
+cannot leave the lane silently green.
+
+**Proof it can fail.** All three paths were broken on purpose and restored:
+
+1. In-place bench file — appended a bad return to `bench/dijkstra/dijkstra.ty`:
+
+```
+FAIL    bench/dijkstra/dijkstra.ty
+        bench/dijkstra/dijkstra.ty:101: error: returning string but proc returns int
+entrypoints: FAILED (1 of 75 entry points do not compile)     # exit 1
+```
+
+2. Isolated path (a separate code path, so proved separately) —
+   `bench/trie/trie_pool.ty`:
+
+```
+FAIL    bench/trie/trie_pool.ty (isolated)
+        …/iso/trie_pool.ty:47: error: returning string but proc returns int   # exit 1
+```
+
+3. Fail-closed `MUST` — moved `bench/dijkstra/dijkstra.ty` away:
+
+```
+entrypoints: MUST-COVER FILE GONE: bench/dijkstra/dijkstra.ty -- this lane
+asserts LESS than it claims; fix the list or restore the file                # exit 1
+```
+
+`git status --porcelain bench/` empty after each restore.
+
+**Other gates.** `make check-links` ok (119 markdown files);
+`python3 scripts/check_citations.py` ok; `sh bench/guard.sh` ok, exit 0
+(`tycho beats C on tree workloads; elision live on array scans`) — undisturbed.
+
+**One correction made during the phase:** the brief's commit hash for the
+motivating change was mistyped into two files as `9bcc93b`, which
+`git cat-file -t` rejects. The real commit is `9cbbd3b`
+("a binding may not start with an uppercase letter"), which is indeed the change
+that migrated `bench/dijkstra/dijkstra.ty`. `check_citations.py` does not
+validate commit hashes, so this had to be checked by hand.
+
 ## Out of scope
 
 `make ci` and standalone `make test` are not run as ritual — each phase runs only

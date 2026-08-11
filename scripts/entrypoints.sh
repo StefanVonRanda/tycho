@@ -38,7 +38,8 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 # The entry points with no gate of their own. Losing one of these to a rename is
 # exactly the rot this lane exists to prevent, so they are named, not globbed.
 MUST="examples/webserver/main.ty examples/weblog/main.ty examples/fetch/main.ty
-      examples/sqlite/demo.ty server/main.ty tools/tycho-vm/main.ty"
+      examples/sqlite/demo.ty server/main.ty tools/tycho-vm/main.ty
+      bench/dijkstra/dijkstra.ty bench/trie/trie.ty bench/trie/trie_pool.ty"
 missing=""
 for m in $MUST; do [ -f "$m" ] || missing="$missing $m"; done
 [ -z "$missing" ] || { echo "entrypoints: MUST-COVER FILE GONE:$missing -- this lane asserts LESS than it claims; fix the list or restore the file"; exit 1; }
@@ -66,6 +67,25 @@ for d in tools/*/; do
     [ -f "${d}main.ty" ] && list="$list ${d}main.ty"
 done
 
+# Every .ty under bench/, at any depth. Each one declares its own main; none had
+# a COMPILE gate before 2026-08-11, because bench/guard.sh asserts one wall-time
+# ratio and nothing else and no other lane touches bench/. That is why 9cbbd3b,
+# migrating bench/dijkstra/dijkstra.ty for a language-rule change, could only be
+# verified by compiling that file BY HAND. Globbed, so a new benchmark is
+# covered the day it lands.
+for f in $(find bench -name '*.ty' | sort); do
+    case "$f" in bench/trie/*) continue ;; esac
+    list="$list $f"
+done
+
+# bench/trie/ is the only bench directory whose files declare a `package` header,
+# and that header is exactly what makes tychoc scan the directory and compile
+# every sibling as one package (src/tychoc.c:8600-8603). trie.ty and trie_pool.ty
+# are two independent programs, so in place they collide on `struct Trie`. They
+# are NOT excluded -- each is compiled alone in a scratch dir, the same fix
+# bench/trie/run.sh:31-34 already applies.
+ISOLATE="bench/trie/trie.ty bench/trie/trie_pool.ty"
+
 n=0; fail=0
 for e in $list; do
     n=$((n + 1))
@@ -79,8 +99,23 @@ for e in $list; do
     rm -f "$T/e.c"
 done
 
-# A zero-length sweep is a broken gate, not a green one.
-[ "$n" -ge 18 ] || { echo "entrypoints: only $n entry point(s) found -- the glob is broken, this lane asserts NOTHING"; exit 1; }
+for e in $ISOLATE; do
+    n=$((n + 1))
+    rm -rf "$T/iso"; mkdir -p "$T/iso"; cp "$e" "$T/iso/"
+    if "$TYCHOC" "$T/iso/$(basename "$e")" --emit-c -o "$T/e" >"$T/log" 2>&1; then
+        echo "ok      $e (isolated)"
+    else
+        echo "FAIL    $e (isolated)"
+        sed 's/^/        /' "$T/log" | head -6
+        fail=$((fail + 1))
+    fi
+    rm -f "$T/e.c"
+done
+
+# A zero-length sweep is a broken gate, not a green one. The floor is a floor,
+# not the count: it sits under examples+server+tools+bench so a find that stops
+# matching bench/ cannot leave this lane silently green.
+[ "$n" -ge 70 ] || { echo "entrypoints: only $n entry point(s) found -- the glob is broken, this lane asserts NOTHING"; exit 1; }
 echo "-----------------------------------------"
 [ "$fail" -eq 0 ] || { echo "entrypoints: FAILED ($fail of $n entry points do not compile)"; exit 1; }
 echo "entrypoints: ok ($n entry points compile with tychoc)"

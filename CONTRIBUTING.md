@@ -100,6 +100,7 @@ reach for first.
 | `tools/tycho-ar/` · `-q/` · `-vm/` · `-kv/` · `-scheme/` | `make ar-check` · `q-check` · `vm-check` · `kv-check` · `scheme-check` | 1–4s each, and **each is the only lane that runs its tool** |
 | `server/`, or the `core:net` accept/recv/send path | `make server-check` | ~7s, starts the server for real |
 | `examples/weblog/`, `examples/webserver/` | `make weblog webserver` | ~4s. **The only lanes that run either program** — `entrypoints` compiles them and asserts nothing |
+| a `bench/` benchmark, or a language change that could break one | `sh scripts/entrypoints.sh` | ~0.22s. **The only lane that compiles anything under `bench/`.** `bench/guard.sh` checks one wall-time ratio and nothing else, so before 2026-08-11 the ~51 benchmarks could stop compiling in silence. Compile-only (`--emit-c`) — it never runs a benchmark, so it stays milliseconds. `make bench` depends on it |
 | `tools/tychofmt.ty`, `tools/lsp.ty` | `sh scripts/tools_check.sh` | ~1 min |
 
 `make test-fast` runs the same fixtures over a worker pool and is much quicker —
