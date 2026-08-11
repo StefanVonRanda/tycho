@@ -1,18 +1,18 @@
 #!/bin/sh
-# tycho pre-push gate -- no broken code leaves this machine. (Local. No GitHub
-# Actions, ever.) Runs the FULL DETERMINISTIC gate via `make ci N=0`: every ci
-# lane EXCEPT the minutes-long fuzz campaign -- build, golden +
-# sanitizer tests, corelib + corelib-examples + the `site`
-# dogfood, concurrency, ffi, formatter/LSP tools-check, bench-guard, recursion,
-# and spec-check -- plus a quick fuzz smoke (`make fuzz-quick`).
+# tycho pre-push gate. (Local. No GitHub Actions, ever.) Two cheap checks: the
+# link + `path:line` citation gate, and a quick fuzz smoke.
 #
-# Why this wide: a green `make test` is NOT a green tree. A `datetime`-FFI link
-# break in the `site` dogfood, and cross-package type-mangling divergences, are
-# invisible to `make test` but caught here -- running only test (+
-# corelib) once let a red `make ci` reach `main` unnoticed.
+# IT DOES NOT RUN THE SWEEP, since 2026-08-10. `make ci N=0` was here and was
+# removed on the owner's instruction: ~274s on every push, usually re-running
+# what a `make ci` minutes earlier had already run. A pre-push hook earns its
+# place by being too cheap to argue with; past that it just teaches people to
+# bypass it.
 #
-# The full fuzz campaign (fuzz N=200 + reject + leak, ~20 min) is NOT in
-# this hook -- run it before a substantial push with `make ci`.
+# So THE SWEEP IS YOURS TO RUN: `make ci` before a substantial push. What that
+# buys, and this hook no longer does, is the wide lanes -- a `datetime`-FFI link
+# break in the `site` dogfood and cross-package type-mangling divergences are
+# invisible to `make test` and were caught by the sweep. Nothing here replaces
+# it; the trade is explicit.
 #
 # Activate once:  make hooks   (sets core.hooksPath to .githooks)
 # Emergency bypass (avoid): git push --no-verify
@@ -37,11 +37,13 @@ gate() {   # gate "<label>" <make args...>
     fi
 }
 
-# Sub-second, so it runs BEFORE the minutes-long sweep: the cheapest gate in the
-# tree should not be the one you discover was red after twenty minutes of lanes.
+# Both sub-second-to-seconds. `make ci N=0` was here until 2026-08-10 and was
+# removed on the owner's instruction: at ~274s it made every push a coffee break,
+# and it re-ran what a `make ci` before the push had usually just run. The gate a
+# push should not be able to skip is the one that is too cheap to think about;
+# the sweep is a thing you run when you want it.
 gate "make check-links (links + path:line citations)" check-links
-gate "make ci N=0 (all deterministic lanes)" ci N=0
 gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 
 rm -f "$LOG"
-printf 'pre-push: gates green -- allowing push (run `make ci` for the full fuzz campaign).\n'
+printf 'pre-push: gates green -- allowing push. `make ci` is NOT run here; run it yourself before a substantial push.\n'

@@ -45,15 +45,19 @@ make ci N=0          # same, skipping the (slow) fuzz lanes for a quick check
 A change is "green" iff `make ci` passes.
 
 **Run `make hooks` once after you clone.** It points `core.hooksPath` at
-`.githooks/`, so `git push` runs the citation/link gate, then `make ci N=0`,
-then a fuzz smoke, and blocks the push if any of them fails. That setting is
-**per-clone git config and is not tracked**, so a fresh clone has no hooks at
-all until you run it — which is exactly how a red citation gate reached `main`
-on 2026-08-10.
+`.githooks/`, so `git push` runs the citation/link gate and a fuzz smoke, and
+blocks the push if either fails. That setting is **per-clone git config and is
+not tracked**, so a fresh clone has no hooks at all until you run it — which is
+exactly how a red citation gate reached `main` on 2026-08-10.
+
+**The hook does not run the sweep**, deliberately: it holds only checks that are
+too cheap to argue with. `make ci` before a substantial push is yours to run,
+and it is the only thing that covers the wide lanes — a dogfood link break or a
+cross-package mangling divergence is invisible to `make test`.
 
 The sweep is not as long as it looks: **`make ci` measured 495–499s across four
 runs on a 16-core box, 2026-08-10** — all thirteen steps including 200 fuzz
-seeds. `N=0`, the hook's setting, is **274s**. It parallelises (`run_lanes`
+seeds. `make ci N=0`, which skips the fuzz lanes, is **274s**. It parallelises (`run_lanes`
 forks each lane group), which is why the whole sweep costs barely more than
 `make test` alone.
 
