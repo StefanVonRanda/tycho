@@ -3327,7 +3327,7 @@ language change, sized and filed as Phase 22 below rather than forced here.
   - Cost: one comment. Gates: the two doc gates only — it is a shell comment, no
     behaviour. Explicitly NOT `make corelib`.
 
-- [ ] **Phase 21 — prunner's lane table is stale in both columns, found while
+- [x] **Phase 21 — prunner's lane table is stale in both columns, found while
       auditing the judges in Phase 19**
   - `tools/prunner/main.ty:40-47` is the map of which `tests/run.sh` loop scores
     which family. Every line range in it is wrong: it cites `tests/run.sh:113-118`
@@ -3343,6 +3343,27 @@ language change, sized and filed as Phase 22 below rather than forced here.
     points at unrelated code. That is the whole reason this drifted.
   - Cost: one comment block. Gates: the two doc gates only. Explicitly NOT
     `make test` or `make test-fast` — no behaviour changes.
+  - DONE 2026-08-11. The brief's `tools/prunner/main.ty:40-47` was right; all
+    seven rows were stale, not five. Re-derived against today's `tests/run.sh`,
+    each row now anchored so a move reddens: pos
+    `tests/run.sh:208-214@queue_positive` (the worker-pool branch a normal run
+    takes — RECORD=1's sequential enumeration is
+    `tests/run.sh:178-193@run_fixture`), pos/pkg
+    `tests/run.sh:217-232@queue_positive`, reject `tests/run.sh:293-320@reject_`,
+    rejectpkg `tests/run.sh:326-347@rejectpkg_`, abort
+    `tests/run.sh:354-382@abort_`, diag `tests/run.sh:389-407@diag_`, warn
+    `tests/run.sh:422-445@warn_`.
+  - The count column is deleted rather than corrected, per CLAUDE.md's "name the
+    command, not the figure". Today's globs total 637 (273 + 16 + 294 + 3 + 18 +
+    24 + 9 via `ls <glob> | wc -l`), not the 560 in the table nor the 634 this
+    phase's own brief predicted — three different numbers in one week is the
+    argument for the rule. The comment now points at `tests/run.sh`'s closing
+    `passed: N   failed: N` line instead.
+  - Evidence: `make check-links` green — "146 anchored ... 15 source->source
+    anchored". Proved it can redden: swapping the diag row's anchor to `warn_`
+    gave "STALE tools/prunner/main.ty:45 ... does NOT contain 'warn_'; it
+    appears at :424", exit 1; reverted, green again. `git diff` is 31 changed
+    lines, every one starting `#`, so `make test-fast` does not apply.
 
 - [ ] **Phase 22 — let a bare `Ok:` / `Some:` arm match a payload-CARRYING
       variant, so a generic body can be written once** (*filed by Phase 16,
