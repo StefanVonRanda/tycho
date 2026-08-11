@@ -1,4 +1,4 @@
-# Phase 20: ... nor a Result arm (tychoc: res_of, src/tychoc.c:822-824).
+# Phase 20: ... nor a Result arm (tychoc: res_of, src/tychoc.c:829-831).
 # BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
 fn f(v: Result(Channel(int), string)) -> int:
     return 1

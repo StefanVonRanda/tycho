@@ -77,7 +77,7 @@ site is either implemented or written down as a refusal with its cost.
     printed `FAIL result (output != golden)` / `corelib: FAIL`, so the golden can
     genuinely redden for this function. Restored, green again.
 
-- [ ] **Phase 2 — size naming the instantiating call site, then decide**
+- [x] **Phase 2 — size naming the instantiating call site, then decide**
   - Scope: read `src/tychoc.c`'s generic-instance resolve path — the one
     `0faccaf` touched — and answer one question with source, not estimate: can
     a generic instantiation failure carry the caller's file and line to the
@@ -93,6 +93,54 @@ site is either implemented or written down as a refusal with its cost.
     `2f0c770`, so expect 639 with the one new reject fixture. If the phase ends
     in a refusal, it touches only Markdown: `python3 scripts/check_citations.py`
     and `sh scripts/check_links.sh`, nothing else.
+  - **Sized, then IMPLEMENTED, 2026-08-11.** The sizing question — can the
+    instantiation site reach the diagnostic — answered yes from source, and
+    narrowly. `instantiate_generic` already receives the call `Expr *e` and
+    already reports at `e->line` for three other refusals
+    (`src/tychoc.c:8425`, `:8432`, `:8454`), and while it runs, `g_srcname` /
+    `g_src` still hold the CALLER's file. So the call site was already in hand at
+    the one place the `GInst` is built; nothing needed threading through.
+  - Cost, measured rather than estimated: **+7 net lines**
+    (`git diff --numstat src/tychoc.c` → `45 38`), and four of the five edit
+    sites are line-neutral in-place rewrites —
+    `src/tychoc.c@GInst` (three fields), the `GInst gi;` construction,
+    and gen_program's instance loop set/clear at `src/tychoc.c:12507` and
+    `:12523`. Only the `die_at` region grew, by factoring the snippet printer out
+    as `src/tychoc.c@src_snippet` so the note can reuse it.
+  - Extends `0faccaf` rather than undoing it: that commit's `diag_use_proc(p)`
+    call is untouched and still decides the ERROR line's file. The note is a
+    second location printed after it.
+  - Result — the rotation's own probe, re-run:
+
+        corelib/result/result.ty:125: error: Ok carries no value here -- write a bare `Ok:` arm
+           125 |         Ok(v): return Ok(v)
+        ./main.ty:9: note: required from here -- this call instantiated the generic
+             9 |     r := result.map_err(work(), 7)
+
+  - One level, not a chain. A nested instantiation records the outer template's
+    file and line, which is the immediate call — Rust prints the whole stack, this
+    prints the hop the user can act on. Not a limitation worth paying for yet.
+  - Fixture: `tests/reject/pkg/generic_inst_callsite/`, a sibling of `0faccaf`'s
+    `generic_inst_srcfile/`. It pins BOTH locations, which needed the reject
+    lanes to assert EVERY `# expect:` line rather than only the first
+    (`tests/run.sh`, both the flat and pkg lanes) — a strict generalisation, so a
+    single-expect fixture scores exactly as before.
+  - Negative control: with `src/tychoc.c` reverted to HEAD and rebuilt, the
+    fixture's second expect line NOMATCHed and the first still matched — i.e. the
+    old compiler prints the error location but no note, so the fixture genuinely
+    fails without the change. It cannot match itself: the old output contains no
+    `note:` at all, and the only line the new output quotes from `main.ty` is the
+    call at `:6`, not the `# expect:` line at `:2`. Restored, both MATCH.
+  - Gates: `make test` → **639 passed, 0 failed** (baseline 638 at `2f0c770`,
+    +1 for the new fixture, and no existing golden moved). `make corelib` → all
+    green (46 ok). `make vm-check` → green. `sh scripts/entrypoints.sh` → ok
+    (75 entry points). `make check-links` → both gates ok.
+  - Citation drift, as the rotation warned: the +7 lines staled 108 citations.
+    `scripts/reanchor_citations.py` dry-run reported 0 needing a human, then
+    `--apply` rewrote 118 files and the gate went green. The script's documented
+    blind spot — bare `:N` continuations inside `src/tychoc.c` itself — was ten
+    refs, each verified to shift by exactly +7 (the text at the old line in
+    `HEAD` and the new line in the working copy is identical) and fixed by hand.
 
 ## Out of scope
 

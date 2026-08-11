@@ -278,8 +278,8 @@ fi
 # that half is gone. The tychoc assertions below are unchanged.
 #
 # A FLAT fixture here must NOT declare a `package` header. detect_package
-# (src/tychoc.c:12636-12642) turns the entry file's leading `package <name>` into
-# a whole-DIRECTORY compile (src/tychoc.c:13033), so such a fixture would be
+# (src/tychoc.c:12643-12649) turns the entry file's leading `package <name>` into
+# a whole-DIRECTORY compile (src/tychoc.c:13040), so such a fixture would be
 # scored against every one of its siblings: it would be "refused" for the FIRST
 # error in sort order rather than for its own defect, and this lane -- which
 # asserts only "nonzero exit + non-empty diagnostic" -- cannot tell the two
@@ -309,10 +309,15 @@ for hi in tests/reject/*.ty; do
         # exact is what the tests/diag/ lane below already does, and a caret
         # column or line number shifts whenever a fixture gains a line -- churn
         # carrying no signal about the REASON for the refusal.
-        exp="$(sed -n 's/^# expect: //p' "$hi" | head -1)"
-        if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rj.log"; then
-            note "$name" "diagnostic does not contain the expected text: $exp"
-            head -3 "$TMP/rj.log" | sed 's/^/      /'
+        # EVERY `# expect:` line is asserted, not just the first: a diagnostic
+        # that names two locations needs two substrings to pin both.
+        miss=''; sed -n 's/^# expect: //p' "$hi" > "$TMP/rj.exp"
+        while IFS= read -r exp; do
+            if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rj.log"; then miss="$exp"; break; fi
+        done < "$TMP/rj.exp"
+        if [ -n "$miss" ]; then
+            note "$name" "diagnostic does not contain the expected text: $miss"
+            head -5 "$TMP/rj.log" | sed 's/^/      /'
             fail=$((fail + 1)); fails="$fails $name"; continue
         fi
         echo "ok    $name"; pass=$((pass + 1))
@@ -336,10 +341,15 @@ for d in tests/reject/pkg/*/; do
         # Same OPT-IN as the flat lane above: a `# expect: <text>` line in main.ty
         # pins WHY, as a literal substring. Here it is also how a fixture pins
         # WHICH FILE a diagnostic names -- the reason this lane grew the option.
-        exp="$(sed -n 's/^# expect: //p' "$entry" | head -1)"
-        if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rjp.log"; then
-            note "$name" "diagnostic does not contain the expected text: $exp"
-            head -3 "$TMP/rjp.log" | sed 's/^/      /'
+        # Every `# expect:` line is asserted, as in the flat lane -- which is how
+        # generic_inst_callsite pins BOTH the template's line and the call's.
+        miss=''; sed -n 's/^# expect: //p' "$entry" > "$TMP/rjp.exp"
+        while IFS= read -r exp; do
+            if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rjp.log"; then miss="$exp"; break; fi
+        done < "$TMP/rjp.exp"
+        if [ -n "$miss" ]; then
+            note "$name" "diagnostic does not contain the expected text: $miss"
+            head -5 "$TMP/rjp.log" | sed 's/^/      /'
             fail=$((fail + 1)); fails="$fails $name"; continue
         fi
         echo "ok    $name"; pass=$((pass + 1))

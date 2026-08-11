@@ -1,0 +1,7 @@
+package main
+
+# The refusal fires while resolving this template's SUBSTITUTED body at $T=bool,
+# so the error names THIS file and its line -- and the note must name the call
+# over in main.ty, which is the only line the user can actually change.
+fn twice(x: $T) -> $T:
+    return x + x

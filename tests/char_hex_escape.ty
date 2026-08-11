@@ -6,7 +6,7 @@
 # join (docs/spec/01-lexical.md §3.9.4) concatenates that escaped text, so
 # `"\x4" "1"` would join into `\x41` and mean one byte where the author wrote
 # two. tests/reject/hex_escape_in_string.ty pins that refusal. A char literal
-# has no such exposure -- it is decoded to a byte at lex time (src/tychoc.c:499)
+# has no such exposure -- it is decoded to a byte at lex time (src/tychoc.c:506)
 # and never reaches a C string literal -- which is also why `\0` was already
 # legal here and not there.
 fn main():

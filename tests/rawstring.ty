@@ -6,13 +6,13 @@
 # lanes never globbed. Those lanes were retired the same day and the fixture came
 # home to tests/, where the main golden loop scores it.
 #
-# Semantics under test (lexer: src/tychoc.c:448-495):
+# Semantics under test (lexer: src/tychoc.c:455-502):
 #   - no escape is interpreted -- a backslash is a backslash;
 #   - an embedded newline is a literal newline byte, so the form is genuinely
 #     multi-line;
 #   - there is no escape for a backtick, so a raw literal cannot contain one;
 #   - a raw piece MAY join with an adjacent normal piece, because the scanner
-#     stores re-escaped text and the join at src/tychoc.c:2291-2303 is sound on
+#     stores re-escaped text and the join at src/tychoc.c:2298-2310 is sound on
 #     any text whose escapes are all exactly two characters.
 
 fn main():
@@ -38,7 +38,7 @@ three`
     println(str(c == "one\ntwo\nthree"))
 
     # 4. adjacent-literal join, both orders. `"a" "b"` is one literal "ab"
-    #    (src/tychoc.c:2291-2303) and a raw piece takes part.
+    #    (src/tychoc.c:2298-2310) and a raw piece takes part.
     d := `raw ` "and normal"
     println(d)
     e := "normal and " `raw`
