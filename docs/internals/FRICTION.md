@@ -1308,6 +1308,37 @@ the compiler stops you. What `io.read` actually hides is **I/O failure** — a
 missing or unreadable file — and that is a real asymmetry worth its own entry,
 about error reporting rather than about bytes.
 
+### 3. ~~`compress.decompress` cannot distinguish empty from corrupt~~ — **CLOSED 2026-08-10**
+
+`decompress` and `raw_decompress` return `Result(bytes, ZErr)`, with `Corrupt`,
+`Truncated` and `Failed`. The entry was right that the information was already
+there and being discarded: every failure branch in the shim set `*outlen = 0`
+and returned, so the branch that knew threw the knowledge away. It now sets a
+status through an `inout int` out-param — the same FFI shape `core:io`'s
+`iox_read_file` already used, since a `bytes` return cannot also carry a code.
+
+The three answers are now distinct, and the corelib golden is the record:
+
+```
+empty=Ok len=0            <- a real zero-byte payload
+corrupt=Corrupt len=-1
+truncated=Truncated len=-1
+```
+
+`tools/tycho-ar` reports the cause directly instead of inferring damage from a
+length mismatch, and its `run.sh` leg 4c now expects `payload is corrupt`. The
+stored-length check STAYS: a payload that inflates cleanly to the wrong thing is
+forgery rather than damage, and no inflate status can catch that.
+
+One nuance found while testing, and documented at `raw_decompress`: raw DEFLATE
+has no wrapper and no checksum, so junk is a valid-looking bit stream that runs
+out, and zlib reports it as no-progress — which decodes to `Truncated`. On a RAW
+stream, `Truncated` means "not a deflate stream" as often as it means "the rest
+exists somewhere". The gzip/zlib entry point has a header and a checksum and
+tells the two apart.
+
+The original text follows.
+
 ### 3. `compress.decompress` cannot distinguish empty from corrupt
 
 Measured, not reasoned. A probe compressing `""`, a 65-byte payload with byte 12

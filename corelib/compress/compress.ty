@@ -3,27 +3,70 @@
 # installed and its test is skipped where it is not. Import with
 # `import "core:compress"`.
 #
-#   compress.compress(data)   -> bytes   gzip-compress a byte buffer.
-#   compress.decompress(data) -> bytes   inflate a gzip OR zlib stream; empty bytes
-#                                        on a corrupt/truncated input (fail closed).
+#   compress.compress(data)   -> bytes                     gzip-compress a byte buffer.
+#   compress.decompress(data) -> Result(bytes, ZErr)       inflate a gzip OR zlib stream.
+#
+# decompress returned bare `bytes` until 2026-08-10, empty on any failure -- which
+# made a corrupt stream, a truncated one and a legitimately empty payload the SAME
+# answer. An archive can hold a zero-byte member, so for any container format a
+# corrupt member read as an empty one: data loss that looks like data. The shim
+# always knew which branch it took (FRICTION.md #3); now it says so.
 #
 # Binary-safe: payloads cross as `bytes`, so interior NUL bytes are preserved.
 package compress
 
+# Why an inflate failed. Payload-free, so a caller can test one cause with `==`.
+enum ZErr:
+    Corrupt        # inflate refused the data: bad wrapper, bad checksum, needs a dictionary
+    Truncated      # the input stops mid-stream
+    Failed         # init or allocation failed -- nothing to do with the payload
+
 # ---- shim externs (zlib; defined in compress_shim.c) ----
+# The inflate pair take a `status: inout int` out-param, the same FFI shape
+# core:io's iox_read_file uses: a `bytes` return cannot also carry a code.
 extern fn zx_compress(data: bytes) -> bytes
-extern fn zx_decompress(data: bytes) -> bytes
+extern fn zx_decompress(data: bytes, status: inout int) -> bytes
 extern fn zx_raw_deflate(data: bytes) -> bytes
-extern fn zx_raw_inflate(data: bytes) -> bytes
+extern fn zx_raw_inflate(data: bytes, status: inout int) -> bytes
+
+const ZD_OK = 0
+const ZD_CORRUPT = 1
+const ZD_TRUNCATED = 2
 
 fn compress(data: bytes) -> bytes:
     return zx_compress(data)
 
-fn decompress(data: bytes) -> bytes:
-    return zx_decompress(data)
+# Shared decode of the shim's status code, so both inflate entry points answer
+# with the same three causes.
+fn _cause(st: int) -> ZErr:
+    if st == ZD_CORRUPT:
+        return Corrupt
+    if st == ZD_TRUNCATED:
+        return Truncated
+    return Failed
+
+# Ok(b) on success -- and an empty payload is Ok with len(b) == 0, a real value
+# now distinct from Err. That distinction is the whole point of the signature.
+fn decompress(data: bytes) -> Result(bytes, ZErr):
+    st := 0
+    b := zx_decompress(data, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))
 
 # Raw DEFLATE (RFC 1951), no wrapper -- the stream zip entries use.
 fn raw_compress(data: bytes) -> bytes:
     return zx_raw_deflate(data)
-fn raw_decompress(data: bytes) -> bytes:
-    return zx_raw_inflate(data)
+
+# NOTE on the Err cause here: raw DEFLATE has no wrapper and no checksum, so
+# arbitrary bytes are a valid-looking bit stream that simply runs out -- zlib
+# reports that as "no progress", which decodes to Truncated. Do not read
+# Truncated on a RAW stream as "the rest exists somewhere"; on a raw stream it
+# means "not a deflate stream" just as often. The gzip/zlib entry point above
+# has a header and a checksum and can tell the two apart.
+fn raw_decompress(data: bytes) -> Result(bytes, ZErr):
+    st := 0
+    b := zx_raw_inflate(data, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))

@@ -13,6 +13,20 @@ block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
 not history, so the two are merged here under the date this actually shipped.
 
+- **`compress.decompress` says why it failed.** It returned bare `bytes`, empty
+  on any failure — so a corrupt stream, a truncated one and a legitimately empty
+  payload were the *same answer*. An archive can hold a zero-byte member, so for
+  any container format a corrupt member read as an empty one: data loss that
+  looks like data. Now `Result(bytes, ZErr)` with `Corrupt` / `Truncated` /
+  `Failed`, and `raw_decompress` likewise.
+
+  The shim always knew which branch it took and discarded it; it now reports a
+  status through an `inout int`, the FFI shape `core:io` already used. Callers
+  updated: `core:zip` (its CRC check already covered the collapse),
+  `tools/tycho-ar` (reports the cause instead of inferring damage from a length
+  mismatch — the length check stays, since a payload that inflates cleanly to
+  the wrong thing is forgery, not damage), and the worked example.
+
 - **`core:io` gains `read_text(p) -> Result(string, IoErr)`.** `io.read` is
   fail-open: it answers `""` for a missing file, an unreadable one and a
   genuinely empty one alike — three different facts flattened into one value.

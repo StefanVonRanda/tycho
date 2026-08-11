@@ -130,7 +130,13 @@ fn entry_body(b: bytes, e: Meta) -> bytes:
     if e.method == 0:
         data = raw
     elif e.method == 8:
-        data = compress.raw_decompress(raw)
+        # raw_decompress returns Result since 2026-08-10. This function's own
+        # contract is empty-bytes-on-failure, so the Err collapses here -- but it
+        # collapses into a path the CRC check below also guards, so a corrupt
+        # member cannot pass as a valid empty one.
+        match compress.raw_decompress(raw):
+            Ok(d): data = d
+            _: return to_bytes([]int)
     else:
         return to_bytes([]int)
     if len(data) != e.usize or crc32(data) != e.crc:

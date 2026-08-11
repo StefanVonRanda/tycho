@@ -47,9 +47,21 @@ void zx_compress(const unsigned char *data, tycho_int len, unsigned char **out, 
     deflateEnd(&s);
 }
 
-void zx_decompress(const unsigned char *data, tycho_int len, unsigned char **out, tycho_int *outlen) {
+/* ZD_* status codes, mirrored in compress.ty's decode of them. Every failure
+ * branch below used to `return` with *outlen = 0 and nothing else, which made a
+ * corrupt stream, a truncated one and a legitimately empty payload the SAME
+ * answer -- data loss that looks like data (FRICTION.md #3). The branch already
+ * knew which it was; it discarded that on the way out. */
+#define ZD_OK        0
+#define ZD_CORRUPT   1   /* inflate refused the data: bad wrapper, bad checksum, needs a dict */
+#define ZD_TRUNCATED 2   /* room left in the output and no progress: the input stops mid-stream */
+#define ZD_FAILED    3   /* init or allocation failed -- nothing to do with the payload */
+
+void zx_decompress(const unsigned char *data, tycho_int len, tycho_int *status,
+                   unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
+    *status = ZD_FAILED;
     if (len < 0) return;
     z_stream s;
     memset(&s, 0, sizeof s);
@@ -65,7 +77,8 @@ void zx_decompress(const unsigned char *data, tycho_int len, unsigned char **out
     for (;;) {
         int rc = inflate(&s, Z_NO_FLUSH);
         if (rc == Z_STREAM_END) break;
-        if (rc != Z_OK && rc != Z_BUF_ERROR) {          /* corrupt / needs dict / OOM -> fail closed */
+        if (rc != Z_OK && rc != Z_BUF_ERROR) {          /* corrupt / needs dict / OOM */
+            *status = ZD_CORRUPT;
             free(buf); inflateEnd(&s); return;
         }
         if (s.avail_out == 0) {                          /* output full -> grow and keep going */
@@ -78,12 +91,14 @@ void zx_decompress(const unsigned char *data, tycho_int len, unsigned char **out
             s.avail_out = (uInt)(ncap - used);
             cap = ncap;
         } else if (rc == Z_BUF_ERROR) {                  /* room left but no progress -> truncated input */
+            *status = ZD_TRUNCATED;
             free(buf); inflateEnd(&s); return;
         }
         /* rc == Z_OK with room remaining: inflate made progress, call it again */
     }
     *outlen = (tycho_int)s.total_out;
     *out = buf;
+    *status = ZD_OK;
     inflateEnd(&s);
 }
 
@@ -103,8 +118,9 @@ void zx_raw_deflate(const unsigned char *data, tycho_int len, unsigned char **ou
     *outlen = (tycho_int)s.total_out; *out = buf; deflateEnd(&s);
 }
 
-void zx_raw_inflate(const unsigned char *data, tycho_int len, unsigned char **out, tycho_int *outlen) {
-    *out = NULL; *outlen = 0;
+void zx_raw_inflate(const unsigned char *data, tycho_int len, tycho_int *status,
+                    unsigned char **out, tycho_int *outlen) {
+    *out = NULL; *outlen = 0; *status = ZD_FAILED;
     if (len < 0) return;
     z_stream s; memset(&s, 0, sizeof s);
     if (inflateInit2(&s, -15) != Z_OK) return;
@@ -116,12 +132,15 @@ void zx_raw_inflate(const unsigned char *data, tycho_int len, unsigned char **ou
     for (;;) {
         int rc = inflate(&s, Z_NO_FLUSH);
         if (rc == Z_STREAM_END) break;
-        if (rc != Z_OK) { free(buf); inflateEnd(&s); return; }
+        if (rc != Z_OK) {   /* one branch before; Z_BUF_ERROR is the truncated case */
+            *status = (rc == Z_BUF_ERROR) ? ZD_TRUNCATED : ZD_CORRUPT;
+            free(buf); inflateEnd(&s); return;
+        }
         if (s.avail_out == 0) {
             size_t ncap = cap * 2u; unsigned char *nb = (unsigned char *)realloc(buf, ncap);
             if (!nb) { free(buf); inflateEnd(&s); return; }
             buf = nb; s.next_out = buf + s.total_out; s.avail_out = (uInt)(ncap - s.total_out); cap = ncap;
         }
     }
-    *outlen = (tycho_int)s.total_out; *out = buf; inflateEnd(&s);
+    *outlen = (tycho_int)s.total_out; *out = buf; *status = ZD_OK; inflateEnd(&s);
 }

@@ -232,7 +232,14 @@ if [ "$fail" -eq 0 ]; then
         dd if="$T/fixed.tyar" bs=1 skip="$payload_off" count="$clen" 2>/dev/null > "$T/pay"
         sha256sum < "$T/pay" | cut -d' ' -f1 | tr -d '\n' > "$T/p"
         dd if="$T/p" of="$T/fixed.tyar" bs=1 seek="$csha_off" count=64 conv=notrunc 2>/dev/null
-        refuses_x "forged csha" "$T/fixed.tyar" "$T/fixeddest" "(corrupt payload)"
+        # Expected message changed 2026-08-10 and the CHANGE IS THE POINT: it used
+        # to be "(corrupt payload)", inferred from a length mismatch because
+        # compress.decompress could only answer with empty bytes. It now reports
+        # the inflate status directly, so the archive's stored length is no longer
+        # the only thing standing between a damaged member and a silent 0-byte
+        # extract. The leg still proves the same thing -- the digest is not what
+        # catches this -- it just gets a better reason out of it.
+        refuses_x "forged csha" "$T/fixed.tyar" "$T/fixeddest" "payload is corrupt"
     fi
 fi
 

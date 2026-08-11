@@ -520,8 +520,14 @@ example `corelib/http/deps` is just `libcurl`.
 The `deps`-backed modules are `http` (libcurl) and `crypto` (libcrypto), documented above,
 plus three more:
 
-- **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`);
-  `bytes -> bytes`, fail-closed on corrupt or truncated input.
+- **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`).
+  `compress(bytes) -> bytes`; `decompress(bytes) -> Result(bytes, ZErr)` and
+  `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed`.
+  **`Ok` with length 0 is a real empty payload**, distinct from every failure — before
+  2026-08-10 these returned bare `bytes` and a corrupt stream was indistinguishable
+  from an empty one, which for a container format meant a damaged member read as a
+  zero-byte file. On a RAW deflate stream `Truncated` also covers "not a deflate
+  stream": there is no wrapper or checksum to tell those apart.
 - **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
   Image{width, height, pixels}` (8-bit RGBA) and `encode(Image) -> bytes`; fail-closed on a
   non-PNG. JPEG is a demand-gated follow-up.

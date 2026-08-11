@@ -10,7 +10,12 @@ fn main():
         i = i + 1
     raw := to_bytes(text)
     packed := compress.compress(raw)
-    back := compress.decompress(packed)
+    # decompress returns Result(bytes, ZErr): Ok("") is a real empty payload,
+    # Err says corrupt or truncated. This example knows its own input is good.
+    back := to_bytes([]int)
+    match compress.decompress(packed):
+        Ok(d): back = d
+        _: println("decompress failed")
     println("original     = " + str(len(raw)) + " bytes")
     println("smaller      = " + str(len(packed) < len(raw)))
     println("roundtrip ok = " + str(to_str(back) == text))

@@ -12,6 +12,26 @@ fn b2i(b: bool) -> int:
         return 1
     return 0
 
+# decompress returns Result(bytes, ZErr) since 2026-08-10. These two collapse it:
+# the cause NAME, and the length on success. Before, all three of legit-empty,
+# corrupt and truncated answered `len == 0` and nothing else.
+fn zwhy(r: Result(bytes, compress.ZErr)) -> string:
+    match r:
+        Ok(b): return "Ok"
+        Err(compress.Corrupt): return "Corrupt"
+        Err(compress.Truncated): return "Truncated"
+        _: return "Failed"
+
+fn zn(r: Result(bytes, compress.ZErr)) -> int:
+    match r:
+        Ok(b): return len(b)
+        _: return -1                      # -1, never 0: a failure must not read as empty
+
+fn zs(r: Result(bytes, compress.ZErr)) -> string:
+    match r:
+        Ok(b): return to_str(b)
+        _: return ""
+
 fn main():
     # round-trip a compressible (repetitive) buffer
     orig := ""
@@ -22,17 +42,30 @@ fn main():
     ob := to_bytes(orig)
     c := compress.compress(ob)
     d := compress.decompress(c)
-    println("roundtrip=" + str(b2i(to_str(d) == orig)))            # 1
+    println("roundtrip=" + str(b2i(zs(d) == orig)))               # 1
     println("smaller=" + str(b2i(len(c) < len(ob))))              # 1 (repetitive -> compresses)
 
     # binary-safe: interior NUL bytes survive the round-trip
     nb := to_bytes("a" + chr(0) + "b" + chr(0) + "c")            # 5 bytes
     nd := compress.decompress(compress.compress(nb))
-    println("nul_roundtrip=" + str(b2i(len(nd) == 5)))            # 1
+    println("nul_roundtrip=" + str(b2i(zn(nd) == 5)))             # 1
 
-    # empty input round-trips to empty
+    # THE DISTINCTION THIS API EXISTS FOR (FRICTION.md #3). All three of these
+    # answered `len == 0` before, so a corrupt archive member read as an empty
+    # file. An archive can legitimately hold a zero-byte member, so there was no
+    # way for a caller to tell data loss from data.
     ed := compress.decompress(compress.compress(to_bytes("")))
-    println("empty_roundtrip=" + str(b2i(len(ed) == 0)))          # 1
+    println("empty=" + zwhy(ed) + " len=" + str(zn(ed)))          # Ok len=0 -- a REAL empty payload
 
-    # corrupt input -> empty bytes (fail closed, no crash)
-    println("corrupt_empty=" + str(b2i(len(compress.decompress(to_bytes("not a gzip stream at all"))) == 0)))   # 1
+    corrupt := compress.decompress(to_bytes("not a gzip stream at all"))
+    println("corrupt=" + zwhy(corrupt) + " len=" + str(zn(corrupt)))
+
+    # a real gzip stream cut short: the header is valid, the data stops
+    full := compress.compress(ob)
+    trunc := compress.decompress(full[0:len(full) / 2])
+    println("truncated=" + zwhy(trunc) + " len=" + str(zn(trunc)))
+
+    # raw DEFLATE carries the same three answers
+    rc := compress.raw_compress(ob)
+    println("raw_ok=" + zwhy(compress.raw_decompress(rc)))
+    println("raw_corrupt=" + zwhy(compress.raw_decompress(to_bytes("junk"))))

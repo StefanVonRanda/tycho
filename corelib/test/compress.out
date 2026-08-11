@@ -1,5 +1,8 @@
 roundtrip=1
 smaller=1
 nul_roundtrip=1
-empty_roundtrip=1
-corrupt_empty=1
+empty=Ok len=0
+corrupt=Corrupt len=-1
+truncated=Truncated len=-1
+raw_ok=Ok
+raw_corrupt=Truncated

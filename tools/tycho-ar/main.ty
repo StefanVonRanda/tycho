@@ -732,10 +732,21 @@ fn cmd_x(archive: string, dest: string):
     mkdir_p(dest)
     for i := 0; i < len(entries); i += 1:
         e := entries[i]
-        raw := compress.decompress(data[e.off:e.off + e.clen])
-        # THE EMPTY-VERSUS-CORRUPT CHECK. `decompress` fails closed to empty
-        # bytes and says nothing else, so `size` is the only thing that can tell
-        # a damaged member from a zero-byte file. Length first, digest second.
+        # `decompress` now REPORTS why (corelib/compress, 2026-08-10). It used to
+        # fail closed to empty bytes and say nothing, which is why the length
+        # check below existed at all -- `size` was the only thing that could tell
+        # a damaged member from a zero-byte file. The cause comes first now,
+        # because it names the fault; the length check stays as the guard for a
+        # payload that inflates FINE but to the wrong thing, which is forgery
+        # rather than damage and which no inflate status can catch.
+        raw := to_bytes([]int)
+        match compress.decompress(data[e.off:e.off + e.clen]):
+            Ok(d):
+                raw = d
+            Err(compress.Truncated):
+                die("tycho-ar: " + archive + ": " + e.rel + ": compressed payload is truncated")
+            _:
+                die("tycho-ar: " + archive + ": " + e.rel + ": compressed payload is corrupt")
         if len(raw) != e.size:
             die("tycho-ar: " + archive + ": " + e.rel + ": inflated to " + str(len(raw)) + " bytes, header says " + str(e.size) + " (corrupt payload)")
         if sha_bytes(raw) != e.sha:
