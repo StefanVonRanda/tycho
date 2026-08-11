@@ -1,0 +1,12 @@
+# An enum VARIANT may not be spelled Ok/Err/Some/None either. Before this the
+# enum declared clean and only construction failed: `e := Ok` reported "'Ok'
+# cannot name a binding ... as a value it is a constructor: Ok(x)", which is the
+# builtin Result talking, while a `match e: Ok:` arm still matched this variant.
+# Half the variant worked; that is worse than refusing it.
+# expect: 'Ok' is already defined
+enum E:
+    Ok
+    Bad
+
+fn main():
+    println("unreachable")

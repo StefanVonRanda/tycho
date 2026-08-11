@@ -4506,7 +4506,7 @@ static void parse_handle(Parser *ps) {
     eat(ps, TK_HANDLE, "'handle'");
     Tok *nameT = eat(ps, TK_IDENT, "a handle name");
     const char *nm = pkg_mangle(nameT->text);
-    if (struct_find(nm) >= 0 || enum_find(nm) >= 0 || newtype_find(nm) >= 0 || handle_find(nm) >= 0)
+    if (struct_find(nm) >= 0 || enum_find(nm) >= 0 || newtype_find(nm) >= 0 || handle_find(nm) >= 0 || is_builtin_ctor(nameT->text))
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nhandles >= 256) die_at(nameT->line, "too many handle types (max 256)");
     eat(ps, TK_COLON, "':' before the handle body");
@@ -4548,7 +4548,7 @@ static void parse_struct(Parser *ps) {
      * `struct H` after `handle H` was accepted and RAN on tychoc while
      * `handle H` after `struct H` was rejected. */
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
-        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0)
+        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0 || is_builtin_ctor(nameT->text))
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nstructs >= T_ARRC_BASE - T_STRUCT_BASE) die_at(nameT->line, "too many structs");
     TBL_ENSURE(g_structs, g_nstructs, g_structs_cap);
@@ -4604,7 +4604,7 @@ static void parse_enum(Parser *ps) {
     /* `handle_find` included for the same reason as the struct site above: one
      * type namespace, checked symmetrically (14-ffi.md §25). */
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
-        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0)
+        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0 || is_builtin_ctor(nameT->text))
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nenums >= T_TUP_BASE - T_ENUM_BASE) die_at(nameT->line, "too many enums");
     TBL_ENSURE(g_enums, g_nenums, g_enums_cap);
@@ -4625,8 +4625,8 @@ static void parse_enum(Parser *ps) {
         TBL_ENSURE(ed->variants, ed->nvariants, ed->variants_cap);
         char *vmn = pkg_mangle(vn->text);   /* variant names are package-scoped (mangled with the enum's package) */
         int dup;
-        if (variant_find(vmn, &dup) >= 0)
-            die_at(vn->line, "variant name '%s' is already used in this package", vn->text);
+        if (variant_find(vmn, &dup) >= 0 || is_builtin_ctor(vn->text))
+            die_at(vn->line, is_builtin_ctor(vn->text) ? "'%s' is already defined" : "variant name '%s' is already used in this package", vn->text);
         Variant *var = &ed->variants[ed->nvariants];
         var->name = vmn;
         var->raw = (char *)vn->text;   /* as written, for an unqualified nested pattern */
@@ -4654,7 +4654,7 @@ static void parse_typedecl(Parser *ps) {
     /* `handle_find` included for the same reason as the struct site above: one
      * type namespace, checked symmetrically (14-ffi.md §25). */
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
-        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0)
+        || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0 || is_builtin_ctor(nameT->text))
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nnewtypes >= T_SOA_BASE - T_NT_BASE) die_at(nameT->line, "too many newtypes");
     TBL_ENSURE(g_newtypes, g_nnewtypes, g_newtypes_cap);
