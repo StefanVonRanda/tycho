@@ -89,6 +89,20 @@
 # CLOSED 2026-08-03: raw bytes >= 0x80 in a string are now validated (utf8_len
 #      below, the s8.1 requirement). A raw 0xFF byte is BadUtf8, not a one-byte
 #      string; `\uXXXX` escapes were already well-formed by construction.
+#
+# ---- OBJECTS: two decisions a signature cannot tell you ---------------------
+#
+# Both are asserted by corelib/test/json/main.ty, so neither can drift silently.
+#
+# DUPLICATE KEYS are all KEPT -- RFC 8259 leaves this to the parser and most take
+# the last. `{"a":1,"a":2}` is two members and `stringify` re-emits both, so the
+# round trip drops nothing; `get` answers with the FIRST. A caller wanting
+# last-wins, or wanting to refuse a duplicate, has the member list in `keys`.
+#
+# NULL AND ABSENT ARE ONE ANSWER FROM `get` -- both JNull -- and this is the only
+# place the accessors lose what the tree still holds. Ask `keys` instead: "n" is
+# in it and "missing" is not. (An empty string is a third case; `kind` says
+# "str".) The round trip is unaffected either way.
 package json
 import "core:strings"
 

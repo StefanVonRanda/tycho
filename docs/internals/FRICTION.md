@@ -1754,6 +1754,24 @@ rather than padded.
 > `-0.0`), for the stated reason that the same text is already refused in a query
 > literal and in a CSV cell. **Finding 2 is untouched by any of this and remains
 > open**: there is still no `decimal.div`.
+>
+> **Re-probed 2026-08-11 along the axis the title claims — "input it cannot
+> represent" — and the round trip is faithful on all five.** Measured, not
+> inferred: an integer stays `JNum` and re-emits as itself, and every number the
+> lexeme covers (`1.0`, `9223372036854775808`, a 30-digit integer) comes back
+> byte-identical; object keys keep insertion order; duplicate keys are ALL kept,
+> so `{"a":1,"a":2}` round-trips unchanged; a `\uXXXX` escape decodes to UTF-8
+> bytes and is a fixed point rather than an identity, with an embedded NUL
+> surviving as `61 00 62` and re-emitting as the escape `\u0000`; and `null`,
+> absent and the empty string
+> are three distinct states in the tree. **Nothing was fixed, because nothing was
+> broken.** What the probe did find was two decisions that were real and written
+> down nowhere: duplicates are kept with `get` answering the FIRST, and `get`
+> returns JNull for both a null member and an absent one, so membership is a
+> `keys` walk. Both are now in the corelib header under OBJECTS, both are asserted
+> by `corelib/test/json/main.ty`, and the stale `core:json` bullet in
+> `docs/guides/corelib.md` — which still said "integers (no floats)" and never
+> mentioned `parse_checked` — was corrected against the source.
 
 **This is the most serious thing this program found, and it has no symptom.**
 Measured by probe, not inferred. `corelib/json/json.ty@parse_number` takes an

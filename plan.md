@@ -261,11 +261,105 @@ or an explicit "open, refused because …".
     the corelib had "nothing to set one" was corrected in place, since leaving a
     provably false claim in the tree is worse than the one-line diff.
 
-- [ ] **Phase 5 — tycho-q #1 `core:json` accepts input it cannot represent**
+- [x] **Phase 5 — tycho-q #1 `core:json` accepts input it cannot represent**
   - Scope: `corelib/json/`.
   - Done when: the three unrepresentable cases are reported, with a fixture, or
     the entry is corrected.
   - Verify: `make corelib` and `make q-check`.
+
+  **Outcome: the entry did NOT reproduce, and it already said so.** The banner on
+  it has read `[FIXED, 2026-08-01]` since two earlier plans closed the error
+  channel and the float path. This phase re-probed the *title's* claim — "input
+  it cannot represent" — along the five axes a value model can lose something on,
+  and **found no loss on any of them**, so nothing was fixed. What it did find
+  was two real decisions written down nowhere, and those were documented and
+  gated.
+
+  **The probe** (`corelib/json/json.ty` read first: `JObj([string], [Json])` is
+  parallel arrays, and `JFloat(float, string)` carries the original lexeme — the
+  shape predicts four of the five answers). Compiled with `./tychoc` under
+  `TYCHO_CORELIB`, exit 0, verbatim output:
+
+  ```
+  --- 1. integers vs floats
+  1        : num -> 1 identical=yes fixed=yes
+  1.0      : float -> 1.0 identical=yes fixed=yes
+  bigint   : float -> 123456789012345678901234567890 identical=yes fixed=yes
+  i64max   : num -> 9223372036854775807 identical=yes fixed=yes
+  i64max+1 : float -> 9223372036854775808 identical=yes fixed=yes
+  --- 2. object key order
+  zyx      : obj -> {"z":1,"y":2,"x":3} identical=yes fixed=yes
+  keys     : zyx
+  --- 3. duplicate keys
+  dup rt   : obj -> {"a":1,"a":2} identical=yes fixed=yes
+  dup keys : 2
+  dup get  : 1
+  --- 4. unicode, NUL, non-ASCII
+  uA       : str -> "A" identical=no fixed=yes
+  u00e9    : str -> "é" identical=no fixed=yes
+  emoji    : str -> "😀" identical=no fixed=yes
+  rawutf8  : str -> "é" identical=yes fixed=yes
+  NUL len  : 3
+  NUL bytes: 61 00 62
+  NUL rt   : str -> "a\u0000b" identical=yes fixed=yes
+  --- 5. null vs absent vs empty string
+  n        : null
+  e        : str
+  absent   : null
+  n=absent : yes
+  ```
+
+  Reading the five, in order: **(1)** an integer stays `JNum` and re-emits as
+  itself; every number outside 64-bit `int` becomes `JFloat` carrying its lexeme
+  and re-emits byte-identically, so `9223372036854775808` and a 30-digit integer
+  both survive. **(2)** insertion order is preserved — parallel arrays, `keys`
+  returns `zyx` for a document written `z,y,x`. **(3)** both duplicate members are
+  kept, so the round trip is byte-identical; `get` answers with the first.
+  **(4)** a `\uXXXX` escape decodes to UTF-8 bytes, so `identical=no` on the
+  escaped spellings is deliberate and documented at `corelib/json/json.ty:801-805`
+  — the property that holds is the fixed point, `fixed=yes` on every line. An
+  embedded NUL survives as the three bytes `61 00 62` (Tycho strings are not
+  NUL-terminated) and re-emits as an escape. **(5)** the tree holds all three
+  states distinctly; only `get` collapses null and absent, which is an accessor
+  limit, not a round-trip loss.
+
+  **What changed, therefore: documentation and a fixture, no behaviour.**
+  `corelib/json/json.ty` gained a 13-line `OBJECTS` header section stating the
+  two decisions (duplicates all kept / `get` returns the first; null and absent
+  are one answer from `get`, ask `keys` instead). `corelib/test/json/main.ty`
+  gained a `has_key` helper and eight assertion lines so neither can drift
+  silently — before this, nothing in the tree asserted either
+  (`grep -n "dup\|duplicate\|absent"` over the test, the golden and the package
+  returned nothing). `docs/guides/corelib.md`'s `core:json` bullet was corrected
+  against the source: it still described the enum without `JFloat`, never
+  mentioned `parse_checked`, and closed with "Scope: integers (no floats), the
+  four common escapes" — all three false since 2026-08-01.
+
+  **Verification.**
+
+  - `make corelib` → `corelib: all green (tychoc matches goldens)`.
+  - **Negative control, so the fixture is not vacuous.** `json.get` was patched
+    in place to last-wins (accumulate into `hit`, return after the loop) and the
+    lane was re-run: `FAIL json (output != golden)`, `corelib: FAIL`. Reverted
+    from a pre-patch copy and `grep -n "return vs\[i\]"` confirms first-wins is
+    back at `corelib/json/json.ty:898`.
+  - `make q-check` → green, 35-query transcript unchanged (`core:json` behaviour
+    is untouched, so it could not have moved — run because the gate table names
+    it for any `core:json` change).
+  - `make corelib-examples` → `corelib examples: all green` (`core:json` has a
+    worked example; the change is comment-only, so this confirms rather than
+    discovers).
+  - `python3 scripts/check_citations.py` → ok. `sh scripts/check_links.sh` → ok
+    (119 markdown files, no dead relative links).
+  - `make test` NOT run: nothing under `src/` or `tests/` changed, and its corpus
+    never descends into `corelib/`.
+
+  **One defect introduced and caught during this phase, recorded because it was
+  invisible to every gate:** writing the FRICTION banner through `Edit` put a
+  literal `0x00` byte into `docs/internals/FRICTION.md` where the prose meant to
+  name the escape. `cat -A` found it; it was stripped with a byte-exact `python3`
+  replacement and the file now contains zero NUL bytes. Neither doc gate checks
+  for control bytes in Markdown — filed below.
 
 - [ ] **Phase 6 — tycho-q #2 `core:decimal` has no `div`**
   - Scope: `corelib/decimal/`. NOTE: ROADMAP's probe table already claims
@@ -532,6 +626,23 @@ or an explicit "open, refused because …".
     multi-call string `+` is worth it — a separate question, do not assume yes.
   - Verify: `sh scripts/spec_check.sh` and `make check-links`. **Not `make test`** —
     a spec-prose change cannot redden it.
+
+- [ ] **Phase N — no gate rejects a raw control byte in a tracked Markdown file**
+  - Found by the `core:json` phase above, not absorbed into it. Writing that
+    phase's prose put a literal `0x00` into `docs/internals/FRICTION.md`, and
+    again into `plan.md`, from text that meant to *name* the escape `\u0000`.
+    Both survived `python3 scripts/check_citations.py` and
+    `sh scripts/check_links.sh` — neither looks at bytes — and were found only
+    because `grep` went silent on a file it now considered binary. A NUL in a
+    tracked doc is invisible in every renderer and breaks line-oriented tools
+    without an error.
+  - Scope: `scripts/check_links.sh` or a new few-line gate. The check is one
+    pass over the tracked `*.md` set for bytes `00-08 0B 0C 0E-1F`, naming the
+    file and the byte offset. TAB and LF stay legal.
+  - Done when: the gate exists, names the offending file and offset, and a
+    deliberately NUL-bearing scratch file is observed reddening it.
+  - Verify: the new gate, plus `sh scripts/check_links.sh`. **Not `make test`** —
+    no `.ty` file is involved.
 
 ## Out of scope
 

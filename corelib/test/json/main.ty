@@ -78,6 +78,16 @@ fn fixed(src: string) -> string:
         Err(e):
             return "err " + json.err_str(e)
 
+# The membership test `get` cannot express, written the only way the package
+# offers: walk `keys`. It is what separates a null-valued member from an absent
+# one, and it is why `get`'s JNull collapse is a limit and not a loss.
+fn has_key(j: json.Json, k: string) -> bool:
+    ks := json.keys(j)
+    for i := 0; i < len(ks); i += 1:
+        if ks[i] == k:
+            return true
+    return false
+
 fn main():
     src := "{\"name\": \"tycho\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}, \"empty\": [], \"nothing\": null}"
     j := json.parse(src)
@@ -415,3 +425,22 @@ fn main():
     # same byte is the fixed point it always should have been.
     println("fp raw tab  = " + fixed("\"a\tb\""))
     println("fp esc tab  = " + fixed("\"a\\tb\""))
+
+    # ---- the two OBJECT decisions, gated here because nothing else asserts --
+    # them and a reader cannot infer either from the signatures. Both are named
+    # in the corelib header under OBJECTS.
+    #
+    # DUPLICATE KEYS: every member is kept, so the round trip is byte-identical
+    # and no member is invented or dropped; `get` answers with the FIRST.
+    dup := "{\"a\":1,\"a\":2}"
+    println("dup rt      = " + fixed(dup))
+    println("dup keys    = " + str(len(json.keys(json.parse(dup)))))
+    println("dup get     = " + str(json.as_num(json.get(json.parse(dup), "a"))))
+    # NULL vs ABSENT: `get` collapses them -- both are JNull. The TREE tells them
+    # apart and `keys` is the way to ask, which is what these three lines prove.
+    na := json.parse("{\"n\":null,\"e\":\"\"}")
+    println("null kind   = " + json.kind(json.get(na, "n")))
+    println("empty kind  = " + json.kind(json.get(na, "e")))
+    println("absent kind = " + json.kind(json.get(na, "missing")))
+    println("get tells   = " + yn(json.kind(json.get(na, "n")) != json.kind(json.get(na, "missing"))))
+    println("keys tell   = " + yn(has_key(na, "n") != has_key(na, "missing")))

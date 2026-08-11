@@ -181,3 +181,11 @@ fp ctl 0b   = "\u000b" fixed=yes
 fp doc      = {"A":["😀",1.5,null]} fixed=yes
 fp raw tab  = err raw control byte inside a string at byte 2
 fp esc tab  = "a\tb" fixed=yes
+dup rt      = {"a":1,"a":2} fixed=yes
+dup keys    = 2
+dup get     = 1
+null kind   = null
+empty kind  = str
+absent kind = null
+get tells   = no
+keys tell   = yes

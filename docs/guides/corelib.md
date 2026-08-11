@@ -174,14 +174,27 @@ element type instead of a family of per-type siblings.
   preserved — used by tycho-fetch). Tests are skipped where libcurl is absent.
 - **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.ty`
   demo promoted to a reusable module). The document is a value-semantic tree, the
-  `Json` enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`, objects as parallel
-  key/value arrays). `parse(s) -> Json` (truncated input fails closed to `JNull`,
-  no abort), `stringify(j) -> string` (compact, escapes `" \ \n \t`). Typed queries:
-  `kind` (the variant tag as a string), `get(j, key)` (object field, else `JNull`),
-  `at(j, i)` (array element, else `JNull`), `keys` (object keys in order), `len_of`
-  (array/object count or string length), `as_num`/`as_str`/`as_bool` (payload with a
-  zero-value default). Variants are constructible cross-package (`json.JNum(1)`) for
-  building trees by hand. Scope: integers (no floats), the four common escapes.
+  `Json` enum (`JNull`/`JBool`/`JNum`/`JFloat`/`JStr`/`JArr`/`JObj`, objects as
+  parallel key/value arrays). **`parse_checked(s) -> Result(Json, JsonErr)` is the
+  entry point new code wants** — the grammar it accepts is exactly RFC 8259's and
+  every refusal carries the byte offset that caused it (`err_reason`, `err_offset`,
+  `err_str`). `parse(s) -> Json` is the lenient wrapper that throws the error away
+  and returns `JNull` for the whole document. `stringify(j) -> string` (compact;
+  escapes `"` `\` and every control byte, `\b \f \n \r \t` where a short form
+  exists). Typed queries: `kind` (the variant tag as a string), `get(j, key)`
+  (object field, else `JNull`), `at(j, i)` (array element, else `JNull`), `keys`
+  (object keys in order), `len_of` (array/object count or string length),
+  `as_num`/`as_str`/`as_bool`/`as_float`/`as_lexeme` (payload with a zero-value
+  default). Variants are constructible cross-package (`json.JNum(1)`).
+  **Round-trip fidelity**, each measured: an integer that fits 64 bits is `JNum`
+  and everything else — a fraction, an exponent, or an integer too large — is
+  `JFloat(value, lexeme)` carrying the original digits, so `stringify` re-emits
+  every accepted number byte-for-byte; object keys keep insertion order; duplicate
+  keys are all kept (`get` answers with the first); a `\uXXXX` escape decodes to
+  its UTF-8 bytes, so it is not byte-identical but parse→stringify is a fixed
+  point, embedded NULs included. Two limits: a number outside binary64's range
+  (`1e400`) is refused rather than represented, and `get` returns `JNull` for both
+  a null-valued member and an absent one — walk `keys` to tell those apart.
 - **`csv`** — an RFC 4180 CSV parser + serializer. A document is rows of fields,
   `[[string]]`. `parse(s) -> [[string]]` is a small state machine handling quoted
   fields, the `""` escape, embedded delimiters/newlines inside quotes, and LF / CRLF /
