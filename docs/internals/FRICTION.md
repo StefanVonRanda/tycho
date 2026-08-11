@@ -2373,3 +2373,129 @@ string" without saying that a Tycho string which is not one is silently cut.
   *unspecified* deliberately, and `docs/spec/appendix-f-impl-defined.md:14` lists
   the f-string holes as the named exception. The feature that shipped is exactly
   as narrow as it says it is.
+
+## Re-scored against five programs written 2026-08-12 (head `680d30d`)
+
+Five ordinary programs, written the way a newcomer would write them rather than
+to probe anything. Two of the three findings below are **combinations of
+deliberate decisions**, not defects in either half — recorded because the cost
+only appears when the two meet, and neither entry proposes reversing either
+decision. The third is the opposite of a defect: an API that already exists and
+was not found.
+
+### 10. A two-key comparator cannot be written inline, and the composition that replaces it is invisible
+
+Two decisions, each right on its own. Closures are **single-expression only** —
+`fn(x: int) -> int: x + n`, no block body:
+
+```
+    f := fn(x: int) -> int:
+        if x > 0:
+            return x
+        return 0
+```
+```
+./blk.ty:3: error: expected an expression
+     3 |     f := fn(x: int) -> int:
+       |                            ^
+```
+
+And a ternary is refused **by decision** (`CONTRIBUTING.md:168-169`, on the
+"please don't propose them" list). Neither is in question here.
+
+Their combination is: `sort.sort_by(xs, cmp)` (`corelib/sort/sort.ty@sort_by`)
+takes a comparator that must be one expression, and a two-key sort — count
+descending, ties alphabetical — needs a branch. A **named** function cannot
+substitute, because the comparator has to see the map being sorted on and Tycho
+has no globals, so the capture must be a closure. That closes every direct
+route, and the honest conclusion a reader reaches is "sorting by two keys is
+not expressible".
+
+**It is expressible, by composing two stable sorts** — sort by the weaker key
+first, then stably by the stronger:
+
+```
+    ks := arrays.sort(keys(m))                                   # weaker key: alphabetical
+    out := sort.sort_by(ks, fn(a: string, b: string) -> int: m[b] - m[a])
+```
+```
+fig 5
+apple 3
+pear 3
+date 1
+```
+
+`apple` before `pear` at equal counts: the alphabetical pass survives the stable
+count pass. Each sort now needs only one key, so each comparator is one
+expression and the restriction never binds.
+
+**This is already the idiom in this tree** — `corelib/test/wordfreq/main.ty:26-30`
+does exactly it with `arrays.sort` then `sort.argsort_desc`, and its header calls
+it out ("lexicographic sort first, then a STABLE `argsort_desc` on counts").
+**Nothing is proposed here.** The cost is purely that the technique is invisible
+before you know it: the failure mode is a reader concluding the language cannot
+do something it does routinely, and neither the closure error nor `sort_by`'s
+signature points at the composition.
+
+### 11. A first `--shim` C file must hand-declare `tycho_int`, because there is no header to include
+
+A shim is its own translation unit, compiled standalone — which is the whole
+point of `make shim-check` (`Makefile:298`, "every corelib `<pkg>_shim.c` must
+compile ON ITS OWN under `-std=c11`"). There is no generated `tycho.h` in the
+tree; `find . -name 'tycho*.h'` returns only `build/tycho_rt_embed.h`, which is
+the embedded runtime source, not a public header. So an author's first
+`--shim` file cannot include anything that defines the FFI integer type, and
+must write the guarded typedef by hand:
+
+```c
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
+```
+
+`corelib/strings/strings_shim.c:77-80`. **All 13 shims in the tree carry it**
+(`grep -l tycho_int corelib/*/*_shim.c | wc -l` is 13, against 13 shims total),
+and its own comment says why the guard and the fixed width are both load-bearing:
+"to match the FFI ABI on ILP32/LLP64, not just LP64".
+
+What a first-time author has to know, none of it written down in one place: the
+typedef, the `#ifndef` guard (two shims in one link would otherwise collide), the
+exact width, and `<stdint.h>` ahead of it. A generated `tycho.h` shipped beside
+the corelib would remove all four. **Not built here** — it is a new installed
+artifact with its own versioning and layout questions, and this entry only
+records the toll, which is one copied block per shim and is paid once.
+
+### What did not go wrong, which is also data
+
+- **`core:strings` is not missing `split`; `split` is a builtin.** This was
+  written up as the day's most likely newcomer-bouncer — a word-frequency
+  program hand-rolled a character scanner because
+  `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
+  `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
+  builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
+  `src/tychoc.c@.name="split"`, so it is in no package at all.
+  `corelib/strings/strings.ty:254` says so in a comment one line above `lines`
+  — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
+  here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program
+  in this tree using it, commented "# split is a builtin". Fifteen-plus files
+  across `corelib/`, `examples/` and `tools/` call it.
+
+  Behaviour, probed directly: `split("a,b,c", ",")` -> `[a, b, c]`,
+  `split("", ",")` -> `[]`, `split("a,,b", ",")` -> `[a, , b]` (the empty field
+  is kept), `split("a,", ",")` -> `[a, ]` (a trailing separator DOES add an
+  empty element, unlike `lines`), `split("a::b", "::")` -> `[a, b]`. An empty
+  separator aborts at run time by design (§29.12).
+
+  **Adding `strings.split` would have been actively harmful**, not merely
+  redundant: `split` is on the shadowed-builtin list
+  (`src/tychoc.c@shadows_builtin`), so a `fn split` in `corelib/strings` would
+  have emitted the exact warning entry #B of this session removed — into every
+  build importing `core:strings`, one of the most-imported packages in the tree.
+  The friction is real but it is **discoverability, not surface area**: the
+  builtins live in the spec and in the compiler, and a reader looking for a
+  string operation looks in the string package. A `fields(s)` whitespace split
+  was considered on the same evidence and declined for the same reason —
+  `split(s, " ")` plus the `strings.trim` already used at
+  `corelib/test/wordfreq/main.ty:23` is the composition, and the tree's own
+  dogfood is written that way.

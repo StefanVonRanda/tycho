@@ -539,6 +539,47 @@ site is either implemented or written down as a refusal with its cost.
   imports. Not absorbed into Phase 10: it is a change to the test harness, and
   it widens what every future `tests/pkg/` fixture may do.
 
+- [ ] **Phase 12 — no lane can redden if corelib warnings leak back into a user
+      build** *(discovered while fixing the `core:json` `keys` warning)*
+
+  `2376066` mutes warnings raised while parsing a corelib package the user
+  merely imported, and three probes proved it (clean user build; the user's own
+  shadow still warns; `corelib/test/json/main.ty` still shows json.ty's). None
+  of that is locked by a gate. The over-mute direction IS held —
+  `tests/warn/shadow_builtin.ty` is a bare program with no `package` decl, so it
+  is unaffected by the mute and still fires. The under-mute direction is not:
+  if the mute regresses, every gate stays green.
+
+  Neither existing lane can express it. `tests/run.sh:440` makes the warn lane
+  *require* a `warning:` in stderr, so it cannot hold a "no warning" fixture;
+  and the lane's fixtures share one directory, so adding `package main` +
+  `import "core:json"` to one makes tychoc compile every sibling `.ty` with it
+  and collide on `main`. The cheap fix is probably a third grading mode in the
+  warn lane (golden stderr, empty allowed) rather than a new gate.
+
+- [ ] **Phase 13 — the shadowed-builtin warning's central claim is false for at
+      least one builtin** *(discovered by the same work)*
+
+  The warning says "every unqualified `X(...)` here calls this procedure, not
+  the builtin". For `len` that is true and `tests/warn/shadow_builtin.ty` proves
+  it — the fixture prints 7, not 4. For `hash` it is false:
+
+  ```
+  fn hash(x: int) -> int:
+      return x * 2
+
+  fn main():
+      println(str(hash(7)))
+  ```
+
+  warns, then prints `-1407484600305285887` — the builtin's answer, not `14`.
+  Reproduced on a plain program with no imports. Pre-existing and untouched by
+  `2376066`, which only gates whether `warn_at` prints. Either the resolver
+  should prefer the user's procedure uniformly, or the warning's wording is
+  wrong for the subset of builtins that win; deciding which is the point of the
+  phase. `src/tychoc.c@shadows_builtin` lists both names, so the warning fires
+  identically for the two.
+
 ## Out of scope
 
 `plan_windows.md` is a separate track and is not touched by this plan.
