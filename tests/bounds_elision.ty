@@ -14,7 +14,7 @@
 # the CHECKED path, so the tree got slower and safer, never wrong — which is exactly
 # why `make test` could not see it. 223 sequential sites across 97 files lost it.
 #
-# Phase 27 restored it for S_FOR3 (for3_elidable_arr, src/tychoc.c:8203-8257):
+# Phase 27 restored it for S_FOR3 (for3_elidable_arr, src/tychoc.c:8211-8265):
 # all four elidable loops below emit `.data[` again. `TYCHOC_NO_BOUNDS_ELISION=1`
 # still turns it off. tests/bounds_noelide.ty locks the other side — the
 # spellings that must KEEP the check — and bench/guard.sh now asserts the

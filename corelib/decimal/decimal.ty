@@ -142,9 +142,9 @@ fn to_str(a: Decimal) -> string:
         sign = "-"
     if a.scale <= 0:
         return sign + mag
-    L := len(mag)
-    if L > a.scale:
-        return sign + substr(mag, 0, L - a.scale) + "." + substr(mag, L - a.scale, L)
+    nd := len(mag)
+    if nd > a.scale:
+        return sign + substr(mag, 0, nd - a.scale) + "." + substr(mag, nd - a.scale, nd)
     frac := mag                                   # fewer digits than the scale -> "0.<pad>mag"
     for len(frac) < a.scale:
         frac = "0" + frac

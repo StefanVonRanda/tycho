@@ -1,0 +1,11 @@
+# The same rule as upper_local.ty, on a parameter: every binding form funnels
+# through one guard, so a parameter is refused exactly like a local.
+# expect: 'Limit' cannot name a binding
+
+fn clamp(x: int, Limit: int) -> int:
+    if x > Limit:
+        return Limit
+    return x
+
+fn main():
+    println(str(clamp(9, 5)))

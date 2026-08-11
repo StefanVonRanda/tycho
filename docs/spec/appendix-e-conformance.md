@@ -80,6 +80,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 |---|---|---|
 | §3.2 | one logical statement per line | `tests/reject/two_stmts_one_line`, `reject/bare_expr_stmt` |
 | §3.4 | indentation; mixed tabs/spaces rejected | `tests/tab_indent`, `reject/tab_mix`, `reject/tab_mix2` |
+| §3.5.1 | a run-time binding must start lowercase or `_` | `tests/reject/upper_local`, `tests/reject/upper_param`, `tests/match_expr`, `tests/nested_pattern` |
 | §3.9.1 | integer literals; overflow rejected | `tests/float_int_lit`, `reject/int_literal_overflow` |
 | §3.9.2 | float literals (exp / leading-dot forms) | `tests/float_exp`, `tests/float_dot`, `reject/float_exp_bad` |
 | §3.9.3 | character literals | `tests/char_basic`, `tests/char_byte` |

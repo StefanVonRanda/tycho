@@ -499,8 +499,8 @@ or an explicit "open, refused because …".
     `src/tychoc.c@side_missing` since phase 15).
   - **Caller audit — all five qualified coverage sites verified green in one probe,
     every match wildcard-free:** a plain enum match with `pk.A:` / `pk.B(k):` arms
-    (`src/tychoc.c:7942-7943`), a nested pattern under `Some` (`src/tychoc.c:7888`),
-    one under `Ok`/`Err` (`src/tychoc.c:7915-7917`), `e is pk.A`, and `... is Ok`.
+    (`src/tychoc.c:7950-7951`), a nested pattern under `Some` (`src/tychoc.c:7896`),
+    one under `Ok`/`Err` (`src/tychoc.c:7923-7925`), `e is pk.A`, and `... is Ok`.
     Output: `enum B 1` / `some B 1` / `err A` / `is A` / `is Ok`, exit 0. No site in
     the class mishandles a package prefix.
   - No fixture was added: there is nothing to regress against, and
@@ -519,7 +519,7 @@ or an explicit "open, refused because …".
     ```
     — but both `Ok` and `Err` ARE written. The real fault is a missing variant, and
     the message never names it. The plain-enum path gets this right
-    (`src/tychoc.c:7971`, "non-exhaustive match: missing variant %s of %s").
+    (`src/tychoc.c:7979`, "non-exhaustive match: missing variant %s of %s").
   - Mechanism: `side_total`, as it stood at `680d30d`, collapsed the whole side to
     one bit and discarded which slot of `sc->cov` was clear — it did not even use
     its `pt` argument (its body ended `(void)pt;`). The caller therefore had no
@@ -799,7 +799,7 @@ or an explicit "open, refused because …".
     `:3315-3316` for a match arm). Enum-scoping therefore needs either a
     three-part `pkg.Enum.Variant` path the grammar has no production for, or
     expected-type-driven resolution — and the resolver is **synthesise-only**:
-    `src/tychoc.c:5633-5643` resolves a bare identifier to a variant through
+    `src/tychoc.c:5641-5651` resolves a bare identifier to a variant through
     `variant_find` with no expected type in hand, returning `e->type = ENUM_TYPE(eid)`.
     Worse, variant references are **mangled at parse time** (`:3070-3071`,
     `:3316`, `:3323`), before any type is known, so the qualifier cannot be
@@ -814,10 +814,10 @@ or an explicit "open, refused because …".
   - **Consumers that would each need work** (enumerated before deciding, per the
     brief): `parse_is` and its four-builtin exemption (`src/tychoc.c:3058-3071`);
     match-arm parsing (`:3283`, `:3298`, `:3315-3337`); bare-identifier and call
-    resolution (`:5633`, `:6173`); `enum_variant_index` (`:1250-1257`), which
+    resolution (`:5641`, `:6181`); `enum_variant_index` (`:1250-1257`), which
     today accepts mangled *or* raw so a nested pattern can stay unqualified;
-    exhaustiveness (`side_missing` `:7615`, `die_missing_variant` `:7624`,
-    `:7944`); the declaration-time duplicate check (`:4613`); `parse_const`'s
+    exhaustiveness (`side_missing` `:7623`, `die_missing_variant` `:7632`,
+    `:7952`); the declaration-time duplicate check (`:4613`); `parse_const`'s
     collision check (`:4899-4901`); plus `tools/tychofmt.ty`, `tools/lsp.ty`,
     `editors/`, and Appendix A. That is a language change, not a resolution fix.
   - **What was changed instead — Markdown and comments only, line-neutral.** Two
@@ -846,8 +846,8 @@ or an explicit "open, refused because …".
             return 7        # built /tmp/probe/p8.bin  -- and p9.bin, decls swapped
 
     At the use site the variant wins, because `resolve_expr` tries the variant
-    before the function (`src/tychoc.c:5633` runs ahead of the `sig_find` at
-    `:5645`). `println(Alpha())` in such a file reports:
+    before the function (`src/tychoc.c:5641` runs ahead of the `sig_find` at
+    `:5653`). `println(Alpha())` in such a file reports:
 
         error: argument 1 of 'println' is A, expected string
 
@@ -1761,7 +1761,7 @@ or an explicit "open, refused because …".
     `a is X and b is Y` groups as `(a is X) and (b is Y)`. The right operand is
     a variant NAME, not an expression — parsing it as one would hit the
     payload-carrying variant's "write V(...)" rejection at
-    `src/tychoc.c:5638@carries a payload`, which is the whole gap.
+    `src/tychoc.c:5646@carries a payload`, which is the whole gap.
   - **`is` is a RESERVED word, not contextual.** The grep that decided it, over
     every `.ty` in the tree with strings and comments stripped:
 
@@ -1779,7 +1779,7 @@ or an explicit "open, refused because …".
     not apply. Reserving follows `in`, the language's other binary-operator
     keyword.
   - **A bad variant name is a compile error naming both**, reusing the match
-    arm's wording verbatim (`src/tychoc.c:7944@is not a variant of`):
+    arm's wording verbatim (`src/tychoc.c:7952@is not a variant of`):
 
     ```
     tests/reject/enum_is_unknown_variant.ty:10: error: 'VFloat' is not a variant of Value
@@ -1870,14 +1870,14 @@ So `is` reuses the discriminator `match` already uses, exactly as `810c8c3` reus
 `->tag` — no representation change, no unification of two mechanisms. Three edits,
 smaller than `810c8c3`'s: an `IS_OPT`/`IS_RES` branch in the `TK_IS` resolver arm
 (`src/tychoc.c@is not a variant of`), a two-way branch in the `TK_IS` codegen
-(`src/tychoc.c:10668-10674`), and the package-mangling exemption for the four
+(`src/tychoc.c:10676-10682`), and the package-mangling exemption for the four
 builtin names in `parse_is` (`src/tychoc.c:3066-3071`) — the same exemption the
 match-arm parser already carries at `src/tychoc.c:3320@"Err"`.
 
 **Design decisions, checked against the source rather than against Rust:**
 
 - Names are `Some`/`None` and `Ok`/`Err`, the constructors' own spellings
-  (`src/tychoc.c:2797-2811`) and the match arms' (`src/tychoc.c:7876-7906`).
+  (`src/tychoc.c:2797-2811`) and the match arms' (`src/tychoc.c:7884-7914`).
 - `is` binds nothing, unchanged: `parse_is` reads one `TK_IDENT` and never an
   `LPAREN`, so `o is Some(x)` cannot parse as a binding.
 - Wrong family is a **compile error** naming the type and both valid names:
@@ -1952,8 +1952,8 @@ fixture, +1 reject, no silent loss.
     the same argument loop happened to straddle — the defect was latent, and a
     corelib addition merely exposed it.
   - Fix: snapshot the index and re-derive after each append-capable call, the
-    idiom this file already uses for the same hazard at `src/tychoc.c:5378` and
-    `src/tychoc.c:5495`. Chosen over copying the `Sig` by value because the
+    idiom this file already uses for the same hazard at `src/tychoc.c:5386` and
+    `src/tychoc.c:5503`. Chosen over copying the `Sig` by value because the
     index stays correct if a `Sig` is ever legitimately mutated in place, and
     because it costs two lines rather than a ~280-byte struct copy per call.
 
@@ -1977,17 +1977,17 @@ reachable during resolution are `instantiate_generic`, `resolve_parfor` and
 
 | Site | Verdict |
 |---|---|
-| `src/tychoc.c:6556` (E_CALL) | **EXPOSED — fixed.** Held across `resolve_exp` |
-| `:5484` (E_SPAWN) | Clear. `resolve_expr(c)` runs BEFORE `sig_find`; already stores an index |
-| `:5645`, `:5648` (fn-as-value) | Clear. Only `note_fnval` (appends to `g_fnval`) and `funcc_of` intervene; neither mentions `g_sigs` |
-| `:5921`, `:5924`, `:5930` (UFCS on qualified) | Clear. Derefs are immediate; `ufcs_generic`/`type_pkg_prefix` do not touch `g_sigs` |
-| `:6000`, `:6003`, `:6009` (UFCS on field) | Clear, same shape |
-| `:6069`, `:6081`, `:8411`, `:8669`, `:8675` | Clear. Truthiness test only, never dereferenced |
-| `:6511` (variadic probe) | Clear. All derefs before any append-capable call |
-| `:7463` (`Sig *sg`, parallel-for) | Clear. Unused after `resolve_block`; already carries `sg_id` as an index |
-| `:8701` (`main` lookup) | Clear. NULL-tested immediately, never used again |
-| `:9840`, `:10148`, `:13384`, `:13424` | Clear. Emit phase. Generic-instance bodies are all resolved in `gen_program`'s dedicated pre-pass loop, which finishes before any emit loop, so `gen_expr` cannot reach `instantiate_generic` |
-| `:10492`, `:13347`, `:11012`, `:11022` | Clear. Index-based (`g_sigs[g_spawn[i]]`, `g_sigs[pf->sig]`), not pointers |
+| `src/tychoc.c:6564` (E_CALL) | **EXPOSED — fixed.** Held across `resolve_exp` |
+| `:5492` (E_SPAWN) | Clear. `resolve_expr(c)` runs BEFORE `sig_find`; already stores an index |
+| `:5653`, `:5656` (fn-as-value) | Clear. Only `note_fnval` (appends to `g_fnval`) and `funcc_of` intervene; neither mentions `g_sigs` |
+| `:5929`, `:5932`, `:5938` (UFCS on qualified) | Clear. Derefs are immediate; `ufcs_generic`/`type_pkg_prefix` do not touch `g_sigs` |
+| `:6008`, `:6011`, `:6017` (UFCS on field) | Clear, same shape |
+| `:6077`, `:6089`, `:8419`, `:8677`, `:8683` | Clear. Truthiness test only, never dereferenced |
+| `:6519` (variadic probe) | Clear. All derefs before any append-capable call |
+| `:7471` (`Sig *sg`, parallel-for) | Clear. Unused after `resolve_block`; already carries `sg_id` as an index |
+| `:8709` (`main` lookup) | Clear. NULL-tested immediately, never used again |
+| `:9848`, `:10156`, `:13392`, `:13432` | Clear. Emit phase. Generic-instance bodies are all resolved in `gen_program`'s dedicated pre-pass loop, which finishes before any emit loop, so `gen_expr` cannot reach `instantiate_generic` |
+| `:10500`, `:13355`, `:11020`, `:11030` | Clear. Index-based (`g_sigs[g_spawn[i]]`, `g_sigs[pf->sig]`), not pointers |
 
 **Regression fixture** — `tests/generic_sig_realloc.ty`. 200 distinct generic
 instantiations inside the arguments of `print`/`str`, which crosses at least one
@@ -2396,6 +2396,162 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
   - Gates: `make check-links` ok (119 markdown files, 142 anchored / 910 bare
     citations), `make q-check` green — 35-query transcript == golden, both
     renderers agree under `cmp`, all refusals still refuse with empty stdout.
+
+- [x] **Phase N — a runtime binding may not start with an uppercase letter**
+      (*authorised directly by the owner, 2026-08-11; the OCaml/Haskell
+      "impossible by grammar" option over a narrower shadow check*)
+  - Locals, parameters and every other run-time binding must start with a
+    lowercase letter or `_`. The uppercase namespace is compile-time only —
+    types, enum variants, consts — so a binding can no longer shadow a
+    constructor. `const` is EXEMPT and unchanged.
+
+  ### Evidence — uppercase bindings
+
+  **The const measurement, re-verified before scoping** (it decides whether
+  consts are in or out):
+
+  ```
+  grep -rn --include='*.ty' '^[[:space:]]*const ' . | grep -v tychoc0  →  266
+    starting uppercase: 264
+    starting lowercase: 0
+    starting '_':         2   (tests/pkg/const_export/levels/levels.ty:12,
+                               tests/reject/pkg/const_private/levels/levels.ty:4)
+  ```
+
+  264 uppercase, zero lowercase — the brief's figure held, so consts stay
+  uppercase and out of scope. `_INTERNAL` is legal under the new rule anyway.
+
+  **Binding-form enumeration.** Every form was located in the parser before the
+  guard was placed, because fixing one and missing four was the named risk:
+
+  | Binding form | parsed at | reaches |
+  |---|---|---|
+  | `x := e`, `x: T = e` | `src/tychoc.c:3944` | `vars_push` |
+  | destructuring `a, b := e` | `:3925`, `:3928` | `vars_push` |
+  | `for x in COLL` / `parallel for` | `:3804` | `vars_push` |
+  | `fn` parameter (incl. `inout`, `sink`, variadic) | `:4182` | `vars_push` |
+  | `subscript` parameter | `:4297` | `vars_push` |
+  | `extern fn` parameter | `:4425` | `vars_push` |
+  | lambda parameter | `:2617` | `vars_push` |
+  | match-arm binding | `:3352` | `vars_push` |
+  | nested-pattern binding | `:3344` | `vars_push` |
+  | `select` `recv(ch, x)` binding | `:3683` | `vars_push` |
+  | local `const` | `:3577` | `vars_push_const` — exempt |
+
+  All ten run-time forms funnel through one function, so the guard is **one
+  site**, not ten: `src/tychoc.c@vars_push`. `is` binds nothing (`:3052-3075`),
+  and the three-clause `for` init recurses into `parse_stmt`, so both are
+  covered without their own case.
+
+  **Why the guard is NOT in the parser**, which was the obvious first choice.
+  `src/tychoc.c:3327-3329` states that a bare `Name` in a payload slot cannot be
+  told from a binding at parse time; it stays in `binds[]` and
+  `src/tychoc.c@match_arm_payload` promotes it to a pattern once the payload's
+  enum is known. A parse-time check would therefore have rejected `Err(NotFound)`
+  — 12 legitimate sites in the tree, including `server/main.ty:925`,
+  `tests/nested_pattern.ty:34` and `corelib/test/io/main.ty:146`. Placing the
+  guard at `vars_push` runs it *after* promotion, so a nullary variant in a
+  payload slot keeps its uppercase spelling and only a genuine binding is judged.
+
+  **Corpus cost, measured before migrating.** 16 real sites in 6 files — the
+  brief named 5 files and undercounted md5; `corelib/sha256` and
+  `corelib/decimal` were not in it:
+
+  | File | Sites | Rename |
+  |---|---|---|
+  | `corelib/md5/md5.ty` | 7 | `K S M A B C D` → `k s m a b c d` |
+  | `corelib/sha256/sha256.ty` | 5 (2 are params) | `H K W` → `hv kt w` |
+  | `bench/dijkstra/dijkstra.ty` | 2 | `INF` → `inf` |
+  | `examples/weblog/main.ty` | 1 | `L` → `lines` |
+  | `corelib/decimal/decimal.ty` | 1 | `L` → `nd` |
+
+  md5's and sha256's uppercase names mirror RFC 1321 and FIPS 180-4, so both
+  files carry a one-line note mapping the lowercase names back to the standard's
+  — that mapping is why a reader can check the algorithm. sha256 could not take
+  the plain lowercase forms: `block` already binds `a`–`h` and `update`/`final`
+  already bind `k`, hence `hv`/`kt`.
+
+  **Negative control**, and it earned its place — the first draft of both
+  fixtures was WRONG. With `src/tychoc.c` stashed and rebuilt, the old compiler
+  rejected them for an unrelated reason:
+
+  ```
+  tests/reject/upper_local.ty:8: error: argument 1 of 'println' is int, expected string
+  ```
+
+  They would have passed the reject lane without ever exercising the new rule.
+  Wrapped both in `str(...)`; the old compiler then reported
+
+  ```
+  tests/reject/upper_local.ty      tychoc ACCEPTED an invalid program
+  tests/reject/upper_param.ty      tychoc ACCEPTED an invalid program
+  ```
+
+  and after restoring `src/tychoc.c` and rebuilding, both die at the binding:
+
+  ```
+  tests/reject/upper_local.ty:7: error: 'Total' cannot name a binding -- a local,
+    parameter or pattern binding must start with a lowercase letter or '_'
+  tests/reject/upper_param.ty:5: error: 'Limit' cannot name a binding -- ...
+  ```
+
+  **Ordinary code still works** — no new fixture was added for the accept side.
+  `tests/match_expr.ty` (constructs and matches variants) and
+  `tests/nested_pattern.ty` (`Err(NotFound)`, the promotion path) both compile,
+  and `corelib/test/result` is green in `make corelib`.
+
+  **`bench/dijkstra/` is run by no lane** — not `bench/guard.sh` (a tree-alloc
+  wall-time ratio), not `make ci`. Compiled and run by hand: `73529 21230611`.
+  HEAD's copy fed to the new compiler is rejected, and
+  `sed 's/\binf\b/INF/g' bench/dijkstra/dijkstra.ty | diff - <HEAD copy>` is
+  empty, so the rename is provably the only change.
+
+  **Spec.** New `§3.5.1 Case and the two name spaces` in
+  `docs/spec/01-lexical.md`, where `IDENT` is defined; `§3.7` and `§19.1` both
+  cross-reference it. **No EBNF fence was added**: the rule is a restriction on
+  which names may *declare*, not on token shape, and `scripts/gen_grammar.sh`
+  harvests only fences containing `::=`, so Appendix A is untouched and still
+  matches §3/§4. Appendix E gained one row.
+
+  **Citation drift.** +8 lines in `src/tychoc.c` staled 43 citations.
+  `scripts/reanchor_citations.py src/tychoc.c --apply` rewrote 117 files with
+  0 needing a human, and `make check-links` was re-run after it rather than
+  trusting the script's own report, as its header instructs.
+
+  - Gates, each in the foreground:
+    - `make check-links` → `link check: ok (119 markdown files…)`,
+      `citation check: ok (143 anchored…, 989 bare in bounds, …)`
+    - `make editors-check` → `editors-check: ok` (951 files parsed, known-bad
+      set unchanged — confirms the change adds no syntax, so `tools/` and
+      `editors/` needed no teaching)
+    - `sh scripts/entrypoints.sh` → `entrypoints: ok (24 entry points compile)`
+    - `make vm-check` → `tycho-vm: green`
+    - `sh scripts/spec_check.sh` → `spec-examples: 11 runnable example(s), all
+      pass`, `Appendix A grammar matches §3/§4 (ok)`, `all Appendix E fixture
+      citations resolve (ok)`
+    - `sh scripts/tools_check.sh` → `tools-check: ok`
+    - `make corelib` → `corelib: all green (46 ok, tychoc matches goldens)` —
+      **no skip**, so md5's and sha256's goldens are byte-identical after the
+      rename
+    - `make corelib-examples` → `corelib examples: all green (37 ok…)`
+    - `make weblog` → `weblog: ok (tychoc == golden)`
+    - `make test` → **`passed: 633   failed: 0`**, against a 631 baseline; the
+      +2 are exactly the two new reject fixtures
+
+- [ ] **No gate compiles `bench/`** (*found by the uppercase-binding phase,
+      2026-08-11 — out of that phase's scope, so recorded rather than absorbed*)
+  - `bench/dijkstra/dijkstra.ty` had to be compiled by hand, because nothing
+    runs it. `bench/guard.sh` is the only bench lane in `make ci` (`[10]`) and it
+    measures ONE tree-alloc wall-time ratio; it never touches the ~30 other `.ty`
+    files under `bench/`. A language change that rejects a construct those files
+    use is invisible to the whole suite — this phase's rule would have shipped
+    with `bench/dijkstra` uncompilable if the brief had not named it explicitly.
+  - The cheap fix is a compile-only lane: `tychoc` over every `bench/**/*.ty`,
+    asserting nothing about output or speed, in the shape of
+    `scripts/entrypoints.sh`. Seconds, and it closes the hole that matters —
+    "does the corpus still compile" — without pretending to be a perf gate.
+  - Not done here: adding a CI step is out of scope for a language change, and
+    `CLAUDE.md` reserves `make ci` for a phase that changes a CI step.
 
 - [ ] **Should `x` warn rather than die on a failed `set_mtime`?** (*found by the
       tycho-ar stderr phase, 2026-08-11*)

@@ -1,0 +1,8 @@
+# A runtime binding may not start with an uppercase letter (spec §3.7): the
+# uppercase namespace belongs to types, enum variants and consts, so no local
+# can shadow a constructor.
+# expect: 'Total' cannot name a binding
+
+fn main():
+    Total := 3
+    println(str(Total))

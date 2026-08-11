@@ -101,27 +101,28 @@ fn init() -> State:
 # The compression of the 64 bytes at `src[base..base+64)`. Operates on the
 # `bytes` value directly, no per-byte int expansion; the caller guarantees the
 # 64 bytes exist.
-fn block(H: inout [u32], K: [u32], src: bytes, base: int):
-    W := []u32
+# hv/kt/w are FIPS 180-4's H, K and W (a binding may not start uppercase, §3.7).
+fn block(hv: inout [u32], kt: [u32], src: bytes, base: int):
+    w := []u32
     t := 0
     for t < 16:
         q := base + t * 4
-        push(W, (to_u32(src[q]) << 24) | (to_u32(src[q + 1]) << 16) | (to_u32(src[q + 2]) << 8) | to_u32(src[q + 3]))
+        push(w, (to_u32(src[q]) << 24) | (to_u32(src[q + 1]) << 16) | (to_u32(src[q + 2]) << 8) | to_u32(src[q + 3]))
         t = t + 1
     for t < 64:
-        push(W, smallsig1(W[t - 2]) + W[t - 7] + smallsig0(W[t - 15]) + W[t - 16])
+        push(w, smallsig1(w[t - 2]) + w[t - 7] + smallsig0(w[t - 15]) + w[t - 16])
         t = t + 1
-    a := H[0]
-    b := H[1]
-    c := H[2]
-    d := H[3]
-    e := H[4]
-    f := H[5]
-    g := H[6]
-    h := H[7]
+    a := hv[0]
+    b := hv[1]
+    c := hv[2]
+    d := hv[3]
+    e := hv[4]
+    f := hv[5]
+    g := hv[6]
+    h := hv[7]
     i := 0
     for i < 64:
-        t1 := h + bigsig1(e) + ch(e, f, g) + K[i] + W[i]
+        t1 := h + bigsig1(e) + ch(e, f, g) + kt[i] + w[i]
         t2 := bigsig0(a) + maj(a, b, c)
         h = g
         g = f
@@ -132,14 +133,14 @@ fn block(H: inout [u32], K: [u32], src: bytes, base: int):
         b = a
         a = t1 + t2
         i = i + 1
-    H[0] = H[0] + a
-    H[1] = H[1] + b
-    H[2] = H[2] + c
-    H[3] = H[3] + d
-    H[4] = H[4] + e
-    H[5] = H[5] + f
-    H[6] = H[6] + g
-    H[7] = H[7] + h
+    hv[0] = hv[0] + a
+    hv[1] = hv[1] + b
+    hv[2] = hv[2] + c
+    hv[3] = hv[3] + d
+    hv[4] = hv[4] + e
+    hv[5] = hv[5] + f
+    hv[6] = hv[6] + g
+    hv[7] = hv[7] + h
 
 # Absorb `data`, leaving whatever did not fill a block in `pending` (< 64
 # bytes). Only concatenates when there really is a carry: `bytes + bytes`
@@ -147,13 +148,13 @@ fn block(H: inout [u32], K: [u32], src: bytes, base: int):
 # not taken mid-file.
 fn update(st: inout State, data: bytes):
     st.total = st.total + len(data)
-    K := k_table()
+    kt := k_table()
     work := data
     if len(st.pending) > 0:
         work = st.pending + data
     nb := len(work) / 64
     for k := 0; k < nb; k += 1:
-        block(&st.h, K, work, k * 64)
+        block(&st.h, kt, work, k * 64)
     st.pending = work[nb * 64:len(work)]
 
 # Pad per FIPS 180-4 (0x80, zeros to 56 mod 64, the 64-bit big-endian bit
@@ -172,10 +173,10 @@ fn final(st: inout State) -> [int]:
         tail = tail + chr((bitlen / pow2(sh)) % 256)
         sh = sh - 8
     tb := to_bytes(tail)
-    K := k_table()
+    kt := k_table()
     nb := len(tb) / 64
     for k := 0; k < nb; k += 1:
-        block(&st.h, K, tb, k * 64)
+        block(&st.h, kt, tb, k * 64)
     out := []int
     vi := 0
     for vi < 8:

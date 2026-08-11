@@ -47,11 +47,11 @@ fn hpop(h: inout [(int, int)]) -> (int, int):
     return top
 
 fn dijkstra(adj: [[Edge]], src: int, n: int) -> [int]:
-    INF := 4000000000000000000
+    inf := 4000000000000000000
     dist := []int
     i := 0
     for i := 0; i < n; i += 1:
-        push(dist, INF)
+        push(dist, inf)
     dist[src] = 0
     heap := [](int, int)
     hpush(&heap, 0, src)
@@ -87,12 +87,12 @@ fn main():
             w := ((state & 1073741823) % 100) + 1
             push(adj[u], Edge(to, w))
     dist := dijkstra(adj, 0, n)
-    INF := 4000000000000000000
+    inf := 4000000000000000000
     sum := 0
     reach := 0
     i := 0
     for i := 0; i < n; i += 1:
-        if dist[i] < INF:
+        if dist[i] < inf:
             sum = sum + dist[i]
             reach = reach + 1
     println(str(reach) + " " + str(sum))

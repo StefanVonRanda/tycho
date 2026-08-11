@@ -120,6 +120,35 @@ Longest-match applies: the lexer forms the longest valid token at each
 position (e.g. `>>` is one shift token, not two `>`; `:=` is one token, not `:`
 then `=`).
 
+### 3.5.1 Case and the two name spaces
+
+An `IDENT` may hold any letter case in any position; the token shape does not
+depend on it. What the case decides is **which space the name may declare in**:
+
+- A name that starts with an **uppercase letter** `A`–`Z` belongs to the
+  **compile-time** space: types (§8), enum variants ([§19.1](12-aggregates.md#191-enum-declaration-and-variants)),
+  and `const` declarations (§14).
+- A name bound at **run time** — a local, a parameter (including `inout`,
+  `sink` and variadic parameters and lambda parameters), a destructuring
+  target, a `for` loop variable, a match-arm payload binding, and a `select`
+  `recv` binding — **must start with a lowercase letter or `_`**. A conforming
+  implementation rejects any other spelling.
+
+The rule is exclusion, not preference: because no run-time binding can be
+spelled the way a variant is spelled, a binding can never shadow a constructor,
+and a bare `Name` in a payload slot is unambiguously a **pattern** rather than a
+binding. `_` and a leading-underscore name stay legal in every binding position
+(`_` is the discard, §22.4). Procedure names are unaffected — they are neither
+run-time bindings nor uppercase by convention — except for the four constructor
+names §3.7 already excludes.
+
+> Provenance: one guard at the single point every binding form reaches,
+> `src/tychoc.c@vars_push` — parameters, `:=`, destructuring, loop variables,
+> match binds and `select` binds all pass through it. It runs *after*
+> `src/tychoc.c@match_arm_payload` promotes a bare `Err(A)` from a binding to a
+> pattern, which is why a nullary variant in a payload slot is still written
+> with its own uppercase spelling.
+
 ## 3.6 Keywords
 
 The following words are **reserved**. A reserved word is never an identifier;
@@ -149,7 +178,9 @@ keywords. `or_return` is matched as a single word (it is not `or` followed by
 
 Several words are significant **only in a specific position** and are ordinary
 identifiers everywhere else. A variable, parameter, or field of the same name
-is unaffected. They are **not** reserved:
+is unaffected — subject to [§3.5.1](#351-case-and-the-two-name-spaces), which
+bars an uppercase spelling from every run-time binding position. They are
+**not** reserved:
 
 - **Top-level leaders:** `package`, `import`, `extern`, `const`, `subscript`.
 - **Statement leaders:** `const` (local), `delete` — each significant only when
@@ -404,7 +435,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:480-481`, its per-piece bound `:746@rn + 2 >= (int)sizeof rbuf`,`:749@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:753@unterminated raw string literal`; adjacent join `:2345-2357`; `const` string fold
 > `:4457-4461`; codegen pastes the escaped text into a C string literal
-> `:10422@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
+> `:10430@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

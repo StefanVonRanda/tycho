@@ -92,12 +92,12 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2625` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:8810-8879`. Each
-  `extern "Lib"` adds `-lLib` (`:5141` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:8816-8820`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:8598-8601`, `:2992-3017`, `:8867-8869`.
+- Link line assembled in one `cc` call: `src/tychoc.c:8818-8887`. Each
+  `extern "Lib"` adds `-lLib` (`:5149` `add_link`). `--link/--shim/--pkg`
+  passthrough at `:8824-8828`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:8606-8609`, `:2992-3017`, `:8875-8877`.
 - String return is arena-copied so Tycho never holds a foreign pointer
-  (`src/tychoc.c:6172-6179`, `tycho_str_from_c`, NULL→`""`).
+  (`src/tychoc.c:6180-6187`, `tycho_str_from_c`, NULL→`""`).
 
 ### Pain point 1 — no composite types cross
 
@@ -145,8 +145,8 @@ hazards, none mitigated:
 The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
-`len()`/`print()`/`println()` (`src/tychoc.c:5917-5921` `is_extern_str_call`,
-applied at `:5959` for `len`, `:6069` for print/println). Footguns:
+`len()`/`print()`/`println()` (`src/tychoc.c:5925-5929` `is_extern_str_call`,
+applied at `:5967` for `len`, `:6077` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -189,7 +189,7 @@ Ranked by value / effort.
   parameter, and an extern returning `bytes` uses an out-param-len shim
   convention (or a small compiler-known `{ptr,len}` return struct emitted by
   Tycho, copied into the arena like the current string return at
-  `src/tychoc.c:6172-6179`).
+  `src/tychoc.c:6180-6187`).
 - *Why.* Eliminates the hex-marshaling tax that dominates the crypto package
   and would hit any binary-data library (compression, image, network, hashing).
   Halves memory and removes the encode/decode CPU and code.
@@ -207,7 +207,7 @@ Ranked by value / effort.
   compiler treats `Db` as distinct from `ptr` and from other handles (fixes the
   wrong-handle hazard, pain point 3a), and emits the named free at scope exit
   for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing
-  task/channel finalizer mechanism (`src/tychoc.c:6560-6571`) that already runs
+  task/channel finalizer mechanism (`src/tychoc.c:6568-6579`) that already runs
   destructor calls at scope end.
 - *Why.* Turns the most dangerous FFI primitive into something the compiler can
   reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8608-8611`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8616-8619`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 

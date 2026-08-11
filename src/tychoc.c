@@ -3805,7 +3805,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10199), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10207), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5123,7 +5123,15 @@ static int g_dup_base = -1;
 
 static int  vars_mark(void) { return g_nvars; }
 static void vars_restore(int m) { g_nvars = m; }
-static void vars_push(const char *name, Type t, int can_mutate) {
+/* §3.7: the uppercase namespace is compile-time only (types, enum variants,
+ * consts), so no runtime binding can shadow a constructor. Every binding form
+ * funnels here -- parameters, `:=`, destructuring, loop vars, match and select
+ * binds -- and this runs AFTER match_arm_payload has promoted a bare `Err(A)`
+ * to a pattern, so a nullary variant in a payload slot is still spelled `A`. */
+static void vars_push(const char *name, Type t, int can_mutate, int line) {
+    if (name[0] >= 'A' && name[0] <= 'Z')
+        die_at(line, "'%s' cannot name a binding -- a local, parameter or pattern "
+                     "binding must start with a lowercase letter or '_'", name);
     TBL_ENSURE(g_vars, g_nvars, g_vars_cap);
     g_vars[g_nvars].name = (char *)name;
     g_vars[g_nvars].type = t;
@@ -5535,7 +5543,7 @@ static Type resolve_expr_inner(Expr *e) {
             int mark = vars_mark();   /* resolve the body with caps + params (caps shadow the enclosing originals) */
             for (int i = 0; i < pr->nparams; i++) {
                 Type pt = pr->params[i].type;
-                vars_push(pr->params[i].name, pt, pr->params[i].is_sink || (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)));
+                vars_push(pr->params[i].name, pt, pr->params[i].is_sink || (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)), pr->line);
             }
             Type saved = g_fn_ret; g_fn_ret = pr->ret;
             g_dup_base = mark;   /* lambda body shares its caps+params scope (same lifted C function) */
@@ -6566,7 +6574,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5378 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5386 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7129,10 +7137,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6753),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6761),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7041). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7049). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7475,7 +7483,7 @@ static void resolve_parfor(Stmt *s) {
     int mark = vars_mark();
     for (int i = 0; i < pr->nparams; i++) {
         Type pt = pr->params[i].type;
-        vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt));
+        vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt), pr->line);
     }
     Type saved = g_fn_ret; g_fn_ret = pr->ret;
     g_dup_base = mark;   /* parallel-for body shares its params scope (same lifted C function) */
@@ -7650,7 +7658,7 @@ static void match_arm_payload(MatchArm *arm, Type pt, const char *tag, SideCov *
             die_at(arm->line, "%s(x) binds exactly one value", tag);
         int vi = enum_variant_index(pt, arm->binds[0]);
         if (vi < 0) {                                 /* an ordinary binding */
-            vars_push(arm->binds[0], pt, 1);
+            vars_push(arm->binds[0], pt, 1, arm->line);
             arm->sub_vi = -1;
             sc->plain = arm->line ? arm->line : 1;
             return;
@@ -7672,7 +7680,7 @@ static void match_arm_payload(MatchArm *arm, Type pt, const char *tag, SideCov *
     if (arm->nsubbinds != var->npayload)
         die_at(arm->sub_line, "%s binds %d value(s), got %d", var->raw, var->npayload, arm->nsubbinds);
     for (int b = 0; b < arm->nsubbinds; b++)
-        if (!bind_is_discard(arm->subbinds[b])) vars_push(arm->subbinds[b], var->payload[b], 1);
+        if (!bind_is_discard(arm->subbinds[b])) vars_push(arm->subbinds[b], var->payload[b], 1, arm->sub_line);
     arm->sub_vi = vi;
     if (!sc->cov) { sc->ncov = ed->nvariants; sc->cov = (int *)calloc((size_t)sc->ncov, sizeof(int)); }
     if (sc->cov[vi]) die_at(arm->sub_line, "duplicate %s(%s) arm", tag, var->raw);
@@ -7730,7 +7738,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 if (IS_TASK(t))
                     die_at(s->line, "a value if/match cannot produce a task handle");
                 s->decl_type = t;
-                vars_push(s->name, t, 1);
+                vars_push(s->name, t, 1, s->line);
                 ctrl_rewrite_tails(s->ctrl, S_ASSIGN, s->name, NULL);   /* tails become `name = tail` */
                 break;
             }
@@ -7748,7 +7756,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 if (g_npend >= 32) die_at(s->line, "too many pending declarations in one function");
                 g_pend[g_npend].name = s->name; g_pend[g_npend].decl = s; g_pend[g_npend].done = 0; g_npend++;
                 s->decl_type = T_PENDING;
-                vars_push(s->name, T_PENDING, 1);
+                vars_push(s->name, T_PENDING, 1, s->line);
                 break;
             }
             Type t = s->typed_decl ? resolve_exp(s->expr, s->annot) : resolve_expr(s->expr);
@@ -7771,7 +7779,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (IS_TASK(t) && s->expr->kind != E_SPAWN)
                 die_at(s->line, "a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))");
             s->decl_type = t;
-            vars_push(s->name, t, 1);
+            vars_push(s->name, t, 1, s->line);
             break;
         }
         case S_MDECL: {   /* a, b := f() — destructure a tuple into fresh locals */
@@ -7787,7 +7795,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     if (!strcmp(s->names[i], s->names[j]))
                         die_at(s->line, "duplicate name '%s' in the destructuring list", s->names[i]);
                 s->mtypes[i] = tup_elem(rt, i);
-                vars_push(s->names[i], s->mtypes[i], 1);
+                vars_push(s->names[i], s->mtypes[i], 1, s->line);
             }
             break;
         }
@@ -7961,7 +7969,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                                    arm->binds[b], type_name(var->payload[b]));
                     int m = vars_mark();
                     for (int b = 0; b < arm->nbinds; b++)
-                        if (!bind_is_discard(arm->binds[b])) vars_push(arm->binds[b], var->payload[b], 1);
+                        if (!bind_is_discard(arm->binds[b])) vars_push(arm->binds[b], var->payload[b], 1, arm->line);
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
@@ -8116,7 +8124,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     if (!IS_CHAN(ct))
                         die_at(a->line, "select recv needs a channel, got %s", type_name(ct));
                     int m = vars_mark();
-                    vars_push(a->binds[0], chan_inner(ct), 1);
+                    vars_push(a->binds[0], chan_inner(ct), 1, a->line);
                     resolve_block(a->body, a->nbody, ret);
                     vars_restore(m);
                 } else {
@@ -8143,7 +8151,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * diagnosed. docs/spec/10-statements.md records that deliberate loss;
              * the field and this check went together in the loops-cleanup plan. */
             int m = vars_mark();
-            vars_push(s->name, T_INT, 1);   /* loop variable is int, scoped to the loop */
+            vars_push(s->name, T_INT, 1, s->line);   /* loop variable is int, scoped to the loop */
             resolve_block(s->body, s->nbody, ret);
             vars_restore(m);
             break;
@@ -8660,7 +8668,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7079: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7087: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8724,7 +8732,7 @@ static void resolve_program(ProcVec *prog) {
             for (int v = 0; v < g_nvars; v++)   /* fail-closed: a duplicate parameter emits a duplicate C param */
                 if (!strcmp(g_vars[v].name, pr->params[j].name))
                     die_at(pr->line, "duplicate parameter '%s'", pr->params[j].name);
-            vars_push(pr->params[j].name, pt, mutable);
+            vars_push(pr->params[j].name, pt, mutable, pr->line);
         }
         /* `fn main() -> Result(void, string)` is the second legal shape: it makes
          * or_return usable at the entry point, which is where a CLI wants it most.
@@ -8828,7 +8836,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11098), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11106), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8858,12 +8866,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13058) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13066) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11185) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11193) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -12486,7 +12494,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int j = 0; j < p->nparams; j++) {
             Type pt = p->params[j].type;
             int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout || p->params[j].is_sink;
-            vars_push(p->params[j].name, pt, mutable);
+            vars_push(p->params[j].name, pt, mutable, p->line);
         }
         for (int k = 0; k < g_ginsts[i].nsp; k++) {   /* const generics 1.6B: bind each `$N` as an int const so the body's `N` folds to the instance's length */
             Expr *lit = new_expr(E_INT, p->line);
