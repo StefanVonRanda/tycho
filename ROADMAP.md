@@ -111,8 +111,8 @@ guesswork about which parts of the surface people actually reach for.
 
 These are ergonomic, not soundness — which is exactly why they must be fixed
 *before* a freeze rather than after, since fixing them later is a breaking
-change. All were recorded by the project itself, in `plan.md`'s phase-1
-learnings and in FRICTION:
+change. All were recorded by the project itself, in the early plan learnings
+(rotated away; recoverable under the `docs-archive` tag) and in FRICTION:
 
 - ~~a package-level `len` **shadows the builtin** inside its own package~~ —
   **closed 2026-08-09**, see the probe table below
@@ -175,7 +175,7 @@ against the wrong mechanism.
 | two error types cannot share an `or_return` chain | **closed — and the row named the wrong mechanism.** `b289a44` triaged it as WRONG MECHANISM: `corelib/result/result.ty@map_err` already bridged, and `1185f1a` added `map_err_with` (`corelib/result/result.ty@map_err_with`) for the cause-preserving case. Probe: one `fn chain(k) -> Result(int, string)` whose first leg is a `Result(string, IoErr)` bridged by `result.map_err_with(read_it(k), ioerr_to_str) or_return` and whose second leg is a native `Result(int, string)` — both legs propagate through the same chain, the IoErr path surfacing as `missing key bad`. There was never a language gap here, only a missing combinator |
 | `core:iter` unusable for a fallible pipeline stage | **closed 2026-08-11** — `9d2a6f9` added `corelib/iter/iter.ty:27@try_map` and `:42@try_filter`; `66cc04e` flipped predicates to `bool`. Probe: `try_map` over `["1","2","3"]` gave `[1, 2, 3]` and over `["1","-2","3"]` short-circuited to `not positive: -2`; `try_filter` kept `[2, 3, 4]` and propagated `overflow guard` |
 | `core:decimal` has no `div` | **closed** — `4251339`, confirmed by `7bff57b`. `corelib/decimal/decimal.ty:116` is `fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr)`. Probe: `div(10, 3, 4, 0)` gave `3.3333` |
-| `[string]` cannot cross the FFI | **CLOSED 2026-08-11 — lifted for the PARAMETER direction, refused for the return.** `src/tychoc.c@ffi_arg_arr_ptr_ctype` answers `"const char *const *"` for `T_ARRAY_STRING`; a `[string]` argument now emits `(const char *const *)xs.data, xs.len`, the same `(ptr,len)` convention `[int]`/`[float]` use, **borrowed for the call** (unenforceable — stated in `docs/spec/14-ffi.md` §24.1). The return gate stayed `src/tychoc.c@ffi_arr_ptr_ctype`, which never answers for `T_ARRAY_STRING`, so `-> [string]` still dies (`tests/reject/extern_ret_arr_string.ty`). Fixture: `tests/ffi/main.ty@ffi_sfold`, non-empty and empty. **`core:os` was left alone** — adopting this to drop its four argv shims is filed separately in `plan.md` |
+| `[string]` cannot cross the FFI | **CLOSED 2026-08-11 — lifted for the PARAMETER direction, refused for the return.** `src/tychoc.c@ffi_arg_arr_ptr_ctype` answers `"const char *const *"` for `T_ARRAY_STRING`; a `[string]` argument now emits `(const char *const *)xs.data, xs.len`, the same `(ptr,len)` convention `[int]`/`[float]` use, **borrowed for the call** (unenforceable — stated in `docs/spec/14-ffi.md` §24.1). The return gate stayed `src/tychoc.c@ffi_arr_ptr_ctype`, which never answers for `T_ARRAY_STRING`, so `-> [string]` still dies (`tests/reject/extern_ret_arr_string.ty`). Fixture: `tests/ffi/main.ty@ffi_sfold`, non-empty and empty. **`core:os` was left alone here** — adopted afterwards by `43a1ded`, which passes argv as a `[string]` and drops the builder handle |
 
 One correction carried forward from 2026-08-09, and one new one.
 
@@ -238,8 +238,10 @@ wall, exactly as the original `Result(void, E)` row was.
 Two defects, one probe. The diagnostic also **names the wrong file**: an
 eleven-line `main.ty` reports `./main.ty:71`, which is the line inside
 `corelib/result/result.ty`, not the user's file. A reader sent to line 71 of an
-eleven-line file has been told nothing. Filed in `plan.md`; it changes no
-decision here.
+eleven-line file has been told nothing. **Fixed 2026-08-11 by `0faccaf`**, which
+makes a generic instantiation failure name the corelib file it is really in; it
+changed no decision here. What that commit did *not* add is the instantiating
+call site, so the message still points at a file the caller cannot edit.
 
 #### Sizing `[string]` across the FFI — both answers, with costs
 

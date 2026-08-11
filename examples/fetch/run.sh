@@ -131,7 +131,8 @@ fi
 # hash embedded in the cache name -- so the golden describes the pre-rename body.
 # That commit's own message claims the dogfood digest goldens were re-recorded;
 # this one was not, and no lane runs it, so nothing said so. Re-recorded 2026-07-30.
-# `make ci` still does not run this lane (see Makefile) -- tracked in plan.md.
+# That gap is closed: this lane joined `make ci` step [3/13] on 2026-07-30
+# (`scripts/ci.sh` runs `make -s fetch`), so a stale golden here now reddens.
 #
 # RECORD is fail-closed: a golden is never written from a run that already
 # failed, or the first red build would overwrite the assertion with its own
