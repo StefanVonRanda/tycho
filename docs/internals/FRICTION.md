@@ -2499,3 +2499,34 @@ records the toll, which is one copied block per shim and is paid once.
   `split(s, " ")` plus the `strings.trim` already used at
   `corelib/test/wordfreq/main.ty:23` is the composition, and the tree's own
   dogfood is written that way.
+
+### 12. A `for` binding does not destructure a tuple, and a tuple is not indexable
+
+Found writing a dependency resolver: `for name, src in [("resolvable", ok),
+("cyclic", bad)]:` is refused with `expected ':' before the block`, pointing at
+the comma. The same destructuring in an assignment is fine and is used earlier
+in the same program — `item, deps := strings.split_once(line, ":")` compiles,
+and `corelib/strings/strings.ty@split_once` exists to be consumed that way. So
+the construct is available in one binding position and not the other.
+
+The obvious fallback does not work either: `for p in xs:` binds, but `p[0]` is
+refused with `can only index an array, a string, bytes, or a map (as a place)`.
+A tuple has no positional accessor, so a single-binder loop cannot reach the
+elements directly.
+
+**There is a working form, one line longer**, and it is worth knowing because
+the two refusals above read like "arrays of tuples are unusable":
+
+```tycho
+for p in xs:
+    k, q := p            # destructure the loop variable in the body
+    println(k + str(q))
+```
+
+Probed at head `f44d805`: the `for k, q in xs` form fails to parse, the `p[0]`
+form fails to resolve, and the body-destructure form builds and prints `a1 b2`.
+
+Not proposed as a change. `:=` destructuring already carries the feature, so
+extending it to a `for` binding is a parser question rather than a type-system
+one — but the cost today is that a reader meets two different refusals before
+finding the form that works, and neither message mentions it.
