@@ -12495,9 +12495,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * prototype and a body below. The loop re-reads g_nginsts as nested
      * instances append; each resolved Proc is kept for the emit loops. gen_proc
      * is self-contained, so resolve (here) and emit (below) can be separated. */
-    g_ninst_procs = 0;
+    g_ninst_procs = 0; const char *sn0 = g_srcname, *st0 = g_src;
     for (int i = 0; i < g_nginsts; i++) {
-        Proc *p = ginst_to_proc(&g_ginsts[i]);
+        Proc *p = ginst_to_proc(&g_ginsts[i]); diag_use_proc(p);   /* the body is the TEMPLATE's lines -- name the template's file, not the caller's */
         g_nvars = 0;
         for (int j = 0; j < p->nparams; j++) {
             Type pt = p->params[j].type;
@@ -12513,7 +12513,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         resolve_block(p->body, p->nbody, p->ret);
         TBL_ENSURE(g_inst_procs, g_ninst_procs, g_inst_procs_cap);
         g_inst_procs[g_ninst_procs++] = p;
-    }
+    } g_srcname = sn0; g_src = st0;   /* the loop retargeted them per instance; the emit below re-targets per proc */
     /* Types reference one another, sometimes cyclically (a `[Node]` field is a
      * TychoArrC descriptor holding S_Node*). Emit in dependency layers:
      *   1. forward-declare every struct tag,

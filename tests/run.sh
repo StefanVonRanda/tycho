@@ -333,6 +333,15 @@ for d in tests/reject/pkg/*/; do
     elif [ ! -s "$TMP/rjp.log" ]; then
         note "$name" "tychoc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
     else
+        # Same OPT-IN as the flat lane above: a `# expect: <text>` line in main.ty
+        # pins WHY, as a literal substring. Here it is also how a fixture pins
+        # WHICH FILE a diagnostic names -- the reason this lane grew the option.
+        exp="$(sed -n 's/^# expect: //p' "$entry" | head -1)"
+        if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rjp.log"; then
+            note "$name" "diagnostic does not contain the expected text: $exp"
+            head -3 "$TMP/rjp.log" | sed 's/^/      /'
+            fail=$((fail + 1)); fails="$fails $name"; continue
+        fi
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done

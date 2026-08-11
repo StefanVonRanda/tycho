@@ -1,0 +1,5 @@
+# expect: tests/reject/pkg/generic_inst_srcfile/helper.ty:9: error:
+package main
+
+fn main():
+    println(str(twice(true)))

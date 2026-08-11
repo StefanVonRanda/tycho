@@ -2850,7 +2850,7 @@ validate commit hashes, so this had to be checked by hand.
   - Verify: `tests/reject/` fixture per family with `# expect:`; `make test`.
     Not `make ci`.
 
-- [ ] **Phase 16 — `core:result`'s combinators cannot be instantiated at
+- [x] **Phase 16 — `core:result`'s combinators cannot be instantiated at
   `Result(void, E)`, and the diagnostic names the wrong file**
 
   Found while re-probing ROADMAP condition 3 on 2026-08-11. Two defects, one
@@ -2875,6 +2875,94 @@ validate commit hashes, so this had to be checked by hand.
     ok payload or documented as not being so.
   - Verify: `make corelib` for the combinator change; `make test` only if
     `src/tychoc.c` moves for the filename fix. Not `make ci`.
+
+### Evidence — a corelib diagnostic names the corelib file
+
+**Both filed line numbers verified.** `corelib/result/result.ty:71` is
+`Ok(v): return true` and `corelib/result/result.ty:76` is `Ok(v): return false`,
+exactly as the entry said. The eleven-line probe reproduced verbatim:
+
+```
+$ ./tychoc /tmp/p16c/main.ty --emit-c -o /tmp/p16c/out.c
+/home/igzo/github/tycho/corelib/result/result.ty:71: error: Ok carries no value here -- write a bare `Ok:` arm
+```
+
+— that is the output AFTER the fix. Before it, the same probe printed
+`./main.ty:71` against an eleven-line file, with no source snippet (line 71 does
+not exist there to quote).
+
+**The mechanism, read at the source.** `die_at` pairs a line with the *global*
+`g_srcname`; package mode re-points that global per proc through
+`src/tychoc.c@diag_use_proc`, which reads the `srcfile`/`srctext` the directory
+scan stamped on each proc. Three call sites already did this — the two
+resolve_program loops and `src/tychoc.c@gen_proc`. The generic-instance resolve
+loop in `src/tychoc.c@gen_program` (`src/tychoc.c:12498-12516`) did not, so a
+substituted body was resolved with whatever file the *previous* loop happened to
+leave in `g_srcname`. `src/tychoc.c@ginst_to_proc` does `*p = *gi->tmpl`, so the
+template's `srcfile` was already on the instance and only had to be used.
+
+**Not corelib-specific, and worse than the entry described.** The defect is
+"the instance body's file", so a plain two-file package reproduces it with no
+corelib involved — and there the wrong line number *exists* in the wrong file,
+so the compiler quotes an innocent line under the message:
+
+```
+$ ./tychoc tests/reject/pkg/generic_inst_srcfile/main.ty     # unpatched
+tests/reject/pkg/generic_inst_srcfile/main.ty:9: error: arithmetic requires two ints or two floats (got bool, bool) -- ...
+```
+
+**Scope of the fix, probed a second time as instructed.** A different package and
+a different error kind — `iter.try_map` at `Result(void, string)` — now reports
+`corelib/iter/iter.ty:30: error: cannot infer the type of 'out' from this use`,
+and printed `main.ty:30` before. Every other corelib diagnostic path was already
+covered: the two `resolve_block` calls at `src/tychoc.c:5559` and
+`src/tychoc.c:7498` are the lambda and parallel-for bodies, both resolved while
+already inside the owning proc, and `src/tychoc.c:8759` is inside the
+resolve_program loop that already calls `diag_use_proc`. The one gap was the one
+fixed.
+
+**Line-neutral: `src/tychoc.c` is 14018 lines before and after, 3 lines changed
+in place, so no citation re-anchoring was needed.** `python3
+scripts/check_citations.py` green without touching anything.
+
+**Fixture: `tests/reject/pkg/generic_inst_srcfile/`.** `tests/diag/` could not
+hold this — its loop compiles one flat `.ty`, and a fixture needing a second file
+must declare `package`, which turns the compile into a whole-directory scan of
+`tests/diag/`. The package-reject lane already gives each fixture its own
+directory, so it grew the same `# expect:` opt-in the flat reject lane has had
+since `d7e39f9` (`tests/run.sh`, the `rejectpkg_` loop). The fixture is a local
+two-file package, not a corelib call, so it stays green whatever `core:result`
+does next.
+
+**The negative control caught a false green in the fixture itself.** With
+`src/tychoc.c` stashed, the first draft scored *ok*: the mis-attributed message
+quoted the caller's source at the template's line number, and the caller's line
+at that number was the `# expect:` line, so the fixture matched itself. `main.ty`
+is now 5 lines and the error lands on `helper.ty:9`, which is out of range in the
+caller; the reason is written into `helper.ty` so the next editor does not undo
+it. Re-run of the control after that change:
+
+```
+REDDENS   tests/reject/pkg/generic_inst_srcfile/main.ty
+          <- ...main.ty:9: error: arithmetic requires two ints or two floats (got bool, bool)
+GREEN     (restored + rebuilt)
+```
+
+**Defect (a) is NOT fixed, and it is not containable in corelib — measured.**
+The six combinators taking `Result($T, $E)` are `unwrap_or`, `is_ok`, `is_err`,
+`err_or`, `map_err` and `map_err_with` (`corelib/result/result.ty`). The entry
+assumed the fix was "the arm becoming `Ok:`". It is not, because the two arm
+spellings are *mutually exclusive*, which the entry did not know:
+
+```
+$ cat /tmp/p16e/m.ty          # a bare `Ok:` arm against Result(int, string)
+/tmp/p16e/m.ty:3: error: Ok(x) binds exactly one value
+```
+
+So `Ok(v)` is refused at a void payload and `Ok:` is refused at every other
+payload — no single template body serves both, and `unwrap_or` is beyond rescue
+anyway (its parameter and return are the void itself). Making it work needs a
+language change, sized and filed as Phase 22 below rather than forced here.
 
 - [x] **Phase 17 — decide `[string]` across the FFI: lift it, or write the refusal**
 
@@ -3197,6 +3285,36 @@ validate commit hashes, so this had to be checked by hand.
     points at unrelated code. That is the whole reason this drifted.
   - Cost: one comment block. Gates: the two doc gates only. Explicitly NOT
     `make test` or `make test-fast` — no behaviour changes.
+
+- [ ] **Phase 22 — let a bare `Ok:` / `Some:` arm match a payload-CARRYING
+      variant, so a generic body can be written once** (*filed by Phase 16,
+      2026-08-11, which measured that its own brief's proposed corelib-only fix
+      is impossible*)
+  - The wall: `Ok(v)` is refused when the ok payload is `void`
+    (`src/tychoc.c:7659`) and a bare `Ok:` is refused when it is not
+    (`src/tychoc.c:7666`). One template body cannot satisfy both, so
+    `result.is_ok`, `result.is_err` and `result.err_or` — which bind `v` and
+    never read it — are uninstantiable at `Result(void, E)` for a reason that has
+    nothing to do with what they compute.
+  - The proposed change: a bare `Ok:` arm matches whatever the payload is,
+    discarding it, exactly as `_` does elsewhere. It only WIDENS what is
+    accepted, so no program that compiles today changes meaning — that is the
+    property that makes it affordable, and it is the property to re-verify first
+    rather than assume.
+  - Sizing, from Phase 16's reading: one arity check at `src/tychoc.c:7666` is
+    the whole compiler cost; the codegen arm already exists for the void case and
+    would simply not bind. The real cost is everything around it — the arm rules
+    in `docs/spec/`, a `tests/` fixture per variant family, and the three
+    combinators above rewritten to the bare arm plus a `corelib/test/result/`
+    case at `Result(void, string)`.
+  - NOT included: `unwrap_or`, `map_err` and `map_err_with` stay uninstantiable
+    at a void ok payload and should be documented as such. `unwrap_or` cannot be
+    rescued by any arm rule — its parameter and its return type *are* the void.
+  - Do not start this without deciding it is wanted: `touch(1) is Ok` already
+    answers the question the combinators would, so this buys uniformity, not
+    capability.
+  - Verify: `make test` (637 at Phase 16), `make corelib`, `sh
+    scripts/spec_check.sh` if the spec text moves. Not `make ci`.
 
 ## Out of scope
 
