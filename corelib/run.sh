@@ -18,6 +18,9 @@ CC="${CC:-cc}"
 RECORD="${RECORD:-0}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
+ran=0
+nskip=0
+skipped=""
 for entry in corelib/test/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
@@ -69,7 +72,10 @@ for entry in corelib/test/*/main.ty; do
     if [ -n "$allpkgs" ]; then
         missing=""
         for pkg in $allpkgs; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
-        if [ -n "$missing" ]; then echo "skip $name (missing dependency:$missing)"; continue; fi
+        if [ -n "$missing" ]; then
+            echo "skip $name (missing dependency:$missing)"
+            nskip=$((nskip + 1)); skipped="$skipped $name(missing:$missing)"; continue
+        fi
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
     "$T/c" > "$T/co" 2>&1; rc=$?
@@ -83,9 +89,17 @@ for entry in corelib/test/*/main.ty; do
             [ "$rc" -eq 0 ] && break
         done
     fi
-    if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; continue; fi
+    if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; ran=$((ran + 1)); continue; fi
     if [ ! -f "$golden" ]; then echo "FAIL $name (no golden -- run RECORD=1)"; fail=1; continue; fi
     if ! cmp -s "$T/co" "$golden"; then echo "FAIL $name (output != golden)"; diff "$golden" "$T/co" | head | sed 's/^/      /'; fail=1; continue; fi
     echo "ok   $name"
+    ran=$((ran + 1))
 done
-[ "$fail" -eq 0 ] && echo "corelib: all green (tychoc matches goldens)" || { echo "corelib: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] || { echo "corelib: FAIL"; exit 1; }
+# A skipped package was NOT verified, so this run is not "all green" -- say which
+# and why, or a log is indistinguishable from a host that ran everything.
+if [ "$nskip" -ne 0 ]; then
+    echo "corelib: $ran ok, $nskip SKIPPED --$skipped -- NOT all green (those packages were not run)"
+else
+    echo "corelib: all green ($ran ok, tychoc matches goldens)"
+fi

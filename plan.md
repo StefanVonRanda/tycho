@@ -1252,7 +1252,7 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     a deliberate negative control — a fixture whose `expect:` does not match must
     redden. **Not `make ci`.**
 
-- [ ] **Phase N — `corelib/run.sh`'s dependency SKIP hides a package from its own
+- [x] **Phase N — `corelib/run.sh`'s dependency SKIP hides a package from its own
       gate, silently** (*filed by the `core:image` phase*)
   - `corelib/run.sh:69-72` skips a package whose `deps` do not resolve via
     pkg-config, printing `skip <name> (missing dependency: ...)`. That is the
@@ -1273,6 +1273,76 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     output, which is a `make ci` step's text.
   - Verify: `make corelib` and `make corelib-examples`, plus `make shim-check` if
     its summary is touched. **Not `make test`.**
+  - **DONE 2026-08-11.** Fixed in `corelib/run.sh` only; `examples/corelib/run.sh`
+    and the other silent-skip lanes are filed as their own phase below (scope lock).
+
+    **Line check first.** The brief cited `corelib/run.sh:69-72`. The pkg-config
+    block was `:69-73` and the skip's `echo` was on `:72` — close enough to find
+    it, but the block's last line was outside the range. Post-fix the skip is
+    `corelib/run.sh:76-77` and the verdict is `corelib/run.sh:101-105`.
+
+    **Skip survey (step 1).** Every dependency/environment skip reachable from a
+    gate, and whether the lane's own final line admits it:
+
+    | Lane | Skip trigger | Announced in the verdict? |
+    |---|---|---|
+    | `corelib/run.sh:76` | any `--print-deps` pkg name failing `pkg-config --exists` | **was SILENT** — printed `skip <name>` mid-run, then `corelib: all green`. Fixed here |
+    | `examples/corelib/run.sh:38` | identical pkg-config test, identical shape | **SILENT** — ends `corelib examples: all green`. Filed below, not fixed |
+    | `scripts/locale_check.sh:68` and its two siblings | no `locale(1)`, no comma-decimal locale, preload does not take | **LOUD** — `locale-check: SKIP (<reason>)`, exit 0, and the skip *replaces* the ok line. This is the model copied here |
+    | `scripts/shim_check.sh@skipped` | a shim with no standalone-compile path | **LOUD** — counted in `shim-check: $ok ok, $skipped skipped, $fail failed` |
+    | `examples/fetch/run.sh:45` | `libcurl` absent | **LOUD** — `fetch: SKIP (...)` is the only line; the ok line never prints |
+    | `examples/sqlite/run.sh:29`, `bench/dbquery/run.sh:22` | `libsqlite3` absent | **LOUD** — same shape, whole lane exits 0 with only the SKIP line |
+    | `server/run.sh:44` | no `python3` | **LOUD** — same shape |
+    | `compiler/selfhost.sh:65` | Windows | **LOUD** — same shape |
+    | `Makefile:617` (ilp32 ASan leg) | 32-bit ASan runtime absent | **LOUD** — prints `ilp32: ASan lane SKIPPED ...` and `Makefile:612` refuses to skip the lane itself |
+    | the ASan/TSan legs in `examples/site/run.sh:56`, `examples/raytrace/run.sh:40`, `examples/mandelbrot/run.sh:51`, `tests/conc/run.sh:63`, `tests/ffi/run.sh:53` | mingw/macOS sanitizer runtime absent | **LOUD by construction** — each rewrites the summary's own label, e.g. `examples/site/run.sh:69` sets `SAN="ASan SKIPPED (no mingw runtime)"` so the final line carries it |
+    | `bench/*/run.sh` `(build skipped)` | a comparison toolchain absent | out of scope — `make bench` is not a gate, and `bench/dbquery/run.sh:42` already records this exact concern |
+
+    So the SILENT pattern is **two lanes, not one**: this one and the corelib
+    examples lane. Everything else was already honest.
+
+    **Both summary lines (step 3).** The skip case, on this box as-is (libpng
+    runtime present, dev headers absent):
+
+    ```
+    $ make corelib
+    ...
+    corelib: 45 ok, 1 SKIPPED -- image(missing: libpng) -- NOT all green (those packages were not run)
+    ```
+
+    And the not-skipped case, against the static libpng 1.6.50 the `core:image`
+    phase built into `/tmp/pngdev` (still on disk; nothing in the repo and nothing
+    installed system-wide):
+
+    ```
+    $ PKG_CONFIG_PATH=/tmp/pngdev/lib/pkgconfig make corelib
+    ...
+    corelib: all green (46 ok, tychoc matches goldens)
+    EXIT=0
+    ```
+
+    45 + 1 = 46, which is the check that the skip is the *only* difference between
+    the two runs. Exit status stays 0 in both: a missing optional dependency is
+    still not a failure, only a fact the verdict now states.
+  - Gates: `make corelib` both ways above · `make check-links` →
+    `link check: ok (119 markdown files, no dead relative links)` ·
+    `python3 scripts/check_citations.py` → ok. `make test` deliberately not run
+    (its corpus never descends into `corelib/`).
+  - Docs: the `make corelib` row in `CONTRIBUTING.md` (tracked) and in `CLAUDE.md`
+    (gitignored) both gained the skip behaviour, per the rule that the two move
+    together. Neither quoted the old verdict string, so neither was stale — this
+    is an addition, not a repair.
+
+- [ ] **Phase N+1 — `examples/corelib/run.sh` has the same silent skip**
+  - `examples/corelib/run.sh:38` skips an example whose pkg-config dependency is
+    absent and the run still ends `corelib examples: all green`, exactly the
+    defect just fixed one directory over. On this box the `image` example is the
+    one that vanishes.
+  - Fix is the same shape as `corelib/run.sh:101-105` — count skips, name them in
+    the verdict, keep exit 0. Copy it rather than re-deriving it.
+  - Verify: `make corelib-examples` (~44s) twice, once as-is and once under
+    `PKG_CONFIG_PATH=/tmp/pngdev/lib/pkgconfig`, the same both-ways check used
+    above. **Not `make test`, not `make ci`.**
 
 ## Out of scope
 
