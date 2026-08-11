@@ -2794,8 +2794,9 @@ static Expr *parse_primary(Parser *ps) {
             e->pkg = g_cur_pkg_prefix;
             return e;
         }
-        if (!strcmp(t->text, "None"))      /* the bare None literal */
-            return new_expr(E_NONE, t->line);
+        if (!strcmp(t->text, "None")) return new_expr(E_NONE, t->line);   /* the bare None literal */
+        /* Paren-less Some/Ok/Err: `expected '(' after Ok` used to out-shout §3.7's binding rule whenever the illegal binding was also USED. */
+        if (!at(ps, TK_LPAREN) && (!strcmp(t->text, "Some") || !strcmp(t->text, "Ok") || !strcmp(t->text, "Err"))) die_at(t->line, "'%s' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: %s(x)", t->text, t->text);
         if (!strcmp(t->text, "Some")) {    /* Some(value) */
             eat(ps, TK_LPAREN, "'(' after Some");
             Expr *e = new_expr(E_SOME, t->line);
@@ -2803,8 +2804,7 @@ static Expr *parse_primary(Parser *ps) {
             eat(ps, TK_RPAREN, "')'");
             return e;
         }
-        if (!strcmp(t->text, "Ok") || !strcmp(t->text, "Err")) {   /* Ok(v) / Err(e), and `Ok()` for a Result(void, E) */
-            int isok = !strcmp(t->text, "Ok");
+        if (!strcmp(t->text, "Ok") || !strcmp(t->text, "Err")) {   int isok = !strcmp(t->text, "Ok");   /* Ok(v) / Err(e), and `Ok()` for a Result(void, E) */
             eat(ps, TK_LPAREN, isok ? "'(' after Ok" : "'(' after Err");
             Expr *e = new_expr(isok ? E_OK : E_ERR, t->line);
             if (at(ps, TK_RPAREN)) {   /* `Ok()`: a void payload carries nothing. lhs stays NULL, and every reader of an E_OK checks it */

@@ -2819,7 +2819,7 @@ motivating change was mistyped into two files as `9bcc93b`, which
 that migrated `bench/dijkstra/dijkstra.ty`. `check_citations.py` does not
 validate commit hashes, so this had to be checked by hand.
 
-- [ ] **Phase 17 — the uppercase-binding diagnostic loses to an earlier parse
+- [x] **Phase 17 — the uppercase-binding diagnostic loses to an earlier parse
       error at the use site** (*found by the 2026-08-11 reconciliation while
       re-probing phase 15 — out of that reconciliation's scope, so filed*)
   - Real, reproduced, and cosmetic only: both spellings are compile errors either
@@ -2849,6 +2849,64 @@ validate commit hashes, so this had to be checked by hand.
     accepted-cost with the reasoning written down.
   - Verify: `tests/reject/` fixture per family with `# expect:`; `make test`.
     Not `make ci`.
+
+### Evidence — the binding rule outranks the use-site parse error
+
+**Both filed line numbers checked; one is slightly wrong.** The rule is at
+`src/tychoc.c:5141`, as filed — inside `src/tychoc.c@vars_push`. The brief's
+`2797-2807` for the builtin-constructor matching is off by a few: before this
+change `None` was at 2799, `Some` opened at 2800 and the `Ok`/`Err` branch the
+message came from was 2806-2816 — the cited range *ends* on that branch's first
+line instead of covering it. After this change the region is
+`src/tychoc.c:2798-2810`, with the new guard at `src/tychoc.c:2799`.
+
+**Why the use site won, which is the part the entry did not name.** These are not
+two checks racing at the same stage. `vars_push` runs at RESOLVE; `expected '('
+after Ok` is thrown by `parse_primary` at PARSE, and parsing finishes before
+resolution starts. So the use-site error wins *by construction* for every body
+that mentions the name — no ordering tweak inside the resolver could change it,
+and moving the parse after the resolve is not a thing.
+
+**The fix, therefore, is at the parse site and not a reordering.** A paren-less
+`Some`/`Ok`/`Err` reaching `parse_primary` is *already* always an error: `x is
+Ok` takes the variant name through the `is` parser (`src/tychoc.c:3054-3074`,
+which `eat`s a `TK_IDENT` itself) and a match arm takes it through the arm
+parser, so neither passes through here. One guard ahead of those three branches
+therefore changes no accepted program — it only replaces the message on a path
+that was going to die anyway. `None` needs nothing: it is a bare literal.
+
+The message states the rule and keeps the constructor hint, so the *other* reader
+of the same syntax — someone who typed `x := Ok` meaning `Ok(v)` — is not misled
+in the opposite direction:
+
+```
+$ ./tychoc /tmp/p17/a.ty            # fn f(Ok: int) -> int: return Ok + 1
+/tmp/p17/a.ty:2: error: 'Ok' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: Ok(x)
+$ ./tychoc /tmp/p17/c.ty            # Ok := 5 ... println(str(Ok))
+/tmp/p17/c.ty:3: error: 'Ok' cannot name a binding -- ...; as a value it is a constructor: Ok(x)
+```
+
+Both families now report the rule. The no-use spelling is untouched and still
+reports at the declaration line.
+
+**Line-neutral: 14018 lines before and after**, 4 changed in place (two existing
+lines were folded to pay for the two the guard added), so no citation
+re-anchoring.
+
+**Positive control, because a message change here sits on the hot path for every
+`Ok`/`Err`/`Some`/`None` in the tree.** A program using all four in every legal
+shape — `Ok(n)`, `Ok()`, `Err(e)`, `Some(n)`, bare `None`, `is Ok`, `is None`,
+`Ok(v):`/`Err(e):`/`Some(v):`/`None:`/bare `Ok:` arms — compiles and prints what
+it should. `grep -rl "expected '(' after \(Ok\|Err\|Some\)" tests/ docs/` is
+empty, so no golden encoded the old text.
+
+**Negative control.** `git stash push src/tychoc.c`, rebuild, both fixtures fail
+their `# expect:` against the old message, then restored, rebuilt, both green:
+
+```
+REDDENS  tests/reject/upper_bind_param_used.ty  <- ...:6: error: expected '(' after Ok
+REDDENS  tests/reject/upper_bind_local_used.ty  <- ...:5: error: expected '(' after Ok
+```
 
 - [x] **Phase 16 — `core:result`'s combinators cannot be instantiated at
   `Result(void, E)`, and the diagnostic names the wrong file**

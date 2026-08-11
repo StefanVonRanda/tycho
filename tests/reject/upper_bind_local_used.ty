@@ -1,0 +1,5 @@
+# Same rule, the `:=` family, with the illegal local USED on a later line.
+# expect: 'Ok' cannot name a binding
+fn main():
+    Ok := 5
+    println(str(Ok))
