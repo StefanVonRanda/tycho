@@ -454,8 +454,17 @@ reimplemented because real crypto must be constant-time and audited.
 ### 33.3 `compress` — zlib
 
 gzip (RFC 1952) compression over **zlib** (`deps` → `zlib`). `compress(data) ->
-bytes` (gzip-compress), `decompress(data) -> bytes` (inflate a gzip *or* zlib
-stream; empty bytes on corrupt/truncated input — fails closed). Binary-safe
+bytes` (gzip-compress), `decompress(data) -> Result(bytes, ZErr)` (inflate a
+gzip *or* zlib stream), plus `raw_compress(data) -> bytes` and
+`raw_decompress(data) -> Result(bytes, ZErr)` for a headerless deflate stream.
+`ZErr` has three causes: `Corrupt` (the bytes are not a valid stream), `Truncated`
+(the stream ends early) and `Failed` (zlib could not complete, e.g. out of
+memory). **An `Ok` of length 0 is a real empty payload and is distinct from every
+failure** — a decompressor must not signal failure by returning empty bytes.
+Conflating the two is a data-loss bug, not a style choice: for a container format
+it makes a corrupt member read as a legitimate zero-byte file. On a raw deflate
+stream `Truncated` also covers "not a deflate stream at all", since a headerless
+stream carries no wrapper or checksum to tell those apart. Binary-safe
 (`bytes`, interior NUL preserved). **`compress` is byte-deterministic**: for a
 given zlib build it is a pure function of its input, so the same bytes in give
 byte-identical bytes out across processes, wall-clock times, locales and time

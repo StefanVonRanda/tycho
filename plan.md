@@ -271,7 +271,7 @@ or an explicit "open, refused because …".
   - Verify: `python3 scripts/check_citations.py` and `make check-links`. **Not
     `make ar-check`** unless a line of code moves, and none should.
 
-- [ ] **Phase 13 — `docs/spec/18-library.md` §33.3 still documents the OLD
+- [x] **Phase 13 — `docs/spec/18-library.md` §33.3 still documents the OLD
       `decompress` signature** (*found by phase 3*)
   - The `core:compress` spec entry says `decompress(data) -> bytes` with "empty
     bytes on corrupt/truncated input — fails closed". That has been false since
@@ -286,6 +286,58 @@ or an explicit "open, refused because …".
     causes, and `raw_decompress` likewise if it is named there.
   - Verify: `sh scripts/spec_check.sh` and `make check-links`. Not `make test`,
     not `make corelib` — no code moves.
+  - **Done 2026-08-11.** One occurrence in the whole tree, `docs/spec/18-library.md:456-458`,
+    rewritten from `decompress(data) -> bytes` + "empty bytes on corrupt/truncated
+    input — fails closed" to the `Result(bytes, ZErr)` signature, the three causes
+    (`Corrupt` / `Truncated` / `Failed`), and "an `Ok` of length 0 is a real empty
+    payload and is distinct from every failure", with the reason (a corrupt member
+    of a container reading as a legitimate zero-byte file) stated so a second
+    implementer cannot re-derive the old behaviour. `raw_compress` / `raw_decompress`
+    were not named in §33.3 at all and now are; the raw-stream caveat that
+    `Truncated` also covers "not a deflate stream" is carried over from the guide.
+    Signatures verified against `corelib/compress/compress.ty@decompress` and
+    `corelib/compress/compress.ty@raw_decompress`, not from the guide's prose.
+    Phase 3's gzip-determinism sentence (commit `dcc87fa`) is intact — the edit
+    ends at "**`compress` is byte-deterministic**" and nothing after it moved.
+  - Evidence:
+    ```
+    $ grep -rn 'decompress' docs/spec/
+    docs/spec/18-library.md:457:bytes` (gzip-compress), `decompress(data) -> Result(bytes, ZErr)` (inflate a
+    docs/spec/18-library.md:459:`raw_decompress(data) -> Result(bytes, ZErr)` for a headerless deflate stream.
+    docs/spec/18-library.md:463:failure** — a decompressor must not signal failure by returning empty bytes.
+
+    $ make check-links
+    link check: ok (119 markdown files, no dead relative links)
+    citation check: ok (136 anchored contain the token they name and each names one
+    line, 817 bare in bounds, 181 source->doc citations resolve, 258 source->source
+    in bounds, 6 source->source anchored, 166 `path@SYMBOL` definition refs name a
+    symbol still in their file)
+
+    $ sh scripts/spec_check.sh
+    spec-examples: 9 runnable example(s), all pass
+    ```
+    No stale signature remains: all three surviving hits are the new wording.
+    `make test` / `make corelib` deliberately not run — Markdown-only change,
+    neither can redden for it.
+
+- [ ] **Phase 14 — `core:image` still fails closed to a sentinel, the exact
+      pattern FRICTION #3 removed from `core:compress`** (*found by phase 13*)
+  - `corelib/image/image.ty@decode` is `decode(data: bytes) -> Image` returning a
+    0×0 `Image` on any error, and `corelib/image/image.ty@encode` returns empty
+    `bytes` on a bad image — verified by grep, there is no `Result` and no error
+    enum in the file. `docs/spec/18-library.md` §33.4 documents this faithfully
+    ("a 0×0 Image on any error — check `width > 0`"), so the **spec is not wrong**;
+    the behaviour is. This is the same conflation phase 13 just finished writing
+    up as a data-loss bug one section higher: a truncated PNG, a PNG that is
+    actually a JPEG, and a legitimately 0-wide image are one answer, and a caller
+    who forgets `width > 0` gets silence.
+  - Out of phase 13's scope, which was doc-only and forbidden from touching code.
+  - Done when: `decode`/`encode` return a `Result` with named causes, §33.4 and
+    `docs/guides/corelib.md` follow, and every in-tree caller is updated.
+  - Verify: `make corelib` (image has a test package), plus `make corelib-examples`
+    if a worked example calls it, plus the two doc gates. Sequence the code change
+    before the doc change so the spec never describes something that is not shipped
+    — which is exactly how phase 13's bug was born.
 
 ## Out of scope
 
