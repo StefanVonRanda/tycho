@@ -1333,7 +1333,7 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     together. Neither quoted the old verdict string, so neither was stale — this
     is an addition, not a repair.
 
-- [ ] **Phase N+1 — `examples/corelib/run.sh` has the same silent skip**
+- [x] **Phase N+1 — `examples/corelib/run.sh` has the same silent skip**
   - `examples/corelib/run.sh:38` skips an example whose pkg-config dependency is
     absent and the run still ends `corelib examples: all green`, exactly the
     defect just fixed one directory over. On this box the `image` example is the
@@ -1343,6 +1343,55 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
   - Verify: `make corelib-examples` (~44s) twice, once as-is and once under
     `PKG_CONFIG_PATH=/tmp/pngdev/lib/pkgconfig`, the same both-ways check used
     above. **Not `make test`, not `make ci`.**
+  - **DONE 2026-08-11.** `corelib/run.sh`'s fix copied, not re-derived.
+
+    **Line check.** The brief cited `examples/corelib/run.sh:38`, and that was
+    exactly the skip's `echo` — the first citation in this chain that landed on
+    the line it named. Post-fix the counters are `examples/corelib/run.sh:20-22`,
+    the skip is `:41-44` and the verdict is `:54-61`.
+
+    **Skip survey, this script only.** One dependency skip, the pkg-config test
+    at the old `:38` — now counted. The other two `continue`s are not skips of a
+    real example: `examples/corelib/run.sh:21` is the empty-glob guard (`[ -e
+    "$entry" ] || continue`, which fires only when the glob matches nothing), and
+    the `RECORD=1` branch at `:48` re-records rather than skipping, so it counts
+    toward `ran` exactly as `corelib/run.sh` counts it. Every other lane was
+    already surveyed by the phase above and found LOUD; nothing new was found,
+    and the SILENT pattern is now zero lanes rather than two.
+
+    **Both summary lines.** As-is on this box (libpng runtime present, dev
+    headers absent):
+
+    ```
+    $ make corelib-examples
+    ...
+    corelib examples: 36 ok, 1 SKIPPED -- image(missing: libpng) -- NOT all green (those examples were not run)
+    EXIT=0
+    ```
+
+    And with the skip not happening, against the same static libpng 1.6.50 in
+    `/tmp/pngdev` the phase above used (nothing in the repo, nothing installed
+    system-wide):
+
+    ```
+    $ PKG_CONFIG_PATH=/tmp/pngdev/lib/pkgconfig make corelib-examples
+    ...
+    corelib examples: all green (37 ok, tychoc matches goldens)
+    EXIT=0
+    ```
+
+    36 + 1 = 37 — the skip is the only difference between the two runs. Exit 0
+    both ways, deliberately: a missing optional dependency is still not a
+    failure, only a fact the verdict now states.
+  - Gates: `make corelib-examples` both ways above · `make check-links` →
+    `link check: ok (119 markdown files, no dead relative links)` ·
+    `python3 scripts/check_citations.py` → ok (a `path@SYMBOL` ref was added to
+    `CLAUDE.md`). `make test`, `make corelib` and `make ci` deliberately not run —
+    none can redden for a change to this one shell script.
+  - Docs: the `make corelib-examples` row in `CLAUDE.md` (gitignored) gained the
+    skip behaviour it had never described, and the `corelib` row in
+    `CONTRIBUTING.md` (tracked) gained one clause saying the examples lane skips
+    and reports the same way. Changed together, per the standing rule.
 
 ## Out of scope
 
