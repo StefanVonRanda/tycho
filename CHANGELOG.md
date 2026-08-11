@@ -13,6 +13,19 @@ block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
 not history, so the two are merged here under the date this actually shipped.
 
+- **A newtype over a collection now supports that collection's operations.**
+  `type Ids = [int]` was effectively write-only: `len`, indexing, slicing,
+  `push`, `pop`, `for … in`, index-assign and every map builtin all refused it,
+  and `to_under` was the only door. ROADMAP.md recorded the symptom as "blocks
+  `push`"; a probe found all of them refusing.
+
+  A newtype's purpose is **distinctness** at assignment, parameter passing and
+  comparison — not hiding what the underlying value can do. Those boundaries are
+  unchanged: `[int]` still cannot be passed where `Ids` is wanted, in either
+  direction, and two newtypes over the same underlying type stay incompatible.
+  A slice or a `map_set` yields the *underlying* type, since it is a fresh value
+  rather than the named one.
+
 - **`or_return` works in `main()`.** `fn main() -> Result(void, string):` is a
   second legal shape for the entry point, so error propagation no longer stops
   one frame short of where a program starts. On `Ok` the process exits 0; on

@@ -122,7 +122,8 @@ learnings and in FRICTION:
 - consts do not cross package boundaries, so levels ship as functions
 - ~~`or_return` requires a `Result`-returning function, which `main()` is not~~ —
   **closed 2026-08-10**: `fn main() -> Result(void, string)` is a second legal shape
-- a newtype-of-array blocks `push`
+- ~~a newtype-of-array blocks `push`~~ — **closed 2026-08-10**, and it was worse
+  than `push`: every collection operation refused it
 - an aggregate capturing a still-live binding warns until you write the copy by
   hand (`arg := hostile`)
 - the typed empty is `[]string`, which nobody guesses first
@@ -140,7 +141,7 @@ phase-1 notes, because two entries turned out to be wrong:
 | no expression line continuation | **closed 2026-08-09** — a line ending on an operator joins the next, when that line is indented deeper. The deeper-indent condition is what keeps a truncated line a truncated line: `tests/diag/caret_expr.ty` caught the naive version degrading its own diagnostic. Fixture `tests/line_continuation.ty`. |
 | no `defer` | **refused 2026-08-10, documented.** Not a papercut: this language has three cleanup mechanisms already and `defer` would be a fourth. Memory is arena-freed at scope exit; a `handle` runs its declared `free:` at scope exit (RAII, affine, §25); a channel/task handle is affine with an implicit join. `core:io` is path-based and opens nothing. The tree's `close(` calls are overwhelmingly CHANNEL closes, not resource cleanup. Already found once and filed anyway — `docs/internals/plan-tycho-vm-DONE.md:27-32`, whose own verdict was "nothing needs it; it was filed because the probe surprised me, which is not a reason." |
 | `or_return` from `main()` | **closed 2026-08-10** — `fn main() -> Result(void, string):` is legal, so `or_return` works at the entry point. `Err(msg)` prints `msg` bare to stderr and exits 1; `Ok` exits 0. The error type is `string` because the message is what gets printed, and the ok payload is `void` so the exit status stays unambiguous. Fixtures `tests/main_result.ty`, `tests/abort/main_result_err.ty` and three rejects |
-| newtype-of-array blocks `push` | open — `push's first argument must be an array or soa` for `type Row = [string]` |
+| newtype-of-array blocks `push` | **closed 2026-08-10** — and the row understated it. A probe found `len`, indexing, slicing, `push`, `pop`, `for … in`, index-assign and every map builtin ALL refusing a newtype-of-collection: it was write-only unless you went through `to_under`. Operations now see through the newtype; distinctness at assignment, parameter passing and comparison is unchanged and pinned by `tests/reject/newtype_agg_still_distinct.ty`. Fixture `tests/newtype_agg_ops.ty` |
 | aggregate capturing a live binding warns | open |
 | ~~typed empty is `[]string`~~ | **not a defect** — both `xs : [string] = []` and `xs := []string` compile. It is a learning-curve item, not a language gap. |
 | consts across package boundaries | not re-probed |

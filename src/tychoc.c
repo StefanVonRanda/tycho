@@ -3751,7 +3751,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10074), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10087), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5651,7 +5651,14 @@ static Type resolve_expr_inner(Expr *e) {
         }
         case E_INDEX: {
             g_place = _place;                  /* the base is on the place spine */
-            Type bt = resolve_expr(e->lhs);
+            Type bt = base_of(resolve_expr(e->lhs));   /* a newtype over a collection acts as one here: its point is DISTINCTNESS at
+     * assignment and parameter passing, not hiding the operations. `to_under` was
+     * the only door before, which made `type Ids = [int]` write-only. */
+            e->lhs->type = bt;   /* NORMALISE on the node, not just for this check: codegen has ~23
+                                  * is_map/is_array dispatches that would otherwise each need the same
+                                  * unwrap. A newtype emits as its base C type, so rewriting the NODE's
+                                  * type changes no emitted value, and the VARIABLE keeps its declared
+                                  * newtype -- which is what distinctness is checked against. */
             g_place = 0;                        /* the subscript/key is always an rvalue */
             Type kt = resolve_expr(e->rhs);
             if (is_map(bt)) {                  /* m[k] -> the value type (#2) */
@@ -5692,7 +5699,12 @@ static Type resolve_expr_inner(Expr *e) {
             die_at(e->line, "can only index an array, a string, bytes, or a map (as a place)");
         }
         case E_SLICE: {   /* xs[a:b] — a sub-range of the same array/soa type; s[a:b] -> a substring */
-            Type bt = resolve_expr(e->lhs);
+            Type bt = base_of(resolve_expr(e->lhs));   /* a slice of a newtype-of-array is the UNDERLYING array: it is a fresh value, not the named one */
+            e->lhs->type = bt;   /* NORMALISE on the node, not just for this check: codegen has ~23
+                                  * is_map/is_array dispatches that would otherwise each need the same
+                                  * unwrap. A newtype emits as its base C type, so rewriting the NODE's
+                                  * type changes no emitted value, and the VARIABLE keeps its declared
+                                  * newtype -- which is what distinctness is checked against. */
             if (e->rhs && resolve_expr(e->rhs) != T_INT)
                 die_at(e->line, "slice start must be int");
             if (e->nargs && resolve_expr(e->args[0]) != T_INT)
@@ -6274,7 +6286,7 @@ static Type resolve_expr_inner(Expr *e) {
             /* array builtins (don't fit the scalar Sig table) */
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
-                Type at_ = resolve_expr(e->args[0]);
+                Type at_ = base_of(resolve_expr(e->args[0]));
                 if (!is_array(at_) && at_ != T_STRING && at_ != T_BYTES && !is_map(at_) && !IS_SOA(at_))
                     die_at(e->line, "len(...) takes an array, a string, bytes, a map, or a soa");
                 return e->type = T_INT;
@@ -6294,7 +6306,7 @@ static Type resolve_expr_inner(Expr *e) {
                         pend_ground(e->args[0]->sval, gm, e->line);
                     }
                 }
-                Type mt = resolve_expr(e->args[0]);
+                Type mt = base_of(resolve_expr(e->args[0]));   /* a newtype over a map operates as one; the RESULT is the underlying map, as with a slice */
                 if (!is_map(mt)) die_at(e->line, "map_set's first argument must be a map");
                 if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_set key must be %s", type_name(map_key(mt)));
                 if (resolve_expr(e->args[2]) != map_val(mt))
@@ -6303,7 +6315,7 @@ static Type resolve_expr_inner(Expr *e) {
             }
             if (!strcmp(e->sval, "map_get")) {
                 if (e->nargs != 3) die_at(e->line, "map_get(m, key, default) takes three arguments");
-                Type mt = resolve_expr(e->args[0]);
+                Type mt = base_of(resolve_expr(e->args[0]));   /* a newtype over a map operates as one; the RESULT is the underlying map, as with a slice */
                 if (!is_map(mt)) die_at(e->line, "map_get's first argument must be a map");
                 if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_get key must be %s", type_name(map_key(mt)));
                 if (resolve_expr(e->args[2]) != map_val(mt))
@@ -6312,7 +6324,7 @@ static Type resolve_expr_inner(Expr *e) {
             }
             if (!strcmp(e->sval, "map_has")) {
                 if (e->nargs != 2) die_at(e->line, "map_has(m, key) takes two arguments");
-                Type mt = resolve_expr(e->args[0]);
+                Type mt = base_of(resolve_expr(e->args[0]));   /* a newtype over a map operates as one; the RESULT is the underlying map, as with a slice */
                 if (!is_map(mt))
                     die_at(e->line, "map_has's first argument must be a map");
                 if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_has key must be %s", type_name(map_key(mt)));
@@ -6322,7 +6334,7 @@ static Type resolve_expr_inner(Expr *e) {
              * self-rebind is rewritten to an in-place backward-shift delete. */
             if (!strcmp(e->sval, "map_del")) {
                 if (e->nargs != 2) die_at(e->line, "map_del(m, key) takes two arguments");
-                Type mt = resolve_expr(e->args[0]);
+                Type mt = base_of(resolve_expr(e->args[0]));   /* a newtype over a map operates as one; the RESULT is the underlying map, as with a slice */
                 if (!is_map(mt)) die_at(e->line, "map_del's first argument must be a map");
                 if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_del key must be %s", type_name(map_key(mt)));
                 return e->type = mt;
@@ -6330,7 +6342,7 @@ static Type resolve_expr_inner(Expr *e) {
             /* keys(m) -> [string] or [int]: the map's live keys, for iteration. */
             if (!strcmp(e->sval, "keys")) {
                 if (e->nargs != 1) die_at(e->line, "keys(m) takes one argument");
-                Type mt = resolve_expr(e->args[0]);
+                Type mt = base_of(resolve_expr(e->args[0]));   /* a newtype over a map operates as one; the RESULT is the underlying map, as with a slice */
                 if (!is_map(mt))
                     die_at(e->line, "keys's argument must be a map");
                 return e->type = arr_of(map_key(mt));   /* [K]: a newtype key stays wrapped */
@@ -6351,7 +6363,7 @@ static Type resolve_expr_inner(Expr *e) {
                         pend_ground(e->args[0]->sval, arr_of(resolve_expr(e->args[1])), e->line);
                 }
                 g_place = 1;                       /* push(m[k], v): m[k] is a place here (#2) */
-                Type arrt = resolve_expr(e->args[0]);
+                Type arrt = base_of(resolve_expr(e->args[0]));
                 g_place = 0;
                 if (!is_array(arrt) && !IS_SOA(arrt))
                     die_at(e->line, "push's first argument must be an array or soa");
@@ -6377,7 +6389,7 @@ static Type resolve_expr_inner(Expr *e) {
                 if (root->kind != E_IDENT)
                     die_at(e->line, "pop's first argument must be an array variable or field");
                 g_place = 1;
-                Type arrt = resolve_expr(e->args[0]);
+                Type arrt = base_of(resolve_expr(e->args[0]));
                 g_place = 0;
                 if (!is_array(arrt) && !IS_SOA(arrt))
                     die_at(e->line, "pop's first argument must be an array or soa");
@@ -7026,10 +7038,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6650),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6662),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:6938). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:6950). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8043,7 +8055,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
             g_place = 0;
             if (!is_lvalue(s->target->lhs))       /* the base being indexed must be a place */
                 die_at(s->line, "cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)");
-            Type baset = s->target->lhs->type;    /* the array/map type (set by the resolve above) */
+            Type baset = base_of(s->target->lhs->type);   /* the array/map type (set by the resolve above); a newtype over one assigns through, as it indexes through */
+            s->target->lhs->type = baset;                 /* normalised on the node: codegen dispatches map-vs-array on it */
             if (is_map(baset)) {                  /* m[k] = v  or  m[k] op= v  (#2) */
                 int compound = (s->expr->kind == E_BINOP && s->expr->lhs == s->target);
                 if (compound) {
@@ -8539,7 +8552,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:6976: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:6988: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8707,7 +8720,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10943), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10956), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8737,12 +8750,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12903) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12916) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11030) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11043) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;

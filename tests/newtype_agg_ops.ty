@@ -1,0 +1,46 @@
+# A newtype over a collection supports that collection's OPERATIONS, while
+# staying a distinct type at every boundary.
+#
+# Before this, `type Ids = [int]` was effectively write-only: `len`, indexing,
+# slicing, `push`, `pop`, `for ... in` and index-assign all refused it, and the
+# only door was `to_under`. ROADMAP.md recorded the symptom as "blocks push";
+# the probe found all seven refusing, not one.
+#
+# The rule: a newtype's point is DISTINCTNESS at assignment, parameter passing
+# and comparison — not hiding what the underlying value can do. Those boundaries
+# are pinned in tests/reject/newtype_agg_arg.ty and its siblings; this fixture
+# pins the operations.
+#
+# A SLICE of a newtype-of-array is the underlying array, not the newtype: it is
+# a fresh value rather than the named one, so it does not inherit the name.
+
+type Ids = [int]
+type Env = [string: int]
+
+fn sum(xs: Ids) -> int:
+    s := 0
+    for x in xs:                      # foreach, through the newtype
+        s = s + x
+    return s
+
+fn main():
+    ids := Ids([1, 2, 3])
+    println("len " + str(len(ids)))           # len 3
+    println("at0 " + str(ids[0]))             # at0 1
+
+    push(ids, 4)                              # push, in place, still an Ids
+    println("pushed " + str(len(ids)))        # pushed 4
+    println("sum " + str(sum(ids)))           # sum 10 -- and it still passes as Ids
+
+    last := pop(ids)
+    println("popped " + str(last) + " left " + str(len(ids)))
+
+    ids[0] = 9                                # index-assign
+    println("set " + str(ids[0]))
+
+    part := ids[0:2]                          # a slice is the UNDERLYING [int]
+    println("slice " + str(len(part)) + " " + str(part[0]))
+
+    e := Env(["a": 1])
+    e["b"] = 2                                # the same rule for a map newtype
+    println("env " + str(len(e)) + " " + str(e["b"]))

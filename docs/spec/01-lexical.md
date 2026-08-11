@@ -401,7 +401,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:479-480`, its per-piece bound `:745@rn + 2 >= (int)sizeof rbuf`,`:748@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:752@unterminated raw string literal`; adjacent join `:2343-2355`; `const` string fold
 > `:4403-4407`; codegen pastes the escaped text into a C string literal
-> `:10297@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
+> `:10310@tycho_str_intern`; `tycho_str_intern`'s `strlen` `runtime/tycho_rt.c:1257@strlen(s)`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

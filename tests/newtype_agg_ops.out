@@ -1,0 +1,8 @@
+len 3
+at0 1
+pushed 4
+sum 10
+popped 4 left 3
+set 9
+slice 2 9
+env 2 2
