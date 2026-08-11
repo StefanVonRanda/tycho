@@ -128,12 +128,61 @@ or an explicit "open, refused because …".
     this phase touched are Markdown, and `tests/run.sh` globs `.ty` only. No new
     golden, so `make goldens-check` has nothing to see.
 
-- [ ] **Phase 3 — #7 gzip byte-determinism is undocumented and load-bearing**
+- [x] **Phase 3 — #7 gzip byte-determinism is undocumented and load-bearing**
   - Scope: documentation only, unless the probe finds it is not actually
     deterministic — in which case report, do not "fix" zlib.
   - Done when: the guarantee (or its absence) is stated where a caller reads it,
     with the probe that establishes it.
   - Verify: the probe re-run; `make check-links`.
+  - **Done 2026-08-11. The entry reproduced — it is one of the true ones.**
+    Output IS byte-deterministic, so no zlib decision goes back to the user.
+    The guarantee is now written in three places a caller reads:
+    `docs/spec/18-library.md` §33.3 (binding on any implementation),
+    `corelib/compress/compress.ty`'s package header, and
+    `docs/guides/corelib.md`'s `compress` bullet. FRICTION #7 struck with the
+    probe and the enumeration of dependents.
+
+    **Probe** (`scratchpad/gzdet/main.ty`: gzip a fixed 2,400-byte payload to a
+    file; run twice, three seconds apart, in different time zones):
+
+    ```
+    run1 09:09:52Z TZ=UTC
+    wrote 82 bytes to .../p1.gz
+    run2 09:09:55Z TZ=Pacific/Auckland
+    wrote 82 bytes to .../p2.gz
+    cmp: identical
+    f6429240f0406b23e1c1bc472208144cf15d8ed5463d1a62c52f313ec11895a1  p1.gz
+    f6429240f0406b23e1c1bc472208144cf15d8ed5463d1a62c52f313ec11895a1  p2.gz
+    hdr :  1f 8b 08 00 00 00 00 00 00 03      <- ours, MTIME (bytes 4..7) zero
+    gzip:  1f 8b 08 00 f1 e5 7a 6a 00 03      <- gzip 1.13, MTIME filled
+    .../p1.gz .../g1.gz differ: byte 5, line 1
+    ```
+
+    The last line is the **negative control**: the `cmp` can fail, and it fails
+    at byte 5 — the first byte of the MTIME field — which is exactly the
+    mechanism `compress_shim.c@zx_compress` predicts (it never calls
+    `deflateSetHeader`, so zlib leaves MTIME zero).
+
+    **What depends on it** (twelve files name `core:compress`; only one gate can
+    see the property):
+    - `tools/tycho-ar/run.sh` leg **[1] create twice, byte-identical** — the only
+      gate that would redden. `make ar-check`: green.
+    - `corelib/test/compress.out` — boolean invariants only, no bytes or lengths;
+      cannot catch a loss of determinism. `corelib/test/zip.out` locks `usz=`,
+      never `csize`. `tools/tycho-ar/expected.out` holds each member's
+      *uncompressed* size and the sha256 of the *original* payload. All three are
+      blind to it.
+
+    **Gates run and why.** `make check-links` (Markdown + a comment edit):
+    `link check: ok (119 markdown files…)` / `citation check: ok (136 anchored…)`.
+    `sh scripts/spec_check.sh` (touched `docs/spec/18-library.md`):
+    `spec-examples: 9 runnable example(s), all pass`. `make corelib` (touched
+    `corelib/compress/compress.ty`, comment only, but it is a corelib change):
+    `corelib: all green (tychoc matches goldens)`. `make ar-check` (it is the
+    lane whose dependency this phase documents): `tycho-ar: green (create twice
+    byte-identical; …)`. **`make test` not run** — it never descends into
+    `corelib/`, and nothing under `src/` or `tests/` changed, so it could not
+    have reddened.
 
 - [ ] **Phase 4 — #8 mtime is captured and cannot be restored**
   - Scope: `core:io` / `tools/tycho-ar`, or the entry.
@@ -221,6 +270,22 @@ or an explicit "open, refused because …".
     change — this is a comment, not a code phase.
   - Verify: `python3 scripts/check_citations.py` and `make check-links`. **Not
     `make ar-check`** unless a line of code moves, and none should.
+
+- [ ] **Phase 13 — `docs/spec/18-library.md` §33.3 still documents the OLD
+      `decompress` signature** (*found by phase 3*)
+  - The `core:compress` spec entry says `decompress(data) -> bytes` with "empty
+    bytes on corrupt/truncated input — fails closed". That has been false since
+    2026-08-10: it returns `Result(bytes, ZErr)`, and the whole point of the
+    change (FRICTION #3) was that empty-on-failure conflated a corrupt stream
+    with a legitimately empty payload. The guide and the package header are both
+    current; only the **spec** — the document a second implementer would build
+    from — still describes the behaviour that was removed for causing data loss.
+  - Phase 3 added the determinism sentence to this same paragraph and did not
+    touch the stale one: out of its scope.
+  - Done when: §33.3 states the `Result(bytes, ZErr)` signature and the three
+    causes, and `raw_decompress` likewise if it is named there.
+  - Verify: `sh scripts/spec_check.sh` and `make check-links`. Not `make test`,
+    not `make corelib` — no code moves.
 
 ## Out of scope
 

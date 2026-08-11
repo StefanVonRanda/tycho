@@ -13,6 +13,22 @@
 # always knew which branch it took (FRICTION.md #3); now it says so.
 #
 # Binary-safe: payloads cross as `bytes`, so interior NUL bytes are preserved.
+#
+# BYTE-DETERMINISTIC, AND CALLERS DEPEND ON IT. `compress(d)` is a pure function
+# of `d` for a given zlib build: the same input gives byte-identical output in
+# any process, at any wall-clock time, under any locale or TZ. The mechanism is
+# that RFC 1952's MTIME header field stays ZERO -- zlib fills it only from a
+# `gz_header` the caller supplies via `deflateSetHeader`, and
+# `compress_shim.c@zx_compress` supplies none, so the ten header bytes are always
+# `1f 8b 08 00 00 00 00 00 00 03`. `gzip(1)` DOES fill that field (from its input
+# file's mtime), which is why gzip's output of the same payload differs from this
+# one at byte 5. `tools/tycho-ar` is the caller that depends on this: its
+# "archive the same tree twice, `cmp`-identical" leg (`tools/tycho-ar/run.sh`)
+# reddens if compress ever stops being a pure function of its input.
+# DO NOT add `deflateSetHeader` to the shim without a plan for that gate. The
+# guarantee is run-to-run, not zlib-version-to-version: the exact byte LENGTH is
+# a tuning detail and no golden in this tree locks it (see corelib/test/compress.out,
+# which asserts only boolean invariants for exactly that reason).
 package compress
 
 # Why an inflate failed. Payload-free, so a caller can test one cause with `==`.

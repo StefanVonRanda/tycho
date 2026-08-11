@@ -1508,7 +1508,7 @@ reason for it.
 whole residue is that a warning costs a `+ "\n"` the tree writes today in nine
 places. That is sugar, not a missing channel, and it does not rank on this list.
 
-### 7. gzip byte-determinism is real, undocumented, and load-bearing
+### ~~7. gzip byte-determinism is real, undocumented, and load-bearing~~ — **entry was right; the guarantee is now written down, 2026-08-11**
 
 Every archive this program writes is reproducible **because zlib writes zero into
 RFC 1952's MTIME header field unless the caller supplies a `gz_header`, and
@@ -1524,6 +1524,58 @@ implementation of `core:compress` could set MTIME and still conform.
 **Cost to fix: one sentence in the spec**, which converts an accident into a
 contract. Cheapest item on this list by a wide margin, and the only one where the
 fix is purely making an existing truth binding.
+
+**Answered 2026-08-11. The claim reproduced in every part**, and the guarantee is
+now stated in three places a caller actually reads: the spec entry
+`docs/spec/18-library.md` §33.3 (binding on any implementation, so a second one
+that filled MTIME no longer conforms), the package header
+`corelib/compress/compress.ty`, and `docs/guides/corelib.md`'s `compress` bullet.
+
+**The probe.** A program that gzips a fixed 2,400-byte payload and writes the
+result to a file, run twice three seconds apart in different time zones:
+
+```
+$ ./gzdet p1.gz                       # 09:05:43 UTC, TZ=UTC
+wrote 82 bytes to .../p1.gz
+$ ./gzdet p2.gz                       # 09:05:46 UTC, TZ=Pacific/Auckland
+wrote 82 bytes to .../p2.gz
+$ cmp p1.gz p2.gz && echo identical
+identical
+$ sha256sum p1.gz p2.gz
+f6429240f0406b23e1c1bc472208144cf15d8ed5463d1a62c52f313ec11895a1  p1.gz
+f6429240f0406b23e1c1bc472208144cf15d8ed5463d1a62c52f313ec11895a1  p2.gz
+$ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
+ 1f 8b 08 00 00 00 00 00 00 03
+```
+
+MTIME is four zero bytes, exactly as reading the shim predicted. **The negative
+control that proves the `cmp` can fail**: `gzip -c` on the identical payload, on
+this host, gives `1f 8b 08 00 f1 e5 7a 6a 00 03` — a filled MTIME — and
+`cmp p1.gz g1.gz` reports `differ: byte 5`, i.e. the first byte of the MTIME
+field and nothing before it. (One correction to the entry's parenthetical: gzip
+1.13 here fills MTIME from its *input file's* mtime, not from the clock, so two
+`gzip` runs of the same file agree with each other. Either way it is non-zero and
+input-dependent, which is what would break reproducibility.)
+
+**What depends on it, enumerated rather than assumed.** Grepping the tree for
+`core:compress` gives twelve files; the ones that are gates are:
+
+- `tools/tycho-ar/run.sh` — leg **[1] create twice, byte-identical**, a `cmp -s`
+  of two archives built from one tree. **This is the only gate in the tree that
+  would redden**, and `make ar-check` is the only lane that runs it.
+- `corelib/test/compress/main.ty` → `corelib/test/compress.out` — asserts only
+  boolean invariants (`roundtrip=1`, `smaller=1`, `empty=Ok len=0`, …) and no
+  compressed bytes or lengths, deliberately, per its own header comment. It does
+  **not** depend on determinism and would not catch a loss of it.
+- `corelib/zip/zip.ty` → `corelib/test/zip.out` — locks `method=` and `usz=`
+  (uncompressed size), never `csize`. Also independent of it.
+- `tools/tycho-ar/expected.out` — the `t` listing golden holds each member's
+  **uncompressed** size and the sha256 of the **original** payload, so a change
+  in zlib's tuning does not move it. Only leg [1] is exposed.
+
+So the entry's "load-bearing" was accurate but narrow: one gate, one leg, and
+nothing else in the tree can see the property at all. That is the argument for
+writing it down rather than relying on a reviewer to notice.
 
 ### 8. mtime is captured faithfully and cannot be restored — and the gate is green over the hole
 

@@ -456,8 +456,16 @@ reimplemented because real crypto must be constant-time and audited.
 gzip (RFC 1952) compression over **zlib** (`deps` → `zlib`). `compress(data) ->
 bytes` (gzip-compress), `decompress(data) -> bytes` (inflate a gzip *or* zlib
 stream; empty bytes on corrupt/truncated input — fails closed). Binary-safe
-(`bytes`, interior NUL preserved). Source `corelib/compress/compress.ty`,
-`corelib/compress/deps`.
+(`bytes`, interior NUL preserved). **`compress` is byte-deterministic**: for a
+given zlib build it is a pure function of its input, so the same bytes in give
+byte-identical bytes out across processes, wall-clock times, locales and time
+zones. Concretely, RFC 1952's MTIME header field is **zero** — an implementation
+must not fill it from the clock or from a source file's mtime, the way `gzip(1)`
+does. This is a requirement on any implementation of `core:compress`, not an
+accident of zlib's defaults: `tools/tycho-ar`'s reproducibility gate ("archive
+the same tree twice, `cmp`-identical") rests on it. The compressed *length* is a
+zlib tuning detail and is not fixed by this spec. Source
+`corelib/compress/compress.ty`, `corelib/compress/deps`.
 
 ### 33.4 `image` — libpng
 

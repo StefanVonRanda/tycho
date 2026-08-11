@@ -528,6 +528,13 @@ plus three more:
   from an empty one, which for a container format meant a damaged member read as a
   zero-byte file. On a RAW deflate stream `Truncated` also covers "not a deflate
   stream": there is no wrapper or checksum to tell those apart.
+  **`compress` is byte-deterministic** and callers may rely on it: for one zlib build
+  it is a pure function of its input — same bytes in, byte-identical bytes out, in any
+  process, at any time, under any locale or TZ. RFC 1952's MTIME header field is held
+  at zero (the shim never calls `deflateSetHeader`), unlike `gzip(1)`, which fills it.
+  `tools/tycho-ar` depends on this: its "archive the same tree twice, `cmp`-identical"
+  gate reddens if it ever stops holding. The compressed *length* is a zlib tuning
+  detail — it is not stable across zlib versions and no golden here locks it.
 - **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
   Image{width, height, pixels}` (8-bit RGBA) and `encode(Image) -> bytes`; fail-closed on a
   non-PNG. JPEG is a demand-gated follow-up.
