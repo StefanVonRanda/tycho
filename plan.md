@@ -453,21 +453,86 @@ or an explicit "open, refused because …".
     link check: ok · citation check: ok
     ```
 
-- [ ] **Phase 14 — a qualified nested pattern does not count toward exhaustiveness**
-  - Found by phase 6b, out of its scope, not folded into it. The helper was first
-    written `Err(decimal.DivByZero):` — the only variant of `decimal.DivErr`
-    (`corelib/decimal/decimal.ty:105-106`) — and the compiler refused:
+- [x] **Phase 14 — a qualified nested pattern does not count toward exhaustiveness — DOES NOT REPRODUCE, entry was wrong**
+  - **The report's premise was false and no compiler change was made.** It rested on
+    "`DivByZero` — the only variant of `decimal.DivErr`". `decimal.DivErr` has
+    THREE variants (`corelib/decimal/decimal.ty:105-108`: `DivByZero`,
+    `BadScale(int)`, `BadMode(int)`), and it already had all three at the commit
+    that filed the report — `git show 8d98a91:corelib/decimal/decimal.ty` shows the
+    same enum. So `Err(decimal.DivByZero):` as the ONLY refined `Err` arm was
+    genuinely non-exhaustive; refusing it was correct. There is no qualification
+    bug.
+  - **The decisive probe** — the reported construct, on the reported package, with
+    all three variants named and no `_` arm. It compiles and runs:
     ```
-    examples/corelib/decimal/main.ty:9: error: match on a Result must cover both Ok and Err
+    $ cat /tmp/dec2/main.ty
+    package main
+    import "core:decimal"
+
+    fn show(r: Result(decimal.Decimal, decimal.DivErr)) -> string:
+        match r:
+            Ok(d): return decimal.to_str(d)
+            Err(decimal.DivByZero): return "refused (divide by zero)"
+            Err(decimal.BadScale(s)): return "bad scale " + str(s)
+            Err(decimal.BadMode(m)): return "bad mode " + str(m)
+    ...
+    $ ./tychoc /tmp/dec2/main.ty -o /tmp/dec2/bin && /tmp/dec2/bin
+    built /tmp/dec2/bin
+    refused (divide by zero)
+    bad scale -1
     ```
-    An UNQUALIFIED nested pattern does count: `corelib/test/result/main.ty@why`
-    covers all three `Local` variants with no `_` arm and compiles. So the gap is
-    specifically the qualified spelling — the one a caller of another package must
-    use — and it forces either an unrefined `Err(e)` with an unused binder or a `_`
-    fallback that silently absorbs variants added later. The example took the first.
-  - Done when: a qualified nested pattern is counted, with a `tests/` fixture — or
-    the limit is written down where a caller will meet it.
-  - Verify: `make test`.
+    Minimal pair, differing only in qualification, both green:
+    a two-variant package enum matched `Err(pk.A)` + `Err(pk.B(k))` builds and
+    prints `ok 3`; the same enum declared locally and matched `Err(A)` + `Err(B(k))`
+    builds. A single-variant package enum matched `Err(one.Solo)` alone builds and
+    prints `solo` — the exact shape the entry claimed was refused. The only refusal
+    was the genuinely partial `Ok(v)` + `Err(pk.A)`, missing `B`.
+  - **Why the mechanism could not have worked the way the entry assumed.** A
+    qualified nested pattern is mangled at parse time — `src/tychoc.c:3337`
+    (`arm->sub = sfmt("%s%s", pkg_prefix_for(sn->text), inm)`) — and an unqualified
+    one is kept as written (`src/tychoc.c:3339`). `enum_variant_index`
+    (`src/tychoc.c:1250-1257`) accepts EITHER spelling: it compares against
+    `variants[v].name` (mangled, `src/tychoc.c:4616`) and against `variants[v].raw`
+    (as written, `src/tychoc.c:4617`). Both spellings therefore reach the same `vi`
+    and the same `sc->cov` slot in `match_arm_payload` (`src/tychoc.c@match_arm_payload`),
+    which is what `side_total` (`src/tychoc.c:7613-7619`) reads.
+  - **Caller audit — all five qualified coverage sites verified green in one probe,
+    every match wildcard-free:** a plain enum match with `pk.A:` / `pk.B(k):` arms
+    (`src/tychoc.c:7925-7926`), a nested pattern under `Some` (`src/tychoc.c:7880`),
+    one under `Ok`/`Err` (`src/tychoc.c:7903-7905`), `e is pk.A`, and `... is Ok`.
+    Output: `enum B 1` / `some B 1` / `err A` / `is A` / `is Ok`, exit 0. No site in
+    the class mishandles a package prefix.
+  - No fixture was added: there is nothing to regress against, and
+    `corelib/test/result/main.ty` already exercises a qualified nested pattern
+    across a package boundary (`Err(io.NotFound):`).
+  - Verified: `make check-links` — link check ok, citation check ok. `make test`,
+    `make vm-check` and `scripts/entrypoints.sh` deliberately NOT run: no file
+    outside `plan.md` changed, so none of them can redden.
+
+- [ ] **Phase 15 — a partially covered Ok/Err side reports the wrong thing**
+  - Discovered while disproving phase 14, out of its scope. This diagnostic is what
+    made phase 14 get filed at all: when refined `Err(...)` arms cover SOME but not
+    all variants of the error enum, the compiler says
+    ```
+    d_qual_partial/main.ty:5: error: match on a Result must cover both Ok and Err
+    ```
+    — but both `Ok` and `Err` ARE written. The real fault is a missing variant, and
+    the message never names it. The plain-enum path gets this right
+    (`src/tychoc.c:7954`, "non-exhaustive match: missing variant %s of %s").
+  - Mechanism: `side_total` (`src/tychoc.c:7613-7619`) collapses the whole side to
+    one bit and discards which slot of `sc->cov` was clear — it does not even use
+    its `pt` argument (`src/tychoc.c:7617` is `(void)pt;`). The caller
+    (`src/tychoc.c:7912`) therefore has no variant name to print.
+  - A second, smaller item from the same finding:
+    `examples/corelib/decimal/main.ty:11` carries the comment "DivByZero is DivErr's
+    only variant", which is false against `corelib/decimal/decimal.ty:105-108`. That
+    false comment is the origin of the phase 14 report. Its `Err(e)` arm also returns
+    "refused (divide by zero)" for `BadScale` and `BadMode`, so fixing the comment
+    honestly means refining the arm, which moves `examples/corelib/decimal.out`.
+  - Done when: the message names the missing variant, and the decimal example no
+    longer states a false fact about the enum it matches.
+  - Verify: `make test`, then `make corelib-examples` for the example (and re-record
+    its golden if the arm is refined).
 
 - [x] **Phase 6c — triage tycho-q #5, #6, #7 against the source (no fixes)**
   - Dispatched out of plan order, because five of the eight entries worked in
