@@ -1,0 +1,35 @@
+# An f-string's interpolations are sequenced LEFT-TO-RIGHT (spec §13.4), the
+# order they are written and printed. Before this was pinned, tychoc lowered the
+# pieces to arguments of one tycho_str_concatN call, and C leaves argument order
+# unspecified -- gcc fired them right-to-left, so the SIDE EFFECTS ran C, B, A
+# while the text still read "ABC". The golden below records the call order, not
+# just the text: a text-only assertion passes either way and catches nothing.
+#
+# Plain `+` concat is deliberately absent here: §13.4 leaves operand order
+# unspecified, so a golden over it would pin what the spec does not.
+fn side(s: string) -> string:
+    println("call " + s)
+    return s
+
+fn main():
+    a := "A"
+    b := "B"
+    c := "C"
+
+    # three holes -- the tycho_str_concat3 fold
+    println(f"{side(a)}{side(b)}{side(c)}")
+
+    # two holes -- the pairwise tycho_str_concat path
+    println(f"{side(a)}{side(b)}")
+
+    # literal text between the holes: 5 pieces, still inside the 3..6 fold
+    println(f"<{side(a)}|{side(b)}|{side(c)}>")
+
+    # seven pieces -- outside the fold, so the pairwise path chains them
+    println(f"{side(a)}{side(b)}{side(c)}{side(a)}{side(b)}{side(c)}{side(a)}")
+
+    # a nested f-string in a hole: the inner sequence runs inside the outer one
+    println(f"{side(a)}{side(f"{side(b)}{side(c)}")}")
+
+    # no holes: nothing to order, and the fold is untouched
+    println(f"plain{{}}")

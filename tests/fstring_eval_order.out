@@ -1,0 +1,25 @@
+call A
+call B
+call C
+ABC
+call A
+call B
+AB
+call A
+call B
+call C
+<A|B|C>
+call A
+call B
+call C
+call A
+call B
+call C
+call A
+ABCABCA
+call A
+call B
+call C
+call BC
+ABC
+plain{}

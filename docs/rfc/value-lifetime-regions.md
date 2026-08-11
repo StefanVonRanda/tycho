@@ -41,9 +41,9 @@ when its scope ends (`runtime/tycho_rt.c:5-13`). The emitted shape is four rules
 `main` opens `_root`, every function opens `Arena _scope = arena_child(_parent)`,
 every allocation takes an arena argument, and a return builds into `_parent`
 (`docs/guides/memory-model.md:37-45`), realised in codegen by a single "current
-arena" string that defaults to `&_scope` (`src/tychoc.c:7343`) and a per-proc stack
+arena" string that defaults to `&_scope` (`src/tychoc.c:7344`) and a per-proc stack
 of enclosing block arenas freed innermost-first at any exit
-(`src/tychoc.c:8882-8888`, `:8912-8916`).
+(`src/tychoc.c:8883-8889`, `:8913-8917`).
 
 The three exceptions in the tree are the ones that prove the rule, because each is a
 *runtime* object the compiler finalises like a scope, not a user-visible lifetime:
@@ -209,8 +209,8 @@ region variable, which is an annotation on every signature in the transitive clo
 
 **`spawn` / channels.** A spawn site allocates its argument struct in the task root
 and deep-copies each heap argument into it, after which spawner and task share zero
-bytes (`src/tychoc.c:8574-8589`, `runtime/tycho_rt.c:523-531`); `wait` copies the
-result out and frees the root eagerly (`src/tychoc.c:8292-8295`). A channel does the
+bytes (`src/tychoc.c:8575-8590`, `runtime/tycho_rt.c:523-531`); `wait` copies the
+result out and frees the root eagerly (`src/tychoc.c:8293-8296`). A channel does the
 same per payload into a per-cell arena (`runtime/tycho_rt.c:604-611`). An `@r` value
 offers neither option: copying it means copying the whole region (unbounded — the
 region exists *because* it is the long-lived structure), and passing the region pointer
@@ -258,12 +258,12 @@ into it: reads copy out (already the language's defining invariant,
 semantics like any other value — it moves down as an argument and up as a return, and
 its arena travels with it. The two-direction rule of §2.2 is untouched, because a
 region introduces no new direction; it changes only *which* arena an allocation lands
-in, and the compiler already picks that per write site (`src/tychoc.c:7343`,
+in, and the compiler already picks that per write site (`src/tychoc.c:7344`,
 `docs/guides/memory-model.md:57-66`).
 
 **`spawn` / channels.** This design survives the boundary, which is the reason it is
 worth writing down at all. Because a region is owned and pointer-free from outside,
-`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:8586`) generalises without a new
+`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:8587`) generalises without a new
 rule: create a fresh arena inside the task root, deep-copy every live element into it.
 Blocks crossing threads is already the status quo — the block pool is thread-local
 (`runtime/tycho_rt.c:357`), blocks are released to whichever thread's pool frees them
@@ -286,8 +286,8 @@ typedef struct { Arena rgn; Arr_Conn conns; } Server;
 Allocations for elements of `s.conns` target `&s.rgn` instead of the current scope
 string; the deep copy becomes `_c.rgn = arena_new(0);` followed by the existing
 recursive element copy; and the free is one `arena_free(&s.rgn)` emitted into exactly
-the finaliser slot tasks and handles already use (`src/tychoc.c:8905-8907`), which fires at block end, early
-`return`, `break`/`continue` and `or_return` (`src/tychoc.c:8922-8926`). There is a
+the finaliser slot tasks and handles already use (`src/tychoc.c:8906-8908`), which fires at block end, early
+`return`, `break`/`continue` and `or_return` (`src/tychoc.c:8923-8927`). There is a
 genuine simplification available: `inout` on a heap value today threads the caller's
 owning scope to the callee as a hidden parameter so an allocating mutation lands where
 the borrowed value lives (`docs/spec/07-memory-model.md:186-192`). If the value owns

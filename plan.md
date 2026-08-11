@@ -94,7 +94,7 @@ or an explicit "open, refused because …".
 
   - The entry says "the builtins are `println`, `die` and `exit(n)`", so "a
     non-fatal warning is inexpressible". `eprint(s)` is a builtin —
-    `src/tychoc.c:5051@eprint`, runtime `runtime/tycho_rt.c@tycho_eprint`
+    `src/tychoc.c:5052@eprint`, runtime `runtime/tycho_rt.c@tycho_eprint`
     (`fputs(s, stderr)`), specified at `docs/spec/16-builtins.md:74@eprint` as
     "no newline, **no exit**". `git log -L 5051,5051:src/tychoc.c` dates it to
     `61fa0dc`, 2026-06-14 ("+ eprint primitive") — before the entry was written.
@@ -425,7 +425,7 @@ or an explicit "open, refused because …".
     (`tools/tycho-ar/main.ty:36`).
   - Verify: `make ar-check`. Not `make corelib` unless the corelib is touched.
 
-- [ ] **f-string interpolations run their side effects RIGHT-TO-LEFT**
+- [x] **f-string interpolations run their side effects RIGHT-TO-LEFT**
   - Found by phase 4 while writing a fixture, where it produced a wrong golden
     value: a `println(f"…{io.mtime(d)}…{io.remove(d)}")` printed the mtime as if
     the file were already gone, because the `remove` ran first. Split into
@@ -445,6 +445,93 @@ or an explicit "open, refused because …".
     already cost one wrong golden.
   - Verify: `make test` (this is a `src/tychoc.c` change), plus `sh scripts/spec_check.sh`
     if a spec example moves.
+  - **Evidence (2026-08-11).** It reproduced on the first try. Probe
+    `f"{side(a)}{side(b)}{side(c)}"`, compiled with `./tychoc` and run:
+
+        BEFORE            AFTER
+        call C            call A
+        call B            call B
+        call A            call C
+        ABC               ABC
+
+    **Mechanism — an ordering bug in the lowering, not a deliberate choice.**
+    `--emit-c` showed all three interpolations landing as arguments of one call:
+
+        tycho_print_s(tycho_str_concat3(&_t, h_side(&_t, h_a),
+                                             h_side(&_t, h_b), h_side(&_t, h_c)))
+
+    C leaves argument order unspecified and gcc evaluates right-to-left. The fold
+    that builds it (`src/tychoc.c@fseq`) even carried a comment
+    asserting "side-effect ordering is unchanged" — true relative to the pairwise
+    concat it replaced, which has the identical hole.
+
+    **What the spec said.** `docs/spec/09-expressions.md` §13.4 called argument and
+    operand order *unspecified*, and Appendix F item 1 listed it as **deliberate**,
+    matching Swift and Odin — with one exception already carved out, the
+    assignment-place index, on the grounds that it "is never short-circuited" so
+    sequencing is cheap and sound. Nothing anywhere mentioned f-strings. That
+    silence is the finding: the desugar to `+` quietly inherited a rule written
+    about hand-written operands.
+
+    **Rule decided.** F-string holes are pinned **left-to-right**, as a second
+    exception on exactly the reasoning the first one used: one hole is never
+    short-circuited against another, and the holes' *printed* order is their
+    source order, so leaving the effects reversed was actively misleading. Bare
+    `+` and call arguments stay unspecified — unchanged. Written into
+    `docs/spec/09-expressions.md` §13.4, `docs/spec/appendix-f-impl-defined.md`
+    item 1, and the Appendix E conformance row.
+
+    **Fix.** `src/tychoc.c@interp_join` marks each desugared `+` node `fstr`;
+    codegen pins a chain carrying that mark *and* a call by binding every piece
+    but the last to a temp in a braced group, so each is sequenced before the
+    next. Both concat paths are covered (the 3..6 `concatN` fold and the pairwise
+    fallback). Emitted for the probe:
+
+        ({ char *_fi0 = h_side(&_t, h_a); char *_fi1 = h_side(&_t, h_b);
+           tycho_str_concat3(&_t, _fi0, _fi1, h_side(&_t, h_c)); })
+
+    A braced group is a GNU extension, but the emitted C **already** requires GNU
+    C (`__attribute__((constructor))`, `__thread`) and is compiled without
+    `-pedantic`, so this adds no new portability class. It is safe everywhere an
+    f-string can appear: Tycho has no top-level variables (a top-level `:=` is
+    rejected with "expected 'fn'"), so no f-string is ever a constant expression.
+
+  - **Fixture.** `tests/fstring_eval_order.ty` + `.out` pins the ORDER OF EFFECTS,
+    not the text — three holes (the fold), two holes (the pairwise path), holes
+    with literal text between them, seven pieces (outside the fold), a nested
+    f-string, and a hole-free control. Plain `+` is deliberately absent: a golden
+    over it would pin what §13.4 leaves unspecified.
+  - **Negative control.** `git stash push src/tychoc.c`, rebuilt, re-ran the
+    fixture: the output diverged from the golden in all five ordered cases
+    (`diff` rc=1, every `call` line displaced). Restored with `git stash pop`,
+    rebuilt, `cmp` against the golden clean again.
+  - **Gates.** `make test` → `passed: 619  failed: 0  all green`, against the 618
+    recorded earlier in this plan — +1 is exactly the new fixture, no silent loss.
+    Re-run once after the citation re-anchor, still 619. `sh scripts/spec_check.sh`
+    green (Appendix E fixture citations resolve, 9 runnable examples pass).
+    Inserting into `src/tychoc.c` staled 81 citations, all of them into that one
+    file and nothing else stale — the re-anchor tool's documented safe case;
+    `--apply` rewrote 116 files with 0 needing a human, and `check_citations.py`
+    and `check_links.sh` are green after it.
+
+- [ ] **The same right-to-left hazard is still live for plain `+` and call arguments**
+  - Found by the f-string phase above, not absorbed into it — that phase was
+    scoped to f-strings, and this is a different (and spec-sanctioned) case.
+  - `a() + b()` on strings, and `f(g(), h())`, still fire right-to-left under gcc.
+    §13.4 permits it, so this is **not a compiler bug** and MUST NOT be "fixed" by
+    widening the f-string pin without deciding to change the language rule.
+  - What is missing is that a reader has no way to discover the hazard before it
+    bites: §13.4 states the rule in one line and gives no example of what it looks
+    like when it goes wrong, which is exactly how the f-string case survived long
+    enough to produce a wrong golden.
+  - Scope: `docs/spec/09-expressions.md` §13.4 only — a worked example showing the
+    reversed order and the explicit-binding fix the rule already tells you to use.
+    A `.ty` fixture is NOT appropriate here: pinning unspecified order in a golden
+    is exactly what the rule forbids relying on.
+  - Done when: §13.4 carries the example. Optionally, decide whether a lint for a
+    multi-call string `+` is worth it — a separate question, do not assume yes.
+  - Verify: `sh scripts/spec_check.sh` and `make check-links`. **Not `make test`** —
+    a spec-prose change cannot redden it.
 
 ## Out of scope
 

@@ -11,7 +11,7 @@ program MUST NOT depend on anything in the "unspecified" list.
 
 | # | Behavior | Reference | Status |
 |---|---|---|---|
-| 1 | **Argument / operand evaluation order** within one expression (order of side effects among a call's arguments or a binary operator's operands). *Exception:* a side-effecting **index in an assignment place** (`a[f()] = g()`) is sequenced **left-to-right** — specified, not in this list. | [§13.4](09-expressions.md#134-evaluation-order) | probed; arguments/operands inherited from the target, not sequenced by Tycho |
+| 1 | **Argument / operand evaluation order** within one expression (order of side effects among a call's arguments or a binary operator's operands). *Exceptions:* a side-effecting **index in an assignment place** (`a[f()] = g()`) and the **holes of an f-string** (`f"{a()}{b()}"`) are sequenced **left-to-right** — specified, not in this list. | [§13.4](09-expressions.md#134-evaluation-order) | probed; arguments/operands inherited from the target, not sequenced by Tycho |
 | 2 | **Floating-point reduction reassociation** in `parallel for`: the result MAY differ across thread counts. (Integer reductions are deterministic and are **not** in this list.) | [§22](13-concurrency.md#22-parallel-for) | defined boundary |
 | 3 | **Using a typed handle after `close(h)`** — passes null to C; a logic bug, not memory corruption, not compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
 | 4 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
@@ -31,7 +31,13 @@ temporary, and that cost was judged not worth closing a hole that was not a live
 divergence at the time. The **assignment-place index** was the exception: it *was*
 a real divergence between the reference compiler and the (now frozen) `tychoc0`
 snapshot, and it is cheap and sound to sequence (a place index is never
-short-circuited), so it is now pinned left-to-right (§13.4) and excluded above. A conforming implementation still need not match the unspecified
+short-circuited), so it is now pinned left-to-right (§13.4) and excluded above.
+**F-string holes are the second exception**, for the same reason: one hole is
+never short-circuited against another, so binding each to a sequenced temporary
+at the concat site costs nothing a program could observe — and leaving it
+unpinned was actively misleading, because the holes' *printed* order is their
+source order while their side effects fired in reverse under the host compiler.
+A conforming implementation still need not match the unspecified
 argument/operand order.
 
 ## F.2 Implementation-defined behavior

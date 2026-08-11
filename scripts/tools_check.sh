@@ -302,7 +302,7 @@ echo ">>> bytes-rehome: a bytes field of a returned struct is deep-copied into t
 mkdir -p "$TMP/brh"
 printf 'package main\nimport "core:io"\nimport "core:result"\nstruct B:\n    data: bytes\nfn mk(p: string) -> B:\n    d := result.unwrap_or(io.read_bytes(p), to_bytes(""))\n    if len(d) == 0:\n        return B(to_bytes(""))\n    return B(d)\nfn main():\n    b := mk("Makefile")\n    println(str(len(b.data)))\n' > "$TMP/brh/main.ty"
 # -o is REQUIRED, not decoration: `--emit-c` with no -o writes the C to stdout
-# (src/tychoc.c:12908, the loops-cleanup plan), which `>/dev/null` would swallow whole.
+# (src/tychoc.c:12932, the loops-cleanup plan), which `>/dev/null` would swallow whole.
 # This was the one in-tree caller relying on the old sibling-file default, and it
 # reported the loss exactly as the header above predicts a stale fixture would:
 # `grep: .../brh/main.c: No such file or directory`.

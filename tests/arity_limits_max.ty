@@ -4,12 +4,12 @@
 #   8-element tuple                    (02-grammar.md:137, src/tychoc.c:1814)
 #   2-element tuple (the minimum)      (02-grammar.md:170, src/tychoc.c:1818)
 #   16 type parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1760)
-#   16 size parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1847)
-#   8 `where` constraints              (05-generics.md:63,  src/tychoc.c:3400)
-#   16 types in a `where` type set     (05-generics.md:61,  src/tychoc.c:3412)
-#   16 struct type parameters          (05-generics.md:20,  src/tychoc.c:3703)
-#   16 enum type parameters            (05-generics.md:20,  src/tychoc.c:3759)
-#   8 variant payload fields           (02-grammar.md:97,   src/tychoc.c:3793)
+#   16 size parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1848)
+#   8 `where` constraints              (05-generics.md:63,  src/tychoc.c:3401)
+#   16 types in a `where` type set     (05-generics.md:61,  src/tychoc.c:3413)
+#   16 struct type parameters          (05-generics.md:20,  src/tychoc.c:3704)
+#   16 enum type parameters            (05-generics.md:20,  src/tychoc.c:3760)
+#   8 variant payload fields           (02-grammar.md:97,   src/tychoc.c:3794)
 
 struct Box16($T0, $T1, $T2, $T3, $T4, $T5, $T6, $T7, $T8, $T9, $T10, $T11, $T12, $T13, $T14, $T15):
     f0: $T0

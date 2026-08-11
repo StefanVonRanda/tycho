@@ -1832,6 +1832,7 @@ struct Expr {
     double   fval;     /* E_FLOAT */
     char    *sval;     /* E_STR contents / E_IDENT name / E_CALL callee */
     TokKind  op;       /* E_BINOP */
+    int      fstr;     /* E_BINOP: this `+` came from an f-string desugar, so its pieces are sequenced left-to-right (§13.4) */
     Expr    *lhs, *rhs;
     Expr   **args; int nargs;   /* E_CALL */
     char   **argnames; /* E_CALL: parallel to args -- non-NULL entry = named field (struct construction `P(x: 1)`); NULL ptr / all-NULL entries = positional */
@@ -2386,7 +2387,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2208) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2209) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2541,7 +2542,7 @@ static Expr *const_fold(Expr *e, int refs); /* fold a const-expr (int arith/bitw
  * a bool/char/aggregate hole then fails str() with a clear error). */
 static Expr *interp_join(Expr *acc, Expr *piece, int line) {
     if (!acc) return piece;
-    Expr *b = new_expr(E_BINOP, line); b->op = TK_PLUS; b->lhs = acc; b->rhs = piece; return b;
+    Expr *b = new_expr(E_BINOP, line); b->op = TK_PLUS; b->lhs = acc; b->rhs = piece; b->fstr = 1; return b;
 }
 static Expr *desugar_interp(const char *s, int line) {
     Expr *acc = NULL;
@@ -2724,7 +2725,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2082): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2083): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3772,7 +3773,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10125), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10126), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -7072,10 +7073,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6696),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6697),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:6984). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:6985). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8586,7 +8587,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7022: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7023: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8754,7 +8755,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10994), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11018), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8784,12 +8785,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12954) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12978) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11081) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11105) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -8806,7 +8807,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3652-3657) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3653-3658) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -10609,7 +10610,17 @@ static char *gen_expr(Expr *e, const char *arena) {
              * piece, or a chain outside 3..6, falls through to the pairwise emit
              * below (which still flattens its own sub-chains). Argument evaluation
              * order is unspecified -- exactly as for the nested pairwise concat it
-             * replaces -- so side-effect ordering is unchanged. */
+             * replaces -- so side-effect ordering is unchanged.
+             *
+             * EXCEPT for a chain desugared from an f-string (`fstr`), whose pieces
+             * §13.4 pins left-to-right: bind every piece but the last to a temp in
+             * a braced group, so each is sequenced before the next. Only a chain
+             * that actually carries a call needs it; every other concat emits
+             * byte-identically to before. */
+            int fseq = 0;
+            if (e->op == TK_PLUS && e->type == T_STRING && expr_has_call(e))
+                for (Expr *c = e; c && c->kind == E_BINOP && c->op == TK_PLUS && c->type == T_STRING; c = c->lhs)
+                    if (c->fstr) { fseq = 1; break; }
             if (e->op == TK_PLUS && e->type == T_STRING) {
                 Expr *pieces[6]; int np = 0, ok = 1;
                 for (Expr *cur = e; ; ) {
@@ -10621,19 +10632,32 @@ static char *gen_expr(Expr *e, const char *arena) {
                     cur = cur->lhs;
                 }
                 if (ok && np >= 3) {
-                    char *out = sfmt("tycho_str_concat%d(%s", np, arena);
-                    for (int k = np - 1; k >= 0; k--)   /* pieces are rightmost-first; emit leftmost first */
-                        out = sfmt("%s, %s", out, gen_expr(pieces[k], arena));
-                    return sfmt("%s)", out);
+                    char *out = sfmt("tycho_str_concat%d(%s", np, arena), *pre = "";
+                    for (int k = np - 1; k >= 0; k--) {   /* pieces are rightmost-first; emit leftmost first */
+                        char *p = gen_expr(pieces[k], arena);
+                        if (fseq && k > 0) {              /* k == 0 is the last piece: nothing follows it to order against */
+                            int id = g_forin_uid++;
+                            pre = sfmt("%schar *_fi%d = %s; ", pre, id, p);
+                            p = sfmt("_fi%d", id);
+                        }
+                        out = sfmt("%s, %s", out, p);
+                    }
+                    return fseq ? sfmt("({ %s%s); })", pre, out) : sfmt("%s)", out);
                 }
             }
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
             /* and/or lower to C's short-circuiting && / || via op_str below */
-            if (e->op == TK_PLUS && (e->lhs->type == T_STRING || e->lhs->type == T_BYTES))
+            if (e->op == TK_PLUS && (e->lhs->type == T_STRING || e->lhs->type == T_BYTES)) {
+                if (fseq && e->lhs->type == T_STRING) {   /* two-piece f-string, or a chain outside the 3..6 fold */
+                    int id = g_forin_uid++;
+                    return sfmt("({ char *_fi%d = %s; tycho_str_concat%s(%s, _fi%d, %s); })",
+                                id, l, e->rhs->type == T_CHAR ? "_char" : "", arena, id, r);
+                }
                 return e->rhs->type == T_CHAR
                     ? sfmt("tycho_str_concat_char(%s, %s, %s)", arena, l, r)
                     : sfmt("tycho_str_concat(%s, %s, %s)", arena, l, r);
+            }
             /* equality dispatches by type (deep/structural); != negates it */
             if (e->op == TK_EQEQ || e->op == TK_NEQ) {
                 char *eq = gen_eq(e->lhs->type, l, r);

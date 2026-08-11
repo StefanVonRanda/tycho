@@ -5,8 +5,8 @@ in [§4.4–§4.5](02-grammar.md#44-expressions); this chapter defines the meani
 of each operator, the **evaluation order**, and the expression-valued control
 forms.
 
-> Provenance: binary-op resolver `src/tychoc.c:6134-6390`; short-circuit
-> lowering `:9489-9515`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
+> Provenance: binary-op resolver `src/tychoc.c:6135-6391`; short-circuit
+> lowering `:9490-9516`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
 > closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
 > "probed" were resolved by running both compilers (spec-plan.md §6a).
 
@@ -62,11 +62,11 @@ their two length-mismatch rules differ; the whole rule — the kinds, the
 mismatches, and literal adaptation of a broadcast scalar — is
 [§16.8](12-aggregates.md#168-element-wise-arithmetic).
 
-> Provenance: array ⊕ array arm `src/tychoc.c:6259-6289`; broadcast arm
-> `src/tychoc.c:6318-6344`; the per-element-type operator set
+> Provenance: array ⊕ array arm `src/tychoc.c:6260-6290`; broadcast arm
+> `src/tychoc.c:6319-6345`; the per-element-type operator set
 > `src/tychoc.c:1344@elem_arith_ok`; the arms an array operand still falls
-> through to — shift `src/tychoc.c:6731@shift operators require integer operands`,
-> modulo/bitwise `src/tychoc.c:6838@modulo / bitwise operators`.
+> through to — shift `src/tychoc.c:6732@shift operators require integer operands`,
+> modulo/bitwise `src/tychoc.c:6839@modulo / bitwise operators`.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
@@ -89,8 +89,8 @@ the result takes the **left** operand's type. So `x << n` is well-typed for a
 (sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
 
 > Provenance: the shift arm accepts any two integers and returns the left type —
-> `src/tychoc.c:6239-6245`, result at `src/tychoc.c:6647@lt`. The bitwise arm is
-> the one that requires a match: `src/tychoc.c:6806@rt`. Exhaustively pinned by
+> `src/tychoc.c:6240-6246`, result at `src/tychoc.c:6648@lt`. The bitwise arm is
+> the one that requires a match: `src/tychoc.c:6807@rt`. Exhaustively pinned by
 > `fuzz/run_typeparity.py`, whose shift clause encodes this rule over the full
 > operand matrix.
 
@@ -134,6 +134,13 @@ both compilers):
   **source order** (left to right, outermost index first), all of them before the
   RHS: in `g[f()][h()] = e()` and in `bs[f()].v[h()] = e()` the order is `f()`,
   `h()`, then `e()`. Compound assignment orders the same legs the same way.
+- **An f-string's interpolations are sequenced left-to-right** (*probed*): in
+  `f"{a()}{b()}{c()}"` the holes are evaluated in the order they are written and
+  printed. An f-string ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals))
+  desugars to a `+` chain, but its holes are pinned
+  where the bare `+` operands below are not — a hole is never short-circuited
+  against another hole, so the sequencing is cheap and sound, and the printed
+  order made the unpinned order actively misleading.
 - **Argument and operand evaluation order is *unspecified*** (*probed*). Tycho
   does not sequence the arguments of a call or the operands of a binary operator
   relative to one another; their order of side effects is inherited from the

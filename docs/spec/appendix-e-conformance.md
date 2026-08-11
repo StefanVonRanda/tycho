@@ -168,6 +168,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §13.4 | evaluation order; subject evaluated once | `tests/compound_index_eval`, `tests/match_subject_once` |
 | §13.4 | place-evaluation order: every place leg left-to-right, before the RHS | `tests/place_eval_order`, `tests/eval_order` |
 | §13.4 | compound assignment through a user subscript: the argument is evaluated once | `tests/compound_subscript_eval` |
+| §13.4 | f-string holes are sequenced left-to-right | `tests/fstring_eval_order` |
 | §13.5 | expression-valued `if`/`match` (tail) | `tests/if_expr`, `tests/match_expr`, `tests/match_inline`, `reject/if_expr_no_else`, `reject/match_expr_nonexhaustive` |
 | §13.5 | multi-statement value arms (block ending in a value expr) | `tests/if_expr_block`, `tests/match_expr_block`, `reject/value_arm_no_tail` |
 | §13.6 | closures & function values | `tests/closures`, `tests/funcvalues`, `tests/combinator`, `reject/infer_lambda_param` |

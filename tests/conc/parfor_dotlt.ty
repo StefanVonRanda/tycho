@@ -3,10 +3,10 @@
 # i in 0 .. N-1 and there is no zero-step case at all (unlike `range()`, which
 # rejects a literal 0 step and aborts on a runtime one).
 #
-# Parsed at src/tychoc.c:3417-3458 into the same S_FORRANGE node `range(0, N)`
+# Parsed at src/tychoc.c:3418-3459 into the same S_FORRANGE node `range(0, N)`
 # builds, so the whole CC-3 path below it -- resolve_parfor's capture/reduction
 # scan, the lifted `__parN` chunk proc, the fan-out over K = tycho_ncpu() tasks
-# at src/tychoc.c:10125 -- is the code that was already there and already
+# at src/tychoc.c:10126 -- is the code that was already there and already
 # exercised. Nothing about chunking is new; only the spelling is.
 #
 # Every value here is a closed form, checked by hand before the golden was
