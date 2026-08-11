@@ -749,7 +749,7 @@ or an explicit "open, refused because …".
     `core:json` and `core:decimal` bullets found stale by earlier phases, this one
     needed only the two new signatures appended.
 
-- [ ] **Phase 10 — enum variant names are PACKAGE-scoped, not enum-scoped**
+- [x] **Phase 10 — enum variant names are PACKAGE-scoped, not enum-scoped**
   - Found by phase 1, not absorbed into it. Adding a second `Result`-returning
     function to `core:strings` with the obvious variant name was refused:
 
@@ -770,6 +770,96 @@ or an explicit "open, refused because …".
   - Done when: an entry states the rule with the diagnostic above, or the phase
     is closed as intended-and-documented.
   - Verify: `make check-links` only, if the change is Markdown.
+  - **Verdict (2026-08-11): (b) BIGGER THAN FILED — closed as intended-and-documented,
+    NOT implemented.** The rule the phase filed as a problem is already normative,
+    already deliberate, and `docs/spec/12-aggregates.md:620-624` already says it in
+    the exact words the phase asked for: *"Variant names are **package-scoped**: a
+    variant is written bare (`Circle`, not `Shape.Circle`), and **no two enums in one
+    package may share a variant name**"*. The spec even names and rejects
+    `Shape.Circle` — the very syntax enum-scoping would need.
+
+    **Probes (real output, today's `./tychoc`).** Two enums, one package, shared
+    variant → refused, reproducing the filed diagnostic:
+
+        p1.ty:6: error: variant name 'Empty' is already used in this package
+
+    The same two enums in packages `one` and `two`, matched as `one.Empty` /
+    `two.Empty`, **compile and run**:
+
+        built /tmp/probe/pk.bin
+        one empty
+        two empty
+
+    So the collision is per-package, not global. Enum-qualification does not exist:
+
+        p5.ty:6: error: unknown variable 'A'      # v := A.Alpha
+
+  - **Why it is not a bounded resolution edit.** The `X.Y` slot is already
+    spent on `package.Variant` (`src/tychoc.c:3058-3071` for `is`,
+    `:3315-3316` for a match arm). Enum-scoping therefore needs either a
+    three-part `pkg.Enum.Variant` path the grammar has no production for, or
+    expected-type-driven resolution — and the resolver is **synthesise-only**:
+    `src/tychoc.c:5633-5643` resolves a bare identifier to a variant through
+    `variant_find` with no expected type in hand, returning `e->type = ENUM_TYPE(eid)`.
+    Worse, variant references are **mangled at parse time** (`:3070-3071`,
+    `:3316`, `:3323`), before any type is known, so the qualifier cannot be
+    deferred without restructuring when resolution happens.
+  - **Blast radius measured, not estimated.** 106 enum declarations across 89
+    `.ty` files, 400 variants, 234 distinct names, 57 names reused by more than
+    one enum somewhere in the tree (`Leaf` 16x, `Red` 10x, `Node` 9x, `Empty`
+    9x). A conservative scan for those names as bare identifiers finds ~4,757
+    occurrences across 182 files — an over-count (it also catches same-named
+    structs) but the right order of magnitude: every constructor and every match
+    arm in the corpus would need a qualifier it currently cannot be given.
+  - **Consumers that would each need work** (enumerated before deciding, per the
+    brief): `parse_is` and its four-builtin exemption (`src/tychoc.c:3058-3071`);
+    match-arm parsing (`:3283`, `:3298`, `:3315-3337`); bare-identifier and call
+    resolution (`:5633`, `:6173`); `enum_variant_index` (`:1250-1257`), which
+    today accepts mangled *or* raw so a nested pattern can stay unqualified;
+    exhaustiveness (`side_missing` `:7615`, `die_missing_variant` `:7624`,
+    `:7944`); the declaration-time duplicate check (`:4613`); `parse_const`'s
+    collision check (`:4899-4901`); plus `tools/tychofmt.ty`, `tools/lsp.ty`,
+    `editors/`, and Appendix A. That is a language change, not a resolution fix.
+  - **What was changed instead — Markdown and comments only, line-neutral.** Two
+    sites contradicted the normative rule by claiming variant names are *globally*
+    unique, which the cross-package probe above disproves: `docs/spec/03-types.md`
+    §5.3.6 now says "uniquely named **within its package**" and points at §19.1,
+    and the two `src/tychoc.c` comments above `Variant` / `variant_find` now say
+    package-scoped. The `src/tychoc.c` edit is comment-only and **added no lines**
+    (`git diff --numstat` = `3 3`), deliberately: a single added line staled **90**
+    citations on the first attempt, and rewriting to the same line count returned
+    the gate to green without touching `scripts/reanchor_citations.py`.
+  - Gates: `make check-links` ok (119 markdown files; 143 anchored, 957 bare, 181
+    source->doc, 259 source->source, 200 `path@SYMBOL`), `sh scripts/spec_check.sh`
+    exit 0 (11 runnable examples, all pass). No compiler behaviour changed, so
+    `make test` cannot redden for this and was not run.
+
+- [ ] **Phase 13 — a function name and an enum variant name may silently collide,
+      and the variant wins** (*found by phase 10*)
+  - `parse_const` rejects a const that collides with a variant
+    (`src/tychoc.c:4899-4901` tests `variant_find`), but **no equivalent check
+    guards a function name**. Both orders compile clean:
+
+        enum A:
+            Alpha
+        fn Alpha() -> int:
+            return 7        # built /tmp/probe/p8.bin  -- and p9.bin, decls swapped
+
+    At the use site the variant wins, because `resolve_expr` tries the variant
+    before the function (`src/tychoc.c:5633` runs ahead of the `sig_find` at
+    `:5645`). `println(Alpha())` in such a file reports:
+
+        error: argument 1 of 'println' is A, expected string
+
+    — the call resolved to the nullary constructor, not to the `-> int` function,
+    and the function became unreachable by its own name with no diagnostic.
+  - Scope: decide whether the const check should extend to functions (symmetry
+    argues yes; the fix is one `sig_find` test beside `:4613`, or one
+    `variant_find` test at the `fn` declaration site) or whether the precedence
+    is deliberate and belongs in the spec beside §19.1. Out of scope for phase 10,
+    which was Markdown-only.
+  - Verify: a `tests/reject/` fixture with `# expect:` if it becomes an error;
+    `make test` if `src/tychoc.c` changes.
 
 - [x] **Phase 11 — the one-paragraph slice warning in `docs/spec/03-types.md`**
   - Entry #5 asked for prose beside the `b[i:j]` row at

@@ -330,8 +330,9 @@ Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 
 ### 5.3.6 Enums, `Option`, `Result`
 
-An `enum` is a **nominal sum type**; each variant is globally uniquely named and
-may carry a payload of up to 8 types. `Option(T)` is the built-in enum with
+An `enum` is a **nominal sum type**; each variant is uniquely named **within its
+package** ([§19.1](12-aggregates.md#191-enum-declaration-and-variants) is
+normative for the scoping rule) and may carry a payload of up to 8 types. `Option(T)` is the built-in enum with
 variants `Some(T)` and `None`; `Result(T, E)` is the built-in enum with variants
 `Ok(T)` and `Err(E)`. Enums are consumed by exhaustive `match` and support
 `or_return` for `Option`/`Result` (§19). Recursive payloads are

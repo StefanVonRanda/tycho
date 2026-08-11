@@ -1211,8 +1211,8 @@ static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
  * of 0+ types. A value is a small descriptor { int tag; void *payload } — the
  * payload (the active variant's fields) is arena-allocated, so even a recursive
  * enum (an AST: Add(Expr, Expr)) is finite, the same way arrays/strings are.
- * Variant names are globally unique, so a constructor or match arm names the
- * variant directly with no qualification. */
+ * Variant names are PACKAGE-scoped, not global: unique within one package (so a
+ * constructor or match arm names them bare), reusable across packages (`p.Empty`). */
 /* `name` is package-mangled ("net__Timeout"); `raw` is the name as written
  * ("Timeout"), kept so a NESTED match pattern can name a variant unqualified --
  * inside `Err(...)` the payload's enum type is already known, so no qualifier is
@@ -1241,7 +1241,7 @@ static int enum_find(const char *name) {
         if (!strcmp(g_enums[i].name, name)) return i;
     return -1;
 }
-/* find a variant by its (globally unique) name: returns its enum id, and writes
+/* find a variant by its already-mangled (package-unique) name: returns its enum id, and writes
  * the variant index through *vi. -1 if not a known variant. */
 /* index of the variant of enum type `t` named `nm`, or -1. `nm` matches either the
  * mangled name (from a qualified `net.Timeout` nested pattern) or the name as
