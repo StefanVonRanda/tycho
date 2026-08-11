@@ -1969,7 +1969,35 @@ to every validator.**
 or admitting `or_return` as a statement when the value is discarded. Both are
 language changes, which is why this ranks below three corelib items that are not.
 
-### 5. An enum cannot be asked which variant it is without binding a payload
+### 5. An enum cannot be asked which variant it is without binding a payload — **CONFIRMED 2026-08-11, one sub-claim corrected**
+
+> **Triage 2026-08-11.** Probed against the compiler at `680d30d`. The finding
+> holds: there is no `is` operator (`if v is VInt:` → `error: expected ':'
+> before the block`) and no tag accessor — `src/tychoc.c` has no `tag_of` or
+> equivalent, and `git log -S'tag_of' -- src/tychoc.c` is empty, so one never
+> existed. A hand-written `kind()` is still the only way to get a variant as a
+> **value**.
+>
+> **Two things below are wrong and are corrected here.**
+>
+> 1. *"a match arm must name a binder it never uses"* — it must name the right
+>    **arity**, not a name. `_` is accepted: `VInt(_): println("int")` compiles
+>    and runs. The decoration is one underscore per arm, not an invented
+>    identifier. What is refused is dropping the parens entirely —
+>    `VInt: return 1` → `error: VInt binds 1 value(s), got 0`
+>    (`src/tychoc.c:7876`).
+> 2. *"without binding a payload"* — a **nullary** variant needs no match at
+>    all: `if v == VNull:` compiles and runs. `==` is a working discriminator
+>    for the payload-free half of an enum. It stops at the other half:
+>    `if v == VInt:` → `error: VInt carries a payload — write VInt(...)`
+>    (`src/tychoc.c:5606`).
+>
+> So the real gap is narrower than the heading: **a payload-carrying variant
+> has no value-level discriminator**, and `match` is the only test for it.
+> `tools/tycho-q/main.ty@kind` is still the workaround, and the arms in it are
+> `(_)`-cheap rather than name-cheap.
+
+The original text follows.
 
 There is no `is`, no tag accessor, and a match arm must name a binder it never
 uses. `Value` needs its tag **constantly** — every comparison rule, every
@@ -1983,7 +2011,55 @@ discriminator, and the only way to get one is to build it.** The alternative is
 that decoration at every site, which is where a reader stops being able to see
 which arms actually use their payloads.
 
-### 6. Two error types cannot share an `or_return` chain
+### 6. ~~Two error types cannot share an `or_return` chain~~ — **WRONG MECHANISM, corrected 2026-08-11**
+
+> **Triage 2026-08-11.** The load-bearing sentence below — "**no function can
+> propagate across the boundary**" — is false, and was false when it was
+> written. `result.map_err` (`corelib/result/result.ty:120`) already converts a
+> `Result`'s error type, and the converted value feeds `or_return` directly.
+> Probed:
+>
+> ```
+> fn both(s: string) -> Result(int, RErr):
+>     n := result.map_err(parse(s), FromParse) or_return   # parse returns Result(int, PErr)
+>     return Ok(n)
+> $ ./tychoc q6b.ty -o q6b
+> built q6b
+> ```
+>
+> What genuinely reproduces is the **unconverted** chain, and only that:
+>
+> ```
+> n := parse(s) or_return          # inside fn both(...) -> Result(int, RErr)
+> error: or_return propagates a PErr error, but the function's error type is RErr
+> ```
+>
+> — `src/tychoc.c:5570-5572`. So the rule is "no *implicit* conversion", not
+> "no conversion".
+>
+> The second, smaller true claim: `map_err` takes a **constant** replacement
+> (`corelib/result/result.ty:120`), so the original cause is discarded — the
+> package's own header states that cost deliberately. But a cause-**preserving**
+> combinator is four lines of ordinary Tycho, needs no compiler change, and
+> composes with `or_return`. Probed end to end, `Syntax(7)` arriving as
+> `FromParse(7)`:
+>
+> ```
+> fn map_err_with(r: Result($T, $E), f: fn($E) -> $F) -> Result($T, $F):
+>     match r:
+>         Ok(v): return Ok(v)
+>         Err(e): return Err(f(e))
+> $ ./q6c
+> off=7
+> ```
+>
+> **This is therefore not a language item.** It is at most one generic function
+> added to `core:result`. The entry's closing worry — three error types paying
+> "at every boundary, with no language feature to make it cheaper" — costs one
+> wrapped call per boundary today, and the collapse-into-one-type pressure it
+> predicts does not follow.
+
+The original text follows.
 
 `PErr` (parse — carries a byte offset) and `RErr` (runtime — carries a column name
 or nothing) genuinely differ, and folding them would put a meaningless `off: 0` on
@@ -1999,6 +2075,32 @@ would be to collapse them into one type carrying fields that are meaningless for
 two thirds of its values.
 
 ### 7. `core:iter` is unusable for a fallible pipeline stage — and this entry got *smaller* as it was written
+
+> **Triage 2026-08-11 — CONFIRMED, unchanged, and correctly sized.** Both
+> diagnostics below reproduce **verbatim** against the compiler at `680d30d`;
+> `corelib/iter/iter.ty` still declares `keep: fn($T) -> int`
+> (`corelib/iter/iter.ty:20`) and still has no fallible counterpart — its five
+> functions are `map`, `filter`, `reduce`, `count`, `any` and nothing else.
+> Its last two commits (`eabb763`, `43eb558`) touched neither.
+>
+> The entry's "cost to fix: a signature, not a language change" is now
+> **verified rather than argued**: the fully generic fallible map compiles and
+> runs today, with no compiler change, inferring `$T`, `$U` and `$E` at once —
+>
+> ```
+> fn try_map(xs: [$T], f: fn($T) -> Result($U, $E)) -> Result([$U], $E):
+>     out := []
+>     for v in xs:
+>         push(out, f(v) or_return)
+>     return Ok(out)
+> $ ./q7d
+> 2
+> ```
+>
+> The `bool` half is equally cheap: the int-predicate signature has **five call
+> sites in the whole tree**, all under `corelib/test/iter/` and
+> `examples/corelib/iter/`, so flipping `keep`/`pred` to `bool` costs those
+> five lines and two goldens.
 
 **Labelled a correction, because the first version of this finding was too broad
 and a probe disproved it.** The row filter is the exact shape `core:iter` exists

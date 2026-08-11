@@ -426,24 +426,74 @@ or an explicit "open, refused because …".
     `Err(DivByZero)` path, with its golden re-recorded.
   - Verify: `make corelib-examples` (~44s). Not `make corelib`, not `make test`.
 
-- [ ] **Phase 7 — tycho-q #5 an enum cannot be asked which variant it is**
-  - Scope: `src/tychoc.c`. The entry notes the pattern-discard fix mitigated it;
-    establish whether anything remains before designing syntax.
-  - Done when: a tag test exists with fixtures, or the entry is struck as
-    mitigated with the spelling that works today.
+- [x] **Phase 6c — triage tycho-q #5, #6, #7 against the source (no fixes)**
+  - Dispatched out of plan order, because five of the eight entries worked in
+    this chain turned out to be already fixed or wrong about their own
+    mechanism. One probe per entry, compiled and run against the compiler at
+    `680d30d`; FRICTION.md corrected in place. No implementation.
+  - **Verdicts.** #5 **CONFIRMED with two sub-claims corrected** — no `is`, no
+    tag accessor, but a match arm needs the right *arity*, not a name (`VInt(_)`
+    compiles), and `v == VNull` already discriminates a nullary variant.
+    #6 **WRONG MECHANISM** — `result.map_err`
+    (`corelib/result/result.ty:120`) already bridges two error types into one
+    `or_return` chain; only *implicit* conversion is missing, and a
+    cause-preserving combinator is four lines of Tycho. #7 **CONFIRMED**,
+    both diagnostics verbatim, and its "a signature, not a language change"
+    sizing is now verified by a working generic `try_map`.
+  - Evidence: the probe outputs are quoted inside each entry's triage block in
+    `docs/internals/FRICTION.md`.
+  - Verified: `make check-links` (link check ok, citation check ok). `make test`,
+    `make corelib` and `make ci` deliberately not run — a Markdown-only change
+    cannot redden any of them.
+
+- [ ] **Phase 7 — tycho-q #5 a payload-carrying variant has no value-level discriminator**
+  - **Re-scoped by the phase 6c triage.** The gap is real but narrower than the
+    entry claimed: `_` binders and `==` on nullary variants already cover the
+    cheap half, so what remains is a way to test a *payload-carrying* variant
+    without a `match`.
+  - **This is a language change — `src/tychoc.c` — and the only one of the
+    three that is.** It needs a new expression form (an `is` operator, or a
+    `tag(v)` accessor yielding an `int`), which touches the lexer, the parser,
+    the resolver's type rules and the C emitter, plus spec text in
+    `docs/spec/02-grammar.md` and `docs/spec/10-statements.md`, plus fixtures.
+    Order of cost: days, not the hour a corelib addition costs. The workaround
+    (`tools/tycho-q/main.ty@kind`, one hand-written function per enum that
+    needs it) is cheap enough that this should stay below both other items.
+  - Done when: a payload-carrying variant can be tested without a `match`, with
+    fixtures — or the entry is closed as accepted-cost with the spelling above.
   - Verify: `make test`.
 
-- [ ] **Phase 8 — tycho-q #6 two error types cannot share an `or_return` chain**
-  - Scope: likely `corelib/result/`. `result.map_err` already exists and closed a
-    sibling entry — re-probe whether this one is the same fact recorded twice.
-  - Done when: fixed, or struck with the spelling that works.
-  - Verify: `make corelib`.
+- [ ] **Phase 8 — tycho-q #6 add a cause-preserving `map_err_with` to `core:result`**
+  - **Re-scoped by the phase 6c triage: this is NOT a language change.** The
+    original framing ("no function can propagate across the boundary") was
+    disproven by probe. What is left is one gap in `core:result`: `map_err`
+    replaces the error with a constant, so the cause is lost.
+  - Scope: `corelib/result/result.ty` — roughly four lines, the same shape
+    already probed working in a `package main` program:
+    `fn map_err_with(r: Result($T, $E), f: fn($E) -> $F) -> Result($T, $F)`,
+    plus a test case in `corelib/test/result/main.ty` and its golden, plus the
+    package header note explaining when to reach for it over `map_err`.
+  - Judgment call to make first: `map_err`'s header argues *against* a function
+    form on purpose. That argument is about the common case; it does not cover
+    an error carrying a payload worth keeping. Decide, and record the decision —
+    "won't do, with reasons" is a legitimate outcome here.
+  - Done when: added with a corelib test, or refused in the entry with reasons.
+  - Verify: `make corelib` (~49s). Not `make test`.
 
-- [ ] **Phase 9 — tycho-q #7 `core:iter` unusable for a fallible pipeline stage**
-  - Scope: `corelib/iter/`.
-  - Done when: a fallible stage is expressible with a fixture, or the entry
-    states the refusal with its cost.
-  - Verify: `make corelib`.
+- [ ] **Phase 9 — tycho-q #7 `core:iter` has no fallible stage and spells predicates as `int`**
+  - **Confirmed by the phase 6c triage; sizing verified, not argued.** A
+    corelib change only.
+  - Scope: `corelib/iter/iter.ty` (44 lines today), two independent halves —
+    (a) add `try_map` / `try_filter` over `fn($T) -> Result(_, $E)`; the generic
+    signature is already probed compiling and running.
+    (b) flip `filter`'s `keep` and `count`/`any`'s `pred` from `fn($T) -> int`
+    to `fn($T) -> bool`. Five call sites in the whole tree, all under
+    `corelib/test/iter/` and `examples/corelib/iter/` — a breaking change with
+    a five-line blast radius, so do it now or never.
+  - Done when: a fallible stage is expressible with a corelib test, goldens
+    re-recorded, and `examples/corelib/iter/main.ty` updated if (b) lands.
+  - Verify: `make corelib` (~49s), plus `make corelib-examples` (~44s) only if
+    the worked example changed.
 
 - [ ] **Phase 10 — enum variant names are PACKAGE-scoped, not enum-scoped**
   - Found by phase 1, not absorbed into it. Adding a second `Result`-returning
