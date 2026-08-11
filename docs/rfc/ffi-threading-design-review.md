@@ -290,7 +290,7 @@ these cases, and the docs only partially flag them:
    library hit whatever sharing that library has. The repo's own crypto shim is
    a live example to scrutinize:
    - The recycled return buffer is `static __thread char *g_out`
-     (`corelib/crypto/crypto_shim.c:36`), so it *is* per-thread-safe — good.
+     (`corelib/crypto/crypto_shim.c:43@g_out`), so it *is* per-thread-safe — good.
      But this is a property of *this* shim, not of the FFI, and it relies on
      Tycho arena-copying the returned string before the next call
      (`crypto_shim.c:10-14`). A shim author who uses a plain `static` buffer
@@ -336,7 +336,7 @@ these cases, and the docs only partially flag them:
   > (shared but internally synchronized), or failure isolation (a panic in any
   > task aborts the whole process).
 - Add an **"FFI from threads"** subsection: shims that return a buffer must use
-  `__thread` (point to `corelib/crypto/crypto_shim.c:36` as the reference
+  `__thread` (point to `corelib/crypto/crypto_shim.c:43@g_out` as the reference
   pattern), and the bound C library must be documented thread-safe for the
   calls made.
 - *Effort.* Trivial. *Value.* High — the current wording is the specific thing

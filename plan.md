@@ -228,7 +228,7 @@ site is either implemented or written down as a refusal with its cost.
   - **Comment budget:** +106 lines in `scripts/check_citations.py`, 11 of them
     comment lines.
 
-- [ ] **Phase 4 — decide what to do about the 290 un-anchored single-line
+- [x] **Phase 4 — decide what to do about the 290 un-anchored single-line
       refs** *(discovered by Phase 3, out of its scope, not absorbed)*
 
   `python3 scripts/check_citations.py --report` lists them. Each proves a line
@@ -241,6 +241,47 @@ site is either implemented or written down as a refusal with its cost.
   whose cited line already contains a token occurring once in the range? Size
   that subset before touching anything.
 
+  **Done 2026-08-11. The subset is small, and the reason is the finding.**
+  `make check-links` green after every file; the 290 refs the phase started from
+  became **252**, 38 converted. The gate now reports 268, not 252: this evidence
+  block and Phase 6 below cite the rot they describe, adding 16 bare refs of
+  their own. They stay bare on purpose — a ref whose job is to name a line that
+  says the *wrong* thing has no honest anchor. A mechanical proposer was written and **rejected**: requiring only
+  "a token occurring once in the range" makes every line anchorable, and for a
+  one-line ref the range *is* the line, so the gate constraint is free and
+  carries no signal. Anchoring on a token the citing sentence does not name
+  produces a false anchor — reddens on an unrelated edit, passes through a real
+  one. The rule that held is **the anchor must be the subject of the citing
+  sentence**, which no script can decide.
+
+  | category | n | note |
+  |---|---|---|
+  | `path@SYMBOL` (definition) | 15 | the best form; survives insertions entirely |
+  | `path:N@token` | 23 | non-definition line with a distinctive subject token |
+  | left bare, deliberately | 252 | prose, comment continuations, refs into frozen `compiler/tychoc0.ty` (which cannot drift), and rotted refs that have no honest anchor |
+
+  **23 of the 38 conversions were also rot repairs** — the citing sentence and
+  the cited line disagreed, each confirmed by reading the source: `stats_dump`
+  (`runtime/tycho_rt.c@stats_dump`, cited as `:416`), `arena_recycle` (`:548` →
+  the body of `block_get`), `TYCHO_BLOCK` (`:466` → `:521`), `g_out`
+  (`corelib/crypto/crypto_shim.c:43@g_out`, cited as `:35` and twice as `:36`),
+  pop-on-empty (line 12121 → `src/tychoc.c:12981@pop`), tuple arity (lines 2018
+  and 2014 → `src/tychoc.c:5592@least` and `src/tychoc.c:5593@most`), `or_return`
+  in a `parallel for` (line 6639 → `src/tychoc.c:7146@or_return`), the
+  inout-aliasing rule (line 6150 → `src/tychoc.c:6662@alias`), the 16-parameter
+  cap (line 8075 → `src/tychoc.c:8688@parameters`), `split_once` (line 193, an
+  unrelated `enum FloatErr`, → `corelib/strings/strings.ty@split_once`),
+  `read_request_capped` (line 242 → `corelib/httpd/httpd.ty@read_request_capped`),
+  `netx_peer_addr` (line 204 → `corelib/net/net_shim.c@netx_peer_addr`), the
+  shutdown line (line 646 → `server/main.ty:1088@stopped`), CI step `[3c/13]`
+  (line 111 → `scripts/ci.sh:233@server`), the `match` grammar production (line
+  130, which is `CompoundAssign`, → `docs/spec/appendix-a-grammar.md:136@match`),
+  and `TYCHO_BLOCK_DEFAULT` (line 51, an `#include`, →
+  `runtime/tycho_rt.c:80@TYCHO_BLOCK_DEFAULT`).
+
+  **Nine rotted refs were flagged, not fixed**, because repairing them means
+  rewriting a prose claim rather than a coordinate — see Phase 6.
+
 - [ ] **Phase 5 — `bench/prongB/RESULTS.md` writes output checksums that read
       as commit hashes** *(discovered by Phase 3, deliberately not guessed at)*
 
@@ -250,6 +291,48 @@ site is either implemented or written down as a refusal with its cost.
   Label them at the source (`crc=…` or `out-sha=…`) so the ambiguity is gone.
   Not done here: it edits a benchmark record whose provenance belongs to
   whoever measured it.
+
+- [ ] **Phase 6 — rotted citations whose repair is a prose rewrite, not a
+      re-point** *(discovered by Phase 4, out of its scope, not absorbed)*
+
+  Each was confirmed by reading the cited source. None is a coordinate that can
+  simply be moved; the surrounding sentence asserts something the tree no longer
+  does, so fixing it is a content decision for whoever owns the claim.
+
+  - `ROADMAP.md:231` says `corelib/result/result.ty:71` "is `Ok(v): return
+    true`". Line 71 is a comment and `is_ok` has no `match` at all —
+    `corelib/result/result.ty:75-76` is `return r is Ok`. The paragraph records a
+    `Result(void, E)` gap that the `is` operator has since closed.
+  - `ROADMAP.md:233` cites `` `:76` `` for `is_err`; `is_err` is at
+    `corelib/result/result.ty:78`, and 76 is inside `is_ok`.
+  - `docs/bootstrap.md:106-107` says four runners "**still** feed their entry
+    point to a freshly built `tychoc0`". All four retired that leg on 2026-07-29
+    and say so themselves (`examples/weblog/run.sh:49`,
+    `examples/webserver/run.sh:59`, `examples/sqlite/run.sh:67`). The same line
+    then credits `scripts/frontparity.sh`, which is retired.
+    `docs/spec/appendix-e-conformance.md:362-363` repeats the citation cluster.
+  - `server/README.md:276` cites `docs/internals/FRICTION.md:601` for a
+    `write-failed` log line. The string `write-failed` does not occur anywhere in
+    `docs/internals/FRICTION.md`.
+  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9415` as `ncpu()`'s
+    lowering; that line is `collect_append_ops`.
+  - `docs/internals/FRICTION.md:1020` quotes a comment it places at
+    `corelib/test/io/main.ty:43`; that line is `fn sl(...)`.
+
+  **And the systemic case, which is the one worth costing.** Whole documents
+  have drifted as a block, every ref into `src/tychoc.c` or
+  `runtime/tycho_rt.c`: `docs/spec/15-program.md` (15 refs — `main` at `:12565`
+  is a map typedef; the `--cc` flag at `:12920` is an `fprintf`),
+  `docs/internals/design-scalar-match.md` (the `S_MATCH` pass at `:7572` is a
+  bare `}`; codegen at `:10309` is a blank line),
+  `docs/rfc/value-lifetime-regions.md` (the `&_scope` default at `:7423` is
+  `pr->name = sfmt("__par%d", id)`), plus
+  `docs/internals/value-semantics-limits.md` and
+  `docs/rfc/limited-references-spike.md`. This is exactly what
+  `docs/internals/FRICTION.md`'s own last entry predicted: bounds-checking a
+  bare ref into a 12k-line file can never fail. Re-pointing them is a day's work
+  that lasts until the next compiler phase; anchoring them as they are
+  re-pointed is what makes the repair hold.
 
 ## Out of scope
 

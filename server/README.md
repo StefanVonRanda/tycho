@@ -56,7 +56,7 @@ filed as phase 15 of the signals plan.
 | **Byte ranges** | One range. `Range: bytes=A-B` (both ends inclusive, `B` clamped to the last byte), `bytes=A-` and the suffix `bytes=-N` get `206` with `Content-Range: bytes A-B/LEN` and a `Content-Length` of the **slice**. A range with no satisfiable byte is `416` with `Content-Range: bytes */LEN`. An invalid spec, an unknown unit or a multipart request is ignored: `200`, whole file. `Accept-Ranges: bytes` goes on exactly the `200` for a file and the `206`. A `304` outranks a `Range` (RFC 7232 §6). |
 | **Keep-alive** | HTTP/1.1 default-on, `Connection: close` honoured, HTTP/1.0 defaults to close. Up to 1024 requests per connection. |
 | **Idle timeout** | `SO_RCVTIMEO` on each accepted socket, so a silent peer cannot pin a worker. |
-| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:646`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
+| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:1088@stopped`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
 | **Statuses** | 200, 206, 301, 304, 400, 403, 404, 405, 408, 416, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
 | **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:343-353`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
 
@@ -175,7 +175,7 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   was unreachable from Tycho — and unreachable in a way no Tycho program could
   work around, since `net.accept` hands back a bare fd.
   **Fixed 2026-07-26** (`7b76fcd`): `netx_peer_addr` is `getpeername` + `inet_ntop`
-  (`corelib/net/net_shim.c:204`), surfaced as
+  (`corelib/net/net_shim.c@netx_peer_addr`), surfaced as
   `fn peer_addr(fd: int) -> Result(string, NetErr)`
   (`corelib/net/net.ty:144@peer_addr`) and used at
   `server/main.ty@peer_addr` — asked **once per connection**, not once per
@@ -205,7 +205,7 @@ And a third, closed on **2026-07-31**:
   readiness banner, so no reader is told "serving" while `SIGTERM` still has its
   default disposition. **No new control flow was added** — every blocked
   `accept` returns `Err`, every loop retires, every spawned peer is joined, and
-  `server/main.ty:646` prints the count that was always unreachable. It fails
+  `server/main.ty:1088@stopped` prints the count that was always unreachable. It fails
   closed: a handler that cannot be installed warns on stderr and the server runs
   on with the old behaviour.
 
@@ -317,7 +317,7 @@ the script**, because from the pass line a control and a proof look identical. A
 case, so a regression that leaves one accept loop blocked reddens this gate
 instead of hanging it. `make server-check`
 runs it (`Makefile:247-248`), and it has been in `make ci` as step **`[3c/13]`**
-since 2026-07-30 (`scripts/ci.sh:111`), immediately after `[3b] entrypoints` —
+since 2026-07-30 (`scripts/ci.sh:233@server`), immediately after `[3b] entrypoints` —
 so a server that does not *build* reddens there with a compile error rather than
 arriving here as a readiness timeout. It skips with a `SKIP` line and exit 0 if
 `python3` is absent.

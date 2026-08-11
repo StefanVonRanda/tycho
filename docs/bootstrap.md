@@ -1,8 +1,8 @@
 # The bootstrap: how Tycho self-hosted, and what is left of it
 
 This document exists because three files in the tree cite it by name —
-`compiler/tychoc0.ty:617`, `compiler/run.sh:3` ("Stage 1 of docs/bootstrap.md") and
-`compiler/fixpoint.sh:2` ("Stage 4 self-host fixpoint (docs/bootstrap.md)") — and
+`compiler/tychoc0.ty:617`, `compiler/run.sh:2@bootstrap` ("Stage 1 of docs/bootstrap.md") and
+`compiler/fixpoint.sh:2@bootstrap` ("Stage 4 self-host fixpoint (docs/bootstrap.md)") — and
 until 2026-07-26 it did not exist. The stage numbers in those headers had no
 referent, which is the whole reason for this page: it names the stages, says which
 script runs each one, and states plainly that **none of them runs in a gate any

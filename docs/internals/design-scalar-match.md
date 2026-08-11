@@ -45,7 +45,7 @@ int** (`src/tychoc.c:5504`), so the char-position ladders all compare ints.
   a fail-closed fallback (observed in emitted C:
   `fprintf(stderr, "tycho: non-exhaustive match\n"); exit(1)`).
 - **Spec** — §14.3 `docs/spec/10-statements.md:32-60`; grammar rule
-  `docs/spec/appendix-a-grammar.md:130`.
+  `docs/spec/appendix-a-grammar.md:136@match`.
 
 ## Decisions
 
@@ -185,7 +185,7 @@ per-compare figure assumed. Neither number is a reason to build for speed.
   form (`x := match c: ...`) works without separate work.
 - **Spec** — §14.3 (`docs/spec/10-statements.md:32-60`), the statements
   section that names the arm forms, and the grammar
-  (`docs/spec/appendix-a-grammar.md:130`).
+  (`docs/spec/appendix-a-grammar.md:136@match`).
 - **Fixtures** — ordinary `tests/` fixtures (the freeze lanes are retired;
   new syntax gets a plain fixture again): accepted forms, the value form,
   and rejects — dup, overlap, missing `_` on int, literal arm on enum,

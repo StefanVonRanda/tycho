@@ -37,7 +37,7 @@ and it is reached with zero manual management.
 The peak-RSS tables above are the memory model's *output*. What the model does
 underneath — how much it reserves, how much it reuses, where the live set sits —
 is observable directly: `TYCHO_ARENA_STATS=full <program>` prints a one-shot
-summary at exit (`runtime/tycho_rt.c:416`): peak live bytes (the working-set
+summary at exit (`runtime/tycho_rt.c@stats_dump`): peak live bytes (the working-set
 high-water), total bump-allocated bytes, the free-list recycle rate, OS-reserved
 bytes over blocks, the block-pool reuse rate, and a per-function — now
 per-statement, see below — residency table. Measured 2026-08-04 on this machine
@@ -62,7 +62,7 @@ Three things the numbers say that the RSS tables cannot:
    exactly. The 64 KiB block only shows up as slack on toy programs (a 40 B
    peak over a 64 KiB block).
 2. **Free-list recycling is workload-shaped, and now countable.** The
-   liveness-driven recycle (`arena_recycle`, `runtime/tycho_rt.c:548`) is zero
+   liveness-driven recycle (`runtime/tycho_rt.c@arena_recycle`) is zero
    where the working set is held (interp/json/gcscan/trie — trees stay live),
    and up to 17% of allocations where loop-carried rebuilds hand dead buffers
    back (optstr_build, strarr_build, structarr_build, lru). Before the counter
@@ -78,7 +78,7 @@ Three things the numbers say that the RSS tables cannot:
    the function total.
 
 **Block size is a memory-only knob.** `TYCHO_BLOCK=<bytes>` overrides the
-64 KiB default per run (read once at startup, `runtime/tycho_rt.c:466`). A
+64 KiB default per run (read once at startup, `runtime/tycho_rt.c:521@TYCHO_BLOCK`). A
 sweep on the three big workloads, same machine:
 
 | block | interp peak/OS | json peak/OS | lru peak/OS | wall (interp/json/lru) |

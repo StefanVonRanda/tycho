@@ -287,12 +287,12 @@ fn main():
 
 Worked examples in the corelib, because the shape is easy to miss when the type
 section is the only place it appears: `strings.split_once(s, sep) -> (before, after)`
-(`corelib/strings/strings.ty:193`), `path.split_path(p) -> (dir, base)`
-(`corelib/path/path.ty:95`), `datetime.parse_offset(s, at) -> (int, bool)` — the
-value-and-verdict form above (`corelib/datetime/datetime.ty:248`),
-`bignum.divmod(a, b) -> (Big, Big)` (`corelib/bignum/bignum.ty:265`), and
+(`corelib/strings/strings.ty@split_once`), `path.split_path(p) -> (dir, base)`
+(`corelib/path/path.ty@split_path`), `datetime.parse_offset(s, at) -> (int, bool)` — the
+value-and-verdict form above (`corelib/datetime/datetime.ty@parse_offset`),
+`bignum.divmod(a, b) -> (Big, Big)` (`corelib/bignum/bignum.ty@divmod`), and
 `httpd.read_request_capped(fd, cap) -> (Result(Request, ReqErr), string)`
-(`corelib/httpd/httpd.ty:242`), which carries a classification *and* the raw bytes
+(`corelib/httpd/httpd.ty@read_request_capped`), which carries a classification *and* the raw bytes
 that produced it. For a C function that must classify a payload the FFI has its own
 shape, since a tuple does not cross the boundary — see
 [§24.1.1](14-ffi.md#2411-returning-a-payload-and-a-classification).

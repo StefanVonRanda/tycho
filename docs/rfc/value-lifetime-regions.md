@@ -226,7 +226,7 @@ takes (`docs/guides/memory-model.md:40-41`). The lowering is nearly free; the en
 cost is in the source language and the checker.
 
 **Verdict.** This is a lifetime-annotation system with a different keyword. It
-contradicts `docs/thesis.md:10` ("no lifetime annotations, no borrow checker") not
+contradicts `docs/thesis.md:10@borrow` ("no lifetime annotations, no borrow checker") not
 incidentally but at the load-bearing joint. Reject.
 
 ### 4.2 Design B — the value-homed arena (the region is a hidden field, never a type variable)
@@ -295,7 +295,7 @@ its arena, that arena is reachable *from the value*, and the hidden parameter is
 longer needed for region-bearing types.
 
 **The arithmetic that decides it.** `arena_new(0)` sets `blocksz` to
-`TYCHO_BLOCK_DEFAULT` = 65536 (`runtime/tycho_rt.c:51`, `:400`), and the first
+`TYCHO_BLOCK_DEFAULT` = 65536 (`runtime/tycho_rt.c:80@TYCHO_BLOCK_DEFAULT`, `:400`), and the first
 allocation in a fresh arena takes a block of `max(n, blocksz)`
 (`runtime/tycho_rt.c:475-480`) from the thread-local pool or, failing a fit, from
 `malloc` (`runtime/tycho_rt.c:359-389`). So **every live region holds a 64 KiB block

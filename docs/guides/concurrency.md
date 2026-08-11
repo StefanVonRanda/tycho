@@ -106,9 +106,9 @@ it is the *requested* width, not always the width used: the chunk count is
 `ncpu()` report 100 while 64 chunks run.
 
 Worked example of the sugar: `tests/conc/parfor_chan.ty` — its `parallel for x
-in jobs:` at `tests/conc/parfor_chan.ty:16` is this construct and nothing else.
+in jobs:` at `tests/conc/parfor_chan.ty:16@parallel` is this construct and nothing else.
 `tests/conc/workers.ty` is the *manual* form the sugar replaces (its own header
-says so at `tests/conc/workers.ty:2`); read it to see what the sugar saves, not
+says so at `tests/conc/workers.ty:2@parallel`); read it to see what the sugar saves, not
 as the way to write this.
 
 A `parallel for` body may also `send` on a captured channel — that is how a
