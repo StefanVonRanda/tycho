@@ -1389,7 +1389,7 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
 `make corelib` not run and not needed: the only `corelib/` file touched is
 `corelib/net/net_shim.c`, and only a `path:line` inside a comment.
 
-- [ ] **The gate table sends a corelib-only change to a lane that cannot redden for it**
+- [x] **The gate table sends a corelib-only change to a lane that cannot redden for it**
   - The bug above was introduced by `17c47c4`, a commit that changed **only**
     `corelib/`. `CLAUDE.md`'s gate table (and its contributor-facing copy in
     `CONTRIBUTING.md`) says: "**A `corelib/` change** → `make corelib`, plus
@@ -1418,6 +1418,55 @@ failed**, against a 622/0 baseline — +1, exactly the new fixture, no silent lo
     for a corelib-only change, and that lane is shown to redden at `17c47c4`.
   - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`
     only — the phase edits Markdown. **Do not run `make test` or `make ci`.**
+
+  **Evidence (2026-08-11). The candidate fix was WRONG, and measuring it is what
+  showed that.** `scripts/entrypoints.sh` globbed `examples/*/` and appended
+  `server/main.ty` — it never touched `tools/`. Checked out `17c47c4` in a
+  worktree, deleted `tychoc` and rebuilt it there so the binary was genuinely
+  that commit's, then ran the candidate unmodified:
+
+      entrypoints: ok (11 entry points compile with tychoc)
+      entrypoints exit=0
+
+  Green at the commit that shipped a red `make ci`. Adding it to the corelib row
+  as filed would have documented a check that does not check. The breakage is
+  real and reproducible there — compiling each `tools/*/main.ty` by hand at that
+  commit, 12 pass and one does not:
+
+      FAIL  tools/tycho-vm/main.ty
+      tools/tycho-vm/main.ty:967: error: argument 1 of 'print' is inout; pass it as '&variable'
+
+  **So the fix is to close the lane's hole, then name it.** `scripts/entrypoints.sh`
+  now also globs `tools/*/main.ty`, with `tools/tycho-vm/main.ty` added to its
+  fail-closed MUST list and its floor raised from 6 to 18 so a broken glob still
+  cannot go vacuous. On `main` it is green over the wider set and costs
+  essentially nothing:
+
+      entrypoints: ok (24 entry points compile with tychoc)
+      exit=0  elapsed=.141452176s
+
+  Copied that same script back into the `17c47c4` worktree — the decisive test:
+
+      FAIL    tools/tycho-vm/main.ty
+      entrypoints: FAILED (1 of 24 entry points do not compile)
+      exit=1
+
+  **The cost trade, measured rather than dodged.** Telling every corelib change
+  to run every tool lane would be `vm-check`+`kv-check`+`q-check`+`ar-check`+
+  `scheme-check` ≈ 12s — not ruinous, but it *still* misses the eight tool
+  programs with no lane at all (`prunner`, `tycho-build`, `tycho-chess`,
+  `tycho-debug`, `tycho-fetch`, `tycho-kvsrv`, `tycho-rsa`, `tycho-sat`). The
+  0.15s compile-only sweep covers all thirteen. It buys strictly less per program
+  — compile, not run — but it is the right instrument for THIS failure class,
+  which is a consumer that stops compiling.
+
+  Both tables updated together, as the standing rule requires: `CLAUDE.md` gains
+  an `sh scripts/entrypoints.sh` row and a new bullet under "The rule";
+  `CONTRIBUTING.md` gains the matching row under "Which gate for which change".
+  Both spell out that the trigger is a **symbol** change, not any corelib edit.
+
+  Gates: `sh scripts/entrypoints.sh` (24/24, exit 0) since a script changed,
+  plus `make check-links`. Not `make ci`.
 
 - [x] **Phase N — `tests/reject/` fixtures pin *that* a program is refused, never
       *why*** (*filed by the `core:image` phase; third independent sighting*)

@@ -38,7 +38,7 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 # The entry points with no gate of their own. Losing one of these to a rename is
 # exactly the rot this lane exists to prevent, so they are named, not globbed.
 MUST="examples/webserver/main.ty examples/weblog/main.ty examples/fetch/main.ty
-      examples/sqlite/demo.ty server/main.ty"
+      examples/sqlite/demo.ty server/main.ty tools/tycho-vm/main.ty"
 missing=""
 for m in $MUST; do [ -f "$m" ] || missing="$missing $m"; done
 [ -z "$missing" ] || { echo "entrypoints: MUST-COVER FILE GONE:$missing -- this lane asserts LESS than it claims; fix the list or restore the file"; exit 1; }
@@ -56,6 +56,15 @@ for d in examples/*/; do
     fi
 done
 list="$list server/main.ty"
+# tools/<name>/main.ty too. Until 2026-08-11 this lane stopped at examples/ and
+# server/, so 13 tool programs had no COMPILE check outside the five tool lanes
+# (vm/kv/q/ar/scheme) -- and eight of them have no lane at all. Measured at
+# 17c47c4, a corelib-only commit: this lane was GREEN and
+# `tychoc tools/tycho-vm/main.ty --emit-c` was RED, which is the whole reason
+# the corelib row of the gate table could not name it.
+for d in tools/*/; do
+    [ -f "${d}main.ty" ] && list="$list ${d}main.ty"
+done
 
 n=0; fail=0
 for e in $list; do
@@ -71,7 +80,7 @@ for e in $list; do
 done
 
 # A zero-length sweep is a broken gate, not a green one.
-[ "$n" -ge 6 ] || { echo "entrypoints: only $n entry point(s) found -- the glob is broken, this lane asserts NOTHING"; exit 1; }
+[ "$n" -ge 18 ] || { echo "entrypoints: only $n entry point(s) found -- the glob is broken, this lane asserts NOTHING"; exit 1; }
 echo "-----------------------------------------"
 [ "$fail" -eq 0 ] || { echo "entrypoints: FAILED ($fail of $n entry points do not compile)"; exit 1; }
 echo "entrypoints: ok ($n entry points compile with tychoc)"
