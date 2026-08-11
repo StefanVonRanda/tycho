@@ -160,7 +160,9 @@ is unaffected. They are **not** reserved:
 - **Construct bodies:** `yield` (in a `subscript`), `free` (in a `handle`),
   `range` (in the head of a `for … in`, **only to refuse it** since 2026-07-29).
 - **Value constructors treated as identifiers:** `None`, `Some`, `Ok`, `Err`,
-  and the match wildcard `_`.
+  and the match wildcard `_`. Unlike the builtin functions below, these four
+  cannot be shadowed: a `fn` or `const` of one of those names is rejected in
+  every package ([§19.1](12-aggregates.md#191-enum-declaration-and-variants)).
 - **Built-in functions:** every builtin (`len`, `push`, `pop`, `print`, `str`,
   `to_int`, `wait`, `send`, `recv`, `close`, …) is an ordinary identifier
   resolved as a call; none is reserved ([§29](16-builtins.md)).

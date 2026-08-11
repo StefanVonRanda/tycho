@@ -630,6 +630,14 @@ implementation MUST reject the program (`error: 'Name' is already defined`).
 The rule exists because a bare variant wins at the use site, so such a function
 would be silently unreachable by its own name.
 
+The four builtin constructors `Ok`, `Err`, `Some` and `None` are covered by the
+same rule in **every** package, not just the one that declares them: they are
+recognised by their spelling wherever they appear, so a `fn` or `const` of one
+of those names is unreachable everywhere and MUST be rejected with the same
+diagnostic. This is not the §3.7 builtin shadowing that a warning describes —
+that shadowing redirects a name to the new declaration, and these four cannot
+be redirected at all.
+
 ```tycho
 enum Shape:
     Circle(float)            # a variant with a payload

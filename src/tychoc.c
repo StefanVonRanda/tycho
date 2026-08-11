@@ -4142,7 +4142,7 @@ static int shadows_builtin(const char *n) {
     for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
     return 0;
 }
-
+static int is_builtin_ctor(const char *n) { return n && (!strcmp(n, "Ok") || !strcmp(n, "Err") || !strcmp(n, "Some") || !strcmp(n, "None")); }
 static Proc *parse_fn(Parser *ps) {
     g_ncur_typarams = 0;                  /* fresh `$T` scope for this function */
     g_ncur_sizeparams = 0;                /* fresh `$N` size-param scope (const generics 1.6B) */
@@ -4162,14 +4162,14 @@ static Proc *parse_fn(Parser *ps) {
         const char *dn = dnote_above(nameT->line);
         if (dn) deprec_add(pkg_mangle(nameT->text), dn);
     }
-    /* Legal (§3.7), but say so: every unqualified call to this name inside this
-     * package now reaches THIS procedure and not the builtin, and nothing else
-     * in the compiler will mention it again. */
+    /* Ok/Err/Some/None are matched on raw token text in parse_primary, so a fn of that name is
+     * unreachable in any package -- an error, not the §3.7 shadowing a warning describes. The rest
+     * is legal (§3.7), but say so: an unqualified call here reaches THIS procedure, not the builtin. */
+    if (is_builtin_ctor(nameT->text)) die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (shadows_builtin(nameT->text))
         warn_at(nameT->line, "`%s` shadows the builtin of the same name inside this package -- "
                              "every unqualified `%s(...)` here calls this procedure, not the builtin "
-                             "(a self-call recurses). Rename it unless that is what you meant.",
-                nameT->text, nameT->text);
+                             "(a self-call recurses). Rename it unless that is what you meant.", nameT->text, nameT->text);
     eat(ps, TK_LPAREN, "'('");
 
     Proc *pr = (Proc *)xmalloc(sizeof(Proc));
@@ -4897,7 +4897,7 @@ static void parse_const(Parser *ps) {
     char *nm = pkg_mangle(nameT->text);
     int vi;
     if (struct_find(nm) >= 0 || enum_find(nm) >= 0 || newtype_find(nm) >= 0
-        || handle_find(nm) >= 0 || variant_find(nm, &vi) >= 0 || consts_find(nm))
+        || handle_find(nm) >= 0 || variant_find(nm, &vi) >= 0 || consts_find(nm) || is_builtin_ctor(nameT->text))
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     TBL_ENSURE(g_consts, g_nconsts, g_consts_cap);
     g_consts[g_nconsts].name = nm;

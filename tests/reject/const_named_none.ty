@@ -1,0 +1,9 @@
+# The `const` half of fn_named_ok.ty: parse_const already refused a user enum
+# variant's name, but the four builtin constructors are not enum variants, so
+# `const None = 1` was accepted -- this file compiled clean -- and a later
+# `str(None)` blamed the literal ("can't stringify a None"), not the const.
+# expect: 'None' is already defined
+const None = 1
+
+fn main():
+    println("unreachable by its own name")

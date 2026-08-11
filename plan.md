@@ -915,7 +915,7 @@ or an explicit "open, refused because …".
     examples · `sh scripts/entrypoints.sh` ok (24) · `make vm-check` green ·
     `make test` **629 passed, 0 failed**.
 
-- [ ] **Phase 14 — `fn Ok` / `fn Err` / `fn Some` / `fn None` are still silently
+- [x] **Phase 14 — `fn Ok` / `fn Err` / `fn Some` / `fn None` are still silently
       shadowed** (*found while doing phase 13*)
   - The four builtin constructor names are **not** enum variants: they are
     recognised by their raw token text in `parse_primary`
@@ -940,6 +940,102 @@ or an explicit "open, refused because …".
     any of the four, so this is latent, not breaking.
   - Verify: `tests/reject/` fixtures with `# expect:`; `make test` if
     `src/tychoc.c` changes; `sh scripts/spec_check.sh` if §3.7 or §19.1 moves.
+  - **Evidence (2026-08-11).** The brief's citations held: the four names are
+    matched on raw token text in `parse_primary`
+    (`src/tychoc.c:2797-2807`) and were absent from `shadows_builtin`
+    (`src/tychoc.c@shadows_builtin`). Probed each name in four declaration
+    forms against the pre-fix `./tychoc`. **The declaration was never the
+    error** — every one of the 16 files compiled clean if the name was not
+    used, and only a *use* misfired, blaming the constructor:
+
+        form              Ok                      Err                     Some                    None
+        declared, unused  rc=0 accepted           rc=0 accepted           rc=0 accepted           rc=0 accepted
+        fn + call         str(x) can't stringify  str(x) can't stringify  rc=0 BUILT AND RAN,     calling a value that
+                          a Ok(...)               a Err(...)              printed `Some(1)`       isn't a function (None)
+        const + use       expected '(' after Ok   expected '(' after Err  expected '(' after Some str(x) can't stringify
+                                                                                                  a None
+        param + use       expected '(' after Ok   expected '(' after Err  expected '(' after Some arithmetic requires two
+                                                                                                  ints or two floats
+        local + use       expected '(' after Ok   expected '(' after Err  expected '(' after Some str(x) can't stringify
+                                                                                                  a None
+
+    `fn Some` is the worst of the four and was not in the brief: it compiled,
+    linked and ran, printing `Some(1)` — the constructor — with no diagnostic at
+    all. The other three at least die, but about the wrong thing.
+  - **Not `shadows_builtin`.** Read at `src/tychoc.c@shadows_builtin`: its
+    header calls the list DELIBERATELY CONSERVATIVE and it drives a *warning*
+    for names §3.7 says legally shadow. These four cannot be shadowed, so a
+    warning there would be a lie — the tension the entry above asked to settle.
+    Settled as an error, with the const guard's wording, `'%s' is already
+    defined`, so all three collision sites now speak with one voice.
+  - Two sites, both on the **unmangled** `nameT->text`, because the collision is
+    package-independent: `parse_fn` (beside the `shadows_builtin` warning) and
+    `parse_const`'s existing condition, extended in place. The entry above was
+    right that `resolve_program` cannot host it — `pr->name` is `pkg_mangle`d at
+    `src/tychoc.c@pr->name = pkg_mangle` — but wrong that this costs lines:
+    **line-neutral, 14002 before and after, 7 insertions / 7 deletions**, paid
+    for by putting `is_builtin_ctor` on the blank line before `parse_fn` and
+    folding one `warn_at` continuation. `make check-links` confirms no citation
+    moved: 143 anchored, 988 bare, 259 source→source, all in bounds.
+  - **Negative control.** `git stash push src/tychoc.c` + rebuild, then the
+    reject lane's own logic over the two new fixtures:
+
+        === OLD compiler (stashed) ===
+        FAIL reject_fn_named_ok: tychoc ACCEPTED an invalid program
+        FAIL reject_const_named_none: tychoc ACCEPTED an invalid program
+        === RESTORED ===
+        ok    reject_fn_named_ok
+        ok    reject_const_named_none
+
+    Both fixtures are declaration-only *on purpose*: a use site would make the
+    old compiler exit non-zero for the wrong reason, and the lane would score
+    that as a pass. With no use site the old compiler accepts them outright, so
+    they redden for exactly the behaviour being fixed.
+  - **Constructors still work.** `tests/match_expr.ty` is the fixture that
+    proves it — it constructs and matches all four (`Ok` ×2, `Err` ×2, `Some`
+    ×2, `None` ×2) against a golden, and passes (`make test` line 175). No new
+    positive fixture was added. `make corelib` is the wider proof: **45 ok**,
+    the whole `Ok`/`Err`-saturated corelib, 1 SKIPPED (`image`, missing
+    libpng, pre-existing).
+  - Spec: `docs/spec/12-aggregates.md` §19.1 gained a paragraph *under* phase
+    13's, not a second description — it extends the same rule to the four
+    builtins and says the scope differs (every package, not just the declaring
+    one) and why this is not §3.7 shadowing. `docs/spec/01-lexical.md` §3.7's
+    "Value constructors treated as identifiers" bullet now says these four
+    cannot be shadowed and links to §19.1, so the two halves cannot drift into
+    contradiction.
+  - Gates: `make check-links` ok (119 files) · `make vm-check` green ·
+    `sh scripts/entrypoints.sh` ok (24) · `sh scripts/spec_check.sh` exit 0,
+    11 runnable examples · `make corelib` 45 ok · `make test` **631 passed,
+    0 failed** (629 baseline + the two new reject fixtures).
+
+- [ ] **Phase 15 — a PARAMETER or LOCAL may still take a constructor's or a
+      variant's name** (*found while doing phase 14, deliberately left out of it*)
+  - Phase 14 closed `fn` and `const` for the four builtins; phase 13 closed `fn`
+    and `const` for user variants. Neither touched a binding, and a binding is
+    still accepted in both families:
+
+        fn f(Ok: int) -> int:   accepted at the declaration; `Ok + 1` inside dies
+                                with "expected '(' after Ok"
+        Ok := 5                 same -- accepted, then `str(Ok)` dies the same way
+        fn f(Red: int)          accepted AND coherent: with `enum A: Red, Blue`,
+        Red := 5                both compile and run, the local winning normally
+
+  - So the two families differ and the fix is not one check. A local shadowing a
+    **user** variant works and may well be intended (verified: `uv_param.ty` and
+    `uv_local.ty` both built and ran). A local shadowing one of the **four
+    builtins** cannot work at all — `parse_primary` matches the raw text before
+    any scope is consulted — so it is the same unreachable-name bug phase 14
+    fixed, one declaration form further down.
+  - Left out of phase 14 on purpose: the guard belongs at the binding sites
+    (`parse_fn`'s parameter loop, `:=`, `for` heads, `match` payload bindings,
+    `inout`/`sink` params), which is several sites rather than two, and the
+    brief scoped phase 14 to the forms the variant check already covered.
+  - Not breaking anything today — nothing in the corpus binds one of the four
+    (`make test` 631 green with the fn/const half landed) — so this is latent.
+  - Verify: enumerate the binding sites first and say how you found them, then a
+    `tests/reject/` fixture per site kind with `# expect:`; `make test`;
+    `sh scripts/spec_check.sh` if §3.7 or §19.1 gains a sentence.
 
 - [x] **Phase 11 — the one-paragraph slice warning in `docs/spec/03-types.md`**
   - Entry #5 asked for prose beside the `b[i:j]` row at

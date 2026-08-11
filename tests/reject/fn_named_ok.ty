@@ -1,0 +1,12 @@
+# A `fn` may not take a builtin constructor's name. Ok/Err/Some/None are matched
+# on raw token text in parse_primary, so the constructor wins everywhere and the
+# function is unreachable by its own name. The declaration is what is refused:
+# before this, THIS file compiled clean, and adding `str(Ok(1))` to main only
+# produced "can't stringify a Ok(...)" -- a type error about the constructor,
+# never a word about the shadowed fn. Sibling const_named_none.ty pins `const`.
+# expect: 'Ok' is already defined
+fn Ok(x: int) -> int:
+    return x + 1
+
+fn main():
+    println("unreachable by its own name")
