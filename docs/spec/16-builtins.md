@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4610-4614`,`:4619-4620`,`:4629-4630`; `eprint` codegen `:9917@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4610-4614`,`:4619-4620`,`:4629-4630`; `eprint` codegen `:9921@tycho_eprint`; `die` codegen
 > `:9309-9310`.
 
 ## 29.4 Conversions
@@ -159,7 +159,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4622-4623`, `split` `:5057@.name="split"`;
 > `len` magic
 > `:5824-5830`; `char_at` `Sig` `src/tychoc.c:5056@.name="char_at"`, codegen `:9159-9166`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10444@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:10448@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -224,8 +224,8 @@ user-callable.)
 > Provenance: `keys` `src/tychoc.c:5880-5885`; `m.get` sugar `:5358-5371`,
 > `:5226-5241`; `map_*` removal (parse error) `:2535-2536`, tychoc0
 > `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
-> form). `hash` resolve `src/tychoc.c:6063-6076`, codegen `:9820-9822`,
-> `gen_hash` `src/tychoc.c:9558@gen_hash`; its type-emission gate is `hash_keyused`
+> form). `hash` resolve `src/tychoc.c:6063-6076`, codegen `:9824-9826`,
+> `gen_hash` `src/tychoc.c:9562@gen_hash`; its type-emission gate is `hash_keyused`
 > `src/tychoc.c:1496-1500`, OR'd into the hash-function gates so a `hash()` on
 > a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
@@ -277,7 +277,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5333-5347`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-862` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:10877@_pk > 64`.
+> 64 is `src/tychoc.c:10881@_pk > 64`.
 
 ## 29.10 Filesystem and time
 

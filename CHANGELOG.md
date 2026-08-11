@@ -13,6 +13,15 @@ block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
 not history, so the two are merged here under the date this actually shipped.
 
+- **The live-copy warning no longer suggests a no-op.** It told you to "pass a
+  copy you keep (`y := s`)". Measured on the emitted C: that spelling silences
+  the warning and emits the *same* two copies, while making the value's last use
+  the aggregate emits one. The warning itself is right — there is an avoidable
+  copy — so it stays, with only the remedy that removes one.
+
+- **`[string]` written where a value goes** now names both working forms
+  (`[]string`, or `xs : [string] = []`) instead of "expected an expression".
+
 - **A newtype over a collection now supports that collection's operations.**
   `type Ids = [int]` was effectively write-only: `len`, indexing, slicing,
   `push`, `pop`, `for … in`, index-assign and every map builtin all refused it,

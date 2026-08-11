@@ -124,8 +124,10 @@ learnings and in FRICTION:
   **closed 2026-08-10**: `fn main() -> Result(void, string)` is a second legal shape
 - ~~a newtype-of-array blocks `push`~~ — **closed 2026-08-10**, and it was worse
   than `push`: every collection operation refused it
-- an aggregate capturing a still-live binding warns until you write the copy by
-  hand (`arg := hostile`)
+- ~~an aggregate capturing a still-live binding warns until you write the copy by
+  hand (`arg := hostile`)~~ — **closed 2026-08-10**: that hand-written copy never
+  removed a copy, it only silenced the warning (measured); the message now offers
+  only the remedy that works
 - ~~the typed empty is `[]string`, which nobody guesses first~~ — **not a
   language gap** (see the probe table); the DIAGNOSTIC for the wrong guess was
   fixed 2026-08-10, so `[string]` now names both working forms instead of
@@ -145,7 +147,7 @@ phase-1 notes, because two entries turned out to be wrong:
 | no `defer` | **refused 2026-08-10, documented.** Not a papercut: this language has three cleanup mechanisms already and `defer` would be a fourth. Memory is arena-freed at scope exit; a `handle` runs its declared `free:` at scope exit (RAII, affine, §25); a channel/task handle is affine with an implicit join. `core:io` is path-based and opens nothing. The tree's `close(` calls are overwhelmingly CHANNEL closes, not resource cleanup. Already found once and filed anyway — `docs/internals/plan-tycho-vm-DONE.md:27-32`, whose own verdict was "nothing needs it; it was filed because the probe surprised me, which is not a reason." |
 | `or_return` from `main()` | **closed 2026-08-10** — `fn main() -> Result(void, string):` is legal, so `or_return` works at the entry point. `Err(msg)` prints `msg` bare to stderr and exits 1; `Ok` exits 0. The error type is `string` because the message is what gets printed, and the ok payload is `void` so the exit status stays unambiguous. Fixtures `tests/main_result.ty`, `tests/abort/main_result_err.ty` and three rejects |
 | newtype-of-array blocks `push` | **closed 2026-08-10** — and the row understated it. A probe found `len`, indexing, slicing, `push`, `pop`, `for … in`, index-assign and every map builtin ALL refusing a newtype-of-collection: it was write-only unless you went through `to_under`. Operations now see through the newtype; distinctness at assignment, parameter passing and comparison is unchanged and pinned by `tests/reject/newtype_agg_still_distinct.ty`. Fixture `tests/newtype_agg_ops.ty` |
-| aggregate capturing a live binding warns | open |
+| aggregate capturing a live binding warns | **closed 2026-08-10 — the warning was right, its advice was not.** Measured on the emitted C: the suggested `y := s` silences the warning and emits the SAME two copies, while making it the value's last use emits one. The no-op remedy is gone from the message; the one that works is stated plainly. Golden `tests/warn/copy_live.err` |
 | ~~typed empty is `[]string`~~ | **not a defect** — both `xs : [string] = []` and `xs := []string` compile. It is a learning-curve item, not a language gap. |
 | consts across package boundaries | not re-probed |
 

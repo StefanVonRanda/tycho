@@ -3765,7 +3765,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10101), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10105), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -8734,7 +8734,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:10970), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:10974), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8764,12 +8764,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:12930) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:12934) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11057) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11061) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -9482,9 +9482,13 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
             if (arg->kind == E_IDENT && !is_param(arg->sval)
                 && g_loop_depth == 0 && g_call_arg_depth > 0 && g_in_return == 0
                 && cv_arena(arg->sval) && !strcmp(cv_arena(arg->sval), arena))
-                warn_at(arg->line, "unavoidable copy of '%s' into this aggregate (it is still live "
-                                   "after this point); make this its last use, or pass a copy you "
-                                   "keep (`y := %s`)", arg->sval, arg->sval);
+                /* the second half of this message used to be "or pass a copy you keep
+                 * (`y := s`)". MEASURED 2026-08-10 on the emitted C: that spelling silences
+                 * the warning and emits the SAME two copies -- a no-op ritual. Making it the
+                 * last use emits one. Only the remedy that works is offered. */
+                warn_at(arg->line, "'%s' is copied into this aggregate because it is still live "
+                                   "afterwards; if you do not need it after this, make this its "
+                                   "last use and the copy goes away", arg->sval);
             v = copy_into(t, arena, v);
         }
     }
