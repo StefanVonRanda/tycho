@@ -3,6 +3,7 @@ package main
 import "core:time"
 import "core:strings"
 import "stage"
+import "graph"
 
 # tycho-flow -- a concurrent pipeline engine, wired end to end.
 #
@@ -211,6 +212,65 @@ fn run_errors():
     match stage.check_link("filter", 9, 7):
         Ok(): println("  FAIL  a losing link was accepted")
         Err(e3): println("  ok    " + stage.err_str(e3))
+
+# --- a pipeline built as a value, then run ------------------------------------
+#
+# Same three stages as `run_words`, but the middle one is not wired here: it is
+# a `graph.Plan` built by name, adjusted by a builder that returns a copy, and
+# handed to `graph.run` as data. The output must be the identical answer
+# `run_words` computes, because a plan is a description of the same work.
+fn ok_word(s: string) -> Result(string, string):
+    if len(s) > 7:
+        return Err("word '" + s + "' is longer than this step accepts (7)")
+    return Ok(s + "!")
+
+fn run_graph():
+    println("graph(string): a Plan built, then run -- filter(len>=4) + stamp, reassembled by index")
+    p := graph.plan("words", keep_long, stamp, ok_word)
+    p = graph.with_cap(p, 8)
+    println("  plan  " + graph.describe(p))
+    raw := channel(stage.Item(string), 4)
+    done := channel(stage.Item(string), 4)
+    t_src := spawn stage.source(raw, words())
+    t_run := spawn graph.run(p, raw, done)
+    got := stage.drain(done)
+    n_src := wait(t_src)
+    n_run := wait(t_run)
+    println("  in    " + str(n_src) + " element(s), " + str(n_run) + " through the plan")
+    match graph.collect(p, got, n_run):
+        Ok(vs): println("  out   " + str(vs))
+        Err(e): fail("graph", e)
+
+# The same Plan value on the fallible path: `graph.run_try` runs the plan's
+# `check`, `stage.guard` closes `done` on the first error and the source stops.
+# Cross-package generic composition and cancellation at once, which is the pair
+# most likely to be wrong.
+fn run_graph_cancel():
+    words_many : [string] = []
+    for i := 0; i < 64; i += 1:
+        for w in words():
+            push(words_many, w)
+    n := len(words_many)
+    println("graph(string): the same Plan run fallibly over " + str(n) + " elements, cancelled at the first refusal")
+    p := graph.plan("plan", keep_long, stamp, ok_word)
+    raw := channel(stage.Item(string), 4)
+    res := channel(Result(stage.Item(string), stage.FlowErr), 4)
+    stop := channel(int, 1)
+    t_src := spawn stage.source_cancellable(raw, stop, words_many)
+    t_run := spawn graph.run_try(p, raw, res)
+    outcome := stage.guard(res, stop)
+    n_src := wait(t_src)
+    n_run := wait(t_run)
+    match outcome:
+        Ok(items): println("  FAIL  the refused element was accepted (" + str(len(items)) + " item(s) collected)")
+        Err(e): println("  err   " + stage.err_str(e))
+    match stage.check_cancelled("source", n_src, n):
+        Ok(): println("  stop  the source produced fewer than " + str(n) + " element(s): the plan's first refusal reached the head of the pipeline")
+        Err(e2): fail("graph cancel", e2)
+    if n_run <= n_src:
+        println("  join  both stages returned; the plan saw no more than the source sent")
+    else:
+        println("  FAIL  the plan saw " + str(n_run) + " of the source's " + str(n_src) + " element(s)")
 
 # --- a fallible stage, and cancellation ---------------------------------------
 #
@@ -433,4 +493,6 @@ fn main():
     run_reduce()
     run_backpressure()
     run_cancel()
+    run_graph()
+    run_graph_cancel()
     run_errors()

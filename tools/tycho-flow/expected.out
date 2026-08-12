@@ -19,6 +19,14 @@ cancel(int): source -> try(step refuses element 8) -> guard closes done
   err   range failed at index 8: value 8 is outside the range this step accepts (0..7)
   stop  the source produced fewer than 256 element(s): cancellation reached the head of the pipeline
   join  both stages returned; the checker saw every element the source sent
+graph(string): a Plan built, then run -- filter(len>=4) + stamp, reassembled by index
+  plan  words: filter then work, ring of 8
+  in    12 element(s), 8 through the plan
+  out   [flow#826923, pipeline#223553, over#826923, bounded#802037, channels#223553, order#760988, comes#760988, back#826923]
+graph(string): the same Plan run fallibly over 768 elements, cancelled at the first refusal
+  err   plan failed at index 3: word 'pipeline' is longer than this step accepts (7)
+  stop  the source produced fewer than 768 element(s): the plan's first refusal reached the head of the pipeline
+  join  both stages returned; the plan saw no more than the source sent
 errors: every FlowErr variant, fired
   ok    duplicate index 0: the index set is not a permutation
   ok    truncated: expected 3 item(s), collected 2
@@ -33,3 +41,5 @@ filter dropped 2: 9 sent, 7 received
 range failed at index 1: value 8 is outside the range this step accepts (0..7)
 === err Cancelled (via the stage API)
 source ignored the cancellation: produced 256 of 256
+=== err Graph (via the stage API)
+p dropped 1: 2 sent, 1 received

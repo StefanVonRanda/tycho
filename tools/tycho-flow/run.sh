@@ -45,7 +45,10 @@
 #       Err(stage.err_str(e)). Nothing is written into the repo. The variant
 #       list is READ out of the enum and checked against what the probe
 #       covers, so a variant added tomorrow reddens here instead of arriving
-#       ungated.
+#       ungated. graph/ is copied beside it and gets one more arm, which is
+#       not a variant but the CROSS-PACKAGE composition: a Plan built at `int`
+#       whose `collect` instantiates stage's generics at graph's own type
+#       parameter must still refuse a short collection with stage's message.
 #   [5] TSAN over the whole demo, and over a short --race. A capture bug, a
 #       ring index published without a release, or a `parallel for` reduction
 #       folded unsafely is a DATA RACE -- it produces the right answer on this
@@ -64,8 +67,9 @@
 #       pipeline with a step that never fails must produce all 256 on every run
 #       -- without that control, "stopped early" would describe a broken source
 #       just as well. The counts are races and never reach the golden; the
-#       demo's four deterministic cancellation lines are asserted against
-#       literals here, like backpressure and for the same reason.
+#       demo's deterministic cancellation lines -- for the hand-wired pipeline
+#       and for the plan-driven one alike -- are asserted against literals
+#       here, like backpressure and for the same reason.
 #
 # WHAT IT DELIBERATELY DOES NOT ASSERT
 #   Timings. `--bench` measures the deep-copy cost at the thread boundary and
@@ -227,11 +231,14 @@ grep -n '  FAIL  ' "$T/d.1" | sed 's/^/      /' | grep . && bad "the demo printe
 # ---------------------------------------------------------------------------
 P="$T/pkg"; mkdir -p "$P"
 [ -d "$src/stage" ] || bad "probe: $src/stage is gone -- this leg asserts NOTHING"
+[ -d "$src/graph" ] || bad "probe: $src/graph is gone -- this leg asserts NOTHING"
 cp -R "$src/stage" "$P/" 2>/dev/null
+cp -R "$src/graph" "$P/" 2>/dev/null
 cat > "$P/probe.ty" <<'EOF'
 package main
 
 import "stage"
+import "graph"
 
 # One variant per run, named on the command line. Each arm calls the API that
 # owns the variant rather than constructing the enum -- a probe that built
@@ -272,7 +279,27 @@ fn main() -> Result(void, string):
         match stage.check_cancelled("source", 256, 256):
             Ok(): return Err("check_cancelled ACCEPTED a source that produced its whole input")
             Err(e): return Err(stage.err_str(e))
+    if a[1] == "Graph":
+        # Not a variant: the CROSS-PACKAGE composition itself, in a tree that
+        # has just been copied out of the repo. A Plan is built at `int`, and
+        # graph.collect -- which instantiates stage.check_link and stage.reorder
+        # at graph's own type parameter -- must refuse a short collection with
+        # stage's message. If graph ever stops importing ../stage, or the
+        # monomorphization across the boundary breaks, this is where it shows.
+        p := graph.plan("p", any_int, same_int, ok_int)
+        match graph.collect(p, [stage.Item(0, 7)], 2):
+            Ok(vs): return Err("graph.collect ACCEPTED a collection short of its expected count")
+            Err(e): return Err(stage.err_str(e))
     return Err("unknown variant " + a[1])
+
+fn any_int(x: int) -> bool:
+    return true
+
+fn same_int(x: int) -> int:
+    return x
+
+fn ok_int(x: int) -> Result(int, string):
+    return Ok(x)
 
 fn refuse8(x: int) -> Result(int, string):
     if x == 8:
@@ -302,6 +329,7 @@ else
     errcase Dropped        'filter dropped 2: 9 sent, 7 received'
     errcase Failed         'range failed at index 1: value 8 is outside the range this step accepts (0..7)'
     errcase Cancelled      'source ignored the cancellation: produced 256 of 256'
+    errcase Graph          'p dropped 1: 2 sent, 1 received'
 fi
 
 # The coverage floor: the enum is READ, not remembered.
@@ -363,6 +391,11 @@ bp 'cancel(int): source -> try(step refuses element 8) -> guard closes done'
 bp '  err   range failed at index 8: value 8 is outside the range this step accepts (0..7)'
 bp '  stop  the source produced fewer than 256 element(s): cancellation reached the head of the pipeline'
 bp '  join  both stages returned; the checker saw every element the source sent'
+# And the same for the plan-driven pipeline, whose cancellation runs through
+# graph.run_try -- a second, cross-package path to the same claim.
+bp '  err   plan failed at index 3: word '"'"'pipeline'"'"' is longer than this step accepts (7)'
+bp '  stop  the source produced fewer than 768 element(s): the plan'"'"'s first refusal reached the head of the pipeline'
+bp '  join  both stages returned; the plan saw no more than the source sent'
 
 # ---------------------------------------------------------------------------
 # [5] TSan
@@ -442,7 +475,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-flow: green (8 default runs plus TYCHO_THREADS=1 and 2 all byte-identical; the pool drained out of source order on essentially every one of 200 runs and on 0 of 25 at one thread; the 4-slot ring parked send 5 with no marker for it; a cancelled pipeline produced $CLO..$CHI of 256 while the never-fails control produced $CTL; $found FlowErr variants each exit non-zero with their own whole message and an empty stdout; TSan over the demo and 15 more pipelines reported no race at all; transcript == golden)"
+    echo "tycho-flow: green (8 default runs plus TYCHO_THREADS=1 and 2 all byte-identical; the pool drained out of source order on essentially every one of 200 runs and on 0 of 25 at one thread; the 4-slot ring parked send 5 with no marker for it; a cancelled pipeline produced $CLO..$CHI of 256 while the never-fails control produced $CTL; $found FlowErr variants and graph's cross-package collect each exit non-zero with their own whole message and an empty stdout; TSan over the demo and 15 more pipelines reported no race at all; transcript == golden)"
 else
     echo "tycho-flow: FAIL"; exit 1
 fi

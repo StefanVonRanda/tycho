@@ -1,0 +1,117 @@
+package graph
+
+import "../stage"
+
+# A pipeline as a VALUE: built here, run later, instead of hand-wired at every
+# call site.
+#
+# WHY THIS IS A SECOND PACKAGE. Everything below instantiates `stage`'s generics
+# at graph's OWN type parameter -- `Channel(stage.Item($T))`, `[stage.Item($T)]`,
+# `Result([$T], stage.FlowErr)`, and `Channel(Result(stage.Item($T),
+# stage.FlowErr))`, which is an imported generic aggregate applied to a
+# parameter of the importing package, wrapped in a builtin generic enum, inside
+# a channel. That is monomorphization across a package boundary, and it is where
+# three of the compiler bugs found on 2026-08-12 lived. Folding graph back into
+# stage would delete the only thing this package is for.
+#
+# WHAT A PLAN CAN AND CANNOT HOLD. Not the channels: a `Channel(T)` cannot be
+# returned, stored in a container or captured (13-concurrency.md §23.1), so the
+# wiring stays in the caller's scope where the `Task` handles live. Not the
+# tasks either, for the same reason. What is left, and what a Plan therefore is,
+# is the WORK plus the shape of the run: a name, a ring capacity, a predicate,
+# a total step, and a fallible one.
+#
+# THE FIELDS ARE FOUR SEPARATE FUNCTIONS AND NOT AN ARRAY OF STEPS, and that is
+# a compiler bug, not a design preference. A generic struct with an
+# array-of-function field is not compilable today:
+#
+#     struct Plan($T):
+#         steps: [fn($T) -> $T]        # m.c: unknown type name 'FnC0'
+#
+# The emitted C declares the array's element type as `FnC0` and never defines
+# it (`struct TychoArrC0_ { FnC0 *data; ... }`, with `FnC1` the only typedef
+# present), so cc rejects the program. The non-generic spelling, `[fn(string) ->
+# string]`, compiles and runs. Worse, the same generic declaration reached from
+# ANOTHER package -- exactly the arrangement here -- makes tychoc itself die
+# with SIGSEGV before it emits anything. Single function-typed fields in a
+# generic struct are fine across packages, which is why the Plan has four of
+# them and no `then()` chain. Both repros are in the commit that added this
+# file.
+
+# The pipeline, described. Copying one is copying the description; `with_cap`
+# and `named` return modified copies rather than mutating, because value
+# semantics is what a plan built in one scope and run in another needs.
+struct Plan($T):
+    name: string
+    cap: int
+    keep: fn($T) -> bool
+    work: fn($T) -> $T
+    check: fn($T) -> Result($T, string)
+
+# `cap` starts at 4: small enough that the ring is a real constraint on the
+# demo rather than a formality. `with_cap` is how a caller says otherwise.
+fn plan(name: string, keep: fn($T) -> bool, work: fn($T) -> $T, check: fn($T) -> Result($T, string)) -> Plan($T):
+    return Plan(name, 4, keep, work, check)
+
+fn with_cap(p: Plan($T), cap: int) -> Plan($T):
+    return Plan(p.name, cap, p.keep, p.work, p.check)
+
+fn named(p: Plan($T), name: string) -> Plan($T):
+    return Plan(name, p.cap, p.keep, p.work, p.check)
+
+fn describe(p: Plan($T)) -> string:
+    return p.name + ": filter then work, ring of " + str(p.cap)
+
+fn cap_of(p: Plan($T)) -> int:
+    return p.cap
+
+# --- running a plan ----------------------------------------------------------
+
+# The total path: one spawnable stage that filters and works in a single pool.
+# Rejects never reach a worker's output, survivors keep their SOURCE index, so
+# the answer is still reassembled by `collect` below and is still independent of
+# the pool width.
+#
+# `ks := [p.keep]` for the same reason `stage.pool` writes `fs := [f]`: a
+# function value in the callee position of a call inside a `parallel for` body
+# is not collected into the chunk's capture set, and a struct field is the worst
+# case of it (`p.keep(...)` emits a reference to an undeclared `h_p`). Indexing
+# an array is the spelling that gets captured.
+fn run(p: Plan($T), inp: Channel(stage.Item($T)), out: Channel(stage.Item($T))) -> int:
+    ks := [p.keep]
+    ws := [p.work]
+    n := 0
+    parallel for it in inp:
+        if ks[0](it.val):
+            send(out, stage.Item(it.idx, ws[0](it.val)))
+            n = n + 1
+    close(out)
+    return n
+
+# The fallible path: the same Plan, run with its `check` instead of its `work`,
+# emitting `Result` items for `stage.guard` to watch. ONE worker on purpose --
+# the pool would make WHICH error arrives first a race, and the whole point of
+# reporting a cause is that the cause is reproducible. The filter still runs, so
+# an element the plan rejects cannot fail the plan.
+fn run_try(p: Plan($T), inp: Channel(stage.Item($T)), out: Channel(Result(stage.Item($T), stage.FlowErr))) -> int:
+    n := 0
+    for true:
+        match recv(inp):
+            Some(it):
+                if p.keep(it.val):
+                    match p.check(it.val):
+                        Ok(v): send(out, Ok(stage.Item(it.idx, v)))
+                        Err(why): send(out, Err(stage.Failed(p.name, it.idx, why)))
+                    n = n + 1
+            None:
+                break
+    close(out)
+    return n
+
+# Arrival order in, source order out, with the plan's name on any complaint.
+# The link check first: `reorder` alone would report a lost element as a
+# truncation, which names the symptom; `check_link` names the stage.
+fn collect(p: Plan($T), got: [stage.Item($T)], made: int) -> Result([$T], stage.FlowErr):
+    match stage.check_link(p.name, made, len(got)):
+        Ok(): return stage.reorder(got, made)
+        Err(e): return Err(e)

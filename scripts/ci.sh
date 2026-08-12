@@ -339,7 +339,7 @@ make -s db-check
 # the bounded ring against literals rather than the golden, then runs the whole
 # thing under TSan -- because a capture bug here is a data race, which is right
 # on this machine and wrong on the next.
-step "[3q/23] make flow-check  (tycho-flow: transcript byte-identical over 8 runs and at TYCHO_THREADS=1 and 2, the pool proved to drain out of source order on 200 runs and not at all on one thread, a 4-slot ring that parks send 5, 3 FlowErr variants each refused with their own message, TSan silent over the demo and 15 more pipelines)"
+step "[3q/23] make flow-check  (tycho-flow: transcript byte-identical over 8 runs and at TYCHO_THREADS=1 and 2, the pool proved to drain out of source order on 200 runs and not at all on one thread, a 4-slot ring that parks send 5, a cancelled pipeline that stops its source under 64 of 256 while the never-fails control runs to 256, 5 FlowErr variants and graph's cross-package collect each refused with their own message, TSan silent over the demo and 15 more pipelines)"
 make -s flow-check
 fi
 
