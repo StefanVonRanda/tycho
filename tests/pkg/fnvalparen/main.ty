@@ -1,0 +1,39 @@
+# `(pkg.fn)(x)` -- the parenthesised immediate call. It died `unknown variable
+# 'opsp'` while BOTH neighbouring spellings worked: `opsp.brack("yo")` and
+# `g := opsp.brack; g("yo")`. The name was never unknown.
+#
+# Cause was NOT the call-on-expression path itself (that arm resolves the E_FIELD
+# correctly -- `f := (opsp.brack)` already compiled). It was the Stage-2 UFCS
+# probe that runs FIRST and resolves the callee's base to find a receiver type:
+# for `pkg.fn` that base is a package name, not a value. A package qualifier is
+# now excluded from that probe, so the node reaches the call-on-expression path.
+#
+# The UFCS chaining that probe exists for is exercised below, in the same file,
+# so the exclusion cannot silently disable it.
+package main
+import "opsp"
+
+struct Box:
+    n: int
+
+fn twice(b: Box) -> Box:
+    return Box(n: b.n * 2)
+
+fn shown(b: Box) -> string:
+    return "Box(" + str(b.n) + ")"
+
+fn main():
+    println("paren=" + (opsp.brack)("yo"))            # [yo]
+    println("paren2=" + str((opsp.addx)(2, 3)))       # 5
+    println("paren1=" + str((opsp.bump)(41)))         # 42
+    (opsp.shout)("loud")                              # loud!
+
+    # the two spellings that already worked, side by side with the fixed one
+    println("plain=" + opsp.brack("hi"))              # [hi]
+    g := opsp.brack
+    println("bound=" + g("yo"))                       # [yo]
+
+    # UFCS chaining on a real receiver -- what the excluded probe is FOR
+    b := Box(n: 3)
+    println("ufcs=" + b.twice().shown())              # Box(6)
+    println("ufcs2=" + b.twice().twice().shown())     # Box(12)

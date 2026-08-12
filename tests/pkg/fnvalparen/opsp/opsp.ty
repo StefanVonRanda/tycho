@@ -1,0 +1,20 @@
+package opsp
+
+fn bump(x: int) -> int:
+    return x + 1
+
+fn addx(a: int, b: int) -> int:
+    return a + b
+
+fn brack(s: string) -> string:
+    return "[" + s + "]"
+
+fn shout(s: string):
+    println(s + "!")
+
+# generic: has NO single function value -- taking `opsx.pick` as one is refused
+# (tests/reject/pkg/fnval_pkg_generic). Called normally here, it instantiates.
+fn pick(a: $T, b: $T) -> $T where comparable(T):
+    if a < b:
+        return a
+    return b

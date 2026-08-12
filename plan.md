@@ -97,15 +97,15 @@ site is either implemented or written down as a refusal with its cost.
     instantiation site reach the diagnostic — answered yes from source, and
     narrowly. `instantiate_generic` already receives the call `Expr *e` and
     already reports at `e->line` for three other refusals
-    (`src/tychoc.c:8460`, `:8467`, `:8489`), and while it runs, `g_srcname` /
+    (`src/tychoc.c:8466`, `:8473`, `:8495`), and while it runs, `g_srcname` /
     `g_src` still hold the CALLER's file. So the call site was already in hand at
     the one place the `GInst` is built; nothing needed threading through.
   - Cost, measured rather than estimated: **+7 net lines**
     (`git diff --numstat src/tychoc.c` → `45 38`), and four of the five edit
     sites are line-neutral in-place rewrites —
     `src/tychoc.c@GInst` (three fields), the `GInst gi;` construction,
-    and gen_program's instance loop set/clear at `src/tychoc.c:12542` and
-    `:12558`. Only the `die_at` region grew, by factoring the snippet printer out
+    and gen_program's instance loop set/clear at `src/tychoc.c:12548` and
+    `:12564`. Only the `die_at` region grew, by factoring the snippet printer out
     as `src/tychoc.c@src_snippet` so the note can reuse it.
   - Extends `0faccaf` rather than undoing it: that commit's `diag_use_proc(p)`
     call is untouched and still decides the ERROR line's file. The note is a
@@ -265,11 +265,11 @@ site is either implemented or written down as a refusal with its cost.
   (`runtime/tycho_rt.c@stats_dump`, cited as `:416`), `arena_recycle` (`:548` →
   the body of `block_get`), `TYCHO_BLOCK` (`:466` → `:521`), `g_out`
   (`corelib/crypto/crypto_shim.c:43@g_out`, cited as `:35` and twice as `:36`),
-  pop-on-empty (line 12121 → `src/tychoc.c:13016@pop`), tuple arity (lines 2018
+  pop-on-empty (line 12121 → `src/tychoc.c:13022@pop`), tuple arity (lines 2018
   and 2014 → `src/tychoc.c:5600@least` and `src/tychoc.c:5601@most`), `or_return`
-  in a `parallel for` (line 6639 → `src/tychoc.c:7181@or_return`), the
-  inout-aliasing rule (line 6150 → `src/tychoc.c:6697@alias`), the 16-parameter
-  cap (line 8075 → `src/tychoc.c:8723@parameters`), `split_once` (line 193, an
+  in a `parallel for` (line 6639 → `src/tychoc.c:7187@or_return`), the
+  inout-aliasing rule (line 6150 → `src/tychoc.c:6703@alias`), the 16-parameter
+  cap (line 8075 → `src/tychoc.c:8729@parameters`), `split_once` (line 193, an
   unrelated `enum FloatErr`, → `corelib/strings/strings.ty@split_once`),
   `read_request_capped` (line 242 → `corelib/httpd/httpd.ty@read_request_capped`),
   `netx_peer_addr` (line 204 → `corelib/net/net_shim.c@netx_peer_addr`), the
@@ -314,7 +314,7 @@ site is either implemented or written down as a refusal with its cost.
   - `server/README.md:276` cites `docs/internals/FRICTION.md:601` for a
     `write-failed` log line. The string `write-failed` does not occur anywhere in
     `docs/internals/FRICTION.md`.
-  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9450` as `ncpu()`'s
+  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9456` as `ncpu()`'s
     lowering; that line is `collect_append_ops`.
   - `docs/internals/FRICTION.md:1020` quotes a comment it places at
     `corelib/test/io/main.ty:43`; that line is `fn sl(...)`.
@@ -773,13 +773,13 @@ site is either implemented or written down as a refusal with its cost.
   const then variant then died — it never asked whether the name was a function.
   The `E_IDENT` arm had done exactly that for a mangled `<pkg>name` since
   `tests/pkg/fnval` was written, including `note_fnval`'s `__clo` thunk, which is
-  emitted per name (`src/tychoc.c:13443-13448`) and so needed nothing new. Fix
+  emitted per name (`src/tychoc.c:13449-13454`) and so needed nothing new. Fix
   reuses it verbatim: `sig_find(q)` → function value (node rewritten to `E_IDENT`
   with `op = TK_FN`, `lhs` cleared so a re-resolve is idempotent);
   `generic_find(q)` → refuse, explaining that no instantiation exists and naming
   the lambda workaround; otherwise the miss message, widened to "variant, const
   or function" and given the `suggest_pkg_symbol` did-you-mean the call path
-  (`src/tychoc.c:6132`) already had. 23 insertions, 2 deletions, one arm.
+  (`src/tychoc.c:6138`) already had. 23 insertions, 2 deletions, one arm.
 
   **Spec.** `docs/spec/09-expressions.md` §13.6 excluded `inout` and
   comparability and never excluded a package-qualified name — the gap was
@@ -813,7 +813,7 @@ site is either implemented or written down as a refusal with its cost.
   suggestion a reader wants. Cause is the mirror of Phase 14: `resolve_expr`'s
   `E_IDENT` arm tries `sig_find` and, on a miss, goes straight to the
   unknown-variable path without consulting the generics registry, which is where
-  a generic template lives (`src/tychoc.c:6129`). Phase 14 fixed this for the
+  a generic template lives (`src/tychoc.c:6135`). Phase 14 fixed this for the
   package-qualified spelling only, and deliberately did not widen scope. The fix
   is the same two lines — `generic_find` before the `suggest_var` fallback,
   reusing Phase 14's wording — plus a `tests/reject/` fixture with `# expect:`.
@@ -860,7 +860,7 @@ site is either implemented or written down as a refusal with its cost.
   covering this phase and that one together. The +6 lines staled 49 citations;
   `scripts/reanchor_citations.py --apply` rewrote 119 files, 0 needing a human.
 
-- [ ] **Phase 16 — `(pkg.fn)(x)`, the parenthesised immediate call, dies
+- [x] **Phase 16 — `(pkg.fn)(x)`, the parenthesised immediate call, dies
   `unknown variable 'pkg'`.** Found writing Phase 14's fixture; the line was
   removed from it rather than absorbed. `g := opsx.brack` then `g("yo")` works,
   and `opsx.brack("yo")` works, but the parenthesised form in between does not:
@@ -871,6 +871,60 @@ site is either implemented or written down as a refusal with its cost.
   form is worth supporting at all — it is redundant with both working spellings
   — or whether the message should simply name the package and say so. Gate:
   `make test`.
+
+  **Done — supported, because the size judgement came out small.** The brief
+  asked for a size call before any fix, and the answer was one condition on one
+  `if`, inside the same package-qualified concern Phase 14 touched. Nothing in
+  how calls resolve generally was reordered, so the structural risk the brief
+  warned about never arose.
+
+  **The brief's stated cause was WRONG, and this matters** — it was inherited
+  from Phase 14's note, not re-derived. The claim was that the call-on-expression
+  path "reaches `E_FIELD` with the package ident as an ordinary `lhs` and
+  resolves it as a variable". That path is innocent: it resolves the `E_FIELD`
+  correctly, which is why `f := (opsp.brack)` **already compiled**, and why
+  `println((opsp.brack))` got as far as a type error naming `fn(string) -> string`.
+  Those two probes are what killed the stated cause.
+
+  The real culprit runs BEFORE it: the Stage-2 UFCS rewrite
+  fires on any `E_CALL` whose callee is an `E_FIELD` and immediately probes the
+  callee's base for a receiver type — `src/tychoc.c:6026@resolve_expr`. For
+  `pkg.fn` that base is a package name, not a value, so the probe itself died
+  before the call-on-expression path at `src/tychoc.c:6095` was ever reached.
+  The new guard is `src/tychoc.c:6024@is_imported_pkg`.
+
+  Fix: exclude an imported package qualifier from that probe, using the same
+  `is_imported_pkg` test the `E_FIELD` arm gates its own package case on, so the
+  two agree on precedence rather than inventing a second rule. The node then
+  falls through to call-on-expression, where Phase 14's arm yields the function
+  value and the call goes indirect. `(pkg.fn)(x)` now runs.
+
+  Regression risk taken seriously, since the excluded probe is what UFCS
+  chaining is FOR: `tests/pkg/fnvalparen/main.ty` exercises `b.twice().shown()`
+  and `b.twice().twice().shown()` in the same file as the fixed spelling, so the
+  exclusion cannot silently disable chaining. `make test` at 651 is the wider
+  proof — the corpus is full of UFCS chains.
+
+  Negative control: `git stash push src/tychoc.c` + `make tychoc` → the old
+  binary dies `tests/pkg/fnvalparen/main.ty:26: error: unknown variable 'opsp'`,
+  so the fixture cannot compile at all. Restored, rebuilt, output byte-identical
+  to `tests/pkg/fnvalparen.out`.
+
+  Gates: `make check-links` ok, `make vm-check` green, `sh scripts/entrypoints.sh`
+  ok (75), `make goldens-check` ok (450). **`make test`: 651 passed, 0 failed**
+  — run ONCE here, covering Phase 15 and this phase together (648 at Phase 14 +
+  3 new fixtures). The +6 lines staled 49 citations;
+  `scripts/reanchor_citations.py --apply` rewrote 119 files.
+
+  One citation needed a human, and it was rotted BEFORE this phase rather than by
+  it — `docs/rfc/ffi-threading-design-review.md:148-149` cited lines 5975-5979 of
+  `src/tychoc.c` for `is_extern_str_call` and line 6017 for its `len`
+  application, both roughly 4,000 lines off. It surfaced only because this hunk
+  landed on that same line 6017. Repaired
+  with coordinates read from source: the definition is now cited as
+  `src/tychoc.c@is_extern_str_call` (the insertion-proof form CLAUDE.md prefers),
+  applied at `src/tychoc.c:9947` for `len` and `:10074`/`:10081` for
+  print/println. A coordinate repair, not the prose rewrite Phase 6 collects.
 
 ## Out of scope
 
