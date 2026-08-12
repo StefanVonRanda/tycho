@@ -39,8 +39,6 @@ Imports resolve relative to the importing file: a sibling is `../sql`.
 Each layer is one phase, one commit, in this order — every step must leave a
 runnable program, never a half-wired one.
 
-- [ ] **store/** — pages, a heap file, row encode/decode, a table catalogue.
-      No B+tree yet; a sequential scan is enough to be correct.
 - [ ] **exec/** — operators over `store`, executing the `sql` AST directly.
       Done when CREATE/INSERT/SELECT with a WHERE actually returns rows.
 - [ ] **run.sh + golden + `make db-check`** — the lane. Nothing else runs this

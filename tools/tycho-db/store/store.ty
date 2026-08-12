@@ -1,0 +1,245 @@
+package store
+
+import "core:io"
+
+# The storage layer: a catalogue of tables and a heap file of rows, encoded to
+# bytes and read back whole. No index -- a scan walks every row -- and no
+# pages beyond the one file, which is all correctness needs today.
+
+enum Ty:
+    ColInt
+    ColText
+
+enum Val:
+    VInt(int)
+    VText(string)
+
+struct Col:
+    name: string
+    ty: Ty
+
+struct Table:
+    name: string
+    cols: [Col]
+    rows: [[Val]]
+
+struct Db:
+    path: string
+    tables: [Table]
+
+enum StoreErr:
+    NoTable(string)
+    TableExists(string)
+    ColCount(string, int, int)
+    TypeClash(string, string, string, string)
+    Corrupt(string)
+    NotWritten(string)
+
+fn ty_name(t: Ty) -> string:
+    if t is ColInt:
+        return "int"
+    return "text"
+
+fn val_ty(v: Val) -> string:
+    match v:
+        VInt(n): return "int"
+        VText(s): return "text"
+
+fn val_str(v: Val) -> string:
+    match v:
+        VInt(n): return str(n)
+        VText(s): return s
+
+fn err_str(e: StoreErr) -> string:
+    match e:
+        NoTable(n): return "no such table: " + n
+        TableExists(n): return "table already exists: " + n
+        ColCount(n, want, got):
+            return n + " takes " + str(want) + " value(s), got " + str(got)
+        TypeClash(n, c, want, got):
+            return n + "." + c + " is " + want + ", got " + got
+        Corrupt(m): return "store is corrupt: " + m
+        NotWritten(p): return "cannot write " + p
+
+# ---- encoding -------------------------------------------------------------
+
+const MAGIC = "TYDB1"
+const VERSION = 1
+
+const T_POS = 0
+const T_NEG = 1
+const T_TEXT = 2
+
+fn _u32(v: int) -> bytes:
+    return to_bytes([v % 256, (v / 256) % 256, (v / 65536) % 256, (v / 16777216) % 256])
+
+fn _get_u32(b: bytes, off: int) -> int:
+    return b[off] + b[off + 1] * 256 + b[off + 2] * 65536 + b[off + 3] * 16777216
+
+# magnitude only: the sign travels in the value's tag byte, so no shift ever
+# runs into the sign bit
+fn _u64(v: int) -> bytes:
+    out := []int
+    m := v
+    for i := 0; i < 8; i += 1:
+        push(out, m % 256)
+        m = m / 256
+    return to_bytes(out)
+
+fn _get_u64(b: bytes, off: int) -> int:
+    v := 0
+    for i := 7; i >= 0; i -= 1:
+        v = v * 256 + b[off + i]
+    return v
+
+fn _put_str(s: string) -> bytes:
+    return _u32(len(s)) + to_bytes(s)
+
+fn _put_val(v: Val) -> bytes:
+    match v:
+        VInt(n):
+            if n < 0:
+                return to_bytes([T_NEG]) + _u64(-n)
+            return to_bytes([T_POS]) + _u64(n)
+        VText(s):
+            return to_bytes([T_TEXT]) + _put_str(s)
+
+fn encode(db: Db) -> bytes:
+    out := to_bytes(MAGIC) + _u32(VERSION) + _u32(len(db.tables))
+    for t in db.tables:
+        out = out + _put_str(t.name) + _u32(len(t.cols))
+        for c in t.cols:
+            tag := 0
+            if c.ty is ColText:
+                tag = 1
+            out = out + _put_str(c.name) + to_bytes([tag])
+        out = out + _u32(len(t.rows))
+        for r in t.rows:
+            out = out + _u32(len(r))
+            for v in r:
+                out = out + _put_val(v)
+    return out
+
+# ---- decoding -------------------------------------------------------------
+
+fn _need(b: bytes, off: int, n: int) -> Result(void, StoreErr):
+    if off + n > len(b):
+        return Err(Corrupt("file ends mid-record"))
+    return Ok()
+
+fn _take_u32(b: bytes, off: inout int) -> Result(int, StoreErr):
+    _need(b, off, 4) or_return
+    v := _get_u32(b, off)
+    off += 4
+    return Ok(v)
+
+fn _take_str(b: bytes, off: inout int) -> Result(string, StoreErr):
+    n := _take_u32(b, &off) or_return
+    _need(b, off, n) or_return
+    s := to_str(b[off: off + n])
+    off += n
+    return Ok(s)
+
+fn _take_val(b: bytes, off: inout int) -> Result(Val, StoreErr):
+    _need(b, off, 1) or_return
+    tag := b[off]
+    off += 1
+    if tag == T_TEXT:
+        s := _take_str(b, &off) or_return
+        return Ok(VText(s))
+    if tag != T_POS and tag != T_NEG:
+        return Err(Corrupt("unknown value tag " + str(tag)))
+    _need(b, off, 8) or_return
+    n := _get_u64(b, off)
+    off += 8
+    if tag == T_NEG:
+        return Ok(VInt(-n))
+    return Ok(VInt(n))
+
+fn decode(path: string, b: bytes) -> Result(Db, StoreErr):
+    if len(b) < 5 or to_str(b[0:5]) != MAGIC:
+        return Err(Corrupt(path + " is not a tycho-db store"))
+    off := 5
+    version := _take_u32(b, &off) or_return
+    if version != VERSION:
+        return Err(Corrupt(path + " has version " + str(version)))
+    ntables := _take_u32(b, &off) or_return
+    tables: [Table] = []
+    for ti := 0; ti < ntables; ti += 1:
+        tname := _take_str(b, &off) or_return
+        ncols := _take_u32(b, &off) or_return
+        cols: [Col] = []
+        for ci := 0; ci < ncols; ci += 1:
+            cname := _take_str(b, &off) or_return
+            _need(b, off, 1) or_return
+            t := ColInt
+            if b[off] == 1:
+                t = ColText
+            off += 1
+            push(cols, Col(cname, t))
+        nrows := _take_u32(b, &off) or_return
+        rows: [[Val]] = []
+        for ri := 0; ri < nrows; ri += 1:
+            nvals := _take_u32(b, &off) or_return
+            row: [Val] = []
+            for vi := 0; vi < nvals; vi += 1:
+                v := _take_val(b, &off) or_return
+                push(row, v)
+            push(rows, row)
+        push(tables, Table(tname, cols, rows))
+    return Ok(Db(path, tables))
+
+# ---- the database ---------------------------------------------------------
+
+fn open(path: string) -> Result(Db, StoreErr):
+    if not io.exists(path):
+        empty: [Table] = []
+        return Ok(Db(path, empty))
+    match io.read_bytes(path):
+        Ok(blob): return decode(path, blob)
+        Err(e): return Err(Corrupt("cannot read " + path))
+
+fn flush(db: Db) -> Result(bool, StoreErr):
+    match io.write_bytes(db.path, encode(db)):
+        Ok(ok): return Ok(true)
+        Err(e): return Err(NotWritten(db.path))
+
+fn _find(db: Db, name: string) -> int:
+    for i := 0; i < len(db.tables); i += 1:
+        if db.tables[i].name == name:
+            return i
+    return -1
+
+fn table_index(db: Db, name: string) -> Result(int, StoreErr):
+    i := _find(db, name)
+    if i < 0:
+        return Err(NoTable(name))
+    return Ok(i)
+
+fn columns(db: Db, name: string) -> Result([Col], StoreErr):
+    i := table_index(db, name) or_return
+    return Ok(db.tables[i].cols)
+
+fn create_table(db: inout Db, name: string, cols: [Col]) -> Result(bool, StoreErr):
+    if _find(db, name) >= 0:
+        return Err(TableExists(name))
+    rows: [[Val]] = []
+    push(db.tables, Table(name, cols, rows))
+    return Ok(true)
+
+fn insert(db: inout Db, name: string, vals: [Val]) -> Result(bool, StoreErr):
+    i := table_index(db, name) or_return
+    cols := db.tables[i].cols
+    if len(vals) != len(cols):
+        return Err(ColCount(name, len(cols), len(vals)))
+    for k := 0; k < len(vals); k += 1:
+        want := ty_name(cols[k].ty)
+        got := val_ty(vals[k])
+        if want != got:
+            return Err(TypeClash(name, cols[k].name, want, got))
+    push(db.tables[i].rows, vals)
+    return Ok(true)
+
+fn scan(db: Db, name: string) -> Result([[Val]], StoreErr):
+    i := table_index(db, name) or_return
+    return Ok(db.tables[i].rows)

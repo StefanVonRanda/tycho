@@ -4,11 +4,16 @@ import "core:cli"
 import "core:io"
 import "core:strings"
 import "sql"
+import "store"
 
 # tycho-db -- a small relational database written in Tycho.
 #
 # This entry point is deliberately thin: it reads statements and hands them to
-# the layers. Today only the SQL front end exists, so it parses and reports.
+# the layers. Today the SQL front end parses them and the store holds the
+# tables; nothing executes a statement against the store yet.
+
+fn nop():
+    return
 
 fn run_line(src: string) -> int:
     trimmed := strings.trim(src)
@@ -22,19 +27,34 @@ fn run_line(src: string) -> int:
             println("  ERR   " + sql.err_str(e))
             return 1
 
-fn main() -> Result(void, string):
-    av := cli.argv()
-    if len(av) == 0:
-        return Err("usage: tycho-db <script.sql>")
-    if not io.exists(av[0]):
-        return Err("no such file: " + av[0])
-
+fn run_script(script: string, db: inout store.Db) -> Result(void, string):
+    println("  db    " + db.path + " (" + str(len(db.tables)) + " table(s))")
     bad := 0
-    for line in io.read_lines(av[0]):
+    for line in io.read_lines(script):
         if strings.trim(line) != "":
             println(line)
         bad += run_line(line)
 
+    match store.flush(db):
+        Ok(x): nop()
+        Err(e): return Err(store.err_str(e))
     if bad > 0:
         return Err(str(bad) + " statement(s) did not parse")
     return Ok()
+
+fn main() -> Result(void, string):
+    av := cli.argv()
+    if len(av) == 0:
+        return Err("usage: tycho-db <script.sql> [store]")
+    if not io.exists(av[0]):
+        return Err("no such file: " + av[0])
+    path := "tycho.db"
+    if len(av) > 1:
+        path = av[1]
+
+    match store.open(path):
+        Ok(d):
+            db := d
+            return run_script(av[0], &db)
+        Err(e):
+            return Err(store.err_str(e))
