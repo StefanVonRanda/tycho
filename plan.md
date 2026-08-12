@@ -29,3 +29,23 @@ a measurement record. Decide per ref whether it wants an anchor, a date-stamped
 
 **Verify:** `make check-links`. `tools/tycho-vm/main.ty` is 974 lines, so its bare
 refs *can* fail a bounds check — these did not, which is why they survived.
+
+## tycho-db — remaining layers
+
+A relational database in `tools/tycho-db/`, and the tree's first program with
+its own internal packages. `sql/` (lexer, parser, AST) landed in `b899be01`.
+Imports resolve relative to the importing file: a sibling is `../sql`.
+
+Each layer is one phase, one commit, in this order — every step must leave a
+runnable program, never a half-wired one.
+
+- [ ] **store/** — pages, a heap file, row encode/decode, a table catalogue.
+      No B+tree yet; a sequential scan is enough to be correct.
+- [ ] **exec/** — operators over `store`, executing the `sql` AST directly.
+      Done when CREATE/INSERT/SELECT with a WHERE actually returns rows.
+- [ ] **run.sh + golden + `make db-check`** — the lane. Nothing else runs this
+      tool, so until it exists the whole thing is ungated.
+- [ ] **wal/** — write-ahead log and crash recovery. The gate must kill the
+      process mid-transaction and prove the replay.
+- [ ] **plan/** — logical → physical, predicate pushdown, index selection.
+- [ ] **srv/** — wire protocol over `core:net`, plus a client.
