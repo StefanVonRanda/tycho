@@ -353,6 +353,16 @@ make -s flow-check
 # demo.ed does not do.
 step "[3r/24] make ed-check  (tycho-ed: demo transcript byte-identical over 2 runs, a backspace over a 2-byte codepoint asserted at 13->11 bytes and 11->10 codepoints and a forward delete of a 3-byte one at 19->16 and 13->12 against literals, no dump reporting INVALID UTF-8, 6 edits undone to an empty buffer and redone to a byte-identical dump, 7 BufErr variants each refused with their own message)"
 make -s ed-check
+
+# 3s for the same reason 3e-3r are: a tool under tools/ that nothing else runs.
+# Its subject is FLOAT TEXT, and a golden is blind to it the same way 3r's is
+# blind to UTF-8: a renderer that drops a digit and a golden re-recorded from
+# that build agree with each other. So the round trip is asserted in the runner,
+# over a corpus the runner generates -- rendered, parsed back, compared as
+# doubles -- with the four values that motivated cell/dtoa.ty asserted one by
+# one, because a count of 98411 does not say which values were in it.
+step "[3s/25] make sheet-check  (tycho-sheet: demo transcript byte-identical over 2 runs, 98411 generated floats rendered and read back bit-equal with 0.1+0.2, 2^53, DBL_MAX and the min subnormal each asserted separately and none falling back to #NUM!, str(0.1+0.2) round-trips, a cycle NAMED F1 -> F2 -> F3 -> F1 and a self-reference G1 -> G1, 10000- and 100000-deep chains exact and four depth limits past them failing closed by name, 13 of 14 CellErr/ParseErr variants each exiting non-zero with their own whole message and the 14th proved unconstructible)"
+make -s sheet-check
 fi
 
 if [ "$LANE" = rest ]; then

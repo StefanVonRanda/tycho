@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -560,6 +560,37 @@ flow-check: tychoc
 # See tools/tycho-ed/run.sh.
 ed-check: tychoc
 	@sh tools/tycho-ed/run.sh
+
+# sheet-check: the gate for tycho-sheet, the spreadsheet engine in
+# tools/tycho-sheet/. Same shape as the tool lanes above -- nothing else RUNS it
+# -- and the same structural problem as ed-check, one subject over: here it is
+# FLOAT TEXT, which a recorded transcript is blind to. If render() drops a digit,
+# a golden re-recorded from that build agrees with it and `cmp` is green by
+# construction. So the round trip is asserted IN THE RUNNER, where RECORD=1
+# cannot reach it: 98411 generated values are rendered, parsed back and compared
+# as DOUBLES, none may fail, and none may fall back to render()'s "#NUM!" arm.
+# The four values that motivated cell/dtoa.ty -- 0.1+0.2, 2^53, DBL_MAX and the
+# min subnormal -- are each asserted on their own, because the corpus count says
+# 98411 round-trip but not which. 08dc88f8 made str(float) round-trip and so made
+# most of cell/dtoa.ty redundant; the leg that used to assert str() was LOSSY is
+# inverted rather than deleted, and now catches a revert. A cycle must be NAMED
+# (F1 -> F2 -> F3 -> F1, and the self-reference G1 -> G1), not merely detected;
+# 10000- and 100000-deep chains must evaluate exactly, and four different depth
+# limits past them fail closed by name. All 14 CellErr and ParseErr variants bar
+# one exit non-zero with their own whole message through a probe built on a COPY
+# of cell/ and sheet/ -- the --script driver reports errors and exits 0 by
+# design, so it cannot make that claim. Both variant lists are read out of the
+# enums, so a new one cannot arrive ungated. The exception is CellErr.NoText,
+# which bc51c069 made unreachable by teaching corelib subnormals; the runner
+# asserts nothing reaches it AND that nothing in the source constructs it.
+# Every run is bounded by timeout(1): a cycle detector that recursed forever is
+# what half these legs exist to catch, and an unbounded gate would sit there
+# until CI's own timeout killed it with no verdict.
+#
+# ~11s, measured 2026-08-12. In `make ci` as step [3s/25].
+# See tools/tycho-sheet/run.sh.
+sheet-check: tychoc
+	@sh tools/tycho-sheet/run.sh
 
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else

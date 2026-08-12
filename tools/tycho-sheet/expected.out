@@ -225,7 +225,12 @@
   A9999 = 2
 === float round trip over a generated corpus
 subnormal render 5e-324
+render 0.1+0.2   0.30000000000000006
+render 2^53      9007199254740992
+render DBL_MAX   1.7976931348623158e+308
+render subnormal 5e-324
 checked 98411 values, 0 failed to round-trip
+rendered #NUM! for 0 of them
 === str(float) round-trips
 str(0.1+0.2)=0.30000000000000004 str round-trips
 === error variants reached: 13 (1 declared unreachable)
@@ -234,3 +239,31 @@ str(0.1+0.2)=0.30000000000000004 str round-trips
   ERR B2: expected a cell reference or a function call but found 'A99999999' at 0
   ERR B3: formula nested deeper than 64 at 65
   B4 = #VALUE! expression nested deeper than 4096 to evaluate
+=== err NoInput
+empty formula
+=== err BadChar
+unexpected character '@' at 0
+=== err BadNumber
+malformed number '1e999999' at 0
+=== err Expected
+expected a value but found end of formula at 2
+=== err Unclosed
+unclosed '(' opened at 0
+=== err Trailing
+trailing input '2' at 2
+=== err TooDeep
+formula nested deeper than 64 at 65
+=== err HugeRef
+reference 'A1048577' is outside the grid, at 0
+=== err DivZero
+#DIV/0! division by zero
+=== err BadName
+#NAME? unknown function NOPE
+=== err BadRef
+#REF! A1:A9 is a range, not a single cell
+=== err NotNum
+#VALUE! text "xy" is not a number
+=== err Cycle
+#CYCLE! A1 -> B1 -> A1
+=== err SelfCycle
+#CYCLE! G1 -> G1
