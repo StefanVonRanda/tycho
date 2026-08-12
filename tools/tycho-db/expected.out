@@ -42,6 +42,37 @@ SELECT name, age FROM people WHERE age > 30 AND name != 'bob';
   row   ada | 36
   row   dee | 55
   ok    2 row(s)
+=== crash replay (fresh process after kill -9)
+  db    k.db (1 table(s))
+  wal   replayed 3 record(s)
+SELECT * FROM acct;
+  cols  id | who | cents
+  row   1 | ada | 100
+  row   2 | bob | 250
+  ok    2 row(s)
+=== crash replay is idempotent (pre-checkpoint log restored)
+  db    k.db (1 table(s))
+SELECT * FROM acct;
+  cols  id | who | cents
+  row   1 | ada | 100
+  row   2 | bob | 250
+  ok    2 row(s)
+=== crash replay with a torn trailing record [zeros]
+  db    z.db (1 table(s))
+  wal   discarded a torn trailing record
+  wal   replayed 2 record(s)
+SELECT * FROM acct;
+  cols  id | who | cents
+  row   1 | ada | 100
+  ok    1 row(s)
+=== crash replay with a torn trailing record [flip]
+  db    z.db (1 table(s))
+  wal   discarded a torn trailing record
+  wal   replayed 2 record(s)
+SELECT * FROM acct;
+  cols  id | who | cents
+  row   1 | ada | 100
+  ok    1 row(s)
 === err NoTable
 --- stdout
   db    e.db (1 table(s))
@@ -99,8 +130,16 @@ store is corrupt: bad.db is not a tycho-db store
 --- stdout
   db    nodir/x.db (0 table(s))
 CREATE TABLE t (a INT);
-  ok    created t
+  ERR   cannot write nodir/x.db.wal
 --- stderr
 cannot write nodir/x.db
+=== err BadLog
+--- stdout
+--- stderr
+not a tycho-db log: bl.db.wal
+=== err LostPrefix
+--- stdout
+--- stderr
+lp.db is unreadable and its log no longer reaches back past lsn 2
 === err NotAPredicate (via the exec API)
 not a predicate: a

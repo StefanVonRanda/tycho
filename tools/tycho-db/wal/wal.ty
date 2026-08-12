@@ -1,0 +1,342 @@
+package wal
+
+import "core:io"
+import "../store"
+
+# The write-ahead log. Every mutation is framed, checksummed and written to
+# <store>.wal BEFORE store.flush touches the store file, so a process that dies
+# mid-script replays to a state in which each row is either wholly there or
+# wholly absent.
+#
+# WHY A LOG IS NEEDED AT ALL HERE. store.flush is io.write_bytes, which is
+# fopen("wb") -- it TRUNCATES the store and then rewrites it whole. A process
+# killed during that rewrite leaves a short file, i.e. the store's own format
+# is the thing most exposed to a crash. The log is what that file is rebuilt
+# from.
+#
+# WHAT DURABILITY IS ACTUALLY CLAIMED. Process death, not machine death.
+# core:io has no fsync -- grep it -- so nothing here can promise a record
+# survives a power cut. What it does promise is exact: io.write_at pwrites and
+# then close(2)s before returning, so once append() returns Ok the bytes are in
+# the page cache and every later process, including one that starts after a
+# SIGKILL, reads them. That is the boundary the gate tests with a real kill -9,
+# and it is the boundary this file claims. Nothing more.
+#
+# FRAMING: length prefix AND checksum, because they catch different tears.
+#   [u32 len][u32 fnv1a(payload)][payload]
+# The length alone cannot tell a complete record from one whose payload was
+# lost and left zero-filled -- write_at pwrites at an offset, so a gap in a
+# file is a run of zero bytes, not a short file. The checksum alone cannot be
+# read without first knowing where the payload ends. A trailing record is
+# discarded when it is short, when its length runs past end-of-file, or when
+# its checksum disagrees; the records before it are kept.
+#
+# This is the opposite POLICY to store.decode over the same MECHANISM. decode
+# treats "file ends mid-record" as Corrupt and refuses the whole file, which is
+# right for a file that is only ever written whole. A log's last record is
+# expected to be torn -- that is the crash signature, not damage -- so the tail
+# is dropped and the prefix stands.
+#
+# IDEMPOTENCE: records are numbered, and the number of the last one folded into
+# the store travels IN the store file (store.Db.applied_lsn). Replay applies
+# only records above it. Replaying twice is therefore a no-op the second time,
+# which is what makes an interrupted checkpoint safe rather than merely
+# unlikely.
+
+const MAGIC = "TYWAL"
+const VERSION = 1
+const HDR = 17             # 5 magic + 4 version + 8 base_lsn
+const FRAME = 8            # 4 length + 4 checksum
+
+const R_CREATE = 1
+const R_INSERT = 2
+
+# FNV-1a, 32-bit. A few lines and no dependency, against core:sha256 which is
+# 256 bits of cryptographic strength for a job that only has to notice a torn
+# or zero-filled payload -- and which would hash every record on every open.
+# The multiply stays under 2^56 and `int` is 64-bit two's complement by spec
+# (docs/spec/03-types.md:41), so this does not depend on the host's word size.
+const FNV_OFF = 2166136261
+const FNV_PRIME = 16777619
+const M32 = 4294967296
+
+enum WalErr:
+    Storage(store.StoreErr)
+    NotWritten(string)
+    BadLog(string)
+    LostPrefix(string, int)
+
+# A mutation. SELECT is absent on purpose: it changes nothing, so logging it
+# would only make the log grow.
+enum Rec:
+    RCreate(string, [store.Col])
+    RInsert(string, [store.Val])
+
+struct Log:
+    path: string
+    base_lsn: int          # lsn of the record before the first one in this file
+    next_lsn: int          # lsn of the most recent record; the next is this + 1
+    end: int               # byte offset just past the last VALID record
+
+struct Session:
+    db: store.Db
+    log: Log
+    replayed: int
+    torn: bool
+    rebuilt: bool
+
+struct Scan:
+    present: bool
+    base_lsn: int
+    recs: [Rec]
+    end: int
+    torn: bool
+
+fn err_str(e: WalErr) -> string:
+    match e:
+        Storage(s): return store.err_str(s)
+        NotWritten(p): return "cannot write " + p
+        BadLog(p): return "not a tycho-db log: " + p
+        LostPrefix(p, n):
+            return p + " is unreadable and its log no longer reaches back past lsn " + str(n)
+
+fn log_path(store_path: string) -> string:
+    return store_path + ".wal"
+
+fn checksum(b: bytes, from: int, to: int) -> int:
+    h := FNV_OFF
+    for i := from; i < to; i += 1:
+        h = (h ^ b[i]) % M32
+        h = (h * FNV_PRIME) % M32
+    return h
+
+# ---- record codec ---------------------------------------------------------
+#
+# Built from store's exported primitives rather than a second set here, so a
+# value encodes identically in both files and cannot drift out of step.
+
+fn put_rec(r: Rec) -> bytes:
+    match r:
+        RCreate(name, cols):
+            out := to_bytes([R_CREATE]) + store.put_str(name) + store.put_u32(len(cols))
+            for c in cols:
+                out = out + store.put_col(c)
+            return out
+        RInsert(name, vals):
+            out := to_bytes([R_INSERT]) + store.put_str(name) + store.put_u32(len(vals))
+            for v in vals:
+                out = out + store.put_val(v)
+            return out
+
+fn take_rec(b: bytes, off: inout int) -> Result(Rec, store.StoreErr):
+    store.need(b, off, 1) or_return
+    tag := b[off]
+    off += 1
+    name := store.take_str(b, &off) or_return
+    n := store.take_u32(b, &off) or_return
+    if tag == R_CREATE:
+        cols: [store.Col] = []
+        for i := 0; i < n; i += 1:
+            c := store.take_col(b, &off) or_return
+            push(cols, c)
+        return Ok(RCreate(name, cols))
+    if tag != R_INSERT:
+        return Err(store.Corrupt("unknown log record tag " + str(tag)))
+    vals: [store.Val] = []
+    for i := 0; i < n; i += 1:
+        v := store.take_val(b, &off) or_return
+        push(vals, v)
+    return Ok(RInsert(name, vals))
+
+fn _header(base_lsn: int) -> bytes:
+    return to_bytes(MAGIC) + store.put_u32(VERSION) + store.put_u64(base_lsn)
+
+# ---- reading the log ------------------------------------------------------
+
+fn scan(path: string) -> Result(Scan, WalErr):
+    none: [Rec] = []
+    if not io.exists(path):
+        return Ok(Scan(false, 0, none, 0, false))
+    blob := to_bytes("")
+    match io.read_bytes(path):
+        Ok(x): blob = x
+        Err(e): return Err(BadLog(path))
+
+    # A zero-length log is a checkpoint that died between truncating the file
+    # and writing the new header. It is not damage: there is simply nothing to
+    # replay, and the caller re-bases the log from the store's applied_lsn.
+    if len(blob) == 0:
+        return Ok(Scan(true, 0, none, 0, false))
+    if len(blob) < HDR or to_str(blob[0:5]) != MAGIC:
+        return Err(BadLog(path))
+    off := 5
+    version := store.get_u32(blob, off)
+    off += 4
+    if version != VERSION:
+        return Err(BadLog(path))
+    base := store.get_u64(blob, off)
+    off += 8
+
+    recs: [Rec] = []
+    end := off
+    torn := false
+    # `i` bounds the walk, it is not the cursor: every iteration consumes at
+    # least one byte, so len(blob) iterations cannot be exceeded and a corrupt
+    # length can never spin this forever.
+    for i := 0; i < len(blob); i += 1:
+        if off >= len(blob):
+            break
+        if off + FRAME > len(blob):
+            torn = true
+            break
+        n := store.get_u32(blob, off)
+        want := store.get_u32(blob, off + 4)
+        body := off + FRAME
+        if n <= 0 or body + n > len(blob):
+            torn = true
+            break
+        if checksum(blob, body, body + n) != want:
+            torn = true
+            break
+        p := body
+        ok := true
+        match take_rec(blob, &p):
+            Ok(r): push(recs, r)
+            Err(e): ok = false
+        if not ok:
+            torn = true
+            break
+        off = body + n
+        end = off
+    return Ok(Scan(true, base, recs, end, torn))
+
+# ---- appending ------------------------------------------------------------
+
+# Append one record and return its lsn. On return the bytes are in the page
+# cache (write_at closes the fd), which is what "logged before the store
+# changes" means here -- see the durability note at the top.
+fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
+    if lg.end == 0:
+        # No header yet: lay one down whole, so magic and base_lsn land in a
+        # single write rather than leaving a half-header behind.
+        match io.write_bytes(lg.path, _header(lg.base_lsn)):
+            Ok(x): pass
+            Err(e): return Err(NotWritten(lg.path))
+        lg.end = HDR
+    body := put_rec(r)
+    frame := store.put_u32(len(body)) + store.put_u32(checksum(body, 0, len(body))) + body
+    # Written AT lg.end, which is the end of the last VALID record -- so a torn
+    # tail left by an earlier crash is overwritten rather than preserved.
+    match io.write_at(lg.path, lg.end, frame):
+        Ok(x): pass
+        Err(e): return Err(NotWritten(lg.path))
+    lg.end += len(frame)
+    lg.next_lsn += 1
+    return Ok(lg.next_lsn)
+
+# ---- checkpoint -----------------------------------------------------------
+
+# Fold the log into the store and rewind it. The ORDER is the whole contract:
+#
+#   1. write the store, stamped with the lsn it now includes
+#   2. only if that returned Ok, rewind the log
+#
+# Rewinding a log over a store that never landed would destroy the only copy
+# of the missing rows, so step 2 is guarded by step 1's result and nothing
+# else. That guard is sound because io.write_bytes fails CLOSED: it checks
+# both the short fwrite and the fclose (corelib/io/io_shim.c@iox_write_bytes),
+# so an Ok means the whole file was written and closed.
+#
+# An earlier draft re-read the store here and compared the stamp before
+# rewinding. It was removed: given the above it can only fire if the OS
+# reports a success it did not perform, no fixture can reach it, and this
+# runner's own break-test confirmed that deleting the check reddened nothing.
+# A guard no test can fail is not protection, it is decoration.
+#
+# INTERRUPTED AT ANY POINT, THIS IS SAFE:
+#   during 1 -- flush never returns, so the log is never rewound; the store is
+#               torn but the log is intact from base 0 and the next open
+#               rebuilds from it.
+#   during 2 -- the store is good and stamped; the log is either the old one
+#               (whose records are all <= applied_lsn, so replay skips every
+#               one) or empty (nothing to replay). Idempotence is what makes
+#               both outcomes harmless rather than merely improbable.
+fn checkpoint(db: inout store.Db, lg: inout Log) -> Result(bool, WalErr):
+    db.applied_lsn = lg.next_lsn
+    match store.flush(db):
+        Ok(x): pass
+        Err(e): return Err(Storage(e))
+    match io.write_bytes(lg.path, _header(lg.next_lsn)):
+        Ok(x): pass
+        Err(e): return Err(NotWritten(lg.path))
+    lg.base_lsn = lg.next_lsn
+    lg.end = HDR
+    return Ok(true)
+
+# ---- opening and replay ---------------------------------------------------
+
+fn _apply(db: inout store.Db, r: Rec) -> Result(bool, WalErr):
+    match r:
+        RCreate(name, cols):
+            match store.create_table(&db, name, cols):
+                Ok(x): return Ok(true)
+                Err(e): return Err(Storage(e))
+        RInsert(name, vals):
+            match store.insert(&db, name, vals):
+                Ok(x): return Ok(true)
+                Err(e): return Err(Storage(e))
+
+# Open the store with its log applied. This, not store.open, is the entry
+# point a caller wants: it is the only one that returns a Db reflecting
+# mutations that were logged but never folded in.
+fn open_db(store_path: string) -> Result(Session, WalErr):
+    lp := log_path(store_path)
+    sc := scan(lp) or_return
+
+    empty: [store.Table] = []
+    db := store.Db(store_path, empty, 0)
+    rebuilt := false
+    match store.open(store_path):
+        Ok(d): db = d
+        Err(e):
+            # The store would not decode. Rebuilding is only honest when a log
+            # exists AND still reaches back to the beginning; with no log at
+            # all the corruption is the answer, and is reported unchanged.
+            if not sc.present:
+                return Err(Storage(e))
+            if sc.base_lsn != 0:
+                return Err(LostPrefix(store_path, sc.base_lsn))
+            rebuilt = true
+
+    # A log with no header (absent, or zero-length from an interrupted
+    # checkpoint) is re-based on the store, so the next record is numbered
+    # above what the store already contains instead of restarting at 1 and
+    # being skipped by its own idempotence check.
+    base := sc.base_lsn
+    if sc.end == 0:
+        base = db.applied_lsn
+
+    lsn := base
+    replayed := 0
+    for r in sc.recs:
+        lsn += 1
+        if lsn > db.applied_lsn:
+            ok := _apply(&db, r) or_return
+            replayed += 1
+
+    lg := Log(lp, base, base + len(sc.recs), sc.end)
+
+    # A torn tail was dropped from the reading, but the junk is still on disk
+    # and write_at cannot shorten a file. Rewrite the log from the records that
+    # survived so the next append is not sitting in front of garbage.
+    if sc.torn:
+        out := _header(base)
+        for r in sc.recs:
+            body := put_rec(r)
+            out = out + store.put_u32(len(body)) + store.put_u32(checksum(body, 0, len(body))) + body
+        match io.write_bytes(lp, out):
+            Ok(x): pass
+            Err(e): return Err(NotWritten(lp))
+        lg.end = len(out)
+
+    return Ok(Session(db, lg, replayed, sc.torn, rebuilt))

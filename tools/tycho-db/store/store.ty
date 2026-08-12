@@ -23,9 +23,15 @@ struct Table:
     cols: [Col]
     rows: [[Val]]
 
+# applied_lsn is the log sequence number this file's contents include, and it
+# is the whole basis of idempotent replay: wal applies only records numbered
+# ABOVE it. It lives in the store file rather than beside it because it
+# describes exactly these bytes, and a marker in a second file could disagree
+# with them after a crash.
 struct Db:
     path: string
     tables: [Table]
+    applied_lsn: int
 
 enum StoreErr:
     NoTable(string)
@@ -64,21 +70,26 @@ fn err_str(e: StoreErr) -> string:
 # ---- encoding -------------------------------------------------------------
 
 const MAGIC = "TYDB1"
-const VERSION = 1
+const VERSION = 2          # 2 added the applied_lsn header word
 
 const T_POS = 0
 const T_NEG = 1
 const T_TEXT = 2
 
-fn _u32(v: int) -> bytes:
+# These are EXPORTED, not package-private like the rest of the helpers here,
+# because wal/ frames its records with them. One encoder serves both files: a
+# value that round-trips through the store round-trips through the log by
+# construction, and a change to the wire shape cannot move one without the
+# other. A second copy in wal/ would be free to drift silently.
+fn put_u32(v: int) -> bytes:
     return to_bytes([v % 256, (v / 256) % 256, (v / 65536) % 256, (v / 16777216) % 256])
 
-fn _get_u32(b: bytes, off: int) -> int:
+fn get_u32(b: bytes, off: int) -> int:
     return b[off] + b[off + 1] * 256 + b[off + 2] * 65536 + b[off + 3] * 16777216
 
 # magnitude only: the sign travels in the value's tag byte, so no shift ever
 # runs into the sign bit
-fn _u64(v: int) -> bytes:
+fn put_u64(v: int) -> bytes:
     out := []int
     m := v
     for i := 0; i < 8; i += 1:
@@ -86,115 +97,125 @@ fn _u64(v: int) -> bytes:
         m = m / 256
     return to_bytes(out)
 
-fn _get_u64(b: bytes, off: int) -> int:
+fn get_u64(b: bytes, off: int) -> int:
     v := 0
     for i := 7; i >= 0; i -= 1:
         v = v * 256 + b[off + i]
     return v
 
-fn _put_str(s: string) -> bytes:
-    return _u32(len(s)) + to_bytes(s)
+fn put_str(s: string) -> bytes:
+    return put_u32(len(s)) + to_bytes(s)
 
-fn _put_val(v: Val) -> bytes:
+fn put_val(v: Val) -> bytes:
     match v:
         VInt(n):
             if n < 0:
-                return to_bytes([T_NEG]) + _u64(-n)
-            return to_bytes([T_POS]) + _u64(n)
+                return to_bytes([T_NEG]) + put_u64(-n)
+            return to_bytes([T_POS]) + put_u64(n)
         VText(s):
-            return to_bytes([T_TEXT]) + _put_str(s)
+            return to_bytes([T_TEXT]) + put_str(s)
+
+fn put_col(c: Col) -> bytes:
+    tag := 0
+    if c.ty is ColText:
+        tag = 1
+    return put_str(c.name) + to_bytes([tag])
 
 fn encode(db: Db) -> bytes:
-    out := to_bytes(MAGIC) + _u32(VERSION) + _u32(len(db.tables))
+    out := to_bytes(MAGIC) + put_u32(VERSION) + put_u64(db.applied_lsn) + put_u32(len(db.tables))
     for t in db.tables:
-        out = out + _put_str(t.name) + _u32(len(t.cols))
+        out = out + put_str(t.name) + put_u32(len(t.cols))
         for c in t.cols:
-            tag := 0
-            if c.ty is ColText:
-                tag = 1
-            out = out + _put_str(c.name) + to_bytes([tag])
-        out = out + _u32(len(t.rows))
+            out = out + put_col(c)
+        out = out + put_u32(len(t.rows))
         for r in t.rows:
-            out = out + _u32(len(r))
+            out = out + put_u32(len(r))
             for v in r:
-                out = out + _put_val(v)
+                out = out + put_val(v)
     return out
 
 # ---- decoding -------------------------------------------------------------
 
-fn _need(b: bytes, off: int, n: int) -> Result(void, StoreErr):
+fn need(b: bytes, off: int, n: int) -> Result(void, StoreErr):
     if off + n > len(b):
         return Err(Corrupt("file ends mid-record"))
     return Ok()
 
-fn _take_u32(b: bytes, off: inout int) -> Result(int, StoreErr):
-    _need(b, off, 4) or_return
-    v := _get_u32(b, off)
+fn take_u32(b: bytes, off: inout int) -> Result(int, StoreErr):
+    need(b, off, 4) or_return
+    v := get_u32(b, off)
     off += 4
     return Ok(v)
 
-fn _take_str(b: bytes, off: inout int) -> Result(string, StoreErr):
-    n := _take_u32(b, &off) or_return
-    _need(b, off, n) or_return
+fn take_str(b: bytes, off: inout int) -> Result(string, StoreErr):
+    n := take_u32(b, &off) or_return
+    need(b, off, n) or_return
     s := to_str(b[off: off + n])
     off += n
     return Ok(s)
 
-fn _take_val(b: bytes, off: inout int) -> Result(Val, StoreErr):
-    _need(b, off, 1) or_return
+fn take_val(b: bytes, off: inout int) -> Result(Val, StoreErr):
+    need(b, off, 1) or_return
     tag := b[off]
     off += 1
     if tag == T_TEXT:
-        s := _take_str(b, &off) or_return
+        s := take_str(b, &off) or_return
         return Ok(VText(s))
     if tag != T_POS and tag != T_NEG:
         return Err(Corrupt("unknown value tag " + str(tag)))
-    _need(b, off, 8) or_return
-    n := _get_u64(b, off)
+    need(b, off, 8) or_return
+    n := get_u64(b, off)
     off += 8
     if tag == T_NEG:
         return Ok(VInt(-n))
     return Ok(VInt(n))
 
+fn take_col(b: bytes, off: inout int) -> Result(Col, StoreErr):
+    name := take_str(b, &off) or_return
+    need(b, off, 1) or_return
+    t := ColInt
+    if b[off] == 1:
+        t = ColText
+    off += 1
+    return Ok(Col(name, t))
+
 fn decode(path: string, b: bytes) -> Result(Db, StoreErr):
     if len(b) < 5 or to_str(b[0:5]) != MAGIC:
         return Err(Corrupt(path + " is not a tycho-db store"))
     off := 5
-    version := _take_u32(b, &off) or_return
+    version := take_u32(b, &off) or_return
     if version != VERSION:
         return Err(Corrupt(path + " has version " + str(version)))
-    ntables := _take_u32(b, &off) or_return
+    need(b, off, 8) or_return
+    applied := get_u64(b, off)
+    off += 8
+    ntables := take_u32(b, &off) or_return
     tables: [Table] = []
     for ti := 0; ti < ntables; ti += 1:
-        tname := _take_str(b, &off) or_return
-        ncols := _take_u32(b, &off) or_return
+        tname := take_str(b, &off) or_return
+        ncols := take_u32(b, &off) or_return
         cols: [Col] = []
         for ci := 0; ci < ncols; ci += 1:
-            cname := _take_str(b, &off) or_return
-            _need(b, off, 1) or_return
-            t := ColInt
-            if b[off] == 1:
-                t = ColText
-            off += 1
-            push(cols, Col(cname, t))
-        nrows := _take_u32(b, &off) or_return
+            c := take_col(b, &off) or_return
+            push(cols, c)
+        nrows := take_u32(b, &off) or_return
         rows: [[Val]] = []
         for ri := 0; ri < nrows; ri += 1:
-            nvals := _take_u32(b, &off) or_return
+            nvals := take_u32(b, &off) or_return
             row: [Val] = []
             for vi := 0; vi < nvals; vi += 1:
-                v := _take_val(b, &off) or_return
+                v := take_val(b, &off) or_return
                 push(row, v)
             push(rows, row)
         push(tables, Table(tname, cols, rows))
-    return Ok(Db(path, tables))
+    return Ok(Db(path, tables, applied))
 
 # ---- the database ---------------------------------------------------------
 
 fn open(path: string) -> Result(Db, StoreErr):
     if not io.exists(path):
         empty: [Table] = []
-        return Ok(Db(path, empty))
+        return Ok(Db(path, empty, 0))
     match io.read_bytes(path):
         Ok(blob): return decode(path, blob)
         Err(e): return Err(Corrupt("cannot read " + path))

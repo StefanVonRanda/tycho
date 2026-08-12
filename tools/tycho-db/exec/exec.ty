@@ -2,13 +2,21 @@ package exec
 
 import "../sql"
 import "../store"
+import "../wal"
 
 # The executor: a sql.Stmt run against a store.Db. Every operator is a
 # sequential scan over the rows the store already holds -- no plan, no index,
 # no join. Storage errors travel up wrapped, so a caller sees one cause enum.
+#
+# Every mutation is written to the log here rather than in main, because this
+# is the layer that knows which statements mutate and what they resolved to.
+# run() takes the log by inout for the same reason there is no unlogged
+# variant of it: a mutation that skipped the log would be invisible to replay,
+# and an API that makes that possible eventually has a caller who does it.
 
 enum ExecErr:
     Storage(store.StoreErr)
+    Wal(wal.WalErr)
     NoColumn(string, string)
     Uncomparable(string, string)
     NotAValue(string)
@@ -26,6 +34,7 @@ enum Outcome:
 fn err_str(e: ExecErr) -> string:
     match e:
         Storage(s): return store.err_str(s)
+        Wal(w): return wal.err_str(w)
         NoColumn(t, c): return t + " has no column " + c
         Uncomparable(a, b): return "cannot compare " + a + " with " + b
         NotAValue(s): return "not a value: " + s
@@ -109,7 +118,7 @@ fn _pred(tbl: string, cols: [store.Col], row: [store.Val], e: sql.Expr) -> Resul
 
 # ---- the statements -------------------------------------------------------
 
-fn _create(db: inout store.Db, name: string, defs: [sql.ColDef]) -> Result(Outcome, ExecErr):
+fn _create(db: inout store.Db, lg: inout wal.Log, name: string, defs: [sql.ColDef]) -> Result(Outcome, ExecErr):
     cols: [store.Col] = []
     for k := 0; k < len(defs); k += 1:
         t := store.ColInt
@@ -117,17 +126,27 @@ fn _create(db: inout store.Db, name: string, defs: [sql.ColDef]) -> Result(Outco
             t = store.ColText
         push(cols, store.Col(defs[k].name, t))
     match store.create_table(&db, name, cols):
-        Ok(x): return Ok(Created(name))
+        Ok(x): pass
         Err(e): return Err(Storage(e))
+    # Logged after the apply, not before: the apply is in MEMORY and the store
+    # file is untouched until checkpoint, so the record still reaches disk
+    # first -- and a statement the store rejected never enters the log, which
+    # keeps replay from re-running a failure.
+    match wal.append(&lg, wal.RCreate(name, cols)):
+        Ok(n): return Ok(Created(name))
+        Err(e): return Err(Wal(e))
 
-fn _insert(db: inout store.Db, name: string, exprs: [sql.Expr]) -> Result(Outcome, ExecErr):
+fn _insert(db: inout store.Db, lg: inout wal.Log, name: string, exprs: [sql.Expr]) -> Result(Outcome, ExecErr):
     vals: [store.Val] = []
     for k := 0; k < len(exprs); k += 1:
         v := _lit(exprs[k]) or_return
         push(vals, v)
     match store.insert(&db, name, vals):
-        Ok(x): return Ok(Inserted(name))
+        Ok(x): pass
         Err(e): return Err(Storage(e))
+    match wal.append(&lg, wal.RInsert(name, vals)):
+        Ok(n): return Ok(Inserted(name))
+        Err(e): return Err(Wal(e))
 
 fn _select(db: store.Db, want: [string], tbl: string, w: Option(sql.Expr)) -> Result(Outcome, ExecErr):
     cols: [store.Col] = []
@@ -166,8 +185,8 @@ fn _select(db: store.Db, want: [string], tbl: string, w: Option(sql.Expr)) -> Re
             push(out, proj)
     return Ok(Selected(Rows(names, out)))
 
-fn run(db: inout store.Db, st: sql.Stmt) -> Result(Outcome, ExecErr):
+fn run(db: inout store.Db, lg: inout wal.Log, st: sql.Stmt) -> Result(Outcome, ExecErr):
     match st:
-        sql.Create(name, defs): return _create(&db, name, defs)
-        sql.Insert(name, exprs): return _insert(&db, name, exprs)
+        sql.Create(name, defs): return _create(&db, &lg, name, defs)
+        sql.Insert(name, exprs): return _insert(&db, &lg, name, exprs)
         sql.Select(want, tbl, w): return _select(db, want, tbl, w)

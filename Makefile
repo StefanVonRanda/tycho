@@ -466,16 +466,26 @@ kv-check: tychoc
 # store and a fourth reads all four rows -- and those rows are literals in the
 # runner, not a slice of the golden, so a re-record cannot bless a lost row.
 #
-# The other half is the refusals: all eleven named variants of store.StoreErr
-# and exec.ExecErr must exit non-zero with THEIR OWN message, compared whole
-# rather than by substring, with Corrupt additionally leaving stdout empty.
-# NotAPredicate is unreachable from SQL text (sql._predicate only builds Cmp
-# and And, both of which exec._pred handles), so the runner copies the three
-# packages into its temp dir and probes the exec API directly. The variant
-# list is EXTRACTED from the two enums and checked against what the runner
-# covers, so a variant added later reddens here instead of arriving ungated.
+# CRASH AND REPLAY is the third half, and the reason wal/ exists. A REAL
+# kill -9 -- tycho-db's --crash-after=N hook runs kill(1) on its own pid --
+# lands between the log write and the store write; a fresh process must then
+# replay to every COMPLETED row and no partial one. Replay is asserted
+# idempotent (a restored pre-checkpoint log must not double-apply) and a torn
+# trailing record must be discarded rather than replayed, in both the
+# zero-filled and the byte-flipped shape. Durability against power loss is NOT
+# claimed anywhere: core:io has no fsync.
 #
-# ~5.4s, measured 2026-08-12. In `make ci` as step [3p/22].
+# The other half is the refusals: all sixteen named variants of store.StoreErr,
+# exec.ExecErr and wal.WalErr must exit non-zero with THEIR OWN message,
+# compared whole rather than by substring, with Corrupt and BadLog
+# additionally leaving stdout empty. NotAPredicate is unreachable from SQL text
+# (sql._predicate only builds Cmp and And, both of which exec._pred handles),
+# so the runner copies the four packages into its temp dir and probes the exec
+# API directly. The variant list is EXTRACTED from the three enums and checked
+# against what the runner covers, so a variant added later reddens here instead
+# of arriving ungated.
+#
+# ~6.0s, measured 2026-08-12. In `make ci` as step [3p/22].
 # See tools/tycho-db/run.sh.
 db-check: tychoc
 	@sh tools/tycho-db/run.sh

@@ -39,7 +39,5 @@ Imports resolve relative to the importing file: a sibling is `../sql`.
 Each layer is one phase, one commit, in this order — every step must leave a
 runnable program, never a half-wired one.
 
-- [ ] **wal/** — write-ahead log and crash recovery. The gate must kill the
-      process mid-transaction and prove the replay.
 - [ ] **plan/** — logical → physical, predicate pushdown, index selection.
 - [ ] **srv/** — wire protocol over `core:net`, plus a client.
