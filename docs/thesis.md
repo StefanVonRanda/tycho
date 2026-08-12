@@ -150,6 +150,63 @@ everyone else.
 
 Quadratic → linear, and the optimized memory does not scale with N.
 
+#### A second shape the append optimization does not cover: replacement
+
+Self-append is one way a loop abandons its accumulator. There is another, and
+`tools/tycho-ed/` is a worked case of it. A text editor's line buffer does
+
+```
+b.lines[ln] = s[0:c] + t + s[c:len(s)]
+```
+
+on every keystroke. That is not `acc = acc + e` — the old line is not a prefix
+of the new one, it is *replaced* — so the self-append shape does not match and
+nothing grows in place. Each edit allocates a whole new line and abandons the
+previous copy inside a scope that never ends: an editing session is one arena
+that lives as long as the program.
+
+*Measured* on a 16-core box, 2026-08-12, `tychoc tools/tycho-ed/main.ty` then
+`--stress=N` (see `tools/tycho-ed/main.ty@stress`; N edits in ten equal
+buckets, one character each with Enter every 60 so the *line* stays bounded
+while the *document* grows):
+
+| N edits | first bucket | last bucket | last/first | document | peak RSS |
+|---|---|---|---|---|---|
+| 10 000 | 133 ns/edit | 119 ns/edit | 89% | 15 KB | 5.8 MB |
+| 100 000 | 133 ns/edit | 298 ns/edit | 224% | 147 KB | 11.8 MB |
+| 1 000 000 | 214 ns/edit | 1413 ns/edit | 660% | 1.46 MB | 95.7 MB |
+
+Flat through 10 000 edits, already drifting at 100 000, and about 7× slower per
+edit by a million — with 65× more memory resident than the document it is
+holding.
+
+**It is not the arena's allocation cost, and that is what makes the case worth
+recording.** Four controls, each 1 000 000 steps in the same ten-bucket shape:
+pushing a two-field struct onto an array, bounded string concatenation (reset
+every 60 steps, so it measures churn and not quadratic growth), pushing into an
+array field of an `inout` struct, and pushing an enum variant carrying a string.
+All four land between 5 and 35 ns/step and none degrades meaningfully across the
+range — the worst, the enum carrying a string, goes 17 → 35 ns and is still
+*forty times* under what the editor costs at the same point. No single
+ingredient of an edit is slow. What the editor adds is **volume**: a million
+abandoned line copies that nothing reclaims, and a resident set that grows with
+the session rather than with the document.
+
+The mitigation is the same one 4b already names, in the shape this workload
+needs: **mutate in place instead of rebuilding**. For an editor that means a gap
+buffer — a line held as text-before-cursor, a gap, and text-after-cursor, where
+inserting a character writes one byte into the gap and allocates nothing. The
+number above is what a gap-buffer slice would be measured against.
+
+Written down here rather than filed as a defect, because it is not one: it is a
+measured instance of a limit this project already concedes. The memory-model
+guide says the same thing in general terms — allocation-churn workloads are
+where the arena is at its weakest, and the honest loss
+([`docs/guides/memory-model.md:116-118`](guides/memory-model.md)). What the
+controls add is the reason to believe the diagnosis: without them, "1 M edits
+got 7× slower" is equally well explained by the arena, by string
+concatenation, or by `inout`, and the fix would be aimed at the wrong one.
+
 The pattern across 4a/4b: **the optimization is the model's own asymmetry,
 applied locally.** Neither touches the source language or the value-semantic
 guarantee.

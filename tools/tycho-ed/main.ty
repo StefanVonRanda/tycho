@@ -135,21 +135,24 @@ fn script(path: string) -> Result(void, string):
 # array after each one, which is what a snapshot undo stack costs under value
 # semantics. It is the control the journal is measured against.
 #
-# WHAT THIS MEASURED, 2026-08-12, 16-core box. Journal: flat to 100k edits
-# (~140 ns/edit, last bucket within 2x of the first and inside run-to-run
-# noise at 10k), then degrading to ~1540 ns/edit by 1M -- an 8x drift the
-# arena claim did not predict. Snapshot: 820 -> 7079 ns/edit within a single
-# 10k session, and 297 MB of retained copies for a 30 KB document at 20k.
+# WHAT THIS MEASURED, 2026-08-12, 16-core box, re-verified the same day.
+# Journal: flat through 10k edits (133 -> 119 ns/edit, last/first 89%, inside
+# run-to-run noise), already drifting at 100k (133 -> 298, last/first 224% and
+# 220% on a second run), and 214 -> 1413 ns/edit by 1M -- a ~7x drift the arena
+# claim did not predict. Snapshot: 820 -> 7079 ns/edit within a single 10k
+# session, and 297 MB of retained copies for a 30 KB document at 20k.
 #
 # The drift is NOT the arena. Four controls -- 1M pushes of a struct, 1M
 # bounded string concatenations, 1M pushes into a field of an `inout` struct,
-# and 1M pushes of an enum carrying a string -- each held flat at 17-52
-# ns/step over the same range, so no single ingredient degrades. What the
-# editor adds is VOLUME: every keystroke abandons the previous version of its
-# line, an arena reclaims nothing, and 1M edits reach 97 MB of resident memory
-# for a 150 KB document. Naming it here rather than guessing at a fix: the
-# next slice can test a gap buffer, which mutates a line in place instead of
-# rebuilding it, against exactly this number.
+# and 1M pushes of an enum carrying a string -- all land at 5-35 ns/step over
+# the same range, the worst of them (the enum) 40x under what an edit costs at
+# 1M, so no single ingredient degrades. What the editor adds is VOLUME: every
+# keystroke abandons the previous version of its line, an arena reclaims
+# nothing, and 1M edits reach 96 MB of resident memory for a document that is
+# only 1.46 MB -- at 100k edits, where the document is 147 KB, it is 12 MB.
+# Naming it here rather than guessing at a fix: the next slice can test a gap
+# buffer, which mutates a line in place instead of rebuilding it, against
+# exactly this number. Written up as a worked case in docs/thesis.md 4b.
 fn stress(n: int, snapshot: bool):
     glyphs := ["a", "b", "c", " ", "é", "ö", "字", "e"]
     buckets := 10
