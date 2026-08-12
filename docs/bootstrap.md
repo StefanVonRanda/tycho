@@ -101,16 +101,17 @@ drift as `tychoc0` drifts, and that drift is expected rather than a defect.
 
 Two consequences a reader needs, because both have cost real time:
 
-1. **The freeze reaches the corelib, not just `tychoc0`.** Four per-example
-   runners still feed their entry point to a freshly built `tychoc0`
-   (`examples/webserver/run.sh:24`, `examples/weblog/run.sh:24`,
-   `examples/fetch/run.sh:35`, `examples/sqlite/run.sh:31`), so every corelib
-   package in those programs' import closure is written in the intersection of two
-   languages. The enumerated split — **13 packages blocked, 24 free** — is in
-   [Appendix E.2](spec/appendix-e-conformance.md#e2-the-coverage-matrix), and
-   since 2026-07-26 `scripts/frontparity.sh` feeds those four entry points too, so
-   the split is checkable by running it rather than by closing the import graph on
-   paper.
+1. **The freeze used to reach the corelib, not just `tychoc0` — that leg is
+   gone.** Four per-example runners once fed their entry point to a freshly
+   built `tychoc0`, which put every corelib package in those programs' import
+   closure into the intersection of two languages. **All four retired that leg
+   on 2026-07-29** and say so in their own headers
+   (`examples/webserver/run.sh:30`, `examples/weblog/run.sh:19`,
+   `examples/fetch/run.sh:10`, `examples/sqlite/run.sh:9`); `scripts/frontparity.sh`,
+   which fed the same four entry points, was retired the same day. The
+   enumerated split — **13 packages blocked, 24 free** — is in
+   [Appendix E.2](spec/appendix-e-conformance.md#e2-the-coverage-matrix), and is
+   now a historical record: nothing runs it, so it can only be closed on paper.
 2. **`compiler/tychoc0.ty`'s own `:N` self-citations are off by −50.** The freeze
    banner was prepended to an otherwise unchanged file; add 50 to any line number
    quoted in its comments. Citations *from* `docs/` into it were corrected and are

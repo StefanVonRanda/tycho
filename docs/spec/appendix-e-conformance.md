@@ -359,8 +359,9 @@ are flagged here so the gap is explicit rather than hidden:
   closing the import graph from every file a `tychoc0` runner compiled
   (`examples/*.ty`, `tools/*.ty`, `tests/*.ty`, `tests/pkg/*/main.ty`,
   `compiler/tychoc0.ty`, plus the four per-example runners at
-  `examples/webserver/run.sh:24`, `examples/weblog/run.sh:24`,
-  `examples/fetch/run.sh:35` and `examples/sqlite/run.sh:31`) reached **13**
+  `examples/webserver/run.sh:30`, `examples/weblog/run.sh:19`,
+  `examples/fetch/run.sh:10` and `examples/sqlite/run.sh:9` — each now the
+  header recording that the leg was retired on 2026-07-29) reached **13**
   corelib packages — `cli`, `datetime`, `http`, `httpd`, `io`, `json`, `markdown`,
   `net`, `path`, `result`, `sha256`, `sort`, `strings` — which could **not** use a
   `bytes` operator. The other **24**, including `base64`, `compress`, `crypto`,

@@ -387,8 +387,11 @@ site is either implemented or written down as a refusal with its cost.
   after** (`time`, warm) — the sub-second cost everyone pays is unmoved.
   `sh scripts/check_links.sh` ok (119 markdown files), 0.488 s.
 
-- [ ] **Phase 6 — rotted citations whose repair is a prose rewrite, not a
+- [x] **Phase 6 — rotted citations whose repair is a prose rewrite, not a
       re-point** *(discovered by Phase 4, out of its scope, not absorbed)*
+      DONE for the seven enumerated bullets. **The systemic block at the end was
+      NOT done** — it is a day's work by the phase's own estimate and is refiled
+      as Phase 19 rather than ticked along with the rest.
 
   Each was confirmed by reading the cited source. None is a coordinate that can
   simply be moved; the surrounding sentence asserts something the tree no longer
@@ -428,6 +431,38 @@ site is either implemented or written down as a refusal with its cost.
   bare ref into a 12k-line file can never fail. Re-pointing them is a day's work
   that lasts until the next compiler phase; anchoring them as they are
   re-pointed is what makes the repair hold.
+
+  **Evidence — each read against its source, then rewritten or deleted.**
+
+  | citation | claimed | true now | done |
+  |---|---|---|---|
+  | `ROADMAP.md:231` | `is_ok` is `Ok(v): return true`, so `core:result`'s combinators "cannot be instantiated at" `Result(void, E)` | `corelib/result/result.ty@is_ok` is `return r is Ok`; built and ran a `touch(x) -> Result(void, string)` through `result.is_ok`/`is_err` — both compile and print `true`. The gap is **closed** | section retitled "**closed**", the false gap claim deleted and replaced with what the `is` rewrite actually did |
+  | `ROADMAP.md:233` | `is_err` at `` `:76` `` | `:76` is inside `is_ok`; `is_err` is at `:78` | replaced with the rename-proof `corelib/result/result.ty@is_err` |
+  | same paragraph, tail | `0faccaf` "did *not* add the instantiating call site, so the message still points at a file the caller cannot edit" | `be325b4` added it — re-probed, the refusal now prints a `note: ... this call instantiated the generic` naming the caller's own line | sentence rewritten to record both fixes |
+  | `docs/bootstrap.md:106-107` | four runners "**still**" feed their entry point to a freshly built `tychoc0` | all four retired that leg 2026-07-29 and say so in their own headers (`examples/webserver/run.sh:30`, `examples/weblog/run.sh:19`, `examples/fetch/run.sh:10`, `examples/sqlite/run.sh:9`); `scripts/frontparity.sh`, credited in the same line, is retired too | rewritten to past tense, coordinates moved to the retirement headers, and the 13/24 split marked as a historical record nothing runs |
+  | `docs/spec/appendix-e-conformance.md:362-363` | the same four runner coordinates | prose was already correctly past-tense; only the coordinates rotted | coordinates repointed to the retirement headers |
+  | `server/README.md:276` | cites `docs/internals/FRICTION.md:601` for the `write-failed` log line | the string occurs nowhere in FRICTION.md; it is emitted at `server/main.ty:569` | repointed and anchored to the real source |
+  | `docs/internals/FRICTION.md:420` | `ncpu()` registered at line 4682 of `src/tychoc.c`, lowering at line 9456 | line 9456 is `collect_append_ops`; registration is `src/tychoc.c:5112`, lowering `src/tychoc.c:10094` | both repointed and **anchored**, so a future shift reddens instead of drifting |
+  | `docs/internals/FRICTION.md:1020` (×2) | quotes a comment at `corelib/test/io/main.ty:43` praising it for distinguishing the language from the frozen compiler | `:43` is `fn sl(...)`; the comment was rewritten and at `:51` now records the **opposite** — that nothing builds tychoc0 and nested patterns are writable | the dead coordinate dropped from both refs and the reversal recorded inline |
+
+  Where a claim was simply obsolete it was deleted rather than guessed at: the
+  `Result(void, E)` gap paragraph is gone, not reworded into a smaller gap.
+  Gate: `sh scripts/check_links.sh` ok (119 markdown files, no dead relative
+  links) and `python3 scripts/check_citations.py` ok. `make test` deliberately
+  not run — prose only, and it cannot redden for it.
+
+- [ ] **Phase 19 — the whole-document citation drift, still uncosted**
+      *(split out of Phase 6, which repaired only its enumerated bullets)*
+
+  Five documents have drifted as a block, every ref into `src/tychoc.c` or
+  `runtime/tycho_rt.c`: `docs/spec/15-program.md` (15 refs),
+  `docs/internals/design-scalar-match.md`, `docs/rfc/value-lifetime-regions.md`,
+  `docs/internals/value-semantics-limits.md`, `docs/rfc/limited-references-spike.md`.
+  Phase 6 verified the shape of the problem and left it: re-pointing is a day's
+  work that lasts until the next compiler phase, so the repair is only worth
+  doing **as a conversion to anchored `path:N@token` form**, after which
+  `scripts/check_citations.py` polices them forever. Bare refs into a 12k-line
+  file can never fail a bounds check, which is why this is invisible today.
 
 - [x] **Phase 7 — adversarially exercise the surface that shipped 2026-08-11**
 

@@ -273,7 +273,7 @@ the rough edges they closed.)
   `corelib/net/net_shim.c:151-152`). Before this, one client that sent a partial request and closed
   without reading killed the entire server — `SIGPIPE`, signal 13, every worker
   and every in-flight connection gone. The server now survives 100 consecutive
-  hostile disconnects and logs them as `write-failed` (`docs/internals/FRICTION.md:601`);
+  hostile disconnects and logs them as `write-failed` (`server/main.ty:569@write-failed`);
   `make server-check` re-runs a 50-disconnect version of that on every CI sweep.
 - **`TCP_NODELAY`** (`corelib/net/net_shim.c:154-155`).
   `httpd.write_response` sends the head and the body as two writes, on purpose,

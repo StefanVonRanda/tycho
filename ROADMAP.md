@@ -224,24 +224,22 @@ type-system one", inferred from the compiler using the word "void" in its own
 diagnostics. That was wrong — diagnostic text is not evidence about the type
 system — and the sentinel collision is why.
 
-#### A gap the `void` work left behind, found by this probe
+#### A gap the `void` work left behind — **closed**
 
-`Result(void, E)` is expressible, but **`core:result`'s own combinators cannot be
-instantiated at it.** `result.is_ok(touch(1))`, where `touch` returns
-`Result(void, string)`, is rejected: `corelib/result/result.ty:71` is
-`Ok(v): return true`, and with the ok payload bound to `void` that arm has no
-value to bind. `is_err` (`:76`) has the same shape, and every combinator taking
-`Result($T, $E)` is a candidate. The `is` operator is the working substitute —
-`touch(1) is Ok` compiles and answers `true` — so this is boilerplate, not a
-wall, exactly as the original `Result(void, E)` row was.
+This probe found that `core:result`'s combinators could not be instantiated at
+`Result(void, E)`: `is_ok` was a `match` whose `Ok(v)` arm had no value to bind
+when the ok payload was `void`. **Both halves are fixed and the claim no longer
+describes the tree.** `is_ok` is `return r is Ok`
+(`corelib/result/result.ty@is_ok`) and `is_err` is `return r is Err`
+(`corelib/result/result.ty@is_err`) — no `match`, so nothing to fail to bind. A
+`touch` returning `Result(void, string)` now compiles through both:
+`result.is_ok(touch(1))` and `result.is_err(touch(-1))` each answer `true`.
 
-Two defects, one probe. The diagnostic also **names the wrong file**: an
-eleven-line `main.ty` reports `./main.ty:71`, which is the line inside
-`corelib/result/result.ty`, not the user's file. A reader sent to line 71 of an
-eleven-line file has been told nothing. **Fixed 2026-08-11 by `0faccaf`**, which
-makes a generic instantiation failure name the corelib file it is really in; it
-changed no decision here. What that commit did *not* add is the instantiating
-call site, so the message still points at a file the caller cannot edit.
+The second defect this probe filed — the diagnostic **naming the wrong file**,
+sending a reader to line 71 of an eleven-line `main.ty` — is also fixed:
+`0faccaf` made a generic instantiation failure name the corelib file it is
+really in, and `be325b4` added the instantiating call site as a `note:`, so the
+message now names both the corelib line and the caller's own line.
 
 #### Sizing `[string]` across the FFI — both answers, with costs
 
