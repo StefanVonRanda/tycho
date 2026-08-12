@@ -20,13 +20,15 @@
 #       difference between two runs is uninitialised state or map iteration
 #       order leaking into output, not scheduling.
 #   [2] THE FLOAT ROUND TRIP, over a corpus this runner generates and against
-#       literals. 98410 values -- every i/j for i,j in 1..120, 40000
+#       literals. 98411 values -- every i/j for i,j in 1..120, 40000
 #       pseudo-random mantissas swept across the exponent range with both signs,
 #       and 4000 pushed out to 10^+-300 -- are rendered, parsed back with
-#       strtod, and compared as doubles. Exactly ONE may fail, and it must be
-#       the min subnormal: strings.parse_float refuses every subnormal as
-#       Underflow, so no text round-trips one. That count is a literal below,
-#       so a renderer that regressed to 15 digits moves it by thousands.
+#       strtod, and compared as doubles. NONE may fail. Until 2026-08-12 one
+#       was allowed to -- the min subnormal, because strings.parse_float refused
+#       every subnormal as Underflow and no text round-tripped one. corelib was
+#       fixed (FRICTION #23) and the exception went with it. That count is a
+#       literal below, so a renderer that regressed to 15 digits moves it by
+#       thousands.
 #   [3] `str(float)` ROUND-TRIPS, asserted directly. This leg used to assert the
 #       opposite -- that `str(0.1 + 0.2)` was the lossy "0.3" -- because that was
 #       the whole reason cell/ carries a renderer. It went red on 2026-08-12 when
@@ -191,9 +193,14 @@ fn main():
         for q := 0; q > e; q -= 1:
             v /= 10.0
         chk(v, &bad, &n)
-    # The one value that CANNOT round-trip: strings.parse_float refuses every
-    # subnormal as Underflow, so there is no text for it. render() says #NUM!.
+    # The min subnormal. This used to be the ONE value in the corpus that could
+    # not round-trip, and not because render() failed: strings.parse_float
+    # refused every subnormal as Underflow, so no text for it existed and
+    # render() said #NUM!. corelib was fixed on 2026-08-12 (FRICTION #23), so it
+    # is now an ordinary value and goes through chk() like every other. Its
+    # rendering is still printed, because it is the one the header quotes.
     sub := 5e-324
+    chk(sub, &bad, &n)
     println("subnormal render " + cell.render(sub))
     println("checked " + str(n) + " values, " + str(bad) + " failed to round-trip")
 EOF
@@ -202,12 +209,12 @@ if ! "$TYCHOC" "$P/probe.ty" -o "$T/probe" >"$T/probe.log" 2>&1; then
     sed 's/^/      /' "$T/probe.log" | head -8
 else
     $TO "$T/probe" > "$T/probe.out" 2>&1 || bad "probe: the round-trip probe did not exit 0"
-    grep -qxF "checked 98410 values, 0 failed to round-trip" "$T/probe.out" || {
+    grep -qxF "checked 98411 values, 0 failed to round-trip" "$T/probe.out" || {
         bad "the float round trip is not exact over the corpus"
         sed 's/^/      /' "$T/probe.out" | head -12
     }
-    grep -qxF "subnormal render #NUM!" "$T/probe.out" || {
-        bad "5e-324 no longer renders #NUM! -- either parse_float learned subnormals (good: update this leg) or render() is claiming text that does not read back"
+    grep -qxF "subnormal render 5e-324" "$T/probe.out" || {
+        bad "5e-324 does not render as itself -- strings.parse_float stopped accepting subnormals, or render() regressed"
         sed 's/^/      /' "$T/probe.out" | head -4
     }
     printf '=== float round trip over a generated corpus\n' >> "$out"
@@ -301,6 +308,25 @@ variant_probe() {
         *) echo "" ;;
     esac
 }
+# A variant no INPUT can reach, with the reason. This is not an exemption from
+# [5] -- the loop below inverts the check for these, so a declared-unreachable
+# variant that a script DOES reach is a failure too. Both directions, or the
+# list rots.
+variant_unreachable() {
+    case "$1" in
+        # render() falls back to #NUM! when no decimal reads back as the value
+        # held. A subnormal used to land there -- not because render() failed
+        # but because strings.parse_float refused every subnormal as Underflow,
+        # so no text for one existed. corelib was fixed on 2026-08-12 (FRICTION
+        # #23) and [2] above now round-trips all 98411 corpus values including
+        # the min subnormal, so nothing reaches this arm. THE ARM STAYS: it is
+        # the fail-closed answer to "these digits do not name this value", and
+        # printing a wrong number instead is the failure cell/dtoa.ty exists to
+        # prevent. If anything ever reaches it again, this leg says so.
+        NoText) echo 'no float fails to round-trip since corelib learned subnormals' ;;
+        *) echo "" ;;
+    esac
+}
 # The demo does not exercise every one; the ones it cannot reach are provoked
 # here, and the two transcripts are searched together.
 cat > "$T/variants.sheet" <<'EOF'
@@ -320,14 +346,19 @@ EOF
 shrun "variants" "$T/variants.sheet" "$T/v.out"
 cat "$T/d.1" "$T/v.out" > "$T/searched"
 nvar=0
+nunreach=0
 for src_file in "$src/cell/cell.ty:CellErr" "$src/cell/expr.ty:ParseErr"; do
     f=${src_file%:*}; en=${src_file#*:}
     got=0
     for v in $(enum_variants "$f" "$en"); do
         got=$((got + 1)); nvar=$((nvar + 1))
         probe=$(variant_probe "$v")
+        why=$(variant_unreachable "$v")
         if [ -z "$probe" ]; then
             bad "$en variant $v has no probe in this runner -- it is UNGATED"
+        elif [ -n "$why" ]; then
+            nunreach=$((nunreach + 1))
+            grep -qF "$probe" "$T/searched" && bad "$en variant $v is declared unreachable ($why) but a script reached it -- the declaration is stale"
         elif ! grep -qF "$probe" "$T/searched"; then
             bad "$en variant $v is never reached by any script here -- it is UNGATED"
         fi
@@ -335,7 +366,7 @@ for src_file in "$src/cell/cell.ty:CellErr" "$src/cell/expr.ty:ParseErr"; do
     [ "$got" -ge 6 ] || bad "found only $got variant(s) of $en -- the scan is broken and [5] asserts nothing"
 done
 [ "$nvar" -ge 14 ] || bad "scanned only $nvar error variants in total -- expected at least 14"
-printf '=== error variants reached: %s\n' "$nvar" >> "$out"
+printf '=== error variants reached: %s (%s declared unreachable)\n' "$((nvar - nunreach))" "$nunreach" >> "$out"
 
 # ---------------------------------------------------------------------------
 # [6] the cycle is NAMED
@@ -412,7 +443,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-sheet: green (demo transcript byte-identical over 2 runs and equal to the golden; 98410 rendered floats all read back bit-equal and the one subnormal that cannot is refused as #NUM!; str(0.1+0.2) round-trips through the fixed builtin; =1/0 is a #DIV/0! VALUE that reaches its readers while five malformed formulas are refused and store nothing; $nvar error variants all reached; a cycle is named F1 -> F2 -> F3 -> F1 and a self-reference G1 -> G1; a 10000- and a 100000-deep chain evaluate exactly and four different depth limits past them fail closed by name; three bad invocations exit non-zero)"
+    echo "tycho-sheet: green (demo transcript byte-identical over 2 runs and equal to the golden; 98411 rendered floats all read back bit-equal, the min subnormal among them; str(0.1+0.2) round-trips through the fixed builtin; =1/0 is a #DIV/0! VALUE that reaches its readers while five malformed formulas are refused and store nothing; $((nvar - nunreach)) of $nvar error variants reached and $nunreach declared unreachable and confirmed absent; a cycle is named F1 -> F2 -> F3 -> F1 and a self-reference G1 -> G1; a 10000- and a 100000-deep chain evaluate exactly and four different depth limits past them fail closed by name; three bad invocations exit non-zero)"
 else
     echo "tycho-sheet: FAIL"; exit 1
 fi

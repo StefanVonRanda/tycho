@@ -83,7 +83,8 @@ typedef int64_t tycho_int;
  * change one, change the other. */
 #define TY_PF_OK        0
 #define TY_PF_OVERFLOW  1    /* ERANGE and the result is infinite */
-#define TY_PF_UNDERFLOW 2    /* ERANGE and the result is finite: 0 or a subnormal */
+#define TY_PF_UNDERFLOW 2    /* ERANGE and the result is 0 -- TOTAL underflow.
+                              * A subnormal is ERANGE too and is NOT this. */
 #define TY_PF_SYNTAX    3    /* no conversion, or trailing bytes left over */
 
 /* The "C" LC_NUMERIC handle, built ONCE. pthread_once and not a plain lazy
@@ -166,10 +167,13 @@ double strx_parse_double(const char *s, tycho_int *status) {
 
     if (!whole) { *status = TY_PF_SYNTAX; return 0.0; }
     if (range) {
-        /* ERANGE covers both ends. isinf splits them: overflow saturates to
-         * +/-HUGE_VAL, underflow lands on a finite 0 or subnormal. */
-        *status = isinf(v) ? TY_PF_OVERFLOW : TY_PF_UNDERFLOW;
-        return 0.0;
+        /* ERANGE has THREE outcomes and the VALUE separates them: an infinity is
+         * overflow, 0 is total underflow, and anything else is a subnormal --
+         * a correctly-rounded answer, so it falls through and is returned.
+         * Testing isinf alone (what this did until 2026-08-12) refused every
+         * subnormal; the reasoning is in corelib/strings/strings.ty. */
+        if (isinf(v)) { *status = TY_PF_OVERFLOW;  return 0.0; }
+        if (v == 0.0) { *status = TY_PF_UNDERFLOW; return 0.0; }   /* -0.0 too: compares equal */
     }
     *status = TY_PF_OK;
     return v;

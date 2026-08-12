@@ -20,6 +20,17 @@ pf 0        ok eq0=yes neg=no
 pf 1e3      ok eq1000=yes
 pf 1E+3     ok eq1000=yes
 pf 25digit  ok eq=yes
+pf DBL_MIN  ok eq=yes
+pf 5e-324   ok eq=yes
+pf 1e-320   ok eq=yes
+pf -5e-324  ok neg=yes
+pf 1e-400   err Underflow (total underflow: still refused)
+pf -1e-400  err Underflow (sign does not change it)
+rt 0.1+0.2  yes
+rt DBL_MAX  yes
+rt 5e-324   yes
+rt 2^53     yes
+rt -0.0     yes neg=yes
 vt=[x]
 s1=[a|b|c]
 s2=[|a|]

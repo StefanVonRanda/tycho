@@ -53,16 +53,15 @@
 > roundtrip 1.7976931348623157e308
   1.7976931348623157e308    render 1.7976931348623158e+308   str 1.7976931348623157e+308   round-trips
 > roundtrip 2.2250738585072014e-308
-  2.2250738585072014e-308   render 2.2250738585072013e-308   str 2.2250738585072014e-308   round-trips
+  2.2250738585072014e-308   render 2.2250738585072012e-308   str 2.2250738585072014e-308   round-trips
 > set B6 =1e-308
-  ERR B6: malformed number '1e-308' at 0
 > set B7 =1e-300/1e10
 > recalc
   recalculated
 > get B6
-  B6 = 
+  B6 = 1e-308
 > get B7
-  B7 = #NUM!
+  B7 = 1e-310
 > set C1 1
 > set C2 2
 > set C3 3
@@ -95,9 +94,10 @@
   B5      =B4*4                     10
   C5      5                         5
   A6      =-A1^2                    -100
+  B6      =1e-308                   1e-308
   C6      =SUM(C1:C5)               15
   A7      =2^3^2                    512
-  B7      =1e-300/1e10              #NUM!
+  B7      =1e-300/1e10              1e-310
   C7      =AVERAGE(C1:C5)           3
   C8      =MIN(C1:C5)               1
   C9      =MAX(C1:C5)               5
@@ -136,10 +136,11 @@
   C5      5                         5
   D5      =IF(D1=0,0,C1/D1)         0
   A6      =-A1^2                    -100
+  B6      =1e-308                   1e-308
   C6      =SUM(C1:C5)               15
   D6      =NOSUCHFN(1)              #NAME? unknown function NOSUCHFN
   A7      =2^3^2                    512
-  B7      =1e-300/1e10              #NUM!
+  B7      =1e-300/1e10              1e-310
   C7      =AVERAGE(C1:C5)           3
   D7      =C1+"text"                #VALUE! text "text" is not a number
   C8      =MIN(C1:C5)               1
@@ -196,10 +197,11 @@
   C5      5                         5
   D5      =IF(D1=0,0,C1/D1)         0
   A6      =-A1^2                    -100
+  B6      =1e-308                   1e-308
   C6      =SUM(C1:C5)               15
   D6      =NOSUCHFN(1)              #NAME? unknown function NOSUCHFN
   A7      =2^3^2                    512
-  B7      =1e-300/1e10              #NUM!
+  B7      =1e-300/1e10              1e-310
   C7      =AVERAGE(C1:C5)           3
   D7      =C1+"text"                #VALUE! text "text" is not a number
   C8      =MIN(C1:C5)               1
@@ -222,11 +224,11 @@
 > get A9999
   A9999 = 2
 === float round trip over a generated corpus
-subnormal render #NUM!
-checked 98410 values, 0 failed to round-trip
+subnormal render 5e-324
+checked 98411 values, 0 failed to round-trip
 === str(float) round-trips
 str(0.1+0.2)=0.30000000000000004 str round-trips
-=== error variants reached: 14
+=== error variants reached: 13 (1 declared unreachable)
 === depth limits
   ERR B1: reference 'A1048577' is outside the grid, at 0
   ERR B2: expected a cell reference or a function call but found 'A99999999' at 0

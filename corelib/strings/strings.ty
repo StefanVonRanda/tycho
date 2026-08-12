@@ -188,15 +188,32 @@ fn parse_int_checked(s: string) -> Result(int, IntErr):
 # rejected: parse_float("1234567890123456789012345") is Ok(1.2345678901234568e24).
 # A caller that needs the digits back must keep the original string; this
 # function does not preserve it.
+#
+# SUBNORMALS ARE VALUES, NOT ERRORS -- changed 2026-08-12. This used to refuse
+# every subnormal as Err(Underflow) because "it has already lost digits". So has
+# a 25-digit decimal, and the paragraph above accepts that one. One policy at
+# both ends now: if the correctly-rounded binary64 EXISTS, it is the answer.
+#   parse_float("5e-324")  is Ok(4.9406564584124654e-324)   the min subnormal
+#   parse_float("1e-320")  is Ok(9.9998886718268301e-321)
+#   parse_float("1e-400")  is STILL Err(Underflow)          rounds to 0
+# The line is where the VALUE is: nonzero is returned, a result that flushed all
+# the way to 0 is refused because 0 is not what the caller wrote -- the same
+# shape as Overflow. Note glibc raises ERANGE for a result merely NEAR the
+# subnormal range: "2.2250738585072012e-308" is flagged and rounds to DBL_MIN,
+# a normal. Testing the value and not the flag is what gets that one right too.
+# This also closed a round-trip hole: `str` emits the shortest decimal that
+# reads back unchanged (runtime/tycho_rt.c@tycho_float_to_str), and str(5e-324)
+# was a string this function refused.
 
 # Why parse_float refused. Every variant is payload-free so `==` works on it.
 enum FloatErr:
     Empty          # the string had no bytes at all
     Syntax         # a byte outside the grammar, or the whole string not consumed
     Overflow       # magnitude too large for binary64 ("1e400") -- NOT infinity
-    Underflow      # non-zero but too small to represent ("1e-400", "1e-320"):
-                   # the C library would round it to 0 or to a subnormal that has
-                   # already lost digits, and either is a silent wrong value
+    Underflow      # non-zero, and TOTAL underflow: the correctly-rounded value
+                   # is 0 ("1e-400"). Returning 0 would be a silent wrong answer.
+                   # A subnormal is NOT this -- "1e-320" and "5e-324" are Ok; see
+                   # the SUBNORMALS paragraph above
 
 # The shim's status codes, named once. Mirrored by the TY_PF_* defines in
 # corelib/strings/strings_shim.c -- change one, change the other.

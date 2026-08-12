@@ -579,8 +579,10 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     # The float path. `lex` already matched a grammar that is a strict subset of
     # `strings.parse_float`'s, so Syntax is unreachable here; the reachable
     # failures are Overflow (`1e400`) and Underflow (`1e-400`), and both are
-    # refusals rather than an infinity or a 0. `pos` rewinds to the first byte of
-    # the number so the reported offset names the token, not its end.
+    # refusals rather than an infinity or a 0. A subnormal (`1e-320`) is a VALUE
+    # here since 2026-08-12 -- parse_float refuses only a total underflow to 0.
+    # `pos` rewinds to the first byte of the number so the reported offset names
+    # the token, not its end.
     match strings.parse_float(lex):
         Ok(fv):
             return JFloat(fv, lex)

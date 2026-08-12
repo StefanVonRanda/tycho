@@ -41,13 +41,22 @@ import "core:strings"
 # 10^+-300): 98417 round-trip, one does not. The three stages of getting there
 # are recorded at _big and _scale, because each was a real defect with a count.
 #
-# THE ONE THAT CANNOT: 5e-324. strings.parse_float REJECTS EVERY SUBNORMAL --
-# it accepts 2.2250738585072014e-308 (DBL_MIN, the smallest normal) and refuses
-# everything below it as Underflow, because the shim reports strtod's ERANGE and
-# corelib turns that into an Err rather than a value (corelib/strings/strings.ty
-# @PF_UNDERFLOW). So no decimal string whatsoever round-trips a subnormal here.
-# render() returns "#NUM!" for those, which is the honest answer: the text does
-# not exist. It is a corelib limit, not a bug in this file.
+# THE ONE THAT COULD NOT, AND NOW DOES: 5e-324. strings.parse_float used to
+# REJECT EVERY SUBNORMAL -- it accepted 2.2250738585072014e-308 (DBL_MIN, the
+# smallest normal) and refused everything below it as Underflow, because the
+# shim reported strtod's ERANGE and corelib turned that into an Err rather than
+# a value. So no decimal string whatsoever round-tripped a subnormal, and
+# render() returned "#NUM!" for those -- the honest answer, since the text did
+# not exist. That was a corelib limit, not a bug in this file, and it was fixed
+# on 2026-08-12 (FRICTION #23): ERANGE with a NONZERO result is now a value, and
+# only a total underflow to 0 is still refused. The corpus above is 98411 of
+# 98411 with the subnormal included.
+#
+# render() STILL RETURNS "#NUM!" when nothing round-trips, and that arm stays
+# even though no input reaches it now. It is the fail-closed answer to "these
+# digits do not name this value"; printing a near-miss instead is the exact
+# failure this file exists to prevent. run.sh declares it unreachable and
+# reddens if anything lands on it again.
 #
 # NO LOCALE RISK. Nothing here routes a value through str(float) or c_dtoa, and
 # the only decimal point is the "." literal in _format. That is deliberate:

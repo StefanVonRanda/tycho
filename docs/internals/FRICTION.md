@@ -3150,3 +3150,50 @@ control — it re-runs the same check against a forced `%.15g` through
 `tycho_test_float_roundtrip_prec`, so the five zeroes in that column are the old
 defect reproduced in the golden. Without it a column of `rt=1` would only prove
 the hook is cheerful.
+
+### 23. `strings.parse_float` refused every subnormal — **fixed**
+
+Measured before the change: `parse_float("2.2250738585072014e-308")` was `Ok`
+and **everything smaller was `Err(Underflow)`** — `5e-324`, `1e-320`, the lot.
+That boundary is DBL_MIN, the smallest *normal*. Every subnormal, a third of a
+binary64's exponent range, was unreadable.
+
+**Was it deliberate?** Half. The `Underflow` variant carried a comment saying
+the library "would round it to 0 or to a subnormal that has already lost
+digits, and either is a silent wrong value" — so somebody thought about it and
+wrote it down. The reasoning does not hold, and its own file says why: the
+`PRECISION` paragraph three lines above accepts
+`parse_float("1234567890123456789012345")` as `Ok(1.2345678901234568e24)`.
+Losing digits to rounding is the documented, accepted behaviour at the top of
+the range. A subnormal is the *correctly-rounded nearest binary64*, exactly like
+that one. Two ends, two policies.
+
+**The cause was a flag test where a value test belonged.** The shim did
+`*status = isinf(v) ? OVERFLOW : UNDERFLOW` for any `ERANGE`, and glibc raises
+`ERANGE` for gradual underflow as well as total underflow. Now the **value**
+decides: an infinity is `Overflow`, a `0` is `Underflow`, and anything else is
+returned. `1e-400` is still refused — it rounds to `0`, and `0` is not what the
+caller wrote.
+
+That test is also right about a case a `issubnormal` check would get wrong.
+glibc raises `ERANGE` for a decimal merely *near* the boundary even when the
+rounded result is normal — `strtod("2.2250738585072012e-308")` sets `ERANGE`
+and returns `DBL_MIN`. The old code refused that string; testing the value
+accepts it.
+
+**It was the other half of #22.** `str` now emits the shortest decimal that
+reads back unchanged, so `str(5e-324)` is `4.94065645841247e-324` — a string the
+parser in the same standard library would not read. Neither fix alone closes the
+round trip; `corelib/test/strings.out` now asserts the pair with
+`str -> parse_float -> the same double` over `0.1+0.2`, `DBL_MAX`, `5e-324`,
+`2^53` and `-0.0`.
+
+**What moved.** `make corelib` gained eleven lines and changed none. The visible
+consequence is in the spreadsheet that reported it: `tools/tycho-sheet`'s demo
+had `=1e-308` rejected as a *malformed number* and `=1e-300/1e10` rendering
+`#NUM!`, both purely because of this. Both now hold their value, its
+98411-value round-trip corpus lost its one permitted failure, and `render()`'s
+`#NUM!` arm became unreachable from any input. **The arm stays** — it is the
+fail-closed answer to "these digits do not name this value" — and the gate now
+declares it unreachable *and asserts nothing reaches it*, so the declaration
+reddens in both directions rather than becoming a quiet exemption.

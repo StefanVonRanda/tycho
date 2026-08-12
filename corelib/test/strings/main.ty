@@ -65,6 +65,30 @@ fn main():
     println("pf 1E+3     " + pfs("1E+3") + " eq1000=" + pfeq("1E+3", 1000.0))
     d25 := "1234567890123456789012345"                        # 25 digits: rounded, not refused
     println("pf 25digit  " + pfs(d25) + " eq=" + pfeq(d25, 1.2345678901234568e24))
+    # ---- subnormals are VALUES (changed 2026-08-12) -------------------------
+    # Every one of these was Err(Underflow) before: strx_parse_double refused
+    # anything ERANGE that was not an infinity, which is every subnormal. glibc
+    # sets ERANGE for a subnormal result whether or not it is exact, so DBL_MIN
+    # -- the smallest NORMAL, one ULP up from this region -- was the last string
+    # that parsed. The three `ok`s below are the fix; the two Err lines are the
+    # NEGATIVE CONTROL, and they are what says the refusal did not simply widen
+    # to accept everything.
+    println("pf DBL_MIN  " + pfs("2.2250738585072014e-308") + " eq=" + pfeq("2.2250738585072014e-308", 2.2250738585072014e-308))
+    println("pf 5e-324   " + pfs("5e-324") + " eq=" + pfeq("5e-324", 5e-324))
+    println("pf 1e-320   " + pfs("1e-320") + " eq=" + pfeq("1e-320", 1e-320))
+    println("pf -5e-324  " + pfs("-5e-324") + " neg=" + pfneg("-5e-324"))
+    println("pf 1e-400   " + pfs("1e-400") + " (total underflow: still refused)")
+    println("pf -1e-400  " + pfs("-1e-400") + " (sign does not change it)")
+    # str -> parse_float -> the SAME double, across the whole range. This is the
+    # pair of fixes meeting: str emits the shortest round-tripping decimal, and
+    # parse_float now accepts every binary64 that decimal can name. Neither half
+    # alone makes these `yes` -- before 2026-08-12 the first two were `NO` (str
+    # threw digits away) and the third was `err` (parse_float refused it).
+    println("rt 0.1+0.2  " + pfrt(0.1 + 0.2))
+    println("rt DBL_MAX  " + pfrt(1.7976931348623157e308))
+    println("rt 5e-324   " + pfrt(5e-324))
+    println("rt 2^53     " + pfrt(9007199254740992.0))
+    println("rt -0.0     " + pfrt(-0.0) + " neg=" + pfneg(str(-0.0)))
     # is_space covers \v (11) and \f (12) too: trim strips them
     println("vt=[" + strings.trim(chr(11) + "x" + chr(12)) + "]")   # vt=[x]
     # ---- builtin split shapes (corelib composes with it; empty sep aborts by design) ----
@@ -156,6 +180,20 @@ fn pfneg(s: string) -> string:    # is it NEGATIVE zero? (-0.0 == 0.0, so divide
                 return "yes"
             return "no"
         Err(e): return "err"
+
+# str(x) -> parse_float -> the same double? Prints a verdict, never the text:
+# str(float) renders under the ambient locale-corrected path and this test runs
+# with LC_NUMERIC hostile, so the string itself must not reach the golden.
+fn pfrt(x: float) -> string:
+    match strings.parse_float(str(x)):
+        Ok(v):
+            if v == x:
+                return "yes"
+            return "NO"
+        Err(strings.Empty): return "err Empty"
+        Err(strings.Syntax): return "err Syntax"
+        Err(strings.Overflow): return "err Overflow"
+        Err(strings.Underflow): return "err Underflow"
 
 fn jn(xs: [string]) -> string:    # local join with '|' so pieces are visible
     r := ""
