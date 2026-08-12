@@ -25,7 +25,7 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 
 | Builtin | Type | Notes |
 | --- | --- | --- |
-| `str(x)` | `int`/`float`/`bool` `-> string` | A float prints with up to 15 significant digits, always with a `.`; a bool prints `true`/`false`. |
+| `str(x)` | `int`/`float`/`bool` `-> string` | A float prints as the shortest decimal (15, 16 or 17 significant digits) that reads back as the same `float`, always with a `.`; a bool prints `true`/`false`. |
 | `to_float(n)` | `int -> float` | Widen. |
 | `to_int(x)` | `float -> int` | Truncate toward zero. |
 | `to_bytes(s)` / `to_str(b)` | `string <-> bytes` | Same byte buffer; `bytes` may carry interior NULs. |

@@ -70,7 +70,7 @@
 # document actually contained; `stringify` emits that lexeme verbatim, never a
 # re-rendered float, so parse -> stringify is byte-identical for every number
 # above. (Re-rendering would also be LOCALE-SENSITIVE: `runtime/tycho_rt.c`'s
-# `tycho_float_to_str` formats with `%.15g`, so `str(1.5)` is `1,5.0` under a
+# `tycho_float_to_str` formats with `%g`, so `str(1.5)` is `1,5.0` under a
 # comma-decimal LC_NUMERIC. Emitting the lexeme sidesteps that entirely.)
 #
 # A number whose VALUE binary64 cannot hold at all (`1e400`, `1e-400`) is an

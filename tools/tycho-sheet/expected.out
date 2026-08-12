@@ -49,11 +49,11 @@
 > roundtrip 1e-300
   1e-300                    render 1e-300                    str 1e-300                    round-trips
 > roundtrip 9007199254740993
-  9007199254740993          render 9007199254740992          str 9.00719925474099e+15      round-trips
+  9007199254740993          render 9007199254740992          str 9007199254740992.0        round-trips
 > roundtrip 1.7976931348623157e308
-  1.7976931348623157e308    render 1.7976931348623158e+308   str 1.79769313486232e+308     round-trips
+  1.7976931348623157e308    render 1.7976931348623158e+308   str 1.7976931348623157e+308   round-trips
 > roundtrip 2.2250738585072014e-308
-  2.2250738585072014e-308   render 2.2250738585072013e-308   str 2.2250738585072e-308      round-trips
+  2.2250738585072014e-308   render 2.2250738585072013e-308   str 2.2250738585072014e-308   round-trips
 > set B6 =1e-308
   ERR B6: malformed number '1e-308' at 0
 > set B7 =1e-300/1e10
@@ -224,8 +224,8 @@
 === float round trip over a generated corpus
 subnormal render #NUM!
 checked 98410 values, 0 failed to round-trip
-=== str(float) is lossy
-str(0.1+0.2)=0.3 str is LOSSY
+=== str(float) round-trips
+str(0.1+0.2)=0.30000000000000004 str round-trips
 === error variants reached: 14
 === depth limits
   ERR B1: reference 'A1048577' is outside the grid, at 0

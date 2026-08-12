@@ -1512,7 +1512,7 @@ char *tycho_bool_to_str(Arena *a, tycho_int b) {
  *
  * THE ".0" GUARD'S CONTRACT, AND WHY THE SCAN IS SOUND. The guard answers "would
  * this text be read back as an int?" and appends ".0" when it would, so str(3.0)
- * is "3.0" and never "3". It decides by scanning for the only four things %.15g
+ * is "3.0" and never "3". It decides by scanning for the only four things %g
  * can emit that make text non-integral: '.' (the separator), 'e'/'E' (an
  * exponent), and the i/I/n/N of "inf"/"nan". That scan is sound ONLY because the
  * separator is now known to be '.': under any other separator the character is
@@ -1548,9 +1548,44 @@ static int ty_fix_decimal_point(char *s, int n) {
     return n - (int)dplen + 1;
 }
 
-/* %.15g trims trailing zeros while keeping ~15 significant digits (readable, not
- * full 17-digit round-trip: a value needing 17 digits prints shortened, and
- * parsing that text back gives a nearby double, not the same one). */
+/* Shortest of %.15g, %.16g, %.17g that strtod reads back as the SAME double.
+ *
+ * WHY NOT A FIXED PRECISION, EITHER WAY. %.15g alone (what this was until
+ * 2026-08-12) is DBL_DIG: it guarantees text -> double -> text, the other
+ * direction. binary64 needs DBL_DECIMAL_DIG = 17 for double -> text -> double,
+ * so str(0.1+0.2) was "0.3" (a different double), str(2^53) was
+ * "9.00719925474099e+15" (not an integer), and str(DBL_MAX) was
+ * "1.79769313486232e+308" -- a decimal ABOVE DBL_MAX, which this project's own
+ * strings.parse_float refuses as Overflow. A plain bump to %.17g fixes all of
+ * that for one snprintf, but then EVERY float prints at full width: 0.1 becomes
+ * "0.10000000000000001". str() is user-facing output here, so that is a worse
+ * trade than the retry.
+ *
+ * COST, measured on this box over 300000 values (gcc -O2, three runs):
+ * %.15g 134-154 ns/call, %.17g 145-149, this 423-448 -- about 290 ns of extra
+ * work, and only on values that need it. A first-try hit costs one strtod more
+ * than the old code. The candidate is always CHECKED, so nothing here has to be
+ * right about digits; a wrong guess costs a retry, never a wrong number.
+ *
+ * `==` and not a bit compare: the text came from x, so %g already carries the
+ * sign and -0.0 prints "-0" whatever this returns. NaN is the one value that can
+ * never compare equal to itself, so it is formatted once and returned -- without
+ * that guard it would burn all three tries and still print "nan".
+ *
+ * CALLED UNDER THE CALLER'S LOCALE, DELIBERATELY. Both the snprintf and the
+ * strtod run in whatever locale the caller established, so they agree on the
+ * decimal separator even on the fallback leg where that separator is a comma.
+ * Fixing the separator afterwards is the caller's job. */
+static int ty_fmt_shortest(char *b, size_t bs, double x) {
+    if (x != x) return snprintf(b, bs, "%.17g", x);
+    int m = 0;
+    for (int p = 15; p <= 17; p++) {
+        m = snprintf(b, bs, "%.*g", p, x);
+        if (p == 17 || strtod(b, NULL) == x) break;
+    }
+    return m;
+}
+
 char *tycho_float_to_str(Arena *a, double x) {
     char tmp[64];
     int m;
@@ -1558,12 +1593,12 @@ char *tycho_float_to_str(Arena *a, double x) {
     pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
     if (ty_c_numeric) {
         locale_t prev = uselocale(ty_c_numeric);
-        m = snprintf(tmp, sizeof tmp, "%.15g", x);
+        m = ty_fmt_shortest(tmp, sizeof tmp, x);
         uselocale(prev);                             /* prev may be LC_GLOBAL_LOCALE; that is legal */
     } else
 #endif
     {
-        m = snprintf(tmp, sizeof tmp, "%.15g", x);
+        m = ty_fmt_shortest(tmp, sizeof tmp, x);
         m = ty_fix_decimal_point(tmp, m);
     }
     int floaty = 0;
@@ -1616,6 +1651,28 @@ tycho_int tycho_test_make_locale_hostile(void) {
     }
     setlocale(LC_NUMERIC, "C");      /* none was hostile: leave a known state */
     return 0;
+}
+
+/* The NEGATIVE CONTROL for the hook above. Formats x at a CALLER-CHOSEN
+ * precision instead of the shipped renderer's, so a fixture can show that
+ * %.15g -- what tycho_float_to_str used until 2026-08-12 -- really does fail to
+ * round-trip the values it claims to, and that the check above is capable of
+ * returning 0. Without it a golden of all-1s proves only that the hook is
+ * cheerful. Same "C" handle, same -1-if-unbuildable contract. */
+tycho_int tycho_test_float_roundtrip_prec(double x, tycho_int prec) {
+#ifndef _WIN32
+    pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
+    if (!ty_c_numeric) return -1;
+    char tmp[64];
+    locale_t prev = uselocale(ty_c_numeric);
+    snprintf(tmp, sizeof tmp, "%.*g", (int)prec, x);
+    double back = strtod(tmp, NULL);
+    uselocale(prev);
+    return (back == x && signbit(back) == signbit(x)) ? 1 : 0;
+#else
+    (void)x; (void)prec;
+    return -1;
+#endif
 }
 
 tycho_int tycho_test_float_roundtrip(double x) {

@@ -50,10 +50,13 @@ fn block():
     show("-0.0       ", -0.0)
     show("1e300      ", 1e300)
     show("1e-300     ", 1e-300)
-    # 0.1 + 0.2 is 0.30000000000000004: 17 significant digits. %.15g is readable,
-    # not round-trip, so it prints 0.3 and rt=0. That is the stated, accepted
-    # cost of the format -- it is not a locale defect, and it is identical under
-    # both locales.
+    # 0.1 + 0.2 is 0.30000000000000004: 17 significant digits. Under the old
+    # fixed %.15g this printed `0.3` with rt=0 -- readable but a DIFFERENT
+    # double. The renderer now escalates to as many digits as the value needs,
+    # so it is the full 17 here and rt=1, identically under both locales.
+    # tests/float_roundtrip.ty is where that behaviour is the subject; this line
+    # stays because it is the one value in this file whose text the escalation
+    # moves, and it must move the same way under a comma-decimal LC_NUMERIC.
     tenth := 0.1
     fifth := 0.2
     show("0.1+0.2    ", tenth + fifth)

@@ -3081,3 +3081,72 @@ when a fix closes an asymmetry between two walks, check the other direction in
 the same commit.** Both of this audit's expensive findings escaped to `cc`,
 which is the failure mode a transpiler exists to prevent, and neither had a
 gate.
+
+## Found by `tools/tycho-sheet`, 2026-08-12 (head `6f7954a9`)
+
+A spreadsheet is the first program in this tree that has to **save a float and
+read it back**. It could not use `str`, and the workaround it shipped —
+`tools/tycho-sheet/cell/dtoa.ty@render`, a strtod-verified shortest-decimal
+renderer written in Tycho — is the evidence: a tool does not reimplement a
+builtin unless the builtin is wrong.
+
+### 22. `str(float)` emitted text the program could not read back — **fixed**
+
+`runtime/tycho_rt.c@tycho_float_to_str` formatted with `%.15g`. Fifteen is
+`DBL_DIG`, which guarantees **text -> double -> text**; binary64 needs
+`DBL_DECIMAL_DIG` = 17 for **double -> text -> double**, which is the direction
+`str` is used in. Three measured consequences, worsening:
+
+| `str(x)` | emitted | reading it back |
+|---|---|---|
+| `0.1 + 0.2` | `0.3` | a **different** double |
+| `9007199254740992.0` (2^53) | `9.00719925474099e+15` | not an integer any more |
+| `DBL_MAX` | `1.79769313486232e+308` | **above** `DBL_MAX` — `strings.parse_float` refuses it as `Overflow` |
+
+The last one is the sharp edge: `str` produced a decimal that this project's own
+parser rejects, so a value at the top of the range could be printed and never
+read. Nothing warned; the text looked fine.
+
+**Fixed by shortest-round-trip, not by `%.17g`.** The renderer now tries
+`%.15g`, `%.16g`, `%.17g` and returns the first that `strtod` reads back
+unchanged. Both options fix every row above; the choice was about what happens
+to the values that were *already* correct.
+
+- `%.17g` is one `snprintf` and makes every float print at full width —
+  `str(0.1)` becomes `0.10000000000000001`. `str` is user-facing output here.
+- Escalation keeps the short text wherever 15 digits already round-tripped.
+  **Measured: of 660 `make test` fixtures, exactly one golden line moved**
+  (`0.1+0.2`, in `tests/float_str_locale.out`, once per locale block), and
+  `make corelib`, `make corelib-examples`, `make conc`, `q-check`, `ed-check`,
+  `db-check` and `flow-check` all stayed green with no re-record at all. A
+  blanket `%.17g` would have moved every one of those that prints a float.
+
+  The only other movement in the tree was **five lines in
+  `tools/tycho-sheet/expected.out`**, all in the transcript that *reported* this
+  bug — three `str` columns next to a `render` column that already had the right
+  digits, and the two-line probe whose whole job was asserting `str` was lossy.
+  That probe is **inverted, not deleted**: it now reddens if the fix is reverted.
+  It is the one lane in the tree that could have caught this, and it did.
+
+**Cost, measured** (300000 values, gcc -O2, three runs, this box): `%.15g`
+134-154 ns/call, `%.17g` 145-149, escalating 423-448. About 290 ns, paid only by
+values that need it — a first-try hit costs one `strtod` more than the old code.
+The candidate is always **checked**, so the digit count never has to be guessed
+right; a wrong guess costs a retry, never a wrong number.
+
+**What did not change.** The `uselocale` guard and the `".0"` suffix for
+integral floats are both untouched, and both still have to be: `make
+locale-check` passes, `str(3.0)` is still `3.0`, and the suffix scan is still
+sound only because the separator is known to be `.`. Formatting and re-parsing
+happen inside the same locale on both legs, so the fallback leg compares
+comma-decimal text against comma-decimal `strtod`.
+
+`f32` prints longer now (`str` promotes to `double`, and an f32's exact double
+value usually needs 17 digits). No golden in the tree moved for it, and the new
+text is the honest one: it round-trips the `double` `str` was handed.
+
+Locked by `tests/float_roundtrip.ty`, whose `rt15=` column is the negative
+control — it re-runs the same check against a forced `%.15g` through
+`tycho_test_float_roundtrip_prec`, so the five zeroes in that column are the old
+defect reproduced in the golden. Without it a column of `rt=1` would only prove
+the hook is cheerful.

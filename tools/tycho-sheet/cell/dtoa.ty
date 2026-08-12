@@ -2,10 +2,21 @@ package cell
 
 import "core:strings"
 
-# Float text for tycho-sheet. THE POINT OF THIS FILE IS THAT `str(float)` IS
-# LOSSY AND A SPREADSHEET CANNOT USE IT.
+# Float text for tycho-sheet. THIS FILE EXISTS BECAUSE `str(float)` WAS LOSSY.
 #
-# `str(v)` is `snprintf("%.15g")` (runtime/tycho_rt.c:1561). Fifteen significant
+# STATUS, 2026-08-12: THE BUILTIN IS FIXED. This file's measurements were the
+# report that fixed it -- `runtime/tycho_rt.c@tycho_float_to_str` now escalates
+# through %.15g/%.16g/%.17g and returns the first that strtod reads back
+# unchanged, which is the same algorithm render() implements below (FRICTION #22
+# in docs/internals/FRICTION.md). So `str` round-trips now, and everything from
+# here to the end of this block is HISTORY, not current behaviour.
+#
+# WHY THIS FILE STAYS ANYWAY. render() answers a question `str` still does not:
+# it returns a SHEET CELL, so it caps width, refuses to widen a column for
+# digits a user did not ask for, and has a defined answer for the values a cell
+# cannot show. Deleting it would trade a cell renderer for a debug renderer.
+#
+# WHAT WAS WRONG. `str(v)` was `snprintf("%.15g")`. Fifteen significant
 # digits is DBL_DIG: it guarantees text -> double -> text survives, which is the
 # OTHER direction. A binary64 needs SEVENTEEN significant digits for
 # double -> text -> double to return the same double. Measured on this box:

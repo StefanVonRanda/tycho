@@ -27,11 +27,11 @@
 #       the min subnormal: strings.parse_float refuses every subnormal as
 #       Underflow, so no text round-trips one. That count is a literal below,
 #       so a renderer that regressed to 15 digits moves it by thousands.
-#   [3] `str(float)` IS STILL LOSSY, asserted directly. The whole reason cell/
-#       carries a renderer is that `str(0.1 + 0.2)` is "0.3" and parsing "0.3"
-#       gives a different double. If a future runtime change made `str`
-#       round-trip, this leg goes red -- and that is a REASON TO DELETE code,
-#       not a failure. It is asserted so nobody has to take the header on faith.
+#   [3] `str(float)` ROUND-TRIPS, asserted directly. This leg used to assert the
+#       opposite -- that `str(0.1 + 0.2)` was the lossy "0.3" -- because that was
+#       the whole reason cell/ carries a renderer. It went red on 2026-08-12 when
+#       the runtime was fixed (FRICTION #22), which is what the leg was there to
+#       detect. It is INVERTED, not deleted: it now catches a revert.
 #   [4] THE PARSE / VALUE SPLIT, which is the design claim of cell/cell.ty.
 #       `=1/0` is ACCEPTED and shows #DIV/0!; `=A1+`, `=(A1`, `=1 2`, `=@A1` and
 #       `=SUM(A1:A9` are REFUSED with their own messages and store nothing --
@@ -215,7 +215,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [3] str(float) is still lossy -- the premise of cell/dtoa.ty, under test
+# [3] str(float) round-trips -- INVERTED 2026-08-12, and that is the point
 # ---------------------------------------------------------------------------
 L="$T/lossypkg"; mkdir -p "$L"
 cat > "$L/lossy.ty" <<'EOF'
@@ -223,9 +223,11 @@ package main
 
 import "core:strings"
 
-# If this program ever prints "str round-trips", the runtime's %.15g became
-# something else and cell/dtoa.ty can be deleted. Until then it is the reason
-# that file exists.
+# This probe used to assert the OPPOSITE: that str(0.1+0.2) was the lossy "0.3",
+# which was the premise cell/dtoa.ty existed to work around. That premise was
+# the bug report, and the runtime was fixed on 2026-08-12 (FRICTION #22) --
+# str now emits the shortest decimal that reads back unchanged. So the same
+# probe stays, pointing the other way: it now fails if the fix is ever reverted.
 fn main():
     v := 0.1 + 0.2
     s := str(v)
@@ -241,11 +243,11 @@ if ! "$TYCHOC" "$L/lossy.ty" -o "$T/lossy" >"$T/lossy.log" 2>&1; then
     bad "lossy: tychoc could not build the str() probe"
 else
     $TO "$T/lossy" > "$T/lossy.out" 2>&1
-    grep -qxF "str(0.1+0.2)=0.3 str is LOSSY" "$T/lossy.out" || {
-        bad "str(0.1+0.2) no longer prints a lossy 0.3 -- re-read cell/dtoa.ty's header before touching anything"
+    grep -qxF "str(0.1+0.2)=0.30000000000000004 str round-trips" "$T/lossy.out" || {
+        bad "str(0.1+0.2) does not round-trip -- runtime/tycho_rt.c@tycho_float_to_str regressed to a fixed precision"
         sed 's/^/      /' "$T/lossy.out"
     }
-    printf '=== str(float) is lossy\n' >> "$out"
+    printf '=== str(float) round-trips\n' >> "$out"
     cat "$T/lossy.out" >> "$out"
 fi
 
@@ -410,7 +412,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-sheet: green (demo transcript byte-identical over 2 runs and equal to the golden; 98410 rendered floats all read back bit-equal and the one subnormal that cannot is refused as #NUM!; str(0.1+0.2) is still the lossy 0.3 that cell/dtoa.ty exists for; =1/0 is a #DIV/0! VALUE that reaches its readers while five malformed formulas are refused and store nothing; $nvar error variants all reached; a cycle is named F1 -> F2 -> F3 -> F1 and a self-reference G1 -> G1; a 10000- and a 100000-deep chain evaluate exactly and four different depth limits past them fail closed by name; three bad invocations exit non-zero)"
+    echo "tycho-sheet: green (demo transcript byte-identical over 2 runs and equal to the golden; 98410 rendered floats all read back bit-equal and the one subnormal that cannot is refused as #NUM!; str(0.1+0.2) round-trips through the fixed builtin; =1/0 is a #DIV/0! VALUE that reaches its readers while five malformed formulas are refused and store nothing; $nvar error variants all reached; a cycle is named F1 -> F2 -> F3 -> F1 and a self-reference G1 -> G1; a 10000- and a 100000-deep chain evaluate exactly and four different depth limits past them fail closed by name; three bad invocations exit non-zero)"
 else
     echo "tycho-sheet: FAIL"; exit 1
 fi
