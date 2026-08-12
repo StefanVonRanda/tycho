@@ -1,0 +1,224 @@
+package main
+
+import "core:cli"
+import "core:io"
+import "core:strings"
+import "core:time"
+import "core:utf8"
+import "buf"
+
+# tycho-ed -- a terminal text editor. THIS SLICE HAS NO TERMINAL.
+#
+# What it has instead is `--script`, which drives the buffer from a file of key
+# names and prints what the screen would show. That is deliberate and it is
+# first, not last: an editor whose only entry point is a tty cannot be checked
+# by anything except a human looking at it, and two programs landed in this
+# tree this week with no gate for exactly that reason. Every behaviour the raw
+# terminal mode will later expose is reachable from here, so when the lane
+# lands it has something to run.
+#
+# The script language, one command per line:
+#
+#   # ...              comment; blank lines are ignored
+#   ins <text>         insert the rest of the line at the cursor
+#   nl                 press Enter (split the line)
+#   bs | del           backspace / forward delete, ONE codepoint
+#   left right up down home end
+#   goto <line> <col>  move; <col> counts CHARACTERS, not bytes
+#   undo | redo
+#   dump               the buffer, the cursor, and the counts
+#   hex                the current line's bytes, to prove what a delete removed
+#
+# Every command echoes as `> cmd`, and a failure prints `  ERR <cause>` and
+# keeps going -- a script is a test, so the error is an observation, not a stop.
+
+fn _hex(s: string) -> string:
+    digits := "0123456789abcdef"
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        if i > 0:
+            out += " "
+        b := s[i]
+        out += digits[b / 16:b / 16 + 1] + digits[b % 16:b % 16 + 1]
+    return out
+
+fn dump(b: buf.Buf):
+    cps := buf.cp_count(b)
+    tag := str(cps) + " codepoints"
+    if cps < 0:
+        tag = "INVALID UTF-8"
+    println("  --- " + str(buf.line_count(b)) + " lines, " +
+            str(buf.byte_count(b)) + " bytes, " + tag + " ---")
+    for i := 0; i < buf.line_count(b); i += 1:
+        mark := "   "
+        if i == b.cur.line:
+            mark = "  >"
+        println(mark + " " + str(i) + " | " + b.lines[i])
+    println("  --- cursor line " + str(b.cur.line) +
+            " char " + str(buf.cur_cp_col(b)) +
+            " (byte " + str(b.cur.col) + ")" +
+            "  undo " + str(buf.undo_depth(b)) +
+            " redo " + str(buf.redo_depth(b)) + " ---")
+
+fn hexline(b: buf.Buf):
+    s := b.lines[b.cur.line]
+    println("  line " + str(b.cur.line) + ": " + str(len(s)) + " bytes, " +
+            str(utf8.count(s)) + " codepoints")
+    println("  bytes: " + _hex(s))
+
+# Returns the command's error, if it had one. Motion past an edge is a real
+# BufErr here rather than a silent clamp; see the note on AtStart in buf.ty.
+fn run_cmd(b: inout buf.Buf, line: string) -> Result(void, buf.BufErr):
+    verb, rest := strings.split_once(line, " ")
+    if verb == "":
+        verb = line
+    if verb == "ins":
+        return buf.insert(&b, rest)
+    elif verb == "nl":
+        return buf.newline(&b)
+    elif verb == "bs":
+        return buf.del_back(&b)
+    elif verb == "del":
+        return buf.del_fwd(&b)
+    elif verb == "left":
+        return buf.left(&b)
+    elif verb == "right":
+        return buf.right(&b)
+    elif verb == "up":
+        return buf.up(&b)
+    elif verb == "down":
+        return buf.down(&b)
+    elif verb == "undo":
+        return buf.undo(&b)
+    elif verb == "redo":
+        return buf.redo(&b)
+    elif verb == "home":
+        buf.home(&b)
+    elif verb == "end":
+        buf.line_end(&b)
+    elif verb == "goto":
+        a, c := strings.split_once(rest, " ")
+        return buf.goto(&b, strings.parse_int(a), strings.parse_int(c))
+    elif verb == "dump":
+        dump(b)
+    elif verb == "hex":
+        hexline(b)
+    else:
+        println("  ERR unknown command: " + verb)
+    return Ok()
+
+fn script(path: string) -> Result(void, string):
+    b := buf.from_text("")
+    for raw in io.read_lines(path):
+        line := strings.trim(raw)
+        if line == "" or strings.starts_with(line, "#"):
+            continue
+        println("> " + line)
+        match run_cmd(&b, line):
+            Ok: pass
+            Err(e): println("  ERR " + buf.err_str(e))
+    return Ok()
+
+# ---- --stress N -----------------------------------------------------------
+#
+# The long-running claim, tested rather than asserted. N edits are run in ten
+# equal buckets and each bucket's ns/edit is printed, so a cost that grows with
+# the session shows up as a rising column instead of hiding inside one average.
+#
+# The typing is deliberately realistic: a character, and Enter every 60, so
+# LINE length stays bounded while the DOCUMENT grows without limit. An editor
+# that appends forever to one line is O(n^2) by representation -- every insert
+# recopies the line -- and measuring that would say something about string
+# concatenation, not about whether the arena degrades with age.
+#
+# --snapshot runs the same edits and additionally deep-copies the whole line
+# array after each one, which is what a snapshot undo stack costs under value
+# semantics. It is the control the journal is measured against.
+#
+# WHAT THIS MEASURED, 2026-08-12, 16-core box. Journal: flat to 100k edits
+# (~140 ns/edit, last bucket within 2x of the first and inside run-to-run
+# noise at 10k), then degrading to ~1540 ns/edit by 1M -- an 8x drift the
+# arena claim did not predict. Snapshot: 820 -> 7079 ns/edit within a single
+# 10k session, and 297 MB of retained copies for a 30 KB document at 20k.
+#
+# The drift is NOT the arena. Four controls -- 1M pushes of a struct, 1M
+# bounded string concatenations, 1M pushes into a field of an `inout` struct,
+# and 1M pushes of an enum carrying a string -- each held flat at 17-52
+# ns/step over the same range, so no single ingredient degrades. What the
+# editor adds is VOLUME: every keystroke abandons the previous version of its
+# line, an arena reclaims nothing, and 1M edits reach 97 MB of resident memory
+# for a 150 KB document. Naming it here rather than guessing at a fix: the
+# next slice can test a gap buffer, which mutates a line in place instead of
+# rebuilding it, against exactly this number.
+fn stress(n: int, snapshot: bool):
+    glyphs := ["a", "b", "c", " ", "é", "ö", "字", "e"]
+    buckets := 10
+    per := n / buckets
+    if per < 1:
+        per = 1
+    b := buf.from_text("")
+    snaps: [[string]] = []
+    first := 0
+    last := 0
+    println("  edits    ns/edit")
+    for k := 0; k < buckets; k += 1:
+        sw := time.start()
+        for j := 0; j < per; j += 1:
+            i := k * per + j
+            if i % 60 == 59:
+                match buf.newline(&b):
+                    Ok: pass
+                    Err(e): println("  ERR " + buf.err_str(e))
+            else:
+                match buf.insert(&b, glyphs[i % 8]):
+                    Ok: pass
+                    Err(e): println("  ERR " + buf.err_str(e))
+            if snapshot:
+                push(snaps, b.lines)
+        ea := time.elapsed_ns(sw) / per
+        if k == 0:
+            first = ea
+        last = ea
+        println("  " + strings.pad_left(str((k + 1) * per), 7, " ") +
+                strings.pad_left(str(ea), 11, " "))
+    kind := "journal"
+    if snapshot:
+        kind = "snapshot"
+    println("  mode          " + kind)
+    println("  lines         " + str(buf.line_count(b)))
+    println("  bytes         " + str(buf.byte_count(b)))
+    println("  undo entries  " + str(buf.undo_depth(b)))
+    println("  undo bytes    " + str(buf.undo_bytes(b)))
+    if snapshot:
+        held := 0
+        for i := 0; i < len(snaps); i += 1:
+            for j := 0; j < len(snaps[i]); j += 1:
+                held += len(snaps[i][j])
+        println("  snapshot bytes " + str(held))
+    # last/first as a percentage, so "flat" is a number and not an impression.
+    if first > 0:
+        println("  last/first    " + str(last * 100 / first) + "%")
+
+fn main() -> Result(void, string):
+    av := cli.argv()
+    path := ""
+    n := 0
+    snapshot := false
+    for a in av:
+        if strings.starts_with(a, "--script="):
+            path = a[9:len(a)]
+        elif strings.starts_with(a, "--stress="):
+            n = strings.parse_int(a[9:len(a)])
+        elif a == "--snapshot":
+            snapshot = true
+        else:
+            return Err("unknown argument: " + a)
+    if n > 0:
+        stress(n, snapshot)
+        return Ok()
+    if path == "":
+        return Err("usage: tycho-ed --script=<file>\n" +
+                   "       tycho-ed --stress=<N> [--snapshot]")
+    if not io.exists(path):
+        return Err("no such file: " + path)
+    return script(path)

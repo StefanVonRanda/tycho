@@ -1,0 +1,123 @@
+# tycho-ed demo script. Drives the buffer with no terminal attached.
+# The point of this file is the MULTI-BYTE cases: every ASCII step below has a
+# non-ASCII twin, so a byte-oriented bug cannot pass by being right on ASCII.
+
+# --- 1. plain ASCII typing, and undo/redo over it -------------------------
+ins hello world
+dump
+bs
+bs
+bs
+bs
+dump
+undo
+undo
+dump
+redo
+dump
+
+# --- 2. multi-byte text on its own line -----------------------------------
+# 2-byte codepoints: e-acute (c3 a9) and o-umlaut (c3 b6).
+# 13 bytes, 11 characters -- the two numbers differ, which is the whole point.
+end
+nl
+ins héllo wörld
+hex
+dump
+
+# The cursor is at end of line. Send it home and step right four times:
+# h, e-acute, l, l. Byte column must be 5 after four characters, not 4 --
+# that is one 2-byte codepoint crossed as a SINGLE step.
+home
+right
+right
+right
+right
+dump
+
+# --- 3. THE MULTI-BYTE DELETE ---------------------------------------------
+# Cursor just after the e-acute (character 2), then one backspace.
+# ONE CHARACTER must vanish, not one byte: 13 bytes -> 11, 11 chars -> 10,
+# and the line must stay valid UTF-8. A byte-wise delete would leave a stray
+# c3 or a9 behind and the codepoint count would report INVALID UTF-8.
+goto 1 2
+hex
+bs
+hex
+dump
+undo
+hex
+
+# Forward delete at the other width: 3-byte CJK codepoints (e5 ad 97 / e6 96 87).
+# Line becomes 19 bytes / 13 characters; deleting the 字 at character 11 must
+# take 3 bytes and 1 character.
+end
+ins 字文
+hex
+goto 1 11
+del
+hex
+dump
+undo
+hex
+
+# --- 4. line splits, joins, and cursor motion across them -----------------
+end
+nl
+ins naïve
+nl
+ins ünicode
+dump
+
+# Column clamping across lines of different byte layouts: character 3 of
+# "naïve" is byte 4, because of the 2-byte i-diaeresis.
+goto 2 3
+dump
+up
+dump
+down
+down
+dump
+
+# Backspace at column 0 joins this line onto the previous one.
+home
+bs
+dump
+undo
+dump
+
+# --- 5. the edges are errors, not silent no-ops ---------------------------
+goto 0 0
+left
+up
+goto 3 7
+end
+right
+down
+del
+
+# --- 6. undo the whole session, then redo part of it ----------------------
+# More undos than there are edits, on purpose: the surplus must report
+# `nothing to undo` rather than corrupting the buffer or aborting.
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+undo
+dump
+undo
+redo
+redo
+redo
+dump

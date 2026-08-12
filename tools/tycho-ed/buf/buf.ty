@@ -1,0 +1,444 @@
+package buf
+
+import "core:utf8"
+
+# The text buffer behind tycho-ed: lines, a cursor, and an undo journal.
+#
+# TEXT IS BYTES, THE CURSOR IS TEXT. A line is a Tycho string, i.e. a byte
+# buffer, and `cur.col` is a BYTE offset into it -- because that is what
+# slicing and concatenation actually take. Every operation a user can name is
+# nonetheless in CODEPOINTS: left() steps over one whole character however many
+# bytes it occupies, and del_back() removes one character, never one byte. The
+# two views meet in the four `_` helpers below, which are the only places that
+# convert, so a byte offset can never leak into a user-facing count by accident.
+#
+# UNDO IS A JOURNAL, NOT A SNAPSHOT. Each entry holds the inverse-able fact
+# about one edit -- (line, byte column, the text) -- plus the cursor as it stood
+# before. That is O(bytes edited) per entry: 1-4 bytes for a typed character.
+# The alternative under value semantics is a snapshot, `push(snaps, b.lines)`,
+# which deep-copies every line in the buffer on every keystroke -- O(bytes in
+# the document) per entry, so a session's undo history costs O(edits x size).
+# tools/tycho-ed/main.ty's --stress mode implements the snapshot arm too and
+# prints both, so this paragraph is a measurement rather than an assertion.
+#
+# A line NEVER contains "\n". A newline is the boundary between two elements of
+# `lines`, so there is exactly one representation of a line break and no way to
+# desynchronise the line count from the text.
+
+struct Cursor:
+    line: int
+    col: int                       # BYTE offset within lines[line]
+
+# One reversible edit. The payloads are what the inverse needs and nothing
+# more: Ins carries the text so undo knows how much to remove, Del carries it
+# so undo can put it back, and the two structural ops need only where they cut.
+enum Op:
+    Ins(int, int, string)          # line, byte col, inserted text
+    Del(int, int, string)          # line, byte col, removed text
+    Split(int, int)                # line, byte col: one line became two
+    Join(int, int)                 # line, byte col: two lines became one
+
+struct Edit:
+    op: Op
+    cur: Cursor                    # the cursor BEFORE this edit ran
+
+struct Buf:
+    lines: [string]
+    cur: Cursor
+    undos: [Edit]
+    redos: [Edit]
+
+# Named causes, no sentinels. AtStart/AtEnd are errors rather than silent
+# no-ops on purpose: a driver script that walks off the end of the buffer has a
+# bug, and an editor that quietly ignores it hides the bug until a later
+# command lands in the wrong place.
+enum BufErr:
+    BadLine(int, int)              # asked for line N, buffer has M
+    BadCol(int, int)               # byte column N, line is M bytes
+    NotUtf8(int, int)              # line N, byte offset M: not a codepoint boundary
+    NothingToUndo
+    NothingToRedo
+    AtStart                        # cursor is at the first character
+    AtEnd                          # cursor is at the last character
+
+fn err_str(e: BufErr) -> string:
+    match e:
+        BadLine(n, m): return "no line " + str(n) + " (buffer has " + str(m) + ")"
+        BadCol(n, m): return "byte column " + str(n) + " past end of a " + str(m) + "-byte line"
+        NotUtf8(n, m): return "line " + str(n) + " byte " + str(m) + " is not a UTF-8 boundary"
+        NothingToUndo: return "nothing to undo"
+        NothingToRedo: return "nothing to redo"
+        AtStart: return "already at start of buffer"
+        AtEnd: return "already at end of buffer"
+
+# ---- the byte/codepoint boundary -----------------------------------------
+#
+# The four functions that convert. Everything above them counts characters.
+
+# Byte width of the codepoint starting at `at`, or an error if `at` is not a
+# boundary. O(1): one decode, no scan of the line.
+fn _width_at(s: string, ln: int, at: int) -> Result(int, BufErr):
+    cp, w := utf8.decode(s, at)
+    if cp < 0:
+        return Err(NotUtf8(ln, at))
+    return Ok(w)
+
+# Byte offset of the codepoint that ENDS at `at`. Walks back over continuation
+# bytes (0x80..0xBF), then proves the answer by decoding forward: a lead byte
+# whose width does not land exactly on `at` means the bytes in between are not
+# a well-formed sequence, and guessing there is how a "delete one character"
+# turns into a corrupted line.
+fn _prev_start(s: string, ln: int, at: int) -> Result(int, BufErr):
+    if at <= 0:
+        return Ok(0)
+    i := at - 1
+    for i > 0 and s[i] >= 128 and s[i] < 192:
+        i -= 1
+    cp, w := utf8.decode(s, i)
+    if cp < 0 or i + w != at:
+        return Err(NotUtf8(ln, at))
+    return Ok(i)
+
+# Pull a byte column back to the nearest codepoint boundary at or before it,
+# and into range. Used by up/down, where the target line's bytes have nothing
+# to do with the source line's and the column would otherwise land mid-glyph.
+fn _clamp(s: string, c: int) -> int:
+    at := c
+    if at > len(s):
+        at = len(s)
+    if at < 0:
+        at = 0
+    for at > 0 and at < len(s) and s[at] >= 128 and s[at] < 192:
+        at -= 1
+    return at
+
+# Codepoints in s[0:at). The status line's column number.
+fn _cp_before(s: string, at: int) -> int:
+    n := 0
+    i := 0
+    for i < at and i < len(s):
+        cp, w := utf8.decode(s, i)
+        if cp < 0:
+            return n
+        n += 1
+        i += w
+    return n
+
+# ---- construction and reading --------------------------------------------
+
+fn from_text(text: string) -> Buf:
+    lines := []string
+    cur := 0
+    for i := 0; i < len(text); i += 1:
+        if text[i] == 10:
+            push(lines, text[cur:i])
+            cur = i + 1
+    push(lines, text[cur:len(text)])
+    return Buf(lines, Cursor(0, 0), []Edit, []Edit)
+
+fn text(b: Buf) -> string:
+    out := ""
+    for i := 0; i < len(b.lines); i += 1:
+        if i > 0:
+            out += "\n"
+        out += b.lines[i]
+    return out
+
+fn line_count(b: Buf) -> int:
+    return len(b.lines)
+
+fn byte_count(b: Buf) -> int:
+    n := 0
+    for i := 0; i < len(b.lines); i += 1:
+        n += len(b.lines[i])
+    return n + len(b.lines) - 1          # the newlines between the lines
+
+# Codepoints in the whole buffer, or -1 if some line is not valid UTF-8.
+fn cp_count(b: Buf) -> int:
+    n := 0
+    for i := 0; i < len(b.lines); i += 1:
+        c := utf8.count(b.lines[i])
+        if c < 0:
+            return -1
+        n += c
+    return n + len(b.lines) - 1
+
+# The cursor's column measured in characters, which is what a status line and a
+# screen column both want. `cur.col` is bytes and is never shown to a user.
+fn cur_cp_col(b: Buf) -> int:
+    return _cp_before(b.lines[b.cur.line], b.cur.col)
+
+fn undo_depth(b: Buf) -> int:
+    return len(b.undos)
+
+fn redo_depth(b: Buf) -> int:
+    return len(b.redos)
+
+# Bytes the journal is holding: two ints and a payload per entry. The number
+# --stress compares against the snapshot arm.
+fn undo_bytes(b: Buf) -> int:
+    n := 0
+    for i := 0; i < len(b.undos); i += 1:
+        match b.undos[i].op:
+            Ins(l, c, t): n += len(t)
+            Del(l, c, t): n += len(t)
+            Split(l, c): pass
+            Join(l, c): pass
+    return n + len(b.undos) * 32       # 4 ints of position + cursor, 8 bytes each
+
+# ---- raw edits: they change the text and journal NOTHING -------------------
+#
+# Undo and redo replay through exactly these, which is why an undone edit
+# cannot itself be pushed onto the undo stack and loop.
+
+fn _lines_insert(b: inout Buf, at: int, s: string):
+    push(b.lines, s)                              # grow by one, then shift down
+    for i := len(b.lines) - 1; i > at; i -= 1:
+        b.lines[i] = b.lines[i - 1]
+    b.lines[at] = s
+
+fn _lines_remove(b: inout Buf, at: int):
+    for i := at; i < len(b.lines) - 1; i += 1:
+        b.lines[i] = b.lines[i + 1]
+    pop(b.lines)
+
+fn _check(b: Buf, ln: int, c: int) -> Result(void, BufErr):
+    if ln < 0 or ln >= len(b.lines):
+        return Err(BadLine(ln, len(b.lines)))
+    if c < 0 or c > len(b.lines[ln]):
+        return Err(BadCol(c, len(b.lines[ln])))
+    return Ok()
+
+fn _raw_ins(b: inout Buf, ln: int, c: int, t: string) -> Result(void, BufErr):
+    match _check(b, ln, c):
+        Ok: pass
+        Err(e): return Err(e)
+    s := b.lines[ln]
+    b.lines[ln] = s[0:c] + t + s[c:len(s)]
+    return Ok()
+
+fn _raw_del(b: inout Buf, ln: int, c: int, n: int) -> Result(void, BufErr):
+    match _check(b, ln, c + n):
+        Ok: pass
+        Err(e): return Err(e)
+    s := b.lines[ln]
+    b.lines[ln] = s[0:c] + s[c + n:len(s)]
+    return Ok()
+
+fn _raw_split(b: inout Buf, ln: int, c: int) -> Result(void, BufErr):
+    match _check(b, ln, c):
+        Ok: pass
+        Err(e): return Err(e)
+    s := b.lines[ln]
+    tail := s[c:len(s)]
+    b.lines[ln] = s[0:c]
+    _lines_insert(&b, ln + 1, tail)
+    return Ok()
+
+fn _raw_join(b: inout Buf, ln: int) -> Result(void, BufErr):
+    if ln < 0 or ln + 1 >= len(b.lines):
+        return Err(BadLine(ln + 1, len(b.lines)))
+    b.lines[ln] = b.lines[ln] + b.lines[ln + 1]
+    _lines_remove(&b, ln + 1)
+    return Ok()
+
+fn _record(b: inout Buf, op: Op, before: Cursor):
+    push(b.undos, Edit(op, before))
+    # A fresh edit invalidates the redo branch. Guarded so the common keystroke
+    # does not allocate a fresh empty array for a branch that is already empty.
+    # Measured: this did NOT move the per-edit cost at 100k edits, so it is
+    # tidiness, not the fix for the drift --stress reports.
+    if len(b.redos) > 0:
+        b.redos = []Edit
+
+# ---- the operations a key press names -------------------------------------
+
+# Insert literal text at the cursor. A "\n" in `t` is rejected by construction:
+# it would put a newline inside a line, so callers press `nl` instead.
+fn insert(b: inout Buf, t: string) -> Result(void, BufErr):
+    if t == "":
+        return Ok()
+    before := b.cur
+    match _raw_ins(&b, b.cur.line, b.cur.col, t):
+        Ok: pass
+        Err(e): return Err(e)
+    _record(&b, Ins(before.line, before.col, t), before)
+    b.cur = Cursor(before.line, before.col + len(t))
+    return Ok()
+
+fn newline(b: inout Buf) -> Result(void, BufErr):
+    before := b.cur
+    match _raw_split(&b, before.line, before.col):
+        Ok: pass
+        Err(e): return Err(e)
+    _record(&b, Split(before.line, before.col), before)
+    b.cur = Cursor(before.line + 1, 0)
+    return Ok()
+
+# Backspace: ONE codepoint, or the line break before it. The width comes from
+# _prev_start, so deleting "é" removes both of its bytes and deleting "ö" from
+# the middle of a word leaves the neighbours intact.
+fn del_back(b: inout Buf) -> Result(void, BufErr):
+    before := b.cur
+    if before.col == 0:
+        if before.line == 0:
+            return Err(AtStart)
+        prev := before.line - 1
+        at := len(b.lines[prev])
+        match _raw_join(&b, prev):
+            Ok: pass
+            Err(e): return Err(e)
+        _record(&b, Join(prev, at), before)
+        b.cur = Cursor(prev, at)
+        return Ok()
+    start := 0
+    match _prev_start(b.lines[before.line], before.line, before.col):
+        Ok(i): start = i
+        Err(e): return Err(e)
+    s := b.lines[before.line]
+    gone := s[start:before.col]
+    match _raw_del(&b, before.line, start, before.col - start):
+        Ok: pass
+        Err(e): return Err(e)
+    _record(&b, Del(before.line, start, gone), before)
+    b.cur = Cursor(before.line, start)
+    return Ok()
+
+# Forward delete: one codepoint at the cursor, or the line break after it.
+fn del_fwd(b: inout Buf) -> Result(void, BufErr):
+    before := b.cur
+    s := b.lines[before.line]
+    if before.col >= len(s):
+        if before.line + 1 >= len(b.lines):
+            return Err(AtEnd)
+        at := len(s)
+        match _raw_join(&b, before.line):
+            Ok: pass
+            Err(e): return Err(e)
+        _record(&b, Join(before.line, at), before)
+        b.cur = before
+        return Ok()
+    w := 0
+    match _width_at(s, before.line, before.col):
+        Ok(x): w = x
+        Err(e): return Err(e)
+    gone := s[before.col:before.col + w]
+    match _raw_del(&b, before.line, before.col, w):
+        Ok: pass
+        Err(e): return Err(e)
+    _record(&b, Del(before.line, before.col, gone), before)
+    b.cur = before
+    return Ok()
+
+# ---- motion (no journal: moving the cursor is not an edit) ----------------
+
+fn left(b: inout Buf) -> Result(void, BufErr):
+    if b.cur.col == 0:
+        if b.cur.line == 0:
+            return Err(AtStart)
+        b.cur = Cursor(b.cur.line - 1, len(b.lines[b.cur.line - 1]))
+        return Ok()
+    match _prev_start(b.lines[b.cur.line], b.cur.line, b.cur.col):
+        Ok(i):
+            b.cur = Cursor(b.cur.line, i)
+            return Ok()
+        Err(e): return Err(e)
+
+fn right(b: inout Buf) -> Result(void, BufErr):
+    s := b.lines[b.cur.line]
+    if b.cur.col >= len(s):
+        if b.cur.line + 1 >= len(b.lines):
+            return Err(AtEnd)
+        b.cur = Cursor(b.cur.line + 1, 0)
+        return Ok()
+    match _width_at(s, b.cur.line, b.cur.col):
+        Ok(w):
+            b.cur = Cursor(b.cur.line, b.cur.col + w)
+            return Ok()
+        Err(e): return Err(e)
+
+fn up(b: inout Buf) -> Result(void, BufErr):
+    if b.cur.line == 0:
+        return Err(AtStart)
+    ln := b.cur.line - 1
+    b.cur = Cursor(ln, _clamp(b.lines[ln], b.cur.col))
+    return Ok()
+
+fn down(b: inout Buf) -> Result(void, BufErr):
+    if b.cur.line + 1 >= len(b.lines):
+        return Err(AtEnd)
+    ln := b.cur.line + 1
+    b.cur = Cursor(ln, _clamp(b.lines[ln], b.cur.col))
+    return Ok()
+
+fn home(b: inout Buf):
+    b.cur = Cursor(b.cur.line, 0)
+
+fn line_end(b: inout Buf):
+    b.cur = Cursor(b.cur.line, len(b.lines[b.cur.line]))
+
+# Move to (line, character-column). The column is in CODEPOINTS -- it is what a
+# caller counts by eye -- and is converted here, the only place a script's
+# numbers meet the byte layout.
+fn goto(b: inout Buf, ln: int, cp_col: int) -> Result(void, BufErr):
+    if ln < 0 or ln >= len(b.lines):
+        return Err(BadLine(ln, len(b.lines)))
+    s := b.lines[ln]
+    at := 0
+    n := 0
+    for n < cp_col and at < len(s):
+        cp, w := utf8.decode(s, at)
+        if cp < 0:
+            return Err(NotUtf8(ln, at))
+        at += w
+        n += 1
+    if n < cp_col:
+        return Err(BadCol(cp_col, utf8.count(s)))
+    b.cur = Cursor(ln, at)
+    return Ok()
+
+# ---- undo / redo ----------------------------------------------------------
+
+fn _invert(b: inout Buf, op: Op) -> Result(void, BufErr):
+    match op:
+        Ins(l, c, t): return _raw_del(&b, l, c, len(t))
+        Del(l, c, t): return _raw_ins(&b, l, c, t)
+        Split(l, c): return _raw_join(&b, l)
+        Join(l, c): return _raw_split(&b, l, c)
+
+fn _forward(b: inout Buf, op: Op) -> Result(void, BufErr):
+    match op:
+        Ins(l, c, t): return _raw_ins(&b, l, c, t)
+        Del(l, c, t): return _raw_del(&b, l, c, len(t))
+        Split(l, c): return _raw_split(&b, l, c)
+        Join(l, c): return _raw_join(&b, l)
+
+# Undo restores the cursor to where it stood BEFORE the edit, not to where the
+# edit left it -- so undoing a typed word puts the caret back where typing
+# started, which is what makes repeated undo retrace the session.
+fn undo(b: inout Buf) -> Result(void, BufErr):
+    if len(b.undos) == 0:
+        return Err(NothingToUndo)
+    e := pop(b.undos)
+    match _invert(&b, e.op):
+        Ok: pass
+        Err(x): return Err(x)
+    push(b.redos, e)
+    b.cur = e.cur
+    return Ok()
+
+fn redo(b: inout Buf) -> Result(void, BufErr):
+    if len(b.redos) == 0:
+        return Err(NothingToRedo)
+    e := pop(b.redos)
+    match _forward(&b, e.op):
+        Ok: pass
+        Err(x): return Err(x)
+    push(b.undos, e)
+    # Forward again, so the cursor lands where the edit originally left it.
+    match e.op:
+        Ins(l, c, t): b.cur = Cursor(l, c + len(t))
+        Del(l, c, t): b.cur = Cursor(l, c)
+        Split(l, c): b.cur = Cursor(l + 1, 0)
+        Join(l, c): b.cur = Cursor(l, c)
+    return Ok()
