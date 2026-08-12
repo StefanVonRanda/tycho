@@ -697,7 +697,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10549@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10558@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -1661,6 +1661,10 @@ static Type map_of(Type k, Type v) {
  * whether a move (decl/assign/return/field-set/construction) must deep-copy
  * to keep the implicit-arena model sound. Structs are defined before use, so
  * a field's struct type is fully known here — no cycles, recursion ends. */
+/* No IS_CHAN arm, deliberately: a channel is a shared HANDLE, so `d := c` must alias
+ * the one queue, and deep-copying it would silently split a rendezvous in two. It also
+ * cannot be reached through the aggregate arms below -- tup_of/arr/struct all refuse a
+ * channel element (src/tychoc.c@chan_container_err). Same for IS_TASK/IS_HANDLE. */
 static int type_is_heap(Type t) {
     if (IS_NEWTYPE(t)) return type_is_heap(nt_under(t));   /* same rep as its base */
     if (IS_SOA(t)) return 1;                               /* holds heap field-array pointers */
@@ -2062,6 +2066,7 @@ static Type subst_type(Type t, Type *binds) {
         for (int i = 0; i < n; i++) es[i] = subst_type(tup_elem(t, i), binds);
         return tup_of(es, n);
     }
+    if (IS_SOA(t)) return soa_of(subst_type(soa_struct(t), binds));   /* soa [Box($T)] -> soa [Box__int] */
     if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
     if (is_map(t))  return map_of(subst_type(map_key(t), binds), subst_type(map_val(t), binds));   /* map_of canonicalizes [string:int]->T_MAP_SI */
     if (IS_FUNC(t)) {   /* fn(P...)->R: substitute each parameter + the return (higher-order generics) */
@@ -2083,6 +2088,7 @@ static int has_typaram(Type t) {
     if (IS_CHAN(t)) return has_typaram(chan_inner(t));   /* a template's `channel($T, n)` interns Channel($T); it is transient like any other `$T` type */
     if (IS_OPT(t))  return has_typaram(opt_inner(t));
     if (IS_TUP(t)) { for (int i = 0; i < tup_n(t); i++) if (has_typaram(tup_elem(t, i))) return 1; return 0; }
+    if (IS_SOA(t))  return has_typaram(soa_struct(t));   /* soa [Box($T)] is template-only; without this it reached codegen as the undefined `S_Box` */
     if (IS_RES(t))  return has_typaram(g_restypes[RES_ID(t)].ok) || has_typaram(g_restypes[RES_ID(t)].err);
     if (is_map(t))  return has_typaram(map_key(t)) || has_typaram(map_val(t));
     if (IS_FUNC(t)) {
@@ -2140,6 +2146,7 @@ static int match_type(Type pat, Type concrete, Type *binds) {
             if (!match_type(tup_elem(pat, i), tup_elem(concrete, i), binds)) return 0;
         return 1;
     }
+    if (IS_SOA(pat) && IS_SOA(concrete))   return match_type(soa_struct(pat), soa_struct(concrete), binds);
     if (IS_RES(pat) && IS_RES(concrete))   return match_type(g_restypes[RES_ID(pat)].ok, g_restypes[RES_ID(concrete)].ok, binds)
                                                && match_type(g_restypes[RES_ID(pat)].err, g_restypes[RES_ID(concrete)].err, binds);
     if (is_map(pat) && is_map(concrete))   return match_type(map_key(pat), map_key(concrete), binds)
@@ -2418,7 +2425,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2240) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2247) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2756,7 +2763,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2107): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2113): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3835,7 +3842,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10326), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10335), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5409,7 +5416,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:2969), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:2976), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6655,7 +6662,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5434 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5441 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7209,7 +7216,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7499). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7506). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7232,10 +7239,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6842),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6849),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7130). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7137). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7256,7 +7263,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:2962). The generic descent below
+     * tell it from a package call (src/tychoc.c:2969). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8394,6 +8401,7 @@ static char *type_mangle_ident(Type t) {
         for (int i = 0; i < tup_n(t); i++) s = sfmt("%s_%s", s, type_mangle_ident(tup_elem(t, i)));
         return s;
     }
+    if (IS_SOA(t))     return sfmt("soa_%s", type_mangle_ident(soa_struct(t)));
     /* The `t%d` tail stays globally unique -- the type ranges are disjoint, so no two
      * types share a number -- but it names an instance by an intern id. Every arm above
      * exists to keep a name stable across unrelated edits, not to prevent a collision. */
@@ -8415,6 +8423,7 @@ static int type_mentions_tp(Type t, Type tp) {
     if (IS_RES(t))  return type_mentions_tp(g_restypes[RES_ID(t)].ok, tp) || type_mentions_tp(g_restypes[RES_ID(t)].err, tp);
     if (is_map(t))  return type_mentions_tp(map_key(t), tp) || type_mentions_tp(map_val(t), tp);
     if (IS_TUP(t)) { for (int i = 0; i < tup_n(t); i++) if (type_mentions_tp(tup_elem(t, i), tp)) return 1; return 0; }
+    if (IS_SOA(t))  return type_mentions_tp(soa_struct(t), tp);
     /* No STRUCT/ENUM/FUNC arm, deliberately: a miss here only over-names. An unpinned
      * `$T` gets its binding appended to the instance name, so a false NEGATIVE adds a
      * redundant suffix (`unbox__Box__int__int`) and a collision needs a false POSITIVE,
@@ -8787,7 +8796,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7168: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7175: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8955,7 +8964,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11225), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11234), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8985,12 +8994,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13186) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13197) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11312) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11321) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -9007,7 +9016,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3715-3720) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3722-3727) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -12696,6 +12705,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * enough — this can precede struct bodies, letting a struct embed a soa by
      * value. The push/copy/eq BODIES (which need sizeof field types) stay later. */
     for (int i = 0; i < g_nsoatypes; i++) {
+        if (has_typaram(g_soatypes[i].st)) continue;   /* generics: a template's `soa [Box($T)]` -- transient, the instance interned its own concrete soa */
         StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
         fprintf(o, "typedef struct {");
         for (int f = 0; f < sd->nfields; f++)
@@ -12809,6 +12819,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static int tycho_eq_E_%s(E_%s *a, E_%s *b);\n", en, en, en);
     }
     for (int i = 0; i < g_nsoatypes; i++) {         /* (4) soa op prototypes (bodies are late) */
+        if (has_typaram(g_soatypes[i].st)) continue;   /* transient template soa; see the typedef loop above */
         const char *sn = g_structs[STRUCT_ID(g_soatypes[i].st)].name;
         fprintf(o, "static void Soa%d_push(Arena*, Soa%d*, S_%s);\n", i, i, sn);
         fprintf(o, "static Soa%d Soa%d_copy(Arena*, Soa%d);\n", i, i, i);
@@ -13255,6 +13266,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * and scatters the struct's fields, deep-copying heap fields via copy_into.
      * Emitted after struct bodies (S_<name> is complete) and before fn bodies. */
     for (int i = 0; i < g_nsoatypes; i++) {
+        if (has_typaram(g_soatypes[i].st)) continue;   /* transient template soa; see the typedef loop above */
         StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
         const char *sn = sd->name;   /* typedef + Soa<id>_bound were emitted early (2c) */
         fprintf(o, "static void Soa%d_push(Arena *a, Soa%d *s, S_%s v) {\n", i, i, sn);

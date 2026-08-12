@@ -1,5 +1,5 @@
 # 02-grammar.md:170 / 03-types.md:246: "A function type has up to 8 parameters."
-# src/tychoc.c:1814. This one has 9.
+# src/tychoc.c:1818. This one has 9.
 fn g(a0: int, a1: int, a2: int, a3: int, a4: int, a5: int, a6: int, a7: int, a8: int) -> int:
     return a0
 

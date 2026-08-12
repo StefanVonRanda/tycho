@@ -1,5 +1,5 @@
 # A builtin called with too FEW arguments. tychoc has arity from its Sig table
-# (register_builtins, src/tychoc.c:4310-4341, checked at :5548-5550); tychoc0 had
+# (register_builtins, src/tychoc.c:4317-4348, checked at :5548-5550); tychoc0 had
 # none, so `substr` walked off the end of its own args array and died with
 # "tycho: index 2 out of bounds (len 1)" -- an internal message, no source line.
 # Both must now reject with a located arity diagnostic.

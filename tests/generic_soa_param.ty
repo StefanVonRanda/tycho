@@ -1,0 +1,47 @@
+# `soa [S($T)]` composes with generics.
+#
+# `soa [$T]` is refused at parse time -- a soa element MUST be a struct
+# (src/tychoc.c:2283) -- so the only way a soa reaches a template is over a
+# GENERIC STRUCT, `soa [Box($T)]`, whose element is a struct today and a
+# concrete instance after substitution. That form parsed and then fell through
+# every generic type walker, which had no IS_SOA arm: has_typaram did not call
+# it transient, so the three soa emit loops stamped out `Soa0_push(Arena*,
+# Soa0*, S_Box)` naming the TEMPLATE struct, which has no C body -- the C
+# compiler, not tychoc, reported "parameter 3 ('v') has incomplete type".
+# subst_type left the parameter a template soa, and match_type could not bind
+# $T from a `soa [Box(int)]` argument.
+#
+# `sum` is instantiated at two element types and `unused` at none. The
+# never-called generic is the has_typaram case specifically: its `soa [Box($T)]`
+# is interned at parse time and must be SKIPPED by the emit loops, not emitted.
+# The string element is not decoration -- soa scatters each field into its own
+# buffer, so a heap field has to be deep-copied per push, and reading it back
+# after the pushing scope proves the copy happened.
+
+struct Box($T):
+    v: T
+
+fn count(s: soa [Box($T)]) -> int:      # match_type must descend into the soa
+    return len(s)
+
+fn first(s: soa [Box($T)]) -> T:        # subst_type must rebuild the element type
+    return s[0].v
+
+fn unused(s: soa [Box($T)]) -> int:     # never instantiated: transient, never emitted
+    return len(s)
+
+fn fill() -> soa [Box(string)]:
+    out : soa [Box(string)] = soa []Box(string)
+    push(out, Box("s" + str(1)))
+    push(out, Box("s" + str(2)))
+    return out
+
+fn main():
+    ints : soa [Box(int)] = soa []Box(int)
+    push(ints, Box(7))
+    push(ints, Box(8))
+    println(str(count(ints)) + " " + str(first(ints)))     # 2 7
+
+    # the strings were built in fill()'s frame, which is gone by the read
+    strs := fill()
+    println(str(count(strs)) + " " + first(strs))          # 2 s1
