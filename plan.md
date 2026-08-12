@@ -1174,9 +1174,10 @@ site is either implemented or written down as a refusal with its cost.
   Not attempted here: Phase 13's brief was a diagnostic, and this is a
   resolution change with a corpus-wide blast radius.
 
-- [ ] **Phase 19 — close the §3.7 `gap:`: reject the other 28 builtin names at
+- [ ] **Phase 20 — close the §3.7 `gap:`: reject the other 28 builtin names at
       the declaration too** *(filed by Phase 18, not done there — the brief said
-      to file it rather than land it)*
+      to file it rather than land it. Numbered 20, not 19: Phase 19 was already
+      taken by the citation-drift entry above, which line 394 points at)*
 
   `docs/spec/01-lexical.md` §3.7 now says declaring a procedure with a builtin's
   name **is an error**, and carries a `> **gap:**` block admitting the reference
