@@ -1,0 +1,231 @@
+=== demo
+> ins hello world
+> dump
+  --- 1 lines, 11 bytes, 11 codepoints ---
+  > 0 | hello world
+  --- cursor line 0 char 11 (byte 11)  undo 1 redo 0 ---
+> bs
+> bs
+> bs
+> bs
+> dump
+  --- 1 lines, 7 bytes, 7 codepoints ---
+  > 0 | hello w
+  --- cursor line 0 char 7 (byte 7)  undo 5 redo 0 ---
+> undo
+> undo
+> dump
+  --- 1 lines, 9 bytes, 9 codepoints ---
+  > 0 | hello wor
+  --- cursor line 0 char 9 (byte 9)  undo 3 redo 2 ---
+> redo
+> dump
+  --- 1 lines, 8 bytes, 8 codepoints ---
+  > 0 | hello wo
+  --- cursor line 0 char 8 (byte 8)  undo 4 redo 1 ---
+> end
+> nl
+> ins héllo wörld
+> hex
+  line 1: 13 bytes, 11 codepoints
+  bytes: 68 c3 a9 6c 6c 6f 20 77 c3 b6 72 6c 64
+> dump
+  --- 2 lines, 22 bytes, 20 codepoints ---
+    0 | hello wo
+  > 1 | héllo wörld
+  --- cursor line 1 char 11 (byte 13)  undo 6 redo 0 ---
+> home
+> right
+> right
+> right
+> right
+> dump
+  --- 2 lines, 22 bytes, 20 codepoints ---
+    0 | hello wo
+  > 1 | héllo wörld
+  --- cursor line 1 char 4 (byte 5)  undo 6 redo 0 ---
+> goto 1 2
+> hex
+  line 1: 13 bytes, 11 codepoints
+  bytes: 68 c3 a9 6c 6c 6f 20 77 c3 b6 72 6c 64
+> bs
+> hex
+  line 1: 11 bytes, 10 codepoints
+  bytes: 68 6c 6c 6f 20 77 c3 b6 72 6c 64
+> dump
+  --- 2 lines, 20 bytes, 19 codepoints ---
+    0 | hello wo
+  > 1 | hllo wörld
+  --- cursor line 1 char 1 (byte 1)  undo 7 redo 0 ---
+> undo
+> hex
+  line 1: 13 bytes, 11 codepoints
+  bytes: 68 c3 a9 6c 6c 6f 20 77 c3 b6 72 6c 64
+> end
+> ins 字文
+> hex
+  line 1: 19 bytes, 13 codepoints
+  bytes: 68 c3 a9 6c 6c 6f 20 77 c3 b6 72 6c 64 e5 ad 97 e6 96 87
+> goto 1 11
+> del
+> hex
+  line 1: 16 bytes, 12 codepoints
+  bytes: 68 c3 a9 6c 6c 6f 20 77 c3 b6 72 6c 64 e6 96 87
+> dump
+  --- 2 lines, 25 bytes, 21 codepoints ---
+    0 | hello wo
+  > 1 | héllo wörld文
+  --- cursor line 1 char 11 (byte 13)  undo 8 redo 0 ---
+> undo
+> hex
+  line 1: 19 bytes, 13 codepoints
+  bytes: 68 c3 a9 6c 6c 6f 20 77 c3 b6 72 6c 64 e5 ad 97 e6 96 87
+> end
+> nl
+> ins naïve
+> nl
+> ins ünicode
+> dump
+  --- 4 lines, 44 bytes, 36 codepoints ---
+    0 | hello wo
+    1 | héllo wörld字文
+    2 | naïve
+  > 3 | ünicode
+  --- cursor line 3 char 7 (byte 8)  undo 11 redo 0 ---
+> goto 2 3
+> dump
+  --- 4 lines, 44 bytes, 36 codepoints ---
+    0 | hello wo
+    1 | héllo wörld字文
+  > 2 | naïve
+    3 | ünicode
+  --- cursor line 2 char 3 (byte 4)  undo 11 redo 0 ---
+> up
+> dump
+  --- 4 lines, 44 bytes, 36 codepoints ---
+    0 | hello wo
+  > 1 | héllo wörld字文
+    2 | naïve
+    3 | ünicode
+  --- cursor line 1 char 3 (byte 4)  undo 11 redo 0 ---
+> down
+> down
+> dump
+  --- 4 lines, 44 bytes, 36 codepoints ---
+    0 | hello wo
+    1 | héllo wörld字文
+    2 | naïve
+  > 3 | ünicode
+  --- cursor line 3 char 3 (byte 4)  undo 11 redo 0 ---
+> home
+> bs
+> dump
+  --- 3 lines, 43 bytes, 35 codepoints ---
+    0 | hello wo
+    1 | héllo wörld字文
+  > 2 | naïveünicode
+  --- cursor line 2 char 5 (byte 6)  undo 12 redo 0 ---
+> undo
+> dump
+  --- 4 lines, 44 bytes, 36 codepoints ---
+    0 | hello wo
+    1 | héllo wörld字文
+    2 | naïve
+  > 3 | ünicode
+  --- cursor line 3 char 0 (byte 0)  undo 11 redo 1 ---
+> goto 0 0
+> left
+  ERR already at start of buffer
+> up
+  ERR already at start of buffer
+> goto 3 7
+> end
+> right
+  ERR already at end of buffer
+> down
+  ERR already at end of buffer
+> del
+  ERR already at end of buffer
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+  ERR nothing to undo
+> undo
+  ERR nothing to undo
+> undo
+  ERR nothing to undo
+> undo
+  ERR nothing to undo
+> undo
+  ERR nothing to undo
+> dump
+  --- 1 lines, 0 bytes, 0 codepoints ---
+  > 0 | 
+  --- cursor line 0 char 0 (byte 0)  undo 0 redo 12 ---
+> undo
+  ERR nothing to undo
+> redo
+> redo
+> redo
+> dump
+  --- 1 lines, 9 bytes, 9 codepoints ---
+  > 0 | hello wor
+  --- cursor line 0 char 9 (byte 9)  undo 3 redo 9 ---
+=== roundtrip (6 edits, 6 undos, 6 redos)
+> ins héllo
+> nl
+> ins 字文
+> bs
+> nl
+> ins ok
+> dump
+  --- 3 lines, 13 bytes, 10 codepoints ---
+    0 | héllo
+    1 | 字
+  > 2 | ok
+  --- cursor line 2 char 2 (byte 2)  undo 6 redo 0 ---
+> undo
+> undo
+> undo
+> undo
+> undo
+> undo
+> dump
+  --- 1 lines, 0 bytes, 0 codepoints ---
+  > 0 | 
+  --- cursor line 0 char 0 (byte 0)  undo 0 redo 6 ---
+> redo
+> redo
+> redo
+> redo
+> redo
+> redo
+> dump
+  --- 3 lines, 13 bytes, 10 codepoints ---
+    0 | héllo
+    1 | 字
+  > 2 | ok
+  --- cursor line 2 char 2 (byte 2)  undo 6 redo 0 ---
+=== err BadLine (via the buf API)
+no line 5 (buffer has 1)
+=== err BadCol (via the buf API)
+byte column 99 past end of a 5-byte line
+=== err NotUtf8 (via the buf API)
+line 0 byte 1 is not a UTF-8 boundary
+=== err NothingToUndo (via the buf API)
+nothing to undo
+=== err NothingToRedo (via the buf API)
+nothing to redo
+=== err AtStart (via the buf API)
+already at start of buffer
+=== err AtEnd (via the buf API)
+already at end of buffer

@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -534,6 +534,32 @@ db-check: tychoc
 # See tools/tycho-flow/run.sh.
 flow-check: tychoc
 	@sh tools/tycho-flow/run.sh
+
+# ed-check: the gate for tycho-ed, the terminal text editor in tools/tycho-ed/.
+# Same shape as the tool lanes above -- nothing else RUNS it -- but the subject
+# is UTF-8, which is the one thing a recorded transcript cannot see: a backspace
+# that removes one BYTE of "é" leaves a lone 0xc3 that renders as plausible text
+# and diffs clean against a golden recorded from the same broken build. So the
+# byte and codepoint counts are asserted against literals IN THE RUNNER, where
+# RECORD=1 cannot reach them: a backspace over a 2-byte codepoint must take the
+# line from 13 bytes to 11 and 11 codepoints to 10, a forward delete of a 3-byte
+# one from 19 to 16 and 13 to 12, and no dump anywhere may report INVALID UTF-8.
+# The demo runs twice and both must be byte-identical. Six edits are undone to
+# an empty buffer and redone back to a byte-identical dump -- cursor and journal
+# depths included -- on a script the runner writes itself, because demo.ed only
+# undoes past the bottom and never closes the loop. All seven buf.BufErr
+# variants must exit non-zero with their own whole message and an empty stdout,
+# through a probe built against a COPY of buf/; the --script driver reports them
+# and exits 0 by design, so the probe is the only caller that can die by one.
+# The variant list is read out of the enum, so a new one cannot arrive ungated.
+# `--stress` is NOT run here: it is a timing measurement, written up in main.ty's
+# header and in docs/thesis.md §4b, and a gate that asserted a timing is a coin
+# toss.
+#
+# ~3.8s, measured 2026-08-12. In `make ci` as step [3r/24].
+# See tools/tycho-ed/run.sh.
+ed-check: tychoc
+	@sh tools/tycho-ed/run.sh
 
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else

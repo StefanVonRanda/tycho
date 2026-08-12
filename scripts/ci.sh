@@ -341,6 +341,18 @@ make -s db-check
 # on this machine and wrong on the next.
 step "[3q/23] make flow-check  (tycho-flow: transcript byte-identical over 8 runs and at TYCHO_THREADS=1 and 2, the pool proved to drain out of source order on 200 runs and not at all on one thread, a 4-slot ring that parks send 5, a cancelled pipeline that stops its source under 64 of 256 while the never-fails control runs to 256, 5 FlowErr variants and graph's cross-package collect each refused with their own message, TSan silent over the demo and 15 more pipelines)"
 make -s flow-check
+
+# 3r for the same reason 3e-3q are: a tool under tools/ that nothing else runs.
+# What makes it different from its neighbours is that its subject is UTF-8, and
+# a golden is structurally blind to a UTF-8 bug: a backspace that removes one
+# BYTE of a 2-byte codepoint leaves a lone lead byte that renders as plausible
+# text, and a golden re-recorded from that build diffs clean against it. So the
+# byte and codepoint counts are asserted against literals in the runner, where
+# RECORD=1 cannot bless them, and the undo journal is closed into a loop --
+# undone to an empty buffer and redone back to a byte-identical dump -- which
+# demo.ed does not do.
+step "[3r/24] make ed-check  (tycho-ed: demo transcript byte-identical over 2 runs, a backspace over a 2-byte codepoint asserted at 13->11 bytes and 11->10 codepoints and a forward delete of a 3-byte one at 19->16 and 13->12 against literals, no dump reporting INVALID UTF-8, 6 edits undone to an empty buffer and redone to a byte-identical dump, 7 BufErr variants each refused with their own message)"
+make -s ed-check
 fi
 
 if [ "$LANE" = rest ]; then
