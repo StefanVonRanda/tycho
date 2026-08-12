@@ -315,6 +315,19 @@ make -s build-check
 # and it also exercises the `tycho debug` dispatcher command end to end.
 step "[3o/21] make debug-check  (tycho-debug: scripted sessions -- breakpoint set + hit on the right source line, stripped-C-name locals, print, step, clean quit, run-to-completion with program output, Ctrl-C interrupt of a running inferior, fail-closed refusals, tycho debug wrapper)"
 make -s debug-check
+
+# 3p for the same reason 3e-3o are: a tool under tools/ that nothing else runs.
+# tycho-db is the first program in the tree with its own internal packages, and
+# a database has two ways to betray a caller -- return the wrong rows, or lose
+# rows a process already acknowledged. The lane splits along that line: a golden
+# carrying the ROWS plus a two-run determinism cmp of the transcript AND the
+# store file, then a four-process persistence leg whose expected rows are
+# literals in the runner rather than a slice of the golden. All eleven named
+# error variants of store.StoreErr and exec.ExecErr must exit non-zero with
+# their own whole message; the variant list is read out of the enums, so a new
+# one cannot arrive ungated.
+step "[3p/22] make db-check  (tycho-db: demo transcript + store file reproducible over two runs, rows survive a process exit and a reopened store takes writes, 11 error variants each refused with their own message)"
+make -s db-check
 fi
 
 if [ "$LANE" = rest ]; then

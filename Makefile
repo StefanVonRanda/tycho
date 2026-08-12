@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -450,6 +450,35 @@ scheme-check: tychoc
 # See tools/tycho-kv/run.sh.
 kv-check: tychoc
 	@sh tools/tycho-kv/run.sh
+
+# db-check: the gate for tycho-db, the relational database in tools/tycho-db/
+# (sql/ parser, store/ heap file, exec/ operators). Same shape and same reason
+# as ar/q/vm/scheme/kv-check above: step [9] tools-check only --emit-c's a tool
+# and [3b] entrypoints only compiles its main.ty, so until this lane existed
+# NOTHING RAN the database -- it could have started returning the wrong rows,
+# or lost every row it was given, with the whole sweep green.
+#
+# WHAT IT REDDENS FOR. A database betrays its caller two ways, and the lane is
+# split accordingly. Wrong answers: the demo transcript is a golden carrying
+# the ROWS, and the demo is run twice from a fresh store with both the stdout
+# and the store FILE cmp'd. Lost data: one process writes and exits, a second
+# opens the file and must read the rows back, a third writes to the REOPENED
+# store and a fourth reads all four rows -- and those rows are literals in the
+# runner, not a slice of the golden, so a re-record cannot bless a lost row.
+#
+# The other half is the refusals: all eleven named variants of store.StoreErr
+# and exec.ExecErr must exit non-zero with THEIR OWN message, compared whole
+# rather than by substring, with Corrupt additionally leaving stdout empty.
+# NotAPredicate is unreachable from SQL text (sql._predicate only builds Cmp
+# and And, both of which exec._pred handles), so the runner copies the three
+# packages into its temp dir and probes the exec API directly. The variant
+# list is EXTRACTED from the two enums and checked against what the runner
+# covers, so a variant added later reddens here instead of arriving ungated.
+#
+# ~5.4s, measured 2026-08-12. In `make ci` as step [3p/22].
+# See tools/tycho-db/run.sh.
+db-check: tychoc
+	@sh tools/tycho-db/run.sh
 
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else

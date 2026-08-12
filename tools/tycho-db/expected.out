@@ -1,0 +1,106 @@
+=== demo
+  db    demo.db (0 table(s))
+CREATE TABLE users (id INT, name TEXT, age INT);
+  ok    created users
+INSERT INTO users VALUES (1, 'ada', 36);
+  ok    1 row into users
+INSERT INTO users VALUES (2, 'bob', 41);
+  ok    1 row into users
+INSERT INTO users VALUES (3, 'cy', 29);
+  ok    1 row into users
+SELECT name, age FROM users WHERE age > 30 AND name != 'bob';
+  cols  name | age
+  row   ada | 36
+  ok    1 row(s)
+SELECT * FROM users;
+  cols  id | name | age
+  row   1 | ada | 36
+  row   2 | bob | 41
+  row   3 | cy | 29
+  ok    3 row(s)
+=== persist read-back (second process)
+  db    p.db (1 table(s))
+SELECT * FROM people;
+  cols  id | name | age
+  row   1 | ada | 36
+  row   2 | bob | 41
+  row   3 | cy | 29
+  ok    3 row(s)
+=== persist reread after append (fourth process)
+  db    p.db (1 table(s))
+SELECT * FROM people;
+  cols  id | name | age
+  row   1 | ada | 36
+  row   2 | bob | 41
+  row   3 | cy | 29
+  row   4 | dee | 55
+  ok    4 row(s)
+=== persist filter
+  db    p.db (1 table(s))
+SELECT name, age FROM people WHERE age > 30 AND name != 'bob';
+  cols  name | age
+  row   ada | 36
+  row   dee | 55
+  ok    2 row(s)
+=== err NoTable
+--- stdout
+  db    e.db (1 table(s))
+SELECT * FROM ghosts;
+  ERR   no such table: ghosts
+--- stderr
+1 statement(s) failed
+=== err TableExists
+--- stdout
+  db    e.db (1 table(s))
+CREATE TABLE users (id INT);
+  ERR   table already exists: users
+--- stderr
+1 statement(s) failed
+=== err ColCount
+--- stdout
+  db    e.db (1 table(s))
+INSERT INTO users VALUES (1, 'x');
+  ERR   users takes 3 value(s), got 2
+--- stderr
+1 statement(s) failed
+=== err TypeClash
+--- stdout
+  db    e.db (1 table(s))
+INSERT INTO users VALUES ('x', 'y', 1);
+  ERR   users.id is int, got text
+--- stderr
+1 statement(s) failed
+=== err NoColumn
+--- stdout
+  db    e.db (1 table(s))
+SELECT nope FROM users;
+  ERR   users has no column nope
+--- stderr
+1 statement(s) failed
+=== err Uncomparable
+--- stdout
+  db    e.db (1 table(s))
+SELECT * FROM users WHERE age > 'x';
+  ERR   cannot compare int with text
+--- stderr
+1 statement(s) failed
+=== err NotAValue
+--- stdout
+  db    e.db (1 table(s))
+INSERT INTO users VALUES (id, 'y', 1);
+  ERR   not a value: id
+--- stderr
+1 statement(s) failed
+=== err Corrupt
+--- stdout
+--- stderr
+store is corrupt: bad.db is not a tycho-db store
+=== err NotWritten
+--- stdout
+  db    nodir/x.db (0 table(s))
+CREATE TABLE t (a INT);
+  ok    created t
+--- stderr
+cannot write nodir/x.db
+=== err NotAPredicate (via the exec API)
+not a predicate: a
