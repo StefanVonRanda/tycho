@@ -1,0 +1,27 @@
+=== demo
+pipeline(string): source -> filter(len>=4) -> pool(fan-out, uneven work) -> reorder
+  in    12 element(s)
+  kept  8 element(s)
+  work  8 element(s) through the pool
+  link  pool consumed every element the filter emitted
+  out   [flow#826923, pipeline#223553, over#826923, bounded#802037, channels#223553, order#760988, comes#760988, back#826923]
+pipeline(int): source -> transform(x*3) -> reorder
+  link  transform consumed every element the source emitted
+  out   [3, 6, 9, 12, 15, 18, 21, 24]
+reduce(string -> int): commutative fold, no index needed
+  sum   54 char(s) over 12 element(s)
+  check agrees with the sequential fold
+backpressure: a 512-element source into a 4-slot channel
+  ring  filled with 4 element(s) and no receiver
+  park  send 5 is blocked: no marker for it exists
+  drain 512 element(s) and 508 marker(s) after release, producer sent 512
+errors: every FlowErr variant, fired
+  ok    duplicate index 0: the index set is not a permutation
+  ok    truncated: expected 3 item(s), collected 2
+  ok    filter dropped 2: 9 sent, 7 received
+=== err Truncated (via the stage API)
+truncated: expected 3 item(s), collected 2
+=== err DuplicateIndex (via the stage API)
+duplicate index 0: the index set is not a permutation
+=== err Dropped (via the stage API)
+filter dropped 2: 9 sent, 7 received

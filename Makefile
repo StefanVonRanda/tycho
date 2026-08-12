@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -511,6 +511,29 @@ kv-check: tychoc
 # See tools/tycho-db/run.sh.
 db-check: tychoc
 	@sh tools/tycho-db/run.sh
+
+# flow-check: the gate for tycho-flow, the concurrent pipeline engine in
+# tools/tycho-flow/. Same shape as the tool lanes above -- nothing else RUNS it
+# -- but the subject is CONCURRENCY, so a golden diff is the weakest leg rather
+# than the lane. The demo's transcript must be byte-identical over 8 default
+# runs and at TYCHO_THREADS=1 and 2, because an answer that depends on the pool
+# width depends on the machine. That proof would be vacuous if the pool never
+# raced, so `--race 200` must find the pool draining out of source order on at
+# least 190 of them, with 25 runs at one thread finding exactly 0 as the
+# negative control. Backpressure is asserted against literals in the runner and
+# not the golden: with a 4-slot ring and no receiver, exactly 4 markers can
+# exist and the 5th cannot. All three stage.FlowErr variants must exit non-zero
+# with their own whole message and an empty stdout, through a probe built
+# against a COPY of stage/; the variant list is read out of the enum, so a new
+# one cannot arrive ungated. And the whole demo plus 15 more pipelines run
+# under TSan with a silent stderr -- a capture or ring bug is a data race, not
+# a wrong answer, and every other leg here is blind to it (`make conc` is the
+# precedent). The TSan leg SKIPS loudly where cc has no runtime.
+#
+# ~11.1s, measured 2026-08-12. In `make ci` as step [3q/23].
+# See tools/tycho-flow/run.sh.
+flow-check: tychoc
+	@sh tools/tycho-flow/run.sh
 
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else

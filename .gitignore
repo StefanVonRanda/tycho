@@ -213,3 +213,8 @@ dist/
 # tracked too, same line, same reason as every lane above it.
 !/tools/tycho-db/*.out
 /tools/tycho-db/tycho-db
+# the tycho-flow pipeline engine's transcript golden
+# (tools/tycho-flow/expected.out) is tracked too, same line, same reason as
+# every lane above it: *.out is ignored broadly, so without this the golden is
+# green on the author's disk and absent from a fresh clone.
+!/tools/tycho-flow/*.out

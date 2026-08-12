@@ -328,6 +328,19 @@ make -s debug-check
 # one cannot arrive ungated.
 step "[3p/22] make db-check  (tycho-db: demo transcript + store file + log reproducible over two runs, rows survive a process exit and a reopened store takes writes, a real kill -9 mid-script replays idempotently and discards a torn record, the index and scan paths return identical rows while examining 1 against 6, a real server answers over TCP and survives rude clients, 25 error variants each refused with their own message)"
 make -s db-check
+
+# 3q for the same reason 3e-3p are: a tool under tools/ that nothing else runs.
+# What makes it different from its neighbours is that its claims are about
+# SCHEDULING, and a golden cannot see any of them -- a pipeline that lost its
+# ordering, stopped being bounded, or races on the ring can all print the
+# expected bytes on a kind run. So the lane varies the pool width and demands
+# the same bytes, then proves the pool really does deliver out of order (a
+# determinism claim over a pipeline that never raced is vacuous), then asserts
+# the bounded ring against literals rather than the golden, then runs the whole
+# thing under TSan -- because a capture bug here is a data race, which is right
+# on this machine and wrong on the next.
+step "[3q/23] make flow-check  (tycho-flow: transcript byte-identical over 8 runs and at TYCHO_THREADS=1 and 2, the pool proved to drain out of source order on 200 runs and not at all on one thread, a 4-slot ring that parks send 5, 3 FlowErr variants each refused with their own message, TSan silent over the demo and 15 more pipelines)"
+make -s flow-check
 fi
 
 if [ "$LANE" = rest ]; then
