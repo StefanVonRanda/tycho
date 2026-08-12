@@ -1,15 +1,13 @@
-# WHICH procedure a shadowed builtin name actually selects -- run, not just
-# compiled. tests/warn/shadow_builtin.ty locks the WARNING, but that lane
-# captures stderr and never executes the program, so nothing in the tree
-# checked the warning's central claim. It is false: the warning says "every
-# unqualified `len(...)` here calls this procedure, not the builtin", and the
-# builtin is what runs. Same in package mode -- the local body never executes.
+# WHICH procedure a builtin's name actually selects -- run, not just compiled.
+# tests/warn/shadow_builtin.ty locks the WARNING, but that lane captures stderr
+# and never executes the program, so nothing in the tree checked which body ran.
 #
-# docs/spec/01-lexical.md:201-209 is normative and says the opposite: the local
-# "shadows that builtin for every unqualified call inside its own package" and
-# "a conforming implementation must not change which procedure is selected".
-# So this golden locks a KNOWN SPEC DIVERGENCE, not desired behaviour. Fixing
-# the resolver must redden this fixture -- that is the point of recording it.
+# docs/spec/01-lexical.md is normative and, since 2026-08-12, matches what this
+# golden records: a builtin name may not be shadowed, the BUILTIN is selected at
+# every unqualified call, and the same-named local is unreachable by that name
+# (a package-QUALIFIED `pkg.len(...)` is a different construct and does reach
+# it). So this golden pins the RULE. A change that makes the local win here is
+# a spec violation, not a fix.
 
 fn len(s: string) -> int:
     return 7

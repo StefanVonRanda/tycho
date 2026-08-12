@@ -1043,8 +1043,108 @@ site is either implemented or written down as a refusal with its cost.
   green (46 ok), `make vm-check` green, `sh scripts/entrypoints.sh` 75 entry
   points, `check_citations` + `check_links` ok.
 
-- [ ] **Phase 18 — the compiler selects the builtin where the spec says the
+- [x] **Phase 18 — the compiler selects the builtin where the spec says the
       package-local procedure wins** *(sized by Phase 13, not absorbed)*
+      VERDICT: **resolved in favour of the compiler — the SPEC was rewritten.**
+
+  **The owner's decision, taken 2026-08-12: builtins are not shadowable.** The
+  spec described a language nobody had built, so it is the spec that moved.
+  Call resolution is untouched; `tests/shadow_builtin_selection.ty` keeps its
+  `4/false/7` golden and now pins the *rule* rather than a violation.
+
+  **Reasoning.** The alternative — reordering call resolution so a local wins —
+  buys a feature with no user in the tree and one active victim against it:
+  `core:utf8` already renamed its `len` to `count` precisely to escape the
+  behaviour the spec was demanding. Making it work would have restored the
+  stack-guard recursion as *correct*, across `make test`, `make corelib` and
+  every tool lane. The `keys`/`json` case shows what users actually want: a
+  package-qualified name, which already works and is what the new text blesses.
+
+  **Re-probe, done here rather than inherited (Phase 13's grouping was an
+  artefact).** All 54 names on `src/tychoc.c@shadows_builtin`, each declared
+  `fn <name>(s: string) -> int: return 7` and called unqualified, `./tychoc`
+  at `680d30d`:
+
+  | outcome | count | examples |
+  |---|---|---|
+  | rejected at the declaration, `'X' is already defined` | 26 | `str` `split` `find` `chr` `sqrt` `pow` `print` `println` `die` `now` |
+  | declares + warns, then the BUILTIN's own arg-check refuses the call | 25 | `keys` (`keys's argument must be a map`), `to_int`, `send`, `close`, `push` |
+  | declares + warns, runs, local body never entered | 3 | `len`→`4`, `to_bytes`→`abcd`, `hash`→`-1360361491285520093` |
+
+  **The 2nd/3rd split is decided by the ARGUMENTS, not the name** — which is
+  what Phase 13's per-name table got wrong. Same name, both outcomes:
+  `to_u8("abcd")` draws the builtin's arg-check, `to_u8(5)` runs and prints `5`,
+  not the local's `99`. Likewise `len("abcd")`→`4` (silent) but `len(3)`→
+  `len(...) takes an array, a string, bytes, a map, or a soa`, refusing a call
+  the local's signature fits perfectly. Every warned name is therefore capable
+  of the silent case; the spec text says so instead of listing names.
+
+  **Self-call does not recurse** (the spec's other false claim): a `len` whose
+  body returns `len("abcd")`, called as `len("xy")`, prints `2` — the builtin
+  answered the inner call too, so the body ran zero times, not twice.
+  **Package mode is identical** to flat: `package main` declaring `len` + `keys`
+  warns twice and then dies on `keys(5)` with the builtin's map diagnostic.
+
+  **`json.keys` is still legal — verified, not assumed.** A separate package
+  doing `import "core:json"` then `json.keys(v)` on a two-key object compiles
+  clean and prints `2` / `a`. The qualifier is what makes it fine, and the new
+  text says that in as many words. `corelib/json/json.ty@keys` is the only hit
+  for `keys(` in that file — it never calls its own `keys` unqualified, which is
+  why the declaration being unreachable that way costs it nothing.
+
+  **New spec text** — `docs/spec/01-lexical.md` §3.7 replaces the "shadows /
+  must not change which procedure is selected" paragraph with: a builtin name
+  may not be shadowed; the builtin is selected at every unqualified call
+  including one inside a same-named body, which therefore does not recurse; such
+  a declaration is unreachable by that name and is an error; the remedy is a
+  different name (`core:utf8`→`count`). A second paragraph makes the
+  package-qualified case explicit and names `json.keys` as the worked example. A
+  `> **gap:**` block then states, without overclaiming, that the reference
+  implementation diagnoses only two of the three paths — hard rejection, the
+  builtin's arg-check, and the silent case which is undiagnosed — and that
+  selection, not the warning, is the normative part.
+
+  `docs/spec/12-aggregates.md:637-641` cross-referenced the old rule ("that
+  shadowing redirects a name to the new declaration") and was rewritten to agree:
+  same verdict, different reach — §3.7 governs the unqualified spelling, while
+  `Ok`/`Err`/`Some`/`None` are recognised by spelling everywhere, which is why
+  their rejection is unconditional. `docs/spec/appendix-a-grammar.md:28-30` and
+  `docs/spec/appendix-b-keywords.md:48` say only that builtin names are
+  *lexically* not reserved, which is still true; neither needed a change, and
+  `spec_check.sh` confirms Appendix A still agrees with §3/§4. Appendix E has no
+  §3.7 row to update (its shadowing row, `docs/spec/appendix-e-conformance.md:158`,
+  is §12.3 *variable* shadowing — a different rule, untouched).
+
+  **Warning text** (`src/tychoc.c@shadows_builtin`'s call site), which promised
+  the opposite of what happens. Kept a WARNING, deliberately — see the new phase
+  below. Line-neutral (14/14), so no citation re-anchoring was needed:
+
+  ```
+  - "`%s` shadows the builtin of the same name inside this package -- "
+  - "every unqualified `%s(...)` here calls this procedure, not the builtin "
+  - "(a self-call recurses). Rename it unless that is what you meant."
+  + "`%s` collides with the builtin of the same name -- every unqualified "
+  + "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
+  + "name (§3.7). Rename it, or call it qualified as `pkg.%s(...)`."
+  ```
+
+  Two warn goldens re-recorded for the new wording, both text-only:
+  `tests/warn/shadow_builtin.err` and `tests/warn/pkg/corelib_mute.err` — the
+  latter's actual assertion (no warnings leak from an imported corelib package)
+  is untouched. The header comments on `tests/shadow_builtin_selection.ty` and
+  `tests/warn/shadow_builtin.ty` were rewritten: both described the golden as a
+  known spec divergence, and it is now the rule.
+
+  **Verified.** `make check-links` ok (176 anchored, 877 bare, 243 `path@SYMBOL`)
+  — note it first reported **68 stale** when the warning was 15 lines against 14,
+  which is why the final text is line-neutral. `sh scripts/spec_check.sh` ok
+  (11 runnable examples). `make vm-check` green. `sh scripts/entrypoints.sh` ok
+  (75 entry points). `make corelib` all green (46 ok). `make test` **654 passed,
+  0 failed** — baseline exactly, no fixture gained or lost.
+
+  ---
+
+  *Original brief, kept for the record:*
 
   `docs/spec/01-lexical.md:201-209`, normative: a procedure named after a
   builtin shadows it for every unqualified call in its package, self-calls
@@ -1073,6 +1173,40 @@ site is either implemented or written down as a refusal with its cost.
 
   Not attempted here: Phase 13's brief was a diagnostic, and this is a
   resolution change with a corpus-wide blast radius.
+
+- [ ] **Phase 19 — close the §3.7 `gap:`: reject the other 28 builtin names at
+      the declaration too** *(filed by Phase 18, not done there — the brief said
+      to file it rather than land it)*
+
+  `docs/spec/01-lexical.md` §3.7 now says declaring a procedure with a builtin's
+  name **is an error**, and carries a `> **gap:**` block admitting the reference
+  implementation only enforces that for 26 of the 54 names on
+  `src/tychoc.c@shadows_builtin`. The other 28 declare with a warning; the
+  builtin then wins at the call site, sometimes *silently* (`to_u8(5)` → the
+  builtin's `5`, local body never entered). That silent path is the undiagnosed
+  one and the reason the entry exists. Closing it deletes the gap block.
+
+  **Why it was not landed with the spec.** It newly rejects
+  `corelib/json/json.ty@keys` — public API, called as `json.keys(obj)` and
+  working today — plus any user code with the same shape. That is a breaking
+  change to a shipped package, which is a separate decision from "what does the
+  spec say", and Phase 18's brief was explicit that it be filed, not done.
+
+  **Sizing, from FRICTION item 4, whose citations Phase 18 left intact.** The
+  definition-time duplicate check is one condition at `src/tychoc.c:8153`
+  (`sig_find(pr->name) || consts_find(pr->name)`), and the 26 already-rejected
+  names are exactly those with real `g_sigs` entries from
+  `src/tychoc.c@register_builtins`. `send`/`recv`/`close` have no entry at all —
+  they are recognised ad hoc during resolution — so this is not a table missing
+  rows. The generic path at `src/tychoc.c:8147` consults the same tables plus
+  `generic_find`, so whatever lands has to be written twice.
+
+  **Prerequisite, not optional:** rename `core:json`'s `keys` (to `object_keys`
+  or similar) with the old name kept as a deprecated forwarder, or accept the
+  break and bump. Sequence the corelib rename *before* the compiler change, or
+  `make corelib` reddens by construction. Gates: `make corelib`,
+  `make corelib-examples`, `make test`, `sh scripts/entrypoints.sh`, and the doc
+  gates for the `gap:` block's removal.
 
 - [x] **Phase 14 — a package-qualified function cannot be a value, and the
   diagnostic says the wrong thing.** VERDICT: **(a) CONTAINED, implemented.**

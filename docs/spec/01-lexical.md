@@ -198,15 +198,32 @@ bars an uppercase spelling from every run-time binding position. They are
   `to_int`, `wait`, `send`, `recv`, `close`, …) is an ordinary identifier
   resolved as a call; none is reserved ([§29](16-builtins.md)).
 
-  A procedure declared with a builtin's name is therefore legal, and it
-  **shadows** that builtin for every unqualified call inside its own package —
-  including calls from the procedure itself, which recurse. This is permitted
-  behavior, not a diagnostic-free one: an implementation is expected to warn at
-  the declaration, because the failure mode is a wrong answer rather than an
-  error. `core:utf8` hit it (its `decode` called the package's own `len` and
-  recursed to the stack guard) and renamed the entry point to `count`.
-  Non-normative for conformance — a warning is quality of implementation — but
-  a conforming implementation must not change which procedure is *selected*.
+  A builtin name may **not** be shadowed. In an unqualified call `f(...)`, if
+  `f` names a builtin then the **builtin is selected**, always — whatever else
+  the package declares, and including a call written inside a same-named
+  procedure's own body, which therefore does not recurse. A procedure declared
+  with a builtin's name is consequently unreachable by that name, and declaring
+  one **is an error**. Pick a different name: `core:utf8` hit this and renamed
+  its `len` to `count`.
+
+  A **package-qualified** call is a different construct and is unaffected:
+  `pkg.f(...)` names `pkg`'s procedure and never a builtin, so a package may
+  export a procedure whose name a builtin also owns and callers may use it.
+  `core:json` does exactly that — `json.keys(j)` resolves to
+  `corelib/json/json.ty@keys`. Only the unqualified spelling is taken.
+
+  > **gap:** the reference implementation enforces this in three ways and
+  > diagnoses only the first two. About half the builtin names are rejected at
+  > the declaration with `'X' is already defined`. The rest declare with a
+  > warning ("`X` shadows the builtin of the same name …") and are then
+  > overtaken at the call site by the builtin, so what a caller sees depends on
+  > its **arguments**, not on the name: arguments the builtin's own contract
+  > refuses produce that builtin's diagnostic — confusingly, since the local's
+  > signature may fit perfectly — and arguments it accepts are answered
+  > silently, with the local body never entered. The silent case is the
+  > undiagnosed one. The warning is quality of implementation, not a
+  > conformance requirement; **selection** is the normative part, and every
+  > path above selects the builtin.
 
 > Provenance: contextual dispatch at `src/tychoc.c:4541-4550` (top level),
 > `:3590@"const"`/`:3616@"delete"` (`const`/`delete`), `:2275@soa [Struct]`/`:2791@soa []Struct` (`soa`),

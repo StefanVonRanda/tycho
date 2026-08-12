@@ -334,6 +334,26 @@ pick-up order is written out in full under "What moved this pass" below.
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
    (`src/tychoc.c:8147`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
+
+   **DECISION TAKEN 2026-08-12 — none of them is shadowable.** The repo owner
+   resolved the open half in favour of the compiler, and `docs/spec/01-lexical.md`
+   §3.7 was rewritten to match: a builtin name may not be shadowed, the builtin is
+   selected at every unqualified call, and a same-named procedure is unreachable by
+   that name. The spec had said the opposite ("**shadows** that builtin … a
+   conforming implementation must not change which procedure is *selected*"), which
+   is what kept this item open — it was never a compiler bug, it was the spec
+   describing a language nobody had built. Re-probed at `680d30d` over every name in
+   `src/tychoc.c@shadows_builtin`: 26 are rejected at the declaration
+   (`'X' is already defined`), the other 28 declare with a warning and are then
+   overtaken by the builtin at the call site. Which of those two the caller sees
+   turns out to depend on the **arguments**, not the name — `to_u8("abcd")` draws the
+   builtin's arg-check while `to_u8(5)` silently returns the builtin's answer with
+   the local body never entered — so the earlier per-name grouping of this behaviour
+   was an artefact of the probe's arguments. **Still open, and now purely cosmetic:**
+   making the ~28 accepted names a hard error like the other 26. Not done here
+   because it would newly reject `corelib/json/json.ty@keys`, which is public API
+   (`json.keys(j)`, still legal — a package qualifier reaches the procedure). The
+   warning at `src/tychoc.c@shadows_builtin` now names the real outcome and the fix.
 5. ~~**Stale in-tree comments asserting constraints that the freeze retirement killed**~~
    — **CLOSED 2026-07-31: all six rewritten, and a seventh found.** Each now states what
    the old reason was, that it expired on 2026-07-29, and what (if anything) survives as

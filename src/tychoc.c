@@ -4122,16 +4122,16 @@ static Stmt **parse_arm_inline(Parser *ps, int value, int *count) {
     return body;
 }
 
-/* Does `n` name a builtin that a same-named package procedure would SHADOW?
+/* Does `n` name a builtin that a same-named package procedure COLLIDES with?
  *
- * §3.7 makes this legal on purpose: builtins lex as TK_IDENT, so they stay
- * legal procedure names. What was not intended is that it happens SILENTLY.
- * Measured 2026-08-09: a package declaring `fn len(s: string) -> int` gets its
- * own `len` for every unqualified call inside that package, so a 4-character
- * string reports whatever that function returns -- a wrong ANSWER, with no
- * diagnostic anywhere. core:utf8 hit exactly this: `utf8.decode` called
- * `utf8.len` and recursed until the stack guard fired, and the package's API
- * was renamed to `count` to escape it.
+ * Builtins lex as TK_IDENT, so they stay legal procedure names. §3.7 (rewritten
+ * 2026-08-12) makes the outcome normative: the BUILTIN is always selected at an
+ * unqualified call, so such a declaration is unreachable by that name. Measured
+ * 2026-08-12 over every name below -- about half are rejected outright at the
+ * declaration (`'X' is already defined`); the rest declare, and the builtin then
+ * answers, either refusing the arguments with its own contract's diagnostic or,
+ * when the arguments happen to fit it, answering silently with the local body
+ * never entered. That silent case is what this warning exists to name.
  *
  * DELIBERATELY CONSERVATIVE. This is the union of the two lists the compiler
  * already keeps -- is_ufcs_builtin and is_pure_builtin -- plus the I/O names,
@@ -4178,13 +4178,13 @@ static Proc *parse_fn(Parser *ps) {
         if (dn) deprec_add(pkg_mangle(nameT->text), dn);
     }
     /* Ok/Err/Some/None are matched on raw token text in parse_primary, so a fn of that name is
-     * unreachable in any package -- an error, not the §3.7 shadowing a warning describes. The rest
-     * is legal (§3.7), but say so: an unqualified call here reaches THIS procedure, not the builtin. */
+     * unreachable in any package -- a hard error. A builtin's name is unreachable only UNQUALIFIED
+     * (§3.7): `pkg.name(...)` still reaches it -- `corelib/json/json.ty@keys` relies on that -- so warn. */
     if (is_builtin_ctor(nameT->text)) die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (shadows_builtin(nameT->text))
-        warn_at(nameT->line, "`%s` shadows the builtin of the same name inside this package -- "
-                             "every unqualified `%s(...)` here calls this procedure, not the builtin "
-                             "(a self-call recurses). Rename it unless that is what you meant.", nameT->text, nameT->text);
+        warn_at(nameT->line, "`%s` collides with the builtin of the same name -- every unqualified "
+                             "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
+                             "name (§3.7). Rename it, or call it qualified as `pkg.%s(...)`.", nameT->text, nameT->text, nameT->text);
     eat(ps, TK_LPAREN, "'('");
 
     Proc *pr = (Proc *)xmalloc(sizeof(Proc));

@@ -1,22 +1,15 @@
-# Declaring a procedure whose name is a builtin is LEGAL (spec §3.7: builtins
-# lex as TK_IDENT, so they stay legal procedure names) -- but it silently takes
-# over every unqualified call to that name in the package, and until 2026-08-09
-# nothing said so. That is the one papercut on the 1.0 list that produced a
-# WRONG ANSWER rather than an error: core:utf8's `decode` called `utf8.len`,
-# reached its own `len` instead of the builtin, and recursed until the stack
-# guard fired -- which is why that package's API is `count` today.
-#
-# The program below is valid and runs; the warning is the assertion, and this
-# lane captures stderr only -- it never runs the program. That is how the note
-# here came to claim the call prints 7: it does NOT. It prints 4, because the
-# builtin is what actually gets selected, and no gate could see the difference.
-# `tests/shadow_builtin_selection.ty` runs it and locks the real answer; the
-# warning's own wording is wrong against docs/spec/01-lexical.md:201-209.
+# Declaring a procedure whose name is a builtin does NOT shadow it (spec §3.7,
+# rewritten 2026-08-12): the builtin is selected at every unqualified call and
+# the local is unreachable by that name, so the declaration warns. core:utf8 hit
+# this -- its `decode` called `len` and got the builtin -- and renamed its own
+# entry point to `count`. The warning is the assertion here; this lane captures
+# stderr only and never runs the program, so
+# `tests/shadow_builtin_selection.ty` runs the calls and locks the answers.
 fn len(s: string) -> int:
     return 7
 
 fn four(s: string) -> int:
-    return len(s)                # says "the shadow"; the builtin is selected
+    return len(s)                # the BUILTIN, not the `len` above
 
 fn main():
     print(str(four("abcd")))     # 4 -- see the selection fixture

@@ -634,10 +634,12 @@ The four builtin constructors `Ok`, `Err`, `Some` and `None` are covered by the
 same rule in **every** package, not just the one that declares them: they are
 recognised by their spelling wherever they appear, so a declaration of one of
 those names — `fn`, `const`, `struct`, `enum`, `type`, `handle`, or a variant —
-is unreachable everywhere and MUST be rejected with the same diagnostic. This
-is not the §3.7 builtin shadowing that a warning describes — that shadowing
-redirects a name to the new declaration, and these four cannot be redirected at
-all. A `struct Ok` used to declare cleanly and fail only at its first use, with
+is unreachable everywhere and MUST be rejected with the same diagnostic. The
+§3.7 builtin-name rule reaches the same verdict for the same reason — the
+builtin wins, so the declaration is unreachable by its own name. What differs is
+reach: §3.7 governs the *unqualified* call spelling, while these four are
+recognised by spelling in every position, so the rejection here is
+unconditional. A `struct Ok` used to declare cleanly and fail only at its first use, with
 a diagnostic about the builtin `Result` and no mention of the struct.
 
 A **run-time binding** cannot collide with a variant at all, in any package: a
