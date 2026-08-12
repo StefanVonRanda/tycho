@@ -50,13 +50,27 @@
 #   [5] THE ERRORS ARE REACHED FROM A SCRIPT TOO. Four of the seven variants
 #       are provoked by demo.ed itself; this asserts their `ERR` lines against
 #       literals, for the same reason as [2].
+#   [6] THE GAP BACKEND IS THE SAME EDITOR. `--backend=gap` replaces the line
+#       being edited with a mutable byte array and a hole, so an insert writes
+#       into the hole instead of rebuilding the line
+#       (tools/tycho-ed/buf/buf.ty@_g_focus). It is a PERFORMANCE change and it
+#       is allowed to move no output at all: demo.ed and the [3] roundtrip are
+#       both re-run under it and must be cmp-identical to the string-backend
+#       runs above. That is strictly stronger than a golden of its own -- the
+#       byte counts, the hex dumps and the UTF-8 literals in [2] all transfer by
+#       construction, and a gap that split a codepoint, dropped the tail after
+#       the hole, or forgot to flush before a `dump` moves a byte and reddens.
+#       The measurement the backend exists for is NOT asserted, for the reason
+#       below; it is recorded in main.ty's header and docs/thesis.md §4b.
 #
 # WHAT IT DELIBERATELY DOES NOT ASSERT
-#   `--stress N`. It is a MEASUREMENT -- ns/edit per bucket -- and its numbers
-#   move with the machine and the load. What it measured, and the four controls
-#   that make the reading credible, are recorded in main.ty's header with the
-#   date, and the churn it exposes is written up in docs/thesis.md §4b. A gate
-#   that asserted a timing would be a coin toss; nothing here runs it.
+#   `--stress N`, under EITHER backend. It is a MEASUREMENT -- ns/edit per
+#   bucket -- and its numbers move with the machine and the load. What it
+#   measured, and the controls that make the reading credible, are recorded in
+#   main.ty's header with the date, and the result is written up in
+#   docs/thesis.md §4b. A gate that asserted a timing would be a coin toss;
+#   nothing here runs it. [6] gates the gap backend's OUTPUT, which is the half
+#   that can be wrong silently.
 #   The terminal. There is no terminal in this slice -- that is main.ty's first
 #   paragraph, not an omission here.
 #
@@ -97,8 +111,8 @@ out="$T/all.out"
 # `edrun <label> <script> <file>` -- one bounded run, exit 0 and a silent stderr
 # required. A run that dies or warns is a failure whatever its stdout says.
 edrun() {
-    _lbl=$1; _s=$2; _f=$3
-    $TO "$ED" "--script=$_s" > "$_f" 2> "$T/e.err"
+    _lbl=$1; _s=$2; _f=$3; _be=${4:-}
+    $TO "$ED" "--script=$_s" $_be > "$_f" 2> "$T/e.err"
     _rc=$?
     [ "$_rc" -eq 0 ] || { bad "$_lbl: exited $_rc, expected 0"; sed 's/^/      /' "$T/e.err"; }
     [ -s "$T/e.err" ] && { bad "$_lbl: wrote to stderr"; sed 's/^/      /' "$T/e.err"; }
@@ -351,6 +365,29 @@ ln_ '  ERR nothing to undo'
 ln_ '  --- cursor line 0 char 0 (byte 0)  undo 0 redo 12 ---'
 
 # ---------------------------------------------------------------------------
+# [6] the gap backend, byte-for-byte the same editor
+#
+# Nothing is appended to $out: the assertion is EQUALITY WITH THE RUNS ABOVE,
+# which the golden already covers. A second recorded transcript would only add
+# a thing RECORD=1 can bless.
+# ---------------------------------------------------------------------------
+edrun "demo run 3 (gap)" "$src/demo.ed" "$T/d.gap" --backend=gap
+cmp -s "$T/d.1" "$T/d.gap" || {
+    bad "the gap backend changes the demo transcript -- it is a representation, not a behaviour"
+    diff "$T/d.1" "$T/d.gap" | sed 's/^/      /'
+}
+edrun "roundtrip (gap)" "$T/roundtrip.ed" "$T/rt.gap" --backend=gap
+cmp -s "$T/rt.out" "$T/rt.gap" || {
+    bad "the gap backend does not undo and redo to the same bytes as the string backend"
+    diff "$T/rt.out" "$T/rt.gap" | sed 's/^/      /'
+}
+# The floor: if --backend=gap were silently ignored, both cmps above would pass
+# and this leg would assert nothing. An unknown argument is a hard error in
+# main(), so a rejected flag proves the selector is wired.
+$TO "$ED" "--script=$src/demo.ed" --backend=nonesuch >/dev/null 2>&1 && \
+    bad "--backend=nonesuch was ACCEPTED -- the selector is not parsed, so [6] proves nothing"
+
+# ---------------------------------------------------------------------------
 # the golden
 # ---------------------------------------------------------------------------
 if [ "$RECORD" = 1 ]; then
@@ -364,7 +401,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-ed: green (demo transcript byte-identical over 2 runs and equal to the golden; a backspace over a 2-byte codepoint took 13 bytes to 11 and 11 codepoints to 10, a forward delete of a 3-byte one took 19 to 16 and 13 to 12, and no dump reported INVALID UTF-8; six edits undone to an empty buffer and redone back to a byte-identical dump; $found BufErr variants each exit non-zero with their own whole message and an empty stdout)"
+    echo "tycho-ed: green (demo transcript byte-identical over 2 runs and equal to the golden; a backspace over a 2-byte codepoint took 13 bytes to 11 and 11 codepoints to 10, a forward delete of a 3-byte one took 19 to 16 and 13 to 12, and no dump reported INVALID UTF-8; six edits undone to an empty buffer and redone back to a byte-identical dump; $found BufErr variants each exit non-zero with their own whole message and an empty stdout; the gap backend reproduces the demo and the roundtrip byte-for-byte and an unknown --backend is refused)"
 else
     echo "tycho-ed: FAIL"; exit 1
 fi

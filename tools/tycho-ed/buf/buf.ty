@@ -42,11 +42,37 @@ struct Edit:
     op: Op
     cur: Cursor                    # the cursor BEFORE this edit ran
 
+# TWO BACKENDS, ONE API. `gap` selects which representation holds the line
+# being edited. Everything above and below this struct is shared: the journal,
+# the byte/codepoint boundary, the errors and every public operation are the
+# same code in both modes, because the point of the second backend is to move
+# ONE number and nothing else.
+#
+#   gap = false   every line is a string. An edit rebuilds the whole line
+#                 (`s[0:c] + t + s[c:]`) and abandons the previous copy.
+#   gap = true    the FOCUSED line lives in `gbuf` as bytes with a hole in the
+#                 middle. Inserting writes bytes into the hole; deleting widens
+#                 it. Neither allocates. `lines[gline]` is STALE while focused
+#                 and is rewritten once, by _unfocus, when the focus moves or a
+#                 reader asks. Content is gbuf[0:gs] ++ gbuf[ge:len(gbuf)], so
+#                 len(gbuf) is the capacity and the gap is ge - gs.
+#
+# `gbuf` is [int], not bytes: `bytes` is immutable (docs/spec/03-types.md:138,
+# `b[i] = v` is a compile error) and an in-place backend needs a place. The
+# array is REUSED across focus changes -- _g_focus only ever grows it -- so a
+# session that types a million characters into ten thousand lines allocates it
+# once. to_str(to_bytes(...)) at _unfocus is the only conversion, and to_str is
+# a zero-cost reinterpret (docs/spec/06-conversions.md:41).
 struct Buf:
     lines: [string]
     cur: Cursor
     undos: [Edit]
     redos: [Edit]
+    gap: bool                      # backend: false = string rebuild, true = gap
+    gbuf: [int]                    # focused line's bytes, gap included
+    gs: int                        # gap start
+    ge: int                        # gap end, exclusive
+    gline: int                     # line gbuf holds, -1 when nothing is focused
 
 # Named causes, no sentinels. AtStart/AtEnd are errors rather than silent
 # no-ops on purpose: a driver script that walks off the end of the buffer has a
@@ -126,7 +152,7 @@ fn _cp_before(s: string, at: int) -> int:
 
 # ---- construction and reading --------------------------------------------
 
-fn from_text(text: string) -> Buf:
+fn _from(text: string, gap: bool) -> Buf:
     lines := []string
     cur := 0
     for i := 0; i < len(text); i += 1:
@@ -134,7 +160,13 @@ fn from_text(text: string) -> Buf:
             push(lines, text[cur:i])
             cur = i + 1
     push(lines, text[cur:len(text)])
-    return Buf(lines, Cursor(0, 0), []Edit, []Edit)
+    return Buf(lines, Cursor(0, 0), []Edit, []Edit, gap, []int, 0, 0, -1)
+
+fn from_text(text: string) -> Buf:
+    return _from(text, false)
+
+fn from_text_gap(text: string) -> Buf:
+    return _from(text, true)
 
 fn text(b: Buf) -> string:
     out := ""
@@ -186,6 +218,75 @@ fn undo_bytes(b: Buf) -> int:
             Join(l, c): pass
     return n + len(b.undos) * 32       # 4 ints of position + cursor, 8 bytes each
 
+# ---- the gap backend ------------------------------------------------------
+#
+# Five small functions. They are inert when `gap` is false: nothing below calls
+# them unless the flag is set, and `gline` stays -1 forever, so the string
+# backend costs exactly what it did before this file grew.
+
+fn _g_len(b: Buf) -> int:
+    return b.gs + len(b.gbuf) - b.ge
+
+# Slide the hole to byte column `c`, one byte across it per step. O(distance),
+# and the distance is zero for the case that matters -- typing, where the next
+# insert lands exactly where the last one left the gap.
+fn _g_gap_to(b: inout Buf, c: int):
+    for b.gs > c:
+        b.gs -= 1
+        b.ge -= 1
+        b.gbuf[b.ge] = b.gbuf[b.gs]
+    for b.gs < c:
+        b.gbuf[b.gs] = b.gbuf[b.ge]
+        b.gs += 1
+        b.ge += 1
+
+# Widen the hole to hold at least `need` more bytes: extend the array, then
+# shift the tail right into the new room. Geometric, so amortised O(1).
+fn _g_grow(b: inout Buf, need: int):
+    if b.ge - b.gs >= need:
+        return
+    old := len(b.gbuf)
+    add := old
+    if add < need + 64:
+        add = need + 64
+    for i := 0; i < add; i += 1:
+        push(b.gbuf, 0)
+    for i := old - 1; i >= b.ge; i -= 1:
+        b.gbuf[i + add] = b.gbuf[i]
+    b.ge += add
+
+# Write the focused line back and stop being focused. THE ONLY place a line is
+# rebuilt as a string in gap mode, and the reason the backend is worth
+# measuring: the string backend does this on every keystroke, this does it once
+# per focus change.
+fn _unfocus(b: inout Buf):
+    if b.gline < 0:
+        return
+    _g_gap_to(&b, _g_len(b))
+    b.lines[b.gline] = to_str(to_bytes(b.gbuf[0:b.gs]))
+    b.gline = -1
+
+# Load line `ln` into the gap. Reuses whatever capacity is already there, so
+# after the first line this allocates nothing at all.
+fn _g_focus(b: inout Buf, ln: int):
+    if b.gline == ln:
+        return
+    _unfocus(&b)
+    s := b.lines[ln]
+    for len(b.gbuf) < len(s) + 64:
+        push(b.gbuf, 0)
+    for i := 0; i < len(s); i += 1:
+        b.gbuf[i] = s[i]
+    b.gs = len(s)
+    b.ge = len(b.gbuf)
+    b.gline = ln
+
+# Flush the gap so every by-value reader below -- text, the counts, and
+# main.ty's dump/hex, which read b.lines directly -- sees the real text.
+# Public because a reader cannot flush a buffer it was handed by value.
+fn sync(b: inout Buf):
+    _unfocus(&b)
+
 # ---- raw edits: they change the text and journal NOTHING -------------------
 #
 # Undo and redo replay through exactly these, which is why an undone edit
@@ -209,7 +310,23 @@ fn _check(b: Buf, ln: int, c: int) -> Result(void, BufErr):
         return Err(BadCol(c, len(b.lines[ln])))
     return Ok()
 
+# The two hot ops, and the ONLY two that differ between the backends. The
+# bounds check is spelled out again on the gap side rather than reusing _check,
+# because _check reads len(b.lines[ln]) and that line is stale while focused.
 fn _raw_ins(b: inout Buf, ln: int, c: int, t: string) -> Result(void, BufErr):
+    if b.gap:
+        if ln < 0 or ln >= len(b.lines):
+            return Err(BadLine(ln, len(b.lines)))
+        _g_focus(&b, ln)
+        glen := b.gs + len(b.gbuf) - b.ge
+        if c < 0 or c > glen:
+            return Err(BadCol(c, glen))
+        _g_gap_to(&b, c)
+        _g_grow(&b, len(t))
+        for i := 0; i < len(t); i += 1:
+            b.gbuf[b.gs] = t[i]
+            b.gs += 1
+        return Ok()
     match _check(b, ln, c):
         Ok: pass
         Err(e): return Err(e)
@@ -218,6 +335,16 @@ fn _raw_ins(b: inout Buf, ln: int, c: int, t: string) -> Result(void, BufErr):
     return Ok()
 
 fn _raw_del(b: inout Buf, ln: int, c: int, n: int) -> Result(void, BufErr):
+    if b.gap:
+        if ln < 0 or ln >= len(b.lines):
+            return Err(BadLine(ln, len(b.lines)))
+        _g_focus(&b, ln)
+        glen := b.gs + len(b.gbuf) - b.ge
+        if c < 0 or c + n > glen:
+            return Err(BadCol(c + n, glen))
+        _g_gap_to(&b, c)
+        b.ge += n
+        return Ok()
     match _check(b, ln, c + n):
         Ok: pass
         Err(e): return Err(e)
@@ -225,7 +352,11 @@ fn _raw_del(b: inout Buf, ln: int, c: int, n: int) -> Result(void, BufErr):
     b.lines[ln] = s[0:c] + s[c + n:len(s)]
     return Ok()
 
+# Structural ops leave the gap: they move whole lines, and a focus index into a
+# shifting array is a bug waiting for a fixture. One flush per Enter is O(one
+# line) and happens once per sixty keystrokes in the stress workload.
 fn _raw_split(b: inout Buf, ln: int, c: int) -> Result(void, BufErr):
+    _unfocus(&b)
     match _check(b, ln, c):
         Ok: pass
         Err(e): return Err(e)
@@ -236,6 +367,7 @@ fn _raw_split(b: inout Buf, ln: int, c: int) -> Result(void, BufErr):
     return Ok()
 
 fn _raw_join(b: inout Buf, ln: int) -> Result(void, BufErr):
+    _unfocus(&b)
     if ln < 0 or ln + 1 >= len(b.lines):
         return Err(BadLine(ln + 1, len(b.lines)))
     b.lines[ln] = b.lines[ln] + b.lines[ln + 1]
@@ -278,7 +410,14 @@ fn newline(b: inout Buf) -> Result(void, BufErr):
 # Backspace: ONE codepoint, or the line break before it. The width comes from
 # _prev_start, so deleting "é" removes both of its bytes and deleting "ö" from
 # the middle of a word leaves the neighbours intact.
+# Every function from here to the end of the motion section reads a whole line
+# as a string -- to find a codepoint boundary, or to clamp a column. In gap
+# mode that line may be the focused one, so each flushes first. That makes
+# backspace and the arrows COLD in gap mode (a flush, then _raw_del refocuses),
+# which is honest: this backend accelerates typing, which is what --stress
+# measures, and nothing else.
 fn del_back(b: inout Buf) -> Result(void, BufErr):
+    _unfocus(&b)
     before := b.cur
     if before.col == 0:
         if before.line == 0:
@@ -306,6 +445,7 @@ fn del_back(b: inout Buf) -> Result(void, BufErr):
 
 # Forward delete: one codepoint at the cursor, or the line break after it.
 fn del_fwd(b: inout Buf) -> Result(void, BufErr):
+    _unfocus(&b)
     before := b.cur
     s := b.lines[before.line]
     if before.col >= len(s):
@@ -333,6 +473,7 @@ fn del_fwd(b: inout Buf) -> Result(void, BufErr):
 # ---- motion (no journal: moving the cursor is not an edit) ----------------
 
 fn left(b: inout Buf) -> Result(void, BufErr):
+    _unfocus(&b)
     if b.cur.col == 0:
         if b.cur.line == 0:
             return Err(AtStart)
@@ -345,6 +486,7 @@ fn left(b: inout Buf) -> Result(void, BufErr):
         Err(e): return Err(e)
 
 fn right(b: inout Buf) -> Result(void, BufErr):
+    _unfocus(&b)
     s := b.lines[b.cur.line]
     if b.cur.col >= len(s):
         if b.cur.line + 1 >= len(b.lines):
@@ -358,6 +500,7 @@ fn right(b: inout Buf) -> Result(void, BufErr):
         Err(e): return Err(e)
 
 fn up(b: inout Buf) -> Result(void, BufErr):
+    _unfocus(&b)
     if b.cur.line == 0:
         return Err(AtStart)
     ln := b.cur.line - 1
@@ -365,6 +508,7 @@ fn up(b: inout Buf) -> Result(void, BufErr):
     return Ok()
 
 fn down(b: inout Buf) -> Result(void, BufErr):
+    _unfocus(&b)
     if b.cur.line + 1 >= len(b.lines):
         return Err(AtEnd)
     ln := b.cur.line + 1
@@ -375,12 +519,14 @@ fn home(b: inout Buf):
     b.cur = Cursor(b.cur.line, 0)
 
 fn line_end(b: inout Buf):
+    _unfocus(&b)
     b.cur = Cursor(b.cur.line, len(b.lines[b.cur.line]))
 
 # Move to (line, character-column). The column is in CODEPOINTS -- it is what a
 # caller counts by eye -- and is converted here, the only place a script's
 # numbers meet the byte layout.
 fn goto(b: inout Buf, ln: int, cp_col: int) -> Result(void, BufErr):
+    _unfocus(&b)
     if ln < 0 or ln >= len(b.lines):
         return Err(BadLine(ln, len(b.lines)))
     s := b.lines[ln]

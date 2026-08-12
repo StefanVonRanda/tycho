@@ -29,6 +29,11 @@ import "buf"
 #   dump               the buffer, the cursor, and the counts
 #   hex                the current line's bytes, to prove what a delete removed
 #
+# `--backend=string` (default) or `--backend=gap` picks which representation
+# holds the line being edited. It is a performance switch and must move no
+# output: see buf/buf.ty's Buf, and the --stress header below for the number it
+# was built to produce.
+#
 # Every command echoes as `> cmd`, and a failure prints `  ERR <cause>` and
 # keeps going -- a script is a test, so the error is an observation, not a stop.
 
@@ -42,7 +47,10 @@ fn _hex(s: string) -> string:
         out += digits[b / 16:b / 16 + 1] + digits[b % 16:b % 16 + 1]
     return out
 
-fn dump(b: buf.Buf):
+# Both readers take the buffer by value and read b.lines directly, so both need
+# the gap flushed first -- a by-value reader cannot flush what it was handed.
+fn dump(b: inout buf.Buf):
+    buf.sync(&b)
     cps := buf.cp_count(b)
     tag := str(cps) + " codepoints"
     if cps < 0:
@@ -60,7 +68,8 @@ fn dump(b: buf.Buf):
             "  undo " + str(buf.undo_depth(b)) +
             " redo " + str(buf.redo_depth(b)) + " ---")
 
-fn hexline(b: buf.Buf):
+fn hexline(b: inout buf.Buf):
+    buf.sync(&b)
     s := b.lines[b.cur.line]
     println("  line " + str(b.cur.line) + ": " + str(len(s)) + " bytes, " +
             str(utf8.count(s)) + " codepoints")
@@ -100,15 +109,17 @@ fn run_cmd(b: inout buf.Buf, line: string) -> Result(void, buf.BufErr):
         a, c := strings.split_once(rest, " ")
         return buf.goto(&b, strings.parse_int(a), strings.parse_int(c))
     elif verb == "dump":
-        dump(b)
+        dump(&b)
     elif verb == "hex":
-        hexline(b)
+        hexline(&b)
     else:
         println("  ERR unknown command: " + verb)
     return Ok()
 
-fn script(path: string) -> Result(void, string):
+fn script(path: string, gap: bool) -> Result(void, string):
     b := buf.from_text("")
+    if gap:
+        b = buf.from_text_gap("")
     for raw in io.read_lines(path):
         line := strings.trim(raw)
         if line == "" or strings.starts_with(line, "#"):
@@ -147,19 +158,49 @@ fn script(path: string) -> Result(void, string):
 # and 1M pushes of an enum carrying a string -- all land at 5-35 ns/step over
 # the same range, the worst of them (the enum) 40x under what an edit costs at
 # 1M, so no single ingredient degrades. What the editor adds is VOLUME: every
-# keystroke abandons the previous version of its line, an arena reclaims
-# nothing, and 1M edits reach 96 MB of resident memory for a document that is
-# only 1.46 MB -- at 100k edits, where the document is 147 KB, it is 12 MB.
-# Naming it here rather than guessing at a fix: the next slice can test a gap
-# buffer, which mutates a line in place instead of rebuilding it, against
-# exactly this number. Written up as a worked case in docs/thesis.md 4b.
-fn stress(n: int, snapshot: bool):
+# keystroke abandons the previous version of its line and an arena reclaims
+# nothing.
+#
+# --backend=gap IS THAT DIAGNOSIS UNDER TEST, 2026-08-12, same box, three runs
+# of each cell. It holds the line being edited as a mutable byte array with a
+# hole in it, so a keystroke writes bytes and allocates nothing; the line is
+# rebuilt as a string once per focus change instead of once per keystroke. Same
+# journal, same API, and run.sh leg [6] asserts the demo and the undo/redo
+# roundtrip come out byte-identical, so this is a representation change and
+# nothing else. Last bucket, ns/edit, and peak RSS:
+#
+#            10k          100k              1M              RSS at 1M
+#   string   145/121/124  281/267/279       1490/1443/1947  95.5/95.4/95.4 MB
+#   gap      114/177/129  119/120/119        141/155/147    95.9/95.7/95.3 MB
+#   last/first at 1M: string 764/747/959%, gap 97/113/103%.
+#
+# TIME: FLAT. The gap buffer removes the drift outright -- last/first goes from
+# ~8x to ~1x and the millionth edit costs what the first one did. That confirms
+# the abandoned line copies were the whole of the SLOWDOWN.
+#
+# IT REALLY IS IN PLACE. The worry with an `inout` gap buffer is that the array
+# is deep-copied at each call boundary and the churn has merely moved. It has
+# not: a per-call copy of gbuf would abandon ~120 ints per edit, i.e. about a
+# gigabyte over 1M edits, and RSS is unchanged at 95.7 MB. The flat time curve
+# says the same thing from the other side.
+#
+# MEMORY: UNMOVED, and that is the finding worth keeping. 95.7 MB before, 95.7
+# MB after, with a million fewer abandoned line copies -- so the copies were
+# never the resident set. A fifth control settles it: 1M pushes of this file's
+# exact Edit shape (Op enum + Cursor) into an array, with no buffer and no line
+# behind them, reaches 94.0 MB on its own at 42-56 ns/step. The RSS is the undo
+# JOURNAL -- one retained entry per keystroke, which is the feature working --
+# and it is flat in time, which is why removing the churn moved one number and
+# not the other. Written up in docs/thesis.md 4b.
+fn stress(n: int, snapshot: bool, gap: bool):
     glyphs := ["a", "b", "c", " ", "é", "ö", "字", "e"]
     buckets := 10
     per := n / buckets
     if per < 1:
         per = 1
     b := buf.from_text("")
+    if gap:
+        b = buf.from_text_gap("")
     snaps: [[string]] = []
     first := 0
     last := 0
@@ -184,10 +225,15 @@ fn stress(n: int, snapshot: bool):
         last = ea
         println("  " + strings.pad_left(str((k + 1) * per), 7, " ") +
                 strings.pad_left(str(ea), 11, " "))
+    buf.sync(&b)                     # the counts below read b.lines
     kind := "journal"
     if snapshot:
         kind = "snapshot"
+    back := "string"
+    if gap:
+        back = "gap"
     println("  mode          " + kind)
+    println("  backend       " + back)
     println("  lines         " + str(buf.line_count(b)))
     println("  bytes         " + str(buf.byte_count(b)))
     println("  undo entries  " + str(buf.undo_depth(b)))
@@ -207,6 +253,7 @@ fn main() -> Result(void, string):
     path := ""
     n := 0
     snapshot := false
+    gap := false
     for a in av:
         if strings.starts_with(a, "--script="):
             path = a[9:len(a)]
@@ -214,14 +261,18 @@ fn main() -> Result(void, string):
             n = strings.parse_int(a[9:len(a)])
         elif a == "--snapshot":
             snapshot = true
+        elif a == "--backend=gap":
+            gap = true
+        elif a == "--backend=string":
+            gap = false
         else:
             return Err("unknown argument: " + a)
     if n > 0:
-        stress(n, snapshot)
+        stress(n, snapshot, gap)
         return Ok()
     if path == "":
-        return Err("usage: tycho-ed --script=<file>\n" +
-                   "       tycho-ed --stress=<N> [--snapshot]")
+        return Err("usage: tycho-ed --script=<file> [--backend=string|gap]\n" +
+                   "       tycho-ed --stress=<N> [--snapshot] [--backend=string|gap]")
     if not io.exists(path):
         return Err("no such file: " + path)
-    return script(path)
+    return script(path, gap)

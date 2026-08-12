@@ -189,14 +189,57 @@ All four land between 5 and 35 ns/step and none degrades meaningfully across the
 range — the worst, the enum carrying a string, goes 17 → 35 ns and is still
 *forty times* under what the editor costs at the same point. No single
 ingredient of an edit is slow. What the editor adds is **volume**: a million
-abandoned line copies that nothing reclaims, and a resident set that grows with
-the session rather than with the document.
+abandoned line copies that nothing reclaims.
 
 The mitigation is the same one 4b already names, in the shape this workload
 needs: **mutate in place instead of rebuilding**. For an editor that means a gap
 buffer — a line held as text-before-cursor, a gap, and text-after-cursor, where
-inserting a character writes one byte into the gap and allocates nothing. The
-number above is what a gap-buffer slice would be measured against.
+inserting a character writes one byte into the gap and allocates nothing.
+
+##### The gap buffer, built and measured
+
+`tools/tycho-ed/` now has both. `--backend=gap` keeps the line being edited in a
+mutable `[int]` with a hole in it (`bytes` is immutable, so it cannot be the
+store); a keystroke writes bytes into the hole and allocates nothing, and the
+line is rebuilt as a string once per *focus change* — an Enter, an arrow key —
+instead of once per keystroke. The journal, the API and every other operation
+are the same code in both modes, and `make ed-check` leg [6] re-runs the demo
+transcript and the six-edit undo/redo roundtrip under the gap backend and
+requires them **byte-identical** to the string backend, so this is a change of
+representation and of nothing else.
+
+*Measured* the same day on the same box, three runs of every cell — last bucket
+in ns/edit, and `last/first` as the drift:
+
+| N edits | string, last | gap, last | string last/first | gap last/first |
+|---|---|---|---|---|
+| 10 000 | 145 / 121 / 124 | 114 / 177 / 129 | 96 / 50 / 89 % | 85 / 119 / 96 % |
+| 100 000 | 281 / 267 / 279 | 119 / 120 / 119 | 181 / 161 / 187 % | 69 / 91 / 67 % |
+| 1 000 000 | 1490 / 1443 / 1947 | 141 / 155 / 147 | 764 / 747 / 959 % | **97 / 113 / 103 %** |
+
+**The curve flattens completely.** At a million edits the string backend's last
+bucket costs about 8× its first; the gap backend's costs what its first did, and
+the millionth keystroke is ~10× cheaper in absolute terms. The mitigation §4b
+names is the right one, and the diagnosis it rested on — abandoned line copies,
+not arena allocation cost — is confirmed by the fix working.
+
+**Peak RSS did not move at all**, and that is the part worth keeping. 95.7 MB
+for the string backend at a million edits, 95.7 MB for the gap backend, with a
+million fewer abandoned line copies between them. So the resident set was never
+the churn. A fifth control settles where it does come from: a million pushes of
+the editor's exact journal entry — the `Op` enum plus a `Cursor`, with no buffer
+and no line behind it — reaches **94.0 MB on its own**, at 42–56 ns/step. The
+memory is the **undo journal**, one retained entry per keystroke, which is the
+feature doing its job rather than a leak; and because it is flat in time, it
+never contributed to the drift. Removing the churn was always going to move one
+number and not the other.
+
+The correction matters more than the confirmation. The paragraph above this one
+used to read "a resident set that grows with the session rather than with the
+document" as if it were the same phenomenon as the slowdown. It is not: one is
+churn the arena cannot reclaim and a gap buffer removes, the other is live data
+the program is deliberately holding. Two costs that rose together are not one
+cost, and only building the fix separated them.
 
 Written down here rather than filed as a defect, because it is not one: it is a
 measured instance of a limit this project already concedes. The memory-model
