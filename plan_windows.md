@@ -1,14 +1,23 @@
 # Native Windows support — plan (separate track from plan.md)
 
-> 2026-08-05 assessment, not yet started. plan.md's agenda explicitly deferred
-> native Windows ("WSL suffices") as an owner decision; this file records the
-> technical assessment that the deferral is a choice, not a wall, and phases
-> the port for when the owner wants it. **No phase here has been started.**
-> WSL2 remains the supported path until the closing phase lands.
+> Assessed 2026-08-05, **executed and closed 2026-08-07**. The port happened:
+> `main` carries 71 `_WIN32` guards across the C sources, and `ROADMAP.md`
+> condition 5 was closed on 2026-08-10 with `make ci` green under MSYS2 — the
+> one measured behavioural difference (a thread parked in `recv` winds down
+> within its idle timeout rather than within a millisecond) is a documented
+> platform limit, not an open item.
 >
-> The assessment was done by reading the source on a Linux box (each claim
-> carries its `path:line` below). **Nothing has been executed under Windows** —
-> the phases open with the spike that tests the assessment's foundation.
+> **This file is kept as the record of the port's design, not as live work.**
+> It is load-bearing: `tests/run.sh`, `tests/conc/run.sh`, `tests/ffi/run.sh`,
+> `scripts/ci.sh`, `scripts/release.sh`, the four `scripts/wine_*.sh` and six
+> `examples/*/run.sh` all cite "plan_windows.md phase N" as the stated reason
+> they skip a sanitizer leg on Windows. Those phase numbers must keep resolving
+> to the sections below, so do not renumber or delete them.
+>
+> The assessment below was written by reading the source on a Linux box, before
+> anything ran under Windows; its `path:line` claims are from that date and have
+> not been re-verified since. Read it as the plan that was followed, not as a
+> current description of the tree.
 >
 > SCOPE. In: a native Windows build of the compiler + runtime + corelib +
 > tools + harness, targeting **MSYS2/mingw-w64 gcc** as the C environment (the
