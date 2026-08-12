@@ -104,18 +104,33 @@ fn twhy(r: Result(string, io.IoErr)) -> string:
         Err(io.IsDir): return "IsDir"
         _: return "Failed"
 
-# sync's Result(bool, IoErr). Ok is always Ok(true) -- there is no "already
-# synced" state to report, unlike make_dir's two successes -- so the boolean is
-# not printed. The Unsupported arm is NOT REACHED by this fixture (see the sync
+# The four Result(void, IoErr) writers -- write_bytes, write_at, set_mtime, sync.
+# There is no boolean to print: each of them either did the thing or is an Err,
+# so `Ok(false)` named nothing and was removed on 2026-08-12 (FRICTION #15).
+# Contrast fswhy above, whose two successes are a real distinction. The
+# Unsupported arm is sync's and is NOT REACHED by this fixture (see the sync
 # section below for why it cannot be, portably); it is written for mwhy's reason,
 # so a platform that starts answering it moves the golden instead of collapsing
 # into "Failed" where nobody would look.
-fn swhy(r: Result(bool, io.IoErr)) -> string:
+fn vwhy(r: Result(void, io.IoErr)) -> string:
     match r:
-        Ok(done): return "Ok"
+        Ok(): return "Ok"
         Err(io.NotFound): return "NotFound"
+        Err(io.IsDir): return "IsDir"
         Err(io.Unsupported): return "Unsupported"
         _: return "Failed"
+
+# THE POINT OF Result(void, IoErr), as a compiled assertion rather than a claim:
+# all four writers chain with a bare `or_return` and nothing bound. While they
+# returned Result(bool, IoErr) this body did not compile -- each statement
+# discarded a bool and the compiler said so (FRICTION #15). It is a durable
+# create besides: bytes, then the name.
+fn durable_write(p: string, b: bytes) -> Result(void, io.IoErr):
+    io.write_bytes(p, b) or_return
+    io.write_at(p, len(b), to_bytes("!")) or_return
+    io.set_mtime(p, 1416470400) or_return
+    io.sync(p) or_return
+    return Ok()
 
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
     out := ""
@@ -140,8 +155,8 @@ fn main():
     wlen := -1
     wa := -1
     match wb:
-        Ok(v):
-            wok = b2i(v)
+        Ok():
+            wok = 1
         Err(e):
             wok = 0
     match rbb:
@@ -177,8 +192,8 @@ fn main():
     wat1k := 0
     wat2k := 0
     match wat1:
-        Ok(v):
-            watk = b2i(v)
+        Ok():
+            watk = 1
         Err(e):
             watk = 0
     match rat1:
@@ -386,10 +401,10 @@ fn main():
     smmiss := io.set_mtime("/tmp/tycho_corelib_io_absent.xyz", 1416470400)
     smdir := io.set_mtime(sdir, 1416470400)
     stillmiss := io.exists("/tmp/tycho_corelib_io_absent.xyz")
-    println(f"set_mtime={fswhy(sm)} exact={b2i(back == 1416470400)} set_missing={fswhy(smmiss)} made_nothing={b2i(not stillmiss)}")
+    println(f"set_mtime={vwhy(sm)} exact={b2i(back == 1416470400)} set_missing={vwhy(smmiss)} made_nothing={b2i(not stillmiss)}")
     dback := result.unwrap_or(io.mtime(sdir), 0)
     srm := io.remove(sdir)
-    println(f"set_dir={fswhy(smdir)} dir_back={b2i(dback == 1416470400)} rm={fswhy(srm)}")
+    println(f"set_dir={vwhy(smdir)} dir_back={b2i(dback == 1416470400)} rm={fswhy(srm)}")
 
     # ---- read_at: pread(2) at an absolute offset -------------------------------
     # Unlike mtime above, this CAN be asserted exactly: the fixture writes the file
@@ -507,13 +522,18 @@ fn main():
     # Ok here, so the fixture makes it and records its status.
     syf := io.sync(sf)
     syd := io.sync(sd)
-    println(f"sync_file={swhy(syf)} sync_dir={swhy(syd)} mk={fswhy(mksd)} wrote={fswhy(wsf)}")
+    println(f"sync_file={vwhy(syf)} sync_dir={vwhy(syd)} mk={fswhy(mksd)} wrote={vwhy(wsf)}")
     # Non-destructive, asserted on CONTENT and not just a status: the seven bytes
     # written above must read back as the same letters.
     println(f"after_sync=[{sl(io.read_bytes(sf))}] size={mwhy(io.size(sf))}")
     # A path that is not there is Err(NotFound) -- never a silent success, which is
     # the failure mode this whole call exists to remove.
-    println(f"sync_missing={swhy(io.sync("/tmp/tycho_corelib_io_absent.xyz"))}")
+    println(f"sync_missing={vwhy(io.sync("/tmp/tycho_corelib_io_absent.xyz"))}")
+    # The or_return chain: one Ok run, and one whose FIRST call fails, proving the
+    # error still ends the chain now that no statement binds anything.
+    cf := sd + "/chain.dat"
+    println(f"chain={vwhy(durable_write(cf, to_bytes("abc")))} back=[{sl(io.read_bytes(cf))}] chain_miss={vwhy(durable_write("/tmp/tycho_corelib_io_no_dir_xyz/f", to_bytes("x")))}")
+    _ = io.remove(cf)
     # Err(Unsupported) HAS NO CASE HERE, on purpose: producing an unsyncable object
     # needs a fifo or a pseudo-filesystem, and neither is portable from a fixture
     # that must give one answer on every host. Faking one would test the fake.

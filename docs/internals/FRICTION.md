@@ -2726,7 +2726,7 @@ statement position, and the language reference for statement positions is not
 where `pass` is introduced. Recorded rather than proposed as a change: the
 remedy is documentation placement, not syntax.
 
-### 15. `or_return` on a `Result(bool, E)` is a three-time papercut
+### 15. ~~`or_return` on a `Result(bool, E)` is a three-time papercut~~ — **CLOSED 2026-08-12; the entry's own reasoning was wrong**
 
 `or_return` yields the `Ok` payload, so on a `Result(bool, E)` it produces a
 `bool` the statement discards, and the compiler refuses:
@@ -2739,11 +2739,29 @@ The message is good — it names the remedy on the same line. It is recorded
 because of the *rate*: it was hit three separate times on 2026-08-12, by three
 different pieces of work (the `hexed` probe program, the `io.sync` wiring at
 five sites, and `tycho-db`'s parser), each time by someone who had already read
-the rule. `io.write_bytes`, `io.write_at` and `io.make_dir` all return
-`Result(bool, IoErr)`, so the common shape "do the write, propagate the error,
-ignore the bool" costs a binding every time.
+the rule. `io.write_bytes`, `io.write_at` and `io.make_dir` all returned
+`Result(bool, IoErr)` when this was written, so the common shape "do the write,
+propagate the error, ignore the bool" cost a binding every time.
 
-Not proposed as a change, because the alternatives are worse: a `Result(void)`
-`io` would lose the "did it write" answer, and silently discarding an `Ok`
-payload is the sentinel habit this file spent a week removing. Recorded so the
-next person sees the cost is known and deliberate.
+The paragraph that stood here said this was "not proposed as a change, because
+the alternatives are worse: a `Result(void)` `io` would lose the 'did it write'
+answer". **That was wrong, and nobody had read the four bodies.** `write_bytes`,
+`write_at`, `set_mtime` and `sync` each returned `Ok(true)` on the success path
+and an `Err` on every other, so there was no "did it write" answer to lose —
+`Ok(false)` was unreachable in all four, and the bool the caller bound could
+only ever be `true`. The cost was not known and deliberate; it was a placeholder
+nobody had questioned.
+
+**Closed 2026-08-12**: the four now return `Result(void, IoErr)` and
+`io.write_bytes(p, b) or_return` is a statement. Six call sites moved
+(`tools/tycho-fetch`, `tools/tycho-ar`, `tools/tycho-kv`, `tools/tycho-db`'s
+store and log, `corelib/test/io`), each a `match` arm losing an unread binding —
+no guard was deleted, because no caller had ever written one against the
+impossible `Ok(false)`, which is itself the evidence that the payload said
+nothing. `corelib/test/io/main.ty@durable_write` chains all four under bare
+`or_return`s so the shape is a compiled assertion rather than a claim.
+
+`is_dir`, `make_dir` and `remove` KEEP their `Result(bool, IoErr)`, and the
+distinction is the whole point: their `Ok(false)` is a real second answer — "it
+was already a directory", "there was nothing there" — reached by a real input.
+The test is not "does the bool look redundant" but "can the false arm happen".

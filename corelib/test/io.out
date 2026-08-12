@@ -25,8 +25,8 @@ exists_self=1 exists_no=0
 exists_mk=1 list_ge1=1
 mtime=Ok sane=1 notfuture=1 grew=1
 mtime_missing=NotFound mtime_dir=Ok
-set_mtime=did exact=1 set_missing=NotFound made_nothing=1
-set_dir=did dir_back=1 rm=did
+set_mtime=Ok exact=1 set_missing=NotFound made_nothing=1
+set_dir=Ok dir_back=1 rm=did
 read_at=[FGHIJ] why=Ok whole=1
 at_eof len=0 why=Ok past len=0 why=Ok
 short=[UVWXYZ] len=6 why=Ok
@@ -40,7 +40,8 @@ text_ok=Ok len=0
 text_missing=NotFound
 text_dir=IsDir
 read_missing_len=0
-sync_file=Ok sync_dir=Ok mk=did wrote=did
+sync_file=Ok sync_dir=Ok mk=did wrote=Ok
 after_sync=[durable] size=Ok
 sync_missing=NotFound
+chain=Ok back=[abc!] chain_miss=NotFound
 sync_cleanup=did|did

@@ -769,7 +769,7 @@ fn cmd_x(archive: string, dest: string) -> [string]:
         # COLLECTED, not fatal: dying here left a half-extracted tree over a
         # metadata problem. Extraction continues; `main` decides what it means.
         match io.set_mtime(targets[i], e.mtime):
-            Ok(_):
+            Ok():
                 continue
             Err(_):
                 push(mtime_failed, targets[i])

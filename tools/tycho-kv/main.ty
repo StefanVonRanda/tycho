@@ -183,7 +183,7 @@ fn store_flush(path: string, st: Store):
     # extent is unchanged: untouched pages keep their on-disk bytes.
     super := to_bytes("TYKV1") + put_u32(1) + put_u32(st.npages) + put_u32(st.root)
     match io.write_at(path, 0, super):
-        Ok(x):
+        Ok():
             nop()
         Err(e):
             die_kv("cannot write " + path)
@@ -195,7 +195,7 @@ fn store_flush(path: string, st: Store):
         if n.kind == K_INTERNAL:
             pg = pg + zeros(NODE_L - NODE_I)   # pages are fixed-width in the file
         match io.write_at(path, SUPER_L + (p - 1) * NODE_L, pg):
-            Ok(x):
+            Ok():
                 nop()
             Err(e):
                 die_kv("cannot write " + path)

@@ -360,7 +360,7 @@ fn open(path: string) -> Result(Db, StoreErr):
 
 fn flush(db: Db) -> Result(bool, StoreErr):
     match io.write_bytes(db.path, encode(db)):
-        Ok(ok): return Ok(true)
+        Ok(): return Ok(true)
         Err(e): return Err(NotWritten(db.path))
 
 fn _find(db: Db, name: string) -> int:

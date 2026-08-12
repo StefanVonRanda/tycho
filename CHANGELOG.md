@@ -7,10 +7,22 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 
 ## [Unreleased]
 
-Nothing yet. **Write new entries here, not under the release heading below** —
+**Write new entries here, not under the release heading below** —
 0.5.0 shipped without this block, so the only heading to write under was a
 frozen one, and eight entries landed inside a tagged release that does not
 contain them (see 0.6.0's opening note).
+
+### Core library — breaking
+
+- **`io.write_bytes`, `io.write_at`, `io.set_mtime` and `io.sync` return
+  `Result(void, IoErr)`**, not `Result(bool, IoErr)`. Every one of them returned
+  `Ok(true)` or an `Err` — `Ok(false)` was unreachable — so the bool made
+  `or_return` produce a value the caller had to bind and then guard against a
+  case that could not happen (FRICTION #15). `io.write_bytes(p, b) or_return` is
+  now a statement. Migration: drop the binding, and rewrite a `match` arm
+  `Ok(x)` as `Ok()`. **`io.is_dir`, `io.make_dir` and `io.remove` are
+  unchanged** — their `Ok(false)` is a real second answer ("it was already how
+  you asked"), not a placeholder.
 
 ## [0.6.0] — 2026-08-11
 

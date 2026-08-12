@@ -105,7 +105,7 @@ fn mkdir(p: string) -> bool:
 
 fn write_bin(p: string, b: bytes) -> bool:
     match io.write_bytes(p, b):
-        Ok(ok):
-            return ok
+        Ok():
+            return true
         Err(_):
             return false

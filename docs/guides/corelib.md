@@ -384,7 +384,14 @@ element type instead of a family of per-type siblings.
   entry structure and not readable bytes, and `size` succeeds on exactly the paths `read_at` can
   read; and `read_at(p, off, n) -> Result(bytes, io.IoErr)` over `pread(2)`, which allocates
   `min(n, size - off)` and never `n`, so a length off the wire cannot over-allocate, and answers
-  `Ok` with zero bytes past EOF. The rest keeps the builtins' sentinels. Nothing aborts.
+  `Ok` with zero bytes past EOF. The **writers that can only succeed or fail** —
+  `write_bytes(p, b)`, `write_at(p, off, b)`, `set_mtime(p, secs)` and `sync(p)` — return
+  `Result(void, io.IoErr)`, so `io.write_bytes(p, b) or_return` is a statement and a `match`
+  arm is `Ok():`. They returned `Result(bool, IoErr)` until 2026-08-12, where `Ok(false)` was
+  unreachable in all four and every caller bound a bool to guard a case that could not occur
+  (FRICTION #15). Read that against `make_dir` / `remove` above, which keep their bool
+  because there `Ok(false)` is a real second answer. The rest keeps the builtins' sentinels.
+  Nothing aborts.
 - **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the

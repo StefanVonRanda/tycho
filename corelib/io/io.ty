@@ -72,11 +72,16 @@ fn read_text(p: string) -> Result(string, IoErr):
     b := read_bytes(p) or_return
     return Ok(to_str(b))
 
-fn write_bytes(p: string, b: bytes) -> Result(bool, IoErr):
+# Ok CARRIES NOTHING, DELIBERATELY. This returned Result(bool, IoErr) until
+# 2026-08-12 and the bool was always `true` -- a write either happened or was an
+# Err, so `Ok(false)` named a case that could not occur and every caller bound a
+# value it then had to guard for nothing (FRICTION #15). Contrast make_dir and
+# remove below, whose Ok(false) is a real second answer.
+fn write_bytes(p: string, b: bytes) -> Result(void, IoErr):
     st := 0
     iox_write_bytes(p, b, &st)
     if st == RF_OK:
-        return Ok(true)
+        return Ok()
     if st == RF_MISS:
         return Err(NotFound)
     if st == RF_DIR:
@@ -91,12 +96,13 @@ fn write_bytes(p: string, b: bytes) -> Result(bool, IoErr):
 # write side stopped at whole-file write_bytes until the tycho-kv store
 # (docs/internals/plan-tycho-kv-DONE.md phase 1) needed to update pages in
 # place. Same fail-closed discipline
-# as write_bytes: a partial write is an error, never a silent short write.
-fn write_at(p: string, off: int, b: bytes) -> Result(bool, IoErr):
+# as write_bytes: a partial write is an error, never a silent short write. Ok
+# carries nothing, for write_bytes' reason.
+fn write_at(p: string, off: int, b: bytes) -> Result(void, IoErr):
     st := 0
     iox_write_at(p, off, b, &st)
     if st == RF_OK:
-        return Ok(true)
+        return Ok()
     if st == RF_MISS:
         return Err(NotFound)
     if st == RF_DIR:
@@ -313,7 +319,7 @@ fn mtime(p: string) -> Result(int, IoErr):
 # record one into an archive and had no way to put it back, so every extracted
 # file got the time it was written (FRICTION #8).
 #
-#   Ok(true)        the time is set; `mtime(p)` now returns `secs`
+#   Ok()            the time is set; `mtime(p)` now returns `secs`
 #   Err(NotFound)   nothing is there -- this does NOT create the file
 #   Err(Failed)     it is there and the time could not be set (not the owner, a
 #                   read-only mount, ...)
@@ -324,10 +330,10 @@ fn mtime(p: string) -> Result(int, IoErr):
 #
 # THE ACCESS TIME IS NOT TOUCHED. See iox_set_mtime in io_shim.c -- the obvious
 # utime(2) spelling would stamp both.
-fn set_mtime(p: string, secs: int) -> Result(bool, IoErr):
+fn set_mtime(p: string, secs: int) -> Result(void, IoErr):
     k := iox_set_mtime(p, secs)
     if k == RF_OK:
-        return Ok(true)
+        return Ok()
     if k == RF_MISS:
         return Err(NotFound)
     return Err(Failed)
@@ -439,7 +445,7 @@ fn remove(p: string) -> Result(bool, IoErr):
 # one started after a SIGKILL, reads the bytes, and NOT enough that they survive
 # the machine losing power. This is the call that closes that gap.
 #
-#   Ok(true)          the device acknowledged the flush
+#   Ok()              the device acknowledged the flush
 #   Err(NotFound)     nothing is there
 #   Err(Unsupported)  it is there and has no flush on this platform/filesystem
 #   Err(Failed)       the flush was attempted and FAILED -- EIO, a dead device,
@@ -481,10 +487,10 @@ fn remove(p: string) -> Result(bool, IoErr):
 # so a caller may fall back to the process-death guarantee AND SAY SO. Note what
 # it is NOT: a silent Ok. A no-op reported as success would rebuild the same false
 # durability claim one layer down, where nothing can see it.
-fn sync(p: string) -> Result(bool, IoErr):
+fn sync(p: string) -> Result(void, IoErr):
     k := iox_sync(p)
     if k == RF_OK:
-        return Ok(true)
+        return Ok()
     if k == RF_MISS:
         return Err(NotFound)
     if k == FS_UNSUP:
