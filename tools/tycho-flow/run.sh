@@ -52,10 +52,9 @@
 #       machine and the wrong one on the next, so legs [1]-[3] can all be green
 #       while the program is broken. `make conc` is the precedent. Skips
 #       loudly, exit 0, where cc has no TSan runtime. It found one race on its
-#       first outing and that race is NOT in this program: tychoc emits string
-#       literals as lazily interned function statics, which the pool's workers
-#       write and read unordered. Those reports are classified, noted out loud
-#       and tolerated; every other report fails the lane. See the leg itself.
+#       first outing and that race was NOT in this program -- it was tychoc's
+#       codegen for string literals, fixed on 2026-08-12. Nothing is tolerated
+#       now: any WARNING at all fails the lane.
 #
 # WHAT IT DELIBERATELY DOES NOT ASSERT
 #   Timings. `--bench` measures the deep-copy cost at the thread boundary and
@@ -311,30 +310,15 @@ else
                 "$T/flowc.c" $SHIMS -lm 2>"$T/tsan.cc"; then
             bad "tsan: cc failed"; sed 's/^/      /' "$T/tsan.cc" | head -8
         else
-            # ONE KNOWN RACE IS TOLERATED, and it is not this program's.
-            # tychoc emits every string literal as a lazily interned function
-            # `static`:
-            #
-            #     ({ static char *_l = 0; if (!_l) _l = tycho_str_intern("#"); _l; })
-            #
-            # and `tycho_str_intern` (runtime/tycho_rt.c@tycho_str_intern) is a
-            # plain malloc+memcpy, not a table. So the FIRST worker to reach a
-            # literal mallocs a copy and publishes the pointer in `_l` while its
-            # siblings read both, with nothing ordering any of it. Two reports
-            # come out of the one bug: the racy `_l` pointer, and the racy READ
-            # of the heap block another thread interned. Roughly 3 runs in 12
-            # here (measured 2026-08-12, on `h_stamp` -- the pool's own per-item
-            # work). It is tree-wide codegen reachable from any literal a
-            # spawned function evaluates, the publish has no release ordering,
-            # so it is a portability bug and not only a formality; fixing it
-            # belongs in src/tychoc.c, not in this lane -- see plan.md.
-            #
-            # So the leg CLASSIFIES rather than counts. A report that names one
-            # of those `_l` statics or `tycho_str_intern` is noted out loud and
-            # tolerated; any other report fails the lane, which is the whole
-            # point of running TSan here. Suppressing `h_stamp` wholesale, which
-            # is what a TSan suppressions file would have bought, would have
-            # hidden a real race in the same function.
+            # NO REPORT IS TOLERATED. Until 2026-08-12 this leg classified its
+            # reports and let through the ones naming a `_l` static or
+            # `tycho_str_intern`: tychoc emitted every string literal as a lazily
+            # interned function static, which two workers reaching the same
+            # literal published with no ordering between them. That is fixed in
+            # the codegen (a literal is now a statically initialised object,
+            # `runtime/tycho_rt.c:1252-1264`), so the classifier is gone and any
+            # WARNING at all fails the lane -- which is the whole point of
+            # running TSan here.
             tsan_run() {
                 _lbl=$1; shift
                 $TO "$@" > "$T/ts.out" 2> "$T/ts.err"
@@ -343,16 +327,10 @@ else
                 # itself still ran to completion.
                 [ "$_rc" -eq 0 ] || [ "$_rc" -eq 66 ] || {
                     bad "tsan: $_lbl exited $_rc"; sed 's/^/      /' "$T/ts.err" | head -20; return 1; }
-                set -- $(awk '
-                    /WARNING: ThreadSanitizer/ { n++; known[n] = 0 }
-                    n && (/Location is global ._l/ || /tycho_str_intern/) { known[n] = 1 }
-                    END { for (i = 1; i <= n; i++) if (known[i]) k++; else u++
-                          printf "%d %d\n", k + 0, u + 0 }' "$T/ts.err")
-                if [ "$2" -gt 0 ]; then
-                    bad "tsan: $_lbl reported $2 race(s) that are NOT the known interned-literal statics"
+                _n=$(grep -c 'WARNING: ThreadSanitizer' "$T/ts.err")
+                if [ "$_n" -gt 0 ]; then
+                    bad "tsan: $_lbl reported $_n race(s)"
                     sed 's/^/      /' "$T/ts.err" | head -40
-                elif [ "$1" -gt 0 ]; then
-                    echo "note tycho-flow: $_lbl -- $1 known interned-literal race(s) tolerated (tychoc codegen, see plan.md)"
                 fi
                 return 0
             }
@@ -384,7 +362,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-flow: green (8 default runs plus TYCHO_THREADS=1 and 2 all byte-identical; the pool drained out of source order on essentially every one of 200 runs and on 0 of 25 at one thread; the 4-slot ring parked send 5 with no marker for it; $found FlowErr variants each exit non-zero with their own whole message and an empty stdout; TSan over the demo and 15 more pipelines reported nothing but the known interned-literal races; transcript == golden)"
+    echo "tycho-flow: green (8 default runs plus TYCHO_THREADS=1 and 2 all byte-identical; the pool drained out of source order on essentially every one of 200 runs and on 0 of 25 at one thread; the 4-slot ring parked send 5 with no marker for it; $found FlowErr variants each exit non-zero with their own whole message and an empty stdout; TSan over the demo and 15 more pipelines reported no race at all; transcript == golden)"
 else
     echo "tycho-flow: FAIL"; exit 1
 fi

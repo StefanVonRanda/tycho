@@ -1,0 +1,50 @@
+# String literals EVALUATED INSIDE parallel workers.
+#
+# Every other tests/conc fixture evaluates its literals on the main thread
+# before or after the pool runs, so none of them could see the bug this one
+# exists for: tychoc used to emit a literal as a lazily interned function
+# `static` (`{ static char *_l = 0; if (!_l) _l = tycho_str_intern(...); }`),
+# which two workers reaching the same literal wrote and read with nothing
+# ordering either the pointer or the bytes. TSan reports it; a native run
+# prints the right answer anyway, which is why `make conc`'s golden leg alone
+# cannot gate this and the sanitizer legs are the point.
+#
+# The literals are behind `i % 8` so each worker's chunk reaches all eight, and
+# the first touch of each lands on several workers at once rather than being
+# warmed by iteration 0.
+
+fn tag(n: int) -> string:
+    k := n % 8
+    if k == 0:
+        return "alpha"
+    if k == 1:
+        return "bravo"
+    if k == 2:
+        return "charlie"
+    if k == 3:
+        return "delta"
+    if k == 4:
+        return "echo"
+    if k == 5:
+        return "foxtrot"
+    if k == 6:
+        return "golf"
+    return "hotel"
+
+fn main():
+    # len of each tag, summed. 250 * (5+5+7+5+4+7+4+5) = 250 * 42.
+    total := 0
+    parallel for i in 0..<2000:
+        total += len(tag(i))
+    print(str(total))
+
+    # concat and compare against literals, both inside the body: the pieces are
+    # interned in the worker too, not just the returned tag.
+    marks := 0
+    parallel for i in 0..<2000:
+        s := "<" + tag(i) + ">"
+        if s == "<alpha>":
+            marks += 1
+        if len(s) > 8:
+            marks += 100
+    print(str(marks))

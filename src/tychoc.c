@@ -696,12 +696,12 @@ static TokVec lex(const char *src) {
                         /* `\r` is here because CRLF is the most common byte pair in HTTP
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
-                         * text is pasted verbatim into a C string literal and interned by
-                         * strlen (codegen `:8671`, `tycho_str_intern` at
-                         * `runtime/tycho_rt.c:1015`), so a `\0` would truncate the
-                         * interned length, and C's `\x` is greedy over hex digits so
-                         * `"\x41" "1"` would mean `\x411`. Both need a byte-exact
-                         * re-escaper plus a decoded length on the emit path. */
+                         * text is pasted verbatim into a C string literal (codegen
+                         * `src/tychoc.c:10513@TYCHO_LIT`, sized by the `sizeof` in
+                         * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
+                         * are greedy over the digits that follow them, so `"\x41" "1"`
+                         * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
+                         * byte-exact re-escaper on the emit path. */
                         if (e != 'n' && e != 't' && e != 'r' && e != '\\' && e != '"')
                             die_at(line, "unsupported escape \\%c (use \\n \\t \\r \\\\ \\\")", e);
                         buf[bn++] = *p++;
@@ -10509,8 +10509,8 @@ static char *gen_expr(Expr *e, const char *arena) {
         }
         case E_BOOL: return sfmt("%lld", (long long)e->ival);
         case E_NULL: return sfmt("((void*)0)");
-        case E_STR:  /* a length-headered, interned-once copy (cached per occurrence) */
-            return sfmt("({ static char *_l = 0; if (!_l) _l = tycho_str_intern(\"%s\"); _l; })", e->sval);
+        case E_STR:  /* a length-headered object in .rodata: no runtime work, nothing to race on */
+            return sfmt("TYCHO_LIT(\"%s\")", e->sval);
         case E_NONE: return sfmt("(%s){0}", c_type(e->type));   /* has = 0 */
         case E_SOME: {
             Type inner = opt_inner(e->type);   /* move/copy the value into the option */

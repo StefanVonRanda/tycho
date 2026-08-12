@@ -1249,19 +1249,19 @@ char *tycho_bytes_from_c(Arena *a, unsigned char *p, tycho_int n) {
     return r;
 }
 
-/* Intern a string literal: a malloc'd, length-headered, immortal copy. Each
- * literal occurrence caches the result in a function-local static (see the
- * codegen), so the strlen+copy runs once; the allocation stays reachable for the
- * process lifetime (never an LSan leak). */
-char *tycho_str_intern(const char *s) {
-    size_t n = strlen(s);
-    char *base = (char *)malloc(8 + n + 1);
-    if (!base) tycho_oom();
-    *(tycho_int *)base = (tycho_int)n;
-    char *data = base + 8;
-    memcpy(data, s, n + 1);   /* bytes + NUL */
-    return data;
-}
+/* A string literal: a statically initialised, length-headered object, so there
+ * is no runtime work and nothing to synchronise. It replaced a lazily interned
+ * function-local static, which two `parallel for` workers reaching the same
+ * literal published with no ordering. `sizeof s` is the exact decoded length + 1
+ * -- the lexer refuses \0 and \xNN -- and the 8-byte header lands immediately
+ * before the data pointer, the layout tycho_str_alloc gives every string. */
+#define TYCHO_LIT(s) (__extension__ ({ \
+    static const struct { \
+        tycho_int n; \
+        char b[sizeof s]; \
+    } _l = { (tycho_int)(sizeof s - 1), s }; \
+    (char *)_l.b; \
+}))
 
 void tycho_print(const char *s) { fputs(s, stdout); }   /* bare C string: codegen newline, FFI read-once borrow */
 void tycho_print_s(const char *s) { fwrite(s, 1, (size_t)((const tycho_int *)s)[-1], stdout); }   /* a Tycho string: all bytes, incl. interior NUL */
