@@ -39,4 +39,3 @@ Imports resolve relative to the importing file: a sibling is `../sql`.
 Each layer is one phase, one commit, in this order — every step must leave a
 runnable program, never a half-wired one.
 
-- [ ] **srv/** — wire protocol over `core:net`, plus a client.

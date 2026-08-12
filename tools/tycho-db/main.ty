@@ -5,10 +5,12 @@ import "core:io"
 import "core:os"
 import "core:strings"
 import "core:time"
+import "core:net"
 import "sql"
 import "store"
 import "exec"
 import "wal"
+import "srv"
 
 # tycho-db -- a small relational database written in Tycho.
 #
@@ -115,6 +117,75 @@ fn run_script(script: string, db: inout store.Db, lg: inout wal.Log, crash_after
         return Err(str(bad) + " statement(s) failed")
     return Ok()
 
+# ---- server mode ----------------------------------------------------------
+#
+# The store is opened ONCE, here, and every session runs against that one
+# in-memory database -- which is only sound because srv serialises sessions.
+# See the concurrency note in srv/srv.ty.
+fn serve(path: string, host: string, port: int) -> Result(void, string):
+    match wal.open_db(path):
+        Ok(s):
+            db := s.db
+            lg := s.log
+            fd := 0
+            real := 0
+            match srv.listen(host, port):
+                Ok(b):
+                    fd = b.fd
+                    real = b.port
+                Err(e): return Err(srv.err_str(e))
+            # The banner is the readiness signal, and its ORDER is load-bearing:
+            # printed after the socket is listening and before the first accept,
+            # so a client that connects on seeing it is queued by the kernel
+            # rather than refused. It carries the bound port because --port=0
+            # means the caller does not know it -- which is what lets a gate run
+            # without claiming a fixed port.
+            eprint("tycho-db: listening on " + host + ":" + str(real) + " store=" + db.path + "\n")
+            match srv.serve_forever(fd, &db, &lg):
+                Ok: return Ok()
+                Err(e): return Err(srv.err_str(e))
+        Err(e): return Err(wal.err_str(e))
+
+# ---- client mode ----------------------------------------------------------
+#
+# The same transcript shape as the local script mode -- the statement, then its
+# result indented -- so the two can be compared line for line. That is what
+# makes "the server answers what the CLI answers" an assertion rather than an
+# impression.
+fn client(addr: string, script: string) -> Result(void, string):
+    host, ps := strings.split_once(addr, ":")
+    if host == "" or ps == "":
+        return Err("--client wants HOST:PORT, got " + addr)
+    fd := 0
+    match srv.connect(host, strings.parse_int(ps)):
+        Ok(f): fd = f
+        Err(e): return Err(srv.err_str(e))
+    buf := ""
+    bad := 0
+    for line in io.read_lines(script):
+        t := strings.trim(line)
+        if t == "" or strings.starts_with(t, "--"):
+            continue
+        println(t)
+        match srv.request(fd, t, &buf):
+            Ok(lines):
+                for l in lines:
+                    println("  " + l)
+                    if strings.starts_with(l, "err "):
+                        bad += 1
+            Err(e):
+                srv.close_conn(fd)
+                return Err(srv.err_str(e))
+    match srv.request(fd, "QUIT", &buf):
+        Ok(lines): pass
+        Err(e):
+            srv.close_conn(fd)
+            return Err(srv.err_str(e))
+    srv.close_conn(fd)
+    if bad > 0:
+        return Err(str(bad) + " statement(s) failed")
+    return Ok()
+
 fn main() -> Result(void, string):
     av := cli.argv()
     # --crash-after=N is a crash-injection hook for the gate, not a feature:
@@ -122,16 +193,44 @@ fn main() -> Result(void, string):
     # Kept visible in --help's usage line rather than hidden behind an
     # environment variable, because a process that can kill itself should say so.
     crash_after := 0
+    serve_mode := false
+    host := "127.0.0.1"
+    port := 0
+    addr := ""
     args: [string] = []
     for a in av:
         if strings.starts_with(a, "--crash-after="):
             crash_after = strings.parse_int(a[14:len(a)])
+        elif a == "--serve":
+            serve_mode = true
+        elif strings.starts_with(a, "--host="):
+            host = a[7:len(a)]
+        elif strings.starts_with(a, "--port="):
+            port = strings.parse_int(a[7:len(a)])
+        elif strings.starts_with(a, "--client="):
+            addr = a[9:len(a)]
         else:
             push(args, a)
+
+    # Server mode takes no script: it runs statements its clients send, so the
+    # store is the only positional it wants.
+    if serve_mode:
+        sp := "tycho.db"
+        if len(args) > 0:
+            sp = args[0]
+        return serve(sp, host, port)
+
     if len(args) == 0:
-        return Err("usage: tycho-db <script.sql> [store] [--crash-after=N]")
+        return Err("usage: tycho-db <script.sql> [store] [--crash-after=N]\n" +
+                   "       tycho-db --serve [store] [--host=H] [--port=N]\n" +
+                   "       tycho-db --client=HOST:PORT <script.sql>")
     if not io.exists(args[0]):
         return Err("no such file: " + args[0])
+
+    # Client mode touches no store of its own -- the server owns the file.
+    if addr != "":
+        return client(addr, args[0])
+
     path := "tycho.db"
     if len(args) > 1:
         path = args[1]

@@ -326,7 +326,7 @@ make -s debug-check
 # error variants of store.StoreErr and exec.ExecErr must exit non-zero with
 # their own whole message; the variant list is read out of the enums, so a new
 # one cannot arrive ungated.
-step "[3p/22] make db-check  (tycho-db: demo transcript + store file + log reproducible over two runs, rows survive a process exit and a reopened store takes writes, a real kill -9 mid-script replays idempotently and discards a torn record, the index and scan paths return identical rows while examining 1 against 6, 19 error variants each refused with their own message)"
+step "[3p/22] make db-check  (tycho-db: demo transcript + store file + log reproducible over two runs, rows survive a process exit and a reopened store takes writes, a real kill -9 mid-script replays idempotently and discards a torn record, the index and scan paths return identical rows while examining 1 against 6, a real server answers over TCP and survives rude clients, 25 error variants each refused with their own message)"
 make -s db-check
 fi
 

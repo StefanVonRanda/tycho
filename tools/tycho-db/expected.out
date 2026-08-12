@@ -197,3 +197,61 @@ lp.db is unreadable and its log no longer reaches back past lsn 2
 not a predicate: a
 === err NoIndex (via the store API)
 users.id has no index
+=== server session 1 (own client, over TCP)
+CREATE TABLE people (id INT KEY, name TEXT, age INT);
+  ok created people
+INSERT INTO people VALUES (1, 'ada', 36);
+  ok 1 row into people
+INSERT INTO people VALUES (2, 'bob', 41);
+  ok 1 row into people
+INSERT INTO people VALUES (3, 'cy', 29);
+  ok 1 row into people
+SELECT * FROM people;
+  cols id|name|age
+  row 1|ada|36
+  row 2|bob|41
+  row 3|cy|29
+  ok 3 row(s) from 3 examined
+EXPLAIN SELECT name FROM people WHERE id = 2;
+  plan access: index people.id = 2
+  plan residual: -
+  plan project: name
+SELECT name FROM people WHERE id = 2;
+  cols name
+  row bob
+  ok 1 row(s) from 1 examined
+SELECT name FROM people WHERE age = 41;
+  cols name
+  row bob
+  ok 1 row(s) from 3 examined
+=== server session 2 (new connection sees session 1 writes)
+SELECT * FROM people;
+  cols id|name|age
+  row 1|ada|36
+  row 2|bob|41
+  row 3|cy|29
+  ok 3 row(s) from 3 examined
+=== server raw socket protocol
+> SELECT name FROM people WHERE id = 3;
+< cols name
+< row cy
+< ok 1 row(s) from 1 examined
+> SELECT * FROM nosuch;
+< err no such table: nosuch
+> NOT SQL AT ALL;
+< err parse error at token 0: expected CREATE, INSERT, SELECT or EXPLAIN
+> EXPLAIN SELECT name FROM people WHERE id = 3;
+< plan access: index people.id = 3
+< plan residual: -
+< plan project: name
+> QUIT
+< ok bye
+=== err Connect
+--- stdout
+=== err Listen
+--- stderr
+cannot listen on 203.0.113.1:0
+=== err Checkpoint
+checkpoint failed: cannot write nodir2/x.db
+=== err Accept (via the srv API)
+accept failed

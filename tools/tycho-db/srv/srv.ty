@@ -1,0 +1,271 @@
+package srv
+
+import "core:net"
+import "core:strings"
+import "../sql"
+import "../store"
+import "../wal"
+import "../exec"
+
+# The wire layer: a line protocol over TCP, and both ends of it.
+#
+# THE PROTOCOL. One statement per line in; a response block out, terminated by
+# a line holding a single ".". The connection stays open for more statements
+# until the client sends QUIT or closes, so a session is many statements over
+# one connection rather than one connection per statement -- the store is
+# opened once per PROCESS, and a connection per statement would make the
+# expensive thing (open, replay the log) the per-statement thing.
+#
+#     -> SELECT name FROM users WHERE id = 2;
+#     <- cols name
+#     <- row bob
+#     <- ok 1 row(s) from 1 examined
+#     <- .
+#
+# A FAILED STATEMENT IS NOT A FAILED CONNECTION. A parse error or an execution
+# error comes back in band as `err <message>` and the session continues; only
+# the transport itself failing ends one. The alternative -- dropping the
+# connection on a bad query -- makes every client implement reconnect-and-retry
+# to recover from a typo.
+#
+# CONCURRENCY: SESSIONS ARE SERIALISED, ONE AT A TIME, DELIBERATELY. There is
+# no spawn here and no actor. serve_forever accepts a connection, serves it to
+# completion, checkpoints, and only then accepts the next; a second client
+# waits in the kernel's listen backlog. The reason is the store: store.Db is
+# mutated through `inout` and is not thread-safe, and the language has no
+# shared mutable storage to make it so. tycho-kvsrv answers the same problem
+# the other way -- an actor task owning the map, workers reaching it over
+# channels -- and that would work here too, but it would put the WAL's ordering
+# (log the record, THEN mutate, THEN checkpoint) behind a message queue whose
+# interleaving the crash tests would then have to cover. Serialising costs
+# throughput this tool has no claim to and keeps the durability argument in
+# wal.ty exactly as the single-process gate already proves it. What is bought:
+# one writer, so a checkpoint can never run beside a mutation.
+#
+# The framing lives here for BOTH ends. main's client calls recv_response and
+# request; the server calls recv_line and send_block. A second copy in the client
+# would be free to disagree with this one about where a line ends.
+
+# The cap is on ONE LINE, checked before the buffer is grown again, because a
+# peer that never sends a newline is otherwise a peer that allocates until the
+# server dies. This is the trust boundary: everything past it is parsed.
+const MAX_LINE = 8192
+const READ_CHUNK = 4096
+const END = "."
+
+enum SrvErr:
+    Listen(string, int)
+    Connect(string, int)
+    Accept
+    # The transport failed or the peer vanished. Carries what it was doing,
+    # because "connection lost" alone cannot distinguish a client that finished
+    # from one that died halfway through a statement.
+    Peer(string)
+    TooLong(int)
+    Checkpoint(wal.WalErr)
+
+fn err_str(e: SrvErr) -> string:
+    match e:
+        Listen(h, p): return "cannot listen on " + h + ":" + str(p)
+        Connect(h, p): return "cannot connect to " + h + ":" + str(p)
+        Accept: return "accept failed"
+        Peer(m): return "connection lost: " + m
+        TooLong(n): return "statement longer than " + str(n) + " bytes"
+        Checkpoint(w): return "checkpoint failed: " + wal.err_str(w)
+
+# ---- sockets --------------------------------------------------------------
+
+struct Bound:
+    fd: int
+    port: int
+
+# Bind, and report the port actually bound -- which is the whole point of being
+# allowed to ask for port 0: a caller that hard-codes a port races every other
+# process on the machine, and a gate that does it is flaky by construction.
+#
+# The two steps share ONE cause on purpose. A socket that binds but cannot say
+# what it bound to has not come up usable, and inventing a second variant for
+# it would be a variant no test could ever reach.
+fn listen(host: string, port: int) -> Result(Bound, SrvErr):
+    fd := 0
+    match net.listen(host, port):
+        Ok(f): fd = f
+        Err(e): return Err(Listen(host, port))
+    match net.port_of(fd):
+        Ok(p): return Ok(Bound(fd, p))
+        Err(e):
+            net.close_fd(fd)
+            return Err(Listen(host, port))
+
+fn accept_one(fd: int) -> Result(int, SrvErr):
+    match net.accept(fd):
+        Ok(c): return Ok(c)
+        Err(e): return Err(Accept)
+
+fn connect(host: string, port: int) -> Result(int, SrvErr):
+    match net.connect(host, port):
+        Ok(fd): return Ok(fd)
+        Err(e): return Err(Connect(host, port))
+
+fn close_conn(fd: int):
+    net.close_fd(fd)
+
+# ---- framing, used by both ends -------------------------------------------
+
+# One line, or None at a CLEAN end of stream. None is not an error and must not
+# be one: a client that sent everything it had and closed did nothing wrong.
+# A stream that ends with bytes still in the buffer DID -- that is a statement
+# cut in half, and it comes back as Peer.
+fn recv_line(fd: int, buf: inout string) -> Result(Option(string), SrvErr):
+    for true:
+        if strings.contains(buf, "\n"):
+            line, rest := strings.split_once(buf, "\n")
+            buf = rest
+            # tolerate a CRLF peer: the protocol is LF, but a stray \r at the
+            # end of a line is the client's line ending, not part of the SQL
+            return Ok(Some(strings.strip_suffix(line, "\r")))
+        if len(buf) > MAX_LINE:
+            return Err(TooLong(MAX_LINE))
+        match net.read(fd, READ_CHUNK):
+            Ok(b): buf = buf + to_str(b)
+            Err(net.Eof):
+                if len(strings.trim(buf)) > 0:
+                    return Err(Peer("closed mid-statement"))
+                return Ok(None)
+            Err(e): return Err(Peer("read failed"))
+    return Ok(None)
+
+# The whole response in ONE write: a response assembled by several writes is a
+# response a reader can see half of, and the terminator is what tells it the
+# block is complete.
+#
+# Named send_block rather than send because an unqualified `send` inside this
+# package binds to the CHANNEL builtin of that name, not to this -- the
+# compiler warns, and it is right to.
+fn send_block(fd: int, lines: [string]) -> Result(bool, SrvErr):
+    payload := ""
+    for l in lines:
+        payload = payload + l + "\n"
+    payload = payload + END + "\n"
+    match net.write(fd, to_bytes(payload)):
+        Ok(n): return Ok(true)
+        Err(e): return Err(Peer("write failed"))
+
+fn _one(s: string) -> [string]:
+    out: [string] = []
+    push(out, s)
+    return out
+
+# ---- rendering an outcome onto the wire -----------------------------------
+
+fn render(o: exec.Outcome) -> [string]:
+    out: [string] = []
+    match o:
+        exec.Created(n): push(out, "ok created " + n)
+        exec.Inserted(n): push(out, "ok 1 row into " + n)
+        exec.Explained(ls):
+            for l in ls:
+                push(out, "plan " + l)
+        exec.Selected(rs):
+            head := ""
+            for k := 0; k < len(rs.cols); k += 1:
+                if k > 0:
+                    head = head + "|"
+                head = head + rs.cols[k]
+            push(out, "cols " + head)
+            for i := 0; i < len(rs.rows); i += 1:
+                line := ""
+                for k := 0; k < len(rs.rows[i]); k += 1:
+                    if k > 0:
+                        line = line + "|"
+                    line = line + store.val_str(rs.rows[i][k])
+                push(out, "row " + line)
+            push(out, "ok " + str(len(rs.rows)) + " row(s) from " + str(rs.examined) + " examined")
+    return out
+
+# ---- the server -----------------------------------------------------------
+
+# Serve one connection to completion. Returns the number of statements run.
+fn serve_conn(conn: int, db: inout store.Db, lg: inout wal.Log) -> Result(int, SrvErr):
+    buf := ""
+    served := 0
+    for true:
+        got := recv_line(conn, &buf) or_return
+        line := ""
+        eof := false
+        match got:
+            Some(l): line = l
+            None: eof = true
+        if eof:
+            break
+        t := strings.trim(line)
+        if t == "" or strings.starts_with(t, "--"):
+            w := send_block(conn, _one("ok")) or_return
+            continue
+        if strings.to_upper(t) == "QUIT":
+            w := send_block(conn, _one("ok bye")) or_return
+            break
+        served = served + 1
+        resp: [string] = []
+        match sql.parse(t):
+            Ok(st):
+                match exec.run(&db, &lg, st):
+                    Ok(o): resp = render(o)
+                    Err(e): push(resp, "err " + exec.err_str(e))
+            Err(e): push(resp, "err " + sql.err_str(e))
+        w := send_block(conn, resp) or_return
+    return Ok(served)
+
+# Accept, serve, checkpoint, repeat. Never returns Ok in practice -- the daemon
+# is stopped by a signal -- so the Result is about the two failures that MUST
+# stop it.
+#
+# WHICH FAILURES ARE FATAL, and why they are not the same:
+#   a client's       -- a peer that hung up mid-statement, or overran the line
+#                       cap, ends ITS OWN session. Reported on stderr and the
+#                       loop goes on; a daemon that a single rude client can
+#                       stop is a denial of service with extra steps.
+#   a checkpoint's   -- fatal. It means the rows this process accepted cannot
+#                       be written down, and carrying on would take in more
+#                       writes it also cannot save.
+fn serve_forever(fd: int, db: inout store.Db, lg: inout wal.Log) -> Result(void, SrvErr):
+    for true:
+        conn := accept_one(fd) or_return
+        match serve_conn(conn, &db, &lg):
+            Ok(n): pass
+            Err(e): eprint("tycho-db: session ended: " + err_str(e) + "\n")
+        close_conn(conn)
+        # After the session, not after each statement: a checkpoint rewinds the
+        # log, and doing that between two statements of one session would cost
+        # a store rewrite per statement to shorten a log that is already bounded
+        # by the session.
+        match wal.checkpoint(&db, &lg):
+            Ok(x): pass
+            Err(e): return Err(Checkpoint(e))
+    return Ok()
+
+# ---- the client half ------------------------------------------------------
+
+# Read one response block: every line up to the terminator.
+fn recv_response(fd: int, buf: inout string) -> Result([string], SrvErr):
+    out: [string] = []
+    for true:
+        got := recv_line(fd, &buf) or_return
+        line := ""
+        eof := false
+        match got:
+            Some(l): line = l
+            None: eof = true
+        if eof:
+            return Err(Peer("closed before the response ended"))
+        if line == END:
+            return Ok(out)
+        push(out, line)
+    return Ok(out)
+
+# Send one statement and read its response.
+fn request(fd: int, stmt: string, buf: inout string) -> Result([string], SrvErr):
+    match net.write(fd, to_bytes(stmt + "\n")):
+        Ok(n): pass
+        Err(e): return Err(Peer("write failed"))
+    return recv_response(fd, &buf)

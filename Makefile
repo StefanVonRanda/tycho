@@ -452,7 +452,8 @@ kv-check: tychoc
 	@sh tools/tycho-kv/run.sh
 
 # db-check: the gate for tycho-db, the relational database in tools/tycho-db/
-# (sql/ parser, store/ heap file + equality index, plan/ planner, exec/ operators). Same shape and same reason
+# (sql/ parser, store/ heap file + equality index, plan/ planner, exec/
+# operators, wal/ log, srv/ line protocol). Same shape and same reason
 # as ar/q/vm/scheme/kv-check above: step [9] tools-check only --emit-c's a tool
 # and [3b] entrypoints only compiles its main.ty, so until this lane existed
 # NOTHING RAN the database -- it could have started returning the wrong rows,
@@ -485,8 +486,18 @@ kv-check: tychoc
 # would satisfy the first alone. Constant folding is asserted by a WHERE 1 = 2
 # examining zero rows of a table holding six.
 #
-# The other half is the refusals: all nineteen named variants of store.StoreErr,
-# exec.ExecErr, wal.WalErr and plan.PlanErr must exit non-zero with THEIR OWN message,
+# THE SERVER is driven over real sockets, never mocked. It binds port 0 and the
+# gate reads the bound port out of the readiness banner, so no fixed port is
+# claimed and no sleep is used to wait for it. A second connection must see the
+# first one's writes (which is why the server checkpoints per session), a RAW
+# SOCKET client asserts the wire format byte for byte so it cannot drift into
+# "whatever our client sends", and two rude clients -- one hanging up
+# mid-statement, one overrunning the 8 KiB line cap -- must each end their own
+# session while a third client is still answered. Sessions are SERIALISED by
+# design; see the concurrency note in srv/srv.ty for why an actor was not used.
+#
+# The other half is the refusals: all twenty-five named variants of store.StoreErr,
+# exec.ExecErr, wal.WalErr, plan.PlanErr and srv.SrvErr must exit non-zero with THEIR OWN message,
 # compared whole rather than by substring, with Corrupt and BadLog
 # additionally leaving stdout empty. NotAPredicate is unreachable from SQL text
 # (sql._predicate only builds Cmp and And, both of which exec._pred handles),
@@ -496,7 +507,7 @@ kv-check: tychoc
 # against what the runner covers, so a variant added later reddens here instead
 # of arriving ungated.
 #
-# ~9.2s, measured 2026-08-12. In `make ci` as step [3p/22].
+# ~13.4s, measured 2026-08-12. In `make ci` as step [3p/22].
 # See tools/tycho-db/run.sh.
 db-check: tychoc
 	@sh tools/tycho-db/run.sh

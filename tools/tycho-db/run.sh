@@ -1,7 +1,8 @@
 #!/bin/sh
 # Gate for tycho-db, the relational database in tools/tycho-db/ -- sql/ (lexer,
-# parser, AST), store/ (catalogue + heap file), exec/ (the operators) and wal/
-# (the write-ahead log and crash recovery).
+# parser, AST), store/ (catalogue, heap file and equality index), plan/ (access
+# path selection and constant folding), exec/ (the operators), wal/ (the
+# write-ahead log and crash recovery) and srv/ (the line protocol and client).
 #
 # Re-record the golden with:  RECORD=1 sh tools/tycho-db/run.sh
 #
@@ -30,13 +31,14 @@
 #       silent fallback to a scan would pass the first alone. Constant folding
 #       is asserted by a `WHERE 1 = 2` examining zero rows of a table holding
 #       six. See the section header.
-#   [4] every named variant of store.StoreErr, exec.ExecErr, wal.WalErr and
-#       plan.PlanErr exits non-zero with ITS OWN message. Most are reachable
-#       from the CLI and are driven through it; NotAPredicate and NoIndex are
-#       not (see [5]).
+#   [4] every named variant of store.StoreErr, exec.ExecErr, wal.WalErr,
+#       plan.PlanErr and srv.SrvErr exits non-zero with ITS OWN message. Most
+#       are reachable from the CLI and are driven through it; NotAPredicate and NoIndex are
+#       not (see [5]); srv.Accept needs a broken listening socket, which a
+#       gate that has one has a broken server rather than a test.
 #       ExecErr.Storage and WalErr.Storage are the wrappers the StoreErr cases
 #       arrive through -- err_str delegates -- so each of those asserts it.
-#       The variant list is EXTRACTED from the three enums and checked against
+#       The variant list is EXTRACTED from the five enums and checked against
 #       the list this runner covers, so a variant added tomorrow reddens here
 #       instead of quietly going ungated.
 #   [5] the two variants no SQL text can reach, each probed through the API
@@ -46,8 +48,14 @@
 #       are indexed before it commits to a probe, so only a caller that skips
 #       that question can get there -- and asserting the REFUSAL is what rules
 #       out a probe() that quietly falls back to a scan. The runner copies the
-#       five packages into its temp dir and builds a probe against each API;
+#       packages into its temp dir and builds a probe against each API;
 #       nothing is written into the repo to do it.
+#   [5b] THE SERVER, over real sockets and nothing mocked: a session through
+#       tycho-db's own client, a SECOND session that must see the first one's
+#       writes, a RAW SOCKET client asserting the wire format byte for byte,
+#       two rude clients that must end their own session and not the daemon,
+#       and two concurrent clients that must both be answered correctly.
+#       The port is discovered from the banner -- no fixed port, no sleep.
 #
 # WHAT IT DELIBERATELY DOES NOT ASSERT
 #   The on-disk format's bytes, for the store or the log. Both are asserted to
@@ -686,9 +694,312 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# [5b] THE SERVER, over real sockets
+#
+# Every leg here opens a TCP connection to a tycho-db that is actually running.
+# Nothing is mocked and no srv function is called in-process except the one
+# variant a socket cannot reach (Accept, at the end).
+#
+# NO FIXED PORT: the server binds port 0 and prints the port the kernel gave it
+# on stderr, which is also the readiness signal -- the banner is printed after
+# the socket is listening and before the first accept, so a client that
+# connects on seeing it is queued rather than refused. No sleep is used to wait
+# for readiness anywhere below.
+#
+#   a  a session through tycho-db's own client: the rows are literals here.
+#   b  a SECOND session, new connection, must see the first one's writes -- the
+#      one claim a single-session test cannot make, and the reason the server
+#      checkpoints at the end of every session rather than at exit.
+#   c  a RAW SOCKET client speaks the protocol. This is what stops the wire
+#      format from being whatever our own client happens to send: it asserts
+#      the response block byte for byte, terminator included.
+#   d  the daemon SURVIVES a rude client. A peer that hangs up mid-statement,
+#      and a peer that overruns the line cap, must each end their own session
+#      and nothing more -- proven by a THIRD client being answered afterwards.
+#   e  sessions are SERIALISED, which is this layer's stated concurrency
+#      decision: two clients launched at once must both complete correctly,
+#      the second having waited in the backlog.
+# ---------------------------------------------------------------------------
+SRVPID=""
+srv_stop() {
+    [ -n "$SRVPID" ] && kill -TERM "$SRVPID" 2>/dev/null
+    [ -n "$SRVPID" ] && wait "$SRVPID" 2>/dev/null
+    SRVPID=""
+}
+trap 'srv_stop; rm -rf "$T"' EXIT INT TERM
+
+# Start a server on port 0 and set $port from the banner. No sleep-then-hope:
+# the banner cannot appear before the socket is listening.
+srv_start() {
+    _store=$1
+    : > "$T/srv.log"
+    "$DB" --serve --port=0 "$_store" >"$T/srv.out" 2>"$T/srv.log" &
+    SRVPID=$!
+    port=""
+    i=0
+    while [ -z "$port" ] && [ "$i" -lt 200 ]; do
+        port=$(sed -n 's/^tycho-db: listening on [^:]*:\([0-9][0-9]*\) .*$/\1/p' "$T/srv.log" | head -1)
+        [ -z "$port" ] && sleep 0.05
+        i=$((i + 1))
+    done
+    [ -n "$port" ]
+}
+
+rm -f n.db n.db.wal
+if ! srv_start n.db; then
+    bad "server: no banner on stderr within 10s"; sed 's/^/      /' "$T/srv.log"
+else
+    [ "$port" -gt 0 ] 2>/dev/null || bad "server: banner did not name a bound port (got '$port')"
+
+    # a -- a session through our own client
+    cat > s1.sql <<'EOF'
+CREATE TABLE people (id INT KEY, name TEXT, age INT);
+INSERT INTO people VALUES (1, 'ada', 36);
+INSERT INTO people VALUES (2, 'bob', 41);
+INSERT INTO people VALUES (3, 'cy', 29);
+SELECT * FROM people;
+EXPLAIN SELECT name FROM people WHERE id = 2;
+SELECT name FROM people WHERE id = 2;
+SELECT name FROM people WHERE age = 41;
+EOF
+    "$DB" "--client=127.0.0.1:$port" s1.sql > "$T/s1.out" 2> "$T/s1.err"
+    rc=$?
+    [ "$rc" -eq 0 ] || { bad "server/session1: client exited $rc"; sed 's/^/      /' "$T/s1.err"; }
+    # `row ` not `  row   `: this is the WIRE shape, indented two by the client
+    srows() {
+        _lbl=$1; _file=$2; shift 2
+        grep '^  row ' "$_file" | sed 's/^  row //' > "$T/got"
+        : > "$T/want"
+        for _r in "$@"; do printf '%s\n' "$_r" >> "$T/want"; done
+        cmp -s "$T/got" "$T/want" || {
+            bad "$_lbl: rows differ from the expected literals"
+            diff "$T/want" "$T/got" | sed 's/^/      /'
+        }
+    }
+    srows 'server/session1' "$T/s1.out" '1|ada|36' '2|bob|41' '3|cy|29' 'bob' 'bob'
+    grep -qxF '  plan access: index people.id = 2' "$T/s1.out" || \
+        bad "server/session1: the planner's index choice did not survive the wire"
+    grep -qxF '  ok 1 row(s) from 1 examined' "$T/s1.out" || \
+        bad "server/session1: the examined counter did not survive the wire"
+    grep -qxF '  ok 1 row(s) from 3 examined' "$T/s1.out" || \
+        bad "server/session1: the scan path's counter did not survive the wire"
+    printf '=== server session 1 (own client, over TCP)\n' >> "$out"
+    cat "$T/s1.out" >> "$out"
+
+    # b -- a NEW connection must see what the first one wrote
+    printf 'SELECT * FROM people;\n' > s2.sql
+    "$DB" "--client=127.0.0.1:$port" s2.sql > "$T/s2.out" 2> "$T/s2.err"
+    rc=$?
+    [ "$rc" -eq 0 ] || { bad "server/session2: client exited $rc"; sed 's/^/      /' "$T/s2.err"; }
+    srows 'server/session2' "$T/s2.out" '1|ada|36' '2|bob|41' '3|cy|29'
+    [ -f n.db ] || bad "server: no store file after a session -- the checkpoint never ran"
+    [ "$(wc -c < n.db.wal)" -eq 17 ] || \
+        bad "server: the log was not rewound after the session ($(wc -c < n.db.wal) bytes, want 17)"
+    printf '=== server session 2 (new connection sees session 1 writes)\n' >> "$out"
+    cat "$T/s2.out" >> "$out"
+
+    # c -- the RAW protocol, byte for byte
+    python3 - "$port" > "$T/raw.out" 2> "$T/raw.err" <<'PYEOF'
+import socket, sys
+sys.stdout.reconfigure(newline="\n")
+port = int(sys.argv[1])
+s = socket.create_connection(("127.0.0.1", port)); s.settimeout(5)
+buf = b""
+def block(stmt):
+    """Send one statement, read lines until the lone '.' terminator."""
+    global buf
+    s.sendall(stmt.encode() + b"\n")
+    out = []
+    while True:
+        while b"\n" not in buf:
+            d = s.recv(4096)
+            if not d:
+                raise SystemExit("server closed mid-response")
+            buf += d
+        line, _, buf = buf.partition(b"\n")
+        line = line.decode()
+        if line == ".":
+            return out
+        out.append(line)
+for stmt in ["SELECT name FROM people WHERE id = 3;",
+             "SELECT * FROM nosuch;",
+             "NOT SQL AT ALL;",
+             "EXPLAIN SELECT name FROM people WHERE id = 3;"]:
+    print("> " + stmt)
+    for l in block(stmt):
+        print("< " + l)
+print("> QUIT")
+for l in block("QUIT"):
+    print("< " + l)
+s.close()
+PYEOF
+    rc=$?
+    [ "$rc" -eq 0 ] || { bad "server/raw: the raw-socket client exited $rc"; sed 's/^/      /' "$T/raw.err"; }
+    # the exact block for a one-row SELECT, asserted as a unit
+    cat > "$T/raw.want" <<'EOF'
+> SELECT name FROM people WHERE id = 3;
+< cols name
+< row cy
+< ok 1 row(s) from 1 examined
+EOF
+    head -4 "$T/raw.out" > "$T/raw.got"
+    cmp -s "$T/raw.got" "$T/raw.want" || {
+        bad "server/raw: the wire format is not what the protocol documents"
+        diff "$T/raw.want" "$T/raw.got" | sed 's/^/      /'
+    }
+    # an in-band error must NOT end the session -- the statements after it were
+    # answered, which is the whole point of reporting `err` instead of hanging up
+    grep -qxF '< err no such table: nosuch' "$T/raw.out" || \
+        bad "server/raw: an execution error did not come back in band"
+    grep -qxF '< ok bye' "$T/raw.out" || \
+        bad "server/raw: the session did not survive to QUIT after two failed statements"
+    printf '=== server raw socket protocol\n' >> "$out"
+    cat "$T/raw.out" >> "$out"
+
+    # d -- rude clients must not take the daemon down
+    python3 - "$port" >/dev/null 2>&1 <<'PYEOF'
+import socket, sys
+port = int(sys.argv[1])
+# half a statement, then hang up
+s = socket.create_connection(("127.0.0.1", port))
+s.sendall(b"SELECT * FROM peo")
+s.close()
+PYEOF
+    python3 - "$port" >/dev/null 2>&1 <<'PYEOF'
+import socket, sys
+port = int(sys.argv[1])
+# a line that never ends, past the cap
+s = socket.create_connection(("127.0.0.1", port)); s.settimeout(5)
+try:
+    s.sendall(b"A" * 20000)
+    s.recv(4096)
+except Exception:
+    pass
+s.close()
+PYEOF
+    # a THIRD client proves the daemon is still serving
+    "$DB" "--client=127.0.0.1:$port" s2.sql > "$T/s3.out" 2> "$T/s3.err"
+    rc=$?
+    [ "$rc" -eq 0 ] || { bad "server/survives: the daemon stopped answering after a rude client (rc $rc)"; sed 's/^/      /' "$T/s3.err"; }
+    srows 'server/survives' "$T/s3.out" '1|ada|36' '2|bob|41' '3|cy|29'
+    grep -qF 'session ended: connection lost: closed mid-statement' "$T/srv.log" || {
+        bad "server: a peer that hung up mid-statement was not reported as such"
+        sed 's/^/      /' "$T/srv.log"; }
+    grep -qF 'session ended: statement longer than 8192 bytes' "$T/srv.log" || {
+        bad "server: the line cap did not fire on a 20000-byte line with no newline"
+        sed 's/^/      /' "$T/srv.log"; }
+
+    # e -- two clients at once. Serialised, so the second waits in the backlog;
+    # both must still get the right answer.
+    "$DB" "--client=127.0.0.1:$port" s2.sql > "$T/p1.out" 2>&1 &
+    c1=$!
+    "$DB" "--client=127.0.0.1:$port" s2.sql > "$T/p2.out" 2>&1 &
+    c2=$!
+    wait $c1; r1=$?
+    wait $c2; r2=$?
+    [ "$r1" -eq 0 ] && [ "$r2" -eq 0 ] || bad "server/serialised: concurrent clients exited $r1 and $r2, want 0 and 0"
+    srows 'server/serialised c1' "$T/p1.out" '1|ada|36' '2|bob|41' '3|cy|29'
+    srows 'server/serialised c2' "$T/p2.out" '1|ada|36' '2|bob|41' '3|cy|29'
+
+    srv_stop
+fi
+
+# srv.SrvErr.Connect -- nothing is listening. The port just freed by srv_stop
+# is the one port on this machine known to have no server on it.
+printf 'SELECT 1;\n' > case.sql
+"$DB" "--client=127.0.0.1:$port" case.sql > "$T/c.out" 2> "$T/c.err"
+rc=$?
+if [ "$rc" -eq 0 ]; then
+    bad "Connect: EXITED 0 -- the client claimed to reach a server that is not there"
+elif ! grep -qxF "cannot connect to 127.0.0.1:$port" "$T/c.err"; then
+    bad "Connect: failed but not with its own message"; sed 's/^/      /' "$T/c.err"
+fi
+[ -s "$T/c.out" ] && bad "Connect: wrote to STDOUT for a server it never reached"
+printf '=== err Connect\n' >> "$out"
+printf -- '--- stdout\n' >> "$out"; cat "$T/c.out" >> "$out"
+
+# srv.SrvErr.Listen -- an address this host cannot bind. TEST-NET-3 (RFC 5737)
+# is not assigned to any interface here, so bind(2) refuses it for root too,
+# which a privileged-port fixture would not.
+"$DB" --serve --host=203.0.113.1 --port=0 nl.db > "$T/c.out" 2> "$T/c.err"
+rc=$?
+if [ "$rc" -eq 0 ]; then
+    bad "Listen: EXITED 0 -- an unbindable address reported success"
+elif ! grep -qxF 'cannot listen on 203.0.113.1:0' "$T/c.err"; then
+    bad "Listen: failed but not with its own message"; sed 's/^/      /' "$T/c.err"
+fi
+printf '=== err Listen\n' >> "$out"
+printf -- '--- stderr\n' >> "$out"; cat "$T/c.err" >> "$out"
+
+# srv.SrvErr.Checkpoint -- the session runs, and the store it must be written
+# to cannot be. Fatal by design: a server that took writes it cannot persist
+# and kept accepting more would lose them all at exit.
+[ -e nodir2 ] && bad "Checkpoint: nodir2 exists, the fixture does not test what it claims"
+if srv_start nodir2/x.db; then
+    printf 'CREATE TABLE t (a INT);\n' > s4.sql
+    "$DB" "--client=127.0.0.1:$port" s4.sql > "$T/c.out" 2>&1
+    # POLLED, NOT `wait`. A bare wait here is unbounded, so the one regression
+    # this leg exists to catch -- a server that does not treat a failed
+    # checkpoint as fatal -- would HANG the gate instead of reddening it. A
+    # gate that can hang is worse than one that fails: nobody reads a log that
+    # never arrives. Found by breaking exactly that, 2026-08-12.
+    i=0
+    while kill -0 "$SRVPID" 2>/dev/null && [ "$i" -lt 100 ]; do
+        sleep 0.05
+        i=$((i + 1))
+    done
+    if kill -0 "$SRVPID" 2>/dev/null; then
+        bad "Checkpoint: the server was still running 5s after a checkpoint it could not perform -- the failure is not fatal"
+        srv_stop
+    else
+        wait "$SRVPID" 2>/dev/null
+        SRVPID=""
+    fi
+    grep -qF 'checkpoint failed: cannot write nodir2/x.db' "$T/srv.log" || {
+        bad "Checkpoint: the server did not report the failed checkpoint with its own message"
+        sed 's/^/      /' "$T/srv.log"; }
+else
+    bad "Checkpoint: the server never came up on an unwritable store path"
+fi
+printf '=== err Checkpoint\n' >> "$out"
+grep 'checkpoint failed' "$T/srv.log" >> "$out"
+
+# srv.SrvErr.Accept, which no client can provoke: it needs a broken LISTENING
+# socket, and a gate that has one has a broken server, not a test. Probed
+# through the API with a file descriptor that was never a socket.
+P3="$T/pkg3"; mkdir -p "$P3"
+for pkg in sql store exec wal plan srv; do
+    cp -R "$src/$pkg" "$P3/" 2>/dev/null
+done
+cat > "$P3/probe3.ty" <<'EOF'
+package main
+
+import "srv"
+
+fn main() -> Result(void, string):
+    match srv.accept_one(-1):
+        Ok(c): return Err("srv.accept_one ACCEPTED a connection on a non-socket")
+        Err(e): return Err(srv.err_str(e))
+EOF
+if ! "$TYCHOC" "$P3/probe3.ty" -o "$T/probe3" >"$T/probe3.log" 2>&1; then
+    bad "probe: tychoc could not build the Accept probe"
+    sed 's/^/      /' "$T/probe3.log" | head -8
+else
+    "$T/probe3" > "$T/c.out" 2> "$T/c.err"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        bad "Accept: EXITED 0 -- srv.accept_one accepted on a non-socket"
+    elif ! grep -qxF 'accept failed' "$T/c.err"; then
+        bad "Accept: failed but not with its own message"; sed 's/^/      /' "$T/c.err"
+    fi
+    printf '=== err Accept (via the srv API)\n' >> "$out"
+    cat "$T/c.err" >> "$out"
+fi
+
+# ---------------------------------------------------------------------------
 # [6] the coverage floor: no variant may go ungated
 #
-# The four enums are READ, not remembered. A variant added to any of them
+# The five enums are READ, not remembered. A variant added to any of them
 # without a leg above reddens here naming itself -- which is the only thing
 # standing between "every error variant is covered" and "every error variant
 # was covered on the day this was written".
@@ -699,7 +1010,8 @@ fi
 # ---------------------------------------------------------------------------
 COVERED='NoTable TableExists ColCount TypeClash Corrupt NotWritten NoIndex
          Storage NoColumn Uncomparable NotAValue NotAPredicate Plan
-         Wal BadLog LostPrefix NotSelect'
+         Wal BadLog LostPrefix NotSelect
+         Listen Connect Accept Peer TooLong Checkpoint'
 
 variants() {
     awk -v want="enum $2:" '
@@ -717,13 +1029,14 @@ found=0
 for v in $(variants "$src/store/store.ty" StoreErr) \
          $(variants "$src/exec/exec.ty" ExecErr) \
          $(variants "$src/wal/wal.ty" WalErr) \
-         $(variants "$src/plan/plan.ty" PlanErr); do
+         $(variants "$src/plan/plan.ty" PlanErr) \
+         $(variants "$src/srv/srv.ty" SrvErr); do
     found=$((found + 1))
     hit=0
     for c in $COVERED; do [ "$v" = "$c" ] && hit=1; done
     [ "$hit" -eq 1 ] || bad "error variant $v has no leg in this runner -- it is UNGATED"
 done
-[ "$found" -ge 19 ] || bad "only $found error variant(s) found in the four enums -- the scan is broken, [4] asserts nothing"
+[ "$found" -ge 25 ] || bad "only $found error variant(s) found in the five enums -- the scan is broken, [4] asserts nothing"
 
 # ---------------------------------------------------------------------------
 # the golden
@@ -739,7 +1052,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-db: green (demo transcript + store file + log reproducible over two runs; rows survive a process exit and a reopened store takes new writes; a real kill -9 mid-script replays to the completed rows only, idempotently, discarding a torn record; the index and scan paths return identical rows over every key while examining 1 against 6, and a constant-false WHERE examines 0 of 6; $found error variants each exit non-zero with their own message, Corrupt and BadLog with empty stdout; transcript == golden)"
+    echo "tycho-db: green (demo transcript + store file + log reproducible over two runs; rows survive a process exit and a reopened store takes new writes; a real kill -9 mid-script replays to the completed rows only, idempotently, discarding a torn record; the index and scan paths return identical rows over every key while examining 1 against 6, and a constant-false WHERE examines 0 of 6; a real server answers over TCP on a kernel-chosen port, a second connection sees the first's writes, a raw socket gets the documented wire format, and two rude clients end their own sessions without stopping the daemon; $found error variants each exit non-zero with their own message, Corrupt and BadLog with empty stdout; transcript == golden)"
 else
     echo "tycho-db: FAIL"; exit 1
 fi
