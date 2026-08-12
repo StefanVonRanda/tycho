@@ -2574,7 +2574,7 @@ records the toll, which is one copied block per shim and is paid once.
   `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
   `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
   builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
-  `src/tychoc.c@.name="split"`, so it is in no package at all.
+  `src/tychoc.c:5120@.name="split"`, so it is in no package at all.
   `corelib/strings/strings.ty:254` says so in a comment one line above `lines`
   — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
   here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program

@@ -75,6 +75,15 @@ CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
 # a line number.
 SYMCITE = re.compile(r'`((?:[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)|Makefile)@([A-Za-z0-9_]+)`')
 
+# THE SAME SHAPE WITH ANY ANCHOR AT ALL, so that an anchor SYMCITE cannot spell
+# is rejected instead of silently skipped -- a malformed anchor used to match
+# no pattern here at all, which is worse than a bare ref: it reads as policed
+# and was checked by nothing. A `:N` cannot appear before the `@` (the path
+# class has no `:`), so this never steals a `path:N@token` ref from CITE, which
+# checks that form's anchor literally and may keep taking many words.
+SYMCITE_ANY = re.compile(r'`((?:[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)|Makefile)@([^`]*)`')
+SYM_OK = re.compile(r'[A-Za-z0-9_]+')
+
 # The same form in a source file, filtered against the tracked set.
 SYMCITE_SRC = re.compile(r'\b((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)'
                          r'|Makefile)@([A-Za-z0-9_]+)')
@@ -225,6 +234,23 @@ def main():
                         "citation survives insertions but not a RENAME or a "
                         "DELETION, which is the whole of what it promises."
                         % (where, sym, sp))
+            # A MALFORMED ANCHOR IS A FAILURE, NOT A SKIP. Same SRC_PREFIX
+            # filter as above, which is what keeps an email address, an npm
+            # `pkg@version` or an `@decorator` out: none of them is a tracked
+            # path immediately followed by `@`.
+            for m in SYMCITE_ANY.finditer(line):
+                sp, sym = m.group(1), m.group(2)
+                if not (sp.startswith(SRC_PREFIX) or sp == "Makefile"):
+                    continue
+                if SYM_OK.fullmatch(sym):
+                    continue
+                fails.append(
+                    "%s:%d  `%s` -> MALFORMED ANCHOR: '%s' is not one "
+                    "symbol-shaped token, so `%s@...` matches nothing this gate "
+                    "checks and the ref only LOOKS policed. Anchor a single "
+                    "`[A-Za-z0-9_]` token, or give the line and anchor there: "
+                    "`%s:<line>@%s`."
+                    % (md, ln, m.group(0).strip("`"), sym, sp, sp, sym))
             for m in CITE.finditer(line):
                 if m.group(1):
                     # A HOST AND A PORT IS NOT A CITATION. Skipped WITHOUT
