@@ -902,8 +902,11 @@ site is either implemented or written down as a refusal with its cost.
   report (651 before; +1 here, +1 for Phase 11 in the same run).
   `make goldens-check` ok once the golden was tracked.
 
-- [ ] **Phase 13 — the shadowed-builtin warning's central claim is false for at
+- [x] **Phase 13 — the shadowed-builtin warning's central claim is false for at
       least one builtin** *(discovered by the same work)*
+      VERDICT: **the claim is false for EVERY builtin, and it is a compiler bug
+      against a normative spec line — not a wording bug. Not fixed here; filed
+      as Phase 18 below.**
 
   The warning says "every unqualified `X(...)` here calls this procedure, not
   the builtin". For `len` that is true and `tests/warn/shadow_builtin.ty` proves
@@ -924,6 +927,87 @@ site is either implemented or written down as a refusal with its cost.
   wrong for the subset of builtins that win; deciding which is the point of the
   phase. `src/tychoc.c@shadows_builtin` lists both names, so the warning fires
   identically for the two.
+
+  **Evidence — the brief's premise was wrong, and so was this phase's.** Both
+  said `len` is the case where the warning is TRUE and
+  `tests/warn/shadow_builtin.ty` "proves it — the fixture prints 7, not 4".
+  Built and run: **it prints 4.** Nothing ever checked, because
+  `tests/run.sh:442` captures the warn lane's *stderr* only and never executes
+  the program — the fixture's own comment asserted the answer and no gate could
+  contradict it.
+
+  All 57 names on `src/tychoc.c@shadows_builtin` were probed (declare
+  `fn <name>` at package level, call it unqualified, mark the local body so
+  "which body ran" is observed rather than inferred). Three groups:
+
+  | group | names | warning? | who won |
+  |---|---|---|---|
+  | rejected at declaration, flat program — `'X' is already defined` | ~40, incl. `str` `split` `find` `chr` `sqrt` `pow` `print` `println` `die` `now` | yes, then a hard error | neither — cannot be declared |
+  | declares, then the **builtin's own arg-check** refuses the local's call | `len` `keys` `push` `pop` `reserve` `to_float` `to_int` `to_str` `to_bool` `to_bytes` `send` `recv` `close` | yes | **builtin** |
+  | declares and runs — local body provably never executes | `hash` `to_u8`–`to_u64` `to_i8`–`to_i64` `to_f32` | yes | **builtin** |
+
+  **There is no name for which the local wins.** `eprintln` and `zero` appeared
+  to, but neither is a builtin at all (`eprintln` → `unknown procedure`, closed
+  FRICTION #6; `zero` → `core:bignum provides zero`), so they were warning about
+  a collision that cannot happen — a false positive on
+  `corelib/bignum/bignum.ty:23`'s own legal declaration. Both removed from the
+  list, which the list's own comment already demanded ("a name wrongly present
+  would warn about a legal declaration, which is worse",
+  `src/tychoc.c:4139-4140`). Package mode behaves identically to flat: a
+  `package main` declaring `len`/`hash` still prints `4` and the builtin's hash,
+  with neither local body running.
+
+  **Why this is not a wording fix.** `docs/spec/01-lexical.md:201-209` is
+  normative and says the local "**shadows** that builtin for every unqualified
+  call inside its own package — including calls from the procedure itself, which
+  recurse", and that "a conforming implementation must not change which
+  procedure is *selected*". The compiler selects the builtin. Rewording the
+  warning to match today's behaviour would bless a spec violation, so the
+  warning text is left exactly as it stands and the divergence is recorded
+  instead.
+
+  **Landed here:** the two false-positive names removed; the false "prints 7"
+  comment in `tests/warn/shadow_builtin.ty` corrected (its golden re-recorded —
+  line number only, warning text byte-identical); and
+  `tests/shadow_builtin_selection.ty` added, which **runs** the shadowed calls
+  and locks the real answers (`4`, `false`, `7`), closing the gate hole that let
+  the claim rot. NEGATIVE CONTROL in that fixture: `mylen`, a name no builtin
+  owns, returns 7 through the same call shape — so the fixture distinguishes
+  "builtin won" from "this test measures nothing". Verified: `make test`
+  **654 passed, 0 failed** (baseline 653 + this fixture), `make corelib` all
+  green (46 ok), `make vm-check` green, `sh scripts/entrypoints.sh` 75 entry
+  points, `check_citations` + `check_links` ok.
+
+- [ ] **Phase 18 — the compiler selects the builtin where the spec says the
+      package-local procedure wins** *(sized by Phase 13, not absorbed)*
+
+  `docs/spec/01-lexical.md:201-209`, normative: a procedure named after a
+  builtin shadows it for every unqualified call in its package, self-calls
+  recurse, and "a conforming implementation must not change which procedure is
+  *selected*". Today the builtin is selected in every case — see Phase 13's
+  table. `tests/shadow_builtin_selection.ty` locks the divergence, so the fix
+  must redden that fixture deliberately.
+
+  **Sizing.** The builtin dispatch runs *before* the user proc table: the
+  give-away is that `fn len(x: int)` + `len(3)` dies with `len(...) takes an
+  array, a string, bytes, a map, or a soa` — the builtin's arg-check refusing a
+  call that matches the local's signature perfectly. So the fix is not a lookup
+  tweak but a reordering of call resolution, and every builtin call in the tree
+  goes through that path. Two decisions have to be made first, and they are
+  separable:
+  1. **Selection** — a package-local proc of a builtin's name must win. Affects
+     `make test`, `make corelib` and every tool lane at once; `core:utf8`'s
+     historical stack-guard recursion is what "correct" looks like here, so the
+     spec is asking for the sharper edge on purpose.
+  2. **Declarability** — ~40 builtin names are rejected outright in a flat
+     program (`'X' is already defined`), which contradicts the same spec section
+     ("none is reserved", "A procedure declared with a builtin's name is
+     therefore legal"). Either the spec narrows to package scope, or the
+     rejection goes. This one is a spec question, not a compiler question, and
+     should be answered before the resolver is touched.
+
+  Not attempted here: Phase 13's brief was a diagnostic, and this is a
+  resolution change with a corpus-wide blast radius.
 
 - [x] **Phase 14 — a package-qualified function cannot be a value, and the
   diagnostic says the wrong thing.** VERDICT: **(a) CONTAINED, implemented.**

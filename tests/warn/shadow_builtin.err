@@ -1,2 +1,2 @@
-tests/warn/shadow_builtin.ty:12: warning: `len` shadows the builtin of the same name inside this package -- every unqualified `len(...)` here calls this procedure, not the builtin (a self-call recurses). Rename it unless that is what you meant.
-    12 | fn len(s: string) -> int:
+tests/warn/shadow_builtin.ty:15: warning: `len` shadows the builtin of the same name inside this package -- every unqualified `len(...)` here calls this procedure, not the builtin (a self-call recurses). Rename it unless that is what you meant.
+    15 | fn len(s: string) -> int:

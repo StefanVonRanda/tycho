@@ -1,0 +1,29 @@
+# WHICH procedure a shadowed builtin name actually selects -- run, not just
+# compiled. tests/warn/shadow_builtin.ty locks the WARNING, but that lane
+# captures stderr and never executes the program, so nothing in the tree
+# checked the warning's central claim. It is false: the warning says "every
+# unqualified `len(...)` here calls this procedure, not the builtin", and the
+# builtin is what runs. Same in package mode -- the local body never executes.
+#
+# docs/spec/01-lexical.md:201-209 is normative and says the opposite: the local
+# "shadows that builtin for every unqualified call inside its own package" and
+# "a conforming implementation must not change which procedure is selected".
+# So this golden locks a KNOWN SPEC DIVERGENCE, not desired behaviour. Fixing
+# the resolver must redden this fixture -- that is the point of recording it.
+
+fn len(s: string) -> int:
+    return 7
+
+fn hash(x: int) -> int:
+    return 14
+
+# NEGATIVE CONTROL: `mylen` is not a builtin, so nothing can outrank it. If this
+# printed 4 the fixture would be measuring something other than shadowing, and
+# if the two `true`s below ever agree with it the test has stopped discriminating.
+fn mylen(s: string) -> int:
+    return 7
+
+fn main():
+    println(str(len("abcd")))          # 4 -- the BUILTIN, not the `len` above
+    println(str(hash(7) == 14))        # false -- the BUILTIN's hash, not 14
+    println(str(mylen("abcd")))        # 7 -- negative control: the local wins

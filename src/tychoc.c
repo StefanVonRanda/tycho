@@ -4151,9 +4151,9 @@ static int shadows_builtin(const char *n) {
         /* is_pure_builtin adds */
         "to_char", "hash",
         /* I/O and process, from the spec's builtin appendix */
-        "print", "println", "eprint", "eprintln", "input", "read_all",
+        "print", "println", "eprint", "input", "read_all",   /* no `eprintln`: not a builtin (FRICTION #6) */
         "write_file", "list_dir", "getenv", "args", "die", "now", "clock",
-        "ncpu", "zero", "channel", "send", "recv", "close", 0 };
+        "ncpu", "channel", "send", "recv", "close", 0 };     /* no `zero`: that is core:bignum's, not a builtin */
     for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
     return 0;
 }

@@ -6,14 +6,17 @@
 # reached its own `len` instead of the builtin, and recursed until the stack
 # guard fired -- which is why that package's API is `count` today.
 #
-# The program below is valid and runs; the warning is the assertion. Note the
-# call in `four` reaches THIS `len`, not the builtin, so it prints 7 and not 4 --
-# the wrong answer, made visible. Locked as a warning golden (tests/warn/).
+# The program below is valid and runs; the warning is the assertion, and this
+# lane captures stderr only -- it never runs the program. That is how the note
+# here came to claim the call prints 7: it does NOT. It prints 4, because the
+# builtin is what actually gets selected, and no gate could see the difference.
+# `tests/shadow_builtin_selection.ty` runs it and locks the real answer; the
+# warning's own wording is wrong against docs/spec/01-lexical.md:201-209.
 fn len(s: string) -> int:
     return 7
 
 fn four(s: string) -> int:
-    return len(s)                # the shadow, not the builtin
+    return len(s)                # says "the shadow"; the builtin is selected
 
 fn main():
-    print(str(four("abcd")))     # 7, not 4
+    print(str(four("abcd")))     # 4 -- see the selection fixture
