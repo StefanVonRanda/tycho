@@ -844,7 +844,7 @@ site is either implemented or written down as a refusal with its cost.
   `git add`, not on a re-record. `sh scripts/entrypoints.sh` and
   `make check-links` ok.
 
-- [ ] **Phase 12 — no lane can redden if corelib warnings leak back into a user
+- [x] **Phase 12 — no lane can redden if corelib warnings leak back into a user
       build** *(discovered while fixing the `core:json` `keys` warning)*
 
   `2376066` mutes warnings raised while parsing a corelib package the user
@@ -862,6 +862,45 @@ site is either implemented or written down as a refusal with its cost.
   and collide on `main`. The cheap fix is probably a third grading mode in the
   warn lane (golden stderr, empty allowed) rather than a new gate.
 
+  **Done, and both constraints in the filing were confirmed by reading, not
+  assumed.** The warn lane does require a `warning:` (`tests/run.sh:446`), and
+  the flat fixtures do share one directory. So the new lane is
+  `tests/warn/pkg/<name>/` — the shape `tests/reject/pkg/<name>/` already uses
+  for exactly the same reason (a `package` header compiles the whole directory),
+  not a sixth convention. It locks the WHOLE compiler stderr against
+  `tests/warn/pkg/<name>.err` and has no "a warning must be present" leg, so an
+  empty golden is legal here.
+
+  **One fixture covers both halves**, which is what makes it hard to fool:
+  `tests/warn/pkg/corelib_mute/main.ty` imports `core:json` (whose `keys`
+  shadows a builtin, internally) AND shadows `len` itself. The golden is the
+  user's own warning and nothing else — so half 1 is "json.ty's line is absent"
+  and half 2 is "main.ty's line is present", in the same byte comparison.
+
+  **Negative control, both directions** (the mute is `src/tychoc.c@g_mute_warn`;
+  `2376066` no longer reverse-applies, later edits moved those lines, so the
+  guard itself was stubbed and the compiler rebuilt each time):
+
+  ```
+  (a) mute off      -> FAIL: + corelib/json/json.ty:932: warning: `keys` shadows ...
+  (b) mute silences -> FAIL: - tests/warn/pkg/corelib_mute/main.ty:13: warning: `len` ...
+      everything
+  restored          -> ok
+  ```
+
+  (a) is the regression this phase exists for; (b) is why half 2 had to be in
+  the golden — a mute that silenced everything passes a half-1-only test.
+
+  `tools/prunner/main.ty` learned the lane too (`judge_warnpkg`, and the job
+  push), because its report is meant to be byte-identical to `tests/run.sh`'s
+  over the whole corpus, and a lane it does not know is a silent count
+  difference. Its seven `tests/run.sh:N-M` header citations were re-anchored:
+  the run.sh edits moved every lane down six lines and the citation gate caught
+  one of them.
+
+  Gates: `make test` **653 passed, 0 failed**, `ok warnpkg_corelib_mute` in the
+  report (651 before; +1 here, +1 for Phase 11 in the same run).
+  `make goldens-check` ok once the golden was tracked.
 
 - [ ] **Phase 13 — the shadowed-builtin warning's central claim is false for at
       least one builtin** *(discovered by the same work)*

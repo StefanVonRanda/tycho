@@ -1,0 +1,2 @@
+tests/warn/pkg/corelib_mute/main.ty:13: warning: `len` shadows the builtin of the same name inside this package -- every unqualified `len(...)` here calls this procedure, not the builtin (a self-call recurses). Rename it unless that is what you meant.
+    13 | fn len(s: string) -> int:

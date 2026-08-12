@@ -460,6 +460,38 @@ for hi in tests/warn/*.ty; do
     fi
 done
 
+# Package-mode warning goldens: tests/warn/pkg/<name>/ is a VALID package program
+# whose WHOLE compiler stderr is locked as tests/warn/pkg/<name>.err. Its own
+# directory for the reason tests/reject/pkg/ has one -- a `package` header
+# compiles the whole directory, so a flat sibling would drag the others in.
+# Deliberately no "a warning must be present" rule, unlike the flat lane above:
+# what these fixtures assert is WHICH warnings a build prints, and "none from the
+# corelib package I merely imported" is the assertion (commit 2376066). An empty
+# golden is a legal answer here; in the flat lane it is a failure.
+for d in tests/warn/pkg/*/; do
+    [ -d "$d" ] || continue
+    base="$(basename "$d")"
+    name="warnpkg_$base"
+    g="tests/warn/pkg/$base.err"
+    entry="${d}main.ty"
+    [ -f "$entry" ] || continue
+    if ! "$TYCHOC" "$entry" --emit-c -o "$TMP/wnp" >"$TMP/wnp.out" 2>"$TMP/wnp.err"; then
+        note "$name" "compiler REJECTED a valid package program"; sed 's/^/      /' "$TMP/wnp.err"
+        fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    if [ "$RECORD" = 1 ]; then
+        cp "$TMP/wnp.err" "$g"; echo "rec   $name"; recorded=$((recorded + 1)); continue
+    fi
+    if [ ! -f "$g" ]; then
+        note "$name" "no golden — run 'make test-update'"; fail=$((fail + 1)); fails="$fails $name"
+    elif ! cmp -s "$TMP/wnp.err" "$g"; then
+        note "$name" "stderr != golden ($g)"
+        diff "$g" "$TMP/wnp.err" | head | sed 's/^/      /'; fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+
 echo "-----------------------------------------"
 if [ "$RECORD" = 1 ]; then
     echo "recorded: $recorded   failed: $fail"

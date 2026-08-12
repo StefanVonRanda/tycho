@@ -31,7 +31,7 @@
 # ---------------------------------------------------------------------------
 # LANES COVERED, AND WHY THESE.
 #
-# All five of `tests/run.sh`'s scoring loops are here, because the invariant the
+# Every one of `tests/run.sh`'s scoring loops is here, because the invariant the
 # Pre-flight names -- "the count is the invariant" -- is only worth much if the
 # count is the SAME count. Covering a subset would mean comparing a partial
 # report against a whole one that has to be filtered first; covering all of it
@@ -44,6 +44,7 @@
 #   abort      tests/abort/*.ty                 (tests/run.sh:364-398@abort_)
 #   diag       tests/diag/*.ty                  (tests/run.sh:399-423@diag_)
 #   warn       tests/warn/*.ty                  (tests/run.sh:428-451@warn_)
+#   warnpkg    tests/warn/pkg/<name>/main.ty    (tests/run.sh:471-493@warnpkg_)
 #
 # The two pos rows name the worker-pool branch a normal run takes; RECORD=1
 # enumerates the same fixtures sequentially at `tests/run.sh:184-199@run_fixture`.
@@ -250,6 +251,14 @@ fn build_jobs() -> [Job]:
         b := strings.strip_suffix(wn[i], ".ty")
         push(js, Job("warn", "warn_" + b, "tests/warn/" + wn[i],
                      "tests/warn/" + b + ".err", ""))
+    # tests/run.sh:471-493 -- package-mode builds whose WHOLE stderr is locked,
+    # empty golden allowed. Same skip-a-directory-without-main.ty rule as above.
+    wp := subdirs("tests/warn/pkg")
+    for i := 0; i < len(wp); i += 1:
+        e := "tests/warn/pkg/" + wp[i] + "/main.ty"
+        if io.exists(e):
+            push(js, Job("warnpkg", "warnpkg_" + wp[i], e,
+                         "tests/warn/pkg/" + wp[i] + ".err", ""))
     return js
 
 # ---- the verdicts ----------------------------------------------------------
@@ -396,6 +405,20 @@ fn judge_warn(j: Job, d: string) -> Verdict:
         return Verdict(0, "warning != golden (" + j.golden + ")")
     return Verdict(1, "")
 
+# tests/run.sh:471-493, minus RECORD mode. No `grep -q 'warning:'` leg, on
+# purpose: this lane's assertion is WHICH warnings a package build prints, and an
+# empty golden is a legal answer. Reasons verbatim, as everywhere here.
+fn judge_warnpkg(j: Job, d: string) -> Verdict:
+    r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/wnp >" + d + "/wnp.out 2>" +
+                d + "/wnp.err")
+    if r.code != 0:
+        return Verdict(0, "compiler REJECTED a valid package program")
+    if not io.exists(j.golden):
+        return Verdict(0, "no golden — run 'make test-update'")
+    if os.run("cmp -s " + d + "/wnp.err " + j.golden).code != 0:
+        return Verdict(0, "stderr != golden (" + j.golden + ")")
+    return Verdict(1, "")
+
 # The whole of one job, temp directory included. Called from the pool worker and
 # from the sequential baseline alike -- they differ only in who calls it.
 fn judge(j: Job, tmp: string) -> Verdict:
@@ -422,6 +445,8 @@ fn judge(j: Job, tmp: string) -> Verdict:
         return judge_diag(j, d)
     if j.kind == "warn":
         return judge_warn(j, d)
+    if j.kind == "warnpkg":
+        return judge_warnpkg(j, d)
     return judge_pos(j, d)
 
 # ---- the pool --------------------------------------------------------------
