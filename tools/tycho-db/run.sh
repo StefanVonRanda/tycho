@@ -47,11 +47,15 @@
 #   checked because "the log was rewound" has no other cheap witness.
 #   Timing, and the size of the store file. Neither is a promise the tool makes.
 #
-#   Durability against POWER LOSS. core:io has no fsync, so nothing here can
-#   promise a record survives a machine dying. The kill -9 leg proves the
-#   boundary that IS claimed -- a record written before the process died is
-#   read by the next one -- and claiming more than that would be a lie the
-#   gate cannot catch.
+#   Durability against POWER LOSS. wal.ty DOES now request a flush -- core:io
+#   gained io.sync (fsync) on 2026-08-12 and append/checkpoint call it -- but a
+#   gate cannot cut the power, and kill -9 is a strictly weaker event that the
+#   page cache alone already survives. So nothing below distinguishes a synced
+#   log from an unsynced one; the kill -9 leg proves only the boundary it always
+#   proved, that a record written before the process died is read by the next
+#   one. What the flush buys is asserted in corelib/test/io (io.sync's statuses)
+#   and argued in wal.ty's header, not measured here. A drive with a lying write
+#   cache would defeat it and no test in this tree could tell.
 #
 # NO HOST DETAIL REACHES THE GOLDEN. Every store path and script path recorded
 # below is RELATIVE and every recorded command runs with the temp dir as cwd,

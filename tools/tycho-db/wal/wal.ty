@@ -1,6 +1,7 @@
 package wal
 
 import "core:io"
+import "core:path"
 import "../store"
 
 # The write-ahead log. Every mutation is framed, checksummed and written to
@@ -14,13 +15,33 @@ import "../store"
 # is the thing most exposed to a crash. The log is what that file is rebuilt
 # from.
 #
-# WHAT DURABILITY IS ACTUALLY CLAIMED. Process death, not machine death.
-# core:io has no fsync -- grep it -- so nothing here can promise a record
-# survives a power cut. What it does promise is exact: io.write_at pwrites and
-# then close(2)s before returning, so once append() returns Ok the bytes are in
-# the page cache and every later process, including one that starts after a
-# SIGKILL, reads them. That is the boundary the gate tests with a real kill -9,
-# and it is the boundary this file claims. Nothing more.
+# WHAT DURABILITY IS ACTUALLY CLAIMED. Machine death, on a platform that can
+# flush -- widened from process death on 2026-08-12, when core:io gained `sync`
+# (fsync(2)). Before that this file said "core:io has no fsync -- grep it" and
+# could promise only that a record written before the WRITING PROCESS died was
+# read by the next one, because close(2) reaches the page cache and the page
+# cache is RAM.
+#
+# Now append() returns only after io.sync has flushed the log file to the
+# device, and after the PARENT DIRECTORY is flushed on the append that created
+# the file -- the two halves of a durable create, since a file's bytes and a
+# file's name live in different places and a power cut can otherwise return a
+# file that does not exist. checkpoint() flushes the store BEFORE it rewinds the
+# log, which is the ordering the rewind's safety already depended on.
+#
+# WHAT IS STILL NOT CLAIMED, because these are still true:
+#   * A platform with no flush degrades to the OLD guarantee, silently to the
+#     data but not to the reader -- see _sync: Err(Unsupported) is allowed to
+#     proceed precisely because it means the bytes are where every core:io
+#     writer has always left them. On such a host this file claims process
+#     death and no more.
+#   * A DRIVE THAT LIES. fsync returning 0 is the kernel's assertion that it
+#     pushed the data at the device; a disk with a volatile write cache that
+#     acknowledges early makes that assertion false, and nothing in this
+#     process can detect it.
+#   * The gate does not TEST power loss and cannot -- it kills a process, which
+#     is a strictly weaker event. What is verified is that the flush is
+#     requested, in the right order, and that its failure is not swallowed.
 #
 # FRAMING: length prefix AND checksum, because they catch different tears.
 #   [u32 len][u32 fnv1a(payload)][payload]
@@ -102,6 +123,29 @@ fn err_str(e: WalErr) -> string:
 
 fn log_path(store_path: string) -> string:
     return store_path + ".wal"
+
+# Flush `p` to the storage device, mapping core:io's three failure causes onto
+# the only two answers this log has a use for.
+#
+# Err(Unsupported) IS Ok(false), NOT AN ERROR, and that distinction is the reason
+# core:io spends a variant on it. It means the platform has no flush for this
+# object, so the bytes sit exactly where every core:io writer has always left
+# them -- the page cache -- which is the guarantee this file shipped before sync
+# existed. Turning that into a hard error would make tycho-db refuse to run on a
+# host where it previously worked correctly, to punish it for a promise it never
+# made. The claim degrades; the database does not stop.
+#
+# Every other Err IS fatal, and reported as NotWritten. A failed fsync is not a
+# retryable hiccup: the kernel tried to push the record at the device and did
+# not get it there, so the record is not durably logged -- which is precisely
+# what NotWritten's message ("cannot write <path>") already says. Swallowing it
+# would leave the store free to move ahead of a log that does not have the
+# record, which is the exact failure the log exists to prevent.
+fn _sync(p: string) -> Result(bool, WalErr):
+    match io.sync(p):
+        Ok(x): return Ok(true)
+        Err(io.Unsupported): return Ok(false)
+        _: return Err(NotWritten(p))
 
 fn checksum(b: bytes, from: int, to: int) -> int:
     h := FNV_OFF
@@ -212,10 +256,13 @@ fn scan(path: string) -> Result(Scan, WalErr):
 
 # ---- appending ------------------------------------------------------------
 
-# Append one record and return its lsn. On return the bytes are in the page
-# cache (write_at closes the fd), which is what "logged before the store
-# changes" means here -- see the durability note at the top.
+# Append one record and return its lsn. On return the record is ON THE DEVICE,
+# not merely in the page cache -- that is what "logged before the store changes"
+# means here, and since 2026-08-12 it is a claim about power loss rather than
+# only about process death. See the durability note at the top for the two cases
+# that still weaken it.
 fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
+    created := false
     if lg.end == 0:
         # No header yet: lay one down whole, so magic and base_lsn land in a
         # single write rather than leaving a half-header behind.
@@ -223,6 +270,7 @@ fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
             Ok(x): pass
             Err(e): return Err(NotWritten(lg.path))
         lg.end = HDR
+        created = true
     body := put_rec(r)
     frame := store.put_u32(len(body)) + store.put_u32(checksum(body, 0, len(body))) + body
     # Written AT lg.end, which is the end of the last VALID record -- so a torn
@@ -230,6 +278,16 @@ fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
     match io.write_at(lg.path, lg.end, frame):
         Ok(x): pass
         Err(e): return Err(NotWritten(lg.path))
+    # THE FLUSH IS THE POINT OF THE WHOLE FILE, so it happens before the lsn is
+    # handed back and before any caller can take Ok as licence to touch the store.
+    hit := _sync(lg.path) or_return
+    # And on the append that CREATED the log, the parent directory too: the file's
+    # bytes and the file's NAME are flushed by different calls, so a log synced
+    # without its parent can come back from a power cut as a log that does not
+    # exist. Only on create -- later appends change no directory entry, so paying
+    # this per record would be cost with nothing bought.
+    if created:
+        dhit := _sync(path.dir(lg.path)) or_return
     lg.end += len(frame)
     lg.next_lsn += 1
     return Ok(lg.next_lsn)
@@ -266,9 +324,20 @@ fn checkpoint(db: inout store.Db, lg: inout Log) -> Result(bool, WalErr):
     match store.flush(db):
         Ok(x): pass
         Err(e): return Err(Storage(e))
+    # STEP 1 IS NOT FINISHED UNTIL THE STORE IS ON THE DEVICE. The rewind below
+    # destroys the only other copy of these rows, and it was already guarded by
+    # flush's result; a flush that returned Ok with the bytes still in RAM makes
+    # that guard true and useless against a power cut. So the guard now waits for
+    # the device, and the store file's directory entry is flushed with it because
+    # this is the write that may have created it.
+    shit := _sync(db.path) or_return
+    sdhit := _sync(path.dir(db.path)) or_return
     match io.write_bytes(lg.path, _header(lg.next_lsn)):
         Ok(x): pass
         Err(e): return Err(NotWritten(lg.path))
+    # And the rewound header itself, so a crash cannot resurrect the old records
+    # from a stale page and replay them over a store that already has them.
+    lhit := _sync(lg.path) or_return
     lg.base_lsn = lg.next_lsn
     lg.end = HDR
     return Ok(true)
@@ -337,6 +406,10 @@ fn open_db(store_path: string) -> Result(Session, WalErr):
         match io.write_bytes(lp, out):
             Ok(x): pass
             Err(e): return Err(NotWritten(lp))
+        # Flushed like any other log write: this one SHORTENS the file, and a
+        # truncation left in the page cache can come back as the torn tail it
+        # just removed.
+        thit := _sync(lp) or_return
         lg.end = len(out)
 
     return Ok(Session(db, lg, replayed, sc.torn, rebuilt))

@@ -472,8 +472,10 @@ kv-check: tychoc
 # replay to every COMPLETED row and no partial one. Replay is asserted
 # idempotent (a restored pre-checkpoint log must not double-apply) and a torn
 # trailing record must be discarded rather than replayed, in both the
-# zero-filled and the byte-flipped shape. Durability against power loss is NOT
-# claimed anywhere: core:io has no fsync.
+# zero-filled and the byte-flipped shape. Power-loss durability is now REQUESTED
+# -- wal.ty calls io.sync (added 2026-08-12) on the log, the store and the parent
+# directory -- but it is not asserted here and cannot be: a gate can kill a
+# process, not cut the power. See the note in tools/tycho-db/run.sh.
 #
 # The other half is the refusals: all sixteen named variants of store.StoreErr,
 # exec.ExecErr and wal.WalErr must exit non-zero with THEIR OWN message,
