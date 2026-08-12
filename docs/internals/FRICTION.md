@@ -2357,6 +2357,21 @@ above — so it is the supported route, and `docs/spec/14-ffi.md` §24.1 now say
 all of this under "Interior `NUL`s", covering the scalar parameter, the array
 element and the return.
 
+**The verdict holds for the boundary and does NOT hold for a validator built on
+it — `core:regex` was fixed 2026-08-12, not documented.** All eight subject-taking
+entry points answered "no match" for a payload sitting behind a NUL
+(`find` = -1 where the same-run NUL-free control gave 4), which is a wrong answer
+to a security question, not a stated limit. The fix is the shape this entry says
+is supported: the subject crosses as `(pointer, length)` and `REG_STARTEND`
+bounds `regexec` by it (`corelib/regex/regex_shim.c@rx_exec`); where that
+extension is absent the shim dies loudly rather than truncating. The cost
+objection above does not transfer — the length is `len(s)`, an O(1) header read,
+not a `memchr`, and 200,000 calls measured 57-60 ms after against 59-62 ms
+before. A NUL-bearing *pattern* is refused instead (`regcomp` has no
+length-bearing form anywhere). **The general rule: a package whose answer is a
+yes/no about untrusted bytes cannot inherit "documented, not enforced" from the
+boundary it is built on.**
+
 ### What did not go wrong, which is also data
 
 - **`is` is single-eval and short-circuits correctly.** `make(&c) is VB` on a

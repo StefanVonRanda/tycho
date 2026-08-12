@@ -491,7 +491,7 @@ site is either implemented or written down as a refusal with its cost.
   `scripts/entrypoints.sh` deliberately NOT run: nothing under `src/`,
   `runtime/` or `tests/` changed, so neither can redden for this.
 
-- [ ] **Phase 17 — `core:regex` silently fails to match past an interior NUL in
+- [x] **Phase 17 — `core:regex` silently fails to match past an interior NUL in
       the subject** *(discovered by Phase 9)*
 
   Phase 9 documented the FFI boundary as a stated limit, which is right for the
@@ -519,6 +519,95 @@ site is either implemented or written down as a refusal with its cost.
   doc gates. Audit the other `string`-taking externs in the same pass —
   `corelib/strings/strings.ty:207` `strx_parse_double` is the same shape at lower
   severity.
+
+  **DONE 2026-08-12. Fixed properly (option a), not documented away.** The
+  subject now crosses as `(pointer, length)` and `REG_STARTEND` bounds `regexec`
+  by that length, so a NUL is matched as an ordinary byte
+  (`corelib/regex/regex_shim.c@rx_exec`). Every subject-taking wrapper passes
+  `len(s)` (`corelib/regex/regex.ty@is_match` and its siblings).
+
+  **Reproduced first, one program, one run, `SECRET` as the pattern:**
+
+  ```
+  BEFORE                              AFTER
+  len(nul)      = 10                  len(nul)      = 10
+  find nul      = -1                  find nul      = 4
+  find_end nul  = -1                  find_end nul  = 10
+  is_match nul  = false               is_match nul  = true
+  matched nul   = ''                  matched nul   = 'SECRET'
+  gstart nul    = -1                  gstart nul    = 4
+  gend nul      = -1                  gend nul      = 10
+  group nul     = ''                  group nul     = 'SECRET'
+  groups nul n  = 0                   groups nul n  = 1
+  find ctl      = 4                   find ctl      = 4     <- control, no NUL
+  is_match ctl  = true                is_match ctl  = true
+  pattern len   = 5                   pattern len   = 5
+  pat ok        = true                pat ok        = false <- pattern refused
+  pat match 'a' = true                pat match 'a' = false
+  ```
+
+  **Entry-point audit: all eight were affected, not one.** `is_match`, `find`,
+  `find_end`, `matched`, `group`, `groups`, `group_start`, `group_end` all reach
+  `regexec` through the subject, and the BEFORE column shows every one of them
+  answering "no match" on bytes that are plainly present. The **pattern** has the
+  same hazard in the other direction: `"a" + chr(0) + "zzz"` compiled to `a`, a
+  *looser* regex than was written, and matched `"a"`. `regcomp` has no
+  length-bearing form on any platform, so the pattern is **refused** —
+  `ok()` is false, the existing bad-pattern channel
+  (`corelib/regex/regex_shim.c@rx_compile`).
+
+  **Portability, measured not assumed.** `REG_STARTEND` is a BSD/glibc extension,
+  not base POSIX; musl lacks it. It needs no feature-test macro here —
+  `gcc -std=c11 -Wall -Wextra -c corelib/regex/regex_shim.c` compiles clean.
+  `make shim-check` **skips this shim** (`skip corelib/regex/regex_shim.c
+  (missing dependency: _WIN32: -lpcre2-posix)`), so that standalone compile is
+  the substitute, not a supplement. Where the macro is absent the fallback does
+  **not** silently truncate: it `memchr`s the subject and dies loudly. Proved by
+  compiling the shim with `#undef REG_STARTEND` in front of it:
+
+  ```
+  clean find = 4
+  tycho: core:regex: subject holds an interior NUL and this platform's
+  <regex.h> has no REG_STARTEND; refusing to match a truncated subject
+  exit=1
+  ```
+
+  **Cost: none measurable.** 200,000 `is_match` calls over a 65-byte subject,
+  three runs each, same box, same program: BEFORE 62 / 60 / 59 ms, AFTER 57 / 60
+  / 58 ms — ~0.3 µs per call either way. The length is an O(1) header read
+  (`runtime/tycho_rt.c@tycho_str_len`), not a scan, so Phase 9's 5.5 µs
+  `memchr`-guard objection does not apply to this shape at all.
+
+  **Fixture + negative control.** `corelib/test/regex/main.ty` gained a
+  NUL-bearing subject, its NUL-free control and the pattern rejection; the golden
+  `corelib/test/regex.out` gained exactly 3 lines and its 7 pre-existing lines are
+  byte-identical, which is the "NUL-free behaviour did not move" control at golden
+  level. Breaking the fix (`REG_STARTEND` → `0` in `rx_exec`) reddens it:
+
+  ```
+  8c8
+  < nul len=10 find=-1 end=-1 hit=false mlen=0 g2= ng=0 gs=-1
+  ---
+  > nul len=10 find=4 end=10 hit=true mlen=6 g2=RET ng=3 gs=4
+  ```
+
+  **Exposed callers: none.** `grep -rn 'regex\.' --include='*.ty' .` names three
+  files and no more — the package itself, `corelib/test/regex/main.ty` and
+  `examples/corelib/regex/main.ty`. No tool, server or example validates untrusted
+  input with `core:regex`, so nothing in this tree was evadable in practice; the
+  defect was in the surface a user would reach for.
+
+  **The audited sibling is already safe.** `strings.parse_float` scans in Tycho
+  before it calls `strx_parse_double` (`corelib/strings/strings.ty@parse_float`),
+  so a NUL-bearing input fails closed rather than parsing a prefix — measured,
+  `parse_float("1" + chr(0) + "2")` returns `Err` while `"12"` gives `12.0`. No
+  follow-up phase is owed for it.
+
+  **Gates.** `make corelib` → `all green (46 ok, tychoc matches goldens)`, no
+  skip. `make corelib-examples` → `all green (37 ok)`. `make shim-check` →
+  `9 ok, 5 skipped, 0 failed` (regex among the skips, hence the standalone
+  compile above). `make test` deliberately NOT run: nothing under `src/`,
+  `runtime/` or `tests/` changed, so it cannot redden for this.
 
 - [x] **Phase 10 — a user's enum variant name leaked into a corelib package and
       broke it** *(discovered by Phase 7)*

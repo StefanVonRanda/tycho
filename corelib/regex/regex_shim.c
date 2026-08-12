@@ -17,6 +17,8 @@
 #include <regex.h>
 #endif
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <stdint.h>
 /* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
  * emitted program; this shim is a separate translation unit, so it defines the
@@ -26,28 +28,56 @@
 typedef int64_t tycho_int;
 #endif
 
-void *rx_compile(const char *pattern) {        /* compile ERE; NULL on a bad pattern */
+/* Every subject crosses as (s, n) -- n is Tycho's len(), an O(1) header read --
+ * because a Tycho string may hold an interior NUL and a bare `char*` ends at it.
+ * REG_STARTEND (BSD, glibc, pcre2-posix) bounds the subject by length, so the
+ * NUL is matched as an ordinary byte. It is NOT base POSIX: where it is absent a
+ * NUL-bearing subject DIES here rather than being matched up to the NUL and
+ * reported as "no match" -- a wrong answer to a validation question is worse
+ * than a loud one. NUL-free subjects behave identically either way.
+ * Returns 0 on a match, non-zero otherwise (regexec's own convention). */
+static int rx_exec(void *re, const char *s, tycho_int n, size_t nm, regmatch_t *m) {
+    if (!re || n < 0) return -1;
+#ifdef REG_STARTEND
+    m[0].rm_so = 0;
+    m[0].rm_eo = (regoff_t)n;
+    return regexec((regex_t *)re, s, nm, m, REG_STARTEND);
+#else
+    if (memchr(s, '\0', (size_t)n)) {
+        fprintf(stderr, "tycho: core:regex: subject holds an interior NUL and this "
+                        "platform's <regex.h> has no REG_STARTEND; refusing to match a "
+                        "truncated subject\n");
+        exit(1);
+    }
+    return regexec((regex_t *)re, s, nm, m, 0);
+#endif
+}
+
+/* regcomp has no length-bearing form anywhere, so a NUL-bearing pattern is
+ * rejected instead: NULL is the existing "bad pattern" channel (ok() is false). */
+void *rx_compile(const char *pattern, tycho_int n) {
+    if (n < 0 || memchr(pattern, '\0', (size_t)n)) return NULL;
     regex_t *re = (regex_t *)malloc(sizeof(regex_t));
     if (!re) return NULL;
     if (regcomp(re, pattern, REG_EXTENDED) != 0) { free(re); return NULL; }
     return re;
 }
 
-tycho_int rx_is_match(void *re, const char *s) {    /* 1 if re matches anywhere in s, else 0 */
-    if (!re) return 0;
-    return regexec((regex_t *)re, s, 0, NULL, 0) == 0 ? 1 : 0;
+tycho_int rx_is_match(void *re, const char *s, tycho_int n) {  /* 1 if re matches anywhere in s */
+    regmatch_t m[1];
+    return rx_exec(re, s, n, 1, m) == 0 ? 1 : 0;
 }
 
-tycho_int rx_find(void *re, const char *s) {        /* byte offset of the first match, or -1 */
-    regmatch_t m;
-    if (!re || regexec((regex_t *)re, s, 1, &m, 0) != 0) return -1;
-    return (tycho_int)m.rm_so;
+tycho_int rx_find(void *re, const char *s, tycho_int n) {      /* first match start offset, or -1 */
+    regmatch_t m[1];
+    if (rx_exec(re, s, n, 1, m) != 0) return -1;
+    return (tycho_int)m[0].rm_so;
 }
 
-tycho_int rx_find_end(void *re, const char *s) {    /* one-past-end offset of the first match, or -1 */
-    regmatch_t m;
-    if (!re || regexec((regex_t *)re, s, 1, &m, 0) != 0) return -1;
-    return (tycho_int)m.rm_eo;
+tycho_int rx_find_end(void *re, const char *s, tycho_int n) {  /* first match end offset, or -1 */
+    regmatch_t m[1];
+    if (rx_exec(re, s, n, 1, m) != 0) return -1;
+    return (tycho_int)m[0].rm_eo;
 }
 
 tycho_int rx_ngroups(void *re) {                     /* # of capturing groups (parenthesized subexprs) */
@@ -57,20 +87,20 @@ tycho_int rx_ngroups(void *re) {                     /* # of capturing groups (p
 /* Offsets of capture group n (0 = the whole match) in the FIRST match. A
  * non-participating group and a non-match both yield -1 (rm_so == -1). Stateless
  * like rx_find: one regexec per call, pmatch sized to n+1. */
-static tycho_int rx_group(void *re, const char *s, tycho_int n, int want_end) {
+static tycho_int rx_group(void *re, const char *s, tycho_int slen, tycho_int n, int want_end) {
     if (!re || n < 0) return -1;
     size_t nm = (size_t)n + 1;
     regmatch_t *m = (regmatch_t *)malloc(nm * sizeof(regmatch_t));
     if (!m) return -1;                          /* fail closed on OOM */
     tycho_int r = -1;
-    if (regexec((regex_t *)re, s, nm, m, 0) == 0)
+    if (rx_exec(re, s, slen, nm, m) == 0)
         r = want_end ? (tycho_int)m[n].rm_eo : (tycho_int)m[n].rm_so;
     free(m);
     return r;
 }
 
-tycho_int rx_group_start(void *re, const char *s, tycho_int n) { return rx_group(re, s, n, 0); }
-tycho_int rx_group_end  (void *re, const char *s, tycho_int n) { return rx_group(re, s, n, 1); }
+tycho_int rx_group_start(void *re, const char *s, tycho_int slen, tycho_int n) { return rx_group(re, s, slen, n, 0); }
+tycho_int rx_group_end  (void *re, const char *s, tycho_int slen, tycho_int n) { return rx_group(re, s, slen, n, 1); }
 
 void rx_free(void *re) {                        /* free a compiled pattern */
     if (re) { regfree((regex_t *)re); free(re); }

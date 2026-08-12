@@ -44,3 +44,23 @@ fn main():
     # a bad pattern compiles to a null handle
     bad := regex.compile("[")
     println(f"bad_ok={regex.ok(bad)}")
+    # an interior NUL is a BYTE of the subject, not its end: a payload hidden
+    # behind one must still be found, and the NUL-free control must not move
+    re5 := regex.compile("(SEC)(RET)")
+    nul := "abc" + chr(0) + "SECRET"
+    ctl := "abcXSECRET"
+    n1 := regex.find(re5, nul)
+    n2 := regex.find_end(re5, nul)
+    n3 := regex.is_match(re5, nul)
+    n4 := len(regex.matched(re5, nul))
+    n5 := regex.group(re5, nul, 2)
+    n6 := len(regex.groups(re5, nul))
+    n7 := regex.group_start(re5, nul, 1)
+    println(f"nul len={len(nul)} find={n1} end={n2} hit={n3} mlen={n4} g2={n5} ng={n6} gs={n7}")
+    c1 := regex.find(re5, ctl)
+    c2 := regex.is_match(re5, ctl)
+    println(f"ctl find={c1} hit={c2}")
+    regex.release(re5)
+    # a NUL-bearing PATTERN is rejected, not compiled down to its prefix
+    pnul := regex.compile("a" + chr(0) + "zzz")
+    println(f"pat_nul_ok={regex.ok(pnul)}")

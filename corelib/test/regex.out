@@ -5,3 +5,6 @@ grp n=3 start=3 1=10 2=Oct 3=2000
 grp_all=4 10/Oct/2000
 grp_np=[] grp_nm=[] grp_ne=0
 bad_ok=false
+nul len=10 find=4 end=10 hit=true mlen=6 g2=RET ng=3 gs=4
+ctl find=4 hit=true
+pat_nul_ok=false
