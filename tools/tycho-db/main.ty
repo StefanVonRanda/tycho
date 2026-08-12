@@ -5,24 +5,52 @@ import "core:io"
 import "core:strings"
 import "sql"
 import "store"
+import "exec"
 
 # tycho-db -- a small relational database written in Tycho.
 #
-# This entry point is deliberately thin: it reads statements and hands them to
-# the layers. Today the SQL front end parses them and the store holds the
-# tables; nothing executes a statement against the store yet.
+# This entry point is deliberately thin: it parses a line with sql, runs it
+# with exec against the store, and prints what came back. Every decision
+# belongs to a layer below.
 
 fn nop():
     return
 
-fn run_line(src: string) -> int:
+fn show_rows(r: exec.Rows):
+    head := ""
+    for k := 0; k < len(r.cols); k += 1:
+        if k > 0:
+            head += " | "
+        head += r.cols[k]
+    println("  cols  " + head)
+    for i := 0; i < len(r.rows); i += 1:
+        line := ""
+        for k := 0; k < len(r.rows[i]); k += 1:
+            if k > 0:
+                line += " | "
+            line += store.val_str(r.rows[i][k])
+        println("  row   " + line)
+    println("  ok    " + str(len(r.rows)) + " row(s)")
+
+fn show(o: exec.Outcome):
+    match o:
+        exec.Created(n): println("  ok    created " + n)
+        exec.Inserted(n): println("  ok    1 row into " + n)
+        exec.Selected(rs): show_rows(rs)
+
+fn run_line(db: inout store.Db, src: string) -> int:
     trimmed := strings.trim(src)
     if trimmed == "" or strings.starts_with(trimmed, "--"):
         return 0
     match sql.parse(trimmed):
         Ok(st):
-            println("  ok    " + sql.show(st))
-            return 0
+            match exec.run(&db, st):
+                Ok(o):
+                    show(o)
+                    return 0
+                Err(e):
+                    println("  ERR   " + exec.err_str(e))
+                    return 1
         Err(e):
             println("  ERR   " + sql.err_str(e))
             return 1
@@ -33,13 +61,13 @@ fn run_script(script: string, db: inout store.Db) -> Result(void, string):
     for line in io.read_lines(script):
         if strings.trim(line) != "":
             println(line)
-        bad += run_line(line)
+        bad += run_line(&db, line)
 
     match store.flush(db):
         Ok(x): nop()
         Err(e): return Err(store.err_str(e))
     if bad > 0:
-        return Err(str(bad) + " statement(s) did not parse")
+        return Err(str(bad) + " statement(s) failed")
     return Ok()
 
 fn main() -> Result(void, string):

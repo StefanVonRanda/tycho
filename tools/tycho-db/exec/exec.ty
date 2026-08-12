@@ -1,0 +1,173 @@
+package exec
+
+import "../sql"
+import "../store"
+
+# The executor: a sql.Stmt run against a store.Db. Every operator is a
+# sequential scan over the rows the store already holds -- no plan, no index,
+# no join. Storage errors travel up wrapped, so a caller sees one cause enum.
+
+enum ExecErr:
+    Storage(store.StoreErr)
+    NoColumn(string, string)
+    Uncomparable(string, string)
+    NotAValue(string)
+    NotAPredicate(string)
+
+struct Rows:
+    cols: [string]
+    rows: [[store.Val]]
+
+enum Outcome:
+    Created(string)
+    Inserted(string)
+    Selected(Rows)
+
+fn err_str(e: ExecErr) -> string:
+    match e:
+        Storage(s): return store.err_str(s)
+        NoColumn(t, c): return t + " has no column " + c
+        Uncomparable(a, b): return "cannot compare " + a + " with " + b
+        NotAValue(s): return "not a value: " + s
+        NotAPredicate(s): return "not a predicate: " + s
+
+# ---- helpers --------------------------------------------------------------
+
+fn _col_index(cols: [store.Col], name: string) -> int:
+    for i := 0; i < len(cols); i += 1:
+        if cols[i].name == name:
+            return i
+    return -1
+
+fn _lit(e: sql.Expr) -> Result(store.Val, ExecErr):
+    match e:
+        sql.LitInt(n): return Ok(store.VInt(n))
+        sql.LitStr(s): return Ok(store.VText(s))
+        _: return Err(NotAValue(sql.show_expr(e)))
+
+fn _eval(tbl: string, cols: [store.Col], row: [store.Val], e: sql.Expr) -> Result(store.Val, ExecErr):
+    match e:
+        sql.Col(c):
+            j := _col_index(cols, c)
+            if j < 0:
+                return Err(NoColumn(tbl, c))
+            return Ok(row[j])
+        _: return _lit(e)
+
+# -1, 0, 1 -- only two values of the same type are ordered
+fn _cmp(a: store.Val, b: store.Val) -> Result(int, ExecErr):
+    at := store.val_ty(a)
+    bt := store.val_ty(b)
+    if at != bt:
+        return Err(Uncomparable(at, bt))
+    match a:
+        store.VInt(x):
+            match b:
+                store.VInt(y):
+                    if x < y:
+                        return Ok(-1)
+                    if x > y:
+                        return Ok(1)
+                    return Ok(0)
+                store.VText(y): return Err(Uncomparable(at, bt))
+        store.VText(x):
+            match b:
+                store.VText(y):
+                    if x < y:
+                        return Ok(-1)
+                    if x > y:
+                        return Ok(1)
+                    return Ok(0)
+                store.VInt(y): return Err(Uncomparable(at, bt))
+
+fn _holds(op: string, c: int) -> bool:
+    if op == "=":
+        return c == 0
+    if op == "!=":
+        return c != 0
+    if op == "<":
+        return c < 0
+    if op == "<=":
+        return c <= 0
+    if op == ">":
+        return c > 0
+    return c >= 0
+
+fn _pred(tbl: string, cols: [store.Col], row: [store.Val], e: sql.Expr) -> Result(bool, ExecErr):
+    match e:
+        sql.And(l, r):
+            left := _pred(tbl, cols, row, l) or_return
+            if not left:
+                return Ok(false)
+            return _pred(tbl, cols, row, r)
+        sql.Cmp(op, l, r):
+            lv := _eval(tbl, cols, row, l) or_return
+            rv := _eval(tbl, cols, row, r) or_return
+            c := _cmp(lv, rv) or_return
+            return Ok(_holds(op, c))
+        _: return Err(NotAPredicate(sql.show_expr(e)))
+
+# ---- the statements -------------------------------------------------------
+
+fn _create(db: inout store.Db, name: string, defs: [sql.ColDef]) -> Result(Outcome, ExecErr):
+    cols: [store.Col] = []
+    for k := 0; k < len(defs); k += 1:
+        t := store.ColInt
+        if sql.ty_name(defs[k].ty) == "text":
+            t = store.ColText
+        push(cols, store.Col(defs[k].name, t))
+    match store.create_table(&db, name, cols):
+        Ok(x): return Ok(Created(name))
+        Err(e): return Err(Storage(e))
+
+fn _insert(db: inout store.Db, name: string, exprs: [sql.Expr]) -> Result(Outcome, ExecErr):
+    vals: [store.Val] = []
+    for k := 0; k < len(exprs); k += 1:
+        v := _lit(exprs[k]) or_return
+        push(vals, v)
+    match store.insert(&db, name, vals):
+        Ok(x): return Ok(Inserted(name))
+        Err(e): return Err(Storage(e))
+
+fn _select(db: store.Db, want: [string], tbl: string, w: Option(sql.Expr)) -> Result(Outcome, ExecErr):
+    cols: [store.Col] = []
+    match store.columns(db, tbl):
+        Ok(cs): cols = cs
+        Err(e): return Err(Storage(e))
+    all: [[store.Val]] = []
+    match store.scan(db, tbl):
+        Ok(rs): all = rs
+        Err(e): return Err(Storage(e))
+
+    names: [string] = []
+    idx: [int] = []
+    if len(want) == 0:
+        for k := 0; k < len(cols); k += 1:
+            push(names, cols[k].name)
+            push(idx, k)
+    else:
+        for k := 0; k < len(want); k += 1:
+            j := _col_index(cols, want[k])
+            if j < 0:
+                return Err(NoColumn(tbl, want[k]))
+            push(names, want[k])
+            push(idx, j)
+
+    out: [[store.Val]] = []
+    for r := 0; r < len(all); r += 1:
+        keep := true
+        match w:
+            Some(p): keep = _pred(tbl, cols, all[r], p) or_return
+            None: keep = true
+        if keep:
+            proj: [store.Val] = []
+            for k := 0; k < len(idx); k += 1:
+                push(proj, all[r][idx[k]])
+            push(out, proj)
+    return Ok(Selected(Rows(names, out)))
+
+fn run(db: inout store.Db, st: sql.Stmt) -> Result(Outcome, ExecErr):
+    match st:
+        sql.Create(name, defs): return _create(&db, name, defs)
+        sql.Insert(name, exprs): return _insert(&db, name, exprs)
+        sql.Select(want, tbl, w): return _select(db, want, tbl, w)
