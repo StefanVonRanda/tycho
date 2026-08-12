@@ -28,9 +28,11 @@ outside the list below** is rejected at the boundary:
   matching fixed-width C type so the call matches the C ABI. An argument of a
   different type is a type error — use the `to_uN` / `to_iN` / `to_f32` conversion
   to produce the sized value.
-- **`string`** — passed as a C `char*`. A `string` **returned** from C is copied
-  into the caller's storage at the call site, so Tycho never retains a pointer
-  into C memory. A nullable C return is declared `-> Option(string)`.
+- **`string`** — passed as a C `char*`, with no length alongside it. A `string`
+  **returned** from C is copied into the caller's storage at the call site, so
+  Tycho never retains a pointer into C memory. A nullable C return is declared
+  `-> Option(string)`. A `string` holding an interior `NUL` does **not** survive
+  the round trip in either direction — see "Interior `NUL`s" below.
 - **`bytes`** — crosses as a `(pointer, length)` pair, preserving interior `NUL`s;
   a `bytes`/array returned from C is copied into an arena and the C buffer freed.
 - **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, long)`
@@ -40,8 +42,11 @@ outside the list below** is rejected at the boundary:
   `(const char *const *, long)` pair, the same `(ptr, len)` convention as
   `[int]`/`[float]` and **not** a `NULL`-terminated `argv`; a callee wanting
   `execv` shape appends its own `NULL`. No marshalling happens: a Tycho string is
-  already a NUL-terminated C `char*`, so the pointer handed over is the array's own
-  element storage. The array is **borrowed for the duration of the call** — the
+  NUL-terminated at its end, so the pointer handed over is the array's own
+  element storage. The `long` counts *pointers*, not bytes, and no per-element
+  length crosses — an element holding an interior `NUL` is therefore read short
+  by the callee (see "Interior `NUL`s" below).
+  The array is **borrowed for the duration of the call** — the
   callee may read the strings while it runs, and **must not retain the pointer, any
   element, or write through either** after returning. Nothing is copied, and nobody
   frees. This contract is **not enforceable by the implementation**; violating it is
@@ -59,6 +64,51 @@ outside the list below** is rejected at the boundary:
 Every value returned from C that carries storage (`string`, `bytes`, an array) is
 **deep-copied into the caller's storage at the call site**; a program never holds
 a live pointer into C-owned memory.
+
+#### Interior `NUL`s: a `string` is truncated at the boundary, silently
+
+A Tycho `string` carries an explicit length and **may hold an interior `0x00`** —
+`to_bytes` on an `[int]` is the documented way to build one
+([§16](16-builtins.md)), and `chr(0)` concatenates like any other byte. A C
+`char*` carries no length: it ends at its first `NUL`. The two disagree, and the
+ABI has nowhere to put the difference.
+
+So wherever a `string` crosses the FFI **as a `char*`**, the bytes at and after
+the first interior `NUL` are invisible to the other side. This is **not
+diagnosed** — there is no error, no truncation warning, and no way to detect it
+after the fact. It applies in every `char*` direction:
+
+- a **scalar `string` parameter** — the callee's `strlen` reports the prefix
+  length, not `len(s)`;
+- **each element of a `[string]` parameter** — the `long` counts pointers, so no
+  element length is available to the callee at all;
+- a **`string` return from C** — the arena copy is `strlen`-bounded
+  (`runtime/tycho_rt.c@tycho_str_from_c`), so a C buffer holding `"h\0i"` becomes
+  a Tycho `string` of length 1.
+
+Given `s := "a" + chr(0) + "c"`, `len(s)` is `3` while a callee declared
+`long f(const char *)` returns `1` for `strlen`. The trailing bytes are still in
+memory and still reachable by index through the borrowed pointer; what is lost is
+the *length*, which is the only thing telling the callee they are there.
+
+**This is a deliberate consequence of the borrow, not a defect to be worked
+around in the callee.** Passing `(ptr, len)` per element would mean marshalling a
+parallel length vector, giving up the "nothing is copied" property that is the
+whole point of the `[string]` contract above; scanning each string for a `NUL`
+before every call would turn an O(1) borrow into an O(total bytes) one, and could
+not cover the return direction at all, since a `char*` out of C offers nothing to
+compare against.
+
+**Use `bytes` for any payload that may hold a `NUL`.** `bytes` crosses as a
+`(pointer, length)` pair in both directions and preserves interior `NUL`s exactly
+— that is what the explicit length is for. Convert with `to_bytes(s)` at the call
+and `to_str(b)` on the way back, both zero-cost reinterprets
+([§16](16-builtins.md)). Reserve a `string` parameter for what C means by a
+string: text that ends at its first `NUL`.
+
+A string *literal* cannot contain a `NUL` — `\0` is not a supported escape and is
+rejected at compile time — so a truncating value always arrives from `chr(0)`,
+from `to_str` over a constructed `bytes`, or from C.
 
 The sized-integer conversions truncate or extend by the C cast (probed on both
 compilers). `to_uN` / `to_iN` narrows a value to the type's low `N` bits; widening

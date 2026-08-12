@@ -430,8 +430,8 @@ site is either implemented or written down as a refusal with its cost.
   package's shape, and the alternative (refuse `void` in `try_map` with a
   message naming `try_each`) is only worth writing once `try_each` exists.
 
-- [ ] **Phase 9 — `docs/spec/14-ffi.md` does not say a `[string]` element is
-      truncated at an embedded NUL** *(discovered by Phase 7)*
+- [x] **Phase 9 — `docs/spec/14-ffi.md` does not say a `string` is truncated at
+      an embedded NUL** *(discovered by Phase 7)*
 
   The spec calls each element "an ordinary NUL-terminated C string" and stops
   there. A Tycho string carries a length and may hold a NUL, so `len(s)` and the
@@ -440,6 +440,85 @@ site is either implemented or written down as a refusal with its cost.
   copies nothing, which is the point) and `bytes` is the tool for a NUL-bearing
   payload; what is missing is the sentence saying so. Doc-only, so the two doc
   gates and nothing else.
+
+  **The brief's scoping was wrong, and the probe is what caught it.** One program
+  under `--shim`, a C file reporting `strlen`:
+
+  ```
+  A [string] C strlen sum = 4      A tycho len sum = 6
+  A elem[0] byte 2 via C  = 99     ('c' is there; only the length is lost)
+  B scalar C strlen       = 1      B scalar tycho len = 3
+  C to_str C strlen       = 1      C to_str len tycho = 3
+  D bytes len C sees      = 3      D bytes byte 1 = 0     (bytes: INTACT)
+  ```
+
+  Line B is the finding: a **scalar `string` parameter has the identical
+  hazard**, with no array involved. So does the **return** direction — a C
+  function returning a static `{'h',0,'i',0}` gives a Tycho string of `len` 1,
+  because the arena copy is `strlen`-bounded
+  (`runtime/tycho_rt.c@tycho_str_from_c`, whose own comment already said so).
+  This is the whole `char*` boundary in both directions, not a `[string]` bug;
+  the spec paragraph is written to that scope. A literal cannot express it —
+  `"a\0c"` is rejected, "unsupported escape \0" — so the value always comes from
+  `chr(0)`, from `to_str` over a constructed `bytes`, or from C.
+
+  **Verdict: (a) alone, and (c) rejected on the measurement**, against the
+  brief's expectation of "(a)+(c) if the scan proves cheap". It does not. The
+  borrow measured **0.0 ns/call** — nothing is copied, which is its whole point —
+  and a `memchr` guard over a 2000×64-byte array measured **5.5 µs/call**
+  (a scratch `memchr` benchmark, `cc -O2`, 200k iterations). That is not a percentage
+  overhead on the call, it is the difference between O(1) and O(total bytes) on
+  the one property §24.1 sells. It also covers only the outbound half: a `char*`
+  out of C carries no length, so there is nothing a return-side check could
+  compare against. (b) is impossible as the brief predicted — the content is a
+  runtime value, and refusing the *type* would ban the FFI's commonest parameter.
+  (d) gives up the same no-copy property and breaks every existing callee for a
+  hazard whose escape hatch already exists and works.
+
+  **`bytes` is that escape hatch, and it was checked, not assumed**: it crosses
+  as `(ptr, len)` in both directions and preserved the interior NUL exactly
+  (C saw length 3, byte 1 = 0, byte 2 = 105).
+
+  **Changed**: `docs/spec/14-ffi.md` §24.1 — the `string` bullet, the `[string]`
+  bullet's misleading "a Tycho string is already a NUL-terminated C `char*`", and
+  a new "Interior `NUL`s" subsection stating what happens, why, what it costs to
+  prevent, and that `bytes` is the supported route. No fixture: documentation
+  only, so there is nothing to redden.
+
+  **Gates** — `python3 scripts/check_citations.py` ok; `make check-links` ok
+  (119 markdown files, no dead relative links); `sh scripts/spec_check.sh`
+  exit 0, 11 runnable examples all pass; `make ffi` green. `make test` and
+  `scripts/entrypoints.sh` deliberately NOT run: nothing under `src/`,
+  `runtime/` or `tests/` changed, so neither can redden for this.
+
+- [ ] **Phase 17 — `core:regex` silently fails to match past an interior NUL in
+      the subject** *(discovered by Phase 9)*
+
+  Phase 9 documented the FFI boundary as a stated limit, which is right for the
+  boundary itself. But `corelib/regex/regex.ty:40` takes the **subject** as a
+  `string` and hands it to `rx_find` as a `char*` (`corelib/regex/regex.ty:24`),
+  and a regex subject is ordinary user data — unlike a hostname
+  (`corelib/net/net.ty:94`) or a hex digest (`corelib/crypto/crypto.ty:35`),
+  which are NUL-free by construction. So a subject with an embedded NUL is
+  matched only up to it, and the caller gets "no match" rather than an error:
+
+  ```
+  len(subject)   = 10      # "abc" + chr(0) + "SECRET"
+  find SECRET    = -1      # the bytes are plainly there
+  is_match       = false
+  control(no NUL)= 4       # "abcXSECRET" -- same shape, matches
+  ```
+
+  The control is in the same run and rules out the pattern being at fault. This
+  is the `core:compress`/`core:image` class the owner has twice removed: plausible
+  data instead of a failure, and here it is filter-evasion shaped — a NUL-prefixed
+  payload passes a regex check that should have caught it. Not absorbed into
+  Phase 9, which was scoped to the spec: this is a corelib behaviour decision
+  (reject a NUL-bearing subject, or carry the length through to a length-aware
+  matcher), and it needs `make corelib` plus a `corelib/test/regex` case, not the
+  doc gates. Audit the other `string`-taking externs in the same pass —
+  `corelib/strings/strings.ty:207` `strx_parse_double` is the same shape at lower
+  severity.
 
 - [x] **Phase 10 — a user's enum variant name leaked into a corelib package and
       broke it** *(discovered by Phase 7)*

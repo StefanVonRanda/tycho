@@ -2313,24 +2313,49 @@ is no `try_each`". The workaround is a hand-written loop with `or_return`, three
 lines, which is what `try_map` existed to remove. **Not fixed here: adding
 `try_each` is a design decision about the package's shape, not a defect.**
 
-### 9. `[string]` across the FFI truncates an element at its first NUL, silently
+### 9. A `string` across the FFI truncates at its first NUL, silently
 
-A Tycho string carries a length and may hold a NUL; the `(const char *const *,
-long)` ABI carries a count of pointers and nothing per element. So the callee's
-`strlen` and Tycho's `len` disagree, with no diagnostic:
+> **Scoped wrong when filed, and fixed 2026-08-12.** This was entered as a
+> `[string]` defect. It is not: the **scalar `string` parameter and the `string`
+> return have the identical hazard**, so it is the whole `char*` boundary, in
+> both directions. The narrow framing would have produced a narrow fix.
+
+A Tycho string carries a length and may hold a NUL; a C `char*` carries no length
+and ends at its first NUL. Nothing in the ABI can hold the difference. Probed on
+one program (`--shim` over a C file reporting `strlen`):
 
 ```
-ns := ["a" + chr(0) + "c", "", "ee" + chr(200)]
-println("nul lensum=" + str(p_lensum(ns)))      # 4  -- C sees 1 + 0 + 3
-println("nul len(tycho)=" + str(len(ns[0])))    # 3  -- Tycho sees "a\0c"
+A [string] C strlen sum = 4      # ["a\0c", "", "ee\xc8"] -- C sees 1 + 0 + 3
+A tycho len sum         = 6      # Tycho sees 3 + 0 + 3
+A elem[0] byte 2 via C  = 99     # 'c' IS there; only the length is lost
+B scalar C strlen       = 1      # the SAME hazard without an array in sight
+B scalar tycho len      = 3
+C to_str len tycho      = 3      # to_str(to_bytes([104,0,105]))
+C to_str C strlen       = 1
+D bytes len C sees      = 3      # bytes crosses as (ptr,len) -- INTACT
+D bytes byte 1          = 0
 ```
 
-This is inherent to the ABI that was chosen, and the alternative (marshalling a
-length array) would give up the "nothing is copied" property that is the whole
-point of the borrow. `bytes` already crosses as `(ptr, len)` and is the right
-tool for a NUL-bearing payload. **Recorded, not fixed**: the gap is that
-`docs/spec/14-ffi.md` describes the element as "an ordinary NUL-terminated C
-string" without saying that a Tycho string which is not one is silently cut.
+The **return** direction truncates too: a C function handing back a static
+`{'h',0,'i',0}` yields a Tycho string of `len` 1, because the arena copy is
+`strlen`-bounded (`runtime/tycho_rt.c@tycho_str_from_c`, whose own comment
+already said so). A string *literal* cannot carry a NUL — `\0` is rejected as an
+unsupported escape — so the value always arrives from `chr(0)`, from `to_str`
+over a constructed `bytes`, or from C.
+
+**Verdict: documented, not enforced.** Refusing at compile time is impossible
+(the content is a runtime value; refusing the *type* would ban the FFI's commonest
+parameter). Refusing at run time was measured and rejected: the borrow costs
+**0.0 ns** — nothing is copied, which is its entire point — and a `memchr` guard
+over a 2000×64-byte array costs **5.5 µs**, turning an O(1) borrow into an
+O(total bytes) one, while covering only the outbound half; a `char*` out of C
+offers nothing to compare against. A parallel length vector gives up the same
+property and breaks every existing callee.
+
+`bytes` crosses as `(ptr, len)` and preserves interior NULs exactly — verified
+above — so it is the supported route, and `docs/spec/14-ffi.md` §24.1 now says
+all of this under "Interior `NUL`s", covering the scalar parameter, the array
+element and the return.
 
 ### What did not go wrong, which is also data
 
