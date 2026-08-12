@@ -97,15 +97,15 @@ site is either implemented or written down as a refusal with its cost.
     instantiation site reach the diagnostic — answered yes from source, and
     narrowly. `instantiate_generic` already receives the call `Expr *e` and
     already reports at `e->line` for three other refusals
-    (`src/tychoc.c:8454`, `:8461`, `:8483`), and while it runs, `g_srcname` /
+    (`src/tychoc.c:8460`, `:8467`, `:8489`), and while it runs, `g_srcname` /
     `g_src` still hold the CALLER's file. So the call site was already in hand at
     the one place the `GInst` is built; nothing needed threading through.
   - Cost, measured rather than estimated: **+7 net lines**
     (`git diff --numstat src/tychoc.c` → `45 38`), and four of the five edit
     sites are line-neutral in-place rewrites —
     `src/tychoc.c@GInst` (three fields), the `GInst gi;` construction,
-    and gen_program's instance loop set/clear at `src/tychoc.c:12536` and
-    `:12552`. Only the `die_at` region grew, by factoring the snippet printer out
+    and gen_program's instance loop set/clear at `src/tychoc.c:12542` and
+    `:12558`. Only the `die_at` region grew, by factoring the snippet printer out
     as `src/tychoc.c@src_snippet` so the note can reuse it.
   - Extends `0faccaf` rather than undoing it: that commit's `diag_use_proc(p)`
     call is untouched and still decides the ERROR line's file. The note is a
@@ -265,11 +265,11 @@ site is either implemented or written down as a refusal with its cost.
   (`runtime/tycho_rt.c@stats_dump`, cited as `:416`), `arena_recycle` (`:548` →
   the body of `block_get`), `TYCHO_BLOCK` (`:466` → `:521`), `g_out`
   (`corelib/crypto/crypto_shim.c:43@g_out`, cited as `:35` and twice as `:36`),
-  pop-on-empty (line 12121 → `src/tychoc.c:13010@pop`), tuple arity (lines 2018
+  pop-on-empty (line 12121 → `src/tychoc.c:13016@pop`), tuple arity (lines 2018
   and 2014 → `src/tychoc.c:5600@least` and `src/tychoc.c:5601@most`), `or_return`
-  in a `parallel for` (line 6639 → `src/tychoc.c:7175@or_return`), the
-  inout-aliasing rule (line 6150 → `src/tychoc.c:6691@alias`), the 16-parameter
-  cap (line 8075 → `src/tychoc.c:8717@parameters`), `split_once` (line 193, an
+  in a `parallel for` (line 6639 → `src/tychoc.c:7181@or_return`), the
+  inout-aliasing rule (line 6150 → `src/tychoc.c:6697@alias`), the 16-parameter
+  cap (line 8075 → `src/tychoc.c:8723@parameters`), `split_once` (line 193, an
   unrelated `enum FloatErr`, → `corelib/strings/strings.ty@split_once`),
   `read_request_capped` (line 242 → `corelib/httpd/httpd.ty@read_request_capped`),
   `netx_peer_addr` (line 204 → `corelib/net/net_shim.c@netx_peer_addr`), the
@@ -314,7 +314,7 @@ site is either implemented or written down as a refusal with its cost.
   - `server/README.md:276` cites `docs/internals/FRICTION.md:601` for a
     `write-failed` log line. The string `write-failed` does not occur anywhere in
     `docs/internals/FRICTION.md`.
-  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9444` as `ncpu()`'s
+  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9450` as `ncpu()`'s
     lowering; that line is `collect_append_ops`.
   - `docs/internals/FRICTION.md:1020` quotes a comment it places at
     `corelib/test/io/main.ty:43`; that line is `fn sl(...)`.
@@ -773,13 +773,13 @@ site is either implemented or written down as a refusal with its cost.
   const then variant then died — it never asked whether the name was a function.
   The `E_IDENT` arm had done exactly that for a mangled `<pkg>name` since
   `tests/pkg/fnval` was written, including `note_fnval`'s `__clo` thunk, which is
-  emitted per name (`src/tychoc.c:13437-13442`) and so needed nothing new. Fix
+  emitted per name (`src/tychoc.c:13443-13448`) and so needed nothing new. Fix
   reuses it verbatim: `sig_find(q)` → function value (node rewritten to `E_IDENT`
   with `op = TK_FN`, `lhs` cleared so a re-resolve is idempotent);
   `generic_find(q)` → refuse, explaining that no instantiation exists and naming
   the lambda workaround; otherwise the miss message, widened to "variant, const
   or function" and given the `suggest_pkg_symbol` did-you-mean the call path
-  (`src/tychoc.c:6126`) already had. 23 insertions, 2 deletions, one arm.
+  (`src/tychoc.c:6132`) already had. 23 insertions, 2 deletions, one arm.
 
   **Spec.** `docs/spec/09-expressions.md` §13.6 excluded `inout` and
   comparability and never excluded a package-qualified name — the gap was
@@ -806,18 +806,59 @@ site is either implemented or written down as a refusal with its cost.
   Citation drift: +21 lines staled 49 refs; `scripts/reanchor_citations.py
   --apply` rewrote 119 files, 0 needing a human, and the checker is green.
 
-- [ ] **Phase 15 — a LOCAL generic function used as a value gives the same class
+- [x] **Phase 15 — a LOCAL generic function used as a value gives the same class
   of false message, in the other arm.** `apply2(mymin, 2, 3)` for a local
   `fn mymin(a: $T, b: $T) -> $T where comparable(T)` dies `unknown variable
   'mymin'; did you mean 'main'?`. The name is not unknown and `main` is not the
   suggestion a reader wants. Cause is the mirror of Phase 14: `resolve_expr`'s
   `E_IDENT` arm tries `sig_find` and, on a miss, goes straight to the
   unknown-variable path without consulting the generics registry, which is where
-  a generic template lives (`src/tychoc.c:6123`). Phase 14 fixed this for the
+  a generic template lives (`src/tychoc.c:6129`). Phase 14 fixed this for the
   package-qualified spelling only, and deliberately did not widen scope. The fix
   is the same two lines — `generic_find` before the `suggest_var` fallback,
   reusing Phase 14's wording — plus a `tests/reject/` fixture with `# expect:`.
   Gate: `make test` (648 at Phase 14, so 649).
+
+  **Done.** The brief's cause was CORRECT, and checked rather than inherited:
+  `resolve_expr_inner`'s `E_IDENT` arm ran `sig_find` → `suggest_var` →
+  `suggest_fn` → die, never touching `generic_find`
+  (`src/tychoc.c:5690-5702@suggest_var`).
+
+  Outcome chosen of the three: **refuse with the reason**, not implement. A
+  generic has no single value form, and the deciding fact is structural rather
+  than a matter of taste — `resolve_expr_inner(Expr *e)` takes no expected type
+  (`src/tychoc.c@resolve_expr_inner`), so at a value site nothing fixes `$T`.
+  Instantiating would mean threading a target type into ident resolution, which
+  is far outside this phase. Same call Phase 14 made for `pkg.fn`, same wording.
+
+  Narrower than the report implied, and worth recording: a local NON-generic
+  function as a value was never broken. `apply2(addi, 2, 3)` printed `5` in the
+  same file where `apply2(mymin, 2, 3)` died, so the defect was genericity
+  alone — the `E_IDENT` arm's `sig_find` path (`tests/pkg/fnval`) already worked.
+
+  Old: `unknown variable 'mymin'; did you mean 'main'?`
+  New: `'mymin' is generic, so it has no single function value -- there is no
+  instantiation to take. Wrap it in a lambda that fixes the types, e.g.
+  fn(a: int, b: int) -> int: mymin(a, b)`
+
+  A refusal that names a workaround is only honest if the workaround runs, so it
+  is executed, not just asserted: `tests/fnval_generic_wrap.ty` compiles the
+  suggested lambda at `int` and at `string` and prints
+  `plain=5 / wrapped=2 / direct=2 / strwrap=fig`. `tests/reject/fnval_local_generic.ty`
+  pins both halves of the new wording with `# expect:`.
+
+  Negative control: `git stash push src/tychoc.c` + `make tychoc` → the old
+  binary emits `tests/reject/fnval_local_generic.ty:21: error: unknown variable
+  'mymin'; did you mean 'main'?`, so BOTH `# expect:` substrings are absent and
+  the fixture fails. Restored (`diff -q` against the saved copy) and re-run: the
+  new wording is back.
+
+  Gates: `make check-links` ok (119 md, no dead links), `make vm-check` green,
+  `sh scripts/entrypoints.sh` ok (75), `make goldens-check` ok (450 goldens, all
+  tracked — both new `.out` files needed an explicit `git add`, exactly the trap
+  `CLAUDE.md` documents). `make test` was run ONCE at the end of Phase 16,
+  covering this phase and that one together. The +6 lines staled 49 citations;
+  `scripts/reanchor_citations.py --apply` rewrote 119 files, 0 needing a human.
 
 - [ ] **Phase 16 — `(pkg.fn)(x)`, the parenthesised immediate call, dies
   `unknown variable 'pkg'`.** Found writing Phase 14's fixture; the line was

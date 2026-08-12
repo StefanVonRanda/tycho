@@ -1,0 +1,25 @@
+# The workaround tests/reject/fnval_local_generic.ty's message NAMES, executed.
+# A refusal that points at a lambda is only honest if that lambda compiles, so
+# this pins it: the wrapper fixes $T=int and reaches the same generic body a
+# direct call does. The non-generic local fn as a value (addi) runs alongside it,
+# which is what makes the refusal specific to genericity rather than to fn values.
+
+fn mymin(a: $T, b: $T) -> $T where comparable(T):
+    if a < b:
+        return a
+    return b
+
+fn addi(a: int, b: int) -> int:
+    return a + b
+
+fn apply2(f: fn(int, int) -> int, x: int, y: int) -> int:
+    return f(x, y)
+
+fn main():
+    println("plain=" + str(apply2(addi, 2, 3)))
+    println("wrapped=" + str(apply2(fn(a: int, b: int) -> int: mymin(a, b), 2, 3)))
+    println("direct=" + str(mymin(2, 3)))
+    println("strwrap=" + apply_s(fn(a: string, b: string) -> string: mymin(a, b), "pear", "fig"))
+
+fn apply_s(f: fn(string, string) -> string, x: string, y: string) -> string:
+    return f(x, y)
