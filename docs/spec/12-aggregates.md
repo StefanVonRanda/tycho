@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2082-2083`,`:2099-2100`;
-> `pop`-empty abort `:13051@pop from an empty array`,`:13240@pop from an empty array`; `reserve` `:6063-6089`,`:9396-9402`; tuple
+> `pop`-empty abort `:13050@pop from an empty array`,`:13239@pop from an empty array`; `reserve` `:6063-6089`,`:9396-9402`; tuple
 > arity `:2327@a tuple has at most 8 elements`,`:2331@a tuple type needs at least two elements`, index `:4989-4997`; destructuring `:3421-3435`,`:7028-7044`;
 > map read (pure `map_get`, no insert) `:5300-5315`; map place insert+zero
-> `:10244-10253`; `keys()` insertion order — the walk `:13209@m.elive[e]` over the append-only entries array `:13164@m->ecount++`; `delete` → `map_del`
+> `:10244-10253`; `keys()` insertion order — the walk `:13208@m.elive[e]` over the append-only entries array `:13163@m->ecount++`; `delete` → `map_del`
 > `:3269-3293`,`:5986-5992`; subscript parse + rules `:3906-3958`, dispatch
 > `:3980-3988`; `or_return` `:5176-5193`.
 
@@ -112,7 +112,7 @@ first argument.
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 
 `push` and `pop` require element type equality: `v` MUST have type `T` for a
-`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13051@pop`); it is not
+`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13050@pop`); it is not
 silently zero-returning. `reserve(a, n)` is a capacity hint only — it copies the
 existing elements into a buffer of capacity `≥ n` and is a no-op when
 `n ≤ cap`; it never changes `len` and never inserts elements

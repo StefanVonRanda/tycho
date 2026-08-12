@@ -1,0 +1,39 @@
+# A generic struct holding an ARRAY of function values. The template interns a
+# dead composite array `[fn($T)->$T]` whose element is a fn type that (2a') skips
+# emitting -- a `$T` param would be `void` in C. The body loop emitted that dead
+# array anyway, naming the FnC<id> that was never declared, and the error escaped
+# to cc as `unknown type name 'FnC0'`. Two instantiations pin that each instance
+# gets its own concrete FnC; Empty pins the uninstantiated template, which failed
+# the same way with no value of the type anywhere in the program.
+
+struct Plan($T):
+    steps: [fn($T) -> $T]
+
+struct Empty($T):
+    never: [fn($T) -> $T]
+
+fn inc(x: int) -> int:
+    return x + 1
+
+fn shout(s: string) -> string:
+    return s + "!"
+
+fn run(p: Plan($T), seed: $T) -> $T:
+    acc := seed
+    for f in p.steps:
+        acc = f(acc)
+    return acc
+
+fn main():
+    fs: [fn(int) -> int] = []
+    push(fs, inc)
+    push(fs, inc)
+    p := Plan(fs)
+    println("direct=" + str(p.steps[0](41)))
+    println("int=" + str(run(p, 40)))
+
+    ss: [fn(string) -> string] = []
+    push(ss, shout)
+    q := Plan(ss)
+    println("str=" + run(q, "hi"))
+    println("len=" + str(len(q.steps)))

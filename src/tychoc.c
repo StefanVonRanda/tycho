@@ -8949,7 +8949,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13151) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13150) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
@@ -12620,13 +12620,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * This is the recursive-enum-with-array-of-itself case (e.g. an AST node
      * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
     for (int i = 0; i < g_nenums; i++) {            /* forward-declare cells; a value is E_<name>* */
-        /* Templates included (mirrors the struct tag loop above): a recursive generic
-         * enum with an array payload (`enum Tree($T): Node([Tree($T)])`) interns a dead
-         * template array composite `TychoArrC<n> { E_Tree **data; }` that names the
-         * template cell as an incomplete POINTER. Without this forward typedef cc errors
-         * `unknown type name 'E_Tree'`. The body/payload/copy/eq loops below still skip
-         * generics, so the template stays an incomplete type — never completed, never
-         * instantiated (only its E_Tree__int instances are). */
+        /* Templates included (mirrors the struct tag loop above): a generic enum's own
+         * tag can still be named by an emitted instance. The body/payload/copy/eq loops
+         * below skip generics, so the template stays an incomplete type — never
+         * completed, never instantiated (only its E_Tree__int instances are). */
         fprintf(o, "typedef struct E_%s E_%s;\n", g_enums[i].name, g_enums[i].name);
     }
     for (int i = 0; i < g_narrtypes; i++)           /* forward-declare composite-array/map tags so a fn value */
@@ -12646,10 +12643,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "); void *(*copyenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes the captured env on return (0 for a plain ref) */
     }
     if (g_nfunctypes) fputs("\n", o);
-    for (int i = 0; i < g_narrtypes; i++)           /* (2b) DYNAMIC composite-array bodies (tags forward-declared above). */
+    for (int i = 0; i < g_narrtypes; i++) {         /* (2b) DYNAMIC composite-array bodies (tags forward-declared above). */
+        if (has_typaram(T_ARRC_BASE + i)) continue; /* generics: `[$T]` from a template -- transient, like the four op loops below. A `[fn($T)->$T]` field would otherwise name the FnC<id> that (2a') deliberately skipped, and the tag has no body to be incomplete for. */
         if (!inline_arrc(T_ARRC_BASE + i))          /*      The element is behind a `*data` pointer, so its forward */
             fprintf(o, "struct TychoArrC%d_ { %s*data; tycho_int len; tycho_int cap; };\n",   /* decl suffices. */
                     i, c_type(g_arrtypes[i].elem));
+    }
     /* (2b-inline) `[N]T` and `bounded[N]T` store the element INLINE, so their
      * bodies need it COMPLETE — they are emitted in step (3) below, inside the
      * containment DFS, alongside the struct/Option/Result/tuple bodies. */
