@@ -133,8 +133,8 @@ memory trades away ergonomics, and you choose how far to walk it.
 An arena returns memory at **scope exit**, not incrementally — but dead buffers are reused
 incrementally. The compiler proves when a heap buffer is dead and uniquely owned (a
 reassigned loop-carried local; value semantics guarantees no aliasing) and hands it back to
-the arena via `arena_recycle` (`runtime/tycho_rt.c:178`, emitted by the compiler at
-`src/tychoc.c:12669`); the next same-or-smaller allocation in that arena reuses it instead
+the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
+`src/tychoc.c:11405@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
 static value semantics. So transient churn inside one scope recycles, and peak is bounded
 by the largest single transient rather than the sum — but the arena keeps its high-water

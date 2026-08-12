@@ -33,26 +33,27 @@ on arithmetic and on the spec freeze instead.
 ### 2.1 An arena's owner is a scope, and only a scope
 
 `arena_new` and `arena_child` are the only two ways an arena comes into existence
-(`runtime/tycho_rt.c:396-406`, `:437-441`), and `arena_free` is the only way one goes
-away (`runtime/tycho_rt.c:512-521`). Every call site of those three in generated code
+(`runtime/tycho_rt.c@arena_new`, `runtime/tycho_rt.c@arena_child`), and `arena_free`
+is the only way one goes away (`runtime/tycho_rt.c@arena_free`). Every call site of those three in generated code
 is a *scope* boundary. The runtime's own header states the mapping as the model:
 every proc, every `if`/`else` block, every loop gets an arena, and a child is freed
 when its scope ends (`runtime/tycho_rt.c:5-13`). The emitted shape is four rules —
 `main` opens `_root`, every function opens `Arena _scope = arena_child(_parent)`,
 every allocation takes an arena argument, and a return builds into `_parent`
 (`docs/guides/memory-model.md:37-45`), realised in codegen by a single "current
-arena" string that defaults to `&_scope` (`src/tychoc.c:7464`) and a per-proc stack
-of enclosing block arenas freed innermost-first at any exit
-(`src/tychoc.c:9020-9026`, `:9050-9054`).
+arena" string that defaults to `&_scope` (`src/tychoc.c:9082@g_cur_scope`) and a
+per-proc stack of enclosing block arenas (`src/tychoc.c:10866@g_ascope`) freed
+innermost-first at any exit (`src/tychoc.c:10925@g_nascope`).
 
 The three exceptions in the tree are the ones that prove the rule, because each is a
 *runtime* object the compiler finalises like a scope, not a user-visible lifetime:
 
 - a task's `root` arena, created at `tycho_task_new` and freed at
-  `tycho_task_free` (`runtime/tycho_rt.c:532`, `:537`, `:590`);
+  `tycho_task_free` (`runtime/tycho_rt.c@tycho_task_new`,
+  `runtime/tycho_rt.c@tycho_task_free`);
 - a channel cell's payload arena, one per ring slot, created at channel construction
-  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:633`, `:673`,
-  `:725`, `:831`);
+  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:925@arena_new`,
+  `runtime/tycho_rt.c:977@arena_free`);
 - a typed FFI handle's destructor, which is emitted into exactly the slot the task
   finaliser uses.
 
@@ -141,7 +142,8 @@ reaches `p.slots[idx].val = v` (`corelib/pool/pool.ty:44-52`), which is an
 element-overwrite, and element-overwrite recycling hands the evicted element's buffer
 back to the array's arena free list (`docs/guides/memory-model.md:108-113`), backed by
 `arena_recycle` and its segregated per-size-class lists
-(`runtime/tycho_rt.c:415-435`, reused on the next allocation at `:456-474`).
+(`runtime/tycho_rt.c@arena_recycle`, reused on the next allocation at
+`runtime/tycho_rt.c@arena_alloc`).
 
 The consequence, stated plainly: **a pool's memory tracks the high-water mark of live
 nodes, and never returns below it.** Bytes are recovered on reuse, never on removal.
@@ -209,9 +211,10 @@ region variable, which is an annotation on every signature in the transitive clo
 
 **`spawn` / channels.** A spawn site allocates its argument struct in the task root
 and deep-copies each heap argument into it, after which spawner and task share zero
-bytes (`src/tychoc.c:8712-8727`, `runtime/tycho_rt.c:523-531`); `wait` copies the
-result out and frees the root eagerly (`src/tychoc.c:8430-8433`). A channel does the
-same per payload into a per-cell arena (`runtime/tycho_rt.c:604-611`). An `@r` value
+bytes (`src/tychoc.c:10560-10568`, `runtime/tycho_rt.c@tycho_task_new`); `wait` copies
+the result out and frees the root eagerly
+(`src/tychoc.c:10118@arena_free(&_tk->root)`). A channel does the same per payload
+into a per-cell arena (`runtime/tycho_rt.c:885@payload bytes live here`). An `@r` value
 offers neither option: copying it means copying the whole region (unbounded — the
 region exists *because* it is the long-lived structure), and passing the region pointer
 shares mutable storage across threads, which is the exact hypothesis the race-freedom
@@ -258,26 +261,26 @@ into it: reads copy out (already the language's defining invariant,
 semantics like any other value — it moves down as an argument and up as a return, and
 its arena travels with it. The two-direction rule of §2.2 is untouched, because a
 region introduces no new direction; it changes only *which* arena an allocation lands
-in, and the compiler already picks that per write site (`src/tychoc.c:7464`,
+in, and the compiler already picks that per write site (`src/tychoc.c:9082@g_cur_scope`,
 `docs/guides/memory-model.md:57-66`).
 
 **`spawn` / channels.** This design survives the boundary, which is the reason it is
 worth writing down at all. Because a region is owned and pointer-free from outside,
-`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:8724`) generalises without a new
+`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:10568@copy_into`) generalises without a new
 rule: create a fresh arena inside the task root, deep-copy every live element into it.
 Blocks crossing threads is already the status quo — the block pool is thread-local
-(`runtime/tycho_rt.c:357`), blocks are released to whichever thread's pool frees them
-(`runtime/tycho_rt.c:392-394`), and a spawned thread flushes its pool before exiting so
-nothing leaks with the TLS (`runtime/tycho_rt.c:543-549`). Channels need nothing new
+(`runtime/tycho_rt.c:540@g_block_pool`), blocks are released to whichever thread's pool
+frees them (`runtime/tycho_rt.c:576@HBlock *nx`), and a spawned thread flushes its pool
+before exiting so nothing leaks with the TLS (`runtime/tycho_rt.c@tycho_pool_flush`). Channels need nothing new
 either: a region payload deep-copies into the cell arena like any other value
-(`runtime/tycho_rt.c:604-611`).
+(`runtime/tycho_rt.c:885@payload bytes live here`).
 
 The honest limit is that this makes regions **cheap to free and no cheaper to send**.
 A 1 GB region crosses a channel as 1 GB of deep copy. Today you would send an index
 instead, and you still would.
 
 **C lowering.** A region-bearing value carries its `Arena` inline — 48 bytes on LP64,
-six fields (`runtime/tycho_rt.c:91`):
+six fields (`runtime/tycho_rt.c:262@Arena`):
 
 ```c
 typedef struct { Arena rgn; Arr_Conn conns; } Server;
@@ -286,8 +289,9 @@ typedef struct { Arena rgn; Arr_Conn conns; } Server;
 Allocations for elements of `s.conns` target `&s.rgn` instead of the current scope
 string; the deep copy becomes `_c.rgn = arena_new(0);` followed by the existing
 recursive element copy; and the free is one `arena_free(&s.rgn)` emitted into exactly
-the finaliser slot tasks and handles already use (`src/tychoc.c:9043-9045`), which fires at block end, early
-`return`, `break`/`continue` and `or_return` (`src/tychoc.c:9060-9064`). There is a
+the finaliser slot tasks and handles already use (`src/tychoc.c:10876@g_taskvars`),
+which fires at block end, early `return`, `break`/`continue` and `or_return`
+(`src/tychoc.c:10871-10874`). There is a
 genuine simplification available: `inout` on a heap value today threads the caller's
 owning scope to the callee as a hidden parameter so an allocating mutation lands where
 the borrowed value lives (`docs/spec/07-memory-model.md:186-192`). If the value owns
@@ -295,10 +299,10 @@ its arena, that arena is reachable *from the value*, and the hidden parameter is
 longer needed for region-bearing types.
 
 **The arithmetic that decides it.** `arena_new(0)` sets `blocksz` to
-`TYCHO_BLOCK_DEFAULT` = 65536 (`runtime/tycho_rt.c:80@TYCHO_BLOCK_DEFAULT`, `:400`), and the first
-allocation in a fresh arena takes a block of `max(n, blocksz)`
-(`runtime/tycho_rt.c:475-480`) from the thread-local pool or, failing a fit, from
-`malloc` (`runtime/tycho_rt.c:359-389`). So **every live region holds a 64 KiB block
+`TYCHO_BLOCK_DEFAULT` = 65536 (`runtime/tycho_rt.c:80@TYCHO_BLOCK_DEFAULT`,
+`runtime/tycho_rt.c:583@TYCHO_BLOCK_DEFAULT`), and the first allocation in a fresh
+arena takes a block of `max(n, blocksz)` (`runtime/tycho_rt.c@arena_alloc`) from the
+thread-local pool or, failing a fit, from `malloc` (`runtime/tycho_rt.c@block_get`). So **every live region holds a 64 KiB block
 out of the pool for as long as it lives**, whatever it contains. Resident cost is
 bounded by pages actually touched, not by the full 64 KiB — the block is `malloc`'d, not
 committed — but the pool's high-water mark rises by one block per concurrently-live
@@ -326,8 +330,9 @@ outliving a value until scope exit, the value's storage dies with the value.
 
 Every piece of machinery already exists. The runtime primitive is `arena_recycle`,
 which hands a proven-dead, uniquely-owned buffer back to its arena and is reused by the
-next allocation (`runtime/tycho_rt.c:408-435`, `:456-474`), guarded by `arena_owns` so
-only buffers the arena actually owns are recycled (`runtime/tycho_rt.c:443-454`). The
+next allocation (`runtime/tycho_rt.c@arena_recycle`, `runtime/tycho_rt.c@arena_alloc`),
+guarded by `arena_owns` so only buffers the arena actually owns are recycled
+(`runtime/tycho_rt.c@arena_owns`). The
 static precondition is unique ownership, which value semantics already guarantees
 (`docs/spec/07-memory-model.md:55-62`). The use-after-consume check already ships:
 passing a variable to a `sink` parameter consumes it, and using it afterwards is a
@@ -425,7 +430,8 @@ tree; §4.2 shows a per-node region is *worse* than the pool it would replace be
 > (`docs/internals/value-semantics-limits.md:126-135`), element-overwrite recycling
 > (`docs/guides/memory-model.md:108-113`), or slot reuse in an index pool
 > (`corelib/pool/pool.ty:44-52`). The workload's live values must have payloads
-> comparable to or larger than one 64 KiB block (`runtime/tycho_rt.c:51`), and its live
+> comparable to or larger than one 64 KiB block
+> (`runtime/tycho_rt.c:80@TYCHO_BLOCK_DEFAULT`), and its live
 > count must genuinely shrink, not merely churn at a fixed capacity.
 
 No such benchmark exists today. I checked the full workload table in

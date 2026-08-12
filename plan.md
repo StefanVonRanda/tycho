@@ -10,25 +10,22 @@
 > than the file — see CLAUDE.md, "Plans". `git show d78db13:plan.md` recovers
 > the long version; every phase's evidence is also in its own commit.
 
-## Phase 1 — the whole-document citation drift
+## Phase 1 — `design-scalar-match.md`'s tycho-vm refs
 
-*Split out of the citation repair that fixed only its enumerated bullets
-(`fa4f5fc`, then the prose repairs in `5489e60`).*
+Found while converting that document's `src/tychoc.c` refs, and deliberately left
+alone: out of that phase's scope, and the section is historical.
 
-Five documents have drifted as a block, every ref pointing into `src/tychoc.c`
-or `runtime/tycho_rt.c`:
+`docs/internals/design-scalar-match.md` cites `tools/tycho-vm/main.ty:622` twice
+(the demand table, and Done-when item 1) and `:634` once. **Line 622 is blank
+today and 634 is an unrelated comment.** The dispatch is now `match op:` at
+`tools/tycho-vm/main.ty:775` with the grouped arm `OP_ADD..OP_GE:` at `:782` —
+so Done-when items 1 and 2 are already satisfied and the document does not say so.
 
-- `docs/spec/15-program.md` (15 refs; `main` cited at a map typedef)
-- `docs/internals/design-scalar-match.md` (the `S_MATCH` pass resolves to a bare `}`)
-- `docs/rfc/value-lifetime-regions.md`
-- `docs/internals/value-semantics-limits.md`
-- `docs/rfc/limited-references-spike.md`
+The care needed: the demand table and the `elif op >= OP_ADD and op <= OP_GE:`
+quotation describe the **pre-implementation** state on purpose ("both already
+written as `if`"). Re-pointing them at the post-implementation code would destroy
+a measurement record. Decide per ref whether it wants an anchor, a date-stamped
+"as measured before Phase 2" note, or the Done-when box ticked.
 
-**Do it as a conversion, not a repair.** Re-pointing bare `path:N` refs lasts
-until the next compiler phase moves the lines again. Converting them to anchored
-`path:N@token` or `path@SYMBOL` form makes `scripts/check_citations.py` police
-them permanently. A bare ref into a 12k-line file can never fail a bounds check,
-which is exactly why this rot was invisible.
-
-**Verify:** `make check-links` — and it must redden if an anchor is wrong, so
-prove that on one ref before converting the rest.
+**Verify:** `make check-links`. `tools/tycho-vm/main.ty` is 974 lines, so its bare
+refs *can* fail a bounds check — these did not, which is why they survived.
