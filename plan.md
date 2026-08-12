@@ -535,8 +535,10 @@ site is either implemented or written down as a refusal with its cost.
   `check_citations.py`, `scripts/entrypoints.sh`. Not `make corelib` — nothing
   under `corelib/` changed. Not `make ci`.
 
-- [ ] **Phase 8 — `core:iter` has no `try_each`, and the refusal is a message
+- [x] **Phase 8 — `core:iter` has no `try_each`, and the refusal is a message
       about a corelib local** *(discovered by Phase 7, filed not absorbed)*
+      VERDICT: **DECLINED — no function added.** The diagnostic half was already
+      fixed by `be325b4`; the loop is the answer to the other half.
 
   `iter.try_map` cannot take a callback returning `Result(void, E)` — `$U`
   becomes `void` and the accumulator has no element type. Minimal repro:
@@ -559,6 +561,34 @@ site is either implemented or written down as a refusal with its cost.
   Not absorbed into Phase 7: adding a function is a decision about the
   package's shape, and the alternative (refuse `void` in `try_map` with a
   message naming `try_each`) is only worth writing once `try_each` exists.
+
+  **Evidence — re-probed first, as the brief required, then declined.**
+
+  1. **The diagnostic half is already fixed.** Re-ran the repro: the refusal
+     prints `corelib/iter/iter.ty:30: error: cannot infer the type of 'out'`
+     *and* `main.ty:11: note: required from here -- this call instantiated the
+     generic`. `be325b4` landed the `note:`, so the caller is no longer sent
+     only to a file they cannot edit. Nothing to do on this half.
+  2. **The loop is the answer.** Built and ran `for x in xs: check(x) or_return`
+     inside a `Result(void, string)` function: compiles today, short-circuits at
+     the first `Err`, propagates it — `[1,2,3]` → `ok`, `[1,-2,3]` → `err neg`.
+     Two lines, versus one for `iter.try_each(xs, check) or_return`.
+  3. **No caller wants it.** 129 `or_return` sites across `corelib/`, `tools/`,
+     `examples/` and `server/`; the count that are a bare `f(x) or_return`
+     directly inside a `for` loop — the shape `try_each` would replace — is
+     **zero**. The entry's motivating cases (chmod each path, `set_mtime` each
+     file) are hypothetical and not in the tree.
+
+  `try_map`/`try_filter` earn their place by *building* something — accumulator,
+  push order, a first-error rule that reddened `make corelib` when it was got
+  wrong. `try_each` returns `Result(void, $E)`: no accumulator, nothing to get
+  wrong. It is the loop with a callback in front of it, and `9d2a6f9` declined
+  `try_reduce`/`try_count`/`try_any` on exactly this evidence.
+
+  Recorded in FRICTION #8 as a decision with its reopen trigger (a real caller,
+  not a hypothetical). No code changed, so `make corelib` was not run: nothing
+  in `corelib/` was touched and it cannot redden for a prose-only decision.
+  `check_links` and `check_citations` ok.
 
 - [x] **Phase 9 — `docs/spec/14-ffi.md` does not say a `string` is truncated at
       an embedded NUL** *(discovered by Phase 7)*

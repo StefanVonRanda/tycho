@@ -2313,6 +2313,46 @@ is no `try_each`". The workaround is a hand-written loop with `or_return`, three
 lines, which is what `try_map` existed to remove. **Not fixed here: adding
 `try_each` is a design decision about the package's shape, not a defect.**
 
+> **Decided 2026-08-12: `try_each` is DECLINED. The loop is the answer.**
+>
+> Re-probed first, because the entry above predates `be325b4`. The diagnostic
+> half is already fixed: the refusal now prints the corelib line *and* a
+> `note: ... this call instantiated the generic` naming the caller's own line,
+> so a reader is no longer sent only to a file they cannot edit. What remains
+> is purely the question of whether the function earns its place.
+>
+> It does not. The whole of `try_each` is the loop it would wrap:
+>
+> ```
+> for x in xs:
+>     check(x) or_return
+> ```
+>
+> Built and run: this compiles today, short-circuits at the first `Err`, and
+> propagates it — `[1,2,3]` gives `ok`, `[1,-2,3]` gives `err neg`. Two lines,
+> against one for `iter.try_each(xs, check) or_return`. That is the entire
+> saving, and it buys a callback indirection in place of a loop body that can
+> read the surrounding scope.
+>
+> `try_map` and `try_filter` earn theirs because they *build* something — an
+> accumulator, a push, an order to preserve, and a documented first-error rule
+> that is easy to get wrong by hand (swallowing the `Err` reddened `make
+> corelib` when it was written). `try_each` returns `Result(void, $E)`: no
+> accumulator, nothing to get wrong, nothing to preserve. It is the loop with a
+> function call in front of it.
+>
+> **And no caller wants it.** Across `corelib/`, `tools/`, `examples/` and
+> `server/` there are 129 `or_return` sites; the number that are a bare
+> `f(x) or_return` directly inside a `for` loop — the exact shape `try_each`
+> would replace — is **zero**. The motivating examples in this entry (chmod each
+> path, `set_mtime` each extracted file) are hypothetical; none of them is in
+> the tree. `9d2a6f9` declined `try_reduce`, `try_count` and `try_any` on
+> precisely this ground, and declining here is the same rule applied to the same
+> evidence, not a new policy.
+>
+> Reopen this if a real caller appears. A second one in the same file would be
+> the honest trigger; one hypothetical is not.
+
 ### 9. A `string` across the FFI truncates at its first NUL, silently
 
 > **Scoped wrong when filed, and fixed 2026-08-12.** This was entered as a
