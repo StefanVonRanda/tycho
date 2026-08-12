@@ -3,7 +3,7 @@
 # The positive half of the same rule is tests/char_elem_ops.ty.
 #
 # `[char]` is never written here -- it cannot be (docs/spec/03-types.md:75) -- it
-# is inferred from the element type of `char_at` (src/tychoc.c:4689).
+# is inferred from the element type of `char_at` (src/tychoc.c:4692).
 fn main():
     s := "ABC"
     a := [char_at(s, 0), char_at(s, 1)]

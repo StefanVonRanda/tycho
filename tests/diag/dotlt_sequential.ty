@@ -2,7 +2,7 @@
 # tests/diag/dotlt_sequential.err. The sibling tests/reject/dotlt_sequential.ty
 # proves the refusal happens at all; this one proves it keeps SAYING the useful
 # thing -- that the sequential replacement is the three-clause form, spelled
-# with this loop's own variable name. Refused at src/tychoc.c:3492.
+# with this loop's own variable name. Refused at src/tychoc.c:3495.
 fn main():
     count := 0
     for idx in 0..<10:

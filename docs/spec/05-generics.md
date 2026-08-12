@@ -8,9 +8,9 @@ user-extensible — user-defined constraints (traits/typeclasses) are a decided
 non-goal ([§1.1](00-conventions.md)); generics grow only by widening the
 built-in predicate set.
 
-> Provenance: `instantiate_generic` `src/tychoc.c:7773-7863`; constraints
-> `constraint_ok` `:7744-7752`, enforcement `:7796-7813`; parse `parse_fn`
-> `:3837-3875`; type grammar for `$T`/`[$N]T` `:1962-1971`,`:2047-2063`.
+> Provenance: `instantiate_generic` `src/tychoc.c:7776-7866`; constraints
+> `constraint_ok` `:7747-7755`, enforcement `:7799-7816`; parse `parse_fn`
+> `:3840-3878`; type grammar for `$T`/`[$N]T` `:1962-1971`,`:2047-2064`.
 
 ## 7.1 Type parameters
 
@@ -22,10 +22,19 @@ parameters may be introduced per generic.
 
 At a call, each parameter is bound by **structurally matching** the parameter's
 type pattern against the concrete argument type. Matching handles a bare `$T`,
-and `$T` nested inside `[$T]`, `Option($T)`, `Result($T, $E)`, a function type,
-and recursive self-references; every occurrence of a given `$T` MUST bind to the
-same concrete type. A generic is instantiated once per distinct binding of its
-parameters.
+and `$T` nested inside `[$T]`, `Option($T)`, `Result($T, $E)`, `Channel($T)`, a
+function type, and recursive self-references; every occurrence of a given `$T`
+MUST bind to the same concrete type. A generic is instantiated once per distinct
+binding of its parameters.
+
+A `Channel($T)` parameter therefore composes like any other pattern, and a
+generic body may create its own channel with `channel($T, cap)`. Because the
+element type is concrete at each instantiation, the deep copy a channel performs
+at the thread boundary ([§23.1](13-concurrency.md#231-channels)) selects the
+copier for that element type — a generic channel is a monomorphized channel, not
+an erased one. The one carve-out is borrowing: `inout Channel($T)` is rejected at
+the declaration, for the reason given in
+[§11.5](07-memory-model.md#115-types-that-cannot-be-inout).
 
 Explicit type arguments may be supplied with the `name$(T, …)` form (§7.5),
 which binds the parameters in declaration order; this is required when a

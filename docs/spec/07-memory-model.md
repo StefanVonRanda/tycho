@@ -182,7 +182,7 @@ the same `a`, even when the elements or fields provably do not overlap. Such
 overlap is rejected at compile time (*"overlapping mutable
 access"*); it would make the copy-out order observable and reintroduce aliasing.
 
-Both implementations enforce this (`src/tychoc.c:6703@alias`;
+Both implementations enforce this (`src/tychoc.c:6706@alias`;
 `compiler/tychoc0.ty` `check_call_args`). A `tychoc0` fail-open on this rule was
 found during the drafting of this specification and fixed; it is locked by
 `tests/reject/inout_alias.ty` (both compilers reject, differential).
@@ -232,7 +232,9 @@ $T`, the declaration is legal — the rule is about what `T` becomes — and the
 check moves to the **instantiation**, reported at the call that chose the
 binding. A `$T` alone is neither a channel nor a function value and passes
 untouched; `inout Channel($T)` is rejected, because the rule is about the
-channel and not about `T`.
+channel and not about `T`. The `inout` is the whole of the restriction: a plain
+`Channel($T)` parameter is a legal type pattern and composes like any other
+([§7.1](05-generics.md#71-type-parameters)).
 
 Both implementations reject every form (`src/tychoc.c` `check_inout_param_type`
 :6844-6852, applied at the declaration :7146 and at the instantiation :6923;

@@ -11,13 +11,13 @@ here. Where an operation reads or writes through part of an aggregate it
 produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
-> Provenance: array element restriction `src/tychoc.c:2080-2081`,`:2097-2098`;
-> `pop`-empty abort `:13022@pop from an empty array`,`:13211@pop from an empty array`; `reserve` `:6060-6086`,`:9369-9375`; tuple
-> arity `:2324@a tuple has at most 8 elements`,`:2328@a tuple type needs at least two elements`, index `:4986-4994`; destructuring `:3418-3432`,`:7025-7041`;
-> map read (pure `map_get`, no insert) `:5297-5312`; map place insert+zero
-> `:10217-10226`; `keys()` insertion order — the walk `:13180@m.elive[e]` over the append-only entries array `:13135@m->ecount++`; `delete` → `map_del`
-> `:3266-3290`,`:5983-5989`; subscript parse + rules `:3903-3955`, dispatch
-> `:3977-3985`; `or_return` `:5173-5190`.
+> Provenance: array element restriction `src/tychoc.c:2082-2083`,`:2099-2100`;
+> `pop`-empty abort `:13029@pop from an empty array`,`:13218@pop from an empty array`; `reserve` `:6063-6089`,`:9374-9380`; tuple
+> arity `:2327@a tuple has at most 8 elements`,`:2331@a tuple type needs at least two elements`, index `:4989-4997`; destructuring `:3421-3435`,`:7028-7044`;
+> map read (pure `map_get`, no insert) `:5300-5315`; map place insert+zero
+> `:10222-10231`; `keys()` insertion order — the walk `:13187@m.elive[e]` over the append-only entries array `:13142@m->ecount++`; `delete` → `map_del`
+> `:3269-3293`,`:5986-5992`; subscript parse + rules `:3906-3958`, dispatch
+> `:3980-3988`; `or_return` `:5176-5193`.
 
 ---
 
@@ -112,11 +112,11 @@ first argument.
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 
 `push` and `pop` require element type equality: `v` MUST have type `T` for a
-`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13022@pop`); it is not
+`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13029@pop`); it is not
 silently zero-returning. `reserve(a, n)` is a capacity hint only — it copies the
 existing elements into a buffer of capacity `≥ n` and is a no-op when
 `n ≤ cap`; it never changes `len` and never inserts elements
-(`src/tychoc.c:12146-12151`).
+(`src/tychoc.c:12151-12156`).
 
 An array **parameter** is a read-only borrow ([§11](07-memory-model.md#11-inout)):
 passed without a copy, but `push`, `pop`, `reserve`, or an index-write on it is a
@@ -210,9 +210,9 @@ may appear inside any array indirectly (e.g. a `struct` field of a `[Struct]`
 element).
 
 > Provenance: dynamic `[T]` admits `bool` because it tests `void` alone —
-> `src/tychoc.c:2389@elem`, and its diagnostic now states that as the whole rule
-> instead of an allow-list (`src/tychoc.c:2407@void`; the loops-cleanup plan). The fixed forms test both:
-> `src/tychoc.c:2063-2064` (`[$N]T`) and `src/tychoc.c:2082-2083` (`[N]T`);
+> `src/tychoc.c:2392@elem`, and its diagnostic now states that as the whole rule
+> instead of an allow-list (`src/tychoc.c:2410@void`; the loops-cleanup plan). The fixed forms test both:
+> `src/tychoc.c:2064-2065` (`[$N]T`) and `src/tychoc.c:2084-2085` (`[N]T`);
 > `bounded[N]T` at `src/tychoc.c:1997-1998`. Pinned both ways by
 > `tests/bool_array.ty` (accepts, with a golden) and
 > `tests/reject/fixarr_elem_bool.ty` / `tests/reject/bounded_elem_bool.ty`.
@@ -316,21 +316,21 @@ This is **post-freeze** syntax: it is a type error to the frozen `tychoc0`. Its
 fixtures lived in `tests/postfreeze/` until the `tychoc0` lanes were retired on
 2026-07-29; they are now in `tests/` and `tests/abort/` (Appendix E.2.1).
 
-> Provenance: two-array arm `src/tychoc.c:6356-6386`, broadcast arm
-> `src/tychoc.c:6415-6441`; per-element-type operator set
+> Provenance: two-array arm `src/tychoc.c:6359-6389`, broadcast arm
+> `src/tychoc.c:6418-6444`; per-element-type operator set
 > `src/tychoc.c:1360@elem_arith_ok`; fixed-length mismatch
-> `src/tychoc.c:6894@on a fixed array requires the same static length`; mixed
-> kinds `src/tychoc.c:6886@cannot mix a fixed array and a growable array`;
-> `bounded`/`[$N]T` `src/tychoc.c:6876@IS_BOUNDED`; element-type mismatch
-> `src/tychoc.c:6879@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
-> element type `src/tychoc.c:6947@requires the scalar to have the array's element type`,
-> its literal adaptation `src/tychoc.c:6426-6431`; the fresh spine
-> `src/tychoc.c:10436@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:10420@gen_arith_op`, operands never reordered
-> `src/tychoc.c:10417@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:10440@tycho_ew_len`, and the abort
+> `src/tychoc.c:6897@on a fixed array requires the same static length`; mixed
+> kinds `src/tychoc.c:6889@cannot mix a fixed array and a growable array`;
+> `bounded`/`[$N]T` `src/tychoc.c:6879@IS_BOUNDED`; element-type mismatch
+> `src/tychoc.c:6882@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
+> element type `src/tychoc.c:6950@requires the scalar to have the array's element type`,
+> its literal adaptation `src/tychoc.c:6429-6434`; the fresh spine
+> `src/tychoc.c:10441@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:10425@gen_arith_op`, operands never reordered
+> `src/tychoc.c:10422@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:10445@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:2920@arithmetic on arrays of different lengths`;
-> literal-zero divisor `src/tychoc.c:6844@division by zero`.
+> literal-zero divisor `src/tychoc.c:6847@division by zero`.
 
 ---
 
@@ -402,7 +402,7 @@ sized. This is a type-formation rule; it is stated normatively in
 
 A tuple `(T1, …, Tn)` is the anonymous product of
 [§5.3.3](03-types.md#533-tuples), with **2 to 8** elements (a 1-element or
-9-element tuple is a compile error, `src/tychoc.c:5600@least` (min) and `:5601@most` (max)). Tuples are first-class
+9-element tuple is a compile error, `src/tychoc.c:5603@least` (min) and `:5604@most` (max)). Tuples are first-class
 values, not merely a return convention:
 
 - **Construction.** A parenthesized list `(10, 20)`, or a bare `return a, b`,
@@ -411,7 +411,7 @@ values, not merely a return convention:
   several values as one tuple (§15).
 - **Positional access and places.** `t.0`, `t.1`, … read an element; `t.0 = v`
   writes one in place (a tuple element is a writable place). An index out of
-  `0 .. n-1` is a compile error (`src/tychoc.c:5169-5171`).
+  `0 .. n-1` is a compile error (`src/tychoc.c:5172-5174`).
 - **Equality.** Two tuples compare element-wise with `==`
   ([§5.5](03-types.md#55-equality-and-ordering)).
 
@@ -430,7 +430,7 @@ names. Two forms exist, distinguished by the binding operator:
 
 The right-hand side MUST be a tuple, and the number of names MUST equal the
 tuple's arity; a mismatch is a compile error, as is a duplicate name in a `:=`
-destructuring list (`src/tychoc.c:7313-7335`). At most 8 targets are permitted.
+destructuring list (`src/tychoc.c:7316-7338`). At most 8 targets are permitted.
 Each name receives its element deep-copied, preserving value semantics.
 
 <!-- fence-skip: shows a fn beside the call site's binding form; Tycho has no top-level statements, so the pair is illustrative, not a program -->
@@ -480,7 +480,7 @@ Writing to `m[k]`:
 - **inserts** the entry if `k` is absent, first initializing the slot to `V`'s
   zero (for a compound `V`, the zero-value is materialized before the write, so a
   field- or element-write lands on a valid zero-initialized value)
-  (`src/tychoc.c:12261-12265`).
+  (`src/tychoc.c:12266-12270`).
 
 This makes the accumulator idioms one line each; the compiler proves the map is
 uniquely owned at the mutation and updates it in place, so a `+=` loop is O(n)
@@ -501,7 +501,7 @@ key it yields:
 - a **deep copy of the zero value** when `V` is composite.
 
 Either way, an absent-key read leaves the map unchanged
-(`src/tychoc.c:5297-5312`). When a non-zero default is wanted, use `m.get`
+(`src/tychoc.c:5300-5315`). When a non-zero default is wanted, use `m.get`
 (§18.5).
 
 ### 18.4 Membership, `delete`, `len`
@@ -513,7 +513,7 @@ Either way, an absent-key read leaves the map unchanged
 | `len(m)` | entry count → `int` |
 
 `delete m[k]` is a contextual-keyword statement that lowers to a functional
-map-delete rebinding the map (`src/tychoc.c:3263-3279`,`:5981-5987`); it removes
+map-delete rebinding the map (`src/tychoc.c:3266-3282`,`:5984-5990`); it removes
 at most one entry and never aborts on a missing key.
 
 ### 18.5 `m.get`
@@ -530,7 +530,7 @@ counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
 ### 18.6 `keys(m)`
 
 `keys(m)` returns the map's live keys as an array `[K]` in **insertion order** —
-the order in which each key was first inserted (`src/tychoc.c:12295-12298`; the
+the order in which each key was first inserted (`src/tychoc.c:12300-12303`; the
 emitted `keys` walks the append-ordered entries array and keeps the live ones.
 The **insertion-ordered link chain** the two refs here formerly named — a `nxt`
 field threaded through the slot table — no longer exists anywhere in the
@@ -589,7 +589,7 @@ bump(&g.edge(0).weight)      # a field of the projection as an `inout` argument
 
 The following rules are checked at compile time and MUST be enforced; each fails
 closed (the subscript is rejected, never silently mis-projected)
-(`src/tychoc.c:3903-3954`):
+(`src/tychoc.c:3906-3957`):
 
 - **Yields a place.** The body MUST be a single `yield &<place>`, where
   `<place>` is a field/index spine; a non-place operand is rejected.
@@ -773,16 +773,16 @@ On a **`Result`**, `v := expr or_return`:
 - binds `v` to the payload when `expr` is `Ok(v)`; and
 - otherwise returns that `Err` from the **enclosing function**, which MUST itself
   return `Result(_, E)` with the **same** error type `E` — a differing `E` is a
-  compile error (`src/tychoc.c:5181-5189`).
+  compile error (`src/tychoc.c:5184-5192`).
 
 On an **`Option`**, `v := opt or_return` binds `v` on `Some(v)` and returns
-`None`; the enclosing function MUST return an `Option` (`src/tychoc.c:5175-5179`).
+`None`; the enclosing function MUST return an `Option` (`src/tychoc.c:5178-5182`).
 
 The short-circuited payload (`Err`'s error, or `None`) is promoted into the
 caller's storage, so it outlives the return
 ([§10](07-memory-model.md#10-object-lifetimes-and-storage)). `or_return` MUST NOT
 appear inside a `parallel for` body — a chunk has no early exit
-(`src/tychoc.c:7187@or_return`).
+(`src/tychoc.c:7190@or_return`).
 
 <!-- fence-skip: calls parse_digit, defined in the prose above, and has no main; the complete program follows immediately below and IS checked -->
 ```tycho

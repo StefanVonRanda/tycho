@@ -2056,6 +2056,7 @@ static Type subst_type(Type t, Type *binds) {
         return arr_of(se);   /* dynamic: arr_of canonicalizes [int]->T_ARRAY_INT */
     }
     if (IS_OPT(t))  return opt_of(subst_type(opt_inner(t), binds));
+    if (IS_CHAN(t)) return chan_of(subst_type(chan_inner(t), binds));   /* Channel($T) -> Channel(int): interns the instance's element type, so the emit loop below gets a real copier */
     if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
     if (is_map(t))  return map_of(subst_type(map_key(t), binds), subst_type(map_val(t), binds));   /* map_of canonicalizes [string:int]->T_MAP_SI */
     if (IS_FUNC(t)) {   /* fn(P...)->R: substitute each parameter + the return (higher-order generics) */
@@ -2074,6 +2075,7 @@ static int has_typaram(Type t) {
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].generic;   /* a bare generic template type is transient (a deferred self-reference) */
     if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].generic;
     if (is_array(t)) return has_typaram(arr_elem(t));
+    if (IS_CHAN(t)) return has_typaram(chan_inner(t));   /* a template's `channel($T, n)` interns Channel($T); it is transient like any other `$T` type */
     if (IS_OPT(t))  return has_typaram(opt_inner(t));
     if (IS_RES(t))  return has_typaram(g_restypes[RES_ID(t)].ok) || has_typaram(g_restypes[RES_ID(t)].err);
     if (is_map(t))  return has_typaram(map_key(t)) || has_typaram(map_val(t));
@@ -2125,6 +2127,7 @@ static int match_type(Type pat, Type concrete, Type *binds) {
         return match_type(arr_elem(pat), arr_elem(concrete), binds);
     }
     if (IS_OPT(pat) && IS_OPT(concrete))   return match_type(opt_inner(pat), opt_inner(concrete), binds);
+    if (IS_CHAN(pat) && IS_CHAN(concrete)) return match_type(chan_inner(pat), chan_inner(concrete), binds);   /* `Channel($T)` param vs a `Channel(int)` argument */
     if (IS_RES(pat) && IS_RES(concrete))   return match_type(g_restypes[RES_ID(pat)].ok, g_restypes[RES_ID(concrete)].ok, binds)
                                                && match_type(g_restypes[RES_ID(pat)].err, g_restypes[RES_ID(concrete)].err, binds);
     if (is_map(pat) && is_map(concrete))   return match_type(map_key(pat), map_key(concrete), binds)
@@ -2403,7 +2406,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2225) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2228) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2741,7 +2744,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2099): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2101): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3820,7 +3823,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10263), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10268), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -6630,7 +6633,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5409 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5412 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7193,10 +7196,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6817),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6820),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7105). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7108). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8339,6 +8342,7 @@ static char *type_mangle_ident(Type t) {
         return sfmt("arr_%s", type_mangle_ident(arr_elem(t)));
     }
     if (IS_OPT(t))     return sfmt("opt_%s", type_mangle_ident(opt_inner(t)));
+    if (IS_CHAN(t))    return sfmt("chan_%s", type_mangle_ident(chan_inner(t)));   /* else the `t%d` fallback names the instance by an intern id, which moves with unrelated edits */
     if (IS_RES(t))     return sfmt("res_%s_%s", type_mangle_ident(g_restypes[RES_ID(t)].ok), type_mangle_ident(g_restypes[RES_ID(t)].err));
     if (is_map(t))     return sfmt("map_%s_%s", type_mangle_ident(map_key(t)), type_mangle_ident(map_val(t)));
     return sfmt("t%d", (int)t);
@@ -8354,6 +8358,7 @@ static char *type_mangle_ident(Type t) {
 static int type_mentions_tp(Type t, Type tp) {
     if (t == tp) return 1;
     if (is_array(t)) return type_mentions_tp(arr_elem(t), tp);
+    if (IS_CHAN(t)) return type_mentions_tp(chan_inner(t), tp);
     if (IS_OPT(t))  return type_mentions_tp(opt_inner(t), tp);
     if (IS_RES(t))  return type_mentions_tp(g_restypes[RES_ID(t)].ok, tp) || type_mentions_tp(g_restypes[RES_ID(t)].err, tp);
     if (is_map(t))  return type_mentions_tp(map_key(t), tp) || type_mentions_tp(map_val(t), tp);
@@ -8724,7 +8729,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7143: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7146: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8892,7 +8897,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11162), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11167), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8922,12 +8927,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13122) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13129) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11249) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11254) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -8944,7 +8949,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3700-3705) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3703-3708) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -12428,6 +12433,8 @@ static Expr *clone_expr_inner(Expr *e, Type *binds) {
     c->args = clone_exprs(e->args, e->nargs, binds);
     if (e->kind == E_ARRLIT && has_typaram((Type)e->ival))   /* `[]$T` element type */
         c->ival = (long)subst_type((Type)e->ival, binds);
+    if (e->kind == E_CALL && e->sval && !strcmp(e->sval, "channel") && has_typaram((Type)e->ival))   /* `channel($T, n)`: ival is the written element type, resolved straight to chan_of */
+        c->ival = (long)subst_type((Type)e->ival, binds);
     if (e->ntypeargs > 0) {                                   /* explicit `f$(T, ...)` type args */
         c->typeargs = (Type *)xmalloc((size_t)e->ntypeargs * sizeof(Type));
         for (int i = 0; i < e->ntypeargs; i++) c->typeargs[i] = subst_type(e->typeargs[i], binds);
@@ -13427,6 +13434,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * begin/commit pairs in the runtime bracket them). */
     for (int i = 0; i < g_nchantypes; i++) {
         Type it = g_chantypes[i].inner;
+        if (has_typaram(it)) continue;   /* generics: a template's `channel($T, n)` -- transient, the instance interned its own concrete Channel(T) */
         /* the deep copy runs in the CLAIMED cell -- exclusive between claim
          * and commit, no lock held (CC-5 lock-free fast path) */
         fprintf(o, "static void tycho_chan_send_%d(HChan *_ch, %s_v) { HCell *_c = tycho_chan_send_cell(_ch); "

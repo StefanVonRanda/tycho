@@ -1,0 +1,73 @@
+# `Channel($T)` composes with generics (05-generics.md:83), the sibling lock to
+# chan_param_recv.ty's concrete `Channel(int)` param. Before this, match_type,
+# subst_type, has_typaram, type_mentions_tp and type_mangle_ident all lacked an
+# IS_CHAN arm, so `Channel($T)` fell through match_type's `pat == concrete` tail
+# ("argument 1 of 'produce' is Channel(int), which does not fit the parameter
+# pattern") and subst_type returned it unsubstituted, leaving the instance body
+# sending an `int` into a still-`Channel($T)` handle.
+#
+# What each case pins, beyond "it compiles":
+#  - drain/produce are instantiated at BOTH int and string, so the string runs
+#    prove the element type is monomorphized per instance, not erased.
+#  - Every string case sends a value built in a scope that is gone before the
+#    recv -- the task's arena (freed at wait) in case 4, the callee's frame in
+#    case 2. A shallow copy would alias freed memory here, which is exactly the
+#    fail-open the generic_enum_channel.ty header guards against; the values
+#    must come back whole.
+#  - Case 3 creates the channel INSIDE the generic (`channel($T, n)`), which is
+#    a separate path: the element type rides on the call expr's `ival` and is
+#    substituted at clone time, not by subst_type.
+
+fn produce(ch: Channel($T), xs: [$T]) -> int:   # returns the count: `spawn` needs a value to wait on
+    n := 0
+    for x in xs:
+        send(ch, x)
+        n = n + 1
+    close(ch)
+    return n
+
+fn drain(ch: Channel($T)) -> [$T]:
+    out : [$T] = []
+    for true:
+        match recv(ch):
+            Some(v):
+                push(out, v)
+            None:
+                break
+    return out
+
+# creates its own channel: `channel($T, n)` inside a generic body
+fn roundtrip(xs: [$T]) -> [$T]:
+    ch := channel($T, 4)
+    sent := produce(ch, xs)
+    if sent != len(xs):
+        println("roundtrip: short send")
+    return drain(ch)
+
+fn label(n: int) -> string:
+    return "s" + str(n)
+
+fn main():
+    # 1. Channel($T) as a parameter, scalar element
+    c1 := channel(int, 4)
+    println(str(produce(c1, [1, 2, 3])))       # 3 sent
+    println(str(drain(c1)))                     # [1, 2, 3]
+
+    # 2. the SAME generics at a heap element: the strings are built in produce's
+    #    frame and read after it returned -- deep copy, not an alias
+    c2 := channel(string, 4)
+    println(str(produce(c2, [label(1), label(2)])))   # 2 sent
+    println(str(drain(c2)))                     # [s1, s2]
+
+    # 3. channel($T, n) created inside the generic, both element types
+    println(str(roundtrip([7, 8])))             # [7, 8]
+    println(str(roundtrip(["a", "b"])))         # [a, b]
+
+    # 4. a spawned generic producer: the real thread boundary. The task's arena
+    #    is freed at wait, so these strings must already have been copied into
+    #    the channel cell at send.
+    c4 := channel(string, 4)
+    t := spawn produce(c4, [label(3), label(4)])
+    got := drain(c4)
+    println(str(wait(t)))                       # 2 sent from the task
+    println(str(got))                           # [s3, s4]

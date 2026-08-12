@@ -754,8 +754,8 @@ hooks:
 
 # The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
 # `make tycho-lsp` -- the loops-cleanup plan made the plain build remove its own
-# intermediate (src/tychoc.c:13139). They stay because `--emit-c -o <base>` still
-# writes and KEEPS `<base>.c` (src/tychoc.c:13108-13110), which is how you debug the
+# intermediate (src/tychoc.c:13146). They stay because `--emit-c -o <base>` still
+# writes and KEEPS `<base>.c` (src/tychoc.c:13115-13117), which is how you debug the
 # toolchain itself, and `clean` is where that leftover belongs. Same rationale as the
 # matching .gitignore block; verified 2026-07-30, see the loops-cleanup plan.
 clean:
