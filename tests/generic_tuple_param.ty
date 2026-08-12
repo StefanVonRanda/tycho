@@ -1,0 +1,59 @@
+# A TUPLE composes with generics, the sibling lock to generic_tuple.ty's
+# "a whole tuple bound to $T" (which already worked, through match_type's
+# `pat == concrete` tail).
+#
+# Five type walkers descend into arrays, Option, Result, maps, channels and fn
+# types; none of them had an IS_TUP arm, so a tuple that MENTIONS `$T` fell
+# through every one:
+#   - match_type   -> "argument 1 of 'second' is (int, int), which does not fit
+#                      the parameter pattern" (FRICTION #18)
+#   - subst_type   -> a `-> (int, T)` return came back unsubstituted, so the
+#                      caller got "str(x) can't stringify a $T"
+#   - has_typaram  -> a template-only `(int, $T)` was not transient
+#   - type_mangle_ident / type_mentions_tp -> `gid__t16384` (an intern id, which
+#                      moves with unrelated edits) and a redundant name suffix
+# The whole-tuple case never hit any of this: `(int,int)` matched itself by
+# identity and needed no descent.
+#
+# What each case pins beyond "it compiles": every generic here is instantiated
+# at BOTH a scalar and a STRING element, so the element type is monomorphized
+# per instance rather than erased, and the string runs prove the tuple's heap
+# member survives the callee's frame -- a shallow copy would alias freed bytes.
+
+struct Holder($T):
+    p: (int, T)
+
+fn second(p: (int, $T)) -> T:          # match_type must descend into the tuple
+    return p.1
+
+fn mk(x: $T) -> (int, T):              # subst_type must rebuild the return tuple
+    return (1, x)
+
+fn swap(p: ($A, $B)) -> (B, A):        # two parameters, both inside one tuple
+    return (p.1, p.0)
+
+fn label(n: int) -> string:
+    return "s" + str(n)
+
+fn main():
+    # 1. a tuple parameter that mentions $T, at a scalar and a heap element
+    println(str(second((1, 7))))                   # 7
+    println(second((1, label(2))))                 # s2
+
+    # 2. a tuple RETURN built inside the generic
+    t := mk(5)
+    println(str(t.0) + " " + str(t.1))             # 1 5
+    u := mk(label(3))
+    println(str(u.0) + " " + u.1)                  # 1 s3
+
+    # 3. two type parameters inside one tuple, order swapped by the instance
+    w := swap((9, "nine"))
+    println(w.0 + " " + str(w.1))                  # nine 9
+
+    # 4. a generic STRUCT whose field type is a tuple mentioning $T
+    h := Holder((4, label(4)))
+    println(str(h.p.0) + " " + h.p.1)              # 4 s4
+
+    # 5. a nested tuple: the descent must be recursive, not one level
+    n := second((0, (2, 3)))
+    println(str(n.0 + n.1))                        # 5

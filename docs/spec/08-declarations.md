@@ -4,8 +4,8 @@ This chapter defines how names are introduced, assigned, resolved, and scoped
 within function bodies. The grammar of each form is in
 [§4.3.1](02-grammar.md#431-simple-statements); this chapter gives their meaning.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3247-3727`; const folding
-> `:4465-4510`,`:4519-4536`; package mangling `pkg_mangle` `:1730-1732`.
+> Provenance: `parse_stmt` `src/tychoc.c:3259-3739`; const folding
+> `:4477-4522`,`:4531-4548`; package mangling `pkg_mangle` `:1730-1732`.
 
 ## 12.1 Binding forms
 
