@@ -1,0 +1,60 @@
+# A lambda captures a local it reads only as a METHOD-CALL RECEIVER.
+#
+# `m.get(k)` / `xs.len()` / `p.area()` keep the receiver name in the call's
+# `qual`, not as a child expr (src/tychoc.c:2957) -- the parser cannot tell it
+# from a package call, so the resolver only rewrites it into an argument later.
+# collect_idents, which builds a lambda's capture list, walked lhs/rhs/args and
+# the callee `sval` but never `qual`, so the receiver reached the lifted body
+# uncaptured and the C COMPILER -- not tychoc -- reported `h_m undeclared`.
+# That is the same asymmetry pf_scan_expr had for `parallel for` before it
+# gained `e->qual ? e->qual : e->sval` (src/tychoc.c@pf_capture_name); this
+# fixture is the lambda-side lock.
+#
+# One case per way a `qual` receiver can be spelled, because each takes a
+# DIFFERENT arm of the resolver's receiver rewrite and only the capture list is
+# shared: a builtin UFCS (len), a map `.get`, a user UFCS method, and a
+# fn-typed struct FIELD call (which becomes a call-on-expression, not a UFCS).
+# The string case is not decoration: the captured value is copied into the
+# closure env at creation, so a shallow capture would alias a buffer the
+# enclosing frame still owns -- `join` reads it after the lambda outlives it.
+
+struct Pt:
+    x: int
+    y: int
+
+struct Ops:
+    bump: fn(int) -> int
+
+fn area(p: Pt) -> int:                 # user UFCS: p.area() -> area(p)
+    return p.x * p.y
+
+fn main():
+    xs := [10, 20, 30]
+    m : [string: int] = ["a": 5, "b": 6]
+    p := Pt(3, 4)
+    o := Ops(fn(n: int) -> int: n + 1)
+    words : [string: string] = ["hi": "alpha"]
+
+    # 1. builtin UFCS on a captured array
+    f1 := fn(d: int) -> int: xs.len() + d
+    println(str(f1(0)))                # 3
+
+    # 2. map .get on a captured map (its own resolver arm)
+    f2 := fn(k: string) -> int: m.get(k, 0)
+    println(str(f2("a")) + " " + str(f2("z")))    # 5 0
+
+    # 3. user UFCS method on a captured struct
+    f3 := fn(d: int) -> int: p.area() + d
+    println(str(f3(1)))                # 13
+
+    # 4. fn-typed struct field: a call-on-expression, receiver still in qual
+    f4 := fn(n: int) -> int: o.bump(n)
+    println(str(f4(41)))               # 42
+
+    # 5. a receiver whose value is heap: the capture must be a real copy
+    f5 := fn(k: string) -> string: words.get(k, "?")
+    println(f5("hi") + " " + f5("no"))   # alpha ?
+
+    # 6. receiver-only capture nested one lambda deep (transitive descent)
+    f6 := fn(d: int) -> int: (fn(e: int) -> int: xs.len() + e)(d)
+    println(str(f6(7)))                # 10

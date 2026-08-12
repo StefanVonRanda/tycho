@@ -1,4 +1,4 @@
-# 15-program.md §27.1 / src/tychoc.c:7507-7508 (resolve_program): `main` MUST take no parameters.
+# 15-program.md §27.1 / src/tychoc.c:7517-7518 (resolve_program): `main` MUST take no parameters.
 # Accepted by tychoc0 before the front-door plan, and it COMPILED AND RAN.
 fn main(x: int):
     print(str(x))
