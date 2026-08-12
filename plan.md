@@ -781,7 +781,7 @@ site is either implemented or written down as a refusal with its cost.
   `make vm-check` green. `make test` 645 passed, 0 failed — 644 at the previous
   phase, +1 for the new fixture.
 
-- [ ] **Phase 11 — a `tests/pkg/` fixture cannot import a shim-backed corelib
+- [x] **Phase 11 — a `tests/pkg/` fixture cannot import a shim-backed corelib
       package** *(discovered by Phase 10)*
 
   `tests/run.sh` compiles a package fixture with `--emit-c` and then its own
@@ -802,6 +802,48 @@ site is either implemented or written down as a refusal with its cost.
   imports. Not absorbed into Phase 10: it is a change to the test harness, and
   it widens what every future `tests/pkg/` fixture may do.
 
+  **Done.** The filed repro was reproduced first, by hand, before anything was
+  changed — `import "core:strings"` plus `--emit-c` and a bare `cc` line gives
+  exactly `undefined reference to strx_parse_double`.
+
+  `tests/run.sh@run_one` now asks `--print-shims` and splices the answer onto
+  both cc lines, the native one and the sanitizer one, the same way
+  `scripts/release.sh:90` does. Cost: one extra tychoc invocation per fixture,
+  measured at 0.001 s (it returns before type checking), against a lane that
+  takes minutes.
+
+  **`tools/prunner/main.ty@judge_pos` had the identical gap** and was fixed with
+  it — not scope creep but the same defect: `make test-fast` reddened on the new
+  fixture alone (652/1) while `make test` was 653/0, which is precisely the
+  divergence prunner's header promises cannot happen.
+
+  **The fixture Phase 10 could not write** is `tests/pkg/corelib_variant_shadow/`:
+  main declares `Syntax` and `Empty` WITH payloads, `core:strings`' `FloatErr`
+  declares both without, and `parse_float` is called across all three outcomes.
+  This is the real-world shape, against corelib, that `tests/pkg/variant_shadow/`
+  had to stand in for with two local packages.
+
+  **Negative controls, both run:**
+
+  ```
+  harness: pre-fix tests/run.sh (git show HEAD:tests/run.sh, own dir + symlinks)
+           FAIL pkg_corelib_variant_shadow (native cc)
+             undefined reference to `strx_parse_double'
+  compiler: f645304's src/tychoc.c hunk reverse-applied, rebuilt
+           FAIL pkg_corelib_variant_shadow (transpile)
+             corelib/strings/strings.ty:212: error: Empty carries a payload
+  ```
+
+  The second is the point of the fixture: without the compiler fix the error
+  lands on a line inside corelib that the user cannot edit. Both were restored
+  and re-run green (`git diff --stat src/tychoc.c` empty afterwards).
+
+  Gates: `make test` **653 passed, 0 failed** (651 before, +1 here and +1 for
+  Phase 12 — the two landed under one run, as the brief allowed).
+  `make goldens-check` reddened first on the untracked golden and went green on
+  `git add`, not on a re-record. `sh scripts/entrypoints.sh` and
+  `make check-links` ok.
+
 - [ ] **Phase 12 — no lane can redden if corelib warnings leak back into a user
       build** *(discovered while fixing the `core:json` `keys` warning)*
 
@@ -819,6 +861,7 @@ site is either implemented or written down as a refusal with its cost.
   `import "core:json"` to one makes tychoc compile every sibling `.ty` with it
   and collide on `main`. The cheap fix is probably a third grading mode in the
   warn lane (golden stderr, empty allowed) rather than a new gate.
+
 
 - [ ] **Phase 13 — the shadowed-builtin warning's central claim is false for at
       least one builtin** *(discovered by the same work)*

@@ -89,12 +89,18 @@ run_one() {
     san="$d/$name.asan$EXE"
     ok=1
 
+    # tychoc's own link path appends the companion shim of every corelib package
+    # an import pulled in; this lane rolls its own cc line, so it has to ask.
+    # `--print-shims` answers with the transitive closure, and is empty for a
+    # program that imports no corelib (scripts/release.sh:90 splices it too).
+    shims="$("$TYCHOC" "$hi" --print-shims 2>/dev/null | tr '\n' ' ')"
+
     if ! "$TYCHOC" "$hi" --emit-c -o "$d/$name" >"$d/$name.log" 2>&1; then
         note "$name" "transpile"; sed 's/^/      /' "$d/$name.log"; ok=0
-    elif ! $CC -O2 -fwrapv -std=c11 -o "$nat" "$c" -lm 2>"$d/$name.log"; then
+    elif ! $CC -O2 -fwrapv -std=c11 -o "$nat" "$c" $shims -lm 2>"$d/$name.log"; then
         note "$name" "native cc"; sed 's/^/      /' "$d/$name.log"; ok=0
     elif [ "$NO_ASAN" = 0 ] && ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
-               -std=c11 -o "$san" "$c" -lm 2>"$d/$name.log"; then
+               -std=c11 -o "$san" "$c" $shims -lm 2>"$d/$name.log"; then
         note "$name" "sanitizer cc"; sed 's/^/      /' "$d/$name.log"; ok=0
     else
         "$nat" <"$in" >"$d/$name.nout" 2>/dev/null; nrc=$?

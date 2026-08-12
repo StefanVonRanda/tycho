@@ -37,16 +37,16 @@
 # report against a whole one that has to be filtered first; covering all of it
 # means the comparison is a straight `diff` of two whole reports.
 #
-#   pos        examples/*.ty and tests/*.ty     (tests/run.sh:208-214@queue_positive)
-#   pos        tests/pkg/<name>/main.ty         (tests/run.sh:217-232@queue_positive)
-#   reject     tests/reject/*.ty                (tests/run.sh:293-320@reject_)
-#   rejectpkg  tests/reject/pkg/<name>/main.ty  (tests/run.sh:326-347@rejectpkg_)
-#   abort      tests/abort/*.ty                 (tests/run.sh:354-382@abort_)
-#   diag       tests/diag/*.ty                  (tests/run.sh:389-407@diag_)
-#   warn       tests/warn/*.ty                  (tests/run.sh:422-445@warn_)
+#   pos        examples/*.ty and tests/*.ty     (tests/run.sh:214-220@queue_positive)
+#   pos        tests/pkg/<name>/main.ty         (tests/run.sh:223-238@queue_positive)
+#   reject     tests/reject/*.ty                (tests/run.sh:299-331@reject_)
+#   rejectpkg  tests/reject/pkg/<name>/main.ty  (tests/run.sh:332-363@rejectpkg_)
+#   abort      tests/abort/*.ty                 (tests/run.sh:364-398@abort_)
+#   diag       tests/diag/*.ty                  (tests/run.sh:399-423@diag_)
+#   warn       tests/warn/*.ty                  (tests/run.sh:428-451@warn_)
 #
 # The two pos rows name the worker-pool branch a normal run takes; RECORD=1
-# enumerates the same fixtures sequentially at `tests/run.sh:178-193@run_fixture`.
+# enumerates the same fixtures sequentially at `tests/run.sh:184-199@run_fixture`.
 # Each row is anchored on a token, not left a bare range: a bare range stays "in
 # bounds" while the code under it moves, which is how all seven of these rotted
 # with `check_citations.py` green throughout (2026-08-11). The per-lane counts
@@ -277,11 +277,15 @@ fn judge_pos(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/out >" + d + "/log 2>&1")
     if r.code != 0:
         return Verdict(0, "transpile")
-    r = os.run("cc -O2 -fwrapv -std=c11 -o " + nat + " " + c + " -lm 2>" + d + "/log")
+    # tests/run.sh:92 -- the corelib shims this program's imports pulled in,
+    # spliced onto both cc lines. A captured string rather than a file: this is a
+    # link line, not a comparison, and a path cannot contain a NUL.
+    shims := os.run("./tychoc " + j.entry + " --print-shims 2>/dev/null | tr '\n' ' '").out
+    r = os.run("cc -O2 -fwrapv -std=c11 -o " + nat + " " + c + " " + shims + " -lm 2>" + d + "/log")
     if r.code != 0:
         return Verdict(0, "native cc")
     r = os.run("cc -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 " +
-               "-fwrapv -std=c11 -o " + san + " " + c + " -lm 2>" + d + "/log")
+               "-fwrapv -std=c11 -o " + san + " " + c + " " + shims + " -lm 2>" + d + "/log")
     if r.code != 0:
         return Verdict(0, "sanitizer cc")
     # stdout is the thing being scored, so it goes to a FILE rather than through
