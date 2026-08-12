@@ -25,7 +25,7 @@
   recalculated
 > dump
   A1      10                        10
-  B1      =0.1+0.2                  0.30000000000000006
+  B1      =0.1+0.2                  0.30000000000000004
   A2      32                        32
   B2      =1/3                      0.3333333333333333
   A3      =A1+A2                    42
@@ -51,9 +51,9 @@
 > roundtrip 9007199254740993
   9007199254740993          render 9007199254740992          str 9007199254740992.0        round-trips
 > roundtrip 1.7976931348623157e308
-  1.7976931348623157e308    render 1.7976931348623158e+308   str 1.7976931348623157e+308   round-trips
+  1.7976931348623157e308    render 1.7976931348623157e+308   str 1.7976931348623157e+308   round-trips
 > roundtrip 2.2250738585072014e-308
-  2.2250738585072014e-308   render 2.2250738585072012e-308   str 2.2250738585072014e-308   round-trips
+  2.2250738585072014e-308   render 2.2250738585072014e-308   str 2.2250738585072014e-308   round-trips
 > set B6 =1e-308
 > set B7 =1e-300/1e10
 > recalc
@@ -79,7 +79,7 @@
   recalculated
 > dump
   A1      10                        10
-  B1      =0.1+0.2                  0.30000000000000006
+  B1      =0.1+0.2                  0.30000000000000004
   C1      1                         1
   A2      32                        32
   B2      =1/3                      0.3333333333333333
@@ -116,7 +116,7 @@
   recalculated
 > dump
   A1      10                        10
-  B1      =0.1+0.2                  0.30000000000000006
+  B1      =0.1+0.2                  0.30000000000000004
   C1      1                         1
   D1      0                         0
   A2      32                        32
@@ -172,7 +172,7 @@
   recalculated; 4 cell(s) on or below a cycle
 > dump
   A1      10                        10
-  B1      =0.1+0.2                  0.30000000000000006
+  B1      =0.1+0.2                  0.30000000000000004
   C1      1                         1
   D1      0                         0
   E1      7                         7
@@ -225,12 +225,17 @@
   A9999 = 2
 === float round trip over a generated corpus
 subnormal render 5e-324
-render 0.1+0.2   0.30000000000000006
+render 0.1+0.2   0.30000000000000004
 render 2^53      9007199254740992
-render DBL_MAX   1.7976931348623158e+308
+render DBL_MAX   1.7976931348623157e+308
 render subnormal 5e-324
 checked 98411 values, 0 failed to round-trip
 rendered #NUM! for 0 of them
+=== the nearest decimal, as text
+near 2^53+2  9007199254740994
+near 0.1+0.2 0.30000000000000004
+near DBL_MAX 1.7976931348623157e+308
+near 2^89    6.189700196426902e+26
 === str(float) round-trips
 str(0.1+0.2)=0.30000000000000004 str round-trips
 === error variants reached: 13 (1 declared unreachable)

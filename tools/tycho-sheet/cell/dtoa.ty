@@ -32,9 +32,20 @@ import "core:strings"
 # the first reload and hard-fail at the top of the range.
 #
 # WHAT render() DOES INSTEAD: the shortest decimal that parses back to bit-equal
-# input. Every candidate is CHECKED with strings.parse_float (strtod, correctly
-# rounded) before it is returned, so digit generation is allowed to be
-# approximate -- a wrong low digit costs a retry, never a wrong number.
+# input, and among those of that length, the one NEAREST the value. Every
+# candidate is CHECKED with strings.parse_float (strtod, correctly rounded)
+# before it is returned, so a wrong digit costs a retry, never a wrong number.
+#
+# SHORTEST ALONE IS NOT ENOUGH, and this file shipped believing it was: several
+# 17-digit decimals read back as 0.1+0.2, and returning the first that did gave
+# 0.30000000000000006 for a value that is 0.30000000000000004440. Round-tripping
+# is a property of the interval; nearest is a property of the value, and only
+# the second one makes str(parse(s)) == s across implementations. The digits now
+# come from _ref, which keeps the scaling's own rounding instead of discarding
+# it. Measured against CPython repr over the 98409-value corpus below: before,
+# 20513 values rendered non-nearest digits and 6767 rendered MORE digits than
+# needed; after, 0 and 0, with 90 exact ties where render rounds half-up and
+# CPython half-even -- both answers equally near, which is what a tie means.
 #
 # MEASURED over 98418 values (every i/j for i,j in 1..120, 40000 pseudo-random
 # mantissas swept across 10^-30..10^30 with both signs, and 4000 pushed out to
@@ -152,6 +163,90 @@ fn _big(v: float) -> (int, int):
         e -= 1
     return (big, e)
 
+# 10^k as an integer, for 0 <= k <= 18. The candidate arithmetic in render() is
+# integer, so it needs the integer table as well as the float one.
+fn _p10i(k: int) -> int:
+    t := [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000,
+          1000000000, 10000000000, 100000000000, 1000000000000,
+          10000000000000, 100000000000000, 1000000000000000,
+          10000000000000000, 100000000000000000, 1000000000000000000]
+    return t[k]
+
+# Dekker's exact product: a * b == p + err, with no wider type in the language.
+# The splitter is 2^27+1, which needs |a| under ~1.3e300 -- _ref guarantees it.
+fn _two_prod(a: float, b: float) -> (float, float):
+    p := a * b
+    ca := 134217729.0 * a
+    ah := ca - (ca - a)
+    al := a - ah
+    cb := 134217729.0 * b
+    bh := cb - (cb - b)
+    bl := b - bh
+    return (p, ((ah * bh - p) + ah * bl + al * bh) + al * bl)
+
+fn _quick_sum(a: float, b: float) -> (float, float):
+    s := a + b
+    return (s, b - (s - a))
+
+fn _dd_mul(hi: float, lo: float, d: float) -> (float, float):
+    p, ep := _two_prod(hi, d)
+    return _quick_sum(p, ep + lo * d)
+
+fn _dd_div(hi: float, lo: float, d: float) -> (float, float):
+    q := hi / d
+    p, ep := _two_prod(q, d)
+    return _quick_sum(q, (((hi - p) - ep) + lo) / d)
+
+# |v| * 10^k as an integer near 10^18, plus the fraction that did not fit.
+#
+# WHY NOT _scale. _scale rounds once, and at 10^17 one rounding is ~11 units in
+# the last digit -- fine for "which digits are roughly right", useless for
+# "which decimal is NEAREST", a question decided a digit or two BELOW the 17
+# a binary64 can name. This carries every rounding of the scaling forward as a
+# second float instead of discarding it, so the pair is good to about 32
+# digits; the caller reads the 18 it needs off the integer and settles ties on
+# the fraction.
+fn _ref(v: float, k: int) -> (int, float):
+    hi := v
+    lo := 0.0
+    g := 0
+    # Powers of two are exact in both directions: pull the two extremes into the
+    # range where the splitter cannot overflow and an error term cannot underflow.
+    if hi > 1e290:
+        hi /= 18446744073709551616.0
+        g = 1
+    if hi < 1e-290:
+        hi *= 18446744073709551616.0
+        g = -1
+    kk := k
+    for kk >= 22:
+        nh, nl := _dd_mul(hi, lo, 1e22)
+        hi = nh
+        lo = nl
+        kk -= 22
+    for kk <= -22:
+        nh, nl := _dd_div(hi, lo, 1e22)
+        hi = nh
+        lo = nl
+        kk += 22
+    if kk > 0:
+        mh, ml := _dd_mul(hi, lo, _pow10(kk))
+        hi = mh
+        lo = ml
+    if kk < 0:
+        dh, dl := _dd_div(hi, lo, _pow10(-kk))
+        hi = dh
+        lo = dl
+    if g == 1:
+        hi *= 18446744073709551616.0
+        lo *= 18446744073709551616.0
+    if g == -1:
+        hi /= 18446744073709551616.0
+        lo /= 18446744073709551616.0
+    n := to_int(hi)
+    a := to_int(lo)
+    return (n + a, lo - to_float(a))
+
 # The `count` decimal digits of `n`, most significant first.
 fn _int_digits(n: int, count: int) -> [int]:
     ds: [int] = []
@@ -246,13 +341,48 @@ fn render(v: float) -> string:
         return "0"
     neg := v < 0.0
     big, e := _big(_fabs(v))
-    ds := _int_digits(big, 18)
+    n, frac := _ref(_fabs(v), 17 - e)
+    # _big chose the decade from a value one rounding wide; _ref is the sharper
+    # instrument, so it gets the last word on which decade the digits sit in.
+    if n >= 1000000000000000000:
+        e += 1
+        n, frac = _ref(_fabs(v), 17 - e)
+    if n < 100000000000000000:
+        e -= 1
+        n, frac = _ref(_fabs(v), 17 - e)
     for p := 1; p <= 17; p += 1:
-        rd, bump := _round_to(ds, p)
-        cand := _format(neg, rd, p, e + bump)
-        if _same(cand, v):
-            return cand
-    # Shortest-first missed, so _scale's rounding moved the low end of `big`.
+        sc := _p10i(18 - p)
+        q := n / sc
+        rem := n - q * sc
+        # Round to p digits on n AND the fraction under it: v is n + frac, and at
+        # 0.1+0.2 the fraction is -0.59, which is the whole difference between
+        # ...004 and ...005.
+        if to_float(rem * 2 - sc) + frac + frac >= 0.0:
+            q += 1
+        ee := e
+        if q >= _p10i(p):
+            q /= 10
+            sc *= 10
+            ee += 1
+        # SHORTEST, THEN NEAREST. q is v correctly rounded to p digits, so it is
+        # the nearest p-digit decimal there is; if it reads back, it is the
+        # answer. If it does not, it fell outside v's rounding interval, and the
+        # only other p-digit decimal that can still be inside is its neighbour on
+        # v's own side -- which is also the next nearest. So the first of the two
+        # that reads back is the nearest one that does. Accepting q alone is what
+        # returned 0.30000000000000006 for 0.1+0.2: it round-trips, and it is not
+        # the nearest.
+        step := 1
+        if to_float(n - q * sc) + frac < 0.0:
+            step = -1
+        for w := 0; w < 2; w += 1:
+            c := q + w * step
+            if c >= _p10i(p - 1) and c < _p10i(p):
+                cand := _format(neg, _int_digits(c, p), p, ee)
+                if _same(cand, v):
+                    return cand
+    # Shortest-first missed. It works off `big`, whose low end one _scale
+    # rounding can move -- a path _ref's digits no longer take, kept fail-closed.
     # A |k| over 22 needs more than one multiplication and the drift can reach
     # a few thousand units, which is too far to scan blindly.
     #

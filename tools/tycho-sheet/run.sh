@@ -46,6 +46,10 @@
 #       many of the 98411 landed there and this runner asserts ZERO. Its sibling
 #       is CellErr.NoText, which nothing constructs at all; [5] asserts that
 #       statically, by counting the token's occurrences in the source.
+#   [2b] THE NEAREST DECIMAL, AS TEXT, for the three values that exposed the
+#       difference. Round-tripping is the weaker half of the contract: six
+#       17-digit decimals read back as 0.1+0.2 and render() picked a wrong one
+#       for as long as [2] was the only float leg.
 #   [3] `str(float)` ROUND-TRIPS, asserted directly. This leg used to assert the
 #       opposite -- that `str(0.1 + 0.2)` was the lossy "0.3" -- because that was
 #       the whole reason cell/ carries a renderer. It went red on 2026-08-12 when
@@ -98,9 +102,10 @@
 # WHAT IT DELIBERATELY DOES NOT ASSERT
 #   Timing. Nothing here is a benchmark; the 100000-chain is bounded by $TO
 #   only so a hang reports instead of sitting there.
-#   Which of several equally short decimals render() picks. Two 17-digit strings
-#   can name the same double, and the contract is "reads back equal", not "is
-#   the canonical shortest". [2] tests the contract that matters.
+#   Which of two EQUALLY NEAR decimals render() picks. A value sitting exactly
+#   between two shortest decimals has two right answers; render rounds half-up
+#   there and nothing here cares. That is the only freedom left: shortest and
+#   nearest is now the contract, and [2b] pins it as text for three values.
 #
 # NO HOST DETAIL REACHES THE GOLDEN -- the program prints no paths. Every run is
 # bounded by $TO where a timeout(1) exists.
@@ -197,9 +202,8 @@ fn chk(v: float, bad: inout int, n: inout int, nnum: inout int):
 # The values cell/dtoa.ty was written for, each reported on its own. The corpus
 # count says 98411 values round-trip; it does not say these four were among
 # them. Two lines per value: the VERDICT, which the runner asserts as a literal,
-# and the DIGITS, which only go to the golden -- which of several equally valid
-# decimals render() picks is not this lane's contract, and pinning it here would
-# redden for an improvement to the renderer.
+# and the DIGITS, which only go to the golden -- the exact text is asserted in
+# [2b], for values whose nearest shortest decimal is unique.
 fn show(label: string, v: float):
     s := cell.render(v)
     verdict := "UNREADABLE"
@@ -317,6 +321,53 @@ else
         bad "the min subnormal does not render as 5e-324"
     printf '=== float round trip over a generated corpus\n' >> "$out"
     grep -e '^checked ' -e '^rendered #NUM' -e '^subnormal ' -e '^render ' "$T/probe.out" >> "$out"
+fi
+
+# ---------------------------------------------------------------------------
+# [2b] the three values whose NEAREST decimal is the whole point, as text
+#
+# [2] asserts round-tripping, which is the weaker half and misses this by
+# construction: six different 17-digit decimals read back as 0.1+0.2, and
+# render() returned 0.30000000000000006 -- round-tripping, and not the value's
+# own digits -- under a green [2]. Nearest is a property of the value, not of
+# the rounding interval, so nothing but the exact text can pin it. None of the
+# three is a tie, so each has exactly one right answer.
+# ---------------------------------------------------------------------------
+N="$T/pkg2"; mkdir -p "$N"
+[ -d "$src/cell" ] || bad "probe: $src/cell is gone -- leg [2b] asserts NOTHING"
+cp -R "$src/cell" "$N/" 2>/dev/null
+cat > "$N/nearest.ty" <<'EOF'
+package main
+
+import "cell"
+
+fn main():
+    println("near 2^53+2  " + cell.render(9007199254740994.0))
+    println("near 0.1+0.2 " + cell.render(0.1 + 0.2))
+    println("near DBL_MAX " + cell.render(1.7976931348623157e308))
+    println("near 2^89    " + cell.render(618970019642690137449562112.0))
+EOF
+if ! "$TYCHOC" "$N/nearest.ty" -o "$T/nearest" >"$T/nearest.log" 2>&1; then
+    bad "nearest: tychoc could not build the nearest-digits probe"
+    sed 's/^/      /' "$T/nearest.log" | head -8
+else
+    $TO "$T/nearest" > "$T/nearest.out" 2>&1 || bad "nearest: the probe did not exit 0"
+    near_() {
+        grep -qxF "near $1" "$T/nearest.out" || {
+            bad "nearest: expected '$1' -- render() returned a decimal that reads back but is not the nearest"
+            sed 's/^/      /' "$T/nearest.out"
+        }
+    }
+    near_ '2^53+2  9007199254740994'
+    near_ '0.1+0.2 0.30000000000000004'
+    near_ 'DBL_MAX 1.7976931348623157e+308'
+    # A power of two: the gap below it is half the gap above, so the nearest
+    # 16-digit decimal falls outside the interval while its neighbour does not.
+    # Without the neighbour probe this comes out a digit longer, and it is the
+    # only one of the four that does -- measured, 45 of 3120 powers of two.
+    near_ '2^89    6.189700196426902e+26'
+    printf '=== the nearest decimal, as text\n' >> "$out"
+    cat "$T/nearest.out" >> "$out"
 fi
 
 # ---------------------------------------------------------------------------
