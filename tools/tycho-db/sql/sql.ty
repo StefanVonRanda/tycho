@@ -1,0 +1,284 @@
+package sql
+
+import "core:char"
+import "core:strings"
+
+# The SQL front end: bytes -> tokens -> AST. No planning, no execution, no
+# storage -- this package answers "what did they ask for", nothing else.
+
+enum Tok:
+    TIdent(string)
+    TNum(int)
+    TStr(string)
+    TPunct(string)
+    TEnd
+
+enum Ty:
+    TyInt
+    TyText
+
+enum Expr:
+    Col(string)
+    LitInt(int)
+    LitStr(string)
+    Cmp(string, Expr, Expr)
+    And(Expr, Expr)
+
+struct ColDef:
+    name: string
+    ty: Ty
+
+enum Stmt:
+    Create(string, [ColDef])
+    Insert(string, [Expr])
+    Select([string], string, Option(Expr))
+
+enum SqlErr:
+    Lex(string, int)
+    Parse(string, int)
+
+fn ty_name(t: Ty) -> string:
+    if t is TyInt:
+        return "int"
+    return "text"
+
+# ---- lexer ----------------------------------------------------------------
+
+fn _keyword(s: string) -> bool:
+    up := strings.to_upper(s)
+    return up == "SELECT" or up == "FROM" or up == "WHERE" or up == "CREATE" or
+           up == "TABLE" or up == "INSERT" or up == "INTO" or up == "VALUES" or
+           up == "AND" or up == "INT" or up == "TEXT"
+
+fn lex(src: string) -> Result([Tok], SqlErr):
+    out: [Tok] = []
+    i := 0
+    for i < len(src):
+        c := src[i]
+        if char.is_space(c):
+            i += 1
+        elif char.is_digit(c):
+            start := i
+            for i < len(src) and char.is_digit(src[i]):
+                i += 1
+            push(out, TNum(strings.parse_int(src[start:i])))
+        elif char.is_alpha(c) or c == 95:
+            start := i
+            for i < len(src) and (char.is_alpha(src[i]) or char.is_digit(src[i]) or src[i] == 95):
+                i += 1
+            push(out, TIdent(src[start:i]))
+        elif c == 39:
+            i += 1
+            start := i
+            for i < len(src) and src[i] != 39:
+                i += 1
+            if i >= len(src):
+                return Err(Lex("unterminated string", start))
+            push(out, TStr(src[start:i]))
+            i += 1
+        elif c == 60 or c == 62 or c == 33:
+            if i + 1 < len(src) and src[i + 1] == 61:
+                push(out, TPunct(src[i:i + 2]))
+                i += 2
+            else:
+                push(out, TPunct(src[i:i + 1]))
+                i += 1
+        elif c == 40 or c == 41 or c == 44 or c == 42 or c == 61 or c == 59:
+            push(out, TPunct(src[i:i + 1]))
+            i += 1
+        else:
+            return Err(Lex("unexpected character '" + src[i:i + 1] + "'", i))
+    push(out, TEnd)
+    return Ok(out)
+
+# ---- token cursor ---------------------------------------------------------
+
+fn _word(ts: [Tok], i: int) -> string:
+    match ts[i]:
+        TIdent(w): return strings.to_upper(w)
+        _: return ""
+
+fn _raw(ts: [Tok], i: int) -> string:
+    match ts[i]:
+        TIdent(w): return w
+        _: return ""
+
+fn _punct(ts: [Tok], i: int) -> string:
+    match ts[i]:
+        TPunct(p): return p
+        _: return ""
+
+fn _expect_punct(ts: [Tok], i: inout int, p: string) -> Result(void, SqlErr):
+    if _punct(ts, i) != p:
+        return Err(Parse("expected '" + p + "'", i))
+    i += 1
+    return Ok()
+
+fn _expect_word(ts: [Tok], i: inout int, w: string) -> Result(void, SqlErr):
+    if _word(ts, i) != w:
+        return Err(Parse("expected " + w, i))
+    i += 1
+    return Ok()
+
+fn _ident(ts: [Tok], i: inout int) -> Result(string, SqlErr):
+    n := _raw(ts, i)
+    if n == "" or _keyword(n):
+        return Err(Parse("expected a name", i))
+    i += 1
+    return Ok(n)
+
+# ---- expressions ----------------------------------------------------------
+
+fn _atom(ts: [Tok], i: inout int) -> Result(Expr, SqlErr):
+    match ts[i]:
+        TNum(n):
+            i += 1
+            return Ok(LitInt(n))
+        TStr(s):
+            i += 1
+            return Ok(LitStr(s))
+        TIdent(w):
+            if _keyword(w):
+                return Err(Parse("expected a value, got keyword " + w, i))
+            i += 1
+            return Ok(Col(w))
+        _:
+            return Err(Parse("expected a value", i))
+
+fn _cmp(ts: [Tok], i: inout int) -> Result(Expr, SqlErr):
+    left := _atom(ts, &i) or_return
+    op := _punct(ts, i)
+    if op != "=" and op != "<" and op != ">" and op != "<=" and op != ">=" and op != "!=":
+        return Err(Parse("expected a comparison operator", i))
+    i += 1
+    right := _atom(ts, &i) or_return
+    return Ok(Cmp(op, left, right))
+
+fn _predicate(ts: [Tok], i: inout int) -> Result(Expr, SqlErr):
+    left := _cmp(ts, &i) or_return
+    for _word(ts, i) == "AND":
+        i += 1
+        right := _cmp(ts, &i) or_return
+        left = And(left, right)
+    return Ok(left)
+
+# ---- statements -----------------------------------------------------------
+
+fn _parse_create(ts: [Tok], i: inout int) -> Result(Stmt, SqlErr):
+    _expect_word(ts, &i, "TABLE") or_return
+    name := _ident(ts, &i) or_return
+    _expect_punct(ts, &i, "(") or_return
+    cols: [ColDef] = []
+    for true:
+        cn := _ident(ts, &i) or_return
+        tw := _word(ts, i)
+        if tw != "INT" and tw != "TEXT":
+            return Err(Parse("column '" + cn + "' needs a type (INT or TEXT)", i))
+        i += 1
+        t := TyInt
+        if tw == "TEXT":
+            t = TyText
+        push(cols, ColDef(cn, t))
+        if _punct(ts, i) != ",":
+            break
+        i += 1
+    _expect_punct(ts, &i, ")") or_return
+    return Ok(Create(name, cols))
+
+fn _parse_insert(ts: [Tok], i: inout int) -> Result(Stmt, SqlErr):
+    _expect_word(ts, &i, "INTO") or_return
+    name := _ident(ts, &i) or_return
+    _expect_word(ts, &i, "VALUES") or_return
+    _expect_punct(ts, &i, "(") or_return
+    vals: [Expr] = []
+    for true:
+        v := _atom(ts, &i) or_return
+        push(vals, v)
+        if _punct(ts, i) != ",":
+            break
+        i += 1
+    _expect_punct(ts, &i, ")") or_return
+    return Ok(Insert(name, vals))
+
+fn _parse_select(ts: [Tok], i: inout int) -> Result(Stmt, SqlErr):
+    cols: [string] = []
+    if _punct(ts, i) == "*":
+        i += 1
+    else:
+        for true:
+            c := _ident(ts, &i) or_return
+            push(cols, c)
+            if _punct(ts, i) != ",":
+                break
+            i += 1
+    _expect_word(ts, &i, "FROM") or_return
+    tbl := _ident(ts, &i) or_return
+    if _word(ts, i) != "WHERE":
+        return Ok(Select(cols, tbl, None))
+    i += 1
+    p := _predicate(ts, &i) or_return
+    return Ok(Select(cols, tbl, Some(p)))
+
+fn parse(src: string) -> Result(Stmt, SqlErr):
+    ts := lex(src) or_return
+    i := 0
+    verb := _word(ts, i)
+    i += 1
+    st := Create("", [])
+    if verb == "CREATE":
+        st = _parse_create(ts, &i) or_return
+    elif verb == "INSERT":
+        st = _parse_insert(ts, &i) or_return
+    elif verb == "SELECT":
+        st = _parse_select(ts, &i) or_return
+    else:
+        return Err(Parse("expected CREATE, INSERT or SELECT", 0))
+    if _punct(ts, i) == ";":
+        i += 1
+    if not (ts[i] is TEnd):
+        return Err(Parse("trailing input", i))
+    return Ok(st)
+
+# ---- rendering, so a caller can show what it understood --------------------
+
+fn show_expr(e: Expr) -> string:
+    match e:
+        Col(c): return c
+        LitInt(n): return str(n)
+        LitStr(s): return "'" + s + "'"
+        Cmp(op, l, r): return show_expr(l) + " " + op + " " + show_expr(r)
+        And(l, r): return show_expr(l) + " AND " + show_expr(r)
+
+fn show(s: Stmt) -> string:
+    match s:
+        Create(n, cols):
+            out := "CREATE " + n + " ("
+            for k := 0; k < len(cols); k += 1:
+                if k > 0:
+                    out += ", "
+                out += cols[k].name + " " + ty_name(cols[k].ty)
+            return out + ")"
+        Insert(n, vals):
+            out := "INSERT " + n + " ("
+            for k := 0; k < len(vals); k += 1:
+                if k > 0:
+                    out += ", "
+                out += show_expr(vals[k])
+            return out + ")"
+        Select(cols, tbl, w):
+            sel := "*"
+            if len(cols) > 0:
+                sel = ""
+                for k := 0; k < len(cols); k += 1:
+                    if k > 0:
+                        sel += ", "
+                    sel += cols[k]
+            out := "SELECT " + sel + " FROM " + tbl
+            match w:
+                Some(p): return out + " WHERE " + show_expr(p)
+                None: return out
+
+fn err_str(e: SqlErr) -> string:
+    match e:
+        Lex(m, at): return "lex error at " + str(at) + ": " + m
+        Parse(m, at): return "parse error at token " + str(at) + ": " + m
