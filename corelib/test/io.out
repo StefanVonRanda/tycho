@@ -40,3 +40,7 @@ text_ok=Ok len=0
 text_missing=NotFound
 text_dir=IsDir
 read_missing_len=0
+sync_file=Ok sync_dir=Ok mk=did wrote=did
+after_sync=[durable] size=Ok
+sync_missing=NotFound
+sync_cleanup=did|did

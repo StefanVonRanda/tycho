@@ -104,6 +104,19 @@ fn twhy(r: Result(string, io.IoErr)) -> string:
         Err(io.IsDir): return "IsDir"
         _: return "Failed"
 
+# sync's Result(bool, IoErr). Ok is always Ok(true) -- there is no "already
+# synced" state to report, unlike make_dir's two successes -- so the boolean is
+# not printed. The Unsupported arm is NOT REACHED by this fixture (see the sync
+# section below for why it cannot be, portably); it is written for mwhy's reason,
+# so a platform that starts answering it moves the golden instead of collapsing
+# into "Failed" where nobody would look.
+fn swhy(r: Result(bool, io.IoErr)) -> string:
+    match r:
+        Ok(done): return "Ok"
+        Err(io.NotFound): return "NotFound"
+        Err(io.Unsupported): return "Unsupported"
+        _: return "Failed"
+
 fn jn(xs: [string]) -> string:                 # join with '|' for stable printing
     out := ""
     for i := 0; i < len(xs); i += 1:
@@ -469,3 +482,41 @@ fn main():
     println(f"text_dir={twhy(io.read_text("/tmp"))}")
     # and read() itself, fail-open, for the contrast the entry above is about
     println(f"read_missing_len={len(io.read("/tmp/tycho_corelib_io_absent.xyz"))}")
+
+    # ---- sync: fsync(2), and the two halves of a durable create ----------------
+    # WHAT THESE FOUR LINES PROVE: sync reaches the kernel and returns; it
+    # classifies its argument as documented (a file Ok, a DIRECTORY Ok rather
+    # than Err(IsDir), a missing path Err(NotFound)); and the file is intact and
+    # unchanged afterwards, so the call is neither destructive nor a stub.
+    #
+    # WHAT THEY DO NOT PROVE, said plainly because a durability test that implies
+    # more than it checked is worse than no test: that anything survives POWER
+    # LOSS. That needs the machine to lose power mid-write and be examined after
+    # -- hardware, not a fixture. fsync returning 0 is the KERNEL'S assertion that
+    # it pushed the bytes at the device; a drive with a lying write cache makes
+    # that assertion false and no code in this process can detect it. So the
+    # golden locks the SURFACE -- statuses, call order, non-destruction -- and
+    # claims exactly that and nothing beyond it.
+    sd := "/tmp/tycho_corelib_io_syncdir.d"
+    mksd := io.make_dir(sd)
+    sf := sd + "/log.dat"
+    wsf := io.write_bytes(sf, to_bytes("durable"))
+    # The create sequence from sync's doc comment, IN ORDER: the bytes, then the
+    # NAME. Syncing only `sf` would leave a file whose directory entry a power cut
+    # could still lose -- that second call is the whole point of a directory being
+    # Ok here, so the fixture makes it and records its status.
+    syf := io.sync(sf)
+    syd := io.sync(sd)
+    println(f"sync_file={swhy(syf)} sync_dir={swhy(syd)} mk={fswhy(mksd)} wrote={fswhy(wsf)}")
+    # Non-destructive, asserted on CONTENT and not just a status: the seven bytes
+    # written above must read back as the same letters.
+    println(f"after_sync=[{sl(io.read_bytes(sf))}] size={mwhy(io.size(sf))}")
+    # A path that is not there is Err(NotFound) -- never a silent success, which is
+    # the failure mode this whole call exists to remove.
+    println(f"sync_missing={swhy(io.sync("/tmp/tycho_corelib_io_absent.xyz"))}")
+    # Err(Unsupported) HAS NO CASE HERE, on purpose: producing an unsyncable object
+    # needs a fifo or a pseudo-filesystem, and neither is portable from a fixture
+    # that must give one answer on every host. Faking one would test the fake.
+    rmsf := io.remove(sf)
+    rmsd := io.remove(sd)
+    println(f"sync_cleanup={fswhy(rmsf)}|{fswhy(rmsd)}")

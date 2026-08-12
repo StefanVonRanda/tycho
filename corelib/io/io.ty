@@ -29,6 +29,11 @@
 # (the option-result plan). `make_dir` / `remove` (2026-07-26, the option-result plan) also
 # return a `Result`, for the same reason `read_bytes` does: their failures are
 # ambiguous. Nothing here aborts.
+#
+# DURABILITY. Every writer here returns once close(2) succeeded -- page cache,
+# not platter. That survives the process dying, not the machine. `sync` (2026-08-12)
+# is the one call that reaches the device, and a durable CREATE needs it twice:
+# once on the file, once on the parent directory. See sync.
 package io
 import "core:strings"
 
@@ -44,6 +49,9 @@ enum IoErr:
                        # (make_dir only -- see make_dir for why it needs its own
                        # variant instead of folding into Failed)
     Failed             # the path exists but could not be read (permissions, ...)
+    Unsupported        # the operation has no implementation for this object on
+                       # this platform/filesystem (sync only -- see sync for why
+                       # this cannot be Failed)
 
 # Whole file as a string. FAIL-OPEN: "" for a missing or unreadable file, which
 # is indistinguishable from a genuinely empty one. Prefer read_text below when
@@ -161,6 +169,9 @@ extern fn iox_stat_size(path: string, size: inout int) -> int
 # mkdir(2) / remove(3), one entry each, in the same code space (plus FS_EXISTS).
 extern fn iox_make_dir(path: string) -> int
 extern fn iox_remove(path: string) -> int
+# fsync(2), same code space plus FS_UNSUP. No `inout`: there is no payload, only
+# a verdict, so the status keeps the return.
+extern fn iox_sync(path: string) -> int
 
 # The shim's read_file status codes, named once so read_bytes reads as prose.
 const RF_MISS = 0
@@ -168,6 +179,8 @@ const RF_OK   = 1
 const RF_DIR  = 2
 # make_dir only: occupied by a non-directory. See iox_make_dir in io_shim.c.
 const FS_EXISTS = 4
+# sync only: it is there, and this platform cannot flush it. See iox_sync.
+const FS_UNSUP = 5
 
 # Read the whole file as raw bytes -- interior NUL bytes are preserved (unlike
 # read(), which cannot report a failure). The right tool for binary assets
@@ -418,6 +431,64 @@ fn remove(p: string) -> Result(bool, IoErr):
         return Ok(true)
     if k == RF_MISS:
         return Ok(false)
+    return Err(Failed)
+
+# Flush `p` to the STORAGE DEVICE and return only once the kernel says it landed
+# -- fsync(2). Every other writer in this module returns once close(2) succeeded,
+# which reaches the page cache and stops: enough that a later process, including
+# one started after a SIGKILL, reads the bytes, and NOT enough that they survive
+# the machine losing power. This is the call that closes that gap.
+#
+#   Ok(true)          the device acknowledged the flush
+#   Err(NotFound)     nothing is there
+#   Err(Unsupported)  it is there and has no flush on this platform/filesystem
+#   Err(Failed)       the flush was attempted and FAILED -- EIO, a dead device,
+#                     ENOSPC on a delayed-allocation filesystem. THE WRITE IS
+#                     LOST; this is not a retryable hiccup.
+#
+# A DIRECTORY IS Ok, NOT Err(IsDir), and that is the whole reason this signature
+# takes a path rather than being bolted onto a writer. A file's CONTENTS and a
+# file's NAME are two different pieces of disk. Syncing the file flushes the
+# contents; the directory entry naming them is flushed only by syncing the PARENT
+# DIRECTORY. Sync a freshly CREATED file and not its parent, and a power cut can
+# hand back a file that does not exist -- data intact, unreachable. So a durable
+# create is TWO calls, and this is both of them:
+#
+#   io.write_bytes(f, b) or_return
+#   io.sync(f) or_return                 # the bytes
+#   io.sync(path.dir(f)) or_return       # the NAME -- only needed on create
+#
+# The second sync is needed when the entry appears or disappears (create, remove,
+# rename), not on every later write to a file that already exists -- which is why
+# it is the caller's separate call and not a hidden syscall inside this one. An
+# appending log pays it once and syncs only the file thereafter.
+#
+# WHY THIS, AND NOT A `write_bytes_synced(p, b)`. A bundled writer looked like the
+# safer surface and is the more dangerous one, for three reasons that all point
+# the same way. It does not fit the caller that demanded this: tycho-db's log
+# appends with `write_at`, so a whole-file bundled call could not have served it,
+# and bundling consistently would mean a synced twin of all five writers here
+# rather than one orthogonal verb that composes with each. And -- decisively -- no
+# name of that shape can carry the paragraph above: `write_bytes_synced` reads as
+# "this is now durable" while the file's NAME may still not be, so it would ship
+# the classic mistake with a label promising the opposite. One `sync` that makes
+# the second call visible is the honest surface.
+#
+# Err(Unsupported) IS SEPARATE FROM Err(Failed) for make_dir's Exists reason: one
+# failed syscall, two opposite next moves. Failed means the data is gone and a log
+# that shrugs has already lied. Unsupported means the data is exactly where every
+# other core:io writer leaves it and the platform has nothing stronger to offer,
+# so a caller may fall back to the process-death guarantee AND SAY SO. Note what
+# it is NOT: a silent Ok. A no-op reported as success would rebuild the same false
+# durability claim one layer down, where nothing can see it.
+fn sync(p: string) -> Result(bool, IoErr):
+    k := iox_sync(p)
+    if k == RF_OK:
+        return Ok(true)
+    if k == RF_MISS:
+        return Err(NotFound)
+    if k == FS_UNSUP:
+        return Err(Unsupported)
     return Err(Failed)
 
 # Open a streaming line reader over `path`. Returns a null ptr (check is_null) if

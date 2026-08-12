@@ -572,3 +572,93 @@ void iox_write_bytes(const char *path, const unsigned char *data,
     if (fclose(f) != 0) { *status = ty_rf_errno(path); return; }
     *status = TY_RF_OK;
 }
+
+/* One more code the read/stat space has no use for: the OBJECT IS REAL AND THE
+ * PLATFORM CANNOT SYNC IT. It is deliberately not TY_RF_ERR, because the two
+ * demand opposite moves from a caller -- see iox_sync below. */
+#define TY_FS_UNSUP 5
+
+/* fsync(2) `path`: return only once the kernel says the bytes AND the metadata
+ * are on the storage device, not merely in the page cache.
+ *
+ *      TY_RF_OK     (1)  the device acknowledged the flush
+ *      TY_RF_MISS   (0)  no such path (ENOENT/ENOTDIR)
+ *      TY_FS_UNSUP  (5)  it is there and this platform/filesystem has no flush
+ *                        for it -- see WHY THIS IS NOT AN ERROR CODE below
+ *      TY_RF_ERR    (3)  it is there and the flush FAILED: EIO, ENOSPC on a
+ *                        delayed-allocation filesystem, a dead device
+ *
+ * Every other writer here returns once close(2) succeeded, which reaches the
+ * page cache and no further: enough to survive the WRITING PROCESS dying, never
+ * enough to survive the machine dying, because the page cache is RAM.
+ *
+ * A DIRECTORY IS A LEGAL ARGUMENT AND IS TY_RF_OK (matching iox_stat_mtime, not
+ * iox_stat_size) because it is the half of durability everyone forgets: a
+ * file's CONTENTS and its NAME live in different places, and fsync of the file
+ * flushes only the first. A freshly created file synced without its parent can
+ * come back from a power cut as a file that does not exist, data intact and
+ * unreachable. O_RDONLY is also the only mode a directory can be opened in.
+ *
+ * TY_FS_UNSUP IS NOT TY_RF_ERR, on iox_make_dir's TY_FS_EXISTS test: one failed
+ * syscall, two opposite next moves. TY_RF_ERR means the kernel tried to push the
+ * data and the device refused -- the write is LOST. TY_FS_UNSUP means the data
+ * is exactly where every other core:io writer leaves it and the platform has no
+ * stronger promise available, which a caller may degrade to and say so. And it
+ * is never a silent TY_RF_OK: claiming a flush that did not happen would rebuild
+ * the false durability claim this call exists to remove, one layer lower. */
+tycho_int iox_sync(const char *path) {
+    errno = 0;
+#ifdef _WIN32
+    /* No Windows API flushes a DIRECTORY ENTRY: FlushFileBuffers (which _commit
+     * wraps) needs a handle opened for writing, and a directory cannot be opened
+     * that way. Flushing NTFS's metadata means a volume handle and Administrator.
+     * So the directory half is honestly unavailable here rather than quietly
+     * skipped -- a caller creating a file on Windows learns that the NAME is not
+     * covered instead of being told it is. */
+    struct stat st;
+    if (stat(path, &st) != 0) return ty_rf_errno(path);
+    if (S_ISDIR(st.st_mode)) return TY_FS_UNSUP;
+    /* O_WRONLY, unlike the POSIX branch: _commit -> FlushFileBuffers requires
+     * GENERIC_WRITE on the handle and fails ERROR_ACCESS_DENIED without it. */
+    int fd = open(path, O_WRONLY | O_BINARY);
+    if (fd < 0) return ty_rf_errno(path);
+    if (_commit(fd) != 0) { int e = errno; close(fd); errno = e; return TY_RF_ERR; }
+    if (close(fd) != 0) return ty_rf_errno(path);
+    return TY_RF_OK;
+#else
+    /* O_RDONLY: POSIX permits fsync on a read-only descriptor, and it is the
+     * only mode that can open a directory at all. fsync, not fdatasync -- an
+     * appending log needs the new SIZE durable, not just the bytes.
+     *
+     * O_NONBLOCK IS LOAD-BEARING AND NOT AN OPTIMISATION. open(2) of a FIFO for
+     * reading BLOCKS until some process opens the write end, so without this a
+     * sync of a path that happens to be a fifo never returns -- an unkillable
+     * hang in the middle of a durability call, which is a worse failure than the
+     * one this function prevents. MEASURED: the probe deadlocked here before the
+     * flag was added. It also covers a device node that blocks on open. On a
+     * regular file or a directory it has no effect, and it does not alter fsync's
+     * semantics on any of them. */
+    int fd = open(path, O_RDONLY | O_NONBLOCK | O_BINARY);
+    if (fd < 0) return ty_rf_errno(path);
+    int r;
+    do { r = fsync(fd); } while (r != 0 && errno == EINTR);   /* a signal is not a failure */
+    if (r != 0) {
+        /* EINVAL is what Linux returns for an fd whose object has no flush (a
+         * fifo, a socket, some pseudo-filesystems); ENOTSUP/EOPNOTSUPP is the
+         * same answer elsewhere. Everything else means the flush was attempted
+         * and did not land, which is data loss. */
+        tycho_int st = TY_RF_ERR;
+        if (errno == EINVAL || errno == ENOTSUP
+#if defined(EOPNOTSUPP) && EOPNOTSUPP != ENOTSUP
+            || errno == EOPNOTSUPP
+#endif
+           ) st = TY_FS_UNSUP;
+        close(fd);
+        return st;
+    }
+    /* close(2) can report a deferred write error; a sync that succeeded and then
+     * failed to close has not proven what it claims. */
+    if (close(fd) != 0) return ty_rf_errno(path);
+    return TY_RF_OK;
+#endif
+}
