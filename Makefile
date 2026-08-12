@@ -699,6 +699,7 @@ hooks:
 # matching .gitignore block; verified 2026-07-30, see the loops-cleanup plan.
 clean:
 	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
+	rm -f tycho-httpd tycho-httpd.c
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c
 	rm -f examples/arrays examples/arrays.c
