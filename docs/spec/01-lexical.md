@@ -192,38 +192,55 @@ bars an uppercase spelling from every run-time binding position. They are
   `range` (in the head of a `for … in`, **only to refuse it** since 2026-07-29).
 - **Value constructors treated as identifiers:** `None`, `Some`, `Ok`, `Err`,
   and the match wildcard `_`. Unlike the builtin functions below, these four
-  cannot be shadowed: a `fn` or `const` of one of those names is rejected in
-  every package ([§19.1](12-aggregates.md#191-enum-declaration-and-variants)).
+  are refused **everywhere**: a `fn` or `const` of one of those names is
+  rejected in every package, qualified spelling or not
+  ([§19.1](12-aggregates.md#191-enum-declaration-and-variants)).
 - **Built-in functions:** every builtin (`len`, `push`, `pop`, `print`, `str`,
   `to_int`, `wait`, `send`, `recv`, `close`, …) is an ordinary identifier
   resolved as a call; none is reserved ([§29](16-builtins.md)).
 
   A builtin name may **not** be shadowed. In an unqualified call `f(...)`, if
   `f` names a builtin then the **builtin is selected**, always — whatever else
-  the package declares, and including a call written inside a same-named
-  procedure's own body, which therefore does not recurse. A procedure declared
-  with a builtin's name is consequently unreachable by that name, and declaring
-  one **is an error**. Pick a different name: `core:utf8` hit this and renamed
-  its `len` to `count`.
+  the file declares, and including a call written inside a same-named
+  procedure's own body, which therefore does not recurse.
 
-  A **package-qualified** call is a different construct and is unaffected:
-  `pkg.f(...)` names `pkg`'s procedure and never a builtin, so a package may
-  export a procedure whose name a builtin also owns and callers may use it.
-  `core:json` does exactly that — `json.keys(j)` resolves to
-  `corelib/json/json.ty@keys`. Only the unqualified spelling is taken.
+  That governs the **call**, and it reaches a declaration only through
+  reachability — so the two declaration positions differ:
 
-  > **gap:** the reference implementation enforces this in three ways and
-  > diagnoses only the first two. About half the builtin names are rejected at
-  > the declaration with `'X' is already defined`. The rest declare with a
-  > warning ("`X` shadows the builtin of the same name …") and are then
-  > overtaken at the call site by the builtin, so what a caller sees depends on
-  > its **arguments**, not on the name: arguments the builtin's own contract
-  > refuses produce that builtin's diagnostic — confusingly, since the local's
-  > signature may fit perfectly — and arguments it accepts are answered
-  > silently, with the local body never entered. The silent case is the
-  > undiagnosed one. The warning is quality of implementation, not a
-  > conformance requirement; **selection** is the normative part, and every
-  > path above selects the builtin.
+  - In the **main program** — the entry file, whether or not it opens with
+    `package main` — a procedure has no spelling other than the unqualified
+    one. One named after a builtin could never be called, so declaring it
+    **is an error**. Pick a different name: `core:utf8` hit this and renamed
+    its `len` to `count`.
+  - In a **package**, `pkg.f(...)` is a different construct: it names `pkg`'s
+    procedure and never a builtin. Such a declaration stays reachable, and is
+    therefore **permitted** — a package MAY export a procedure whose name a
+    builtin also owns, and callers MAY call it. `core:json` does exactly that;
+    `json.keys(j)` resolves to `corelib/json/json.ty@keys` and is legal. Only
+    the unqualified spelling, written inside that package's own body, is taken
+    by the builtin.
+
+  > **gap:** the error in the first case is under-enforced. Measured
+  > 2026-08-12 across the 54 names `src/tychoc.c@shadows_builtin` lists: in the
+  > main program 26 are rejected at the declaration with `'X' is already
+  > defined`, and the other 28 are accepted with a warning and then overtaken
+  > by the builtin at the call site — so what a caller sees turns on the
+  > **arguments**, not the name. Arguments the builtin's own contract refuses
+  > produce that builtin's diagnostic (with a two-parameter `hash` declared,
+  > `hash(1, 2)` fails as `hash(x) takes one argument`), which is confusing
+  > since the local's signature fits perfectly. Arguments it accepts are
+  > answered **silently**, the local body never entered: with
+  > `fn to_u8(x: int) -> int` returning `99`, `to_u8(5)` evaluates to `5`.
+  > That silent case is the undiagnosed one, and those 28 declarations are
+  > what this gap covers — each ought to be rejected outright.
+  >
+  > Inside a package all 54 declare successfully and the qualified call reaches
+  > the local in every one. That is the rule above rather than a gap. The
+  > warning still fires, but only when the file being compiled is itself inside
+  > the corelib tree; a consumer's build mutes it (`src/tychoc.c@g_mute_warn`),
+  > the collision not being theirs to fix. The warning is quality of
+  > implementation, not a conformance requirement; **selection** is the
+  > normative part.
 
 > Provenance: contextual dispatch at `src/tychoc.c:4541-4550` (top level),
 > `:3590@"const"`/`:3616@"delete"` (`const`/`delete`), `:2275@soa [Struct]`/`:2791@soa []Struct` (`soa`),

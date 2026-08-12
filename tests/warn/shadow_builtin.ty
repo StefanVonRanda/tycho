@@ -1,10 +1,10 @@
-# Declaring a procedure whose name is a builtin does NOT shadow it (spec §3.7,
-# rewritten 2026-08-12): the builtin is selected at every unqualified call and
-# the local is unreachable by that name, so the declaration warns. core:utf8 hit
-# this -- its `decode` called `len` and got the builtin -- and renamed its own
-# entry point to `count`. The warning is the assertion here; this lane captures
-# stderr only and never runs the program, so
-# `tests/shadow_builtin_selection.ty` runs the calls and locks the answers.
+# `len` here is a MAIN-PROGRAM procedure named after a builtin: spec §3.7 makes
+# that an error, but `len` is one of the 28 names the compiler only warns about
+# (§3.7's documented gap), so the warning is what there is to pin. The builtin
+# is selected at every unqualified call and this local is unreachable by that
+# name; core:utf8 hit it and renamed `len` to `count`. A PACKAGE-level
+# declaration is legal instead (`json.keys`). This lane captures stderr and
+# never runs, so `tests/shadow_builtin_selection.ty` locks the answers.
 fn len(s: string) -> int:
     return 7
 

@@ -4122,14 +4122,14 @@ static Stmt **parse_arm_inline(Parser *ps, int value, int *count) {
     return body;
 }
 
-/* Does `n` name a builtin that a same-named package procedure COLLIDES with?
+/* Does `n` name a builtin that a same-named procedure COLLIDES with?
  *
  * Builtins lex as TK_IDENT, so they stay legal procedure names. §3.7 (rewritten
  * 2026-08-12) makes the outcome normative: the BUILTIN is always selected at an
  * unqualified call, so such a declaration is unreachable by that name. Measured
- * 2026-08-12 over every name below -- about half are rejected outright at the
- * declaration (`'X' is already defined`); the rest declare, and the builtin then
- * answers, either refusing the arguments with its own contract's diagnostic or,
+ * 2026-08-12 over every name below -- in the MAIN PROGRAM 26 of the 54 are
+ * rejected outright (`'X' is already defined`); the other 28 declare, and the
+ * builtin answers, either refusing the arguments with its own diagnostic or,
  * when the arguments happen to fit it, answering silently with the local body
  * never entered. That silent case is what this warning exists to name.
  *
