@@ -80,7 +80,7 @@ done
 
 # bench/trie/ is the only bench directory whose files declare a `package` header,
 # and that header is exactly what makes tychoc scan the directory and compile
-# every sibling as one package (src/tychoc.c:8661-8664). trie.ty and trie_pool.ty
+# every sibling as one package (src/tychoc.c:8683-8686). trie.ty and trie_pool.ty
 # are two independent programs, so in place they collide on `struct Trie`. They
 # are NOT excluded -- each is compiled alone in a scratch dir, the same fix
 # bench/trie/run.sh:31-34 already applies.

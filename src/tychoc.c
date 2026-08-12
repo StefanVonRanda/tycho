@@ -3823,7 +3823,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10268), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10290), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -7184,6 +7184,20 @@ static void pf_capture(Expr *id) {
     if (g_pf_ncap >= 14) die_at(id->line, "parallel for captures at most 14 outer variables");
     g_pf_caps[g_pf_ncap++] = id;
 }
+/* capture an outer local named by a STRING rather than by an E_IDENT node -- the
+ * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
+ * in a child expr. The synthesized read is resolved in the enclosing scope with
+ * every other capture (src/tychoc.c:7477). Non-locals (global fns, builtins,
+ * enum constructors, package qualifiers) fail vars_find and are dropped. */
+static void pf_capture_name(const char *n, int line) {
+    Type vt;
+    if (!n || pf_local(n) || !vars_find(n, &vt)) return;
+    if (IS_TASK(vt)) die_at(line, "a parallel for cannot capture a task handle -- wait it first");
+    if (IS_HANDLE(vt)) die_at(line, "a parallel for cannot capture a handle -- it is freed at the end of its scope");
+    Expr *id = new_expr(E_IDENT, line);
+    id->sval = (char *)n;
+    pf_capture(id);
+}
 static void pf_scan_expr(Expr *e) {
     if (!e) return;
     if (e->kind == E_ORRETURN)
@@ -7218,6 +7232,14 @@ static void pf_scan_expr(Expr *e) {
                 die_at(e->line, "parallel for cannot mutate captured variable '%s' in place", root->sval);
         }
     }
+    /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
+     * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
+     * tell it from a package call (src/tychoc.c:2950). The generic descent below
+     * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
+     * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
+     * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
+    if (e->kind == E_CALL)
+        pf_capture_name(e->qual ? e->qual : e->sval, e->line);
     if (e->kind == E_IDENT) {
         Type vt;
         if (!pf_local(e->sval) && vars_find(e->sval, &vt)) {
@@ -8897,7 +8919,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11167), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11189), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8927,12 +8949,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13129) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13151) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11254) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11276) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;

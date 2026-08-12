@@ -1,0 +1,52 @@
+# A `parallel for` body may CALL a captured fn value. The callee of `f(x)` lives
+# in E_CALL's sval and the receiver of `o.f(x)` in its qual -- neither is a child
+# expr -- so the capture scan walked straight past both and the lifted chunk proc
+# referenced a C name it never received as a parameter. tychoc accepted the
+# program and `cc` reported the undeclared name in generated source.
+# Three spellings, all reductions, so the answers are chunk-count independent.
+
+struct Ops:
+    f: fn(int) -> int
+
+fn dbl(x: int) -> int:
+    return x * 2
+
+# the callee is a PARAMETER
+fn apply_all(f: fn(int) -> int, xs: [int]) -> int:
+    total := 0
+    parallel for i in 0..<len(xs):
+        total = total + f(xs[i])
+    return total
+
+fn main():
+    println(str(apply_all(dbl, [1, 2, 3, 4, 5])))
+
+    # the callee is a LOCAL holding a plain fn reference (env == 0)
+    g := dbl
+    a := 0
+    parallel for i in 0..<100:
+        a += g(i)
+    println(str(a))
+
+    # the callee is a LOCAL holding a CLOSURE -- its env is deep-copied into each
+    # chunk task's root arena, including the heap capture `pre`
+    k := 3
+    pre := "n="
+    scale := fn(x: int) -> int: x * k
+    lbl := fn(x: int) -> string: pre + str(x)
+    b := 0
+    parallel for i in 0..<1000:
+        b += scale(i)
+    println(str(b))
+    c := 0
+    parallel for i in 0..<1000:
+        c += len(lbl(i))
+    println(str(c))
+
+    # the callee is a STRUCT FIELD: `o.f(i)` parses as a qualified call, so the
+    # captured name is the receiver `o`, not the field
+    o := Ops(dbl)
+    d := 0
+    parallel for i in 0..<100:
+        d = d + o.f(i)
+    println(str(d))

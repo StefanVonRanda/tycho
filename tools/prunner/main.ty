@@ -426,8 +426,8 @@ fn judge(j: Job, tmp: string) -> Verdict:
     _ := io.make_dir(d)
     if j.kind == "reject":
         # tests/run.sh:174-177. A FLAT reject fixture must not declare a
-        # `package` header: detect_package (src/tychoc.c:12691-12697) would turn
-        # the compile into a whole-DIRECTORY one (src/tychoc.c:13088) and the
+        # `package` header: detect_package (src/tychoc.c:12713-12719) would turn
+        # the compile into a whole-DIRECTORY one (src/tychoc.c:13110) and the
         # fixture would be "refused" for a sibling's error rather than its own,
         # which neither runner's reject lane can distinguish. Same `grep -q` and
         # the same FAIL reason as run.sh, so the two reports stay byte-identical.
