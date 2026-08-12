@@ -1,0 +1,16 @@
+package main
+import "genx"
+
+# A GENERIC package function has no single function value: no call site fixes $T,
+# so there is no instantiation to take the address of. It must be refused -- but
+# with THAT reason, not "package 'genx' has no variant or const 'pick'", which is
+# false (the name exists; `genx.pick(1, 2)` compiles) and sends the reader hunting
+# for a typo. The non-generic case is now accepted: tests/pkg/fnvalcross/.
+# expect: 'genx.pick' is generic, so it has no single function value
+# expect: fn(a: int, b: int) -> int: genx.pick(a, b)
+
+fn apply2(f: fn(int, int) -> int, a: int, b: int) -> int:
+    return f(a, b)
+
+fn main():
+    println(str(apply2(genx.pick, 2, 3)))

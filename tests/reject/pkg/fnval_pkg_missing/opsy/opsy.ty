@@ -1,0 +1,4 @@
+package opsy
+
+fn bump(x: int) -> int:
+    return x + 1

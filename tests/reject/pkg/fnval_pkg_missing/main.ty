@@ -1,0 +1,15 @@
+package main
+import "opsy"
+
+# A `pkg.NAME` value that really is absent still has to be refused -- and the
+# message now says "variant, const or function", because a function IS one of the
+# things this position accepts (tests/pkg/fnvalcross/). It also suggests the near
+# miss, which the old "has no variant or const" wording never did.
+# expect: package 'opsy' has no variant, const or function 'bumpp'
+# expect: did you mean 'bump'?
+
+fn apply(f: fn(int) -> int, x: int) -> int:
+    return f(x)
+
+fn main():
+    println(str(apply(opsy.bumpp, 1)))

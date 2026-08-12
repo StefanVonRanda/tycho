@@ -185,7 +185,7 @@ shrinking `A`. **That form no longer exists** — it was deleted from the langua
 on 2026-07-29, and for one day the surviving three-clause spelling had no
 elision arm at all, so 223 sequential sites fell back to the checked accessor.
 Phase 27 restored it: `for i := 0; i < len(A); i += 1:` elides today
-(`src/tychoc.c:8234-8288`), for a slightly *stronger* reason — the condition is
+(`src/tychoc.c:8255-8309`), for a slightly *stronger* reason — the condition is
 emitted into the C `while` header and so is re-evaluated every iteration rather
 than cached. **The 47 ms was not re-measured on the three-clause form**, and at
 `-O3` gcc folds the check away by itself, so a wall-time re-run would not

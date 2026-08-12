@@ -1,0 +1,34 @@
+# A package-qualified function used as a first-class VALUE (`pkg.fn`, no parens).
+# The same-package case is tests/pkg/fnval/; this is the CROSS-package one, which
+# resolved through a different arm and died "package 'opsx' has no variant or
+# const 'bump'" -- a false message, since the name exists and calling it works.
+# Covers: passed as an argument, bound to a local and called indirectly, void
+# return, string param/return, and a generic instantiated by a normal call
+# (taking THAT as a value stays refused -- tests/reject/pkg/fnval_pkg_generic).
+package main
+import "opsx"
+
+fn apply(f: fn(int) -> int, x: int) -> int:
+    return f(x)
+
+fn apply2(f: fn(int, int) -> int, a: int, b: int) -> int:
+    return f(a, b)
+
+fn apply_str(g: fn(string) -> string, s: string) -> string:
+    return g(s)
+
+fn main():
+    println("arg=" + str(apply(opsx.bump, 41)))          # 42
+    println("arg2=" + str(apply2(opsx.addx, 2, 3)))      # 5
+
+    f := opsx.bump                 # cross-package fn bound to a local
+    println("bound=" + str(f(99)))                       # 100
+
+    println("str=" + apply_str(opsx.brack, "hi"))        # [hi]
+    g := opsx.brack                # heap (string) param + return
+    println("strb=" + g("yo"))                           # [yo]
+
+    v := opsx.shout                # void return through a function value
+    v("loud")                                            # loud!
+
+    println("gen=" + str(opsx.pick(7, 4)))               # 4  (called, not valued)

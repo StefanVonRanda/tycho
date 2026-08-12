@@ -1,7 +1,7 @@
 # A `<=` bound on a three-clause loop must keep the CHECKED accessor, and this
 # fixture proves it at runtime rather than by reading the emitted C: the last
 # iteration indexes a[len(a)], so a correctly-checked program dies with
-# `tycho: index 4 out of bounds (len 4)`. If for3_elidable_arr (src/tychoc.c:8234-8288) ever
+# `tycho: index 4 out of bounds (len 4)`. If for3_elidable_arr (src/tychoc.c:8255-8309) ever
 # accepted `<=`, the loop would emit `(h_a).data[h_i]`, read one past the end and
 # exit 0 -- and tests/run.sh's abort lane fails on "runtime abort did not fire".
 # That is the whole reason this lives in tests/abort/ and not next to

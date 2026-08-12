@@ -3820,7 +3820,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10230), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10251), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5822,8 +5822,29 @@ static Type resolve_expr_inner(Expr *e) {
                     }
                 }
                 int evi, eid = variant_find(q, &evi);
-                if (eid < 0)
-                    die_at(e->line, "package '%s' has no variant or const '%s'", e->lhs->sval, e->sval);
+                if (eid < 0) {
+                    /* Not a variant or a const: an exported package function is a first-class
+                     * value, exactly as a local one is. Same machinery as the E_IDENT arm --
+                     * the __clo thunk is emitted per mangled name, so `pkg__fn` needs nothing
+                     * new. Rewritten to E_IDENT because that is the arm codegen's TK_FN case
+                     * lives in; e->lhs is cleared so a re-resolve of this node (generic calls
+                     * resolve their arguments twice) re-enters as a plain ident and is idempotent. */
+                    Sig *pfs = sig_find(q);
+                    if (pfs && !pfs->builtin) {
+                        if (pfs->nparams > 8) die_at(e->line, "a function value supports at most 8 parameters");
+                        for (int i = 0; i < pfs->nparams; i++)
+                            if (pfs->inout[i]) die_at(e->line, "'%s.%s' has an inout parameter, so it can't be a function value", e->lhs->sval, e->sval);
+                        e->kind = E_IDENT; e->sval = q; e->lhs = NULL; e->op = TK_FN;
+                        note_fnval(q);
+                        return e->type = funcc_of(pfs->params, pfs->nparams, pfs->ret);
+                    }
+                    if (generic_find(q))   /* a generic template has no single value form: no $T is fixed here */
+                        die_at(e->line, "'%s.%s' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: %s.%s(a, b)",
+                               e->lhs->sval, e->sval, e->lhs->sval, e->sval);
+                    const char *psg = suggest_pkg_symbol(e->lhs->sval, e->sval);
+                    if (psg) die_at(e->line, "package '%s' has no variant, const or function '%s'; did you mean '%s'?", e->lhs->sval, e->sval, psg);
+                    die_at(e->line, "package '%s' has no variant, const or function '%s'", e->lhs->sval, e->sval);
+                }
                 if (g_enums[eid].variants[evi].npayload != 0)
                     die_at(e->line, "%s.%s carries a payload — write %s.%s(...)",
                            e->lhs->sval, e->sval, e->lhs->sval, e->sval);
@@ -7160,10 +7181,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6784),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6805),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7072). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7093). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8691,7 +8712,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7110: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7131: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -8859,7 +8880,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11129), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11150), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -8889,12 +8910,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13089) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13110) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11216) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11237) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;

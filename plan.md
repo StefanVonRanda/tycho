@@ -97,15 +97,15 @@ site is either implemented or written down as a refusal with its cost.
     instantiation site reach the diagnostic — answered yes from source, and
     narrowly. `instantiate_generic` already receives the call `Expr *e` and
     already reports at `e->line` for three other refusals
-    (`src/tychoc.c:8433`, `:8440`, `:8462`), and while it runs, `g_srcname` /
+    (`src/tychoc.c:8454`, `:8461`, `:8483`), and while it runs, `g_srcname` /
     `g_src` still hold the CALLER's file. So the call site was already in hand at
     the one place the `GInst` is built; nothing needed threading through.
   - Cost, measured rather than estimated: **+7 net lines**
     (`git diff --numstat src/tychoc.c` → `45 38`), and four of the five edit
     sites are line-neutral in-place rewrites —
     `src/tychoc.c@GInst` (three fields), the `GInst gi;` construction,
-    and gen_program's instance loop set/clear at `src/tychoc.c:12515` and
-    `:12531`. Only the `die_at` region grew, by factoring the snippet printer out
+    and gen_program's instance loop set/clear at `src/tychoc.c:12536` and
+    `:12552`. Only the `die_at` region grew, by factoring the snippet printer out
     as `src/tychoc.c@src_snippet` so the note can reuse it.
   - Extends `0faccaf` rather than undoing it: that commit's `diag_use_proc(p)`
     call is untouched and still decides the ERROR line's file. The note is a
@@ -265,11 +265,11 @@ site is either implemented or written down as a refusal with its cost.
   (`runtime/tycho_rt.c@stats_dump`, cited as `:416`), `arena_recycle` (`:548` →
   the body of `block_get`), `TYCHO_BLOCK` (`:466` → `:521`), `g_out`
   (`corelib/crypto/crypto_shim.c:43@g_out`, cited as `:35` and twice as `:36`),
-  pop-on-empty (line 12121 → `src/tychoc.c:12989@pop`), tuple arity (lines 2018
+  pop-on-empty (line 12121 → `src/tychoc.c:13010@pop`), tuple arity (lines 2018
   and 2014 → `src/tychoc.c:5600@least` and `src/tychoc.c:5601@most`), `or_return`
-  in a `parallel for` (line 6639 → `src/tychoc.c:7154@or_return`), the
-  inout-aliasing rule (line 6150 → `src/tychoc.c:6670@alias`), the 16-parameter
-  cap (line 8075 → `src/tychoc.c:8696@parameters`), `split_once` (line 193, an
+  in a `parallel for` (line 6639 → `src/tychoc.c:7175@or_return`), the
+  inout-aliasing rule (line 6150 → `src/tychoc.c:6691@alias`), the 16-parameter
+  cap (line 8075 → `src/tychoc.c:8717@parameters`), `split_once` (line 193, an
   unrelated `enum FloatErr`, → `corelib/strings/strings.ty@split_once`),
   `read_request_capped` (line 242 → `corelib/httpd/httpd.ty@read_request_capped`),
   `netx_peer_addr` (line 204 → `corelib/net/net_shim.c@netx_peer_addr`), the
@@ -314,7 +314,7 @@ site is either implemented or written down as a refusal with its cost.
   - `server/README.md:276` cites `docs/internals/FRICTION.md:601` for a
     `write-failed` log line. The string `write-failed` does not occur anywhere in
     `docs/internals/FRICTION.md`.
-  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9423` as `ncpu()`'s
+  - `docs/internals/FRICTION.md:420` cites `src/tychoc.c:9444` as `ncpu()`'s
     lowering; that line is `collect_append_ops`.
   - `docs/internals/FRICTION.md:1020` quotes a comment it places at
     `corelib/test/io/main.ty:43`; that line is `fn sl(...)`.
@@ -579,6 +579,89 @@ site is either implemented or written down as a refusal with its cost.
   wrong for the subset of builtins that win; deciding which is the point of the
   phase. `src/tychoc.c@shadows_builtin` lists both names, so the warning fires
   identically for the two.
+
+- [x] **Phase 14 — a package-qualified function cannot be a value, and the
+  diagnostic says the wrong thing.** VERDICT: **(a) CONTAINED, implemented.**
+
+  Both halves of the report were real, and the report's own guess about the
+  cause was wrong in a way worth recording.
+
+  **Probe, generic (the reported case).** `apply2(math.min, 2, 3)` →
+  `error: package 'math' has no variant or const 'min'`. False: the name exists
+  at `corelib/math/math.ty@min` and `math.min(2, 3)` compiles.
+
+  **Control, local.** The identical shape with a local `addi` builds and prints
+  `5`. `tests/pkg/fnval/main.ty` already pinned the *same-package* case, so the
+  asymmetry was cross-package only.
+
+  **Probe, NON-generic — the one that decided the verdict.**
+  `apply1(strings.to_upper, "hi")` → `error: package 'strings' has no variant or
+  const 'to_upper'`. `strings.to_upper(s: string) -> string` is fully concrete.
+  So genericity was NOT the cause and the report was right that the capability
+  itself was missing; had only generics failed, the diagnostic would have been
+  the whole bug.
+
+  **Mechanism.** `resolve_expr`'s `E_FIELD` arm, for an imported package, tried
+  const then variant then died — it never asked whether the name was a function.
+  The `E_IDENT` arm had done exactly that for a mangled `<pkg>name` since
+  `tests/pkg/fnval` was written, including `note_fnval`'s `__clo` thunk, which is
+  emitted per name (`src/tychoc.c:13437-13442`) and so needed nothing new. Fix
+  reuses it verbatim: `sig_find(q)` → function value (node rewritten to `E_IDENT`
+  with `op = TK_FN`, `lhs` cleared so a re-resolve is idempotent);
+  `generic_find(q)` → refuse, explaining that no instantiation exists and naming
+  the lambda workaround; otherwise the miss message, widened to "variant, const
+  or function" and given the `suggest_pkg_symbol` did-you-mean the call path
+  (`src/tychoc.c:6126`) already had. 23 insertions, 2 deletions, one arm.
+
+  **Spec.** `docs/spec/09-expressions.md` §13.6 excluded `inout` and
+  comparability and never excluded a package-qualified name — the gap was
+  incidental, not designed. §13.6 now says so, and states the generic exclusion,
+  which was real and unwritten.
+
+  **Fixtures.** `tests/pkg/fnvalcross/` + `.out` (argument, bound local,
+  indirect call, void return, string in/out, generic still callable);
+  `tests/reject/pkg/fnval_pkg_generic/` and `.../fnval_pkg_missing/`, each
+  pinning two `# expect:` substrings.
+
+  **Negative control.** `git checkout src/tychoc.c`, rebuild: all four
+  `# expect:` lines reported `correctly MISSING`, the old compiler emitting
+  `package 'genx' has no variant or const 'pick'` and `package 'opsy' has no
+  variant or const 'bumpp'` — the same message for a valid use and a typo, which
+  is the defect. `tests/pkg/fnvalcross/main.ty` failed to build under it. Source
+  restored from a verified backup and rebuilt; golden matches.
+
+  **Gates.** `make check-links` ok · `make vm-check` green ·
+  `sh scripts/entrypoints.sh` ok (75) · `make corelib` all green (46 ok, no
+  skip) · `sh scripts/spec_check.sh` 11 runnable examples all pass ·
+  `make goldens-check` ok (448 golden files, all tracked) · `make test`
+  **passed: 648 failed: 0** (baseline 645 + the 3 fixtures above).
+  Citation drift: +21 lines staled 49 refs; `scripts/reanchor_citations.py
+  --apply` rewrote 119 files, 0 needing a human, and the checker is green.
+
+- [ ] **Phase 15 — a LOCAL generic function used as a value gives the same class
+  of false message, in the other arm.** `apply2(mymin, 2, 3)` for a local
+  `fn mymin(a: $T, b: $T) -> $T where comparable(T)` dies `unknown variable
+  'mymin'; did you mean 'main'?`. The name is not unknown and `main` is not the
+  suggestion a reader wants. Cause is the mirror of Phase 14: `resolve_expr`'s
+  `E_IDENT` arm tries `sig_find` and, on a miss, goes straight to the
+  unknown-variable path without consulting the generics registry, which is where
+  a generic template lives (`src/tychoc.c:6123`). Phase 14 fixed this for the
+  package-qualified spelling only, and deliberately did not widen scope. The fix
+  is the same two lines — `generic_find` before the `suggest_var` fallback,
+  reusing Phase 14's wording — plus a `tests/reject/` fixture with `# expect:`.
+  Gate: `make test` (648 at Phase 14, so 649).
+
+- [ ] **Phase 16 — `(pkg.fn)(x)`, the parenthesised immediate call, dies
+  `unknown variable 'pkg'`.** Found writing Phase 14's fixture; the line was
+  removed from it rather than absorbed. `g := opsx.brack` then `g("yo")` works,
+  and `opsx.brack("yo")` works, but the parenthesised form in between does not:
+  a call whose callee is an expression resolves that callee down the
+  call-on-expression path, which reaches `E_FIELD` with the package ident as an
+  ordinary `lhs` and resolves it as a variable. Pre-existing and unrelated to
+  Phase 14's change (it reproduces identically before it). Decide whether the
+  form is worth supporting at all — it is redundant with both working spellings
+  — or whether the message should simply name the package and say so. Gate:
+  `make test`.
 
 ## Out of scope
 
