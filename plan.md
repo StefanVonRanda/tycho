@@ -342,7 +342,7 @@ site is either implemented or written down as a refusal with its cost.
   run — it needs Go, Rust and Koka toolchains and measures nothing this change
   touches.
 
-- [ ] **Phase 17 — the commit-hash gate cannot widen while its own comment
+- [x] **Phase 17 — the commit-hash gate cannot widen while its own comment
       quotes a bare digest** *(discovered by Phase 5, not absorbed: it edits the
       gate, which Phase 5 was told not to do)*
 
@@ -354,6 +354,38 @@ site is either implemented or written down as a refusal with its cost.
   is that 8-to-12 char backticked hashes stop being unchecked forever.
   Verify by widening, running `python3 scripts/check_citations.py`, and
   confirming it is green before keeping the wider form.
+
+  **Done.** The inherited measurement was re-run, not trusted: an untracked copy
+  of the gate with `HASH_TICK` widened to `{7,12}` (untracked, so `git ls-files`
+  never scans it) failed on **exactly one** token, and it was the gate's own
+  comment — `scripts/check_citations.py:95` in the pre-fix file, quoting a CRC32
+  digest in backticks. One blocker, self-referential, as filed.
+
+  The comment now names the digest as `crc=...` prose with no hex run, and the
+  module docstring's claim was wrong in the same place and is corrected: it said
+  no "md5/sha/CRC-width run" reaches 7..12, but CRC32 is 8 and does. Both now
+  say a CRC32 digest must be written unbackticked.
+  `scripts/check_citations.py@HASH_TICK` is `{7,12}`.
+
+  **Proof it can fail, both directions** (`ROADMAP.md` appended to, then
+  restored; `git diff --stat ROADMAP.md` empty after):
+
+  ```
+  bad  -> STALE  ROADMAP.md:400  deadbeef1234 is not a commit in this
+          repository ... citation check: FAILED
+  good -> HEAD at 9 and 12 chars: ok, 62 commit hashes resolve (60 + 2)
+  ```
+
+  The bad token is written unbackticked *here* because the widened gate caught
+  this very evidence block when it was not — `plan.md` is exempt from the path
+  citation rules, not from the hash check. That is a third demonstration.
+
+  The tree's own count is unchanged at 60: no backticked 8..12 hash exists here
+  today, so the widening buys future coverage, not present coverage.
+
+  Gates: `python3 scripts/check_citations.py` green, **0.535 s before / 0.542 s
+  after** (`time`, warm) — the sub-second cost everyone pays is unmoved.
+  `sh scripts/check_links.sh` ok (119 markdown files), 0.488 s.
 
 - [ ] **Phase 6 — rotted citations whose repair is a prose rewrite, not a
       re-point** *(discovered by Phase 4, out of its scope, not absorbed)*

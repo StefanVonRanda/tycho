@@ -27,10 +27,10 @@ The rules, in brief:
   * A dotted-decimal `127.0.0.1:8080` is not a citation and never overwrites
     the paragraph's inherited path.
   * A COMMIT HASH written as a citation -- backticked, or after the word
-    `commit`/`commits` -- must resolve to a commit in this repository. Digests
-    are kept out by construction: 7..12 hex characters, needing both a digit
-    and an `a-f` letter, which no md5/sha/CRC-width run reaches and no decimal
-    measurement satisfies. Skipped loudly on a shallow clone.
+    `commit`/`commits` -- must resolve to a commit in this repository. A token
+    qualifies at 7..12 hex characters with both a digit and an `a-f` letter, so
+    md5/sha/FNV-64 runs and decimal measurements are out; a CRC32 digest is 8
+    and is not, so write one unbackticked. Skipped loudly on a shallow clone.
 
 `--report` adds an advisory listing of drift-prone refs (un-anchored
 single-line refs, and very wide ranges). It changes no verdict: tree-wide
@@ -88,13 +88,13 @@ DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
 SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)'
                      r':(\d+)(?:-(\d+))?(?:@([A-Za-z0-9_]+))?')
 
-# A COMMIT HASH AS THIS TREE WRITES ONE. Backticked at git's default width of
-# exactly 7, or any width after the word `commit`. Seven is the discriminator
-# that keeps a bare backticked digest out: every fixed-width digest in this
-# tree is even -- CRC32 8, FNV 8/16, md5 32, sha256 64 -- and a backticked
-# `cbf43926` reddened this gate until the width was pinned. An 8..12-char
-# backticked hash is therefore NOT checked; write `commit <hash>` for that.
-HASH_TICK = re.compile(r'`([0-9a-f]{7})`')
+# A COMMIT HASH AS THIS TREE WRITES ONE: backticked at 7..12 hex characters,
+# or any width after the word `commit`. `hashy` below wants both a digit and an
+# `a-f` letter, and md5 (32) / sha256 (64) / FNV-64 (16) are far wider -- but a
+# CRC32 digest is 8 and does fit, so write one unbackticked (crc=... in prose)
+# or it is read as a citation and reddens here. That is deliberate: a reader
+# cannot tell a backticked 8-char digest from a short hash either.
+HASH_TICK = re.compile(r'`([0-9a-f]{7,12})`')
 HASH_WORD = re.compile(r'\bcommits?\s+((?<![0-9a-zA-Z])[0-9a-f]{7,12}'
                        r'(?:\s*,\s*[0-9a-f]{7,12})*(?![0-9a-zA-Z]))')
 
