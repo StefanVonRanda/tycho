@@ -211,7 +211,7 @@ gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
 | §18.2–18.6 | `m[k]` place/rvalue, `delete`, `keys`, `m.get` | `tests/map_mutation`, `tests/map_delete`, `tests/map_get_method`, `tests/map_insorder`, `reject/map_del_removed`, `reject/map_key_wrong_read` |
 | §18.7 | user-defined subscripts | `tests/subscript` |
 | §19.1–19.3 | enums, `Option`, `Result`; construction | `tests/enums`, `tests/options`, `tests/results`, `reject/genenum_bare_nullary`, `reject/sum_ctor_payload_mismatch` |
-| §14.1 | `pass`, the no-op statement; contextual, so the name still binds | `tests/pass_stmt`, `reject/pass_as_value` |
+| §14.1.1 | `pass`, the no-op statement; contextual, so the name still binds | `tests/pass_stmt`, `reject/pass_as_value` |
 | §28.3 | a top-level `const` is exported and folded at the use site; `_name` stays private | `tests/pkg/const_export`, `reject/pkg/const_private` |
 | §15 | `main`'s two shapes; `Err` out of the entry point prints bare and exits non-zero | `tests/main_result`, `tests/abort/main_result_err`, `reject/main_result_int`, `reject/main_result_enum_err`, `reject/main_params` |
 | §19.8, §13.2 | `is` — the variant test: nullary and payload-carrying alike, inside a boolean expression, and the two compile-time rejections | `tests/enum_is`, `reject/enum_is_unknown_variant`, `reject/enum_is_not_an_enum` |

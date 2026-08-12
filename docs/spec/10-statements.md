@@ -14,11 +14,36 @@ meaning. Declarations and assignments are covered in
 A block is an indentation-delimited sequence of one or more statements
 ([§3.4](01-lexical.md#34-indentation-indent--dedent)). Each block is a scope
 ([§12.3](08-declarations.md#123-scope-and-shadowing)). A block cannot be empty;
-`pass` is the no-op that gives one a body. The bare-expression
+`pass` is the no-op that gives one a body (§14.1.1). The bare-expression
 statements permitted are a call, and a call followed by `or_return` when the
 callee's ok payload is `void` ([§5.3.6](03-types.md#536-enums-option-result));
 a bare variable, index or field expression is rejected as having no effect, and
 so is an `or_return` over any other payload type, which would drop a value.
+
+### 14.1.1 `pass`
+
+```text
+pass
+```
+
+`pass` is the statement that does nothing. It is the body to write wherever the
+grammar demands a statement and the program has nothing to do there: a `match`
+arm that deliberately ignores its case, an `if` branch kept for its comment, a
+loop body whose work is entirely in its head.
+
+```tycho
+fn drain(r: Result(int, string)) -> int:
+    match r:
+        Ok(n): return n
+        Err(e): pass          # this case is deliberately ignored
+    return 0
+```
+
+`pass` is **contextual, not reserved** ([Appendix B](appendix-b-keywords.md)):
+it is a statement only in statement position, so `pass := 0` and `pass = pass +
+1` remain ordinary code and a variable named `pass` keeps working. It is not an
+expression and MUST NOT appear where a value is expected. A hand-written empty
+function called for its emptiness is not the idiom and is not needed.
 
 ## 14.2 `if` / `elif` / `else`
 

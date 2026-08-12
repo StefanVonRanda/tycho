@@ -2705,7 +2705,7 @@ as discoveries by people who had not read `docs/guides/packages.md:118` and
 `docs/spec/12-aggregates.md:831`. That is the same failure as a stale
 document, pointed the other way, and it is why both are named here.
 
-### 14. `pass` exists and nobody reaches for it
+### 14. ~~`pass` exists and nobody reaches for it~~ — **CLOSED 2026-08-12 by placement**
 
 Writing `tools/tycho-db/main.ty`, a match arm that ignores a flush result was
 written as a call to a hand-rolled `fn nop(): return`. `pass` is the language's
@@ -2721,10 +2721,31 @@ Probed at head `c56fbf6d`: the `pass` form builds. Nothing was broken — the
 dummy function worked — so no gate could ever have caught it.
 
 The shape is `split`'s (entry #8 of the previous scoring): the feature exists,
-and nothing points at it from where a writer needs it. A reader reaches for a
-statement position, and the language reference for statement positions is not
-where `pass` is introduced. Recorded rather than proposed as a change: the
-remedy is documentation placement, not syntax.
+and nothing points at it from where a writer needs it. The remedy is
+documentation placement, not syntax.
+
+**Where it was, checked 2026-08-12.** The claim above that "the language
+reference for statement positions is not where `pass` is introduced" was half
+wrong, and the true half is worse. `pass` WAS in the statements chapter — as a
+subordinate clause of one sentence about blocks not being empty
+(`docs/spec/10-statements.md:12-21`), with no heading, no example and no entry in
+any list of statement forms. A reader scanning §14's headings for what they may
+write saw `if`, `match`, `for`, `break`, `continue` and `return`, and never saw
+`pass`. Its only other homes were `docs/spec/appendix-b-keywords.md` (a
+contextual-keyword table read by nobody looking for a statement) and
+`docs/spec/appendix-e-conformance.md` (a fixture index). It appeared nowhere in
+`docs/reference/`, the reader-facing guide, at all — including
+`docs/reference/basics.md`'s "Control flow" section, which lists `break` and
+`continue` and is precisely where the writer who hand-rolled `nop` would have
+looked.
+
+**Where it is now.** `docs/spec/10-statements.md` §14.1.1 — its own numbered
+subsection, with the grammar line, a compiled `match`-arm example, and the
+contextual-not-reserved rule; §14.1's clause now points at it. And
+`docs/reference/basics.md`'s "Control flow" section, where it joins `break` and
+`continue` in the keyword block and gets the same example plus a link to
+§14.1.1. Numbering below §14.1 is untouched, so no cross-reference moved.
+Nothing about the language changed.
 
 ### 15. ~~`or_return` on a `Result(bool, E)` is a three-time papercut~~ — **CLOSED 2026-08-12; the entry's own reasoning was wrong**
 

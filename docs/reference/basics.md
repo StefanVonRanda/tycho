@@ -128,6 +128,7 @@ for x in xs:                # foreach: each element of an array, or each byte of
 
 break                       # exit the nearest enclosing loop
 continue                    # skip to its next iteration (runs the post clause)
+pass                        # do nothing — the body for a block that has no work
 ```
 
 In the three-clause form all three clauses are required (`for:` is the only degenerate form);
@@ -136,6 +137,22 @@ variable the init declares is scoped to the loop. `continue` **runs the post cla
 loop that advances only there still terminates. The foreach form binds each element of an
 array (`[T]`) or each byte of a string, evaluating the collection once. The condition form
 takes any `bool`. `break` and `continue` work in every shape and are an error outside a loop.
+
+No block may be empty, and **`pass` is how you write one that does nothing** — a `match` arm
+whose case is deliberately ignored, an `if` branch kept for its comment, a loop whose work is
+all in its head. Reach for it before writing an empty function to call:
+
+```tycho
+fn drain(r: Result(int, string)) -> int:
+    match r:
+        Ok(n): return n
+        Err(e): pass          # this case is deliberately ignored
+    return 0
+```
+
+`pass` is contextual, not reserved: it is a statement only in statement position, so a variable
+named `pass` still works. It is not an expression — it produces no value and cannot be assigned
+([spec §14.1.1](../spec/10-statements.md#1411-pass)).
 
 There is no counting form and no `range`: `for i in range(a, b, step):` was removed on
 2026-07-29, and a `for` head that names `range` is refused with its replacements. Say the
