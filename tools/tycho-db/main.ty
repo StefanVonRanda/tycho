@@ -13,9 +13,6 @@ import "exec"
 # with exec against the store, and prints what came back. Every decision
 # belongs to a layer below.
 
-fn nop():
-    return
-
 fn show_rows(r: exec.Rows):
     head := ""
     for k := 0; k < len(r.cols); k += 1:
@@ -64,7 +61,7 @@ fn run_script(script: string, db: inout store.Db) -> Result(void, string):
         bad += run_line(&db, line)
 
     match store.flush(db):
-        Ok(x): nop()
+        Ok(x): pass
         Err(e): return Err(store.err_str(e))
     if bad > 0:
         return Err(str(bad) + " statement(s) failed")
