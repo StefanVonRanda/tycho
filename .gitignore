@@ -212,3 +212,4 @@ dist/
 # the tycho-db database's transcript golden (tools/tycho-db/expected.out) is
 # tracked too, same line, same reason as every lane above it.
 !/tools/tycho-db/*.out
+/tools/tycho-db/tycho-db
