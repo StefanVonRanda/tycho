@@ -46,7 +46,7 @@
 #       many of the 98411 landed there and this runner asserts ZERO. Its sibling
 #       is CellErr.NoText, which nothing constructs at all; [5] asserts that
 #       statically, by counting the token's occurrences in the source.
-#   [2b] THE NEAREST DECIMAL, AS TEXT, for the three values that exposed the
+#   [2b] THE NEAREST DECIMAL, AS TEXT, for the four values that exposed the
 #       difference. Round-tripping is the weaker half of the contract: six
 #       17-digit decimals read back as 0.1+0.2 and render() picked a wrong one
 #       for as long as [2] was the only float leg.
@@ -105,7 +105,7 @@
 #   Which of two EQUALLY NEAR decimals render() picks. A value sitting exactly
 #   between two shortest decimals has two right answers; render rounds half-up
 #   there and nothing here cares. That is the only freedom left: shortest and
-#   nearest is now the contract, and [2b] pins it as text for three values.
+#   nearest is now the contract, and [2b] pins it as text for four values.
 #
 # NO HOST DETAIL REACHES THE GOLDEN -- the program prints no paths. Every run is
 # bounded by $TO where a timeout(1) exists.
@@ -324,14 +324,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [2b] the three values whose NEAREST decimal is the whole point, as text
+# [2b] the four values whose NEAREST decimal is the whole point, as text
 #
 # [2] asserts round-tripping, which is the weaker half and misses this by
 # construction: six different 17-digit decimals read back as 0.1+0.2, and
 # render() returned 0.30000000000000006 -- round-tripping, and not the value's
 # own digits -- under a green [2]. Nearest is a property of the value, not of
 # the rounding interval, so nothing but the exact text can pin it. None of the
-# three is a tie, so each has exactly one right answer.
+# four is a tie, so each has exactly one right answer. 2^89 is there for the
+# neighbour probe, which _ref alone does not exercise: 45 of 3120 powers of two
+# render a digit longer without it.
 # ---------------------------------------------------------------------------
 N="$T/pkg2"; mkdir -p "$N"
 [ -d "$src/cell" ] || bad "probe: $src/cell is gone -- leg [2b] asserts NOTHING"
