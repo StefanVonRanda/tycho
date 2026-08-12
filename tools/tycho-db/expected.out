@@ -1,6 +1,6 @@
 === demo
   db    demo.db (0 table(s))
-CREATE TABLE users (id INT, name TEXT, age INT);
+CREATE TABLE users (id INT KEY, name TEXT, age INT);
   ok    created users
 INSERT INTO users VALUES (1, 'ada', 36);
   ok    1 row into users
@@ -11,13 +11,36 @@ INSERT INTO users VALUES (3, 'cy', 29);
 SELECT name, age FROM users WHERE age > 30 AND name != 'bob';
   cols  name | age
   row   ada | 36
-  ok    1 row(s)
+  ok    1 row(s) from 3 examined
 SELECT * FROM users;
   cols  id | name | age
   row   1 | ada | 36
   row   2 | bob | 41
   row   3 | cy | 29
-  ok    3 row(s)
+  ok    3 row(s) from 3 examined
+EXPLAIN SELECT name FROM users WHERE id = 2;
+  plan  access: index users.id = 2
+  plan  residual: -
+  plan  project: name
+SELECT name FROM users WHERE id = 2;
+  cols  name
+  row   bob
+  ok    1 row(s) from 1 examined
+EXPLAIN SELECT name FROM users WHERE age = 41;
+  plan  access: scan users
+  plan  residual: age = 41
+  plan  project: name
+SELECT name FROM users WHERE age = 41;
+  cols  name
+  row   bob
+  ok    1 row(s) from 3 examined
+EXPLAIN SELECT * FROM users WHERE 1 = 2;
+  plan  access: none (WHERE is constant false)
+  plan  residual: -
+  plan  project: *
+SELECT * FROM users WHERE 1 = 2;
+  cols  id | name | age
+  ok    0 row(s) from 0 examined
 === persist read-back (second process)
   db    p.db (1 table(s))
 SELECT * FROM people;
@@ -25,7 +48,7 @@ SELECT * FROM people;
   row   1 | ada | 36
   row   2 | bob | 41
   row   3 | cy | 29
-  ok    3 row(s)
+  ok    3 row(s) from 3 examined
 === persist reread after append (fourth process)
   db    p.db (1 table(s))
 SELECT * FROM people;
@@ -34,14 +57,14 @@ SELECT * FROM people;
   row   2 | bob | 41
   row   3 | cy | 29
   row   4 | dee | 55
-  ok    4 row(s)
+  ok    4 row(s) from 4 examined
 === persist filter
   db    p.db (1 table(s))
 SELECT name, age FROM people WHERE age > 30 AND name != 'bob';
   cols  name | age
   row   ada | 36
   row   dee | 55
-  ok    2 row(s)
+  ok    2 row(s) from 4 examined
 === crash replay (fresh process after kill -9)
   db    k.db (1 table(s))
   wal   replayed 3 record(s)
@@ -49,14 +72,14 @@ SELECT * FROM acct;
   cols  id | who | cents
   row   1 | ada | 100
   row   2 | bob | 250
-  ok    2 row(s)
+  ok    2 row(s) from 2 examined
 === crash replay is idempotent (pre-checkpoint log restored)
   db    k.db (1 table(s))
 SELECT * FROM acct;
   cols  id | who | cents
   row   1 | ada | 100
   row   2 | bob | 250
-  ok    2 row(s)
+  ok    2 row(s) from 2 examined
 === crash replay with a torn trailing record [zeros]
   db    z.db (1 table(s))
   wal   discarded a torn trailing record
@@ -64,7 +87,7 @@ SELECT * FROM acct;
 SELECT * FROM acct;
   cols  id | who | cents
   row   1 | ada | 100
-  ok    1 row(s)
+  ok    1 row(s) from 1 examined
 === crash replay with a torn trailing record [flip]
   db    z.db (1 table(s))
   wal   discarded a torn trailing record
@@ -72,7 +95,29 @@ SELECT * FROM acct;
 SELECT * FROM acct;
   cols  id | who | cents
   row   1 | ada | 100
-  ok    1 row(s)
+  ok    1 row(s) from 1 examined
+=== plan EXPLAIN
+  db    pl.db (2 table(s))
+EXPLAIN SELECT name FROM idx WHERE id = 20;
+  plan  access: index idx.id = 20
+  plan  residual: -
+  plan  project: name
+EXPLAIN SELECT name FROM noidx WHERE id = 20;
+  plan  access: scan noidx
+  plan  residual: id = 20
+  plan  project: name
+EXPLAIN SELECT name FROM idx WHERE 1 = 2;
+  plan  access: none (WHERE is constant false)
+  plan  residual: -
+  plan  project: name
+EXPLAIN SELECT name FROM idx WHERE 1 = 1 AND id = 20;
+  plan  access: index idx.id = 20
+  plan  residual: -
+  plan  project: name
+EXPLAIN SELECT name FROM idx WHERE id = 20 AND name != 'zz';
+  plan  access: index idx.id = 20
+  plan  residual: name != 'zz'
+  plan  project: name
 === err NoTable
 --- stdout
   db    e.db (1 table(s))
@@ -122,6 +167,13 @@ INSERT INTO users VALUES (id, 'y', 1);
   ERR   not a value: id
 --- stderr
 1 statement(s) failed
+=== err NotSelect
+--- stdout
+  db    e.db (1 table(s))
+EXPLAIN INSERT INTO users VALUES (2, 'x', 1);
+  ERR   cannot plan (only SELECT has a plan): INSERT users (2, 'x', 1)
+--- stderr
+1 statement(s) failed
 === err Corrupt
 --- stdout
 --- stderr
@@ -143,3 +195,5 @@ not a tycho-db log: bl.db.wal
 lp.db is unreadable and its log no longer reaches back past lsn 2
 === err NotAPredicate (via the exec API)
 not a predicate: a
+=== err NoIndex (via the store API)
+users.id has no index

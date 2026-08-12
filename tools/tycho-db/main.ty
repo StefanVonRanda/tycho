@@ -35,13 +35,20 @@ fn show_rows(r: exec.Rows):
                 line += " | "
             line += store.val_str(r.rows[i][k])
         println("  row   " + line)
-    println("  ok    " + str(len(r.rows)) + " row(s)")
+    # RETURNED and EXAMINED, on the line a reader already looks at. The second
+    # number is the one that moves when the planner picks the index over the
+    # scan, and printing it is what makes that choice checkable from outside
+    # rather than a claim in a comment.
+    println("  ok    " + str(len(r.rows)) + " row(s) from " + str(r.examined) + " examined")
 
 fn show(o: exec.Outcome):
     match o:
         exec.Created(n): println("  ok    created " + n)
         exec.Inserted(n): println("  ok    1 row into " + n)
         exec.Selected(rs): show_rows(rs)
+        exec.Explained(lines):
+            for l in lines:
+                println("  plan  " + l)
 
 # Returns 1 if the statement failed, and reports through `mutated` whether it
 # was a mutation -- which is what the crash hook below counts.
@@ -54,9 +61,14 @@ fn run_line(db: inout store.Db, lg: inout wal.Log, src: string, mutated: inout b
         Ok(st):
             match exec.run(&db, &lg, st):
                 Ok(o):
+                    # Listed as what a mutation IS, not as what it is not: an
+                    # outcome added later defaults to "did not change the
+                    # store", which is the answer that cannot corrupt the
+                    # crash hook's count if it is wrong.
                     match o:
-                        exec.Selected(rs): pass
-                        _: mutated = true
+                        exec.Created(n): mutated = true
+                        exec.Inserted(n): mutated = true
+                        _: mutated = false
                     show(o)
                     return 0
                 Err(e):

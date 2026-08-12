@@ -3,8 +3,20 @@ package store
 import "core:io"
 
 # The storage layer: a catalogue of tables and a heap file of rows, encoded to
-# bytes and read back whole. No index -- a scan walks every row -- and no
-# pages beyond the one file, which is all correctness needs today.
+# bytes and read back whole. No pages beyond the one file, which is all
+# correctness needs today.
+#
+# TWO ACCESS PATHS, which is the point of the index below. scan() walks every
+# row; probe() answers an equality on a KEY column by binary search. Without
+# the second one a planner would have nothing to decide and choosing between
+# them would be theatre -- so the index came first and the plan layer second.
+#
+# THE INDEX IS DERIVED DATA AND IS NEVER WRITTEN DOWN. Only the DECLARATION
+# (Col.indexed) is encoded; the entries are rebuilt from the rows at decode.
+# That is not thrift, it is the reason the index cannot go stale: there is no
+# second copy on disk for a crash to leave disagreeing with the rows, and
+# replaying a logged INSERT maintains the index by the same code path an
+# original INSERT does.
 
 enum Ty:
     ColInt
@@ -17,11 +29,24 @@ enum Val:
 struct Col:
     name: string
     ty: Ty
+    indexed: bool
+
+# One entry of an equality index: a key and the position of the row holding it.
+struct IdxEnt:
+    key: Val
+    row: int
+
+# Sorted by (key, row). Rows are append-only here -- this SQL has no DELETE and
+# no UPDATE -- so an entry, once placed, never has to move.
+struct Index:
+    col: int
+    ents: [IdxEnt]
 
 struct Table:
     name: string
     cols: [Col]
     rows: [[Val]]
+    idx: [Index]
 
 # applied_lsn is the log sequence number this file's contents include, and it
 # is the whole basis of idempotent replay: wal applies only records numbered
@@ -40,6 +65,12 @@ enum StoreErr:
     TypeClash(string, string, string, string)
     Corrupt(string)
     NotWritten(string)
+    # probe() was asked for the index path on a column that has none. Not a
+    # sentinel and not a silent fall back to a scan: a caller that believes it
+    # is doing a key lookup and is quietly given a full walk gets the right
+    # rows and the wrong cost, which is the kind of wrong that never shows up
+    # until the table is large.
+    NoIndex(string, string)
 
 fn ty_name(t: Ty) -> string:
     if t is ColInt:
@@ -56,6 +87,33 @@ fn val_str(v: Val) -> string:
         VInt(n): return str(n)
         VText(s): return s
 
+# A TOTAL order over values: -1, 0, 1. Two values of different types are
+# ordered by their tag (every int before every text) rather than refused,
+# because this is what an index sorts by and a sorted array cannot hold a
+# comparison that declines to answer. Refusing a cross-type comparison is a
+# QUERY-level rule and lives in exec, which checks the types first and then
+# delegates the same-type case here -- so the two orderings cannot disagree.
+fn val_cmp(a: Val, b: Val) -> int:
+    match a:
+        VInt(x):
+            match b:
+                VInt(y):
+                    if x < y:
+                        return -1
+                    if x > y:
+                        return 1
+                    return 0
+                VText(y): return -1
+        VText(x):
+            match b:
+                VText(y):
+                    if x < y:
+                        return -1
+                    if x > y:
+                        return 1
+                    return 0
+                VInt(y): return 1
+
 fn err_str(e: StoreErr) -> string:
     match e:
         NoTable(n): return "no such table: " + n
@@ -66,11 +124,12 @@ fn err_str(e: StoreErr) -> string:
             return n + "." + c + " is " + want + ", got " + got
         Corrupt(m): return "store is corrupt: " + m
         NotWritten(p): return "cannot write " + p
+        NoIndex(n, c): return n + "." + c + " has no index"
 
 # ---- encoding -------------------------------------------------------------
 
 const MAGIC = "TYDB1"
-const VERSION = 2          # 2 added the applied_lsn header word
+const VERSION = 3          # 2 added the applied_lsn header word; 3 the KEY flag
 
 const T_POS = 0
 const T_NEG = 1
@@ -115,10 +174,18 @@ fn put_val(v: Val) -> bytes:
         VText(s):
             return to_bytes([T_TEXT]) + put_str(s)
 
+# The tag is a BITFIELD as of version 3: bit 0 is the type, bit 1 the KEY
+# flag. Widening the existing byte rather than appending a second one keeps
+# wal's record framing -- which calls straight into this -- the same shape.
+const COL_TEXT = 1
+const COL_KEY = 2
+
 fn put_col(c: Col) -> bytes:
     tag := 0
     if c.ty is ColText:
-        tag = 1
+        tag = tag + COL_TEXT
+    if c.indexed:
+        tag = tag + COL_KEY
     return put_str(c.name) + to_bytes([tag])
 
 fn encode(db: Db) -> bytes:
@@ -173,11 +240,12 @@ fn take_val(b: bytes, off: inout int) -> Result(Val, StoreErr):
 fn take_col(b: bytes, off: inout int) -> Result(Col, StoreErr):
     name := take_str(b, &off) or_return
     need(b, off, 1) or_return
+    tag := b[off]
     t := ColInt
-    if b[off] == 1:
+    if tag % 2 == COL_TEXT:
         t = ColText
     off += 1
-    return Ok(Col(name, t))
+    return Ok(Col(name, t, (tag / COL_KEY) % 2 == 1))
 
 fn decode(path: string, b: bytes) -> Result(Db, StoreErr):
     if len(b) < 5 or to_str(b[0:5]) != MAGIC:
@@ -207,8 +275,78 @@ fn decode(path: string, b: bytes) -> Result(Db, StoreErr):
                 v := take_val(b, &off) or_return
                 push(row, v)
             push(rows, row)
-        push(tables, Table(tname, cols, rows))
+        # The entries are rebuilt here rather than read: they are derived from
+        # the rows in this same file, so recomputing them is the one way they
+        # cannot come back disagreeing with the rows they index.
+        push(tables, Table(tname, cols, rows, _build_index(cols, rows)))
     return Ok(Db(path, tables, applied))
+
+# ---- the equality index ---------------------------------------------------
+#
+# A sorted array with a binary search, not a tree. The rows are append-only and
+# they all live in memory anyway -- the tree that would be earned is the one in
+# tools/tycho-kv, and it is earned there by a store that pages to disk. What is
+# wanted here is only a SECOND ACCESS PATH whose cost differs from the scan's,
+# and log2(n) probes against n row reads is that difference.
+
+fn _build_index(cols: [Col], rows: [[Val]]) -> [Index]:
+    out: [Index] = []
+    for c := 0; c < len(cols); c += 1:
+        if not cols[c].indexed:
+            continue
+        ents: [IdxEnt] = []
+        ix := Index(c, ents)
+        for r := 0; r < len(rows); r += 1:
+            _place(&ix, rows[r][c], r)
+        push(out, ix)
+    return out
+
+# First position whose key is >= `key`. The search is over (key, row) pairs and
+# rows only ever grow, so appending a duplicate key lands after its twins.
+fn _lower(ix: Index, key: Val) -> int:
+    lo := 0
+    hi := len(ix.ents)
+    for lo < hi:
+        mid := lo + (hi - lo) / 2
+        if val_cmp(ix.ents[mid].key, key) < 0:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+fn _place(ix: inout Index, key: Val, row: int):
+    at := _lower(ix, key)
+    # walk past equal keys so entries stay ordered by row within a key, which
+    # is what makes probe() return rows in insertion order
+    for at < len(ix.ents) and val_cmp(ix.ents[at].key, key) == 0:
+        at += 1
+    push(ix.ents, IdxEnt(key, row))
+    for k := len(ix.ents) - 1; k > at; k -= 1:
+        ix.ents[k] = ix.ents[k - 1]
+    ix.ents[at] = IdxEnt(key, row)
+
+fn _index_for(t: Table, col: int) -> int:
+    for k := 0; k < len(t.idx); k += 1:
+        if t.idx[k].col == col:
+            return k
+    return -1
+
+fn _col_pos(cols: [Col], name: string) -> int:
+    for k := 0; k < len(cols); k += 1:
+        if cols[k].name == name:
+            return k
+    return -1
+
+# Is `col` of `name` reachable by the index path? The planner asks this before
+# it commits to a probe, which is why probe()'s NoIndex is a genuine misuse
+# rather than a case the planner is expected to hit.
+fn indexed_cols(db: Db, name: string) -> Result([string], StoreErr):
+    i := table_index(db, name) or_return
+    t := db.tables[i]
+    out: [string] = []
+    for k := 0; k < len(t.idx); k += 1:
+        push(out, t.cols[t.idx[k].col].name)
+    return Ok(out)
 
 # ---- the database ---------------------------------------------------------
 
@@ -245,7 +383,7 @@ fn create_table(db: inout Db, name: string, cols: [Col]) -> Result(bool, StoreEr
     if _find(db, name) >= 0:
         return Err(TableExists(name))
     rows: [[Val]] = []
-    push(db.tables, Table(name, cols, rows))
+    push(db.tables, Table(name, cols, rows, _build_index(cols, rows)))
     return Ok(true)
 
 fn insert(db: inout Db, name: string, vals: [Val]) -> Result(bool, StoreErr):
@@ -258,9 +396,35 @@ fn insert(db: inout Db, name: string, vals: [Val]) -> Result(bool, StoreErr):
         got := val_ty(vals[k])
         if want != got:
             return Err(TypeClash(name, cols[k].name, want, got))
+    at := len(db.tables[i].rows)
     push(db.tables[i].rows, vals)
+    # The index is maintained HERE, on the one path every row arrives by --
+    # both a fresh INSERT and a replayed one call this -- so recovery cannot
+    # produce a table whose index has fewer rows in it than the table does.
+    for k := 0; k < len(db.tables[i].idx); k += 1:
+        _place(&db.tables[i].idx[k], vals[db.tables[i].idx[k].col], at)
     return Ok(true)
 
+# ACCESS PATH 1: every row, in insertion order.
 fn scan(db: Db, name: string) -> Result([[Val]], StoreErr):
     i := table_index(db, name) or_return
     return Ok(db.tables[i].rows)
+
+# ACCESS PATH 2: the rows whose `col` equals `key`, in insertion order, found
+# by binary search instead of a walk. Err(NoIndex) if the column has none --
+# see the variant's note for why this does not fall back to a scan.
+fn probe(db: Db, name: string, col: string, key: Val) -> Result([[Val]], StoreErr):
+    i := table_index(db, name) or_return
+    t := db.tables[i]
+    c := _col_pos(t.cols, col)
+    if c < 0:
+        return Err(NoIndex(name, col))
+    k := _index_for(t, c)
+    if k < 0:
+        return Err(NoIndex(name, col))
+    out: [[Val]] = []
+    at := _lower(t.idx[k], key)
+    for at < len(t.idx[k].ents) and val_cmp(t.idx[k].ents[at].key, key) == 0:
+        push(out, t.rows[t.idx[k].ents[at].row])
+        at += 1
+    return Ok(out)

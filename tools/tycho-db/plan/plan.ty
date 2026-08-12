@@ -1,0 +1,230 @@
+package plan
+
+import "../sql"
+
+# The planner: a sql.Stmt plus what the catalogue knows about indexes, in; a
+# PHYSICAL plan out -- which access path to open, what predicate is left to
+# evaluate per row, and which columns to materialise.
+#
+# WHY THIS PACKAGE EXISTS AT ALL, since the obvious answer was that it should
+# not. A planner over ONE access path decides nothing: with only store.scan
+# there is exactly one way to answer every query, and a layer that "chooses"
+# it would be a rename of the AST wearing a plan's vocabulary. So the access
+# path came first -- store.probe, an equality index behind a KEY column -- and
+# only then is there a choice to make. Everything below either picks between
+# those two paths or removes work from the one it picked; nothing here
+# restates the AST.
+#
+# THE THREE DECISIONS, all three observable through EXPLAIN and through the
+# examined/returned counters exec reports:
+#
+#   1. CONSTANT FOLDING. A comparison of two literals is decided here, once,
+#      instead of per row. `WHERE 1 = 2` folds to a constant false and the plan
+#      becomes NoRows -- the table is never opened, and the counter says 0
+#      examined for a table with rows in it. `WHERE 1 = 1 AND age > 30` loses
+#      its left conjunct and the residual shrinks.
+#   2. INDEX SELECTION. An equality conjunct against a KEY column becomes an
+#      IndexEq probe; everything else stays a Scan. This is the decision the
+#      counter measures: the probe examines the rows that matched the key, the
+#      scan examines all of them.
+#   3. PROJECTION. The columns to materialise travel in the plan, so the
+#      executor copies the selected columns out of a row and not the row.
+#
+# WHAT IS DELIBERATELY NOT HERE. A cost model, and any preference between two
+# usable indexes. With no statistics -- no row counts per key, no histogram --
+# picking the "cheaper" of two equality indexes would be a coin toss dressed
+# as a decision, so the first usable conjunct wins and this comment is the
+# honest version of that rule. Statistics are what would earn the choice, and
+# they are not here.
+
+# The access path the executor is to open.
+enum Access:
+    NoRows                          # the predicate is constant-false
+    Scan                            # every row
+    IndexEq(string, sql.Expr)       # column, and the literal key to probe for
+
+struct Plan:
+    table: string
+    cols: [string]                  # [] means every column, as in the AST
+    access: Access
+    residual: Option(sql.Expr)      # what the access path did NOT decide
+
+enum PlanErr:
+    # EXPLAIN of something this planner has no plan for. Only SELECT reads,
+    # and only a read has an access path to choose; a CREATE or an INSERT has
+    # one thing it can possibly do, and saying so in a plan would be the
+    # theatre this package was written to avoid.
+    NotSelect(string)
+
+fn err_str(e: PlanErr) -> string:
+    match e:
+        NotSelect(s): return "cannot plan (only SELECT has a plan): " + s
+
+# ---- constant folding -----------------------------------------------------
+
+# The outcome of folding one predicate: either it is settled without looking at
+# a row, or what is left of it after its settled parts were removed.
+enum Folded:
+    Const(bool)
+    Keep(sql.Expr)
+
+# Two literals of the SAME type, ordered. None when either side is a column, or
+# when the types differ -- a cross-type comparison is a query error, and
+# folding it away here would swallow exec's Uncomparable and turn a diagnostic
+# into an answer.
+fn _lit_cmp(l: sql.Expr, r: sql.Expr) -> Option(int):
+    match l:
+        sql.LitInt(a):
+            match r:
+                sql.LitInt(b):
+                    if a < b:
+                        return Some(-1)
+                    if a > b:
+                        return Some(1)
+                    return Some(0)
+                _: return None
+        sql.LitStr(a):
+            match r:
+                sql.LitStr(b):
+                    if a < b:
+                        return Some(-1)
+                    if a > b:
+                        return Some(1)
+                    return Some(0)
+                _: return None
+        _: return None
+
+fn _fold(e: sql.Expr) -> Folded:
+    match e:
+        sql.Cmp(op, l, r):
+            match _lit_cmp(l, r):
+                Some(c): return Const(sql.holds(op, c))
+                None: return Keep(e)
+        sql.And(l, r):
+            fl := _fold(l)
+            fr := _fold(r)
+            match fl:
+                Const(a):
+                    if not a:
+                        return Const(false)
+                    return fr
+                Keep(le):
+                    match fr:
+                        Const(b):
+                            if not b:
+                                return Const(false)
+                            return Keep(le)
+                        Keep(re): return Keep(sql.And(le, re))
+        _: return Keep(e)
+
+# ---- index selection ------------------------------------------------------
+
+struct EqKey:
+    col: string
+    key: sql.Expr
+
+# The AND-conjuncts of a predicate, flattened left to right.
+fn _conjuncts(e: sql.Expr, out: inout [sql.Expr]):
+    match e:
+        sql.And(l, r):
+            _conjuncts(l, &out)
+            _conjuncts(r, &out)
+        _: push(out, e)
+
+fn _is_lit(e: sql.Expr) -> bool:
+    match e:
+        sql.LitInt(n): return true
+        sql.LitStr(s): return true
+        _: return false
+
+# `col = <literal>` or `<literal> = col`, with col indexed. Equality only:
+# the index is sorted, so a range would be servable too, but nothing above
+# asks for one yet and an untested range path is not a feature.
+fn _eq_key(e: sql.Expr, indexed: [string]) -> Option(EqKey):
+    match e:
+        sql.Cmp(op, l, r):
+            if op != "=":
+                return None
+            match l:
+                sql.Col(c):
+                    if _is_lit(r) and _has(indexed, c):
+                        return Some(EqKey(c, r))
+                    return None
+                _:
+                    match r:
+                        sql.Col(c):
+                            if _is_lit(l) and _has(indexed, c):
+                                return Some(EqKey(c, l))
+                            return None
+                        _: return None
+        _: return None
+
+fn _has(xs: [string], want: string) -> bool:
+    for x in xs:
+        if x == want:
+            return true
+    return false
+
+# Rebuild a predicate from the conjuncts, skipping the one at `drop`.
+fn _rejoin(cs: [sql.Expr], drop: int) -> Option(sql.Expr):
+    out: Option(sql.Expr) = None
+    for k := 0; k < len(cs); k += 1:
+        if k == drop:
+            continue
+        match out:
+            Some(acc): out = Some(sql.And(acc, cs[k]))
+            None: out = Some(cs[k])
+    return out
+
+# ---- the plan -------------------------------------------------------------
+
+fn build(st: sql.Stmt, indexed: [string]) -> Result(Plan, PlanErr):
+    match st:
+        sql.Select(cols, tbl, w):
+            match w:
+                None: return Ok(Plan(tbl, cols, Scan, None))
+                Some(p):
+                    match _fold(p):
+                        Const(v):
+                            # A constant-true WHERE leaves a scan with nothing
+                            # to check; a constant-false one leaves no work at
+                            # all, and NoRows is that stated rather than
+                            # discovered a row at a time.
+                            if not v:
+                                return Ok(Plan(tbl, cols, NoRows, None))
+                            return Ok(Plan(tbl, cols, Scan, None))
+                        Keep(kept):
+                            cs: [sql.Expr] = []
+                            _conjuncts(kept, &cs)
+                            for k := 0; k < len(cs); k += 1:
+                                match _eq_key(cs[k], indexed):
+                                    Some(ek):
+                                        return Ok(Plan(tbl, cols, IndexEq(ek.col, ek.key), _rejoin(cs, k)))
+                                    None: continue
+                            return Ok(Plan(tbl, cols, Scan, Some(kept)))
+        _: return Err(NotSelect(sql.show(st)))
+
+# ---- EXPLAIN --------------------------------------------------------------
+#
+# One line per decision, so a reader can see WHICH of the three fired. The
+# access line is the one that changes with the index; the residual line is the
+# one that changes with folding.
+
+fn show(p: Plan) -> [string]:
+    out: [string] = []
+    match p.access:
+        NoRows: push(out, "access: none (WHERE is constant false)")
+        Scan: push(out, "access: scan " + p.table)
+        IndexEq(c, k): push(out, "access: index " + p.table + "." + c + " = " + sql.show_expr(k))
+    match p.residual:
+        Some(e): push(out, "residual: " + sql.show_expr(e))
+        None: push(out, "residual: -")
+    proj := "*"
+    if len(p.cols) > 0:
+        proj = ""
+        for k := 0; k < len(p.cols); k += 1:
+            if k > 0:
+                proj += ", "
+            proj += p.cols[k]
+    push(out, "project: " + proj)
+    return out

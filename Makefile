@@ -452,7 +452,7 @@ kv-check: tychoc
 	@sh tools/tycho-kv/run.sh
 
 # db-check: the gate for tycho-db, the relational database in tools/tycho-db/
-# (sql/ parser, store/ heap file, exec/ operators). Same shape and same reason
+# (sql/ parser, store/ heap file + equality index, plan/ planner, exec/ operators). Same shape and same reason
 # as ar/q/vm/scheme/kv-check above: step [9] tools-check only --emit-c's a tool
 # and [3b] entrypoints only compiles its main.ty, so until this lane existed
 # NOTHING RAN the database -- it could have started returning the wrong rows,
@@ -477,17 +477,26 @@ kv-check: tychoc
 # directory -- but it is not asserted here and cannot be: a gate can kill a
 # process, not cut the power. See the note in tools/tycho-db/run.sh.
 #
-# The other half is the refusals: all sixteen named variants of store.StoreErr,
-# exec.ExecErr and wal.WalErr must exit non-zero with THEIR OWN message,
+# THE PLANNER is gated by a differential rather than a golden, because a plan
+# layer that merely renamed the AST would pass a transcript diff. The index and
+# the scan are run over identical rows and must return THE SAME rows, then must
+# DIFFER in what they examined (1 against 6) -- correctness and "the index ran
+# at all" are separate claims, and a probe silently falling back to a scan
+# would satisfy the first alone. Constant folding is asserted by a WHERE 1 = 2
+# examining zero rows of a table holding six.
+#
+# The other half is the refusals: all nineteen named variants of store.StoreErr,
+# exec.ExecErr, wal.WalErr and plan.PlanErr must exit non-zero with THEIR OWN message,
 # compared whole rather than by substring, with Corrupt and BadLog
 # additionally leaving stdout empty. NotAPredicate is unreachable from SQL text
 # (sql._predicate only builds Cmp and And, both of which exec._pred handles),
-# so the runner copies the four packages into its temp dir and probes the exec
-# API directly. The variant list is EXTRACTED from the three enums and checked
+# so the runner copies the packages into its temp dir and probes the exec
+# API directly; store.NoIndex is probed the same way, and asserting that
+# REFUSAL is what rules out a probe() that quietly falls back to a scan. The variant list is EXTRACTED from the three enums and checked
 # against what the runner covers, so a variant added later reddens here instead
 # of arriving ungated.
 #
-# ~6.0s, measured 2026-08-12. In `make ci` as step [3p/22].
+# ~9.2s, measured 2026-08-12. In `make ci` as step [3p/22].
 # See tools/tycho-db/run.sh.
 db-check: tychoc
 	@sh tools/tycho-db/run.sh

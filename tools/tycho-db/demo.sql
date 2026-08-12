@@ -1,6 +1,12 @@
-CREATE TABLE users (id INT, name TEXT, age INT);
+CREATE TABLE users (id INT KEY, name TEXT, age INT);
 INSERT INTO users VALUES (1, 'ada', 36);
 INSERT INTO users VALUES (2, 'bob', 41);
 INSERT INTO users VALUES (3, 'cy', 29);
 SELECT name, age FROM users WHERE age > 30 AND name != 'bob';
 SELECT * FROM users;
+EXPLAIN SELECT name FROM users WHERE id = 2;
+SELECT name FROM users WHERE id = 2;
+EXPLAIN SELECT name FROM users WHERE age = 41;
+SELECT name FROM users WHERE age = 41;
+EXPLAIN SELECT * FROM users WHERE 1 = 2;
+SELECT * FROM users WHERE 1 = 2;

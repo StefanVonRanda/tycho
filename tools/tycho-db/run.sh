@@ -23,20 +23,31 @@
 #       then replays and must show every completed row and no partial one.
 #       Replay is asserted idempotent, and a torn trailing record is asserted
 #       to be discarded rather than replayed. See the section header.
-#   [4] every named variant of store.StoreErr, exec.ExecErr and wal.WalErr
-#       exits non-zero with ITS OWN message. Most are reachable from the CLI
-#       and are driven through it; NotAPredicate is not (see [5]).
+#   [3b] THE PLANNER EARNS ITS PACKAGE. Not a golden diff: the index path and
+#       the scan path are run over identical rows and asserted to return THE
+#       SAME rows, then asserted to differ in what they EXAMINED (1 against 6)
+#       -- correctness and "the index actually ran" are separate claims and a
+#       silent fallback to a scan would pass the first alone. Constant folding
+#       is asserted by a `WHERE 1 = 2` examining zero rows of a table holding
+#       six. See the section header.
+#   [4] every named variant of store.StoreErr, exec.ExecErr, wal.WalErr and
+#       plan.PlanErr exits non-zero with ITS OWN message. Most are reachable
+#       from the CLI and are driven through it; NotAPredicate and NoIndex are
+#       not (see [5]).
 #       ExecErr.Storage and WalErr.Storage are the wrappers the StoreErr cases
 #       arrive through -- err_str delegates -- so each of those asserts it.
 #       The variant list is EXTRACTED from the three enums and checked against
 #       the list this runner covers, so a variant added tomorrow reddens here
 #       instead of quietly going ungated.
-#   [5] exec.ExecErr.NotAPredicate, which the parser cannot produce: sql
-#       _predicate only ever builds Cmp or And, and _pred handles both. The
-#       only caller that can reach it is one holding the AST directly, so the
-#       runner copies the four packages into its temp dir, writes a probe
-#       program against the exec API, and asserts the message from that.
-#       Nothing is written into the repo to do it.
+#   [5] the two variants no SQL text can reach, each probed through the API
+#       that owns it. exec.ExecErr.NotAPredicate: sql._predicate only ever
+#       builds Cmp or And and exec._pred handles both, so only a caller holding
+#       the AST can get there. store.StoreErr.NoIndex: plan asks which columns
+#       are indexed before it commits to a probe, so only a caller that skips
+#       that question can get there -- and asserting the REFUSAL is what rules
+#       out a probe() that quietly falls back to a scan. The runner copies the
+#       five packages into its temp dir and builds a probe against each API;
+#       nothing is written into the repo to do it.
 #
 # WHAT IT DELIBERATELY DOES NOT ASSERT
 #   The on-disk format's bytes, for the store or the log. Both are asserted to
@@ -298,6 +309,127 @@ for shape in zeros flip; do
 done
 
 # ---------------------------------------------------------------------------
+# [3b] THE PLANNER, and the only assertions that can tell it from theatre
+#
+# plan/ chooses between two access paths -- store.scan and store.probe, the
+# equality index behind a KEY column -- folds a constant WHERE, and carries the
+# projection. A layer that merely renamed the AST would pass a golden diff
+# happily, so none of the legs below is a golden diff:
+#
+#   a  THE DIFFERENTIAL. Two tables, byte-identical rows, one with KEY on id
+#      and one without. The same query against both must return THE SAME ROWS
+#      -- an index that returns different rows from the scan is the worst bug
+#      this tool could have, and it would be invisible to a transcript that
+#      only ever asks one of them. Every key present in the table is probed,
+#      plus one that is absent.
+#   b  AND THE PATHS MUST ACTUALLY DIFFER. Identical rows from both proves
+#      correctness, not that the index ran at all -- a probe silently falling
+#      back to a scan would pass (a). So the EXAMINED counter is asserted too:
+#      1 through the index against 6 through the scan, over the same table and
+#      the same answer.
+#   c  CONSTANT FOLDING, in the shape whose effect nothing else could produce:
+#      `WHERE 1 = 2` over a table with six rows must examine ZERO. A layer that
+#      passed the predicate through would examine six and return none.
+#   d  EXPLAIN names the path it chose, and folding is visible in the residual.
+#   e  the counters are not decoration: rows returned <= rows examined, always.
+# ---------------------------------------------------------------------------
+cat > plan_seed.sql <<'EOF'
+CREATE TABLE idx (id INT KEY, name TEXT);
+CREATE TABLE noidx (id INT, name TEXT);
+INSERT INTO idx VALUES (10, 'ada');
+INSERT INTO idx VALUES (20, 'bob');
+INSERT INTO idx VALUES (30, 'cy');
+INSERT INTO idx VALUES (40, 'dee');
+INSERT INTO idx VALUES (50, 'eve');
+INSERT INTO idx VALUES (60, 'fay');
+INSERT INTO noidx VALUES (10, 'ada');
+INSERT INTO noidx VALUES (20, 'bob');
+INSERT INTO noidx VALUES (30, 'cy');
+INSERT INTO noidx VALUES (40, 'dee');
+INSERT INTO noidx VALUES (50, 'eve');
+INSERT INTO noidx VALUES (60, 'fay');
+EOF
+rm -f pl.db pl.db.wal
+runs 'plan/seed' plan_seed.sql pl.db
+
+# a -- the differential, over every key in the table and one that is not
+for k in 10 20 30 40 50 60 99; do
+    printf 'SELECT name FROM idx WHERE id = %s;\n' "$k" > case.sql
+    runs "plan/index k=$k" case.sql pl.db
+    grep '^  row   ' "$T/p.out" > "$T/idx.rows"
+    printf 'SELECT name FROM noidx WHERE id = %s;\n' "$k" > case.sql
+    runs "plan/scan k=$k" case.sql pl.db
+    grep '^  row   ' "$T/p.out" > "$T/scan.rows"
+    cmp -s "$T/idx.rows" "$T/scan.rows" || {
+        bad "plan/differential k=$k: the index path and the scan path returned DIFFERENT rows"
+        diff "$T/scan.rows" "$T/idx.rows" | sed 's/^/      /'
+    }
+done
+
+# b -- and the two paths must not be the same path wearing two names
+examined() {
+    sed -n 's/^  ok    [0-9]* row(s) from \([0-9]*\) examined$/\1/p' "$1" | tr '\n' ' '
+}
+printf 'SELECT name FROM idx WHERE id = 30;\n' > case.sql
+runs 'plan/examined index' case.sql pl.db
+ix_ex=$(examined "$T/p.out"); ix_ex=${ix_ex% }
+rows 'plan/examined index' "$T/p.out" 'cy'
+printf 'SELECT name FROM noidx WHERE id = 30;\n' > case.sql
+runs 'plan/examined scan' case.sql pl.db
+sc_ex=$(examined "$T/p.out"); sc_ex=${sc_ex% }
+rows 'plan/examined scan' "$T/p.out" 'cy'
+[ "$ix_ex" = 1 ] || bad "plan/index: examined $ix_ex rows, want 1 -- the probe did not narrow anything, so the index path is not being taken"
+[ "$sc_ex" = 6 ] || bad "plan/scan: examined $sc_ex rows, want 6 -- the scan is not reading the whole table"
+
+# c -- constant folding: a false WHERE must not open the table at all
+printf 'SELECT name FROM idx WHERE 1 = 2;\n' > case.sql
+runs 'plan/fold false' case.sql pl.db
+rows 'plan/fold false' "$T/p.out"
+fold_ex=$(examined "$T/p.out"); fold_ex=${fold_ex% }
+[ "$fold_ex" = 0 ] || bad "plan/fold: a constant-false WHERE examined $fold_ex rows, want 0 -- the predicate was not folded, it was evaluated"
+
+# a constant-TRUE conjunct must vanish from the residual and change no answer
+printf 'SELECT name FROM idx WHERE 1 = 1 AND id = 20;\n' > case.sql
+runs 'plan/fold true' case.sql pl.db
+rows 'plan/fold true' "$T/p.out" 'bob'
+
+# d -- EXPLAIN names the chosen path, and shows what folding left behind
+cat > explain.sql <<'EOF'
+EXPLAIN SELECT name FROM idx WHERE id = 20;
+EXPLAIN SELECT name FROM noidx WHERE id = 20;
+EXPLAIN SELECT name FROM idx WHERE 1 = 2;
+EXPLAIN SELECT name FROM idx WHERE 1 = 1 AND id = 20;
+EXPLAIN SELECT name FROM idx WHERE id = 20 AND name != 'zz';
+EOF
+runs 'plan/explain' explain.sql pl.db
+for want in \
+    '  plan  access: index idx.id = 20' \
+    '  plan  access: scan noidx' \
+    '  plan  access: none (WHERE is constant false)' \
+    '  plan  residual: name != '"'"'zz'"'"''
+do
+    grep -qxF "$want" "$T/p.out" || bad "plan/explain: no line [$want]"
+done
+# The folded conjunct must be GONE from the residual, not merely reported.
+# Scoped to the residual lines: the transcript echoes each script line, so the
+# `1 = 1` in the SOURCE is present either way and searching the whole file
+# would redden for a planner that folded perfectly.
+grep '^  plan  residual:' "$T/p.out" | grep -qF '1 = 1' && \
+    bad "plan/explain: a constant-true conjunct survived into the residual -- it was not folded"
+printf '=== plan EXPLAIN\n' >> "$out"
+cat "$T/p.out" >> "$out"
+
+# e -- returned never exceeds examined, over every SELECT this runner has run
+# `  ok    2 row(s) from 4 examined` -- awk strips the indent, so returned is
+# $2 and examined is $5.
+counted=$(grep -c 'row(s) from' "$out")
+[ "$counted" -ge 8 ] || bad "plan/counters: only $counted counted SELECT(s) in the transcript -- this leg is asserting almost nothing"
+awk '/^  ok    [0-9]+ row\(s\) from [0-9]+ examined$/ {
+        if ($2 + 0 > $5 + 0) { print "      " $0; over = 1 }
+     } END { exit over + 0 }' "$out" || \
+    bad "plan/counters: a SELECT returned more rows than its access path examined"
+
+# ---------------------------------------------------------------------------
 # [4] every named error variant
 #
 # stmt_err <variant> <expected message> <sql> -- a statement that fails inside
@@ -346,6 +478,10 @@ stmt_err TypeClash    'users.id is int, got text'          "INSERT INTO users VA
 stmt_err NoColumn     'users has no column nope'           'SELECT nope FROM users;'
 stmt_err Uncomparable 'cannot compare int with text'       "SELECT * FROM users WHERE age > 'x';"
 stmt_err NotAValue    'not a value: id'                    "INSERT INTO users VALUES (id, 'y', 1);"
+# plan.PlanErr, through exec.ExecErr.Plan -- EXPLAIN of a statement that has no
+# access path to choose. Reachable from SQL text, unlike NoIndex below.
+stmt_err NotSelect    "cannot plan (only SELECT has a plan): INSERT users (2, 'x', 1)" \
+                                                           "EXPLAIN INSERT INTO users VALUES (2, 'x', 1);"
 
 # store.StoreErr.Corrupt -- an OPEN failure, so nothing runs and stdout must be
 # EMPTY. A database that prints a header for a file it could not read hands the
@@ -449,7 +585,7 @@ printf -- '--- stderr\n' >> "$out"; cat "$T/c.err" >> "$out"
 # into the repo; the copy is also why a renamed package reddens here.
 # ---------------------------------------------------------------------------
 P="$T/pkg"; mkdir -p "$P"
-for pkg in sql store exec wal; do
+for pkg in sql store exec wal plan; do
     [ -d "$src/$pkg" ] || { bad "probe: $src/$pkg is gone -- this leg asserts NOTHING"; }
     cp -R "$src/$pkg" "$P/" 2>/dev/null
 done
@@ -468,13 +604,14 @@ import "wal"
 # nothing reaches it, and the probe leaves no file behind.
 fn main() -> Result(void, string):
     cols: [store.Col] = []
-    push(cols, store.Col("a", store.ColInt))
+    push(cols, store.Col("a", store.ColInt, false))
     row: [store.Val] = []
     push(row, store.VInt(1))
     rows: [[store.Val]] = []
     push(rows, row)
+    idx: [store.Index] = []
     tables: [store.Table] = []
-    push(tables, store.Table("users", cols, rows))
+    push(tables, store.Table("users", cols, rows, idx))
     db := store.Db("probe.db", tables, 0)
     lg := wal.Log("probe.db.wal", 0, 0, 0)
     want: [string] = []
@@ -498,10 +635,60 @@ else
     cat "$T/c.err" >> "$out"
 fi
 
+# store.StoreErr.NoIndex, which no SQL text can reach either, and for a reason
+# worth keeping true: plan asks store which columns are indexed BEFORE it
+# commits to a probe, so the planner never requests the index path on a column
+# that has none. The variant guards the store API against a caller that skips
+# that question -- and this probe is that caller.
+#
+# It is also the assertion that probe() does not quietly fall back to a scan.
+# A fallback would return the right rows here and exit 0, which is exactly the
+# failure the variant exists to prevent, so the probe asserts the REFUSAL.
+#
+# In its OWN directory: tychoc compiles every .ty beside the entry file, so two
+# probe programs in one directory are two `main`s in one package.
+P2="$T/pkg2"; mkdir -p "$P2"
+cp -R "$src/store" "$P2/" 2>/dev/null
+cat > "$P2/probe2.ty" <<'EOF'
+package main
+
+import "store"
+
+fn main() -> Result(void, string):
+    cols: [store.Col] = []
+    push(cols, store.Col("id", store.ColInt, false))     # NOT indexed
+    row: [store.Val] = []
+    push(row, store.VInt(1))
+    rows: [[store.Val]] = []
+    push(rows, row)
+    idx: [store.Index] = []
+    tables: [store.Table] = []
+    push(tables, store.Table("users", cols, rows, idx))
+    db := store.Db("probe.db", tables, 0)
+    match store.probe(db, "users", "id", store.VInt(1)):
+        Ok(rs): return Err("store.probe SERVED an index path on a column with no index")
+        Err(e): return Err(store.err_str(e))
+EOF
+if ! "$TYCHOC" "$P2/probe2.ty" -o "$T/probe2" >"$T/probe2.log" 2>&1; then
+    bad "probe: tychoc could not build the NoIndex probe"
+    sed 's/^/      /' "$T/probe2.log" | head -8
+else
+    "$T/probe2" > "$T/c.out" 2> "$T/c.err"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        bad "NoIndex: EXITED 0 -- store.probe accepted a column with no index"
+    elif ! grep -qxF 'users.id has no index' "$T/c.err"; then
+        bad "NoIndex: failed but not with its own message"; sed 's/^/      /' "$T/c.err"
+    fi
+    [ -s "$T/c.out" ] && bad "NoIndex: wrote to STDOUT"
+    printf '=== err NoIndex (via the store API)\n' >> "$out"
+    cat "$T/c.err" >> "$out"
+fi
+
 # ---------------------------------------------------------------------------
 # [6] the coverage floor: no variant may go ungated
 #
-# The three enums are READ, not remembered. A variant added to any of them
+# The four enums are READ, not remembered. A variant added to any of them
 # without a leg above reddens here naming itself -- which is the only thing
 # standing between "every error variant is covered" and "every error variant
 # was covered on the day this was written".
@@ -510,14 +697,18 @@ fi
 # of that name: store's is the failed store flush, wal's the failed log write,
 # and the NotWritten leg above asserts BOTH messages from the one run.
 # ---------------------------------------------------------------------------
-COVERED='NoTable TableExists ColCount TypeClash Corrupt NotWritten
-         Storage NoColumn Uncomparable NotAValue NotAPredicate
-         Wal BadLog LostPrefix'
+COVERED='NoTable TableExists ColCount TypeClash Corrupt NotWritten NoIndex
+         Storage NoColumn Uncomparable NotAValue NotAPredicate Plan
+         Wal BadLog LostPrefix NotSelect'
 
 variants() {
     awk -v want="enum $2:" '
         $0 == want { on = 1; next }
         on && /^[^ \t]/ { on = 0 }
+        # A comment inside the enum body is not a variant. Without this the
+        # scan yields "#" for every commented variant, which matches nothing
+        # in COVERED and reddens the floor with a name that is not one.
+        on && $1 ~ /^#/ { next }
         on && NF { v = $1; sub(/\(.*/, "", v); print v }
     ' "$1"
 }
@@ -525,13 +716,14 @@ variants() {
 found=0
 for v in $(variants "$src/store/store.ty" StoreErr) \
          $(variants "$src/exec/exec.ty" ExecErr) \
-         $(variants "$src/wal/wal.ty" WalErr); do
+         $(variants "$src/wal/wal.ty" WalErr) \
+         $(variants "$src/plan/plan.ty" PlanErr); do
     found=$((found + 1))
     hit=0
     for c in $COVERED; do [ "$v" = "$c" ] && hit=1; done
     [ "$hit" -eq 1 ] || bad "error variant $v has no leg in this runner -- it is UNGATED"
 done
-[ "$found" -ge 16 ] || bad "only $found error variant(s) found in the three enums -- the scan is broken, [4] asserts nothing"
+[ "$found" -ge 19 ] || bad "only $found error variant(s) found in the four enums -- the scan is broken, [4] asserts nothing"
 
 # ---------------------------------------------------------------------------
 # the golden
@@ -547,7 +739,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-db: green (demo transcript + store file + log reproducible over two runs; rows survive a process exit and a reopened store takes new writes; a real kill -9 mid-script replays to the completed rows only, idempotently, discarding a torn record; $found error variants each exit non-zero with their own message, Corrupt and BadLog with empty stdout; transcript == golden)"
+    echo "tycho-db: green (demo transcript + store file + log reproducible over two runs; rows survive a process exit and a reopened store takes new writes; a real kill -9 mid-script replays to the completed rows only, idempotently, discarding a torn record; the index and scan paths return identical rows over every key while examining 1 against 6, and a constant-false WHERE examines 0 of 6; $found error variants each exit non-zero with their own message, Corrupt and BadLog with empty stdout; transcript == golden)"
 else
     echo "tycho-db: FAIL"; exit 1
 fi

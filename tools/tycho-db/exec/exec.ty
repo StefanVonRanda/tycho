@@ -3,10 +3,17 @@ package exec
 import "../sql"
 import "../store"
 import "../wal"
+import "../plan"
 
-# The executor: a sql.Stmt run against a store.Db. Every operator is a
-# sequential scan over the rows the store already holds -- no plan, no index,
-# no join. Storage errors travel up wrapped, so a caller sees one cause enum.
+# The executor: a sql.Stmt run against a store.Db. Storage errors travel up
+# wrapped, so a caller sees one cause enum.
+#
+# A SELECT is no longer read straight off the AST: plan.build turns it into an
+# access path (a scan or an index probe), a residual predicate and a
+# projection, and _select does what the plan says. The counters it reports --
+# rows EXAMINED by the access path against rows RETURNED after the residual --
+# are the observable difference between the two paths, and the reason the plan
+# layer is a decision rather than a rename.
 #
 # Every mutation is written to the log here rather than in main, because this
 # is the layer that knows which statements mutate and what they resolved to.
@@ -17,24 +24,32 @@ import "../wal"
 enum ExecErr:
     Storage(store.StoreErr)
     Wal(wal.WalErr)
+    Plan(plan.PlanErr)
     NoColumn(string, string)
     Uncomparable(string, string)
     NotAValue(string)
     NotAPredicate(string)
 
+# `examined` is what the ACCESS PATH produced, before the residual predicate
+# ran. It is carried beside the rows rather than printed from inside _select
+# because it is a result, not a log line: a caller that wants to assert which
+# path ran -- the gate does -- needs it as a value.
 struct Rows:
     cols: [string]
     rows: [[store.Val]]
+    examined: int
 
 enum Outcome:
     Created(string)
     Inserted(string)
     Selected(Rows)
+    Explained([string])
 
 fn err_str(e: ExecErr) -> string:
     match e:
         Storage(s): return store.err_str(s)
         Wal(w): return wal.err_str(w)
+        Plan(p): return plan.err_str(p)
         NoColumn(t, c): return t + " has no column " + c
         Uncomparable(a, b): return "cannot compare " + a + " with " + b
         NotAValue(s): return "not a value: " + s
@@ -63,44 +78,16 @@ fn _eval(tbl: string, cols: [store.Col], row: [store.Val], e: sql.Expr) -> Resul
             return Ok(row[j])
         _: return _lit(e)
 
-# -1, 0, 1 -- only two values of the same type are ordered
+# -1, 0, 1. The QUERY rule that two values of different types do not compare
+# lives here; the ordering of two values that do is store.val_cmp's, which the
+# index also sorts by -- so a row found through the index and the same row
+# found through a scan can never be ordered differently.
 fn _cmp(a: store.Val, b: store.Val) -> Result(int, ExecErr):
     at := store.val_ty(a)
     bt := store.val_ty(b)
     if at != bt:
         return Err(Uncomparable(at, bt))
-    match a:
-        store.VInt(x):
-            match b:
-                store.VInt(y):
-                    if x < y:
-                        return Ok(-1)
-                    if x > y:
-                        return Ok(1)
-                    return Ok(0)
-                store.VText(y): return Err(Uncomparable(at, bt))
-        store.VText(x):
-            match b:
-                store.VText(y):
-                    if x < y:
-                        return Ok(-1)
-                    if x > y:
-                        return Ok(1)
-                    return Ok(0)
-                store.VInt(y): return Err(Uncomparable(at, bt))
-
-fn _holds(op: string, c: int) -> bool:
-    if op == "=":
-        return c == 0
-    if op == "!=":
-        return c != 0
-    if op == "<":
-        return c < 0
-    if op == "<=":
-        return c <= 0
-    if op == ">":
-        return c > 0
-    return c >= 0
+    return Ok(store.val_cmp(a, b))
 
 fn _pred(tbl: string, cols: [store.Col], row: [store.Val], e: sql.Expr) -> Result(bool, ExecErr):
     match e:
@@ -113,7 +100,7 @@ fn _pred(tbl: string, cols: [store.Col], row: [store.Val], e: sql.Expr) -> Resul
             lv := _eval(tbl, cols, row, l) or_return
             rv := _eval(tbl, cols, row, r) or_return
             c := _cmp(lv, rv) or_return
-            return Ok(_holds(op, c))
+            return Ok(sql.holds(op, c))
         _: return Err(NotAPredicate(sql.show_expr(e)))
 
 # ---- the statements -------------------------------------------------------
@@ -124,7 +111,7 @@ fn _create(db: inout store.Db, lg: inout wal.Log, name: string, defs: [sql.ColDe
         t := store.ColInt
         if sql.ty_name(defs[k].ty) == "text":
             t = store.ColText
-        push(cols, store.Col(defs[k].name, t))
+        push(cols, store.Col(defs[k].name, t, defs[k].key))
     match store.create_table(&db, name, cols):
         Ok(x): pass
         Err(e): return Err(Storage(e))
@@ -148,15 +135,44 @@ fn _insert(db: inout store.Db, lg: inout wal.Log, name: string, exprs: [sql.Expr
         Ok(n): return Ok(Inserted(name))
         Err(e): return Err(Wal(e))
 
-fn _select(db: store.Db, want: [string], tbl: string, w: Option(sql.Expr)) -> Result(Outcome, ExecErr):
+# The planner's inputs that only the catalogue can supply.
+fn _plan_for(db: store.Db, st: sql.Stmt, tbl: string) -> Result(plan.Plan, ExecErr):
+    ix: [string] = []
+    match store.indexed_cols(db, tbl):
+        Ok(cs): ix = cs
+        Err(e): return Err(Storage(e))
+    match plan.build(st, ix):
+        Ok(p): return Ok(p)
+        Err(e): return Err(Plan(e))
+
+# Open the access path the plan chose. This is the ONE place the two paths are
+# distinguished, and what it returns is the `examined` set -- the rows the
+# residual predicate will then be run over.
+fn _open(db: store.Db, p: plan.Plan) -> Result([[store.Val]], ExecErr):
+    match p.access:
+        plan.NoRows:
+            # The predicate was decided without a row, so the table is not
+            # opened at all. This is the folding made visible: 0 examined over
+            # a table that has rows in it.
+            none: [[store.Val]] = []
+            return Ok(none)
+        plan.Scan:
+            match store.scan(db, p.table):
+                Ok(rs): return Ok(rs)
+                Err(e): return Err(Storage(e))
+        plan.IndexEq(col, key):
+            k := _lit(key) or_return
+            match store.probe(db, p.table, col, k):
+                Ok(rs): return Ok(rs)
+                Err(e): return Err(Storage(e))
+
+fn _select(db: store.Db, st: sql.Stmt, want: [string], tbl: string) -> Result(Outcome, ExecErr):
     cols: [store.Col] = []
     match store.columns(db, tbl):
         Ok(cs): cols = cs
         Err(e): return Err(Storage(e))
-    all: [[store.Val]] = []
-    match store.scan(db, tbl):
-        Ok(rs): all = rs
-        Err(e): return Err(Storage(e))
+    p := _plan_for(db, st, tbl) or_return
+    all := _open(db, p) or_return
 
     names: [string] = []
     idx: [int] = []
@@ -175,18 +191,35 @@ fn _select(db: store.Db, want: [string], tbl: string, w: Option(sql.Expr)) -> Re
     out: [[store.Val]] = []
     for r := 0; r < len(all); r += 1:
         keep := true
-        match w:
-            Some(p): keep = _pred(tbl, cols, all[r], p) or_return
+        match p.residual:
+            Some(q): keep = _pred(tbl, cols, all[r], q) or_return
             None: keep = true
         if keep:
             proj: [store.Val] = []
             for k := 0; k < len(idx); k += 1:
                 push(proj, all[r][idx[k]])
             push(out, proj)
-    return Ok(Selected(Rows(names, out)))
+    return Ok(Selected(Rows(names, out, len(all))))
+
+# EXPLAIN builds the plan and stops. It runs plan.build on the SAME statement
+# _select would, through the same helper, so the plan shown is the plan used
+# and not a description of one.
+fn _explain(db: store.Db, inner: sql.Stmt) -> Result(Outcome, ExecErr):
+    match inner:
+        sql.Select(want, t, w):
+            p := _plan_for(db, inner, t) or_return
+            return Ok(Explained(plan.show(p)))
+        _:
+            # Routed through plan.build rather than refused here, so the rule
+            # about what has a plan lives in exactly one file.
+            empty: [string] = []
+            match plan.build(inner, empty):
+                Ok(p): return Ok(Explained(plan.show(p)))
+                Err(e): return Err(Plan(e))
 
 fn run(db: inout store.Db, lg: inout wal.Log, st: sql.Stmt) -> Result(Outcome, ExecErr):
     match st:
         sql.Create(name, defs): return _create(&db, &lg, name, defs)
         sql.Insert(name, exprs): return _insert(&db, &lg, name, exprs)
-        sql.Select(want, tbl, w): return _select(db, want, tbl, w)
+        sql.Select(want, tbl, w): return _select(db, st, want, tbl)
+        sql.Explain(inner): return _explain(db, inner)

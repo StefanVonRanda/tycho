@@ -24,14 +24,23 @@ enum Expr:
     Cmp(string, Expr, Expr)
     And(Expr, Expr)
 
+# `key` asks for an equality index on the column. It rides in the column
+# definition rather than a separate CREATE INDEX statement because that is the
+# form the storage layer can honour without a second mutation record: the
+# catalogue already travels through the log inside RCreate.
 struct ColDef:
     name: string
     ty: Ty
+    key: bool
 
 enum Stmt:
     Create(string, [ColDef])
     Insert(string, [Expr])
     Select([string], string, Option(Expr))
+    # EXPLAIN wraps a statement instead of being a fourth verb with its own
+    # body, so there is exactly one grammar for a SELECT and no way for the
+    # explained text and the executed text to drift apart.
+    Explain(Stmt)
 
 enum SqlErr:
     Lex(string, int)
@@ -48,7 +57,26 @@ fn _keyword(s: string) -> bool:
     up := strings.to_upper(s)
     return up == "SELECT" or up == "FROM" or up == "WHERE" or up == "CREATE" or
            up == "TABLE" or up == "INSERT" or up == "INTO" or up == "VALUES" or
-           up == "AND" or up == "INT" or up == "TEXT"
+           up == "AND" or up == "INT" or up == "TEXT" or up == "KEY" or
+           up == "EXPLAIN"
+
+# What a comparison operator MEANS, given -1/0/1 from an ordering. It lives
+# here, beside the list of operators the parser accepts, because two callers
+# need it -- exec evaluates a predicate against a row, plan folds one whose
+# sides are both literals -- and a second copy would be free to disagree with
+# this one about a single operator without either file looking wrong.
+fn holds(op: string, c: int) -> bool:
+    if op == "=":
+        return c == 0
+    if op == "!=":
+        return c != 0
+    if op == "<":
+        return c < 0
+    if op == "<=":
+        return c <= 0
+    if op == ">":
+        return c > 0
+    return c >= 0
 
 fn lex(src: string) -> Result([Tok], SqlErr):
     out: [Tok] = []
@@ -178,7 +206,11 @@ fn _parse_create(ts: [Tok], i: inout int) -> Result(Stmt, SqlErr):
         t := TyInt
         if tw == "TEXT":
             t = TyText
-        push(cols, ColDef(cn, t))
+        key := false
+        if _word(ts, i) == "KEY":
+            key = true
+            i += 1
+        push(cols, ColDef(cn, t, key))
         if _punct(ts, i) != ",":
             break
         i += 1
@@ -219,20 +251,27 @@ fn _parse_select(ts: [Tok], i: inout int) -> Result(Stmt, SqlErr):
     p := _predicate(ts, &i) or_return
     return Ok(Select(cols, tbl, Some(p)))
 
+# The verb and its body. Split out of parse() so EXPLAIN can recurse into it
+# rather than carry a second copy of the dispatch.
+fn _parse_stmt(ts: [Tok], i: inout int) -> Result(Stmt, SqlErr):
+    at := i
+    verb := _word(ts, i)
+    i += 1
+    if verb == "CREATE":
+        return _parse_create(ts, &i)
+    if verb == "INSERT":
+        return _parse_insert(ts, &i)
+    if verb == "SELECT":
+        return _parse_select(ts, &i)
+    if verb == "EXPLAIN":
+        inner := _parse_stmt(ts, &i) or_return
+        return Ok(Explain(inner))
+    return Err(Parse("expected CREATE, INSERT, SELECT or EXPLAIN", at))
+
 fn parse(src: string) -> Result(Stmt, SqlErr):
     ts := lex(src) or_return
     i := 0
-    verb := _word(ts, i)
-    i += 1
-    st := Create("", [])
-    if verb == "CREATE":
-        st = _parse_create(ts, &i) or_return
-    elif verb == "INSERT":
-        st = _parse_insert(ts, &i) or_return
-    elif verb == "SELECT":
-        st = _parse_select(ts, &i) or_return
-    else:
-        return Err(Parse("expected CREATE, INSERT or SELECT", 0))
+    st := _parse_stmt(ts, &i) or_return
     if _punct(ts, i) == ";":
         i += 1
     if not (ts[i] is TEnd):
@@ -257,6 +296,8 @@ fn show(s: Stmt) -> string:
                 if k > 0:
                     out += ", "
                 out += cols[k].name + " " + ty_name(cols[k].ty)
+                if cols[k].key:
+                    out += " KEY"
             return out + ")"
         Insert(n, vals):
             out := "INSERT " + n + " ("
@@ -277,6 +318,7 @@ fn show(s: Stmt) -> string:
             match w:
                 Some(p): return out + " WHERE " + show_expr(p)
                 None: return out
+        Explain(inner): return "EXPLAIN " + show(inner)
 
 fn err_str(e: SqlErr) -> string:
     match e:
