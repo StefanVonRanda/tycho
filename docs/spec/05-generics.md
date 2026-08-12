@@ -91,6 +91,33 @@ concrete or a whole own-parameter reference; it may not *partially* mention a
 type parameter. Generic aggregates monomorphize per distinct instantiation and
 compose with generic functions, containers, channels, and tasks.
 
+**"Its own parameters" means the aggregate's, by name.** The check compares each
+argument against the type parameters on the *declaration* being applied, so
+`Item($T)` is admitted inside `struct Item($T)` — and, because a `$Name` interns
+to one type program-wide, inside any generic function that happens to spell its
+parameter `$T` as well. Any other spelling is refused:
+
+> `error: generic struct 'Item': a type argument may not partially mention a
+> type parameter; use the generic applied to its own parameters (a recursive
+> reference) or to concrete types`
+
+`Item($A)` and `Item($U)` both hit this, so **a generic stage that CHANGES the
+parameter is inexpressible**: `fn relabel(it: Item($T), f: fn($T) -> $U) ->
+Item($U)` is rejected on its return type, and every generic function over a
+generic aggregate must therefore be *endomorphic* — same instantiation in and
+out. Tuples are no way around it: a pattern that mentions a type parameter
+inside a tuple, `(int, $T)` or `Channel((int, $T))`, does not match a
+`(int, int)` or `Channel((int, int))` argument either.
+
+This is a restriction of the type *representation*, not a soundness rule. An
+applied aggregate type is one interned id naming either the template or a
+completed instance; there is no third form carrying pending arguments to be
+substituted when the enclosing function's bindings are known. `Item($T)` works
+because it takes the recursive-self-reference path, which keeps the template and
+lets `subst_type` finish the job — not because the parameter was in scope.
+Lifting it means adding that deferred-application type and teaching every
+consumer of an aggregate type about it; it is not planned.
+
 ## 7.4 Const generics (`[N]T`, `[$N]T`)
 
 A fixed-size array type `[N]T` has its length `N` fixed at compile time by an

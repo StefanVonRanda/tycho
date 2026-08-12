@@ -2843,3 +2843,73 @@ a heap capture, and a struct field — as reductions, so the answers are
 chunk-count independent, and it runs under ASan/UBSan/TSan like the rest of the
 lane. Stashing the fix and rebuilding reddens it on every spelling
 (`h_f`, `h_g`, `h_scale`, `h_lbl`, `h_o` undeclared).
+
+### 17. `Item($A)` is rejected where `Item($T)` is accepted — **verdict: deliberate and permanent, now documented**
+
+A generic aggregate may be applied only to its own declared parameter *names*:
+
+<!-- fence-skip: this is the REFUSED program -- compiling it is the finding -->
+```tycho
+struct Item($T):
+    v: $T
+
+fn relabel(it: Item($A), f: fn($A) -> $B) -> Item($B):    # refused
+    return Item(f(it.v))
+```
+
+The diagnostic is explicit and names both legal forms, so this reads as a guard
+rather than an oversight — and it is one (`src/tychoc.c@parse_type`, the
+`has_typaram(args[i])` test after the self-reference shortcut).
+
+**What the guard actually tests, checked at the source.** Not scope: each
+argument is compared against the type parameters of the *declaration being
+applied*. `Item($T)` inside a generic function passes only because a `$Name`
+interns to one program-wide type (`src/tychoc.c@typaram_of`), so the function's
+`$T` and the struct's `$T` are literally the same `Type`, and the application
+takes the recursive-self-reference early return that keeps the template for
+`subst_type` to finish. Rename either and it fails: `Item($U)` in
+`fn relabel(it: Item($T), f: fn($T) -> $U) -> Item($U)` is refused on the return
+type, verified 2026-08-12. So the accepted spelling works by name coincidence,
+which is exactly why the restriction is invisible until a stage needs to change
+the parameter.
+
+**The cost, measured in `tools/tycho-flow`.** Every generic stage had to be
+endomorphic — same instantiation in and out — because a type-CHANGING stage
+(`Item($A)` -> `Item($B)`) cannot be spelled. Tuples were the obvious escape and
+are not one (see below).
+
+**Verdict (b): deliberate and permanent, and it is now in the spec.**
+`docs/spec/05-generics.md` §7.3 previously stated the rule in one sentence and
+said nothing about why or what it costs; it now carries the reason (an applied
+aggregate type is one interned id naming the template or a completed instance,
+with no third form holding pending arguments), the endomorphic-stage
+consequence, and the note that `Item($T)`'s acceptance is the recursive path
+rather than scoping. Lifting it means introducing a deferred-application type
+and teaching every consumer of an aggregate type about it — not the five-arm
+shape of `4a0a6116`-era fixes, and not planned.
+
+### 18. `(int, $T)` does not match a `(int, int)` argument — **liftable, sized, not implemented**
+
+Found while looking for a way around #17. This one is **not** deliberate:
+
+<!-- fence-skip: this is the REFUSED program -- compiling it is the finding -->
+```tycho
+fn first(p: (int, $T)) -> int:
+    return p.0
+
+first((1, 2))    # error: argument 1 of 'first' is (int, int),
+                 # which does not fit the parameter pattern
+```
+
+`Channel((int, $T))` against a `Channel((int, int))` fails the same way, and the
+channel is incidental — the bare tuple above fails on its own, so the miss is
+tuples, not the `Channel` arm added in `f0fd19e5`.
+
+**Size: the same five-arm shape as that commit, and its diff is the template.**
+`src/tychoc.c@match_type`, `@subst_type`, `@has_typaram`, `@type_mentions_tp`
+and `@type_mangle_ident` each descend into arrays, `Option`, `Result`, maps,
+channels and fn types; none has an `IS_TUP` case, though `src/tychoc.c@type_is_heap`
+shows the recursion is already written elsewhere in the file. Expect one arm
+each plus a fixture in the shape of `tests/generic_channel.ty` — a tuple
+parameter at a scalar and at a heap element, and a nested `Channel((int, $T))`.
+Filed rather than implemented: it is its own change with its own gate run.
