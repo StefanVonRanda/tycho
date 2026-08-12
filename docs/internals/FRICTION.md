@@ -2694,3 +2694,56 @@ in the `E_IDENT` arm, which does not consult the generics registry. And
 `(pkg.fn)(x)` — the parenthesised immediate call — dies `unknown variable 'opsx'`,
 because a call-on-expression resolves its callee before the package logic runs.
 Neither is the reported shape; both are in `plan.md`.
+
+## Re-scored against `tools/tycho-db`, 2026-08-12 (head `b7c58a36`)
+
+Six packages, ~3k lines, a WAL, an index and a TCP server. It found one real
+corelib gap (no `fsync`, closed by `io.sync` in `4a0a6116`) and two papercuts.
+It also produced two *false* findings — the package-import rule and the
+cross-package match-arm rule were both already documented, and were reported
+as discoveries by people who had not read `docs/guides/packages.md:118` and
+`docs/spec/12-aggregates.md:831`. That is the same failure as a stale
+document, pointed the other way, and it is why both are named here.
+
+### 14. `pass` exists and nobody reaches for it
+
+Writing `tools/tycho-db/main.ty`, a match arm that ignores a flush result was
+written as a call to a hand-rolled `fn nop(): return`. `pass` is the language's
+no-op statement, shipped for exactly this, and reads as intent:
+
+```tycho
+match store.flush(db):
+    Ok(x): pass
+    Err(e): return Err(store.err_str(e))
+```
+
+Probed at head `c56fbf6d`: the `pass` form builds. Nothing was broken — the
+dummy function worked — so no gate could ever have caught it.
+
+The shape is `split`'s (entry #8 of the previous scoring): the feature exists,
+and nothing points at it from where a writer needs it. A reader reaches for a
+statement position, and the language reference for statement positions is not
+where `pass` is introduced. Recorded rather than proposed as a change: the
+remedy is documentation placement, not syntax.
+
+### 15. `or_return` on a `Result(bool, E)` is a three-time papercut
+
+`or_return` yields the `Ok` payload, so on a `Result(bool, E)` it produces a
+`bool` the statement discards, and the compiler refuses:
+
+```
+error: `or_return` here produces bool, which this statement discards -- bind it (x := ... or_return)
+```
+
+The message is good — it names the remedy on the same line. It is recorded
+because of the *rate*: it was hit three separate times on 2026-08-12, by three
+different pieces of work (the `hexed` probe program, the `io.sync` wiring at
+five sites, and `tycho-db`'s parser), each time by someone who had already read
+the rule. `io.write_bytes`, `io.write_at` and `io.make_dir` all return
+`Result(bool, IoErr)`, so the common shape "do the write, propagate the error,
+ignore the bool" costs a binding every time.
+
+Not proposed as a change, because the alternatives are worse: a `Result(void)`
+`io` would lose the "did it write" answer, and silently discarding an `Ok`
+payload is the sentinel habit this file spent a week removing. Recorded so the
+next person sees the cost is known and deliberate.
