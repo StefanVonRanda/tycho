@@ -1,0 +1,302 @@
+package cell
+
+# Evaluating one parsed formula against the cells it reads.
+#
+# EVERY FAILURE IN HERE IS A VALUE. The parser already rejected anything that is
+# not a formula, so what is left -- dividing by zero, summing a column with a
+# #REF! in it, calling a function that does not exist -- produces Bad(CellErr)
+# and keeps going. That is what lets an error travel downstream instead of
+# stopping the recalculation (value.ty says why at length).
+#
+# THE ENVIRONMENT IS PASSED `inout` AND NEVER MUTATED. Tycho is value semantics,
+# so a by-value map would be deep-copied on entry to every call -- O(cells) per
+# formula, O(cells^2) for a sheet, which is exactly the cost that makes a 10k
+# chain unusable. `inout` is the established spelling for a reader that must not
+# copy; tools/tycho-ed/main.ty@dump takes its buffer the same way.
+
+struct Env:
+    vals: [int: Value]
+
+fn env_new() -> Env:
+    m := []int: Value
+    return Env(m)
+
+fn env_set(e: inout Env, row: int, col: int, v: Value):
+    e.vals[key(row, col)] = v
+
+# A cell nobody has written is Empty -- which is the map's zero value for a
+# Value, so an absent key needs no special case.
+fn env_get(e: inout Env, row: int, col: int) -> Value:
+    k := key(row, col)
+    if k in e.vals:
+        return e.vals[k]
+    return Empty
+
+fn MAX_CELLS() -> int:
+    return 1048576
+
+fn _num_of(v: Value) -> Result(float, CellErr):
+    return to_num(v)
+
+# x^y. corelib has no float pow and this slice does not link libm, so an integer
+# exponent is done by repeated multiplication and a fractional one is refused by
+# name rather than approximated. Saying "unsupported" is honest; returning a
+# wrong number is not.
+fn _pow(b: float, e: float) -> Result(float, CellErr):
+    if e != to_float(to_int(e)):
+        return Err(NotNum("fractional exponent " + render(e) + " is not supported"))
+    n := to_int(e)
+    neg := n < 0
+    if neg:
+        n = -n
+    if n > 4096:
+        return Err(NotNum("exponent " + render(e) + " is too large"))
+    r := 1.0
+    for i := 0; i < n; i += 1:
+        r *= b
+    if neg:
+        if r == 0.0:
+            return Err(DivZero)
+        return Ok(1.0 / r)
+    return Ok(r)
+
+fn _cmp_vals(op: string, l: Value, r: Value) -> Value:
+    # Numbers compare as numbers; anything else compares as its rendered text,
+    # so the order is total and does not depend on which cell was typed first.
+    ln := 0.0
+    rn := 0.0
+    both := true
+    match to_num(l):
+        Ok(x): ln = x
+        Err(e):
+            match l:
+                Bad(be): return Bad(be)
+                Empty: both = false
+                Num(f): both = false
+                Text(s): both = false
+                Bool(b): both = false
+    match to_num(r):
+        Ok(x): rn = x
+        Err(e):
+            match r:
+                Bad(be): return Bad(be)
+                Empty: both = false
+                Num(f): both = false
+                Text(s): both = false
+                Bool(b): both = false
+    c := 0
+    if both:
+        if ln < rn:
+            c = -1
+        elif ln > rn:
+            c = 1
+    else:
+        ls := render_value(l)
+        rs := render_value(r)
+        if ls < rs:
+            c = -1
+        elif ls > rs:
+            c = 1
+    if op == "=":
+        return Bool(c == 0)
+    if op == "<>":
+        return Bool(c != 0)
+    if op == "<":
+        return Bool(c < 0)
+    if op == "<=":
+        return Bool(c <= 0)
+    if op == ">":
+        return Bool(c > 0)
+    return Bool(c >= 0)
+
+fn _binary(op: string, l: Value, r: Value) -> Value:
+    if op == "=" or op == "<>" or op == "<" or op == "<=" or op == ">" or op == ">=":
+        return _cmp_vals(op, l, r)
+    a := 0.0
+    b := 0.0
+    match to_num(l):
+        Ok(x): a = x
+        Err(e): return Bad(e)
+    match to_num(r):
+        Ok(x): b = x
+        Err(e): return Bad(e)
+    if op == "+":
+        return Num(a + b)
+    if op == "-":
+        return Num(a - b)
+    if op == "*":
+        return Num(a * b)
+    if op == "/":
+        # The canonical cell error. IEEE would hand back an infinity here and a
+        # sheet that showed "Inf" would be hiding a mistake behind a number.
+        if b == 0.0:
+            return Bad(DivZero)
+        return Num(a / b)
+    if op == "^":
+        match _pow(a, b):
+            Ok(x): return Num(x)
+            Err(e): return Bad(e)
+    return Bad(BadName(op))
+
+# Flatten one argument into values: a range contributes every cell in it, any
+# other expression contributes its single result.
+fn _collect(a: Ast, i: int, env: inout Env, out: inout [Value], depth: int) -> Value:
+    nd := a.nodes[i]
+    if nd.kind == K_RANGE():
+        h := nd.c - nd.a + 1
+        w := nd.d - nd.b + 1
+        if h * w > MAX_CELLS():
+            return Bad(BadRef("range " + ref_name(nd.a, nd.b) + ":" +
+                              ref_name(nd.c, nd.d) + " covers too many cells"))
+        for r := nd.a; r <= nd.c; r += 1:
+            for c := nd.b; c <= nd.d; c += 1:
+                push(out, env_get(&env, r, c))
+        return Empty
+    push(out, _ev(a, i, &env, depth + 1))
+    return Empty
+
+fn _call_fn(a: Ast, i: int, env: inout Env, depth: int) -> Value:
+    nd := a.nodes[i]
+    name := nd.text
+    # IF is evaluated lazily: the untaken branch must not run, or =IF(A1=0,0,1/A1)
+    # would report #DIV/0! on exactly the input it was written to guard.
+    if name == "IF":
+        if len(nd.kids) < 2 or len(nd.kids) > 3:
+            return Bad(BadName("IF takes 2 or 3 arguments, got " + str(len(nd.kids))))
+        cv := _ev(a, nd.kids[0], &env, depth + 1)
+        t := false
+        match to_num(cv):
+            Ok(x): t = x != 0.0
+            Err(e): return Bad(e)
+        if t:
+            return _ev(a, nd.kids[1], &env, depth + 1)
+        if len(nd.kids) == 3:
+            return _ev(a, nd.kids[2], &env, depth + 1)
+        return Bool(false)
+    args: [Value] = []
+    for k := 0; k < len(nd.kids); k += 1:
+        e := _collect(a, nd.kids[k], &env, &args, depth)
+        if is_bad(e):
+            return e
+    if name == "COUNT":
+        n := 0
+        for j := 0; j < len(args); j += 1:
+            match args[j]:
+                Num(f): n += 1
+                Empty: pass
+                Text(s): pass
+                Bool(b): pass
+                Bad(er): return Bad(er)
+        return Num(to_float(n))
+    if name == "COUNTA":
+        n := 0
+        for j := 0; j < len(args); j += 1:
+            match args[j]:
+                Empty: pass
+                Num(f): n += 1
+                Text(s): n += 1
+                Bool(b): n += 1
+                Bad(er): return Bad(er)
+        return Num(to_float(n))
+    if name == "SUM" or name == "AVERAGE" or name == "MIN" or name == "MAX":
+        total := 0.0
+        best := 0.0
+        seen := 0
+        for j := 0; j < len(args); j += 1:
+            skip := false
+            match args[j]:
+                Empty: skip = true
+                Text(s): skip = true
+                Num(f): pass
+                Bool(b): pass
+                Bad(er): return Bad(er)
+            if skip:
+                continue
+            x := 0.0
+            match to_num(args[j]):
+                Ok(v): x = v
+                Err(er): return Bad(er)
+            total += x
+            if seen == 0 or (name == "MIN" and x < best) or (name == "MAX" and x > best):
+                best = x
+            seen += 1
+        if name == "SUM":
+            return Num(total)
+        if seen == 0:
+            # AVERAGE of nothing is a division by zero, and MIN/MAX of nothing
+            # has no answer. Both are cell errors, not zeros.
+            return Bad(DivZero)
+        if name == "AVERAGE":
+            return Num(total / to_float(seen))
+        return Num(best)
+    if name == "ABS":
+        if len(args) != 1:
+            return Bad(BadName("ABS takes 1 argument, got " + str(len(args))))
+        match to_num(args[0]):
+            Ok(x): return Num(_fabs(x))
+            Err(e): return Bad(e)
+    return Bad(BadName(name))
+
+# The evaluator's own depth ceiling, which is NOT the parser's.
+#
+# MAX_DEPTH bounds how deeply parentheses nest. It does not bound the tree: the
+# operator loops are iterative, so `=1+1+1+...` with n terms parses at constant
+# depth and builds a left spine n deep, which _ev then walks with n native
+# frames. A guard set to the parser's limit would refuse a perfectly ordinary
+# long sum. This one is set where a native frame still costs nothing (a few
+# hundred KB of stack at the ceiling) and well under where the C stack ends, so
+# an absurd formula is refused by name instead of taking the process down.
+fn EVAL_DEPTH() -> int:
+    return 4096
+
+fn _ev(a: Ast, i: int, env: inout Env, depth: int) -> Value:
+    if depth > EVAL_DEPTH():
+        return Bad(NotNum("expression nested deeper than " + str(EVAL_DEPTH()) +
+                          " to evaluate"))
+    nd := a.nodes[i]
+    if nd.kind == K_NUM():
+        return Num(nd.num)
+    if nd.kind == K_TEXT():
+        return Text(nd.text)
+    if nd.kind == K_BOOL():
+        return Bool(nd.a == 1)
+    if nd.kind == K_REF():
+        return env_get(&env, nd.a, nd.b)
+    if nd.kind == K_RANGE():
+        # A bare range where one value is wanted, e.g. `=A1:A9+1`.
+        return Bad(BadRef(ref_name(nd.a, nd.b) + ":" + ref_name(nd.c, nd.d) +
+                          " is a range, not a single cell"))
+    if nd.kind == K_UN():
+        v := _ev(a, nd.a, &env, depth + 1)
+        match to_num(v):
+            Ok(x): return Num(-x)
+            Err(e): return Bad(e)
+    if nd.kind == K_BIN():
+        l := _ev(a, nd.a, &env, depth + 1)
+        r := _ev(a, nd.b, &env, depth + 1)
+        return _binary(nd.text, l, r)
+    if nd.kind == K_CALL():
+        return _call_fn(a, i, &env, depth)
+    return Bad(NotNum("unknown node kind " + str(nd.kind)))
+
+fn eval(a: Ast, env: inout Env) -> Value:
+    return _ev(a, a.root, &env, 0)
+
+# Every cell this formula reads, as packed keys. Ranges are expanded, because
+# the dependency graph is over cells: a range that is not expanded would let a
+# write inside it go unnoticed by the recalculation order.
+fn deps_of(a: Ast, out: inout [int]) -> Result(void, string):
+    for i := 0; i < len(a.nodes); i += 1:
+        nd := a.nodes[i]
+        if nd.kind == K_REF():
+            push(out, key(nd.a, nd.b))
+        elif nd.kind == K_RANGE():
+            h := nd.c - nd.a + 1
+            w := nd.d - nd.b + 1
+            if h * w > MAX_CELLS():
+                return Err("range " + ref_name(nd.a, nd.b) + ":" + ref_name(nd.c, nd.d) +
+                           " covers too many cells")
+            for r := nd.a; r <= nd.c; r += 1:
+                for c := nd.b; c <= nd.d; c += 1:
+                    push(out, key(r, c))
+    return Ok()

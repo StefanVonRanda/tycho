@@ -221,3 +221,6 @@ dist/
 # the tycho-ed editor's transcript golden (tools/tycho-ed/expected.out) is
 # tracked too, same line, same reason as every lane above it.
 !/tools/tycho-ed/*.out
+# the tycho-sheet spreadsheet engine's transcript golden
+# (tools/tycho-sheet/expected.out), same line, same reason.
+!/tools/tycho-sheet/*.out

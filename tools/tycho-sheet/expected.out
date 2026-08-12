@@ -1,0 +1,234 @@
+=== demo
+> set A1 10
+> set A2 32
+> set A3 =A1+A2
+> set A4 =A1*A2-2
+> set A5 =(A1+A2)/2
+> set A6 =-A1^2
+> set A7 =2^3^2
+> recalc
+  recalculated
+> dump
+  A1      10                        10
+  A2      32                        32
+  A3      =A1+A2                    42
+  A4      =A1*A2-2                  318
+  A5      =(A1+A2)/2                21
+  A6      =-A1^2                    -100
+  A7      =2^3^2                    512
+> set B1 =0.1+0.2
+> set B2 =1/3
+> set B3 =B1=0.3
+> set B4 2.5
+> set B5 =B4*4
+> recalc
+  recalculated
+> dump
+  A1      10                        10
+  B1      =0.1+0.2                  0.30000000000000006
+  A2      32                        32
+  B2      =1/3                      0.3333333333333333
+  A3      =A1+A2                    42
+  B3      =B1=0.3                   FALSE
+  A4      =A1*A2-2                  318
+  B4      2.5                       2.5
+  A5      =(A1+A2)/2                21
+  B5      =B4*4                     10
+  A6      =-A1^2                    -100
+  A7      =2^3^2                    512
+> roundtrip 0.1
+  0.1                       render 0.1                       str 0.1                       round-trips
+> roundtrip 0.3
+  0.3                       render 0.3                       str 0.3                       round-trips
+> roundtrip 1
+  1                         render 1                         str 1.0                       round-trips
+> roundtrip 42
+  42                        render 42                        str 42.0                      round-trips
+> roundtrip 1e300
+  1e300                     render 1e+300                    str 1e+300                    round-trips
+> roundtrip 1e-300
+  1e-300                    render 1e-300                    str 1e-300                    round-trips
+> roundtrip 9007199254740993
+  9007199254740993          render 9007199254740992          str 9.00719925474099e+15      round-trips
+> roundtrip 1.7976931348623157e308
+  1.7976931348623157e308    render 1.7976931348623158e+308   str 1.79769313486232e+308     round-trips
+> roundtrip 2.2250738585072014e-308
+  2.2250738585072014e-308   render 2.2250738585072013e-308   str 2.2250738585072e-308      round-trips
+> set B6 =1e-308
+  ERR B6: malformed number '1e-308' at 0
+> set B7 =1e-300/1e10
+> recalc
+  recalculated
+> get B6
+  B6 = 
+> get B7
+  B7 = #NUM!
+> set C1 1
+> set C2 2
+> set C3 3
+> set C4 4
+> set C5 5
+> set C6 =SUM(C1:C5)
+> set C7 =AVERAGE(C1:C5)
+> set C8 =MIN(C1:C5)
+> set C9 =MAX(C1:C5)
+> set C10 =COUNT(C1:C5)
+> set C11 =SUM(C1:C5)/COUNT(C1:C5)
+> set C12 =SUM(C1:C3,C5,100)
+> set C13 =ABS(0-C5)
+> recalc
+  recalculated
+> dump
+  A1      10                        10
+  B1      =0.1+0.2                  0.30000000000000006
+  C1      1                         1
+  A2      32                        32
+  B2      =1/3                      0.3333333333333333
+  C2      2                         2
+  A3      =A1+A2                    42
+  B3      =B1=0.3                   FALSE
+  C3      3                         3
+  A4      =A1*A2-2                  318
+  B4      2.5                       2.5
+  C4      4                         4
+  A5      =(A1+A2)/2                21
+  B5      =B4*4                     10
+  C5      5                         5
+  A6      =-A1^2                    -100
+  C6      =SUM(C1:C5)               15
+  A7      =2^3^2                    512
+  B7      =1e-300/1e10              #NUM!
+  C7      =AVERAGE(C1:C5)           3
+  C8      =MIN(C1:C5)               1
+  C9      =MAX(C1:C5)               5
+  C10     =COUNT(C1:C5)             5
+  C11     =SUM(C1:C5)/COUNT(C1:C5)  3
+  C12     =SUM(C1:C3,C5,100)        111
+  C13     =ABS(0-C5)                5
+> set D1 0
+> set D2 =C1/D1
+> set D3 =D2+1
+> set D4 =SUM(D1:D3)
+> set D5 =IF(D1=0,0,C1/D1)
+> set D6 =NOSUCHFN(1)
+> set D7 =C1+"text"
+> recalc
+  recalculated
+> dump
+  A1      10                        10
+  B1      =0.1+0.2                  0.30000000000000006
+  C1      1                         1
+  D1      0                         0
+  A2      32                        32
+  B2      =1/3                      0.3333333333333333
+  C2      2                         2
+  D2      =C1/D1                    #DIV/0! division by zero
+  A3      =A1+A2                    42
+  B3      =B1=0.3                   FALSE
+  C3      3                         3
+  D3      =D2+1                     #DIV/0! division by zero
+  A4      =A1*A2-2                  318
+  B4      2.5                       2.5
+  C4      4                         4
+  D4      =SUM(D1:D3)               #DIV/0! division by zero
+  A5      =(A1+A2)/2                21
+  B5      =B4*4                     10
+  C5      5                         5
+  D5      =IF(D1=0,0,C1/D1)         0
+  A6      =-A1^2                    -100
+  C6      =SUM(C1:C5)               15
+  D6      =NOSUCHFN(1)              #NAME? unknown function NOSUCHFN
+  A7      =2^3^2                    512
+  B7      =1e-300/1e10              #NUM!
+  C7      =AVERAGE(C1:C5)           3
+  D7      =C1+"text"                #VALUE! text "text" is not a number
+  C8      =MIN(C1:C5)               1
+  C9      =MAX(C1:C5)               5
+  C10     =COUNT(C1:C5)             5
+  C11     =SUM(C1:C5)/COUNT(C1:C5)  3
+  C12     =SUM(C1:C3,C5,100)        111
+  C13     =ABS(0-C5)                5
+> set E1 7
+> set E1 =A1+
+  ERR E1: expected a value but found end of formula at 3
+> set E1 =(A1
+  ERR E1: unclosed '(' opened at 0
+> set E1 =1 2
+  ERR E1: trailing input '2' at 2
+> set E1 =@A1
+  ERR E1: unexpected character '@' at 0
+> set E1 =SUM(A1:A9
+  ERR E1: expected ',' or ')' but found end of formula at 9
+> recalc
+  recalculated
+> get E1
+  E1 = 7
+> set F1 =F2+1
+> set F2 =F3+1
+> set F3 =F1+1
+> set F4 =F1+100
+> recalc
+  recalculated; 4 cell(s) on or below a cycle
+> dump
+  A1      10                        10
+  B1      =0.1+0.2                  0.30000000000000006
+  C1      1                         1
+  D1      0                         0
+  E1      7                         7
+  F1      =F2+1                     #CYCLE! F1 -> F2 -> F3 -> F1
+  A2      32                        32
+  B2      =1/3                      0.3333333333333333
+  C2      2                         2
+  D2      =C1/D1                    #DIV/0! division by zero
+  F2      =F3+1                     #CYCLE! F2 -> F3 -> F1 -> F2
+  A3      =A1+A2                    42
+  B3      =B1=0.3                   FALSE
+  C3      3                         3
+  D3      =D2+1                     #DIV/0! division by zero
+  F3      =F1+1                     #CYCLE! F3 -> F1 -> F2 -> F3
+  A4      =A1*A2-2                  318
+  B4      2.5                       2.5
+  C4      4                         4
+  D4      =SUM(D1:D3)               #DIV/0! division by zero
+  F4      =F1+100                   #CYCLE! F1 -> F2 -> F3 -> F1
+  A5      =(A1+A2)/2                21
+  B5      =B4*4                     10
+  C5      5                         5
+  D5      =IF(D1=0,0,C1/D1)         0
+  A6      =-A1^2                    -100
+  C6      =SUM(C1:C5)               15
+  D6      =NOSUCHFN(1)              #NAME? unknown function NOSUCHFN
+  A7      =2^3^2                    512
+  B7      =1e-300/1e10              #NUM!
+  C7      =AVERAGE(C1:C5)           3
+  D7      =C1+"text"                #VALUE! text "text" is not a number
+  C8      =MIN(C1:C5)               1
+  C9      =MAX(C1:C5)               5
+  C10     =COUNT(C1:C5)             5
+  C11     =SUM(C1:C5)/COUNT(C1:C5)  3
+  C12     =SUM(C1:C3,C5,100)        111
+  C13     =ABS(0-C5)                5
+> set G1 =G1+1
+> recalc
+  recalculated; 5 cell(s) on or below a cycle
+> get G1
+  G1 = #CYCLE! G1 -> G1
+> chain 10000
+  built a chain 10000 deep: A1 = A2 + 1 ... A10000 = 1
+> recalc
+  recalculated; 5 cell(s) on or below a cycle
+> get A1
+  A1 = 10000
+> get A9999
+  A9999 = 2
+=== float round trip over a generated corpus
+subnormal render #NUM!
+checked 98410 values, 0 failed to round-trip
+=== str(float) is lossy
+str(0.1+0.2)=0.3 str is LOSSY
+=== error variants reached: 14
+=== depth limits
+  ERR B1: reference 'A1048577' is outside the grid, at 0
+  ERR B2: expected a cell reference or a function call but found 'A99999999' at 0
+  ERR B3: formula nested deeper than 64 at 65
+  B4 = #VALUE! expression nested deeper than 4096 to evaluate

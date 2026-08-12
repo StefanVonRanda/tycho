@@ -1,0 +1,106 @@
+# The demo script for tycho-sheet. Every line here is an assertion in disguise:
+# run.sh compares the whole transcript against a golden, and the numbers in the
+# comments are what a reader should check by eye.
+
+# ---- literals and arithmetic ---------------------------------------------
+set A1 10
+set A2 32
+set A3 =A1+A2
+set A4 =A1*A2-2
+set A5 =(A1+A2)/2
+set A6 =-A1^2
+set A7 =2^3^2
+recalc
+dump
+
+# ---- floats: the reason this tool exists ---------------------------------
+# B1 is 0.1 + 0.2. str() would print 0.3, which is a DIFFERENT double.
+set B1 =0.1+0.2
+set B2 =1/3
+set B3 =B1=0.3
+set B4 2.5
+set B5 =B4*4
+recalc
+dump
+
+# The same claim, direct: render, then read back and compare.
+roundtrip 0.1
+roundtrip 0.3
+roundtrip 1
+roundtrip 42
+roundtrip 1e300
+roundtrip 1e-300
+roundtrip 9007199254740993
+roundtrip 1.7976931348623157e308
+roundtrip 2.2250738585072014e-308
+
+# Subnormals have NO text form here, in either direction. corelib's
+# strings.parse_float refuses everything below DBL_MIN as Underflow, so:
+#   - `=1e-308` is refused as a malformed NUMBER at parse time, and
+#   - a subnormal reached by arithmetic renders #NUM!, because no decimal
+#     string would read back as it.
+# Both are the same corelib limit seen from the two sides. See cell/dtoa.ty.
+set B6 =1e-308
+set B7 =1e-300/1e10
+recalc
+get B6
+get B7
+
+# ---- ranges and functions -------------------------------------------------
+set C1 1
+set C2 2
+set C3 3
+set C4 4
+set C5 5
+set C6 =SUM(C1:C5)
+set C7 =AVERAGE(C1:C5)
+set C8 =MIN(C1:C5)
+set C9 =MAX(C1:C5)
+set C10 =COUNT(C1:C5)
+set C11 =SUM(C1:C5)/COUNT(C1:C5)
+set C12 =SUM(C1:C3,C5,100)
+set C13 =ABS(0-C5)
+recalc
+dump
+
+# ---- errors are VALUES and they travel ------------------------------------
+set D1 0
+set D2 =C1/D1
+set D3 =D2+1
+set D4 =SUM(D1:D3)
+set D5 =IF(D1=0,0,C1/D1)
+set D6 =NOSUCHFN(1)
+set D7 =C1+"text"
+recalc
+dump
+
+# ---- a malformed formula is an Err, not a cell value ----------------------
+# Each of these is refused and stores NOTHING. E1 keeps its old value.
+set E1 7
+set E1 =A1+
+set E1 =(A1
+set E1 =1 2
+set E1 =@A1
+set E1 =SUM(A1:A9
+recalc
+get E1
+
+# ---- a cycle, named ------------------------------------------------------
+set F1 =F2+1
+set F2 =F3+1
+set F3 =F1+1
+set F4 =F1+100
+recalc
+dump
+
+# ---- a self-reference is the shortest cycle ------------------------------
+set G1 =G1+1
+recalc
+get G1
+
+# ---- a deep dependency chain ---------------------------------------------
+# H is not used; the chain is built in column A, which replaces A1..A7 above.
+chain 10000
+recalc
+get A1
+get A9999

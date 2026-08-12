@@ -1,0 +1,148 @@
+package main
+
+import "core:cli"
+import "core:io"
+import "core:strings"
+import "cell"
+import "sheet"
+
+# tycho-sheet -- a spreadsheet engine. THIS SLICE HAS NO SCREEN.
+#
+# What it has instead is `--script`, which drives the grid from a file of
+# commands and prints what a screen would show. That is deliberate and it is
+# first, not last: an engine whose only entry point is a UI cannot be checked by
+# anything but a human squinting at it, and this tree has been bitten by exactly
+# that. tools/tycho-ed/main.ty took the same shape for the same reason.
+#
+# The script language, one command per line:
+#
+#   # ...                comment; blank lines ignored
+#   set <ref> <text>     type into a cell: `set A1 42`, `set B1 =A1*2`
+#   get <ref>            print one cell's value
+#   recalc               recalculate the whole sheet in dependency order
+#   dump                 every occupied cell: reference, source, value
+#   chain <n>            build an n-deep chain A1 = A2 + 1 ... A<n> = 1
+#   roundtrip <literal>  render a float and report whether it reads back equal
+#
+# `set` reports a malformed formula as `ERR ...` and carries on, because a
+# script is a test and a rejection is an observation. The distinction that
+# matters is in cell/cell.ty: `=1/` is an ERR here and stores nothing, while
+# `=1/0` is accepted and shows #DIV/0! in the cell.
+
+fn _ref(s: string) -> Result((int, int), string):
+    ok, row, col := cell.ref_of(s)
+    if not ok:
+        return Err("not a cell reference: " + s)
+    return Ok((row, col))
+
+fn cmd_set(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
+    name, src := strings.split_once(rest, " ")
+    if name == "":
+        return Err("set needs a reference and a value")
+    row := 0
+    col := 0
+    match _ref(name):
+        Ok(rc):
+            r, c := rc
+            row = r
+            col = c
+        Err(e): return Err(e)
+    return sheet.set(&sh, row, col, src)
+
+fn cmd_get(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
+    match _ref(strings.trim(rest)):
+        Ok(rc):
+            row, col := rc
+            println("  " + cell.ref_name(row, col) + " = " +
+                    cell.detail_value(sheet.get(&sh, row, col)))
+        Err(e): return Err(e)
+    return Ok()
+
+# An n-deep dependency chain: A1 = A2 + 1, ... A(n-1) = A(n) + 1, A(n) = 1.
+# So A1 must come out as exactly n, which is a single number that proves the
+# whole chain was ordered and evaluated rather than partly skipped.
+fn cmd_chain(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
+    n := strings.parse_int(strings.trim(rest))
+    if n < 2:
+        return Err("chain needs a length of at least 2")
+    for i := 1; i < n; i += 1:
+        match sheet.set(&sh, i - 1, 0, "=A" + str(i + 1) + "+1"):
+            Ok(): pass
+            Err(e): return Err(e)
+    match sheet.set(&sh, n - 1, 0, "1"):
+        Ok(): pass
+        Err(e): return Err(e)
+    println("  built a chain " + str(n) + " deep: A1 = A2 + 1 ... A" + str(n) + " = 1")
+    return Ok()
+
+# The float evidence, as a command rather than a claim: parse the literal, print
+# what render() gives, and say whether reading that text back yields the same
+# double. `str()` is printed beside it because the difference is the finding.
+fn cmd_roundtrip(rest: string) -> Result(void, string):
+    t := strings.trim(rest)
+    v := 0.0
+    match cell.parse_num(t):
+        Ok(x): v = x
+        Err(e): return Err(e)
+    s := cell.render(v)
+    verdict := "LOST"
+    match strings.parse_float(s):
+        Ok(b):
+            if b == v:
+                verdict = "round-trips"
+        Err(e): verdict = "unreadable"
+    println("  " + strings.pad_right(t, 26, " ") + "render " +
+            strings.pad_right(s, 26, " ") + "str " +
+            strings.pad_right(str(v), 26, " ") + verdict)
+    return Ok()
+
+fn run_cmd(sh: inout sheet.Sheet, line: string) -> Result(void, string):
+    verb, rest := strings.split_once(line, " ")
+    if verb == "":
+        verb = line
+    if verb == "set":
+        return cmd_set(&sh, rest)
+    elif verb == "get":
+        return cmd_get(&sh, rest)
+    elif verb == "chain":
+        return cmd_chain(&sh, rest)
+    elif verb == "roundtrip":
+        return cmd_roundtrip(rest)
+    elif verb == "recalc":
+        n := sheet.recalc(&sh)
+        if n > 0:
+            println("  recalculated; " + str(n) + " cell(s) on or below a cycle")
+        else:
+            println("  recalculated")
+    elif verb == "dump":
+        for l in sheet.dump(&sh):
+            println("  " + l)
+    else:
+        return Err("unknown command: " + verb)
+    return Ok()
+
+fn script(path: string) -> Result(void, string):
+    sh := sheet.new()
+    for raw in io.read_lines(path):
+        line := strings.trim(raw)
+        if line == "" or strings.starts_with(line, "#"):
+            continue
+        println("> " + line)
+        match run_cmd(&sh, line):
+            Ok(): pass
+            Err(e): println("  ERR " + e)
+    return Ok()
+
+fn main() -> Result(void, string):
+    av := cli.argv()
+    path := ""
+    for a in av:
+        if strings.starts_with(a, "--script="):
+            path = a[9:len(a)]
+        else:
+            return Err("unknown argument: " + a)
+    if path == "":
+        return Err("usage: tycho-sheet --script=<file>")
+    if not io.exists(path):
+        return Err("no such file: " + path)
+    return script(path)

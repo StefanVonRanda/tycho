@@ -1,0 +1,498 @@
+package cell
+
+import "core:strings"
+
+# The formula parser: `=A1+B2*2`, `=SUM(A1:A9)/COUNT(A1:A9)`, `=-(A1^2)`.
+#
+# A FAILURE HERE IS AN Err, NOT A CELL ERROR. See value.ty for why the two are
+# different. Everything in this file is about text that does not describe a
+# formula at all, so there is no value to store and nothing to propagate.
+#
+# THE TREE IS AN ARENA, NOT A LINKED STRUCTURE. Tycho lets a struct recurse
+# "only MAY be recursive through a container" (docs/spec/12-aggregates.md:394),
+# so children are int indices into `nodes` rather than nested values. That is
+# not a workaround: it also means the tree is one flat array to copy, and an
+# evaluator can walk it without the arena churn a nested value tree would cause
+# on every recalculation.
+#
+# DEPTH IS BOUNDED. Descent is recursive, so `((((((...))))))` is a native stack
+# frame per paren. MAX_DEPTH turns that into a named TooDeep error well before
+# the C stack runs out -- fail closed, never a segfault. tests/recursion/ is the
+# precedent for treating that as a requirement rather than a nicety.
+
+# Node kinds. Ints, not an enum, because a Node is one flat struct in an arena
+# and the payload shape differs per kind.
+fn K_NUM() -> int:
+    return 0
+fn K_TEXT() -> int:
+    return 1
+fn K_BOOL() -> int:
+    return 2
+fn K_REF() -> int:
+    return 3
+fn K_RANGE() -> int:
+    return 4
+fn K_BIN() -> int:
+    return 5
+fn K_UN() -> int:
+    return 6
+fn K_CALL() -> int:
+    return 7
+
+fn MAX_DEPTH() -> int:
+    return 64
+
+# Columns are packed into one int with the row so a reference is a single map
+# key. 16384 is Excel's column limit and comfortably inside an int.
+fn COLS() -> int:
+    return 16384
+
+fn key(row: int, col: int) -> int:
+    return row * COLS() + col
+
+struct Node:
+    kind: int
+    num: float
+    text: string                   # operator, function name, or string literal
+    a: int                         # child, or row
+    b: int                         # child, or col
+    c: int                         # range end row
+    d: int                         # range end col
+    kids: [int]                    # call arguments
+
+struct Ast:
+    nodes: [Node]
+    root: int
+
+enum ParseErr:
+    NoInput
+    BadChar(string, int)
+    BadNumber(string, int)
+    Expected(string, string, int)  # wanted, got, byte offset
+    Unclosed(int)
+    Trailing(string, int)
+    TooDeep(int)
+    HugeRef(string, int)
+
+fn parse_err_str(e: ParseErr) -> string:
+    match e:
+        NoInput: return "empty formula"
+        BadChar(c, p): return "unexpected character '" + c + "' at " + str(p)
+        BadNumber(t, p): return "malformed number '" + t + "' at " + str(p)
+        Expected(w, g, p): return "expected " + w + " but found " + g + " at " + str(p)
+        Unclosed(p): return "unclosed '(' opened at " + str(p)
+        Trailing(t, p): return "trailing input '" + t + "' at " + str(p)
+        TooDeep(p): return "formula nested deeper than " + str(MAX_DEPTH()) + " at " + str(p)
+        HugeRef(r, p): return "reference '" + r + "' is outside the grid, at " + str(p)
+
+# ---- tokens ---------------------------------------------------------------
+
+fn T_END() -> int:
+    return 0
+fn T_NUM() -> int:
+    return 1
+fn T_STR() -> int:
+    return 2
+fn T_IDENT() -> int:
+    return 3
+fn T_OP() -> int:
+    return 4
+fn T_LP() -> int:
+    return 5
+fn T_RP() -> int:
+    return 6
+fn T_COMMA() -> int:
+    return 7
+fn T_COLON() -> int:
+    return 8
+
+struct Tok:
+    kind: int
+    num: float
+    text: string
+    pos: int
+
+fn _is_digit(c: int) -> bool:
+    return c >= 48 and c <= 57
+
+fn _is_alpha(c: int) -> bool:
+    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+
+fn _tok_desc(t: Tok) -> string:
+    if t.kind == T_END():
+        return "end of formula"
+    return "'" + t.text + "'"
+
+fn lex(s: string) -> Result([Tok], ParseErr):
+    toks: [Tok] = []
+    i := 0
+    n := len(s)
+    for i < n:
+        c := s[i]
+        if c == 32 or c == 9:
+            i += 1
+            continue
+        start := i
+        if _is_digit(c) or (c == 46 and i + 1 < n and _is_digit(s[i + 1])):
+            for i < n and _is_digit(s[i]):
+                i += 1
+            if i < n and s[i] == 46:
+                i += 1
+                for i < n and _is_digit(s[i]):
+                    i += 1
+            if i < n and (s[i] == 101 or s[i] == 69):        # e / E
+                j := i + 1
+                if j < n and (s[j] == 43 or s[j] == 45):
+                    j += 1
+                if j < n and _is_digit(s[j]):
+                    i = j
+                    for i < n and _is_digit(s[i]):
+                        i += 1
+            raw := s[start:i]
+            # strtod, so the literal is correctly rounded -- the same parser
+            # render() verifies against, which is what makes the round trip real.
+            match strings.parse_float(raw):
+                Ok(v): push(toks, Tok(T_NUM(), v, raw, start))
+                Err(pe): return Err(BadNumber(raw, start))
+            continue
+        if _is_alpha(c) or c == 36:                          # letter or '$'
+            for i < n and (_is_alpha(s[i]) or _is_digit(s[i]) or s[i] == 36 or s[i] == 95):
+                i += 1
+            push(toks, Tok(T_IDENT(), 0.0, s[start:i], start))
+            continue
+        if c == 34:                                          # "text"
+            i += 1
+            lit := ""
+            for i < n and s[i] != 34:
+                lit += s[i:i + 1]
+                i += 1
+            if i >= n:
+                return Err(Expected("closing '\"'", "end of formula", start))
+            i += 1
+            push(toks, Tok(T_STR(), 0.0, lit, start))
+            continue
+        if c == 40:
+            i += 1
+            push(toks, Tok(T_LP(), 0.0, "(", start))
+            continue
+        if c == 41:
+            i += 1
+            push(toks, Tok(T_RP(), 0.0, ")", start))
+            continue
+        if c == 44:
+            i += 1
+            push(toks, Tok(T_COMMA(), 0.0, ",", start))
+            continue
+        if c == 58:
+            i += 1
+            push(toks, Tok(T_COLON(), 0.0, ":", start))
+            continue
+        if c == 60:                                          # < <= <>
+            i += 1
+            op := "<"
+            if i < n and s[i] == 61:
+                op = "<="
+                i += 1
+            elif i < n and s[i] == 62:
+                op = "<>"
+                i += 1
+            push(toks, Tok(T_OP(), 0.0, op, start))
+            continue
+        if c == 62:                                          # > >=
+            i += 1
+            op := ">"
+            if i < n and s[i] == 61:
+                op = ">="
+                i += 1
+            push(toks, Tok(T_OP(), 0.0, op, start))
+            continue
+        if c == 43 or c == 45 or c == 42 or c == 47 or c == 94 or c == 61:
+            i += 1
+            push(toks, Tok(T_OP(), 0.0, s[start:i], start))
+            continue
+        return Err(BadChar(s[start:start + 1], start))
+    push(toks, Tok(T_END(), 0.0, "", n))
+    return Ok(toks)
+
+# ---- references -----------------------------------------------------------
+
+# "A1", "$B$7", "AA100" -> (row, col). Returns false when the identifier is not
+# a reference at all, which is how SUM and TRUE fall through to their own cases.
+fn ref_of(s: string) -> (bool, int, int) :
+    i := 0
+    n := len(s)
+    if i < n and s[i] == 36:
+        i += 1
+    col := 0
+    letters := 0
+    for i < n and _is_alpha(s[i]):
+        c := s[i]
+        if c >= 97:
+            c -= 32
+        col = col * 26 + (c - 64)
+        letters += 1
+        i += 1
+        if letters > 3:
+            return (false, 0, 0)
+    if letters == 0:
+        return (false, 0, 0)
+    if i < n and s[i] == 36:
+        i += 1
+    digits := 0
+    row := 0
+    for i < n and _is_digit(s[i]):
+        row = row * 10 + (s[i] - 48)
+        digits += 1
+        i += 1
+        if digits > 7:
+            return (false, 0, 0)
+    if digits == 0 or i != n or row == 0:
+        return (false, 0, 0)
+    return (true, row - 1, col - 1)
+
+# The A1 name of a cell, for error messages and dumps.
+fn ref_name(row: int, col: int) -> string:
+    letters := ""
+    c := col + 1
+    for c > 0:
+        r := (c - 1) % 26
+        letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[r:r + 1] + letters
+        c = (c - 1) / 26
+    return letters + str(row + 1)
+
+# ---- recursive descent ----------------------------------------------------
+
+struct P:
+    toks: [Tok]
+    i: int
+    nodes: [Node]
+
+fn _peek(p: inout P) -> Tok:
+    return p.toks[p.i]
+
+fn _add(p: inout P, n: Node) -> int:
+    push(p.nodes, n)
+    return len(p.nodes) - 1
+
+fn _mk(kind: int) -> Node:
+    return Node(kind, 0.0, "", -1, -1, -1, -1, []int)
+
+fn _atom(p: inout P, depth: int) -> Result(int, ParseErr):
+    t := _peek(&p)
+    if t.kind == T_NUM():
+        p.i += 1
+        n := _mk(K_NUM())
+        n.num = t.num
+        return Ok(_add(&p, n))
+    if t.kind == T_STR():
+        p.i += 1
+        n := _mk(K_TEXT())
+        n.text = t.text
+        return Ok(_add(&p, n))
+    if t.kind == T_LP():
+        p.i += 1
+        inner := 0
+        match _cmp(&p, depth + 1):
+            Ok(x): inner = x
+            Err(e): return Err(e)
+        if _peek(&p).kind != T_RP():
+            return Err(Unclosed(t.pos))
+        p.i += 1
+        return Ok(inner)
+    if t.kind == T_IDENT():
+        p.i += 1
+        up := strings.to_upper(t.text)
+        if _peek(&p).kind == T_LP():
+            return _call(&p, t, up, depth)
+        if up == "TRUE" or up == "FALSE":
+            n := _mk(K_BOOL())
+            n.a = 0
+            if up == "TRUE":
+                n.a = 1
+            return Ok(_add(&p, n))
+        ok, row, col := ref_of(t.text)
+        if not ok:
+            return Err(Expected("a cell reference or a function call", _tok_desc(t), t.pos))
+        if row >= 1048576 or col >= COLS():
+            return Err(HugeRef(t.text, t.pos))
+        # "A1:B9" -- a range, only ever valid between two plain references.
+        if _peek(&p).kind == T_COLON():
+            p.i += 1
+            e2 := _peek(&p)
+            if e2.kind != T_IDENT():
+                return Err(Expected("a cell reference after ':'", _tok_desc(e2), e2.pos))
+            p.i += 1
+            ok2, r2, c2 := ref_of(e2.text)
+            if not ok2:
+                return Err(Expected("a cell reference after ':'", _tok_desc(e2), e2.pos))
+            if r2 >= 1048576 or c2 >= COLS():
+                return Err(HugeRef(e2.text, e2.pos))
+            n := _mk(K_RANGE())
+            n.a = row
+            n.b = col
+            n.c = r2
+            n.d = c2
+            if r2 < row:
+                n.a = r2
+                n.c = row
+            if c2 < col:
+                n.b = c2
+                n.d = col
+            return Ok(_add(&p, n))
+        n := _mk(K_REF())
+        n.a = row
+        n.b = col
+        return Ok(_add(&p, n))
+    return Err(Expected("a value", _tok_desc(t), t.pos))
+
+fn _call(p: inout P, t: Tok, name: string, depth: int) -> Result(int, ParseErr):
+    p.i += 1                                                 # the '('
+    n := _mk(K_CALL())
+    n.text = name
+    if _peek(&p).kind == T_RP():
+        p.i += 1
+        return Ok(_add(&p, n))
+    for true:
+        arg := 0
+        match _cmp(&p, depth + 1):
+            Ok(x): arg = x
+            Err(e): return Err(e)
+        push(n.kids, arg)
+        if _peek(&p).kind == T_COMMA():
+            p.i += 1
+            continue
+        break
+    if _peek(&p).kind != T_RP():
+        return Err(Expected("',' or ')'", _tok_desc(_peek(&p)), _peek(&p).pos))
+    p.i += 1
+    return Ok(_add(&p, n))
+
+fn _power(p: inout P, depth: int) -> Result(int, ParseErr):
+    if depth > MAX_DEPTH():
+        return Err(TooDeep(_peek(&p).pos))
+    left := 0
+    match _atom(&p, depth):
+        Ok(x): left = x
+        Err(e): return Err(e)
+    t := _peek(&p)
+    if t.kind == T_OP() and t.text == "^":
+        p.i += 1
+        # right associative: 2^3^2 is 2^(3^2)
+        right := 0
+        match _unary(&p, depth + 1):
+            Ok(x): right = x
+            Err(e): return Err(e)
+        n := _mk(K_BIN())
+        n.text = "^"
+        n.a = left
+        n.b = right
+        return Ok(_add(&p, n))
+    return Ok(left)
+
+fn _unary(p: inout P, depth: int) -> Result(int, ParseErr):
+    if depth > MAX_DEPTH():
+        return Err(TooDeep(_peek(&p).pos))
+    t := _peek(&p)
+    if t.kind == T_OP() and (t.text == "-" or t.text == "+"):
+        p.i += 1
+        inner := 0
+        match _unary(&p, depth + 1):
+            Ok(x): inner = x
+            Err(e): return Err(e)
+        if t.text == "+":
+            return Ok(inner)
+        n := _mk(K_UN())
+        n.text = "-"
+        n.a = inner
+        return Ok(_add(&p, n))
+    return _power(&p, depth)
+
+fn _mul(p: inout P, depth: int) -> Result(int, ParseErr):
+    if depth > MAX_DEPTH():
+        return Err(TooDeep(_peek(&p).pos))
+    left := 0
+    match _unary(&p, depth):
+        Ok(x): left = x
+        Err(e): return Err(e)
+    for true:
+        t := _peek(&p)
+        if t.kind != T_OP() or (t.text != "*" and t.text != "/"):
+            break
+        p.i += 1
+        right := 0
+        match _unary(&p, depth + 1):
+            Ok(x): right = x
+            Err(e): return Err(e)
+        n := _mk(K_BIN())
+        n.text = t.text
+        n.a = left
+        n.b = right
+        left = _add(&p, n)
+    return Ok(left)
+
+fn _add_expr(p: inout P, depth: int) -> Result(int, ParseErr):
+    if depth > MAX_DEPTH():
+        return Err(TooDeep(_peek(&p).pos))
+    left := 0
+    match _mul(&p, depth):
+        Ok(x): left = x
+        Err(e): return Err(e)
+    for true:
+        t := _peek(&p)
+        if t.kind != T_OP() or (t.text != "+" and t.text != "-"):
+            break
+        p.i += 1
+        right := 0
+        match _mul(&p, depth + 1):
+            Ok(x): right = x
+            Err(e): return Err(e)
+        n := _mk(K_BIN())
+        n.text = t.text
+        n.a = left
+        n.b = right
+        left = _add(&p, n)
+    return Ok(left)
+
+fn _cmp(p: inout P, depth: int) -> Result(int, ParseErr):
+    if depth > MAX_DEPTH():
+        return Err(TooDeep(_peek(&p).pos))
+    left := 0
+    match _add_expr(&p, depth):
+        Ok(x): left = x
+        Err(e): return Err(e)
+    for true:
+        t := _peek(&p)
+        if t.kind != T_OP():
+            break
+        if t.text != "=" and t.text != "<>" and t.text != "<" and t.text != "<=" and t.text != ">" and t.text != ">=":
+            break
+        p.i += 1
+        right := 0
+        match _add_expr(&p, depth + 1):
+            Ok(x): right = x
+            Err(e): return Err(e)
+        n := _mk(K_BIN())
+        n.text = t.text
+        n.a = left
+        n.b = right
+        left = _add(&p, n)
+    return Ok(left)
+
+# Parse a formula BODY -- the text after '='.
+fn parse(src: string) -> Result(Ast, ParseErr):
+    body := strings.trim(src)
+    if body == "":
+        return Err(NoInput)
+    toks: [Tok] = []
+    match lex(body):
+        Ok(t): toks = t
+        Err(e): return Err(e)
+    p := P(toks, 0, []Node)
+    root := 0
+    match _cmp(&p, 0):
+        Ok(x): root = x
+        Err(e): return Err(e)
+    t := _peek(&p)
+    if t.kind != T_END():
+        return Err(Trailing(t.text, t.pos))
+    return Ok(Ast(p.nodes, root))

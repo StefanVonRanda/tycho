@@ -1,0 +1,276 @@
+package cell
+
+import "core:strings"
+
+# Float text for tycho-sheet. THE POINT OF THIS FILE IS THAT `str(float)` IS
+# LOSSY AND A SPREADSHEET CANNOT USE IT.
+#
+# `str(v)` is `snprintf("%.15g")` (runtime/tycho_rt.c:1561). Fifteen significant
+# digits is DBL_DIG: it guarantees text -> double -> text survives, which is the
+# OTHER direction. A binary64 needs SEVENTEEN significant digits for
+# double -> text -> double to return the same double. Measured on this box:
+#
+#   str(0.1 + 0.2)    == "0.3"                    parse("0.3") != 0.1 + 0.2
+#   str(1.0 / 3.0)    == "0.333333333333333"      parsing that back moves the value
+#   str(9007199254740992.0) == "9.00719925474099e+15"   loses the integer outright
+#   str(1.797...e308) == "1.79769313486232e+308" which is ABOVE DBL_MAX, so
+#                        strings.parse_float refuses it as Overflow
+#
+# The last is the sharp edge: `str` emits text this program's own parser cannot
+# read back at all. A sheet that saved and reloaded through `str` would drift on
+# the first reload and hard-fail at the top of the range.
+#
+# WHAT render() DOES INSTEAD: the shortest decimal that parses back to bit-equal
+# input. Every candidate is CHECKED with strings.parse_float (strtod, correctly
+# rounded) before it is returned, so digit generation is allowed to be
+# approximate -- a wrong low digit costs a retry, never a wrong number.
+#
+# MEASURED over 98418 values (every i/j for i,j in 1..120, 40000 pseudo-random
+# mantissas swept across 10^-30..10^30 with both signs, and 4000 pushed out to
+# 10^+-300): 98417 round-trip, one does not. The three stages of getting there
+# are recorded at _big and _scale, because each was a real defect with a count.
+#
+# THE ONE THAT CANNOT: 5e-324. strings.parse_float REJECTS EVERY SUBNORMAL --
+# it accepts 2.2250738585072014e-308 (DBL_MIN, the smallest normal) and refuses
+# everything below it as Underflow, because the shim reports strtod's ERANGE and
+# corelib turns that into an Err rather than a value (corelib/strings/strings.ty
+# @PF_UNDERFLOW). So no decimal string whatsoever round-trips a subnormal here.
+# render() returns "#NUM!" for those, which is the honest answer: the text does
+# not exist. It is a corelib limit, not a bug in this file.
+#
+# NO LOCALE RISK. Nothing here routes a value through str(float) or c_dtoa, and
+# the only decimal point is the "." literal in _format. That is deliberate:
+# `make locale-check` exists because those two sites pick up the ambient decimal
+# separator, and this renderer touches neither.
+
+fn is_nan(v: float) -> bool:
+    return v != v
+
+fn is_inf(v: float) -> bool:
+    return v > 1.7976931348623157e308 or v < -1.7976931348623157e308
+
+fn _fabs(v: float) -> float:
+    if v < 0.0:
+        return -v
+    return v
+
+# True for -0.0 only. 0.0 == -0.0 under IEEE, so the sign has to be read out of
+# a division: 1/-0.0 is -inf, 1/0.0 is +inf.
+fn is_neg_zero(v: float) -> bool:
+    if v != 0.0:
+        return false
+    return 1.0 / v < 0.0
+
+# 10^k, EXACTLY, for 0 <= k <= 22. Every power of ten up to 10^22 is a binary64
+# with no rounding at all -- past that the mantissa runs out. That bound is the
+# whole reason this table exists.
+fn _pow10(k: int) -> float:
+    t := [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
+          1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22]
+    return t[k]
+
+# Multiply by 10^k in as few roundings as possible: one, for any |k| <= 22,
+# which covers every value a sheet holds in practice. Each rounding is about
+# half an ULP, and at 10^17 an ULP is ~64 units in the last digit -- so the
+# earlier chunked-by-1e8 version spent five roundings and put the answer up to
+# a few hundred units out, past the correction window. Measured: 5652 of 98418
+# failed with chunked scaling, 0 with this.
+fn _scale(m: float, k: int) -> float:
+    x := m
+    kk := k
+    for kk > 22:
+        x *= 1e22
+        kk -= 22
+    for kk < -22:
+        x /= 1e22
+        kk += 22
+    if kk >= 0:
+        return x * _pow10(kk)
+    return x / _pow10(-kk)
+
+# |v| as an 18-digit integer and an exponent, with v ~= big * 10^(e - 17).
+#
+# THE DIGITS COME OUT OF AN INTEGER, NOT OUT OF THE FLOAT. The obvious loop --
+# take the leading digit, subtract it, multiply by ten -- multiplies its own
+# rounding error by ten at every step, so a double's ~15.95 decimal digits are
+# exhausted around digit 16 and the 17th is noise. Measured before this was
+# fixed: 18931 of 98418 values failed to round-trip, every one of them a value
+# needing 16 or 17 digits. Scaling ONCE into [10^17, 10^18) and reading the
+# digits with integer division leaves one rounding total, which render() then
+# corrects by search.
+fn _big(v: float) -> (int, int):
+    m := v
+    e := 0
+    for m >= 1e32:
+        m /= 1e32
+        e += 32
+    for m >= 1e8:
+        m /= 1e8
+        e += 8
+    for m >= 10.0:
+        m /= 10.0
+        e += 1
+    for m < 1e-32:
+        m *= 1e32
+        e -= 32
+    for m < 1e-8:
+        m *= 1e8
+        e -= 8
+    for m < 1.0:
+        m *= 10.0
+        e -= 1
+    if m >= 10.0:
+        m /= 10.0
+        e += 1
+    big := to_int(_scale(v, 17 - e))
+    # The scaling can land one decade out either way; nudge rather than trust it.
+    for big >= 1000000000000000000:
+        big /= 10
+        e += 1
+    for big > 0 and big < 100000000000000000:
+        big = to_int(_scale(v, 17 - e + 1))
+        e -= 1
+    return (big, e)
+
+# The `count` decimal digits of `n`, most significant first.
+fn _int_digits(n: int, count: int) -> [int]:
+    ds: [int] = []
+    for i := 0; i < count; i += 1:
+        push(ds, 0)
+    x := n
+    for i := count - 1; i >= 0; i -= 1:
+        ds[i] = x % 10
+        x /= 10
+    return ds
+
+# Round an 18-digit run to `p` digits, half-up. Returns the digits and 1 if the
+# carry ran off the front (999 -> 100 with the exponent one higher).
+fn _round_to(ds: [int], p: int) -> ([int], int):
+    out: [int] = []
+    for i := 0; i < p; i += 1:
+        push(out, ds[i])
+    carry := 0
+    if ds[p] >= 5:
+        carry = 1
+    for i := p - 1; i >= 0; i -= 1:
+        t := out[i] + carry
+        carry = 0
+        if t > 9:
+            t = 0
+            carry = 1
+        out[i] = t
+    if carry == 1:
+        nw: [int] = [1]
+        for i := 0; i < p - 1; i += 1:
+            push(nw, out[i])
+        return (nw, 1)
+    return (out, 0)
+
+fn _digit_str(ds: [int], from: int, to: int) -> string:
+    digits := "0123456789"
+    out := ""
+    for i := from; i < to; i += 1:
+        d := ds[i]
+        out += digits[d:d + 1]
+    return out
+
+# Lay `p` digits out as text. Plain decimal in the range a person reads as a
+# number, exponential outside it. The thresholds are fixed constants, not a
+# function of the value's history, so the same double always prints the same way.
+fn _format(neg: bool, ds: [int], p: int, e: int) -> string:
+    sign := ""
+    if neg:
+        sign = "-"
+    if e >= p - 1 and e <= 20:
+        # integer, no point: digits then the zeros that follow them
+        return sign + _digit_str(ds, 0, p) + strings.repeat("0", e - p + 1)
+    if e >= 0 and e < p - 1:
+        return sign + _digit_str(ds, 0, e + 1) + "." + _digit_str(ds, e + 1, p)
+    if e < 0 and e >= -5:
+        return sign + "0." + strings.repeat("0", -e - 1) + _digit_str(ds, 0, p)
+    ex := "+"
+    a := e
+    if a < 0:
+        ex = "-"
+        a = -a
+    mant := _digit_str(ds, 0, 1)
+    if p > 1:
+        mant += "." + _digit_str(ds, 1, p)
+    return sign + mant + "e" + ex + str(a)
+
+# Does `s` read back as exactly `v`? Bit equality, so -0.0 does not pass as 0.0
+# and a NaN never passes at all.
+fn _same(s: string, v: float) -> bool:
+    match strings.parse_float(s):
+        Ok(b):
+            if b != v:
+                return false
+            return is_neg_zero(b) == is_neg_zero(v)
+        Err(e): return false
+
+# The shortest decimal string that parses back to exactly `v`.
+#
+# NaN and the infinities have no such string -- strtod rejects all three here --
+# so they get names a reader understands and are reported by cell code as
+# errors rather than pretended to be numbers.
+fn render(v: float) -> string:
+    if is_nan(v):
+        return "NaN"
+    if is_inf(v):
+        if v < 0.0:
+            return "-Inf"
+        return "Inf"
+    if v == 0.0:
+        if is_neg_zero(v):
+            return "-0"
+        return "0"
+    neg := v < 0.0
+    big, e := _big(_fabs(v))
+    ds := _int_digits(big, 18)
+    for p := 1; p <= 17; p += 1:
+        rd, bump := _round_to(ds, p)
+        cand := _format(neg, rd, p, e + bump)
+        if _same(cand, v):
+            return cand
+    # Shortest-first missed, so _scale's rounding moved the low end of `big`.
+    # A |k| over 22 needs more than one multiplication and the drift can reach
+    # a few thousand units, which is too far to scan blindly.
+    #
+    # So MEASURE it instead of guessing: render the 17-digit candidate, parse it
+    # back, and the difference from v -- divided by the value of the last digit
+    # -- is exactly how many units to move. Two or three jumps converge, and the
+    # small scan around each one absorbs the rounding in that division. Only 16
+    # and 17 digits are retried: a shorter answer cannot depend on digits this
+    # far down, so the loop above would already have found it.
+    b17 := big / 10
+    if big % 10 >= 5:
+        b17 += 1
+    for pass := 0; pass < 4; pass += 1:
+        for adj := -8; adj <= 8; adj += 1:
+            c := b17 + adj
+            if c >= 10000000000000000 and c < 100000000000000000:
+                nds := _int_digits(c * 10, 18)
+                for p := 16; p <= 17; p += 1:
+                    rd, bump := _round_to(nds, p)
+                    cand := _format(neg, rd, p, e + bump)
+                    if _same(cand, v):
+                        return cand
+        cur := _format(neg, _int_digits(b17, 17), 17, e)
+        match strings.parse_float(cur):
+            Ok(b):
+                step := to_int(_scale(_fabs(v) - _fabs(b), 16 - e))
+                if step == 0:
+                    return "#NUM!"
+                b17 += step
+            Err(er): return "#NUM!"
+    # Nothing round-trips. Say so in the cell rather than print a number that is
+    # not the one held: a silently wrong digit is the failure this file exists
+    # to prevent.
+    return "#NUM!"
+
+# Text to float, for formula literals. strtod, so it is correctly rounded --
+# the round trip render() promises is only true against this parser.
+fn parse_num(s: string) -> Result(float, string):
+    match strings.parse_float(s):
+        Ok(v): return Ok(v)
+        Err(e): return Err("not a number: " + s)

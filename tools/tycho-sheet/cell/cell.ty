@@ -1,0 +1,115 @@
+package cell
+
+# What a cell holds, and the difference between a BAD FORMULA and a BAD VALUE.
+#
+# THE TWO ARE NOT THE SAME KIND OF THING and this file keeps them apart on
+# purpose:
+#
+#   `=A1+`      is not a formula. There is nothing to store, nothing to
+#               recalculate, and no answer to show. parse() returns Err(ParseErr)
+#               and the caller is told it failed. That is a Result.
+#
+#   `=1/0`      IS a formula. It parses, it has dependencies, it takes part in
+#               the recalculation order, and it produces #DIV/0! -- which then
+#               flows into every cell that reads it, exactly like a number would.
+#               That is a VALUE, so it lives in Value as Bad(CellErr).
+#
+# Collapsing them costs you the propagation: a #DIV/0! has to reach the cells
+# downstream of it, and an Err returned out of the evaluator would stop the
+# recalculation instead of travelling. Every real spreadsheet makes this same
+# split, and it is the reason SUM of a range containing an error is an error
+# rather than a crash.
+
+enum CellErr:
+    DivZero                        # #DIV/0!  division, or modulo, by zero
+    BadRef(string)                 # #REF!    a reference outside the grid
+    Cycle(string)                  # #CYCLE!  carries the cycle, e.g. "A1 -> B1 -> A1"
+    NotNum(string)                 # #VALUE!  arithmetic on something that is not a number
+    NoText                         # #NUM!    a float with no round-trippable text
+    BadName(string)                # #NAME?   unknown function
+
+# The short code a sheet shows in the cell.
+fn err_code(e: CellErr) -> string:
+    match e:
+        DivZero: return "#DIV/0!"
+        BadRef(r): return "#REF!"
+        Cycle(c): return "#CYCLE!"
+        NotNum(w): return "#VALUE!"
+        NoText: return "#NUM!"
+        BadName(n): return "#NAME?"
+
+# The long form, for the transcript. The cycle case is the one that earns this:
+# "#CYCLE!" tells you nothing, "A1 -> B1 -> A1" tells you where to look.
+fn err_detail(e: CellErr) -> string:
+    match e:
+        DivZero: return "#DIV/0! division by zero"
+        BadRef(r): return "#REF! " + r
+        Cycle(c): return "#CYCLE! " + c
+        NotNum(w): return "#VALUE! " + w
+        NoText: return "#NUM! no round-trippable decimal for this float"
+        BadName(n): return "#NAME? unknown function " + n
+
+enum Value:
+    Empty
+    Num(float)
+    Text(string)
+    Bool(bool)
+    Bad(CellErr)
+
+fn num(v: float) -> Value:
+    return Num(v)
+
+fn text(s: string) -> Value:
+    return Text(s)
+
+fn boolean(b: bool) -> Value:
+    return Bool(b)
+
+fn bad(e: CellErr) -> Value:
+    return Bad(e)
+
+fn empty() -> Value:
+    return Empty
+
+fn is_bad(v: Value) -> bool:
+    match v:
+        Bad(e): return true
+        Num(f): return false
+        Text(s): return false
+        Bool(b): return false
+        Empty: return false
+
+# How a cell prints. Empty is "" and not "0": a blank cell and a zero are
+# different things to every formula that counts non-empty cells.
+fn render_value(v: Value) -> string:
+    match v:
+        Empty: return ""
+        Num(f): return render(f)
+        Text(s): return s
+        Bool(b):
+            if b:
+                return "TRUE"
+            return "FALSE"
+        Bad(e): return err_code(e)
+
+fn detail_value(v: Value) -> string:
+    match v:
+        Bad(e): return err_detail(e)
+        Empty: return ""
+        Num(f): return render(f)
+        Text(s): return s
+        Bool(b): return render_value(v)
+
+# A number out of a value, for arithmetic. Empty counts as 0 and a bool as 0/1,
+# which is what a sheet does; text does not silently become a number, because
+# that is how a typo in one cell turns into a plausible wrong total downstream.
+fn to_num(v: Value) -> Result(float, CellErr):
+    match v:
+        Empty: return Ok(0.0)
+        Num(f): return Ok(f)
+        Bool(b):
+            if b:
+                return Ok(1.0)
+            return Ok(0.0)
+        Text(s): return Err(NotNum("text \"" + s + "\" is not a number"))
+        Bad(e): return Err(e)
