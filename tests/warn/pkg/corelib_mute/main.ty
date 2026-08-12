@@ -1,6 +1,6 @@
 package main
 
-# BOTH halves of the corelib-warning mute (commit 2376066), in one golden.
+# BOTH halves of the corelib-warning mute (commit 8f4367d), in one golden.
 # `core:json` declares `keys`, which collides with the builtin, and warned in the
 # stderr of any program that merely imported it -- a diagnostic about a file the
 # user cannot edit. The mute silences warnings raised while parsing an imported

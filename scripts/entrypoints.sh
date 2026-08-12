@@ -60,7 +60,7 @@ list="$list server/main.ty"
 # tools/<name>/main.ty too. Until 2026-08-11 this lane stopped at examples/ and
 # server/, so 13 tool programs had no COMPILE check outside the five tool lanes
 # (vm/kv/q/ar/scheme) -- and eight of them have no lane at all. Measured at
-# 17c47c4, a corelib-only commit: this lane was GREEN and
+# 9f601a6, a corelib-only commit: this lane was GREEN and
 # `tychoc tools/tycho-vm/main.ty --emit-c` was RED, which is the whole reason
 # the corelib row of the gate table could not name it.
 for d in tools/*/; do
@@ -69,7 +69,7 @@ done
 
 # Every .ty under bench/, at any depth. Each one declares its own main; none had
 # a COMPILE gate before 2026-08-11, because bench/guard.sh asserts one wall-time
-# ratio and nothing else and no other lane touches bench/. That is why 9cbbd3b,
+# ratio and nothing else and no other lane touches bench/. That is why e96d6fc,
 # migrating bench/dijkstra/dijkstra.ty for a language-rule change, could only be
 # verified by compiling that file BY HAND. Globbed, so a new benchmark is
 # covered the day it lands.

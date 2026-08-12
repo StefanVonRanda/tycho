@@ -182,7 +182,7 @@ def main():
     # top-level ones. The checker then reported `ok` over 8 anchored and 6 bare
     # citations instead of 134 and 812, which is the dangerous failure: a gate
     # that passes because it checked almost nothing. Same class as the
-    # posixpath bug in check_goldens.py (b115336).
+    # posixpath bug in check_goldens.py (1ca7e80).
     mds = [f for f in subprocess.run(["git", "ls-files"], cwd=ROOT,
                                      capture_output=True, text=True,
                                      check=True).stdout.split()

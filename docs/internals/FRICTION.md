@@ -342,7 +342,7 @@ pick-up order is written out in full under "What moved this pass" below.
    that name. The spec had said the opposite ("**shadows** that builtin … a
    conforming implementation must not change which procedure is *selected*"), which
    is what kept this item open — it was never a compiler bug, it was the spec
-   describing a language nobody had built. Re-probed at `680d30d` over every name in
+   describing a language nobody had built. Re-probed at `77bd826` over every name in
    `src/tychoc.c@shadows_builtin`: 26 are rejected at the declaration
    (`'X' is already defined`), the other 28 declare with a warning and are then
    overtaken by the builtin at the call site. Which of those two the caller sees
@@ -1778,7 +1778,7 @@ rather than padded.
 > literal and in a CSV cell. **Finding 2 is untouched by any of this and remains
 > open**: there is still no `decimal.div`. *(That last clause was true when it was
 > written and stopped being true the next day — `decimal.div` landed 2026-08-02 in
-> commit `4251339`, and finding 2 is closed. Left in place because the sentence it
+> commit `a8c761c`, and finding 2 is closed. Left in place because the sentence it
 > qualifies — that nothing in the `core:json` work depended on division — is still
 > the point.)*
 >
@@ -1848,7 +1848,7 @@ programmer; this one is paid by the person reading the output.**
 
 ### 2. `core:decimal` has no `div`, so the ordinary averaging query has no answer
 
-> **[CLOSED 2026-08-11 — fixed 2026-08-02 by commit `4251339`; this banner had
+> **[CLOSED 2026-08-11 — fixed 2026-08-02 by commit `a8c761c`; this banner had
 > gone stale for nine days.]** The finding below is left verbatim. `div` landed
 > in exactly the shape the finding asked for and nothing here re-litigated it:
 > `corelib/decimal/decimal.ty@div` is
@@ -1964,7 +1964,7 @@ names the type it would have dropped rather than the general "no effect" rule.
 The item's own diagnosis held up under the fix. What it did not see is that the
 enabling change was two-layered: `T_VOID` doubled as the generic bind-vector's
 "unbound" sentinel, so `void` could not become a real type until that moved to
-`T_UNBOUND` (`3a67bbe`). ROADMAP.md priced that re-sentinel as buying the
+`T_UNBOUND` (`d868083`). ROADMAP.md priced that re-sentinel as buying the
 spelling; it bought the *possibility* of the spelling.
 
 `tools/tycho-q/main.ty@check_cols` — one of the three sightings — is untouched
@@ -2018,7 +2018,7 @@ language changes, which is why this ranks below three corelib items that are not
 >
 > The confirmation triage that preceded the fix follows.
 
-> **Triage 2026-08-11.** Probed against the compiler at `680d30d`. The finding
+> **Triage 2026-08-11.** Probed against the compiler at `77bd826`. The finding
 > holds: there is no `is` operator (`if v is VInt:` → `error: expected ':'
 > before the block`) and no tag accessor — `src/tychoc.c` has no `tag_of` or
 > equivalent, and `git log -S'tag_of' -- src/tychoc.c` is empty, so one never
@@ -2159,11 +2159,11 @@ two thirds of its values.
 > own revertible commit.
 
 > **Triage 2026-08-11 — CONFIRMED, unchanged, and correctly sized.** Both
-> diagnostics below reproduce **verbatim** against the compiler at `680d30d`;
+> diagnostics below reproduce **verbatim** against the compiler at `77bd826`;
 > `corelib/iter/iter.ty` still declares `keep: fn($T) -> int`
 > (`corelib/iter/iter.ty:20`) and still has no fallible counterpart — its five
 > functions are `map`, `filter`, `reduce`, `count`, `any` and nothing else.
-> Its last two commits (`eabb763`, `43eb558`) touched neither.
+> Its last two commits (`4e58e14`, `43eb558`) touched neither.
 >
 > The entry's "cost to fix: a signature, not a language change" is now
 > **verified rather than argued**: the fully generic fallible map compiles and
@@ -2294,7 +2294,7 @@ shrank them. Padding this list would make the seven above harder to act on.
   re-scorings above found and continues to contradict the picture the older half
   of this file paints.
 
-## Adversarial pass over the surface that shipped 2026-08-11 (head `e6014db`)
+## Adversarial pass over the surface that shipped 2026-08-11 (head `fa4f5fc`)
 
 Not a program being written — a hunt. Every feature that landed on 2026-08-11
 had roughly one happy-path fixture and one reject fixture, so the combinations
@@ -2327,7 +2327,7 @@ corelib/iter/iter.ty:30: error: cannot infer the type of 'out' from this use
 ```
 
 **The `note:` is the day's other feature working exactly as intended** — without
-`be325b4` this was a bare corelib line and nothing else. It is still a message
+`4a7cca0` this was a bare corelib line and nothing else. It is still a message
 about `out`, a local the caller has never heard of, for a problem that is "there
 is no `try_each`". The workaround is a hand-written loop with `or_return`, three
 lines, which is what `try_map` existed to remove. **Not fixed here: adding
@@ -2335,7 +2335,7 @@ lines, which is what `try_map` existed to remove. **Not fixed here: adding
 
 > **Decided 2026-08-12: `try_each` is DECLINED. The loop is the answer.**
 >
-> Re-probed first, because the entry above predates `be325b4`. The diagnostic
+> Re-probed first, because the entry above predates `4a7cca0`. The diagnostic
 > half is already fixed: the refusal now prints the corelib line *and* a
 > `note: ... this call instantiated the generic` naming the caller's own line,
 > so a reader is no longer sent only to a file they cannot edit. What remains
@@ -2366,7 +2366,7 @@ lines, which is what `try_map` existed to remove. **Not fixed here: adding
 > `f(x) or_return` directly inside a `for` loop — the exact shape `try_each`
 > would replace — is **zero**. The motivating examples in this entry (chmod each
 > path, `set_mtime` each extracted file) are hypothetical; none of them is in
-> the tree. `9d2a6f9` declined `try_reduce`, `try_count` and `try_any` on
+> the tree. `6d498cf` declined `try_reduce`, `try_count` and `try_any` on
 > precisely this ground, and declining here is the same rule applied to the same
 > evidence, not a new policy.
 >
@@ -2468,13 +2468,13 @@ boundary it is built on.**
 - **Operand and argument evaluation order is NOT left-to-right, and that is
   correct.** `str(bump(&c)) + "|" + str(c)` prints `1|0` and `pair(bump(&e), e)`
   prints `1,0`, while the f-string spelling prints `1|1`. This looked like the
-  same defect `680d30d` had just fixed; it is not.
+  same defect `77bd826` had just fixed; it is not.
   `docs/spec/09-expressions.md:168` makes argument and operand order
   *unspecified* deliberately, and `docs/spec/appendix-f-impl-defined.md:14` lists
   the f-string holes as the named exception. The feature that shipped is exactly
   as narrow as it says it is.
 
-## Re-scored against five programs written 2026-08-12 (head `680d30d`)
+## Re-scored against five programs written 2026-08-12 (head `77bd826`)
 
 Five ordinary programs, written the way a newcomer would write them rather than
 to probe anything. Two of the three findings below are **combinations of
@@ -2623,7 +2623,7 @@ for p in xs:
     println(k + str(q))
 ```
 
-Probed at head `f44d805`: the `for k, q in xs` form fails to parse, the `p[0]`
+Probed at head `2f407ed`: the `for k, q in xs` form fails to parse, the `p[0]`
 form fails to resolve, and the body-destructure form builds and prints `a1 b2`.
 
 Not proposed as a change. `:=` destructuring already carries the feature, so

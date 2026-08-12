@@ -38,7 +38,7 @@ for entry in corelib/test/*/main.ty; do
     # core:os is the first user -- NOT because exec is unavailable on Windows:
     # `corelib/os/os_shim.c:378@osx_spawn_win` wires it to CreateProcessA, and
     # `corelib/test/os.out.win` records exec and exec_out WORKING there
-    # (`e_exit7=7`), observed on a Windows 11 VM when that path landed (690a718)
+    # (`e_exit7=7`), observed on a Windows 11 VM when that path landed (88a6da8)
     # and not re-run since the argv refactor -- `corelib/os/os_shim.c:375@gap`
     # says so itself. The golden differs for a smaller reason: /bin/sh does not
     # resolve there, so the test prints posix=false and skips the shell-contrast

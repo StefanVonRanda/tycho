@@ -466,7 +466,7 @@ done
 # compiles the whole directory, so a flat sibling would drag the others in.
 # Deliberately no "a warning must be present" rule, unlike the flat lane above:
 # what these fixtures assert is WHICH warnings a build prints, and "none from the
-# corelib package I merely imported" is the assertion (commit 2376066). An empty
+# corelib package I merely imported" is the assertion (commit 8f4367d). An empty
 # golden is a legal answer here; in the flat lane it is a failure.
 for d in tests/warn/pkg/*/; do
     [ -d "$d" ] || continue

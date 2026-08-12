@@ -7,13 +7,13 @@
 > Trimmed 2026-08-12. It had reached 1,396 lines, of which 1,299 were evidence
 > under 19 finished phases against 2 open ones: 93% archive. That is the second
 > time in two days the file needed rotating, so the convention changed rather
-> than the file — see CLAUDE.md, "Plans". `git show 3bb16fd:plan.md` recovers
+> than the file — see CLAUDE.md, "Plans". `git show d78db13:plan.md` recovers
 > the long version; every phase's evidence is also in its own commit.
 
 ## Phase 1 — the whole-document citation drift
 
 *Split out of the citation repair that fixed only its enumerated bullets
-(`e6014db`, then the prose repairs in `2206b1c`).*
+(`fa4f5fc`, then the prose repairs in `5489e60`).*
 
 Five documents have drifted as a block, every ref pointing into `src/tychoc.c`
 or `runtime/tycho_rt.c`:

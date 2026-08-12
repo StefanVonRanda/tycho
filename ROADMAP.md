@@ -169,13 +169,13 @@ against the wrong mechanism.
 
 | Gap | State |
 |---|---|
-| `Result(void, E)` not expressible | **closed 2026-08-09** — `3a67bbe` (`T_VOID` → `T_UNBOUND`) then `72340be` (the spelling). Probe: `fn touch(x: int) -> Result(void, string)` returning `Ok()`/`Err("neg")` compiles and runs. The stated limit still holds exactly — `Result(Option(void), E)`, `fn g(x: void)` and `v : void = 0` are each refused with *"'void' is a type only as a Result's ok payload"*. See below |
-| no comparator-taking sort | **closed 2026-08-11** — `4b81a8a` added `corelib/sort/sort.ty@sort_by`, `fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]`. Probe: sorting a `[Emp]` by its `name` field through a comparator gave `amy,zoe`, and `sort.asc` on `["pear","apple","fig"]` gave `[apple, fig, pear]` — the row's own complaint, sorting by a string key, needs no invented int in either form |
-| an enum cannot be tested for its variant without binding a payload | **closed 2026-08-11** — `810c8c3` (`is` for user enums) and `2fe0f6b` (`is` for Option/Result). Probe: `s is Circle`/`s is Square`/`s is Dot` on a payload-carrying enum gave `true false false`, and `o is Some`/`r is Ok`/`r is Err` all answer, including on a `Result(void, E)`. The 2026-08-09 note called this "mitigated, stylistic"; `is` closed it structurally instead |
-| two error types cannot share an `or_return` chain | **closed — and the row named the wrong mechanism.** `b289a44` triaged it as WRONG MECHANISM: `corelib/result/result.ty@map_err` already bridged, and `1185f1a` added `map_err_with` (`corelib/result/result.ty@map_err_with`) for the cause-preserving case. Probe: one `fn chain(k) -> Result(int, string)` whose first leg is a `Result(string, IoErr)` bridged by `result.map_err_with(read_it(k), ioerr_to_str) or_return` and whose second leg is a native `Result(int, string)` — both legs propagate through the same chain, the IoErr path surfacing as `missing key bad`. There was never a language gap here, only a missing combinator |
-| `core:iter` unusable for a fallible pipeline stage | **closed 2026-08-11** — `9d2a6f9` added `corelib/iter/iter.ty:27@try_map` and `:42@try_filter`; `66cc04e` flipped predicates to `bool`. Probe: `try_map` over `["1","2","3"]` gave `[1, 2, 3]` and over `["1","-2","3"]` short-circuited to `not positive: -2`; `try_filter` kept `[2, 3, 4]` and propagated `overflow guard` |
-| `core:decimal` has no `div` | **closed** — `4251339`, confirmed by `7bff57b`. `corelib/decimal/decimal.ty@div` is `fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr)`. Probe: `div(10, 3, 4, 0)` gave `3.3333` |
-| `[string]` cannot cross the FFI | **CLOSED 2026-08-11 — lifted for the PARAMETER direction, refused for the return.** `src/tychoc.c@ffi_arg_arr_ptr_ctype` answers `"const char *const *"` for `T_ARRAY_STRING`; a `[string]` argument now emits `(const char *const *)xs.data, xs.len`, the same `(ptr,len)` convention `[int]`/`[float]` use, **borrowed for the call** (unenforceable — stated in `docs/spec/14-ffi.md` §24.1). The return gate stayed `src/tychoc.c@ffi_arr_ptr_ctype`, which never answers for `T_ARRAY_STRING`, so `-> [string]` still dies (`tests/reject/extern_ret_arr_string.ty`). Fixture: `tests/ffi/main.ty@ffi_sfold`, non-empty and empty. **`core:os` was left alone here** — adopted afterwards by `43a1ded`, which passes argv as a `[string]` and drops the builder handle |
+| `Result(void, E)` not expressible | **closed 2026-08-09** — `d868083` (`T_VOID` → `T_UNBOUND`) then `760bb83` (the spelling). Probe: `fn touch(x: int) -> Result(void, string)` returning `Ok()`/`Err("neg")` compiles and runs. The stated limit still holds exactly — `Result(Option(void), E)`, `fn g(x: void)` and `v : void = 0` are each refused with *"'void' is a type only as a Result's ok payload"*. See below |
+| no comparator-taking sort | **closed 2026-08-11** — `e40f32d` added `corelib/sort/sort.ty@sort_by`, `fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]`. Probe: sorting a `[Emp]` by its `name` field through a comparator gave `amy,zoe`, and `sort.asc` on `["pear","apple","fig"]` gave `[apple, fig, pear]` — the row's own complaint, sorting by a string key, needs no invented int in either form |
+| an enum cannot be tested for its variant without binding a payload | **closed 2026-08-11** — `308b6d6` (`is` for user enums) and `6d275ca` (`is` for Option/Result). Probe: `s is Circle`/`s is Square`/`s is Dot` on a payload-carrying enum gave `true false false`, and `o is Some`/`r is Ok`/`r is Err` all answer, including on a `Result(void, E)`. The 2026-08-09 note called this "mitigated, stylistic"; `is` closed it structurally instead |
+| two error types cannot share an `or_return` chain | **closed — and the row named the wrong mechanism.** `d806a4d` triaged it as WRONG MECHANISM: `corelib/result/result.ty@map_err` already bridged, and `6bc0a29` added `map_err_with` (`corelib/result/result.ty@map_err_with`) for the cause-preserving case. Probe: one `fn chain(k) -> Result(int, string)` whose first leg is a `Result(string, IoErr)` bridged by `result.map_err_with(read_it(k), ioerr_to_str) or_return` and whose second leg is a native `Result(int, string)` — both legs propagate through the same chain, the IoErr path surfacing as `missing key bad`. There was never a language gap here, only a missing combinator |
+| `core:iter` unusable for a fallible pipeline stage | **closed 2026-08-11** — `6d498cf` added `corelib/iter/iter.ty:27@try_map` and `:42@try_filter`; `3bdfabc` flipped predicates to `bool`. Probe: `try_map` over `["1","2","3"]` gave `[1, 2, 3]` and over `["1","-2","3"]` short-circuited to `not positive: -2`; `try_filter` kept `[2, 3, 4]` and propagated `overflow guard` |
+| `core:decimal` has no `div` | **closed** — `a8c761c`, confirmed by `b4d28e3`. `corelib/decimal/decimal.ty@div` is `fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr)`. Probe: `div(10, 3, 4, 0)` gave `3.3333` |
+| `[string]` cannot cross the FFI | **CLOSED 2026-08-11 — lifted for the PARAMETER direction, refused for the return.** `src/tychoc.c@ffi_arg_arr_ptr_ctype` answers `"const char *const *"` for `T_ARRAY_STRING`; a `[string]` argument now emits `(const char *const *)xs.data, xs.len`, the same `(ptr,len)` convention `[int]`/`[float]` use, **borrowed for the call** (unenforceable — stated in `docs/spec/14-ffi.md` §24.1). The return gate stayed `src/tychoc.c@ffi_arr_ptr_ctype`, which never answers for `T_ARRAY_STRING`, so `-> [string]` still dies (`tests/reject/extern_ret_arr_string.ty`). Fixture: `tests/ffi/main.ty@ffi_sfold`, non-empty and empty. **`core:os` was left alone here** — adopted afterwards by `9d63198`, which passes argv as a `[string]` and drops the builder handle |
 
 One correction carried forward from 2026-08-09, and one new one.
 
@@ -237,8 +237,8 @@ describes the tree.** `is_ok` is `return r is Ok`
 
 The second defect this probe filed — the diagnostic **naming the wrong file**,
 sending a reader to line 71 of an eleven-line `main.ty` — is also fixed:
-`0faccaf` made a generic instantiation failure name the corelib file it is
-really in, and `be325b4` added the instantiating call site as a `note:`, so the
+`cf42e2f` made a generic instantiation failure name the corelib file it is
+really in, and `4a7cca0` added the instantiating call site as a `note:`, so the
 message now names both the corelib line and the caller's own line.
 
 #### Sizing `[string]` across the FFI — both answers, with costs
@@ -259,7 +259,7 @@ copy, no ownership transfer. The change is one branch in
 `src/tychoc.c@ffi_arr_ptr_ctype` returning `"const char *const *"` for
 `T_ARRAY_STRING`; both call-emit sites (`src/tychoc.c@_xa` — the direct-call and
 out-param-return emitters) are already generic over that function's result and would
-emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `810c8c3`
+emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `308b6d6`
 (`is`): one resolver branch, one codegen path already written, a fixture.
 
 Three things that must be decided with it, not after:
@@ -350,9 +350,9 @@ Set 2026-08-09, cheapest-and-safest first, so each step is verifiable before the
 next depends on it. Compiler changes are ordered late within each group because
 every one costs a citation re-anchor (~50-110 anchors move) and a full `make ci`.
 
-1. ~~`len` shadowing~~ — **closed**, `b267d2b`. The only silent-wrong-answer item.
-2. ~~expression line continuation~~ — **closed**, `621bf64`.
-3. ~~`Result(void, E)`~~ — **closed**, `3a67bbe` (re-sentinel) and the commit
+1. ~~`len` shadowing~~ — **closed**, `ec4914f`. The only silent-wrong-answer item.
+2. ~~expression line continuation~~ — **closed**, `3c2ea6d`.
+3. ~~`Result(void, E)`~~ — **closed**, `d868083` (re-sentinel) and the commit
    after it (the spelling). The re-anchor cost the table above warned about was
    real: the first commit was written line-count-neutral and moved zero
    citations; the second moved 87 files' worth.

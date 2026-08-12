@@ -80,8 +80,8 @@ move lines yourself — read its header first, it is the wrong tool when only so
 refs are stale.
 
 **A commit hash is a citation too, and the gate resolves it.** Write it
-backticked at git's default seven characters (`` `9cbbd3b` ``) or introduced by
-the word `commit` (`commit 9cbbd3b`); either form must name a commit in this
+backticked at git's default seven characters (`` `e96d6fc` ``) or introduced by
+the word `commit` (`commit e96d6fc`); either form must name a commit in this
 repository. A wrong-but-plausible hash — one transposition away from the one you
 meant — is exactly what this catches. Two things follow:
 
@@ -110,7 +110,7 @@ reach for first.
 | added a `run.sh`, or recorded a new golden | `make goldens-check` | ~0.1s. Asserts every golden a runner names is **tracked by git**. `.gitignore` ignores `*.out` broadly, so a new golden is green on your disk and absent from a fresh clone — `make test` reads the copy that exists and cannot redden for it |
 | `src/tychoc.c`, `runtime/tycho_rt.c`, or any `.ty` fixture | `make test` | ~8 min |
 | anything under `corelib/` | `make corelib` | ~49s. **`make test` cannot redden for it** — `tests/run.sh` globs the top level only and never descends into `corelib/`. Add `make corelib-examples` (~44s) if the package has a worked example. A package whose external dependency is absent (no `libpng-dev`, say) is SKIPPED rather than failed, and the verdict line names it: `N ok, M SKIPPED -- image(missing: libpng)`. Only `all green` means everything ran. `make corelib-examples` skips and reports the same way |
-| a corelib change that ADDS, RENAMES or RETYPES a symbol | also `sh scripts/entrypoints.sh` | ~0.15s. **Neither corelib lane can redden for this.** A new symbol changes the compiler's global state, and that can break an unrelated **consumer** program: `17c47c4` changed only `corelib/`, was gated exactly as the row above says, and still shipped a red `make ci` — two extra `core:io` entries exposed a latent compiler bug that stopped `tools/tycho-vm/main.ty` compiling. `make corelib` builds `corelib/test/<pkg>/main.ty`; `make corelib-examples` builds `examples/corelib/**`; neither compiles anything under `tools/`. This lane compiles every entry point in the tree — `examples/`, `server/` and `tools/` — so it is the cheap consumer check |
+| a corelib change that ADDS, RENAMES or RETYPES a symbol | also `sh scripts/entrypoints.sh` | ~0.15s. **Neither corelib lane can redden for this.** A new symbol changes the compiler's global state, and that can break an unrelated **consumer** program: `9f601a6` changed only `corelib/`, was gated exactly as the row above says, and still shipped a red `make ci` — two extra `core:io` entries exposed a latent compiler bug that stopped `tools/tycho-vm/main.ty` compiling. `make corelib` builds `corelib/test/<pkg>/main.ty`; `make corelib-examples` builds `examples/corelib/**`; neither compiles anything under `tools/`. This lane compiles every entry point in the tree — `examples/`, `server/` and `tools/` — so it is the cheap consumer check |
 | a corelib `<pkg>_shim.c` | `make shim-check` | <1s. **`make corelib` cannot redden for it**: the real build appends the shim with no `-std`, so a missing feature-test macro compiles there and fails only here |
 | how a float is read or written as text | `make locale-check` | ~1.5s. **`make test` cannot redden for the compiler sites** — it runs in the `"C"` locale, and an `LC_ALL=` prefix is inert because a C program stays in `"C"` until something calls `setlocale`. This lane forces it with an `LD_PRELOAD` constructor |
 | `tools/tycho-ar/` · `-q/` · `-vm/` · `-kv/` · `-scheme/` | `make ar-check` · `q-check` · `vm-check` · `kv-check` · `scheme-check` | 1–4s each, and **each is the only lane that runs its tool** |

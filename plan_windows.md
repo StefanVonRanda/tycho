@@ -534,7 +534,7 @@ language surface. WSL2 stays a first-class supported path.
 > /dev/null), and tycho-fetch (mingw curl). Each needs a Windows-native test
 > variant in the CI leg.
 
-> Phase 6/7 harness evidence — 2026-08-07 (commit b115336, recorded here after
+> Phase 6/7 harness evidence — 2026-08-07 (commit 1ca7e80, recorded here after
 > the fact; the run itself was on a real Windows VM: ARM64 Windows 11 running
 > the x86-64 MSYS2/mingw toolchain under **Prism emulation**).
 >
@@ -568,7 +568,7 @@ language surface. WSL2 stays a first-class supported path.
 > (WinBoat/podman over KVM, MSYS2 + mingw-w64 gcc 16.1.0, gdb 17.2). Not the
 > emulated ARM64 box of 2026-08-07.
 >
-> THE GATE: `make ci` exit 0, from a CLEAN CHECKOUT at d24c53f with an empty
+> THE GATE: `make ci` exit 0, from a CLEAN CHECKOUT at c4994d6 with an empty
 > working tree, 114 skips each printing its reason. Nine sweeps were needed —
 > every one died one step further along than the last, which is what the plan
 > predicted the long tail would feel like. The order they fell in: `site` (no
@@ -646,7 +646,7 @@ language surface. WSL2 stays a first-class supported path.
 > it is ASan's own machinery failing, not a finding; the same program is
 > correct under no sanitizer, under UBSan alone, and under mingw gcc. Isolated
 > by building it four ways. So the channel/allocator paths -- exactly where
-> 44fcbf4's heap corruption lived -- have UBSan coverage only, and the bug
+> 07c3e4b's heap corruption lived -- have UBSan coverage only, and the bug
 > class that actually bit this port is still the one ASan would catch.
 > Also unproven: clang64 is not the shipping toolchain, so a fault specific to
 > mingw gcc's codegen would not appear here. Wiring this into `make ci` was
