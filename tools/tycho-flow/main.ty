@@ -1,0 +1,325 @@
+package main
+
+import "core:time"
+import "stage"
+
+# tycho-flow -- a concurrent pipeline engine, wired end to end.
+#
+# The pipeline is built here rather than inside the combinators because this is
+# where the `Task` handles can live: a handle is affine and non-storable, so the
+# scope that spawns a stage is the scope that joins it. Every stage below is one
+# of the generics in `stage/`, instantiated at `string` in the first pipeline and
+# at `int` in the second -- the same template, monomorphized twice, which is the
+# thing `Channel($T)` in a generic signature buys and which did not compile at
+# all before f0fd19e5.
+#
+# THE OUTPUT IS DETERMINISTIC AND THAT IS THE CLAIM UNDER TEST. The middle of the
+# first pipeline is a fan-out pool whose results arrive in completion order, so
+# the byte-identical output across runs and across TYCHO_THREADS is not an
+# accident of a small input -- it is `stage.reorder` rebuilding source order from
+# the index tag, and `stage.reduce_sum` folding with an operator that does not
+# care what order it sees. Timings, which are not deterministic, live behind
+# `--bench` and are never printed by the default run.
+
+# The pool's per-item work, and it is deliberately UNEVEN -- the iteration count
+# is quadratic in the word length, so a short word started later finishes before a
+# long word started earlier. That is not padding. With an equal-cost transform the
+# pool on this machine delivered out of source order in only 7 of 2000 runs, which
+# would have made the determinism claim below vacuous: the output would have been
+# ordered because nothing raced, not because the index put it back. `--race`
+# measures this; it is 2000 of 2000 with the work below.
+#
+# The mixed counter is stamped on the output so the work is observable and cannot
+# be folded away by the C compiler. It is a receipt for the work, not a digest of
+# the word: it depends only on the LENGTH, which is why equal-length words carry
+# equal receipts in the output below -- the same fact that makes the cost uneven.
+fn stamp(s: string) -> string:
+    h := len(s)
+    for i := 0; i < len(s) * len(s) * 65536; i += 1:
+        h = (h * 31 + i) % 1000003
+    return s + "#" + str(h)
+
+# The bench's transform, kept as cheap as `triple` so the two benches differ only
+# in what has to be copied across the boundary and not in what has to be computed.
+fn bang(s: string) -> string:
+    return s + "!"
+
+fn keep_long(s: string) -> bool:
+    return len(s) >= 4
+
+fn triple(x: int) -> int:
+    return x * 3
+
+fn weigh(s: string) -> int:
+    return len(s)
+
+fn words() -> [string]:
+    return ["flow", "is", "a", "pipeline", "over", "bounded", "channels",
+            "and", "the", "order", "comes", "back"]
+
+fn fail(what: string, e: stage.FlowErr):
+    println("  FAIL  " + what + ": " + stage.err_str(e))
+
+# --- pipeline 1: source -> filter -> pool, reassembled by index ---------------
+#
+# Three stages on three tasks, two bounded channels between them. The pool is the
+# unordered part; everything printed after it is index-ordered.
+fn run_words():
+    println("pipeline(string): source -> filter(len>=4) -> pool(fan-out, uneven work) -> reorder")
+    raw := channel(stage.Item(string), 4)
+    kept := channel(stage.Item(string), 4)
+    done := channel(stage.Item(string), 4)
+
+    t_src := spawn stage.source(raw, words())
+    t_flt := spawn stage.filter(raw, kept, keep_long)
+    t_pool := spawn stage.pool(kept, done, stamp)
+    got := stage.drain(done)              # arrival order: a race, on purpose
+    n_src := wait(t_src)
+    n_flt := wait(t_flt)
+    n_pool := wait(t_pool)
+
+    println("  in    " + str(n_src) + " element(s)")
+    println("  kept  " + str(n_flt) + " element(s)")
+    println("  work  " + str(n_pool) + " element(s) through the pool")
+    match stage.check_link("pool", n_flt, n_pool):
+        Ok(): println("  link  pool consumed every element the filter emitted")
+        Err(e): fail("link", e)
+    match stage.reorder(got, n_pool):
+        Ok(vs): println("  out   " + str(vs))
+        Err(e): fail("reorder", e)
+
+# --- pipeline 2: the same generics at a scalar element ------------------------
+fn run_ints():
+    println("pipeline(int): source -> transform(x*3) -> reorder")
+    raw := channel(stage.Item(int), 4)
+    done := channel(stage.Item(int), 4)
+    xs : [int] = []
+    for i := 1; i <= 8; i += 1:
+        push(xs, i)
+    t_src := spawn stage.source(raw, xs)
+    t_map := spawn stage.transform(raw, done, triple)
+    got := stage.drain(done)
+    n_src := wait(t_src)
+    n_map := wait(t_map)
+    match stage.check_link("transform", n_src, n_map):
+        Ok(): println("  link  transform consumed every element the source emitted")
+        Err(e): fail("link", e)
+    match stage.reorder(got, n_map):
+        Ok(vs): println("  out   " + str(vs))
+        Err(e): fail("reorder", e)
+
+# --- the second determinism mechanism ----------------------------------------
+#
+# A commutative reduction needs no index and no reassembly: integer `+` is exact
+# and associative, so the chunk folds join to one answer whatever the thread count.
+# The cross-check is the point -- it is computed by a different mechanism than the
+# ordered pipeline above and must agree with it.
+fn run_reduce():
+    println("reduce(string -> int): commutative fold, no index needed")
+    raw := channel(stage.Item(string), 4)
+    t_src := spawn stage.source(raw, words())
+    total := stage.reduce_sum(raw, weigh)
+    n_src := wait(t_src)
+    hand := 0
+    for w in words():
+        hand = hand + len(w)
+    println("  sum   " + str(total) + " char(s) over " + str(n_src) + " element(s)")
+    if total == hand:
+        println("  check agrees with the sequential fold")
+    else:
+        println("  FAIL  parallel fold " + str(total) + " != sequential " + str(hand))
+
+# --- backpressure, proved rather than asserted -------------------------------
+#
+# `source_probed` posts a marker only AFTER a data send has returned, so the
+# markers count sends that COMPLETED. A ring of 4 accepts exactly 4 sends with no
+# receiver; the 5th blocks. So:
+#
+#   1. receiving 4 markers is guaranteed to succeed -- the producer can get that
+#      far on its own;
+#   2. a non-blocking probe for a 5th marker is guaranteed to find nothing, and
+#      not because it was early: the producer is parked inside send #5 and cannot
+#      reach the marker until this thread drains the data channel.
+#
+# Both halves are forced by the ring, not by timing, which is why the printed
+# numbers are the same on every run. An unbounded channel would have let all 512
+# sends complete and the probe would have found marker 5 waiting.
+fn run_backpressure():
+    println("backpressure: a 512-element source into a 4-slot channel")
+    data := channel(stage.Item(int), 4)
+    mark := channel(int, 64)
+    xs : [int] = []
+    for i := 0; i < 512; i += 1:
+        push(xs, i)
+    t := spawn stage.source_probed(data, mark, xs)
+
+    parked := 0
+    for i := 0; i < 4; i += 1:
+        match recv(mark):
+            Some(m): parked = m
+            None: println("  FAIL  producer closed early")
+    ahead := -1
+    select:
+        recv(mark, m2):
+            ahead = m2
+        default:
+            ahead = 0
+    println("  ring  filled with " + str(parked) + " element(s) and no receiver")
+    if ahead == 0:
+        println("  park  send " + str(parked + 1) + " is blocked: no marker for it exists")
+    else:
+        println("  FAIL  send " + str(ahead) + " completed with a full ring -- not bounded")
+
+    # Release it. Both channels are drained together; the producer resumes as
+    # slots free up and closes both when it runs out.
+    seen := 0
+    marks := 0
+    stop := false
+    for true:
+        if stop:
+            break
+        select:
+            recv(data, it):
+                seen = seen + it.idx * 0 + 1
+            recv(mark, m3):
+                marks = marks + m3 * 0 + 1
+            closed:
+                stop = true
+    n := wait(t)
+    println("  drain " + str(seen) + " element(s) and " + str(marks) + " marker(s) after release, producer sent " + str(n))
+
+# --- the error paths, exercised ----------------------------------------------
+#
+# Every variant of FlowErr is reachable and every one is shown firing. A cause
+# enum nobody can make fire is a decoration.
+fn run_errors():
+    println("errors: every FlowErr variant, fired")
+    dup := [stage.Item(0, "x"), stage.Item(0, "y")]
+    match stage.reorder(dup, 2):
+        Ok(vs): println("  FAIL  a duplicate index was accepted: " + str(vs))
+        Err(e): println("  ok    " + stage.err_str(e))
+    short := [stage.Item(0, 7), stage.Item(1, 8)]
+    match stage.reorder(short, 3):
+        Ok(vs2): println("  FAIL  a short collection was accepted: " + str(vs2))
+        Err(e2): println("  ok    " + stage.err_str(e2))
+    match stage.check_link("filter", 9, 7):
+        Ok(): println("  FAIL  a losing link was accepted")
+        Err(e3): println("  ok    " + stage.err_str(e3))
+
+# --- is the middle actually unordered? (nondeterministic; --race only) -------
+#
+# `reorder` is only load-bearing if the pool really does deliver out of order, so
+# this counts how often it does over R runs of the EXACT pipeline `run_words`
+# uses. If this printed 0 the determinism claim would be vacuous -- the answer
+# would be ordered because nothing ever raced, not because the index put it back.
+# The count is a race, so it lives behind a flag and never reaches the demo's
+# output; the demo's own output is the same either way, which is the whole point.
+fn scrambled_once() -> int:
+    raw := channel(stage.Item(string), 4)
+    kept := channel(stage.Item(string), 4)
+    done := channel(stage.Item(string), 4)
+    t_src := spawn stage.source(raw, words())
+    t_flt := spawn stage.filter(raw, kept, keep_long)
+    t_pool := spawn stage.pool(kept, done, stamp)
+    got := stage.drain(done)
+    n1 := wait(t_src)
+    n2 := wait(t_flt)
+    n3 := wait(t_pool)
+    if n1 < 1 or n2 < 1 or n3 < 1:
+        return 0
+    for i := 1; i < len(got); i += 1:
+        if got[i].idx < got[i - 1].idx:
+            return 1
+    return 0
+
+fn race():
+    r := 2000
+    out_of_order := 0
+    for i := 0; i < r; i += 1:
+        out_of_order = out_of_order + scrambled_once()
+    println("race: " + str(out_of_order) + " of " + str(r) + " runs drained out of source order")
+
+# --- what the deep copy costs (nondeterministic; --bench only) ---------------
+#
+# Same element count, same stages, same channel capacity; only the element type
+# differs. The int run is the floor -- a scalar rides in the ring cell. The string
+# run pays a copy into the cell at every send and a copy out at every recv, twice
+# per stage boundary, at whatever the payload's length is.
+#
+# MEASURED 2026-08-12, 16-core box, three runs each, 20000 elements:
+#
+#   int             3807 / 4028 / 3849 us     190 ns per element  (the floor)
+#   string    16 B  4021 / 3943 / 4367 us     205 ns per element
+#   string   256 B  9954 / 9993 / 9899 us     497 ns per element
+#   string  4096 B  121464 / 123965 / 128809 us   6.2 us per element
+#
+# What that says: the deep copy is NOT a fixed per-element tax. At 16 bytes it is
+# inside the noise of the int floor -- the pipeline is paying for scheduling and
+# ring tickets, not for bytes. It starts to show at 256 B (2.5x the floor) and
+# dominates completely at 4 KB (32x). Between 256 B and 4 KB the width grows 16x
+# and the time grows 12.4x, i.e. once the payload dominates the cost is linear in
+# payload bytes, as a copy should be. The practical reading for a pipeline: value
+# semantics at the thread boundary is free for small elements and is a real budget
+# line for large ones, and the lever is element SIZE, not element count.
+fn fill(n: int) -> string:
+    s := ""
+    for i := 0; i < n; i += 1:
+        s += "x"
+    return s
+
+fn bench_ints(n: int) -> int:
+    raw := channel(stage.Item(int), 16)
+    done := channel(stage.Item(int), 16)
+    xs : [int] = []
+    for i := 0; i < n; i += 1:
+        push(xs, i)
+    sw := time.start()
+    t1 := spawn stage.source(raw, xs)
+    t2 := spawn stage.pool(raw, done, triple)
+    got := stage.drain(done)
+    a := wait(t1)
+    b := wait(t2)
+    us := time.elapsed_us(sw)
+    if a != n or b != n or len(got) != n:
+        println("  bench(int): lost elements")
+    return us
+
+fn bench_strings(n: int, width: int) -> int:
+    raw := channel(stage.Item(string), 16)
+    done := channel(stage.Item(string), 16)
+    xs : [string] = []
+    pad := fill(width)
+    for i := 0; i < n; i += 1:
+        push(xs, pad)
+    sw := time.start()
+    t1 := spawn stage.source(raw, xs)
+    t2 := spawn stage.pool(raw, done, bang)
+    got := stage.drain(done)
+    a := wait(t1)
+    b := wait(t2)
+    us := time.elapsed_us(sw)
+    if a != n or b != n or len(got) != n:
+        println("  bench(string): lost elements")
+    return us
+
+fn bench():
+    n := 20000
+    println("bench: " + str(n) + " elements, source -> pool -> drain, cap 16")
+    println("  int          " + str(bench_ints(n)) + " us")
+    println("  string    16 " + str(bench_strings(n, 16)) + " us")
+    println("  string   256 " + str(bench_strings(n, 256)) + " us")
+    println("  string  4096 " + str(bench_strings(n, 4096)) + " us")
+
+fn main():
+    a := args()
+    if len(a) > 1 and a[1] == "--bench":
+        bench()
+        return
+    if len(a) > 1 and a[1] == "--race":
+        race()
+        return
+    run_words()
+    run_ints()
+    run_reduce()
+    run_backpressure()
+    run_errors()

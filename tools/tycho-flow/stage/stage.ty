@@ -1,0 +1,203 @@
+package stage
+
+# Generic stage combinators over bounded channels.
+#
+# Every stage here is generic in its element type and is written to be `spawn`ed:
+# it takes its channels as parameters, loops until its input is closed+drained,
+# closes its output, and returns the count it moved. That shape is forced by the
+# language rather than chosen -- a `Channel(T)` cannot be returned, stored in a
+# container or captured (13-concurrency.md §23.1), and a `Task` handle is affine
+# and non-storable (§21), so a combinator cannot spawn on your behalf and hand
+# back a handle. The pipeline is therefore wired in the caller's scope, where the
+# handles live, and the stages are the things that run.
+#
+# DETERMINISM -- the whole reason this program exists. The fan-out pool below
+# emits in completion order, which is a race. Two mechanisms recover a fixed
+# answer, and this package offers exactly those two:
+#
+#   1. ORDERED REASSEMBLY BY INDEX. `source` tags each element with its position
+#      and every stage carries that tag through unchanged; `reorder` sorts by it
+#      at the end. The tag, not the arrival order, is what the output is built
+#      from, so the answer is identical for any number of workers.
+#   2. COMMUTATIVE REDUCTION. `reduce_sum` folds a per-element weight with integer
+#      `+`, which is associative and exact, so the reduction is identical for any
+#      thread count (§22 says this in so many words, and says a FLOAT reduction is
+#      NOT -- which is why the weight is an `int`).
+#
+# Nothing else is deterministic and nothing else is claimed to be. In particular
+# `drain` returns items in arrival order on purpose: it is the raw, racy result,
+# and `reorder` is the thing that makes it an answer.
+#
+# THE `fs := [f]` LINES IN `pool` AND `reduce_sum` ARE A COMPILER WORKAROUND, not
+# a style. A function value named directly inside a `parallel for` body is not
+# collected into the chunk's capture set, and the emitted C then references an
+# undeclared symbol -- `error: 'h_f' undeclared (first use in this function)` out
+# of `h___par0`. It reproduces with no generics anywhere:
+#
+#     fn viapar(ch: Channel(int), f: fn(int) -> int) -> int:
+#         acc := 0
+#         parallel for x in ch:
+#             acc = acc + f(x)          # h_f undeclared in the emitted chunk fn
+#         return acc
+#
+# A local (`g := f` then `g(x)`) fails the same way, and so does a struct field
+# (`op.f(x)` -> `h_op` undeclared), so the miss is the callee position of a call,
+# not the parameter. Indexing an array first is the one spelling that does get
+# captured, hence the one-element array. Remove it and this package stops
+# compiling; it is not dead weight.
+
+# The named cause of every failure this package can report. No sentinel counts,
+# no -1, no empty array standing in for an error.
+enum FlowErr:
+    # Reassembly was handed a different number of items than the stage that fed
+    # it said it emitted -- something was lost or double-counted in between.
+    Truncated(int, int)
+    # Two items claim the same slot, so the index set is not a permutation and
+    # there is no one ordering to reassemble into.
+    DuplicateIndex(int)
+    # Two adjacent stages disagree on how many elements crossed between them.
+    Dropped(string, int, int)
+
+fn err_str(e: FlowErr) -> string:
+    match e:
+        Truncated(want, got): return "truncated: expected " + str(want) + " item(s), collected " + str(got)
+        DuplicateIndex(i): return "duplicate index " + str(i) + ": the index set is not a permutation"
+        Dropped(where, out, into): return where + " dropped " + str(out - into) + ": " + str(out) + " sent, " + str(into) + " received"
+
+# An element and the position it had at the source. The index is what survives
+# the unordered middle of the pipeline; the value is what the work is done to.
+struct Item($T):
+    idx: int
+    val: $T
+
+# --- stages ------------------------------------------------------------------
+
+# Emit `xs` tagged 0..len(xs)-1 and close. `out` is bounded, so this blocks once
+# the ring is full and cannot run ahead of the pipeline.
+fn source(out: Channel(Item($T)), xs: [$T]) -> int:
+    n := 0
+    for x in xs:
+        send(out, Item(n, x))
+        n = n + 1
+    close(out)
+    return n
+
+# `source` with a witness. After each data send completes it posts the running
+# count on `mark`. A marker therefore cannot exist for a send that has not
+# returned, which is what makes the backpressure check in main a proof rather
+# than a timing guess: with a ring of `cap`, marker cap+1 is unreachable until
+# somebody drains `out`.
+fn source_probed(out: Channel(Item($T)), mark: Channel(int), xs: [$T]) -> int:
+    n := 0
+    for x in xs:
+        send(out, Item(n, x))
+        n = n + 1
+        send(mark, n)
+    close(out)
+    close(mark)
+    return n
+
+# One worker, order-preserving: a single receiver on a channel takes values in
+# send order (§23.1 FIFO for a single sender), so this stage's output order is
+# its input's. The index is carried anyway -- a stage does not get to assume it
+# is the last one.
+fn transform(inp: Channel(Item($T)), out: Channel(Item($T)), f: fn($T) -> $T) -> int:
+    n := 0
+    for true:
+        match recv(inp):
+            Some(it):
+                send(out, Item(it.idx, f(it.val)))
+                n = n + 1
+            None:
+                break
+    close(out)
+    return n
+
+# Drop what `keep` rejects, forwarding survivors WITH THEIR ORIGINAL INDEX. The
+# index space therefore acquires holes, which is why `reorder` sorts by the tag
+# instead of using it as a slot: after a filter the tags are no longer 0..n-1.
+fn filter(inp: Channel(Item($T)), out: Channel(Item($T)), keep: fn($T) -> bool) -> int:
+    n := 0
+    for true:
+        match recv(inp):
+            Some(it):
+                if keep(it.val):
+                    send(out, it)
+                    n = n + 1
+            None:
+                break
+    close(out)
+    return n
+
+# Fan-out / fan-in. `parallel for it in inp:` is K = min(ncpu(), N) chunks all
+# pulling from the one queue -- the channel capture is a scalar handle, not a
+# per-chunk copy (§22), which is what makes this a pool rather than K pipelines.
+# Each item is taken by exactly one chunk, and the results go out on `out` in
+# whatever order the workers finish: UNORDERED BY CONSTRUCTION. `n` is a
+# reduction accumulator, the only outer write a parallel body may do.
+fn pool(inp: Channel(Item($T)), out: Channel(Item($T)), f: fn($T) -> $T) -> int:
+    fs := [f]                       # see the header: fn values need the array
+    n := 0
+    parallel for it in inp:
+        send(out, Item(it.idx, fs[0](it.val)))
+        n = n + 1
+    close(out)
+    return n
+
+# The commutative reduction: sum of a per-element weight, folded with integer `+`
+# at the in-order join. Identical for any thread count, and it never needs the
+# index -- which is the point of offering it beside the ordered path.
+fn reduce_sum(inp: Channel(Item($T)), w: fn($T) -> int) -> int:
+    ws := [w]                       # see the header: fn values need the array
+    acc := 0
+    parallel for it in inp:
+        acc = acc + ws[0](it.val)
+    return acc
+
+# --- reassembly --------------------------------------------------------------
+
+# Take everything the pipeline produced, in arrival order. Racy on purpose.
+fn drain(inp: Channel(Item($T))) -> [Item($T)]:
+    got : [Item($T)] = []
+    for true:
+        match recv(inp):
+            Some(it):
+                push(got, it)
+            None:
+                break
+    return got
+
+# Arrival order in, source order out. `expect` is the count the feeding stage
+# reported, so a lost item is an error here and not a shorter answer.
+#
+# Insertion sort, and the scan of the placed prefix is deliberately NOT cut short
+# at the insertion point: it runs to the end so a duplicate index anywhere is
+# seen. O(n^2) on a pipeline whose per-item work dominates; if that ever stops
+# being true this is the line to change, not the interface.
+fn reorder(items: [Item($T)], expect: int) -> Result([$T], FlowErr):
+    if len(items) != expect:
+        return Err(Truncated(expect, len(items)))
+    ord : [Item($T)] = []
+    for it in items:
+        at := len(ord)
+        for j := 0; j < len(ord); j += 1:
+            if ord[j].idx == it.idx:
+                return Err(DuplicateIndex(it.idx))
+            if ord[j].idx > it.idx and at == len(ord):
+                at = j
+        push(ord, it)
+        for k := len(ord) - 1; k > at; k -= 1:
+            tmp := ord[k]
+            ord[k] = ord[k - 1]
+            ord[k - 1] = tmp
+    out : [$T] = []
+    for it in ord:
+        push(out, it.val)
+    return Ok(out)
+
+# Two adjacent stages' own counts must agree. Cheap, and it is the only thing
+# that would notice a stage closing its output early.
+fn check_link(where: string, sent: int, got: int) -> Result(void, FlowErr):
+    if sent != got:
+        return Err(Dropped(where, sent, got))
+    return Ok()
