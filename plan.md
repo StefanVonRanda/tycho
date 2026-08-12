@@ -282,15 +282,78 @@ site is either implemented or written down as a refusal with its cost.
   **Nine rotted refs were flagged, not fixed**, because repairing them means
   rewriting a prose claim rather than a coordinate — see Phase 6.
 
-- [ ] **Phase 5 — `bench/prongB/RESULTS.md` writes output checksums that read
+- [x] **Phase 5 — `bench/prongB/RESULTS.md` writes output checksums that read
       as commit hashes** *(discovered by Phase 3, deliberately not guessed at)*
 
-  `411c91a9` and `67f39fca` appear as bare parenthesised 8-hex tokens meaning
-  "byte-identical output"; neither resolves to any object. A reader cannot tell
-  them from a short commit hash, and the new gate cannot check them either way.
-  Label them at the source (`crc=…` or `out-sha=…`) so the ambiguity is gone.
-  Not done here: it edits a benchmark record whose provenance belongs to
-  whoever measured it.
+  The two 8-hex tokens (now `md5=411c91a9` and `md5=67f39fca`) appeared as bare
+  parenthesised 8-hex tokens meaning "byte-identical output"; neither resolves to
+  any object. A reader cannot tell them from a short commit hash, and the new
+  gate cannot check them either way. Label them at the source (`crc=…` or
+  `out-sha=…`) so the ambiguity is gone. Not done here: it edits a benchmark
+  record whose provenance belongs to whoever measured it.
+
+  **Done.** Fixed at the true source, which is not `RESULTS.md`: that file is
+  hand-maintained prose, and the tokens are pasted from the runner's stdout.
+  `bench/prongB/run.sh` computes them at two sites — `run_one` and the
+  json-workload runner — both `md5sum … | cut -c1-8`. Both now emit
+  `md5=<8hex>`, so the label is produced where the value is, and the next paste
+  carries it automatically. `RESULTS.md`'s two occurrences were updated to match
+  what the runner now prints.
+
+  Label shape is the house one, not invented: `CONTRIBUTING.md:88-91` already
+  says "do not backtick a bare digest… give it a label (`sha=cbf43926`)". `md5=`
+  names the algorithm actually used.
+
+  Scope checked rather than assumed. `RESULTS.md` holds two other checksum-ish
+  tokens and BOTH correctly stay: `26214400` and `262547666730` are printed by
+  the benchmark programs themselves, not by the runner —
+  `bench/prongB/maptree.ty:34` computes `200 * 2 * 65536 = 26214400` — and being
+  pure decimal they can never read as a commit hash, since `hashy()` in
+  `scripts/check_citations.py@hashy` requires an `a-f` letter.
+
+  **Widening: still NOT possible, and the blocker is no longer this file.**
+  Measured, not guessed, by temporarily widening `HASH_TICK` to `{7,12}` and
+  running the gate (then reverting — the gate is unchanged by this phase, as the
+  brief required). The probe was run three times, and the count fell each time:
+
+  1. **Before this phase's edits: 3 reddened.** Two were `plan.md:288` — this
+     phase's own description, which quoted the raw prongB tokens in backticks —
+     and the third was the gate's own comment. The tokens in
+     `bench/prongB/RESULTS.md` were never among them: they are not backticked,
+     so `HASH_TICK` never saw them.
+  2. **After relabelling and rewriting this phase's own prose: 1 reddens.**
+     `scripts/check_citations.py:95` — **the gate's own comment**, which cites
+     crc=cbf43926 as the example digest that forced the width pin. A widened
+     gate fails on its own docstring.
+
+  So after this phase one blocker remains, and it is self-referential. Filed as
+  Phase 17 rather than absorbed, because it edits the gate.
+
+  **The premise this phase inherited was wrong, and it matters for Phase 17.**
+  The claim was that width 7 was pinned to dodge these prongB tokens. It was not:
+  they are not backticked at all, so `HASH_TICK` never saw them. The gate's own
+  comment names the real forcing case — a backticked CRC32, crc=cbf43926, from
+  `corelib`'s worked example. Fixing prongB was still right (a reader genuinely
+  could not tell those tokens from a hash), but it was never what pinned the gate.
+
+  Gates: `sh bench/guard.sh` ok (tycho beats C on tree workloads; elision live),
+  `make check-links` ok. `sh -n bench/prongB/run.sh` clean, and the emitted form
+  was executed rather than assumed: `md5=b1946ac9`. The full prongB sweep was NOT
+  run — it needs Go, Rust and Koka toolchains and measures nothing this change
+  touches.
+
+- [ ] **Phase 17 — the commit-hash gate cannot widen while its own comment
+      quotes a bare digest** *(discovered by Phase 5, not absorbed: it edits the
+      gate, which Phase 5 was told not to do)*
+
+  With Phase 5 done, widening `HASH_TICK` from `{7}` to `{7,12}` reddens on
+  exactly one remaining token, and it is inside the gate itself:
+  `scripts/check_citations.py:95` quotes crc=cbf43926 in backticks while
+  explaining why bare digests must not be backticked. Relabel it to the form
+  `CONTRIBUTING.md:88-91` prescribes, then decide whether to widen — the payoff
+  is that 8-to-12 char backticked hashes stop being unchecked forever.
+  Verify by widening, running `python3 scripts/check_citations.py`, and
+  confirming it is green before keeping the wider form.
 
 - [ ] **Phase 6 — rotted citations whose repair is a prose rewrite, not a
       re-point** *(discovered by Phase 4, out of its scope, not absorbed)*

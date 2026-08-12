@@ -387,7 +387,8 @@ The first two workloads are tree-shaped (pointer-structured). This one is a
 **flat-array pipeline**: build one `[N]int` (N = 100 000), then 200 times build
 a fresh mapped array of N ints, sum it, and discard — checksumming. Pure
 allocate-and-discard of *contiguous* data, no pointer structure.
-`arr_pipeline.{ty,c,rs,go}`, `arrpipeline.kk`. Byte-identical output (411c91a9):
+`arr_pipeline.{ty,c,rs,go}`, `arrpipeline.kk`. Byte-identical output
+(md5=411c91a9):
 
 | language               | peak RSS | wall time |
 | ---------------------- | -------: | --------: |
@@ -419,7 +420,8 @@ never the GC tier (Go) and never the refcount-list tier (Koka on arrays).
 
 Build M = 4000 strings, each K = 256 digit-chars, by concatenation; hash each
 (sum of byte codes); checksum. Stresses string *building* and per-character
-work. `string_pipe.{ty,c,rs,go}`, `stringpipe.kk`. Byte-identical (67f39fca):
+work. `string_pipe.{ty,c,rs,go}`, `stringpipe.kk`. Byte-identical
+(md5=67f39fca):
 
 | language                    | peak RSS | wall time |
 | --------------------------- | -------: | --------: |

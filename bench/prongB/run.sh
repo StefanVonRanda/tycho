@@ -32,12 +32,15 @@ build_tycho() {                                # <src.ty> <out-binary> — fail-
 }
 REC="$T/records"; : > "$REC"                   # "<workload> <lang> <rssMB> <ms>" rows, for the summary scorecard
 WL="-"                                         # current workload slug (set by workload()/json_workload())
+# The `md5=` label on the digest below is load-bearing, not decoration: a bare
+# 8-hex token is indistinguishable from a short commit hash once it is pasted
+# into RESULTS.md, and CONTRIBUTING.md:88-91 requires the label for that reason.
 run_one() {                                   # <label> <binary>
     lbl="$1"; bin="$2"
     [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }
     "$T/peakrss" "$bin" > "$T/out" 2> "$T/m"
     read rss ms < "$T/m"; kb="$(to_kb "$rss")"
-    h="$(md5sum < "$T/out" | cut -c1-8)"
+    h="md5=$(md5sum < "$T/out" | cut -c1-8)"
     [ -z "$ref" ] && ref="$h"
     [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
     printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
@@ -72,7 +75,7 @@ json_run() {                                  # <label> <binary> <stdin|arg>
     if [ "$m" = stdin ]; then "$T/peakrss" "$bin" < "$T/json_in" > "$T/out" 2> "$T/m"
     else                     "$T/peakrss" "$bin" "$T/json_in"   > "$T/out" 2> "$T/m"; fi
     read rss ms < "$T/m"; kb="$(to_kb "$rss")"
-    h="$(md5sum < "$T/out" | cut -c1-8)"
+    h="md5=$(md5sum < "$T/out" | cut -c1-8)"
     [ -z "$ref" ] && ref="$h"
     [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
     printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
