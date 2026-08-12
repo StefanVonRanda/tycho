@@ -212,6 +212,97 @@ fn run_errors():
         Ok(): println("  FAIL  a losing link was accepted")
         Err(e3): println("  ok    " + stage.err_str(e3))
 
+# --- a fallible stage, and cancellation ---------------------------------------
+#
+# 256 elements into a 4-slot ring; the step refuses element 8 by name. The
+# consumer closes `done` on that first error and keeps draining; the source sees
+# the close before its next send and stops. What is DETERMINISTIC here is the
+# error (one worker, so the first error out is the lowest failing index) and the
+# fact that the source stopped short. How far it got is a race -- it is bounded
+# by the rings, never printed, and measured under `--cancel` instead.
+fn upto(n: int) -> [int]:
+    xs : [int] = []
+    for i := 0; i < n; i += 1:
+        push(xs, i)
+    return xs
+
+fn small_only(x: int) -> Result(int, string):
+    if x == 8:
+        return Err("value 8 is outside the range this step accepts (0..7)")
+    return Ok(x * 3)
+
+fn never_fails(x: int) -> Result(int, string):
+    return Ok(x * 3)
+
+fn run_cancel():
+    n := 256
+    println("cancel(int): source -> try(step refuses element 8) -> guard closes done")
+    xs := upto(n)
+    raw := channel(stage.Item(int), 4)
+    res := channel(Result(stage.Item(int), stage.FlowErr), 4)
+    done := channel(int, 1)
+    t_src := spawn stage.source_cancellable(raw, done, xs)
+    t_chk := spawn stage.try_transform(raw, res, "range", small_only)
+    outcome := stage.guard(res, done)
+    n_src := wait(t_src)
+    n_chk := wait(t_chk)
+    match outcome:
+        Ok(items): println("  FAIL  the refused element was accepted (" + str(len(items)) + " item(s) collected)")
+        Err(e): println("  err   " + stage.err_str(e))
+    match stage.check_cancelled("source", n_src, n):
+        Ok(): println("  stop  the source produced fewer than " + str(n) + " element(s): cancellation reached the head of the pipeline")
+        Err(e2): fail("cancel", e2)
+    # The lifecycle claim, printed rather than assumed: both handles were joined
+    # -- `wait` above is the only way past this line -- and each stage closed its
+    # own output, which is why `guard` and the drains terminated at all.
+    if n_chk == n_src and n_src > 8:
+        println("  join  both stages returned; the checker saw every element the source sent")
+    else:
+        println("  FAIL  checker saw " + str(n_chk) + " of the source's " + str(n_src) + " element(s)")
+
+# --- how far did the source get? (nondeterministic; --cancel only) ------------
+#
+# The demo above can only say "fewer than 256", because the exact count is a
+# race. This measures it, and the control beside it is the point: the SAME
+# pipeline with a step that never fails must produce all 256, or "it stopped
+# early" is not evidence of cancellation -- it is evidence of a broken source.
+fn produced_with(f: fn(int) -> Result(int, string), n: int) -> int:
+    xs := upto(n)
+    raw := channel(stage.Item(int), 4)
+    res := channel(Result(stage.Item(int), stage.FlowErr), 4)
+    done := channel(int, 1)
+    t_src := spawn stage.source_cancellable(raw, done, xs)
+    t_chk := spawn stage.try_transform(raw, res, "range", f)
+    outcome := stage.guard(res, done)
+    made := wait(t_src)
+    got := wait(t_chk)
+    if got != made:
+        println("  FAIL  the checker lost elements")
+    match outcome:
+        Ok(items): return made
+        Err(e): return made
+    return made
+
+fn cancels(r: int):
+    n := 256
+    lo := n + 1
+    hi := -1
+    for i := 0; i < r; i += 1:
+        m := produced_with(small_only, n)
+        if m < lo:
+            lo = m
+        if m > hi:
+            hi = m
+    println("cancel: produced " + str(lo) + " to " + str(hi) + " of " + str(n) + " over " + str(r) + " runs, refusing element 8")
+    ctl := n + 1
+    for i := 0; i < r; i += 1:
+        m2 := produced_with(never_fails, n)
+        if m2 != n:
+            ctl = m2
+    if ctl == n + 1:
+        ctl = n
+    println("control: produced " + str(ctl) + " of " + str(n) + " on every one of " + str(r) + " runs with a step that never fails")
+
 # --- is the middle actually unordered? (nondeterministic; --race only) -------
 #
 # `reorder` is only load-bearing if the pool really does deliver out of order, so
@@ -328,8 +419,18 @@ fn main():
             r = strings.parse_int(a[2])
         race(r)
         return
+    if len(a) > 1 and a[1] == "--cancel":
+        # `--cancel [N]`: how far the source got before the cancellation landed,
+        # over N runs, plus the never-fails control. Both are races and neither
+        # reaches the demo's output.
+        r := 25
+        if len(a) > 2 and strings.parse_int(a[2]) > 0:
+            r = strings.parse_int(a[2])
+        cancels(r)
+        return
     run_words()
     run_ints()
     run_reduce()
     run_backpressure()
+    run_cancel()
     run_errors()

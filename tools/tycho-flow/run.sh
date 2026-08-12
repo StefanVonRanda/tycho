@@ -55,6 +55,17 @@
 #       first outing and that race was NOT in this program -- it was tychoc's
 #       codegen for string literals, fixed on 2026-08-12. Nothing is tolerated
 #       now: any WARNING at all fails the lane.
+#   [6] CANCELLATION ACTUALLY CANCELS. The demo's transcript is byte-identical
+#       whether the first error stopped upstream production or merely got
+#       reported at the end, so the golden is structurally blind to the whole
+#       feature. `--cancel 25` prints how far the source got over 25 runs: it
+#       must be under 64 of 256 (the cancellation arrived), at least 9 (it did
+#       not arrive before the element that raises the error), and the same
+#       pipeline with a step that never fails must produce all 256 on every run
+#       -- without that control, "stopped early" would describe a broken source
+#       just as well. The counts are races and never reach the golden; the
+#       demo's four deterministic cancellation lines are asserted against
+#       literals here, like backpressure and for the same reason.
 #
 # WHAT IT DELIBERATELY DOES NOT ASSERT
 #   Timings. `--bench` measures the deep-copy cost at the thread boundary and
@@ -243,7 +254,30 @@ fn main() -> Result(void, string):
         match stage.check_link("filter", 9, 7):
             Ok(): return Err("check_link ACCEPTED a link that lost elements")
             Err(e): return Err(stage.err_str(e))
+    if a[1] == "Failed":
+        # The owner of this variant is the fallible stage, so the probe runs one:
+        # a real source, a real try_transform, a real guard closing `done`.
+        raw := channel(stage.Item(int), 4)
+        res := channel(Result(stage.Item(int), stage.FlowErr), 4)
+        done := channel(int, 1)
+        t1 := spawn stage.source_cancellable(raw, done, [5, 8, 5])
+        t2 := spawn stage.try_transform(raw, res, "range", refuse8)
+        outcome := stage.guard(res, done)
+        n1 := wait(t1)
+        n2 := wait(t2)
+        match outcome:
+            Ok(items): return Err("try_transform ACCEPTED the element its step refused")
+            Err(e): return Err(stage.err_str(e))
+    if a[1] == "Cancelled":
+        match stage.check_cancelled("source", 256, 256):
+            Ok(): return Err("check_cancelled ACCEPTED a source that produced its whole input")
+            Err(e): return Err(stage.err_str(e))
     return Err("unknown variant " + a[1])
+
+fn refuse8(x: int) -> Result(int, string):
+    if x == 8:
+        return Err("value 8 is outside the range this step accepts (0..7)")
+    return Ok(x)
 EOF
 if ! "$TYCHOC" "$P/probe.ty" -o "$T/probe" >"$T/probe.log" 2>&1; then
     bad "probe: tychoc could not build the FlowErr probe"
@@ -266,10 +300,12 @@ else
     errcase Truncated      'truncated: expected 3 item(s), collected 2'
     errcase DuplicateIndex 'duplicate index 0: the index set is not a permutation'
     errcase Dropped        'filter dropped 2: 9 sent, 7 received'
+    errcase Failed         'range failed at index 1: value 8 is outside the range this step accepts (0..7)'
+    errcase Cancelled      'source ignored the cancellation: produced 256 of 256'
 fi
 
 # The coverage floor: the enum is READ, not remembered.
-COVERED='Truncated DuplicateIndex Dropped'
+COVERED='Truncated DuplicateIndex Dropped Failed Cancelled'
 found=0
 for v in $(awk '
         $0 == "enum FlowErr:" { on = 1; next }
@@ -282,7 +318,51 @@ for v in $(awk '
     for c in $COVERED; do [ "$v" = "$c" ] && hit=1; done
     [ "$hit" -eq 1 ] || bad "FlowErr variant $v has no leg in this runner -- it is UNGATED"
 done
-[ "$found" -eq 3 ] || bad "found $found FlowErr variant(s) in stage.ty, expected 3 -- the scan is broken and [4]'s floor asserts nothing"
+[ "$found" -eq 5 ] || bad "found $found FlowErr variant(s) in stage.ty, expected 5 -- the scan is broken and [4]'s floor asserts nothing"
+
+# ---------------------------------------------------------------------------
+# [6] cancellation: the pipeline must NOT process everything
+#
+# The demo can only print "fewer than 256", because how far the source got
+# before the cancellation landed is a race. This measures it, and both bounds
+# matter:
+#
+#   - the ceiling says the cancellation ARRIVED. A source that ran to 256 and a
+#     consumer that reported an error anyway is the failure this leg exists for,
+#     and no golden can see it: the demo's transcript is identical either way.
+#   - the floor says it did not arrive too early -- element 8 must have been
+#     produced at all, or the error being reported is not the one the step
+#     raised.
+#   - the CONTROL is what makes the ceiling evidence. The same pipeline with a
+#     step that never fails must produce all 256 on every run; without that, "it
+#     stopped early" would equally describe a source that is simply broken.
+#
+# The bound is 64, not the ~20 measured here (14..19 over 25 runs on this box):
+# what is in flight when the close lands is a ring depth plus a scheduling
+# delay, and pinning it tight would make the lane a coin toss on a slower
+# machine. 64 is still a quarter of the source.
+# ---------------------------------------------------------------------------
+if $TO "$FLOW" --cancel 25 > "$T/cx.out" 2> "$T/cx.err"; then
+    CLO=$(sed -n 's/^cancel: produced \([0-9][0-9]*\) to [0-9][0-9]* of 256 over 25 runs.*$/\1/p' "$T/cx.out")
+    CHI=$(sed -n 's/^cancel: produced [0-9][0-9]* to \([0-9][0-9]*\) of 256 over 25 runs.*$/\1/p' "$T/cx.out")
+    CTL=$(sed -n 's/^control: produced \([0-9][0-9]*\) of 256 on every one of 25 runs.*$/\1/p' "$T/cx.out")
+    if [ -z "$CLO" ] || [ -z "$CHI" ] || [ -z "$CTL" ]; then
+        bad "cancel: --cancel printed no counts this runner could read"; sed 's/^/      /' "$T/cx.out"
+    else
+        [ "$CHI" -lt 64 ] || bad "cancel: the source produced up to $CHI of 256 elements -- the cancellation did not stop upstream production"
+        [ "$CLO" -ge 9 ] || bad "cancel: the source produced only $CLO element(s), too few to have reached the element the step refuses"
+        [ "$CTL" -eq 256 ] || bad "cancel: the never-fails control produced $CTL of 256 -- 'it stopped early' is not evidence of cancellation if the source stops early anyway"
+    fi
+else
+    bad "cancel: --cancel 25 exited $?"; sed 's/^/      /' "$T/cx.err"
+fi
+# And the demo's own cancellation lines, against literals here rather than the
+# golden -- same reason as backpressure: RECORD=1 must not be able to bless a
+# cancellation that stopped cancelling.
+bp 'cancel(int): source -> try(step refuses element 8) -> guard closes done'
+bp '  err   range failed at index 8: value 8 is outside the range this step accepts (0..7)'
+bp '  stop  the source produced fewer than 256 element(s): cancellation reached the head of the pipeline'
+bp '  join  both stages returned; the checker saw every element the source sent'
 
 # ---------------------------------------------------------------------------
 # [5] TSan
@@ -362,7 +442,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-flow: green (8 default runs plus TYCHO_THREADS=1 and 2 all byte-identical; the pool drained out of source order on essentially every one of 200 runs and on 0 of 25 at one thread; the 4-slot ring parked send 5 with no marker for it; $found FlowErr variants each exit non-zero with their own whole message and an empty stdout; TSan over the demo and 15 more pipelines reported no race at all; transcript == golden)"
+    echo "tycho-flow: green (8 default runs plus TYCHO_THREADS=1 and 2 all byte-identical; the pool drained out of source order on essentially every one of 200 runs and on 0 of 25 at one thread; the 4-slot ring parked send 5 with no marker for it; a cancelled pipeline produced $CLO..$CHI of 256 while the never-fails control produced $CTL; $found FlowErr variants each exit non-zero with their own whole message and an empty stdout; TSan over the demo and 15 more pipelines reported no race at all; transcript == golden)"
 else
     echo "tycho-flow: FAIL"; exit 1
 fi

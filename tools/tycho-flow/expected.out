@@ -15,6 +15,10 @@ backpressure: a 512-element source into a 4-slot channel
   ring  filled with 4 element(s) and no receiver
   park  send 5 is blocked: no marker for it exists
   drain 512 element(s) and 508 marker(s) after release, producer sent 512
+cancel(int): source -> try(step refuses element 8) -> guard closes done
+  err   range failed at index 8: value 8 is outside the range this step accepts (0..7)
+  stop  the source produced fewer than 256 element(s): cancellation reached the head of the pipeline
+  join  both stages returned; the checker saw every element the source sent
 errors: every FlowErr variant, fired
   ok    duplicate index 0: the index set is not a permutation
   ok    truncated: expected 3 item(s), collected 2
@@ -25,3 +29,7 @@ truncated: expected 3 item(s), collected 2
 duplicate index 0: the index set is not a permutation
 === err Dropped (via the stage API)
 filter dropped 2: 9 sent, 7 received
+=== err Failed (via the stage API)
+range failed at index 1: value 8 is outside the range this step accepts (0..7)
+=== err Cancelled (via the stage API)
+source ignored the cancellation: produced 256 of 256

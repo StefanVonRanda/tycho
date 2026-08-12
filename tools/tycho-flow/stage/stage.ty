@@ -57,12 +57,20 @@ enum FlowErr:
     DuplicateIndex(int)
     # Two adjacent stages disagree on how many elements crossed between them.
     Dropped(string, int, int)
+    # A fallible step refused one element: the stage that ran it, the source
+    # index of the element, and the cause the step itself named.
+    Failed(string, int, string)
+    # A pipeline was cancelled and produced its whole source anyway -- the
+    # cancellation was reported but never took effect upstream.
+    Cancelled(string, int, int)
 
 fn err_str(e: FlowErr) -> string:
     match e:
         Truncated(want, got): return "truncated: expected " + str(want) + " item(s), collected " + str(got)
         DuplicateIndex(i): return "duplicate index " + str(i) + ": the index set is not a permutation"
         Dropped(where, out, into): return where + " dropped " + str(out - into) + ": " + str(out) + " sent, " + str(into) + " received"
+        Failed(where, at, why): return where + " failed at index " + str(at) + ": " + why
+        Cancelled(where, made, all): return where + " ignored the cancellation: produced " + str(made) + " of " + str(all)
 
 # An element and the position it had at the source. The index is what survives
 # the unordered middle of the pipeline; the value is what the work is done to.
@@ -153,6 +161,126 @@ fn reduce_sum(inp: Channel(Item($T)), w: fn($T) -> int) -> int:
     parallel for it in inp:
         acc = acc + ws[0](it.val)
     return acc
+
+# --- fallible stages, and cancellation ---------------------------------------
+#
+# THE CHANNEL OF RESULTS COMPILES, which was not a given: `Channel(Result($T,
+# $E))` puts TWO type parameters through the machinery that f0fd19e5 fixed for
+# one, and `try_transform` below carries a third instantiation, `Channel(Result(
+# Item($T), FlowErr))` -- a generic aggregate applied to its own parameter,
+# inside a builtin generic enum, inside a channel. All three build and run.
+# `Item(Result($T, $E))` is the one shape that does NOT exist: that is the
+# 05-generics.md §7.3 partial-mention guard, which refuses a type argument that
+# only partly mentions a parameter. The result therefore wraps the item, never
+# the other way round -- an ordering forced by the type system, not chosen.
+#
+# CANCELLATION IS A CLOSE, NOT A FLAG AND NOT A VALUE.
+#
+#   - A shared flag is unavailable by construction: `send` deep-copies and a
+#     `parallel for` capture is a copy, so there is no cell two tasks can both
+#     see. Value semantics removes the usual mechanism outright.
+#   - A VALUE on a done-channel would be wrong even where it fits: it is
+#     delivered to exactly ONE receiver (§23.1), so with several stages
+#     watching, the first to look consumes the only notice and the rest never
+#     stop.
+#   - `close(done)` is the broadcast. Every `select` that lists a closed and
+#     drained channel takes its `closed:` arm, every time it looks, forever
+#     after -- which is what a cancellation has to be: level-triggered, not a
+#     message that can be missed or stolen.
+#
+# The cost of that choice is that closing twice ABORTS the process (§23.1), so
+# exactly one party may close: `guard`, the consumer. Nothing ever sends on
+# `done`, and the `recv` arm below exists only because a `select` needs a
+# channel to watch.
+#
+# NOTHING LEAKS AND NOTHING DEADLOCKS, and neither is an accident:
+#
+#   - No task is abandoned, because no combinator can abandon one. A `Task` is
+#     affine and non-storable, so the handle lives in the scope that spawned it
+#     and that scope must `wait` it; the counts those `wait`s return are the
+#     evidence, and main prints them.
+#   - The deadlock this design HAS to avoid is a producer parked in `send` on a
+#     full ring while the consumer has stopped receiving. So `guard` never stops
+#     receiving: it records the first error, closes `done`, and keeps draining
+#     to `None`. Cancellation stops PRODUCTION at the head of the pipeline and
+#     lets the few elements already in flight fall out of the tail. A consumer
+#     that returned early instead would hang the source on a ring of 4 with 256
+#     elements behind it.
+
+# Non-blocking, and level-triggered: true once `done` is closed and true on
+# every later call. The `recv` arm is unreachable by design -- see the header.
+fn cancelled(done: Channel(int)) -> bool:
+    stop := false
+    select:
+        recv(done, v):
+            stop = v == v            # unreachable: nobody sends on `done`
+        default:
+            stop = false
+        closed:
+            stop = true
+    return stop
+
+# `source` that asks, before every send, whether anyone still wants the answer.
+# The check is before the send and not after, so the element that would have
+# been produced next is never produced at all.
+fn source_cancellable(out: Channel(Item($T)), done: Channel(int), xs: [$T]) -> int:
+    n := 0
+    for x in xs:
+        if cancelled(done):
+            break
+        send(out, Item(n, x))
+        n = n + 1
+    close(out)
+    return n
+
+# A FALLIBLE STAGE. `f` returns `Result($T, string)` -- the step names its own
+# cause and this stage attributes it, so the error that comes out carries the
+# stage, the source index and the reason. One worker, so `out` is in input order
+# and the FIRST error out is the lowest failing index: the demo's cancellation
+# point is therefore deterministic even though how much the source got through
+# before stopping is not.
+fn try_transform(inp: Channel(Item($T)), out: Channel(Result(Item($T), FlowErr)), where: string, f: fn($T) -> Result($T, string)) -> int:
+    n := 0
+    for true:
+        match recv(inp):
+            Some(it):
+                match f(it.val):
+                    Ok(v): send(out, Ok(Item(it.idx, v)))
+                    Err(why): send(out, Err(Failed(where, it.idx, why)))
+                n = n + 1
+            None:
+                break
+    close(out)
+    return n
+
+# The consumer half, and the ONLY party that closes `done`. It drains to the end
+# whatever happens -- see the header on why stopping early is the deadlock.
+fn guard(inp: Channel(Result(Item($T), FlowErr)), done: Channel(int)) -> Result([Item($T)], FlowErr):
+    got : [Item($T)] = []
+    first : [FlowErr] = []            # 0 or 1: the first error, kept to return
+    for true:
+        match recv(inp):
+            Some(r):
+                match r:
+                    Ok(it):
+                        push(got, it)
+                    Err(e):
+                        if len(first) == 0:
+                            push(first, e)
+                            close(done)
+            None:
+                break
+    if len(first) > 0:
+        return Err(first[0])
+    return Ok(got)
+
+# After a cancelled run: production must have STOPPED, not merely been reported.
+# A pipeline that drained its whole source and called that a cancellation is
+# exactly what `Cancelled` exists to name.
+fn check_cancelled(where: string, made: int, all: int) -> Result(void, FlowErr):
+    if made >= all:
+        return Err(Cancelled(where, made, all))
+    return Ok()
 
 # --- reassembly --------------------------------------------------------------
 
