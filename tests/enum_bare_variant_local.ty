@@ -1,0 +1,17 @@
+# A variant of a LOCAL enum stays spellable BARE, in a match arm and after `is`.
+# This is the regression the FRICTION #26 fix could have caused: both lookups now
+# fall through to src/tychoc.c@die_not_variant, which must never be reached here.
+enum Fetch:
+    Miss
+    Hit(int)
+
+fn label(f: Fetch) -> string:
+    match f:
+        Miss: return "miss"
+        Hit(n): return "hit " + str(n)
+
+fn main():
+    println(label(Miss))
+    println(label(Hit(7)))
+    println(str(Miss is Miss))
+    println(str(Hit(7) is Miss))

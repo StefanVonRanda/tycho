@@ -1,6 +1,6 @@
 # `to_char(n)`: the int -> char direction, and `'\xNN'`: the byte written in hex.
 #
-# WHY to_char EXISTS. `chr(n)` (src/tychoc.c:4742) already turns an int into a
+# WHY to_char EXISTS. `chr(n)` (src/tychoc.c:4764) already turns an int into a
 # byte, but it returns that byte as a one-character STRING, so the only way to
 # reach a `char` from an int was `char_at(chr(n), 0)` -- two builtins and a heap
 # string for a value that is one byte. `char` has no type keyword

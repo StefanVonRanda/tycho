@@ -1,0 +1,12 @@
+# `is` reaches its own copy of the same lookup (src/tychoc.c@die_not_variant is
+# shared with the match arm), so the qualification rule is pinned on both.
+# expect: 'NotFound' is a variant of io.IoErr
+# expect: must be written qualified -- write 'io.NotFound'
+package main
+
+import "core:io"
+
+fn main():
+    e := io.NotFound
+    if e is NotFound:
+        println("no such file")

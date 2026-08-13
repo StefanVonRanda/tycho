@@ -1,7 +1,7 @@
 # bounded[C]T -- the capacity named by an int `const`, the same spelling a
 # fixed-size [C]T accepts (docs/spec/03-types.md 5.3.2, 5.3.10). Exercised in all
 # four type positions: struct field, function parameter, return type, and local.
-# tychoc has always accepted this (src/tychoc.c:1796-1803); tychoc0 rejected it at
+# tychoc has always accepted this (src/tychoc.c:1818-1825); tychoc0 rejected it at
 # parse until Phase 18 taught it the deferred "[b#W]T" encoding.
 
 const CAP = 4

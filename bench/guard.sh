@@ -61,7 +61,7 @@ done
 # The assertion is STRUCTURAL, on the emitted C, and that is a MEASURED
 # decision rather than a preference. Wall time cannot see this class at -O3 --
 # the level this script builds with, and the level `tychoc` itself hands to cc
-# (src/tychoc.c:13264) -- because the three-clause form emits its bound into the
+# (src/tychoc.c:13286) -- because the three-clause form emits its bound into the
 # C `while` header, so gcc already knows `i < xs.len` and folds the accessor's
 # own `i >= xs.len` test away. Best-of-3 on arr_pipeline, the same program built
 # with and without TYCHOC_NO_BOUNDS_ELISION=1, measured while writing this:

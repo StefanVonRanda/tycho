@@ -1,0 +1,15 @@
+# A variant of an IMPORTED enum must be written qualified. Until 2026-08-13 the
+# refusal claimed the variant did not exist, and named the mangled `io__IoErr`.
+# expect: 'NotFound' is a variant of io.IoErr
+# expect: must be written qualified -- write 'io.NotFound'
+package main
+
+import "core:io"
+
+fn describe(e: io.IoErr) -> string:
+    match e:
+        NotFound: return "no such file"
+        _: return "other"
+
+fn main():
+    println(describe(io.NotFound))

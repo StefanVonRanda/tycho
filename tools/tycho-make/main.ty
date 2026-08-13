@@ -24,8 +24,8 @@ import "graph"
 # and ordering have succeeded. A build tool that carried on past a rulefile it
 # did not understand would be guessing at what to build.
 
-# A foreign enum's variants must be written qualified in a match arm; bare
-# `NotFound` is rejected as "not a variant of io__IoErr".
+# A foreign enum's variants must be written qualified in a match arm; since
+# 2026-08-13 bare `NotFound` is refused with the qualified spelling to write.
 fn io_str(e: io.IoErr) -> string:
     match e:
         io.NotFound: return "no such file"

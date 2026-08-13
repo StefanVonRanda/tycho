@@ -1,0 +1,14 @@
+# A name that is a variant of NOTHING must still report as unknown: qualifying
+# it would not help, so the fix for the bare-foreign case must not suggest it.
+# expect: 'Nonesuch' is not a variant of io.IoErr
+package main
+
+import "core:io"
+
+fn describe(e: io.IoErr) -> string:
+    match e:
+        Nonesuch: return "no such file"
+        _: return "other"
+
+fn main():
+    println(describe(io.NotFound))
