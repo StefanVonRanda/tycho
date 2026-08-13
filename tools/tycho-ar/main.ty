@@ -537,10 +537,15 @@ fn parse_uint(s: string) -> int:
         return -1
     if n > 1000000000000000000:              # absurd length: refuse before it reaches a slice
         return -1
-    # gap: run.sh forges a DAMAGED header (leg 4b/4c) and proves refusal, but no
-    # leg forges a NEGATIVE or an over-cap length, so these two lines are covered
-    # by reading and by a scratch probe, not by the lane. Both were checked by
-    # hand 2026-08-10 -- "-5" and 1000000000000000001 each return -1.
+    # GATED since 2026-08-13: run.sh legs [4d]/[4e] forge a negative `size` and an
+    # over-cap `clen` into a rebuilt header, and both must be refused by name.
+    # The two lines are not equally load-bearing, which the controls showed:
+    # deleting the over-cap test reddens [4e], while deleting the `n < 0` test
+    # above leaves the lane GREEN, because the caller checks `size < 0` itself
+    # (`if size < 0 or mtime < 0 ...`, the read loop below). So the negative case
+    # is defence in depth here and the refusal is asserted end-to-end, not at
+    # this line. Keep both: this one keeps `parse_uint` honest for a future
+    # caller that forgets its own check.
     return n
 
 # 64 lowercase hex digits, the shape `sha256.hex` produces. Checked so a damaged

@@ -255,6 +255,31 @@ if [ "$fail" -eq 0 ]; then
     "$AR" t "$T/flip.tyar" >/dev/null 2>&1 && bad "flipped payload byte: t EXITED 0 -- listing does not verify"
 fi
 
+# [4d]/[4e] A FORGED LENGTH FIELD. `parse_uint` rejects a negative and an
+# over-cap value (tools/tycho-ar/main.ty@parse_uint), and until 2026-08-13 those
+# two lines were covered by reading and a hand probe -- the file said so in a
+# `# gap:`. The BEHAVIOUR is covered here now, and the two legs are not equally
+# strong: deleting the over-cap test reddens [4e], while deleting `parse_uint`'s
+# `n < 0` leaves this lane green, because the read loop tests `size < 0` itself.
+# [4d] therefore pins the refusal end-to-end, not that one line -- measured
+# 2026-08-13, both ways. The header line is rebuilt rather than
+# patched in place, because these values are wider than the originals: magic,
+# then the edited line, then everything from the old path offset on.
+forge_hdr() {
+    _lbl=$1; _field=$2; _value=$3
+    _new=$(echo "$hdr" | awk -v f="$_field" -v v="$_value" '{ $f = v; print }')
+    dd if="$A" bs=1 count=6 2>/dev/null > "$T/$_lbl.tyar"
+    printf '%s\n' "$_new" >> "$T/$_lbl.tyar"
+    dd if="$A" bs=1 skip="$path_off" 2>/dev/null >> "$T/$_lbl.tyar"
+    refuses_x "$_lbl" "$T/$_lbl.tyar" "$T/${_lbl}dest" "header has a non-numeric length field"
+    [ ! -e "$T/${_lbl}dest" ] || bad "$_lbl: destination was created before the refusal"
+    "$AR" t "$T/$_lbl.tyar" >/dev/null 2>&1 && bad "$_lbl: t EXITED 0 -- listing accepted the forged length"
+}
+if [ "$fail" -eq 0 ]; then
+    forge_hdr "neg_size"  2 "-5"                       # field 2 is `size`
+    forge_hdr "huge_clen" 4 "1000000000000000001"      # field 4 is `clen`, one over the cap
+fi
+
 # [4c] the same flip WITH csha recomputed to match, which disarms 4b's check and
 # leaves `size` as the only witness. This is the leg that proves the format's
 # answer to the empty-versus-corrupt question is load-bearing:
