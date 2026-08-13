@@ -2568,11 +2568,19 @@ Odin os.open("h\0i")                    = nil      # OPENS `h`
 
 **Neither refuses at the FFI boundary**, so the verdict above matches both; and
 the split this entry already drew — boundary documented, validator enforced — is
-Go's, one layer up, at the stdlib call that names a resource. **`core:io` is
-currently on Odin's side of that line**: `io.exists("h" + chr(0) + "i")` is
-`true` and `io.read` of it returns the contents of `h`. That is the same class as
-the `core:regex` finding, not a defect of the boundary, and it is filed as its
-own phase rather than absorbed here.
+Go's, one layer up, at the stdlib call that names a resource. **`core:io` was on
+Odin's side of that line until 2026-08-13**: `io.exists("h" + chr(0) + "i")` was
+`true` and `io.read` of it returned the contents of `h`. That is the same class as
+the `core:regex` finding, not a defect of the boundary, and it moved to Go's side
+along with `core:net` and `core:os` — 21 path-taking entry points, 4 host-taking
+and 4 command-taking ones now refuse before anything is attempted
+(`corelib/io/io.ty@has_nul`), naming `Err(BadPath)` / `Err(BadAddr)` where there
+is an error channel and giving each call's documented "this did not happen"
+sentinel where there is not. `core:path` is exempt: lexical, reaching no `char*`.
+The three fixtures carry live positive controls — strip the guards and `core:io`
+reads `HELLO` through a truncated path, `net.listen` binds `127.0.0.1` and
+`os.system` runs `printf NULBAD` reporting exit 0 (measured 2026-08-13 against a
+guard-stripped copy of `corelib/`).
 
 **The length is at the boundary but is not in the ABI.** A Tycho string is
 length-headered, so a shim reading `((const int64_t *)s)[-1]` recovers 3 where
