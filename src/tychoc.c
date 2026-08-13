@@ -8317,8 +8317,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 }
                 break;
             }
-            if (!is_array(baset))
-                die_at(s->line, "can only index-assign an array element (strings and bytes are immutable)");
+            if (!is_array(baset) && !IS_SOA(baset))   /* soa: whole-element scatter, the mirror of the `g := ps[i]` gather */
+                die_at(s->line, "cannot index-assign an element of %s (it is immutable)", type_name(baset));
             Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
             if (tt != vt)
                 die_at(s->line, "cannot assign %s to a %s element", type_name(vt), type_name(tt));
@@ -9009,7 +9009,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13212) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13221) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
@@ -11555,7 +11555,15 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             char *ix  = gen_expr(s->target->rhs, scope);
             char *v   = gen_expr(s->expr, scope);
             indent(o, ind);
-            if (arrx->type == T_ARRAY_STRING || IS_ARRC(arrx->type)) {
+            if (IS_SOA(arrx->type)) {
+                /* whole-element scatter: one bounds check, then each field
+                 * buffer's slot takes its own deep copy into the soa's owning
+                 * arena — the same per-field copy_into push does, so a scattered
+                 * heap field never aliases the source (including `ps[i]=ps[j]`,
+                 * whose gather is a by-value temp read before the call). */
+                const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
+                fprintf(o, "Soa%d_set(%s, &(%s), %s, %s);\n", SOA_ID(arrx->type), owner, arr, ix, v);
+            } else if (arrx->type == T_ARRAY_STRING || IS_ARRC(arrx->type)) {
                 /* string/struct/array element: the set deep-copies it into the
                  * array's owning arena — the carried _ina_ arena if the root is
                  * a heap inout param. */
@@ -12840,6 +12848,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static Soa%d Soa%d_copy(Arena*, Soa%d);\n", i, i, i);
         fprintf(o, "static int Soa%d_eq(Soa%d, Soa%d);\n", i, i, i);
         fprintf(o, "static S_%s Soa%d_pop(Soa%d *);\n", sn, i, i);
+        fprintf(o, "static void Soa%d_set(Arena*, Soa%d*, tycho_int, S_%s);\n", i, i, sn);
     }
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
         if (has_typaram(T_ARRC_BASE + i)) continue;   /* generics: `[$T]` from a template -- transient */
@@ -13297,6 +13306,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "    s->f%d[s->len] = %s;\n", f,
                     copy_into(sd->fields[f].type, "a", sfmt("v.f_%s", sd->fields[f].name)));
         fprintf(o, "    s->len++;\n}\n");
+        /* set: whole-element scatter, bounds-checked once. Each field slot takes
+         * its own deep copy into `a` via the same copy_into push uses, so the
+         * scattered element owns its heap bytes rather than aliasing the source. */
+        fprintf(o, "static void Soa%d_set(Arena *a, Soa%d *s, tycho_int ix, S_%s v) {\n", i, i, sn);
+        fprintf(o, "    tycho_int _si = Soa%d_bound(s, ix);\n", i);
+        for (int f = 0; f < sd->nfields; f++)
+            fprintf(o, "    s->f%d[_si] = %s;\n", f,
+                    copy_into(sd->fields[f].type, "a", sfmt("v.f_%s", sd->fields[f].name)));
+        fprintf(o, "}\n");
         /* pop: shrink len, then gather the (new) last element as a struct value */
         fprintf(o, "static S_%s Soa%d_pop(Soa%d *s) {\n", sn, i, i);
         fprintf(o, "    if (s->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); exit(1); }\n");

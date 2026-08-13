@@ -132,7 +132,7 @@ EXPECT_MSG_RUNTIME = {
 # arm that stops emitting its guard reddens here and nowhere else.
 EXPECT_MSG_CODEGEN = {
     r"tycho: non-exhaustive match\n",     # src/tychoc.c:10439, :10782
-    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:12195 (the [4] is surface.ty's Inline.slots)
+    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:12203 (the [4] is surface.ty's Inline.slots)
     r"tycho: slice [%",                   # src/tychoc.c:10065, :9711
 }
 # REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".

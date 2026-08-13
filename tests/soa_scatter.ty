@@ -1,0 +1,39 @@
+# SOA whole-element scatter, int-only struct: `ps[i] = v`, the mirror of the
+# `g := ps[i]` gather tests/soa_basic.ty pins. Also the swap-remove this exists
+# for (`ps[i] = ps[len-1]`) and self-scatter `ps[i] = ps[j]`, which must read
+# the source element by value before writing any field buffer.
+
+struct P:
+    x: int
+    y: int
+    z: int
+
+fn main():
+    ps := soa []P
+    i := 0
+    for i < 5:
+        push(ps, P(i, i * 10, i + 100))
+        i = i + 1
+
+    # scatter a fresh value over element 1: every field buffer must be written
+    ps[1] = P(70, 71, 72)
+    println("set1=" + str(ps[1].x) + "," + str(ps[1].y) + "," + str(ps[1].z))
+
+    # scatter a gathered value: element 0 becomes a copy of element 3
+    g := ps[3]
+    ps[0] = g
+    println("set0=" + str(ps[0].x) + "," + str(ps[0].y) + "," + str(ps[0].z))
+
+    # self-scatter straight out of the same soa, no intermediate variable
+    ps[2] = ps[4]
+    println("set2=" + str(ps[2].x) + "," + str(ps[2].y) + "," + str(ps[2].z))
+
+    # swap-remove: overwrite the hole with the last element, then drop the tail
+    ps[1] = ps[len(ps) - 1]
+    last := pop(ps)
+    println("popped=" + str(last.x) + " len=" + str(len(ps)))
+
+    i = 0
+    for i < len(ps):
+        println("e" + str(i) + "=" + str(ps[i].x) + "," + str(ps[i].y) + "," + str(ps[i].z))
+        i = i + 1

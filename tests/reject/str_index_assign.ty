@@ -1,0 +1,8 @@
+# A string is immutable, so `s[i] = c` is refused. Pinned because this arm used
+# to be the catch-all for every non-array index-assign and named "strings and
+# bytes" whatever the base actually was — a soa hit it and sent readers looking
+# for a string that was not there. The message must name ITS OWN subject.
+# expect: cannot index-assign an element of string (it is immutable)
+fn main():
+    s := "abc"
+    s[0] = 122

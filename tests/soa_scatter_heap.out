@@ -1,0 +1,6 @@
+p0=fresh 10,20
+p1=two 7
+p2=mutated 777
+p0=mutated 777
+p2=mutated 555
+g=two 7

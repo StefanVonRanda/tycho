@@ -451,7 +451,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
 > Rejections: slice `src/tychoc.c:5374-5375`, `pop` `:6097-6098`, `reserve`
 > `:6596@reserve does not apply to a bounded`, over-long literal `:6303-6306`. The full-push trap is emitted at
-> `:12140-12143`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
+> `:12148-12151`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
 > `tests/reject/bounded_nonconst_cap.ty`,
@@ -462,7 +462,7 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > a return type) and `tests/fixarr_aggregate.ty` for the `[N]T` twin. The
 > inline element is emitted inside the by-value containment DFS — `[N]T` and
 > `bounded[N]T` are ordered with the struct/tuple/Option bodies rather than with
-> the pointer-shaped arrays (`src/tychoc.c:11550-11640`, with `inline_arrc`/
+> the pointer-shaped arrays (`src/tychoc.c:11550-11648`, with `inline_arrc`/
 > `needs_body_first` at `:11532-11538`; tychoc0's `comp_dep_types`
 > `compiler/tychoc0.ty:10241-10268` and `emit_comp_body` `:10278-10302`) — which is what makes an aggregate element compile; the
 > infinite-type rejection falls out of the same DFS

@@ -36,17 +36,3 @@ last two fixes came from. Output is a tick transcript that goldens byte-exactly.
   - Verify: a reject fixture pinning the new text; `make test`, expect 662.
   - Probed: `len(w)`, `w[0]`, `bump(&w)`, `w[0] = 9` and `push(w, x)` each
     disqualify. Only `w := [5,7]` immediately consumed is accepted.
-
-- [ ] **Phase 4 — `soa` has no whole-element scatter, and says so wrongly**
-  - Found by Phase 1, outside its scope. `g := ps[i]` gathers a whole element
-    (`tests/soa_basic.ty:35`) but `ps[i] = g` is refused, so swap-remove — the
-    operation a dense pool exists for — has to be written out field by field
-    (`tools/tycho-sim/world/world.ty@despawn`). `docs/spec/03-types.md:380-382`
-    says a soa "presents the same value-semantic array interface", and a bracket
-    array accepts `a[i] = v`.
-  - The diagnostic names the wrong subject: `error: can only index-assign an
-    array element (strings and bytes are immutable)`. No string or bytes is
-    involved; a reader is sent to look for one.
-  - Done when: either the scatter is implemented, or the spec's "same interface"
-    sentence is narrowed AND the message names soa. Not both silently.
-  - Verify: a fixture pinning whichever was chosen; `make test`.

@@ -1,0 +1,38 @@
+# SOA whole-element scatter of a struct with HEAP fields. A soa keeps one
+# backing buffer per field, so a scatter that stored the source's pointers would
+# leave two slots sharing one buffer. Strings cannot show that (they are
+# immutable, so an alias is unobservable); an array field can — write through
+# the source element and the destination must not move.
+
+struct E:
+    tag: string
+    xs: [int]
+
+fn main():
+    ps := soa []E
+    push(ps, E("zero", [1, 2, 3]))
+    push(ps, E("one", [4, 5, 6]))
+    push(ps, E("two", [7, 8, 9]))
+
+    # scatter a value built here, then drop the source binding
+    src := E("fresh", [10, 20])
+    ps[0] = src
+    src = E("gone", [0])
+    println("p0=" + ps[0].tag + " " + str(ps[0].xs[0]) + "," + str(ps[0].xs[1]))
+
+    # scatter a gathered element, then write through the SOURCE's array
+    g := ps[2]
+    ps[1] = g
+    ps[2].xs[0] = 777
+    ps[2].tag = "mutated"
+    println("p1=" + ps[1].tag + " " + str(ps[1].xs[0]))     # two 7 -- not mutated,777
+    println("p2=" + ps[2].tag + " " + str(ps[2].xs[0]))
+
+    # self-scatter, then write through the source element again
+    ps[0] = ps[2]
+    ps[2].xs[0] = 555
+    println("p0=" + ps[0].tag + " " + str(ps[0].xs[0]))     # mutated 777
+    println("p2=" + ps[2].tag + " " + str(ps[2].xs[0]))
+
+    # the gathered value taken before any of it is still intact
+    println("g=" + g.tag + " " + str(g.xs[0]))              # two 7
