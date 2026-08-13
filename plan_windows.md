@@ -498,6 +498,27 @@ language surface. WSL2 stays a first-class supported path.
 > unchanged), make tools builds, doc gates green (0 citations shifted — the
 > shim's cited lines are bare ranges). make wine-tools is a manual target.
 
+> **Phase 6 re-measured 2026-08-13 at `7ddfcef8`, and the lanes were the
+> problem more than the port.** All five wine lanes rebuilt `tychoc-mingw.exe`
+> only `if [ ! -x ]`, so this box had been testing an **Aug 5 compiler**: 25 of
+> wine-test's 28 failures were features that postdated it. With that fixed, plus
+> the lane learning to link `<pkg>_shim.c` and to honour a sibling `.err` the way
+> `tests/run.sh:381` does, and one real port fix (`iox_set_mtime` could not touch
+> a DIRECTORY on Windows — `_utime` fails EACCES, so the directory case now uses
+> `FILE_FLAG_BACKUP_SEMANTICS` + `SetFileTime`):
+>
+> | lane | 2026-08-13 |
+> |---|---|
+> | wine-smoke | all green |
+> | wine-test | **passed 347, failed 2** — both float park candidates (`c_float_roundtrip`, `c_float_str_locale`), down from 28 |
+> | wine-corelib | 36 ok, 9 skipped, 1 park (`io`: `sync_dir=Unsupported`, which `iox_sync` returns deliberately) |
+> | wine-ffi | 10 passed, 0 failed |
+> | wine-tools | built+ran 17, failed 0, skipped 1 (tycho-fetch/libcurl) |
+>
+> The park list is therefore SHORTER than this plan recorded: float text under
+> mingw, `sync` on a directory, and the os/datetime/signal test mechanisms. The
+> phase-7 gate is unchanged and still needs the box — `make ci` under MSYS2.
+>
 > Phase 6 evidence (the Linux half) — 2026-08-05: the golden audit is DONE,
 > the ffi lane gained wine coverage, and the verdict itself is the CI leg's.
 >
