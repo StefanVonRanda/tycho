@@ -389,6 +389,12 @@ make -s make-check
 # proves nothing about interoperability.
 step "[3v/28] make snap-check  (tycho-snap: transcript AND archive bytes identical over 2 runs, the 4-member entry set and its sorted ORDER exact against literals with sub/ descended, .txt filtered and skipme/ never entered, python3 zipfile testzip() None and a member's sha256 out of the archive equal to the file on disk, an empty selection a 22-byte EOCD read as 0 entries, a missing manifest exit 1 naming the file and an unknown option exit 2 naming it)"
 make -s snap-check
+
+# tycho-tally: the SQLite ledger, and the only lane whose subject is a TEST
+# FRAMEWORK -- its control breaks an assertion in a copy and requires the suite
+# to notice.
+step "[3w/29] make tally-check  (tycho-tally: a 15-check core:testing suite passing twice byte-identically AND proven able to fail -- a copy with one expected total changed exits 1 naming the check and counting 1 of 15; three processes write the ledger and a fourth reads it back against literals, SQL doing the sort and the SUM; a non-numeric amount exits 2 and books nothing)"
+make -s tally-check
 fi
 
 if [ "$LANE" = rest ]; then

@@ -1,0 +1,160 @@
+# tycho-tally -- a tiny expense ledger on SQLite, with its own test suite.
+#
+# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md), and the
+# last two corelib packages with no consumer outside corelib/: `core:sqlite` and
+# `core:testing`. A test framework nothing tests is the sharper of the two, so
+# this program uses it for real -- `--selftest` is not a demo mode, it is how the
+# ledger's behaviour is asserted, and its exit code is the verdict.
+#
+#   tycho-tally --db FILE --add "coffee=350"     add a row, cents
+#   tycho-tally --db FILE --report               category totals, sorted
+#   tycho-tally --selftest                       run the suite on a temp db
+#
+# THE GATE IS `make tally-check` (tools/tycho-tally/run.sh).
+package main
+
+import "core:cli"
+import "core:sqlite"
+import "core:testing"
+import "core:strings"
+import "core:io"
+
+fn schema(d: inout sqlite.Db) -> Result(int, string):
+    return sqlite.exec(&d, "CREATE TABLE IF NOT EXISTS entry (cat TEXT NOT NULL, cents INTEGER NOT NULL)")
+
+# One row in. Parameters, not string-built SQL: `cat` is user input and a
+# ledger that concatenates it is a SQL injection with a nicer name.
+fn add(d: inout sqlite.Db, cat: string, cents: int) -> Result(int, string):
+    return sqlite.exec_params(&d, "INSERT INTO entry (cat, cents) VALUES (?, ?)", [cat, str(cents)])
+
+# Category totals, ordered by the database rather than by us -- the point of
+# having a database at all.
+fn totals(d: inout sqlite.Db) -> Result([[string]], string):
+    return sqlite.query(&d, "SELECT cat, SUM(cents) FROM entry GROUP BY cat ORDER BY cat")
+
+fn selftest() -> int:
+    t := testing.new("tycho-tally")
+    path := "/tmp/tycho_tally_selftest.db"
+    _r := io.remove(path)
+
+    d := sqlite.Db(null)
+    match sqlite.open(path):
+        Ok(v): d = v
+        Err(e):
+            println("cannot open " + path + ": " + e)
+            return 1
+
+    match schema(&d):
+        Ok(n): testing.check(&t, true, "schema created")
+        Err(e): testing.check(&t, false, "schema: " + e)
+
+    # An empty ledger reports nothing -- the case a report loop written against
+    # a non-empty table never visits.
+    match totals(&d):
+        Ok(rows): testing.eq(&t, len(rows), 0, "empty ledger has no rows")
+        Err(e): testing.check(&t, false, "totals on empty: " + e)
+
+    match add(&d, "coffee", 350):
+        Ok(n): testing.eq(&t, n, 1, "first insert changed 1 row")
+        Err(e): testing.check(&t, false, "insert: " + e)
+    match add(&d, "coffee", 275):
+        Ok(n): testing.eq(&t, n, 1, "second insert changed 1 row")
+        Err(e): testing.check(&t, false, "insert: " + e)
+    match add(&d, "books", 1299):
+        Ok(n): testing.eq(&t, n, 1, "third insert changed 1 row")
+        Err(e): testing.check(&t, false, "insert: " + e)
+
+    # The SUM and the ORDER BY are the database's answers, not ours: books
+    # before coffee, and 350 + 275 folded into one row.
+    match totals(&d):
+        Ok(rows):
+            testing.eq(&t, len(rows), 2, "two categories")
+            if len(rows) == 2:
+                testing.eq(&t, rows[0][0], "books", "first category is books")
+                testing.eq(&t, rows[0][1], "1299", "books total")
+                testing.eq(&t, rows[1][0], "coffee", "second category is coffee")
+                testing.eq(&t, rows[1][1], "625", "coffee total folded by SUM")
+        Err(e): testing.check(&t, false, "totals: " + e)
+
+    # A quote in the category must survive as data. Built by hand this is the
+    # injection; through a parameter it is one row with an apostrophe in it.
+    hostile := "o'brien'); DROP TABLE entry; --"
+    match add(&d, hostile, 1):
+        Ok(n): testing.eq(&t, n, 1, "hostile category inserted as data")
+        Err(e): testing.check(&t, false, "hostile insert: " + e)
+    match sqlite.query_params(&d, "SELECT cents FROM entry WHERE cat = ?", [hostile]):
+        Ok(rows):
+            testing.eq(&t, len(rows), 1, "hostile category reads back as one row")
+            if len(rows) == 1:
+                testing.eq(&t, rows[0][0], "1", "hostile row kept its value")
+        Err(e): testing.check(&t, false, "hostile select: " + e)
+    match totals(&d):
+        Ok(rows): testing.eq(&t, len(rows), 3, "the table still exists after the injection attempt")
+        Err(e): testing.check(&t, false, "totals after hostile: " + e)
+
+    # A statement that cannot parse must be Err, not a silent Ok(0).
+    match sqlite.exec(&d, "THIS IS NOT SQL"):
+        Ok(n): testing.check(&t, false, "malformed SQL returned Ok")
+        Err(e): testing.check(&t, len(e) > 0, "malformed SQL is Err with a message")
+
+    sqlite.close(&d)
+    _r2 := io.remove(path)
+    return testing.report(t)
+
+fn main():
+    c := cli.parse_spec(cli.argv(), ["db", "add"], ["report", "selftest"])
+    for u in cli.unknown(c):
+        println("unknown option " + u)
+    if len(cli.unknown(c)) > 0:
+        exit(2)
+
+    if cli.flag(c, "selftest"):
+        exit(selftest())
+
+    path := cli.get(c, "db", "")
+    if path == "":
+        println("usage: tycho-tally --db FILE [--add cat=cents] [--report] | --selftest")
+        exit(2)
+
+    d := sqlite.Db(null)
+    match sqlite.open(path):
+        Ok(v): d = v
+        Err(e):
+            println("cannot open " + path + ": " + e)
+            exit(1)
+    match schema(&d):
+        Ok(n): pass
+        Err(e):
+            println("schema: " + e)
+            exit(1)
+
+    entry := cli.get(c, "add", "")
+    if entry != "":
+        parts := split(entry, "=")
+        if len(parts) != 2:
+            println("--add wants cat=cents")
+            exit(2)
+        # parse_int_checked, NOT parse_int: the short name fails open --
+        # measured, `parse_int("35x")` is 35 and `parse_int("abc")` is 0, so a
+        # ledger built on it books a free entry for any typo (FRICTION #34).
+        cents := 0
+        match strings.parse_int_checked(parts[1]):
+            Ok(v): cents = v
+            Err(e):
+                println("--add wants an integer amount, got " + parts[1])
+                exit(2)
+        match add(&d, parts[0], cents):
+            Ok(n): println("added " + parts[0] + " " + str(cents))
+            Err(e):
+                println("insert: " + e)
+                exit(1)
+
+    if cli.flag(c, "report"):
+        match totals(&d):
+            Ok(rows):
+                for r in rows:
+                    println(r[0] + " " + r[1])
+            Err(e):
+                println("report: " + e)
+                exit(1)
+    sqlite.close(&d)

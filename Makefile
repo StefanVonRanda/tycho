@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -684,6 +684,14 @@ make-check: tychoc
 # member ORDER are asserted against literals RECORD=1 cannot reach.
 snap-check: tychoc
 	@sh tools/tycho-snap/run.sh
+
+# tally-check: the gate for tycho-tally, the SQLite ledger in tools/tycho-tally/.
+# Its `--selftest` is 15 core:testing assertions, so the lane's load-bearing leg
+# is the POSITIVE CONTROL: a copy of main.ty with one expected total changed must
+# exit 1 and name the check. A framework that never fails would otherwise print
+# `ok` forever. SKIPPED, exit 0, without sqlite3.
+tally-check: tychoc
+	@sh tools/tycho-tally/run.sh
 
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else

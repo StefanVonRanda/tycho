@@ -4071,3 +4071,63 @@ an ordinary typo keeps its did-you-mean (`conut = 2` still suggests `count`).
 useless; "`_` is not a discard here -- call `f(x)` as a statement to drop its
 result" would end it in one line, and is the same shape as the `push` hint added
 to the element-wise message in #30.
+
+## Found by `tools/tycho-tally`, 2026-08-13 (head `b188feb2`)
+
+The second dogfood audit, against the last two corelib packages with no consumer
+outside `corelib/`: `core:sqlite` and `core:testing`. `tools/tycho-tally` is an
+expense ledger whose `--selftest` is 15 `core:testing` assertions over a real
+SQLite file — a test framework nothing tests being the sharper of the two
+subjects.
+
+### 34. The obvious `parse_int` is the fail-open one, and the safe one is longer
+
+`strings.parse_int` stops at the first non-digit and answers with what it got.
+Measured at `b188feb2`, beside its checked sibling:
+
+```
+[350]                    parse_int=350  parse_int_checked=Ok(350)
+[35x]                    parse_int=35   parse_int_checked=Err(Garbage)
+[x35]                    parse_int=0    parse_int_checked=Err(Garbage)
+[]                       parse_int=0    parse_int_checked=Err(EmptyInput)
+[9999999999999999999999] parse_int=0    parse_int_checked=Err(OutOfRange)
+```
+
+A ledger that reads an amount with `parse_int` books `35x` as **35** and `abc`
+as **0** — a free entry — and nothing anywhere says so. This is not the old
+entry 4 ("`strings.parse_int` fails open, so no format parser can use it",
+struck as ALREADY FIXED): that was closed by ADDING `parse_int_checked`, and the
+trap it names is still there, under the shorter and more inviting name. The
+package's own comment says the checked one exists because "`server/main.ty` each
+hand-rolled a strict parser for want of this".
+
+**Not proposed as a rename.** `parse_int`'s fail-open behaviour is documented on
+its own line and something in the tree may want it. What is worth recording is
+that the audit reached for the short name first, and that the two differ by a
+suffix rather than by anything a reader would notice at the call site — the same
+shape as #29, where the plausible spelling was the silent one.
+
+### What did not go wrong, which is also data
+
+- **`core:testing` fails honestly, and this is now GATED.** The whole risk of a
+  test framework nobody tests is that it prints `ok` unconditionally. Probed by
+  changing one expected total in a copy of the program: it printed
+  `FAIL: coffee total folded by SUM (got 625, want 999)`, then
+  `FAIL tycho-tally (1 of 15 checks failed)`, and exited **1**. That control is
+  `tools/tycho-tally/run.sh` leg [2] — it edits a COPY, never the tree, so the
+  proof runs on every `make tally-check`.
+- **`core:sqlite`'s parameter binding holds against a hostile value.**
+  `o'brien'); DROP TABLE entry; --` inserted through `exec_params` reads back as
+  one row with its bytes intact, and the table is still there afterwards — three
+  assertions in the suite, not a claim in a comment.
+- **`sqlite.exec` on malformed SQL is `Err` with a message**, not a silent
+  `Ok(0)`: `THIS IS NOT SQL` is asserted in the suite.
+- **A `Db` handle is an ordinary struct over a `ptr`**, so `open` -> `close` is
+  the whole lifecycle and nothing in the language stops a use-after-close. Not a
+  finding — the package says `h: ptr # the sqlite3* handle; 0 = closed` — but
+  worth knowing before someone reaches for `defer`-shaped reasoning that does not
+  exist here.
+- **The compiler's copy warning fires on a live `bytes`/`string` reused after an
+  aggregate takes it.** `[hostile]` in a query parameter list, with `hostile`
+  still live afterwards, warns and names the fix ("make this its last use").
+  Correct, and the message is the useful kind.
