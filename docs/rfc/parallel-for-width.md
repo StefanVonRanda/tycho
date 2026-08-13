@@ -102,7 +102,25 @@ them, carried on the statement beside `s->parallel`.
   silently did nothing would pass every one of those except a fixture that
   *counts* workers, so that fixture is the load-bearing one.
 
-## Why (b) is still open, and now harder to spell
+## (b) CLOSED 2026-08-13 — it was never a type-system problem
+
+Written below as "still open, and now harder to spell", on the assumption that
+per-worker identity needed a second binder or task handles in a container.
+Neither: **the counting form already binds the identity**, and the width slot
+this RFC added supplies the count.
+
+```tycho
+parallel(N) for wid in 0..<N:      # N workers, each with its own wid
+    accept_loop(cfg, srv, wid)
+```
+
+Probed directly — 4 workers, ids summing to 6 — and then applied to the program
+the item cited: `server/main.ty`'s recursive fan-out is gone and
+`make server-check` starts the real server and passes. The reasoning below is
+kept because its analysis of the SECOND BINDER is still correct; what it got
+wrong is treating the first binder as unavailable.
+
+## The original: why (b) looked still open, and harder to spell
 
 The natural spelling for per-worker identity is a second binder:
 

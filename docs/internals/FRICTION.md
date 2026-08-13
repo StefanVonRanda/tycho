@@ -492,10 +492,23 @@ pick-up order is written out in full under "What moved this pass" below.
      undocumented ceiling and `ncpu()`'s own false definition above it, split out as a
      carried-forward phase. *(It was taken, and both halves are the CLOSED note at the
      head of this item.)*
-8. **No direct spelling for N workers** (*Earlier phases*) — **HALF BUILT
-   2026-08-13. (a) the program can now choose the width: `parallel(W) for …`,
-   1..64, refused as a literal outside that range and aborting at run time when
-   computed. (b) per-worker identity is still open and is the type-system half.**
+8. ~~**No direct spelling for N workers** (*Earlier phases*)~~ — **CLOSED
+   2026-08-13, BOTH halves, and (b) needed no type-system change at all.**
+   (a) is `parallel(W) for …`, 1..64, refused as a literal outside that range and
+   aborting at run time when computed (`b188feb2`). (b) — "N long-lived workers,
+   each carrying its own identity" — turned out to be the loop variable the
+   counting form already binds: `parallel(N) for wid in 0..<N:` gives each of the
+   N chunks its own `wid`. Probed directly (sum of ids over 4 workers = 6 =
+   0+1+2+3), and then PROVED ON THE PROGRAM THE ITEM CITED: `server/main.ty`'s
+   recursive fan-out — worker k spawning worker k+1 into a frame-local — is gone,
+   replaced by `parallel(n) for wid in 0..<n:`, and `make server-check` starts the
+   real server and passes. The item asked for task handles in a container to get
+   here; nothing in this tree needs them for this.
+
+   What the item's evidence really wanted is worth recording: `server`'s `wid` is
+   used for ONE thing, the log prefix `"w" + str(wid)` — not a shard key, not an
+   index into per-worker state. A want that reads as "the type system must grow"
+   was a label in a log line.**
    `docs/rfc/parallel-for-width.md` carries what shipped and what it asserts —
    including why the emitted `_pk` is read by `tests/conc/run.sh`: no output can
    show the width was honoured while a worker cannot observe its own identity,
@@ -4080,7 +4093,7 @@ expense ledger whose `--selftest` is 15 `core:testing` assertions over a real
 SQLite file — a test framework nothing tests being the sharper of the two
 subjects.
 
-### 34. The obvious `parse_int` is the fail-open one, and the safe one is longer
+### 34. ~~The obvious `parse_int` is the fail-open one, and the safe one is longer~~ — **RECORDED, not fixed: a rename is a 40-caller flag day. Measured 2026-08-13: 40 call sites use `parse_int`, 13 use `parse_int_checked`**
 
 `strings.parse_int` stops at the first non-digit and answers with what it got.
 Measured at `b188feb2`, beside its checked sibling:

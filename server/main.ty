@@ -937,14 +937,22 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
                         time.sleep_ms(ACCEPT_BACKOFF_MS)
     return served
 
-# Worker k spawns worker k+1 into a frame-local, then runs its own accept loop;
-# the last one just runs the loop. See the header note on affine task handles.
-fn worker(cfg: Config, srv: int, wid: int, remaining: int) -> int:
-    if remaining > 1:
-        peer := spawn worker(cfg, srv, wid + 1, remaining - 1)
-        n := accept_loop(cfg, srv, wid)
-        return n + wait(peer)
-    return accept_loop(cfg, srv, wid)
+# N accept loops, each with its own id. This was a RECURSIVE fan-out until
+# 2026-08-13 -- worker k spawned worker k+1 into a frame-local and waited it --
+# because a task handle cannot live in a container and `parallel for` had no way
+# to say how many workers OR to tell one from another. Both halves exist now: the
+# width is `parallel(N)` (b188feb2) and the identity is the loop variable the
+# counting form already binds. FRICTION open-list item 8 asked for task handles
+# in a container to get here; it turned out not to be needed.
+#
+# The reduction is `+` on `served`, which `parallel for` folds at an in-order
+# join, so the total is identical for any width -- the property §22 states for an
+# integer reduction.
+fn workers(cfg: Config, srv: int, n: int) -> int:
+    served := 0
+    parallel(n) for wid in 0..<n:
+        served = served + accept_loop(cfg, srv, wid + 1)
+    return served
 
 # ---- command line ----------------------------------------------------------
 
@@ -1084,5 +1092,5 @@ fn main():
     banner += " idle=" + str(cfg.idle_ms) + "ms\n"
     eprint(banner)
 
-    total := worker(cfg, srv, 1, cfg.workers)
+    total := workers(cfg, srv, cfg.workers)
     eprint("tycho-httpd: stopped after " + str(total) + " requests\n")
