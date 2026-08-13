@@ -3888,7 +3888,7 @@ of them: read a TOML manifest, walk a tree, archive it as a zip, and prove the
 archive by reading it back and checking every CRC against the bytes that went
 in. Every finding below was hit while writing it, in order.
 
-### 29. `cli.parse_spec`'s schema names must be UNDASHED, and getting it wrong is silent
+### 29. ~~`cli.parse_spec`'s schema names must be UNDASHED, and getting it wrong is silent~~ — **FIXED 2026-08-13 (`c46952de`); see the banner below. The residue — `unknown()` is advisory — is not fixed.**
 
 The schema lists and `cli.get`'s key take the option name **without** its
 leading `--`; the parser strips the dashes before matching
@@ -3923,7 +3923,7 @@ What is NOT fixed is the general shape: `unknown()` is still advisory, so a
 typo'd option (`--maifest`) still runs the program on defaults unless the caller
 reads it. `tools/tycho-snap` reads it and exits 2; nothing makes anyone else.
 
-### 30. `[string] + [string]` is refused with a reason that is false
+### 30. ~~`[string] + [string]` is refused with a reason that is false~~ — **FIXED 2026-08-13 (`c46952de`), both sites; see the banner below**
 
 `out = out + [s]` on a `[string]` — the append every Go and Python habit reaches
 for — gives:
@@ -3951,7 +3951,7 @@ The user's actual mistake is not arithmetic at all — it is that append is
 `push(xs, x)`. A message naming `push` would end the confusion in one line
 instead of sending the reader to check whether `+` really works on strings.
 
-### 31. A generic struct is constructed from its FIELDS, in field order, not from its type parameters
+### 31. ~~A generic struct is constructed from its FIELDS, in field order, not from its type parameters~~ — **RECORDED, not proposed: this is the ordinary struct-literal rule applied to a generic**
 
 `intern.Interner($K, $V)` is instantiated by writing its two field values — an
 empty `[$V]` and an empty `[$K: int]` — so a `string -> int` interner is:
@@ -3971,7 +3971,7 @@ generic, and inference from the field values is what lets the type parameters go
 unwritten. Recorded because the first thing a caller reads is the `($K, $V)`
 header, and it is a false friend.
 
-### 32. Mangled instantiation names reach the user
+### 32. ~~Mangled instantiation names reach the user~~ — **RECORDED, cosmetic; one pass over `type_name`/callee spelling, not a phase**
 
 Two diagnostics from the same session, verbatim:
 
@@ -4007,7 +4007,7 @@ good — the first even names the fix. Purely cosmetic, and worth one pass over
   `package` declaration`. Correct, documented, and still a five-second stumble
   when the folder is a scratchpad rather than a project.
 
-### 33. `_` is an ordinary variable, not a discard — and it reads like one
+### 33. `_` is an ordinary variable, not a discard — and it reads like one — **OPEN: the ask is one diagnostic line**
 
 Found writing `tools/tycho-snap/run.sh`'s fixture, where a call's result was
 genuinely not wanted. Every spelling below was run at `bf18a560`:
