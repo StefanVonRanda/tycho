@@ -1,11 +1,18 @@
 # A package of USER-DEFINED GENERICS, written to find out what that is like.
 #
-# WHY IT EXISTS. Measured 2026-08-13: `$T` appears in ZERO files under `tools/`,
-# `examples/`, `server/` and `bench/`. Every generic in this tree is declared
-# inside `corelib/`; programs only ever CONSUME them. So the ergonomics of
-# writing your own -- constraints, inference at the call site, a generic struct,
-# a generic taking a function value, instantiation across a package boundary --
-# have never been exercised by a program. This package is that program's half.
+# WHY IT EXISTS. To exercise the ergonomics of writing your own generics --
+# constraints, inference at the call site, a generic struct, a generic taking a
+# function value, instantiation across a package boundary -- and to record what
+# fights back (FRICTION #35, #36).
+#
+# Measured 2026-08-13 and WRONG, corrected the same day: the first version of
+# this header said `$T` appears in ZERO files outside corelib/. It does not --
+# `grep "$T"` treats `$` as an end-of-line anchor, so the search could never
+# match. A fixed-string count finds ~50 uses across six files:
+# tools/tycho-flow/stage/stage.ty (21, `struct Item($T)`), graph/graph.ty (16,
+# `struct Plan($T)`), tools/tycho-q, tools/prunner, and examples/generics_tour.ty
+# (`struct Pair($A, $B)`), which exists for exactly this. Writing generics outside
+# corelib was NOT new here.
 package pipe
 
 # --- generic combinators over an array ---------------------------------------

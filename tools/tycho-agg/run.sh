@@ -3,13 +3,13 @@
 #
 # Re-record the golden with:  RECORD=1 sh tools/tycho-agg/run.sh
 #
-# WHY THIS LANE'S SUBJECT IS GENERICS, NOT COUNTING. tycho-agg exists because
-# `$T` appeared in ZERO files outside `corelib/` (measured 2026-08-13): every
-# generic in this tree was declared in the corelib and only consumed elsewhere.
-# The program declares its own in `pipe/` and instantiates them ACROSS the
-# package boundary at its own `Row` type. A golden can see the counts; it cannot
-# see whether the generics were instantiated at all, so leg [4] reads the
-# emitted C for the mangled instantiations.
+# WHY THIS LANE'S SUBJECT IS GENERICS, NOT COUNTING. tycho-agg declares its own
+# generics in `pipe/` and instantiates them across a package boundary at its own
+# `Row`. A golden can see the counts; it cannot see whether the generics were
+# instantiated at all, so leg [4] reads the emitted C for the mangled symbols --
+# and that IS what no other lane does: no other `run.sh` greps a `pkg__fn__type`
+# mangling (checked 2026-08-13). tycho-flow's lane probes a cross-package generic
+# composition, but through behaviour, not through the emitted symbol.
 #
 # WHAT IT ASSERTS
 #   [1] THE REPORT, TWICE, and equal to the golden. No clock, no environment.

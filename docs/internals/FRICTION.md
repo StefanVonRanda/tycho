@@ -4167,12 +4167,28 @@ shape as #29, where the plausible spelling was the silent one.
 ## Found by `tools/tycho-agg`, 2026-08-13 (head `097f7e16`)
 
 The third dogfood audit, and the first chosen by a LANGUAGE FEATURE rather than a
-package — every corelib package had a consumer by then. The measurement that
-picked it: **`$T` appeared in ZERO files** under `tools/`, `examples/`,
-`server/` and `bench/`. Every generic in this tree was declared inside
-`corelib/`; programs only ever consumed them, so the ergonomics of WRITING one
-had never been exercised. `tools/tycho-agg` declares its own in `pipe/` and
-instantiates them across a package boundary at its own `Row` type.
+package — every corelib package had a consumer by then. `tools/tycho-agg`
+declares its own generics in `pipe/` and instantiates them across a package
+boundary at its own `Row` type.
+
+> **THE MEASUREMENT THAT PICKED IT WAS WRONG, and the review caught it the same
+> day.** This section first said "`$T` appeared in ZERO files under `tools/`,
+> `examples/`, `server/` and `bench/`" and built the program's whole
+> justification on it. `$` is an end-of-line anchor in a POSIX regex, so
+> `grep "$T"` searches for *end-of-line followed by T* and cannot match anything;
+> the zero was an artifact of the instrument, not a property of the tree. A
+> fixed-string count finds **~50 uses across six files** —
+> `tools/tycho-flow/stage/stage.ty` (21, `struct Item($T)`),
+> `tools/tycho-flow/graph/graph.ty` (16, `struct Plan($T)`), `tools/tycho-q`,
+> `tools/prunner`, and `examples/generics_tour.ty`, which exists for exactly this
+> subject. **Writing generics outside `corelib/` was not new here.** The findings
+> below stand on their own — they are properties of the type system, not of who
+> had written a generic first — and the lane's one defensible uniqueness is
+> narrower: no other `run.sh` greps the emitted C for a `pkg__fn__type` mangling.
+>
+> It is the same failure mode this file records against everything else: a proxy
+> measured instead of the thing, and a green (here, a zero) believed because it
+> was convenient. `grep -F` is what should have run.
 
 ### 35. A `where hashable(K)` constraint does not admit `K` as a map key
 

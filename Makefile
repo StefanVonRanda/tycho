@@ -694,10 +694,9 @@ tally-check: tychoc
 	@sh tools/tycho-tally/run.sh
 
 # agg-check: the gate for tycho-agg, the group-and-count in tools/tycho-agg/.
-# Its subject is USER-DEFINED GENERICS -- `$T` appeared in zero files outside
-# corelib/ until this program -- so the load-bearing leg reads the emitted C for
-# the mangled instantiations: a golden sees the counts, not whether the generics
-# ran at all.
+# Its subject is USER-DEFINED GENERICS, and its load-bearing leg reads the
+# emitted C for the mangled instantiations: a golden sees the counts, not whether
+# the generics ran at all. No other run.sh greps a `pkg__fn__type` mangling.
 agg-check: tychoc
 	@sh tools/tycho-agg/run.sh
 

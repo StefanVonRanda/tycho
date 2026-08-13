@@ -1,12 +1,19 @@
 # tycho-agg -- group-and-count over a CSV column, built on generics this program
 # declares itself.
 #
-# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md). Measured
-# 2026-08-13: `$T` appears in ZERO files under tools/, examples/, server/ and
-# bench/ -- every generic in this tree is written inside corelib/ and programs
-# only consume them. So this one declares its own (tools/tycho-agg/pipe/), and
-# instantiates them ACROSS the package boundary, which is the leg no consumer
-# program had ever walked.
+# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md): it
+# declares its own generics in tools/tycho-agg/pipe/ and instantiates them across
+# a package boundary at its own `Row`, and the two findings that came out of
+# writing them are FRICTION #35 and #36.
+#
+# Measured 2026-08-13 and WRONG, corrected the same day: the first version of
+# this header said `$T` appears in ZERO files outside corelib/. It does not --
+# `grep "$T"` treats `$` as an end-of-line anchor, so the search could never
+# match. A fixed-string count finds ~50 uses across six files:
+# tools/tycho-flow/stage/stage.ty (21, `struct Item($T)`), graph/graph.ty (16,
+# `struct Plan($T)`), tools/tycho-q, tools/prunner, and examples/generics_tour.ty
+# (`struct Pair($A, $B)`), which exists for exactly this. Writing generics outside
+# corelib was NOT new here.
 #
 #   tycho-agg --csv FILE --by COLUMN [--min N]
 #
