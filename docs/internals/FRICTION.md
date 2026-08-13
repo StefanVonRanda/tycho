@@ -1807,7 +1807,7 @@ a repaired description of a fixed defect describes nothing. The last group is th
 entries that got smaller as they were written down, and they are labelled as such
 rather than padded.
 
-### 1. `core:json` accepts input it cannot represent, three ways, and cannot report any of them
+### 1. ~~`core:json` accepts input it cannot represent, three ways, and cannot report any of them~~ — **FIXED 2026-08-01, re-probed 2026-08-11; see the banner below**
 
 > **[FIXED, 2026-08-01.]** Both halves are closed, by two plans in sequence. The
 > finding below is left **verbatim**, including the parts that are no longer true
@@ -1946,7 +1946,7 @@ path is a separate, larger question that interacts with item 2, since
 **This ranks first because every other item on this list is a cost paid by the
 programmer; this one is paid by the person reading the output.**
 
-### 2. `core:decimal` has no `div`, so the ordinary averaging query has no answer
+### 2. ~~`core:decimal` has no `div`, so the ordinary averaging query has no answer~~ — **CLOSED 2026-08-11 (fixed 2026-08-02); see the banner below**
 
 > **[CLOSED 2026-08-11 — fixed 2026-08-02 by commit `a8c761c`; this banner had
 > gone stale for nine days.]** The finding below is left verbatim. `div` landed
@@ -2484,7 +2484,7 @@ lines, which is what `try_map` existed to remove. **Not fixed here: adding
 > (the `err` in their signature is the allocator's, not the callback's), and
 > neither language has `Result` to shape one from.
 
-### 9. A `string` across the FFI truncates at its first NUL, silently
+### 9. ~~A `string` across the FFI truncates at its first NUL, silently~~ — **verdict upheld and gated 2026-08-12, re-probed 2026-08-13; see the banner below**
 
 > **Scoped wrong when filed, and fixed 2026-08-12.** This was entered as a
 > `[string]` defect. It is not: the **scalar `string` parameter and the `string`
