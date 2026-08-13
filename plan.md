@@ -1,40 +1,48 @@
-# Open work
+# tycho-sim — a deterministic entity simulation
 
-> **This file holds only what is NOT done.** A phase is deleted when it is
-> ticked, not archived here — its evidence lives in the commit that closed it,
-> where it is attached to the diff it describes and `git log -S` can find it.
->
-> Trimmed 2026-08-12. It had reached 1,396 lines, of which 1,299 were evidence
-> under 19 finished phases against 2 open ones: 93% archive. That is the second
-> time in two days the file needed rotating, so the convention changed rather
-> than the file — see CLAUDE.md, "Plans". `git show d78db13:plan.md` recovers
-> the long version; every phase's evidence is also in its own commit.
+## Goal
+A tick-driven simulation over `soa` component storage, exercising the three
+features no real program uses: `soa` (1 program today), `subscript` (0), `sink`
+(0). Integer/logic workload only — deliberately away from float text, where the
+last two fixes came from. Output is a tick transcript that goldens byte-exactly.
 
-## Phase 1 — `design-scalar-match.md`'s tycho-vm refs
+## Pre-flight
+- Worst case: the program compiles and runs, finds nothing, and costs a week.
+  Mitigation: every slice reports which compiler/runtime defects it surfaced;
+  a slice that surfaces none says so rather than padding.
+- Reversibility: new files under `tools/tycho-sim/` only. Nothing existing moves.
+- Verified: `soa [Ent]` indexes natively (`s[i].hp`), monomorphic `subscript`
+  works, `subscript` over `soa` works, `subscript` across a package boundary
+  works — all four probed 2026-08-13.
+- Verified 2026-08-13: `sink` cannot take a collection built with `push`.
+  `can_move_into_sink` (`src/tychoc.c@can_move_into_sink`) requires exactly one
+  read in the whole body, so pools use `inout`, not `sink`. Phase 3 is now the
+  diagnostic, not the transfer.
 
-Found while converting that document's `src/tychoc.c` refs, and deliberately left
-alone: out of that phase's scope, and the section is historical.
+## Phases
 
-`docs/internals/design-scalar-match.md` cites `tools/tycho-vm/main.ty:622` twice
-(the demand table, and Done-when item 1) and `:634` once. **Line 622 is blank
-today and 634 is an unrelated comment.** The dispatch is now `match op:` at
-`tools/tycho-vm/main.ty:775` with the grouped arm `OP_ADD..OP_GE:` at `:782` —
-so Done-when items 1 and 2 are already satisfied and the document does not say so.
+- [ ] **Phase 1 — world/ + the lane, together**
+  - Scope: `tools/tycho-sim/world/` (entity ids with generation counters, `soa`
+    component pools, monomorphic `subscript` projections), `main.ty` driver,
+    `run.sh`, golden, `make sim-check`, `scripts/ci.sh` step, both gate tables.
+  - Done when: `make sim-check` is green from a clean checkout and reddens for a
+    broken swap-remove.
+  - Verify: `make sim-check`, `make goldens-check`, `sh scripts/entrypoints.sh`.
+  - NOTE: the lane ships WITH slice 1. It lagged the program on all four previous
+    programs; that is the process defect being corrected here.
 
-The care needed: the demand table and the `elif op >= OP_ADD and op <= OP_GE:`
-quotation describe the **pre-implementation** state on purpose ("both already
-written as `if`"). Re-pointing them at the post-implementation code would destroy
-a measurement record. Decide per ref whether it wants an anchor, a date-stamped
-"as measured before Phase 2" note, or the Done-when box ticked.
+- [ ] **Phase 2 — sys/ systems and the tick loop**
+  - Scope: movement, combat, decay, spawn/despawn over the pools.
+  - Done when: transcript byte-identical over two runs and at two `TYCHO_THREADS`
+    values; entity-count and energy conservation asserted against literals in the
+    runner, not against a slice of the golden.
+  - Verify: `make sim-check`.
 
-**Verify:** `make check-links`. `tools/tycho-vm/main.ty` is 974 lines, so its bare
-refs *can* fail a bounds check — these did not, which is why they survived.
-
-## tycho-db — remaining layers
-
-A relational database in `tools/tycho-db/`, and the tree's first program with
-its own internal packages. `sql/` (lexer, parser, AST) landed in `b899be01`.
-Imports resolve relative to the importing file: a sibling is `../sql`.
-
-Each layer is one phase, one commit, in this order — every step must leave a
-runnable program, never a half-wired one.
+- [ ] **Phase 3 — the `sink` diagnostic describes a rule it does not implement**
+  - Scope: `src/tychoc.c@sink_arg_into`'s message, and FRICTION.md.
+  - Done when: a variable whose sink pass IS its last use but which was read
+    earlier gets a message naming the real rule (one read in the whole body),
+    not "make this its last use", which it already is.
+  - Verify: a reject fixture pinning the new text; `make test`, expect 662.
+  - Probed: `len(w)`, `w[0]`, `bump(&w)`, `w[0] = 9` and `push(w, x)` each
+    disqualify. Only `w := [5,7]` immediately consumed is accepted.
