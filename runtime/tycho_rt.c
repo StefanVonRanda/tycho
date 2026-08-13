@@ -1670,8 +1670,20 @@ tycho_int tycho_test_float_roundtrip_prec(double x, tycho_int prec) {
     uselocale(prev);
     return (back == x && signbit(back) == signbit(x)) ? 1 : 0;
 #else
-    (void)x; (void)prec;
-    return -1;
+    /* Windows: no uselocale, but the pieces exist -- print with the running
+     * locale and normalise the separator exactly as tycho_float_to_str's own
+     * fallback does, then read back through a "C" _locale_t. Until 2026-08-13
+     * this returned -1 and BOTH float fixtures were parked as Windows failures;
+     * the text they compare was byte-identical all along, only this check was
+     * unimplemented. */
+    _locale_t cl = _create_locale(LC_NUMERIC, "C");
+    if (!cl) return -1;
+    char tmp[64];
+    int n = snprintf(tmp, sizeof tmp, "%.*g", (int)prec, x);
+    if (n > 0 && n < (int)sizeof tmp) ty_fix_decimal_point(tmp, n);
+    double back = _strtod_l(tmp, NULL, cl);
+    _free_locale(cl);
+    return (back == x && signbit(back) == signbit(x)) ? 1 : 0;
 #endif
 }
 
@@ -1687,7 +1699,17 @@ tycho_int tycho_test_float_roundtrip(double x) {
     arena_free(&a);
     return (back == x && signbit(back) == signbit(x)) ? 1 : (x != x && back != back) ? 1 : 0;
 #else
-    return -1;   /* no newlocale on Windows: the roundtrip check is untestable */
+    /* Windows: tycho_float_to_str already produces C-locale text on this
+     * platform (its own ty_fix_decimal_point fallback), so only the READ needs a
+     * "C" locale, which _strtod_l provides. See the prec variant above. */
+    _locale_t cl = _create_locale(LC_NUMERIC, "C");
+    if (!cl) return -1;
+    Arena a  = arena_new(0);
+    char *s  = tycho_float_to_str(&a, x);
+    double back = _strtod_l(s, NULL, cl);
+    arena_free(&a);
+    _free_locale(cl);
+    return (back == x && signbit(back) == signbit(x)) ? 1 : (x != x && back != back) ? 1 : 0;
 #endif
 }
 
