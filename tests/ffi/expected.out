@@ -7,6 +7,7 @@ bsum=294 brev=cba brevlen=3
 nulsum=195 nullen=3
 wrapfn=zyx wraplen=3
 wrapnullen=3
+nulparam=3/1 nulret=1 nularr=114 ctl=2
 isum=102 isum0=0 favg=4.0
 iota=[0,1,2,3] iolen=4 empty=0
 sfold=374 sfold0=0 spick=be soob=<oob>

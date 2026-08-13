@@ -32,24 +32,34 @@ remaining seven, then corrects or fixes each.
 
 ## Phases
 
-- [ ] **Phase 4 — a `string` across the FFI truncates at its first NUL** (`:2487`)
-  - Silent truncation at a trust boundary. Probe it, then decide whether the FFI
-    should refuse an embedded NUL rather than truncate. Fail loud beats fail short.
-  - Verify: `make ffi`, `make test`.
-
-- [ ] **Phase 5 — a two-key comparator cannot be written inline** (`:2597`)
+- [ ] **Phase 5 — a two-key comparator cannot be written inline** (`:2636`)
   - `core:sort` gained a comparator-taking sort (`:2013`, CLOSED 2026-08-10).
     Probe whether that already answers this; the entry may predate it.
   - Verify: `make corelib`.
 
-- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2651`)
+- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2690`)
   - Probe whether a generated header now exists. If not, decide whether to emit
     one — this is ergonomics, so a correction saying "deliberate" is a fine
     outcome.
   - Verify: `make shim-check`, `make corelib`.
 
-- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2714`)
+- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2753`)
   - Probe both halves: destructuring in a `for` binding, and whether a tuple is
     indexable. Go and Odin both destructure in range/multi-return position, so
     check that default before recording this as deliberate.
   - Verify: `make test`.
+
+- [ ] **Phase 8 — `core:io` acts on the prefix of a path holding an interior NUL**
+  - Found 2026-08-13 while probing `:2487`, outside that phase's scope.
+    `io.exists("h" + chr(0) + "i")` is `true` and `io.read` of it returns the
+    contents of `h`. Go refuses this (`os.Open` → EINVAL, measured); Odin opens
+    the wrong file, and `core:io` is currently on Odin's side.
+  - This is the `core:regex` class, recorded at `:2531`: a package built on the
+    `char*` boundary does not inherit "documented, not enforced".
+  - Scope: enumerate every path-taking entry point in `core:io` first, and ask
+    the same of `core:os`, `core:net` and `core:path` before fixing — one guard
+    in the shared hop beats one per caller.
+  - Done when a NUL-bearing path is refused by name, with a fixture proved able
+    to fail without the guard.
+  - Verify: `make corelib`; `sh scripts/entrypoints.sh` if a signature changes.
+    NOT `make test` — no file under `corelib/` is in its corpus.

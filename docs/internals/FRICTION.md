@@ -2543,6 +2543,45 @@ length-bearing form anywhere). **The general rule: a package whose answer is a
 yes/no about untrusted bytes cannot inherit "documented, not enforced" from the
 boundary it is built on.**
 
+**Re-probed 2026-08-13: reproduces exactly, both directions, and the verdict
+stands.** A fresh `--shim` program: `"h" + chr(0) + "i"` has `len` 3 while the
+callee's `strlen` returns 1; a C `{'h',0,'i',0}` comes back at `len` 1; a
+`strlen`-fold over `["h\0i"]` sees 1, not 3. The same run shows the supported
+route intact — the identical value as `bytes` crosses at `len` 3, sums 209
+(104+0+105), returns from C at `len` 3 with byte 1 == 0, and `to_str` brings it
+back at `len` 3. Those four legs were prose only; they are now pinned by
+`tests/ffi/main.ty@nulparam` (`nulparam=3/1 nulret=1 nularr=114 ctl=2`), which
+reddens if the boundary ever starts carrying the length.
+
+**Precedent, measured rather than recalled** (go1.26.5, Odin
+dev-2026-04-nightly; same string, a real file named `h` in the cwd as the
+positive control):
+
+```
+Go   C.CString("h\0i") -> strlen        = 1        # truncates, silently
+Go   syscall.BytePtrFromString          = EINVAL   # refuses
+Go   os.Open("h\0i")                    = EINVAL   # refuses, though `h` exists
+Odin strings.clone_to_cstring -> strlen = 1        # truncates, silently
+Odin strings.unsafe_string_to_cstring   = 1        # truncates, silently
+Odin os.open("h\0i")                    = nil      # OPENS `h`
+```
+
+**Neither refuses at the FFI boundary**, so the verdict above matches both; and
+the split this entry already drew — boundary documented, validator enforced — is
+Go's, one layer up, at the stdlib call that names a resource. **`core:io` is
+currently on Odin's side of that line**: `io.exists("h" + chr(0) + "i")` is
+`true` and `io.read` of it returns the contents of `h`. That is the same class as
+the `core:regex` finding, not a defect of the boundary, and it is filed as its
+own phase rather than absorbed here.
+
+**The length is at the boundary but is not in the ABI.** A Tycho string is
+length-headered, so a shim reading `((const int64_t *)s)[-1]` recovers 3 where
+`strlen` says 1 — probed at a constructed string, a literal and `""`. That is a
+private runtime layout, not a contract: a third-party C function cannot use it,
+and `bytes` is how the ABI says the same thing. It does not weaken the cost
+objection above either, because deciding *whether* a string holds an interior
+NUL still costs a scan, header or no header.
+
 ### What did not go wrong, which is also data
 
 - **`is` is single-eval and short-circuits correctly.** `make(&c) is VB` on a

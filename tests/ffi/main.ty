@@ -18,6 +18,8 @@ extern "ffidemo" fn ffi_isum(xs: [int]) -> int           # [int] param -> (const
 extern "ffidemo" fn ffi_favg(xs: [float]) -> float       # [float] param -> (const double*, long)
 extern "ffidemo" fn ffi_iota(n: int) -> [int]            # [int] RETURN via the out-param shim
 extern "ffidemo" fn ffi_sfold(v: [string]) -> int        # [string] param -> (const char *const *, long), borrowed
+extern "ffidemo" fn ffi_clen(s: string) -> int           # strlen of a string param -- the prefix, not len(s)
+extern "ffidemo" fn ffi_nulstr() -> string               # C buffer {'h',0,'i',0} -- comes back strlen-bounded
 extern "ffidemo" fn ffi_spick(v: [string], i: int) -> string   # an element is an ordinary C string
 extern "ffidemo" fn ffi_dscale(xs: [float], k: float) -> [float]   # [float] param AND return
 
@@ -96,6 +98,10 @@ fn main():
     println(f"wrapfn={to_str(wf)} wraplen={len(wf)}")
     wn := brev_fn(to_bytes("a" + chr(0) + "c"))             # "a\0c" reversed -> "c\0a", len 3
     println(f"wrapnullen={len(wn)}")
+    # The contrast, and why `bytes` above is the supported route: a `string` crosses as a bare
+    # char* and truncates at its first NUL both ways and per [string] element (§24.1 of 14-ffi).
+    nz := "h" + chr(0) + "i"
+    println(f"nulparam={len(nz)}/{ffi_clen(nz)} nulret={len(ffi_nulstr())} nularr={ffi_sfold([nz])} ctl={ffi_clen("hi")}")
     # Stage R1c -- [int]/[float] cross as (const T*, long), empty array -> len 0
     println(f"isum={ffi_isum([10, 20, 30, 42])} isum0={ffi_isum([]int)} favg={ffi_favg([2.0, 4.0, 6.0])}")   # 102 0 4.0
     # Stage R1d -- array RETURN via the out-param shim (and param+return together)

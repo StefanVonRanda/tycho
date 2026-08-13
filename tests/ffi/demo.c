@@ -115,3 +115,8 @@ int64_t ffi_sfold(const char *const *v, int64_t n) {
 const char *ffi_spick(const char *const *v, int64_t n, int64_t i) {
     return (i >= 0 && i < n) ? v[i] : "<oob>";
 }
+
+/* Interior NUL (docs/spec/14-ffi.md §24.1): a `string` crosses as a bare char*, so the
+ * callee's strlen sees the prefix only, and a C buffer holding one comes back strlen-bounded. */
+int64_t ffi_clen(const char *s) { return (int64_t)strlen(s); }
+const char *ffi_nulstr(void) { static const char b[4] = {'h', 0, 'i', 0}; return b; }

@@ -110,6 +110,13 @@ A string *literal* cannot contain a `NUL` — `\0` is not a supported escape and
 rejected at compile time — so a truncating value always arrives from `chr(0)`,
 from `to_str` over a constructed `bytes`, or from C.
 
+**A package built on this boundary does not inherit the exemption.** "Documented,
+not enforced" is a statement about the ABI, not about a library whose answer is a
+yes/no about untrusted bytes: such a caller must cross as `bytes`, or refuse the
+input by name. `core:regex` does the first — the subject crosses as
+`(pointer, length)` and `REG_STARTEND` bounds the match by it
+(`corelib/regex/regex_shim.c@rx_exec`).
+
 The sized-integer conversions truncate or extend by the C cast (probed on both
 compilers). `to_uN` / `to_iN` narrows a value to the type's low `N` bits; widening
 back with `to_int` **sign-extends** the signed types (`i8`/`i16`/`i32`/`i64`) and
