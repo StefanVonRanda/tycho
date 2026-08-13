@@ -1,0 +1,14 @@
+# Forgetting the type argument on a return-only generic. Until 2026-08-13 this
+# compiled here and failed at the NEXT call with `Box__t28` -- a name out of the
+# compiler's bind vector, at a line the author had no reason to suspect. It now
+# fails at the call that cannot be inferred, names the parameter, and gives the
+# form that fixes it (FRICTION.md #36).
+struct Box($T):
+    items: [$T]
+
+fn empty() -> Box($T):
+    return Box([]$T)
+
+fn main():
+    b := empty()
+    println(str(len(b.items)))

@@ -17,7 +17,7 @@ their own chapters and are out of scope here.
 > Provenance: `Sig` builtins `src/tychoc.c:4832-4930`; conversion magic
 > `:6118-6174`; `len` `:6176-6182`; `keys`/`push`/`pop`/`reserve` `:6232-6327`;
 > `m.get` sugar `:5668-5681`,`:5526-5541`; `zero$` `:5616-5642`; concurrency
-> magic `:6017-6100`; `map_*` removal `:2646-2647`; `die` codegen `:9777-9778`.
+> magic `:6017-6100`; `map_*` removal `:2646-2647`; `die` codegen `:9791-9792`.
 
 ## 29.1 Builtins are part of the language
 
@@ -82,8 +82,8 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4837-4841`,`:4911-4912`,`:4921-4922`; `eprint` codegen `:10410@tycho_eprint`; `die` codegen
-> `:9777-9778`.
+> Provenance: `src/tychoc.c:4837-4841`,`:4911-4912`,`:4921-4922`; `eprint` codegen `:10424@tycho_eprint`; `die` codegen
+> `:9791-9792`.
 
 ## 29.4 Conversions
 
@@ -127,7 +127,7 @@ serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is t
 only spelling — `n.to_char()` is not.
 
 > Provenance: conversion magic `src/tychoc.c:6118-6174`; `chr` and `to_char` `Sig`
-> `:5342@.name="to_char"`, their shared codegen `:9817-9819`;
+> `:5342@.name="to_char"`, their shared codegen `:9831-9833`;
 > `is_null`/`to_ptr` `Sig` `:4923-4924`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1130-1134` /
 > `sized_conv_target` `:1119-1129`, resolved inline at `:6134-6140`. The abort
@@ -158,8 +158,8 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4914-4915`, `split` `:5349@.name="split"`;
 > `len` magic
-> `:6176-6182`; `char_at` `Sig` `src/tychoc.c:5348@.name="char_at"`, codegen `:9627-9634`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10937@tycho_str_get`), tychoc0
+> `:6176-6182`; `char_at` `Sig` `src/tychoc.c:5348@.name="char_at"`, codegen `:9641-9648`
+> (`tycho_str_get`, the same call `s[i]` emits at `:10951@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -224,8 +224,8 @@ user-callable.)
 > Provenance: `keys` `src/tychoc.c:6232-6237`; `m.get` sugar `:5668-5681`,
 > `:5526-5541`; `map_*` removal (parse error) `:2646-2647`, tychoc0
 > `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
-> form). `hash` resolve `src/tychoc.c:6421-6434`, codegen `:10313-10315`,
-> `gen_hash` `src/tychoc.c:10051@gen_hash`; its type-emission gate is `hash_keyused`
+> form). `hash` resolve `src/tychoc.c:6421-6434`, codegen `:10327-10329`,
+> `gen_hash` `src/tychoc.c:10065@gen_hash`; its type-emission gate is `hash_keyused`
 > `src/tychoc.c:1545-1549`, OR'd into the hash-function gates so a `hash()` on
 > a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
@@ -277,7 +277,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5643-5657`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-862` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:11412@_pk > 64`.
+> 64 is `src/tychoc.c:11426@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -365,7 +365,7 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:5343@.name="die"`, codegen `:9777-9778`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:5343@.name="die"`, codegen `:9791-9792`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no

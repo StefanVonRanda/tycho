@@ -1,0 +1,23 @@
+# A generic whose type parameter appears ONLY in its return type is called with
+# the explicit type-argument form, `name$(T)(...)`, specified at §7.1/§7.5. It
+# always worked; FRICTION.md #36 claimed there was "no explicit-instantiation
+# syntax to rescue it", which was wrong and is retracted there.
+#
+# What was real is the DIAGNOSTIC for forgetting it, pinned by the sibling
+# tests/reject/generic_return_only_unbound.ty.
+struct Box($T):
+    items: [$T]
+
+fn empty() -> Box($T):
+    return Box([]$T)
+
+fn put(b: inout Box($T), v: $T):
+    push(b.items, v)
+
+fn main():
+    bs := empty$(string)()
+    put(&bs, "a")
+    put(&bs, "b")
+    bi := empty$(int)()
+    put(&bi, 7)
+    println(str(len(bs.items)) + " " + str(len(bi.items)) + " " + bs.items[0] + " " + str(bi.items[0]))

@@ -92,10 +92,10 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2727` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:9184-9253`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:9198-9267`. Each
   `extern "Lib"` adds `-lLib` (`:5401` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:9190-9194`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:8972-8975`, `:3113-3138`, `:9241-9243`.
+  passthrough at `:9204-9208`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:8986-8989`, `:3113-3138`, `:9255-9257`.
 - String return is arena-copied so Tycho never holds a foreign pointer
   (`src/tychoc.c:6477-6484`, `tycho_str_from_c`, NULL→`""`).
 
@@ -146,7 +146,7 @@ The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:10278` for `len`, `:10405` and `:10412` for print/println). Footguns:
+`src/tychoc.c:10292` for `len`, `:10419` and `:10426` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8982-8985`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8996-8999`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 
