@@ -70,6 +70,33 @@ freed: id 0#0 names a despawned entity
 respawned 0#1 into slot 0
 stale: id 0#0 is stale (slot 0 is at generation 1)
 fresh 0#1 hp=44
+=== sim: 24 ticks, order spawn,move,combat,decay,reap
+sim seed: spawned=8 live=8
+tick 0 spawned=3 moved=10 hits=0 decayed=11 reaped=0 live=11 hp=239 sum=1217
+tick 1 spawned=3 moved=12 hits=1 decayed=14 reaped=0 live=14 hp=288 sum=1537
+tick 2 spawned=3 moved=15 hits=1 decayed=17 reaped=0 live=17 hp=322 sum=1738
+tick 3 spawned=3 moved=18 hits=7 decayed=20 reaped=0 live=20 hp=306 sum=1774
+tick 4 spawned=3 moved=20 hits=1 decayed=23 reaped=1 live=22 hp=337 sum=1799
+tick 5 spawned=3 moved=22 hits=7 decayed=25 reaped=2 live=23 hp=345 sum=1951
+tick 6 spawned=3 moved=23 hits=4 decayed=26 reaped=2 live=24 hp=358 sum=2021
+tick 7 spawned=3 moved=24 hits=13 decayed=27 reaped=4 live=23 hp=299 sum=1866
+tick 8 spawned=3 moved=23 hits=6 decayed=26 reaped=3 live=23 hp=311 sum=1919
+tick 9 spawned=3 moved=23 hits=7 decayed=26 reaped=1 live=25 hp=311 sum=2112
+tick 10 spawned=3 moved=25 hits=4 decayed=28 reaped=3 live=25 hp=298 sum=1970
+tick 11 spawned=3 moved=25 hits=12 decayed=28 reaped=7 live=21 hp=265 sum=1811
+tick 12 spawned=3 moved=21 hits=7 decayed=24 reaped=6 live=18 hp=284 sum=1667
+tick 13 spawned=3 moved=18 hits=3 decayed=21 reaped=2 live=19 hp=298 sum=1849
+tick 14 spawned=3 moved=19 hits=6 decayed=22 reaped=1 live=21 hp=297 sum=1878
+tick 15 spawned=3 moved=21 hits=10 decayed=24 reaped=5 live=19 hp=262 sum=1698
+tick 16 spawned=3 moved=19 hits=3 decayed=22 reaped=1 live=21 hp=260 sum=1720
+tick 17 spawned=3 moved=21 hits=9 decayed=24 reaped=1 live=23 hp=235 sum=1698
+tick 18 spawned=3 moved=23 hits=7 decayed=26 reaped=5 live=21 hp=227 sum=1624
+tick 19 spawned=3 moved=21 hits=9 decayed=24 reaped=5 live=19 hp=197 sum=1437
+tick 20 spawned=3 moved=19 hits=4 decayed=22 reaped=1 live=21 hp=213 sum=1534
+tick 21 spawned=3 moved=21 hits=6 decayed=24 reaped=2 live=22 hp=211 sum=1684
+tick 22 spawned=3 moved=22 hits=10 decayed=25 reaped=7 live=18 hp=191 sum=1337
+tick 23 spawned=3 moved=20 hits=1 decayed=21 reaped=5 live=16 hp=230 sum=1373
+sim: spawned=80 reaped=64 live=16 moved=485 hits=138 decayed=550 hp=230 sum=1373
 === err BadSlot (via the world API)
 no slot 99 (world has 0)
 === err Dead (via the world API)

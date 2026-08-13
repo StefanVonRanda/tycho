@@ -3239,3 +3239,38 @@ gets a fourth arm that claims nothing rather than a fixture.
 and it is why an entity pool built with `push` cannot be `sink`-passed at all.
 Relaxing it needs a real last-use analysis; that is a language change, out of
 this scope.
+
+### 25. a keyword used as a field or a variable does not say it is a keyword — **open**
+
+Writing the systems in `tools/tycho-sim/sys/` wanted a struct of flags saying
+which systems run, one per system. The obvious spelling does not compile, and
+the refusal names the wrong thing:
+
+    struct Cfg:
+        spawn: bool
+    ->  error: expected a field name
+
+`spawn` is a keyword, so the field-name parser rejects it — but the message
+describes the token as not being a field name at all, which is what you would
+also get from a stray `,` or a number. Nothing in it suggests the identifier is
+fine and merely taken. The same holds for a local: `spawn := 1` gives
+`expected an expression`, pointing at the `:=` rather than at the name.
+
+**The compiler already has the right sentence and uses it one place out of
+three.** A procedure gets it (probed 2026-08-13, all four in a clean directory):
+
+| written as | diagnostic |
+|---|---|
+| `fn spawn(n: int)` | `'spawn' is a reserved keyword and cannot be used as a procedure name` |
+| `spawn: bool` (field) | `expected a field name` |
+| `spawn := 1` (local) | `expected an expression` |
+| `parallel: bool` (field) | `expected a field name` |
+
+So this is not a missing analysis, it is one existing string not reused at the
+field-name and short-declaration sites. Cost is small and the shape is settled
+by the procedure arm; left unfixed only because this slice's scope was
+`tools/tycho-sim/`, not `src/`.
+
+Worked around in the program by naming the field `reinforce`
+(`tools/tycho-sim/sys/sys.ty@reinforce`) — which is a fair name for per-tick
+spawning, so the cost here was the minutes spent learning why, not the rename.

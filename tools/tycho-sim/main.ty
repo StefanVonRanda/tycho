@@ -1,26 +1,33 @@
 package main
 
 import "core:strings"
+import "core:arrays"
 import "core:cli"
 import "world"
+import "sys"
 
-# tycho-sim slice 1: a driver over world/, the slot map in the package next
-# door. There is no simulation here yet -- movement, combat and decay are the
-# next slice. What this exercises is the STORAGE: `soa` component pools,
-# `subscript` projections into them, and swap-remove despawn on the hot path.
+# tycho-sim: a driver over world/ (the slot map and its `soa` component pools)
+# and sys/ (the five systems and the tick loop). What this exercises is the
+# STORAGE -- `soa` pools, `subscript` projections into them, swap-remove despawn
+# on the hot path -- driven by a simulation rather than by a script.
 #
 # WHY THIS PROGRAM EXISTS. `soa` had one user in the tree and `subscript` had
 # none, so both were gated only by fixtures written to test them. Here they are
-# the pool's real API: every field read and every field write in world/ goes
-# through a projection, and the swap-remove is written out of them too.
+# the pool's real API: every per-field read and write in world/ and every system
+# in sys/ goes through a projection.
 #
 # DETERMINISM. Integer arithmetic only, one LCG whose seed is a literal, no
 # float, no map iteration, no clock, no path printed. Two runs are the same
-# bytes or the program is wrong.
+# bytes or the program is wrong. There is no `parallel for` and no `spawn` in
+# this program -- see the header of sys/sys.ty for why.
 #
-# THREE MODES, because the gate needs three different things and only one of
+# FOUR MODES, because the gate needs four different things and only one of
 # them is a transcript:
-#   --demo       the goldened scenario: many ticks, many swap-removes.
+#   --sim=N      the simulation: N ticks of spawn/move/combat/decay/reap over
+#                the pools, one line of counters per tick. `--order=` names the
+#                order the systems run in and `--off=` withholds one of them,
+#                which is what lets the runner see each system separately.
+#   --demo       the storage scenario: many ticks, many swap-removes.
 #   --sweep=N    an ARITHMETIC scenario: spawn N, despawn the odd-numbered
 #                ones. The survivor set is N/2 hp values the runner can compute
 #                without replaying anything, which is what lets it assert the
@@ -30,27 +37,22 @@ import "world"
 #                the slot really was reused, so the refusal is the generation
 #                and not a slot that merely stayed empty.
 
-# LCG, constants from the C standard's example. 2^31 modulus keeps the product
-# under 2^62 at every step, so nothing here depends on the width of int beyond
-# 64 bits.
-struct Rng:
-    s: int
+# The two numbers the runner needs to predict the entity total without
+# replaying anything: spawned = seed() + per_tick() * N.
+fn seed_n() -> int:
+    return 8
 
-fn next(r: inout Rng) -> int:
-    r.s = (r.s * 1103515245 + 12345) % 2147483648
-    return r.s
-
-fn pick(r: inout Rng, n: int) -> int:
-    return next(&r) % n
+fn per_tick() -> int:
+    return 3
 
 fn demo() -> int:
     w := world.new()
-    r := Rng(20260813)
+    r := sys.Rng(20260813)
     ids := []
     println("=== demo: 8 ticks over a soa pool, despawn by swap-remove")
     for t := 0; t < 8; t += 1:
         for k := 0; k < 5; k += 1:
-            id := world.spawn_at(&w, pick(&r, 100), pick(&r, 100), 20 + pick(&r, 40))
+            id := world.spawn_at(&w, sys.pick(&r, 100), sys.pick(&r, 100), 20 + sys.pick(&r, 40))
             push(ids, id)
         # Damage a third of the live pool through their ids, then despawn every
         # entity the damage took to 0 or below. Both the picking and the
@@ -58,8 +60,8 @@ fn demo() -> int:
         # repairing its slot is read back on the very next tick.
         hits := len(ids) / 3
         for k := 0; k < hits; k += 1:
-            victim := ids[pick(&r, len(ids))]
-            match world.damage(&w, victim, 9 + pick(&r, 20)):
+            victim := ids[sys.pick(&r, len(ids))]
+            match world.damage(&w, victim, 9 + sys.pick(&r, 20)):
                 Ok(hp): hp = hp
                 Err(er): er = er
         dead := []
@@ -138,10 +140,63 @@ fn stale() -> int:
         Err(er): println("  BUG the fresh id was refused: " + world.err_str(er))
     return 0
 
+# "a,b,c" -> ["a", "b", "c"]. core:strings has split_once, not split, and a
+# scan is shorter than a loop around it. An empty field stays in, so a stray
+# comma produces "" and is refused by name rather than dropped.
+fn commas(s: string) -> [string]:
+    out := []
+    cur := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i:i + 1]
+        if c == ",":
+            push(out, cur)
+            cur = ""
+        else:
+            cur = cur + c
+    push(out, cur)
+    return out
+
+# The simulation. Every printed number is a counter a system returned, so a
+# system that stops doing its job takes its own column to zero rather than
+# quietly leaving the transcript plausible.
+fn simulate(ticks: int, ord: [string], c: sys.Cfg) -> Result(void, string):
+    w := world.new()
+    r := sys.Rng(20260813)
+    println("=== sim: " + str(ticks) + " ticks, order " + arrays.join(ord, ","))
+    s := sys.seed(&w, &r, seed_n())
+    println("sim seed: spawned=" + str(s) + " live=" + str(world.live(w)))
+    tot := sys.Tally(s, 0, 0, 0, 0)
+    for t := 0; t < ticks; t += 1:
+        match sys.tick(&w, &r, c, ord):
+            Ok(q):
+                tot.spawned = tot.spawned + q.spawned
+                tot.moved = tot.moved + q.moved
+                tot.hits = tot.hits + q.hits
+                tot.decayed = tot.decayed + q.decayed
+                tot.reaped = tot.reaped + q.reaped
+                println("tick " + str(t) +
+                        " spawned=" + str(q.spawned) +
+                        " moved=" + str(q.moved) +
+                        " hits=" + str(q.hits) +
+                        " decayed=" + str(q.decayed) +
+                        " reaped=" + str(q.reaped) +
+                        " live=" + str(world.live(w)) +
+                        " hp=" + str(world.total_hp(w)) +
+                        " sum=" + str(world.checksum(w)))
+            Err(m):
+                return Err(m)
+    println("sim: spawned=" + str(tot.spawned) + " reaped=" + str(tot.reaped) +
+            " live=" + str(world.live(w)) + " moved=" + str(tot.moved) +
+            " hits=" + str(tot.hits) + " decayed=" + str(tot.decayed) +
+            " hp=" + str(world.total_hp(w)) + " sum=" + str(world.checksum(w)))
+    return Ok()
+
 fn main() -> Result(void, string):
     av := cli.argv()
     mode := ""
     n := 0
+    ord := sys.order()
+    cfg := sys.all_on(per_tick())
     for a in av:
         if a == "--demo":
             mode = "demo"
@@ -150,8 +205,34 @@ fn main() -> Result(void, string):
         elif strings.starts_with(a, "--sweep="):
             mode = "sweep"
             n = strings.parse_int(a[8:len(a)])
+        elif strings.starts_with(a, "--sim="):
+            mode = "sim"
+            n = strings.parse_int(a[6:len(a)])
+        elif strings.starts_with(a, "--order="):
+            ord = commas(a[8:len(a)])
+        elif strings.starts_with(a, "--off="):
+            # One system withheld. Unknown names are refused here rather than
+            # silently ignored: a typo that disabled nothing would make the
+            # gate's off-run identical to the on-run and prove nothing.
+            k := a[6:len(a)]
+            if k == "spawn":
+                cfg.reinforce = false
+            elif k == "move":
+                cfg.mv = false
+            elif k == "combat":
+                cfg.combat = false
+            elif k == "decay":
+                cfg.decay = false
+            elif k == "reap":
+                cfg.reap = false
+            else:
+                return Err("no system named '" + k + "' to switch off")
         else:
             return Err("unknown argument: " + a)
+    if mode == "sim":
+        if n < 1:
+            return Err("--sim needs at least 1 tick, got " + str(n))
+        return simulate(n, ord, cfg)
     if mode == "demo":
         demo()
         return Ok()
@@ -163,4 +244,4 @@ fn main() -> Result(void, string):
             return Err("--sweep needs at least 2 entities, got " + str(n))
         sweep(n)
         return Ok()
-    return Err("usage: tycho-sim --demo | --sweep=<N> | --stale")
+    return Err("usage: tycho-sim --sim=<N> [--order=a,b,c] [--off=<system>] | --demo | --sweep=<N> | --stale")

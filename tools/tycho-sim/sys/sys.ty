@@ -1,0 +1,171 @@
+package sys
+
+import "../world"
+
+# The systems and the tick loop for tycho-sim. Five systems over the `soa`
+# pools in world/: spawn, move, combat, decay, reap. Each is one function that
+# walks the dense pool and touches one concern.
+#
+# THE TICK ORDER MATTERS AND IS NOT HIDDEN. `tick` drives the systems through
+# `run_one` and through nothing else, so the list it is handed IS the order that
+# ran -- there is no second path that could quietly run them in another one.
+# Order independence is NOT claimed: combat reads the positions move writes, and
+# reap reads the hp decay writes, so two orders give two answers. The runner
+# asserts both halves -- that the canonical order reproduces the golden, and
+# that a swapped one does not.
+#
+# ONE THING HERE IS ORDER-INDEPENDENT, and only because the arithmetic makes it
+# so: combat's damage is symmetric in the two slots and hp takes a sum of it, so
+# the answer does not depend on which order the pairs are visited.
+#
+# DETERMINISM. Integer arithmetic only, one seeded LCG, no float, no map
+# iteration, no clock. Positions are non-negative everywhere a `%` is applied,
+# so nothing depends on how the host rounds a negative division.
+#
+# NO PARALLELISM, deliberately. The pool is tens of entities and combat is the
+# only quadratic system in it; a `parallel for` here would buy nothing and would
+# put a thread-count leg in the gate that could not fail. See run.sh.
+
+# The torus the entities live on. Small on purpose: 64 cells against tens of
+# entities is what makes combat fire often enough to be worth gating.
+fn grid() -> int:
+    return 8
+
+# LCG, constants from the C standard's example. 2^31 modulus keeps the product
+# under 2^62 at every step.
+struct Rng:
+    s: int
+
+fn next(r: inout Rng) -> int:
+    r.s = (r.s * 1103515245 + 12345) % 2147483648
+    return r.s
+
+fn pick(r: inout Rng, n: int) -> int:
+    return next(&r) % n
+
+# Which systems run this tick. The gate flips exactly one off at a time: a
+# system that silently stopped running would leave its counter at zero in the
+# ON run too, which is what the off-runs are compared against.
+struct Cfg:
+    reinforce: bool
+    mv: bool
+    combat: bool
+    decay: bool
+    reap: bool
+    per_tick: int
+
+fn all_on(per_tick: int) -> Cfg:
+    return Cfg(true, true, true, true, true, per_tick)
+
+# What each system did, summed over the run. These are the numbers the gate
+# reads: a system that stops working takes its own counter to zero.
+struct Tally:
+    spawned: int
+    moved: int
+    hits: int
+    decayed: int
+    reaped: int
+
+fn order() -> [string]:
+    return ["spawn", "move", "combat", "decay", "reap"]
+
+# --- the systems ----------------------------------------------------------
+
+fn sys_spawn(w: inout world.World, r: inout Rng, k: int) -> int:
+    g := grid()
+    for i := 0; i < k; i += 1:
+        world.spawn_at(&w, pick(&r, g), pick(&r, g), 12 + pick(&r, 24))
+    return k
+
+# Each entity steps by the velocity its SLOT names, so an entity's course is a
+# property of its identity and survives every swap-remove that moves it. One
+# slot in nine names a standstill, which is why `moved` is below `live`.
+fn sys_move(w: inout world.World) -> int:
+    g := grid()
+    n := 0
+    for d := 0; d < world.live(w); d += 1:
+        s := world.slot_at(w, d)
+        vx := (s % 3) - 1
+        vy := ((s / 3) % 3) - 1
+        if vx == 0 and vy == 0:
+            continue
+        w.px(d) = (w.px(d) + vx + g) % g
+        w.py(d) = (w.py(d) + vy + g) % g
+        n = n + 1
+    return n
+
+# Every unordered pair sharing a cell trades damage.
+fn sys_combat(w: inout world.World) -> int:
+    n := 0
+    live := world.live(w)
+    for i := 0; i < live; i += 1:
+        for j := i + 1; j < live; j += 1:
+            if w.px(i) != w.px(j) or w.py(i) != w.py(j):
+                continue
+            dmg := 2 + ((world.slot_at(w, i) + world.slot_at(w, j)) % 4)
+            w.hp(i) = w.hp(i) - dmg
+            w.hp(j) = w.hp(j) - dmg
+            n = n + 1
+    return n
+
+fn sys_decay(w: inout world.World) -> int:
+    n := 0
+    for d := 0; d < world.live(w); d += 1:
+        w.hp(d) = w.hp(d) - (1 + (world.slot_at(w, d) % 2))
+        n = n + 1
+    return n
+
+# DOWNWARD, because swap-remove moves the LAST element into the hole: walking
+# down means the element that arrives has already been judged, so every entity
+# is tested exactly once and none is skipped. Upward would skip the entity that
+# landed in the hole.
+fn sys_reap(w: inout world.World) -> int:
+    n := 0
+    for d := world.live(w) - 1; d >= 0; d -= 1:
+        if w.hp(d) > 0:
+            continue
+        id := world.id_at(w, d)
+        match world.despawn(&w, id):
+            Ok(): n = n + 1
+            Err(er): er = er
+    return n
+
+# --- the tick -------------------------------------------------------------
+
+# The single dispatch point. False means the name is not a system, which is how
+# a mistyped --order is refused rather than silently dropped.
+fn run_one(name: string, w: inout world.World, r: inout Rng, c: Cfg, t: inout Tally) -> bool:
+    if name == "spawn":
+        if c.reinforce:
+            t.spawned = t.spawned + sys_spawn(&w, &r, c.per_tick)
+        return true
+    if name == "move":
+        if c.mv:
+            t.moved = t.moved + sys_move(&w)
+        return true
+    if name == "combat":
+        if c.combat:
+            t.hits = t.hits + sys_combat(&w)
+        return true
+    if name == "decay":
+        if c.decay:
+            t.decayed = t.decayed + sys_decay(&w)
+        return true
+    if name == "reap":
+        if c.reap:
+            t.reaped = t.reaped + sys_reap(&w)
+        return true
+    return false
+
+fn tick(w: inout world.World, r: inout Rng, c: Cfg, ord: [string]) -> Result(Tally, string):
+    t := Tally(0, 0, 0, 0, 0)
+    for i := 0; i < len(ord); i += 1:
+        if not run_one(ord[i], &w, &r, c, &t):
+            return Err("no system named '" + ord[i] + "'")
+    return Ok(t)
+
+# The initial population. It is the spawn system called once, outside the loop,
+# so --off=spawn withholds REINFORCEMENTS rather than emptying the world and
+# making every other leg vacuous.
+fn seed(w: inout world.World, r: inout Rng, k: int) -> int:
+    return sys_spawn(&w, &r, k)

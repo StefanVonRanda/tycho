@@ -58,10 +58,10 @@ fn err_str(er: SimErr) -> string:
         Stale(i, g, w): return "id " + str(i) + "#" + str(g) + " is stale (slot " + str(i) + " is at generation " + str(w) + ")"
         Dead(i, g): return "id " + str(i) + "#" + str(g) + " names a despawned entity"
 
-# The projections. These are the pool's read/write API: every field access on
-# the hot path below goes through one, including the swap-remove itself, so a
-# projection that stopped naming the place it claims to name would move the
-# transcript rather than merely going unused.
+# The projections. These are the pool's read/write API: every per-field access
+# on the hot path below goes through one, so a projection that stopped naming
+# the place it claims to name would move the transcript rather than merely
+# going unused.
 subscript hp(w: World, d: int) -> inout int:
     yield &w.e[d].hp
 
@@ -107,12 +107,11 @@ fn dense_of(w: World, id: Id) -> Result(int, SimErr):
         return Err(Dead(id.idx, id.gen))
     return Ok(w.slots[id.idx].dense)
 
-# SWAP-REMOVE. The last element is copied down over the hole field by field
-# (`w.e[d] = w.e[last]` does not compile -- see the header of main.ty), the
-# moved entity's slot is re-pointed at its new dense index, and the pool is
-# popped. Forgetting that one repair is the classic bug this shape exists to
-# catch: the pool length stays right, every walk still sees the right number of
-# entities, and exactly one id quietly starts addressing somebody else.
+# SWAP-REMOVE. The last element is scattered whole over the hole, the moved
+# entity's slot is re-pointed at its new dense index, and the pool is popped.
+# Forgetting that one repair is the classic bug this shape exists to catch: the
+# pool length stays right, every walk still sees the right number of entities,
+# and exactly one id quietly starts addressing somebody else.
 fn despawn(w: inout World, id: Id) -> Result(void, SimErr):
     d := 0
     match dense_of(w, id):
@@ -120,15 +119,21 @@ fn despawn(w: inout World, id: Id) -> Result(void, SimErr):
         Err(er): return Err(er)
     last := len(w.e) - 1
     if d != last:
-        w.e[d].slot = w.e[last].slot
-        w.hp(d) = w.hp(last)
-        w.px(d) = w.px(last)
-        w.py(d) = w.py(last)
+        w.e[d] = w.e[last]
         w.slots[w.e[d].slot].dense = d
     pop(w.e)
     w.slots[id.idx].dense = -1
     push(w.free, id.idx)
     return Ok()
+
+# A dense walk needs two things the projections do not give it: which slot the
+# entity at d belongs to, and the id that names it. `id_at` is what lets a
+# system despawn from inside a walk without having remembered an id.
+fn slot_at(w: World, d: int) -> int:
+    return w.e[d].slot
+
+fn id_at(w: World, d: int) -> Id:
+    return Id(w.e[d].slot, w.slots[w.e[d].slot].gen)
 
 fn id_str(id: Id) -> string:
     return str(id.idx) + "#" + str(id.gen)

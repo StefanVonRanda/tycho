@@ -1,7 +1,8 @@
 #!/bin/sh
 # Gate for tycho-sim, the entity simulation in tools/tycho-sim/ -- world/ (the
 # slot map, the `soa` component pools and the `subscript` projections into
-# them) and main.ty (the three-mode driver that stands in for a game loop).
+# them), sys/ (the five systems and the tick loop) and main.ty (the four-mode
+# driver).
 #
 # Re-record the golden with:  RECORD=1 sh tools/tycho-sim/run.sh
 #
@@ -14,12 +15,12 @@
 # else. A golden recorded from that build agrees with it and cmp is green by
 # construction. So the survivor SET is asserted against values this runner
 # computes itself, where RECORD=1 cannot reach it. The golden is leg [1] of
-# five and the weakest of them.
+# eight and the weakest of them.
 #
 # WHAT IT ASSERTS
-#   [1] THE TRANSCRIPT, twice. --demo, --sweep=24 and --stale are each run
-#       twice; the two runs must be cmp-identical to each other and the first
-#       to the golden. The program reads no clock, no path and no environment
+#   [1] THE TRANSCRIPT, twice. --demo, --sweep=N, --stale and --sim=T are each
+#       run twice; the two runs must be cmp-identical to each other and the
+#       first to the golden. It reads no clock, no path and no environment
 #       and its one PRNG is seeded from a literal, so a difference between two
 #       runs is uninitialised state, not scheduling.
 #   [2] THE LIVE COUNT, against arithmetic in this runner. --sweep=N spawns N
@@ -41,7 +42,29 @@
 #         - the reused id is refused as STALE, naming both generations.
 #       If the slot were not reused, the program prints a FLOOR line and this
 #       runner fails on it.
-#   [5] EVERY SimErr VARIANT exits NON-ZERO with its own whole message and an
+#   [5] CONSERVATION, computed here. --sim=T seeds 8 entities and reinforces 3
+#       per tick, so the run must report 8 + 3T ever spawned; those three
+#       numbers are literals below, not read off the transcript. Then
+#       spawned = reaped + live over the whole run, and the same identity per
+#       tick: live(t) = live(t-1) + spawned(t) - reaped(t), walked from the
+#       seeded 8. A lost entity breaks the tick it was lost on.
+#   [6] EACH SYSTEM SEPARATELY VISIBLE. The five systems are switched off one
+#       at a time and each off-run is checked for TWO things: that system's own
+#       counter goes to zero, and a consequence that a counter alone cannot
+#       fake -- combat off leaves more entities alive, decay off leaves more
+#       hp, reap off leaves every entity ever spawned in the pool. A system
+#       that silently stopped running reddens on the ON side (its counter is
+#       zero when it should not be); a system that counts without acting
+#       reddens on the consequence. Neither run is in the golden, so RECORD=1
+#       cannot reach either.
+#   [7] THE TICK ORDER, because it is NOT independent and this says so. Combat
+#       reads what move writes and reap reads what decay writes, so the order
+#       is part of the answer. Two assertions: the canonical order SPELLED OUT
+#       HERE reproduces the goldened transcript byte for byte, and a swapped
+#       one does not. The first alone would pass if --order were ignored; the
+#       second is what proves it is read. A third arm gives --order a system
+#       that does not exist and requires a non-zero exit naming it.
+#   [8] EVERY SimErr VARIANT exits NON-ZERO with its own whole message and an
 #       empty stdout. The driver REPORTS a refusal and exits 0 by design -- a
 #       refusal is the observation, not a crash -- so this needs a different
 #       caller: the runner copies world/ into its temp dir and builds a probe
@@ -51,9 +74,13 @@
 #       variant added tomorrow reddens here instead of arriving ungated.
 #
 # WHAT IT DELIBERATELY DOES NOT ASSERT
-#   Any timing. There is no measurement in this slice.
-#   The systems -- movement, combat, decay. There are none yet; that is the
-#   next slice, not an omission here.
+#   Any timing. There is no measurement here.
+#   A THREAD COUNT. The program has no `parallel for` and no `spawn` -- the
+#   pool is tens of entities and nothing in it would go faster -- so a
+#   TYCHO_THREADS=1-vs-2 leg could not fail, and a leg that cannot fail is
+#   worse than no leg. `grep` below holds that claim to the source: if a
+#   parallel construct ever lands in this program, this runner reddens and
+#   whoever added it owes the leg.
 #
 # NO HOST DETAIL REACHES THE GOLDEN -- the program prints no paths and reads no
 # environment. Every run below is bounded by $TO where a timeout(1) exists: a
@@ -62,7 +89,7 @@ set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
 [ -x "$TYCHOC" ] || { echo "tycho-sim: no ./tychoc -- run 'make' first"; exit 2; }
-TYCHOC="$PWD/tychoc"          # absolute: the probe in [5] is built after a cd
+TYCHOC="$PWD/tychoc"          # absolute: the probe in [8] is built after a cd
 export TYCHO_CORELIB="$PWD/corelib"
 RECORD="${RECORD:-0}"
 golden="$PWD/tools/tycho-sim/expected.out"
@@ -103,9 +130,14 @@ ln_() {
 }
 
 # ---------------------------------------------------------------------------
-# [1] the three modes, each twice
+# [1] the four modes, each twice
 # ---------------------------------------------------------------------------
 N=24                              # the sweep's size; every number in [2] and [3] derives from it
+T_TICKS=24                        # the sim's length; every number in [5] derives from it
+SEED_N=8                          # tools/tycho-sim/main.ty@seed_n -- the initial population
+PER_TICK=3                        # tools/tycho-sim/main.ty@per_tick -- reinforcements per tick
+ORDER='spawn,move,combat,decay,reap'      # the canonical order, spelled out here for [7]
+SWAPPED='spawn,combat,move,decay,reap'    # combat before move: it reads stale positions
 
 simrun "demo run 1"  "$T/demo.1"  --demo
 simrun "demo run 2"  "$T/demo.2"  --demo
@@ -113,15 +145,17 @@ simrun "sweep run 1" "$T/sweep.1" "--sweep=$N"
 simrun "sweep run 2" "$T/sweep.2" "--sweep=$N"
 simrun "stale run 1" "$T/stale.1" --stale
 simrun "stale run 2" "$T/stale.2" --stale
+simrun "sim run 1"   "$T/sim.1"   "--sim=$T_TICKS"
+simrun "sim run 2"   "$T/sim.2"   "--sim=$T_TICKS"
 
-for m in demo sweep stale; do
+for m in demo sweep stale sim; do
     cmp -s "$T/$m.1" "$T/$m.2" || {
         bad "the $m transcript is not deterministic (run 1 vs run 2)"
         diff "$T/$m.1" "$T/$m.2" | sed 's/^/      /'
     }
 done
 
-cat "$T/demo.1" "$T/sweep.1" "$T/stale.1" >> "$out"
+cat "$T/demo.1" "$T/sweep.1" "$T/stale.1" "$T/sim.1" >> "$out"
 
 # ---------------------------------------------------------------------------
 # [2] the live count, computed here
@@ -181,7 +215,125 @@ grep -n 'BUG ' "$T/demo.1" "$T/sweep.1" | sed 's/^/      /' | grep . && \
     bad "a mode reported a BUG line"
 
 # ---------------------------------------------------------------------------
-# [5] every SimErr variant, exiting non-zero with its own whole message
+# [5] conservation, computed here
+#
+# `fld <name> <file>` reads one field off the sim's summary line. Every number
+# it is compared against below is arithmetic on the four literals above.
+# ---------------------------------------------------------------------------
+fld() {
+    sed -n "s/^sim:.* $1=\(-\{0,1\}[0-9]\{1,\}\).*/\1/p" "$2"
+}
+
+want_spawned=$(( SEED_N + PER_TICK * T_TICKS ))
+got_spawned=$(fld spawned "$T/sim.1")
+got_reaped=$(fld reaped "$T/sim.1")
+got_live=$(fld live "$T/sim.1")
+if [ -z "$got_spawned" ] || [ -z "$got_reaped" ] || [ -z "$got_live" ]; then
+    bad "sim: no summary line -- [5] asserts NOTHING"
+else
+    [ "$got_spawned" = "$want_spawned" ] || \
+        bad "sim: $got_spawned entities spawned, but $SEED_N seeded + $PER_TICK per tick over $T_TICKS ticks is $want_spawned"
+    [ "$(( got_reaped + got_live ))" = "$got_spawned" ] || \
+        bad "sim: $got_spawned spawned but $got_reaped reaped + $got_live live = $(( got_reaped + got_live )) -- entities were lost or invented"
+    # The floors: a run where nothing died, or where nothing survived, would
+    # satisfy the identity above while asserting nothing about either half.
+    [ "$got_reaped" -gt 0 ] || bad "sim: nothing was ever reaped -- the conservation identity is vacuous"
+    [ "$got_live" -gt 0 ] || bad "sim: the world emptied -- the conservation identity is vacuous"
+fi
+ln_ "sim seed: spawned=$SEED_N live=$SEED_N" "$T/sim.1"
+
+# The same identity per tick, walked from the seeded population. The whole-run
+# sum above would balance even if one tick lost an entity and the next invented
+# one; this is the leg that localises it.
+awk -v start="$SEED_N" -v ticks="$T_TICKS" '
+    BEGIN { prev = start }
+    /^tick / {
+        sp = 0; rp = 0; lv = 0
+        for (i = 1; i <= NF; i++) {
+            split($i, kv, "=")
+            if (kv[1] == "spawned") sp = kv[2] + 0
+            else if (kv[1] == "reaped") rp = kv[2] + 0
+            else if (kv[1] == "live") lv = kv[2] + 0
+        }
+        want = prev + sp - rp
+        if (lv != want)
+            printf "tick %s: live=%d, but %d live + %d spawned - %d reaped = %d\n", $2, lv, prev, sp, rp, want
+        prev = lv
+        n++
+    }
+    END { if (n != ticks) printf "found %d tick lines, expected %d\n", n, ticks }
+' "$T/sim.1" > "$T/cons.bad"
+[ -s "$T/cons.bad" ] && { bad "sim: entities are not conserved tick to tick"; sed 's/^/      /' "$T/cons.bad"; }
+
+# ---------------------------------------------------------------------------
+# [6] each system separately visible
+#
+# `sysoff <system> <counter>` runs with that system withheld and requires its
+# counter to be zero there and non-zero in the full run. The counter alone
+# cannot tell a system that stopped acting from one that stopped counting, so
+# each call is followed by a consequence check on a DIFFERENT column.
+# ---------------------------------------------------------------------------
+# The floor <want> is what the counter must read with the system withheld: 0 for
+# four of them, and the seeded population for spawn, whose seed call is outside
+# the tick loop on purpose (tools/tycho-sim/sys/sys.ty@seed).
+sysoff() {
+    _s=$1; _c=$2; _want=$3
+    simrun "sim --off=$_s" "$T/off.$_s" "--sim=$T_TICKS" "--off=$_s"
+    _on=$(fld "$_c" "$T/sim.1")
+    _off=$(fld "$_c" "$T/off.$_s")
+    if [ -z "$_on" ] || [ -z "$_off" ]; then
+        bad "--off=$_s: no $_c on a summary line -- this leg asserts NOTHING"
+        return 0
+    fi
+    [ "$_on" -gt "$_want" ] || bad "$_c=$_on with every system ON, floor is $_want -- the '$_s' system is not running at all"
+    [ "$_off" = "$_want" ] || bad "$_c=$_off with --off=$_s, expected $_want -- withholding the '$_s' system did not stop it"
+    cmp -s "$T/sim.1" "$T/off.$_s" && bad "--off=$_s changed nothing in the transcript"
+}
+
+sysoff spawn  spawned "$SEED_N"
+sysoff move   moved   0
+sysoff combat hits    0
+sysoff decay  decayed 0
+sysoff reap   reaped  0
+
+# The consequences, each a column the system in question does not itself count.
+[ "$(fld live "$T/off.combat")" -gt "$got_live" ] || \
+    bad "--off=combat: no more entities survive without combat than with it -- combat counts hits without dealing damage"
+[ "$(fld hp "$T/off.decay")" -gt "$(fld hp "$T/sim.1")" ] || \
+    bad "--off=decay: total hp is no higher without decay than with it -- decay counts entities without draining them"
+[ "$(fld live "$T/off.reap")" = "$want_spawned" ] || \
+    bad "--off=reap: $(fld live "$T/off.reap") live, expected every one of the $want_spawned ever spawned to still be in the pool"
+
+# The claim in the header, held to the source. Comments are stripped first, and
+# `spawn` must be a call in its own right: `despawn(`, `sys_spawn(` and
+# `world.spawn_at(` are the pool's own vocabulary, not the thread keyword.
+cat "$src/main.ty" "$src/sys/sys.ty" "$src/world/world.ty" | sed 's/#.*//' | \
+    grep -n 'parallel for\|\(^\|[^a-z_]\)spawn *(' > "$T/par.hits"
+[ -s "$T/par.hits" ] && {
+    bad "a parallel construct landed in tycho-sim -- this runner owes a TYCHO_THREADS leg it does not have"
+    sed 's/^/      /' "$T/par.hits"
+}
+
+# ---------------------------------------------------------------------------
+# [7] the tick order is fixed, and this is the order that produced the golden
+# ---------------------------------------------------------------------------
+simrun "sim --order=canonical" "$T/ord.same" "--sim=$T_TICKS" "--order=$ORDER"
+simrun "sim --order=swapped"   "$T/ord.diff" "--sim=$T_TICKS" "--order=$SWAPPED"
+cmp -s "$T/sim.1" "$T/ord.same" || {
+    bad "the goldened transcript was NOT produced by the order '$ORDER'"
+    diff "$T/sim.1" "$T/ord.same" | sed 's/^/      /' | head -8
+}
+cmp -s "$T/sim.1" "$T/ord.diff" && \
+    bad "reordering the systems to '$SWAPPED' changed nothing -- --order is being ignored, so the leg above is vacuous"
+ln_ "=== sim: $T_TICKS ticks, order $ORDER" "$T/sim.1"
+
+$TO "$SIM" "--sim=$T_TICKS" --order=spawn,mvoe,combat,decay,reap > "$T/o.out" 2> "$T/o.err"
+[ $? -eq 0 ] && bad "--order accepted a system name that does not exist"
+grep -qxF "no system named 'mvoe'" "$T/o.err" || \
+    { bad "--order: a bad system name did not fail by name"; sed 's/^/      /' "$T/o.err"; }
+
+# ---------------------------------------------------------------------------
+# [8] every SimErr variant, exiting non-zero with its own whole message
 #
 # The driver REPORTS these and exits 0 by design. A caller that propagates one
 # has to die by it, and this is that caller. world/ is COPIED into the temp dir
@@ -267,7 +419,7 @@ for v in $(awk '
     for c in $COVERED; do [ "$v" = "$c" ] && hit=1; done
     [ "$hit" -eq 1 ] || bad "SimErr variant $v has no leg in this runner -- it is UNGATED"
 done
-[ "$found" -eq 3 ] || bad "found $found SimErr variant(s) in world.ty, expected 3 -- the scan is broken and [5]'s floor asserts nothing"
+[ "$found" -eq 3 ] || bad "found $found SimErr variant(s) in world.ty, expected 3 -- the scan is broken and [8]'s floor asserts nothing"
 
 # ---------------------------------------------------------------------------
 # the golden
@@ -283,7 +435,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-sim: green (demo, sweep=$N and stale each byte-identical over 2 runs and equal to the golden; $want_live of $N entities survive the sweep and every one of them resolves through its id to the hp it was spawned with, totalling $want_sum; a despawned id is refused as dead, its slot is reused with the generation moved, and the original id is then refused as stale; $found SimErr variants each exit non-zero with their own whole message and an empty stdout)"
+    echo "tycho-sim: green (demo, sweep=$N, stale and sim=$T_TICKS each byte-identical over 2 runs and equal to the golden; $want_live of $N entities survive the sweep and every one of them resolves through its id to the hp it was spawned with, totalling $want_sum; over $T_TICKS ticks $want_spawned entities are spawned and $got_reaped + $got_live = $want_spawned are reaped or still live, tick by tick as well as in total; each of the 5 systems takes its own counter to its floor when withheld and moves a column it does not count; the transcript is reproduced by the order '$ORDER' and not by '$SWAPPED'; a despawned id is refused as dead, its slot is reused with the generation moved, and the original id is then refused as stale; $found SimErr variants each exit non-zero with their own whole message and an empty stdout)"
 else
     echo "tycho-sim: FAIL"; exit 1
 fi
