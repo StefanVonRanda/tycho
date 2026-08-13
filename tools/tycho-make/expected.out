@@ -61,6 +61,17 @@ run docs (missing)
 group all
 targets 4: 4 run, 0 up to date
 sources 4: 4 new, 0 changed, 0 touched, 0 unchanged
+=== build race
+src base new
+run w1 (missing)
+run w2 (missing)
+run w3 (missing)
+run c1 (missing)
+run c2 (missing)
+run c3 (missing)
+group all
+targets 6: 6 run, 0 up to date
+sources 1: 1 new, 0 changed, 0 touched, 0 unchanged
 === build noop
 src zeta.c unchanged
 src common.h unchanged

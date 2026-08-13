@@ -3345,54 +3345,73 @@ own `# expect:` line. `tests/enum_bare_variant_local.ty` is the positive one and
 is the regression this could have caused: a bare variant of a *local* enum, in a
 match arm and after `is`, must still be accepted, which no reject fixture sees.
 
-### 27. bounded parallelism over a graph read at runtime has exactly one expressible shape
+### 27. ~~bounded parallelism over a graph read at runtime has exactly one expressible shape~~ — **WRONG, WITHDRAWN 2026-08-13**
 
-`tools/tycho-make` schedules a DAG parsed from a file, so the shape of the work
-is not known until run time. The textbook executor is a ready queue and N
-workers. It is not expressible here, and two independent rules each rule it out.
+This entry claimed that a work queue over a DAG read at run time was not
+expressible, and that a **wavefront** — `parallel for` over one depth of the
+graph, depths in order — was all the language allowed. That was false, and
+`tools/tycho-make` now runs a work queue.
 
-**N live handles have nowhere to live.** `Task(T)` is affine and non-storable
-(`docs/spec/03-types.md:398`), so a pool of handles cannot be an array:
+**What is actually expressible**, and is what
+`tools/tycho-make/build/build.ty@build` does today: **one coordinator and N
+stateless workers**. The pool is a single `spawn`ed task whose body is a
+`parallel for` over a slot list, every chunk looping on the same jobs channel
+(`tools/tycho-make/build/build.ty@pool`). The coordinator keeps the indegree
+table, sends a job when a node's last dependency reports, and files outcomes by
+node index. A node starts when its own dependencies finish, not when its level
+does.
 
-```
-$ ./tychoc probe/main.ty -o probe/x          # hs := [spawn work(1), spawn work(2)]
-tychoc: a task handle cannot be stored in a container or aggregate -- wait(t) first
-```
+**Where the reasoning went wrong.** The two rules quoted below are real. The
+error was looking for a design in which the WORKERS share a mutable indegree
+table, finding that forbidden, and concluding the shape was impossible. Go's
+worker pool does not share that table either — it lives in the one coordinator
+goroutine, and workers are stateless pullers on a jobs channel that report on a
+results channel. Neither rule reaches that:
 
-**There is no shared mutable indegree table.** A worker cannot record that a
-dependency finished, because a `parallel for` body may not write a captured
-variable — probed 2026-08-13:
+- `Task(T)` is affine and non-storable (`docs/spec/03-types.md:398`), so
+  `hs := [spawn work(1), spawn work(2)]` is still refused with "a task handle
+  cannot be stored in a container or aggregate". But a pool is not N handles.
+  It is **one** handle whose task fans out internally, which satisfies affinity
+  by naming it individually.
+- A `parallel for` body still may not write a captured variable — `out[i-1] = i
+  * 2` inside one is still refused with "parallel for cannot mutate captured
+  variable 'out' in place". But no worker needs to. The indegree array is a
+  local of the coordinator thread, mutated only by its owner, so the capture
+  rule never applies to it. What a worker needs travels with the job: `Job`
+  carries each dependency's current hash, filled in by the coordinator.
 
-```
-$ ./tychoc probe/main.ty -o probe/x
-probe/main.ty:6: error: parallel for cannot mutate captured variable 'out' in place
-     6 |         out[i-1] = i * 2
-```
+Three probes on 2026-08-13, before any of this was written, each ran clean:
+four `parallel for` bodies all `recv`ing from one shared channel; two spawned
+workers sharing one jobs channel, splitting eight items **2+6** — uneven, so
+pulled on demand rather than statically partitioned; and a full coordinator loop
+over a diamond DAG with `deps`/`indeg` arrays, which finished in order with no
+deadlock.
 
-Value semantics removes the alternative too: a capture is a copy and `send`
-deep-copies, so there is no cell two workers can both see. `tools/tycho-flow`
-never met this because its stages are a fixed chain written as source; the
-constraint only bites when the graph is data.
+**What the mistake cost.** A build tool that idled its pool. Under the
+wavefront, one long chain sitting inside a wide level held up every node behind
+it however free the workers were. `tools/tycho-make/race.mk` is the fixture that
+shows it: a 3-node instant chain beside three one-second sleepers at the same
+depth. The wavefront started the chain's second node at trace line 9, after all
+three sleepers had finished; the work queue starts it at line 6, about a second
+earlier, and `tools/tycho-make/run.sh` [8b] asserts that ordering rather than
+any duration. The entry also stood as a general claim about the language, which
+is the part worth withdrawing loudly: it named an "honest ceiling" that was not
+one.
 
-What remains expressible is a **wavefront**: `parallel for` over one depth of
-the graph, depths in order, results returned on a channel and filed by node
-index (`tools/tycho-make/build/build.ty@run_level`). It is correct and it is
-deterministic. It is also strictly weaker than a ready queue — a level runs only
-as wide as it is, so one long chain inside a wide level idles the pool, and no
-node from the next level may start early however free the workers are.
+**The determinism claim survived intact.** Completion order is a wider race now
+— the ready set is no longer bounded by a level — and the log is byte-identical
+anyway, at `TYCHO_THREADS` 1, 2 and 8 over six cold runs, because reassembly was
+never a property of the scheduler. The golden did not move: the transcript the
+wavefront produced is the transcript the work queue produces, which is exactly
+why the [8b] leg had to be an assertion in the runner and could not be a
+recorded one.
 
-**Not filed as a bug.** Both rules are load-bearing: affinity is what makes it
-impossible to leak or double-wait a task, and the capture rule is what makes a
-`parallel for` body free of data races by construction. The cost is real and is
-worth stating rather than working around — a language that wants dynamic
-work-stealing needs a third thing (an owned pool object, or a channel of work
-items that workers may also write to), and neither exists today.
-
-The one thing that made the wavefront usable was that `os.run` is thread-safe in
-practice: 12 concurrent subprocesses returned the right exit code and the right
-captured stdout at three different pool widths (probed 2026-08-13). `plan.md`
-had this down as unverified with a fallback to internal actions; the fallback was
-not needed, and tycho-make runs real recipes.
+**The one thing here that stands** is that `os.run` is thread-safe in practice:
+12 concurrent subprocesses returned the right exit code and the right captured
+stdout at three different pool widths (probed 2026-08-13). `plan.md` had this
+down as unverified with a fallback to internal actions; the fallback was not
+needed, and tycho-make runs real recipes. That mattered more under the work
+queue, not less — more subprocesses are now in flight at once.
 
 ### 28. ~~a struct field cannot name a type declared later in the same file~~ — **FIXED 2026-08-13**
 

@@ -10,37 +10,46 @@ import "../graph"
 # tycho-make, slice 2: decide what is stale, run it with bounded parallelism,
 # and print a log whose bytes do not depend on how the work was scheduled.
 #
-# WHY THE SCHEDULER IS A WAVEFRONT AND NOT A READY QUEUE. The obvious design is
-# a queue of ready nodes and N workers taking from it. It is not expressible
-# here, and that is a language fact, not a preference:
+# THE SCHEDULER IS A WORK QUEUE: one coordinator and N stateless workers, which
+# is the textbook design and is expressible here. It replaced a wavefront
+# (`parallel for` over one depth of the graph, depths in order) on 2026-08-13.
+# The wavefront was an unnecessary restriction, and the two rules that were
+# thought to forbid a work queue do not reach this shape:
 #
-#   - N live task handles cannot be held. `Task(T)` is affine and non-storable
-#     (docs/spec/03-types.md:398), so `[spawn a(), spawn b()]` is refused --
-#     "a task handle cannot be stored in a container or aggregate". A pool of
-#     handles has nowhere to live.
-#   - There is no shared mutable indegree table. A `parallel for` body may not
-#     write a captured variable; probed 2026-08-13, `out[i] = v` inside one is
-#     refused with "parallel for cannot mutate captured variable 'out' in
-#     place". So workers cannot decrement a counter to discover what became
-#     ready, and value semantics leaves no cell two workers can both see.
+#   - `Task(T)` is affine and non-storable, so a pool of handles cannot be an
+#     array -- but the pool is not handles. It is ONE spawned task whose body is
+#     a `parallel for` over a slot list, every chunk pulling from the one jobs
+#     channel. One handle, named individually, is all that is ever held.
+#   - A `parallel for` body may not write a captured variable -- but no worker
+#     needs to. The indegree table lives in the coordinator, which is a single
+#     thread mutating its OWN locals; workers are stateless pullers that receive
+#     a job and send an outcome. Neither rule applies.
 #
-# What IS expressible is `parallel for` over a level of the graph: every node at
-# depth d has all of its dependencies at depth < d, so a whole level may run at
-# once and the levels run in order. The cost is real and is not hidden here: a
-# level runs only as wide as it is, and one long chain inside a wide level idles
-# the pool. A ready queue would not. This is the honest ceiling of the language's
-# concurrency model on a graph read at runtime, and it is written up in
-# docs/internals/FRICTION.md.
+# A node therefore starts when its own dependencies finish, not when its whole
+# level does. `tools/tycho-make/run.sh` [8b] asserts exactly that difference: a
+# chain node must start before a wide level of sleepers beside it has finished,
+# which a wavefront cannot do.
 #
-# WHERE DETERMINISM COMES FROM. A level's outcomes arrive on a channel in
-# COMPLETION order, which is a race. Nothing is printed from a worker. Each
-# outcome carries the node index it belongs to, `build` files it by that index,
-# and the log is emitted afterwards by walking the TOPOLOGICAL ORDER. So the log
-# is a function of the graph and the disk, never of the pool -- the same bytes at
-# any TYCHO_THREADS. Recipe output is captured and printed in the same place, so
-# even two recipes racing to write to their stdout cannot interleave in the log.
-# The first error is chosen the same way: by DAG position, not by who failed
-# first.
+# WHAT A WORKER IS TOLD. `Job` carries the node index and the CURRENT hash of
+# each of its dependencies, because the coordinator is the only thread that owns
+# the completed-state array and a worker must not read it. So the data a worker
+# needs arrives with the work, and nothing is shared.
+#
+# WHERE DETERMINISM COMES FROM. Outcomes arrive on a channel in COMPLETION
+# order, which is a race -- and a wider race than the wavefront's, since the
+# ready set is no longer bounded by a level. Nothing is printed from a worker.
+# Each outcome carries the node index it belongs to, the coordinator files it by
+# that index, and the log is emitted afterwards by walking the TOPOLOGICAL
+# ORDER. So the log is a function of the graph and the disk, never of the pool
+# -- the same bytes at any TYCHO_THREADS. Recipe output is captured and printed
+# in the same place, so even two recipes racing to write to their stdout cannot
+# interleave in the log. The error is chosen the same way: by DAG position, not
+# by who failed first.
+#
+# WHY IT CANNOT DEADLOCK. Both channels are sized to the node count, so the
+# coordinator can never block sending a job and a worker can never block sending
+# an outcome. The loop is driven by an in-flight count, so it ends when the last
+# dispatched job has reported; `close(jobs)` then releases every worker.
 #
 # WHAT MAKES IT A CONTENT HASH AND NOT A STAT. mtime decides whether to READ a
 # file; the SHA-256 of the bytes decides whether to REBUILD. A file whose mtime
@@ -88,7 +97,7 @@ enum BuildErr:
     NoOutput(string, string)
     Unreadable(string)
     StampBroken(int, string)
-    LevelLost(int, int, int)
+    WorkLost(int, int)
 
 # One node's verdict, tagged with the node index that produced it. `err` holds
 # nought or one element: a `Result` cannot come back through a channel arm and
@@ -104,6 +113,13 @@ struct Outcome:
     out: string
     err: [BuildErr]
 
+# One unit of work. `dep_hash[j]` is the current hash of `deps_at(g, idx)[j]`,
+# filled in by the coordinator: a worker never reads the completed-state array,
+# so everything it needs travels with the job.
+struct Job:
+    idx: int
+    dep_hash: [string]
+
 # No message names a path: the driver is handed one rulefile, the recipes name
 # their own files, and a path here would put the gate's temp directory in the
 # golden.
@@ -114,7 +130,7 @@ fn err_str(e: BuildErr) -> string:
         NoOutput(n, c): return "recipe for '" + n + "' succeeded but did not create it: " + c
         Unreadable(n): return "cannot read '" + n + "' to hash it"
         StampBroken(l, t): return "stamp line " + str(l) + " is not <name> <mtime> <hash>: [" + t + "]"
-        LevelLost(l, want, got): return "level " + str(l) + " lost work: " + str(want) + " scheduled, " + str(got) + " reported"
+        WorkLost(want, got): return "work lost: " + str(want) + " nodes in the graph, " + str(got) + " reported"
 
 # --- the stamp file ----------------------------------------------------------
 
@@ -192,15 +208,16 @@ fn state_word(s: int) -> string:
         return "touched (content identical)"
     return "unchanged"
 
-fn hash_of(now: [Stat], prev: [string: Stamp], g: graph.Graph, d: int) -> (string, string):
-    was := ""
+fn was_hash(prev: [string: Stamp], g: graph.Graph, d: int) -> string:
     if graph.name_at(g, d) in prev:
-        was = prev[graph.name_at(g, d)].hash
-    return (now[d].hash, was)
+        return prev[graph.name_at(g, d)].hash
+    return ""
 
-# The whole decision for one node, run on a worker. It reads `now` -- the states
-# of every earlier level, already final -- and writes nothing outside itself.
-fn do_node(g: graph.Graph, prev: [string: Stamp], now: [Stat], racy: int, i: int) -> Outcome:
+# The whole decision for one node, run on a worker. Every dependency's current
+# hash arrived in the job, so this reads nothing shared and writes nothing
+# outside itself.
+fn do_node(g: graph.Graph, prev: [string: Stamp], racy: int, jb: Job) -> Outcome:
+    i := jb.idx
     name := graph.name_at(g, i)
     deps := graph.deps_at(g, i)
     rec := graph.recipe_at(g, i)
@@ -224,8 +241,7 @@ fn do_node(g: graph.Graph, prev: [string: Stamp], now: [Stat], racy: int, i: int
         why = "output modified"
     else:
         for j := 0; j < len(deps); j += 1:
-            got, was := hash_of(now, prev, g, deps[j])
-            if got != was:
+            if jb.dep_hash[j] != was_hash(prev, g, deps[j]):
                 why = graph.name_at(g, deps[j]) + " changed"
                 break
     if why == "":
@@ -247,51 +263,51 @@ fn do_node(g: graph.Graph, prev: [string: Stamp], now: [Stat], racy: int, i: int
 
 # --- the scheduler -----------------------------------------------------------
 
-# depth(n) = 0 for a node with no dependencies, else 1 + the deepest dependency.
-# `ord` is topological, so a node's dependencies are already assigned when it is
-# reached. Level membership is in node-index order and does not depend on `ord`
-# beyond that.
-fn levels(g: graph.Graph, ord: [int]) -> [[int]]:
-    n := graph.node_count(g)
-    depth := []
-    for i := 0; i < n; i += 1:
-        push(depth, 0)
-    deepest := 0
-    for k := 0; k < len(ord); k += 1:
-        d := 0
-        for j := 0; j < len(graph.deps_at(g, ord[k])); j += 1:
-            if depth[graph.deps_at(g, ord[k])[j]] + 1 > d:
-                d = depth[graph.deps_at(g, ord[k])[j]] + 1
-        depth[ord[k]] = d
-        if d > deepest:
-            deepest = d
-    out : [[int]] = []
-    for l := 0; l <= deepest; l += 1:
-        push(out, []int)
-    for i := 0; i < n; i += 1:
-        push(out[depth[i]], i)
-    return out
+# THE POOL. One spawned task, `parallel for` over a slot list, every chunk
+# looping on the same jobs channel until it is closed and drained. `slots` sets
+# the width, so this is a pool and not one pipeline per slot. The count returned
+# is the reduction a `parallel for` body is allowed to write; the caller checks
+# it against what it dispatched.
+fn pool(g: graph.Graph, prev: [string: Stamp], racy: int,
+        jobs: Channel(Job), outs: Channel(Outcome), slots: [int]) -> int:
+    done := 0
+    parallel for s in slots:
+        for true:
+            match recv(jobs):
+                Some(jb):
+                    send(outs, do_node(g, prev, racy, jb))
+                    done = done + 1
+                None: break
+    return done
 
-# One level, all at once. The ring is sized to the level so no worker can park on
-# a full channel with nobody draining; the drain happens after `close`.
-fn run_level(g: graph.Graph, prev: [string: Stamp], now: [Stat], racy: int, lvl: [int]) -> [Outcome]:
-    room := len(lvl) + 1
-    ch := channel(Outcome, room)
-    parallel for i in lvl:
-        send(ch, do_node(g, prev, now, racy, i))
-    close(ch)
-    got : [Outcome] = []
-    for true:
-        match recv(ch):
-            Some(o): push(got, o)
-            None: break
-    return got
+# The coordinator's half of one dispatch: read the dependency hashes it already
+# owns and hand them to the worker with the index.
+fn job_for(g: graph.Graph, now: [Stat], i: int) -> Job:
+    hs := []string
+    for j := 0; j < len(graph.deps_at(g, i)); j += 1:
+        push(hs, now[graph.deps_at(g, i)[j]].hash)
+    return Job(i, hs)
+
+# Reverse edges: `rdeps[d]` is every node naming `d` as a dependency, which is
+# what turns one completion into the set of nodes that may have just become
+# ready.
+fn rdeps_of(g: graph.Graph) -> [[int]]:
+    out : [[int]] = []
+    for i := 0; i < graph.node_count(g); i += 1:
+        push(out, []int)
+    for i := 0; i < graph.node_count(g); i += 1:
+        for j := 0; j < len(graph.deps_at(g, i)); j += 1:
+            push(out[graph.deps_at(g, i)[j]], i)
+    return out
 
 # --- the build ---------------------------------------------------------------
 
-# ORDERED REASSEMBLY. `res` is indexed by node, `got` is in completion order,
-# and this loop is the only place the two meet. Everything downstream reads
-# `res` and walks `ord`, so nothing downstream can see the pool at all.
+# THE COORDINATOR, and the ordered reassembly. `indeg`, `blocked`, `res` and
+# `now` are this thread's own locals and no other thread ever sees them; that is
+# what makes a mutable indegree table legal. Outcomes arrive in completion order
+# and are filed by node index, which is the only place the two orders meet.
+# Everything downstream reads `res` and walks `ord`, so nothing downstream can
+# see the pool at all.
 fn build(g: graph.Graph, ord: [int], stamp: string) -> Result([string], BuildErr):
     prev := []string: Stamp
     match stamps_read(stamp):
@@ -308,19 +324,60 @@ fn build(g: graph.Graph, ord: [int], stamp: string) -> Result([string], BuildErr
     for i := 0; i < n; i += 1:
         push(res, blank)
         push(now, Stat(false, 0, "", SABSENT))
-    lv := levels(g, ord)
-    for l := 0; l < len(lv); l += 1:
-        got := run_level(g, prev, now, racy, lv[l])
-        if len(got) != len(lv[l]):
-            return Err(LevelLost(l, len(lv[l]), len(got)))
-        for k := 0; k < len(got); k += 1:
-            res[got[k].idx] = got[k]
-            now[got[k].idx] = got[k].st
-        # Raised in node-index order, so which recipe lost the race cannot decide
-        # which failure the user is told about.
-        for k := 0; k < len(lv[l]); k += 1:
-            if len(res[lv[l][k]].err) > 0:
-                return Err(res[lv[l][k]].err[0])
+    indeg := []int
+    blocked := []bool
+    for i := 0; i < n; i += 1:
+        push(indeg, len(graph.deps_at(g, i)))
+        push(blocked, false)
+    rd := rdeps_of(g)
+    # Sized to the whole graph, so neither end can ever park on a full channel.
+    jobs := channel(Job, n + 1)
+    outs := channel(Outcome, n + 1)
+    slots := []int
+    for i := 0; i < ncpu(); i += 1:
+        push(slots, i)
+    w := spawn pool(g, prev, racy, jobs, outs, slots)
+    sent := 0
+    for i := 0; i < n; i += 1:
+        if indeg[i] == 0:
+            send(jobs, job_for(g, now, i))
+            sent = sent + 1
+    live := sent
+    for live > 0:
+        match recv(outs):
+            Some(o):
+                live = live - 1
+                res[o.idx] = o
+                now[o.idx] = o.st
+                for k := 0; k < len(rd[o.idx]); k += 1:
+                    r := rd[o.idx][k]
+                    indeg[r] = indeg[r] - 1
+                    # A dependent of a failed node is never dispatched, so a
+                    # broken build stops spreading without stopping the nodes
+                    # that had nothing to do with it -- and which those are does
+                    # not depend on when the failure happened to arrive.
+                    if len(o.err) > 0:
+                        blocked[r] = true
+                    if indeg[r] == 0 and not blocked[r]:
+                        send(jobs, job_for(g, now, r))
+                        sent = sent + 1
+                        live = live + 1
+            None: break
+    close(jobs)
+    ran := wait(w)
+    # Raised in TOPOLOGICAL order, so which recipe lost the race cannot decide
+    # which failure the user is told about.
+    for k := 0; k < len(ord); k += 1:
+        if len(res[ord[k]].err) > 0:
+            return Err(res[ord[k]].err[0])
+    # No failure, so nothing was blocked: every node must have reported, and
+    # under its own index. A misfiled or never-ready node is caught here.
+    filed := 0
+    for i := 0; i < n; i += 1:
+        if res[i].idx == i:
+            filed = filed + 1
+    if filed != n or ran != sent:
+        return Err(WorkLost(n, filed))
     stamps_write(stamp, g, now)
     return Ok(log_of(g, ord, res))
 

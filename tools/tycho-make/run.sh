@@ -1,7 +1,7 @@
 #!/bin/sh
 # Gate for tycho-make, the build tool in tools/tycho-make/ -- graph/ (the
 # rulefile parser, the DAG, the topological order and the cycle namer), build/
-# (staleness, the wavefront executor and the log) and main.ty (the driver:
+# (staleness, the work-queue executor and the log) and main.ty (the driver:
 # `--graph` prints the report, no flag builds).
 #
 # Re-record the golden with:  RECORD=1 sh tools/tycho-make/run.sh
@@ -69,6 +69,12 @@
 #       real order is `trace`, which every recipe appends its own name to. Only
 #       PAIRS are asserted there -- three rules sit at one depth and race, and
 #       pinning their order between themselves would pin the race.
+#   [8b] A NODE STARTS WHEN ITS OWN DEPS FINISH, NOT WHEN ITS LEVEL DOES. The
+#       one leg that separates the work queue from the wavefront it replaced,
+#       and invisible to the golden: both designs print the same reassembled
+#       log. race.mk sits a 3-node instant chain beside 3 one-second sleepers
+#       at the same depth, and `start c2` must precede the first `end w`. The
+#       wavefront at 027bc1d8 put it after all three; measured 2026-08-13.
 #   [9] A NO-OP REBUILD RUNS ZERO RULES AND SAYS SO, and `trace` stays empty.
 #   [10] TOUCHING ONE INPUT REBUILDS EXACTLY ITS DEPENDENTS. alpha.c's content
 #       moves; alpha.o and app must run and zeta.o and docs must not. The
@@ -88,7 +94,7 @@
 #       redden a cold-only comparison. [8]'s trace is what makes this worth
 #       running at all: the pool really does finish out of source order.
 #   [13] EVERY BuildErr VARIANT exits non-zero with its own whole message and an
-#       empty stdout, the list read out of the enum. LevelLost is the one
+#       empty stdout, the list read out of the enum. WorkLost is the one
 #       variant no rulefile reaches -- it guards the reassembly itself -- and is
 #       pinned to a single construction site instead.
 #
@@ -341,6 +347,11 @@ done
 # below pass by being sequential, which is the one way they can go vacuous.
 grep -q 'parallel for' "$src/build/build.ty" || \
     bad "build.ty has no 'parallel for' -- nothing is scheduled, so [12] asserts NOTHING"
+# And the pool must be a pool: one spawned task pulling from a shared jobs
+# channel, not a fan-out per level. Without the spawn the coordinator and the
+# workers are the same thread and [8b] could only ever pass by luck.
+grep -q 'spawn pool(' "$src/build/build.ty" || \
+    bad "build.ty no longer spawns the worker pool -- the coordinator cannot run concurrently with it, so [8b] asserts NOTHING"
 
 # ---------------------------------------------------------------------------
 # THE EXECUTOR. Everything from here down builds for real, in a private work
@@ -421,6 +432,53 @@ before alpha.o app
 grep -q '^app: zeta.o alpha.o$' "$W/build.mk" || \
     bad "build.mk no longer has app depending on zeta.o -- the trace pairs assert nothing"
 printf '=== build cold\n' >> "$out"; cat "$T/cold.log" >> "$out"
+
+# ---------------------------------------------------------------------------
+# [8b] A NODE STARTS WHEN ITS OWN DEPENDENCIES FINISH, NOT WHEN ITS LEVEL DOES.
+#      This is the one leg that separates a work queue from the wavefront that
+#      preceded it, and it is asserted HERE rather than in the golden because a
+#      transcript cannot see scheduling at all: both designs build the same
+#      files and print the same reassembled log.
+#
+#      race.mk puts a 3-node chain (c1 -> c2 -> c3, each instant) beside a wide
+#      level of 3 sleepers, all four at depth 1 behind one source. Under a
+#      wavefront c2 is at depth 2 and CANNOT start until every depth-1 node has
+#      finished, so `start c2` lands after all three `end w`. Under a work queue
+#      c1's completion releases c2 immediately, a second or so before the first
+#      sleeper wakes.
+#
+#      Measured against the wavefront build at 027bc1d8 on 2026-08-13: it put
+#      `start c2` at trace line 9, after `end w1`/`end w3`/`end w2` at 6/7/8 --
+#      this leg reddens on it, which is what makes it worth running.
+#
+#      TYCHO_THREADS=8 because the claim needs a worker free for the chain while
+#      the sleepers hold theirs; at 2 the pool is legitimately saturated and the
+#      chain waits, which is scheduling working, not failing.
+# ---------------------------------------------------------------------------
+R="$T/r"; mkdir -p "$R"
+cp "$src/race.mk" "$R/race.mk"; cp "$MAKE" "$R/tycho-make"
+printf 'b\n' > "$R/base"; : > "$R/rtrace"
+( cd "$R" && env TYCHO_THREADS=8 $TO ./tycho-make race.mk ) > "$T/race.log" 2> "$T/race.err"
+_rc=$?
+[ "$_rc" -eq 0 ] || { bad "race: exited $_rc, expected 0"; sed 's/^/      /' "$T/race.err"; }
+[ -s "$T/race.err" ] && { bad "race: wrote to stderr"; sed 's/^/      /' "$T/race.err"; }
+# The floor: every node really ran, or the ordering claim below is about a trace
+# with nothing in it.
+[ "$(grep -c '^end ' "$R/rtrace")" = 6 ] || \
+    bad "race: $(grep -c '^end ' "$R/rtrace") of 6 recipes finished -- [8b] asserts nothing"
+_c2=$(grep -n '^start c2$' "$R/rtrace" | head -1 | cut -d: -f1)
+_ew=$(grep -n '^end w' "$R/rtrace" | head -1 | cut -d: -f1)
+if [ -z "$_c2" ] || [ -z "$_ew" ]; then
+    bad "race: 'start c2' or an 'end w' never appeared -- $(tr '\n' ' ' < "$R/rtrace")"
+elif [ "$_c2" -ge "$_ew" ]; then
+    bad "race: c2 started at trace line $_c2, AFTER the wide level began finishing at $_ew -- a node is still waiting for its whole level, which is the wavefront this replaced"
+    sed 's/^/      /' "$R/rtrace"
+fi
+# The floor under the fixture: the chain must be deeper than the wide level, or
+# c2 was never behind it in the first place.
+grep -q '^c2: c1$' "$R/race.mk" || bad "race.mk no longer has c2 behind c1 -- [8b] asserts nothing"
+grep -q '^w1: base$' "$R/race.mk" || bad "race.mk no longer has w1 at the same depth as c1 -- [8b] asserts nothing"
+printf '=== build race\n' >> "$out"; cat "$T/race.log" >> "$out"
 
 # ---------------------------------------------------------------------------
 # [9] A NO-OP REBUILD RUNS ZERO RULES AND SAYS SO. Nothing on disk moved, so
@@ -565,17 +623,17 @@ berr StampBroken   'x: a
 	cp a x
 '   'stamp line 1 is not <name> <mtime> <hash>: [garbage]'
 
-# LevelLost is the reassembly's own invariant and has no rulefile that reaches
-# it: it fires when a level's channel yields fewer outcomes than the level had
-# nodes, which is a runtime bug, not an input. It is held the way
+# WorkLost is the reassembly's own invariant and has no rulefile that reaches
+# it: it fires when a node the graph contains never reported under its own
+# index, which is a runtime bug, not an input. It is held the way
 # tools/tycho-sheet/run.sh holds CellErr.NoText -- pinned to ONE construction
-# site, and that site asserted to be the length guard in `build`.
-n_ll=$(grep -c 'LevelLost(' "$src/build/build.ty")
-[ "$n_ll" = 3 ] || bad "LevelLost appears $n_ll time(s) in build.ty, expected 3 (enum, err_str, the one guard)"
-grep -q 'if len(got) != len(lv\[l\]):' "$src/build/build.ty" || \
-    bad "build.ty no longer compares a level's outcome count to its node count -- LevelLost is now dead AND the reassembly is unguarded"
+# site, and that site asserted to be the accounting guard in `build`.
+n_ll=$(grep -c 'WorkLost(' "$src/build/build.ty")
+[ "$n_ll" = 3 ] || bad "WorkLost appears $n_ll time(s) in build.ty, expected 3 (enum, err_str, the one guard)"
+grep -q 'if filed != n or ran != sent:' "$src/build/build.ty" || \
+    bad "build.ty no longer checks that every node reported and that the pool did every job it was sent -- WorkLost is now dead AND the reassembly is unguarded"
 
-BCOVERED='MissingSource RecipeFailed NoOutput Unreadable StampBroken LevelLost'
+BCOVERED='MissingSource RecipeFailed NoOutput Unreadable StampBroken WorkLost'
 bfound=0
 for v in $(awk '
         $0 == "enum BuildErr:" { on = 1; next }
@@ -604,7 +662,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-make: green (demo.mk's report byte-identical over 2 runs and equal to the golden; its 8 nodes come out in declaration order, zeta.o before alpha.o where alphabetical would disagree, and every one of the 7 printed edges is respected with each node listed exactly once; removing one edge from a 4-node chain moves the order, and with it in place bot is immediately followed by mid; 3 cycles are NAMED -- a 3-cycle, a self-edge, and one with two innocent nodes stuck behind it that the message does not mention; $found MakeErr variants each exit non-zero with their own whole message and an empty stdout; build.mk cold-builds all 4 rules with zeta.o and alpha.o really running before app, a no-op rebuild runs 0 and says 'nothing to do', changing alpha.c reruns exactly alpha.o and app, moving common.h's mtime with its bytes intact reruns NOTHING and reports it 'touched (content identical)', the log is byte-identical over 6 cold runs at TYCHO_THREADS 1, 2 and 8 although the recipes finish out of source order, and $bfound BuildErr variants are accounted for)"
+    echo "tycho-make: green (demo.mk's report byte-identical over 2 runs and equal to the golden; its 8 nodes come out in declaration order, zeta.o before alpha.o where alphabetical would disagree, and every one of the 7 printed edges is respected with each node listed exactly once; removing one edge from a 4-node chain moves the order, and with it in place bot is immediately followed by mid; 3 cycles are NAMED -- a 3-cycle, a self-edge, and one with two innocent nodes stuck behind it that the message does not mention; $found MakeErr variants each exit non-zero with their own whole message and an empty stdout; build.mk cold-builds all 4 rules with zeta.o and alpha.o really running before app, a no-op rebuild runs 0 and says 'nothing to do', changing alpha.c reruns exactly alpha.o and app, moving common.h's mtime with its bytes intact reruns NOTHING and reports it 'touched (content identical)', a chain node starts while the wide level beside it is still sleeping -- which the wavefront this replaced could not do -- the log is byte-identical over 6 cold runs at TYCHO_THREADS 1, 2 and 8 although the recipes finish out of source order, and $bfound BuildErr variants are accounted for)"
 else
     echo "tycho-make: FAIL"; exit 1
 fi

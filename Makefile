@@ -661,11 +661,19 @@ sim-check: tychoc
 # a SEQUENCE (cold, no-op, one input changed) rather than a cold build, because a
 # cold build's outcomes are all the same shape and a misfiled one is invisible in
 # it. All 6 build.BuildErr variants are accounted for, the list read out of the
-# enum; LevelLost guards the reassembly itself and is pinned to one construction
+# enum; WorkLost guards the reassembly itself and is pinned to one construction
 # site instead of a fixture.
 #
-# ~3s (2.96 / 2.99 / 3.02 s, measured 2026-08-13, up from ~2s before the
-# executor). In `make ci` as step [3u/27]. See tools/tycho-make/run.sh.
+# And one leg separates the WORK QUEUE from the wavefront it replaced, which no
+# golden can: race.mk sits a 3-node instant chain beside three one-second
+# sleepers at the same depth, and the chain's second node must START before the
+# first sleeper finishes. Both designs build the same files and print the same
+# reassembled log, so this is an ordering asserted in the runner. It reddens on
+# the wavefront, measured 2026-08-13.
+#
+# ~4s (3.9 / 4.0 / 4.0 s, measured 2026-08-13, up from ~3s -- the work-queue leg
+# adds one build whose recipes sleep). In `make ci` as step [3u/27]. See
+# tools/tycho-make/run.sh.
 make-check: tychoc
 	@sh tools/tycho-make/run.sh
 
