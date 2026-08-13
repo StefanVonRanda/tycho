@@ -18,15 +18,6 @@ cheapest-first order.
 
 ## Phases
 
-- [ ] **Phase 3 — item 10: this file's coordinates drift and no gate sees it**
-  - `--report` lists un-anchored single-line refs and 100+ line ranges but is
-    advisory by design (`CLAUDE.md`, "Citations"). The item's measurement — 11 of
-    15 sampled refs no longer pointing at their subject — predates the
-    `path@SYMBOL` form and the commit-hash check.
-  - Re-measure FIRST on a fresh sample; the fix may be "migrate N refs to
-    `path@SYMBOL`" rather than a new gate, and that is a fine outcome.
-  - Verify: `python3 scripts/check_citations.py` (plus `--report`).
-
 - [ ] **Phase 4 — item 6: may a leaf package import `core:strings`?**
   - A layering decision, not lines: `core:httpd` hand-rolls `has_ext` rather than
     import `core:strings` for `ends_with`. Precedent cuts both ways — `core:io`

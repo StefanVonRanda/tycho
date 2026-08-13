@@ -8,6 +8,14 @@ The program these notes came from is `server/` — `tycho-httpd`, ~440 lines,
 serving `server/www` to a real browser. Everything below was hit while writing
 it, not imagined about it.
 
+> **A bare `path:line` in this file is as-of its entry's date.** Measured
+> 2026-08-13 on a fresh random sample: 7 of 15 no longer point at their subject,
+> because every insertion into `src/tychoc.c` shifts everything below it. They are
+> deliberately NOT being re-anchored — open-list item 10 has the measurement and
+> why a mechanical pass would certify the wrong line rather than fix it. **When
+> you write a NEW citation here, anchor it**: `path@SYMBOL` for a definition, or
+> `path:N@token`. Both survive an insertion; a bare line number does not.
+
 > **Plan references, removed 2026-08.** This file used to point every closure at
 > the plan that closed it (`docs/internals/plan-*-DONE.md`). Those archives were
 > pruned; the pointers now say "the X plan" with no phase numbers. The full
@@ -509,8 +517,34 @@ pick-up order is written out in full under "What moved this pass" below.
    golden therefore asserts nothing here. **Not closable in-tree** — it is a property of
    the machine, and the skip is the deliberate design that keeps `make ci` green on
    platforms without the lib. Listed so nobody re-derives it a third time.
-10. **This file's own coordinates drift silently, and no gate can see it** (*phase 10*) —
-    still open, and **re-measured here rather than restated.** Fifteen `path:line`
+10. ~~**This file's own coordinates drift silently, and no gate can see it**~~
+    (*phase 10*) — **the drift REPRODUCES and the proposed fix is UNSAFE. Verdict
+    recorded 2026-08-13; nothing mechanical was run.**
+
+    Re-measured on a fresh random sample of 15 bare `path:line` refs at
+    `e9d05224`: **7 no longer point at their subject** (2026-07-31 measured 11 of
+    15), so the defect is real and undiminished.
+
+    But "a mechanical pass to anchored form, after which the gate polices them" —
+    what this item asks for below — **would make it worse.** An anchor is checked
+    by CONTENT: `path:N@token` passes when `token` appears on that line. Anchoring
+    a ref that has ALREADY drifted therefore freezes the WRONG line and hands it a
+    green gate, where a stale line number at least reads as wrong the moment
+    someone opens it. Measured over all 128 bare refs in this file: 58 sit on a
+    line carrying a token unique in its file, so 58 anchors could be generated —
+    and **nothing distinguishes which of those lines are still the intended
+    subject**, because that lives only in the author's head. Deriving the symbol
+    from the surrounding prose instead is no better: it collapses distinct refs
+    onto one anchor (`corelib/net/net_shim.c` lines 84, 88, 89 and 90 all yield
+    `@hints`) and picks generic words (`corelib/io/io.ty:69` yields `@Option`).
+
+    **What is safe is the FORM, at the moment of writing**, and it is already the
+    house rule: cite a definition as `path@SYMBOL` with no line number, or write
+    `path:N@token` yourself, where you know the subject. Both are position-
+    independent or content-checked, so neither can drift into a green lie. The
+    ~105 existing bare refs stay as they are, as-of-their-date coordinates in a
+    historical record — see the note at the top of this file. The record of what
+    the item said when open follows. Fifteen `path:line`
     citations were opened at HEAD and checked against what this file says is there:
     **11 of the 15 no longer point at their subject.** All eleven are into
     `src/tychoc.c` — the `\r` escape set, the literal-intern emit site, the
