@@ -1,0 +1,11 @@
+# The constraint still bites, and now at the place that can name the type: a
+# generic building `[]$K: int` is accepted at its DECLARATION (FRICTION.md #35),
+# so an unhashable K is caught where it is chosen. float is not a legal map key.
+fn distinct(xs: [$K]) -> int where hashable(K):
+    m := []$K: int
+    for x in xs:
+        m[x] = 1
+    return len(m)
+
+fn main():
+    println(str(distinct([1.5, 2.5])))

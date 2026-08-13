@@ -1,0 +1,32 @@
+# A generic may build a map keyed by its own type parameter, which is exactly
+# what `where hashable(K)` promises. Until 2026-08-13 the empty map literal
+# `[]$K: int` died "map keys must be string, int ..." inside the generic --
+# the parse-time key check ran map_of on an unsubstituted parameter, while the
+# DECLARED `[$K: $V]` type one screen up already routed a type parameter to
+# mapc_of (FRICTION.md #35). The constraint is still enforced, at instantiation:
+# tests/reject/generic_map_key_unhashable.ty is the float case.
+#
+# `[]$T` is the other half (#36): the empty ARRAY literal now takes the `$`
+# spelling a writer reaches for by analogy with `[]string`.
+struct P:
+    x: int
+    y: int
+
+fn distinct(xs: [$K]) -> int where hashable(K):
+    m := []$K: int
+    for x in xs:
+        m[x] = 1
+    return len(m)
+
+fn evens(xs: [$T], f: fn($T) -> bool) -> [$T]:
+    out := []$T
+    for x in xs:
+        if f(x):
+            push(out, x)
+    return out
+
+fn main():
+    println(str(distinct(["a", "b", "a"])))
+    println(str(distinct([1, 2, 2, 3])))
+    println(str(distinct([P(1, 2), P(1, 2), P(3, 4)])))
+    println(str(len(evens([1, 2, 3, 4], fn(n: int) -> bool: n % 2 == 0))))

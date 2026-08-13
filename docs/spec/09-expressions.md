@@ -5,8 +5,8 @@ in [§4.4–§4.5](02-grammar.md#44-expressions); this chapter defines the meani
 of each operator, the **evaluation order**, and the expression-valued control
 forms.
 
-> Provenance: binary-op resolver `src/tychoc.c:6453-6709`; short-circuit
-> lowering `:9918-9944`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
+> Provenance: binary-op resolver `src/tychoc.c:6472-6728`; short-circuit
+> lowering `:9937-9963`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
 > closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
 > "probed" were resolved by running both compilers (spec-plan.md §6a).
 
@@ -62,11 +62,11 @@ their two length-mismatch rules differ; the whole rule — the kinds, the
 mismatches, and literal adaptation of a broadcast scalar — is
 [§16.8](12-aggregates.md#168-element-wise-arithmetic).
 
-> Provenance: array ⊕ array arm `src/tychoc.c:6578-6608`; broadcast arm
-> `src/tychoc.c:6637-6663`; the per-element-type operator set
+> Provenance: array ⊕ array arm `src/tychoc.c:6597-6627`; broadcast arm
+> `src/tychoc.c:6656-6682`; the per-element-type operator set
 > `src/tychoc.c:1393@elem_arith_ok`; the arms an array operand still falls
-> through to — shift `src/tychoc.c:7074@shift operators require integer operands`,
-> modulo/bitwise `src/tychoc.c:7187@modulo / bitwise operators`.
+> through to — shift `src/tychoc.c:7093@shift operators require integer operands`,
+> modulo/bitwise `src/tychoc.c:7206@modulo / bitwise operators`.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
@@ -113,8 +113,8 @@ the result takes the **left** operand's type. So `x << n` is well-typed for a
 (sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
 
 > Provenance: the shift arm accepts any two integers and returns the left type —
-> `src/tychoc.c:6558-6564`, result at `src/tychoc.c:6990@lt`. The bitwise arm is
-> the one that requires a match: `src/tychoc.c:7154@rt`. Exhaustively pinned by
+> `src/tychoc.c:6577-6583`, result at `src/tychoc.c:7009@lt`. The bitwise arm is
+> the one that requires a match: `src/tychoc.c:7173@rt`. Exhaustively pinned by
 > `fuzz/run_typeparity.py`, whose shift clause encodes this rule over the full
 > operand matrix.
 

@@ -8,9 +8,9 @@ user-extensible — user-defined constraints (traits/typeclasses) are a decided
 non-goal ([§1.1](00-conventions.md)); generics grow only by widening the
 built-in predicate set.
 
-> Provenance: `instantiate_generic` `src/tychoc.c:8033-8123`; constraints
-> `constraint_ok` `:8004-8012`, enforcement `:8056-8073`; parse `parse_fn`
-> `:3970-4008`; type grammar for `$T`/`[$N]T` `:2000-2009`,`:2101-2124`.
+> Provenance: `instantiate_generic` `src/tychoc.c:8052-8142`; constraints
+> `constraint_ok` `:8023-8031`, enforcement `:8075-8092`; parse `parse_fn`
+> `:3989-4027`; type grammar for `$T`/`[$N]T` `:2000-2009`,`:2101-2124`.
 
 ## 7.1 Type parameters
 
@@ -60,6 +60,13 @@ type bound to the parameter at instantiation:
 | `has_str(T)` | `int`, `bool`, `float`, `string` |
 | `hashable(T)` | any legal map key type ([§5.3.5](03-types.md#535-maps-k-v)) |
 | `defaultable(T)` | **exactly** `int`, `float`, `bool`, `string` |
+
+**`hashable(K)` admits `K` as a map key inside the generic.** A body carrying it
+MAY write `[]$K: V` and index the result with a `$K` value; the key check is
+deferred to instantiation, where the concrete type is known and a violation is
+reported against the call (`'f' instantiated with K = float, which does not
+satisfy \`hashable(K)\``). The same holds for the DECLARED type `[$K: $V]`. An
+empty ARRAY literal likewise takes the parameter form, `[]$T`.
 
 `numeric`, `comparable`, `has_str`, and `hashable` see through a newtype (they
 test the underlying capability). `defaultable` does **not**: it is satisfied

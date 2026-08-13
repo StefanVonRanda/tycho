@@ -9,7 +9,7 @@ fn main():
 
     s := 0
     p := 1
-    # counts 1..10. `0..<N` counts from zero by construction (src/tychoc.c:3581),
+    # counts 1..10. `0..<N` counts from zero by construction (src/tychoc.c:3600),
     # so the non-zero lower bound moves into the body as `i + 1` rather than into
     # the header. s and p are unchanged: s = 1+..+10 = 55, p = 1*2*3*4*5 = 120.
     parallel for i in 0..<10:
