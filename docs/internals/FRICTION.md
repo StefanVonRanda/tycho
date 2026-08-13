@@ -2403,7 +2403,7 @@ and run. One real defect came out (`struct Ok` and its four siblings declaring
 cleanly and being unreachable — fixed in the same commit as this entry, see
 `tests/reject/struct_named_ok.ty`). The rest of what turned up is below.
 
-### 8. `iter.try_map` has no `Result(void, E)` shape, and says so from inside corelib
+### 8. ~~`iter.try_map` has no `Result(void, E)` shape, and says so from inside corelib~~ — **CLOSED 2026-08-12: deliberate; re-probed 2026-08-13**
 
 A callback answering `Result(void, E)` is the natural spelling for "walk these
 and stop at the first failure, I want no values back" — validate each row, chmod
@@ -2472,6 +2472,17 @@ lines, which is what `try_map` existed to remove. **Not fixed here: adding
 >
 > Reopen this if a real caller appears. A second one in the same file would be
 > the honest trigger; one hypothetical is not.
+>
+> **Re-probed 2026-08-13: the decline stands and its evidence grew.** The repro
+> above still fails byte-identically, and the loop still prints `ok` then
+> `err neg`. Re-counted over the same four trees: `or_return` is now on 158
+> lines of code (was 129), yet the count that decides this — a bare
+> `f(x) or_return` directly inside a `for` — is still **0**, of 21 bare
+> `or_return` statements tree-wide. **Neither Go nor Odin is a precedent
+> either way**: Go's `slices` and `iter` have no fallible-callback helper at
+> all, Odin's `core:slice` `mapper`/`filter` take an infallible `proc(U) -> V`
+> (the `err` in their signature is the allocator's, not the callback's), and
+> neither language has `Result` to shape one from.
 
 ### 9. A `string` across the FFI truncates at its first NUL, silently
 

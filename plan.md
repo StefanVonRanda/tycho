@@ -32,28 +32,23 @@ remaining seven, then corrects or fixes each.
 
 ## Phases
 
-- [ ] **Phase 3 — `iter.try_map` has no `Result(void, E)` shape** (`:2406`)
-  - Entry 4 in an earlier section claimed `Result(void, E)` was inexpressible and
-    was CLOSED; check whether that closure already covers this one.
-  - Verify: `make corelib`.
-
-- [ ] **Phase 4 — a `string` across the FFI truncates at its first NUL** (`:2476`)
+- [ ] **Phase 4 — a `string` across the FFI truncates at its first NUL** (`:2487`)
   - Silent truncation at a trust boundary. Probe it, then decide whether the FFI
     should refuse an embedded NUL rather than truncate. Fail loud beats fail short.
   - Verify: `make ffi`, `make test`.
 
-- [ ] **Phase 5 — a two-key comparator cannot be written inline** (`:2586`)
+- [ ] **Phase 5 — a two-key comparator cannot be written inline** (`:2597`)
   - `core:sort` gained a comparator-taking sort (`:2013`, CLOSED 2026-08-10).
     Probe whether that already answers this; the entry may predate it.
   - Verify: `make corelib`.
 
-- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2640`)
+- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2651`)
   - Probe whether a generated header now exists. If not, decide whether to emit
     one — this is ergonomics, so a correction saying "deliberate" is a fine
     outcome.
   - Verify: `make shim-check`, `make corelib`.
 
-- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2703`)
+- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2714`)
   - Probe both halves: destructuring in a `for` binding, and whether a tuple is
     indexable. Go and Odin both destructure in range/multi-return position, so
     check that default before recording this as deliberate.
