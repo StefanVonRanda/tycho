@@ -3344,3 +3344,71 @@ Three reject fixtures pin the new text (`tests/reject/pkg/foreign_variant_bare/`
 own `# expect:` line. `tests/enum_bare_variant_local.ty` is the positive one and
 is the regression this could have caused: a bare variant of a *local* enum, in a
 match arm and after `is`, must still be accepted, which no reject fixture sees.
+
+### 27. bounded parallelism over a graph read at runtime has exactly one expressible shape
+
+`tools/tycho-make` schedules a DAG parsed from a file, so the shape of the work
+is not known until run time. The textbook executor is a ready queue and N
+workers. It is not expressible here, and two independent rules each rule it out.
+
+**N live handles have nowhere to live.** `Task(T)` is affine and non-storable
+(`docs/spec/03-types.md:398`), so a pool of handles cannot be an array:
+
+```
+$ ./tychoc probe/main.ty -o probe/x          # hs := [spawn work(1), spawn work(2)]
+tychoc: a task handle cannot be stored in a container or aggregate -- wait(t) first
+```
+
+**There is no shared mutable indegree table.** A worker cannot record that a
+dependency finished, because a `parallel for` body may not write a captured
+variable — probed 2026-08-13:
+
+```
+$ ./tychoc probe/main.ty -o probe/x
+probe/main.ty:6: error: parallel for cannot mutate captured variable 'out' in place
+     6 |         out[i-1] = i * 2
+```
+
+Value semantics removes the alternative too: a capture is a copy and `send`
+deep-copies, so there is no cell two workers can both see. `tools/tycho-flow`
+never met this because its stages are a fixed chain written as source; the
+constraint only bites when the graph is data.
+
+What remains expressible is a **wavefront**: `parallel for` over one depth of
+the graph, depths in order, results returned on a channel and filed by node
+index (`tools/tycho-make/build/build.ty@run_level`). It is correct and it is
+deterministic. It is also strictly weaker than a ready queue — a level runs only
+as wide as it is, so one long chain inside a wide level idles the pool, and no
+node from the next level may start early however free the workers are.
+
+**Not filed as a bug.** Both rules are load-bearing: affinity is what makes it
+impossible to leak or double-wait a task, and the capture rule is what makes a
+`parallel for` body free of data races by construction. The cost is real and is
+worth stating rather than working around — a language that wants dynamic
+work-stealing needs a third thing (an owned pool object, or a channel of work
+items that workers may also write to), and neither exists today.
+
+The one thing that made the wavefront usable was that `os.run` is thread-safe in
+practice: 12 concurrent subprocesses returned the right exit code and the right
+captured stdout at three different pool widths (probed 2026-08-13). `plan.md`
+had this down as unverified with a fallback to internal actions; the fallback was
+not needed, and tycho-make runs real recipes.
+
+### 28. a struct field cannot name a type declared later in the same file
+
+Functions in a package are order-free — `tools/tycho-make/graph/graph.ty@order`
+calls `find_cycle`, declared 30 lines below it. Types are not, and nothing in
+`docs/spec/03-types.md` says so:
+
+```
+$ ./tychoc probe/main.ty -o probe/x
+probe/main.ty:3: error: unknown type 'E'; did you mean 'S'?
+     3 |     e: E
+```
+
+The same for a struct field naming a later struct (`did you mean 'A'?`). The
+diagnostic is the ordinary unknown-type one, so the "did you mean" suggests the
+enclosing type — which is never the answer — and says nothing about ordering.
+The fix is to move the declaration up, which is what `build/build.ty` does.
+Cheap to live with, and cheap to improve: the name IS in the file, so the
+message could say "declared below; a type must be declared before it is used".

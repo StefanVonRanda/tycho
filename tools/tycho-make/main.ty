@@ -3,6 +3,7 @@ package main
 import "core:io"
 import "core:arrays"
 import "graph"
+import "build"
 
 # tycho-make, slice 1: read a rulefile, build the dependency graph, print it in
 # a topological order. There is no execution here and no staleness -- see
@@ -47,10 +48,16 @@ fn report(g: graph.Graph, ord: [string]):
     println("sinks: " + arrays.join(graph.sinks(g), " "))
     println("order: " + arrays.join(ord, " "))
 
+# `--graph` is the slice-1 report and touches no file but the rulefile. Without
+# it the program BUILDS: it stats, hashes and runs recipes in the current
+# directory, which is why the two are not the same command.
 fn main() -> Result(void, string):
     av := cli_args()
+    show := len(av) == 2 and av[0] == "--graph"
+    if show:
+        av = [av[1]]
     if len(av) != 1:
-        return Err("usage: tycho-make <rulefile>")
+        return Err("usage: tycho-make [--graph] <rulefile>")
     text := ""
     match io.read_text(av[0]):
         Ok(s): text = s
@@ -59,10 +66,21 @@ fn main() -> Result(void, string):
     match graph.parse(text):
         Ok(p): g = p
         Err(e): return Err(graph.err_str(e))
-    match graph.order(g):
-        Ok(ord): report(g, ord)
+    ord := []int
+    match graph.order_idx(g):
+        Ok(o): ord = o
         Err(e): return Err(graph.err_str(e))
+    if show:
+        report(g, graph.names_at(g, ord))
+        return Ok()
+    match build.build(g, ord, ".tycho-make.stamp"):
+        Ok(log): print_all(log)
+        Err(e): return Err(build.err_str(e))
     return Ok()
+
+fn print_all(ls: [string]):
+    for s in ls:
+        println(s)
 
 # args() includes argv[0]; the driver takes exactly one operand.
 fn cli_args() -> [string]:

@@ -1,0 +1,377 @@
+package build
+
+import "core:io"
+import "core:os"
+import "core:sha256"
+import "core:strings"
+import "core:arrays"
+import "../graph"
+
+# tycho-make, slice 2: decide what is stale, run it with bounded parallelism,
+# and print a log whose bytes do not depend on how the work was scheduled.
+#
+# WHY THE SCHEDULER IS A WAVEFRONT AND NOT A READY QUEUE. The obvious design is
+# a queue of ready nodes and N workers taking from it. It is not expressible
+# here, and that is a language fact, not a preference:
+#
+#   - N live task handles cannot be held. `Task(T)` is affine and non-storable
+#     (docs/spec/03-types.md:398), so `[spawn a(), spawn b()]` is refused --
+#     "a task handle cannot be stored in a container or aggregate". A pool of
+#     handles has nowhere to live.
+#   - There is no shared mutable indegree table. A `parallel for` body may not
+#     write a captured variable; probed 2026-08-13, `out[i] = v` inside one is
+#     refused with "parallel for cannot mutate captured variable 'out' in
+#     place". So workers cannot decrement a counter to discover what became
+#     ready, and value semantics leaves no cell two workers can both see.
+#
+# What IS expressible is `parallel for` over a level of the graph: every node at
+# depth d has all of its dependencies at depth < d, so a whole level may run at
+# once and the levels run in order. The cost is real and is not hidden here: a
+# level runs only as wide as it is, and one long chain inside a wide level idles
+# the pool. A ready queue would not. This is the honest ceiling of the language's
+# concurrency model on a graph read at runtime, and it is written up in
+# docs/internals/FRICTION.md.
+#
+# WHERE DETERMINISM COMES FROM. A level's outcomes arrive on a channel in
+# COMPLETION order, which is a race. Nothing is printed from a worker. Each
+# outcome carries the node index it belongs to, `build` files it by that index,
+# and the log is emitted afterwards by walking the TOPOLOGICAL ORDER. So the log
+# is a function of the graph and the disk, never of the pool -- the same bytes at
+# any TYCHO_THREADS. Recipe output is captured and printed in the same place, so
+# even two recipes racing to write to their stdout cannot interleave in the log.
+# The first error is chosen the same way: by DAG position, not by who failed
+# first.
+#
+# WHAT MAKES IT A CONTENT HASH AND NOT A STAT. mtime decides whether to READ a
+# file; the SHA-256 of the bytes decides whether to REBUILD. A file whose mtime
+# moved and whose content did not is reported `touched` and rebuilds nothing.
+# That also gives early cutoff for free: a rule that reruns and produces the
+# same bytes does not make its dependents stale.
+#
+# THE RACY WINDOW IS HANDLED. `io.mtime` has one-second granularity, so an
+# mtime-keyed hash cache is unsound for an edit landing in the same second as
+# the stamp write -- the mtime would match and the stale hash would be trusted.
+# Any file whose mtime is >= the stamp file's own mtime is therefore re-read
+# regardless. This is git's racy-timestamp rule and without it this program is
+# wrong on a fast machine, not merely flaky.
+
+# gap: a file is hashed via io.read_text, so a target holding bytes that are not
+#   valid text is out of scope. gap: no parallelism inside one node's recipe
+#   list; the lines of one rule run in order, and the first non-zero exit stops
+#   the build.
+
+struct Stamp:
+    mtime: int
+    hash: string
+
+# `state` is one of the S* codes below and is what the log reports.
+struct Stat:
+    present: bool
+    mtime: int
+    hash: string
+    state: int
+
+const SABSENT   = 0
+const SUNCHANGED = 1
+const STOUCHED  = 2
+const SCHANGED  = 3
+const SNEW      = 4
+
+const KSOURCE = 0
+const KGROUP  = 1
+const KRAN    = 2
+const KSKIP   = 3
+
+enum BuildErr:
+    MissingSource(string)
+    RecipeFailed(string, string, int)
+    NoOutput(string, string)
+    Unreadable(string)
+    StampBroken(int, string)
+    LevelLost(int, int, int)
+
+# One node's verdict, tagged with the node index that produced it. `err` holds
+# nought or one element: a `Result` cannot come back through a channel arm and
+# an `Option` would force a two-arm match at every read, where `len(e) > 0` is
+# one line and orders the errors by DAG position for free. BuildErr is declared
+# ABOVE this struct because a field type must already be known -- tychoc does
+# not forward-declare.
+struct Outcome:
+    idx: int
+    kind: int
+    why: string
+    st: Stat
+    out: string
+    err: [BuildErr]
+
+# No message names a path: the driver is handed one rulefile, the recipes name
+# their own files, and a path here would put the gate's temp directory in the
+# golden.
+fn err_str(e: BuildErr) -> string:
+    match e:
+        MissingSource(n): return "no rule to make '" + n + "' and no such file"
+        RecipeFailed(n, c, rc): return "recipe for '" + n + "' failed with exit " + str(rc) + ": " + c
+        NoOutput(n, c): return "recipe for '" + n + "' succeeded but did not create it: " + c
+        Unreadable(n): return "cannot read '" + n + "' to hash it"
+        StampBroken(l, t): return "stamp line " + str(l) + " is not <name> <mtime> <hash>: [" + t + "]"
+        LevelLost(l, want, got): return "level " + str(l) + " lost work: " + str(want) + " scheduled, " + str(got) + " reported"
+
+# --- the stamp file ----------------------------------------------------------
+
+fn cut(s: string, at: int) -> (string, string):
+    return (substr(s, 0, at), substr(s, at + 1, len(s)))
+
+# `<name>\t<mtime>\t<hash>`. A name cannot hold a tab because the rulefile
+# parser splits targets on whitespace, so two cuts are unambiguous.
+fn stamps_read(path: string) -> Result([string: Stamp], BuildErr):
+    m := []string: Stamp
+    text := ""
+    match io.read_text(path):
+        Ok(s): text = s
+        Err(e): return Ok(m)
+    ls := strings.lines(text)
+    for i := 0; i < len(ls); i += 1:
+        if len(ls[i]) == 0:
+            continue
+        a := find(ls[i], "\t")
+        if a < 0:
+            return Err(StampBroken(i + 1, ls[i]))
+        nm, rest := cut(ls[i], a)
+        b := find(rest, "\t")
+        if b < 0 or len(nm) == 0:
+            return Err(StampBroken(i + 1, ls[i]))
+        mt, hs := cut(rest, b)
+        if len(hs) != 64:
+            return Err(StampBroken(i + 1, ls[i]))
+        m[nm] = Stamp(strings.parse_int(mt), hs)
+    return Ok(m)
+
+# Node-index order, so the file itself is deterministic. Written only after a
+# build has fully succeeded: a stamp for a half-done tree would record inputs
+# against outputs that were never made from them.
+fn stamps_write(path: string, g: graph.Graph, now: [Stat]) -> bool:
+    ls := []string
+    for i := 0; i < len(now); i += 1:
+        if now[i].present:
+            push(ls, graph.name_at(g, i) + "\t" + str(now[i].mtime) + "\t" + now[i].hash)
+    return io.write_lines(path, ls)
+
+# --- staleness ---------------------------------------------------------------
+
+# `racy` is the stamp file's own mtime. Trusting the cached hash is allowed only
+# for a file strictly older than that; see the header.
+# An absent Stat carries mtime -1 when the file is not there at all and its real
+# mtime when it is there but could not be read -- a directory named as a source
+# is the case that matters, and the two deserve different messages.
+fn probe(name: string, prev: [string: Stamp], racy: int) -> Stat:
+    mt := 0
+    match io.mtime(name):
+        Ok(v): mt = v
+        Err(e): return Stat(false, -1, "", SABSENT)
+    known := name in prev
+    if known and prev[name].mtime == mt and mt < racy:
+        return Stat(true, mt, prev[name].hash, SUNCHANGED)
+    h := ""
+    match io.read_text(name):
+        Ok(s): h = sha256.hex(s)
+        Err(e): return Stat(false, mt, "", SABSENT)
+    if not known:
+        return Stat(true, mt, h, SNEW)
+    if h != prev[name].hash:
+        return Stat(true, mt, h, SCHANGED)
+    if mt != prev[name].mtime:
+        return Stat(true, mt, h, STOUCHED)
+    return Stat(true, mt, h, SUNCHANGED)
+
+fn state_word(s: int) -> string:
+    if s == SNEW:
+        return "new"
+    if s == SCHANGED:
+        return "changed"
+    if s == STOUCHED:
+        return "touched (content identical)"
+    return "unchanged"
+
+fn hash_of(now: [Stat], prev: [string: Stamp], g: graph.Graph, d: int) -> (string, string):
+    was := ""
+    if graph.name_at(g, d) in prev:
+        was = prev[graph.name_at(g, d)].hash
+    return (now[d].hash, was)
+
+# The whole decision for one node, run on a worker. It reads `now` -- the states
+# of every earlier level, already final -- and writes nothing outside itself.
+fn do_node(g: graph.Graph, prev: [string: Stamp], now: [Stat], racy: int, i: int) -> Outcome:
+    name := graph.name_at(g, i)
+    deps := graph.deps_at(g, i)
+    rec := graph.recipe_at(g, i)
+    none : [BuildErr] = []
+    if len(rec) == 0:
+        if len(deps) > 0:
+            return Outcome(i, KGROUP, "", Stat(false, 0, "", SABSENT), "", none)
+        st := probe(name, prev, racy)
+        if not st.present:
+            if st.mtime < 0:
+                return Outcome(i, KSOURCE, "", st, "", [MissingSource(name)])
+            return Outcome(i, KSOURCE, "", st, "", [Unreadable(name)])
+        return Outcome(i, KSOURCE, state_word(st.state), st, "", none)
+    cur := probe(name, prev, racy)
+    why := ""
+    if not cur.present:
+        why = "missing"
+    elif not (name in prev):
+        why = "no record"
+    elif cur.hash != prev[name].hash:
+        why = "output modified"
+    else:
+        for j := 0; j < len(deps); j += 1:
+            got, was := hash_of(now, prev, g, deps[j])
+            if got != was:
+                why = graph.name_at(g, deps[j]) + " changed"
+                break
+    if why == "":
+        return Outcome(i, KSKIP, "up to date", cur, "", none)
+    txt := ""
+    for j := 0; j < len(rec); j += 1:
+        # stderr is folded into stdout: a build log that showed only half of what
+        # a failing recipe said would be the wrong half.
+        r := os.run("{ " + rec[j] + " ; } 2>&1")
+        txt = txt + r.out
+        if r.code != 0:
+            return Outcome(i, KRAN, why, cur, txt, [RecipeFailed(name, rec[j], r.code)])
+    after := probe(name, []string: Stamp, 0)
+    if not after.present:
+        if after.mtime < 0:
+            return Outcome(i, KRAN, why, after, txt, [NoOutput(name, rec[len(rec) - 1])])
+        return Outcome(i, KRAN, why, after, txt, [Unreadable(name)])
+    return Outcome(i, KRAN, why, after, txt, none)
+
+# --- the scheduler -----------------------------------------------------------
+
+# depth(n) = 0 for a node with no dependencies, else 1 + the deepest dependency.
+# `ord` is topological, so a node's dependencies are already assigned when it is
+# reached. Level membership is in node-index order and does not depend on `ord`
+# beyond that.
+fn levels(g: graph.Graph, ord: [int]) -> [[int]]:
+    n := graph.node_count(g)
+    depth := []
+    for i := 0; i < n; i += 1:
+        push(depth, 0)
+    deepest := 0
+    for k := 0; k < len(ord); k += 1:
+        d := 0
+        for j := 0; j < len(graph.deps_at(g, ord[k])); j += 1:
+            if depth[graph.deps_at(g, ord[k])[j]] + 1 > d:
+                d = depth[graph.deps_at(g, ord[k])[j]] + 1
+        depth[ord[k]] = d
+        if d > deepest:
+            deepest = d
+    out : [[int]] = []
+    for l := 0; l <= deepest; l += 1:
+        push(out, []int)
+    for i := 0; i < n; i += 1:
+        push(out[depth[i]], i)
+    return out
+
+# One level, all at once. The ring is sized to the level so no worker can park on
+# a full channel with nobody draining; the drain happens after `close`.
+fn run_level(g: graph.Graph, prev: [string: Stamp], now: [Stat], racy: int, lvl: [int]) -> [Outcome]:
+    room := len(lvl) + 1
+    ch := channel(Outcome, room)
+    parallel for i in lvl:
+        send(ch, do_node(g, prev, now, racy, i))
+    close(ch)
+    got : [Outcome] = []
+    for true:
+        match recv(ch):
+            Some(o): push(got, o)
+            None: break
+    return got
+
+# --- the build ---------------------------------------------------------------
+
+# ORDERED REASSEMBLY. `res` is indexed by node, `got` is in completion order,
+# and this loop is the only place the two meet. Everything downstream reads
+# `res` and walks `ord`, so nothing downstream can see the pool at all.
+fn build(g: graph.Graph, ord: [int], stamp: string) -> Result([string], BuildErr):
+    prev := []string: Stamp
+    match stamps_read(stamp):
+        Ok(m): prev = m
+        Err(e): return Err(e)
+    racy := 0
+    match io.mtime(stamp):
+        Ok(v): racy = v
+        Err(e): racy = 0
+    n := graph.node_count(g)
+    blank := Outcome(-1, KGROUP, "", Stat(false, 0, "", SABSENT), "", [])
+    res : [Outcome] = []
+    now : [Stat] = []
+    for i := 0; i < n; i += 1:
+        push(res, blank)
+        push(now, Stat(false, 0, "", SABSENT))
+    lv := levels(g, ord)
+    for l := 0; l < len(lv); l += 1:
+        got := run_level(g, prev, now, racy, lv[l])
+        if len(got) != len(lv[l]):
+            return Err(LevelLost(l, len(lv[l]), len(got)))
+        for k := 0; k < len(got); k += 1:
+            res[got[k].idx] = got[k]
+            now[got[k].idx] = got[k].st
+        # Raised in node-index order, so which recipe lost the race cannot decide
+        # which failure the user is told about.
+        for k := 0; k < len(lv[l]); k += 1:
+            if len(res[lv[l][k]].err) > 0:
+                return Err(res[lv[l][k]].err[0])
+    stamps_write(stamp, g, now)
+    return Ok(log_of(g, ord, res))
+
+# The log, emitted by walking the topological order. Recipe output is indented
+# under the rule that produced it with a '| ' marker, so a recipe printing
+# something that looks like a log line cannot forge one.
+fn log_of(g: graph.Graph, ord: [int], res: [Outcome]) -> [string]:
+    out := []string
+    tgt := 0
+    ran := 0
+    src := 0
+    fresh := 0
+    moved := 0
+    tapped := 0
+    for k := 0; k < len(ord); k += 1:
+        o := res[ord[k]]
+        name := graph.name_at(g, ord[k])
+        if o.kind == KGROUP:
+            push(out, "group " + name)
+        elif o.kind == KSOURCE:
+            src = src + 1
+            if o.st.state == SNEW:
+                fresh = fresh + 1
+            elif o.st.state == SCHANGED:
+                moved = moved + 1
+            elif o.st.state == STOUCHED:
+                tapped = tapped + 1
+            push(out, "src " + name + " " + o.why)
+        elif o.kind == KSKIP:
+            tgt = tgt + 1
+            push(out, "skip " + name + " (up to date)")
+        else:
+            tgt = tgt + 1
+            ran = ran + 1
+            push(out, "run " + name + " (" + o.why + ")")
+            for t in emitted(o.out):
+                push(out, "| " + t)
+    push(out, "targets " + str(tgt) + ": " + str(ran) + " run, " + str(tgt - ran) + " up to date")
+    push(out, "sources " + str(src) + ": " + str(fresh) + " new, " + str(moved) + " changed, " +
+              str(tapped) + " touched, " + str(src - fresh - moved - tapped) + " unchanged")
+    if ran == 0:
+        push(out, "nothing to do")
+    return out
+
+# strings.lines leaves a trailing empty element for text ending in a newline,
+# which every well-behaved command produces; printing it would put a bare '| '
+# under every rule.
+fn emitted(s: string) -> [string]:
+    if len(s) == 0:
+        return []string
+    ls := strings.lines(s)
+    if len(ls) > 0 and len(ls[len(ls) - 1]) == 0:
+        return arrays.take(ls, len(ls) - 1)
+    return ls

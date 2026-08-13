@@ -381,7 +381,7 @@ make -s sim-check
 # re-recorded from that build agrees with it. So the order is checked against
 # literals, against the edges the program itself printed, and against a second
 # rulefile one edge apart from the first.
-step "[3u/27] make make-check  (tycho-make: demo report byte-identical over 2 runs, 8 nodes ordered by DECLARATION order where alphabetical would disagree, every printed edge respected with each node listed exactly once, one edge removed from a 4-node chain moving the order, 3 cycles NAMED including a self-edge and one with innocent nodes stuck behind it, 8 MakeErr variants each exiting non-zero with their own whole message and an empty stdout)"
+step "[3u/27] make make-check  (tycho-make: demo report byte-identical over 2 runs, 8 nodes ordered by DECLARATION order where alphabetical would disagree, every printed edge respected with each node listed exactly once, one edge removed from a 4-node chain moving the order, 3 cycles NAMED including a self-edge and one with innocent nodes stuck behind it, 8 MakeErr variants each exiting non-zero with their own whole message and an empty stdout; then the executor: a cold build runs all 4 rules with zeta.o and alpha.o really running before app in the recipes' own trace, a no-op rebuild runs ZERO, changing one input reruns exactly its 2 dependents, moving a file's mtime with its bytes intact reruns NOTHING and calls it touched, the log is byte-identical over 6 runs at TYCHO_THREADS 1/2/8, and 6 BuildErr variants are accounted for)"
 make -s make-check
 fi
 

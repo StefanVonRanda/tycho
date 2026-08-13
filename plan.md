@@ -17,19 +17,12 @@ around.
   cannot be stored in a container or aggregate". So a ready-queue of handles is
   not expressible; fan-out must be `parallel for`, paired spawn/wait, or
   channels. Design the scheduler around that, do not fight it.
-- Assuming: `core:os` can run a subprocess and return its exit code and output.
-  NOT probed. If it cannot, the "recipe" becomes an internal action and the
-  program still stands — say so rather than working around it silently.
+- Verified 2026-08-13: `core:os` CAN run a subprocess and return its exit code
+  and its captured stdout (`os.run`), including 12 at once from inside a
+  `parallel for` at three pool widths. The recipes are real; the fallback to an
+  internal action was not needed.
 
 ## Phases
-
-- [ ] **Phase 2 — staleness and the executor**
-  - Scope: content hash + mtime staleness, bounded-parallel execution honouring
-    dependencies, the build log.
-  - Done when: log byte-identical over two runs and at two `TYCHO_THREADS`
-    values; a no-op rebuild does zero work and says so; touching one input
-    rebuilds exactly its dependents, asserted against literals in the runner.
-  - Verify: `make make-check`.
 
 - [ ] **Phase 3 — the affine-handle diagnostic has no source location**
   - `tychoc: a task handle cannot be stored in a container or aggregate --

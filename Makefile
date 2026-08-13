@@ -622,8 +622,9 @@ sheet-check: tychoc
 sim-check: tychoc
 	@sh tools/tycho-sim/run.sh
 
-# make-check: the gate for tycho-make, the dependency-graph half of the build
-# tool in tools/tycho-make/. It is the only lane that runs it.
+# make-check: the gate for tycho-make, the build tool in tools/tycho-make/. It
+# is the only lane that runs it, and the only lane that runs a SCHEDULER over a
+# graph read at runtime.
 #
 # Its subject is a TOPOLOGICAL ORDER, which is the sibling of ed-check's UTF-8,
 # sheet-check's float text and sim-check's swap-remove: a thing a recorded
@@ -647,8 +648,24 @@ sim-check: tychoc
 # reporting. All 8 graph.MakeErr variants exit non-zero with their own whole
 # message and an empty stdout, and the variant list is read out of the enum.
 #
-# ~2s (2.04 / 2.02 / 2.07 s, measured 2026-08-13). In `make ci` as step [3u/27].
-# See tools/tycho-make/run.sh.
+# THE EXECUTOR half has the same problem one layer up: the build log is
+# REASSEMBLED into topological order, so reading dependency order off the log is
+# circular. Each recipe therefore appends its own name to a `trace` file, and
+# specific PAIRS are asserted there -- three rules sit at one depth and race, so
+# their order between themselves is deliberately not pinned. Staleness is asserted
+# against literals in the runner: a no-op rebuild runs ZERO rules, changing one
+# input reruns exactly its two dependents and no others, and moving a file's
+# MTIME with its bytes intact reruns NOTHING and reports it `touched (content
+# identical)` -- the one leg that can tell a content hash from a stat. The log is
+# byte-identical over two runs at each of TYCHO_THREADS 1, 2 and 8, compared over
+# a SEQUENCE (cold, no-op, one input changed) rather than a cold build, because a
+# cold build's outcomes are all the same shape and a misfiled one is invisible in
+# it. All 6 build.BuildErr variants are accounted for, the list read out of the
+# enum; LevelLost guards the reassembly itself and is pinned to one construction
+# site instead of a fixture.
+#
+# ~3s (2.96 / 2.99 / 3.02 s, measured 2026-08-13, up from ~2s before the
+# executor). In `make ci` as step [3u/27]. See tools/tycho-make/run.sh.
 make-check: tychoc
 	@sh tools/tycho-make/run.sh
 

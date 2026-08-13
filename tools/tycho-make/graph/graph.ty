@@ -177,6 +177,11 @@ fn edge_count(g: Graph) -> int:
 fn name_at(g: Graph, i: int) -> string:
     return g.nodes[i].name
 
+# The dep list as INDICES. `dep_names` is for the report; the scheduler needs
+# the indices, because a node index is its identity everywhere in slice 2.
+fn deps_at(g: Graph, i: int) -> [int]:
+    return g.nodes[i].deps
+
 fn dep_names(g: Graph, i: int) -> [string]:
     out := []string
     for j := 0; j < len(g.nodes[i].deps); j += 1:
@@ -214,6 +219,17 @@ fn sinks(g: Graph) -> [string]:
 # ready set kept in any other structure would be one refactor away from a
 # host-dependent answer.
 fn order(g: Graph) -> Result([string], MakeErr):
+    match order_idx(g):
+        Ok(ix): return Ok(names_at(g, ix))
+        Err(e): return Err(e)
+
+fn names_at(g: Graph, ix: [int]) -> [string]:
+    out := []string
+    for i := 0; i < len(ix); i += 1:
+        push(out, g.nodes[ix[i]].name)
+    return out
+
+fn order_idx(g: Graph) -> Result([int], MakeErr):
     n := len(g.nodes)
     indeg := []
     done := []
@@ -225,7 +241,7 @@ fn order(g: Graph) -> Result([string], MakeErr):
     for i := 0; i < n; i += 1:
         for j := 0; j < len(g.nodes[i].deps); j += 1:
             push(rdeps[g.nodes[i].deps[j]], i)
-    out := []string
+    out := []int
     for k := 0; k < n; k += 1:
         pick := -1
         for i := 0; i < n; i += 1:
@@ -235,7 +251,7 @@ fn order(g: Graph) -> Result([string], MakeErr):
         if pick < 0:
             return Err(Cycle(find_cycle(g, done)))
         done[pick] = true
-        push(out, g.nodes[pick].name)
+        push(out, pick)
         for j := 0; j < len(rdeps[pick]); j += 1:
             indeg[rdeps[pick][j]] = indeg[rdeps[pick][j]] - 1
     return Ok(out)

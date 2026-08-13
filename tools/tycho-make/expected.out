@@ -48,3 +48,102 @@ line 1: dependency 'b:c' contains a ':'
 line 1: a trailing backslash -- line continuations are not supported
 === err Cycle
 dependency cycle: a -> b -> a
+=== build cold
+src zeta.c new
+src common.h new
+run zeta.o (missing)
+src alpha.c new
+run alpha.o (missing)
+run app (missing)
+| linking app
+src README.md new
+run docs (missing)
+group all
+targets 4: 4 run, 0 up to date
+sources 4: 4 new, 0 changed, 0 touched, 0 unchanged
+=== build noop
+src zeta.c unchanged
+src common.h unchanged
+skip zeta.o (up to date)
+src alpha.c unchanged
+skip alpha.o (up to date)
+skip app (up to date)
+src README.md unchanged
+skip docs (up to date)
+group all
+targets 4: 0 run, 4 up to date
+sources 4: 0 new, 0 changed, 0 touched, 4 unchanged
+nothing to do
+=== build one-input
+src zeta.c unchanged
+src common.h unchanged
+skip zeta.o (up to date)
+src alpha.c changed
+run alpha.o (alpha.c changed)
+run app (alpha.o changed)
+| linking app
+src README.md unchanged
+skip docs (up to date)
+group all
+targets 4: 2 run, 2 up to date
+sources 4: 0 new, 1 changed, 0 touched, 3 unchanged
+=== build mtime-only
+src zeta.c unchanged
+src common.h touched (content identical)
+skip zeta.o (up to date)
+src alpha.c unchanged
+skip alpha.o (up to date)
+skip app (up to date)
+src README.md unchanged
+skip docs (up to date)
+group all
+targets 4: 0 run, 4 up to date
+sources 4: 0 new, 0 changed, 1 touched, 3 unchanged
+nothing to do
+=== build threads
+src zeta.c new
+src common.h new
+run zeta.o (missing)
+src alpha.c new
+run alpha.o (missing)
+run app (missing)
+| linking app
+src README.md new
+run docs (missing)
+group all
+targets 4: 4 run, 0 up to date
+sources 4: 4 new, 0 changed, 0 touched, 0 unchanged
+src zeta.c unchanged
+src common.h unchanged
+skip zeta.o (up to date)
+src alpha.c unchanged
+skip alpha.o (up to date)
+skip app (up to date)
+src README.md unchanged
+skip docs (up to date)
+group all
+targets 4: 0 run, 4 up to date
+sources 4: 0 new, 0 changed, 0 touched, 4 unchanged
+nothing to do
+src zeta.c unchanged
+src common.h unchanged
+skip zeta.o (up to date)
+src alpha.c changed
+run alpha.o (alpha.c changed)
+run app (alpha.o changed)
+| linking app
+src README.md unchanged
+skip docs (up to date)
+group all
+targets 4: 2 run, 2 up to date
+sources 4: 0 new, 1 changed, 0 touched, 3 unchanged
+=== berr MissingSource
+no rule to make 'nosuch.c' and no such file
+=== berr RecipeFailed
+recipe for 'x' failed with exit 1: false
+=== berr NoOutput
+recipe for 'x' succeeded but did not create it: true
+=== berr Unreadable
+cannot read 'd' to hash it
+=== berr StampBroken
+stamp line 1 is not <name> <mtime> <hash>: [garbage]

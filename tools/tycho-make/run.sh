@@ -1,7 +1,8 @@
 #!/bin/sh
-# Gate for tycho-make, the dependency-graph half of the build tool in
-# tools/tycho-make/ -- graph/ (the rulefile parser, the DAG, the topological
-# order and the cycle namer) and main.ty (the driver that prints the report).
+# Gate for tycho-make, the build tool in tools/tycho-make/ -- graph/ (the
+# rulefile parser, the DAG, the topological order and the cycle namer), build/
+# (staleness, the wavefront executor and the log) and main.ty (the driver:
+# `--graph` prints the report, no flag builds).
 #
 # Re-record the golden with:  RECORD=1 sh tools/tycho-make/run.sh
 #
@@ -62,14 +63,40 @@
 #       enum, so a variant added tomorrow reddens here instead of arriving
 #       ungated.
 #
+#   [8] A COLD BUILD RUNS EVERY RULE, IN AN ORDER THAT RESPECTS THE DAG. Two
+#       instruments, because the log cannot be one of them: build.ty reassembles
+#       it into topological order, so reading the DAG off it is circular. The
+#       real order is `trace`, which every recipe appends its own name to. Only
+#       PAIRS are asserted there -- three rules sit at one depth and race, and
+#       pinning their order between themselves would pin the race.
+#   [9] A NO-OP REBUILD RUNS ZERO RULES AND SAYS SO, and `trace` stays empty.
+#   [10] TOUCHING ONE INPUT REBUILDS EXACTLY ITS DEPENDENTS. alpha.c's content
+#       moves; alpha.o and app must run and zeta.o and docs must not. The
+#       expected set is a literal, so RECORD=1 cannot widen it.
+#   [11] CONTENT-HASH STALENESS IS NOT MTIME STALENESS. common.h's mtime is
+#       moved to a fixed future stamp with its bytes untouched. make(1) would
+#       rebuild three rules; this must rebuild NONE and must count the file as
+#       `touched`, which is what says the move was seen and then dismissed on
+#       content rather than never seen. This is the only leg that can tell a
+#       real hash from a stat.
+#   [12] THE LOG IS BYTE-IDENTICAL at TYCHO_THREADS 1, 2 and 8, and over two
+#       runs at each. What is compared is a SEQUENCE -- cold, no-op, one input
+#       changed -- not a cold build: on a cold build every outcome is the same
+#       shape, so filing them under the wrong nodes yields the same bytes and
+#       the leg cannot see the bug it exists for. Measured 2026-08-13: filing by
+#       arrival position instead of node index reddens the sequence and does not
+#       redden a cold-only comparison. [8]'s trace is what makes this worth
+#       running at all: the pool really does finish out of source order.
+#   [13] EVERY BuildErr VARIANT exits non-zero with its own whole message and an
+#       empty stdout, the list read out of the enum. LevelLost is the one
+#       variant no rulefile reaches -- it guards the reassembly itself -- and is
+#       pinned to a single construction site instead.
+#
 # WHAT IT DELIBERATELY DOES NOT ASSERT
-#   Any timing, and any thread count. Slice 1 has no `spawn` and no
-#   `parallel for` -- there is nothing to schedule yet -- so a TYCHO_THREADS
-#   leg could not fail, and a leg that cannot fail is worse than no leg. The
-#   grep below holds that claim to the source: when the scheduler lands, this
-#   runner reddens and whoever added it owes the leg.
-#   Staleness, mtimes and recipe execution. A recipe line is counted and never
-#   run; slice 2 owns all three.
+#   Any timing, and any wall-clock duration. Whether the pool is FASTER is a
+#   measurement, and a gate asserting a measurement is a coin toss; that the
+#   pool is real is asserted structurally instead, by `trace` coming out in an
+#   order the source does not have.
 #
 # NO HOST DETAIL REACHES THE GOLDEN -- the program prints no path and reads no
 # environment, and every fixture is written into a private mktemp -d.
@@ -102,7 +129,7 @@ out="$T/all.out"
 # silent stderr. A run that dies or warns is a failure whatever its stdout says.
 ok() {
     _lbl=$1; _f=$2; _mk=$3
-    $TO "$MAKE" "$_mk" > "$_f" 2> "$T/e.err"
+    $TO "$MAKE" --graph "$_mk" > "$_f" 2> "$T/e.err"
     _rc=$?
     [ "$_rc" -eq 0 ] || { bad "$_lbl: exited $_rc, expected 0"; sed 's/^/      /' "$T/e.err"; }
     [ -s "$T/e.err" ] && { bad "$_lbl: wrote to stderr"; sed 's/^/      /' "$T/e.err"; }
@@ -218,7 +245,7 @@ cat "$T/chain.out" "$T/dropped.out" >> "$out"
 # ---------------------------------------------------------------------------
 cycrun() {
     _lbl=$1; _msg=$2
-    $TO "$MAKE" "$T/$_lbl.mk" > "$T/c.out" 2> "$T/c.err"
+    $TO "$MAKE" --graph "$T/$_lbl.mk" > "$T/c.out" 2> "$T/c.err"
     _rc=$?
     if [ "$_rc" -eq 0 ]; then
         bad "$_lbl: EXITED 0 -- a cycle was ordered rather than refused"
@@ -261,7 +288,7 @@ done
 errcase() {
     _v=$1; _text=$2; _msg=$3
     printf '%s' "$_text" > "$T/bad.mk"
-    $TO "$MAKE" "$T/bad.mk" > "$T/c.out" 2> "$T/c.err"
+    $TO "$MAKE" --graph "$T/bad.mk" > "$T/c.out" 2> "$T/c.err"
     _rc=$?
     if [ "$_rc" -eq 0 ]; then
         bad "$_v: EXITED 0 -- the parser accepted what the variant exists to refuse"
@@ -309,14 +336,259 @@ for v in $(awk '
 done
 [ "$found" -eq 8 ] || bad "found $found MakeErr variant(s) in graph.ty, expected 8 -- the scan is broken and [7]'s floor asserts nothing"
 
-# The claim in the header, held to the source: slice 1 has nothing to schedule,
-# so it must contain no concurrency, and this runner owes no thread leg.
-sed 's/#.*//' "$src/main.ty" "$src/graph/graph.ty" | \
-    grep -n 'parallel for\|\(^\|[^a-z_]\)spawn *(\|wait *(' > "$T/par.hits"
-[ -s "$T/par.hits" ] && {
-    bad "a concurrency construct landed in tycho-make -- this runner owes a TYCHO_THREADS leg it does not have"
-    sed 's/^/      /' "$T/par.hits"
+# The floor under [12]: the scheduler must actually BE concurrent. A `parallel
+# for` that was quietly turned into a `for` would make every determinism leg
+# below pass by being sequential, which is the one way they can go vacuous.
+grep -q 'parallel for' "$src/build/build.ty" || \
+    bad "build.ty has no 'parallel for' -- nothing is scheduled, so [12] asserts NOTHING"
+
+# ---------------------------------------------------------------------------
+# THE EXECUTOR. Everything from here down builds for real, in a private work
+# directory: the recipes in build.mk write files, so the runner cds into $W and
+# the program is handed relative names only. No path reaches the golden.
+#
+# `bld <label> <logfile> [env...]` -- one bounded build that must exit 0 with a
+# silent stderr.
+# ---------------------------------------------------------------------------
+W="$T/w"
+mkdir -p "$W"
+cp "$src/build.mk" "$W/build.mk"
+
+# The tree the demo builds from. Written here rather than committed: they are
+# inputs whose CONTENT this gate edits, and an edited fixture in the repo would
+# be a dirty tree after a run.
+seed() {
+    rm -f "$W/app" "$W/zeta.o" "$W/alpha.o" "$W/docs" "$W/.tycho-make.stamp" "$W/trace"
+    printf 'common\n'  > "$W/common.h"
+    printf 'zeta\n'    > "$W/zeta.c"
+    printf 'alpha\n'   > "$W/alpha.c"
+    printf 'abc doc\n' > "$W/README.md"
+    : > "$W/trace"
 }
+
+bld() {
+    _lbl=$1; _f=$2; shift 2
+    ( cd "$W" && env "$@" $TO ./tycho-make build.mk ) > "$_f" 2> "$T/b.err"
+    _rc=$?
+    [ "$_rc" -eq 0 ] || { bad "$_lbl: exited $_rc, expected 0"; sed 's/^/      /' "$T/b.err"; }
+    [ -s "$T/b.err" ] && { bad "$_lbl: wrote to stderr"; sed 's/^/      /' "$T/b.err"; }
+    return 0
+}
+cp "$MAKE" "$W/tycho-make"
+
+# `ranset <label> <file> <space-separated names, in DAG order>` -- the set of
+# rules that RAN must be exactly this. The expected set is a literal here, which
+# is the whole point: RECORD=1 rewrites the golden and cannot touch this line.
+ranset() {
+    _lbl=$1; _f=$2; _want=$3
+    _got=$(sed -n 's/^run \([^ ]*\) .*/\1/p' "$_f" | tr '\n' ' ' | sed 's/ $//')
+    [ "$_got" = "$_want" ] || bad "$_lbl: ran [$_got], expected exactly [$_want]"
+}
+
+# ---------------------------------------------------------------------------
+# [8] A COLD BUILD RUNS EVERY RULE, AND THE ORDER IT REALLY RAN IN RESPECTS THE
+#     DAG. Two different claims, and they need two instruments.
+#
+#     The log is REASSEMBLED into topological order by build.ty, so reading the
+#     DAG off the log would be circular -- it is ordered by construction. The
+#     real order is in `trace`, which each recipe appends its own name to as it
+#     runs. Specific PAIRS are asserted there, not the whole list: zeta.o and
+#     alpha.o and docs are at one depth and their order between themselves is a
+#     race, which is exactly what must NOT be pinned.
+# ---------------------------------------------------------------------------
+seed
+bld "cold" "$T/cold.log"
+ranset "cold" "$T/cold.log" 'zeta.o alpha.o app docs'
+ln_ 'targets 4: 4 run, 0 up to date' "$T/cold.log"
+ln_ 'sources 4: 4 new, 0 changed, 0 touched, 0 unchanged' "$T/cold.log"
+ln_ 'group all' "$T/cold.log"
+ln_ '| linking app' "$T/cold.log"
+# `before A B` -- A must appear before B in the REAL execution order.
+before() {
+    _a=$(grep -n "^$1\$" "$W/trace" | head -1 | cut -d: -f1)
+    _b=$(grep -n "^$2\$" "$W/trace" | head -1 | cut -d: -f1)
+    if [ -z "$_a" ] || [ -z "$_b" ]; then
+        bad "trace: '$1' or '$2' never ran -- $(tr '\n' ' ' < "$W/trace")"
+    elif [ "$_a" -ge "$_b" ]; then
+        bad "trace: '$1' ran at $_a, after '$2' at $_b -- the executor ignored a dependency"
+    fi
+}
+before zeta.o app
+before alpha.o app
+[ "$(wc -l < "$W/trace")" = 4 ] || bad "trace has $(wc -l < "$W/trace") lines, expected 4 recipes to have run"
+# The floor under `before`: the two names must be at DIFFERENT depths, or the
+# assertion is about a pair that could never have raced anyway.
+grep -q '^app: zeta.o alpha.o$' "$W/build.mk" || \
+    bad "build.mk no longer has app depending on zeta.o -- the trace pairs assert nothing"
+printf '=== build cold\n' >> "$out"; cat "$T/cold.log" >> "$out"
+
+# ---------------------------------------------------------------------------
+# [9] A NO-OP REBUILD RUNS ZERO RULES AND SAYS SO. Nothing on disk moved, so
+#     every target is up to date and `trace` must not grow.
+# ---------------------------------------------------------------------------
+: > "$W/trace"
+bld "noop" "$T/noop.log"
+ranset "noop" "$T/noop.log" ''
+ln_ 'targets 4: 0 run, 4 up to date' "$T/noop.log"
+ln_ 'nothing to do' "$T/noop.log"
+[ -s "$W/trace" ] && bad "noop: a recipe ran -- trace: $(tr '\n' ' ' < "$W/trace")"
+printf '=== build noop\n' >> "$out"; cat "$T/noop.log" >> "$out"
+
+# ---------------------------------------------------------------------------
+# [10] TOUCHING ONE INPUT REBUILDS EXACTLY ITS DEPENDENTS. alpha.c's CONTENT
+#      changes. alpha.o depends on it and app depends on alpha.o, so both must
+#      run; zeta.o shares common.h with alpha.o but not alpha.c, and docs is in
+#      the other component, so neither may. The expected set is written out in
+#      full, in DAG order, as a literal.
+# ---------------------------------------------------------------------------
+: > "$W/trace"
+printf 'ALPHA2\n' > "$W/alpha.c"
+bld "one-input" "$T/one.log"
+ranset "one-input" "$T/one.log" 'alpha.o app'
+ln_ 'src alpha.c changed' "$T/one.log"
+ln_ 'skip zeta.o (up to date)' "$T/one.log"
+ln_ 'skip docs (up to date)' "$T/one.log"
+ln_ 'run app (alpha.o changed)' "$T/one.log"
+ln_ 'targets 4: 2 run, 2 up to date' "$T/one.log"
+[ "$(tr '\n' ' ' < "$W/trace")" = "alpha.o app " ] || \
+    bad "one-input: trace is [$(tr '\n' ' ' < "$W/trace")], expected exactly alpha.o then app"
+printf '=== build one-input\n' >> "$out"; cat "$T/one.log" >> "$out"
+
+# ---------------------------------------------------------------------------
+# [11] CONTENT-HASH STALENESS IS NOT MTIME STALENESS. This is the leg that
+#      separates a real hash from a stat, and nothing else in this file can see
+#      the difference.
+#
+#      common.h's mtime is moved to a fixed future stamp and its bytes are left
+#      alone. `make(1)` would rebuild zeta.o, alpha.o and app. This must rebuild
+#      NOTHING, and must say the word: `touched (content identical)`. A fixed
+#      timestamp rather than a bare `touch` because a bare touch inside the same
+#      second as the last build sets the same mtime, and then the leg would be
+#      asserting that nothing happened for the wrong reason.
+# ---------------------------------------------------------------------------
+: > "$W/trace"
+touch -t 203001010000 "$W/common.h"
+bld "mtime-only" "$T/mt.log"
+ranset "mtime-only" "$T/mt.log" ''
+ln_ 'src common.h touched (content identical)' "$T/mt.log"
+ln_ 'targets 4: 0 run, 4 up to date' "$T/mt.log"
+# Exactly one source touched: the count is what says the move was NOTICED and
+# then dismissed on content, rather than never seen at all.
+ln_ 'sources 4: 0 new, 0 changed, 1 touched, 3 unchanged' "$T/mt.log"
+[ -s "$W/trace" ] && bad "mtime-only: a recipe ran on an unchanged file -- staleness is mtime, not content"
+# The floor: the mtime really did move. If it did not, the paragraph above is a
+# story about a file nobody touched.
+[ "$(date -r "$W/common.h" +%Y 2>/dev/null)" = 2030 ] || \
+    bad "mtime-only: common.h's mtime is not 2030 -- touch(1) did not move it and [11] asserts nothing"
+printf '=== build mtime-only\n' >> "$out"; cat "$T/mt.log" >> "$out"
+
+# ---------------------------------------------------------------------------
+# [12] THE LOG IS BYTE-IDENTICAL AT TYCHO_THREADS=1 AND 2, AND OVER TWO RUNS.
+#      A level of this graph holds three rules that run at once and finish in
+#      whatever order they finish in -- `trace` above proves they are not in
+#      source order. The log is assembled by node index afterwards, so it must
+#      not move. Cold every time, so all four runs do the maximum work.
+# ---------------------------------------------------------------------------
+#      A COLD build alone is not enough here and that is not a detail: on a cold
+#      build every outcome is the same shape -- ran, reason `missing` -- so
+#      filing them under the wrong nodes produces the same bytes and the leg
+#      goes blind. Each run is therefore the whole SEQUENCE cold -> no-op ->
+#      one-input-changed, where the outcomes differ per node and a misfiled one
+#      shows up as the wrong verdict against the wrong name.
+# `bld` assigns _lbl and _f, and a shell function has no locals -- hence the
+# distinct names here.
+seq_run() {
+    _tag=$1; _dst=$2; _th=$3
+    seed
+    bld "$_tag cold" "$T/s1" TYCHO_THREADS="$_th"
+    bld "$_tag noop" "$T/s2" TYCHO_THREADS="$_th"
+    printf 'ALPHA2\n' > "$W/alpha.c"
+    bld "$_tag one"  "$T/s3" TYCHO_THREADS="$_th"
+    cat "$T/s1" "$T/s2" "$T/s3" > "$_dst"
+}
+for t in 1 2 8; do
+    seq_run "threads=$t" "$T/th.$t" "$t"
+    seq_run "threads=$t rerun" "$T/th.$t.b" "$t"
+    cmp -s "$T/th.$t" "$T/th.$t.b" || {
+        bad "the build log is not deterministic at TYCHO_THREADS=$t (two runs of the same sequence differ)"
+        diff "$T/th.$t" "$T/th.$t.b" | sed 's/^/      /'
+    }
+done
+cmp -s "$T/th.1" "$T/th.2" || {
+    bad "the build log DEPENDS ON THE POOL WIDTH (TYCHO_THREADS=1 vs 2) -- the ordered reassembly is broken"
+    diff "$T/th.1" "$T/th.2" | sed 's/^/      /'
+}
+cmp -s "$T/th.1" "$T/th.8" || {
+    bad "the build log differs at TYCHO_THREADS=8"
+    diff "$T/th.1" "$T/th.8" | sed 's/^/      /'
+}
+printf '=== build threads\n' >> "$out"; cat "$T/th.1" >> "$out"
+
+# ---------------------------------------------------------------------------
+# [13] EVERY BuildErr VARIANT exits NON-ZERO with its own whole message and an
+#      EMPTY STDOUT. No probe is needed: the driver propagates, so the program
+#      dies by them itself. The variant list is READ out of the enum.
+# ---------------------------------------------------------------------------
+# `berr <variant> <rulefile text> <the whole message>` -- run in a scratch tree
+# so a failed build cannot leave the demo's work directory half-written.
+berr() {
+    _v=$1; _text=$2; _msg=$3
+    rm -rf "$T/e"; mkdir -p "$T/e/d"
+    printf 'a\n' > "$T/e/a"
+    printf '%s' "$_text" > "$T/e/bad.mk"
+    [ "$_v" = StampBroken ] && printf 'garbage\n' > "$T/e/.tycho-make.stamp"
+    ( cd "$T/e" && $TO "$MAKE" bad.mk ) > "$T/c.out" 2> "$T/c.err"
+    _rc=$?
+    if [ "$_rc" -eq 0 ]; then
+        bad "$_v: EXITED 0 -- the build accepted what the variant exists to refuse"
+    elif ! grep -qxF "$_msg" "$T/c.err"; then
+        bad "$_v: failed but not with its own whole message"; sed 's/^/      /' "$T/c.err"
+    fi
+    [ -s "$T/c.out" ] && bad "$_v: wrote to STDOUT"
+    printf '=== berr %s\n' "$_v" >> "$out"
+    cat "$T/c.err" >> "$out"
+}
+
+berr MissingSource 'x: nosuch.c
+	cat nosuch.c > x
+'   "no rule to make 'nosuch.c' and no such file"
+berr RecipeFailed  'x: a
+	false
+'   "recipe for 'x' failed with exit 1: false"
+berr NoOutput      'x: a
+	true
+'   "recipe for 'x' succeeded but did not create it: true"
+berr Unreadable    'x: d
+	cp a x
+'   "cannot read 'd' to hash it"
+berr StampBroken   'x: a
+	cp a x
+'   'stamp line 1 is not <name> <mtime> <hash>: [garbage]'
+
+# LevelLost is the reassembly's own invariant and has no rulefile that reaches
+# it: it fires when a level's channel yields fewer outcomes than the level had
+# nodes, which is a runtime bug, not an input. It is held the way
+# tools/tycho-sheet/run.sh holds CellErr.NoText -- pinned to ONE construction
+# site, and that site asserted to be the length guard in `build`.
+n_ll=$(grep -c 'LevelLost(' "$src/build/build.ty")
+[ "$n_ll" = 3 ] || bad "LevelLost appears $n_ll time(s) in build.ty, expected 3 (enum, err_str, the one guard)"
+grep -q 'if len(got) != len(lv\[l\]):' "$src/build/build.ty" || \
+    bad "build.ty no longer compares a level's outcome count to its node count -- LevelLost is now dead AND the reassembly is unguarded"
+
+BCOVERED='MissingSource RecipeFailed NoOutput Unreadable StampBroken LevelLost'
+bfound=0
+for v in $(awk '
+        $0 == "enum BuildErr:" { on = 1; next }
+        on && /^[^ \t]/ { on = 0 }
+        on && $1 ~ /^#/ { next }
+        on && NF { v = $1; sub(/\(.*/, "", v); print v }
+    ' "$src/build/build.ty"); do
+    bfound=$((bfound + 1))
+    hit=0
+    for c in $BCOVERED; do [ "$v" = "$c" ] && hit=1; done
+    [ "$hit" -eq 1 ] || bad "BuildErr variant $v has no leg in this runner -- it is UNGATED"
+done
+[ "$bfound" -eq 6 ] || bad "found $bfound BuildErr variant(s) in build.ty, expected 6 -- the scan is broken and [13]'s floor asserts nothing"
 
 # ---------------------------------------------------------------------------
 # the golden
@@ -332,7 +604,7 @@ elif ! cmp -s "$out" "$golden"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-make: green (demo.mk's report byte-identical over 2 runs and equal to the golden; its 8 nodes come out in declaration order, zeta.o before alpha.o where alphabetical would disagree, and every one of the 7 printed edges is respected with each node listed exactly once; removing one edge from a 4-node chain moves the order, and with it in place bot is immediately followed by mid; 3 cycles are NAMED -- a 3-cycle, a self-edge, and one with two innocent nodes stuck behind it that the message does not mention; $found MakeErr variants each exit non-zero with their own whole message and an empty stdout)"
+    echo "tycho-make: green (demo.mk's report byte-identical over 2 runs and equal to the golden; its 8 nodes come out in declaration order, zeta.o before alpha.o where alphabetical would disagree, and every one of the 7 printed edges is respected with each node listed exactly once; removing one edge from a 4-node chain moves the order, and with it in place bot is immediately followed by mid; 3 cycles are NAMED -- a 3-cycle, a self-edge, and one with two innocent nodes stuck behind it that the message does not mention; $found MakeErr variants each exit non-zero with their own whole message and an empty stdout; build.mk cold-builds all 4 rules with zeta.o and alpha.o really running before app, a no-op rebuild runs 0 and says 'nothing to do', changing alpha.c reruns exactly alpha.o and app, moving common.h's mtime with its bytes intact reruns NOTHING and reports it 'touched (content identical)', the log is byte-identical over 6 cold runs at TYCHO_THREADS 1, 2 and 8 although the recipes finish out of source order, and $bfound BuildErr variants are accounted for)"
 else
     echo "tycho-make: FAIL"; exit 1
 fi
