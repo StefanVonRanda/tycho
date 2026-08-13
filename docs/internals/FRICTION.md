@@ -492,7 +492,21 @@ pick-up order is written out in full under "What moved this pass" below.
      undocumented ceiling and `ncpu()`'s own false definition above it, split out as a
      carried-forward phase. *(It was taken, and both halves are the CLOSED note at the
      head of this item.)*
-8. **No direct spelling for N workers** (*Earlier phases*) — reproduced again at
+8. **No direct spelling for N workers** (*Earlier phases*) — **COSTED 2026-08-13,
+   still open, and half of it is not a type-system change at all:
+   `docs/rfc/parallel-for-width.md`.** The channel-drain form already lowers to
+   `parallel for __pw in 0..<ncpu()` with the width synthesised as an ordinary
+   `E_CALL` node in `r_stop` — the same slot a user's `0..<N` fills — so want (a),
+   "the program cannot choose N", is a grammar slot plus three call sites
+   (`src/tychoc.c@task_container_err` is not among them), not a new type. Want
+   (b), per-worker identity, stays open AND got harder to spell the same day: the
+   natural `parallel(4) for x, wid in work:` collides with the one-binder rule
+   gated by `tests/reject/for_two_binders.ty`, and both neighbour languages spend
+   a second binder on the index. The RFC has the spelling, the four decisions it
+   needs, the gates that can redden, and why a fixture that COUNTS workers is the
+   load-bearing one. The record of what the item said when open follows.
+
+   Reproduced at
    `9e8f8f2` with a scratch program: `hs := [spawn work(1), spawn work(2)]` is refused with
    `tychoc: a task handle cannot be stored in a container or aggregate -- wait(t) first`
    (`src/tychoc.c@task_container_err`, fail-closed at the type-intern choke points so a

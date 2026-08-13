@@ -18,10 +18,6 @@ cheapest-first order.
 
 ## Phases
 
-- [ ] **Phase 5 — item 8: no direct spelling for N workers**
-  - `[spawn work(1), spawn work(2)]` is refused by design (a handle cannot escape
-    to be waited twice or never). The ask is a width slot on `parallel for`, or
-    task handles in a container with the affine rule preserved.
-  - This is a type-system change and the item says so. Scope it as a written
-    design before any code; a phase that only produces the design is complete.
-  - Verify: `make test` and `make conc` if anything lands in `src/tychoc.c`.
+None open. Item 8 stays open in the open list by design — the phase's
+deliverable was the costing, and it is `docs/rfc/parallel-for-width.md`.
+This file is finished and should be deleted rather than archived.
