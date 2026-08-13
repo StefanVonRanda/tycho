@@ -18,6 +18,9 @@ remaining seven, then corrects or fixes each.
   `core:json` phase found its entry already carrying a `[FIXED, 2026-08-01]`
   banner *and* a 2026-08-11 re-probe, neither of which the index shows. Check the
   entry itself before assuming a phase has work in it.
+- **The banner is not spelled one way.** `core:decimal`'s said `[CLOSED …]`, and
+  a detector grepping `[FIXED]` reported it open on 2026-08-13. Grep for the
+  bracketed word, not the word you expect. Six entries remain unprobed, not seven.
 - The file's convention, confirmed at `docs/internals/FRICTION.md:1331` vs
   `docs/internals/FRICTION.md:1362`, and `docs/internals/FRICTION.md:1396` vs
   `docs/internals/FRICTION.md:1420`: a closed entry keeps a struck-through
@@ -28,12 +31,6 @@ remaining seven, then corrects or fixes each.
   changes, so a repro that no longer parses is itself the finding.
 
 ## Phases
-
-- [ ] **Phase 2 — `core:decimal` has no `div`** (`:1949`)
-  - Probe that it is still absent, then decide: add `div` with an explicit scale
-    and rounding mode, or record why a decimal `div` is refused. Do not add a
-    `div` that silently picks a scale.
-  - Verify: `make corelib`, `make q-check`.
 
 - [ ] **Phase 3 — `iter.try_map` has no `Result(void, E)` shape** (`:2406`)
   - Entry 4 in an earlier section claimed `Result(void, E)` was inexpressible and
