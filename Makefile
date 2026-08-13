@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -591,6 +591,36 @@ ed-check: tychoc
 # See tools/tycho-sheet/run.sh.
 sheet-check: tychoc
 	@sh tools/tycho-sheet/run.sh
+
+# sim-check: the gate for tycho-sim, the entity simulation in tools/tycho-sim/.
+# It is the only lane that runs it, and the only program in the tree that uses
+# `soa` and `subscript` as an API rather than as a fixture.
+#
+# Its subject is SWAP-REMOVE, which is the sibling of ed-check's UTF-8 and
+# sheet-check's float text: a thing a recorded transcript cannot see. Despawn
+# moves the last entity down over the hole and pops; forget to re-point the
+# moved entity's slot and the POOL LENGTH IS STILL RIGHT -- every count, every
+# field-wise sum over a dense walk and every "N live" line still read correctly,
+# while exactly one id quietly starts addressing somebody else. A golden
+# re-recorded from that build agrees with it.
+#
+# So the survivor SET is generated in the runner -- entity i is spawned with
+# hp i*7+1 and the odd ones despawned, so the survivors are that expression over
+# the even i -- and compared as a whole block, separately from the live count,
+# which is computed from N. The two redden independently: a swap that forgets
+# one component moves the set and leaves the count alone, and a pool that is
+# never popped moves the count. A stale id must be refused BY THE GENERATION,
+# with the reuse of the slot asserted too so the refusal is not just an empty
+# slot. All three world.SimErr variants exit non-zero with their own whole
+# message and an empty stdout, through a probe built against a COPY of world/;
+# the driver reports a refusal and exits 0 by design, because a refusal is the
+# observation. The variant list is read out of the enum.
+#
+# ~3.3s (3.32 / 3.33 / 3.34 s, measured 2026-08-13; two tychoc builds are most
+# of it). In `make ci` as step [3t/26].
+# See tools/tycho-sim/run.sh.
+sim-check: tychoc
+	@sh tools/tycho-sim/run.sh
 
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else

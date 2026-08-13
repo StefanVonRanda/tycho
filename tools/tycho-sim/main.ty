@@ -1,0 +1,166 @@
+package main
+
+import "core:strings"
+import "core:cli"
+import "world"
+
+# tycho-sim slice 1: a driver over world/, the slot map in the package next
+# door. There is no simulation here yet -- movement, combat and decay are the
+# next slice. What this exercises is the STORAGE: `soa` component pools,
+# `subscript` projections into them, and swap-remove despawn on the hot path.
+#
+# WHY THIS PROGRAM EXISTS. `soa` had one user in the tree and `subscript` had
+# none, so both were gated only by fixtures written to test them. Here they are
+# the pool's real API: every field read and every field write in world/ goes
+# through a projection, and the swap-remove is written out of them too.
+#
+# DETERMINISM. Integer arithmetic only, one LCG whose seed is a literal, no
+# float, no map iteration, no clock, no path printed. Two runs are the same
+# bytes or the program is wrong.
+#
+# THREE MODES, because the gate needs three different things and only one of
+# them is a transcript:
+#   --demo       the goldened scenario: many ticks, many swap-removes.
+#   --sweep=N    an ARITHMETIC scenario: spawn N, despawn the odd-numbered
+#                ones. The survivor set is N/2 hp values the runner can compute
+#                without replaying anything, which is what lets it assert the
+#                count and the reachability separately from the golden.
+#   --stale      spawn, despawn, respawn into the same slot, then resolve the
+#                original id. It must be refused, and the floor is printed too:
+#                the slot really was reused, so the refusal is the generation
+#                and not a slot that merely stayed empty.
+
+# LCG, constants from the C standard's example. 2^31 modulus keeps the product
+# under 2^62 at every step, so nothing here depends on the width of int beyond
+# 64 bits.
+struct Rng:
+    s: int
+
+fn next(r: inout Rng) -> int:
+    r.s = (r.s * 1103515245 + 12345) % 2147483648
+    return r.s
+
+fn pick(r: inout Rng, n: int) -> int:
+    return next(&r) % n
+
+fn demo() -> int:
+    w := world.new()
+    r := Rng(20260813)
+    ids := []
+    println("=== demo: 8 ticks over a soa pool, despawn by swap-remove")
+    for t := 0; t < 8; t += 1:
+        for k := 0; k < 5; k += 1:
+            id := world.spawn_at(&w, pick(&r, 100), pick(&r, 100), 20 + pick(&r, 40))
+            push(ids, id)
+        # Damage a third of the live pool through their ids, then despawn every
+        # entity the damage took to 0 or below. Both the picking and the
+        # despawning walk `ids`, so a swap-remove that moved an entity without
+        # repairing its slot is read back on the very next tick.
+        hits := len(ids) / 3
+        for k := 0; k < hits; k += 1:
+            victim := ids[pick(&r, len(ids))]
+            match world.damage(&w, victim, 9 + pick(&r, 20)):
+                Ok(hp): hp = hp
+                Err(er): er = er
+        dead := []
+        for k := 0; k < len(ids); k += 1:
+            match world.get(w, ids[k]):
+                Ok(e):
+                    if e.hp <= 0:
+                        push(dead, ids[k])
+                Err(er): er = er
+        for k := 0; k < len(dead); k += 1:
+            match world.despawn(&w, dead[k]):
+                Ok(): k = k
+                Err(er): println("  ERR " + world.err_str(er))
+        println("tick " + str(t) + " live=" + str(world.live(w)) +
+                " slots=" + str(world.slot_count(w)) +
+                " free=" + str(world.free_count(w)) +
+                " despawned=" + str(len(dead)) +
+                " hp=" + str(world.total_hp(w)) +
+                " sum=" + str(world.checksum(w)))
+    # Every id ever handed out, resolved once. A live one prints its entity, a
+    # dead one prints why it is refused -- both are the point.
+    reach := 0
+    for k := 0; k < len(ids); k += 1:
+        match world.get(w, ids[k]):
+            Ok(e):
+                reach = reach + 1
+                println("  live " + world.id_str(ids[k]) + " hp=" + str(e.hp) +
+                        " at " + str(e.x) + "," + str(e.y))
+            Err(er): println("  gone " + world.id_str(ids[k]) + ": " + world.err_str(er))
+    println("demo: handed out " + str(len(ids)) + " ids, " + str(reach) + " resolve, live=" + str(world.live(w)))
+    return 0
+
+fn sweep(n: int) -> int:
+    w := world.new()
+    ids := []
+    println("=== sweep " + str(n) + ": spawn all, despawn the odd ones")
+    for i := 0; i < n; i += 1:
+        push(ids, world.spawn_at(&w, i, 2 * i, i * 7 + 1))
+    for i := 1; i < n; i += 2:
+        match world.despawn(&w, ids[i]):
+            Ok(): i = i
+            Err(er): println("  ERR " + world.err_str(er))
+    println("live=" + str(world.live(w)))
+    # One line per surviving id, in creation order. The hp is what identifies
+    # WHICH entity survived, so a swap-remove that dropped one and duplicated
+    # another moves this block without moving the count above it.
+    for i := 0; i < n; i += 1:
+        match world.get(w, ids[i]):
+            Ok(e): println("  hp " + str(e.hp))
+            Err(er): er = er
+    println("sweep: hp total " + str(world.total_hp(w)))
+    return 0
+
+fn stale() -> int:
+    w := world.new()
+    println("=== stale: an id must not survive its slot being handed on")
+    a := world.spawn_at(&w, 1, 2, 30)
+    println("spawned " + world.id_str(a))
+    match world.despawn(&w, a):
+        Ok(): println("despawned, live=" + str(world.live(w)))
+        Err(er): println("  ERR " + world.err_str(er))
+    # Freed but not yet reused: the generation still matches, so this is the
+    # OTHER refusal, and printing it here is what proves the two are distinct.
+    match world.get(w, a):
+        Ok(e): println("  BUG a despawned id resolved to hp=" + str(e.hp))
+        Err(er): println("freed: " + world.err_str(er))
+    b := world.spawn_at(&w, 9, 9, 44)
+    println("respawned " + world.id_str(b) + " into slot " + str(b.idx))
+    if b.idx != a.idx:
+        println("  FLOOR the slot was NOT reused -- the refusal below would be Dead, not the generation")
+    match world.get(w, a):
+        Ok(e): println("  BUG the stale id resolved to hp=" + str(e.hp))
+        Err(er): println("stale: " + world.err_str(er))
+    match world.get(w, b):
+        Ok(e): println("fresh " + world.id_str(b) + " hp=" + str(e.hp))
+        Err(er): println("  BUG the fresh id was refused: " + world.err_str(er))
+    return 0
+
+fn main() -> Result(void, string):
+    av := cli.argv()
+    mode := ""
+    n := 0
+    for a in av:
+        if a == "--demo":
+            mode = "demo"
+        elif a == "--stale":
+            mode = "stale"
+        elif strings.starts_with(a, "--sweep="):
+            mode = "sweep"
+            n = strings.parse_int(a[8:len(a)])
+        else:
+            return Err("unknown argument: " + a)
+    if mode == "demo":
+        demo()
+        return Ok()
+    if mode == "stale":
+        stale()
+        return Ok()
+    if mode == "sweep":
+        if n < 2:
+            return Err("--sweep needs at least 2 entities, got " + str(n))
+        sweep(n)
+        return Ok()
+    return Err("usage: tycho-sim --demo | --sweep=<N> | --stale")

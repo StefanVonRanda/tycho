@@ -224,3 +224,6 @@ dist/
 # the tycho-sheet spreadsheet engine's transcript golden
 # (tools/tycho-sheet/expected.out), same line, same reason.
 !/tools/tycho-sheet/*.out
+# the tycho-sim entity simulation's transcript golden
+# (tools/tycho-sim/expected.out), same line, same reason.
+!/tools/tycho-sim/*.out

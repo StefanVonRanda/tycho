@@ -1,0 +1,78 @@
+=== demo: 8 ticks over a soa pool, despawn by swap-remove
+tick 0 live=5 slots=5 free=0 despawned=0 hp=205 sum=4092
+tick 1 live=10 slots=10 free=0 despawned=0 hp=364 sum=7802
+tick 2 live=14 slots=15 free=1 despawned=1 hp=498 sum=9940
+tick 3 live=18 slots=19 free=1 despawned=1 hp=612 sum=11630
+tick 4 live=22 slots=23 free=1 despawned=1 hp=690 sum=14464
+tick 5 live=23 slots=27 free=4 despawned=4 hp=767 sum=16140
+tick 6 live=26 slots=28 free=2 despawned=2 hp=860 sum=18126
+tick 7 live=27 slots=31 free=4 despawned=4 hp=951 sum=19008
+  gone 0#0: id 0#0 is stale (slot 0 is at generation 1)
+  live 1#0 hp=45 at 99,78
+  gone 2#0: id 2#0 is stale (slot 2 is at generation 1)
+  live 3#0 hp=13 at 85,44
+  gone 4#0: id 4#0 is stale (slot 4 is at generation 1)
+  live 5#0 hp=55 at 85,12
+  gone 6#0: id 6#0 is stale (slot 6 is at generation 1)
+  live 7#0 hp=32 at 47,90
+  gone 8#0: id 8#0 is stale (slot 8 is at generation 1)
+  live 9#0 hp=35 at 65,88
+  gone 10#0: id 10#0 names a despawned entity
+  live 11#0 hp=9 at 9,32
+  live 12#0 hp=58 at 44,83
+  live 13#0 hp=18 at 43,2
+  gone 14#0: id 14#0 is stale (slot 14 is at generation 1)
+  live 0#1 hp=49 at 87,2
+  gone 15#0: id 15#0 is stale (slot 15 is at generation 1)
+  live 16#0 hp=30 at 25,0
+  gone 17#0: id 17#0 names a despawned entity
+  live 18#0 hp=21 at 35,78
+  live 14#1 hp=36 at 26,69
+  live 19#0 hp=30 at 29,60
+  gone 20#0: id 20#0 is stale (slot 20 is at generation 1)
+  live 21#0 hp=2 at 51,26
+  gone 22#0: id 22#0 names a despawned entity
+  live 15#1 hp=16 at 53,80
+  live 23#0 hp=50 at 52,39
+  live 24#0 hp=41 at 67,26
+  live 25#0 hp=42 at 86,89
+  live 26#0 hp=59 at 69,88
+  live 20#1 hp=34 at 60,63
+  live 8#1 hp=33 at 87,14
+  live 6#1 hp=44 at 26,25
+  live 4#1 hp=32 at 57,56
+  gone 27#0: id 27#0 is stale (slot 27 is at generation 1)
+  live 27#1 hp=55 at 53,32
+  gone 2#1: id 2#1 names a despawned entity
+  live 28#0 hp=25 at 19,18
+  live 29#0 hp=44 at 6,29
+  live 30#0 hp=43 at 53,72
+demo: handed out 40 ids, 27 resolve, live=27
+=== sweep 24: spawn all, despawn the odd ones
+live=12
+  hp 1
+  hp 15
+  hp 29
+  hp 43
+  hp 57
+  hp 71
+  hp 85
+  hp 99
+  hp 113
+  hp 127
+  hp 141
+  hp 155
+sweep: hp total 936
+=== stale: an id must not survive its slot being handed on
+spawned 0#0
+despawned, live=0
+freed: id 0#0 names a despawned entity
+respawned 0#1 into slot 0
+stale: id 0#0 is stale (slot 0 is at generation 1)
+fresh 0#1 hp=44
+=== err BadSlot (via the world API)
+no slot 99 (world has 0)
+=== err Dead (via the world API)
+id 0#0 names a despawned entity
+=== err Stale (via the world API)
+id 0#0 is stale (slot 0 is at generation 1)

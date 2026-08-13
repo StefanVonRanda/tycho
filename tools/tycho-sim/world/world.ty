@@ -1,0 +1,163 @@
+package world
+
+# Entity storage for tycho-sim: a slot map with generation counters over `soa`
+# component pools, projected through monomorphic `subscript`s.
+#
+# THE POOL IS DENSE, THE IDS ARE STABLE. `w.e` is a `soa [Ent]` with no holes:
+# every element is a live entity, so a system is a straight walk from 0 to
+# len(w.e) with no liveness test in the loop. Despawn keeps it dense by SWAP-
+# REMOVE -- the last element is moved down into the hole and the pool is popped.
+# That moves an entity's dense index, so a dense index is not a name; `Id` is.
+#
+# `w.slots` is the indirection that makes it so. slots[i].dense is where slot i
+# lives in the pool right now, or -1 if the slot is free, and every swap-remove
+# repairs exactly one of them: the moved entity's. `Ent.slot` is the reverse
+# edge, which is what makes that repair O(1) instead of a scan -- the moved
+# entity carries its own slot number with it.
+#
+# GENERATIONS MAKE A DEAD ID SAY SO. slots[i].gen is bumped when the slot is
+# handed out AGAIN, not when it is freed, which splits the two failures a
+# reader actually needs told apart:
+#   despawned, slot still free   -> gen matches, dense is -1  -> Dead
+#   despawned, slot handed on    -> gen has moved             -> Stale
+# Bumping on free would collapse both into Stale and make Dead unreachable.
+# An id is a value, so nothing stops one outliving its entity; the point is
+# that it cannot silently address the entity that replaced it.
+#
+# NOTHING HERE IS ORDER-DEPENDENT ON A HOST. Integer arithmetic, no float, no
+# map iteration, no clock. The free list is a stack, so slot reuse is a
+# deterministic function of the call sequence and nothing else.
+
+struct Ent:
+    slot: int                      # reverse edge into w.slots, repaired by swap-remove
+    hp: int
+    x: int
+    y: int
+
+struct Slot:
+    gen: int
+    dense: int                     # index into w.e, or -1 when free
+
+struct Id:
+    idx: int                       # which slot
+    gen: int                       # the generation that slot was at when handed out
+
+struct World:
+    e: soa [Ent]
+    slots: [Slot]
+    free: [int]                    # freed slot indices, reused newest-first
+
+enum SimErr:
+    BadSlot(int, int)
+    Stale(int, int, int)
+    Dead(int, int)
+
+fn err_str(er: SimErr) -> string:
+    match er:
+        BadSlot(i, n): return "no slot " + str(i) + " (world has " + str(n) + ")"
+        Stale(i, g, w): return "id " + str(i) + "#" + str(g) + " is stale (slot " + str(i) + " is at generation " + str(w) + ")"
+        Dead(i, g): return "id " + str(i) + "#" + str(g) + " names a despawned entity"
+
+# The projections. These are the pool's read/write API: every field access on
+# the hot path below goes through one, including the swap-remove itself, so a
+# projection that stopped naming the place it claims to name would move the
+# transcript rather than merely going unused.
+subscript hp(w: World, d: int) -> inout int:
+    yield &w.e[d].hp
+
+subscript px(w: World, d: int) -> inout int:
+    yield &w.e[d].x
+
+subscript py(w: World, d: int) -> inout int:
+    yield &w.e[d].y
+
+fn new() -> World:
+    return World(soa []Ent, [], [])
+
+fn live(w: World) -> int:
+    return len(w.e)
+
+fn slot_count(w: World) -> int:
+    return len(w.slots)
+
+fn free_count(w: World) -> int:
+    return len(w.free)
+
+# Hand out a slot: the most recently freed one if there is one, otherwise a new
+# one. Reuse is where the generation moves, which is what turns every id
+# outstanding against that slot into a Stale rather than a wrong answer.
+fn spawn_at(w: inout World, x: int, y: int, hp: int) -> Id:
+    s := 0
+    if len(w.free) > 0:
+        s = pop(w.free)
+        w.slots[s].gen = w.slots[s].gen + 1
+    else:
+        s = len(w.slots)
+        push(w.slots, Slot(0, -1))
+    w.slots[s].dense = len(w.e)
+    push(w.e, Ent(s, hp, x, y))
+    return Id(s, w.slots[s].gen)
+
+fn dense_of(w: World, id: Id) -> Result(int, SimErr):
+    if id.idx < 0 or id.idx >= len(w.slots):
+        return Err(BadSlot(id.idx, len(w.slots)))
+    if w.slots[id.idx].gen != id.gen:
+        return Err(Stale(id.idx, id.gen, w.slots[id.idx].gen))
+    if w.slots[id.idx].dense < 0:
+        return Err(Dead(id.idx, id.gen))
+    return Ok(w.slots[id.idx].dense)
+
+# SWAP-REMOVE. The last element is copied down over the hole field by field
+# (`w.e[d] = w.e[last]` does not compile -- see the header of main.ty), the
+# moved entity's slot is re-pointed at its new dense index, and the pool is
+# popped. Forgetting that one repair is the classic bug this shape exists to
+# catch: the pool length stays right, every walk still sees the right number of
+# entities, and exactly one id quietly starts addressing somebody else.
+fn despawn(w: inout World, id: Id) -> Result(void, SimErr):
+    d := 0
+    match dense_of(w, id):
+        Ok(v): d = v
+        Err(er): return Err(er)
+    last := len(w.e) - 1
+    if d != last:
+        w.e[d].slot = w.e[last].slot
+        w.hp(d) = w.hp(last)
+        w.px(d) = w.px(last)
+        w.py(d) = w.py(last)
+        w.slots[w.e[d].slot].dense = d
+    pop(w.e)
+    w.slots[id.idx].dense = -1
+    push(w.free, id.idx)
+    return Ok()
+
+fn id_str(id: Id) -> string:
+    return str(id.idx) + "#" + str(id.gen)
+
+# Read an entity through its id. Every reader in main.ty goes through this
+# rather than through a dense index it remembered, which is the discipline the
+# generation counter exists to enforce.
+fn get(w: World, id: Id) -> Result(Ent, SimErr):
+    match dense_of(w, id):
+        Ok(d): return Ok(Ent(w.e[d].slot, w.hp(d), w.px(d), w.py(d)))
+        Err(er): return Err(er)
+
+fn damage(w: inout World, id: Id, n: int) -> Result(int, SimErr):
+    match dense_of(w, id):
+        Ok(d):
+            w.hp(d) = w.hp(d) - n
+            return Ok(w.hp(d))
+        Err(er): return Err(er)
+
+# Field-wise sums straight down the pool -- the access pattern soa is for, and
+# the cheapest whole-world invariant a transcript can carry.
+fn total_hp(w: World) -> int:
+    t := 0
+    for d := 0; d < len(w.e); d += 1:
+        t = t + w.hp(d)
+    return t
+
+fn checksum(w: World) -> int:
+    c := 0
+    for d := 0; d < len(w.e); d += 1:
+        c = c + w.hp(d) * 3 + w.px(d) * 5 + w.py(d) * 7
+    return c
