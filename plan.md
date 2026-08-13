@@ -29,7 +29,7 @@ last two fixes came from. Output is a tick transcript that goldens byte-exactly.
   - Verify: `make sim-check`.
 
 - [ ] **Phase 3 — the `sink` diagnostic describes a rule it does not implement**
-  - Scope: `src/tychoc.c@sink_arg_into`'s message, and FRICTION.md.
+  - Scope: `src/tychoc.c@sink_arg_into`'s message, and `docs/internals/FRICTION.md`.
   - Done when: a variable whose sink pass IS its last use but which was read
     earlier gets a message naming the real rule (one read in the whole body),
     not "make this its last use", which it already is.
@@ -50,9 +50,3 @@ last two fixes came from. Output is a tick transcript that goldens byte-exactly.
   - Done when: either the scatter is implemented, or the spec's "same interface"
     sentence is narrowed AND the message names soa. Not both silently.
   - Verify: a fixture pinning whichever was chosen; `make test`.
-
-- [ ] **Phase 5 — `FRICTION.md` does not exist**
-  - Phase 3's scope names it. `ls FRICTION.md docs/FRICTION.md` finds nothing;
-    the friction notes are in commit messages (`git log --grep=FRICTION`).
-  - Done when: Phase 3 either creates it or is rewritten to name the real
-    destination. Decide before Phase 3 starts, not during it.
