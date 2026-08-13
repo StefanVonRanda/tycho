@@ -407,7 +407,25 @@ pick-up order is written out in full under "What moved this pass" below.
    stay — just not this one. **~15 lines of comment across 6 files**, and worth doing
    before someone reads one
    of them as a reason not to write the obvious thing.
-6. **`ends_with` needs `core:strings`** (*Earlier phases*) — still true at `9e8f8f2`:
+6. ~~**`ends_with` needs `core:strings`**~~ (*Earlier phases*) — **WITHDRAWN
+   2026-08-13: they are not the same predicate, and the layering question was
+   already answered.** `httpd.has_ext` is a CASE-INSENSITIVE extension test and
+   says so in its own comment (`corelib/httpd/httpd.ty@has_ext`, "Case-insensitive
+   `.ext` suffix test"); `strings.ends_with` is case-sensitive. Measured at
+   `02c4cf75`: `strings.ends_with("/INDEX.HTML", ".html")` is **false**, the
+   has_ext shape is **true**. Importing the package would not delete the function
+   — it would rewrite it as `ends_with(to_lower(path), ext)`, which lowercases the
+   WHOLE path to test its last five bytes, where `has_ext` lowercases only the
+   suffix region. It is also public API with five callers
+   (`server/main.ty@has_ext`), not an internal shortcut.
+
+   And the "corelib layering decision" this item wanted taken **was already
+   taken, four times**: `core:io`, `core:json`, `core:markdown` and `core:toml`
+   all `import "core:strings"` today, and `corelib/strings/` carries no `deps`
+   file, so the import costs no pkg-config dependency. Nothing was ever in the
+   way. The record of what the item said when open follows.
+
+   Reproduced at `9e8f8f2`:
    `corelib/strings/strings.ty@ends_with` exists and `core:httpd` still hand-rolls its own
    `corelib/httpd/httpd.ty@has_ext` rather than import the package for one predicate.
    `core:httpd`'s imports are `core:net` and `core:result` and nothing else

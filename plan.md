@@ -18,14 +18,6 @@ cheapest-first order.
 
 ## Phases
 
-- [ ] **Phase 4 — item 6: may a leaf package import `core:strings`?**
-  - A layering decision, not lines: `core:httpd` hand-rolls `has_ext` rather than
-    import `core:strings` for `ends_with`. Precedent cuts both ways — `core:io`
-    dropped a dependency, `core:sort` gained one.
-  - Decide and write the rule down where a future package author will read it;
-    "deliberate, leaf packages stay dependency-free" is a fine outcome.
-  - Verify: `make corelib` only if an import changes; otherwise the doc gates.
-
 - [ ] **Phase 5 — item 8: no direct spelling for N workers**
   - `[spawn work(1), spawn work(2)]` is refused by design (a handle cannot escape
     to be waited twice or never). The ask is a width slot on `parallel for`, or
