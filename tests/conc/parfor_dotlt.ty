@@ -6,7 +6,7 @@
 # Parsed at src/tychoc.c:3551-3592 into the same S_FORRANGE node `range(0, N)`
 # builds, so the whole CC-3 path below it -- resolve_parfor's capture/reduction
 # scan, the lifted `__parN` chunk proc, the fan-out over K = tycho_ncpu() tasks
-# at src/tychoc.c:10534 -- is the code that was already there and already
+# at src/tychoc.c:10547 -- is the code that was already there and already
 # exercised. Nothing about chunking is new; only the spelling is.
 #
 # Every value here is a closed form, checked by hand before the golden was

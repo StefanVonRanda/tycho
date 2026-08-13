@@ -1,0 +1,13 @@
+# `_` is an ordinary identifier, not a blank. `_ = f(x)` -- the Go/Python/Rust
+# reflex -- used to die "assignment to unknown variable '_'" with a did-you-mean
+# offering an unrelated local, which is true and useless (FRICTION.md #33). The
+# message now says what `_` is and names both working spellings: call it as a
+# statement to drop the value, or give it a name to keep it.
+#
+# The sibling case is tests/reject/underscore_tuple_not_discard.ty, where the
+# advice differs because a tuple element cannot be called as a statement.
+fn f(n: int) -> int:
+    return n
+
+fn main():
+    _ = f(1)

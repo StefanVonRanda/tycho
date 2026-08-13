@@ -37,7 +37,7 @@ int** (`src/tychoc.c:5993@T_BYTES`), so the char-position ladders all compare in
   arm: "a match arm `Variant(bindings):` or `Variant:`". A scalar literal dies
   there with that message, which is why `match` on an int is currently a parse
   error.
-- **Resolve** — the `S_MATCH` case of `resolve_stmt` (`src/tychoc.c:8164@S_MATCH`) already enforces
+- **Resolve** — the `S_MATCH` case of `resolve_stmt` (`src/tychoc.c:8177@S_MATCH`) already enforces
   wildcard-last (`tests/reject/match_wildcard_not_last.ty`), duplicate arms
   (`tests/reject/match_dup_arm.ty`), and exhaustiveness
   (`tests/reject/match_non_exhaustive.ty`) — all enum machinery, all reusable.
@@ -124,7 +124,7 @@ instead of seven labels with a shared body).
 - Ranges emit as **consecutive case labels** (`case 48: case 49: ... case 57:`).
   Unrolling, not GNU `case 48 ... 57:`: the ranges in the tree are all small
   (7–10 values), and unrolling is portable under any dialect. (The repo
-  compiles with plain `cc`, no `-std` — `src/tychoc.c:14359@-fwrapv` — so GNU case
+  compiles with plain `cc`, no `-std` — `src/tychoc.c:14372@-fwrapv` — so GNU case
   ranges would work, but there is no reason to depend on them.)
 - The table-vs-binary-search decision is **cc's**, not ours: at `-O2`, GCC and
   Clang lower a dense switch to a jump table and a sparse one to a binary
@@ -173,14 +173,14 @@ per-compare figure assumed. Neither number is a reason to build for speed.
   (`lit | lit | ...`), and a range (`lit..lit`). The diagnostic widens from
   "a match arm `Variant(bindings):` or `Variant:`" to name the new forms.
   String and float literals stay rejected at parse.
-- **Resolve** (`src/tychoc.c:8164@S_MATCH`) — a scalar subject path: subject is
+- **Resolve** (`src/tychoc.c:8177@S_MATCH`) — a scalar subject path: subject is
   `int`/`char`/`bool`; arm literals typed against the subject exactly as
   assignment would type them (newtype rules unchanged — a newtype over int
   is its own type and takes its own spellings); literal arms on an enum
   subject and variant arms on a scalar subject are distinct errors; the
   dup/overlap check (D3); the `_` rule (D2); string/bytes/float subjects
   refused with the demand-gated reason (D1).
-- **Codegen** (`src/tychoc.c:11974@S_MATCH`) — the switch emission (D6). The
+- **Codegen** (`src/tychoc.c:11987@S_MATCH`) — the switch emission (D6). The
   `S_MATCH` statement and value forms both flow through it, so the value
   form (`x := match c: ...`) works without separate work.
 - **Spec** — §14.3 (`docs/spec/10-statements.md:32-60`), the statements

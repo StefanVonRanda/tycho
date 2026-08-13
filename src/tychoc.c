@@ -711,7 +711,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10757@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10770@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -3935,7 +3935,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10534), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10547), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -8096,6 +8096,12 @@ static void resolve_stmt(Stmt *s, Type ret) {
             for (int i = 0; i < s->nnames; i++) {
                 Type vt;
                 if (!vars_find(s->names[i], &vt)) {
+                    /* the tuple half of FRICTION #33; the fix differs from the
+                     * scalar one, since a tuple element cannot be "called as a
+                     * statement" -- every name has to exist. */
+                    if (!strcmp(s->names[i], "_"))
+                        die_at(s->line, "`_` is not a discard -- it is an ordinary variable, and this one was never declared. "
+                                        "Name every element, or declare `_` once with `:=` and reuse it");
                     const char *sg = suggest_var(s->names[i]);
                     if (sg) die_at(s->line, "assignment to unknown variable '%s' (use ':=' to declare); did you mean '%s'?", s->names[i], sg);
                     die_at(s->line, "assignment to unknown variable '%s' (use ':=' to declare)", s->names[i]);
@@ -8113,6 +8119,13 @@ static void resolve_stmt(Stmt *s, Type ret) {
                   die_at(s->line, "cannot assign to constant '%s'", s->name); }
             Type vt;
             if (!vars_find(s->name, &vt)) {
+                /* `_` is an ordinary identifier here, not a blank -- so `_ = f(x)`,
+                 * the Go/Python/Rust reflex, reads as an assignment to a variable
+                 * nobody declared and the suggestion offers an unrelated local
+                 * (FRICTION #33). Say what it is and name the spelling that works. */
+                if (!strcmp(s->name, "_"))
+                    die_at(s->line, "`_` is not a discard -- it is an ordinary variable, and this one was never declared. "
+                                    "To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)");
                 const char *sg = suggest_var(s->name);
                 if (sg) die_at(s->line, "assignment to unknown variable '%s'; did you mean '%s'?", s->name, sg);
                 die_at(s->line, "assignment to unknown variable '%s'", s->name);
@@ -9142,7 +9155,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11433), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11446), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9172,12 +9185,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13405) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13418) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11520) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11533) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
