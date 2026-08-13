@@ -1432,6 +1432,78 @@ predates the `Result` convention the rest of the corelib converged on.
 **Cost to fix:** ~15 lines for `parse_int_strict(s) -> Result(int, string)`,
 leaving `parse_int` alone so no caller moves.
 
+### ~~5. `bytes` slices clamp, so a slice is not a bounds check~~ — **REPRODUCES, and the clamp is DELIBERATE; the entry's own residual ask was already paid. Verdict recorded 2026-08-13**
+
+Re-probed 2026-08-13 against the reference languages the entry never consulted.
+**Every factual claim below still holds** — this closure is a verdict, not a
+correction. What changed is that the behaviour is now *decided* rather than
+merely observed, and the entry's closing sentence ("the one-paragraph spec
+warning is still unwritten") is **stale**: it was written in commit `a335b8db`
+on 2026-08-11, hours after the note that says it is missing.
+
+**The probe, four out-of-range shapes on a 5-byte value, all bounds routed
+through a `fn at(n: int) -> int` so nothing folds at compile time:**
+
+```
+b past=3 far=0      <- b[2:10] is 3 bytes; b[7:9] is 0
+b neg =2 inv=0      <- b[-3:2] clamps to 0; b[4:1] inverts to empty
+s past=3 far=0      <- the identical string slice, identical clamp
+s neg =2 inv=0
+```
+
+`bytes` and `string` are **the same** on all four — that half of the entry is
+confirmed, not a divergence between them. An array aborts on all four, and the
+check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
+cleanly (exit 0 from tychoc) and dies only when run, so there is no
+compile-time arm to strengthen. The array check is emitted inline into the
+generated C by the compiler — `src/tychoc.c:10904-10906` for an ordinary array
+(the path the probe above took) and the same test again at
+`src/tychoc.c:10885-10887` for the SoA variant, both spelling it
+`_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
+just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
+whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
+
+**Both reference languages fault where Tycho clamps, and that divergence is the
+finding.** Measured here, not recalled — go1.26.5 panics on all six shapes tried,
+**including the `string` slice**:
+
+```
+[]byte[2:10]  PANIC slice bounds out of range [:10] with capacity 5
+[]byte[4:1]   PANIC slice bounds out of range [4:1]
+string[2:10]  PANIC slice bounds out of range [:10] with length 5
+```
+
+and Odin (dev-2026-04-nightly) traps by default, naming the source line —
+`m.odin(10:8) Invalid slice indices 2:10 is out of range 0..<5`. Note that
+`-no-bounds-check`, documented as disabling bounds checking "program wide",
+does **not** lift this one: the slice-index check survives it, so Odin's slice
+bound is stronger than its own opt-out suggests.
+
+**Verdict: keep the clamp.** The divergence is real but it is not the same
+choice being made differently — a Tycho `b[i:j]` *is* `substr`, the function
+form, which clamps by definition and is right for the text processing it exists
+for. Go has no clamping substring operator to keep consistent, so its panic
+costs it nothing; changing Tycho's operator would either desynchronise it from
+`substr` or drag `substr` along with it. Against that, the operator is not the
+only spelling available, and the fail-closed one already exists.
+
+**What a caller wanting a real bounds check should use:**
+`corelib/strings/strings.ty@slice_bytes` and `@slice_str`, which take the same
+`(start, stop)` the operator does and return `Result(_, SliceErr)`. Verified
+running, same four shapes: `OutOfBounds`, `Inverted`, `OutOfBounds`, then `ok
+len=3` for the in-range case.
+
+**What this closure adds beyond the verdict: a gate.** The clamp was pinned by
+nothing — `tests/string_slice.ty` covers only in-range slices, so a change making
+Tycho match Go and Odin would have passed `make test` green. A deliberate
+divergence from both reference languages with no fixture watching it is the exact
+shape of a behaviour that gets "fixed" by accident. `tests/slice_clamp.ty` now
+locks all eight cells above; it was proved able to fail by replacing the three
+clamp lines with a Go-style abort, which reddens it (`FAIL slice_clamp (native
+exit 1)`) before the runtime was restored.
+
+The original entry follows.
+
 ### 5. `bytes` slices clamp, so a slice is not a bounds check
 
 `data[p:p + 8]` past the end of a `bytes` value yields three bytes rather than

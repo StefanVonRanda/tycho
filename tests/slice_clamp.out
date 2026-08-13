@@ -1,0 +1,4 @@
+b past=3 far=0
+b neg =2 inv=0
+s past=3 far=0
+s neg =2 inv=0
