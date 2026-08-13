@@ -4006,3 +4006,44 @@ good — the first even names the fix. Purely cosmetic, and worth one pass over
   sibling into the build: `tychoc: plus.ty is in package `main` but has no
   `package` declaration`. Correct, documented, and still a five-second stumble
   when the folder is a scratchpad rather than a project.
+
+### 33. `_` is an ordinary variable, not a discard — and it reads like one
+
+Found writing `tools/tycho-snap/run.sh`'s fixture, where a call's result was
+genuinely not wanted. Every spelling below was run at `bf18a560`:
+
+```
+_ = f(1)            error: assignment to unknown variable '_'
+_ = r(1)            error: assignment to unknown variable '_'      (Result, same)
+_ := f(1)           OK -- DECLARES a variable whose name is one underscore
+_ = f(2)            OK, now: it is an ordinary assignment to that variable
+_ = r(3)            error: cannot assign Result(int, E) to '_' of type int
+println(str(_))     prints 2 -- the value is live and readable
+for _ in [7, 8]     OK, and the body can read `_`; it is the loop variable
+match ...: _: pass  OK -- but this `_` is the PATTERN wildcard, a different thing
+f(4)                OK -- a bare call statement drops the value, no name needed
+```
+
+The last error is the sharpest: `_` has a **type**, inferred from whatever was
+first assigned to it, so a `_` that was an `int` cannot later absorb a `Result`.
+Nothing about it is special-cased.
+
+**Two things make this worth an entry rather than a shrug.** The wildcard `_`
+in a `match` arm IS special, so the language uses the same character for a real
+wildcard in pattern position and for an ordinary identifier in expression
+position — the asymmetry is invisible at the call site. And the tree's own
+corpus reads as though the discard exists: `corelib/test/io/main.ty:404` is
+`_ := io.make_dir(sdir)` followed at `:542` by `_ = io.remove(cf)`, which looks
+exactly like Go's blank identifier and is in fact a live variable holding the
+last `Result` assigned to it. A reader who copies that line into a file where
+`_` was never declared gets "assignment to unknown variable", and a reader who
+copies it into one where `_` holds a different type gets the type error instead.
+
+**Not proposed as a change here.** A real blank identifier is a language
+decision, not a papercut fix, and there is already a spelling that works and
+allocates nothing: call the function as a statement. What the entry asks for is
+smaller — the diagnostic could say it. "assignment to unknown variable '_'"
+(with a `did you mean 'c'?` suggesting an unrelated local, observed) is true and
+useless; "`_` is not a discard here -- call `f(x)` as a statement to drop its
+result" would end it in one line, and is the same shape as the `push` hint added
+to the element-wise message in #30.
