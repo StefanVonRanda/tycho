@@ -149,8 +149,9 @@ For         ::= "for" ForInit ";" Expr ";" ForPost ":" NEWLINE Block  /* three-c
               | "for" ":" NEWLINE Block                               /* infinite */
 ForInit     ::= Decl | TypedDecl | Assign | CompoundAssign  /* the ';' supplies the clause's NEWLINE */
 ForPost     ::= Assign | CompoundAssign                     /* the ':' supplies it; target MUST be a variable */
-ParallelFor ::= "parallel" "for" IDENT "in" "0" "..<" Expr ":" NEWLINE Block  /* counting; the `0` is a literal */
-              | "parallel" "for" IDENT "in" IDENT ":" NEWLINE Block           /* foreach; the source MUST be a name */
+ParallelFor ::= "parallel" Width? "for" IDENT "in" "0" "..<" Expr ":" NEWLINE Block  /* counting; the `0` is a literal */
+              | "parallel" Width? "for" IDENT "in" IDENT ":" NEWLINE Block           /* foreach; the source MUST be a name */
+Width       ::= "(" Expr ")"                                  /* fan-out width, 1..64; omitted = ncpu() */
 Select      ::= "select" ":" NEWLINE INDENT SelectArm+ DEDENT
 SelectArm   ::= "recv" "(" Expr "," IDENT ")" ":" NEWLINE Block
               | "default" ":" NEWLINE Block
