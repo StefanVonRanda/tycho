@@ -383,12 +383,10 @@ make -s sim-check
 # rulefile one edge apart from the first.
 step "[3u/27] make make-check  (tycho-make: demo report byte-identical over 2 runs, 8 nodes ordered by DECLARATION order where alphabetical would disagree, every printed edge respected with each node listed exactly once, one edge removed from a 4-node chain moving the order, 3 cycles NAMED including a self-edge and one with innocent nodes stuck behind it, 8 MakeErr variants each exiting non-zero with their own whole message and an empty stdout; then the executor: a cold build runs all 4 rules with zeta.o and alpha.o really running before app in the recipes' own trace, a no-op rebuild runs ZERO, changing one input reruns exactly its 2 dependents, moving a file's mtime with its bytes intact reruns NOTHING and calls it touched, a chain node starting before the wide level beside it finishes -- the leg the wavefront this replaced cannot pass -- the log is byte-identical over 6 runs at TYCHO_THREADS 1/2/8, and 6 BuildErr variants are accounted for)"
 make -s make-check
-fi
 
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.
-if [ -f tools/tycho-snap/run.sh ]; then
 step "[3v/28] make snap-check  (tycho-snap: transcript AND archive bytes identical over 2 runs, the 4-member entry set and its sorted ORDER exact against literals with sub/ descended, .txt filtered and skipme/ never entered, python3 zipfile testzip() None and a member's sha256 out of the archive equal to the file on disk, an empty selection a 22-byte EOCD read as 0 entries, a missing manifest exit 1 naming the file and an unknown option exit 2 naming it)"
 make -s snap-check
 fi
