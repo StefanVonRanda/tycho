@@ -44,8 +44,8 @@ is why:
   2026-08-03 and lived on only under the `docs-archive` tag, which `git ls-files`
   disagrees with. **[`rfc/`](rfc/)** — proposals, resolved and open:
   [`value-lifetime-regions.md`](rfc/value-lifetime-regions.md) and
-  [`parallel-for-width.md`](rfc/parallel-for-width.md) (proposed, not built — a
-  width slot for `parallel for`). Not user documentation; kept for contributors
+  [`parallel-for-width.md`](rfc/parallel-for-width.md) (BUILT 2026-08-13 — the
+  `parallel(W) for` width slot, with what shipped recorded at its end). Not user documentation; kept for contributors
   and provenance.
 
 ## Contributing
