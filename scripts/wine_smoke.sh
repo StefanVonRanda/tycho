@@ -44,7 +44,14 @@ fail=0
 # the mingw cross-compiled compiler (build dir; the repo .gitignore covers it)
 mkdir -p build
 make -s build/tycho_rt_embed.h
-if [ ! -x build/tychoc-mingw.exe ]; then
+# REBUILD WHEN THE SOURCE MOVED, not merely when the exe is absent. Until
+# 2026-08-13 this said `if [ ! -x ... ]`, so an exe cross-built once was reused
+# for ever: on this box it was 8 days old and 25 fixtures "failed" at emit/cc
+# under mingw purely because the compiler predated the features they use. A lane
+# whose subject is stale reports on a program nobody is running.
+if [ ! -x build/tychoc-mingw.exe ] \
+   || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
+   || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
     "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o build/tychoc-mingw.exe \
         || { echo "FAIL: mingw compiler build"; exit 2; }
 fi

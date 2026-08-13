@@ -37,7 +37,14 @@ note() { echo "      $*"; }
 
 mkdir -p build
 make -s build/tycho_rt_embed.h
-if [ ! -x build/tychoc-mingw.exe ]; then
+# REBUILD WHEN THE SOURCE MOVED, not merely when the exe is absent. Until
+# 2026-08-13 this said `if [ ! -x ... ]`, so an exe cross-built once was reused
+# for ever: on this box it was 8 days old and 25 fixtures "failed" at emit/cc
+# under mingw purely because the compiler predated the features they use. A lane
+# whose subject is stale reports on a program nobody is running.
+if [ ! -x build/tychoc-mingw.exe ] \
+   || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
+   || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
     "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o build/tychoc-mingw.exe \
         || { echo "FAIL: mingw compiler build"; exit 2; }
 fi
@@ -52,8 +59,16 @@ CCF="-O3 -fwrapv -pthread"          # the transpiler's own Windows cc line
 pos() {
     name="$1"; hi="$2"; g="$3"; in="$4"
     case "$name" in *"$FILTER"*) ;; *) return ;; esac
-    $E "$hi" --emit-c -o "$T/$name" >"$T/$name.emit" 2>&1 || { note "$name (emit)"; fail=$((fail+1)); return; }
-    "$MINGWCC" $CCF -o "$T/$name.exe" "$T/$name.c" -lm 2>"$T/$name.cc" || { note "$name (cc)"; fail=$((fail+1)); return; }
+    $E "$hi" --emit-c -o "$T/$name" >"$T/$name.emit" 2>&1 || { note "$name (emit)"; fail=$((fail + 1)); return; }
+    # THE SHIMS. tychoc links a package's `<pkg>_shim.c` itself (merge_pkg calls
+    # add_shim); this lane compiled the emitted C alone, so any fixture importing
+    # a shim-backed package died at LINK and was read as a port failure --
+    # p_corelib_variant_shadow, "undefined reference to strx_parse_double",
+    # 2026-08-13. The Linux compiler is asked for the list: the import closure is
+    # the same source and the same corelib, and its answer is a Linux path the
+    # cross compiler can read, which the wine exe's own Z:\ answer is not.
+    _shims=$(./tychoc "$hi" --print-shims 2>/dev/null | tr '\n' ' ')
+    "$MINGWCC" $CCF -o "$T/$name.exe" "$T/$name.c" $_shims -lm 2>"$T/$name.cc" || { note "$name (cc)"; fail=$((fail + 1)); return; }
     $W "$T/$name.exe" <"$in" >"$T/$name.out" 2>/dev/null; rc=$?
     if [ "$rc" -ne 0 ]; then note "$name (exit $rc)"; fail=$((fail+1)); return; fi
     if cmp -s "$T/$name.out" "$g"; then pass=$((pass+1))
@@ -86,9 +101,19 @@ for hi in tests/abort/*.ty; do
     n="abort_$(basename "$hi" .ty)"
     case "$n" in *"$FILTER"*) ;; *) continue ;; esac
     $E "$hi" --emit-c -o "$T/ab" >/dev/null 2>&1 || { note "$n (emit)"; fail=$((fail+1)); continue; }
-    "$MINGWCC" $CCF -o "$T/ab.exe" "$T/ab.c" -lm 2>/dev/null || { note "$n (cc)"; fail=$((fail+1)); continue; }
+    _shims=$(./tychoc "$hi" --print-shims 2>/dev/null | tr '\n' ' ')
+    "$MINGWCC" $CCF -o "$T/ab.exe" "$T/ab.c" $_shims -lm 2>/dev/null || { note "$n (cc)"; fail=$((fail+1)); continue; }
     $W "$T/ab.exe" </dev/null >/dev/null 2>"$T/ab.err"; rc=$?
+    # A fixture MAY lock its exact stderr in a sibling .err instead of carrying a
+    # `tycho:` prefix -- tests/run.sh:381 has had that rule; this lane did not, so
+    # tests/abort/main_result_err.ty (whose message is the PROGRAM's, and whose
+    # own header says there is no `tycho:` and should not be) was read as a
+    # Windows failure on 2026-08-13. Same rule here now.
+    _errg="tests/abort/$(basename "$hi" .ty).err"
     if [ "$rc" -eq 0 ]; then note "$n (did not die)"; fail=$((fail+1))
+    elif [ -f "$_errg" ]; then
+        if cmp -s "$T/ab.err" "$_errg"; then pass=$((pass+1))
+        else note "$n (stderr differs from $_errg)"; fail=$((fail+1)); fi
     elif grep -q "tycho:" "$T/ab.err"; then pass=$((pass+1))
     else note "$n (died rc=$rc, no tycho: msg)"; fail=$((fail+1)); fi
 done

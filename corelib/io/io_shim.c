@@ -389,6 +389,28 @@ tycho_int iox_set_mtime(const char *path, tycho_int mtime) {
     struct stat st;
     struct _utimbuf ub;
     if (stat(path, &st) != 0) return ty_rf_errno(path);
+    if (S_ISDIR(st.st_mode)) {
+        /* _utime CANNOT touch a directory on Windows -- it fails EACCES, where
+         * the POSIX branch's utimensat works on one. Only a handle opened with
+         * FILE_FLAG_BACKUP_SEMANTICS may, so that is what the directory case
+         * uses. Measured under Wine 2026-08-13: corelib/test/io line 29 read
+         * `set_dir=Failed dir_back=0` before this branch and matches the Linux
+         * golden after it. The ACCESS time is left alone here, the same promise
+         * the POSIX branch keeps with UTIME_OMIT. */
+        HANDLE h = CreateFileA(path, FILE_WRITE_ATTRIBUTES,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) return TY_RF_ERR;
+        /* Unix seconds -> FILETIME: 100ns ticks since 1601-01-01, offset by the
+         * 11644473600 seconds between the two epochs. */
+        unsigned long long t = (unsigned long long)mtime * 10000000ULL + 116444736000000000ULL;
+        FILETIME ft;
+        ft.dwLowDateTime  = (DWORD)(t & 0xFFFFFFFFULL);
+        ft.dwHighDateTime = (DWORD)(t >> 32);
+        BOOL ok = SetFileTime(h, NULL, NULL, &ft);
+        CloseHandle(h);
+        return ok ? TY_RF_OK : TY_RF_ERR;
+    }
     ub.actime = (time_t)st.st_atime;
     ub.modtime = (time_t)mtime;
     if (_utime(path, &ub) != 0) return ty_rf_errno(path);
