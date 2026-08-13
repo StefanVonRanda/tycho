@@ -182,7 +182,7 @@ the same `a`, even when the elements or fields provably do not overlap. Such
 overlap is rejected at compile time (*"overlapping mutable
 access"*); it would make the copy-out order observable and reintroduce aliasing.
 
-Both implementations enforce this (`src/tychoc.c:6878@alias`;
+Both implementations enforce this (`src/tychoc.c:6893@alias`;
 `compiler/tychoc0.ty` `check_call_args`). A `tychoc0` fail-open on this rule was
 found during the drafting of this specification and fixed; it is locked by
 `tests/reject/inout_alias.ty` (both compilers reject, differential).

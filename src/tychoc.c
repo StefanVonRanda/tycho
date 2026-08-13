@@ -49,6 +49,7 @@ static const char *g_src = NULL;   /* current file's source text, for the error 
 static int g_line_info = 0;        /* -g: emit `#line N "src.ty"` before each statement (single-file only) */
 static char *g_line_file = NULL;   /* the source path, C-string-escaped, for those directives */
 static int g_err_col = 0;          /* 1-based caret column (0 = none); set from the offending token before die_at */
+static int g_affine_line = 0;      /* line of the construct being parsed/resolved, for the affine refusals in the type-intern helpers, which take no line of their own (see affine_err) */
 
 static const char *g_inst_from = NULL, *g_inst_from_src = NULL; static int g_inst_from_line = 0;   /* generics: the call that instantiated the template whose SUBSTITUTED body is being resolved. Set only around gen_program's instance loop, so an ordinary diagnostic never grows a note */
 
@@ -77,6 +78,19 @@ static void die_at(int line, const char *fmt, ...) {
         fprintf(stderr, "%s:%d: note: required from here -- this call instantiated the generic\n", g_inst_from, g_inst_from_line);
         src_snippet(g_inst_from_src, g_inst_from_line, 0);
     }
+    exit(1);
+}
+
+/* The affine refusals (task / handle / channel in a container) fire deep inside
+ * the type-intern helpers, which are reached from ~28 call sites and carry no
+ * line. `g_affine_line` is the ambient one, saved and restored by the two
+ * choke points every route passes through: parse_type for a type annotation,
+ * resolve_expr for a value. Zero only if some future route reaches an intern
+ * outside both, so the message degrades to file-only rather than lying. */
+__attribute__((noreturn))
+static void affine_err(const char *msg) {
+    if (g_affine_line > 0) die_at(g_affine_line, "%s", msg);
+    fprintf(stderr, "%s: error: %s\n", g_srcname, msg);
     exit(1);
 }
 
@@ -697,7 +711,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10722@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10737@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -972,8 +986,7 @@ static Type task_inner(Type t) { return g_tasktypes[TASK_ID(t)].inner; }
  * aliased -- fail closed at the type-intern choke points (every aggregate
  * containing a task would have to intern a type through one of these). */
 static void task_container_err(void) {
-    fprintf(stderr, "tychoc: a task handle cannot be stored in a container or aggregate -- wait(t) first\n");
-    exit(1);
+    affine_err("a task handle cannot be stored in a container or aggregate -- wait(t) first");
 }
 
 /* Typed C handles (FFI R2): `handle Name:
@@ -993,8 +1006,7 @@ static int handle_find(const char *name) {
     return -1;
 }
 static void handle_container_err(void) {
-    fprintf(stderr, "tychoc: a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope\n");
-    exit(1);
+    affine_err("a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope");
 }
 
 /* Channel(T) -- the bounded queue from `ch := channel(T, cap)` (CC-4). The
@@ -1012,8 +1024,7 @@ static int g_nchantypes = 0, g_chantypes_cap = 0;
 #define IS_CHAN(t) ((t) >= T_CHAN_BASE && (t) < T_CHAN_BASE + 4096)
 #define CHAN_ID(t) ((int)((t) - T_CHAN_BASE))
 static void chan_container_err(void) {
-    fprintf(stderr, "tychoc: a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead\n");
-    exit(1);
+    affine_err("a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead");
 }
 static Type chan_of(Type inner) {                /* find-or-create Channel(inner) */
     if (IS_TASK(inner)) task_container_err();
@@ -2319,7 +2330,9 @@ static int tok_starts_type(TokKind k) {
 }
 static Type parse_type(Parser *ps) {
     if (++ps->depth > TYCHO_MAX_PARSE_DEPTH) die_at(cur(ps)->line, "type nesting too deep");
+    int sv = g_affine_line; g_affine_line = cur(ps)->line;
     Type t = parse_type_inner(ps);
+    g_affine_line = sv;
     ps->depth--;
     return t;
 }
@@ -2475,7 +2488,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2285) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2296) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2814,7 +2827,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2151): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2162): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3908,7 +3921,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10499), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10514), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5559,7 +5572,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3027), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3040), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -5668,7 +5681,9 @@ static void f32_lit(Expr *e) {
 static Type resolve_expr_inner(Expr *e);
 static Type resolve_expr(Expr *e) {
     if (++g_resolve_depth > TYCHO_MAX_TREE_DEPTH) die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_TREE_DEPTH);
+    int sv = g_affine_line; g_affine_line = e->line;
     Type t = resolve_expr_inner(e);
+    g_affine_line = sv;
     g_resolve_depth--;
     return t;
 }
@@ -6805,7 +6820,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5584 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5597 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7359,7 +7374,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7649). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7664). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7382,10 +7397,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6992),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7007),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7280). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7295). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7406,7 +7421,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3020). The generic descent below
+     * tell it from a package call (src/tychoc.c:3033). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8939,7 +8954,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7318: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7333: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -9107,7 +9122,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11398), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11413), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9124,7 +9139,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * a post that assigns anything but i all keep `tycho_arr_*_get`. The body guard
  * is the SAME `stmts_unsafe` S_FORRANGE uses, run over the body WITHOUT its
  * last element: the post clause lives there (see the `els`/`body` note at
- * src/tychoc.c:1649) and assigns i, so including it would report unsafe every
+ * src/tychoc.c:1660) and assigns i, so including it would report unsafe every
  * time. Returns the array's name, or NULL when the shape is not certain.
  *
  * WHAT THIS BUYS, MEASURED -- read before "improving" it. At -O3, the level
@@ -9137,12 +9152,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13370) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13385) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11485) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11500) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -9159,7 +9174,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3788-3793) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3801-3806) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

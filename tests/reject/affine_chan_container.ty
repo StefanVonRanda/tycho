@@ -1,0 +1,8 @@
+# A channel handle must not outlive the scope that frees it. Sibling of
+# affine_task_container.ty; the second `# expect:` pins that it names its line.
+# expect: a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
+# expect: affine_chan_container.ty:7: error:
+fn main():
+    ch := channel(int, 4)
+    chs := [ch, ch]
+    println(str(len(chs)))

@@ -5,6 +5,6 @@
 # so a greedy C-style `\x` could absorb a hex digit across a join.
 #
 # This fixture is the guard on that: it must stay red for as long as string
-# literals reach codegen as escaped text (src/tychoc.c:437-443).
+# literals reach codegen as escaped text (src/tychoc.c:451-457).
 fn main():
     println("\x41")

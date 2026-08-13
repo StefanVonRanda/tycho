@@ -1,4 +1,4 @@
-# Phase 20: ... nor a struct field (tychoc: resolve_program, src/tychoc.c:7491).
+# Phase 20: ... nor a struct field (tychoc: resolve_program, src/tychoc.c:7506).
 # BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
 struct Box:
     c: Channel(int)

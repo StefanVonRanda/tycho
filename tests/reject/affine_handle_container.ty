@@ -1,0 +1,16 @@
+# A typed C handle is freed at its owning scope's exit, so an alias in an array
+# would be a use-after-free. This is the VALUE route, where resolve_expr sets
+# the line; affine_handle_container_type.ty reaches the same refusal through a
+# type annotation, and the two together prove both choke points, not just one.
+# expect: a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope
+# expect: affine_handle_container.ty:15: error:
+handle R:
+    free: hc
+
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+
+fn main():
+    r := ho(1)
+    rs := [r, r]
+    println(str(len(rs)))

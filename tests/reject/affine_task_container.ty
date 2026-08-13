@@ -1,0 +1,11 @@
+# A task handle aliased in an array could be waited twice or never. The refusal
+# fires in a type-intern helper with no line of its own; the second `# expect:`
+# is the point of the fix -- before it this printed a bare `tychoc: ...`.
+# expect: a task handle cannot be stored in a container or aggregate -- wait(t) first
+# expect: affine_task_container.ty:10: error:
+fn work(n: int) -> int:
+    return n * 2
+
+fn main():
+    hs := [spawn work(1), spawn work(2)]
+    println(str(len(hs)))

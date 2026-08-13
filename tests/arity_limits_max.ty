@@ -1,15 +1,15 @@
 # Phase 29 boundary lock. Every arity limit in this program sits exactly ON its
 # maximum, so a future NARROWING of any of them turns this test red:
-#   8-parameter function type          (02-grammar.md:170, src/tychoc.c:1840)
-#   8-element tuple                    (02-grammar.md:137, src/tychoc.c:1856)
-#   2-element tuple (the minimum)      (02-grammar.md:170, src/tychoc.c:1860)
-#   16 type parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1802)
-#   16 size parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1890)
-#   8 `where` constraints              (05-generics.md:63,  src/tychoc.c:3521)
-#   16 types in a `where` type set     (05-generics.md:61,  src/tychoc.c:3533)
-#   16 struct type parameters          (05-generics.md:20,  src/tychoc.c:3839)
-#   16 enum type parameters            (05-generics.md:20,  src/tychoc.c:3895)
-#   8 variant payload fields           (02-grammar.md:97,   src/tychoc.c:3929)
+#   8-parameter function type          (02-grammar.md:170, src/tychoc.c:1851)
+#   8-element tuple                    (02-grammar.md:137, src/tychoc.c:1867)
+#   2-element tuple (the minimum)      (02-grammar.md:170, src/tychoc.c:1871)
+#   16 type parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1813)
+#   16 size parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1901)
+#   8 `where` constraints              (05-generics.md:63,  src/tychoc.c:3534)
+#   16 types in a `where` type set     (05-generics.md:61,  src/tychoc.c:3546)
+#   16 struct type parameters          (05-generics.md:20,  src/tychoc.c:3852)
+#   16 enum type parameters            (05-generics.md:20,  src/tychoc.c:3908)
+#   8 variant payload fields           (02-grammar.md:97,   src/tychoc.c:3942)
 
 struct Box16($T0, $T1, $T2, $T3, $T4, $T5, $T6, $T7, $T8, $T9, $T10, $T11, $T12, $T13, $T14, $T15):
     f0: $T0

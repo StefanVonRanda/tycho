@@ -1,0 +1,15 @@
+# The affine_handle_container.ty refusal reached through a TYPE ANNOTATION: no
+# expression is resolved here, so the line can only come from the parser's
+# choke point. Without that second setter this reports no location at all.
+# expect: a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope
+# expect: affine_handle_container_type.ty:12: error:
+handle R:
+    free: hc
+
+extern fn hc(h: R) -> int
+
+struct Bag:
+    items: [R]
+
+fn main():
+    println("x")
