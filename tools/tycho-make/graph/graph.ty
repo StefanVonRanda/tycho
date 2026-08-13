@@ -1,0 +1,298 @@
+package graph
+
+import "core:strings"
+import "core:arrays"
+
+# tycho-make's rulefile parser and dependency graph. This is SLICE 1: parse,
+# order, cycles. Nothing here runs a recipe, reads an mtime or hashes a file --
+# a recipe line is stored verbatim and never looked at again.
+#
+# THE BOUNDARY IS `parse`. Everything past it is trusted: every element of
+# `Node.deps` is an index that exists, every name is non-empty and contains no
+# ':', and no target is declared twice. Nothing downstream re-validates, and
+# nothing downstream may assume anything `parse` does not enforce.
+#
+# THE ORDER BREAKS TIES BY DECLARATION ORDER, NOT BY NAME. Kahn's algorithm has
+# a free choice whenever two nodes are ready at once. This one always takes the
+# ready node with the SMALLEST NODE INDEX, and a node's index is the position at
+# which the parser FIRST SAW that name anywhere -- as a target or as somebody's
+# dependency. So `app: zeta alpha` orders zeta before alpha because zeta is
+# written first, and renaming zeta to `omega` would not move it. `sources` and
+# `sinks` are in the same order for the same reason. An order that merely
+# reproduces on one machine is the failure mode here, so the rule is stated as
+# a rule and tools/tycho-make/run.sh asserts it against a fixture whose
+# declaration order and alphabetical order disagree.
+#
+# NOTHING ITERATES A MAP. `g.index` is read by key and never walked; map
+# iteration order is not a language guarantee, and one walk of it would make
+# every claim above a coincidence. Every loop below is over an array.
+#
+# `->` MEANS "DEPENDS ON". A cycle prints as `a -> b -> a`: a depends on b and
+# b depends on a. The walk enters a cycle wherever Kahn happened to stall, so
+# the result is rotated to start at its smallest-index member -- the text is a
+# property of the graph, not of the entry point.
+
+struct Node:
+    name: string
+    deps: [int]                    # indices into Graph.nodes, deduplicated, in the order written
+    line: int                      # line the target was declared on; 0 = only ever named as a dependency
+    recipe: [string]               # stored, never interpreted -- slice 2 owns execution
+
+struct Graph:
+    nodes: [Node]
+    index: [string: int]           # name -> index into nodes; read by key only, never iterated
+    rules: int
+    recipes: int
+
+enum MakeErr:
+    NoColon(int, string)
+    EmptyTarget(int)
+    MultiTarget(int, string)
+    DupTarget(int, string, int)
+    OrphanRecipe(int)
+    ColonInDep(int, string)
+    Continuation(int)
+    Cycle([string])
+
+# Every message names the line and what was actually got. No message contains a
+# path: the driver is handed one rulefile and a path in the text would put the
+# gate's temp directory into the golden.
+fn err_str(e: MakeErr) -> string:
+    match e:
+        NoColon(l, t): return "line " + str(l) + ": not a rule and not a recipe -- no ':' in [" + t + "]"
+        EmptyTarget(l): return "line " + str(l) + ": a rule with no target -- nothing before the ':'"
+        MultiTarget(l, t): return "line " + str(l) + ": [" + t + "] declares more than one target -- one target per rule"
+        DupTarget(l, n, f): return "line " + str(l) + ": target '" + n + "' is declared again (first at line " + str(f) + ")"
+        OrphanRecipe(l): return "line " + str(l) + ": an indented recipe line before any rule"
+        ColonInDep(l, t): return "line " + str(l) + ": dependency '" + t + "' contains a ':'"
+        Continuation(l): return "line " + str(l) + ": a trailing backslash -- line continuations are not supported"
+        Cycle(c): return "dependency cycle: " + arrays.join(c, " -> ")
+
+fn is_ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 13
+
+# Whitespace-separated tokens, runs collapsed, no empty tokens. Used for both
+# sides of the ':' so a target and a dependency are split by one rule.
+fn fields(s: string) -> [string]:
+    out := []string
+    i := 0
+    for i < len(s):
+        if is_ws(s[i]):
+            i = i + 1
+        else:
+            j := i
+            for j < len(s) and not is_ws(s[j]):
+                j = j + 1
+            push(out, substr(s, i, j))
+            i = j
+    return out
+
+fn rtrim(s: string) -> string:
+    n := len(s)
+    for n > 0 and is_ws(s[n - 1]):
+        n = n - 1
+    return substr(s, 0, n)
+
+# A name is interned the first time it is seen, wherever it is seen. That is
+# what makes a node index equal to declaration order.
+fn node_of(g: inout Graph, name: string) -> int:
+    if name in g.index:
+        return g.index[name]
+    i := len(g.nodes)
+    push(g.nodes, Node(name, [], 0, []))
+    g.index[name] = i
+    return i
+
+# The trust boundary. A line is one of: blank, a whole-line comment, an
+# indented recipe line, or `target: dep dep`. Anything else is refused by name
+# with its line number -- nothing is skipped, defaulted or guessed at.
+#
+# gap: no variables, no `$(...)` expansion, no pattern rules, no `.PHONY`, no
+#   include, no multiple targets per rule, no order-only prerequisites.
+# gap: '#' starts a comment only as the first non-blank character of a line, so
+#   a '#' inside a filename survives. Make strips '#' to end of line anywhere;
+#   that is a silent truncation of a legal filename and is not worth copying.
+# gap: a trailing backslash is REFUSED rather than joined, because joining is
+#   the only alternative to silently splitting a rule in half.
+fn parse(text: string) -> Result(Graph, MakeErr):
+    g := Graph([], []string: int, 0, 0)
+    ls := strings.lines(text)
+    cur := -1                      # node the last rule line declared; -1 until there is one
+    for i := 0; i < len(ls); i += 1:
+        ln := i + 1
+        raw := rtrim(ls[i])
+        if len(raw) == 0:
+            continue
+        body := strings.trim(raw)
+        if body[0] == 35:
+            continue
+        if raw[len(raw) - 1] == 92:
+            return Err(Continuation(ln))
+        if is_ws(raw[0]):
+            if cur < 0:
+                return Err(OrphanRecipe(ln))
+            push(g.nodes[cur].recipe, body)
+            g.recipes = g.recipes + 1
+            continue
+        ci := find(raw, ":")
+        if ci < 0:
+            return Err(NoColon(ln, body))
+        tf := fields(substr(raw, 0, ci))
+        if len(tf) == 0:
+            return Err(EmptyTarget(ln))
+        if len(tf) > 1:
+            return Err(MultiTarget(ln, arrays.join(tf, " ")))
+        if tf[0] in g.index and g.nodes[g.index[tf[0]]].line > 0:
+            return Err(DupTarget(ln, tf[0], g.nodes[g.index[tf[0]]].line))
+        ti := node_of(&g, tf[0])
+        g.nodes[ti].line = ln
+        g.rules = g.rules + 1
+        cur = ti
+        for d in fields(substr(raw, ci + 1, len(raw))):
+            if find(d, ":") >= 0:
+                return Err(ColonInDep(ln, d))
+            di := node_of(&g, d)
+            # `a: b b` is one edge. A repeated prerequisite is a duplicate, not
+            # a second constraint, and deduplicating here is what lets the
+            # indegree bookkeeping below decrement exactly once per edge.
+            if not arrays.contains(g.nodes[ti].deps, di):
+                push(g.nodes[ti].deps, di)
+    return Ok(g)
+
+fn node_count(g: Graph) -> int:
+    return len(g.nodes)
+
+fn rule_count(g: Graph) -> int:
+    return g.rules
+
+fn recipe_count(g: Graph) -> int:
+    return g.recipes
+
+fn edge_count(g: Graph) -> int:
+    e := 0
+    for i := 0; i < len(g.nodes); i += 1:
+        e = e + len(g.nodes[i].deps)
+    return e
+
+fn name_at(g: Graph, i: int) -> string:
+    return g.nodes[i].name
+
+fn dep_names(g: Graph, i: int) -> [string]:
+    out := []string
+    for j := 0; j < len(g.nodes[i].deps); j += 1:
+        push(out, g.nodes[g.nodes[i].deps[j]].name)
+    return out
+
+fn recipe_at(g: Graph, i: int) -> [string]:
+    return g.nodes[i].recipe
+
+# Nodes with no prerequisites: the files a build never makes. Declaration order.
+fn sources(g: Graph) -> [string]:
+    out := []string
+    for i := 0; i < len(g.nodes); i += 1:
+        if len(g.nodes[i].deps) == 0:
+            push(out, g.nodes[i].name)
+    return out
+
+# Nodes nothing depends on: the things a bare `tycho-make` would ask for.
+fn sinks(g: Graph) -> [string]:
+    n := len(g.nodes)
+    used := []
+    for i := 0; i < n; i += 1:
+        push(used, false)
+    for i := 0; i < n; i += 1:
+        for j := 0; j < len(g.nodes[i].deps); j += 1:
+            used[g.nodes[i].deps[j]] = true
+    out := []string
+    for i := 0; i < n; i += 1:
+        if not used[i]:
+            push(out, g.nodes[i].name)
+    return out
+
+# Kahn's algorithm, dependencies first. The inner scan takes the LOWEST-INDEXED
+# ready node, which is the declaration-order tie-break the header promises; a
+# ready set kept in any other structure would be one refactor away from a
+# host-dependent answer.
+fn order(g: Graph) -> Result([string], MakeErr):
+    n := len(g.nodes)
+    indeg := []
+    done := []
+    rdeps := []
+    for i := 0; i < n; i += 1:
+        push(indeg, len(g.nodes[i].deps))
+        push(done, false)
+        push(rdeps, []int)
+    for i := 0; i < n; i += 1:
+        for j := 0; j < len(g.nodes[i].deps); j += 1:
+            push(rdeps[g.nodes[i].deps[j]], i)
+    out := []string
+    for k := 0; k < n; k += 1:
+        pick := -1
+        for i := 0; i < n; i += 1:
+            if not done[i] and indeg[i] == 0:
+                pick = i
+                break
+        if pick < 0:
+            return Err(Cycle(find_cycle(g, done)))
+        done[pick] = true
+        push(out, g.nodes[pick].name)
+        for j := 0; j < len(rdeps[pick]); j += 1:
+            indeg[rdeps[pick][j]] = indeg[rdeps[pick][j]] - 1
+    return Ok(out)
+
+# Called only when Kahn stalls, which means every unfinished node has at least
+# one unfinished dependency. So the walk below can always step, and it must
+# revisit a node within n + 1 steps -- it is bounded by construction, not by a
+# guard. Following the FIRST unfinished dependency keeps it deterministic; the
+# deps array is in the order the rulefile wrote them.
+#
+# The cycle it returns is not "everything left over": a node that merely sits
+# behind a cycle is walked through and then dropped when the path is trimmed to
+# the loop.
+fn find_cycle(g: Graph, done: [bool]) -> [string]:
+    n := len(g.nodes)
+    at := -1
+    for i := 0; i < n; i += 1:
+        if not done[i]:
+            at = i
+            break
+    path := []int
+    pos := []                      # pos[i] = where node i sits in `path`, or -1
+    for i := 0; i < n; i += 1:
+        push(pos, -1)
+    for step := 0; step <= n; step += 1:
+        if at < 0:
+            return []
+        if pos[at] >= 0:
+            return names_of(g, rotate(arrays.drop(path, pos[at])))
+        pos[at] = len(path)
+        push(path, at)
+        nxt := -1
+        for j := 0; j < len(g.nodes[at].deps); j += 1:
+            if not done[g.nodes[at].deps[j]]:
+                nxt = g.nodes[at].deps[j]
+                break
+        at = nxt
+    return []
+
+fn rotate(c: [int]) -> [int]:
+    if len(c) == 0:
+        return c
+    b := 0
+    for i := 1; i < len(c); i += 1:
+        if c[i] < c[b]:
+            b = i
+    out := []
+    for i := 0; i < len(c); i += 1:
+        push(out, c[(b + i) % len(c)])
+    return out
+
+# The first name is repeated at the end, so a one-node cycle reads `a -> a` and
+# closes the loop visually for every longer one.
+fn names_of(g: Graph, c: [int]) -> [string]:
+    out := []string
+    for i := 0; i < len(c); i += 1:
+        push(out, g.nodes[c[i]].name)
+    if len(c) > 0:
+        push(out, g.nodes[c[0]].name)
+    return out

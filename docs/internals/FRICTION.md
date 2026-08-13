@@ -3297,3 +3297,37 @@ predicate broadened past `keyword()` would refuse all of them.
 Worked around in the program by naming the field `reinforce`
 (`tools/tycho-sim/sys/sys.ty@reinforce`) — which is a fair name for per-tick
 spawning, so the cost here was the minutes spent learning why, not the rename.
+
+## Found by `tools/tycho-make`, 2026-08-13 (head `680d30d`)
+
+### 26. a foreign enum's variant in a `match` arm is refused as if it did not exist
+
+Matching a corelib enum by its bare variant name is refused, and the message
+says the variant is not a variant of the type — which is untrue, and sends you
+looking at the enum rather than at the spelling:
+
+```
+$ ./tychoc /tmp/a.ty -o /tmp/a
+/tmp/a.ty:5: error: 'NotFound' is not a variant of io__IoErr
+     5 |         NotFound: return "nf"
+```
+
+`NotFound` **is** a variant of `io.IoErr` (`corelib/io/io.ty@NotFound`). The
+rule is that a foreign enum's variants must be written qualified, and
+`io.NotFound` compiles and runs. Both halves of that were probed: the same
+program with every arm qualified builds and prints `nf`, and the identical
+shape over a *locally* declared enum accepts the bare form, so the qualification
+requirement is real and specific to the cross-package case.
+
+Not fixed here, and it is a diagnostic, not a miscompile: the compiler accepts
+exactly the right programs. What it costs is that the message names the wrong
+suspect. `'NotFound' is not a variant of io__IoErr -- write it qualified, as
+'io.NotFound'` would have ended the detour, and the compiler already knows the
+package prefix because it printed the mangled `io__IoErr`.
+
+Nobody in the tree had hit it because every package that owns an error enum also
+owns the `err_str` that matches it, so the match is always in-package. This is
+the first consumer that needed to read a corelib enum from outside.
+
+Worked around in the program by qualifying the arms
+(`tools/tycho-make/main.ty@io_str`), which is one character per arm.

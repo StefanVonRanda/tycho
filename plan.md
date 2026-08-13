@@ -23,16 +23,6 @@ around.
 
 ## Phases
 
-- [ ] **Phase 1 — graph/ + the lane, together**
-  - Scope: `tools/tycho-make/graph/` (rulefile parse, DAG, topological order,
-    cycle detection that NAMES the cycle), a thin driver, `run.sh`, golden,
-    `make make-check`, a `scripts/ci.sh` step, both gate tables.
-  - Done when: `make make-check` is green from a clean checkout and reddens for
-    a dropped edge.
-  - Verify: `make make-check`, `make goldens-check`, `sh scripts/entrypoints.sh`.
-  - The lane ships WITH slice 1. It lagged the program on four of five previous
-    programs; tycho-sim is the only one that got this right.
-
 - [ ] **Phase 2 — staleness and the executor**
   - Scope: content hash + mtime staleness, bounded-parallel execution honouring
     dependencies, the build log.

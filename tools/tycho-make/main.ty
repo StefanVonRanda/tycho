@@ -1,0 +1,73 @@
+package main
+
+import "core:io"
+import "core:arrays"
+import "graph"
+
+# tycho-make, slice 1: read a rulefile, build the dependency graph, print it in
+# a topological order. There is no execution here and no staleness -- see
+# graph/graph.ty for what the parser does and does not accept.
+#
+# WHY THIS PROGRAM EXISTS. The graph is DATA READ AT RUNTIME, which is what
+# separates it from tycho-flow's fixed chain of stages: the shape of the work is
+# not known until a file has been parsed, so a scheduler over it cannot be
+# written as a chain of spawns. Slice 2 adds that scheduler; slice 1 exists so
+# the graph it will schedule is already pinned by a gate.
+#
+# EVERYTHING IS DECLARATION-ORDERED AND NOTHING IS A PATH. The report below
+# prints no filename, reads no clock and no environment, and every list in it is
+# in the order the parser first saw the names. Two runs are the same bytes or
+# the program is wrong.
+#
+# A BAD RULEFILE AND A CYCLE BOTH KILL THE PROCESS, with the whole message on
+# stderr and NOTHING on stdout -- the report is printed only after both parsing
+# and ordering have succeeded. A build tool that carried on past a rulefile it
+# did not understand would be guessing at what to build.
+
+# A foreign enum's variants must be written qualified in a match arm; bare
+# `NotFound` is rejected as "not a variant of io__IoErr".
+fn io_str(e: io.IoErr) -> string:
+    match e:
+        io.NotFound: return "no such file"
+        io.IsDir: return "that is a directory"
+        io.Exists: return "already exists"
+        io.Failed: return "could not be read"
+        io.Unsupported: return "unsupported"
+
+fn report(g: graph.Graph, ord: [string]):
+    println("=== graph: " + str(graph.node_count(g)) + " nodes, " +
+            str(graph.edge_count(g)) + " edges, " +
+            str(graph.rule_count(g)) + " rules, " +
+            str(graph.recipe_count(g)) + " recipe lines")
+    for i := 0; i < graph.node_count(g); i += 1:
+        println("node " + graph.name_at(g, i) +
+                " deps=[" + arrays.join(graph.dep_names(g, i), " ") + "]" +
+                " recipe=" + str(len(graph.recipe_at(g, i))))
+    println("sources: " + arrays.join(graph.sources(g), " "))
+    println("sinks: " + arrays.join(graph.sinks(g), " "))
+    println("order: " + arrays.join(ord, " "))
+
+fn main() -> Result(void, string):
+    av := cli_args()
+    if len(av) != 1:
+        return Err("usage: tycho-make <rulefile>")
+    text := ""
+    match io.read_text(av[0]):
+        Ok(s): text = s
+        Err(e): return Err("rulefile: " + io_str(e))
+    g := graph.Graph([], []string: int, 0, 0)
+    match graph.parse(text):
+        Ok(p): g = p
+        Err(e): return Err(graph.err_str(e))
+    match graph.order(g):
+        Ok(ord): report(g, ord)
+        Err(e): return Err(graph.err_str(e))
+    return Ok()
+
+# args() includes argv[0]; the driver takes exactly one operand.
+fn cli_args() -> [string]:
+    a := args()
+    out := []string
+    for i := 1; i < len(a); i += 1:
+        push(out, a[i])
+    return out

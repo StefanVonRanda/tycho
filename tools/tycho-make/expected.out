@@ -1,0 +1,50 @@
+=== graph: 8 nodes, 7 edges, 4 rules, 4 recipe lines
+node app deps=[zeta.o alpha.o] recipe=1
+node zeta.o deps=[zeta.c common.h] recipe=1
+node alpha.o deps=[alpha.c common.h] recipe=1
+node zeta.c deps=[] recipe=0
+node common.h deps=[] recipe=0
+node alpha.c deps=[] recipe=0
+node docs deps=[README.md] recipe=1
+node README.md deps=[] recipe=0
+sources: zeta.c common.h alpha.c README.md
+sinks: app docs
+order: zeta.c common.h zeta.o alpha.c alpha.o app README.md docs
+=== graph: 4 nodes, 3 edges, 3 rules, 0 recipe lines
+node top deps=[mid] recipe=0
+node mid deps=[bot] recipe=0
+node bot deps=[leaf] recipe=0
+node leaf deps=[] recipe=0
+sources: leaf
+sinks: top
+order: leaf bot mid top
+=== graph: 4 nodes, 2 edges, 3 rules, 0 recipe lines
+node top deps=[mid] recipe=0
+node mid deps=[] recipe=0
+node bot deps=[leaf] recipe=0
+node leaf deps=[] recipe=0
+sources: mid leaf
+sinks: top bot
+order: mid top leaf bot
+=== cycle cyc3
+dependency cycle: a -> c -> b -> a
+=== cycle self
+dependency cycle: a -> a
+=== cycle behind
+dependency cycle: lib -> core -> lib
+=== err NoColon
+line 1: not a rule and not a recipe -- no ':' in [app zeta]
+=== err EmptyTarget
+line 1: a rule with no target -- nothing before the ':'
+=== err MultiTarget
+line 1: [a b] declares more than one target -- one target per rule
+=== err DupTarget
+line 2: target 'app' is declared again (first at line 1)
+=== err OrphanRecipe
+line 1: an indented recipe line before any rule
+=== err ColonInDep
+line 1: dependency 'b:c' contains a ':'
+=== err Continuation
+line 1: a trailing backslash -- line continuations are not supported
+=== err Cycle
+dependency cycle: a -> b -> a

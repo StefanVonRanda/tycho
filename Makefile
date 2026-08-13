@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -621,6 +621,36 @@ sheet-check: tychoc
 # See tools/tycho-sim/run.sh.
 sim-check: tychoc
 	@sh tools/tycho-sim/run.sh
+
+# make-check: the gate for tycho-make, the dependency-graph half of the build
+# tool in tools/tycho-make/. It is the only lane that runs it.
+#
+# Its subject is a TOPOLOGICAL ORDER, which is the sibling of ed-check's UTF-8,
+# sheet-check's float text and sim-check's swap-remove: a thing a recorded
+# transcript cannot see. Drop an edge in the parser and the result is still an
+# order -- the same nodes, each exactly once, in a sequence that looks entirely
+# plausible -- and a golden re-recorded from that build agrees with it byte for
+# byte. The only thing that moved is a constraint nobody printed.
+#
+# So the order is checked three ways RECORD=1 cannot reach. Against literals in
+# the runner, over a demo rulefile built so DECLARATION order and ALPHABETICAL
+# order disagree, which is what pins the tie-break rule rather than merely
+# reproducing one answer. Against the edges the program itself printed, computed
+# in the runner, which survives a change to the rulefile but is blind to a
+# dropped edge by construction. And against a second rulefile exactly one edge
+# apart from the first, which is the leg a parser that ignored dependencies
+# entirely would fail. A cycle must be NAMED (`a -> c -> b -> a`, the self-edge
+# `a -> a`) and named as the LOOP, not as the unfinished set -- one fixture puts
+# two innocent nodes behind a cycle and the message may not mention them. Every
+# run is bounded by timeout(1): a cycle detector that recursed forever is what
+# half these legs exist to catch, and an unbounded gate would hang instead of
+# reporting. All 8 graph.MakeErr variants exit non-zero with their own whole
+# message and an empty stdout, and the variant list is read out of the enum.
+#
+# ~2s (2.04 / 2.02 / 2.07 s, measured 2026-08-13). In `make ci` as step [3u/27].
+# See tools/tycho-make/run.sh.
+make-check: tychoc
+	@sh tools/tycho-make/run.sh
 
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else

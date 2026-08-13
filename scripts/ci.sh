@@ -373,6 +373,16 @@ make -s sheet-check
 # block, separately from the count, and the two redden independently.
 step "[3t/26] make sim-check  (tycho-sim: demo, sweep and stale transcripts each byte-identical over 2 runs, 12 of 24 entities surviving a scripted despawn sweep with the count computed in the runner and every survivor resolved through its id to the hp it was spawned with, a despawned id refused as dead and the same id refused as stale once its slot is handed on with the generation moved, 3 SimErr variants each refused with their own whole message)"
 make -s sim-check
+
+# 3u for the same reason 3e-3t are: a tool under tools/ that nothing else runs.
+# Its subject is a TOPOLOGICAL ORDER, and a golden is blind to it the way 3r's is
+# blind to UTF-8 and 3s's to float text: drop an edge in the parser and the order
+# is still an order -- same nodes, each once, entirely plausible -- and a golden
+# re-recorded from that build agrees with it. So the order is checked against
+# literals, against the edges the program itself printed, and against a second
+# rulefile one edge apart from the first.
+step "[3u/27] make make-check  (tycho-make: demo report byte-identical over 2 runs, 8 nodes ordered by DECLARATION order where alphabetical would disagree, every printed edge respected with each node listed exactly once, one edge removed from a 4-node chain moving the order, 3 cycles NAMED including a self-edge and one with innocent nodes stuck behind it, 8 MakeErr variants each exiting non-zero with their own whole message and an empty stdout)"
+make -s make-check
 fi
 
 if [ "$LANE" = rest ]; then
