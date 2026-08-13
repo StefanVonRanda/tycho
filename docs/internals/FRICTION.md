@@ -4163,3 +4163,83 @@ shape as #29, where the plausible spelling was the silent one.
   aggregate takes it.** `[hostile]` in a query parameter list, with `hostile`
   still live afterwards, warns and names the fix ("make this its last use").
   Correct, and the message is the useful kind.
+
+## Found by `tools/tycho-agg`, 2026-08-13 (head `097f7e16`)
+
+The third dogfood audit, and the first chosen by a LANGUAGE FEATURE rather than a
+package — every corelib package had a consumer by then. The measurement that
+picked it: **`$T` appeared in ZERO files** under `tools/`, `examples/`,
+`server/` and `bench/`. Every generic in this tree was declared inside
+`corelib/`; programs only ever consumed them, so the ergonomics of WRITING one
+had never been exercised. `tools/tycho-agg` declares its own in `pipe/` and
+instantiates them across a package boundary at its own `Row` type.
+
+### 35. A `where hashable(K)` constraint does not admit `K` as a map key
+
+Six lines, run at `097f7e16`:
+
+<!-- fence-skip: this fence is the REPRO -- it must not compile, and the error it produces is quoted directly below it -->
+```tycho
+fn counts(xs: [$K]) -> int where hashable(K):
+    m := []K: int          # the constraint says K is a legal map key
+    for x in xs:
+        m[x] = 1
+    return len(m)
+```
+
+```
+error: map keys must be string, int (directly or through a newtype), a fieldless
+       enum, or a hashable struct/tuple/array
+```
+
+The constraint exists to say exactly what the message asks for. A generic that
+wants a map keyed by its own parameter therefore cannot build one, and the shape
+this forces is visible in the corelib itself: `corelib/intern/intern.ty`'s
+`Interner($K, $V)` is **constructed by the caller**, where `K` is concrete, and
+every function there only ever receives it. `tycho-agg` hit the wall and took the
+same way out (`tools/tycho-agg/pipe/pipe.ty@group_into` groups INTO a tally the
+caller built, rather than returning one it made).
+
+**Not proposed as a fix here** — whether the constraint should feed the map-key
+check is a type-checker decision, and the workaround is the one corelib already
+lives with. Recorded because a reader who adds `where hashable(K)` has every
+reason to expect it to be the answer.
+
+### 36. Two spellings a generic cannot use, and one it cannot infer
+
+Hit in order while writing `pipe/`:
+
+- **`[]$T` is not an empty-array literal.** `out := []$T` is `error: expected
+  newline` at the `$`. Outside a generic `[]string` and `[]int` are the ordinary
+  spellings, so the analogy is the first thing a writer reaches for. The working
+  form is a bare `out := []`, whose element type comes from a later `push` —
+  which is what every corelib generic does (`corelib/iter/iter.ty`,
+  `corelib/arrays/arrays.ty`).
+- **A bare `[]` needs an expected type.** In `Tally([], [])` it is
+  `error: cannot type a bare [] here -- no expected type (write []T, or use it
+  where the element type is known)`. The message's `[]T` advice is right and is
+  the OTHER spelling: bare `K`, not `$K`, works in expression position — `$` is
+  the declaration form. Nothing says so at the point of use.
+- **A type parameter appearing only in the RETURN type cannot be inferred.**
+  `fn tally() -> Tally($K)` compiles, and the call `t := tally()` fails one line
+  later with `argument 1 of bump is pipe__Tally__t28, expected
+  pipe__Tally__string` — an unbound type variable escaping into the next call's
+  message. There is no explicit-instantiation syntax to rescue it, so such a
+  constructor cannot be written at all.
+
+### What did not go wrong, which is also data
+
+- **Cross-package generic instantiation works, at a type the corelib has never
+  seen.** `pipe.keep`, `pipe.to` (two parameters, `$T` -> `$U`), `pipe.fold`
+  (three types in one signature) and `pipe.group_into` all instantiate at
+  `main`'s own `Row`, with the function values written inline as lambdas at the
+  call site. `make agg-check` asserts the mangled instantiations appear in the
+  emitted C, because the counts alone cannot show a generic ran.
+- **The `required from here` note is the reason these were diagnosable at all.**
+  Every generic error above pointed at the instantiating call in `main.ty` as
+  well as the failing line in `pipe/`, which is what turned "an unbound type
+  variable" into "this call did it".
+- **`where` clauses compose with an `inout` generic struct.** `bump(t: inout
+  Tally($K), k: $K) where hashable(K)` takes the tally by reference, mutates the
+  map, and the caller's copy sees it — no aliasing surprise and no annotation
+  beyond the one on the parameter.

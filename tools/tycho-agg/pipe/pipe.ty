@@ -1,0 +1,82 @@
+# A package of USER-DEFINED GENERICS, written to find out what that is like.
+#
+# WHY IT EXISTS. Measured 2026-08-13: `$T` appears in ZERO files under `tools/`,
+# `examples/`, `server/` and `bench/`. Every generic in this tree is declared
+# inside `corelib/`; programs only ever CONSUME them. So the ergonomics of
+# writing your own -- constraints, inference at the call site, a generic struct,
+# a generic taking a function value, instantiation across a package boundary --
+# have never been exercised by a program. This package is that program's half.
+package pipe
+
+# --- generic combinators over an array ---------------------------------------
+
+# Keep the elements a predicate accepts. No constraint: nothing here touches the
+# element beyond copying it.
+fn keep(xs: [$T], f: fn($T) -> bool) -> [$T]:
+    out := []          # NOT `[]$T`: an empty-array literal takes no type PARAMETER,
+                        # only a concrete type. The element type comes from the push below.
+    for x in xs:
+        if f(x):
+            push(out, x)
+    return out
+
+# Map to a DIFFERENT element type -- the two-parameter case, which is where a
+# single-parameter mental model breaks.
+fn to(xs: [$T], f: fn($T) -> $U) -> [$U]:
+    out := []
+    for x in xs:
+        push(out, f(x))
+    return out
+
+# Fold with an explicit accumulator type: three types in one signature.
+fn fold(xs: [$T], init: $A, f: fn($A, $T) -> $A) -> $A:
+    acc := init
+    for x in xs:
+        acc = f(acc, x)
+    return acc
+
+# --- a generic struct, and the group-by that motivates it ---------------------
+
+# Counts per key. `hashable(K)` is what the map inside needs; the struct itself
+# carries the constraint at every function that touches the map, not on the
+# declaration, which is the rule this package exists to find out about.
+struct Tally($K):
+    keys: [$K]                  # insertion order, so a report is reproducible
+    n: [$K: int]
+
+# NO `fn tally() -> Tally($K)` CONSTRUCTOR. A generic whose type parameter
+# appears ONLY in the return type has nothing to infer from: the call
+# `t := tally()` inside group_by below reported
+# `argument 1 of bump is pipe__Tally__t28, expected pipe__Tally__string` --
+# an unbound type variable reaching the next call. The struct is built where its
+# K is already bound instead, which is what corelib does too
+# (`intern.Interner([]int, []string: int)` names the field values, never the
+# parameters).
+
+fn bump(t: inout Tally($K), k: $K) where hashable(K):
+    if k in t.n:
+        t.n[k] = t.n[k] + 1
+    else:
+        push(t.keys, k)
+        t.n[k] = 1
+
+fn count_of(t: Tally($K), k: $K) -> int where hashable(K):
+    if k in t.n:
+        return t.n[k]
+    return 0
+
+fn distinct(t: Tally($K)) -> int:
+    return len(t.keys)
+
+# Group an array by a key function -- a generic taking a generic function value
+# and returning a generic struct, which is the composition most likely to bite.
+# Groups INTO a tally the caller built, rather than returning one it made.
+# That is not a style choice: a `[]K: int` literal cannot be written inside a
+# generic even under `where hashable(K)` -- the compiler answers "map keys must
+# be string, int ..., or a hashable struct/tuple/array" for the type parameter
+# the constraint just admitted (minimal repro in FRICTION #35). corelib hits the
+# same wall and takes the same way out: `intern.Interner` is CONSTRUCTED BY THE
+# CALLER, where K is concrete, and its functions only ever receive it.
+fn group_into(t: inout Tally($K), xs: [$T], key: fn($T) -> $K) where hashable(K):
+    for x in xs:
+        bump(&t, key(x))

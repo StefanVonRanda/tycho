@@ -1,0 +1,96 @@
+# tycho-agg -- group-and-count over a CSV column, built on generics this program
+# declares itself.
+#
+# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md). Measured
+# 2026-08-13: `$T` appears in ZERO files under tools/, examples/, server/ and
+# bench/ -- every generic in this tree is written inside corelib/ and programs
+# only consume them. So this one declares its own (tools/tycho-agg/pipe/), and
+# instantiates them ACROSS the package boundary, which is the leg no consumer
+# program had ever walked.
+#
+#   tycho-agg --csv FILE --by COLUMN [--min N]
+#
+# THE GATE IS `make agg-check` (tools/tycho-agg/run.sh).
+package main
+
+import "core:cli"
+import "core:csv"
+import "core:io"
+import "core:sort"
+import "core:strings"
+import "pipe"
+
+struct Row:
+    cells: [string]
+
+fn cell(r: Row, i: int) -> string:
+    if i < 0 or i >= len(r.cells):
+        return ""
+    return r.cells[i]
+
+fn col_index(header: [string], name: string) -> int:
+    for i := 0; i < len(header); i += 1:
+        if header[i] == name:
+            return i
+    return -1
+
+fn main():
+    c := cli.parse_spec(cli.argv(), ["csv", "by", "min"], ["help"])
+    for u in cli.unknown(c):
+        println("unknown option " + u)
+    if len(cli.unknown(c)) > 0:
+        exit(2)
+    path := cli.get(c, "csv", "")
+    by := cli.get(c, "by", "")
+    if path == "" or by == "":
+        println("usage: tycho-agg --csv FILE --by COLUMN [--min N]")
+        exit(2)
+    minimum := 1
+    match strings.parse_int_checked(cli.get(c, "min", "1")):
+        Ok(v): minimum = v
+        Err(e):
+            println("--min wants an integer")
+            exit(2)
+
+    text := ""
+    match io.read_text(path):
+        Ok(t): text = t
+        Err(e):
+            println("cannot read " + path)
+            exit(1)
+
+    grid := csv.parse(text)
+    if len(grid) == 0:
+        println("empty csv")
+        exit(1)
+    header := grid[0]
+    idx := col_index(header, by)
+    if idx < 0:
+        println("no column named " + by)
+        exit(1)
+
+    # Row is this program's own type, so every generic below is instantiated at a
+    # type corelib has never seen.
+    rows := []Row
+    for i := 1; i < len(grid); i += 1:
+        push(rows, Row(grid[i]))
+
+    # keep: [Row] -> [Row], the predicate declared inline.
+    full := pipe.keep(rows, fn(r: Row) -> bool: len(cell(r, idx)) > 0)
+    # group_by: [Row] -> Tally(string), a generic struct over a generic fn value,
+    # instantiated across the package boundary at Row and string.
+    # The Tally is built HERE, where K is concretely `string` -- see the note on
+    # pipe.group_into for why a generic cannot build its own.
+    t := pipe.Tally([]string, []string: int)
+    pipe.group_into(&t, full, fn(r: Row) -> string: cell(r, idx))
+    # to: [string] -> [int], the two-parameter map -- $T and $U differ here.
+    counts := pipe.to(t.keys, fn(k: string) -> int: pipe.count_of(t, k))
+    # fold: [int] -> int with an explicit accumulator type.
+    total := pipe.fold(counts, 0, fn(a: int, n: int) -> int: a + n)
+
+    println("rows=" + str(len(rows)) + " nonempty=" + str(len(full)) +
+            " distinct=" + str(pipe.distinct(t)) + " counted=" + str(total))
+    for k in sort.asc(t.keys):
+        n := pipe.count_of(t, k)
+        if n >= minimum:
+            println(k + " " + str(n))

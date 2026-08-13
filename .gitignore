@@ -227,6 +227,9 @@ dist/
 # the tycho-sim entity simulation's transcript golden
 # (tools/tycho-sim/expected.out), same line, same reason.
 !/tools/tycho-sim/*.out
+# the tycho-agg group-and-count's report golden
+# (tools/tycho-agg/agg.out), same line, same reason.
+!/tools/tycho-agg/*.out
 # the tycho-tally ledger's suite+report golden
 # (tools/tycho-tally/tally.out), same line, same reason.
 !/tools/tycho-tally/*.out

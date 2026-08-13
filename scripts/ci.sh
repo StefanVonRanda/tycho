@@ -395,6 +395,12 @@ make -s snap-check
 # to notice.
 step "[3w/29] make tally-check  (tycho-tally: a 15-check core:testing suite passing twice byte-identically AND proven able to fail -- a copy with one expected total changed exits 1 naming the check and counting 1 of 15; three processes write the ledger and a fourth reads it back against literals, SQL doing the sort and the SUM; a non-numeric amount exits 2 and books nothing)"
 make -s tally-check
+
+# tycho-agg: the only program in the tree that DECLARES generics rather than
+# consuming corelib's, and the only lane that checks an instantiation reached
+# codegen.
+step "[3x/30] make agg-check  (tycho-agg: report identical over 2 runs and equal to the golden; north 3 / south 2 / east 1 against literals with an empty-key row dropped by the generic filter; --min filters the display without moving distinct=3; the emitted C carries pipe__keep__, pipe__to__ and pipe__group_into__ instantiated at the program's own Row type; missing file, absent column and unknown option each exit non-zero naming the thing)"
+make -s agg-check
 fi
 
 if [ "$LANE" = rest ]; then
