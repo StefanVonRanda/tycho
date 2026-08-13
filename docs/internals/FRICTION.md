@@ -2641,7 +2641,69 @@ only appears when the two meet, and neither entry proposes reversing either
 decision. The third is the opposite of a defect: an API that already exists and
 was not found.
 
-### 10. A two-key comparator cannot be written inline, and the composition that replaces it is invisible
+### 10. ~~A two-key comparator cannot be written inline, and the composition that replaces it is invisible~~ — **WITHDRAWN 2026-08-13**
+
+Re-probed by running programs at `49f49ae8`. The entry's premise holds and its
+conclusion does not. **A two-key comparator is written directly, as one named
+function with as many branches as it likes**, and `sort.sort_by` takes it:
+
+```tycho
+fn count_then_name(ac: int, bc: int, an: string, bn: string) -> int:
+    if ac != bc:
+        return bc - ac
+    ...
+byc := sort.sort_by(fruit, fn(a: string, b: string) -> int: count_then_name(freq.get(a, 0), freq.get(b, 0), a, b))
+```
+```
+capt=[fig, apple, pear]
+```
+
+The step this entry missed is the last line: the closure does not have to *be*
+the comparator, only to **reach** the captured data and forward it. One
+expression is enough to call a function, so the single-expression restriction
+constrains nothing here — it never touches the branching, which lives in the
+named function. "A named function cannot substitute, because the comparator has
+to see the map being sorted on" is a non sequitur, and it is the whole basis of
+the claim below.
+
+Where no capture is needed the closure disappears too, and **the tree already
+proved this two days before the entry was written**: `corelib/test/sort/main.ty`
+has ordered a struct by dept ascending and pay descending since `e40f32d6`
+(2026-08-10) with a plain named comparator and no closure at all —
+`corelib/test/sort/main.ty@dept_then_pay`, passed by name. The entry cites
+`sort_by` while overlooking its own package's test of exactly the case it
+declares impossible, and `sort_by`'s doc comment already advertises it
+(`corelib/sort/sort.ty:66`, "several keys, mixed directions").
+
+The capture case the entry did reason about is now pinned as well, at
+`corelib/test/sort/main.ty@count_then_name`. Its negative control: delete the
+name tiebreak and `capt` becomes `[fig, pear, apple]` while every other line of
+the golden, `bytwo` included, is unchanged.
+
+**Precedent, run rather than recalled** (go1.26.5, odin dev-2026-04-nightly;
+all three languages agree on `eng9cy eng3ann eng3dee ops5bo`):
+
+| | two-key comparator | can a comparator capture a local? |
+|---|---|---|
+| Go | `slices.SortStableFunc` — block closure, or **one expression** via `cmp.Or(cmp.Compare(x.Dept, y.Dept), cmp.Compare(y.Pay, x.Pay))`, or a named func | yes |
+| Odin | `slice.stable_sort_by` — block-bodied `proc` literal, or a named `proc` | **no** — `proc` literals are not closures; the map probe fails at compile time with `Error: Undeclared name: m` |
+| Tycho | named `fn`, passed by name or called from a one-expression closure | yes |
+
+So on the axis this entry is actually about, Tycho sits **with Go and ahead of
+Odin**: Odin cannot express the captured-map comparator at all without a global
+or a `_with_data` variant, and Tycho can.
+
+**What survives.** Two smaller facts, neither of which supports the heading.
+First, the block-closure refusal still reproduces verbatim at `49f49ae8` — that
+is a real restriction, just not one that blocks this. Second, the stable-sort
+composition the entry documents is correct and remains a good technique for the
+argsort-style parallel-array shape `corelib/test/wordfreq/main.ty:26-30` uses;
+it is simply not the *only* route, and calling it "the composition that
+replaces it" overstates a workaround into a necessity.
+
+The original entry is preserved below.
+
+### 10 (original, 2026-08-12). A two-key comparator cannot be written inline, and the composition that replaces it is invisible
 
 Two decisions, each right on its own. Closures are **single-expression only** —
 `fn(x: int) -> int: x + n`, no block body:

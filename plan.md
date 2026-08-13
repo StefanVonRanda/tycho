@@ -32,18 +32,13 @@ remaining seven, then corrects or fixes each.
 
 ## Phases
 
-- [ ] **Phase 5 — a two-key comparator cannot be written inline** (`:2636`)
-  - `core:sort` gained a comparator-taking sort (`:2013`, CLOSED 2026-08-10).
-    Probe whether that already answers this; the entry may predate it.
-  - Verify: `make corelib`.
-
-- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2690`)
+- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2760`)
   - Probe whether a generated header now exists. If not, decide whether to emit
     one — this is ergonomics, so a correction saying "deliberate" is a fine
     outcome.
   - Verify: `make shim-check`, `make corelib`.
 
-- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2753`)
+- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2823`)
   - Probe both halves: destructuring in a `for` binding, and whether a tuple is
     indexable. Go and Odin both destructure in range/multi-return position, so
     check that default before recording this as deliberate.
