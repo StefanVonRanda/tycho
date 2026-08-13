@@ -83,6 +83,16 @@ impose a fixed upper bound on the chunk count — the reference bounds it at **6
 so above 64 the fan-out is narrower than `ncpu()` reports
 ([§29.9](16-builtins.md#299-concurrency)).
 
+**The program MAY choose the width: `parallel(W) for …`.** `W` is an ordinary
+expression of type `int`, evaluated **once**, at the spawn site, before any
+chunk starts. It replaces `ncpu()` in the rule above; the `min(…, N)` and the
+64-chunk bound still apply, so `parallel(8) for i in 0..<3:` runs 3 chunks.
+An explicit width **overrides `TYCHO_THREADS`** — the variable is the default
+for a program that did not choose. A width outside `1..64` is refused: a
+literal at compile time, and a computed one aborts at run time rather than
+clamping, because a clamped width answers a different question than the one
+asked. Omitting the width is unchanged in every respect.
+
 Each chunk's captured values are deep-copied into it, **with one exception: a
 `Channel(T)` capture is a scalar handle and is passed by value.** Every chunk
 therefore shares the one queue rather than receiving a private copy of it. This
@@ -146,15 +156,15 @@ The fail-closed rules of §22 are unchanged inside such a body: `break`,
 `return` and `or_return` at the parallel-loop level are still compile errors, so
 an early exit can never cross a chunk boundary.
 
-> Provenance: `0..<N` parsed at `src/tychoc.c:3573-3598`; parallel-only refusal
-> `src/tychoc.c:3962@par_here`; literal-zero refusal `src/tychoc.c:3965@ival != 0`;
-> any other loop shape under `parallel` refused at `src/tychoc.c:3827@S_FORRANGE`
+> Provenance: `0..<N` parsed at `src/tychoc.c:3574-3599`; parallel-only refusal
+> `src/tychoc.c:3980@par_here`; literal-zero refusal `src/tychoc.c:3983@ival != 0`;
+> any other loop shape under `parallel` refused at `src/tychoc.c:3844@S_FORRANGE`
 > (it is the only node the chunker accepts). Chunk fan-out `K = min(ncpu(), N)`
-> `src/tychoc.c:10653-10654`, capped at 64 by `src/tychoc.c:11353@_pk > 64`
-> (the chunk-handle array `src/tychoc.c:11354@_pts[64]` is the reason for the
+> `src/tychoc.c:10681-10682`, capped at 64 by `src/tychoc.c:11393@_pk > 64`
+> (the chunk-handle array `src/tychoc.c:11394@_pts[64]` is the reason for the
 > number); each chunk is a real OS thread,
 > `runtime/tycho_rt.c:790@pthread_create`. A capture is deep-copied only when
-> `src/tychoc.c:11364@type_is_heap(ct)` holds, and `type_is_heap`
+> `src/tychoc.c:11404@type_is_heap(ct)` holds, and `type_is_heap`
 > (`src/tychoc.c:1413-1435`) has no channel arm, so a `Channel(T)` capture is
 > passed by value — one queue shared by every chunk.
 

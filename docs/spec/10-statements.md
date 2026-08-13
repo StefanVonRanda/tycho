@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3330-3825` (`parse_if` `:3246@parse_if`,
-> `parse_match` `:3352@parse_match`, `for` `:3467-3668`, `select` `:3411-3447`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3331-3842` (`parse_if` `:3247@parse_if`,
+> `parse_match` `:3353@parse_match`, `for` `:3468-3669`, `select` `:3412-3448`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -174,16 +174,16 @@ the implementation **does not diagnose it**, at compile time or at run time.
 bought is a single loop form that says its own direction and amount in the
 source instead of inferring them from the sign of a step expression.
 
-> Provenance: bare `for:` `src/tychoc.c:3840@TK_COLON`; the three-clause header
-> scan and its five required-clause refusals `src/tychoc.c:3501-3550`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:3891@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:7756-7761`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:11360-11363` with the
-> label at `src/tychoc.c:12235@_post%d`; the `range()` refusal
-> `src/tychoc.c:3988@was removed: write`. There is no step in the implementation
+> Provenance: bare `for:` `src/tychoc.c:3858@TK_COLON`; the three-clause header
+> scan and its five required-clause refusals `src/tychoc.c:3502-3551`; `init`
+> parsed by `parse_stmt` itself `src/tychoc.c:3909@parse_stmt`; loop scoping and
+> the post clause resolved outside the body block `src/tychoc.c:7784-7789`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:11400-11403` with the
+> label at `src/tychoc.c:12275@_post%d`; the `range()` refusal
+> `src/tychoc.c:4006@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1650-1656`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:11533-11537`).
+> (`src/tychoc.c:11573-11577`).
 >
 > **Amended 2026-07-30 (the loops-cleanup plan).** This note previously read "The step
 > codegen and its zero-step guards still exist but are unreachable: every

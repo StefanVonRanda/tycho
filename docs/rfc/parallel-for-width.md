@@ -1,6 +1,9 @@
 # A width slot for `parallel for`
 
-Status: **proposed, not built.** Written 2026-08-13 to cost open-list item 8 in
+Status: **BUILT 2026-08-13.** What follows is the proposal as written; the
+differences the implementation forced are listed under "What shipped" at the end.
+
+Written 2026-08-13 to cost open-list item 8 in
 [`../internals/FRICTION.md`](../internals/FRICTION.md), which had stood as
 "uncosted, and still the honest core of what is left". It is costed now, and it
 is smaller than the item says.
@@ -118,3 +121,30 @@ The alternatives, none costed here: a builtin readable inside a parallel body
 (`worker_id()`), which is honest about being ambient rather than bound; or the
 original ask, task handles in a container, which is the type-system change the
 item names and which nothing in this RFC makes cheaper.
+
+
+## What shipped, and where it differs from the proposal above
+
+Landed in `src/tychoc.c` at the three sites this RFC named, plus the two spec
+sections. Two things the proposal did not say, both found by building it:
+
+- **The range is `1..64`, not `>= 1`.** 64 is the static `_pts[64]` task array in
+  `gen_parfor`, and it was already the silent ceiling for `ncpu()`. Silently
+  clamping an explicit `parallel(100)` would run a program nobody asked for, so a
+  literal outside the range is refused in the parser (where the caret lands on the
+  author's digit) and a computed one aborts at run time via `tycho_die`.
+- **The width lands in `r_stop`, not in a new codegen path.** For the
+  channel-drain form the iteration space IS the worker count, so the author's
+  expression simply replaces the synthesised `ncpu()` node and every existing
+  clamp reads it unchanged.
+
+**What is asserted, and what is not.** `tests/conc/parfor_width.ty` proves the
+ANSWER does not move with the width (328350 at 1, at 3 and at `ncpu()`), the two
+`reject/` fixtures pin the literal refusals and `abort/parfor_width_computed.ty`
+pins the runtime one. None of those can show the width is honoured *at all*:
+with no way to observe a worker's identity from inside the loop — item 8b, still
+open — a `parallel(3)` that quietly ran at `ncpu()` prints the same bytes. So
+`tests/conc/run.sh` reads the emitted `_pk` initialiser and requires 1, 3 and
+`tycho_ncpu()` to each appear. Proven to redden: making `gen_parfor` ignore
+`s->par_width` fails that leg and the abort fixture, 43 passed / 2 failed
+against 45 / 0.

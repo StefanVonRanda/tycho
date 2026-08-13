@@ -51,7 +51,7 @@ for f in tests/conc/*.ty; do
     # then `mv "${f%.ty}.c" "$c"`, i.e. it created tests/conc/<name>.c inside the
     # tree on every run and moved it out again -- the stray-artifact behaviour
     # the loops-cleanup plan removed. `--emit-c` with no -o now writes to stdout
-    # (src/tychoc.c:13372), which this line's `>/dev/null` swallowed, and all 13
+    # (src/tychoc.c:13412), which this line's `>/dev/null` swallowed, and all 13
     # fixtures failed with `FAIL <name> (tychoc)`.
     if ! $TYCHOC "$f" --emit-c -o "${c%.c}" >/dev/null 2>"$TMP/$name.log"; then
         note "$name" "tychoc"; sed 's/^/      /' "$TMP/$name.log"; fail=$((fail+1)); continue
@@ -127,6 +127,24 @@ for f in tests/conc/reject/*.ty; do
         pass=$((pass+1))
     fi
 done
+
+# `parallel(W)` must reach CODEGEN, which no output can show. With no way to
+# observe a worker's identity from inside the loop (FRICTION open-list item 8b),
+# a `parallel(3)` that quietly ran at ncpu() prints exactly what a real one
+# prints -- tests/conc/parfor_width.ty says so in its own header. So the emitted
+# `_pk` initialiser is read here: the literal widths must appear as themselves
+# and the un-widthed form must still be ncpu(). Verified to redden 2026-08-13 by
+# ignoring s->par_width in gen_parfor.
+$TYCHOC tests/conc/parfor_width.ty --emit-c -o "$TMP/pw" >/dev/null 2>&1
+if [ -f "$TMP/pw.c" ]; then
+    if grep -q "_pk = 1;" "$TMP/pw.c" && grep -q "_pk = 3;" "$TMP/pw.c" && grep -q "_pk = tycho_ncpu();" "$TMP/pw.c"; then
+        pass=$((pass+1))
+    else
+        note "parfor_width/codegen" "the emitted _pk does not carry 1, 3 and ncpu()"; fail=$((fail+1))
+    fi
+else
+    note "parfor_width/codegen" "no emitted C to read"; fail=$((fail+1))
+fi
 
 echo "conc: passed $pass   failed $fail"
 [ $fail -eq 0 ] || exit 1

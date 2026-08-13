@@ -116,7 +116,7 @@ fn cmd_run(a: [string], cc: string):
     ensure_tmp_root()
     exe := with_exe(tmp_dir() + "/.tycho_run_bin")
     # build to a throwaway temp; tychoc emits <exe>, and <exe>.c survives a cc
-    # failure on purpose (src/tychoc.c:14251) -- so clean both, either way
+    # failure on purpose (src/tychoc.c:14291) -- so clean both, either way
     if tycho_run(cc + " " + file + " -o " + exe + " > " + null_dev()) != 0:
         tycho_remove(exe)
         tycho_remove(exe + ".c")

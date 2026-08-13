@@ -21,18 +21,6 @@ runs again against the last two corelib packages with no consumers.
 
 ## Phases
 
-- [ ] **Phase 2 — item 8(a): `parallel(W) for`**
-  - Build what `docs/rfc/parallel-for-width.md` specifies: optional `(Expr)`
-    between `parallel` and `for`, substituted for the synthesised `ncpu()` node in
-    the channel-drain lowering and for `gen_parfor`'s chunk count.
-  - Decisions are already made in the RFC: evaluated once at the spawn site;
-    literal `W < 1` refused at compile time and a computed one aborts at run time;
-    an explicit width beats `TYCHO_THREADS`.
-  - The load-bearing fixture COUNTS distinct workers — a width that is parsed and
-    ignored passes everything else.
-  - Verify: `make test`, `make conc`, `sh scripts/entrypoints.sh`, the re-anchor.
-    Update `docs/spec/02-grammar.md`, `docs/spec/13-concurrency.md` §22.
-
 - [ ] **Phase 3 — audit `core:sqlite` and `core:testing`**
   - Same method as `tools/tycho-snap`: one real program, findings recorded as they
     are hit, positive controls where a claim is made.

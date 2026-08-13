@@ -1,0 +1,5 @@
+# A literal `parallel(0)` is refused where the number is written. Below 1 has no
+# meaning; the parser catches it so the caret lands on the author's digit.
+fn main():
+    parallel(0) for i in 0..<8:
+        println(str(i))

@@ -1,0 +1,9 @@
+# A COMPUTED width out of range cannot be caught at compile time, so it dies at
+# run time rather than clamping -- the same fail-closed choice as the literal.
+fn width() -> int:
+    return 0
+
+fn main():
+    w := width()
+    parallel(w) for i in 0..<8:
+        println(str(i))

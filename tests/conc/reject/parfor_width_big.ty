@@ -1,0 +1,6 @@
+# A literal `parallel(65)` is refused: 64 is the static fan-out cap (`_pts[64]`
+# in gen_parfor), and silently clamping would run a different program than the
+# one asked for.
+fn main():
+    parallel(65) for i in 0..<8:
+        println(str(i))
