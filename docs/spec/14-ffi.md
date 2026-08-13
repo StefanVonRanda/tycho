@@ -35,15 +35,15 @@ outside the list below** is rejected at the boundary:
   the round trip in either direction — see "Interior `NUL`s" below.
 - **`bytes`** — crosses as a `(pointer, length)` pair, preserving interior `NUL`s;
   a `bytes`/array returned from C is copied into an arena and the C buffer freed.
-- **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, long)`
+- **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, int64_t)`
   pair (like `bytes`), in either direction; an array of any other element type,
   and any map or struct, is rejected (no flat, self-describing C ABI).
 - **`[string]` — parameter direction only.** It crosses as a
-  `(const char *const *, long)` pair, the same `(ptr, len)` convention as
+  `(const char *const *, int64_t)` pair, the same `(ptr, len)` convention as
   `[int]`/`[float]` and **not** a `NULL`-terminated `argv`; a callee wanting
   `execv` shape appends its own `NULL`. No marshalling happens: a Tycho string is
   NUL-terminated at its end, so the pointer handed over is the array's own
-  element storage. The `long` counts *pointers*, not bytes, and no per-element
+  element storage. The length counts *pointers*, not bytes, and no per-element
   length crosses — an element holding an interior `NUL` is therefore read short
   by the callee (see "Interior `NUL`s" below).
   The array is **borrowed for the duration of the call** — the
@@ -80,14 +80,14 @@ after the fact. It applies in every `char*` direction:
 
 - a **scalar `string` parameter** — the callee's `strlen` reports the prefix
   length, not `len(s)`;
-- **each element of a `[string]` parameter** — the `long` counts pointers, so no
+- **each element of a `[string]` parameter** — the length counts pointers, so no
   element length is available to the callee at all;
 - a **`string` return from C** — the arena copy is `strlen`-bounded
   (`runtime/tycho_rt.c@tycho_str_from_c`), so a C buffer holding `"h\0i"` becomes
   a Tycho `string` of length 1.
 
 Given `s := "a" + chr(0) + "c"`, `len(s)` is `3` while a callee declared
-`long f(const char *)` returns `1` for `strlen`. The trailing bytes are still in
+`int64_t f(const char *)` returns `1` for `strlen`. The trailing bytes are still in
 memory and still reachable by index through the borrowed pointer; what is lost is
 the *length*, which is the only thing telling the callee they are there.
 

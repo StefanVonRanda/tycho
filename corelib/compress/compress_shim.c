@@ -3,7 +3,7 @@
  * where zlib is installed and its test is skipped where it is not.
  *
  * Both cross the FFI as `bytes -> bytes` via the out-param convention
- * (unsigned char **out, long *outlen): the shim mallocs *out and tycho_bytes_from_c
+ * (unsigned char **out, int64_t *outlen): the shim mallocs *out and tycho_bytes_from_c
  * copies it into the caller's arena and frees it. Fail closed -- any zlib error,
  * truncated input, or allocation failure yields *out=NULL / *outlen=0 (empty bytes
  * to tycho), never a partial or uninitialized buffer. Length-carried, so binary
