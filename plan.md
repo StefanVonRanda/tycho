@@ -32,14 +32,19 @@ remaining seven, then corrects or fixes each.
 
 ## Phases
 
-- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2760`)
-  - Probe whether a generated header now exists. If not, decide whether to emit
-    one — this is ergonomics, so a correction saying "deliberate" is a fine
-    outcome.
-  - Verify: `make shim-check`, `make corelib`.
-
-- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2823`)
+- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`docs/internals/FRICTION.md:2872`)
   - Probe both halves: destructuring in a `for` binding, and whether a tuple is
     indexable. Go and Odin both destructure in range/multi-return position, so
     check that default before recording this as deliberate.
   - Verify: `make test`.
+
+- [ ] **Phase 8 — `make docs-fences` is RED on main** (found 2026-08-13, out of
+  phase 6's scope)
+  - `docs-fences: FAIL docs/internals/FRICTION.md:2650 -- does not compile`,
+    `<fence>:4: error: expected an expression | 4 | ...`. The ```` ```tycho ````
+    fence in entry #10's withdrawal elides a branch with a literal `...`, and
+    docs-fences compiles it. Introduced by `fe150d4`, the commit before this one;
+    confirmed pre-existing by `git stash` + re-run, same 54/76/1 both ways.
+  - Fix is one of the runner's own skip markers (see the `[MARKED]` / `[FRAGMENT]`
+    reasons it already prints) or spelling the elided branch out.
+  - Verify: `make docs-fences` only. Do not run `make test` or `make ci`.

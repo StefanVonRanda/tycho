@@ -69,14 +69,30 @@ Scalars, `string`, `bytes`, and the opaque handle `ptr` cross the boundary:
 
 | Tycho type | C type      | direction | notes |
 |-----------|-------------|-----------|-------|
-| `int`     | `long`      | in/out    | zero-cost |
-| `char`    | `long`      | in/out    | zero-cost |
+| `int`     | `int64_t`   | in/out    | zero-cost |
+| `char`    | `int64_t`   | in/out    | zero-cost |
 | `float`   | `double`    | in/out    | zero-cost |
 | `bool`    | `int`       | in/out    | zero-cost |
 | `string`  | `char *`    | in: zero-cost; out: arena-copied | see below |
-| `bytes`   | `(const unsigned char *, long)` in; out-param shim out | binary buffer, length-carried | see below |
+| `bytes`   | `(const unsigned char *, int64_t)` in; out-param shim out | binary buffer, length-carried | see below |
 | `ptr`     | `void *`    | in/out    | opaque handle, never dereferenced |
 | (none)    | `void`      | out only  | return-less extern |
+
+**The integer column is `int64_t`, not `long`.** Until 2026-08-13 this table said
+`long` for `int`, `char` and the `bytes` length, which is right only on LP64 and
+silently truncates on LLP64 (Windows) and ILP32. Nothing catches it: the emitted
+prototype (`extern tycho_int f(tycho_int);`, `tycho_int` being `int64_t`, see
+`docs/spec/appendix-f-impl-defined.md:81`) lives in a different translation unit
+from the shim, so C never compares the two. A shim written to the old row and
+built where `long` is 32 bits returns the wrong number, not an error.
+
+**You do not declare `tycho_int` yourself.** The generated program declares each
+`extern fn` for you; the shim only has to define a function of the same shape.
+`#include <stdint.h>` and write `int64_t` — a complete first shim is the include
+plus the function body, with no Tycho-specific typedef, guard or header. The
+corelib shims all open with a guarded `typedef int64_t tycho_int;` and spell
+their signatures `tycho_int`; that is a house style that keeps them readable
+next to the spec's prototypes, not a requirement of the FFI.
 
 **String passing.** A Tycho `string` is a NUL-terminated `char *`, so a C
 function taking `const char *` takes a Tycho `string` directly — no wrapper type,

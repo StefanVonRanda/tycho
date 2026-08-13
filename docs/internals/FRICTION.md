@@ -2757,6 +2757,55 @@ before you know it: the failure mode is a reader concluding the language cannot
 do something it does routinely, and neither the closure error nor `sort_by`'s
 signature points at the composition.
 
+### 11. ~~A first `--shim` C file must hand-declare `tycho_int`, because there is no header to include~~ — **WITHDRAWN 2026-08-13**
+
+It does not have to declare anything. The entry reasoned from the corelib shims
+instead of writing one, and a shim written from scratch needs no typedef, no
+guard and no header — six lines, of which none are Tycho-specific:
+
+```c
+#include <stdint.h>
+int64_t shim_add(int64_t a, int64_t b) { return a + b; }
+```
+
+`tychoc probe.ty --shim probe_shim.c` builds and runs that, printing
+`1099511627777` for `shim_add(1099511627776, 1)`. The reason is in the emitted
+C: the **caller** declares the prototype, `extern tycho_int shim_add(tycho_int
+, tycho_int );`, so the shim is never the place where the type is introduced. It
+only has to define a function of matching shape, and `int64_t` matches
+`tycho_int` by construction (`docs/spec/appendix-f-impl-defined.md:81`).
+
+All 13 shims do carry the guarded typedef, and stripping it from one reddens
+`make shim-check` — but only because they *spell their signatures* `tycho_int`.
+That is house style, seven lines each (three comment, four code), chosen so they
+read like the spec's prototypes; `int64_t` throughout would compile identically.
+So the toll on a first-time author is **zero lines**, not the four claimed here.
+
+**What was really wrong is one row of a table.** `docs/guides/ffi.md` mapped
+Tycho `int` to C `long` — right on LP64, 32-bit on Windows and ILP32. An author
+following it writes a truncating shim that no gate can see, because the shim and
+the generated prototype are separate translation units and C never compares
+them: the same probe against `int shim_add(int, int)` prints `1`, not
+`1099511627777`, with no diagnostic at any stage. Corrected there on 2026-08-13,
+along with the `char` row and the `bytes` length, both of which said `long` too.
+
+`make shim-check` could not have caught any of this. It globs
+`corelib/*/*_shim.c` (`scripts/shim_check.sh:59`), so no `--shim` file outside
+the corelib is in its corpus at all.
+
+**Precedent, run rather than asserted** (go1.26.5, odin dev-2026-04). Odin is the
+same shape as Tycho: `foreign import` plus a `foreign` block declaring
+`shim_add :: proc(a, b: i64) -> i64 ---`, against a plain `int64_t` C file with
+nothing Odin-specific in it. Go's cgo is *worse* on this axis, not better — the
+C function must be visible to the preamble, so with no header the author
+hand-writes the prototype inside the `import "C"` comment, and a mismatch
+between that prototype and the `.c` file is equally silent: preamble `int64_t`
+against `int shim_add(int, int)` compiles clean and prints `1`. Neither
+toolchain ships the "header that defines the language's integer type" this entry
+wanted, because neither needs one.
+
+The original text follows.
+
 ### 11. A first `--shim` C file must hand-declare `tycho_int`, because there is no header to include
 
 A shim is its own translation unit, compiled standalone — which is the whole
