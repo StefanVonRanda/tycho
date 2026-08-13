@@ -1,0 +1,7 @@
+# Demo manifest: snapshot this tool's own directory.
+#   ./tycho-snap --manifest tools/tycho-snap/demo.toml --out /tmp/snap.zip
+[snapshot]
+name = "tycho-snap"
+root = "tools/tycho-snap"
+ext  = [".ty", ".toml"]
+skip = ["build"]

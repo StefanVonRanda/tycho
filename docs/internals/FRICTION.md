@@ -3877,3 +3877,114 @@ because `E` existed and was not found; for a name that genuinely does not
 exist, suggesting the enclosing struct is a fair guess, since a struct may name
 itself in a field through `[S]`.
 
+
+## Found by `tools/tycho-snap`, 2026-08-13 (head `56709b34`)
+
+A **dogfood audit**, chosen by measurement rather than taste: six corelib
+packages had ZERO consumers outside `corelib/` — `intern`, `log`, `sqlite`,
+`testing`, `toml`, `zip` — and a package nobody calls is a package whose
+ergonomics nobody has tested. `tools/tycho-snap` is a real program against four
+of them: read a TOML manifest, walk a tree, archive it as a zip, and prove the
+archive by reading it back and checking every CRC against the bytes that went
+in. Every finding below was hit while writing it, in order.
+
+### 29. `cli.parse_spec`'s schema names must be UNDASHED, and getting it wrong is silent
+
+The schema lists and `cli.get`'s key take the option name **without** its
+leading `--`; the parser strips the dashes before matching
+(`corelib/cli/cli.ty@parse_into`). Writing them the way you type them at a shell
+— `parse_spec(argv, ["--manifest"], ["--quiet"])` — compiles, parses, runs, and
+**silently uses every default**. Measured on the same argv:
+
+```
+dashed  get=[DEFAULT]    unknown=2
+bare    get=[real.toml]  unknown=0
+```
+
+The tokens are not lost: they land in `cli.unknown(c)`, which exists for exactly
+this. But nothing makes a caller read it, so the failure mode is a program that
+runs to completion on a configuration nobody asked for. This is the
+`core:regex`-class shape recorded at open-list item 12 for `cli.has`: the answer
+is not wrong, the question was silently a different one. `tycho-snap` now reads
+`unknown()` and `missing()` and exits 2, which is the workaround, not a fix.
+
+**Cheapest real fix:** `parse_spec` could accept either spelling (strip a
+leading `--` from each schema entry as it is read), which cannot break an
+existing caller because a schema entry starting with `--` matches nothing today.
+
+### 30. `[string] + [string]` is refused with a reason that is false
+
+`out = out + [s]` on a `[string]` — the append every Go and Python habit reaches
+for — gives:
+
+```
+error: `+` is not defined element-wise on [string], because `+` is not defined on string
+```
+
+The clause after the comma is **untrue**, and one line of the same program
+disproves it: `"x" + "y"` prints `xy`. Probed at `56709b34`, `[1, 2] + [3, 4]`
+prints `4,6`, so `+` on arrays is element-wise by design and the real rule is
+that there is no element-wise `+` for `string` elements. The message is built
+from the element type at `src/tychoc.c:7101` and again at `src/tychoc.c:7155`,
+where `arr_elem(lt)` is spelled into a sentence that reads as a claim about the
+language.
+
+The user's actual mistake is not arithmetic at all — it is that append is
+`push(xs, x)`. A message naming `push` would end the confusion in one line
+instead of sending the reader to check whether `+` really works on strings.
+
+### 31. A generic struct is constructed from its FIELDS, in field order, not from its type parameters
+
+`intern.Interner($K, $V)` is instantiated by writing its two field values — an
+empty `[$V]` and an empty `[$K: int]` — so a `string -> int` interner is:
+
+```tycho
+ei := intern.Interner([]int, []string: int)      # V's array first, K's map second
+```
+
+Reading the declaration `struct Interner($K, $V)` and writing
+`Interner(string, int)` gives `error: expected an expression`, pointing at
+`string`. The order is not the declaration's — it is whatever order the fields
+happen to sit in (`nodes: [$V]` before `lookup: [$K: int]`), so the two type
+parameters appear reversed. Nothing in the diagnostic connects the two.
+
+Not proposed as a change: this is the ordinary struct-literal rule applied to a
+generic, and inference from the field values is what lets the type parameters go
+unwritten. Recorded because the first thing a caller reads is the `($K, $V)`
+header, and it is a false friend.
+
+### 32. Mangled instantiation names reach the user
+
+Two diagnostics from the same session, verbatim:
+
+```
+error: argument 1 of 'intern__count__intern__Interner__string__int__string__int' is not inout; remove the '&'
+error: cannot compare intern__Handle with int
+```
+
+The first names a symbol the programmer never wrote and cannot find in any
+source file; the source spelling is `intern.count`. The second is closer but
+still prints `intern__Handle` for `intern.Handle`. Both messages are otherwise
+good — the first even names the fix. Purely cosmetic, and worth one pass over
+`type_name`/callee spelling at some point, not a phase of its own.
+
+### What did not go wrong, which is also data
+
+- **`core:zip` is interoperable, and nothing in this tree had ever checked.**
+  Its output is read by Python's `zipfile`: `testzip()` returns `None` (every
+  CRC verified by a second implementation), the member list matches, and one
+  member's SHA-256 out of the archive equals the file on disk. An **empty**
+  archive is a valid 22-byte end-of-central-directory record that `zipfile`
+  reads as `[]`, rather than a zero-byte file or a crash.
+- **Two runs are byte-identical** once the walk sorts each directory level —
+  `io.list` order is `readdir(3)` order and a snapshot that inherits it is not a
+  snapshot. That is the program's job, not the package's, and `sort.asc` made it
+  one line.
+- **`core:toml`, `core:log` and `core:intern` did what their headers say** on
+  first reading, with no probe needed: dotted-path `get`, an `inout` logger with
+  four levels, and handle identity across repeated keys.
+- **A directory is a package, including a scratch directory.** Two unrelated
+  `package main` files in one throwaway folder make the compiler pull the
+  sibling into the build: `tychoc: plus.ty is in package `main` but has no
+  `package` declaration`. Correct, documented, and still a five-second stumble
+  when the folder is a scratchpad rather than a project.

@@ -1,0 +1,223 @@
+# tycho-snap -- snapshot a directory tree into a zip, driven by a TOML manifest.
+#
+# WHY THIS PROGRAM EXISTS. It is a dogfood audit (docs/internals/FRICTION.md,
+# "What the audit says about the method"): four corelib packages had ZERO
+# consumers outside corelib/ before it -- core:toml, core:zip, core:log and
+# core:intern -- and a package nobody calls is a package whose ergonomics nobody
+# has tested. Everything it does is real work: read a manifest, walk a tree,
+# archive it, and PROVE the archive by reading it back and comparing CRCs
+# against the bytes that went in.
+#
+#   tycho-snap --manifest snap.toml [--out x.zip] [--quiet]
+#
+# gap: NO RUNTIME LANE. `sh scripts/entrypoints.sh` compiles this file and
+# nothing runs it in CI, so a regression in the walk, the archive or the
+# verification would be invisible to `make ci`. Its self-check (every CRC read
+# back and compared to the bytes that went in) makes a lane cheap to add against
+# `demo.toml`; it is not added here because the audit's deliverable was the
+# findings in FRICTION.md, not a 28th tool lane.
+#
+# The manifest:
+#
+#   [snapshot]
+#   name = "demo"
+#   root = "some/dir"
+#   ext  = [".ty", ".md"]     # empty = every file
+#   skip = ["build"]          # directory basenames never descended into
+package main
+
+import "core:cli"
+import "core:io"
+import "core:path"
+import "core:strings"
+import "core:sort"
+import "core:toml"
+import "core:zip"
+import "core:log"
+import "core:intern"
+
+struct Manifest:
+    name: string
+    root: string
+    ext: [string]
+    skip: [string]
+
+# TOML string out of a dotted path, or the default. `toml.get` answers
+# Option(Value) and the Value is still an enum, so every read is two steps.
+fn tstr(root: toml.Value, key: string, dflt: string) -> string:
+    match toml.get(root, key):
+        Some(v):
+            match v:
+                toml.TStr(s): return s
+                _: return dflt
+        None: return dflt
+
+# Same for an array of strings. A non-string element is skipped rather than
+# failing the parse: the manifest is a user file, not a wire format.
+fn tstrs(root: toml.Value, key: string) -> [string]:
+    out := []string
+    match toml.get(root, key):
+        Some(v):
+            match v:
+                toml.TArr(items):
+                    for it in items:
+                        match it:
+                            toml.TStr(s): push(out, s)
+                            _: pass
+                _: pass
+        None: pass
+    return out
+
+fn read_manifest(p: string) -> Result(Manifest, string):
+    txt := ""
+    match io.read_text(p):
+        Ok(t): txt = t
+        Err(e): return Err("cannot read manifest " + p)
+    root := toml.parse(txt) or_return
+    return Ok(Manifest(tstr(root, "snapshot.name", "snapshot"),
+                       tstr(root, "snapshot.root", "."),
+                       tstrs(root, "snapshot.ext"),
+                       tstrs(root, "snapshot.skip")))
+
+fn wanted(name: string, ext: [string]) -> bool:
+    if len(ext) == 0:
+        return true
+    for e in ext:
+        if strings.ends_with(name, e):
+            return true
+    return false
+
+fn skipped(name: string, skip: [string]) -> bool:
+    for s in skip:
+        if name == s:
+            return true
+    return false
+
+# Depth-first walk, sorted at every level so the archive is byte-reproducible.
+# A snapshot whose entry order depends on readdir(3) is not a snapshot.
+fn walk(dir: string, rel: string, m: Manifest, out: inout [string], lg: inout log.Logger):
+    names := sort.asc(io.list(dir))     # value semantics: asc() returns a NEW array, there is no in-place sort
+    for n in names:
+        full := path.join(dir, n)
+        sub := n
+        if rel != "":
+            sub = rel + "/" + n
+        isdir := false
+        match io.is_dir(full):
+            Ok(d): isdir = d
+            Err(e):
+                log.warn(&lg, "stat failed: " + full)
+                continue
+        if isdir:
+            if skipped(n, m.skip):
+                log.debug(&lg, "skip dir " + sub)
+                continue
+            walk(full, sub, m, &out, &lg)
+        elif wanted(n, m.ext):
+            push(out, sub)
+
+fn ext_of(name: string) -> string:
+    i := len(name) - 1
+    for i >= 0:
+        if name[i] == 46:        # '.'
+            return name[i:len(name)]
+        if name[i] == 47:        # '/' -- no dot in the basename
+            return "(none)"
+        i -= 1
+    return "(none)"
+
+fn main():
+    # The schema names carry NO leading dashes, and neither does `get`'s key --
+    # the parser strips "--" before matching. Writing them dashed parses, runs,
+    # and silently uses every default: measured, the tokens land in `unknown()`
+    # and nothing makes you read it. So this program reads it, below.
+    c := cli.parse_spec(cli.argv(), ["manifest", "out"], ["quiet"])
+    mf := cli.get(c, "manifest", "snap.toml")
+    outp := cli.get(c, "out", "")
+    level := log.level_info()
+    if cli.has(c, "quiet"):
+        level = log.level_error()
+    lg := log.init(level, false)
+    for u in cli.unknown(c):
+        log.error(&lg, "unknown option " + u)
+    for mv in cli.missing(c):
+        log.error(&lg, "option needs a value: " + mv)
+    if len(cli.unknown(c)) + len(cli.missing(c)) > 0:
+        exit(2)
+
+    m := Manifest("", "", []string, []string)
+    match read_manifest(mf):
+        Ok(v): m = v
+        Err(e):
+            log.error(&lg, e)
+            exit(1)
+    if outp == "":
+        outp = m.name + ".zip"
+    log.info(&lg, "manifest " + mf + " -> " + m.name + " (root " + m.root + ")")
+
+    files := []string
+    walk(m.root, "", m, &files, &lg)
+    log.info(&lg, "walked " + str(len(files)) + " file(s)")
+
+    # Intern each extension so the summary counts DISTINCT kinds without a
+    # second pass or a map of counters keyed by a string built per file.
+    # NOTE the spelling: the type parameters are never written. `Interner($K, $V)`
+    # is instantiated from its two FIELD values -- an empty `[$V]` and an empty
+    # `[$K: int]` -- so a string->int interner is `Interner([]int, []string: int)`,
+    # V first, K second, the reverse of the declaration's order.
+    ei := intern.Interner([]int, []string: int)
+    kinds := []string
+    entries := []zip.Entry
+    for f in files:
+        body := to_bytes("")
+        match io.read_bytes(path.join(m.root, f)):
+            Ok(b): body = b
+            Err(e):
+                log.warn(&lg, "unreadable, skipped: " + f)
+                continue
+        push(entries, zip.Entry(f, body))
+        e := ext_of(f)
+        h := intern.intern(&ei, e, 1)
+        if to_int(h) == intern.count(ei) - 1:      # Handle is type-distinct from int, by design
+            push(kinds, e)
+
+    arch := zip.create(entries)
+    match io.write_bytes(outp, arch):
+        Ok(): pass
+        Err(e):
+            log.error(&lg, "cannot write " + outp)
+            exit(1)
+    log.info(&lg, "wrote " + outp + " (" + str(len(arch)) + " bytes, " +
+                  str(len(entries)) + " entries, " + str(len(kinds)) + " kinds)")
+
+    # THE PROOF, and the reason this program is not just a zip writer: read the
+    # archive back and check every entry's CRC against the bytes that went in.
+    # A golden would agree with a broken writer; these numbers come from the
+    # data, not from the last run.
+    back := to_bytes("")
+    match io.read_bytes(outp):
+        Ok(b): back = b
+        Err(e):
+            log.error(&lg, "cannot re-read " + outp)
+            exit(1)
+    metas := zip.list(back)
+    bad := 0
+    if len(metas) != len(entries):
+        log.error(&lg, "entry count changed: " + str(len(entries)) + " -> " + str(len(metas)))
+        bad += 1
+    for i := 0; i < len(metas); i += 1:
+        want := zip.crc32(entries[i].data)
+        if metas[i].name != entries[i].name:
+            log.error(&lg, "name moved at " + str(i))
+            bad += 1
+        elif metas[i].crc != want:
+            log.error(&lg, "crc mismatch for " + metas[i].name)
+            bad += 1
+        elif metas[i].usize != len(entries[i].data):
+            log.error(&lg, "size mismatch for " + metas[i].name)
+            bad += 1
+    println("snap: " + m.name + " files=" + str(len(entries)) +
+            " kinds=" + str(len(kinds)) + " bytes=" + str(len(arch)) +
+            " verified=" + str(len(metas) - bad))
+    if bad > 0:
+        exit(1)
