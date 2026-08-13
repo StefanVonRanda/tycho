@@ -37,14 +37,3 @@ remaining seven, then corrects or fixes each.
     indexable. Go and Odin both destructure in range/multi-return position, so
     check that default before recording this as deliberate.
   - Verify: `make test`.
-
-- [ ] **Phase 8 — `make docs-fences` is RED on main** (found 2026-08-13, out of
-  phase 6's scope)
-  - `docs-fences: FAIL docs/internals/FRICTION.md:2650 -- does not compile`,
-    `<fence>:4: error: expected an expression | 4 | ...`. The ```` ```tycho ````
-    fence in entry #10's withdrawal elides a branch with a literal `...`, and
-    docs-fences compiles it. Introduced by `fe150d4`, the commit before this one;
-    confirmed pre-existing by `git stash` + re-run, same 54/76/1 both ways.
-  - Fix is one of the runner's own skip markers (see the `[MARKED]` / `[FRAGMENT]`
-    reasons it already prints) or spelling the elided branch out.
-  - Verify: `make docs-fences` only. Do not run `make test` or `make ci`.

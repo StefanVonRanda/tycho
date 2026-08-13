@@ -2647,6 +2647,7 @@ Re-probed by running programs at `49f49ae8`. The entry's premise holds and its
 conclusion does not. **A two-key comparator is written directly, as one named
 function with as many branches as it likes**, and `sort.sort_by` takes it:
 
+<!-- fence-skip: excerpt -- the name tie-break is elided as `...` and `fruit`/`freq` are locals of the program it was cut from; the compiled twin is `corelib/test/sort/main.ty@count_then_name`, gated by `make corelib` -->
 ```tycho
 fn count_then_name(ac: int, bc: int, an: string, bn: string) -> int:
     if ac != bc:
