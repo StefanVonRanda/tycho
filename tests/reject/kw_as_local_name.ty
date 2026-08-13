@@ -1,0 +1,7 @@
+# Said "expected an expression", caret on the `:=`. The one identifier position
+# that does NOT route through `eat`: every binding branch of `parse_stmt` gates on
+# TK_IDENT, so a keyword falls through to the expression parser. Its own arm.
+# expect: 'spawn' is a reserved keyword and cannot be used as a variable name
+fn main():
+    spawn := 1
+    println(str(spawn))

@@ -14,10 +14,10 @@ Operators and keywords that read as calls but are **not** builtins — `m[k]`,
 `k in m`, `delete m[k]`, `for x in xs`, `&place`, `or_return` — are specified in
 their own chapters and are out of scope here.
 
-> Provenance: `Sig` builtins `src/tychoc.c:4706-4738`; conversion magic
-> `:5924-5980`; `len` `:5982-5988`; `keys`/`push`/`pop`/`reserve` `:6038-6133`;
-> `m.get` sugar `:5476-5489`,`:5334-5349`; `zero$` `:5424-5450`; concurrency
-> magic `:5823-5906`; `map_*` removal `:2581-2582`; `die` codegen `:9554-9555`.
+> Provenance: `Sig` builtins `src/tychoc.c:4728-4760`; conversion magic
+> `:5946-6002`; `len` `:6004-6010`; `keys`/`push`/`pop`/`reserve` `:6060-6155`;
+> `m.get` sugar `:5498-5511`,`:5356-5371`; `zero$` `:5446-5472`; concurrency
+> magic `:5845-5928`; `map_*` removal `:2597-2598`; `die` codegen `:9576-9577`.
 
 ## 29.1 Builtins are part of the language
 
@@ -30,7 +30,7 @@ distinguished from user functions only by being predefined.
 The line between the **language** and the **corelib** is drawn precisely:
 
 - A name is a **builtin** (part of the language) iff `register_builtins`
-  (`src/tychoc.c:4706-4738`) registers it **or** a case in `resolve_expr` /
+  (`src/tychoc.c:4728-4760`) registers it **or** a case in `resolve_expr` /
   codegen special-cases it by name (§29.2). Such a name is available with no
   import.
 - Every other predefined function is a **corelib** procedure, reached only
@@ -82,8 +82,8 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4710-4714`,`:4719-4720`,`:4729-4730`; `eprint` codegen `:10187@tycho_eprint`; `die` codegen
-> `:9554-9555`.
+> Provenance: `src/tychoc.c:4732-4736`,`:4741-4742`,`:4751-4752`; `eprint` codegen `:10209@tycho_eprint`; `die` codegen
+> `:9576-9577`.
 
 ## 29.4 Conversions
 
@@ -126,11 +126,11 @@ the abort message names `chr` even when the call was `to_char` (one runtime trap
 serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is the
 only spelling — `n.to_char()` is not.
 
-> Provenance: conversion magic `src/tychoc.c:5924-5980`; `chr` and `to_char` `Sig`
-> `:5150@.name="to_char"`, their shared codegen `:9594-9596`;
-> `is_null`/`to_ptr` `Sig` `:4731-4732`. `to_i32` (and the rest of
+> Provenance: conversion magic `src/tychoc.c:5946-6002`; `chr` and `to_char` `Sig`
+> `:5172@.name="to_char"`, their shared codegen `:9616-9618`;
+> `is_null`/`to_ptr` `Sig` `:4753-4754`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1119-1123` /
-> `sized_conv_target` `:1108-1118`, resolved inline at `:5940-5946`. The abort
+> `sized_conv_target` `:1108-1118`, resolved inline at `:5962-5968`. The abort
 > both share is `runtime/tycho_rt.c:1436@out of byte range`. Conformance:
 > `tests/char_to_char.ty`, `tests/abort/chr_oob.ty`.
 
@@ -156,10 +156,10 @@ literally the same bounds-checked call — so neither is faster or safer than th
 other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 [§5.2.5](03-types.md#525-string) for why the wart exists.
 
-> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4722-4723`, `split` `:5157@.name="split"`;
+> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4744-4745`, `split` `:5179@.name="split"`;
 > `len` magic
-> `:5982-5988`; `char_at` `Sig` `src/tychoc.c:5156@.name="char_at"`, codegen `:9404-9411`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10714@tycho_str_get`), tychoc0
+> `:6004-6010`; `char_at` `Sig` `src/tychoc.c:5178@.name="char_at"`, codegen `:9426-9433`
+> (`tycho_str_get`, the same call `s[i]` emits at `:10736@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -178,8 +178,8 @@ rejected — so they may grow or shrink the value in the owning arena.
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays, so a known-size workload skips the retained growth intermediates (the lru bench's one-line fix; entries survive a later re-size). |
 
-> Provenance: `len` `src/tychoc.c:5982-5988`; `push` `:6045-6085`; `pop`
-> `:6086-6106`; `reserve` `:6107-6133`.
+> Provenance: `len` `src/tychoc.c:6004-6010`; `push` `:6067-6107`; `pop`
+> `:6108-6128`; `reserve` `:6129-6155`.
 
 ## 29.7 Maps
 
@@ -221,11 +221,11 @@ to `m[k] = v`, `m.get(k, default)`, `k in m`, and `delete m[k]` respectively.
 (The identically-named nodes that the desugars build internally are not
 user-callable.)
 
-> Provenance: `keys` `src/tychoc.c:6038-6043`; `m.get` sugar `:5476-5489`,
-> `:5334-5349`; `map_*` removal (parse error) `:2581-2582`, tychoc0
+> Provenance: `keys` `src/tychoc.c:6060-6065`; `m.get` sugar `:5498-5511`,
+> `:5356-5371`; `map_*` removal (parse error) `:2597-2598`, tychoc0
 > `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
-> form). `hash` resolve `src/tychoc.c:6227-6240`, codegen `:10090-10092`,
-> `gen_hash` `src/tychoc.c:9828@gen_hash`; its type-emission gate is `hash_keyused`
+> form). `hash` resolve `src/tychoc.c:6249-6262`, codegen `:10112-10114`,
+> `gen_hash` `src/tychoc.c:9850@gen_hash`; its type-emission gate is `hash_keyused`
 > `src/tychoc.c:1512-1516`, OR'd into the hash-function gates so a `hash()` on
 > a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
@@ -248,7 +248,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5424-5450`; `defaultable` predicate `:8468@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5446-5472`; `defaultable` predicate `:8490@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -272,12 +272,12 @@ builtins below are their only consumers.
 likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle;
 `ncpu` is the sole `Sig` builtin here.
 
-> Provenance: `wait` `src/tychoc.c:5823-5830`; `channel` `:5831-5846`; `send`
-> `:5847-5855`; `recv` `:5856-5861`; `close` `:5862-5906`; `ncpu` `Sig` `:5149@.name="ncpu"`;
-> task/channel method sugar `:5451-5465`. `ncpu()`'s value is
+> Provenance: `wait` `src/tychoc.c:5845-5852`; `channel` `:5853-5868`; `send`
+> `:5869-5877`; `recv` `:5878-5883`; `close` `:5884-5928`; `ncpu` `Sig` `:5171@.name="ncpu"`;
+> task/channel method sugar `:5473-5487`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-862` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:11177@_pk > 64`.
+> 64 is `src/tychoc.c:11199@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -293,8 +293,8 @@ aborting.
 | `clock()` | `-> int` | Sig | Monotonic nanoseconds — differences are meaningful; the absolute value is not. |
 | `now()` | `-> int` | Sig | Wall-clock seconds since the UNIX epoch. |
 
-> Provenance: `clock`/`now` `src/tychoc.c:4715-4716`;
-> `read_file`/`write_file`/`list_dir` `:4726-4728`.
+> Provenance: `clock`/`now` `src/tychoc.c:4737-4738`;
+> `read_file`/`write_file`/`list_dir` `:4748-4750`.
 
 ## 29.11 Float math (libm)
 
@@ -312,7 +312,7 @@ Other numeric functions — `min`, `max`, `clamp`, and the trigonometric functio
 — are **not** builtins; they are provided by the standard library (§31)
 and require an import.
 
-> Provenance: `src/tychoc.c:4734-4737`.
+> Provenance: `src/tychoc.c:4756-4759`.
 
 ## 29.12 Abnormal termination
 
@@ -365,10 +365,10 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:5151@.name="die"`, codegen `:9554-9555`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:5173@.name="die"`, codegen `:9576-9577`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
-> `assert`/`panic`/`abort` name in `register_builtins` `:4706-4738` or the
-> `resolve_expr` magic block (`case E_CALL:` `:5940@case E_CALL:`, running
-> through `reserve` at `:6584@"reserve"`).
+> `assert`/`panic`/`abort` name in `register_builtins` `:4728-4760` or the
+> `resolve_expr` magic block (`case E_CALL:` `:5962@case E_CALL:`, running
+> through `reserve` at `:6606@"reserve"`).

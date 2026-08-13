@@ -1,0 +1,19 @@
+# §3.7's contextual identifiers lex as TK_IDENT and stay legal as NAMES, in every
+# position. Nothing else in the corpus asserts that, and the reserved-keyword
+# diagnostic added for FRICTION #25 is exactly the change that could break it: a
+# predicate broadened from "keyword() maps the lexeme back to its own kind" to
+# anything coarser (a name table, a strcmp list) would refuse all of these.
+struct Q:
+    where: int
+    soa: bool
+    range: int
+
+fn sink(extern: int, package: int) -> int:
+    return extern + package
+
+fn main():
+    q := Q(1, true, 2)
+    where := q.where + q.range
+    range := sink(where, 4)
+    println(str(range))
+    println(str(q.soa))

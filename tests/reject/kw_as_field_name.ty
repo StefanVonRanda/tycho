@@ -1,0 +1,11 @@
+# A reserved word as a struct field said "expected a field name" -- which is also
+# what a stray `,` or a number gives, so nothing suggested the identifier was fine
+# and merely taken. The guard lives in `eat` (`src/tychoc.c@reserved_kw`), so the
+# phrase is the one the identifier position already carried.
+# expect: 'spawn' is a reserved keyword and cannot be used as a field name
+struct Cfg:
+    spawn: bool
+
+fn main():
+    c := Cfg(true)
+    println(str(c.spawn))
