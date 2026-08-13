@@ -1,0 +1,13 @@
+# Cause 1 of the sink consume diagnostic: `w` is mentioned twice, so it cannot be
+# adopted -- even though the sink call below IS its last use. The message must say
+# that, not "make this its last use", which it already is.
+# expect: is mentioned 2 times in this function
+# expect: must be the variable's ONLY mention
+fn dbl(xs: sink [int]) -> int:
+    xs[0] = xs[0] + 1
+    return xs[0]
+
+fn main():
+    w := [5, 7]
+    println(str(len(w)))
+    println(str(dbl(w)))

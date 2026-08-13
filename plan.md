@@ -16,8 +16,8 @@ last two fixes came from. Output is a tick transcript that goldens byte-exactly.
   works — all four probed 2026-08-13.
 - Verified 2026-08-13: `sink` cannot take a collection built with `push`.
   `can_move_into_sink` (`src/tychoc.c@can_move_into_sink`) requires exactly one
-  read in the whole body, so pools use `inout`, not `sink`. Phase 3 is now the
-  diagnostic, not the transfer.
+  read in the whole body, so pools use `inout`, not `sink`. The diagnostic that
+  misdescribed that rule was fixed on 2026-08-13 (FRICTION #24).
 
 ## Phases
 
@@ -27,12 +27,3 @@ last two fixes came from. Output is a tick transcript that goldens byte-exactly.
     values; entity-count and energy conservation asserted against literals in the
     runner, not against a slice of the golden.
   - Verify: `make sim-check`.
-
-- [ ] **Phase 3 — the `sink` diagnostic describes a rule it does not implement**
-  - Scope: `src/tychoc.c@sink_arg_into`'s message, and `docs/internals/FRICTION.md`.
-  - Done when: a variable whose sink pass IS its last use but which was read
-    earlier gets a message naming the real rule (one read in the whole body),
-    not "make this its last use", which it already is.
-  - Verify: a reject fixture pinning the new text; `make test`, expect 662.
-  - Probed: `len(w)`, `w[0]`, `bump(&w)`, `w[0] = 9` and `push(w, x)` each
-    disqualify. Only `w := [5,7]` immediately consumed is accepted.

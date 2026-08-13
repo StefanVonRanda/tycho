@@ -697,7 +697,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10573@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10594@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -3842,7 +3842,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10350), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10371), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -8979,7 +8979,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11249), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11270), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9009,12 +9009,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13221) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13242) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11336) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11357) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -9768,14 +9768,35 @@ static char *alias_arg(Type t, const char *arena, Expr *arg, Expr **args, int na
 static char *sink_arg_into(Type t, const char *arena, Expr *arg) {
     char *v = gen_expr(arg, arena);
     if (type_is_heap(t) && is_place(arg) && !can_move_into_sink(arg)) {
-        /* consume diagnostic: a bare local handed to a `sink` parameter but used
-         * again (or inside a loop) cannot be moved into it. Rather than silently
-         * copy, require the move-vs-copy to be visible (Hylo-style): the user
-         * passes a copy they keep, or makes this the variable's last use. A field/
-         * index/param argument still copies (you cannot move a part out of a value). */
-        if (arg->kind == E_IDENT && (!is_param(arg->sval) || is_sink_param(arg->sval)))
-            die_at(arg->line, "'%s' is consumed by a `sink` parameter but used again (or inside a loop); "
-                              "pass a copy you keep (`y := %s`) or make this its last use", arg->sval, arg->sval);
+        /* consume diagnostic: a place handed to a `sink` parameter that cannot be
+         * adopted. Rather than silently copy, require the move-vs-copy to be visible
+         * (Hylo-style). One arm per can_move_into_sink condition, in ITS order: the
+         * causes are not interchangeable, and the single string these replaced told a
+         * caller to "make this its last use" in the three cases where it already was.
+         * A field/index/plain-param argument still copies (no part moves out of a value). */
+        if (arg->kind == E_IDENT && (!is_param(arg->sval) || is_sink_param(arg->sval))) {
+            const char *n = arg->sval;
+            if (is_sink_param(n))
+                die_at(arg->line, "'%s' is a `sink` parameter and cannot be handed to another `sink` "
+                                  "parameter: a parameter's buffer is never adopted, however it was "
+                                  "declared. Copy it first (`y := %s`) and consume `y`", n, n);
+            else if (g_loop_depth != 0)
+                die_at(arg->line, "'%s' is consumed by a `sink` parameter inside a loop, where the next "
+                                  "iteration would consume it again; no named variable can be adopted "
+                                  "in a loop, a copy made in the loop included. Lift the call out of the "
+                                  "loop, or pass a fresh value (a literal, or a call's result)", n);
+            else if (count_reads_b(g_proc_body, g_proc_nbody, n) != 1)
+                die_at(arg->line, "'%s' is consumed by a `sink` parameter but is mentioned %d times in "
+                                  "this function: a sink argument must be the variable's ONLY mention. "
+                                  "One textual mention is how the compiler proves the consume is the last "
+                                  "use on every path, with no dataflow analysis -- so `len(%s)`, `%s[0]`, "
+                                  "`%s[0] = ...` and passing `%s` anywhere else all disqualify it, even "
+                                  "before this line. Copy it first (`y := %s`) and consume `y`",
+                                  n, count_reads_b(g_proc_body, g_proc_nbody, n), n, n, n, n, n);
+            else
+                die_at(arg->line, "'%s' cannot be consumed by a `sink` parameter here; copy it first "
+                                  "(`y := %s`) and consume `y`", n, n);
+        }
         v = copy_into(t, arena, v);
     }
     return v;

@@ -265,7 +265,7 @@ emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `308b6d6`
 Three things that must be decided with it, not after:
 
 1. **`(ptr, len)`, not a NULL-terminated argv.** It would follow the
-   `[int]`/`[float]` convention already at `src/tychoc.c:9979@arrp`. A callee wanting
+   `[int]`/`[float]` convention already at `src/tychoc.c:10000@arrp`. A callee wanting
    `execv` semantics appends its own `NULL`. Promising argv-shape instead means
    the emitter allocates a terminated copy, and that is a different, larger change.
 2. **Borrow for the call; the callee must not retain.** Same contract

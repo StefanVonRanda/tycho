@@ -1,0 +1,14 @@
+# A `sink` parameter forwarded to another `sink` parameter: mentioned once, not in a
+# loop, and still refused -- a parameter's buffer is never adopted. The old single
+# string blamed "used again (or inside a loop)" here, and neither was true.
+# expect: is a `sink` parameter and cannot be handed to another `sink` parameter
+fn dbl(xs: sink [int]) -> int:
+    xs[0] = xs[0] + 1
+    return xs[0]
+
+fn mid(ys: sink [int]) -> int:
+    return dbl(ys)
+
+fn main():
+    b := [5]
+    println(str(mid(b)))

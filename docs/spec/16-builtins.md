@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4710-4714`,`:4719-4720`,`:4729-4730`; `eprint` codegen `:10166@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4710-4714`,`:4719-4720`,`:4729-4730`; `eprint` codegen `:10187@tycho_eprint`; `die` codegen
 > `:9554-9555`.
 
 ## 29.4 Conversions
@@ -159,7 +159,7 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4722-4723`, `split` `:5157@.name="split"`;
 > `len` magic
 > `:5982-5988`; `char_at` `Sig` `src/tychoc.c:5156@.name="char_at"`, codegen `:9404-9411`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10693@tycho_str_get`), tychoc0
+> (`tycho_str_get`, the same call `s[i]` emits at `:10714@tycho_str_get`), tychoc0
 > `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6770@hi_sidx`).
 
@@ -224,8 +224,8 @@ user-callable.)
 > Provenance: `keys` `src/tychoc.c:6038-6043`; `m.get` sugar `:5476-5489`,
 > `:5334-5349`; `map_*` removal (parse error) `:2581-2582`, tychoc0
 > `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
-> form). `hash` resolve `src/tychoc.c:6227-6240`, codegen `:10069-10071`,
-> `gen_hash` `src/tychoc.c:9807@gen_hash`; its type-emission gate is `hash_keyused`
+> form). `hash` resolve `src/tychoc.c:6227-6240`, codegen `:10090-10092`,
+> `gen_hash` `src/tychoc.c:9828@gen_hash`; its type-emission gate is `hash_keyused`
 > `src/tychoc.c:1512-1516`, OR'd into the hash-function gates so a `hash()` on
 > a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
@@ -277,7 +277,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5451-5465`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:847-862` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:11156@_pk > 64`.
+> 64 is `src/tychoc.c:11177@_pk > 64`.
 
 ## 29.10 Filesystem and time
 

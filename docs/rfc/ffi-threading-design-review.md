@@ -146,7 +146,7 @@ The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:10034` for `len`, `:10161` and `:10168` for print/println). Footguns:
+`src/tychoc.c:10055` for `len`, `:10182` and `:10189` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
