@@ -59,10 +59,33 @@ fn in_list(xs: [string], s: string) -> bool:
             return true
     return false
 
+# A schema entry with its dashes still on. The names here are matched against a
+# token that has ALREADY had its "--" stripped, so `["--out"]` matched nothing and
+# every value silently fell back to the caller's default -- found by tycho-snap
+# (FRICTION #29), where a dashed schema gave `get=[DEFAULT]` with the tokens
+# parked in `unknown()` that nothing forces you to read. Accepting both spellings
+# cannot change an existing caller's behaviour: an entry beginning with "--" could
+# not match any token before this line existed.
+fn undash(s: string) -> string:
+    if len(s) > 2 and s[0] == 45 and s[1] == 45:      # "--name"
+        return s[2:len(s)]
+    if len(s) == 2 and s[0] == 45:                    # "-f", a short flag
+        return s[1:len(s)]
+    return s
+
+fn undash_all(xs: [string]) -> [string]:
+    out := []string
+    for x in xs:
+        push(out, undash(x))
+    return out
+
 # The one parse loop. `strict` selects which of the two public entry points is
 # calling: false = `parse` (schema-free, every unrecognised `--x` is a flag),
 # true = `parse_spec` (schema-carrying, an unrecognised token is recorded).
-fn parse_into(av: [string], valued: [string], boolean: [string], strict: bool) -> Cli:
+fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict: bool) -> Cli:
+    av := av_in
+    valued := undash_all(valued_in)
+    boolean := undash_all(boolean_in)
     keys := []string
     vals := []string
     flags := []string
@@ -149,7 +172,8 @@ fn parse_spec(av: [string], valued: [string], boolean: [string]) -> Cli:
 
 # The value of option `key`, or `dflt` if it was not supplied. Last one wins if
 # an option is repeated.
-fn get(c: Cli, key: string, dflt: string) -> string:
+fn get(c: Cli, key_in: string, dflt: string) -> string:
+    key := undash(key_in)          # `get(c, "--out", ...)` reads the same as `get(c, "out", ...)`
     out := dflt
     for i := 0; i < len(c.keys); i += 1:
         if c.keys[i] == key:
@@ -173,14 +197,16 @@ fn get(c: Cli, key: string, dflt: string) -> string:
 # `cli.has(c, k) || cli.flag(c, k)` at the call site -- deliberately not a corelib
 # function, because a caller that cannot say which of the two it means usually has
 # a schema question (`parse_spec`) rather than a lookup question.
-fn has(c: Cli, key: string) -> bool:
+fn has(c: Cli, key_in: string) -> bool:
+    key := undash(key_in)          # same both-spellings rule as `get`
     for i := 0; i < len(c.keys); i += 1:
         if c.keys[i] == key:
             return true
     return false
 
 # Was flag `name` present? Long (`--name`) and short (`-n` -> name "n") both count.
-fn flag(c: Cli, name: string) -> bool:
+fn flag(c: Cli, name_in: string) -> bool:
+    name := undash(name_in)        # same both-spellings rule as `get`
     for i := 0; i < len(c.flags); i += 1:
         if c.flags[i] == name:
             return true

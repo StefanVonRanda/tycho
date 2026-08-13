@@ -2,7 +2,7 @@
 # compute the right answer through the checked accessor.
 #
 # Companion to tests/bounds_elision.ty, which locks the shape that DOES elide.
-# This one locks the boundary: for3_elidable_arr (src/tychoc.c:8493-8547) has to
+# This one locks the boundary: for3_elidable_arr (src/tychoc.c:8499-8553) has to
 # fail closed on every spelling below, because eliding any of them would emit a
 # raw `.data[i]` for an index it has not proved in range. The golden only proves
 # the answers are right (they are right either way); the emitted C is the real
