@@ -21,7 +21,9 @@ is why:
   essays on the reasoning behind each subsystem (`memory-model`, `generics`,
   `concurrency`, `ffi`, `packages`, `arrays-structs`, `map-values`, `map-mutation`,
   `perf`, `corelib`, `debugging`). And **[thesis.md](thesis.md)** — the argument the whole
-  language exists to test — is the best place to start.
+  language exists to test — is the best place to start;
+  **[guides/debugging.md](guides/debugging.md)** is the one to read when a program
+  misbehaves (gdb/lldb over the generated C, `--emit-c -o`, the sanitizer builds).
 - **[`spec/`](spec/)** — the formal specification: grammar, per-construct semantics, and
   a conformance suite. For implementers and edge-case reasoning.
 - **[`architecture.md`](architecture.md)** — how the project is built, what each
@@ -32,11 +34,17 @@ is why:
 - **[`bootstrap.md`](bootstrap.md)** — how Tycho self-hosted: the bootstrap stages,
   which script ran each one, and why the frozen `compiler/tychoc0.ty` is no longer
   built by any gate. History, not a build instruction.
-- **[`internals/`](internals/)** — one design note
-  ([`value-semantics-limits.md`](internals/value-semantics-limits.md)) on where the
-  memory model costs. The plan archives that used to live here were pruned
-  2026-08-03 and remain in git under the `docs-archive` tag. **[`rfc/`](rfc/)** —
-  resolved proposals. Not user documentation; kept for contributors and provenance.
+- **[`internals/`](internals/)** — three design notes:
+  [`value-semantics-limits.md`](internals/value-semantics-limits.md) on where the
+  memory model costs, [`design-aggregate-ref.md`](internals/design-aggregate-ref.md)
+  and [`design-scalar-match.md`](internals/design-scalar-match.md). Also
+  [`FRICTION.md`](internals/FRICTION.md), the running record of what fought back
+  while writing real programs against this language, and nine `plan-*-DONE.md`
+  archives — this line claimed until 2026-08-13 that those were pruned on
+  2026-08-03 and lived on only under the `docs-archive` tag, which `git ls-files`
+  disagrees with. **[`rfc/`](rfc/)** — resolved proposals, currently
+  [`value-lifetime-regions.md`](rfc/value-lifetime-regions.md). Not user
+  documentation; kept for contributors and provenance.
 
 ## Contributing
 

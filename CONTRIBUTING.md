@@ -71,7 +71,7 @@ result.
 The one gate to never skip is the cheapest:
 
 ```
-make check-links     # relative links, every path:line citation, every commit hash — ~1s
+make check-links     # relative links, docs/ reachability, every path:line citation, every commit hash — ~1s
 ```
 
 `path:line` refs are load-bearing in this tree and drift on any insertion into a
@@ -105,7 +105,7 @@ reach for first.
 
 | You changed | Run | Notes |
 |---|---|---|
-| Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~1s. Nothing else can tell you more — none of it reaches a compiled artifact |
+| Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~1s. Also fails a NEW document under `docs/` that no index links to. Nothing else can tell you more — none of it reaches a compiled artifact |
 | a fixture under `docs/spec/`, or moved a `tests/` directory | `sh scripts/spec_check.sh` | ~6s. Also checks Appendix A against §3/§4, and that every `tests/…` path in Appendix E resolves |
 | added a `run.sh`, or recorded a new golden | `make goldens-check` | ~0.1s. Asserts every golden a runner names is **tracked by git**. `.gitignore` ignores `*.out` broadly, so a new golden is green on your disk and absent from a fresh clone — `make test` reads the copy that exists and cannot redden for it |
 | `src/tychoc.c`, `runtime/tycho_rt.c`, or any `.ty` fixture | `make test` | ~8 min |

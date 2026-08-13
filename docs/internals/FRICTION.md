@@ -635,8 +635,22 @@ pick-up order is written out in full under "What moved this pass" below.
     `has_value`, or add a `supplied(c, name)` that scans both — and it is numbered here
     because it is the only thing in this file that failed *silently*, which is the class
     this file exists to catch.
-13. **NEW — nothing checks that a document is REACHABLE, only that its links resolve**
-    (*split off item 3 when item 3 was closed, 2026-07-31*). `scripts/check_links.sh`
+13. ~~**NEW — nothing checks that a document is REACHABLE, only that its links
+    resolve**~~ (*split off item 3 when item 3 was closed, 2026-07-31*) — **CLOSED
+    2026-08-13 by `scripts/check_reachable.py`, gate first.** Roots are `README.md`
+    and `docs/README.md`; a FILE link reaches that file, a DIRECTORY link reaches
+    only that directory's index. That distinction is the gate: `docs/README.md`
+    links `guides/`, `internals/` and `rfc/` as bare directories, so counting a
+    listing as reachability makes the check vacuous for the case that motivated it
+    — measured, 0 of 76 unreachable under the permissive rule against 13 under
+    this one. Four were real orphans and are now indexed (`guides/debugging.md`,
+    both `internals/design-*.md`, `rfc/value-lifetime-regions.md`); nine are the
+    `plan-*-DONE.md` archives, EXEMPT with a reason. Proven to redden both ways:
+    unlinking one doc names it ORPHAN, and an exemption that is stale — reachable
+    again, or no longer tracked — is itself a failure, so the list cannot rot into
+    a silencer. Wired into `scripts/check_links.sh`, so `make check-links` and the
+    pre-push hook both carry it. The record of what the item said when open
+    follows. `scripts/check_links.sh`
     reports "139 markdown files, no dead relative links" — a link that points nowhere is
     a hard failure, a document nobody points at is invisible. `docs/bootstrap.md` was
     orphaned for days and was found by a human reading the index, not by a gate. The

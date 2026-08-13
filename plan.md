@@ -18,17 +18,6 @@ cheapest-first order.
 
 ## Phases
 
-- [ ] **Phase 2 — item 13: a gate for document REACHABILITY**
-  - `scripts/check_links.sh` fails a link that points nowhere and says nothing
-    about a document nobody points at; `docs/bootstrap.md` was orphaned for days
-    and a human found it.
-  - Decide what "reachable" means first (from `docs/README.md`? from any tracked
-    Markdown? what about spec appendices), then gate it. Name the roots in the
-    script, not in prose.
-  - Prove it reddens: unlink a document, re-run, expect a named failure.
-  - Verify: `sh scripts/check_links.sh`, and `make check-links` since the
-    pre-push hook runs it.
-
 - [ ] **Phase 3 — item 10: this file's coordinates drift and no gate sees it**
   - `--report` lists un-anchored single-line refs and 100+ line ranges but is
     advisory by design (`CLAUDE.md`, "Citations"). The item's measurement — 11 of

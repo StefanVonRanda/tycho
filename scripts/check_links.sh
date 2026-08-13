@@ -65,9 +65,14 @@ git ls-files '*.md' | while IFS= read -r md; do
     touch "$fail"
 done
 
+# Reachability. A dead link is loud; a document nobody points at is silent, and
+# this script said nothing about the second class until 2026-08-13 (open-list
+# item 13). Run last so its verdict lands under this script's own.
+python3 "$root/scripts/check_reachable.py" || touch "$fail"
+
 if [ -f "$fail" ]; then
     rm -f "$fail"
-    echo "link check: FAILED (dead links or raw control bytes above)"
+    echo "link check: FAILED (dead links, raw control bytes, or unreachable docs above)"
     exit 1
 fi
 echo "link check: ok ($(git ls-files '*.md' | grep -vcE 'examples/[^/]*/content/') markdown files, no dead relative links; $(git ls-files '*.md' | wc -l) free of raw control bytes)"
