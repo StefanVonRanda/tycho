@@ -1,0 +1,2 @@
+leaf a [0,1] 7 kids=0
+branch r [0,9] 42 kids=1

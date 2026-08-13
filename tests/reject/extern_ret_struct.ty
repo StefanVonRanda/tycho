@@ -1,4 +1,4 @@
-# 14-ffi.md:21-22,:38-39 / src/tychoc.c:3777: a struct RETURN is rejected too.
+# 14-ffi.md:21-22,:38-39 / src/tychoc.c:3790: a struct RETURN is rejected too.
 struct P:
     x: int
 

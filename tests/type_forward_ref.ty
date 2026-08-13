@@ -1,0 +1,42 @@
+# Types are order-free within a file, as functions already are. A field may name
+# a type declared further down; the declaration is parsed on demand and the
+# lookup retried. Every declaration form is exercised from ABOVE its definition:
+# an enum, a plain struct, a newtype, and a generic struct instantiated here.
+# The recursive `[Node]` child list pins that a struct is still visible to its
+# own fields, which is what the on-demand parse must not break.
+
+struct Node:
+    kind: Kind
+    label: Name
+    kids: [Node]
+    span: Span
+    slot: Cell(int)
+
+enum Kind:
+    Leaf
+    Branch
+
+type Name = string
+
+struct Span:
+    lo: int
+    hi: int
+
+struct Cell($T):
+    v: T
+
+fn describe(n: Node) -> string:
+    k := ""
+    match n.kind:
+        Leaf:
+            k = "leaf"
+        Branch:
+            k = "branch"
+    where := "[" + str(n.span.lo) + "," + str(n.span.hi) + "]"
+    return k + " " + str(n.label) + " " + where + " " + str(n.slot.v) + " kids=" + str(len(n.kids))
+
+fn main():
+    leaf := Node(Leaf, Name("a"), [], Span(0, 1), Cell(7))
+    root := Node(Branch, Name("r"), [leaf], Span(0, 9), Cell(42))
+    println(describe(leaf))
+    println(describe(root))

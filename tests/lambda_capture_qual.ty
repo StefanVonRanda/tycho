@@ -1,7 +1,7 @@
 # A lambda captures a local it reads only as a METHOD-CALL RECEIVER.
 #
 # `m.get(k)` / `xs.len()` / `p.area()` keep the receiver name in the call's
-# `qual`, not as a child expr (src/tychoc.c:3014) -- the parser cannot tell it
+# `qual`, not as a child expr (src/tychoc.c:3027) -- the parser cannot tell it
 # from a package call, so the resolver only rewrites it into an argument later.
 # collect_idents, which builds a lambda's capture list, walked lhs/rhs/args and
 # the callee `sval` but never `qual`, so the receiver reached the lifted body

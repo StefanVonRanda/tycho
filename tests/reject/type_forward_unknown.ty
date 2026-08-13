@@ -1,0 +1,11 @@
+# The on-demand parse of a later declaration must not swallow a name that is
+# declared NOWHERE in the file. `Q` has no declaration above or below, so the
+# ordinary unknown-type diagnostic still fires.
+# expect: unknown type 'Q'
+
+struct S:
+    q: Q
+    n: int
+
+fn main():
+    println("unreachable")

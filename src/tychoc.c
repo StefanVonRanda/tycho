@@ -697,7 +697,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10638@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10722@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -2298,6 +2298,18 @@ static int enum_instantiate(int tmpl, Type *binds) {
  * as expressions so it fails closed instead of SIGSEGV. */
 static Type parse_type_inner(Parser *ps);
 static Expr *consts_find(const char *name);   /* fwd: a `[W]T` fixed-array size may name an int const */
+/* Order-free types. Functions in a file are already order-free (bodies resolve
+ * in a later pass); types were not, because a field's type is resolved as it is
+ * parsed. A pre-scan of the token stream records where every top-level
+ * `struct`/`enum`/`type`/`handle` starts, and a field naming one that has not
+ * been parsed yet forces that declaration to be parsed first, then retries the
+ * lookup. The main loop skips a declaration already forced this way, so source
+ * order is otherwise unchanged. A cycle through a by-value field still fails
+ * closed on the containment DFS in emit_aggregate. */
+typedef struct { const char *name; int tok, end, state; } PendDecl;   /* state: 0 unparsed, 1 parsing, 2 done */
+static PendDecl *g_tdecl; static int g_ntdecl = 0, g_tdecl_cap = 0;
+static Tok *g_tdecl_toks = NULL;
+static void force_type_decl(const char *raw);   /* fwd: defined with the declaration parsers */
 /* could this token begin a type? (used to disambiguate `[W]int` size-form from a dynamic `[Foo]`) */
 static int tok_starts_type(TokKind k) {
     return k == TK_IDENT || k == TK_LBRACKET || k == TK_DOLLAR || k == TK_LPAREN ||
@@ -2511,6 +2523,7 @@ static Type parse_type_inner(Parser *ps) {
             ps->p += 2;                  /* skip qualifier + dot; the type-name ident is consumed on a hit below */
         } else {
             nm = pkg_mangle(t->text);    /* package-local: try the current package's prefixed name */
+            force_type_decl(t->text);    /* order-free: a name declared further down this file is parsed now */
         }
         int sid = struct_find(nm);
         if (sid >= 0) {
@@ -3895,7 +3908,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10415), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10499), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -4645,7 +4658,8 @@ static void parse_struct(Parser *ps) {
     eat(ps, TK_NEWLINE, "newline");
     eat(ps, TK_INDENT, "an indented field list");
 
-    StructDef *sd = &g_structs[g_nstructs];
+    int my_sid = g_nstructs;   /* the table is reachable from parse_type below, so re-derive `sd` after every call into it */
+    StructDef *sd = &g_structs[my_sid];
     sd->name = pkg_mangle(nameT->text);
     sd->fields = NULL; sd->nfields = 0; sd->fields_cap = 0;
     sd->line = nameT->line;
@@ -4664,6 +4678,7 @@ static void parse_struct(Parser *ps) {
                 die_at(fn->line, "duplicate field '%s'", fn->text);
         eat(ps, TK_COLON, "':' after field name");
         Type ft = parse_type(ps);   /* int, string, a struct, [Struct]/[[T]], Option(T), ... */
+        sd = &g_structs[my_sid];    /* parse_type may register a generic instance or a forced declaration and realloc g_structs */
         TBL_ENSURE(sd->fields, sd->nfields, sd->fields_cap);
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
@@ -4671,7 +4686,7 @@ static void parse_struct(Parser *ps) {
         eat(ps, TK_NEWLINE, "newline");
     }
     eat(ps, TK_DEDENT, "dedent");
-    if (sd->nfields == 0) die_at(nameT->line, "a struct needs at least one field");
+    if (g_structs[my_sid].nfields == 0) die_at(nameT->line, "a struct needs at least one field");
     g_ncur_typarams = 0;                         /* generics: leave the struct's `$T` scope */
 }
 
@@ -4700,7 +4715,8 @@ static void parse_enum(Parser *ps) {
     eat(ps, TK_COLON, "':' before the variants");
     eat(ps, TK_NEWLINE, "newline");
     eat(ps, TK_INDENT, "an indented variant list");
-    EnumDef *ed = &g_enums[g_nenums];
+    int my_eid = g_nenums;   /* same re-derivation rule as the struct site: a payload's parse_type may realloc g_enums */
+    EnumDef *ed = &g_enums[my_eid];
     ed->name = pkg_mangle(nameT->text);
     ed->variants = NULL; ed->nvariants = 0; ed->variants_cap = 0;
     ed->line = nameT->line;
@@ -4711,6 +4727,7 @@ static void parse_enum(Parser *ps) {
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
         Tok *vn = eat(ps, TK_IDENT, "a variant name");
+        ed = &g_enums[my_eid];
         TBL_ENSURE(ed->variants, ed->nvariants, ed->variants_cap);
         char *vmn = pkg_mangle(vn->text);   /* variant names are package-scoped (mangled with the enum's package) */
         int dup;
@@ -4723,16 +4740,18 @@ static void parse_enum(Parser *ps) {
         if (accept(ps, TK_LPAREN)) {     /* a payload tuple, e.g. Add(Expr, Expr) */
             while (!at(ps, TK_RPAREN)) {
                 if (var->npayload >= 8) die_at(vn->line, "too many payload fields (max 8)");
-                var->payload[var->npayload++] = parse_type(ps);
+                Type pt = parse_type(ps);
+                var = &g_enums[my_eid].variants[g_enums[my_eid].nvariants];   /* re-derive: parse_type may have realloc'd g_enums */
+                var->payload[var->npayload++] = pt;
                 if (!accept(ps, TK_COMMA)) break;
             }
             eat(ps, TK_RPAREN, "')'");
         }
-        ed->nvariants++;
+        g_enums[my_eid].nvariants++;
         eat(ps, TK_NEWLINE, "newline");
     }
     eat(ps, TK_DEDENT, "dedent");
-    if (ed->nvariants == 0) die_at(nameT->line, "an enum needs at least one variant");
+    if (g_enums[my_eid].nvariants == 0) die_at(nameT->line, "an enum needs at least one variant");
     g_ncur_typarams = 0;                         /* generics: leave the enum's `$T` scope */
 }
 
@@ -4746,9 +4765,9 @@ static void parse_typedecl(Parser *ps) {
         || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0 || is_builtin_ctor(nameT->text))
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nnewtypes >= T_SOA_BASE - T_NT_BASE) die_at(nameT->line, "too many newtypes");
-    TBL_ENSURE(g_newtypes, g_nnewtypes, g_newtypes_cap);
     eat(ps, TK_EQ, "'=' in a type declaration");
     Type under = parse_type(ps);
+    TBL_ENSURE(g_newtypes, g_nnewtypes, g_newtypes_cap);   /* after parse_type: it may have forced a newtype declaration of its own */
     if (under != T_INT && under != T_FLOAT && under != T_STRING && under != T_BOOL
         && !is_array(under) && !is_map(under) && !IS_STRUCT(under))
         die_at(nameT->line, "a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got %s)", type_name(under));
@@ -4756,6 +4775,71 @@ static void parse_typedecl(Parser *ps) {
     g_newtypes[g_nnewtypes].name = pkg_mangle(nameT->text);
     g_newtypes[g_nnewtypes].under = under;
     g_nnewtypes++;
+}
+
+/* Order-free types, part two (the table is declared beside parse_type).
+ * The pre-scan runs before the file's `package` line is parsed, so the RAW name
+ * is recorded and matched against the raw name at the use site -- a qualified
+ * `pkg.Type` never reaches here, and every declaration in a file belongs to that
+ * file's own package. */
+static void scan_type_decls(Tok *toks) {
+    g_ntdecl = 0; g_tdecl_toks = toks;
+    int depth = 0;
+    for (int i = 0; toks[i].kind != TK_EOF; i++) {
+        if (toks[i].kind == TK_INDENT) { depth++; continue; }
+        if (toks[i].kind == TK_DEDENT) { depth--; continue; }
+        int k = toks[i].kind;
+        if (depth != 0 || toks[i + 1].kind != TK_IDENT) continue;
+        if (k != TK_STRUCT && k != TK_ENUM && k != TK_TYPE && k != TK_HANDLE) continue;
+        TBL_ENSURE(g_tdecl, g_ntdecl, g_tdecl_cap);
+        g_tdecl[g_ntdecl].name = toks[i + 1].text;
+        g_tdecl[g_ntdecl].tok = i; g_tdecl[g_ntdecl].end = -1; g_tdecl[g_ntdecl].state = 0;
+        g_ntdecl++;
+    }
+}
+/* Parse pending declaration `i` from its own sub-parser. The `$T` scope is saved
+ * and restored because the caller may be mid-declaration in a generic of its own. */
+static void parse_pend_decl(int i) {
+    Parser sub = { g_tdecl_toks, g_tdecl[i].tok, 0 };
+    char *save[TYCHO_MAX_TYPARAMS]; int nsave = g_ncur_typarams;
+    for (int k = 0; k < nsave; k++) save[k] = g_cur_typarams[k];
+    g_tdecl[i].state = 1;
+    switch (sub.t[sub.p].kind) {
+        case TK_STRUCT: parse_struct(&sub);   break;
+        case TK_ENUM:   parse_enum(&sub);     break;
+        case TK_HANDLE: parse_handle(&sub);   break;
+        default:        parse_typedecl(&sub); break;
+    }
+    g_tdecl[i].state = 2; g_tdecl[i].end = sub.p;
+    g_ncur_typarams = nsave;
+    for (int k = 0; k < nsave; k++) g_cur_typarams[k] = save[k];
+}
+/* A type name that is not registered yet but IS declared later in this file:
+ * parse that declaration now. State 1 (already being parsed) is left alone --
+ * a struct/enum registers its name before its body, so a self-reference through
+ * `[T]` still resolves, and a `type X = Y` / `type Y = X` knot falls through to
+ * the ordinary unknown-type diagnostic instead of recursing forever. */
+static void force_type_decl(const char *raw) {
+    for (int i = 0; i < g_ntdecl; i++)
+        if (g_tdecl[i].state == 0 && !strcmp(g_tdecl[i].name, raw)) { parse_pend_decl(i); return; }
+}
+/* Top-level dispatch for a declaration the main loop has reached: parse it, or
+ * step over it if a forward reference already forced it. */
+static void parse_type_decl_at(Parser *ps) {
+    for (int i = 0; i < g_ntdecl; i++) {
+        if (g_tdecl[i].tok != ps->p) continue;
+        if (g_tdecl[i].state == 0) parse_pend_decl(i);
+        ps->p = g_tdecl[i].end;
+        return;
+    }
+    /* Not in the pre-scan, which requires a name token: parse in place so the
+     * malformed declaration gets its own "a struct name" diagnostic. */
+    switch (cur(ps)->kind) {
+        case TK_STRUCT: parse_struct(ps);   break;
+        case TK_ENUM:   parse_enum(ps);     break;
+        case TK_HANDLE: parse_handle(ps);   break;
+        default:        parse_typedecl(ps); break;
+    }
 }
 
 /* ------------------------------------------------ package/import headers
@@ -5014,6 +5098,7 @@ static ProcVec parse_program(Tok *toks) {
     Parser ps = { toks, 0, 0 };
     ProcVec out = {0};
     g_parsed_package = NULL;                     /* reset per file; set if a `package` decl is seen */
+    scan_type_decls(toks);                       /* order-free types: where each top-level type declaration starts */
     while (!at(&ps, TK_EOF)) {
         if (accept(&ps, TK_NEWLINE)) continue;
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "package")) { parse_package_decl(&ps); continue; }
@@ -5026,10 +5111,9 @@ static ProcVec parse_program(Tok *toks) {
         }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "const")) { parse_const(&ps); continue; }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "subscript")) { parse_subscript(&ps); continue; }
-        if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
-        if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
-        if (at(&ps, TK_HANDLE)) { parse_handle(&ps); continue; }
-        if (at(&ps, TK_TYPE))   { parse_typedecl(&ps); continue; }
+        if (at(&ps, TK_STRUCT) || at(&ps, TK_ENUM) || at(&ps, TK_HANDLE) || at(&ps, TK_TYPE)) {
+            parse_type_decl_at(&ps); continue;   /* may already have been forced by an earlier field */
+        }
         Proc *pr = parse_fn(&ps);
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)xrealloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
@@ -5475,7 +5559,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3014), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3027), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6721,7 +6805,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5500 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5584 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7275,7 +7359,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7565). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7649). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7298,10 +7382,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6908),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6992),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7196). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7280). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7322,7 +7406,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3007). The generic descent below
+     * tell it from a package call (src/tychoc.c:3020). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8855,7 +8939,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7234: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7318: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -9023,7 +9107,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11314), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11398), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9053,12 +9137,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13286) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13370) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11401) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11485) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -9075,7 +9159,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3775-3780) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3788-3793) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
