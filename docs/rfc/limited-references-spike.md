@@ -25,9 +25,9 @@ Three distinct mechanisms, not one. They are easy to conflate.
    but rather a parameter passing mode … because they can't be stored in structs or returned
    from functions, lifetime analysis is not needed. Borrow checking is just a disjointness
    check at function call sites." **Tycho already has this**: `let` = immutable-borrow params
-   (`src/tychoc.c:9011@read-only borrows`, mutation refused at
-   `src/tychoc.c:6699@borrowed read-only`), `inout` = exclusive mutable borrow
-   (`src/tychoc.c:4291@TK_INOUT`),
+   (`src/tychoc.c:9025@read-only borrows`, mutation refused at
+   `src/tychoc.c:6713@borrowed read-only`), `inout` = exclusive mutable borrow
+   (`src/tychoc.c:4305@TK_INOUT`),
    `sink` = consuming (shipped). `set` ≈ the FFI out-param.
 
 2. **Projections via subscripts.** A subscript does not *return* a value; it `yield`s a

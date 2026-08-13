@@ -5,7 +5,7 @@ within function bodies. The grammar of each form is in
 [§4.3.1](02-grammar.md#431-simple-statements); this chapter gives their meaning.
 
 > Provenance: `parse_stmt` `src/tychoc.c:3330-3825`; const folding
-> `:4569-4614`,`:4623-4640`; package mangling `pkg_mangle` `:1767-1769`.
+> `:4583-4628`,`:4637-4654`; package mangling `pkg_mangle` `:1767-1769`.
 
 ## 12.1 Binding forms
 

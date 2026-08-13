@@ -1,0 +1,19 @@
+# A foreach head binds ONE name. `for k, q in xs:` used to fall through to the
+# condition form, which parsed `k` as the condition and died "expected ':'
+# before the block" with the caret on the comma -- a message that names neither
+# the rule nor the fix (FRICTION.md #12, where the author met this refusal and
+# then a second one, `p[0]`, before finding the body-destructure form).
+#
+# The diagnostic now spells the working form out, substituting the names that
+# were written: "a `for` binds one name -- write `for p in COLL:` then
+# `k, q := p` in the body". Refused in the parser (src/tychoc.c@TK_COMMA scan in
+# the TK_FOR handler), so this file must not compile.
+#
+# The second binder is NOT reserved for an index here, which is what both
+# neighbour languages spend it on -- measured 2026-08-13: Go's `for a, b := range
+# xs` binds a=index, and Odin's `for v, i in xs` binds i=index (int), so neither
+# destructures the element either.
+fn main():
+    xs := [("a", 1), ("b", 2)]
+    for k, q in xs:
+        println(k + str(q))

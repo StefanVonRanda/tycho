@@ -32,8 +32,6 @@ remaining seven, then corrects or fixes each.
 
 ## Phases
 
-- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`docs/internals/FRICTION.md:2872`)
-  - Probe both halves: destructuring in a `for` binding, and whether a tuple is
-    indexable. Go and Odin both destructure in range/multi-return position, so
-    check that default before recording this as deliberate.
-  - Verify: `make test`.
+None open. Every entry this plan set out to re-probe has been closed in
+`docs/internals/FRICTION.md`; the evidence is in the commits that closed each
+one. This file is finished and should be deleted rather than archived.

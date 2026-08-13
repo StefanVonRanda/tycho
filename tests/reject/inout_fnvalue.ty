@@ -1,6 +1,6 @@
 # 07-memory-model.md §11.5: an `inout` parameter MUST NOT be a function value --
 # a callee could write a closure back into the caller and it would dangle.
-# tychoc: src/tychoc.c:7309-7317 (via check_inout_param_type). Both compilers reject (differential).
+# tychoc: src/tychoc.c:7323-7331 (via check_inout_param_type). Both compilers reject (differential).
 fn g(x: int) -> int:
     return x + 1
 
