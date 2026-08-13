@@ -115,7 +115,15 @@ not enforced" is a statement about the ABI, not about a library whose answer is 
 yes/no about untrusted bytes: such a caller must cross as `bytes`, or refuse the
 input by name. `core:regex` does the first — the subject crosses as
 `(pointer, length)` and `REG_STARTEND` bounds the match by it
-(`corelib/regex/regex_shim.c@rx_exec`).
+(`corelib/regex/regex_shim.c@rx_exec`). `core:io`, `core:net` and `core:os` do the
+second, since a path, a host and a command line have no length-bearing syscall to
+cross by: each checks the argument before anything is attempted
+(`corelib/io/io.ty@has_nul`) and refuses — `Err(BadPath)` / `Err(BadAddr)` where
+there is an error channel, and each call's documented "this did not happen"
+sentinel where there is not. Until 2026-08-13 all three acted on the PREFIX:
+`io.exists("h" + chr(0) + "i")` was `true`, `io.read` of it returned the contents
+of `h`, and `io.write` of it created `h` — a caller that validated one path
+reached another. `core:path` needs no guard: it is lexical and reaches no `char*`.
 
 The sized-integer conversions truncate or extend by the C cast (probed on both
 compilers). `to_uN` / `to_iN` narrows a value to the type's low `N` bits; widening

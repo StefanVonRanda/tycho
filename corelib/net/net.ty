@@ -87,6 +87,20 @@ enum NetErr:
     Eof                # the peer closed the connection cleanly (recv == 0)
     Timeout            # the SO_RCVTIMEO deadline expired with no data
     Failed             # the syscall failed (bad fd, refused, reset, ...)
+    BadAddr            # `host` holds an interior NUL -- see has_nul. NOT Failed:
+                       # no syscall was made, so retrying cannot help.
+
+# True if `host` holds an interior NUL byte. It crosses to getaddrinfo as a
+# `char*`, which ENDS AT THE FIRST NUL, so an unguarded call resolves the PREFIX:
+# probed 2026-08-13, net.listen("127.0.0.1" + chr(0) + "bogus.invalid", 0) BOUND
+# 127.0.0.1 and connect reached it. A caller that validated the whole string thus
+# reaches a different host. Same rule and same byte loop as core:io's has_nul --
+# docs/spec/14-ffi.md leaves this to the consuming package.
+fn has_nul(host: string) -> bool:
+    for i := 0; i < len(host); i += 1:
+        if host[i] == 0:
+            return true
+    return false
 
 # ---- shim externs (libc sockets; defined in net_shim.c) ----
 # The `netx_` prefix keeps these off the real libc socket symbols (listen/connect
@@ -114,6 +128,8 @@ const RD_TMO  = 2
 
 # ---- TCP ----
 fn listen(host: string, port: int) -> Result(int, NetErr):
+    if has_nul(host):
+        return Err(BadAddr)
     fd := netx_listen(host, port)
     if fd < 0:
         return Err(Failed)
@@ -126,6 +142,8 @@ fn accept(fd: int) -> Result(int, NetErr):
     return Ok(c)
 
 fn connect(host: string, port: int) -> Result(int, NetErr):
+    if has_nul(host):
+        return Err(BadAddr)
     fd := netx_connect(host, port)
     if fd < 0:
         return Err(Failed)
@@ -179,11 +197,18 @@ fn close_fd(fd: int):
     netx_close(fd)
 
 # ---- UDP ----
-# Sentinel-based; see the note in the header block for why.
+# Sentinel-based; see the note in the header block for why. A NUL-bearing host is
+# -1 here rather than Err(BadAddr) -- these two have no error channel to name it
+# in, and -1 is already their whole "this did not happen". Refusing still beats
+# resolving the prefix, which is what the pair did before 2026-08-13.
 fn udp_bind(host: string, port: int) -> int:
+    if has_nul(host):
+        return -1
     return netx_udp_bind(host, port)
 
 fn udp_send(fd: int, host: string, port: int, data: bytes) -> int:
+    if has_nul(host):
+        return -1
     return netx_udp_send(fd, host, port, data)
 
 fn udp_read(fd: int, max: int) -> bytes:

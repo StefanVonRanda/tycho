@@ -14,3 +14,7 @@ e_argc=[1]
 e_empty=-1
 e_nosuch=-1
 e_nosuch_out=[] code=-1
+nul_system=-1
+nul_run=[] code=-1
+nul_exec=-1
+nul_exec_out=[] code=-1

@@ -45,3 +45,13 @@ after_sync=[durable] size=Ok
 sync_missing=NotFound
 chain=Ok back=[abc!] chain_miss=NotFound
 sync_cleanup=did|did
+nul_seed=true nul_exists=false nul_read=[] nul_lines=0 nul_list=0
+nul_open_null=true nul_fold=0
+nul_write=false nul_append=false nul_wlines=false
+nul_bytes=BadPath nul_text=BadPath nul_at=BadPath
+nul_isdir=BadPath nul_mtime=BadPath nul_size=BadPath
+nul_wbytes=BadPath nul_wat=BadPath
+nul_setm=BadPath nul_sync=BadPath
+nul_mkdir=BadPath nul_remove=BadPath
+nul_target_intact=[HELLO] nul_target_is_file=file
+nul_cleanup=did

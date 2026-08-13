@@ -46,6 +46,27 @@ struct Output:
     code: int
     out: string
 
+# INTERIOR NUL. A command line and every argv entry cross as a `char*`, which ENDS
+# AT THE FIRST NUL, so all four calls below used to run a DIFFERENT, SHORTER
+# command than the one they were handed: probed 2026-08-13,
+# os.system("printf ok" + chr(0) + "; printf BAD") ran `printf ok` and reported
+# exit 0, so the caller was told its whole command succeeded. All four now refuse,
+# reusing the -1 / Output(-1, "") that already means "this did not run" -- the same
+# fail-closed answer an empty or oversized argv gets, for the same reason: a
+# TRUNCATED command is not a smaller one, it is a different one. The rule is
+# docs/spec/14-ffi.md's, and the sibling guards are core:io's and core:net's.
+fn has_nul(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 0:
+            return true
+    return false
+
+fn argv_has_nul(argv: [string]) -> bool:
+    for i := 0; i < len(argv); i += 1:
+        if has_nul(argv[i]):
+            return true
+    return false
+
 # ---- shim externs (libc; defined in os_shim.c) ----
 extern fn osx_system(cmd: string) -> int
 extern fn osx_run(cmd: string) -> ptr          # opaque result handle; null only on popen() failure
@@ -57,10 +78,14 @@ extern fn osx_exec_out(argv: [string]) -> ptr  # same OsRun handle shape osx_run
 
 # Run cmd, inheriting stdout/stderr; return its exit code.
 fn system(cmd: string) -> int:
+    if has_nul(cmd):
+        return -1
     return osx_system(cmd)
 
 # Run cmd, capturing stdout; return Output{code, out}.
 fn run(cmd: string) -> Output:
+    if has_nul(cmd):
+        return Output(-1, "")
     r := osx_run(cmd)
     if is_null(r):
         return Output(-1, "")
@@ -73,10 +98,14 @@ fn run(cmd: string) -> Output:
 # copied or freed on either side; the shim appends the NULL execv wants to a
 # vector it owns, and refuses (-1) an empty or oversized argv.
 fn exec(argv: [string]) -> int:
+    if argv_has_nul(argv):
+        return -1
     return osx_exec(argv)
 
 # Run argv with no shell, capturing stdout; return Output{code, out}.
 fn exec_out(argv: [string]) -> Output:
+    if argv_has_nul(argv):
+        return Output(-1, "")
     r := osx_exec_out(argv)
     if is_null(r):
         return Output(-1, "")

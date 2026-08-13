@@ -57,6 +57,7 @@ fn why(r: Result(bytes, io.IoErr)) -> string:
         Ok(bs): return "Ok"
         Err(io.NotFound): return "NotFound"
         Err(io.IsDir): return "IsDir"
+        Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
 # The same collapse for is_dir's Result(bool, IoErr). Note there is no IsDir arm:
@@ -68,6 +69,7 @@ fn dwhy(r: Result(bool, io.IoErr)) -> string:
                 return "dir"
             return "file"
         Err(io.NotFound): return "NotFound"
+        Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
 # make_dir / remove: the same Result(bool, IoErr), but Ok's boolean means "did the
@@ -82,6 +84,7 @@ fn fswhy(r: Result(bool, io.IoErr)) -> string:
             return "already"
         Err(io.NotFound): return "NotFound"
         Err(io.Exists): return "Exists"
+        Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
 # mtime's Result(int, IoErr). No IsDir arm is REACHED -- a directory is Ok here,
@@ -92,6 +95,7 @@ fn mwhy(r: Result(int, io.IoErr)) -> string:
         Ok(secs): return "Ok"
         Err(io.NotFound): return "NotFound"
         Err(io.IsDir): return "IsDir"
+        Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
 # The same collapse for read_text's Result(string, ...). A second copy because a
@@ -102,6 +106,7 @@ fn twhy(r: Result(string, io.IoErr)) -> string:
         Ok(s): return "Ok"
         Err(io.NotFound): return "NotFound"
         Err(io.IsDir): return "IsDir"
+        Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
 # The four Result(void, IoErr) writers -- write_bytes, write_at, set_mtime, sync.
@@ -118,6 +123,7 @@ fn vwhy(r: Result(void, io.IoErr)) -> string:
         Err(io.NotFound): return "NotFound"
         Err(io.IsDir): return "IsDir"
         Err(io.Unsupported): return "Unsupported"
+        Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
 # THE POINT OF Result(void, IoErr), as a compiled assertion rather than a claim:
@@ -540,3 +546,31 @@ fn main():
     rmsf := io.remove(sf)
     rmsd := io.remove(sd)
     println(f"sync_cleanup={fswhy(rmsf)}|{fswhy(rmsd)}")
+    nul_checks()
+
+# ---- interior NUL, all 21 path-taking entry points --------------------------
+# A path leaves core:io as a `char*`, which ends at the first NUL, so an unguarded
+# call acts on the PREFIX. THE POSITIVE CONTROL IS THE WHOLE POINT of the block
+# below: `nt` really exists and really holds five bytes, and `nb` truncates to
+# exactly `nt` -- so with corelib/io/io.ty@has_nul removed every line here
+# SUCCEEDS instead of refusing (measured 2026-08-13: exists true, read "HELLO",
+# and the writers created/rewrote the target). The twelve entry points with an
+# error channel must name BadPath; the nine sentinels must give their documented
+# "this did not happen" value and touch nothing.
+fn nul_checks():
+    nt := "/tmp/tycho_corelib_io_nul_target"
+    seeded := io.write(nt, "HELLO")
+    nb := nt + chr(0) + "x"
+    println(f"nul_seed={seeded} nul_exists={io.exists(nb)} nul_read=[{io.read(nb)}] nul_lines={len(io.read_lines(nb))} nul_list={len(io.list(nb))}")
+    println(f"nul_open_null={is_null(io.open_lines(nb))} nul_fold={io.fold_lines(nb, 0, addlen)}")
+    println(f"nul_write={io.write(nb, "z")} nul_append={io.append(nb, "z")} nul_wlines={io.write_lines(nb, ["z"])}")
+    println(f"nul_bytes={why(io.read_bytes(nb))} nul_text={twhy(io.read_text(nb))} nul_at={why(io.read_at(nb, 0, 1))}")
+    println(f"nul_isdir={dwhy(io.is_dir(nb))} nul_mtime={mwhy(io.mtime(nb))} nul_size={mwhy(io.size(nb))}")
+    println(f"nul_wbytes={vwhy(io.write_bytes(nb, to_bytes("z")))} nul_wat={vwhy(io.write_at(nb, 0, to_bytes("z")))}")
+    println(f"nul_setm={vwhy(io.set_mtime(nb, 1))} nul_sync={vwhy(io.sync(nb))}")
+    println(f"nul_mkdir={fswhy(io.make_dir(nb))} nul_remove={fswhy(io.remove(nb))}")
+    # The destructive half, asserted on the FILESYSTEM rather than on a status:
+    # after eight write-shaped calls at `nb`, `nt` must still be a file holding the
+    # same five bytes. Without the guard write/write_bytes rewrote it.
+    println(f"nul_target_intact=[{io.read(nt)}] nul_target_is_file={dwhy(io.is_dir(nt))}")
+    println(f"nul_cleanup={fswhy(io.remove(nt))}")

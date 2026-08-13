@@ -12,3 +12,7 @@ tmo=Timeout
 udp_ok=true
 udp_sent=9
 udp=[hello-udp] len=9
+nul_listen=BadAddr
+nul_connect=BadAddr
+nul_udp_bind=-1
+nul_udp_send=-1

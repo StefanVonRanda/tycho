@@ -177,7 +177,7 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   **Fixed 2026-07-26** (`7b76fcd`): `netx_peer_addr` is `getpeername` + `inet_ntop`
   (`corelib/net/net_shim.c@netx_peer_addr`), surfaced as
   `fn peer_addr(fd: int) -> Result(string, NetErr)`
-  (`corelib/net/net.ty:144@peer_addr`) and used at
+  (`corelib/net/net.ty@peer_addr`) and used at
   `server/main.ty@peer_addr` — asked **once per connection**, not once per
   request, because the peer of an accepted fd cannot change. It is `-` when the
   fd could not be asked, which is honest rather than blank. `make server-check`

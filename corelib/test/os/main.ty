@@ -83,3 +83,16 @@ fn main():
     println("e_nosuch=" + str(os.exec(["/nonexistent/prog"])))
     en := os.exec_out(["/nonexistent/prog"])
     println("e_nosuch_out=[" + en.out + "] code=" + str(en.code))
+
+    # A NUL-bearing command line runs its PREFIX -- probed 2026-08-13,
+    # os.system("printf ok" + chr(0) + "; printf BAD") printed `ok` and returned 0,
+    # so the caller was told a command it never ran had succeeded. All four refuse
+    # with the -1 an empty argv already gets. `printf` is a live positive control:
+    # strip corelib/os/os.ty@has_nul and these print `ok` and return 0 again.
+    nc := "printf NULBAD" + chr(0) + "; printf TAIL"
+    println("nul_system=" + str(os.system(nc)))
+    nr := os.run(nc)
+    println("nul_run=[" + nr.out + "] code=" + str(nr.code))
+    println("nul_exec=" + str(os.exec(["printf", "NULBAD" + chr(0) + "TAIL"])))
+    nx := os.exec_out(["printf", "NULBAD" + chr(0) + "TAIL"])
+    println("nul_exec_out=[" + nx.out + "] code=" + str(nx.code))

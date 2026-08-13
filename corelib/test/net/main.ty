@@ -37,6 +37,16 @@ fn why(e: net.NetErr) -> string:
 fn data_of(r: Result(bytes, net.NetErr)) -> bytes:
     return result.unwrap_or(r, to_bytes(""))
 
+# Which NetErr, by name -- BadAddr must not collapse into Failed, since telling
+# "refused before the syscall" from "the syscall failed" is the point of the variant.
+fn nerr(r: Result(int, net.NetErr)) -> string:
+    match r:
+        Ok(v): return "Ok"
+        Err(net.BadAddr): return "BadAddr"
+        Err(net.Timeout): return "Timeout"
+        Err(net.Eof): return "Eof"
+        _: return "Failed"
+
 fn main():
     # -- TCP: client <-> server round trip over loopback --
     srv := fd_of(net.listen("127.0.0.1", 0))   # ephemeral port
@@ -90,5 +100,15 @@ fn main():
     println("udp_sent=" + str(usent))
     dg := net.udp_read(u, 64)
     println("udp=[" + to_str(dg) + "] len=" + str(len(dg)))
+
+    # A NUL-bearing host resolves as its PREFIX -- probed 2026-08-13,
+    # net.listen("127.0.0.1" + chr(0) + "bogus.invalid", 0) BOUND 127.0.0.1 and
+    # connect reached it. "127.0.0.1" here is a live positive control: strip
+    # corelib/net/net.ty@has_nul and all four lines succeed again.
+    nh := "127.0.0.1" + chr(0) + "bogus.invalid"
+    println("nul_listen=" + nerr(net.listen(nh, 0)))
+    println("nul_connect=" + nerr(net.connect(nh, uport)))
+    println("nul_udp_bind=" + str(net.udp_bind(nh, 0)))
+    println("nul_udp_send=" + str(net.udp_send(u, nh, uport, to_bytes("x"))))
 
     net.close_fd(u)

@@ -48,18 +48,3 @@ remaining seven, then corrects or fixes each.
     indexable. Go and Odin both destructure in range/multi-return position, so
     check that default before recording this as deliberate.
   - Verify: `make test`.
-
-- [ ] **Phase 8 — `core:io` acts on the prefix of a path holding an interior NUL**
-  - Found 2026-08-13 while probing `:2487`, outside that phase's scope.
-    `io.exists("h" + chr(0) + "i")` is `true` and `io.read` of it returns the
-    contents of `h`. Go refuses this (`os.Open` → EINVAL, measured); Odin opens
-    the wrong file, and `core:io` is currently on Odin's side.
-  - This is the `core:regex` class, recorded at `:2531`: a package built on the
-    `char*` boundary does not inherit "documented, not enforced".
-  - Scope: enumerate every path-taking entry point in `core:io` first, and ask
-    the same of `core:os`, `core:net` and `core:path` before fixing — one guard
-    in the shared hop beats one per caller.
-  - Done when a NUL-bearing path is refused by name, with a fixture proved able
-    to fail without the guard.
-  - Verify: `make corelib`; `sh scripts/entrypoints.sh` if a signature changes.
-    NOT `make test` — no file under `corelib/` is in its corpus.

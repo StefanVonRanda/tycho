@@ -34,6 +34,7 @@ fn io_str(e: io.IoErr) -> string:
         io.Exists: return "already exists"
         io.Failed: return "could not be read"
         io.Unsupported: return "unsupported"
+        io.BadPath: return "path holds an interior NUL"
 
 fn report(g: graph.Graph, ord: [string]):
     println("=== graph: " + str(graph.node_count(g)) + " nodes, " +
