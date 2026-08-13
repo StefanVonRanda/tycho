@@ -10,12 +10,12 @@
 #
 #   tycho-snap --manifest snap.toml [--out x.zip] [--quiet]
 #
-# gap: NO RUNTIME LANE. `sh scripts/entrypoints.sh` compiles this file and
-# nothing runs it in CI, so a regression in the walk, the archive or the
-# verification would be invisible to `make ci`. Its self-check (every CRC read
-# back and compared to the bytes that went in) makes a lane cheap to add against
-# `demo.toml`; it is not added here because the audit's deliverable was the
-# findings in FRICTION.md, not a 28th tool lane.
+# THE GATE IS `make snap-check` (tools/tycho-snap/run.sh). It reads the archive
+# with python3's `zipfile` -- an implementation this repo did not write -- because
+# every number printed below is our own CRC over our own bytes and proves nothing
+# about interoperability. It also pins the entry set AND its sorted order against
+# literals, which is what catches a walk that stopped sorting; the two-run
+# byte-identity check cannot, since a broken build agrees with itself.
 #
 # The manifest:
 #
@@ -177,8 +177,13 @@ fn main():
                 continue
         push(entries, zip.Entry(f, body))
         e := ext_of(f)
-        h := intern.intern(&ei, e, 1)
-        if to_int(h) == intern.count(ei) - 1:      # Handle is type-distinct from int, by design
+        # "is this key NEW?" is a count that GREW, not a handle that equals
+        # count-1: the latter is also true every time the most recently minted
+        # key is seen again, which double-counted the last extension until the
+        # lane's [2] leg caught it (tools/tycho-snap/run.sh).
+        n0 := intern.count(ei)
+        intern.intern(&ei, e, 1)      # a bare call drops the value; `_` is not a discard here
+        if intern.count(ei) > n0:
             push(kinds, e)
 
     arch := zip.create(entries)

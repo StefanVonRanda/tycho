@@ -1,0 +1,4 @@
+[info] manifest TMP/m.toml -> fixture (root TMP/tree)
+[info] walked 4 file(s)
+[info] wrote TMP/OUT.zip (423 bytes, 4 entries, 2 kinds)
+snap: fixture files=4 kinds=2 bytes=423 verified=4

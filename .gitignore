@@ -227,6 +227,9 @@ dist/
 # the tycho-sim entity simulation's transcript golden
 # (tools/tycho-sim/expected.out), same line, same reason.
 !/tools/tycho-sim/*.out
+# the tycho-snap snapshot tool's transcript golden
+# (tools/tycho-snap/snap.out), same line, same reason.
+!/tools/tycho-snap/*.out
 # the tycho-make dependency graph's transcript golden
 # (tools/tycho-make/expected.out), same line, same reason.
 !/tools/tycho-make/*.out

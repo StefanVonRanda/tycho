@@ -385,6 +385,14 @@ step "[3u/27] make make-check  (tycho-make: demo report byte-identical over 2 ru
 make -s make-check
 fi
 
+# tycho-snap: the newest tool lane, and the only one whose subject is an archive
+# read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
+# proves nothing about interoperability.
+if [ -f tools/tycho-snap/run.sh ]; then
+step "[3v/28] make snap-check  (tycho-snap: transcript AND archive bytes identical over 2 runs, the 4-member entry set and its sorted ORDER exact against literals with sub/ descended, .txt filtered and skipme/ never entered, python3 zipfile testzip() None and a member's sha256 out of the archive equal to the file on disk, an empty selection a 22-byte EOCD read as 0 entries, a missing manifest exit 1 naming the file and an unknown option exit 2 naming it)"
+make -s snap-check
+fi
+
 if [ "$LANE" = rest ]; then
 step "[4/13] make conc  (spawn/parallel-for/channels: native + ASan + TSan vs goldens)"
 make -s conc
