@@ -1871,6 +1871,34 @@ rather than padded.
 > by `corelib/test/json/main.ty`, and the stale `core:json` bullet in
 > `docs/guides/corelib.md` — which still said "integers (no floats)" and never
 > mentioned `parse_checked` — was corrected against the source.
+>
+> **Re-probed again 2026-08-13 — all three sightings, SEPARATELY, and none of
+> them reproduces.** One program per sighting in its own `mktemp -d`, each
+> calling the lenient `parse` the finding used as well as `parse_checked`: `1.5`
+> is `float` and re-emits as `1.5`; `[1.5]` returns `[1.5]` and exits 0 under
+> `ulimit -v 1000000`, so the unbounded loop is gone rather than merely faster;
+> `[{"a":1.5}]` re-emits itself and invents no key. All three were already pinned
+> by `corelib/test/json/main.ty:137-146`, each with the original symptom in a
+> comment beside it, so no test was added — a fourth would have been a copy.
+>
+> **What that probe DID add is the reference-language verdict, which nothing here
+> had.** The same twelve inputs went through Go's `encoding/json` and Odin's
+> `core:encoding/json` (forced to `.JSON`; Odin's default is `JSON5`, which
+> accepts more still). Tycho refuses, naming a byte, in every case where either
+> of them corrupts in silence: Go rounds a 30-digit integer to
+> `1.2345678901234568e+29` and Odin WRAPS it to `-4362896299872285998`; both read
+> `1e-400` as `0`, and Odin reads `1e400` as `Inf`; Go swaps a raw `0xFF` for
+> U+FFFD and Odin ABORTS on it (an assertion inside its own parser); and Odin
+> under `.JSON` still accepts trailing text, a leading zero and a trailing comma,
+> and silently TRUNCATES `"a<TAB>b"` to `"a"`.
+>
+> **Duplicate keys is the one axis that matches neither reference, and it stays.**
+> Go keeps the last and drops the first; Odin refuses the whole document
+> (`Duplicate_Object_Key`). Tycho keeps both with `get` answering the first — the
+> only one of the three that is lossless, and the only one where a caller can
+> still choose either reference behaviour afterwards, by reading `keys`.
+> Deliberate, not changed: both alternatives destroy something the document
+> contained.
 
 **This is the most serious thing this program found, and it has no symptom.**
 Measured by probe, not inferred. `corelib/json/json.ty@parse_number` takes an

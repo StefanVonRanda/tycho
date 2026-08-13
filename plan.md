@@ -14,6 +14,10 @@ remaining seven, then corrects or fixes each.
   reasoning stays on record beside what actually holds.
 - Verified 2026-08-13 by reading the index: 7 entries carry no resolution marker
   (was 8; entry 5, the `bytes` slice clamp, was closed as deliberate).
+- **That count was read from the index and the index is not the entry.** The
+  `core:json` phase found its entry already carrying a `[FIXED, 2026-08-01]`
+  banner *and* a 2026-08-11 re-probe, neither of which the index shows. Check the
+  entry itself before assuming a phase has work in it.
 - The file's convention, confirmed at `docs/internals/FRICTION.md:1331` vs
   `docs/internals/FRICTION.md:1362`, and `docs/internals/FRICTION.md:1396` vs
   `docs/internals/FRICTION.md:1420`: a closed entry keeps a struck-through
@@ -25,38 +29,34 @@ remaining seven, then corrects or fixes each.
 
 ## Phases
 
-- [ ] **Phase 1 — `core:json` accepts input it cannot represent** (`:1810`)
-  - Three claimed sightings. Probe each separately; they may not all still hold.
-  - Verify: `make corelib`, plus `make q-check` if `core:json` behaviour moves.
-
-- [ ] **Phase 2 — `core:decimal` has no `div`** (`:1921`)
+- [ ] **Phase 2 — `core:decimal` has no `div`** (`:1949`)
   - Probe that it is still absent, then decide: add `div` with an explicit scale
     and rounding mode, or record why a decimal `div` is refused. Do not add a
     `div` that silently picks a scale.
   - Verify: `make corelib`, `make q-check`.
 
-- [ ] **Phase 3 — `iter.try_map` has no `Result(void, E)` shape** (`:2378`)
+- [ ] **Phase 3 — `iter.try_map` has no `Result(void, E)` shape** (`:2406`)
   - Entry 4 in an earlier section claimed `Result(void, E)` was inexpressible and
     was CLOSED; check whether that closure already covers this one.
   - Verify: `make corelib`.
 
-- [ ] **Phase 4 — a `string` across the FFI truncates at its first NUL** (`:2448`)
+- [ ] **Phase 4 — a `string` across the FFI truncates at its first NUL** (`:2476`)
   - Silent truncation at a trust boundary. Probe it, then decide whether the FFI
     should refuse an embedded NUL rather than truncate. Fail loud beats fail short.
   - Verify: `make ffi`, `make test`.
 
-- [ ] **Phase 5 — a two-key comparator cannot be written inline** (`:2558`)
-  - `core:sort` gained a comparator-taking sort (`:1985`, CLOSED 2026-08-10).
+- [ ] **Phase 5 — a two-key comparator cannot be written inline** (`:2586`)
+  - `core:sort` gained a comparator-taking sort (`:2013`, CLOSED 2026-08-10).
     Probe whether that already answers this; the entry may predate it.
   - Verify: `make corelib`.
 
-- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2612`)
+- [ ] **Phase 6 — a first `--shim` C file must hand-declare `tycho_int`** (`:2640`)
   - Probe whether a generated header now exists. If not, decide whether to emit
     one — this is ergonomics, so a correction saying "deliberate" is a fine
     outcome.
   - Verify: `make shim-check`, `make corelib`.
 
-- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2675`)
+- [ ] **Phase 7 — a `for` binding does not destructure a tuple** (`:2703`)
   - Probe both halves: destructuring in a `for` binding, and whether a tuple is
     indexable. Go and Odin both destructure in range/multi-return position, so
     check that default before recording this as deliberate.
