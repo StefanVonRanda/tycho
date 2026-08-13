@@ -796,7 +796,18 @@ looking for what the list said was open. Four more of this file's unnumbered ite
 the same way. So the mechanism works; what the previous pass had actually measured was a
 batch that happened to be aimed elsewhere.
 
-**Pick-up order, cheapest first.**
+**Pick-up order, cheapest first — SPENT 2026-08-13.** Every item this ordering
+names is now struck above: the last two were item 6 (withdrawn, `has_ext` is not
+`ends_with`) and item 8 (closed in both halves, the width slot plus the loop
+variable). The order is kept as the record of how the batch was scheduled, and
+because entries below address items by number.
+
+**It is not a to-do list, and it reads like one.** A numbered line here is an
+ITEM REFERENCE (`1. **Item 11** — …` orders item 11 first), not an open item;
+a detector that greps this section for unstruck numbers reports nine open items
+and is wrong every time — mine did, three times in one session, before reading
+the header two lines up. The open items are the numbered `N.` entries in the
+list ABOVE this paragraph, and as of 2026-08-13 there are none.
 
 1. **Item 11** — one paragraph plus a provenance line in `docs/spec/14-ffi.md`, and it is
    the only open item where the tree already has three working instances and no written
