@@ -317,7 +317,14 @@ pick-up order is written out in full under "What moved this pass" below.
    link**, plus the real question behind it: `scripts/check_links.sh` checks that links
    *resolve*, not that documents are *reachable*, so an orphan is invisible to every gate.
    Three files under `docs/internals/` are additionally mentioned by no Markdown at all.
-4. **The `send` collision** (*Phase 7*) — reproduced again at `9e8f8f2` with two scratch
+4. ~~**The `send` collision** (*Phase 7*)~~ — **CLOSED 2026-08-13: the definition is
+   diagnosed now.** `fn send(a: int, b: int) -> int` warns where it is WRITTEN --
+   "`send` collides with the builtin of the same name -- every unqualified `send(...)`
+   calls the BUILTIN, so this procedure is unreachable by that name (§3.7). Rename it,
+   or call it qualified as `pkg.send(...)`" -- which is the definition-time diagnosis
+   this item asked for; the caller still fails, but no longer as the first sign.
+   The record of what the item said when open follows.
+   Reproduced at `9e8f8f2` with two scratch
    programs, and every citation on this entry re-checked and still correct.
    `fn send(a: int, b: int) -> int` compiles silently and dies at the *call* with
    `error: send(ch, v) takes a channel, got int`, while `fn die(s: string) -> int` is
@@ -641,8 +648,11 @@ pick-up order is written out in full under "What moved this pass" below.
     have stayed green on `docs/bootstrap.md`'s whole outage, since `docs/` is trivially
     reachable — so the cheap version of this gate is the version that does not work.
     Sized as a decision, not a line.
-14. **NEW — `corelib/test/result/main.ty` states a compile failure that no longer
-    happens** (*found 2026-07-31 while closing item 5*). Its note says the real surviving
+14. ~~**NEW — `corelib/test/result/main.ty` states a compile failure that no longer
+    happens**~~ (*found 2026-07-31 while closing item 5*) — **CLOSED 2026-08-13: the
+    note was corrected in place.** `corelib/test/result/main.ty:156` now reads "This
+    note used to go on to claim", so the false claim is gone and its correction is
+    recorded beside it. The record of what the item said when open follows. Its note says the real surviving
     constraint on `httpd.read_request_capped` is `docs/spec/appendix-e-conformance.md`
     §E.2.1, and that "rewriting it to `return (Err(why), buf)` still fails, because the
     Ok payload type cannot be grounded from a partially-inferred Request". **Measured:
@@ -654,8 +664,11 @@ pick-up order is written out in full under "What moved this pass" below.
     rather than the frozen one — which makes it the harder class to notice, because
     nothing about it looks dated. Worth re-deriving what §E.2.1's surviving constraint
     actually is before rewriting the note, rather than deleting the sentence.
-15. **NEW — `README.md` documents two `make` targets that do not exist**
-    (*found 2026-07-31 while closing item 3*). `README.md:223` lists
+15. ~~**NEW — `README.md` documents two `make` targets that do not exist**~~
+    (*found 2026-07-31 while closing item 3*) — **CLOSED 2026-08-13: neither row is
+    in README any more.** The target table ends at `make clean`; the only surviving
+    mention of the frozen compiler is prose at `README.md:250`, which names no target.
+    The record of what the item said when open follows. `README.md:223` lists
     `make bootstrap` / `make fixpoint` — "Build / self-host-check
     `compiler/tychoc0.ty`" — and `grep -n 'fixpoint\|bootstrap' Makefile` is **empty**;
     both went with the 2026-07-29 freeze retirement. A reader following the README gets
