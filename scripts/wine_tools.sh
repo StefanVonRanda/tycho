@@ -48,10 +48,44 @@ CORELIB="Z:\\$(pwd | sed 's|^/||; s|/|\\|g')\\corelib"
 E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB $WINE ./build/tychoc-mingw.exe"
 W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\\\usr\\\\x86_64-w64-mingw32\\\\lib $WINE"
 
+# Can the CROSS toolchain link -l<name>? A tool whose library is not installed
+# for mingw is an ENVIRONMENT gap, not a port failure, and wine_corelib.sh has
+# always said so by name ("skip <reason>"); this lane had no such notion and
+# would report a missing cross library as `FAIL <tool> (link: undefined reference
+# to ...)`, which reads like the port cannot build the tool.
+#
+# THIS BOX IS NOT SUCH A HOST, and the probe finds nothing to skip here: mingw
+# zlib IS installed, `-lz` links, and tycho-ar builds and runs under Wine
+# (measured 2026-08-13). Its two failures earlier that day were the stale
+# cross-compiler fixed in 94aa75dd, NOT a missing library -- the `pkg-config
+# could not resolve dependency 'zlib'` line the emit prints is about the MINGW
+# pkg-config path and does not stop the link. So this is a safety net for a host
+# without the library, kept because the alternative reading of that FAIL cost an
+# hour today. Answer cached per lib; the probe is a compile, not a path guess.
+have_mingw_lib() {
+    _l="${1#-l}"
+    eval "_c=\${_have_$_l:-}"
+    if [ -z "$_c" ]; then
+        printf 'int main(void){return 0;}\n' > "$T/_probe.c"
+        if "$MINGWCC" "$T/_probe.c" "-l$_l" -o "$T/_probe.exe" >/dev/null 2>&1; then _c=yes; else _c=no; fi
+        eval "_have_$_l=\$_c"
+    fi
+    [ "$_c" = yes ]
+}
+
 # <name> <entry> <extra-shim|-> <extra-libs|->  ; fetch is a documented skip
 build_tool() {
     name="$1"; entry="$2"; shim="$3"; libs="$4"
     case "$name" in *"$FILTER"*) ;; *) return ;; esac
+    if [ "$libs" != "-" ]; then
+        for _lib in $libs; do
+            case "$_lib" in
+                -l*) have_mingw_lib "$_lib" || {
+                        echo "skip  $name (${_lib#-l} not installed for mingw on this host)"
+                        skipped=$((skipped+1)); return; } ;;
+            esac
+        done
+    fi
     S=""; [ "$shim" != "-" ] && S="--shim $shim"
     LIBS=""; [ "$libs" != "-" ] && LIBS="$libs"
     $E "$entry" $S --emit-c -o "$T/$name" >/dev/null 2>&1 || { echo "FAIL $name (emit)"; fail=$((fail+1)); return; }
