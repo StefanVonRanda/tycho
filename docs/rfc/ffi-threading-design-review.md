@@ -48,7 +48,7 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
    passing the wrong handle type (`docs/guides/ffi.md:108-110`; no destructor exists
    — verified by searching `src/tychoc.c` for destructor/drop/dealloc/free).
 4. String lifetime rules have a subtle read-once-borrow footgun
-   (`src/tychoc.c:5748-5752,5790,5900`).
+   (`src/tychoc.c:5763-5767,5805,5915`).
 5. Every out-param / callback API needs a hand-written C shim
    (`docs/guides/ffi.md:131-142`, `examples/sqlite/`, `corelib/crypto/crypto_shim.c`).
 6. No variadics, no callbacks into Tycho (`docs/ffi.md:108-110,163-166`).
@@ -92,12 +92,12 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2662` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:8946-9015`. Each
-  `extern "Lib"` adds `-lLib` (`:5194` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:8952-8956`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:8734-8737`, `:3029-3054`, `:9003-9005`.
+- Link line assembled in one `cc` call: `src/tychoc.c:8961-9030`. Each
+  `extern "Lib"` adds `-lLib` (`:5209` `add_link`). `--link/--shim/--pkg`
+  passthrough at `:8967-8971`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:8749-8752`, `:3029-3054`, `:9018-9020`.
 - String return is arena-copied so Tycho never holds a foreign pointer
-  (`src/tychoc.c:6268-6275`, `tycho_str_from_c`, NULL→`""`).
+  (`src/tychoc.c:6283-6290`, `tycho_str_from_c`, NULL→`""`).
 
 ### Pain point 1 — no composite types cross
 
@@ -146,7 +146,7 @@ The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:10019` for `len`, `:10146` and `:10153` for print/println). Footguns:
+`src/tychoc.c:10034` for `len`, `:10161` and `:10168` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -189,7 +189,7 @@ Ranked by value / effort.
   parameter, and an extern returning `bytes` uses an out-param-len shim
   convention (or a small compiler-known `{ptr,len}` return struct emitted by
   Tycho, copied into the arena like the current string return at
-  `src/tychoc.c:6268-6275`).
+  `src/tychoc.c:6283-6290`).
 - *Why.* Eliminates the hex-marshaling tax that dominates the crypto package
   and would hit any binary-data library (compression, image, network, hashing).
   Halves memory and removes the encode/decode CPU and code.
@@ -207,7 +207,7 @@ Ranked by value / effort.
   compiler treats `Db` as distinct from `ptr` and from other handles (fixes the
   wrong-handle hazard, pain point 3a), and emits the named free at scope exit
   for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing
-  task/channel finalizer mechanism (`src/tychoc.c:6656-6667`) that already runs
+  task/channel finalizer mechanism (`src/tychoc.c:6671-6682`) that already runs
   destructor calls at scope end.
 - *Why.* Turns the most dangerous FFI primitive into something the compiler can
   reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8744-8747`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8759-8762`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 
@@ -322,7 +322,7 @@ these cases, and the docs only partially flag them:
 5. **Affine/implicit-join edge cases.** The affine rules are enforced and look
    sound (double-wait dies loudly, `runtime/tycho_rt.c:297-300`; implicit join
    at every scope exit, `:310-315`; `parallel for` rejects captured tasks /
-   inout captures / cross-chunk mutation, `src/tychoc.c:4353-4448`). No unsafety
+   inout captures / cross-chunk mutation, `src/tychoc.c:4368-4463`). No unsafety
    found here — call out as *verified sound*, not a gap.
 
 ### Threading — ranked recommendations

@@ -62,7 +62,7 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
 ### The boundary rules (verified)
 
 1. A `-> string` / `-> Option(string)` return is **copied into the caller's
-   arena at the call site and NOT freed** (`tycho_str_from_c`, src/tychoc.c:9760).
+   arena at the call site and NOT freed** (`tycho_str_from_c`, src/tychoc.c:9775).
    The shim contract: the returned pointer must stay valid only until the call
    returns — recycled buffers are safe, owned buffers must be freed by a paired
    call (`osx_run_free`, `http_free`) or they leak.

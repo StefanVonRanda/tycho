@@ -242,7 +242,7 @@ bars an uppercase spelling from every run-time binding position. They are
   > implementation, not a conformance requirement; **selection** is the
   > normative part.
 
-> Provenance: contextual dispatch at `src/tychoc.c:4563-4572` (top level),
+> Provenance: contextual dispatch at `src/tychoc.c:4578-4587` (top level),
 > `:3612@"const"`/`:3638@"delete"` (`const`/`delete`), `:2297@soa [Struct]`/`:2813@soa []Struct` (`soa`),
 > `:4261@"where"` (`where`), `:4227@"sink"` (`sink`), `:3894@"range"` (`range`, refusal only).
 
@@ -468,8 +468,8 @@ is a single four-byte literal and not a run-time concatenation.
 > raw piece `:463-510`, its re-escape table `:491-494`, its control-byte
 > rejection `:495-496`, its per-piece bound `:761@rn + 2 >= (int)sizeof rbuf`,`:764@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:768@unterminated raw string literal`; adjacent join `:2382-2394`; `const` string fold
-> `:4502-4506`; codegen pastes the escaped text into a C string literal
-> `:10558@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1262@sizeof s - 1`.
+> `:4517-4521`; codegen pastes the escaped text into a C string literal
+> `:10573@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1262@sizeof s - 1`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
