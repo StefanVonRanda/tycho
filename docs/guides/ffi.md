@@ -109,10 +109,10 @@ length-counted buffer, so nothing is converted at those operators
 implicitly with `string`: `b + "s"` is a type error, by design.
 
 - *A `bytes` **parameter** lowers to two C arguments* `(const unsigned char *ptr,
-  long len)`. So `extern fn f(b: bytes)` binds to C `void f(const unsigned char *,
-  long)`, and `f(mybytes)` passes the pointer and length. Zero-copy in.
+  int64_t len)`. So `extern fn f(b: bytes)` binds to C `void f(const unsigned char *,
+  int64_t)`, and `f(mybytes)` passes the pointer and length. Zero-copy in.
 - *A `bytes` **return** uses an out-param shim.* `extern fn f(...) -> bytes` binds
-  to C `void f(<args>, unsigned char **out, long *outlen)`. **Convention: the C
+  to C `void f(<args>, unsigned char **out, int64_t *outlen)`. **Convention: the C
   function `malloc`s `*out` and sets `*outlen`; Tycho copies the buffer into the
   caller's arena and then `free`s `*out`.** A `NULL` `*out` becomes empty `bytes`.
 
@@ -138,7 +138,7 @@ rc := sqlite3_open("app.db", &db)     # the compiler emits sqlite3_open(path, &d
 ```
 
 A `inout` extern parameter is declared to C as a pointer to its type (`ptr → void**`,
-`int → long*`, etc.), so the C function fills it in place and Tycho reads it back by
+`int → int64_t*`, etc.), so the C function fills it in place and Tycho reads it back by
 value. Only `int`/`char`/`float`/`bool`/`ptr` may be `inout` — a `inout string` would be
 a `char**` handing Tycho a raw pointer with no length header, and `bytes`/handles/
 composites have no trivial pointer-to-self ABI, so all are rejected (use `--shim`).
@@ -151,11 +151,12 @@ crossing C's scalar conventions, both in-language (no shim):
   `(void*)-1`: `sqlite3_bind_text(st, i, s, -1, to_ptr(-1))`. Tycho never
   dereferences the pointer, so this is sound.
 - **`to_i32(n: int) -> int`** sign-extends a 32-bit C `int` return. Tycho's `int` is
-  64-bit (C `long`), so an `extern fn … -> int` bound to a C function that really
+  `int64_t`, so an `extern fn … -> int` bound to a C function that really
   returns 32-bit `int` reads the correct low 32 bits but the wrong upper bits — a
   returned `-1` shows up as `4294967295`. Wrap the call: `rc := to_i32(c_func())`
   recovers the sign. (Only needed when the C function can return a *negative* `int`;
-  non-negative codes and any function returning `long`/`int64` are already correct.
+  non-negative codes and any function returning `int64_t` are already correct —
+  `long` is not among them, being 32-bit on Windows and ILP32.
   For a 64-bit row value, prefer the `…_int64` variant of the C call.)
 
 **Other composites are rejected.** Arrays, maps, structs, other `Option`/`Result`,
