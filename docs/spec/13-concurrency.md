@@ -156,16 +156,16 @@ The fail-closed rules of §22 are unchanged inside such a body: `break`,
 `return` and `or_return` at the parallel-loop level are still compile errors, so
 an early exit can never cross a chunk boundary.
 
-> Provenance: `0..<N` parsed at `src/tychoc.c:3615-3640`; parallel-only refusal
-> `src/tychoc.c:4021@par_here`; literal-zero refusal `src/tychoc.c:4024@ival != 0`;
-> any other loop shape under `parallel` refused at `src/tychoc.c:3885@S_FORRANGE`
+> Provenance: `0..<N` parsed at `src/tychoc.c:3621-3646`; parallel-only refusal
+> `src/tychoc.c:4027@par_here`; literal-zero refusal `src/tychoc.c:4030@ival != 0`;
+> any other loop shape under `parallel` refused at `src/tychoc.c:3891@S_FORRANGE`
 > (it is the only node the chunker accepts). Chunk fan-out `K = min(ncpu(), N)`
-> `src/tychoc.c:10794-10795`, capped at 64 by `src/tychoc.c:11506@_pk > 64`
-> (the chunk-handle array `src/tychoc.c:11507@_pts[64]` is the reason for the
+> `src/tychoc.c:10802-10803`, capped at 64 by `src/tychoc.c:11514@_pk > 64`
+> (the chunk-handle array `src/tychoc.c:11515@_pts[64]` is the reason for the
 > number); each chunk is a real OS thread,
 > `runtime/tycho_rt.c:790@pthread_create`. A capture is deep-copied only when
-> `src/tychoc.c:11517@type_is_heap(ct)` holds, and `type_is_heap`
-> (`src/tychoc.c:1413-1435`) has no channel arm, so a `Channel(T)` capture is
+> `src/tychoc.c:11525@type_is_heap(ct)` holds, and `type_is_heap`
+> (`src/tychoc.c:1419-1441`) has no channel arm, so a `Channel(T)` capture is
 > passed by value — one queue shared by every chunk.
 
 ## 23. Channels and `select`

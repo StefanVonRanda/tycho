@@ -1,0 +1,25 @@
+# Two edges of the deprecation marker, in one program, both fixed 2026-08-14.
+#
+# FALSE POSITIVE (FRICTION #46): the scan looked for `deprecated:` ANYWHERE in a
+# comment line, so ordinary prose that merely mentioned it marked the fn below
+# and every caller got a warning nobody wrote. `plain` below sits under exactly
+# such a sentence and MUST NOT appear in this file's .err.
+#
+# FALSE NEGATIVE (FRICTION #47): a marked fn taken as a VALUE warned nowhere --
+# the later call names the binding, not the fn, so one `f := stale` laundered the
+# whole policy. `stale` is taken as a value below and MUST warn there.
+#
+# The .err golden is the proof of both: it has exactly one warning, on the line
+# that takes the value, and nothing for `plain`.
+
+# a note about the deprecated: marker, which is prose and must mark nothing
+fn plain(n: int) -> int:
+    return n + 1
+
+# deprecated: use plain(n) -- stale(n) is plain(n)
+fn stale(n: int) -> int:
+    return n + 1
+
+fn main():
+    f := stale
+    println(str(f(1)) + " " + str(plain(1)))

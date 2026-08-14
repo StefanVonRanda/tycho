@@ -4,7 +4,7 @@
 # first, the scanner reports the OPENING line.
 #
 # tychoc rejects at the raw-literal scanner's terminator check
-# (src/tychoc.c:520, "unterminated raw string literal"). Expected diagnostic:
+# (src/tychoc.c:526, "unterminated raw string literal"). Expected diagnostic:
 #     tests/reject/rawstring_unterminated.ty:13: error: unterminated raw string literal
 # The frozen tychoc0 has no backtick token at all, which is why no tychoc0 lane
 # globs tests/reject/ (tests/run.sh:183).

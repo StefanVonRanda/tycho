@@ -564,7 +564,7 @@
 #     tycho-q: parse error at byte 21: unexpected token "form" (expected `from`)
 #
 # A parse error is fatal by decision, not by limitation: `eprint` writes to
-# stderr without terminating (`src/tychoc.c:5384@eprint`, shipped 2026-06-14),
+# stderr without terminating (`src/tychoc.c:5390@eprint`, shipped 2026-06-14),
 # so a non-fatal diagnostic was available and is deliberately unused. A query
 # that does not parse has no partial result worth printing, and stdout IS the
 # result -- a caller parsing rows should never have to decide whether a line is one.

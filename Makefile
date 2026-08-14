@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -730,6 +730,14 @@ ledger-check: tychoc
 fh-check: tychoc
 	@sh tools/tycho-fh/run.sh
 
+# grid-check: the gate for tycho-grid, the integer grid in tools/tycho-grid/.
+# It is the SECOND consumer of `subscript`, `bounded[N]T` and `# deprecated:` --
+# each had exactly one before. Its load-bearing legs are the ones a transcript
+# cannot carry: the compile-time deprecation warnings (stderr, not stdout) and
+# the five subscript declaration rules.
+grid-check: tychoc
+	@sh tools/tycho-grid/run.sh
+
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else
 # RUNS a tool under tools/ (step [9] tools-check only --emit-c's them), so
@@ -972,8 +980,8 @@ hooks:
 
 # The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
 # `make tycho-lsp` -- the loops-cleanup plan made the plain build remove its own
-# intermediate (src/tychoc.c:13588). They stay because `--emit-c -o <base>` still
-# writes and KEEPS `<base>.c` (src/tychoc.c:13557-13559), which is how you debug the
+# intermediate (src/tychoc.c:13596). They stay because `--emit-c -o <base>` still
+# writes and KEEPS `<base>.c` (src/tychoc.c:13565-13567), which is how you debug the
 # toolchain itself, and `clean` is where that leftover belongs. Same rationale as the
 # matching .gitignore block; verified 2026-07-30, see the loops-cleanup plan.
 clean:

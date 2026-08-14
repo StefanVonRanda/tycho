@@ -1,5 +1,5 @@
 # `/` is not defined element-wise on [char] -- the char arm of the element-wise
-# table (src/tychoc.c:1102) admits `+` and `-` only. Companion to
+# table (src/tychoc.c:1108) admits `+` and `-` only. Companion to
 # tests/reject/char_elem_mul.ty and tests/reject/char_elem_mod.ty.
 fn main():
     s := "ABC"

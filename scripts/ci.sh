@@ -422,6 +422,11 @@ make -s ledger-check
 # handle be aliased into a double free until 2026-08-14.
 step "[4b/34] make fh-check  (tycho-fh: run identical over 2 runs and equal to the golden; counts and balance against literals; live=0 and opens==closes after 64 scope exits and again after 20000 with a re-read checksum; all six affine shapes -- decl copy, bare handle struct field, returned, in an array, in an Option, close() on a call result -- refused; a double borrow still leaves one live owner; an unknown option refused by name)"
 make -s fh-check
+
+# tycho-grid: the second consumer of subscript, bounded[N]T and the deprecation
+# marker -- the three features that had one real user each.
+step "[4c/35] make grid-check  (tycho-grid: run identical over 2 runs and equal to the golden; the subscript as a place and an rvalue against literals with two independently-computed totals agreeing; the deprecation warning emitted with its text, NOT emitted for prose that merely mentions the marker, and emitted for a fn taken as a value; a fifth mark past bounded[4] exits non-zero naming the limit; all five subscript rules plus the flat 2-D once-per-parameter limit still refused; a bounded struct field still copies by value)"
+make -s grid-check
 fi
 
 if [ "$LANE" = rest ]; then

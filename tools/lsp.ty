@@ -797,7 +797,7 @@ fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], 
 # literal text is skipped but identifiers inside each `{...}` interpolation hole
 # ARE matched (so rename/references reach `x` in f"got {x}"); `{{`/`}}` are literal
 # braces, holes nest, and a nested "..." string inside a hole is skipped verbatim.
-# A backtick raw literal (src/tychoc.c:477-524) is skipped too, and because it may
+# A backtick raw literal (src/tychoc.c:483-530) is skipped too, and because it may
 # span source lines the `inraw` flag carries the state across the line loop --
 # without it the closing lines of a multi-line raw literal would be scanned as
 # ordinary code and a rename could edit text inside the literal.
@@ -1189,10 +1189,10 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # the tree-sitter grammar painted it a keyword, in the same buffer
 # (the loops-cleanup plan). All three are hard
 # tokens in the compiler's lexer:
-# src/tychoc.c:248 (or_return), :181 (parallel), :182 (select).
+# src/tychoc.c:254 (or_return), :181 (parallel), :182 (select).
 # The four soft ones already here are NOT drift and stay: `handle` is a hard
-# token too (src/tychoc.c:261), while `const`, `sink`, `where` and `soa` are
-# TK_IDENT matched by text in the parser (src/tychoc.c:3380, :3681, :3715,
+# token too (src/tychoc.c:267), while `const`, `sink`, `where` and `soa` are
+# TK_IDENT matched by text in the parser (src/tychoc.c:3386, :3681, :3715,
 # :1911) -- keywords to a reader, contextual to the lexer, and both grammars
 # highlight them.
 fn sem_is_keyword(w: string) -> bool:
@@ -1259,7 +1259,7 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
                 ty = 4
             elif c >= 48 and c <= 57:                # number (digits + a decimal point)
                 # A `.` that starts a `..` pair is NOT part of the number: it opens
-                # `..<` (src/tychoc.c:558) or `...` (src/tychoc.c:557). Without this
+                # `..<` (src/tychoc.c:564) or `...` (src/tychoc.c:563). Without this
                 # guard `0..<N` painted `0..` as one number token -- the digit, and
                 # two thirds of the operator beside it, in the number colour.
                 j := i

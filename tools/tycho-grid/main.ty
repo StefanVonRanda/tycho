@@ -1,0 +1,134 @@
+# tycho-grid -- a small integer grid, built on the three least-used features.
+#
+# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
+# Measured 2026-08-14, each of these had exactly ONE real consumer in the tree:
+#   subscript     -- tools/tycho-sim/world/world.ty
+#   bounded[N]T   -- tools/tycho-vm/main.ty
+#   # deprecated: -- corelib/sort/sort.ty
+# This program is the second consumer of all three at once, which is what a
+# feature needs before its edges are known.
+#
+#   tycho-grid --rows R --cols C [--set r,c=v ...] [--mark r,c ...]
+#
+# THE GATE IS `make grid-check` (tools/tycho-grid/run.sh).
+package main
+
+import "core:cli"
+import "core:strings"
+
+const MAXMARKS = 4      # a bounded capacity may be a literal or an int const
+
+struct Grid:
+    rows: [[int]]
+
+# A subscript: a compile-time place-macro, so `g.at(r, c) = v` writes THROUGH
+# the projection with no copy and no runtime object.
+#
+# THE SHAPE THIS CANNOT HAVE. The obvious flat-array spelling
+# `yield &g.cells[r * g.w + c]` is REFUSED: reading two fields of the receiver
+# counts as using the parameter `g` twice, and the rule is that each parameter
+# appears at most once in the yielded place (FRICTION #48). So the grid is a
+# nested array, where the receiver is mentioned exactly once.
+subscript at(g: Grid, r: int, c: int) -> inout int:
+    yield &g.rows[r][c]
+
+# The marks are a `bounded[N]int`: inline, fixed-capacity, variable-count, and
+# copied by value with the struct that holds it. Capacity is part of the type,
+# so a fifth mark is a runtime abort rather than a silent reallocation.
+struct Board:
+    grid: Grid
+    marks: bounded[MAXMARKS]int      # flat indices, r * cols + c
+
+fn make_grid(nrows: int, ncols: int) -> Grid:
+    rows := [][int]
+    for r := 0; r < nrows; r += 1:
+        row := []int
+        for c := 0; c < ncols; c += 1:
+            push(row, 0)
+        push(rows, row)
+    return Grid(rows)
+
+# The deprecation marker. It must OPEN the comment: a line that merely MENTIONS
+# `deprecated:` in prose marked the fn below it until 2026-08-14 (FRICTION #46).
+# deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
+fn sum_all(g: Grid) -> int:
+    t := 0
+    for row in g.rows:
+        for v in row:
+            t += v
+    return t
+
+# The replacement, reading every cell through the subscript so the projection is
+# exercised as an RVALUE as well as a place.
+fn total(g: Grid, nrows: int, ncols: int) -> int:
+    t := 0
+    for r := 0; r < nrows; r += 1:
+        for c := 0; c < ncols; c += 1:
+            t += g.at(r, c)
+    return t
+
+fn row_sum(g: Grid, r: int, ncols: int) -> int:
+    t := 0
+    for c := 0; c < ncols; c += 1:
+        t += g.at(r, c)
+    return t
+
+# `r,c=v` / `r,c` -> the two or three numbers, or death naming the token.
+fn coords(tok: string, want_value: bool) -> (int, int, int):
+    body := tok
+    v := 0
+    if want_value:
+        kv := split(tok, "=")
+        if len(kv) != 2:
+            die("tycho-grid: want r,c=v, got " + tok)
+        body = kv[0]
+        v = strings.parse_int(kv[1])
+    rc := split(body, ",")
+    if len(rc) != 2:
+        die("tycho-grid: want r,c, got " + tok)
+    return (strings.parse_int(rc[0]), strings.parse_int(rc[1]), v)
+
+fn main():
+    c := cli.Cli([], [], [], [], [], [])
+    match cli.parse_checked(cli.argv(), ["rows", "cols", "set", "mark"], ["help"]):
+        Ok(v): c = v
+        Err(cli.Unknown(tok)): die("tycho-grid: unknown option " + tok)
+        Err(cli.NoValue(tok)): die("tycho-grid: " + tok + " needs a value")
+
+    nrows := strings.parse_int(cli.get(c, "rows", "3"))
+    ncols := strings.parse_int(cli.get(c, "cols", "3"))
+    if nrows < 1 or ncols < 1:
+        die("tycho-grid: --rows and --cols must be positive")
+
+    b := Board(make_grid(nrows, ncols), [])
+
+    av := cli.argv()
+    for i := 0; i < len(av); i += 1:
+        if av[i] == "--set" and i + 1 < len(av):
+            r, col, v := coords(av[i + 1], true)
+            if r < 0 or r >= nrows or col < 0 or col >= ncols:
+                die("tycho-grid: --set out of range: " + av[i + 1])
+            b.grid.at(r, col) = v          # the subscript as a PLACE
+        elif av[i] == "--mark" and i + 1 < len(av):
+            r, col, _unused := coords(av[i + 1], false)
+            if r < 0 or r >= nrows or col < 0 or col >= ncols:
+                die("tycho-grid: --mark out of range: " + av[i + 1])
+            if len(b.marks) >= MAXMARKS:
+                die("tycho-grid: at most " + str(MAXMARKS) + " marks")
+            push(b.marks, r * ncols + col)
+
+    for r := 0; r < nrows; r += 1:
+        line := ""
+        for col := 0; col < ncols; col += 1:
+            if col > 0:
+                line = line + " "
+            line = line + str(b.grid.at(r, col))       # the subscript as an RVALUE
+        println(line + " | " + str(row_sum(b.grid, r, ncols)))
+    # Both totals, from the deprecated walker and its replacement. They must
+    # agree -- which is what makes the deprecated one safe to keep calling here,
+    # and the call is what makes the compiler emit the warning the gate reads.
+    println("total " + str(total(b.grid, nrows, ncols)))
+    println("legacy " + str(sum_all(b.grid)))
+    println("marks " + str(len(b.marks)) + "/" + str(MAXMARKS))
+    for i := 0; i < len(b.marks); i += 1:
+        println("mark " + str(b.marks[i]))
