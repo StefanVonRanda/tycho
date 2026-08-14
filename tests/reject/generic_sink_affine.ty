@@ -1,0 +1,13 @@
+# The param parse site refuses `sink Channel(int)` by name, but a `sink $T` bound
+# to a channel reached the instance signature unchecked. Harmless today -- `sink`
+# on such a type enforces nothing, measured against tools/tycho-fh/fh.c's counters
+# as opens=1 closes=1 live=0, the same as a borrow -- and a double free the day it
+# starts consuming. tests/reject/generic_struct_field_chan.ty is the same seam in
+# a struct field, where the harm was immediate.
+
+fn take(x: sink $T):
+    pass
+
+fn main():
+    c := channel(int, 2)
+    take(c)

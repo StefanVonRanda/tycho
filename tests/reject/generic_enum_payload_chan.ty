@@ -1,0 +1,14 @@
+# The enum sibling of tests/reject/generic_struct_field_chan.ty: the payload ban
+# was checked on the template, whose payload type is `$T`, and enum_instantiate
+# never re-checked the substituted payload.
+
+enum Holder($T):
+    Empty
+    Full($T)
+
+fn main():
+    ch := channel(int, 2)
+    h := Full(ch)
+    match h:
+        Full(c): send(c, 5)
+        Empty: println("empty")

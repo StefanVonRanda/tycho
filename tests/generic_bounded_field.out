@@ -1,0 +1,4 @@
+int len=2 head=1
+after push len=3 last=3
+str len=2 joined=ab
+tagged k len=2 head=7

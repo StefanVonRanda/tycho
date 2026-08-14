@@ -1,0 +1,17 @@
+# CC-4's field ban was enforced only on the TEMPLATE, whose field type is `$T`
+# and therefore not a channel. The instance stamped out by struct_instantiate was
+# never re-scanned, so this compiled and RAN: `b2 := b` then copied the struct and
+# gave two owners one channel (a send through one was received through the other,
+# observed 2026-08-14). tests/reject/generic_enum_payload_chan.ty is the enum
+# sibling; generic_struct_field_task.ty is the kind that has no type syntax at
+# all and so can ONLY arrive this way.
+
+struct Box($T):
+    c: $T
+
+fn main():
+    ch := channel(int, 2)
+    b := Box(ch)
+    b2 := b
+    send(b.c, 7)
+    println(str(recv(b2.c)))

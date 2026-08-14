@@ -1,0 +1,15 @@
+# The SILENT half of the subst_type bounded bug, and the only fixture that pins
+# it. Instantiation rebuilt `bounded[4]$T` through fixarr_of (bnd=0), so the
+# field became a plain `[4]int` and this program COMPILED AND RAN -- the
+# declaration said bounded, the caller handed over a fixed array, and the
+# capacity rule was gone with nothing on stderr to say so. The two positive
+# fixtures cannot catch this: they pass real bounded values, so they fail loudly.
+# A `[4]int` here must be refused because the field is bounded[4]int.
+
+struct Box($T):
+    xs: bounded[4]$T
+
+fn main():
+    a: [4]int = [1, 2, 3, 4]
+    p := Box(a)
+    println(str(p.xs[0]))

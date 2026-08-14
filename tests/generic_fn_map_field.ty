@@ -1,0 +1,35 @@
+# The MAP sibling of generic_fn_array_field.ty. That fixture pinned the array
+# body loop's `has_typaram` skip; the map body loop never had one, so a generic
+# struct holding `[string: fn($T)->$T]` emitted the dead template map naming an
+# FnC<id> that (2a') deliberately skipped, and cc rejected the program with
+# `unknown type name 'FnC0'`. Two instantiations pin that each instance gets its
+# own concrete FnC; Empty pins the uninstantiated template, which failed the same
+# way with no value of the type anywhere in the program.
+
+struct Plan($T):
+    steps: [string: fn($T) -> $T]
+
+struct Empty($T):
+    never: [string: fn($T) -> $T]
+
+fn inc(x: int) -> int:
+    return x + 1
+
+fn shout(s: string) -> string:
+    return s + "!"
+
+fn run(p: Plan($T), key: string, seed: $T) -> $T:
+    return p.steps[key](seed)
+
+fn main():
+    fs := []string: fn(int) -> int
+    fs["inc"] = inc
+    p := Plan(fs)
+    println("direct=" + str(p.steps["inc"](41)))
+    println("int=" + str(run(p, "inc", 40)))
+
+    ss := []string: fn(string) -> string
+    ss["shout"] = shout
+    q := Plan(ss)
+    println("str=" + run(q, "shout", "hi"))
+    println("len=" + str(len(q.steps)))

@@ -284,8 +284,8 @@ fi
 # that half is gone. The tychoc assertions below are unchanged.
 #
 # A FLAT fixture here must NOT declare a `package` header. detect_package
-# (src/tychoc.c:13166-13172) turns the entry file's leading `package <name>` into
-# a whole-DIRECTORY compile (src/tychoc.c:13565), so such a fixture would be
+# (src/tychoc.c:13187-13193) turns the entry file's leading `package <name>` into
+# a whole-DIRECTORY compile (src/tychoc.c:13586), so such a fixture would be
 # scored against every one of its siblings: it would be "refused" for the FIRST
 # error in sort order rather than for its own defect, and this lane -- which
 # asserts only "nonzero exit + non-empty diagnostic" -- cannot tell the two

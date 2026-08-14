@@ -717,7 +717,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10946@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10965@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -2109,11 +2109,12 @@ static Type subst_type(Type t, Type *binds) {
         Type se = subst_type(arr_elem(t), binds);
         if (IS_ARRC(t)) {
             int64_t sz = g_arrtypes[ARRC_ID(t)].size;
+            char bnd = g_arrtypes[ARRC_ID(t)].bnd;   /* index, never hold: the recursive subst_type above may have realloc'd g_arrtypes */
             if (sz < 0) {   /* [$N]T (1.6B): substitute the bound concrete N; if still unbound, stay a size-param */
                 int64_t cn = (g_sizebinds && g_sizebinds[sizeparam_id(sz)] > 0) ? g_sizebinds[sizeparam_id(sz)] : 0;
-                return cn > 0 ? fixarr_of(se, cn) : arrc_sized(se, sz);
+                return arrc_sized_b(se, cn > 0 ? cn : sz, bnd);
             }
-            if (sz > 0) return fixarr_of(se, sz);   /* [3]$T -> [3]int: preserve the fixed size */
+            if (sz > 0) return arrc_sized_b(se, sz, bnd);   /* [3]$T -> [3]int, and bounded[3]$T -> bounded[3]int: the capacity RULE is part of the type, not just the size */
         }
         return arr_of(se);   /* dynamic: arr_of canonicalizes [int]->T_ARRAY_INT */
     }
@@ -2238,6 +2239,17 @@ static int match_type(Type pat, Type concrete, Type *binds) {
 /* Find or stamp out the concrete struct instance of a generic template for the
  * given bindings: Box($T) + {T:int} -> a real `struct Box__int` with substituted
  * field types. The instance is an ordinary (non-generic) struct from here on. */
+/* CC-4, the INSTANCE half. resolve_program's field/payload scan runs over the
+ * aggregates that exist at that moment; a generic instance is stamped out later,
+ * so `struct Box($T)` bound at Channel(int) never reaches it -- and a Task has no
+ * type syntax at all, so a `$T` binding is the ONLY way one can land in a field.
+ * Left open, `b2 := b` copied the struct and aliased the channel (both halves
+ * observed 2026-08-14), which is the entire thing affinity exists to prevent. */
+static void affine_slot_check(Type t, int line, const char *slot, const char *owner) {
+    const char *k = IS_CHAN(t) ? "channel" : IS_TASK(t) ? "task" : IS_HANDLE(t) ? "handle" : 0;
+    if (k) die_at(line, "%s cannot be a %s -- '%s' was instantiated at one", slot, k, owner);
+}
+
 static int struct_instantiate(int tmpl, Type *binds) {
     char *nm = g_structs[tmpl].name;
     for (int i = 0; i < g_structs[tmpl].ntyparams; i++)
@@ -2260,6 +2272,7 @@ static int struct_instantiate(int tmpl, Type *binds) {
     for (int f = 0; f < nf; f++) {
         char *fname = g_structs[tmpl].fields[f].name;
         Type   sty  = subst_type(g_structs[tmpl].fields[f].type, binds);
+        affine_slot_check(sty, g_structs[tmpl].line, "a struct field", g_structs[tmpl].name);
         StructDef *s = &g_structs[id];
         TBL_ENSURE(s->fields, s->nfields, s->fields_cap);
         s = &g_structs[id];   /* TBL_ENSURE grows s->fields (not g_structs), but re-fetch for safety */
@@ -2299,8 +2312,10 @@ static int enum_instantiate(int tmpl, Type *binds) {
         char *vraw  = g_enums[tmpl].variants[v].raw;
         int   np    = g_enums[tmpl].variants[v].npayload;
         Type  pl[8];
-        for (int f = 0; f < np; f++)
+        for (int f = 0; f < np; f++) {
             pl[f] = subst_type(g_enums[tmpl].variants[v].payload[f], binds);   /* may realloc g_enums */
+            affine_slot_check(pl[f], g_enums[tmpl].line, "an enum payload", g_enums[tmpl].name);
+        }
         EnumDef *e = &g_enums[id];
         TBL_ENSURE(e->variants, e->nvariants, e->variants_cap);
         e = &g_enums[id];
@@ -2497,7 +2512,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2305) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2367) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2855,7 +2870,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2171): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2177): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -4000,7 +4015,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10723), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10793), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -5690,7 +5705,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3067), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3129), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6963,7 +6978,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5715 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5777 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7523,7 +7538,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7823). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7885). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7546,10 +7561,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7150),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7212),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7444). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7506). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7570,7 +7585,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3061). The generic descent below
+     * tell it from a package call (src/tychoc.c:3123). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8888,6 +8903,10 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     Type cparams[16], cret;
     for (int j = 0; j < gt->nparams; j++) {
         cparams[j] = subst_type(gt->params[j].type, binds);
+        if ((gt->params[j].is_sink || gt->params[j].is_inout)   /* the INSTANCE half of the rule stated by name at the param parse site: `sink Channel(int)` is refused there, but a `sink $T` bound to one reached here unchecked */
+            && (IS_HANDLE(cparams[j]) || IS_CHAN(cparams[j]) || IS_TASK(cparams[j])))
+            die_at(e->line, "'%s' is %s, which an affine type cannot be -- '%s' was instantiated at one. Pass it plainly: that is already a borrow",
+                   gt->params[j].name, gt->params[j].is_sink ? "sink" : "inout", gt->name);
         nm = sfmt("%s__%s", nm, type_mangle_ident(cparams[j]));
     }
     /* a return-only `$T` (no parameter mentions it, e.g. `empty() -> [$T]`) is not
@@ -9163,7 +9182,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7482: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7544: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -9331,7 +9350,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11634), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11704), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9361,12 +9380,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13606) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13690) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11721) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11791) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -9383,7 +9402,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3849-3854) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3911-3916) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -13105,9 +13124,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
     /* (2b-inline) `[N]T` and `bounded[N]T` store the element INLINE, so their
      * bodies need it COMPLETE — they are emitted in step (3) below, inside the
      * containment DFS, alongside the struct/Option/Result/tuple bodies. */
-    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] -- COMPACT indexed-dict: int32 index table -> dense insertion-ordered entries */
+    for (int i = 0; i < g_nmaptypes; i++) {         /* (2b') composite-map bodies [K: V] -- COMPACT indexed-dict: int32 index table -> dense insertion-ordered entries */
+        if (has_typaram(T_MAPC_BASE + i)) continue; /* generics: same skip (2b) gives arrays -- a `[string: fn($T)->$T]` field named the FnC<id> that (2a') deliberately skipped, and cc rejected the program */
         fprintf(o, "struct TychoMapC%d_ { %s*ekeys; %s*evals; unsigned char *elive; int *idx; tycho_int len; tycho_int ecount; tycho_int ecap; tycho_int icap; };\n",
                 i, mapc_kslot(g_maptypes[i].key), c_type(g_maptypes[i].val));
+    }
     /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.
      * Members are pointers, so the element struct's tag forward-decl above is
      * enough — this can precede struct bodies, letting a struct embed a soa by

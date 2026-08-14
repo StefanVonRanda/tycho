@@ -1,5 +1,5 @@
 # 05-generics.md:20: 16 type parameters per generic -- structs included.
-# src/tychoc.c:3917. 17 SLOTS here (one repeated name, so the distinct-name cap
+# src/tychoc.c:3932. 17 SLOTS here (one repeated name, so the distinct-name cap
 # at :1714 is not what fires).
 struct Box($T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T):
     f: $T

@@ -1,0 +1,38 @@
+# A `bounded[N]T` field inside a GENERIC struct. subst_type rebuilt every
+# instantiated array through fixarr_of, which hardcodes bnd=0, so the field came
+# out `[N]T` -- the capacity RULE was dropped while the size survived. Nothing
+# caught it: no fixture combined the two, and the only symptom was that passing a
+# real bounded value type-errored while a plain `[N]T` was silently ACCEPTED, so
+# the declaration said bounded and the program got a fixed array.
+#
+# Both element kinds are pinned: `bounded[4]$T` (the element is the parameter)
+# and `bounded[3]int` (concrete element, generic struct) -- the bug hit both,
+# which is what proves it was the array rebuild and not the substitution of $T.
+# tests/abort/generic_bounded_overflow.ty pins that the capacity is ENFORCED;
+# a golden cannot show a trap.
+
+struct Box($T):
+    xs: bounded[4]$T
+
+struct Tagged($T):
+    tag: $T
+    ns: bounded[3]int
+
+fn fill(b: inout Box($T), v: $T):
+    push(b.xs, v)
+
+fn main():
+    xs: bounded[4]int = [1, 2]
+    p := Box(xs)
+    println("int len=" + str(len(p.xs)) + " head=" + str(p.xs[0]))
+    fill(&p, 3)
+    println("after push len=" + str(len(p.xs)) + " last=" + str(p.xs[2]))
+
+    ss: bounded[4]string = ["a"]
+    q := Box(ss)
+    fill(&q, "b")
+    println("str len=" + str(len(q.xs)) + " joined=" + q.xs[0] + q.xs[1])
+
+    ns: bounded[3]int = [7, 8]
+    t := Tagged("k", ns)
+    println("tagged " + t.tag + " len=" + str(len(t.ns)) + " head=" + str(t.ns[0]))

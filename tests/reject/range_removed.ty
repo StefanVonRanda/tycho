@@ -4,7 +4,7 @@
 # `parallel for i in 0..<N:` replaces it inside a `parallel for`.
 #
 # `range` was never a procedure -- it was recognised only by lexeme inside a
-# `for` header (src/tychoc.c:3657), so its removal is the removal of that one
+# `for` header (src/tychoc.c:3672), so its removal is the removal of that one
 # branch. This fixture asserts the header form is refused. `x := range(3)` has
 # always said "unknown procedure 'range'" and still does.
 #

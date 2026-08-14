@@ -1,0 +1,15 @@
+# A Task has NO type syntax, so `t: Task` cannot be written and resolve_program
+# has no template to reject. Binding a generic field at one is the only way a
+# task can reach a struct field, which makes struct_instantiate the only place
+# this can be caught. See tests/reject/generic_struct_field_chan.ty.
+
+struct Box($T):
+    t: $T
+
+fn work() -> int:
+    return 1
+
+fn main():
+    t := spawn work()
+    b := Box(t)
+    println("held a task in a field")

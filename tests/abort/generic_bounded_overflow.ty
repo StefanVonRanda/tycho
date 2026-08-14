@@ -1,0 +1,14 @@
+# The capacity of a `bounded[N]T` field must be enforced after the field has been
+# through generic instantiation. subst_type rebuilt it as a plain `[N]T`, so this
+# push grew silently instead of trapping -- and no golden could show that, since
+# the enforcement IS the trap. tests/generic_bounded_field.ty pins the typed half.
+
+struct Box($T):
+    xs: bounded[2]$T
+
+fn main():
+    xs: bounded[2]int = [1, 2]
+    p := Box(xs)
+    println("full at " + str(len(p.xs)))
+    push(p.xs, 3)
+    println("unreachable: pushed past the capacity")
