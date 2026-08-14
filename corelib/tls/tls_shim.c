@@ -15,6 +15,7 @@
 #define _DEFAULT_SOURCE          /* glibc: expose getaddrinfo + struct addrinfo */
 #endif
 #ifndef _WIN32
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -108,6 +109,12 @@ void tlsx_read(void *p, tycho_int max, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
     if (!p || max <= 0) return;
+    /* SSL_read takes an int. tycho_int is 64-bit, so a caller asking for more
+     * than INT_MAX would hand SSL_read a TRUNCATED or negative length while the
+     * buffer really was that big -- undefined, and silently. Clamp instead: a
+     * short read is the documented contract here ("up to max"), so nothing is
+     * lost. netx_read has the same shape but passes size_t and needs no clamp. */
+    if (max > INT_MAX) max = INT_MAX;
     Tls *t = (Tls *)p;
     unsigned char *buf = (unsigned char *)malloc((size_t)max);
     if (!buf) return;

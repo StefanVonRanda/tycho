@@ -7,7 +7,7 @@
 reviewer who did not write them, which is a different and lesser thing than a
 third-party professional audit. §7 stays open. What this buys is that the obvious
 classes have now been looked for by someone, with the method written down so the
-next pass can start further along, and three real findings fixed.
+next pass can start further along, and five real findings fixed.
 
 ## Scope and method
 
@@ -22,6 +22,7 @@ looking, because it produces a clean report.
 | allocation-size arithmetic (`malloc(a*b)`, `realloc(p, a+b)`) | 12 sites reviewed by hand; one finding (below) |
 | process execution | `posix_spawnp` with a real argv vector, no shell |
 | unbounded accumulation from the network | one finding (below) |
+| unbounded output from a DECOMPRESSOR | one finding (below) |
 | redirect / protocol handling | two findings (below) |
 
 ## What is sound
@@ -38,7 +39,7 @@ documented shell API doing what it says.
 **No unbounded string operation exists in the whole shim surface.** For 3.7k
 lines of hand-written boundary C that is a genuinely good result.
 
-## Findings, all three fixed in this commit
+## Findings, all five fixed
 
 ### 1. A response body was accumulated with no cap (`corelib/http/http_shim.c@collect`)
 
@@ -103,18 +104,40 @@ allocating a gigabyte**: `tools/tycho-ar/run.sh` rebuilds the shim with
 `refused`. Removing the ceiling reddens that leg — confirmed, not assumed. A
 ceiling nothing ever crosses is a ceiling nobody has tested.
 
+### 5. TLS is configured correctly — the notable result is a negative one
+
+`corelib/tls/tls_shim.c` (128 lines) does all four of the things this class of
+code usually gets wrong, and none of the shortcuts:
+
+| the classic mistake | what it does |
+|---|---|
+| verification left off | `SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL)` |
+| no CA store | `SSL_CTX_set_default_verify_paths` |
+| cert checked, hostname NOT | `SSL_set1_host(ssl, host)` |
+| no SNI, so the server picks the wrong cert | `SSL_set_tlsext_host_name(ssl, host)` |
+
+plus `SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)`. `tlsx_read` guards
+`max <= 0`, a failed `malloc` and the `SSL_read` result.
+
+**One narrow fix.** `SSL_read` takes an `int` and `tycho_int` is 64-bit, so a
+caller asking for more than `INT_MAX` handed it a truncated or negative length
+while the buffer really was that large — undefined, and silently. Now clamped;
+"up to max" is the documented contract, so a short read loses nothing. The
+sibling `netx_read` has the same shape but passes `size_t` and needs no clamp.
+
+Not reachable from the network — `max` comes from the calling Tycho program —
+which is why it is a hardening rather than a vulnerability.
+
 ## What this pass did NOT cover
 
 Named so the next reviewer starts here rather than repeating the above:
 
-- **TLS.** `corelib/tls/tls_shim.c` was not reviewed. Certificate validation,
-  hostname checking and session handling are the highest-value target left.
+- ~~**TLS**~~ — **reviewed, see below. It is sound.**
 - **`corelib/regex`.** A regex over attacker-controlled input is a
   catastrophic-backtracking (ReDoS) question that grep cannot answer.
 - **`corelib/image`.** `decode_bmp`/`decode_qoi` parse untrusted bytes into a
   pixel buffer — the classic decoder-overflow surface. They return `Result`, so
   the error path exists; the arithmetic was not audited.
-- ~~**`corelib/compress`.** Decompression bombs~~ — **REVIEWED AND FIXED, see
-  finding 4 below.**
+- ~~**`corelib/compress`.** Decompression bombs~~ — **reviewed and fixed, finding 4 above.**
 - Anything about the **generated C** rather than the hand-written shims.
 - Fuzzing of any boundary. The tree's fuzzer targets the compiler, not the shims.
