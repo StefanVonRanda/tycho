@@ -254,3 +254,7 @@ dist/
 # the tycho-make dependency graph's transcript golden
 # (tools/tycho-make/expected.out), same line, same reason.
 !/tools/tycho-make/*.out
+
+# bench/peakrss is a built binary (bench/peakrss.c); bench/run.sh and
+# bench/transpile/run.sh compile it on demand.
+/bench/peakrss
