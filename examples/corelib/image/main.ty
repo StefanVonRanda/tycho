@@ -12,6 +12,7 @@ fn why(e: image.ImgErr) -> string:
         image.BadDims: return "bad dimensions"
         image.ShortPixels: return "too few pixel bytes"
         image.Failed: return "libpng failed"
+        image.TooBig: return "the declared image is too large to decode"
     return "?"
 
 fn main():
