@@ -38,7 +38,7 @@ fundamental one, and the risk it poses to the value-semantic invariant.
 `src/tychoc.c:2696-2735`). That keeps the *language* sound — no foreign
 pointer enters Tycho's owned world — but it pushes real cost onto users:
 
-1. No composite types cross (rejected at parse, `src/tychoc.c:2542,2554`).
+1. No composite types cross (rejected at parse, `src/tychoc.c`).
 2. No byte-buffer / `(ptr,len)` story. A `string` cannot hold `0x00`
    (`corelib/hex/hex.ty:7-11`), so all binary is marshaled as hex — see the
    crypto package marshaling *every* key/nonce/ciphertext/digest as a hex
@@ -48,10 +48,10 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
    passing the wrong handle type (`docs/guides/ffi.md:108-110`; no destructor exists
    — verified by searching `src/tychoc.c` for destructor/drop/dealloc/free).
 4. String lifetime rules have a subtle read-once-borrow footgun
-   (`src/tychoc.c:5763-5767,5805,5915`).
+   (`src/tychoc.c`).
 5. Every out-param / callback API needs a hand-written C shim
    (`docs/guides/ffi.md:131-142`, `examples/sqlite/`, `corelib/crypto/crypto_shim.c`).
-6. No variadics, no callbacks into Tycho (`docs/ffi.md:108-110,163-166`).
+6. No variadics, no callbacks into Tycho (`docs/guides/ffi.md`).
 
 **Threading.** "Race-free by construction" (`README.md:35-37`,
 `docs/guides/concurrency.md:5-9`) is *true for pure Tycho values* and **false the
@@ -102,7 +102,7 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
 ### Pain point 1 — no composite types cross
 
 Arrays, maps, structs, `Option`/`Result`, tuples are all rejected
-(`src/tychoc.c:2542,2554`; `docs/guides/ffi.md:78-87`). Rationale is sound: those
+(`src/tychoc.c`; `docs/guides/ffi.md:78-87`). Rationale is sound: those
 have Tycho-internal C layouts, not a stable ABI. But it means any aggregate
 must be flattened into scalars/strings/`ptr` or carried through a hand-written
 shim. For a struct-heavy C API this is a lot of boilerplate.
@@ -171,9 +171,9 @@ pointer argument. The crypto package is essentially one large shim
 
 ### Pain point 6 — no variadics, no callbacks into Tycho
 
-`printf`-style variadics need a fixed-arity C wrapper (`docs/ffi.md:108,163`).
+`printf`-style variadics need a fixed-arity C wrapper (`docs/guides/ffi.md`).
 A Tycho function value is a non-C-ABI fat pointer, so C cannot call back into
-Tycho (`docs/ffi.md:109-110,165-166`) — qsort-comparator / event-callback APIs
+Tycho (`docs/guides/ffi.md`) — qsort-comparator / event-callback APIs
 are unreachable without a C trampoline. These are documented as by-design
 non-goals; listed here for completeness, not necessarily to fix.
 
@@ -244,7 +244,7 @@ opt-out.**
   is anything non-trivial.
 
 **R5 (lowest priority). Variadics / callbacks-into-Tycho.**
-- These are documented non-goals (`docs/ffi.md:108-110,163-166`). A callback
+- These are documented non-goals (`docs/guides/ffi.md`). A callback
   story would require emitting a C-ABI trampoline that re-enters Tycho with a
   fresh arena — large, and it punctures the "no foreign control flow into
   Tycho" stance. Recommend leaving as-is unless a concrete library forces it.

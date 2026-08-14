@@ -71,6 +71,16 @@ HOSTPORT = re.compile(r'^\d+(?:\.\d+)+$')
 CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
                   r'(?:@([^`]+))?`')
 
+# A MULTI-RANGE citation, `path:N-M,X-Y`. CITE above wants the closing backtick
+# straight after the range, so this shape matches NOTHING and used to be skipped
+# in total silence -- a docs/rfc/ ref of this shape pointed at a file that had not
+# existed since the guides move, and the gate reported ok for as long as it took
+# someone to grep for it by hand. Same failure mode the malformed-anchor
+# rule below exists for: a ref that only LOOKS policed. Split it into one
+# citation per range.
+CITE_MULTI = re.compile(r'`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+):'
+                        r'(?:\d+(?:-\d+)?)(?:,\d+(?:-\d+)?)+`')
+
 # `path@SYMBOL` in Markdown: a citation to a definition, deliberately without
 # a line number.
 SYMCITE = re.compile(r'`((?:[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)|Makefile)@([A-Za-z0-9_]+)`')
@@ -234,6 +244,16 @@ def main():
                         "citation survives insertions but not a RENAME or a "
                         "DELETION, which is the whole of what it promises."
                         % (where, sym, sp))
+            # A MULTI-RANGE REF IS A FAILURE, NOT A SKIP -- see CITE_MULTI.
+            for m in CITE_MULTI.finditer(line):
+                sp = m.group(1)
+                if not (sp.startswith(SRC_PREFIX) or sp == "Makefile"):
+                    continue
+                fails.append(
+                    "%s:%d  `%s` -> MULTI-RANGE CITATION: `path:N-M,X-Y` matches "
+                    "nothing this gate checks, so the ref only LOOKS policed. "
+                    "Write one citation per range."
+                    % (md, ln, m.group(0).strip("`")))
             # A MALFORMED ANCHOR IS A FAILURE, NOT A SKIP. Same SRC_PREFIX
             # filter as above, which is what keeps an email address, an npm
             # `pkg@version` or an `@decorator` out: none of them is a tracked

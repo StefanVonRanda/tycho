@@ -63,11 +63,11 @@ incidental implementation choices:
 
 - **I1 — implicit scope arenas.** A value's lifetime = its lexical scope; reclamation is one
   O(1) arena reset. The model deliberately has **no escape analysis** beyond move-on-last-use
-  and the per-scope arena (`docs/memory-model.md`). It works precisely because no value
+  and the per-scope arena (`docs/guides/memory-model.md`). It works precisely because no value
   outlives its arena except by an explicit copy to a longer-lived one (`_parent`).
 - **I2 — deep-copy *is* the thread boundary.** `spawn` / `parallel for` / channel send copy
   the value across the boundary; that copy is *why* concurrency is race-free with no locks
-  and no lifetime rules (`docs/concurrency.md`, `[[hier-concurrency-design]]`: "the deep-copy
+  and no lifetime rules (`docs/guides/concurrency.md`, `[[hier-concurrency-design]]`: "the deep-copy
   call convention IS a sound thread boundary").
 - **I3 — no reference counting.** COW/RC is explicitly rejected: atomic refcount traffic on
   shared values is exactly the cost the arena + lock-free design exists to avoid

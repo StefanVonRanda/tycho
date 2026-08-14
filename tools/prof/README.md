@@ -11,8 +11,11 @@ wrote it for environments where the usual tools don't work:
   to *every function call*, so a tiny, branch-predicted, million-times-called
   function (`is_variant`, `count_str_occ`, the bounds-check helpers) is charged
   that overhead and *looks* like 25–33% of runtime — when at `-O2` it's ~0.3%.
-  Chasing that ghost cost me real effort (see `docs/perf.md`). **Trust this sampler
-  (or `-O2` wall-clock deltas), not gprof self-times, for hot tiny functions.**
+  Chasing that ghost cost real effort. **Trust this sampler (or `-O2` wall-clock
+  deltas), not gprof self-times, for hot tiny functions.** The measured figures
+  are here rather than elsewhere on purpose: `docs/guides/perf.md` states the rule
+  but no longer carries the numbers, which were taken against a workload that can
+  no longer be run.
 
 ## How it works
 
