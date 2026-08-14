@@ -199,13 +199,30 @@ fn main():
     av := cli.argv()
     valued := ["host", "port", "idle-ms"]
     boolean := ["help", "h"]
-    c := cli.parse_spec(av, valued, boolean)
+    # parse_checked, not parse_spec: the schema-carrying parse RECORDS an unknown
+    # token and hands back a usable Cli, so `--pot 9000` used to start the server
+    # on the default port with nothing said (FRICTION #29's residue). A Result
+    # cannot be ignored.
+    c := cli.Cli([], [], [], [], [], [])
+    match cli.parse_checked(av, valued, boolean):
+        Ok(v): c = v
+        Err(cli.Unknown(tok)): die("tycho-kvsrv: unknown option " + tok)
+        Err(cli.NoValue(tok)): die("tycho-kvsrv: " + tok + " needs a value")
     if cli.flag(c, "help") or cli.flag(c, "h"):
         print(usage())
         return
     host := cli.get(c, "host", DEF_HOST)
-    port := strings.parse_int(cli.get(c, "port", str(DEF_PORT)))
-    idle := strings.parse_int(cli.get(c, "idle-ms", str(DEF_IDLE_MS)))
+    # parse_int_checked, not parse_int: the short name stops at the first
+    # non-digit and answers with what it got, so `--port abc` was port 0 -- a
+    # kernel-chosen port -- and `--port 80x` was 80 (FRICTION #34).
+    port := 0
+    match strings.parse_int_checked(cli.get(c, "port", str(DEF_PORT))):
+        Ok(v): port = v
+        Err(e): die("tycho-kvsrv: --port must be an integer")
+    idle := 0
+    match strings.parse_int_checked(cli.get(c, "idle-ms", str(DEF_IDLE_MS))):
+        Ok(v): idle = v
+        Err(e): die("tycho-kvsrv: --idle-ms must be an integer")
     if port < 0 or port > 65535:
         die("tycho-kvsrv: --port must be 0..65535")
     if idle < 0:

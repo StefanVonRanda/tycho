@@ -130,7 +130,13 @@ fn main():
     # cli.parse wants. This was the four-line copy loop above -- the friction plan.
     c := cli.parse(cli.argv())
     files := cli.positionals(c)
-    topk := strings.parse_int(cli.get(c, "top", "5"))
+    # parse_int_checked, not parse_int: the short name stops at the first
+    # non-digit, so `--top=9x` meant 9 and `--top=abc` meant 0. The `< 1` guard
+    # below caught the 0 but not the 9 (FRICTION #34).
+    topk := 5
+    match strings.parse_int_checked(cli.get(c, "top", "5")):
+        Ok(v): topk = v
+        Err(e): topk = 5
     if topk < 1:
         topk = 5
 

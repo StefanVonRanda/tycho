@@ -3958,9 +3958,19 @@ dashed  get=[real.toml]  unknown=0
 bare    get=[real.toml]  unknown=0
 ```
 
-What is NOT fixed is the general shape: `unknown()` is still advisory, so a
+~~What is NOT fixed is the general shape: `unknown()` is still advisory, so a
 typo'd option (`--maifest`) still runs the program on defaults unless the caller
-reads it. `tools/tycho-snap` reads it and exits 2; nothing makes anyone else.
+reads it.~~ **FIXED 2026-08-14 by a shape that cannot be ignored:
+`corelib/cli/cli.ty@parse_checked` returns `Result(Cli, CliErr)` and refuses to
+hand back a `Cli` carrying anything in `unknown` or `missing`. Not a `die` --
+a typo'd option is INPUT, and corelib dies only for a use-after-free
+(`corelib/pool/pool.ty@get`) -- but a `Result` has to be matched.
+
+Measured before writing it: 6 programs call `parse_spec` and 5 already read
+`unknown()` by hand. The sixth, `tools/tycho-kvsrv`, did not — `--pot 9000`
+started the server on the default port with nothing said. It now reports
+`unknown option --pot`, and `--port` with nothing after it reports
+`--port needs a value`.**
 
 ### 30. ~~`[string] + [string]` is refused with a reason that is false~~ — **FIXED 2026-08-13 (`c46952de`), both sites; see the banner below**
 
@@ -4112,7 +4122,7 @@ expense ledger whose `--selftest` is 15 `core:testing` assertions over a real
 SQLite file — a test framework nothing tests being the sharper of the two
 subjects.
 
-### 34. ~~The obvious `parse_int` is the fail-open one, and the safe one is longer~~ — **RECORDED, not fixed: a rename is a 40-caller flag day. Measured 2026-08-13: 40 call sites use `parse_int`, 13 use `parse_int_checked`**
+### 34. ~~The obvious `parse_int` is the fail-open one, and the safe one is longer~~ — **the NAME stands (a rename is a 40-caller flag day); the two callers it was actually hurting are fixed, 2026-08-14**
 
 `strings.parse_int` stops at the first non-digit and answers with what it got.
 Measured at `b188feb2`, beside its checked sibling:
@@ -4133,7 +4143,14 @@ trap it names is still there, under the shorter and more inviting name. The
 package's own comment says the checked one exists because "`server/main.ty` each
 hand-rolled a strict parser for want of this".
 
-**Not proposed as a rename.** `parse_int`'s fail-open behaviour is documented on
+**Not proposed as a rename, but the call sites were audited, 2026-08-14.** Of the
+40 `parse_int` calls, exactly two were fed unvalidated input:
+`tools/tycho-kvsrv` (`--port abc` became port 0 — a kernel-chosen port — and
+`--port 80x` became 80) and `examples/weblog` (`--top=9x` meant 9; its `< 1`
+guard caught `abc` but not that). Both now use `parse_int_checked`. The rest pass
+digits they produced themselves. So the harm was two programs, not the name.
+
+`parse_int`'s fail-open behaviour is documented on
 its own line and something in the tree may want it. What is worth recording is
 that the audit reached for the short name first, and that the two differ by a
 suffix rather than by anything a reader would notice at the call site — the same

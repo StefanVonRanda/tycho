@@ -148,6 +148,30 @@ fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict
 fn parse(av: [string]) -> Cli:
     return parse_into(av, []string, []string, false)
 
+# Why a `Result` and not a `die`: a typo'd option is INPUT, not a programmer
+# error, so it is the caller's to report -- corelib dies only for a use-after-free
+# (`corelib/pool/pool.ty@get`). What this shape buys is that the caller cannot
+# forget: `parse_spec` records an unknown token in `unknown(c)` and returns a
+# perfectly usable `Cli`, so a program that never asks runs on defaults with no
+# sign anything was wrong (FRICTION #29's residue -- `tools/tycho-kvsrv` was
+# exactly that program until 2026-08-14). A `Result` has to be matched.
+enum CliErr:
+    Unknown(string)        # a token the schema does not name, as written
+    NoValue(string)        # a valued option with nothing after it
+
+# `parse_spec` with the check built in: Err on the FIRST offending token, Ok on a
+# clean parse. Same rule table, same buckets -- this only refuses to hand back a
+# Cli that has something in `unknown` or `missing`.
+fn parse_checked(av: [string], valued: [string], boolean: [string]) -> Result(Cli, CliErr):
+    c := parse_spec(av, valued, boolean)
+    u := unknown(c)
+    if len(u) > 0:
+        return Err(Unknown(u[0]))
+    m := missing(c)
+    if len(m) > 0:
+        return Err(NoValue(m[0]))
+    return Ok(c)
+
 # Parse with a schema, which buys the space-separated spelling `--root DIR`.
 # `valued` and `boolean` name LONG options and short flag letters WITHOUT their
 # dashes -- the same spelling `get`/`flag` take. The full rule table:
