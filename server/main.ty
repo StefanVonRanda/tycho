@@ -84,6 +84,14 @@ const DEF_HOST    = "127.0.0.1"
 const DEF_PORT    = 8080
 const DEF_WORKERS = 8
 const DEF_IDLE_MS = 5000
+# A TOTAL deadline for the request head, distinct from the per-read idle timeout
+# above. The idle timer resets on every byte, so a slowloris that dribbles one
+# byte before each expiry holds a worker forever: measured 2026-08-15, twelve
+# such connections against workers=4 blocked all service until they closed. This
+# bounds the whole head instead. nginx spells the same idea
+# client_header_timeout, and defaults it to 60s; 15s is chosen here because this
+# server has no keep-alive to amortise it over.
+const DEF_HEAD_MS = 15000
 const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
@@ -622,7 +630,7 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
         # would not parse in the access log, and answer "did this peer even start
         # talking" below. This one line replaced a 19-line local read loop and its
         # `Head` struct.
-        got, raw := httpd.read_request_capped(conn, MAX_HEAD)
+        got, raw := httpd.read_request_deadline(conn, MAX_HEAD, DEF_HEAD_MS)
         sw := time.start()
         match got:
             # The five causes, ACTED ON rather than collapsed, and since

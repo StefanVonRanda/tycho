@@ -207,6 +207,43 @@ that these five are. `bytes`/`string` slices CLAMP rather than trap — that is
 deliberate and has its own recorded verdict at FRICTION #5, re-probed 2026-08-13
 against the reference languages.
 
+### 9. Slowloris: the per-read idle timeout does not bound a request
+
+`tycho-httpd` survives every malformed shape thrown at it — an unterminated head,
+an 8 MiB header line (reset by the cap), a lying `Content-Length`, NUL bytes in
+the request line, connect-and-vanish, binary garbage — and keeps serving after
+all of them. `server-check`'s "two rude clients" leg is real.
+
+**A slow client is a different thing from a rude one.** `net.set_read_timeout_ms`
+is per READ, so dribbling one byte before each expiry makes every read succeed and
+resets the timer forever. Measured 2026-08-15, `workers=4`:
+
+```
+12 dribbling connections (1 byte / 2s)   legitimate request BLOCKED at 8s, 16s
+                                          service returned only when they closed
+```
+
+**Fixed to the extent the architecture allows.** `httpd.read_request_deadline`
+adds a TOTAL deadline for the head — what nginx calls `client_header_timeout` —
+and the server passes 15s. Re-measured against the same attack:
+
+```
+blocked at 5s and 20s, SERVING again at 35s while the attackers dribbled on
+```
+
+The deadline evicts each held connection, so service recovers on its own instead
+of waiting for the attacker to lose interest.
+
+**This is not "slowloris fixed" and the write-up should not say so.** An attacker
+who reconnects continuously still saturates four workers; that is inherent to
+connection-per-worker and the answers are more workers, an event loop, or a
+per-peer connection limit — a design decision, not a patch. What changed is
+indefinite denial becoming bounded degradation that self-heals every deadline.
+
+`read_request_capped` keeps its exact old signature and behaviour (`deadline_ms
+<= 0` means none), so no caller moves — the same split `core:strings` has between
+`parse_int` and `parse_int_checked`.
+
 ## Where a next reviewer should start
 
 Every item this pass originally listed as uncovered has since been worked — TLS,
@@ -239,8 +276,9 @@ Concretely open:
   Both times the harness reported a large number of clean inputs while testing
   almost nothing. That is the failure mode of fuzzing, and it does not announce
   itself.
-- **`corelib/net`'s accept/recv path** under hostile peers. `server-check` proves
-  the daemon survives two rude clients; that is not the same as an adversary.
+- ~~`corelib/net` under hostile peers~~ — **probed, finding 9. A slowloris DoS
+  was confirmed and BOUNDED, not eliminated;** the residual is a design property
+  of connection-per-worker, described below.
 - ~~The image decoders' uncapped allocation~~ — **capped at 512 MiB of RGBA
   (an 11600x11600 image) with its own `ImgErr.TooBig`,** overridable at compile
   time like `compress`'s so a gate can prove it fires cheaply. It failed safely

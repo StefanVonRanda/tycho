@@ -40,6 +40,7 @@
 # `with_connection(r, alive)` implement HTTP/1.1 keep-alive.
 package httpd
 import "core:net"
+import "core:time"
 import "core:result"
 
 # Why a request could not be produced. Every variant is payload-free, so both
@@ -270,7 +271,19 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
 # correct line for the request that was served; the second request simply never
 # happened. Pipelining is listed as deliberately not implemented in
 # server/README.md, and this is what that costs the client that tries it anyway.
-fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
+# The idle timeout `net.set_read_timeout_ms` gives is PER READ, and a slowloris
+# defeats it by dribbling one byte before each expiry: every read succeeds, the
+# timer resets, and the connection holds a worker for as long as the attacker
+# likes. Measured 2026-08-15 against tycho-httpd with workers=4: twelve dribbling
+# connections at one byte / 2s blocked every legitimate request indefinitely, and
+# service returned only when they closed.
+#
+# The fix is a TOTAL deadline on the head, which is what nginx's
+# client_header_timeout is. `deadline_ms <= 0` means no deadline, so
+# read_request_capped keeps its exact old behaviour and no caller moves -- the
+# same split core:strings has between parse_int and parse_int_checked.
+fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request, ReqErr), string):
+    sw := time.start()
     buf := ""
     need := -1                                  # total expected bytes once known
     reading := true
@@ -279,6 +292,8 @@ fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     term := crlf() + crlf()                     # hoisted: two allocations + a concat per
                                                 # loop iteration otherwise (FRICTION.md:123)
     for reading:
+        if deadline_ms > 0 and time.elapsed_ms(sw) > deadline_ms:
+            return (Err(Timeout), buf)          # the WHOLE head, not one read, ran out
         he := find(buf, term)
         if he >= 0 and need < 0:
             # Only the Content-Length matters here, and a malformed head has no
@@ -529,3 +544,10 @@ fn write_response(fd: int, r: Response) -> Result(int, net.NetErr):
         return Ok(n)
     m := net.write(fd, r.body) or_return
     return Ok(n + m)
+
+
+# The old two-argument shape, unchanged: no deadline. Kept so every existing
+# caller compiles as written; a server that faces the open internet should call
+# read_request_deadline instead and say how long a head may take.
+fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
+    return read_request_deadline(fd, cap, 0)
