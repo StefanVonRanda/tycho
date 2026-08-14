@@ -98,6 +98,14 @@ SYM_OK = re.compile(r'[A-Za-z0-9_]+')
 SYMCITE_SRC = re.compile(r'\b((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)'
                          r'|Makefile)@([A-Za-z0-9_]+)')
 
+# The multi-range shape in a SOURCE file. SRCCITE and DOCCITE below stop at the
+# first range exactly as CITE does in Markdown, so the same blind spot exists on
+# this side of the gate. There are none in the tree today (searched 2026-08-14,
+# backticked and bare, across .c/.h/.sh/.py/.ty); this is here so that stays a
+# fact rather than a hope.
+CITE_MULTI_SRC = re.compile(r'\b((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile):'
+                            r'(?:\d+(?:-\d+)?)(?:,\d+(?:-\d+)?)+')
+
 # A source file naming a document: `docs/<path>.md`, optionally `:N` or `:N-M`.
 DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
 
@@ -415,6 +423,15 @@ def main():
                             "a RENAME or a DELETION, which is the whole of what "
                             "it promises."
                             % (sf, ln, m.group(0), sym, sp))
+                for m in CITE_MULTI_SRC.finditer(line):
+                    tgt = m.group(1)
+                    if tgt not in tracked:
+                        continue
+                    fails.append(
+                        "%s:%d  %s -> MULTI-RANGE CITATION: this shape matches "
+                        "nothing the gate checks, so the ref only LOOKS policed. "
+                        "Write one citation per range."
+                        % (sf, ln, m.group(0)))
                 for m in SRCCITE.finditer(line):
                     tgt = m.group(1)
                     if tgt.endswith(".md") or tgt not in tracked:
