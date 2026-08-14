@@ -7,7 +7,7 @@
 reviewer who did not write them, which is a different and lesser thing than a
 third-party professional audit. §7 stays open. What this buys is that the obvious
 classes have now been looked for by someone, with the method written down so the
-next pass can start further along. Five findings fixed, two areas measured clean.
+next pass can start further along. Five findings fixed, three areas measured clean.
 
 ## Scope and method
 
@@ -172,27 +172,66 @@ allocation is a single sized request rather than an unbounded doubling loop, and
 the caller learns about it. Worth a cap if `core:image` ever decodes untrusted
 input in a long-lived process.
 
-## What this pass did NOT cover
+### 8. The emitted C: bounds checks hold, and no user data reaches a format string
 
-Named so the next reviewer starts here rather than repeating the above:
+The previous note listed this as uncovered while conceding it is sanitizer-tested
+(`make test` runs all 717 fixtures under ASan/UBSan/LeakSanitizer; `asan-self`
+covers the compiler's own execution over 736 programs). What was missing was a
+look at the emitted code as CODE. Two classes checked, both by probe rather than
+by reading:
 
-- ~~**TLS**~~ — **reviewed, see below. It is sound.**
-- ~~**`corelib/regex`** ReDoS~~ — **measured clean with a control, finding 6.**
-- ~~**`corelib/image`** decoder arithmetic~~ — **audited, finding 7. One uncapped allocation noted, not fixed.**
-- ~~**`corelib/compress`.** Decompression bombs~~ — **reviewed and fixed, finding 4 above.**
-- Anything about the **generated C** rather than the hand-written shims. Note
-  that it is not unexamined: `make test` builds and runs the whole 717-fixture
-  corpus under ASan/UBSan/LeakSanitizer, and `asan-self` does the same for the
-  compiler's own execution over 736 programs. What is missing is a review of the
-  emitted code as CODE, not sanitizer coverage of it.
-- ~~Fuzzing of any boundary~~ — **closed: `scripts/fuzz_shims.sh`, wired into
-  `make ci`.** 900 mutated inputs through `compress.decompress` and
-  `regex.compile`/`is_match` under ASan+UBSan, 0 failures. Seeds are valid gzip /
-  zlib streams and near-misses, mutated by bit flips, deletions and insertions,
-  so the interesting inputs are those that look valid for a while and then are
-  not. Two things the harness had to get right, each of which cost a round:
-  `detect_leaks=0`, because a Tycho program exits with live arenas by design and
-  LeakSanitizer scored 700/700 "crashes" that were nothing; and a CONTROL heap
-  overflow that must be caught before any real input, because a fuzzer reporting
-  zero findings is indistinguishable from one that is not running. Neutering the
-  control reddens the lane — confirmed.
+**Format strings.** Every `printf`/`fprintf` in the emitted C takes a string
+LITERAL as its format; no value from the program is ever passed as one. That is
+the format-string class closed by construction rather than by discipline.
+
+**Bounds.** Each shape was indexed out of range through a `fn at(n: int) -> int`
+so nothing folds at compile time, and every one traps with the offending index
+AND the true length:
+
+```
+xs[-1]                  tycho: index -1 out of bounds (len 3)
+xs[INT64_MAX]           tycho: index 9223372036854775807 out of bounds (len 3)
+xs[1:99]                tycho: slice [1:99] out of bounds (len 3)
+[3]int   a[5]           tycho: index 5 out of bounds (len 3)
+bounded[3]int b[7]      tycho: index 7 out of bounds (len 2)
+```
+
+The `bounded` case reports the LIVE length (2), not the capacity (3), which is the
+right answer and the one a caller can act on. Negative indices and an index at
+`INT64_MAX` are both caught, so the check is not a naive `i >= len` on a signed
+value. `-fwrapv` is passed by the build, so the arithmetic reaching those checks
+is defined rather than UB the optimiser may assume away.
+
+**What this does NOT establish:** that every emitted construct is checked, only
+that these five are. `bytes`/`string` slices CLAMP rather than trap — that is
+deliberate and has its own recorded verdict at FRICTION #5, re-probed 2026-08-13
+against the reference languages.
+
+## Where a next reviewer should start
+
+Every item this pass originally listed as uncovered has since been worked — TLS,
+regex, the image decoders, compression bombs, boundary fuzzing and the emitted C.
+That is not the same as "there is nothing left", so this section is now a list of
+what is genuinely open rather than a list of struck-through entries.
+
+**The largest gap is not technical.** `ROADMAP.md` §7 asks for a THIRD-PARTY
+review. Everything here was done by one reviewer who did not write the shims but
+is not independent of the project either, and who chose which classes to look
+for. A reviewer who picks different classes will find different things; that is
+the whole argument for §7 and nothing in this document substitutes for it.
+
+Concretely open:
+
+- **`corelib/zip`, `corelib/json`, `corelib/csv`, `corelib/markdown`** — parsers
+  over untrusted input, none reviewed and none in `scripts/fuzz_shims.sh` yet.
+  Extending that harness is the cheapest next step: it already has the control
+  and the mutation loop, and adding a subject is a few lines.
+- **`corelib/net`'s accept/recv path** under hostile peers. `server-check` proves
+  the daemon survives two rude clients; that is not the same as an adversary.
+- **The image decoders' uncapped allocation** (finding 7) — safe today because
+  `malloc` failure is handled, worth a ceiling if `core:image` ever decodes
+  untrusted input in a long-lived process.
+- **Windows.** Every measurement here is Linux. The wine lanes cover behaviour,
+  not memory safety: there is no ASan equivalent in that path.
+- **Timing and side channels.** Not considered at all. `core:crypto` compares
+  digests; whether any comparison is variable-time was not examined.
