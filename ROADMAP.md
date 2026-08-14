@@ -154,7 +154,7 @@ phase-1 notes, because two entries turned out to be wrong:
 | newtype-of-array blocks `push` | **closed 2026-08-10** — and the row understated it. A probe found `len`, indexing, slicing, `push`, `pop`, `for … in`, index-assign and every map builtin ALL refusing a newtype-of-collection: it was write-only unless you went through `to_under`. Operations now see through the newtype; distinctness at assignment, parameter passing and comparison is unchanged and pinned by `tests/reject/newtype_agg_still_distinct.ty`. Fixture `tests/newtype_agg_ops.ty` |
 | aggregate capturing a live binding warns | **closed 2026-08-10 — the warning was right, its advice was not.** Measured on the emitted C: the suggested `y := s` silences the warning and emits the SAME two copies, while making it the value's last use emits one. The no-op remedy is gone from the message; the one that works is stated plainly. Golden `tests/warn/copy_live.err` |
 | ~~typed empty is `[]string`~~ | **not a defect** — both `xs : [string] = []` and `xs := []string` compile. It is a learning-curve item, not a language gap. |
-| consts across package boundaries | not re-probed |
+| consts across package boundaries | **re-probed 2026-08-14 — closed.** `pkg.NAME` reads across the boundary for all four base types in every value position, including arithmetic and comparison: a four-const package read from another gave `4 lim 1.5 true` and `arith: 8 cmp: true`. The one remaining position is the documented `gap:` beside `size_is_const` — a fixed-array LENGTH (`[lim.MAX]int`), which needs the size at parse time when the imported package may not be parsed yet. Still refused, deliberately, but it used to fall through to a type parse and say `unknown type 'lim'`, blaming the package rather than the position; it now names the limitation and the two ways out. `[pkg.Type]` stays a dynamic array of an imported type — the discriminator is the type token after `]`, and `[store.Col]`/`[money.Account]` are everywhere. `tests/reject/fixarr_qualified_const.ty` |
 
 Priority inside the list was `len` shadowing, because it was the only one that
 produced a wrong answer instead of an error message. It is closed; the rest are
@@ -265,13 +265,13 @@ emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `308b6d6`
 Three things that must be decided with it, not after:
 
 1. **`(ptr, len)`, not a NULL-terminated argv.** It would follow the
-   `[int]`/`[float]` convention already at `src/tychoc.c:10374@arrp`. A callee wanting
+   `[int]`/`[float]` convention already at `src/tychoc.c:10385@arrp`. A callee wanting
    `execv` semantics appends its own `NULL`. Promising argv-shape instead means
    the emitter allocates a terminated copy, and that is a different, larger change.
 2. **Borrow for the call; the callee must not retain.** Same contract
    `[int]`/`[float]` carry today. Nobody frees, because nothing was allocated.
 3. **The return direction stays refused.** `[string]` *out* of C has no length
-   header to reconstruct — the same reason `src/tychoc.c:4678-4679` bans a
+   header to reconstruct — the same reason `src/tychoc.c:4689-4690` bans a
    `char **` out-param. Lifting the parameter direction does not lift this one,
    and saying so is part of the change.
 

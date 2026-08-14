@@ -4,7 +4,7 @@
  *
  * WHY THIS FILE EXISTS AT ALL. There is no string-to-float conversion anywhere in
  * the language: `to_float` is a builtin that takes an int, a sized int, an f32 or
- * a float newtype (src/tychoc.c:6218-6222), never a string. So the conversion has
+ * a float newtype (src/tychoc.c:6229-6233), never a string. So the conversion has
  * to cross the FFI boundary, and the only libc routine for it is strtod.
  *
  * WHY strtod ALONE IS A BUG. strtod reads the decimal separator from LC_NUMERIC.

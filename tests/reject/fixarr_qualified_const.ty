@@ -1,0 +1,16 @@
+# `[pkg.CONST]T` cannot be a fixed-array length: the size is needed at PARSE time
+# and an imported package may not be parsed yet, so accepting it would succeed or
+# fail depending on file order. The refusal is deliberate (src/tychoc.c, the gap
+# note beside size_is_const) -- what was wrong is that the tokens fell through to
+# a type parse and the error read `unknown type 'lim'`, blaming the package name
+# rather than the position. Exported consts DO work in every value position.
+#
+# The discriminator is the type after `]`: `[pkg.Type]` with nothing following is
+# a dynamic array of an imported type and stays legal -- `[store.Col]` and
+# `[money.Account]` are all over tools/.
+# expect: cannot be an imported const
+# expect: dynamic [T]
+
+fn main():
+    xs: [lim.MAX]int = [1, 2, 3, 4]
+    println(str(len(xs)))
