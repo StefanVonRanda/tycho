@@ -13,6 +13,22 @@ correctness harness — an adversarial fuzzer, sanitizer lanes over both the com
 the programs it emits, and a golden-locked test suite, all green in a local gate
 (`make ci`). See [docs/architecture.md](docs/architecture.md) for what each gate proves.
 
+**Production readiness, as of 2026-08-14.** Of the seven things §"What 1.0
+requires" asks for, §2 through §5 are closed and §6's artifacts are built and
+verified for both platforms. What is left is not engineering: **§1** (someone
+other than the author writes a real program), **§7** (an external security
+review), and the outward half of **§6** (tag and publish, a decision). Those need
+another person or the owner, so the tree cannot close them on its own.
+
+The last engineering sweep before that line was the **fail-open audit**: every
+corelib parse function and every caller that reads persisted or wire data,
+checked for a parser that returns a plausible wrong value instead of an error.
+It found a build tool accepting a damaged mtime (a stale output shipped as
+current), a database lexer turning an out-of-range literal into `0` (a query
+matching the wrong rows), and the money type's only text constructor returning
+`0.15` for `"1.5x"`. All three are fixed and gated; the pattern and the
+`_checked` convention are written up at FRICTION #4 and #56.
+
 Until 2026-07-29 that harness also included a **two-compiler differential**: every
 program was compiled by `tychoc` and by the self-hosted `compiler/tychoc0.ty`, and the
 two had to agree. That is over — see below for what it proved and what its loss costs.
