@@ -1,0 +1,26 @@
+# `fn ident(x: $T) -> $T` instantiated at a handle. The ban on returning one is
+# checked at the parameter parse site against the WRITTEN return type, which here
+# is `$T` and not a handle, so the instance signature never saw it. `g := ident(f)`
+# then DOUBLE FREED for real: the callee frees at its scope exit and the caller
+# frees the copy again -- glibc reported "double free detected in tcache 2",
+# exit 134, measured 2026-08-14 against the counters in tools/tycho-fh/fh.c.
+#
+# A channel and a task were already refused out of the same generic by their own
+# guards; only the handle was open. tests/reject/affine_handle_copy.ty is the
+# non-generic sibling, which was the same double free one path over.
+# expect: cannot return a handle
+# expect: instantiated at one
+
+handle R:
+    free: hc
+
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+
+fn ident(x: $T) -> $T:
+    return x
+
+fn main():
+    f := ho(1)
+    g := ident(f)
+    print("unreachable")

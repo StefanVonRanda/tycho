@@ -717,7 +717,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10965@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10968@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -4015,7 +4015,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10793), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10796), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -8920,6 +8920,9 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)]));
     }
     cret = subst_type(gt->ret, binds);
+    if (IS_HANDLE(cret))   /* the instance half of :4429. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
+        die_at(e->line, "a Tycho fn cannot return a handle -- '%s' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope",
+               gt->name);
     if (has_typaram(cret))
         die_at(e->line, "the return type of '%s' has a type parameter not fixed by any argument; pass it explicitly, e.g. %s$(int)", gt->name, gt->name);
     /* Phase 39: the declaration rules again, now on the SUBSTITUTED signature.
@@ -9350,7 +9353,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11704), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11707), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9380,12 +9383,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13690) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13693) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11791) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11794) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
