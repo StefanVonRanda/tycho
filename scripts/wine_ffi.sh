@@ -60,14 +60,32 @@ run_exe() {
 }
 
 # <label> <program> -- the MINGW compiler must REJECT it
+# reject <label> <program> [link]
+#
+# Default is --emit-c: STOP BEFORE THE LINKER. With -o these legs were vacuous.
+# Every one of these programs declares `extern fn ho/hc/hu`, which exist in no
+# library, so the LINK always failed and the leg reported "ok" whether or not the
+# compiler had rejected anything -- it could not tell a refusal from a missing
+# symbol. Measured 2026-08-14: the legal program `d := ho(1); print(str(hu(d)))`
+# fails under -o and is ACCEPTED under --emit-c, so a leg fed a valid program
+# still passed. Four of these legs shipped in that state.
+#
+# Pass "link" as the third argument for the one leg whose subject IS the link
+# line: the shell-injection guard lives in cc_safe_name, which --emit-c returns
+# before reaching.
 reject() {
-    label="$1"; prog="$2"
+    label="$1"; prog="$2"; mode="${3:-emit}"
     case "$label" in *"$FILTER"*) ;; *) return ;; esac
     printf '%b' "$prog" > "$T/rej.ty"
-    # -o, not --emit-c: the shell-injection guard lives at LINK-line construction
-    # (src/tychoc.c cc_safe_name), which --emit-c returns before. The rejected
-    # programs are all invalid, so the refusal fires before any cc invocation. */
-    if $E "$T/rej.ty" -o "$T/rej" >/dev/null 2>&1; then
+    # Capture the status in a variable. Reading `$?` after the if/fi below was
+    # unreliable in practice -- a control that fed this leg a LEGAL program still
+    # reported ok, which is the one thing a rejection leg must never do.
+    if [ "$mode" = link ]; then
+        $E "$T/rej.ty" -o "$T/rej" >/dev/null 2>&1; st=$?
+    else
+        $E --emit-c "$T/rej.ty" -o "$T/rej" >/dev/null 2>&1; st=$?
+    fi
+    if [ "$st" -eq 0 ]; then
         echo "FAIL $label (mingw compiler ACCEPTED it)"; fail=$((fail+1))
     else echo "ok    $label (mingw compiler rejects, under Wine)"; pass=$((pass+1)); fi
 }
@@ -93,12 +111,24 @@ run_exe "pkgext" "tests/ffi/pkgext/main.ty" "tests/ffi/shim.c" "" "tri6=42"
 run_exe "sized"  "$T/sz.ty"        "tests/ffi/shim.c" "" "5032704 8589934592 -5"
 
 echo ">>> compiler-side rejections through the mingw compiler"
+# NOTE THE `${hh}` SPLICE AT EVERY CALL SITE, NOT `$hh `. With the space the
+# program began ` fn main():` -- indented at top level -- so the compiler said
+# `expected 'fn'` and every one of these legs passed on a SYNTAX ERROR, never
+# reaching the rule it names. Measured 2026-08-14 by feeding the decl-copy leg a
+# LEGAL program: it still reported ok. Four of these legs shipped that way.
 hh='handle R:\n    free: hc\nextern fn ho(i: int) -> R\nextern fn hc(h: R) -> int\nextern fn hu(h: R) -> int\n'
-reject "handle-reassign" "$hh fn main():\n    d := ho(1)\n    d = ho(2)\n"
-reject "handle-container" "$hh fn main():\n    a := [ho(1)]\n    print(\"x\")\n"
-reject "handle-return" "$hh fn bad() -> R:\n    return ho(1)\nfn main():\n    return\n"
-reject "handle-capture" "$hh fn main():\n    d := ho(1)\n    f := fn() -> int: hu(d)\n    print(str(f()))\n"
-reject "shell-inject-extern" 'extern "m; touch /tmp/wine_ffi_INJECTED" fn z() -> int\nfn main():\n    print(str(z()))\n'
+reject "handle-reassign" "${hh}fn main():\n    d := ho(1)\n    d = ho(2)\n"
+reject "handle-container" "${hh}fn main():\n    a := [ho(1)]\n    print(\"x\")\n"
+reject "handle-return" "${hh}fn bad() -> R:\n    return ho(1)\nfn main():\n    return\n"
+reject "handle-capture" "${hh}fn main():\n    d := ho(1)\n    f := fn() -> int: hu(d)\n    print(str(f()))\n"
+# The two shapes added on 2026-08-14 (FRICTION #43, #44). Both COMPILED before
+# that, and the decl copy double-freed at run time -- two owners, two scope-exit
+# destructor calls on one pointer. They are guarded in shared parse/resolve code
+# with no platform branch, so this leg is asking whether that is really true of
+# the mingw build rather than assuming it.
+reject "handle-decl-copy" "${hh}fn main():\n    d := ho(1)\n    e := d\n    print(str(hu(e)))\n"
+reject "handle-struct-field" "${hh}struct S:\n    r: R\nfn main():\n    print(\"x\")\n"
+reject "shell-inject-extern" 'extern "m; touch /tmp/wine_ffi_INJECTED" fn z() -> int\nfn main():\n    print(str(z()))\n' link
 reject "inout-string" 'extern "x" fn f(s: inout string)\nfn main():\n    print("x")\n'
 
 echo
