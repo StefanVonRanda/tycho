@@ -124,6 +124,7 @@ reach for first.
 | `tools/tycho-tally/` | `make tally-check` | ~3s. The only lane that runs `core:sqlite` or `core:testing`, and the only one whose control BREAKS an assertion in a copy to prove the test framework can fail |
 | `tools/tycho-agg/` | `make agg-check` | ~3s. The only lane that asserts a generic INSTANTIATION reached codegen -- it greps the emitted C for the mangled `pipe__fn__type` symbols, which no other run.sh does |
 | `tools/tycho-tmpl/` | `make tmpl-check` | ~3s. The only program using `sink`, and the only lane that asserts a consume rule still REFUSES four shapes |
+| `tools/tycho-stat/` | `make stat-check` | ~2s. The only program using variadics or `zero$(T)`. Checks the ANSWERS -- count/sum/min/max/mean are recomputed in the runner, so re-recording cannot bless wrong arithmetic |
 | `server/`, or the `core:net` accept/recv/send path | `make server-check` | ~7s, starts the server for real |
 | `examples/weblog/`, `examples/webserver/` | `make weblog webserver` | ~4s. **The only lanes that run either program** — `entrypoints` compiles them and asserts nothing |
 | a `bench/` benchmark, or a language change that could break one | `sh scripts/entrypoints.sh` | ~0.22s. **The only lane that compiles anything under `bench/`.** `bench/guard.sh` checks one wall-time ratio and nothing else, so before 2026-08-11 the ~51 benchmarks could stop compiling in silence. Compile-only (`--emit-c`) — it never runs a benchmark, so it stays milliseconds. `make bench` depends on it |

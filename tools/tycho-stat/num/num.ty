@@ -1,0 +1,61 @@
+# Variadic and zero-seeded numeric helpers -- the two features nothing outside
+# `tests/` used.
+#
+# WHY THIS PACKAGE EXISTS. Measured 2026-08-14 with `grep -F`: a variadic
+# parameter (`...T`) is DECLARED in exactly three files, all under `tests/`
+# (one positive fixture and two rejects), and `zero$(T)` appears only in three
+# fixtures and in `compiler/tychoc0.ty`, the frozen compiler no gate builds. Both
+# are language features whose only exercise is their own fixtures.
+package num
+
+# A variadic over `int`. `f()` supplies an empty `[int]`, so the identity is the
+# answer for no arguments rather than a special case.
+fn sum(xs: ...int) -> int:
+    t := 0
+    for x in xs:
+        t = t + x
+    return t
+
+# Generic in the element type, so an EMPTY call has nothing to infer from and
+# must name it: `num.count$(int)()`. Both halves of that spelling were errors
+# until 2026-08-14 -- the qualified `$(...)` did not parse (FRICTION #39) and the
+# explicit type argument was ignored when the call was empty (FRICTION #40).
+fn count(xs: ...$T) -> int:
+    return len(xs)
+
+# Min and max over a variadic. Empty is not a number, so both answer an Option
+# rather than inventing a sentinel -- `min()` of nothing is None, not 0 and not
+# a huge constant a caller would have to know about.
+fn min_of(xs: ...int) -> Option(int):
+    if len(xs) == 0:
+        return None
+    m := xs[0]
+    for x in xs:
+        if x < m:
+            m = x
+    return Some(m)
+
+fn max_of(xs: ...int) -> Option(int):
+    if len(xs) == 0:
+        return None
+    m := xs[0]
+    for x in xs:
+        if x > m:
+            m = x
+    return Some(m)
+
+# The zero-seeded generic fold: the accumulator starts at `zero$(T)`, so the
+# caller supplies no seed and the identity comes from the type. `defaultable(T)`
+# is what makes `zero$(T)` legal, and it admits exactly int/float/bool/string.
+fn total(xs: [$T]) -> $T where defaultable(T), numeric(T):      # comma-separated; `and` is not the spelling
+    acc := zero$(T)
+    for x in xs:
+        acc = acc + x
+    return acc
+
+# Mean in integer arithmetic, truncating. None for an empty input, for min_of's
+# reason: a mean of nothing is not a number.
+fn mean(xs: [int]) -> Option(int):
+    if len(xs) == 0:
+        return None
+    return Some(total(xs) / len(xs))

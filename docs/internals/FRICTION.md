@@ -4381,7 +4381,7 @@ are language features whose only caller was their own fixture. Writing the first
 consumer package broke all three of the following on the first build.
 
 All three are **FIXED**, with the compiler's own message quoted as it stood
-before the fix. `tests/pkg/variadic_qual/` pins the working forms; its two
+before the fix. The program that found them is gated by `make stat-check`. `tests/pkg/variadic_qual/` pins the working forms; its two
 reject siblings and `tests/reject/variadic_empty_untyped.ty` pin the refusals.
 
 ### 38. ~~A variadic called through a package qualifier did not pack~~ — **FIXED 2026-08-14**

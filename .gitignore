@@ -230,6 +230,9 @@ dist/
 # the tycho-tmpl renderer's golden
 # (tools/tycho-tmpl/tmpl.out), same line, same reason.
 !/tools/tycho-tmpl/*.out
+# the tycho-stat statistics program's golden
+# (tools/tycho-stat/stat.out), same line, same reason.
+!/tools/tycho-stat/*.out
 # the tycho-agg group-and-count's report golden
 # (tools/tycho-agg/agg.out), same line, same reason.
 !/tools/tycho-agg/*.out

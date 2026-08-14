@@ -406,6 +406,11 @@ make -s agg-check
 # consume rule still REFUSES four shapes.
 step "[3y/31] make tmpl-check  (tycho-tmpl: render identical over 2 runs and equal to the golden; substitution against literals with a repeated key; all four sink shapes -- accumulate in a loop, collect then consume, create-grow-consume, count before consuming -- still refused with a sink diagnostic; a missing key exits 1 naming the placeholder; an unknown option refused by name)"
 make -s tmpl-check
+
+# tycho-stat: the only consumer of variadics and `zero$(T)` outside tests/, and
+# the lane that checks the ANSWERS rather than reproducing them.
+step "[3z/32] make stat-check  (tycho-stat: run identical over 2 runs and equal to the golden; count/sum/min/max/mean over a 201-number corpus each equal to the runner's own arithmetic; both empty identities exactly 0 from zero\$(T); negatives survive parsing and min; a non-numeric field refused by name rather than read as its leading digits; an empty generic variadic naming no type still refused with a message naming the cure; an unknown option refused by name)"
+make -s stat-check
 fi
 
 if [ "$LANE" = rest ]; then
