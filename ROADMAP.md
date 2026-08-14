@@ -328,23 +328,30 @@ marks it, so the next deprecation costs one comment
 constant is now `0.6.0` (`src/tychoc.c@TYCHO_VERSION`), and this section
 described `v0.5.0` until 2026-08-14.
 
-**The tarball in `dist/` is STALE and must not be published as it stands.**
-Measured 2026-08-14: `dist/tycho-v0.6.0-linux-x86_64.tar.gz` verifies against its
-`.sha256` and its `tychoc` reports `0.6.0`, but it predates that day's affine and
-generics fixes, and the shipped compiler **accepts all four** of
+**Both tarballs were REBUILT from HEAD on 2026-08-14 and verified.** They had
+gone stale in the way that matters: the previous
+`dist/tycho-v0.6.0-linux-x86_64.tar.gz` verified against its `.sha256` and
+reported `0.6.0`, yet its `tychoc` **accepted all four** of
 `tests/reject/generic_ret_handle.ty`, `generic_struct_field_chan.ty`,
-`generic_sink_affine.ty` and `generic_bounded_field_degraded.ty`. The first two
-are memory errors at run time — a double free and an aliased channel — so
-publishing that artifact would ship known memory-safety bugs under a version
-whose CHANGELOG says they are fixed. There is also no `mingw64` build at 0.6.0;
-0.5.0 had one.
+`generic_sink_affine.ty` and `generic_bounded_field_degraded.ty`. Two of those
+are run-time memory errors — a double free and an aliased channel — so it would
+have shipped known memory-safety bugs under a version whose CHANGELOG says they
+are fixed. A checksum proves an artifact is intact, never that it is current.
 
-What remains is therefore two steps, not one: **rebuild from HEAD**
-(`make release-check`, and `scripts/release.sh <version> --mingw` for Windows),
-then the outward step — `git tag`, push, and `gh release create ... --notes-file
-RELEASE_NOTES.md`. Only the second is a decision rather than a build step. Verify
-the rebuilt tarball the same way: extract it and run the reject fixtures above
-through the shipped `tychoc`, which is what caught this.
+State now, each figure measured rather than assumed:
+
+- `make release-check` reports **byte-identical archives** over two builds.
+- The extracted native `tychoc` reports `0.6.0`, **refuses all six** of the
+  affine/generics reject fixtures, and still finds `corelib` beside itself with
+  no `TYCHO_CORELIB`, compiling and running a `core:sort` program.
+- The `mingw64` cross-build exists again at 0.6.0 (0.5.0 had one, 0.6.0 did not).
+  Under wine its `tychoc.exe` reports `0.6.0` and refuses the same fixtures.
+
+What remains is the outward step alone: `git tag`, push, and `gh release create
+... --notes-file RELEASE_NOTES.md --prerelease`. That is a decision, not a build
+step. **Re-verify before publishing** — extract the tarball and run those reject
+fixtures through the shipped compiler. That check is what caught this, and a
+checksum would not have.
 
 ### 7. An external security review
 
