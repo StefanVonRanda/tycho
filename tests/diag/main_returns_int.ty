@@ -1,0 +1,6 @@
+# `main` cannot return a status, and diff(1)-style tools need 0/1/2. The message
+# must name `exit(code)`, which is the shape that CAN express it and which five
+# programs under tools/ already use -- naming only Result(void, string) sends the
+# reader to redesign around two outcomes. Found writing tools/tycho-diff.
+fn main() -> int:
+    return 2

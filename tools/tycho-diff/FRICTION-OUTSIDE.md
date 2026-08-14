@@ -13,6 +13,11 @@ Everything here is a first-contact reaction, kept even where the answer turned
 out to be documented somewhere I did not look. That is the data §1 is after: an
 author knows where to look.
 
+**All four diagnostics below were fixed the same day**, each with a fixture under
+`tests/diag/`. The wording quoted in each section is what the compiler said
+BEFORE; the reports are left in the past tense they were written in, because the
+point of this file is the first-contact experience, not the changelog.
+
 ---
 
 ## 1. In `package main`, the `die` warning offers a remedy the next line forbids
@@ -35,7 +40,11 @@ qualified name to reach itself by, so "call it qualified" cannot be done.
 The warning is right in general and wrong in the one package where every
 newcomer writes their first program. Cost: two minutes, but the two minutes are
 spent doubting a diagnostic, which is worse than being told plainly. Suggested
-fix: in `package main`, drop the qualified-call half of the remedy.
+fix: in `package main`, drop the qualified-call half of the remedy. **Done** — the
+explanation is kept in full and only the impossible remedy is replaced, since for
+`len` (which warns and compiles) "unreachable by that name" is the load-bearing
+half. `tests/diag/shadow_builtin_main.ty` pins the warning AND the error together,
+because it was the pair that was wrong.
 
 ## 2. A missing import is reported as a missing symbol
 
@@ -49,7 +58,9 @@ the symbol as the problem, so I went and re-read the corelib source to check I
 had the name right — the one place that could not tell me anything.
 
 Suggested fix: when the package prefix is not imported in this file, say so
-first. The symbol is only worth mentioning once the package is in scope.
+first. **Done** — appended rather than substituted, so a self-qualified name
+(which is not "imported" either) keeps its old message.
+`tests/diag/qualified_no_import.ty`.
 
 ## 3. `print`/`println` are paired; stderr has only `eprint`
 
@@ -65,12 +76,14 @@ program's own gate asserts stdout stays empty on all five error paths, which is
 the rule the suggestion quietly breaks.
 
 `eprint` is documented, at `docs/reference/builtins.md:107` — ninety lines below
-`print` and `println` at `:16-17`, in a different table. A newcomer reading the
+`print` and `println` at `docs/reference/builtins.md:16-17`, in a different table. A newcomer reading the
 print family does not scroll past the intervening sections.
 
 Suggested fixes, either alone would do: add `eprintln`, or make the suggestion
 for `eprintln` be `eprint` rather than `println`, or move the stderr row next to
-its stdout siblings.
+its stdout siblings. **The second was done** —
+`unknown procedure 'eprintln' -- stderr has no println; use eprint(s + "\n")`.
+`tests/diag/eprintln_wrong_stream.ty`.
 
 ## 4. `main` cannot return a status, and the error does not mention `exit`
 
@@ -87,7 +100,9 @@ The capability is there: `exit(code)` is a builtin, documented at
 `builtins.md:23`, and five programs under `tools/` already use it. But the
 diagnostic names only the shape that cannot do the job, so the reader's next move
 is to redesign around a two-outcome status. Adding "…or set the status with
-`exit(code)`" to that message closes the gap at no design cost.
+`exit(code)`" to that message closes the gap at no design cost. **Done** —
+the message now names `exit(code)` and cites diff(1)'s 0/1/2 as the case.
+`tests/diag/main_returns_int.ty`.
 
 ## 5. What made the program *easier* than expected
 

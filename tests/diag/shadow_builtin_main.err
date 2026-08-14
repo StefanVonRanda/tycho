@@ -1,0 +1,4 @@
+tests/diag/shadow_builtin_main.ty:9: warning: `die` collides with the builtin of the same name -- every unqualified `die(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7). `package main` has no package prefix to qualify with, so rename it.
+     9 | fn die(m: string) -> int:
+tests/diag/shadow_builtin_main.ty:9: error: 'die' is already defined
+     9 | fn die(m: string) -> int:

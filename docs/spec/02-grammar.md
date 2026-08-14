@@ -11,7 +11,7 @@ a later static rule rejects (for example, a value `if` without an `else`, §4.4)
 Such forms are flagged here and constrained in the semantic chapters. A program
 is valid only if it parses **and** satisfies every static-semantic rule.
 
-> Provenance: parser entry `src/tychoc.c:4760-4785` (`parse_program`); the
+> Provenance: parser entry `src/tychoc.c:4772-4797` (`parse_program`); the
 > per-construct functions are cited at each section.
 
 ## 4.1 Program and top-level declarations
@@ -43,8 +43,8 @@ arithmetic, bitwise, unary, and backward references to earlier top-level
 constants); its rules are given in §8 and §13. Package resolution,
 visibility, and merging are specified in §28.
 
-> Provenance: `parse_package_decl` `src/tychoc.c:4993@parse_package_decl`, `parse_import_decl` `:5000@parse_import_decl`, `parse_const`
-> (`src/tychoc.c:4741-4758`).
+> Provenance: `parse_package_decl` `src/tychoc.c:5005@parse_package_decl`, `parse_import_decl` `:5012@parse_import_decl`, `parse_const`
+> (`src/tychoc.c:4753-4770`).
 
 ### 4.1.1 Functions
 
@@ -102,7 +102,7 @@ only via a container (e.g. `[Node]`), never as a direct by-value self-field
 (§17).
 
 > Provenance: `parse_struct`/`parse_enum`/`parse_handle`/`parse_typedecl`,
-> `src/tychoc.c:4316-4489`.
+> `src/tychoc.c:4316-4501`.
 
 ### 4.1.3 Extern functions and subscripts
 

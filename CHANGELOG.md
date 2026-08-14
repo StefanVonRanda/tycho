@@ -65,6 +65,28 @@ contain them (see 0.6.0's opening note).
   of trapping. Migration: pass a real `bounded[N]T` — the fixed array that used
   to be accepted is now refused by name (FRICTION #52).
 
+### Diagnostics
+
+Four messages that an outside reader hit in the first ten minutes writing
+`tools/tycho-diff` against `docs/` alone (`tools/tycho-diff/FRICTION-OUTSIDE.md`).
+
+- **The builtin-collision warning no longer offers a remedy `package main`
+  forbids.** It said "rename it, or call it qualified as `pkg.name(...)`" — but
+  main has no package prefix to qualify with, and the next check makes the
+  declaration a hard error, so the second remedy could not be taken. The library
+  wording is unchanged, because there the qualified call really works.
+- **A qualifier this file never imported says so.** `arrays.fill` without
+  `import "core:arrays"` reported `package 'arrays' has no symbol 'fill'` — the
+  symbol exists, and the message sent the reader to the package source, the one
+  place that could not help.
+- **`eprintln` names the stderr primitive.** Edit distance answered `println`,
+  which is the wrong STREAM for an error and puts it on stdout, where it corrupts
+  whatever the tool is piped into.
+- **`main` returning a non-void type names `exit(code)`.** It named only
+  `Result(void, string)`, which has two outcomes and prints one of them, so a
+  0/1/2 contract like diff(1)'s looked inexpressible. It is not: `exit(code)` is
+  a builtin and five programs under `tools/` already use it.
+
 ### Language — added
 
 - **Explicit type arguments now parse on a package-qualified name.**

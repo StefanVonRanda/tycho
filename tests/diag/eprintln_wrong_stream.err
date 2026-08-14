@@ -1,0 +1,2 @@
+tests/diag/eprintln_wrong_stream.ty:6: error: unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + "\n")`
+     6 |     eprintln("boom")

@@ -1,0 +1,2 @@
+tests/diag/main_returns_int.ty:5: error: 'main' returns nothing or Result(void, string), not int -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
+     5 | fn main() -> int:

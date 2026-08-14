@@ -717,7 +717,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10979@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:11004@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -4026,7 +4026,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10807), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10856), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -4378,10 +4378,22 @@ static Proc *parse_fn(Parser *ps) {
      * unreachable in any package -- a hard error. A builtin's name is unreachable only UNQUALIFIED
      * (§3.7): `pkg.name(...)` still reaches it -- `corelib/json/json.ty@keys` relies on that -- so warn. */
     if (is_builtin_ctor(nameT->text)) die_at(nameT->line, "'%s' is already defined", nameT->text);
-    if (shadows_builtin(nameT->text))
-        warn_at(nameT->line, "`%s` collides with the builtin of the same name -- every unqualified "
-                             "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
-                             "name (§3.7). Rename it, or call it qualified as `pkg.%s(...)`.", nameT->text, nameT->text, nameT->text);
+    if (shadows_builtin(nameT->text)) {
+        /* The qualified escape needs a package prefix to spell, and `package main`
+         * has none (pkg_mangle is the identity there) -- so in main the name simply
+         * collides and the very next check makes it a hard error. Offering
+         * `pkg.name(...)` there sent an outside reader looking for a spelling that
+         * does not exist; found writing tools/tycho-diff, FRICTION-OUTSIDE.md item 1. */
+        if (g_cur_pkg_prefix[0])
+            warn_at(nameT->line, "`%s` collides with the builtin of the same name -- every unqualified "
+                                 "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
+                                 "name (§3.7). Rename it, or call it qualified as `pkg.%s(...)`.", nameT->text, nameT->text, nameT->text);
+        else
+            warn_at(nameT->line, "`%s` collides with the builtin of the same name -- every unqualified "
+                                 "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
+                                 "name (§3.7). `package main` has no package prefix to qualify with, so "
+                                 "rename it.", nameT->text, nameT->text);
+    }
     eat(ps, TK_LPAREN, "'('");
 
     Proc *pr = (Proc *)xmalloc(sizeof(Proc));
@@ -6479,8 +6491,15 @@ static Type resolve_expr_inner(Expr *e) {
                     { e->sval = q; e->qual = NULL; e->pkg_done = 1; }   /* adopt the mangled name + drop qual so the generic dispatch below instantiates it */
                 else {
                     const char *sg = suggest_pkg_symbol(e->qual, e->sval);   /* F8: did-you-mean within the package */
-                    if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?", e->qual, nominal_name(e->sval), sg);
-                    die_at(e->line, "package '%s' has no symbol '%s'", e->qual, nominal_name(e->sval));
+                    /* A qualifier this file never imported reads as a package that is
+                     * MISSING A SYMBOL, which sends the reader to the package source --
+                     * the one place that cannot help, because the symbol is right there.
+                     * Say which it is. Appended, not substituted: a self-qualified name is
+                     * not "imported" either and its old message is still the right one.
+                     * FRICTION-OUTSIDE.md item 2. */
+                    const char *imp = is_imported_pkg(e->qual) ? "" : " -- and this file does not `import` it; add the import first";
+                    if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?%s", e->qual, nominal_name(e->sval), sg, imp);
+                    die_at(e->line, "package '%s' has no symbol '%s'%s", e->qual, nominal_name(e->sval), imp);
                 }
             } else if (e->pkg && e->pkg[0]) {
                 int _vi;
@@ -6982,6 +7001,11 @@ static Type resolve_expr_inner(Expr *e) {
                 const char *cl = corelib_hint(e->sval, &cl_strong);   /* F8: a corelib package/function by this name? */
                 if (cl && cl_strong) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* high-confidence stdlib match beats a weak local typo */
                 const char *sg = suggest_fn(e->sval);                 /* a user fn / builtin typo */
+                /* `eprintln` has no builtin, and edit distance answers `println` -- which is
+                 * the WRONG STREAM for the message the caller is plainly trying to write to
+                 * stderr. Name the stderr primitive instead. FRICTION-OUTSIDE.md item 3. */
+                if (!strcmp(e->sval, "eprintln"))
+                    die_at(e->line, "unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + \"\\n\")`");
                 if (sg) die_at(e->line, "unknown procedure '%s'; did you mean '%s'?", nominal_name(e->sval), sg);
                 if (cl) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* weak stdlib guess, but nothing local matched */
                 die_at(e->line, "unknown procedure '%s'", nominal_name(e->sval));
@@ -6989,7 +7013,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5788 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5811 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7549,7 +7573,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7896). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7943). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7572,10 +7596,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7223),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7270),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7517). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7564). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -9196,7 +9220,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7555: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7578: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -9272,7 +9296,8 @@ static void resolve_program(ProcVec *prog) {
             if (pr->ret != T_VOID
                 && !(IS_RES(pr->ret) && res_ok(pr->ret) == T_VOID && res_err(pr->ret) == T_STRING))
                 die_at(pr->line, "'main' returns nothing or Result(void, string), not %s -- an Err reaching the "
-                       "entry point is printed, so the error type is the message", type_name(pr->ret));
+                       "entry point is printed, so the error type is the message. For a status other than 0 or 1 "
+                       "(diff(1)'s 0/1/2, say), call the `exit(code)` builtin", type_name(pr->ret));
         }
         g_fn_ret = pr->ret;
         g_dup_base = 0;   /* the top body shares the param scope (same C function): a decl colliding with a param is a redeclaration */
@@ -9364,7 +9389,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11718), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11767), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9394,12 +9419,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13704) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13753) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11805) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11854) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
