@@ -139,6 +139,57 @@ arguments to be the same size, checked at the call.
 - A `[$N]T` is a template type: it is meaningful only as a function parameter, never in a
   stored position (a struct field, an enum payload, a newtype).
 
+## Inline, fixed-capacity (`bounded[N]T`)
+
+`bounded[N]T` holds **0 to N** elements stored *inside* the container — never in a separate
+arena buffer — and is copied by value with whatever holds it. It differs from `[N]T` in
+carrying a runtime count, and from `[T]` in that the count can never exceed the compile-time
+capacity `N`. The capacity is part of the type: `bounded[4]int` and `bounded[8]int` are
+distinct, and both differ from `[4]int` and `[int]`.
+
+```tycho
+fn main():
+    b: bounded[4]int = [1, 2]      # an array literal initialises it
+    push(b, 3)
+    println(str(len(b)) + " " + str(b[2]))   # 3 3
+```
+
+- The capacity is a positive integer **literal** or the name of a positive `int` `const` —
+  the same two spellings `[C]T` accepts. `0`, a negative, a non-`const` name, and a `const`
+  that is not a positive integer are each rejected.
+- The element type may not be `bool` or `void`, and may not be an affine handle (including
+  `Task(T)` and `Channel(T)`). Everything else is allowed, including a nested `bounded[M]E`.
+- An initialiser with more elements than the capacity is a **compile** error; a `push` past
+  it is a clean runtime abort (`push to a full bounded[2]`), not a reallocation.
+
+Reach for it when a count is small and bounded and you want the storage inline — no arena
+allocation, and the whole thing copies with its owner. `tools/tycho-grid/` uses one.
+
+## Struct-of-arrays (`soa [T]`)
+
+`soa [Point]` stores a struct's fields as **parallel arrays** rather than an array of
+structs — the same values, transposed, so a pass touching one field walks contiguous memory.
+It is indexed and appended like an array (`s[i].x`, `push(s, Point(1, 2))`); the transposition
+is a representation choice the language makes for you, not a different API.
+
+**The type and the empty literal are spelled differently** — the type is `soa [Point]`, the
+empty value is `soa []Point`:
+
+```tycho
+struct Point:
+    x: int
+    y: int
+
+fn main():
+    s := soa []Point          # the empty literal: brackets first, then the type
+    push(s, Point(1, 2))
+    println(str(s[0].x) + " " + str(len(s)))   # 1 1
+```
+
+Affine types stay out, as everywhere else: no handle, `Task(T)` or `Channel(T)` as a field of
+an `soa` element. `tools/tycho-sim/` uses one for its entity pools, which is the shape it is
+for — many entities, a pass at a time over one field.
+
 ## Slices (`xs[a:b]`)
 
 `xs[a:b]` is a sub-range of an array — `xs[a:]` runs to the end, `xs[:b]` from the start,

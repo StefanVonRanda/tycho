@@ -56,6 +56,12 @@ parallel for i in 0..<1000000:      # K = min(ncpu(), 64) chunk tasks (TYCHO_THR
     total += score(i)               # reduction: chunk-local partials, folded at join
 ```
 
+The width can be **named at the loop** when the default is wrong for that particular loop —
+`parallel(4) for i in 0..<n:` runs exactly 4 chunk tasks. The literal must be `1..64` and is
+checked at compile time; a computed width aborts at run time rather than silently clamping. An
+explicit width beats `TYCHO_THREADS`, which is what makes it useful: it pins the one loop whose
+shape you know without touching the rest of the program.
+
 `parallel for` (over `0..<N` or a collection) lifts the body into a chunk procedure: captures
 deep-copy into each task, and a reduction accumulator (`+` or `*` on `int`/`float`) starts from
 the operator's identity per chunk and folds at the in-order join — so an integer result is
