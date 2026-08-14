@@ -7,7 +7,7 @@
 reviewer who did not write them, which is a different and lesser thing than a
 third-party professional audit. §7 stays open. What this buys is that the obvious
 classes have now been looked for by someone, with the method written down so the
-next pass can start further along, and five real findings fixed.
+next pass can start further along. Five findings fixed, two areas measured clean.
 
 ## Scope and method
 
@@ -39,7 +39,7 @@ documented shell API doing what it says.
 **No unbounded string operation exists in the whole shim surface.** For 3.7k
 lines of hand-written boundary C that is a genuinely good result.
 
-## Findings, all five fixed
+## Findings
 
 ### 1. A response body was accumulated with no cap (`corelib/http/http_shim.c@collect`)
 
@@ -128,16 +128,57 @@ sibling `netx_read` has the same shape but passes `size_t` and needs no clamp.
 Not reachable from the network — `max` comes from the calling Tycho program —
 which is why it is a hardening rather than a vulnerability.
 
+### 6. `core:regex` does NOT backtrack catastrophically — measured, with a control
+
+The concern was ReDoS: the shim uses POSIX `regcomp`/`regexec`, and a backtracking
+engine on attacker-controlled input is an exponential-time DoS. Measured
+2026-08-14 with the textbook killer, `^(a+)+$` against `a{n}!`:
+
+| n | Python's `re` (backtracking) | `core:regex` here |
+|---|---|---|
+| 18 | 9 ms | 2 ms |
+| 22 | 146 ms | 2 ms |
+| 26 | 2251 ms | 2 ms |
+| 28 | 8940 ms | 2 ms |
+| 20000 | — | **2 ms** |
+
+The Python column is the **control**: it proves the probe shape detects blowup,
+so the flat column is a result and not a probe that measures nothing — which is
+the failure mode a clean security finding usually has. glibc's `regexec` is a
+hybrid automaton and does not explore that space.
+
+**Scope of the claim, stated because it is narrower than "regex is safe":** one
+pattern class, on glibc, on this host. The shim binds whatever POSIX regex the
+platform provides, and Windows and musl are different implementations that were
+NOT measured. A pattern with backreferences — which force backtracking in any
+engine — was also not tried.
+
+### 7. The PNG decoder allocates exactly what libpng will write
+
+`imgx_decode` uses libpng's **simplified** API, which is the one that validates:
+`png_image_begin_read_from_memory` parses and checks the header, `PNG_IMAGE_SIZE`
+computes the output size from the validated fields, the `malloc` is that size, and
+`png_image_finish_read` writes into exactly that. Failure at each step is handled
+and mapped to a distinct status. The format is forced to `PNG_FORMAT_RGBA`, so
+the size is not a function of anything the file chooses.
+
+That is the arithmetic the "did not cover" note was worried about, and it holds.
+
+**One residual, not fixed:** there is no ceiling on the decoded size, so a PNG
+declaring enormous dimensions asks for a correspondingly enormous allocation. It
+fails *safely* — `malloc` returns NULL and that branch is handled — so this is
+memory pressure, not corruption. Unlike the decompression bomb (finding 4) the
+allocation is a single sized request rather than an unbounded doubling loop, and
+the caller learns about it. Worth a cap if `core:image` ever decodes untrusted
+input in a long-lived process.
+
 ## What this pass did NOT cover
 
 Named so the next reviewer starts here rather than repeating the above:
 
 - ~~**TLS**~~ — **reviewed, see below. It is sound.**
-- **`corelib/regex`.** A regex over attacker-controlled input is a
-  catastrophic-backtracking (ReDoS) question that grep cannot answer.
-- **`corelib/image`.** `decode_bmp`/`decode_qoi` parse untrusted bytes into a
-  pixel buffer — the classic decoder-overflow surface. They return `Result`, so
-  the error path exists; the arithmetic was not audited.
+- ~~**`corelib/regex`** ReDoS~~ — **measured clean with a control, finding 6.**
+- ~~**`corelib/image`** decoder arithmetic~~ — **audited, finding 7. One uncapped allocation noted, not fixed.**
 - ~~**`corelib/compress`.** Decompression bombs~~ — **reviewed and fixed, finding 4 above.**
 - Anything about the **generated C** rather than the hand-written shims.
 - Fuzzing of any boundary. The tree's fuzzer targets the compiler, not the shims.
