@@ -384,6 +384,9 @@ make -s sim-check
 step "[3u/27] make make-check  (tycho-make: demo report byte-identical over 2 runs, 8 nodes ordered by DECLARATION order where alphabetical would disagree, every printed edge respected with each node listed exactly once, one edge removed from a 4-node chain moving the order, 3 cycles NAMED including a self-edge and one with innocent nodes stuck behind it, 8 MakeErr variants each exiting non-zero with their own whole message and an empty stdout; then the executor: a cold build runs all 4 rules with zeta.o and alpha.o really running before app in the recipes' own trace, a no-op rebuild runs ZERO, changing one input reruns exactly its 2 dependents, moving a file's mtime with its bytes intact reruns NOTHING and calls it touched, a chain node starting before the wide level beside it finishes -- the leg the wavefront this replaced cannot pass -- the log is byte-identical over 6 runs at TYCHO_THREADS 1/2/8, and 6 BuildErr variants are accounted for)"
 make -s make-check
 
+step "[3u2/27] make diff-check  (tycho-diff: unified output == golden and the diff(1) 0/1/2 exit contract held on a differing pair, an identical pair and 5 error paths each with an empty stdout; over 206 generated pairs -- including two empty files, one empty, identical and a reversal -- every edit script rebuilt BOTH files exactly and matched GNU diff's edit distance, which is what a transcript cannot see)"
+make -s diff-check
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.

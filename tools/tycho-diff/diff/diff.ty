@@ -1,0 +1,186 @@
+# Myers O(ND) line diff and unified-diff formatting.
+#
+# Written 2026-08-14 as a ROADMAP section-1 program: by someone who did not write
+# the compiler, from the public docs only, with the friction recorded rather than
+# worked around silently. See tools/tycho-diff/FRICTION-OUTSIDE.md.
+#
+# The algorithm is Myers' greedy edit-graph walk (An O(ND) Difference Algorithm
+# and Its Variations, 1986): advance a furthest-reaching path per diagonal k for
+# increasing edit distance d, snapshot the frontier at every d, then walk the
+# snapshots backwards to recover which edit was taken. O((N+M)D) time, and the
+# snapshots are what make the backtrack possible at all.
+package diff
+import "core:arrays"
+
+# One step of the edit script. Keep carries BOTH indices because a unified hunk
+# needs to number the line in each file independently.
+enum Edit:
+    Keep(int, int)     # a[i] == b[j]
+    Del(int)           # a[i] is not in b
+    Ins(int)           # b[j] is not in a
+
+fn is_keep(e: Edit) -> bool:
+    return e is Keep
+
+# The edit script taking `a` to `b`, in file order.
+fn script(a: [string], b: [string]) -> [Edit]:
+    n := len(a)
+    m := len(b)
+    if n == 0 and m == 0:
+        return []Edit
+    bound := n + m
+    off := bound                     # k ranges [-bound, bound]; index with k + off
+    v := arrays.fill(2 * bound + 1, 0)
+    trace: [[int]] = []
+
+    endd := 0 - 1
+    for d := 0; d <= bound and endd < 0; d += 1:
+        push(trace, v)               # value semantics: this is a SNAPSHOT, not an alias
+        for k := 0 - d; k <= d; k += 2:
+            x := 0
+            if k == 0 - d or (k != d and v[k - 1 + off] < v[k + 1 + off]):
+                x = v[k + 1 + off]   # came from above: an insertion
+            else:
+                x = v[k - 1 + off] + 1
+            y := x - k
+            for x < n and y < m and a[x] == b[y]:      # slide down the diagonal
+                x = x + 1
+                y = y + 1
+            v[k + off] = x
+            if x >= n and y >= m:
+                endd = d
+                break
+
+    out: [Edit] = []
+    x := n
+    y := m
+    for d := endd; d > 0; d -= 1:
+        vd := trace[d]
+        k := x - y
+        prevk := 0
+        if k == 0 - d or (k != d and vd[k - 1 + off] < vd[k + 1 + off]):
+            prevk = k + 1
+        else:
+            prevk = k - 1
+        px := vd[prevk + off]
+        py := px - prevk
+        for x > px and y > py:
+            push(out, Keep(x - 1, y - 1))
+            x = x - 1
+            y = y - 1
+        if x == px:
+            push(out, Ins(py))
+            y = py
+        else:
+            push(out, Del(px))
+            x = px
+    for x > 0 and y > 0:             # the d == 0 prefix: a common head
+        push(out, Keep(x - 1, y - 1))
+        x = x - 1
+        y = y - 1
+    return arrays.reverse(out)
+
+# --- unified diff -----------------------------------------------------------
+
+# A run of edits with `ctx` unchanged lines around it. Hunks that would overlap
+# after padding are merged, which is what keeps `@@` counts honest.
+struct Hunk:
+    astart: int
+    alen:   int
+    bstart: int
+    blen:   int
+    lines:  [string]
+
+fn _num(v: int) -> string:
+    return str(v)
+
+# Group the script into hunks with `ctx` lines of context. An empty result means
+# the files are identical.
+fn hunks(a: [string], b: [string], es: [Edit], ctx: int) -> [Hunk]:
+    out: [Hunk] = []
+    n := len(es)
+    i := 0
+    for i < n:
+        if is_keep(es[i]):
+            i = i + 1
+            continue
+        # a change starts here: back up ctx keeps, then run forward until ctx
+        # consecutive keeps have passed with no further change.
+        lo := i
+        c := 0
+        for lo > 0 and c < ctx and is_keep(es[lo - 1]):
+            lo = lo - 1
+            c = c + 1
+        hi := i
+        run := 0
+        j := i
+        for j < n:
+            if is_keep(es[j]):
+                run = run + 1
+                if run > 2 * ctx:
+                    break
+            else:
+                run = 0
+                hi = j
+            j = j + 1
+        top := hi + 1 + ctx
+        if top > n:
+            top = n
+        out = _emit(a, b, es, lo, top, out)
+        i = top
+    return out
+
+fn _emit(a: [string], b: [string], es: [Edit], lo: int, top: int, acc: [Hunk]) -> [Hunk]:
+    ls: [string] = []
+    astart := 0 - 1
+    bstart := 0 - 1
+    alen := 0
+    blen := 0
+    for t := lo; t < top; t += 1:
+        match es[t]:
+            Keep(ai, bi):
+                if astart < 0:
+                    astart = ai
+                    bstart = bi
+                push(ls, " " + a[ai])
+                alen = alen + 1
+                blen = blen + 1
+            Del(ai):
+                if astart < 0:
+                    astart = ai
+                    bstart = 0
+                push(ls, "-" + a[ai])
+                alen = alen + 1
+            Ins(bi):
+                if bstart < 0:
+                    bstart = bi
+                    astart = 0
+                push(ls, "+" + b[bi])
+                blen = blen + 1
+    out := acc
+    push(out, Hunk(astart + 1, alen, bstart + 1, blen, ls))
+    return out
+
+# Render a unified diff. `an`/`bn` are the file names for the ---/+++ header.
+fn unified(a: [string], b: [string], an: string, bn: string, ctx: int) -> [string]:
+    es := script(a, b)
+    hs := hunks(a, b, es, ctx)
+    out: [string] = []
+    if len(hs) == 0:
+        return out
+    push(out, "--- " + an)
+    push(out, "+++ " + bn)
+    for h in hs:
+        push(out, "@@ -" + _num(h.astart) + "," + _num(h.alen) + " +" + _num(h.bstart) + "," + _num(h.blen) + " @@")
+        for l in h.lines:
+            push(out, l)
+    return out
+
+# One edit step as `K <line>` / `- <line>` / `+ <line>`. Used by --script, whose
+# point is that Keep+Del must rebuild `a` and Keep+Ins must rebuild `b`.
+fn step_str(e: Edit, a: [string], b: [string]) -> string:
+    match e:
+        Keep(ai, bi): return "K " + a[ai]
+        Del(ai): return "- " + a[ai]
+        Ins(bi): return "+ " + b[bi]
+    return "?"

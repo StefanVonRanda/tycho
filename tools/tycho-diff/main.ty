@@ -1,0 +1,62 @@
+# tycho-diff -- a unified diff between two text files.
+#
+#   tycho-diff OLD NEW [--context=N]
+#
+# Exit status follows diff(1): 0 when the files match, 1 when they differ, 2 on
+# an error. `main` cannot RETURN a status (it is void or Result(void, string)),
+# so the status is set with the `exit` builtin, which is what every other CLI in
+# tools/ does. See FRICTION-OUTSIDE.md item 4.
+package main
+
+import "core:io"
+import "core:strings"
+import "diff"
+
+fn fail(msg: string):
+    eprint("tycho-diff: " + msg + "\n")
+    exit(2)
+
+fn main():
+    av := args()
+    paths: [string] = []
+    ctx := 3
+    mode_script := false
+    for i := 1; i < len(av); i += 1:
+        a := av[i]
+        if strings.starts_with(a, "--context="):
+            rest := a[10:len(a)]
+            match strings.parse_int_checked(rest):
+                Ok(v): ctx = v
+                _: fail("--context needs a number, got '" + rest + "'")
+            if ctx < 0:
+                fail("--context cannot be negative")
+        elif a == "--script":
+            mode_script = true
+        elif strings.starts_with(a, "-"):
+            fail("unknown option: " + a)
+        else:
+            push(paths, a)
+    if len(paths) != 2:
+        fail("usage: tycho-diff OLD NEW [--context=N]")
+
+    for p in paths:
+        if not io.exists(p):
+            fail("no such file: " + p)
+
+    a := io.read_lines(paths[0])
+    b := io.read_lines(paths[1])
+    # --script prints the raw edit script, one step per line, with NO context and
+    # no hunk grouping. It exists so the algorithm can be checked on the property
+    # that actually matters -- the Keep+Del steps must rebuild the old file and the
+    # Keep+Ins steps the new one -- rather than against another diff's tie-break,
+    # which is free to differ between equally minimal scripts.
+    if mode_script:
+        for e in diff.script(a, b):
+            println(diff.step_str(e, a, b))
+        exit(0)
+    out := diff.unified(a, b, paths[0], paths[1], ctx)
+    if len(out) == 0:
+        exit(0)
+    for l in out:
+        println(l)
+    exit(1)

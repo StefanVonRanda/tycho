@@ -678,6 +678,15 @@ sim-check: tychoc
 make-check: tychoc
 	@sh tools/tycho-make/run.sh
 
+# diff-check: the gate for tycho-diff, the Myers line differ. Its subject is an
+# EDIT SCRIPT, which a golden cannot judge -- two minimal scripts may differ, and
+# GNU diff picks another tie-break on ~18% of random inputs while being just as
+# right. So the golden pins the rendering and the lane asserts the two properties
+# that define correctness: the script must rebuild BOTH files exactly, and its
+# edit count must equal GNU's.
+diff-check: tychoc
+	@sh tools/tycho-diff/run.sh
+
 # snap-check: the gate for tycho-snap, the manifest-driven snapshot tool in
 # tools/tycho-snap/. The subject is a ZIP ARCHIVE, so the numbers the program
 # prints about it are its own CRCs of its own bytes -- python3's zipfile reads

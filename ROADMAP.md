@@ -123,6 +123,23 @@ Concretely: **three non-trivial programs by two people who did not write the
 compiler**, each with its friction written down. Until then the API freeze is
 guesswork about which parts of the surface people actually reach for.
 
+**One of the three exists as of 2026-08-14**: `tools/tycho-diff`, a Myers O(ND)
+line differ with unified output, written against `docs/` alone by someone who had
+not read `src/tychoc.c`, with its friction in
+[tools/tycho-diff/FRICTION-OUTSIDE.md](tools/tycho-diff/FRICTION-OUTSIDE.md).
+Four first-contact findings, all diagnostics and all in the first ten minutes: the
+`die` collision warning offers a remedy that `package main` forbids; a missing
+import is reported as a missing SYMBOL; `eprintln` does not exist and the
+suggestion points at `println`, the wrong stream for an error; and `main` cannot
+return a status while the error names `Result(void, string)` without mentioning
+`exit(code)`, which is what every CLI in `tools/` actually uses. The report also
+records what went RIGHT, because a friction log that only complains is not
+evidence: value semantics made the algorithm's frontier snapshot
+(`push(trace, v)`) correct as written, which is the thesis doing its job.
+
+**This does not close the item** — it is one program by one non-author, where the
+ask is three by two. It moves the count from zero.
+
 ### 2. The daily papercuts are gone
 
 These are ergonomic, not soundness — which is exactly why they must be fixed

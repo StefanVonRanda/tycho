@@ -1,0 +1,43 @@
+=== differ
+--- a
++++ b
+@@ -1,6 +1,6 @@
+ alpha
+ bravo
+-charlie
++CHARLIE
+ delta
+-echo
+ foxtrot
++golf
+=== same
+=== context 1
+--- a
++++ b
+@@ -2,5 +2,5 @@
+ bravo
+-charlie
++CHARLIE
+ delta
+-echo
+ foxtrot
++golf
+=== script
+K alpha
+K bravo
+- charlie
++ CHARLIE
+K delta
+- echo
+K foxtrot
++ golf
+=== err missing_file b
+tycho-diff: no such file: missing_file
+=== err a
+tycho-diff: usage: tycho-diff OLD NEW [--context=N]
+=== err a b --context=x
+tycho-diff: --context needs a number, got 'x'
+=== err a b --context=-1
+tycho-diff: --context cannot be negative
+=== err a b --nope
+tycho-diff: unknown option: --nope
