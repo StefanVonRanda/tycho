@@ -45,6 +45,25 @@ contain them (see 0.6.0's opening note).
   mentioned it deprecated the next `fn` and every caller got a warning nobody
   wrote. Both real users in the tree already use the opening form, so no marker
   changed meaning (FRICTION #46).
+- **Affine rules now hold through a GENERIC.** Every refusal that named a
+  `handle`, `Channel(T)` or `Task(T)` was enforced on the template, where the
+  field type is `$T` and not an affine type, and never re-checked on the
+  instance. Four shapes compiled and now do not: an affine type as a generic
+  struct field (`struct Box($T): c: $T` at a channel), as a generic enum
+  payload, as a `sink $T` / `inout $T` parameter, and as the RETURN of a generic
+  (`fn ident(x: $T) -> $T`). Two were real memory errors, not just rule gaps:
+  the struct field aliased one channel to two owners, so a `send` through one
+  was received through the other; the return double freed, with glibc reporting
+  `double free detected in tcache 2` and exit 134. Migration: pass the affine
+  value as a plain parameter, which is already a borrow. A **Task has no type
+  syntax**, so a `$T` binding was the only way one could reach a field at all
+  (FRICTION #53, #54, #55).
+- **`bounded[N]T` in a generic struct stays bounded.** Instantiation rebuilt
+  every array through the fixed-array constructor, dropping the capacity rule
+  while keeping the size, so a field declared `bounded[4]$T` came out `[4]int`.
+  A plain `[4]int` was accepted for it and pushes past the capacity grew instead
+  of trapping. Migration: pass a real `bounded[N]T` — the fixed array that used
+  to be accepted is now refused by name (FRICTION #52).
 
 ### Language — added
 
@@ -61,6 +80,11 @@ contain them (see 0.6.0's opening note).
 
 ### Language — fixed
 
+- **A generic struct with a map-of-function field compiles.** `steps:
+  [string: fn($T) -> $T]` emitted C naming an `FnC<id>` that was deliberately
+  never defined, and cc rejected the program with `unknown type name 'FnC0'`.
+  The array form of the same field was fixed earlier; the map body loop was the
+  only one of five without the guard its siblings had (FRICTION #51).
 - **A variadic called through a package qualifier now packs.** `vp.sum(1, 2, 3)`
   died with `'vp__sum' takes 1 argument(s), got 3`: the fold that gathers trailing
   arguments was skipped for a qualified callee, so the call reached the arity
@@ -84,6 +108,17 @@ contain them (see 0.6.0's opening note).
   string, got int` — about an index the user never wrote, since the loop desugars
   to one — and named neither the loop nor the cure. It now points at `keys(m)`. A
   genuine wrong index keeps the precise old message (FRICTION #42).
+
+### Tools
+
+- **`tycho-make` refuses a damaged mtime in its stamp file.** Every other field
+  of a stamp line was validated; the mtime went through the lax `parse_int`, so
+  `17x` read as 17 and `abc` as 0. The mtime decides staleness, so a corrupted
+  stamp file shipped a stale output as up to date (FRICTION #4).
+- **`tycho-db` refuses a SQL integer literal outside int range.** The lexer's
+  numeric span is all digits by construction, but `parse_int` returns 0 on
+  overflow, so `WHERE id = 9223372036854775808` silently meant `WHERE id = 0`
+  and matched the wrong rows with no error.
 
 ### Core library — breaking
 

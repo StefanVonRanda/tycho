@@ -324,16 +324,27 @@ special-cased on the way: a `# deprecated: <text>` line directly above a `fn`
 marks it, so the next deprecation costs one comment
 (`tests/warn/deprecated.ty`).
 
-**Tarballs are built and verified, 2026-08-10, and NOT published** — the owner's
-call. `dist/tycho-v0.5.0-linux-x86_64.tar.gz` and the `mingw64` cross-build,
-both with matching `.sha256`, and the native one extracted and exercised: the
-shipped `tychoc` reports `0.5.0`, finds `corelib` beside itself with no
-`TYCHO_CORELIB`, and compiles and runs a `core:sort` program.
+**Tarballs are built and NOT published** — the owner's call. The version
+constant is now `0.6.0` (`src/tychoc.c@TYCHO_VERSION`), and this section
+described `v0.5.0` until 2026-08-14.
 
-What remains is the outward step, and only that: `git tag v0.5.0`, push it, and
-`gh release create v0.5.0 dist/tycho-v0.5.0-*.tar.gz dist/tycho-v0.5.0-*.sha256
---notes-file RELEASE_NOTES.md`. Nothing is blocking it; it has not been done
-because publishing is a decision, not a build step.
+**The tarball in `dist/` is STALE and must not be published as it stands.**
+Measured 2026-08-14: `dist/tycho-v0.6.0-linux-x86_64.tar.gz` verifies against its
+`.sha256` and its `tychoc` reports `0.6.0`, but it predates that day's affine and
+generics fixes, and the shipped compiler **accepts all four** of
+`tests/reject/generic_ret_handle.ty`, `generic_struct_field_chan.ty`,
+`generic_sink_affine.ty` and `generic_bounded_field_degraded.ty`. The first two
+are memory errors at run time — a double free and an aliased channel — so
+publishing that artifact would ship known memory-safety bugs under a version
+whose CHANGELOG says they are fixed. There is also no `mingw64` build at 0.6.0;
+0.5.0 had one.
+
+What remains is therefore two steps, not one: **rebuild from HEAD**
+(`make release-check`, and `scripts/release.sh <version> --mingw` for Windows),
+then the outward step — `git tag`, push, and `gh release create ... --notes-file
+RELEASE_NOTES.md`. Only the second is a decision rather than a build step. Verify
+the rebuilt tarball the same way: extract it and run the reject fixtures above
+through the shipped `tychoc`, which is what caught this.
 
 ### 7. An external security review
 
