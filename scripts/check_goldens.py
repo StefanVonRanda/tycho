@@ -148,6 +148,7 @@ NO_GOLDEN = {
     "bench/interp/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/json/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/latency/run.sh": "timing only",
+    "bench/transpile/run.sh": "timing only: reports min/median/max of N transpile runs and asserts nothing -- it is a measurement instrument, not a gate",
     "bench/lru/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/prongB/run.sh": "timing/rss only",
     "bench/raytrace/run.sh": "self-consistency checksum, as bench/conc/run.sh",
