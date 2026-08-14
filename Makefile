@@ -687,6 +687,16 @@ make-check: tychoc
 diff-check: tychoc
 	@sh tools/tycho-diff/run.sh
 
+# hash-check: the gate for tycho-hash, the parallel tree hasher. Its subject is a
+# report that must not depend on the pool WIDTH, which a golden cannot see: a
+# transcript recorded from a build whose workers raced is byte-identical to one
+# that serialized. So the report is compared across 1/2/3/5/8 workers, the
+# per-worker split is read back to prove the pool really shares (at width 1 the
+# first worker must take ALL of them -- the negative control for --workers), and
+# every hash is checked against sha256sum(1).
+hash-check: tychoc
+	@sh tools/tycho-hash/run.sh
+
 # snap-check: the gate for tycho-snap, the manifest-driven snapshot tool in
 # tools/tycho-snap/. The subject is a ZIP ARCHIVE, so the numbers the program
 # prints about it are its own CRCs of its own bytes -- python3's zipfile reads

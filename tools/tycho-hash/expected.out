@@ -1,0 +1,30 @@
+=== report (4 workers)
+5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  6  a/b/x.txt
+9089d3bc08c0209f3d78276ae6cb130909712672fb186fbc9ceecf691d260f69  32  a/f1.txt
+c02ae7c4e9b32730f8d3d5f853601ac0b32ce8bacecd64e3cc03e7ff39a155f7  64  a/f2.txt
+32e9f5b8d0676a24431f63ea5b60da6ed21ae7e6dd739c5d8f4f0b31a00f9dcf  96  a/f3.txt
+1530a40c661d0a475ac45b7d79d0d970928db77281538ecdc5e383c4bf0e823c  128  a/f4.txt
+b083d5c92249d06ca0082bcf4e97c873428db560b7ef092fa75b1c5656947359  160  a/f5.txt
+33a3a16f6505d55aab60eb33b4baac41f3e91af09f3024aa0618cc6bd558bfa3  192  a/f6.txt
+a1aa8ca33b6f0064d2d288f21e51cd0d130555bb38c0739a5ec659e6ab16a0a8  224  a/f7.txt
+d3d8713a37144cbc669efc781c6d88dac2b75f30cbdfe544e58ac204bd8acb20  256  a/f8.txt
+e2f79adf3015f9ff3da33663597f0594d3fc98be494eb947d88b41789f4a3663  288  a/f9.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  0  c/empty
+e258d248fda94c63753607f7c4494ee0fcbe92f1a76bfdac795c9d84101eb317  6  c/y.txt
+-- 12 files, 1452 bytes, 12 hashed
+=== dist w=1
+dist 12 0 0 0 0 0 0 0
+=== err nosuchdir
+tycho-hash: cannot stat: nosuchdir
+=== err 
+tycho-hash: usage: tycho-hash DIR [--workers=N]
+=== err tree --workers=0
+tycho-hash: --workers must be 1..8, got 0
+=== err tree --workers=99
+tycho-hash: --workers must be 1..8, got 99
+=== err tree --workers=x
+tycho-hash: --workers needs a number, got 'x'
+=== err tree --nope
+tycho-hash: unknown option: --nope
+=== err file-as-dir
+tycho-hash: not a directory: tree/c/y.txt

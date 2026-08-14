@@ -387,6 +387,9 @@ make -s make-check
 step "[3u2/27] make diff-check  (tycho-diff: unified output == golden and the diff(1) 0/1/2 exit contract held on a differing pair, an identical pair and 5 error paths each with an empty stdout; over 206 generated pairs -- including two empty files, one empty, identical and a reversal -- every edit script rebuilt BOTH files exactly and matched GNU diff's edit distance, which is what a transcript cannot see)"
 make -s diff-check
 
+step "[3u3/27] make hash-check  (tycho-hash: the report byte-identical at 1/2/3/5/8 workers AND the pool proven to share -- all 8 take a file at width 8 while at width 1 the first takes all 12 and the rest none, which is the negative control for --workers; every hash equals sha256sum's; the per-worker counts sum to exactly the file count at every width; 7 error paths exit 2 with an empty stdout)"
+make -s hash-check
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.

@@ -137,8 +137,28 @@ records what went RIGHT, because a friction log that only complains is not
 evidence: value semantics made the algorithm's frontier snapshot
 (`push(trace, v)`) correct as written, which is the thesis doing its job.
 
-**This does not close the item** — it is one program by one non-author, where the
-ask is three by two. It moves the count from zero.
+**A second landed the same day**: `tools/tycho-hash`, sha256 over a directory
+tree by a worker pool, written for the OTHER half of the surface — `spawn`,
+channels, backpressure, and the determinism a parallel tool has to prove. Its
+[FRICTION-OUTSIDE.md](tools/tycho-hash/FRICTION-OUTSIDE.md) repeats none of
+tycho-diff's four, which is the argument for a second program rather than a
+longer first one: `io.list` is the directory listing but its name contains no
+"dir" so no search finds it; it returns `[]` for a directory it cannot read,
+where everything around it returns `Result`; `sha256.hex` takes a string where a
+file is bytes; and a spawned fn must return a value while a task cannot live in
+an array, so a worker pool is a fixed list of named spawns whose width cannot be
+computed — `parallel for` fans out properly but reduces only int/float, so
+between them no shape both fans out dynamically and returns non-scalar results.
+
+It also records a mistake worth more than the findings: the first version's
+`--workers` did nothing, so the determinism check compared eight workers against
+eight, five times, and passed. The lane now reads the per-worker split back, and
+the width-1 case (first worker takes ALL, rest none) is the negative control for
+the option itself.
+
+**This still does not close the item** — two programs by one non-author, where
+the ask is three by two. It moves the count from zero to two-thirds of the
+programs and none of the people.
 
 ### 2. The daily papercuts are gone
 
