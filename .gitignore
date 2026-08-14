@@ -258,3 +258,7 @@ dist/
 # bench/peakrss is a built binary (bench/peakrss.c); bench/run.sh and
 # bench/transpile/run.sh compile it on demand.
 /bench/peakrss
+
+# python bytecode from running the gate scripts directly
+__pycache__/
+*.pyc
