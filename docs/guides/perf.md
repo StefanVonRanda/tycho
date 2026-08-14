@@ -14,12 +14,13 @@
 > mechanism DOES and why, with the profiling notes that still hold. The one
 > reproducible number on this page is the transpile time below.
 
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`.
->
-> **Most figures date from on or before 2026-07-22**; where one has been
-> re-measured since it says so inline with its date. `make bench` re-runs the
-> guard suite (17 benchmarks, all within bounds on 2026-08-14) and each
-> `bench/*/RESULTS.md` carries its own date.
+> **This page carries one number**, the transpile time below, measured on
+> 2026-08-14 on an AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64.
+> Everything else describes what a mechanism does and why. That is deliberate:
+> the figures that used to be here were taken against a workload that can no
+> longer be run, and a number nobody can reproduce is worse than no number.
+> For figures you can reproduce, `make bench` runs the guard suite (17
+> benchmarks) and each `bench/*/RESULTS.md` carries its own date and hardware.
 
 ## Transpile time
 
@@ -35,35 +36,29 @@ Measured 2026-08-14, minimum of 10 timed runs over a 4.2k-line input:
 
 ## What the arena codegen buys, by workload pattern
 
-The baseline here is an early **naive codegen** — `malloc`, no frees, value-copy
-concatenation — which is what the arena model replaced. It is a historical
-baseline, not a compiler anyone can run today; the point is the shape of the gap
-and where it does and does not appear.
-
-| program | arena codegen | naive baseline | ratio |
-|---|---|---|---|
-| `memo` (memoized fib) | 0.48 ms | 0.45 ms | ~1× |
-| `optimize` (tree-rewrite pass) | 0.44 ms | 0.41 ms | ~1× |
-| `accumulate_big` (string built in a loop) | 1.1 ms / 11 MB | 257 ms / 598 MB | **239× slower, 56× more memory** |
+The baseline for comparison is an early **naive codegen** — `malloc`, no frees,
+value-copy concatenation — which is what the arena model replaced. It cannot be
+run today; what is worth recording is the shape of the gap, and where it does and
+does not appear.
 
 ## Interpretation
 
 - **Straight-line compute is identical.** With no repeated growth or mutation
   of heap values, the naive baseline and the arena codegen run at the same speed
   (`memo`, `optimize`).
-- **The arena model wins exactly where I designed it to.** `accumulate_big` is the
-  `acc = acc + s` loop: `tychoc` rewrites it to an in-place O(n) append in a
-  bounded buffer; the naive `sc()` re-copies the whole growing string each step
-  → O(n²) time, and every intermediate is leaked (≈625 MB allocated, never
-  freed). The 239× / 56× gap is the memory-model payoff, made concrete.
-- **Arena has a per-scope tax.** On a compiler-shaped workload (many small
-  allocations across deeply nested scopes plus recursion) the naive baseline
-  measured the arena version at 13× slower (520 ms vs 40 ms). Every block scope
-  and call does `arena_child` / `arena_reset` / `arena_free`, which under the
-  original allocator meant a `malloc`+`free` of an arena block per scope or loop
-  iteration. The naive transpiler does zero frees, so it has no such churn — at
-  the cost of unbounded memory. So the arena advantage is large but concentrated
-  in the grow-in-place pattern, not uniform.
+- **The arena model wins exactly where it was designed to**, by orders of
+  magnitude in both time and memory: the `acc = acc + s` loop, which the compiler
+  rewrites to an in-place O(n) append in a bounded buffer where the naive `sc()`
+  re-copies the whole growing string each step (O(n²)) and leaks every
+  intermediate.
+- **Arena has a per-scope tax.** On code with many small allocations across
+  deeply nested scopes plus recursion, the naive leak-everything approach was
+  materially faster before the tuning below: every block scope and call does
+  `arena_child` / `arena_reset` / `arena_free`, which under the original
+  allocator meant a `malloc`+`free` of an arena block per scope or loop
+  iteration, and a model that never frees has no such churn — at the cost of
+  unbounded memory. The arena advantage is large but concentrated in the
+  grow-in-place pattern, not uniform.
 
 That per-scope block churn is the arena concern I address with the tuning below.
 
@@ -212,9 +207,9 @@ called `count_str_occ(reads, n)` for every read; a one-pass frequency map plus
 loopreads set makes it O(reads). (2) `sig_ret`'s per-call linear `dc.sigs` scan
 became an O(1) `dc.sigmap` lookup. What remains (`gen_expr`/`type_of` plus a large unattributed `memcpy`/`malloc` chunk)
 is the
-inherent string-building codegen: `tychoc0` returns `sc()`-concatenated owned
-strings, so output bytes are copied once per nesting level — the value-semantic
-string-copy floor. No logic-level change moves it.
+inherent string-building codegen: concatenated owned strings mean output bytes
+are copied once per nesting level — the value-semantic string-copy floor. No
+logic-level change moves it.
 
 ### Push-loop fusion — register-resident array building (both compilers)
 
@@ -223,10 +218,10 @@ local scalar array paid, **per element**, for the array descriptor
 (`data`/`len`/`cap`) round-tripping through memory: the C compiler must assume
 `&arr` aliases the arena pointer also passed to `push`, so it cannot keep the
 cursor in registers. Profiling `iter_transform` (a 200M-element push loop)
-isolated it — arithmetic plus bounds-elided reads were 334 ms, `push` ~915 ms
-(73%); hand-hoisting the loop hit 337 ms. `reserve`, `restrict`, and a cheaper
-empty-arena `reset` all failed to move it — the cost is the descriptor traffic,
-not growth or the capacity branch.
+isolated it: `push` dominated the loop, and hand-hoisting the descriptor brought
+it back down to roughly the cost of the arithmetic alone. `reserve`, `restrict`,
+and a cheaper empty-arena `reset` all failed to move it — the cost is the
+descriptor traffic, not growth or the capacity branch.
 
 **Fusion:** when a loop's body uses a local scalar array (`[int]`/`[float]`)
 ONLY as `push(arr, …)`, codegen caches `data`/`len`/`cap` in C locals across the
@@ -240,17 +235,14 @@ first; nested loops pushing the same array reuse the outer cursor.
 solely as a push target), the array is a plain non-inout scalar local not
 defined/shadowed in the body, and (for a `while`) the condition does not read
 it. Any miss falls back to the standard codegen, so a non-fused loop is never
-wrong. In `tychoc` the registry is C globals (`g_fuse`); `tychoc0` has no globals,
-so I thread it through `Ctx` (fields `fusearr`/`fusesuf`/`fusety`, top-down into
-the body) with cursor names keyed on `ctx.depth`.
+wrong. The registry is C globals (`g_fuse`).
 
-**Result:** `iter_transform` 1249 → 416 ms (6.7× → 2.3× C) and 4 → 3 MB;
-`arr_pipeline` 53 → 30 ms (2.2× → 1.25× C). It applies generally — every scalar
-push loop, including the self-compiler. Fusion correctly compiles the push-heavy
-`tychoc0.ty`, which self-reproduces byte-identically and compiles itself faster;
-`tests/push_fusion.ty` covers break/continue/return/nested/two-array/while/bail.
+**Result:** a large multiple on push-dominated loops, closing most of the gap to
+hand-written C, with peak memory slightly down. It applies generally — every
+scalar push loop. `tests/push_fusion.ty` covers
+break/continue/return/nested/two-array/while/bail.
 
-**Every element type now fuses** (both compilers): not just scalars, but
+**Every element type now fuses**: not just scalars, but
 `[string]`, structs, tuples, nested arrays, options/results, and enums — any
 array whose element family has a `_grow` hook (all of them). The grow hook is
 element-generic: regrow the *spine* (the element buffer), recycle the old spine;
@@ -262,8 +254,6 @@ push does, preserving value semantics. The win is largest for scalars; for heap
 elements the per-element deep-copy dominates, so the descriptor-elision is a
 smaller fraction — a consistency/completeness close more than a hot-path
 multiplier, though it still cuts a call plus a descriptor write-back per push on
-the very common build-a-list loop. Composite fusion fires on `tychoc0.ty`'s own
-struct/tuple array push loops (+400 lines C vs scalar-only) and the self-build
-stays byte-identical, with `tests/str_fuse.ty` and `tests/comp_fuse.ty`
-covering it. Every array element type fuses.
+the very common build-a-list loop. `tests/str_fuse.ty` and `tests/comp_fuse.ty`
+cover it. Every array element type fuses.
 
