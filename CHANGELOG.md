@@ -12,6 +12,65 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 frozen one, and eight entries landed inside a tagged release that does not
 contain them (see 0.6.0's opening note).
 
+### Language — breaking
+
+- **A handle can no longer be COPIED.** `g := f` on a `handle` value is a compile
+  error: it gave one pointer two owners and two scope-exit destructor calls, and
+  glibc reported `double free detected in tcache 2` from a four-line program.
+  Reassignment (`g = f`) was already refused; only the declaration path was open.
+  Migration: pass the handle as an argument, which borrows it, or bind the opener
+  directly (`f := open(...)`). Nothing outside `tests/` declared a handle, so no
+  known program is affected (FRICTION #43).
+- **A bare handle may no longer be a struct field.** `f: File` in a struct is a
+  compile error, matching every other aggregate — an array, map, tuple, `Option`
+  and `Result` already refused one. `items: [R]` was refused before this only
+  because the ARRAY intern helper checked its element; a handle that *is* the
+  field type passed through no such helper (FRICTION #44).
+- **A comment must now OPEN with `deprecated:` to mark a function.** The scan
+  matched the marker anywhere in the line, so ordinary prose that merely
+  mentioned it deprecated the next `fn` and every caller got a warning nobody
+  wrote. Both real users in the tree already use the opening form, so no marker
+  changed meaning (FRICTION #46).
+
+### Language — added
+
+- **Explicit type arguments now parse on a package-qualified name.**
+  `vp.ident$(int)(5)`, and with several parameters `vp.pair$(int, string)(1, "a")`.
+  The `$` previously fell through to a field access and the spelling was a parse
+  error in every form, while the unqualified `ident$(int)(5)` had always worked —
+  so the two spellings of one call disagreed. §3/§4, Appendix A, §7.5 and §15.3
+  move with it (FRICTION #39).
+- **An empty call to a generic variadic may name its element type**:
+  `count$(int)()` supplies the empty `[]int`. It was rejected with "pass at least
+  one argument" even though the type was given, because the packing site never
+  read the explicit type-argument list (FRICTION #40).
+
+### Language — fixed
+
+- **A variadic called through a package qualifier now packs.** `vp.sum(1, 2, 3)`
+  died with `'vp__sum' takes 1 argument(s), got 3`: the fold that gathers trailing
+  arguments was skipped for a qualified callee, so the call reached the arity
+  check unpacked. The same declaration called unqualified always worked, which is
+  why three fixture files never caught it (FRICTION #38).
+- **A deprecated function taken as a VALUE now warns.** `f := stale` warned
+  nowhere, and the later `f(1)` names the binding rather than the function, so one
+  line laundered the whole policy. The warning now also fires where the value is
+  taken (FRICTION #47).
+
+### Diagnostics
+
+- **Imported types and callees are named as the source spells them.** Every
+  diagnostic about a type from another package printed its mangled form —
+  `declared type int but value is pool__Handle` for a user who wrote
+  `pool.Handle`, and `argument 2 of 'money__add'`. This covered structs, enums,
+  handles and newtypes alike, so it reached every corelib type in every message.
+  Same-package types were never affected, which is why the tree never noticed
+  (FRICTION #41).
+- **`for k in m` over a map says what to do.** It reported `map key must be
+  string, got int` — about an index the user never wrote, since the loop desugars
+  to one — and named neither the loop nor the cure. It now points at `keys(m)`. A
+  genuine wrong index keeps the precise old message (FRICTION #42).
+
 ### Core library — breaking
 
 - **`io.write_bytes`, `io.write_at`, `io.set_mtime` and `io.sync` return
