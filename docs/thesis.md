@@ -352,9 +352,12 @@ required to match native `-O2`.
 Three further things back the thesis up, written up separately.
 
 **Self-hosting.** A second transpiler written in Tycho itself
-(`compiler/tychoc0.ty`) reaches a byte-identical fixpoint (`make fixpoint`) — it
-reproduces its own emitted C byte-for-byte — and its codegen runs on this same
-implicit-arena model
+(`compiler/tychoc0.ty`) reached a byte-identical fixpoint — it reproduced its own
+emitted C byte-for-byte — and its codegen ran on this same implicit-arena model.
+**That gate was retired on 2026-07-29**: a breaking loop-syntax change left the
+frozen `tychoc0` unable to parse the corpus, so `make fixpoint` no longer exists
+and nothing replaces it. The claim stands as of the freeze; it is not re-checked
+by anything today
 ([docs/memory-model.md](guides/memory-model.md)). Soundness is checked by that
 byte-identical self-build and sanitizers. That makes the model eat its own dog
 food on a real, allocation-heavy, deeply-recursive program. A differential fuzzer

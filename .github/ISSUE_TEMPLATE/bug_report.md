@@ -30,8 +30,11 @@ $ ...
 
 **Does it reproduce in both transpilers?** (helps me a lot, if you can check)
 - [ ] `./tychoc bug.ty` (the C reference transpiler)
-- [ ] the self-hosted transpiler — easiest via `make fixpoint`, which builds with both
 - [ ] not sure
+
+(There used to be a second, self-hosted transpiler to cross-check against.
+`compiler/tychoc0.ty` was frozen on 2026-07-29 and `make fixpoint` no longer
+exists, so `./tychoc` is the only answer needed.)
 
 **Environment**
 - OS / arch: (e.g. Linux x86_64, macOS arm64)

@@ -157,9 +157,10 @@ package mangling in a post-parse pass — dormant unless a `package` declaration
 showed up, so a single-file compile stays identical.
 
 Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
-`tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`, and
-`make fixpoint` additionally builds each fixture with `tychoc0` and checks that
-`tychoc0` reproduces its own emitted C byte-for-byte.
+`tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`. A second lane used to build each
+fixture with `tychoc0` as well, but that gate (`make fixpoint`) was retired on
+2026-07-29 when `tychoc0` was frozen, so `tychoc` is the only compiler these
+fixtures run through now.
 
 The transpiler dogfoods its own package system: `compiler/pkg-split.sh` splits the
 self-hosted transpiler into a two-package program — `rt` (the leaf

@@ -7,8 +7,10 @@
 ## Checklist
 
 - [ ] `make ci` passes locally (the full gate — there is no hosted CI).
-- [ ] If this touches the language: the change works in **both** compilers
-      (`src/tychoc.c` and `compiler/tychoc0.ty`) — otherwise `make fixpoint` goes red.
+- [ ] If this touches the language: `src/tychoc.c` is the only compiler you need
+      to change. `compiler/tychoc0.ty` was FROZEN on 2026-07-29 and cut from every
+      gate, so the second-implementation check no longer exists — do not try to
+      keep it in step, and do not run `make fixpoint` (the target is gone).
 - [ ] New behavior is covered by a test (a golden in `tests/`, or a `tests/reject/`
       case for something that must fail).
 - [ ] Docs updated if the change is user-visible (`docs/reference/` for behavior).

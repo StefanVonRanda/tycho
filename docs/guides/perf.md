@@ -15,17 +15,24 @@ behaves on a real, allocation-heavy, deeply-recursive workload.
 
 > **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted transpiler, `tychoc0` the self-hosted one; each figure names which.
 >
-> **These figures date from on or before 2026-07-22**, the last time this page was
-> revised, and have not been re-measured since. Treat them as the shape of the
-> result — the ratios and what dominates — rather than as today's wall-clock: the
-> compiler, the corpus and the corelib have all grown since (§"the profiler box"
-> below already says so for `tychoc0.ty`). `make bench` re-runs the suites, and
-> each `bench/*/RESULTS.md` carries its own date.
+> **Most figures here date from on or before 2026-07-22**, and where one has been
+> re-measured since it says so inline with its date. Treat the rest as the shape
+> of the result — the ratios and what dominates — rather than as today's
+> wall-clock: the compiler, the corpus and the corelib have all grown since.
+> `make bench` re-runs the guard suite (17 benchmarks, all within bounds on
+> 2026-08-14) and each `bench/*/RESULTS.md` carries its own date.
+>
+> **What cannot be re-measured at all:** every figure comparing against the naive
+> `tychoc0` codegen, or against "the compiler just before this optimization".
+> Those baselines no longer exist in a runnable form — `tychoc0` was frozen on
+> 2026-07-29 and no gate builds it. They are historical records of what a change
+> bought on the day, and are kept as such.
 
-I check every change here against the byte-identical self-build
-(`make fixpoint`) and the sanitizer and fuzzer suite (`make test` under
-`-fsanitize=address,undefined`, `make bootstrap`, and the differential
-fuzzer).
+I check every change here against the sanitizer and fuzzer suite (`make test`
+under `-fsanitize=address,undefined` and the differential fuzzer). The
+byte-identical self-build that used to be part of this — `make fixpoint`, plus
+`make bootstrap` — was retired on 2026-07-29 with the freezing of `tychoc0`;
+both targets are gone.
 
 ## The three transpilers in play
 
@@ -57,24 +64,28 @@ arena model bought, not how the current transpiler behaves. Today `tychoc0`'s
 emitted C uses the same implicit-arena model as the C transpiler (see
 [docs/memory-model.md](memory-model.md)), so the "arena vs naive" gap those
 sections document is closed. Concretely, the `accumulate_big` row below (naive:
-257 ms / 598 MB) is now **<1 ms / ~1.6 MB** — flat and bounded; the O(n²) blowup
-and the leak are gone. Read sections (1)–(2) as "naive vs
+257 ms / 598 MB) is now **~1 ms / ~1.9 MB** — flat and bounded; the O(n²) blowup
+and the leak are gone. (`make bench`'s `append` row, 1 ms / 1940 KB, measured
+2026-08-14; this line previously said `<1 ms / ~1.6 MB`.) Read sections (1)–(2) as "naive vs
 arena," and the later sections as the current transpiler.
 
 ## What the self-compile number does (and does not) measure
 
 The ~31 ms figure is `tychoc0`'s *transpile* step alone: reading `tychoc0.ty`
 and emitting C. That step is genuinely fast, but it is **not** the time to
-build the transpiler. A full `make bootstrap` / `make fixpoint` takes about a
-minute of wall clock, and almost all of that belongs to the *host* C compiler,
-not to Tycho. A representative breakdown on the primary machine (`cc -O2`;
-`tychoc0.ty` ≈ 16.1k lines → emitted C):
+build the transpiler. A full self-host took about a minute of wall clock, and
+almost all of that belonged to the *host* C compiler, not to Tycho. The
+breakdown below is from the primary machine (`cc -O2`) while the self-host gates
+still existed; `make bootstrap` and `make fixpoint` were retired on 2026-07-29
+and the rows naming them can no longer be re-run. `tychoc0.ty` was ≈16.1k lines
+when this was measured and is **17,244 today** (2026-08-14), which is part of why
+the absolute numbers below have moved:
 
 | step | wall |
 |------|------|
 | tychoc0 transpiles `tychoc0.ty` → C | ~0.03 s |
 | `cc -O2` compiles that emitted C (once per self-host stage; ×3 in fixpoint) | ~10.7 s each |
-| `make bootstrap` end-to-end | ~58 s |
+| `make bootstrap` end-to-end (target retired 2026-07-29) | ~58 s |
 
 So "tycho compiles itself in milliseconds" is true of the **tycho→C pass**; the
 `cc` back-end owns the bootstrap wall clock (hundreds to one). It is not
@@ -82,7 +93,17 @@ So "tycho compiles itself in milliseconds" is true of the **tycho→C pass**; th
 (`tychoc0.ty` has grown since I first measured these, and the profiler-box
 trace in [Where the remaining time goes](#where-the-remaining-time-goes) lands at
 ~20 ms on a different machine); the **~2.4× ratio vs the C transpiler is the stable
-claim**, reproducing across both. Re-measure locally for a current absolute number.
+claim**, reproducing across both.
+
+**Re-measured 2026-08-14** on the primary machine: `tychoc --emit-c` over
+`compiler/tychoc0.ty` is **36 / 38 / 38 ms** (3 runs, wall, process start and
+output write included) against the ~13 ms recorded here. Two things moved at
+once — `tychoc0.ty` grew ~7% and `src/tychoc.c` has taken a year's worth of
+features — and this harness is coarser than the one that produced the original
+figure, so treat it as "the same order, not the same number" rather than as a
+measured regression. **The 2.4× ratio itself could not be re-checked**: it needs
+`tychoc0` to run, and the frozen `tychoc0` can no longer be built by any gate in
+the tree.
 
 ## (1) Transpiler speed — turning an earlier tychoc0.ty into C
 
