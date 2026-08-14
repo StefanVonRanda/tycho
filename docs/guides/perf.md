@@ -9,10 +9,10 @@
 > **This page was reframed on 2026-08-14.** It used to be a head-to-head between
 > `tychoc` and the self-hosted `tychoc0` — a comparison retired when `tychoc0`
 > was frozen (2026-07-29) and cut from every gate. The mechanisms it documented
-> are kept; the versus framing is gone. **Several measurements below used the
-> self-compile as their workload and say so.** Those are records of what a change
-> bought on the day and cannot be reproduced now; they are kept because they are
-> the evidence for why the code is shaped the way it is, not as current figures.
+> are kept; the versus framing and the timings taken against the self-compile are
+> gone, since that workload can no longer be run. What is left says what each
+> mechanism DOES and why, with the profiling notes that still hold. The one
+> reproducible number on this page is the transpile time below.
 
 > **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`.
 >
@@ -85,22 +85,16 @@ mechanisms keep that churn off the hot path:
   block and just rewinds it (`off = 0`), releasing only overflow blocks. The
   common one-block-per-iteration loop does zero pool traffic per iteration.
 
-Here's the effect on the self-compile (A = tychoc0 under arena codegen):
+The pool is the load-bearing one: it turns per-scope block churn into O(1)
+pointer traffic, and it is why `arena_child`/`arena_free` do not appear as a cost
+in any current profile. Retain-reset is neutral on code that allocates once per
+scope and pays off on loop-scratch-heavy code, which is what it was added for.
+Peak live memory is unchanged by either.
 
-| arena strategy | ms |
-|---|---|
-| naive (malloc/free per scope) | ~520 |
-| + block pool | ~231 (**2.2× faster**) |
-| + retain-reset | ~231 (neutral here — the pool already makes reset cheap; retain-reset pays off on loop-scratch-heavy code) |
-
-Generated-code benchmarks are unchanged or slightly better (`accumulate_big`
-1.07 → 0.59 ms; `memo`/`optimize` ~equal; peak RSS steady at ~11 MB).
-
-**Residual gap (after the pool).** Arena codegen was still ~6× slower than the
-naive-leak baseline on the transpiler workload (231 ms vs ~39 ms). That remainder
-is almost entirely the value-semantics deep-copies the arena
-model performs and the leak-everything model skips — *not* arena bookkeeping
-(the pool already made `arena_child`/`free` O(1)). See the codegen work below.
+**What the pool does NOT fix.** With block churn off the hot path, what remained
+was the value-semantics deep copies the arena model performs and a
+leak-everything allocator skips — not arena bookkeeping. That is what the codegen
+work below addresses.
 
 ## Codegen-level arena handling (src/tychoc.c)
 
@@ -124,21 +118,15 @@ unmutated aliasing is unobservable; `return param` still deep-copies via the
 return path) — removes the dominant cost: the `Ctx` symbol table cloned on every
 call.
 
-| metric (A self-compiling tychoc0.ty) | before step 2 | after |
-|---|---|---|
-| `tycho_copy_S_Ctx` calls | 72,686 | **0** |
-| `tycho_str_copy` calls | 27.8 M | 186 k (149× fewer) |
-| `arena_alloc` calls | 31 M | 387 k (80× fewer) |
-| wall-clock | 232 ms | **49 ms (4.7×)** |
-| peak RSS | 11.8 MB | 11.5 MB |
+On a compiler-shaped workload this eliminated the symbol-table clone entirely and
+cut string-copy and allocation counts by two orders of magnitude, with peak
+memory flat. It is the single largest win in this file.
 
-**Net result.** The arena model's overhead vs naive-leak on the transpiler
-workload drops from **~6× to ~1.26×** (49 ms vs ~39 ms) — while holding peak
-memory at **11.5 MB** against the naive version's unbounded growth. Combined
-with the grow-in-place win (`accumulate_big` 239× / 56×), the value-semantic
-implicit-arena model matches a leak-everything allocator on a real,
-allocation-heavy, deeply-recursive workload to within ~26%, with bounded
-memory.
+**Net effect.** With the copy gated, the value-semantic implicit-arena model
+lands close to a leak-everything allocator on an allocation-heavy,
+deeply-recursive workload — while holding peak memory bounded where the
+leak-everything version grows without limit. That, plus the grow-in-place win
+above, is the case for the model.
 
 The borrow-iff-not-mutated rule is the same predicate proven on match-arm
 payloads, checked through the byte-identical self-build.
@@ -180,8 +168,8 @@ artifact). It surfaces a hotspot the gprof profile hid entirely: **`scan_token`
 recomputed `len(src)` — a full `strlen` of the whole source — once per token**,
 so lexing was O(tokens × len) = **O(n²)**. The fix is purely algorithmic and
 touches no bounds-checking: thread the already-known length (`lex` computes
-`n := len(src)` once) into `scan_token` instead of recomputing it. The
-self-hosted self-compile (B) dropped **62 → 33 ms (~1.9×)**.
+`n := len(src)` once) into `scan_token` instead of recomputing it, which takes
+lexing from O(n²) back to O(n).
 
 This also revealed B was always ~2× faster than the A binary this doc had been
 timing: `tychoc0`'s codegen emits a direct O(1) `s[i]` where `tychoc` emitted a
@@ -195,8 +183,7 @@ invariant) gets one hoisted `_slen_h_<v> = strlen(v)` sidecar at scope entry,
 and its index sites use a new `tycho_str_get_n(s, i, len)` — the **same bounds
 check, now O(1)** instead of re-`strlen`-ing per access. Full safety is kept
 (verified: out-of-bounds and negative indices still `exit(1)` with the bounds
-error). The `tychoc`-built A self-compile dropped **126 → 75 ms (~1.7×)**, with
-`tests/str_index.ty` guarding it with hand-verifiable output.
+error), and `tests/str_index.ty` guards it with hand-verifiable output.
 
 ### The "diffuse floor" turned out to be one thing: Ctx reconstruction
 
@@ -218,10 +205,9 @@ threaded read-only (`dc`), never reconstructed; `Ctx` keeps only the 7 mutable
 per-scope/per-fn fields, so `with_owner`/`enter_block` rebuild a tiny struct.
 `dc` is threaded through all 67 `ctx`-taking functions (which pushed
 `gen_match_optres` to 9 params, so `tychoc`'s fixed `Sig` param cap was raised
-8→16; `tychoc0` uses dynamic arrays). Result: **B self-hosted self-compile 33.5 →
-22.7 ms (~1.48×)**, with `with_owner`/`enter_block` gone from the profile. The
-new top is genuine codegen logic (`type_of` ~13%, `gen_expr` ~11%,
-`compute_movables` ~7%, `sig_ret` ~5%) — a smaller, more diffuse next layer.
+8→16). `with_owner`/`enter_block` leave the profile entirely; what surfaces
+underneath is genuine codegen logic (`type_of`, `gen_expr`, `compute_movables`,
+`sig_ret`) — a smaller, more diffuse next layer.
 
 Two more from that layer, both output-invariant. The Decls split also made it
 safe to add O(1) lookup *maps* to the immutable `Decls` (built once, never
@@ -229,8 +215,7 @@ reconstructed — the per-clone copy cost that doomed an earlier such attempt is
 gone). (1) `compute_movables` (the move-on-last-use pre-pass) was O(reads²) — it
 called `count_str_occ(reads, n)` for every read; a one-pass frequency map plus
 loopreads set makes it O(reads). (2) `sig_ret`'s per-call linear `dc.sigs` scan
-became an O(1) `dc.sigmap` lookup. Together: **B 22.7 → 19.8 ms (~13%)**. What
-remains (`gen_expr`/`type_of` plus a large unattributed `memcpy`/`malloc` chunk)
+became an O(1) `dc.sigmap` lookup. What remains (`gen_expr`/`type_of` plus a large unattributed `memcpy`/`malloc` chunk)
 is the
 inherent string-building codegen: `tychoc0` returns `sc()`-concatenated owned
 strings, so output bytes are copied once per nesting level — the value-semantic
