@@ -71,16 +71,6 @@ HOSTPORT = re.compile(r'^\d+(?:\.\d+)+$')
 CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
                   r'(?:@([^`]+))?`')
 
-# A MULTI-RANGE citation, `path:N-M,X-Y`. CITE above wants the closing backtick
-# straight after the range, so this shape matches NOTHING and used to be skipped
-# in total silence -- a docs/rfc/ ref of this shape pointed at a file that had not
-# existed since the guides move, and the gate reported ok for as long as it took
-# someone to grep for it by hand. Same failure mode the malformed-anchor
-# rule below exists for: a ref that only LOOKS policed. Split it into one
-# citation per range.
-CITE_MULTI = re.compile(r'`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+):'
-                        r'(?:\d+(?:-\d+)?)(?:,\d+(?:-\d+)?)+`')
-
 # `path@SYMBOL` in Markdown: a citation to a definition, deliberately without
 # a line number.
 SYMCITE = re.compile(r'`((?:[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)|Makefile)@([A-Za-z0-9_]+)`')
@@ -97,14 +87,6 @@ SYM_OK = re.compile(r'[A-Za-z0-9_]+')
 # The same form in a source file, filtered against the tracked set.
 SYMCITE_SRC = re.compile(r'\b((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)'
                          r'|Makefile)@([A-Za-z0-9_]+)')
-
-# The multi-range shape in a SOURCE file. SRCCITE and DOCCITE below stop at the
-# first range exactly as CITE does in Markdown, so the same blind spot exists on
-# this side of the gate. There are none in the tree today (searched 2026-08-14,
-# backticked and bare, across .c/.h/.sh/.py/.ty); this is here so that stays a
-# fact rather than a hope.
-CITE_MULTI_SRC = re.compile(r'\b((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile):'
-                            r'(?:\d+(?:-\d+)?)(?:,\d+(?:-\d+)?)+')
 
 # A source file naming a document: `docs/<path>.md`, optionally `:N` or `:N-M`.
 DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
@@ -201,6 +183,107 @@ def where_at(on):
     return ", ".join(":%d" % i for i in on[:4]) + (", ..." if len(on) > 4 else "")
 
 
+# ---------------------------------------------------------------------------
+# STRICT MODE (`--strict`): anything citation-SHAPED that no parser above claims.
+#
+# The gate has now failed the same way twice -- a malformed anchor, and a
+# multi-range -- and both times the shape matched NO pattern here, so it was
+# skipped in silence and read as policed. Each was fixed by naming that one bad
+# shape, which cannot fix the third one. This pass inverts the question: find
+# every token that LOOKS like a citation, subtract every span a strict parser
+# claimed, and report what is left over.
+#
+# The `tracked` filter is what keeps it usable: a candidate whose path is not a
+# file in this repo is not a citation, which drops URLs (`host:8080/x`), times,
+# `pkg@version`, and every `foo.c:` that is really prose.
+#
+# A COMMA IS PART OF THE TOKEN WHEN A DIGIT FOLLOWS IT. Excluding `,` outright
+# (the first cut) made the candidate stop at the comma, so a BARE `path:N,M` in
+# Markdown looked fully covered by SRCCITE and slipped through the very backstop
+# this pass is. Caught by the probe table, not by reading.
+CAND = re.compile(
+    r'(?<![A-Za-z0-9_./-])'
+    r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)'
+    r'([:@])((?:[^\s`)\],;"\']|,(?=\d))*)')
+
+
+def unclaimed(line, tracked, claimers):
+    """Citation-shaped tokens on `line` that no strict parser fully matched."""
+    spans = [(m.start(), m.end()) for rx in claimers for m in rx.finditer(line)]
+    out = []
+    for m in CAND.finditer(line):
+        path, sep, rest = m.group(1), m.group(2), m.group(3)
+        if path not in tracked:
+            continue                 # not a file here -> not a citation
+        if sep == ":" and not rest[:1].isdigit():
+            continue                 # `path: prose` is a label, not a ref
+        if sep == "@" and not rest:
+            continue                 # a bare `path@` is caught by SYMCITE_ANY
+        # SENTENCE PUNCTUATION IS NOT PART OF THE REF. Without this the first
+        # run flagged 36 refs the gate parses perfectly -- a path-and-line at the
+        # end of a sentence, or before a quote -- because the candidate swallowed
+        # the trailing character and so was not covered by the strict span.
+        # (The examples are described rather than written: spelling one here
+        # would make this comment a live citation, which is how the count moved
+        # by one the first time I wrote it.) An over-greedy detector reporting correct refs as
+        # broken is worse than the hole it was written to close.
+        end = m.end()
+        while end > m.start() and line[end - 1] in ".,:;":
+            end -= 1
+        if any(a <= m.start() and end <= b for a, b in spans):
+            continue                 # a strict parser claimed the whole token
+        out.append(line[m.start():end])
+    return out
+
+# gap: only the two directions the gate already walks (tracked .md, and source
+# files under DOC_SCAN_PREFIX). A citation in an UNTRACKED file is invisible to
+# every arm of this checker, strict mode included.
+
+def selfcheck():
+    """`--selfcheck`: the strict-mode detector against a table of shapes.
+
+    Every one of these was a real mistake first. The four TRUE rows are shapes
+    that reached `main` checked by nothing; the FALSE rows are shapes an earlier
+    cut of this detector flagged wrongly -- a valid ref at the end of a sentence,
+    and two refs separated by a comma, both of which it swallowed whole.
+    """
+    # THE FIXTURES ARE ASSEMBLED, NEVER SPELLED. Written literally, this table is
+    # a dozen citation-shaped tokens in a file the gate scans -- it flagged six of
+    # its own test rows the first time, which is the gate being right and the test
+    # being unusable. Same trap caught two explanatory comments in this file
+    # before it: write an example citation and you have made a citation.
+    A, B = "src/tycho" + "c.c", "tests/ru" + "n.sh"
+    tracked = {A, B}
+    cases = [
+        ("see `%s:100` here" % A,            False, "backticked path:N"),
+        ("see `%s:100-200` here" % A,        False, "path:N-M"),
+        ("see `%s:100@main` here" % A,       False, "path:N@token"),
+        ("see `%s@main` here" % A,           False, "path@SYMBOL"),
+        ("see %s:100 here" % A,              False, "bare path:N"),
+        ("see http://example.com:8080/x here", False, "a URL with a port"),
+        ("see %s:100. Next." % A,            False, "ref ending a sentence"),
+        ("see %s:100, %s:5" % (A, B),        False, "two refs, comma-separated"),
+        ("see nosuch/thing.c:100,200 here",  False, "path not in the repo"),
+        ("see %s:100,200 here" % A,          True,  "bare multi-range"),
+        ("see `%s:100,200` here" % A,        True,  "backticked multi-range"),
+        ("see `%s:100-200x` here" % A,       True,  "junk after the range"),
+        ("see %s:100@foo.bar here" % A,      True,  "dotted anchor, unbackticked"),
+    ]
+    claimers = (CITE, SYMCITE, SYMCITE_ANY, DOCCITE, SRCCITE, SYMCITE_SRC)
+    bad = 0
+    for line, want, why in cases:
+        got = bool(unclaimed(line, tracked, claimers))
+        if got != want:
+            bad += 1
+            print("  FAIL  %-28s want=%s got=%s  %r" % (why, want, got, line))
+    if bad:
+        print("citation selfcheck: FAILED (%d of %d)" % (bad, len(cases)))
+        return 1
+    print("citation selfcheck: ok (%d shapes, %d of them must be flagged)"
+          % (len(cases), sum(1 for c in cases if c[1])))
+    return 0
+
+
 def main():
     # Filter in Python rather than passing `*.md` as a pathspec. Handing a
     # wildcard to git THROUGH subprocess loses it on Windows: measured on
@@ -252,16 +335,6 @@ def main():
                         "citation survives insertions but not a RENAME or a "
                         "DELETION, which is the whole of what it promises."
                         % (where, sym, sp))
-            # A MULTI-RANGE REF IS A FAILURE, NOT A SKIP -- see CITE_MULTI.
-            for m in CITE_MULTI.finditer(line):
-                sp = m.group(1)
-                if not (sp.startswith(SRC_PREFIX) or sp == "Makefile"):
-                    continue
-                fails.append(
-                    "%s:%d  `%s` -> MULTI-RANGE CITATION: `path:N-M,X-Y` matches "
-                    "nothing this gate checks, so the ref only LOOKS policed. "
-                    "Write one citation per range."
-                    % (md, ln, m.group(0).strip("`")))
             # A MALFORMED ANCHOR IS A FAILURE, NOT A SKIP. Same SRC_PREFIX
             # filter as above, which is what keeps an email address, an npm
             # `pkg@version` or an `@decorator` out: none of them is a tracked
@@ -423,15 +496,6 @@ def main():
                             "a RENAME or a DELETION, which is the whole of what "
                             "it promises."
                             % (sf, ln, m.group(0), sym, sp))
-                for m in CITE_MULTI_SRC.finditer(line):
-                    tgt = m.group(1)
-                    if tgt not in tracked:
-                        continue
-                    fails.append(
-                        "%s:%d  %s -> MULTI-RANGE CITATION: this shape matches "
-                        "nothing the gate checks, so the ref only LOOKS policed. "
-                        "Write one citation per range."
-                        % (sf, ln, m.group(0)))
                 for m in SRCCITE.finditer(line):
                     tgt = m.group(1)
                     if tgt.endswith(".md") or tgt not in tracked:
@@ -504,6 +568,42 @@ def main():
         for w, md, ln, raw, cur in sorted(drift_wide, reverse=True):
             print("    %4d lines  %s:%d  `%s`" % (w, md, ln, raw))
         print("--- end advisory ---")
+    # --- strict mode: the leftovers no strict parser claimed ----------------
+    # Only parsers that actually CHECK a ref belong here. Two shape-DETECTORS
+    # sat in this tuple for one revision and that was a bug: claiming a token
+    # told strict mode "handled" while the detector's own arm did not run for
+    # that file type, so a bare `path:N,M` in Markdown went unreported by both.
+    # Strict mode subsumes them, which is the point of inverting the question:
+    # one rule that asks "did anything check this?" instead of a list of the
+    # bad shapes seen so far.
+    CLAIMERS = (CITE, SYMCITE, SYMCITE_ANY, DOCCITE, SRCCITE, SYMCITE_SRC)
+    leftovers = []
+    for f in srcs:
+        if f.endswith(SKIP_SUFFIX) or f in SKIP_CITER:
+            continue
+        if not (f.endswith(".md") or f.startswith(DOC_SCAN_PREFIX)):
+            continue
+        try:
+            fh = open(os.path.join(ROOT, f), errors="replace")
+        except (IsADirectoryError, FileNotFoundError):
+            continue
+        with fh:
+            for ln, line in enumerate(fh, 1):
+                for tok in unclaimed(line, tracked, CLAIMERS):
+                    leftovers.append("%s:%d  %s" % (f, ln, tok))
+    # A LEFTOVER IS A FAILURE. It was an advisory for exactly as long as it took
+    # to get the tree to zero (2026-08-14), which is the only honest moment to
+    # turn one of these on: no flag day, and the next one that appears is the
+    # author's own line rather than an inherited backlog.
+    for lo in leftovers:
+        hint = (" A multi-range (`path:N-M,X-Y`) is the common case: write one "
+                "citation per range." if "," in lo.split()[-1] else "")
+        fails.append("%s -> UNPARSEABLE CITATION: citation-shaped, and no rule "
+                     "in this gate claims it, so it is checked by NOTHING. "
+                     "Rewrite it in a form the gate parses (`path:N`, "
+                     "`path:N-M`, `path:N@token`, `path@SYMBOL`) or stop making "
+                     "it look like a citation.%s" % (lo, hint))
+
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the "
               "mandatory `> Provenance:` single-line refs), %d bare (bounds "
@@ -529,4 +629,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--selfcheck" in sys.argv:
+        sys.exit(selfcheck())
     sys.exit(main())

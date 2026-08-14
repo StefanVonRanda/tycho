@@ -96,6 +96,7 @@ docs-fences: tychoc
 # of scripts/check_citations.py for exactly what that does and does not catch).
 check-links:
 	@sh scripts/check_links.sh
+	@python3 scripts/check_citations.py --selfcheck
 	@python3 scripts/check_citations.py
 
 # Regenerate the GitHub wiki's reader-doc mirror from /docs. Clones or pulls the
