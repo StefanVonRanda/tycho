@@ -1,118 +1,46 @@
-# Performance: the self-hosted transpiler vs the C one
+# Performance: the compiler and the C it emits
 
-> **[!CAUTION]** This document measures the **transpiler's own** compile-time performance
-> (`tychoc0` vs `tychoc`), tracking optimization history and codegen quality. It is
-> **not** about the language's performance or about the arena model's claims — those are
-> in [the thesis](../thesis.md) and the cross-language benchmark suite
-> (`bench/prongB/`, `bench/conc/`). The thesis numbers are what matters for evaluating
-> the model; this page is a contributors' log.
+> **[!CAUTION]** A contributors' log about `src/tychoc.c`, `runtime/tycho_rt.c`
+> and their output — how the arena model is kept cheap and what each mechanism
+> measured when it landed. It is **not** the language's headline performance
+> story: that is [the thesis](../thesis.md) and the cross-language suite
+> (`bench/prongB/`, `bench/conc/`).
 
-Tycho has two transpilers for the same language: `tychoc`, which I wrote by hand
-in C, and `tychoc0`, written in Tycho and able to transpile itself. This document
-is about how the self-hosted one performs — how fast `tychoc0` transpiles
-its own source, and how the value-semantic, implicit-arena memory model
-behaves on a real, allocation-heavy, deeply-recursive workload.
+> **This page was reframed on 2026-08-14.** It used to be a head-to-head between
+> `tychoc` and the self-hosted `tychoc0` — a comparison retired when `tychoc0`
+> was frozen (2026-07-29) and cut from every gate. The mechanisms it documented
+> are kept; the versus framing is gone. **Several measurements below used the
+> self-compile as their workload and say so.** Those are records of what a change
+> bought on the day and cannot be reproduced now; they are kept because they are
+> the evidence for why the code is shaped the way it is, not as current figures.
 
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted transpiler, `tychoc0` the self-hosted one; each figure names which.
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`.
 >
-> **Most figures here date from on or before 2026-07-22**, and where one has been
-> re-measured since it says so inline with its date. Treat the rest as the shape
-> of the result — the ratios and what dominates — rather than as today's
-> wall-clock: the compiler, the corpus and the corelib have all grown since.
-> `make bench` re-runs the guard suite (17 benchmarks, all within bounds on
-> 2026-08-14) and each `bench/*/RESULTS.md` carries its own date.
->
-> **What cannot be re-measured at all:** every figure comparing against the naive
-> `tychoc0` codegen, or against "the compiler just before this optimization".
-> Those baselines no longer exist in a runnable form — `tychoc0` was frozen on
-> 2026-07-29 and no gate builds it. They are historical records of what a change
-> bought on the day, and are kept as such.
+> **Most figures date from on or before 2026-07-22**; where one has been
+> re-measured since it says so inline with its date. `make bench` re-runs the
+> guard suite (17 benchmarks, all within bounds on 2026-08-14) and each
+> `bench/*/RESULTS.md` carries its own date.
 
-I check every change here against the sanitizer and fuzzer suite (`make test`
-under `-fsanitize=address,undefined` and the differential fuzzer). The
-byte-identical self-build that used to be part of this — `make fixpoint`, plus
-`make bootstrap` — was retired on 2026-07-29 with the freezing of `tychoc0`;
-both targets are gone.
+## Transpile time
 
-## The three transpilers in play
+`bench/transpile/run.sh` measures how long `tychoc` takes to turn one `.ty` file
+into C. It generates a syntax-stable input, verifies the compile **succeeds**
+before timing it (a compile that dies is faster than one that works, so an
+unchecked input reports the failure path as a speed-up), discards a warm-up run,
+and reports the minimum of N with median and max beside it.
 
-- **`tychoc`** — the C transpiler I wrote by hand (`src/tychoc.c`): full language,
-  type checking, and tuned arena + FBIP codegen. This is the default,
-  production transpiler.
-- **A** — `tychoc0` built *by* `tychoc`. Because `tychoc` emits arena codegen, A
-  runs with the arena memory model.
-- **B** — `tychoc0` built *by* `tychoc0` — the self-hosted transpiler.
+Measured 2026-08-14, minimum of 10 timed runs over a 4.2k-line input:
+**11 ms at `84e83132` (2026-08-04), 11 ms at `77bd8260` (2026-08-11), 11 ms at
+`HEAD`** — flat, no regression across that window.
 
-A and B are the *same tychoc0 source*, so comparing A against B isolates exactly
-the codegen / memory-model difference between `tychoc`'s output and `tychoc0`'s
-own output.
+## What the arena codegen buys, by workload pattern
 
-## Summary
+The baseline here is an early **naive codegen** — `malloc`, no frees, value-copy
+concatenation — which is what the arena model replaced. It is a historical
+baseline, not a compiler anyone can run today; the point is the shape of the gap
+and where it does and does not appear.
 
-The self-hosted `tychoc0` transpiles its own source in **~31 ms — about 2.4× the C
-transpiler's 13 ms** (on one machine; absolute numbers vary widely by
-machine, so the ratio is the claim) — and emits the same implicit-arena C the
-C transpiler does. With that codegen, `tychoc0` beats `tychoc` on both
-memory and time on 3 of 4 workloads in the cross-language benchmark suite
-(`bench/prongB/`, [RESULTS.md](../../bench/prongB/RESULTS.md)) and leads the suite
-on binary-trees here.
-
-The earliest `tychoc0` used a naive codegen — `malloc`, no frees,
-value-copy concatenation — and I measured the first two sections below
-against it. I keep them as a *historical baseline*: they show what the
-arena model bought, not how the current transpiler behaves. Today `tychoc0`'s
-emitted C uses the same implicit-arena model as the C transpiler (see
-[docs/memory-model.md](memory-model.md)), so the "arena vs naive" gap those
-sections document is closed. Concretely, the `accumulate_big` row below (naive:
-257 ms / 598 MB) is now **~1 ms / ~1.9 MB** — flat and bounded; the O(n²) blowup
-and the leak are gone. (`make bench`'s `append` row, 1 ms / 1940 KB, measured
-2026-08-14; this line previously said `<1 ms / ~1.6 MB`.) Read sections (1)–(2) as "naive vs
-arena," and the later sections as the current transpiler.
-
-## What the self-compile number does (and does not) measure
-
-The ~31 ms figure is `tychoc0`'s *transpile* step alone: reading `tychoc0.ty`
-and emitting C. That step is genuinely fast, but it is **not** the time to
-build the transpiler. A full self-host took about a minute of wall clock, and
-almost all of that belonged to the *host* C compiler, not to Tycho. The
-breakdown below is from the primary machine (`cc -O2`) while the self-host gates
-still existed; `make bootstrap` and `make fixpoint` were retired on 2026-07-29
-and the rows naming them can no longer be re-run. `tychoc0.ty` was ≈16.1k lines
-when this was measured and is **17,244 today** (2026-08-14), which is part of why
-the absolute numbers below have moved:
-
-| step | wall |
-|------|------|
-| tychoc0 transpiles `tychoc0.ty` → C | ~0.03 s |
-| `cc -O2` compiles that emitted C (once per self-host stage; ×3 in fixpoint) | ~10.7 s each |
-| `make bootstrap` end-to-end (target retired 2026-07-29) | ~58 s |
-
-So "tycho compiles itself in milliseconds" is true of the **tycho→C pass**; the
-`cc` back-end owns the bootstrap wall clock (hundreds to one). It is not
-"instant" end to end. Absolute transpile ms are machine- and source-size-specific
-(`tychoc0.ty` has grown since I first measured these, and the profiler-box
-trace in [Where the remaining time goes](#where-the-remaining-time-goes) lands at
-~20 ms on a different machine); the **~2.4× ratio vs the C transpiler is the stable
-claim**, reproducing across both.
-
-**Re-measure with `bench/transpile/run.sh`**, which generates a syntax-stable
-input, verifies the compile succeeds before timing it, discards a warm-up run and
-reports the minimum of N. Measured with it on 2026-08-14, minimum of 10 runs over
-a 4.2k-line input: **11 ms at `84e83132` (2026-08-04), 11 ms at `77bd8260`
-(2026-08-11), 11 ms at `HEAD`** — flat, no regression across that window. It does
-not reach the ~13 ms above, which was a different input on a different day.
-
-## (1) Transpiler speed — turning an earlier tychoc0.ty into C
-
-| compiler | ms |
-|---|---|
-| `tychoc` (hand-written C) | ~10 |
-| **B** = tychoc0, naive codegen | ~40 |
-| **A** = tychoc0, arena codegen | ~49 (was ~520 before the arena tuning + codegen work below) |
-
-## (2) Generated-code runtime/memory, by workload pattern
-
-| program | `tychoc` (arena) | tychoc0 (naive) | ratio |
+| program | arena codegen | naive baseline | ratio |
 |---|---|---|---|
 | `memo` (memoized fib) | 0.48 ms | 0.45 ms | ~1× |
 | `optimize` (tree-rewrite pass) | 0.44 ms | 0.41 ms | ~1× |
@@ -121,15 +49,15 @@ not reach the ~13 ms above, which was a different input on a different day.
 ## Interpretation
 
 - **Straight-line compute is identical.** With no repeated growth or mutation
-  of heap values, naive and arena codegen run at the same speed (`memo`,
-  `optimize`).
+  of heap values, the naive baseline and the arena codegen run at the same speed
+  (`memo`, `optimize`).
 - **The arena model wins exactly where I designed it to.** `accumulate_big` is the
   `acc = acc + s` loop: `tychoc` rewrites it to an in-place O(n) append in a
   bounded buffer; the naive `sc()` re-copies the whole growing string each step
   → O(n²) time, and every intermediate is leaked (≈625 MB allocated, never
   freed). The 239× / 56× gap is the memory-model payoff, made concrete.
-- **Arena has a per-scope tax.** On the transpiler's *own* workload (many small
-  allocations across deeply nested scopes plus recursion), the naive baseline
+- **Arena has a per-scope tax.** On a compiler-shaped workload (many small
+  allocations across deeply nested scopes plus recursion) the naive baseline
   measured the arena version at 13× slower (520 ms vs 40 ms). Every block scope
   and call does `arena_child` / `arena_reset` / `arena_free`, which under the
   original allocator meant a `malloc`+`free` of an arena block per scope or loop
@@ -308,33 +236,6 @@ inherent string-building codegen: `tychoc0` returns `sc()`-concatenated owned
 strings, so output bytes are copied once per nesting level — the value-semantic
 string-copy floor. No logic-level change moves it.
 
-### Codegen quality of tychoc0's own output
-
-These properties of the code `tychoc0` *emits* when transpiling itself (B = tychoc0
-compiled by tychoc0, transpiling `tychoc0.ty`) are output-invisible — the self-build
-stays byte-identical:
-
-- A **block free-list pool** in the emitted arena runtime cuts time **106 → 64
-  ms (1.66×)** by removing malloc/free churn per scope.
-- A **compact tagged-union enum layout** cuts peak RSS **18.2 → 9.9 MB
-  (1.84×)**: the flat `Expr`/`Stmt` nodes — 25 and 33 fields — shrink to their
-  active variant.
-
-The last generated-code gap on the cross-language suite came down to a pair of
-leaf-path bugs: profiling binary-trees showed `tychoc0` doing 3× the allocations
-(102.7M vs `tychoc`'s 34.0M) from a redundant deep-copy on `return Leaf` and no
-shared singleton for nullary variants. With both fixed, binary-trees drops **38 →
-13 MB, 289 → 124 ms** — `tychoc`'s exact allocation count. With this, `tychoc0`
-beats `tychoc` on both memory and time on 3 of 4 workloads in the cross-language
-benchmark suite and leads the suite on binary-trees here.
-
-The former string-pipeline gap is closed by the additive `char` type: `'x'`
-literals, `char ± int → char`, and `string + char` compiling to a one-byte
-in-place append (`hi_append_char`, no per-digit string allocation) — the same
-byte-write C/Rust/Go do. With `s = s + ('0' + d)`, string-pipeline drops **34 →
-1 ms (~21× on tychoc, ~10× on tychoc0)** at unchanged memory, tying C at 1 MB / 1
-ms.
-
 ### Push-loop fusion — register-resident array building (both compilers)
 
 The generated-code counterpart to the wins above. A loop that only pushes to a
@@ -386,37 +287,3 @@ struct/tuple array push loops (+400 lines C vs scalar-only) and the self-build
 stays byte-identical, with `tests/str_fuse.ty` and `tests/comp_fuse.ty`
 covering it. Every array element type fuses.
 
-## Where the self-compile gap stands
-
-**Current gap: tychoc0 self-compile ≈ 2.4× the C transpiler** (on the primary
-machine, B 31 ms vs `tychoc` 13 ms transpiling `tychoc0.ty`; the profiler-box
-trace in [Where the remaining time goes](#where-the-remaining-time-goes) lands at
-~20 ms — same ratio, different machine, so compare the *ratio*, not the absolute ms). I'm out of cheap wins: the algorithmic
-O(n²)s are gone (`scan_token` strlen, `compute_movables`), the linear scans are
-O(1) maps (`sig_ret`/`dc.sigmap`), and the per-scope `Ctx` deep-copy is gone
-(the `Decls` split). I tried two more logic micro-opts and reverted both as
-wall-clock noise — `sig_ret` user-map-first (it was already O(1)) and a
-`type_of` short-circuit (skip recursing operands when the result is always
-`int`). They are correct but 0%, because the profiler's by-caller hotspots
-(`gen_expr`/`type_of`/`sig_ret`) are those functions *on the stack while their
-returned strings are copied*, not their own compute.
-
-**The gap is architectural, not a bug.** About 85% of `tychoc0`'s self-compile
-time is string allocation and copying, dominated by `scopy` return-value copies
-(~5:1 over `sc` concats). This is the **value-semantic string-copy floor**:
-`tychoc0`'s codegen builds output by returning and concatenating owned strings
-(each copied once per nesting level, plus a deep-copy on every string-returning
-`return`), whereas the C transpiler writes output through `fprintf` with raw
-pointers. No logic-level change moves it; I don't think outperforming the C
-transpiler with a value-semantic self-hosted one is reachable incrementally.
-
-**The C transpiler `src/tychoc.c` stays the default, production transpiler.**
-`tychoc0` is the self-hosting proof — the byte-identical self-build
-(`make fixpoint`) is the definitive dogfood of the value-semantic plus arena
-model on a real, allocation-heavy self-hosted transpiler (~16.1k lines of Tycho)
-— and the counterpart in the
-differential oracle. I haven't retired it, and it
-is not on the correctness-critical path for production. By the convention I
-hold to, retiring the C transpiler would mean `tychoc0` has to *outperform* it,
-not merely match; and that gap is a fundamental property of the value-semantic
-model rather than a missing optimization.

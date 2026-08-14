@@ -367,7 +367,7 @@ language `tychoc0` accepts is no longer a strict subset of the reference's.
 
 **Head-to-head performance.** The cross-language benchmark suite under `bench/`
 (Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and the
-compiler-vs-generated-code numbers are in [docs/perf.md](guides/perf.md).
+the compiler and codegen numbers are in [docs/guides/perf.md](guides/perf.md).
 
 **Concurrency falls out for free.** The same call convention — deep-copy in, copy
 out, a private arena per call — is already a sound thread boundary, so
