@@ -158,7 +158,7 @@ Measured, on this tree:
     copy-in/copy-out; that is the semantic contract, but it has been read as
     the implementation, which is how the copy-tax premise entered the last
     plan. The codegen is an in-place pointer pass with the owner arena carried
-    (`src/tychoc.c:9273-9281`); no aggregate is copied.
+    (`src/tychoc.c:9277-9285`); no aggregate is copied.
   - Scope: `docs/spec/07-memory-model.md` §11, `docs/reference/basics.md`,
     the stale "one big function" comment at `tools/tycho-vm/main.ty:573`.
   - Verify: the two doc gates, `make vm-check`. No build gate.

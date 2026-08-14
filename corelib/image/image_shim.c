@@ -37,6 +37,17 @@ typedef struct { tycho_int w, h; unsigned char *rgba; size_t nbytes; } Img;
 #define IMG_BADDIMS  4
 #define IMG_SHORTPX  5
 #define IMG_FAILED   6
+#define IMG_TOOBIG   7   /* the decoded image passes IMG_MAX_OUT */
+/* A ceiling on ONE decoded image. libpng's own limits allow dimensions whose
+ * RGBA buffer is tens of gigabytes, and the header declaring them costs the
+ * attacker nothing. Unlike the compress bomb this fails SAFELY today -- malloc
+ * returns NULL and that branch is handled -- so this is defence in depth, and it
+ * buys a NAMED error instead of a generic allocation failure. Overridable at
+ * compile time so a gate can prove the ceiling fires without allocating 512 MiB.
+ * 512 MiB of RGBA is an 11600x11600 image. */
+#ifndef IMG_MAX_OUT
+#define IMG_MAX_OUT  ((size_t)512 * 1024 * 1024)
+#endif
 
 void *imgx_decode(const unsigned char *data, tycho_int len, tycho_int *status) {
     *status = IMG_FAILED;
@@ -50,6 +61,9 @@ void *imgx_decode(const unsigned char *data, tycho_int len, tycho_int *status) {
     }
     image.format = PNG_FORMAT_RGBA;                 /* always hand back 8-bit RGBA */
     size_t nbytes = PNG_IMAGE_SIZE(image);
+    if (nbytes > IMG_MAX_OUT) {
+        png_image_free(&image); *status = IMG_TOOBIG; return NULL;
+    }
     unsigned char *buf = (unsigned char *)malloc(nbytes ? nbytes : 1);
     if (!buf) { png_image_free(&image); return NULL; }
     /* The header read, the pixel data did not: truncated or damaged. */

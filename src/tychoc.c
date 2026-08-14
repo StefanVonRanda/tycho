@@ -717,7 +717,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:11004@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:11008@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -4026,7 +4026,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10856), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10860), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -8108,7 +8108,11 @@ static int side_missing(SideCov *sc) {
  * the plain-enum exhaustiveness check below words it. */
 static void die_missing_variant(int line, Type pt, int mi) {
     EnumDef *ed = &g_enums[ENUM_ID(pt)];
-    die_at(line, "non-exhaustive match: missing variant %s of %s", ed->variants[mi].name, ed->name);
+    /* nominal_name: an imported enum's variant and type print as `pkg.Name`, not
+     * the mangled `pkg__Name`. The imported-type fix of 2026-08-14 covered the
+     * type-mismatch diagnostics and MISSED both non-exhaustive-match sites, which
+     * surfaced when adding a variant to core:image. */
+    die_at(line, "non-exhaustive match: missing variant %s of %s", nominal_name(ed->variants[mi].name), nominal_name(ed->name));
 }
 
 /* Check one Ok/Err/Some arm against its payload type `pt`, push what it binds, and
@@ -8490,7 +8494,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     for (int v = 0; v < ed->nvariants; v++)
                         if (!covered[v])
                             die_at(s->line, "non-exhaustive match: missing variant %s of %s",
-                                   ed->variants[v].name, ed->name);
+                                   nominal_name(ed->variants[v].name), nominal_name(ed->name));
                 free(covered);
             } else if (st == T_INT || st == T_CHAR || st == T_BOOL) {
                 /* Scalar subject: arms are literals, ranges, sets, or const
@@ -9389,7 +9393,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11767), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11771), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9419,12 +9423,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13753) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13757) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11854) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11858) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;

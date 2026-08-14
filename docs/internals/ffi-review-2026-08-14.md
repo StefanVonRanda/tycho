@@ -241,9 +241,11 @@ Concretely open:
   itself.
 - **`corelib/net`'s accept/recv path** under hostile peers. `server-check` proves
   the daemon survives two rude clients; that is not the same as an adversary.
-- **The image decoders' uncapped allocation** (finding 7) — safe today because
-  `malloc` failure is handled, worth a ceiling if `core:image` ever decodes
-  untrusted input in a long-lived process.
+- ~~The image decoders' uncapped allocation~~ — **capped at 512 MiB of RGBA
+  (an 11600x11600 image) with its own `ImgErr.TooBig`,** overridable at compile
+  time like `compress`'s so a gate can prove it fires cheaply. It failed safely
+  before (a NULL `malloc` is handled), so this is defence in depth and a NAMED
+  error rather than a generic allocation failure.
 - **Windows.** Every measurement here is Linux. The wine lanes cover behaviour,
   not memory safety: there is no ASan equivalent in that path.
 - **Timing and side channels.** Not considered at all. `core:crypto` compares

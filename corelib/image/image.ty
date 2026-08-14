@@ -36,6 +36,8 @@ enum ImgErr:
     BadDims        # encode: width or height <= 0, or beyond the 100000-pixel bound
     ShortPixels    # encode: fewer than width*height*4 pixel bytes
     Failed         # libpng or an allocation failed -- nothing to do with the payload
+    TooBig         # decode: the header declares an image whose RGBA buffer passes the
+                   # 512 MiB ceiling. The FILE is small; the declared size is not
 
 # ---- shim externs (libpng; defined in image_shim.c) ----
 # The fallible pair take `status: inout int`, the FFI shape core:compress's
@@ -53,6 +55,7 @@ const IMG_NOTPNG = 2
 const IMG_CORRUPT = 3
 const IMG_BADDIMS = 4
 const IMG_SHORTPX = 5
+const IMG_TOOBIG = 7
 
 fn make(width: int, height: int, pixels: bytes) -> Image:
     return Image(width, height, pixels)
@@ -68,6 +71,8 @@ fn _cause(st: int) -> ImgErr:
         return Corrupt
     if st == IMG_BADDIMS:
         return BadDims
+    if st == IMG_TOOBIG:
+        return TooBig
     if st == IMG_SHORTPX:
         return ShortPixels
     return Failed

@@ -25,6 +25,7 @@ fn why(e: image.ImgErr) -> string:
         image.BadDims: return "BadDims"
         image.ShortPixels: return "ShortPixels"
         image.Failed: return "Failed"
+        image.TooBig: return "TooBig"
     return "?"
 
 # Report a decode that MUST fail: "Ok" here is the regression, not a pass.
