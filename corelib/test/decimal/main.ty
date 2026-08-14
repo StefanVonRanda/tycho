@@ -27,6 +27,13 @@ fn dstr(r: Result(decimal.Decimal, decimal.DivErr)) -> string:
 fn dv(a: string, b: string, sc: int, mode: int) -> string:
     return dstr(decimal.div(decimal.from_str(a), decimal.from_str(b), sc, mode))
 
+# from_str_checked rendered one way, so the two assertion lines below stay short.
+fn ck(s: string) -> string:
+    match decimal.from_str_checked(s):
+        Ok(d): return decimal.to_str(d)
+        Err(e): return "ERR:" + decimal.err_str(e)
+    return "?"
+
 fn main():
     # from_str / to_str round-trips, stored scale preserved
     println("rt=" + decimal.to_str(decimal.from_str("123.45")) + " " + decimal.to_str(decimal.from_str("-0.001")) + " " + decimal.to_str(decimal.from_str("42")) + " " + decimal.to_str(decimal.from_str("1000.00")))
@@ -92,3 +99,13 @@ fn main():
     # the refusals: a zero divisor is an Err, not an abort; so are a negative scale
     # and a mode that is neither of the two.
     println("div_err=" + dv("1", "0", 2, decimal.half_up()) + " " + dv("1", "0.00", 2, decimal.toward_zero()) + " " + dv("1", "2", 0 - 1, decimal.half_up()) + " " + dv("1", "2", 2, 9))
+
+    # from_str_checked: the STRICT sibling. from_str is lax and, unlike parse_int,
+    # does not fail to 0 -- the scale counts the garbage as a digit position, so
+    # "1.5x" is 0.15 and "1.2.3" is 0.012, plausible WRONG NUMBERS in the type this
+    # package exists to make exact. Both are asserted here against the lax answer,
+    # so the split is visible and a regression that made from_str strict, or
+    # from_str_checked lax, moves this line.
+    println("lax_wrong=" + decimal.to_str(decimal.from_str("1.5x")) + " " + decimal.to_str(decimal.from_str("1.2.3")) + " " + decimal.to_str(decimal.from_str("1,5")))
+    println("strict_ok=" + ck("1.5") + " " + ck("1.50") + " " + ck("-2.25") + " " + ck("+3") + " " + ck(".5") + " " + ck("5.") + " " + ck("99999999999999999999.5"))
+    println("strict_err=" + ck("1.5x") + " " + ck("1.2.3") + " " + ck("") + " " + ck("-") + " " + ck(".") + " " + ck("abc") + " " + ck(" 1.5") + " " + ck("1e5") + " " + ck("1,5"))

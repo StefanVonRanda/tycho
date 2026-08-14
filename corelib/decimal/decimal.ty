@@ -41,6 +41,56 @@ fn from_str(s: string) -> Decimal:
     sc := n - point - 1                # digits after the point
     return Decimal(bignum.from_str(coeffstr), sc)
 
+# Why from_str_checked refused. from_str above stays LAX and unchanged, so no
+# caller moves -- the same split core:strings has between parse_int and
+# parse_int_checked.
+enum DecErr:
+    Empty                  # ""
+    NoDigits               # a sign or a point with no digit: "-", ".", "+."
+    TwoPoints              # "1.2.3"
+    Garbage                # anything outside [-|+]digits[.digits]
+
+fn err_str(e: DecErr) -> string:
+    if e is Empty:
+        return "empty input"
+    if e is NoDigits:
+        return "no digits"
+    if e is TwoPoints:
+        return "more than one decimal point"
+    return "unexpected character"
+
+# The STRICT sibling of from_str, for a decimal read out of a file or a wire
+# format. from_str fails open and, unlike parse_int, does not fail to 0 -- it
+# returns a plausible WRONG NUMBER, because the scale counts the garbage as a
+# digit position: "1.5x" is coefficient 15 at scale 2, i.e. 0.15, and "1.2.3" is
+# 0.012. For the type this package exists to make exact, that is the worst
+# failure it could have. Accepts exactly `[-|+]digits[.digits]` and nothing else
+# -- no exponent, no spaces, no thousands separator.
+fn from_str_checked(s: string) -> Result(Decimal, DecErr):
+    n := len(s)
+    if n == 0:
+        return Err(Empty)
+    i := 0
+    if s[0] == 45 or s[0] == 43:       # '-' or '+'
+        i = 1
+    digits := 0
+    points := 0
+    j := i
+    for j < n:
+        c := s[j]
+        if c == 46:                    # '.'
+            points = points + 1
+        elif c >= 48 and c <= 57:
+            digits = digits + 1
+        else:
+            return Err(Garbage)
+        j = j + 1
+    if points > 1:
+        return Err(TwoPoints)
+    if digits == 0:
+        return Err(NoDigits)
+    return Ok(from_str(s))
+
 fn neg(a: Decimal) -> Decimal:
     return Decimal(bignum.neg(a.coeff), a.scale)
 

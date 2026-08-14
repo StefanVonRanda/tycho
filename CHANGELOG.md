@@ -120,6 +120,17 @@ contain them (see 0.6.0's opening note).
   overflow, so `WHERE id = 9223372036854775808` silently meant `WHERE id = 0`
   and matched the wrong rows with no error.
 
+### Core library — added
+
+- **`decimal.from_str_checked(s) -> Result(Decimal, DecErr)`.** The strict
+  sibling of `from_str`, which fails open to a plausible WRONG NUMBER rather than
+  to zero: it splits on the decimal point and lets the coefficient parse skip
+  non-digits while the scale still counts them, so `1.5x` is `0.15`, `1.2.3` is
+  `0.012` and the comma-decimal `1,5` is `1`. For the type this package exists to
+  make exact, that is the worst failure it could have. The checked form accepts
+  exactly `[-|+]digits[.digits]`; `from_str` is unchanged and still lax, so no
+  caller moves (FRICTION #56).
+
 ### Core library — breaking
 
 - **`io.write_bytes`, `io.write_at`, `io.set_mtime` and `io.sync` return

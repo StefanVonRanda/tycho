@@ -16,3 +16,6 @@ div_scale0=4 3
 div_neg=-0.67 -0.67 0.67 -0.66
 div_vs_rescale=1.23 -1.23 ok=1
 div_err=ERR:divzero ERR:divzero ERR:scale-1 ERR:mode9
+lax_wrong=0.15 0.012 1
+strict_ok=1.5 1.50 -2.25 3 0.5 5 99999999999999999999.5
+strict_err=ERR:unexpected character ERR:more than one decimal point ERR:empty input ERR:no digits ERR:no digits ERR:unexpected character ERR:unexpected character ERR:unexpected character ERR:unexpected character

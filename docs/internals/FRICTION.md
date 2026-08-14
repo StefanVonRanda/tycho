@@ -4815,3 +4815,34 @@ The rest of that sweep came back clean, and the negative results are the point:
 containment in a struct, enum, Option or array are all re-checked when the type
 arrives through `$T`. `[$N]T` in a struct field stays unreachable that way --
 the type cannot be named at a call site to infer it.
+
+### 56. `decimal.from_str` fails open to a WRONG NUMBER, not to zero — **strict sibling added 2026-08-14**
+
+Found by sweeping every corelib parse function for FRICTION #4's shape after
+closing it. `core:decimal` is the money type — the package header calls itself
+"the right type for money and any base-10-exact arithmetic" — and its only
+constructor from text failed open **worse than `parse_int` does**. `parse_int`
+fails to 0, which is at least obviously a default. `from_str` returns a plausible
+wrong amount, because it splits on the point and lets `bignum.from_str` skip
+non-digits while the SCALE still counts them as digit positions:
+
+```
+"1.5x"  -> coefficient 15, scale 2  =  0.15
+"1.2.3" -> coefficient 12, scale 3  =  0.012
+"1,5"   -> 1                            (the comma-decimal spelling, silently)
+" 1.5"  -> 0.0
+```
+
+Nothing in the tree was wrong because of it — `tools/tycho-q` guards both of its
+data paths with a `decimal.to_str(d) == cell` round trip, deliberately, and its
+third call site takes an already-shape-checked lexer token. The gap was the
+missing API: `core:strings` has `parse_int_checked`, and `core:decimal` had a
+`Result`-returning `div` with a `DivErr`, so the convention was present in the
+package and `from_str` was the outlier.
+
+`from_str_checked(s) -> Result(Decimal, DecErr)` accepts exactly
+`[-|+]digits[.digits]` and nothing else; `from_str` is unchanged and still lax,
+so no caller moves. 17 inputs are asserted in `corelib/test/decimal/main.ty`,
+including the two wrong numbers above **against the lax answer**, so a regression
+in either direction moves that line. Arbitrary precision survives the check: a
+20-digit coefficient round-trips exactly.
