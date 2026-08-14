@@ -1,0 +1,24 @@
+# `sink` on an affine type. Accepted and then SILENTLY IGNORED until 2026-08-14:
+# measured with a counting C shim, a `sink File` callee left the handle live and
+# unclosed at return -- it borrowed exactly like a default parameter, so the
+# declared mode did nothing at all.
+#
+# Refused rather than implemented. Passing an affine value already BORROWS
+# (docs/spec/14-ffi.md, §25), which is what a caller wants; a consuming callee
+# would have to free at ITS scope exit while the destructor is emitted at the
+# owner's, which is the double free of FRICTION #43. `inout` is refused for the
+# same reason -- there is no copy-back for a value with one owner.
+# expect: which an affine type cannot be
+# expect: Pass it plainly
+
+handle R:
+    free: hc
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+extern fn hu(h: R) -> int
+
+fn take(h: sink R) -> int:
+    return hu(h)
+
+fn main():
+    println("unreachable")

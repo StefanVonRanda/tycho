@@ -270,6 +270,12 @@ permitted to *return* a handle) and released without explicit calls.
   the second declaration. Locked by `tests/reject/handle_dup_name.ty` (the
   handle-second order) and `tests/reject/handle_then_struct.ty`,
   `handle_then_enum.ty`, `handle_then_newtype.ty` (the handle-first order).
+- **Neither borrow mode applies.** A `handle` parameter MUST NOT be `sink` or
+  `inout`. It has one owner and a scope-bound destructor, so there is nothing to
+  consume and nothing to copy back; passing it plainly is already the borrow
+  above. Both were accepted and silently IGNORED until 2026-08-14 — a `sink`
+  callee borrowed exactly like a default parameter — which is why they are now
+  refused at the declaration. The same rule covers `Task(T)` and `Channel(T)`.
 - **Scope-exit free.** The owning variable's destructor runs at every scope exit
   — block end, early `return`, `break`, `continue`, `or_return`.
 - **Borrow on pass.** Passing a handle passes the `void*`; the callee does **not**

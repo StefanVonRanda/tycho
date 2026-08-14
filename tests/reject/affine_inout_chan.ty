@@ -1,0 +1,11 @@
+# `inout` on a Channel(T), the same rule as tests/reject/affine_sink_param.ty
+# reached through the other mode and the other affine type. A channel has one
+# owner and is freed when its creating scope exits, so there is no copy-back to
+# perform; passing it plainly is already what a consumer needs.
+# expect: which an affine type cannot be
+
+fn drain(ch: inout Channel(int)) -> int:
+    return 0
+
+fn main():
+    println("unreachable")

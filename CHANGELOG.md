@@ -26,6 +26,13 @@ contain them (see 0.6.0's opening note).
   and `Result` already refused one. `items: [R]` was refused before this only
   because the ARRAY intern helper checked its element; a handle that *is* the
   field type passed through no such helper (FRICTION #44).
+- **`sink` and `inout` are refused on an affine type** — a `handle`, `Task(T)` or
+  `Channel(T)` parameter may not carry either. Both were accepted and silently
+  ignored: a `sink` handle callee borrowed exactly like a default parameter,
+  leaving the value live and unclosed at return. Passing an affine value plainly
+  is already a borrow, which is what a caller wants; consuming one would free it
+  at the callee's scope exit while its destructor is emitted at the owner's
+  (FRICTION #49).
 - **A channel can no longer be COPIED.** `e := c` on a `Channel(T)` is a compile
   error: a channel-typed declaration is legal only from `channel(...)` itself,
   which is what the spec already required and nothing enforced. No double free

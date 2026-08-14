@@ -121,7 +121,7 @@ fn main():
 # was `range(a, b, step)` and a non-unit step was a SOUNDNESS gate (a strided space
 # cannot be chunked); `parallel for i in range(0, 10, 2)` was its fixture. `0..<N`
 # has no step syntax at all, so that die_at is now unreachable by construction and
-# is kept only as a fail-closed assertion (src/tychoc.c:7789@r_step). The constraint that
+# is kept only as a fail-closed assertion (src/tychoc.c:7802@r_step). The constraint that
 # took its place is the LOWER bound: `0..<N` demands a literal `0`
 # (src/tychoc.c:4024@i_dotlt), so this is the range-shape rejection that still has a source
 # spelling. Folding the old stride into the body (`0..<5` with `i * 2`) was the
@@ -156,7 +156,7 @@ fn main():
         bump(&xs)
 ''',
 # The RHS of a multi-assign must be a single TUPLE-valued expression
-# (src/tychoc.c:7678-7681), so this fixture's original body `a, b = b, a` was never
+# (src/tychoc.c:7691-7694), so this fixture's original body `a, b = b, a` was never
 # valid Tycho: it died at "expected newline" in the parser and never reached the
 # capture gate it names. That was invisible while the whole file died earlier still,
 # on `range()`. Respelled through a tuple-returning call, it now trips
