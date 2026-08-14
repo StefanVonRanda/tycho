@@ -20,6 +20,7 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 | `args()` | `-> [string]` | Command-line arguments; `args()[0]` is the program name. |
 | `getenv(name)` | `string -> string` | The variable's value, or `""` if unset. |
 | `die(msg)` | `string -> void` | Print `msg` to stderr and exit with status 1. |
+| `exit(code)` | `int -> void` | Terminate with status `code`, printing nothing; never returns. `exit(0)` is an ordinary answered exit, not a failure. |
 
 ## Conversions
 
@@ -31,6 +32,7 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 | `to_bytes(s)` / `to_str(b)` | `string <-> bytes` | Same byte buffer; `bytes` may carry interior NULs. |
 | `to_bytes(xs)` | `[int] -> bytes` | Each element `& 0xFF` into a fresh buffer — builds a binary `bytes` (interior NULs and all) that a `string` can't hold. |
 | `chr(n)` | `int -> string` | The one-byte string for byte value `n` (`0`–`255`). |
+| `to_char(n)` | `int -> char` | The byte value `n` as a `char`. Outside `0..255` it **aborts** — where `chr(n)` returns a one-byte *string*, this returns a `char`. |
 
 (A newtype's `to_int` / `to_float` / `to_str` / `to_bool` / `to_under` unwrappers are on the
 [Types](types.md#distinct-newtypes-type) page.)
@@ -45,6 +47,7 @@ Unicode-aware). String escapes: `\n \t \\ \"`.
 | `len(s)` | `string -> int` | Byte length. |
 | `substr(s, a, b)` | `(string, int, int) -> string` | Substring `[a, b)`, a fresh copy. Out-of-range bounds are **clamped**, not an error. |
 | `find(s, sub)` | `(string, string) -> int` | Byte index of the first `sub`, or `-1`. |
+| `char_at(s, i)` | `(string, int) -> char` | The byte at `i` as a `char` — the same read and the same bounds abort as `s[i]`. |
 | `split(s, sep)` | `(string, string) -> [string]` | Split on a non-empty separator; `n` separators yield `n+1` fields. An empty separator aborts. |
 
 ## Arrays
@@ -64,6 +67,7 @@ Unicode-aware). String escapes: `\n \t \\ \"`.
 | Builtin | Type | Notes |
 | --- | --- | --- |
 | `m.get(k, d)` | `(map, K, V) -> V` | Value for `k`, or default `d` if absent. `m.get(k)` is `m[k]` (value-type zero on a miss). |
+| `hash(x)` | `K -> int` for any map-key type | The hash the maps themselves use, exposed: values equal by `==` hash equal. Returns the full 64-bit value. |
 
 ## Concurrency
 
