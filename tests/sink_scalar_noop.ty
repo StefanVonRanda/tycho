@@ -1,0 +1,37 @@
+# `sink` on a NON-HEAP type is legal and enforces nothing, which is what the
+# spec now says (§15.2) after it said the opposite. A value with nothing on the
+# heap has nothing to move, so the consume rule has no work to do -- but a reader
+# of the signature alone cannot tell, which is why this fixture prints the proof
+# rather than leaving it to the prose.
+#
+# Every line below would be a COMPILE ERROR if the same parameter were a string,
+# an array, or a struct with a heap field: "is consumed by a `sink` parameter but
+# is mentioned 2 times in this function".
+
+struct Pt:
+    x: int
+    y: int
+
+type Id = int
+
+fn take_int(n: sink int) -> int:
+    return n + 1
+
+fn take_pt(p: sink Pt) -> int:
+    return p.x
+
+fn take_id(i: sink Id) -> int:
+    return to_under(i)
+
+fn main():
+    n := 1
+    a := take_int(n)
+    println("int " + str(a) + " " + str(n))        # n still readable
+
+    p := Pt(3, 4)
+    b := take_pt(p)
+    println("struct " + str(b) + " " + str(p.y))   # p still readable
+
+    i := Id(7)
+    c := take_id(i)
+    println("newtype " + str(c) + " " + str(to_under(i)))

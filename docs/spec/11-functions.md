@@ -40,9 +40,28 @@ A parameter is passed in one of three modes:
   an exclusive, call-scoped mutable borrow written `&x` at the call site,
   equivalent to `x = f(x)`, with the exclusivity rule of §11.2.
 - **`sink` (owned, consuming).** The callee **owns and consumes** the argument
-  and may mutate it in place. The caller's argument is consumed: after passing a
-  variable to a `sink` parameter, the caller MUST NOT use that variable again
-  (doing so is a compile error, not a silent copy). A fresh literal or a local on
+  and may mutate it in place. **On a heap-bearing type** the caller's argument is
+  consumed: after passing a variable to a `sink` parameter, the caller MUST NOT
+  use that variable again (doing so is a compile error, not a silent copy).
+
+  **The consume rule reaches exactly the heap-bearing types**, because a value
+  with nothing on the heap has nothing to move — `sink` on it is a no-op the
+  compiler accepts and does not enforce. Measured 2026-08-14:
+
+  | parameter type | consume rule |
+  |---|---|
+  | `string`, `[T]`, a struct with any heap field, a newtype over one | enforced |
+  | `int`, `float`, `bool`, a struct of scalars only, a newtype over a scalar | **not enforced** — the variable stays usable |
+
+  Two consequences worth knowing before you write one. `sink` on a scalar is
+  legal and means nothing, so it documents an intent the compiler will not hold
+  you to. And **the meaning of a signature can change when a type gains a
+  field**: `fn take(p: sink Point)` over `Point{int, int}` enforces nothing, and
+  starts enforcing consumption on every caller the day `Point` gains a `string`.
+  Neither is a defect — there is genuinely nothing to consume in the first case —
+  but a reader of the signature alone cannot tell which case they are in.
+  ([`src/tychoc.c@sink_arg_into`](../../src/tychoc.c) gates the whole check on
+  the type being heap-bearing.) A fresh literal or a local on
   its last use is adopted with **no copy**; a copy is made only where value
   semantics require independence (the variable is read again after the call, or
   is captured by a closure). **Inside a loop a named variable is neither adopted

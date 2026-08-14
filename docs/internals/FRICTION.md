@@ -4621,6 +4621,29 @@ and §25 now states it.
 A mode that reads as ownership and delivers a borrow is worse than no mode: it
 is a promise in the signature that nothing keeps.
 
+### 50. ~~The spec claimed the `sink` consume rule applied to every type~~ — **SPEC CORRECTED 2026-08-14**
+
+Found by probing #49's neighbours. `sink` on a NON-HEAP type is accepted and
+enforces nothing: `f(n: sink int)` then reading `n` compiles and prints, where the
+same shape on a `string` or `[int]` is refused. §15.2 stated the rule with no
+qualification.
+
+**The compiler is right and the spec was wrong**, which is the reverse of the
+first three findings in this section and worth recording as such. Two existing
+fixtures — `tests/reject/sink_arg_scalar.ty` and `sink_arg_newtype.ty` — use
+`sink int` and `sink Id` as SETUP to test argument checking, so refusing `sink` on
+a scalar would have left both passing for the wrong reason: they would be rejected
+at the declaration and never reach the call-argument check they exist to pin. That
+is the vacuous-test disease, and nearly shipping it is the reason this entry
+exists.
+
+The boundary is `type_is_heap`, measured: enforced for `string`, `[T]`, a struct
+with any heap field and a newtype over one; inert for `int`, `float`, `bool`, an
+all-scalar struct and a newtype over a scalar. §15.2 now carries that table and
+the consequence a reader cannot see from a signature — `fn take(p: sink Point)`
+enforces nothing over `Point{int,int}` and starts enforcing it on every caller the
+day `Point` gains a `string`. `tests/sink_scalar_noop.ty` prints the proof.
+
 ---
 
 ## Found by `tools/tycho-grid`, 2026-08-14 (head `8c06eb8a`)
