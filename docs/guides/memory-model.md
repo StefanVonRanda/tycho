@@ -94,6 +94,20 @@ reference counts anywhere.
   dynamic last use — `b` takes over `a`'s buffer instead, a move rather than a
   copy. Output-invisible; it reduces allocator churn.
 
+- **`sink` — the move you ask for.** Where move-on-last-use is an inference the
+  compiler makes silently, a `sink` parameter states it in the signature: the
+  callee **owns and consumes** the argument, and the caller may not use that
+  variable again. A fresh literal or a call's result is adopted with no copy.
+  The value is that it is *checked* — a second use is a compile error rather than
+  a copy you never see. The same rules that make it checkable also make it
+  strict: a sink argument must be the variable's only mention in the function,
+  and no named variable can be adopted inside a loop, because a copy hidden in a
+  loop is the one place the move-vs-copy cost is invisible and unbounded. So a
+  consuming chain is written point-free — each call's result handed straight to
+  the next — rather than accumulated into a named variable.
+  ([reference](../reference/functions.md), and `tools/tycho-tmpl/` as a worked
+  example.)
+
 - **Liveness-driven in-place reuse.** A loop-carried value reassigned each step
   (`a = step(a)`) is the arena's classic worst case: an arena cannot free a
   single object mid-scope, so every dead intermediate would pile up until the

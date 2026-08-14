@@ -178,6 +178,18 @@ the capability the resolver already enforces, over the newtype-resolved base:
 - `numeric(T)` — `int` or `float` (supports `+ - * /`).
 - `comparable(T)` — `int`, `char`, `float`, or `string` (supports `< > <= >=`).
 - `has_str(T)` — `int`, `bool`, `float`, or `string` (passable to `str()`).
+- `hashable(T)` — any legal map key type. It also *admits* `T` as a map key inside
+  the body: a generic carrying it may write `[]$K: V` and index the result with a
+  `$K`, with the key check deferred to instantiation.
+- `defaultable(T)` — exactly `int`, `float`, `bool`, `string`. This is what makes
+  `zero$(T)` legal, so a fold can seed its accumulator from the type
+  (`acc := zero$(T)`) instead of from `xs[0]`, and therefore answer for an empty
+  input.
+
+The first four see **through** a newtype — they test the underlying capability.
+`defaultable` does not, so `zero$(X)` fails for a newtype even over a defaultable
+base. Several constraints are separated by **commas**: `where defaultable(T),
+numeric(T)`; `and` is not a spelling the grammar has.
 
 They are checked at instantiation against each inferred concrete type; a
 violation is a clear signature error (`'sum' instantiated with T = string, which
@@ -291,8 +303,9 @@ worth a monomorphization pass that the transpiler *already runs* for its built-i
   inferred from inside the map argument, substituted, and monomorphized per
   concrete map.
 - **`where` constraints.**
-  A `where pred(T), …` clause over the fixed predicate set `numeric` /
-  `comparable` / `has_str` ([§5](#5-constraints-checked-at-instantiation)),
+  A `where pred(T), …` clause over the fixed five-predicate set `numeric` /
+  `comparable` / `has_str` / `hashable` / `defaultable`
+  ([§5](#5-constraints-checked-at-instantiation)),
   parsed after the return type and checked at instantiation against each inferred
   concrete type (newtype base resolved).
 - **Explicit type args.**

@@ -14,6 +14,13 @@ its own source, and how the value-semantic, implicit-arena memory model
 behaves on a real, allocation-heavy, deeply-recursive workload.
 
 > **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted transpiler, `tychoc0` the self-hosted one; each figure names which.
+>
+> **These figures date from on or before 2026-07-22**, the last time this page was
+> revised, and have not been re-measured since. Treat them as the shape of the
+> result — the ratios and what dominates — rather than as today's wall-clock: the
+> compiler, the corpus and the corelib have all grown since (§"the profiler box"
+> below already says so for `tychoc0.ty`). `make bench` re-runs the suites, and
+> each `bench/*/RESULTS.md` carries its own date.
 
 I check every change here against the byte-identical self-build
 (`make fixpoint`) and the sanitizer and fuzzer suite (`make test` under

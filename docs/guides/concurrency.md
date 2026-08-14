@@ -79,6 +79,14 @@ parallel-loop level, a `inout` of a capture, and range steps are all compile
 errors — there is nothing left to race on. All chunk tasks join inside the
 statement.
 
+**Naming the width.** `parallel(W) for …` fixes the chunk count for one loop:
+`parallel(4) for i in 0..<n:` runs exactly four. The literal is checked at compile
+time and must be `1..64`; a computed width aborts at run time rather than silently
+clamping. An explicit width **beats `TYCHO_THREADS`**, which is the point — it pins
+the one loop whose shape you know (a short body where `ncpu()` chunks would cost
+more in copy-in than they save) without changing how the rest of the program
+scales. Leave it off and the default stands.
+
 On the compute-bound reduction this keeps up with C-pthreads here: 37 ms vs C's 36 ms, same peak RSS.
 
 ### Bounded fan-out over a channel
