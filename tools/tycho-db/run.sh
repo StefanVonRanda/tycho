@@ -491,6 +491,33 @@ stmt_err NotAValue    'not a value: id'                    "INSERT INTO users VA
 stmt_err NotSelect    "cannot plan (only SELECT has a plan): INSERT users (2, 'x', 1)" \
                                                            "EXPLAIN INSERT INTO users VALUES (2, 'x', 1);"
 
+# sql.SqlErr.Lex -- all three, none of which had a leg before. The lexer is the
+# one stage whose failures a caller sees as DATA rather than as an error, which
+# is why the out-of-range case mattered: the span is all digits by construction,
+# so parse_int could not fail open on garbage there, but it returns 0 on
+# OVERFLOW. `WHERE id = <too large>` then silently meant `WHERE id = 0`.
+stmt_err LexRange     'lex error at 31: integer literal out of range' \
+                                                           'SELECT * FROM users WHERE id = 9223372036854775808;'
+stmt_err LexString    'lex error at 34: unterminated string' \
+                                                           "SELECT * FROM users WHERE name = 'oops;"
+stmt_err LexChar      "lex error at 29: unexpected character '#'" \
+                                                           'SELECT * FROM users WHERE id # 1;'
+
+# The WRONG ANSWER the range check exists to prevent, asserted as an answer and
+# not as a message. A row with id 0 is seeded, then queried for with a literal
+# too large for int: with the check out, the query returned THAT ROW -- a silent
+# wrong result, which no error-message leg above can see.
+rm -f z.db
+printf "CREATE TABLE t (id INT, tag TEXT);\nINSERT INTO t VALUES (0, 'ZEROROW');\nINSERT INTO t VALUES (7, 'seven');\n" > zseed.sql
+"$DB" zseed.sql z.db > "$T/z.seed" 2>&1 || bad "LexRange/answer: the seed script failed"
+printf 'SELECT * FROM t WHERE id = 9223372036854775808;\n' > zcase.sql
+"$DB" zcase.sql z.db > "$T/z.out" 2> "$T/z.err"
+if grep -qF 'ZEROROW' "$T/z.out"; then
+    bad "LexRange/answer: an out-of-range literal matched the id=0 row -- the query returned a wrong ANSWER"
+    sed 's/^/      /' "$T/z.out"
+fi
+printf '=== lexrange answer\n' >> "$out"; cat "$T/z.out" >> "$out"
+
 # store.StoreErr.Corrupt -- an OPEN failure, so nothing runs and stdout must be
 # EMPTY. A database that prints a header for a file it could not read hands the
 # caller a transcript it cannot tell is empty of results.

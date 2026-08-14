@@ -174,6 +174,31 @@ EXPLAIN INSERT INTO users VALUES (2, 'x', 1);
   ERR   cannot plan (only SELECT has a plan): INSERT users (2, 'x', 1)
 --- stderr
 1 statement(s) failed
+=== err LexRange
+--- stdout
+  db    e.db (1 table(s))
+SELECT * FROM users WHERE id = 9223372036854775808;
+  ERR   lex error at 31: integer literal out of range
+--- stderr
+1 statement(s) failed
+=== err LexString
+--- stdout
+  db    e.db (1 table(s))
+SELECT * FROM users WHERE name = 'oops;
+  ERR   lex error at 34: unterminated string
+--- stderr
+1 statement(s) failed
+=== err LexChar
+--- stdout
+  db    e.db (1 table(s))
+SELECT * FROM users WHERE id # 1;
+  ERR   lex error at 29: unexpected character '#'
+--- stderr
+1 statement(s) failed
+=== lexrange answer
+  db    z.db (1 table(s))
+SELECT * FROM t WHERE id = 9223372036854775808;
+  ERR   lex error at 27: integer literal out of range
 === err Corrupt
 --- stdout
 --- stderr

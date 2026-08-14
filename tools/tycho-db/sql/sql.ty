@@ -89,7 +89,12 @@ fn lex(src: string) -> Result([Tok], SqlErr):
             start := i
             for i < len(src) and char.is_digit(src[i]):
                 i += 1
-            push(out, TNum(strings.parse_int(src[start:i])))
+            # The span is all digits by construction, so parse_int cannot fail open on
+            # garbage here -- but it returns 0 on OVERFLOW, and a WHERE against a literal
+            # too large for int would then have silently matched the rows equal to 0.
+            match strings.parse_int_checked(src[start:i]):
+                Ok(v): push(out, TNum(v))
+                _: return Err(Lex("integer literal out of range", start))
         elif char.is_alpha(c) or c == 95:
             start := i
             for i < len(src) and (char.is_alpha(src[i]) or char.is_digit(src[i]) or src[i] == 95):
