@@ -349,6 +349,50 @@ if [ "$fail" -eq 0 ]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# DECOMPRESSION BOMB. core:compress grew its inflate buffer by doubling with no
+# ceiling, so a small archive that expands enormously was attempted until realloc
+# failed or the host did -- measured 2026-08-14, a 199 KB gzip reached 200 MB
+# with no complaint and a real bomb reaches petabytes at the same ratio. The
+# ceiling is ZD_MAX_OUT (1 GiB). Proving it fires must NOT cost a gigabyte, so the
+# shim is rebuilt with the ceiling forced small and the SAME input must flip from
+# accepted to refused. A ceiling nothing ever crosses is a ceiling nobody tested.
+if command -v python3 >/dev/null 2>&1 && [ -n "${TYCHOC:-./tychoc}" ]; then
+    bd="$T/bomb"; mkdir -p "$bd"
+    python3 -c "
+import gzip,pathlib,sys
+pathlib.Path(sys.argv[1]).write_bytes(gzip.compress(b'x'*300000, 9))
+" "$bd/small.gz" 2>/dev/null || bad "bomb: could not build the fixture"
+    cat > "$bd/m.ty" <<'TY'
+package main
+import "core:io"
+import "core:compress"
+fn main():
+    match io.read_bytes(args()[1]):
+        Ok(b):
+            match compress.decompress(b):
+                Ok(o): println("out " + str(len(o)))
+                Err(e): println("refused")
+        Err(e): println("unreadable")
+TY
+    if ./tychoc "$bd/m.ty" --emit-c -o "$bd/g" >"$bd/emit.log" 2>&1; then
+        SH=$(./tychoc "$bd/m.ty" --print-shims 2>/dev/null | tr '
+' ' ')
+        # $SH unquoted on purpose: it is a LIST of shim paths. This lane runs under
+        # /bin/sh, which word-splits it; zsh would not, and that cost a debug round.
+        if cc -O2 -o "$bd/dflt" "$bd/g.c" $SH -lz -lm -lpthread 2>/dev/null         && cc -O2 -DZD_MAX_OUT=65536 -o "$bd/tiny" "$bd/g.c" $SH -lz -lm -lpthread 2>/dev/null; then
+            got_d=$("$bd/dflt" "$bd/small.gz" 2>&1)
+            got_t=$("$bd/tiny" "$bd/small.gz" 2>&1)
+            [ "$got_d" = "out 300000" ] || bad "bomb: under the 1 GiB ceiling a 300 KB expansion should pass, got '$got_d'"
+            [ "$got_t" = "refused" ]    || bad "bomb: with the ceiling forced to 64 KiB the SAME input should be refused, got '$got_t' -- the ceiling does not fire"
+        else
+            echo "      skip bomb leg (cc could not link the probe)"
+        fi
+    else
+        bad "bomb: the probe does not compile"
+    fi
+fi
+
 if [ "$fail" -eq 0 ]; then
     echo "tycho-ar: green (create twice byte-identical; t == golden; diff -r round trip empty; extracted mtimes == archived mtimes; a failed set_mtime warns on stderr and exits nonzero without stopping; traversal, absolute path, flipped payload, forged csha and truncation all refused)"
 else

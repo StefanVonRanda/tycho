@@ -54,6 +54,14 @@ void zx_compress(const unsigned char *data, tycho_int len, unsigned char **out, 
  * knew which it was; it discarded that on the way out. */
 #define ZD_OK        0
 #define ZD_CORRUPT   1   /* inflate refused the data: bad wrapper, bad checksum, needs a dict */
+#define ZD_TOOBIG    3   /* the output passed ZD_MAX_OUT -- a decompression bomb */
+/* 1 GiB ceiling on one decompress. Overridable at COMPILE time so a gate can
+ * prove the ceiling fires without allocating a gigabyte: the lane rebuilds this
+ * shim with -DZD_MAX_OUT=65536 and feeds it an input that expands past that. A
+ * ceiling nothing ever crosses is a ceiling nobody has tested. */
+#ifndef ZD_MAX_OUT
+#define ZD_MAX_OUT   ((size_t)1024 * 1024 * 1024)
+#endif
 #define ZD_TRUNCATED 2   /* room left in the output and no progress: the input stops mid-stream */
 #define ZD_FAILED    3   /* init or allocation failed -- nothing to do with the payload */
 
@@ -84,6 +92,17 @@ void zx_decompress(const unsigned char *data, tycho_int len, tycho_int *status,
         if (s.avail_out == 0) {                          /* output full -> grow and keep going */
             size_t used = cap;
             size_t ncap = cap * 2u;
+            /* DECOMPRESSION BOMB. This loop doubled without a ceiling, so a small
+             * archive that expands enormously was attempted until realloc failed or
+             * the machine did -- measured 2026-08-14: a 199 KB gzip decompressed to
+             * 200 MB with no complaint, and a real bomb reaches petabytes at the
+             * same 1000:1. inflate cannot know the output size in advance, so the
+             * ceiling has to live here. 1 GiB is far above anything corelib reads
+             * (tycho-ar's archives are kilobytes) and far below hurting the host. */
+            if (ncap > ZD_MAX_OUT) {
+                *status = ZD_TOOBIG;
+                free(buf); inflateEnd(&s); return;
+            }
             unsigned char *nb = (unsigned char *)realloc(buf, ncap);
             if (!nb) { free(buf); inflateEnd(&s); return; }
             buf = nb;

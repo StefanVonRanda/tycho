@@ -81,6 +81,28 @@ Now `MAXREDIRS 10` and redirect protocols pinned to `http,https`, using
 fetches a `file://` URL directly, and that stays legal: the danger is a *remote
 party* changing the scheme, not the caller choosing one.
 
+### 4. Decompression had no ceiling — a bomb was attempted until the host gave out
+
+`compress_shim.c`'s inflate loop grew its output buffer by **doubling with no
+limit**. zlib cannot know the decompressed size in advance, so nothing else in
+the path could stop it either: a small archive that expands enormously was
+attempted until `realloc` failed or the machine did.
+
+Measured 2026-08-14, before the fix: a **199 KB** gzip decompressed to **200 MB**
+with no complaint — a 1000:1 ratio, and a real bomb reaches petabytes at the same
+ratio. `compress.decompress` is reachable from untrusted bytes through
+`tycho-ar`, `core:zip` and any gzip-encoded HTTP body.
+
+Now capped at 1 GiB with its own `ZErr.TooBig`, kept distinct from `Corrupt` and
+`Truncated` because **the input is VALID** — that is exactly what makes it
+dangerous, and a caller that treats it as corruption learns the wrong thing.
+
+The ceiling is `#ifndef`-overridable so the gate can prove it fires **without
+allocating a gigabyte**: `tools/tycho-ar/run.sh` rebuilds the shim with
+`-DZD_MAX_OUT=65536` and the same 325-byte input must flip from `out 300000` to
+`refused`. Removing the ceiling reddens that leg — confirmed, not assumed. A
+ceiling nothing ever crosses is a ceiling nobody has tested.
+
 ## What this pass did NOT cover
 
 Named so the next reviewer starts here rather than repeating the above:
@@ -92,7 +114,7 @@ Named so the next reviewer starts here rather than repeating the above:
 - **`corelib/image`.** `decode_bmp`/`decode_qoi` parse untrusted bytes into a
   pixel buffer — the classic decoder-overflow surface. They return `Result`, so
   the error path exists; the arithmetic was not audited.
-- **`corelib/compress`.** Decompression bombs: a small input expanding without
-  bound is the same class as finding 1, one layer down.
+- ~~**`corelib/compress`.** Decompression bombs~~ — **REVIEWED AND FIXED, see
+  finding 4 below.**
 - Anything about the **generated C** rather than the hand-written shims.
 - Fuzzing of any boundary. The tree's fuzzer targets the compiler, not the shims.
