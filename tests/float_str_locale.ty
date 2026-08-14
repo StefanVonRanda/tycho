@@ -29,14 +29,29 @@ extern fn tycho_test_float_roundtrip(x: float) -> int
 # 0.0); rt=0 means it did not; rt=-1 means the "C" locale handle could not be
 # built and neither leg is trustworthy.
 #
-# WINDOWS, measured 2026-08-13 under Wine 10 with the msvcrt toolchain: the
-# `=` column is byte-identical to this golden on every line. Three lines differ
-# in `rt` only -- inf, -inf and nan read back as 0 because MSVCRT's strtod does
-# not parse them, where glibc's does. No Tycho program can observe that: this
-# project's own `strings.parse_float` refuses all three on EVERY platform
-# (probed the same day), so the difference lives entirely in the C-library probe
-# behind tycho_test_float_roundtrip. Untested under a UCRT mingw, where strtod is
-# C99-conformant and the three would likely agree.
+# WINDOWS, measured 2026-08-13 and re-measured 2026-08-14 under Wine with the
+# mingw toolchain: the `=` column is byte-identical to this golden on every line.
+# Three lines differ in `rt` only -- inf, -inf and nan read back as 0.
+#
+# The 2026-08-13 note blamed "MSVCRT's strtod", and that is WRONG. Probed on
+# 2026-08-14 from one Windows program, same build, same run:
+#
+#     strtod("inf")                    = inf, consumed 3
+#     _strtod_l("inf", NULL, "C" hnd)  = 0,   consumed 0
+#
+# Plain `strtod` parses all three exactly as glibc does. It is `_strtod_l`, the
+# LOCALE-AWARE variant, that refuses them -- and that is the one the Windows
+# branch of `runtime/tycho_rt.c@tycho_test_float_roundtrip_prec` must call,
+# because Windows has no `uselocale` to swap the numeric locale around a plain
+# strtod. Numbers (1.5, 1e300) parse identically through both. So the prediction
+# that a C99-conformant UCRT strtod "would likely agree" does not follow either:
+# the call that fails is not the one being conformed.
+#
+# No Tycho program can observe any of it: this project's own
+# `strings.parse_float` returns Err for inf, -inf, nan, infinity, Inf and NaN on
+# Linux too (re-measured 2026-08-14), so the API refuses these on every platform
+# and the difference lives entirely in the C-library probe behind the test hook.
+# scripts/wine_test.sh accepts exactly this rt difference and nothing else.
 fn show(label: string, x: float):
     println(label + " = " + str(x) + "  rt=" + str(tycho_test_float_roundtrip(x)))
 

@@ -90,8 +90,32 @@ for d in corelib/test/*/; do
     # -k: wine spawns a process tree (wineserver + the test); a plain timeout
     # would kill the client and leave the server hanging the lane
     ( cd "$(pwd)" && timeout -k 5 120 $W "$T/$p.exe" 2>&1 ) >"$T/$p.out"
-    if cmp -s "$T/$p.out" "corelib/test/$p.out"; then
-        echo "ok    $p (byte-identical under Wine)"
+    # A line where WINDOWS IS CORRECT to disagree with the Linux golden. Written
+    # as a sed rewriting the Windows value back to the Linux one, so it fires only
+    # for the exact documented answer -- any OTHER value leaves the line alone and
+    # the lane red. That is what separates this from ignoring the line: a real
+    # regression on the same line still fails.
+    #
+    # Not a package `skip`: io's other 42 lines are byte-identical under Wine and
+    # skipping the package to excuse one line throws that coverage away.
+    got="$T/$p.out"; xnote=""
+    if ! cmp -s "$got" "corelib/test/$p.out"; then
+        case $p in
+            # Windows has no directory fsync. corelib/io/io.ty documents
+            # Err(Unsupported) as the DESIGNED answer for that case, and keeps it
+            # distinct from Err(Failed) precisely so a platform that cannot flush
+            # is not confused with one that tried and lied. The Linux `sync_dir=Ok`
+            # is therefore unreachable there, and `Failed` would still redden.
+            io) xsed='s/^sync_file=Ok sync_dir=Unsupported /sync_file=Ok sync_dir=Ok /'
+                xwhy='sync_dir: no directory fsync on Windows, io.ty documents Unsupported' ;;
+            *)  xsed=''; xwhy='' ;;
+        esac
+        if [ -n "$xsed" ] && sed "$xsed" "$got" > "$T/$p.win" && cmp -s "$T/$p.win" "corelib/test/$p.out"; then
+            got="$T/$p.win"; xnote=", after 1 documented Windows difference -- $xwhy"
+        fi
+    fi
+    if cmp -s "$got" "corelib/test/$p.out"; then
+        echo "ok    $p (byte-identical under Wine$xnote)"
         pass=$((pass+1))
     else
         echo "FAIL $p (output differs)"; diff "corelib/test/$p.out" "$T/$p.out" | head -6 | sed 's/^/      /'

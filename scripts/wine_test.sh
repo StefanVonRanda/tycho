@@ -59,7 +59,14 @@ CCF="-O3 -fwrapv -pthread"          # the transpiler's own Windows cc line
 pos() {
     name="$1"; hi="$2"; g="$3"; in="$4"
     case "$name" in *"$FILTER"*) ;; *) return ;; esac
-    $E "$hi" --emit-c -o "$T/$name" >"$T/$name.emit" 2>&1 || { note "$name (emit)"; fail=$((fail + 1)); return; }
+    # SHOW the captured stderr. It was written to $name.emit and never printed, and
+    # $T is a mktemp -d deleted on exit -- so an `(emit)` line was all anyone ever saw.
+    # On 2026-08-14 one fixture failed here, did not reproduce on a second run or by
+    # hand, and separating "wine hiccup" from "Windows compiler bug" took two 13-minute
+    # lane runs. The reason was in that file the whole time.
+    $E "$hi" --emit-c -o "$T/$name" >"$T/$name.emit" 2>&1 || {
+        note "$name (emit)"; sed 's/^/        /' "$T/$name.emit" | head -4
+        fail=$((fail + 1)); return; }
     # THE SHIMS. tychoc links a package's `<pkg>_shim.c` itself (merge_pkg calls
     # add_shim); this lane compiled the emitted C alone, so any fixture importing
     # a shim-backed package died at LINK and was read as a port failure --
@@ -73,9 +80,38 @@ pos() {
     if [ "$rc" -ne 0 ]; then note "$name (exit $rc)"; fail=$((fail+1)); return; fi
     if cmp -s "$T/$name.out" "$g"; then pass=$((pass+1))
     else
-        # classify: show only the first differing line for the park list
-        d=$(diff "$g" "$T/$name.out" 2>/dev/null | head -2 | tr '\n' ' ')
-        note "$name (mismatch: $d)"
+        # A line where WINDOWS IS CORRECT to disagree, rewritten back to the Linux
+        # value so it fires ONLY for the documented answer -- anything else stays red.
+        #
+        # float_str_locale: the `=` column is byte-identical on both (verified
+        # 2026-08-14). Only `rt` differs, and only for inf/-inf/nan, because the
+        # C-library probe behind tycho_test_float_roundtrip reads them back and
+        # MSVCRT's does not. NO TYCHO PROGRAM CAN OBSERVE IT: strings.parse_float
+        # returns Err for inf, -inf, nan, infinity, Inf and NaN on Linux too
+        # (measured the same day), so the API refuses these on every platform and
+        # the difference lives entirely in a test hook. The fixture's own header
+        # records the same finding from 2026-08-13.
+        case $name in
+            c_float_str_locale)
+                sed -e 's/^\(inf  *= inf  rt=\)0$/\11/' \
+                    -e 's/^\(-inf  *= -inf  rt=\)0$/\11/' \
+                    -e 's/^\(nan  *= nan  rt=\)0$/\11/' \
+                    "$T/$name.out" > "$T/$name.win" 2>/dev/null || : ;;
+            *) : > "$T/$name.win" 2>/dev/null || : ;;
+        esac
+        if [ -s "$T/$name.win" ] && cmp -s "$T/$name.win" "$g"; then
+            note "$name (ok after the documented Windows difference -- rt on inf/-inf/nan, a C-library probe no Tycho API can reach)"
+            pass=$((pass+1))
+            return
+        fi
+        # Show BOTH sides. `head -2` took the diff header and the first `<` line
+        # only, so the WINDOWS value -- the one thing a reader needs to decide
+        # whether a difference is a platform fact or a bug -- was never printed.
+        # On 2026-08-14 that cost several probe rounds on c_float_str_locale and
+        # still did not answer it. Squashing newlines made it worse; the lines are
+        # printed as lines now.
+        note "$name (mismatch, golden < vs Windows >)"
+        diff "$g" "$T/$name.out" 2>/dev/null | head -8 | sed 's/^/        /'
         park="$park $name"
         fail=$((fail+1))
     fi
@@ -100,7 +136,9 @@ for hi in tests/abort/*.ty; do
     [ -e "$hi" ] || continue
     n="abort_$(basename "$hi" .ty)"
     case "$n" in *"$FILTER"*) ;; *) continue ;; esac
-    $E "$hi" --emit-c -o "$T/ab" >/dev/null 2>&1 || { note "$n (emit)"; fail=$((fail+1)); continue; }
+    $E "$hi" --emit-c -o "$T/ab" >"$T/ab.emit" 2>&1 || {
+        note "$n (emit)"; sed 's/^/        /' "$T/ab.emit" | head -4
+        fail=$((fail+1)); continue; }
     _shims=$(./tychoc "$hi" --print-shims 2>/dev/null | tr '\n' ' ')
     "$MINGWCC" $CCF -o "$T/ab.exe" "$T/ab.c" $_shims -lm 2>/dev/null || { note "$n (cc)"; fail=$((fail+1)); continue; }
     $W "$T/ab.exe" </dev/null >/dev/null 2>"$T/ab.err"; rc=$?
