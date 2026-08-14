@@ -1,0 +1,15 @@
+# The exported side of the cross-package newtype fixture. See ../main.ty.
+package coin
+
+type Cents = int
+type Rate = float
+type Tag = string
+
+fn cents(n: int) -> Cents:
+    return Cents(n)
+
+fn add(a: Cents, b: Cents) -> Cents:
+    return a + b
+
+fn scale(a: Cents, r: Rate) -> Cents:
+    return Cents(to_int(to_float(to_int(a)) * to_float(r)))

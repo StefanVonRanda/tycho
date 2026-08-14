@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -715,6 +715,13 @@ tmpl-check: tychoc
 stat-check: tychoc
 	@sh tools/tycho-stat/run.sh
 
+# ledger-check: the gate for tycho-ledger, the per-account totals program in
+# tools/tycho-ledger/. Its subject is the REFUSALS: a newtype is erased in
+# lowering, so the transcript is identical whether the three domain types are
+# distinct or the program used bare int/float/string. Five probes must each FAIL.
+ledger-check: tychoc
+	@sh tools/tycho-ledger/run.sh
+
 # chess-check: the gate for tycho-chess, the perft + search engine in
 # tools/tycho-chess/. Sixth of the same shape as the tool lanes: nothing else
 # RUNS a tool under tools/ (step [9] tools-check only --emit-c's them), so
@@ -957,8 +964,8 @@ hooks:
 
 # The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
 # `make tycho-lsp` -- the loops-cleanup plan made the plain build remove its own
-# intermediate (src/tychoc.c:13548). They stay because `--emit-c -o <base>` still
-# writes and KEEPS `<base>.c` (src/tychoc.c:13517-13519), which is how you debug the
+# intermediate (src/tychoc.c:13573). They stay because `--emit-c -o <base>` still
+# writes and KEEPS `<base>.c` (src/tychoc.c:13542-13544), which is how you debug the
 # toolchain itself, and `clean` is where that leftover belongs. Same rationale as the
 # matching .gitignore block; verified 2026-07-30, see the loops-cleanup plan.
 clean:

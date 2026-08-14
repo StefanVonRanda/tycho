@@ -1,0 +1,114 @@
+# tycho-ledger -- per-account totals, with the money kept in the type system.
+#
+# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
+# Measured 2026-08-14: newtypes are declared in 46 files, 43 of them under
+# `tests/`, and the three real consumers each keep their newtype inside one
+# package. Only `examples/corelib/pool/main.ty:12` ever names a foreign
+# package's newtype. This program does it throughout: every amount is a
+# `money.Cents`, every account name a `money.Account`, and the per-account map
+# is KEYED by that foreign newtype.
+#
+#   tycho-ledger --file LEDGER [--rate R] [--only ACCOUNT]
+#
+# A ledger line is `account amount-in-cents`, e.g. `alice 250`.
+#
+# THE GATE IS `make ledger-check` (tools/tycho-ledger/run.sh).
+package main
+
+import "core:cli"
+import "core:io"
+import "core:sort"
+import "core:strings"
+import "money"
+
+# Parse one integer field, refusing trailing garbage. `parse_int` fails open
+# (FRICTION #34), so "25x" would otherwise read as 25 -- and in a ledger that is
+# a wrong balance rather than a parse error.
+fn whole(tok: string) -> Result(int, string):
+    if len(tok) == 0:
+        return Err("empty amount")
+    start := 0
+    if tok[0] == 45 and len(tok) > 1:
+        start = 1
+    for i := start; i < len(tok); i += 1:
+        if tok[i] < 48 or tok[i] > 57:
+            return Err("not an amount: " + tok)
+    return Ok(strings.parse_int(tok))
+
+# The whole file, as (Account, Cents) pairs. Both element types are the foreign
+# package's newtypes, so nothing downstream can mix an account with a name or an
+# amount with a bare int.
+fn read_entries(text: string) -> ([money.Account], [money.Cents]):
+    who := []money.Account
+    amt := []money.Cents
+    for line in strings.lines(text):
+        t := strings.trim(line)
+        if len(t) == 0 or t[0] == 35:        # blank, or a '#' comment
+            continue
+        parts := split(t, " ")
+        if len(parts) != 2:
+            die("tycho-ledger: want `account amount`, got: " + t)
+        match whole(parts[1]):
+            Ok(v):
+                push(who, money.account(parts[0]))
+                push(amt, money.cents(v))
+            Err(e): die("tycho-ledger: " + e)
+    return (who, amt)
+
+fn main():
+    c := cli.Cli([], [], [], [], [], [])
+    match cli.parse_checked(cli.argv(), ["file", "rate", "only"], ["help"]):
+        Ok(v): c = v
+        Err(cli.Unknown(tok)): die("tycho-ledger: unknown option " + tok)
+        Err(cli.NoValue(tok)): die("tycho-ledger: " + tok + " needs a value")
+
+    path := cli.get(c, "file", "")
+    if path == "":
+        println("usage: tycho-ledger --file LEDGER [--rate R] [--only ACCOUNT]")
+        exit(2)
+
+    text := ""
+    match io.read_text(path):
+        Ok(t): text = t
+        Err(e): die("tycho-ledger: cannot read " + path)
+
+    who, amt := read_entries(text)
+
+    # A map KEYED by a foreign newtype over string. A bare `string` key is a
+    # compile error here, which is the property being dogfooded -- the key
+    # cannot be confused with any other string in the program.
+    totals := []money.Account: money.Cents
+    for i := 0; i < len(who); i += 1:
+        k := who[i]
+        if k in totals:
+            totals[k] = money.add(totals[k], amt[i])
+        else:
+            totals[k] = amt[i]
+
+    only := cli.get(c, "only", "")
+    r := money.rate(1.0)
+    rs := cli.get(c, "rate", "")
+    if rs != "":
+        match strings.parse_float(rs):
+            Ok(f): r = money.rate(f)
+            Err(e): die("tycho-ledger: bad --rate " + rs)
+
+    # Sorted for a stable transcript: map order is not a promise.
+    # `keys(m)` is the way to iterate a map, and the spec promises it returns the
+    # key values still WRAPPED (§18.6) -- so these are money.Account values, not
+    # the bare strings underneath. They are then sorted BY A GENERIC corelib
+    # function: `sort.asc` is `where comparable(T)`, and a newtype over string
+    # has to satisfy that constraint at instantiation, across two package
+    # boundaries at once (main -> sort, sort's $T <- money's Account).
+    accts := sort.asc(keys(totals))
+
+    grand := money.zero()
+    for a in accts:
+        n := money.name_of(a)
+        if only != "" and n != only:
+            continue
+        v := money.scale(totals[a], r)
+        grand = money.add(grand, v)
+        println(n + " " + money.show(v))
+    println("total " + money.show(grand))
+    println("accounts " + str(len(accts)))

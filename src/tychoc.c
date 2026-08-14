@@ -711,7 +711,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10871@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10896@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -1766,6 +1766,7 @@ static const char *c_type(Type t) {
         default:             return "void ";
     }
 }
+static const char *nominal_name(const char *nm);      /* mangled -> `pkg.Name`, for diagnostics */
 static const char *type_name(Type t) {
     /* A `$T` is REACHABLE here: an annotated local whose annotation names a
      * typaram not bound by any argument keeps the raw T_TYPARAM through
@@ -1773,11 +1774,11 @@ static const char *type_name(Type t) {
      * but value is int". Checked first because IS_TYPARAM is the only
      * unbounded-above range (T_TYPARAM_BASE = 65536, past every other base). */
     if (IS_TYPARAM(t))  return sfmt("$%s", typaram_name(t));
-    if (IS_NEWTYPE(t)) return g_newtypes[NT_ID(t)].name;
+    if (IS_NEWTYPE(t)) return nominal_name(g_newtypes[NT_ID(t)].name);
     if (IS_TASK(t))    return sfmt("Task(%s)", type_name(task_inner(t)));
     if (IS_CHAN(t))    return sfmt("Channel(%s)", type_name(chan_inner(t)));
-    if (IS_HANDLE(t))  return g_handles[HANDLE_ID(t)].name;
-    if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
+    if (IS_HANDLE(t))  return nominal_name(g_handles[HANDLE_ID(t)].name);
+    if (IS_STRUCT(t)) return nominal_name(g_structs[STRUCT_ID(t)].name);
     if (IS_ARRC(t)) {   /* [T] dynamic, [N]T fixed (1.6), [$N]T size-param (1.6B), bounded[N]T */
         int64_t sz = g_arrtypes[ARRC_ID(t)].size;
         if (IS_BOUNDED(t)) return sfmt("bounded[%lld]%s", (long long)sz, type_name(arr_elem(t)));
@@ -1800,7 +1801,7 @@ static const char *type_name(Type t) {
         if (func_ret(t) != T_VOID) s = sfmt("%s -> %s", s, type_name(func_ret(t)));
         return s;
     }
-    if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].name;
+    if (IS_ENUM(t))   return nominal_name(g_enums[ENUM_ID(t)].name);
     if (IS_SOA(t))    return sfmt("soa [%s]", type_name(soa_struct(t)));
     switch (t) {
         case T_VOID:         return "void";
@@ -1886,6 +1887,7 @@ struct Expr {
     char    *sval;     /* E_STR contents / E_IDENT name / E_CALL callee */
     TokKind  op;       /* E_BINOP */
     int      fstr;     /* E_BINOP: this `+` came from an f-string desugar, so its pieces are sequenced left-to-right (§13.4) */
+    int      forin;    /* E_INDEX: synthesized by the `for x in COLL` desugar, so a bad element type is really a bad LOOP SOURCE */
     Expr    *lhs, *rhs;
     Expr   **args; int nargs;   /* E_CALL */
     char   **argnames; /* E_CALL: parallel to args -- non-NULL entry = named field (struct construction `P(x: 1)`); NULL ptr / all-NULL entries = positional */
@@ -2489,7 +2491,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2297) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2299) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2847,7 +2849,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2163): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2165): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3992,7 +3994,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10648), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10673), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -4077,7 +4079,7 @@ static Stmt *parse_stmt(Parser *ps) {
             tmp->name = cn; tmp->expr = coll;
             Expr *cref = new_expr(E_IDENT, t->line); cref->sval = cn; cref->pkg = g_cur_pkg_prefix;
             Expr *iref = new_expr(E_IDENT, t->line); iref->sval = iv; iref->pkg = g_cur_pkg_prefix;
-            Expr *idx = new_expr(E_INDEX, t->line); idx->lhs = cref; idx->rhs = iref;
+            Expr *idx = new_expr(E_INDEX, t->line); idx->lhs = cref; idx->rhs = iref; idx->forin = 1;
             Stmt *elem = new_stmt(S_DECL, t->line);  /* x := _fcN[_fiN] */
             elem->name = var->text; elem->expr = idx;
             Stmt *fr = new_stmt(S_FORRANGE, t->line);
@@ -5064,6 +5066,26 @@ static int is_imported_pkg(const char *name) {
     return 0;
 }
 
+/* A nominal type from another package is STORED mangled (`pool__Handle`), and
+ * `type_name` used to print that verbatim -- so every diagnostic about a corelib
+ * or cross-package type named something the reader cannot type. Rewrite the
+ * first `__` to `.` only when the prefix names a package this file imported,
+ * which leaves a local type that happens to contain `__` alone. Diagnostics
+ * only; nothing here reaches codegen. */
+static const char *nominal_name(const char *nm) {
+    if (!nm) return nm;
+    const char *sep = strstr(nm, "__");
+    if (!sep || sep == nm) return nm;
+    size_t n = (size_t)(sep - nm);
+    char *pfx = (char *)xmalloc(n + 1);
+    memcpy(pfx, nm, n); pfx[n] = '\0';
+    if (!is_imported_pkg(pfx)) return nm;
+    for (int i = 0; i < g_nimports; i++)      /* prefer the alias the user actually wrote */
+        if (g_imports[i].alias && !strcmp(pkg_basename(g_imports[i].path), pfx))
+            return sfmt("%s.%s", g_imports[i].alias, sep + 2);
+    return sfmt("%s.%s", pfx, sep + 2);
+}
+
 /* Package privacy (B3): a top-level name with a leading underscore is private
  * to its own package. A qualified reference `qualifier.name` always names an
  * imported (hence foreign) package, so reject it when `name` starts with '_'. */
@@ -5643,7 +5665,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3059), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3061), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -5908,7 +5930,7 @@ static Type resolve_expr_inner(Expr *e) {
             }
             if (lv) {
                 if (lv->type == T_PENDING)        /* B-3: this use NEEDS the type; grounding hasn't happened */
-                    die_at(e->line, "'%s' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration", e->sval);
+                    die_at(e->line, "'%s' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration", nominal_name(e->sval));
                 return e->type = lv->type;
             }
             /* precedence: local var -> const -> variant -> fn. Look the const up
@@ -5927,10 +5949,10 @@ static Type resolve_expr_inner(Expr *e) {
             if (eid < 0) eid = variant_find(e->sval, &evi);   /* main's own, or a builtin ctor (never mangled) */
             if (eid >= 0) {
                 if (g_enums[eid].variants[evi].npayload != 0)
-                    die_at(e->line, "%s carries a payload — write %s(...)", e->sval, e->sval);
+                    die_at(e->line, "%s carries a payload — write %s(...)", nominal_name(e->sval), nominal_name(e->sval));
                 if (g_enums[eid].generic)   /* a nullary variant of a generic enum fixes no $T -- need the explicit form */
                     die_at(e->line, "%s is a variant of generic enum %s; supply the type explicitly, e.g. %s$(int)",
-                           e->sval, g_enums[eid].name, e->sval);
+                           nominal_name(e->sval), g_enums[eid].name, nominal_name(e->sval));
                 e->kind = E_CALL; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;   /* 0-arg constructor */
                 return e->type = ENUM_TYPE(eid);
             }
@@ -5943,7 +5965,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (fs && !fs->builtin) {
                 if (fs->nparams > 8) die_at(e->line, "a function value supports at most 8 parameters");
                 for (int i = 0; i < fs->nparams; i++)
-                    if (fs->inout[i]) die_at(e->line, "'%s' has an inout parameter, so it can't be a function value", e->sval);
+                    if (fs->inout[i]) die_at(e->line, "'%s' has an inout parameter, so it can't be a function value", nominal_name(e->sval));
                 e->op = TK_FN;   /* mark: this E_IDENT is a function reference (codegen emits the fat value) */
                 note_fnval(e->sval);   /* emit a <name>__clo thunk for it */
                 return e->type = funcc_of(fs->params, fs->nparams, fs->ret);
@@ -5953,14 +5975,14 @@ static Type resolve_expr_inner(Expr *e) {
              * expected type, so no $T is fixed. Bare key first, then the package-local one. */
             if (generic_find(e->sval) || (e->pkg && e->pkg[0] && generic_find(sfmt("%s%s", e->pkg, e->sval))))
                 die_at(e->line, "'%s' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: %s(a, b)",
-                       e->sval, e->sval);
+                       nominal_name(e->sval), nominal_name(e->sval));
             const char *sg = suggest_var(e->sval);
             if (!sg) sg = suggest_fn(e->sval);
             /* `pass` is a statement, not an expression; here it can only be a value branch's tail */
             if (!strcmp(e->sval, "pass"))
                 die_at(e->line, "`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement");
-            if (sg) die_at(e->line, "unknown variable '%s'; did you mean '%s'?", e->sval, sg);
-            die_at(e->line, "unknown variable '%s'", e->sval);
+            if (sg) die_at(e->line, "unknown variable '%s'; did you mean '%s'?", nominal_name(e->sval), sg);
+            die_at(e->line, "unknown variable '%s'", nominal_name(e->sval));
         }
         case E_ARRLIT: {
             if (e->op == TK_COLON) {           /* map literal ["k": v, ...] */
@@ -6015,8 +6037,11 @@ static Type resolve_expr_inner(Expr *e) {
             Type kt = resolve_expr(e->rhs);
             if (is_map(bt)) {                  /* m[k] -> the value type (#2) */
                 Type wantk = map_key(bt);
-                if (kt != wantk)
+                if (kt != wantk) {
+                    if (e->forin)   /* `for k in m` -- the user wrote a loop, not an index */
+                        die_at(e->line, "a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as %s, wrapped)", type_name(wantk));
                     die_at(e->line, "map key must be %s, got %s", type_name(wantk), type_name(kt));
+                }
                 Type vt = map_val(bt);
                 if (!_place) {
                     /* rvalue read -> a PURE map_get (yields the value's zero on a missing
@@ -6100,24 +6125,24 @@ static Type resolve_expr_inner(Expr *e) {
                     if (pfs && !pfs->builtin) {
                         if (pfs->nparams > 8) die_at(e->line, "a function value supports at most 8 parameters");
                         for (int i = 0; i < pfs->nparams; i++)
-                            if (pfs->inout[i]) die_at(e->line, "'%s.%s' has an inout parameter, so it can't be a function value", e->lhs->sval, e->sval);
+                            if (pfs->inout[i]) die_at(e->line, "'%s.%s' has an inout parameter, so it can't be a function value", e->lhs->sval, nominal_name(e->sval));
                         e->kind = E_IDENT; e->sval = q; e->lhs = NULL; e->op = TK_FN;
                         note_fnval(q);
                         return e->type = funcc_of(pfs->params, pfs->nparams, pfs->ret);
                     }
                     if (generic_find(q))   /* a generic template has no single value form: no $T is fixed here */
                         die_at(e->line, "'%s.%s' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: %s.%s(a, b)",
-                               e->lhs->sval, e->sval, e->lhs->sval, e->sval);
+                               e->lhs->sval, nominal_name(e->sval), e->lhs->sval, nominal_name(e->sval));
                     const char *psg = suggest_pkg_symbol(e->lhs->sval, e->sval);
-                    if (psg) die_at(e->line, "package '%s' has no variant, const or function '%s'; did you mean '%s'?", e->lhs->sval, e->sval, psg);
-                    die_at(e->line, "package '%s' has no variant, const or function '%s'", e->lhs->sval, e->sval);
+                    if (psg) die_at(e->line, "package '%s' has no variant, const or function '%s'; did you mean '%s'?", e->lhs->sval, nominal_name(e->sval), psg);
+                    die_at(e->line, "package '%s' has no variant, const or function '%s'", e->lhs->sval, nominal_name(e->sval));
                 }
                 if (g_enums[eid].variants[evi].npayload != 0)
                     die_at(e->line, "%s.%s carries a payload — write %s.%s(...)",
-                           e->lhs->sval, e->sval, e->lhs->sval, e->sval);
+                           e->lhs->sval, nominal_name(e->sval), e->lhs->sval, nominal_name(e->sval));
                 if (g_enums[eid].generic)   /* nullary variant of a generic enum: no $T to fix */
                     die_at(e->line, "%s.%s is a variant of a generic enum; supply the type explicitly, e.g. %s.%s$(int)",
-                           e->lhs->sval, e->sval, e->lhs->sval, e->sval);
+                           e->lhs->sval, nominal_name(e->sval), e->lhs->sval, nominal_name(e->sval));
                 /* e->lhs MUST be cleared: this node is now an E_CALL, and the E_CALL arm
                  * treats a non-NULL lhs as a call-on-expression (an indirect call through a
                  * fn VALUE) and resolves it. A second resolve of this node -- which happens
@@ -6132,14 +6157,14 @@ static Type resolve_expr_inner(Expr *e) {
             g_place = _place;                  /* s.field is a place iff s is (spine) */
             Type bt = resolve_expr(e->lhs);
             if (!IS_STRUCT(bt))
-                die_at(e->line, "'.%s' on a non-struct value", e->sval);
+                die_at(e->line, "'.%s' on a non-struct value", nominal_name(e->sval));
             StructDef *sd = &g_structs[STRUCT_ID(bt)];
             for (int i = 0; i < sd->nfields; i++)
                 if (!strcmp(sd->fields[i].name, e->sval))
                     return e->type = sd->fields[i].type;
             const char *fsg = suggest_field(sd, e->sval);
-            if (fsg) die_at(e->line, "struct %s has no field '%s'; did you mean '%s'?", sd->name, e->sval, fsg);
-            die_at(e->line, "struct %s has no field '%s'", sd->name, e->sval);
+            if (fsg) die_at(e->line, "struct %s has no field '%s'; did you mean '%s'?", sd->name, nominal_name(e->sval), fsg);
+            die_at(e->line, "struct %s has no field '%s'", sd->name, nominal_name(e->sval));
         }
         case E_ADDR:   /* &place; only valid as the direct argument of an inout
                         * parameter (the call site validates that). Anywhere
@@ -6370,12 +6395,12 @@ static Type resolve_expr_inner(Expr *e) {
             Type fvt;   /* indirect call through a function-typed local variable: f(args) */
             if (!e->qual && vars_find(e->sval, &fvt) && IS_FUNC(fvt)) {
                 if (e->nargs != func_n(fvt))
-                    die_at(e->line, "'%s' expects %d argument(s), got %d", e->sval, func_n(fvt), e->nargs);
+                    die_at(e->line, "'%s' expects %d argument(s), got %d", nominal_name(e->sval), func_n(fvt), e->nargs);
                 for (int i = 0; i < e->nargs; i++) {
                     g_in_arg++;
                     int arg_ok = resolve_exp(e->args[i], func_param(fvt, i)) == func_param(fvt, i);
                     g_in_arg--;
-                    if (!arg_ok) die_at(e->line, "argument %d to '%s' must be %s", i + 1, e->sval, type_name(func_param(fvt, i)));
+                    if (!arg_ok) die_at(e->line, "argument %d to '%s' must be %s", i + 1, nominal_name(e->sval), type_name(func_param(fvt, i)));
                 }
                 e->op = TK_FN;   /* indirect-call marker; gen_call's user-proc tail emits h_<var>(arena, args) */
                 return e->type = func_ret(fvt);
@@ -6397,8 +6422,8 @@ static Type resolve_expr_inner(Expr *e) {
                     { e->sval = q; e->qual = NULL; e->pkg_done = 1; }   /* adopt the mangled name + drop qual so the generic dispatch below instantiates it */
                 else {
                     const char *sg = suggest_pkg_symbol(e->qual, e->sval);   /* F8: did-you-mean within the package */
-                    if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?", e->qual, e->sval, sg);
-                    die_at(e->line, "package '%s' has no symbol '%s'", e->qual, e->sval);
+                    if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?", e->qual, nominal_name(e->sval), sg);
+                    die_at(e->line, "package '%s' has no symbol '%s'", e->qual, nominal_name(e->sval));
                 }
             } else if (e->pkg && e->pkg[0]) {
                 int _vi;
@@ -6414,10 +6439,10 @@ static Type resolve_expr_inner(Expr *e) {
             if (ntid >= 0) {
                 Type under = g_newtypes[ntid].under;
                 if (e->nargs != 1)
-                    die_at(e->line, "%s(x) takes one %s", e->sval, type_name(under));
+                    die_at(e->line, "%s(x) takes one %s", nominal_name(e->sval), type_name(under));
                 Type at_ = resolve_exp(e->args[0], under);   /* expected type grounds a bare []/[:] literal */
                 if (at_ != under)
-                    die_at(e->line, "%s(x) needs a %s, got %s", e->sval, type_name(under), type_name(at_));
+                    die_at(e->line, "%s(x) needs a %s, got %s", nominal_name(e->sval), type_name(under), type_name(at_));
                 e->op = TK_TYPE;   /* mark as a newtype wrap for codegen (identity) */
                 return e->type = NT_TYPE(ntid);
             }
@@ -6516,7 +6541,7 @@ static Type resolve_expr_inner(Expr *e) {
                     for (int i = 0; i < gt->ntyparams; i++)
                         if (binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] == T_UNBOUND)
                             die_at(e->line, "type parameter $%s of %s is not fixed by any payload value; supply it explicitly, e.g. %s$(int)",
-                                   typaram_name(gt->typarams[i]), gt->name, e->sval);
+                                   typaram_name(gt->typarams[i]), gt->name, nominal_name(e->sval));
                     eid = enum_instantiate(eid, binds);   /* eid now names the concrete instance; the tail below re-resolves against it */
                 }
                 if (eid >= 0) {
@@ -6635,10 +6660,10 @@ static Type resolve_expr_inner(Expr *e) {
                 return e->type = T_INT;
             }
             if (is_sized_conv(e->sval)) {   /* to_u8..to_i64, to_f32: any numeric scalar -> the named sized type */
-                if (e->nargs != 1) die_at(e->line, "%s(x) takes one argument", e->sval);
+                if (e->nargs != 1) die_at(e->line, "%s(x) takes one argument", nominal_name(e->sval));
                 Type at_ = base_of(resolve_expr(e->args[0]));
                 if (at_ != T_INT && at_ != T_CHAR && at_ != T_FLOAT && !is_sized_int(at_) && at_ != T_F32)
-                    die_at(e->line, "%s(x) takes a numeric value", e->sval);
+                    die_at(e->line, "%s(x) takes a numeric value", nominal_name(e->sval));
                 return e->type = sized_conv_target(e->sval);
             }
             if (!strcmp(e->sval, "to_str")) {   /* unwrap a string newtype, OR reinterpret bytes -> string */
@@ -6849,13 +6874,13 @@ static Type resolve_expr_inner(Expr *e) {
                 if (vlast) {
                     int nfixed = vnp - 1;
                     if (e->nargs < nfixed)
-                        die_at(e->line, "'%s' takes at least %d argument(s), got %d", e->sval, nfixed, e->nargs);
+                        die_at(e->line, "'%s' takes at least %d argument(s), got %d", nominal_name(e->sval), nfixed, e->nargs);
                     int ntrail = e->nargs - nfixed, spread = 0;
                     for (int i = nfixed; i < e->nargs; i++) if (e->args[i]->kind == E_SPREAD) spread = 1;
                     Expr *varg;
                     if (spread) {
                         if (ntrail != 1 || e->args[nfixed]->kind != E_SPREAD)
-                            die_at(e->line, "a spread argument `x...` must be the only variadic argument to '%s'", e->sval);
+                            die_at(e->line, "a spread argument `x...` must be the only variadic argument to '%s'", nominal_name(e->sval));
                         varg = e->args[nfixed]->lhs;   /* unwrap; its [T] type is checked in the arg loop below */
                     } else {
                         Expr *lit = new_expr(E_ARRLIT, e->line);
@@ -6873,7 +6898,7 @@ static Type resolve_expr_inner(Expr *e) {
                                 for (int i = 0; i < vgt->ntyparams; i++)
                                     if (vgt->typarams[i] == velem) { vfix = e->typeargs[i]; vfound = 1; }
                             if (!vfound)
-                                die_at(e->line, "cannot infer the element type of an empty variadic call to generic '%s'; pass at least one argument, or name the type: %s$(<type>)()", e->sval, e->sval);
+                                die_at(e->line, "cannot infer the element type of an empty variadic call to generic '%s'; pass at least one argument, or name the type: %s$(<type>)()", nominal_name(e->sval), nominal_name(e->sval));
                             lit->type = arr_of(vfix); lit->ival = (int)arr_of(vfix);
                         } else { lit->type = arr_of(velem); lit->ival = (int)arr_of(velem); }   /* typed empty [T] */
                         varg = lit;
@@ -6897,21 +6922,21 @@ static Type resolve_expr_inner(Expr *e) {
             }
             { Proc *gt = generic_find(e->sval);   /* generics: infer type args, intern instance, rewrite e->sval */
               if (gt && !e->qual && !e->lhs) instantiate_generic(gt, e);
-              else if (e->ntypeargs > 0) die_at(e->line, "explicit type arguments given, but '%s' is not a generic function", e->sval); }
+              else if (e->ntypeargs > 0) die_at(e->line, "explicit type arguments given, but '%s' is not a generic function", nominal_name(e->sval)); }
             Sig *s = sig_find(e->sval);
             if (!s) {
                 int cl_strong = 0;
                 const char *cl = corelib_hint(e->sval, &cl_strong);   /* F8: a corelib package/function by this name? */
-                if (cl && cl_strong) die_at(e->line, "unknown procedure '%s' -- %s", e->sval, cl);   /* high-confidence stdlib match beats a weak local typo */
+                if (cl && cl_strong) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* high-confidence stdlib match beats a weak local typo */
                 const char *sg = suggest_fn(e->sval);                 /* a user fn / builtin typo */
-                if (sg) die_at(e->line, "unknown procedure '%s'; did you mean '%s'?", e->sval, sg);
-                if (cl) die_at(e->line, "unknown procedure '%s' -- %s", e->sval, cl);   /* weak stdlib guess, but nothing local matched */
-                die_at(e->line, "unknown procedure '%s'", e->sval);
+                if (sg) die_at(e->line, "unknown procedure '%s'; did you mean '%s'?", nominal_name(e->sval), sg);
+                if (cl) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* weak stdlib guess, but nothing local matched */
+                die_at(e->line, "unknown procedure '%s'", nominal_name(e->sval));
             }
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
-                       e->sval, s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5668 */
+                       nominal_name(e->sval), s->nparams, e->nargs);
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5690 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -6923,16 +6948,16 @@ static Type resolve_expr_inner(Expr *e) {
                 if (s->inout[i]) {
                     if (e->args[i]->kind != E_ADDR)
                         die_at(e->line, "argument %d of '%s' is inout; pass it as '&variable'",
-                               i + 1, e->sval);
+                               i + 1, nominal_name(e->sval));
                     Expr *tgt = e->args[i]->lhs;
                     Expr *root = tgt;
                     while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
                     if (root->kind != E_IDENT)
-                        die_at(e->line, "inout argument %d of '%s' must name a variable", i + 1, e->sval);
+                        die_at(e->line, "inout argument %d of '%s' must name a variable", i + 1, nominal_name(e->sval));
                     if (!vars_can_mutate(root->sval))
                         die_at(e->line, "cannot pass borrowed parameter '%s' as inout (it is read-only; copy it first)", root->sval);
                 } else if (e->args[i]->kind == E_ADDR) {
-                    die_at(e->line, "argument %d of '%s' is not inout; remove the '&'", i + 1, e->sval);
+                    die_at(e->line, "argument %d of '%s' is not inout; remove the '&'", i + 1, nominal_name(e->sval));
                 }
                 if (at_ != s->params[i]) {
                     /* F6: a print-family (or other builtin) string param handed a
@@ -6945,9 +6970,9 @@ static Type resolve_expr_inner(Expr *e) {
                                    IS_TUP(ab) || IS_OPT(ab) || IS_RES(ab));
                     if (s->builtin && s->params[i] == T_STRING && strable)
                         die_at(e->line, "argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))",
-                               i + 1, e->sval, type_name(at_), e->sval);
+                               i + 1, nominal_name(e->sval), type_name(at_), nominal_name(e->sval));
                     die_at(e->line, "argument %d of '%s' is %s, expected %s",
-                           i + 1, e->sval, type_name(at_), type_name(s->params[i]));
+                           i + 1, nominal_name(e->sval), type_name(at_), type_name(s->params[i]));
                 }
             }
             /* exclusivity (Law of Exclusivity): the same variable may not be
@@ -6963,7 +6988,7 @@ static Type resolve_expr_inner(Expr *e) {
                     Expr *rj = e->args[j]->lhs;
                     while (rj->kind == E_FIELD || rj->kind == E_INDEX) rj = rj->lhs;
                     if (ri->kind == E_IDENT && rj->kind == E_IDENT && !strcmp(ri->sval, rj->sval))
-                        die_at(e->line, "variable '%s' passed to two inout parameters of '%s' (overlapping mutable access)", ri->sval, e->sval);
+                        die_at(e->line, "variable '%s' passed to two inout parameters of '%s' (overlapping mutable access)", ri->sval, nominal_name(e->sval));
                 }
             }
             /* Also forbid passing a WHOLE variable inout AND by value in the same
@@ -6981,7 +7006,7 @@ static Type resolve_expr_inner(Expr *e) {
                     if (j == i || s->inout[j]) continue;       /* only a by-value arg */
                     Expr *rj = e->args[j];                     /* the WHOLE variable, not a sub-place */
                     if (rj->kind == E_IDENT && !strcmp(rj->sval, ri->sval))
-                        die_at(e->line, "variable '%s' is passed to an inout parameter and also by value in the same call to '%s' (overlapping access — the by-value copy would alias the inout'd value)", ri->sval, e->sval);
+                        die_at(e->line, "variable '%s' is passed to an inout parameter and also by value in the same call to '%s' (overlapping access — the by-value copy would alias the inout'd value)", ri->sval, nominal_name(e->sval));
                 }
             }
             /* A slice argument views its source's buffer; an inout of that same
@@ -7471,7 +7496,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7771). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7796). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7494,10 +7519,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7098),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7123),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7392). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7417). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7518,7 +7543,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3053). The generic descent below
+     * tell it from a package call (src/tychoc.c:3055). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9088,7 +9113,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7430: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7455: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -9256,7 +9281,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11559), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11584), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9286,12 +9311,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13531) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13556) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11646) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11671) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
@@ -9308,7 +9333,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3841-3846) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3843-3848) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

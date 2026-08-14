@@ -1,7 +1,7 @@
 # `soa [S($T)]` composes with generics.
 #
 # `soa [$T]` is refused at parse time -- a soa element MUST be a struct
-# (src/tychoc.c:2347) -- so the only way a soa reaches a template is over a
+# (src/tychoc.c:2349) -- so the only way a soa reaches a template is over a
 # GENERIC STRUCT, `soa [Box($T)]`, whose element is a struct today and a
 # concrete instance after substitution. That form parsed and then fell through
 # every generic type walker, which had no IS_SOA arm: has_typaram did not call

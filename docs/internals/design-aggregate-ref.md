@@ -23,7 +23,7 @@ it."* The three symptoms:
 
 **The premise is wrong about the codegen, and the measurement is the emitted
 C.** `inout` on a heap value already passes a **pointer plus the value's owning
-arena** as a hidden `_ina_` parameter (`src/tychoc.c:9141-9149`), and every
+arena** as a hidden `_ina_` parameter (`src/tychoc.c:9166-9174`), and every
 allocating mutation of the parameter allocates into that arena — the caller's,
 where the value lives — not the callee's scope (`src/tychoc.c@owner_arena_of`).
 The codegen was already in place at the Hier→Tycho rename; nothing in the
@@ -96,7 +96,7 @@ piece of the space that does not exist — and it must not be added (below).
    (the counter-argument).
 2. **Arena interaction.** In-place `inout` is sound because the callee's
    allocating mutations route to the caller's arena via `_ina_`
-   (`src/tychoc.c:9141-9149`); the callee's own arena holds only its
+   (`src/tychoc.c:9166-9174`); the callee's own arena holds only its
    transients and is freed at return. A `ref` binding would need the same
    owning-arena routing at every use site — the bookkeeping that grows into
    alias analysis the moment the binding can be passed on.
@@ -143,8 +143,8 @@ the borrow checker. Three things ARE worth doing, in order:
    function" comment is misleading; the machine could be factored if anyone
    wants to.
 2. **Reject `&` outside argument position.** `&` parses as a unary `E_ADDR`
-   everywhere (`src/tychoc.c:2996-2999`) and resolves to the place's type
-   without position validation (`src/tychoc.c:5888-5890` — "only valid as an
+   everywhere (`src/tychoc.c:2998-3001`) and resolves to the place's type
+   without position validation (`src/tychoc.c:5910-5912` — "only valid as an
    inout argument", enforced only at call sites). `r := &a` therefore compiles
    to invalid C (`TychoArrInt h_r = &(h_a);` — cc: "invalid initializer"),
    and `&a + 1` emits garbage. The fix is one check: `E_ADDR` is legal only as

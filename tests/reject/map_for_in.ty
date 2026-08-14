@@ -1,0 +1,11 @@
+# `for k in m` over a map. The desugar indexes the collection by position, so
+# this used to die "map key must be string, got int" -- a message about an index
+# the user never wrote, naming neither the loop nor the cure.
+# expect: not directly iterable
+# expect: keys(m)
+
+fn main():
+    m := []string: int
+    m["a"] = 1
+    for k in m:
+        println(k)

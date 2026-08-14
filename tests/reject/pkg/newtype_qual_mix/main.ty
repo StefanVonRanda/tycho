@@ -1,0 +1,12 @@
+# Two newtypes over DIFFERENT bases, both from another package, mixed in
+# arithmetic. The refusal must name them the way the source spells them --
+# `coin.Cents`, not the mangled `coin__Cents` the compiler stores. Diagnostics
+# printed the mangled form for every imported type until 2026-08-14, which meant
+# a message about a corelib type named something the reader could not type.
+# expect: coin.Cents
+# expect: coin.Rate
+package main
+import "coin"
+
+fn main():
+    println(str(to_int(coin.cents(1) + coin.Rate(2.0))))

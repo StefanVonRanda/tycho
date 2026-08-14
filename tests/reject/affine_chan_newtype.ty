@@ -1,4 +1,4 @@
-# Phase 20: ... nor a newtype underlying type (tychoc: resolve_program, src/tychoc.c:7605-7607).
+# Phase 20: ... nor a newtype underlying type (tychoc: resolve_program, src/tychoc.c:7630-7632).
 # BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
 type C = Channel(int)
 

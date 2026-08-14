@@ -1,0 +1,61 @@
+# Three newtypes over three different bases, used as DOMAIN types.
+#
+# WHY THIS PACKAGE EXISTS. Measured 2026-08-14: `type X = U` is declared in 46
+# files and 43 of them are under `tests/`. The three real consumers --
+# `tools/tycho-vm/main.ty`, `corelib/intern/intern.ty`, `corelib/pool/pool.ty` --
+# all declare a newtype over `int` and use it INSIDE their own package. Exactly
+# one file in the tree names a foreign package's newtype
+# (`examples/corelib/pool/main.ty:12`, `pool.Handle`), so the cross-package
+# surface was almost entirely unexercised. This package is the first to export
+# newtypes over int, float AND string and have another package do arithmetic,
+# comparison and map-keying with them.
+#
+# The point of the type is that the compiler refuses the mistakes: Cents is not
+# an int, a Rate is not a Cents, and an Account is not a string. Each refusal is
+# asserted by the gate (tools/tycho-ledger/run.sh leg [4]).
+package money
+
+type Cents = int        # a whole number of cents; never a bare int
+type Rate = float       # a multiplier; never a bare float
+type Account = string   # an account name; never a bare string
+
+fn cents(n: int) -> Cents:
+    return Cents(n)
+
+fn rate(f: float) -> Rate:
+    return Rate(f)
+
+fn account(s: string) -> Account:
+    return Account(s)
+
+# Arithmetic between two values of the SAME newtype keeps the newtype, which is
+# what makes a running total typed rather than a bare int.
+fn add(a: Cents, b: Cents) -> Cents:
+    return a + b
+
+fn zero() -> Cents:
+    return Cents(0)
+
+# Applying a Rate is the one place the wrapper must come off: Cents is over int
+# and Rate over float, so there is no operation between them. Unwrapping both,
+# multiplying, and re-wrapping is the honest spelling -- and it is deliberately
+# ugly, because scaling money is exactly where a silent int/float mix does harm.
+fn scale(a: Cents, r: Rate) -> Cents:
+    return Cents(to_int(to_float(to_int(a)) * to_float(r)))
+
+# Rendering unwraps; `str` on a newtype is permitted but yields the wrapped
+# value's text, so the currency formatting lives here rather than at each caller.
+fn show(a: Cents) -> string:
+    n := to_int(a)
+    sign := ""
+    if n < 0:
+        sign = "-"
+        n = -n
+    frac := n % 100
+    pad := "."
+    if frac < 10:
+        pad = ".0"
+    return sign + str(n / 100) + pad + str(frac)
+
+fn name_of(a: Account) -> string:
+    return to_str(a)

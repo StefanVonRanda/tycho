@@ -1,0 +1,36 @@
+# A newtype declared in one package and USED in another: arithmetic, ordering,
+# a map keyed by it, `keys()` handing it back wrapped, and a generic corelib
+# function instantiated at it.
+#
+# Measured 2026-08-14: `type X = U` is declared in 46 files, 43 under tests/, and
+# the three real consumers all keep their newtype inside one package. Exactly one
+# file in the tree named a foreign package's newtype, so this surface was
+# effectively untested.
+package main
+import "coin"
+import "core:sort"
+
+fn main():
+    a := coin.cents(250)
+    b := coin.cents(75)
+    println("add=" + str(to_int(coin.add(a, b))))
+    println("arith=" + str(to_int(a + b)))       # arithmetic in the CONSUMER keeps the newtype
+    println("ord=" + str(a > b))
+    println("eq=" + str(a == b))
+    println("scale=" + str(to_int(coin.scale(a, coin.Rate(2.0)))))
+
+    # a map keyed by a foreign newtype over string
+    m := []coin.Tag: coin.Cents
+    m[coin.Tag("x")] = a
+    m[coin.Tag("y")] = b
+    println("get=" + str(to_int(m[coin.Tag("x")])))
+    println("in=" + str(coin.Tag("y") in m))
+
+    # keys() returns the keys WRAPPED (spec 18.6), so they sort as Tags and can
+    # index the map directly -- no unwrap anywhere in this loop.
+    for k in sort.asc(keys(m)):
+        println("key " + to_str(k) + "=" + str(to_int(m[k])))
+
+    xs := [a, b]
+    println("elem=" + str(to_int(xs[0])))
+    println("under=" + str(to_under(b)))

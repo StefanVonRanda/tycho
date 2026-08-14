@@ -411,6 +411,11 @@ make -s tmpl-check
 # the lane that checks the ANSWERS rather than reproducing them.
 step "[3z/32] make stat-check  (tycho-stat: run identical over 2 runs and equal to the golden; count/sum/min/max/mean over a 201-number corpus each equal to the runner's own arithmetic; both empty identities exactly 0 from zero\$(T); negatives survive parsing and min; a non-numeric field refused by name rather than read as its leading digits; an empty generic variadic naming no type still refused with a message naming the cure; an unknown option refused by name)"
 make -s stat-check
+
+# tycho-ledger: the only program using newtypes ACROSS a package boundary, and
+# the lane whose load-bearing leg is five refusals no transcript can show.
+step "[4a/33] make ledger-check  (tycho-ledger: run identical over 2 runs and equal to the golden; totals and the --rate doubling against literals; all five distinctness violations still refused, each naming an UNMANGLED type; keys() hands back wrapped keys that index the map with no unwrap; a non-numeric amount and an unknown option each refused by name)"
+make -s ledger-check
 fi
 
 if [ "$LANE" = rest ]; then
