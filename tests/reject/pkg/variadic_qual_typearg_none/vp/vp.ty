@@ -1,0 +1,3 @@
+package vp
+fn pair(a: $T, b: $U) -> string:
+    return str(a) + "/" + str(b)

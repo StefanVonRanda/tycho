@@ -171,7 +171,8 @@ PostfixOp ::= "[" Expr "]"                              /* index */
             | "[" Expr? ":" Expr? "]"                   /* slice (either bound optional) */
             | "." IDENT                                 /* field access */
             | "." INT                                   /* tuple index */
-            | "." IDENT "(" ArgList? ")"                /* qualified pkg call (on a bare identifier) */
+            | "." IDENT CallTypeArgs? "(" ArgList? ")"  /* qualified pkg call (on a bare identifier) */
+            | "." IDENT CallTypeArgs                    /* ... with no value arguments */
             | "(" ArgList? ")"                          /* call */
 ArgList   ::= Expr ( "," Expr )*
 Place ::= IDENT ( "[" Expr "]" | "." IDENT | "." INT | "(" ArgList? ")" )*
@@ -185,9 +186,10 @@ Primary ::= INT | FLOAT | STR | CHAR
           | "spawn" Call                                /* spawn a direct call */
           | Lambda
           | "None" | "Some" "(" Expr ")" | "Ok" "(" Expr? ")" | "Err" "(" Expr ")"
-          | IDENT "$" "(" Type ( "," Type )* ")" ( "(" ArgList? ")" )?  /* explicit type args */
+          | IDENT CallTypeArgs ( "(" ArgList? ")" )?    /* explicit type args */
           | IDENT "(" ArgList? ")"                      /* named call */
           | IDENT                                       /* variable, or nullary enum variant */
+CallTypeArgs ::= "$" "(" Type ( "," Type )* ")"  /* at least one; `f$()` is an error */
 Lambda  ::= "fn" "(" LambdaParams? ")" ( "->" Type )? ":" Expr
 LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
 ```

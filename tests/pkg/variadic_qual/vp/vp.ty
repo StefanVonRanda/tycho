@@ -1,0 +1,24 @@
+# The imported side of the cross-package variadic regression. See ../main.ty.
+package vp
+
+fn sum(xs: ...int) -> int:
+    t := 0
+    for x in xs:
+        t = t + x
+    return t
+
+fn count(xs: ...$T) -> int:
+    return len(xs)
+
+# A fixed parameter before the variadic: the packing must fold only the TRAILING
+# arguments, so `tagged("n", 7, 8)` is two parameters, not one array of three.
+fn tagged(tag: string, xs: ...int) -> string:
+    return tag + "=" + str(sum(xs...))
+
+fn join(sep: string, xs: ...string) -> string:
+    out := ""
+    for i := 0; i < len(xs); i += 1:
+        if i > 0:
+            out = out + sep
+        out = out + xs[i]
+    return out

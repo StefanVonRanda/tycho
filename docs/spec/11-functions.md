@@ -4,7 +4,7 @@ The grammar of function declarations, parameters, and the `where` clause is in
 [§4.1.1](02-grammar.md#411-functions). This chapter defines parameter passing,
 variadics, first-class function values, method-call syntax, and subscripts.
 
-> Provenance: `parse_fn` `src/tychoc.c:3911-4035`; parameter modes and the
+> Provenance: `parse_fn` `src/tychoc.c:3931-4055`; parameter modes and the
 > `sink`/`inout` semantics `docs/reference/basics.md:24-70`,
 > `docs/reference/functions.md`.
 
@@ -19,7 +19,7 @@ parameters (the same cap for an `extern fn`; a *function type*, which is a
 distinct construct, allows up to 8 — [§5.3.8](03-types.md#538-function-types)).
 The 16-parameter cap applies to a **generic template** exactly as it does to a
 concrete function: being generic defers what the parameters *are*, never how
-many there may be (`src/tychoc.c:9053@parameters`, ahead of the template stash; locked by
+many there may be (`src/tychoc.c:9093@parameters`, ahead of the template stash; locked by
 `tests/reject/params_17.ty`, `extern_params_17.ty` and
 `generic_params_17.ty`).
 Exactly one function named `main`, with no parameters and `void` return, is the
@@ -63,10 +63,19 @@ A final parameter written `...T` has type `[T]`; a call packs its trailing
 positional arguments into that array. `f()` supplies an empty `[]T`; an existing
 `[T]` is forwarded with the spread form `f(xs...)`. Fixed parameters may precede
 the variadic one, which MUST be last. The generic form `...$T` infers `T` from
-the arguments; supplying an empty variadic to a generic element type is an error
-(nothing to infer `T` from). A variadic parameter cannot be `inout` or `sink`.
-Variadics are pure sugar: the call folds the trailing arguments into one array
-argument, after which it is an ordinary call.
+the arguments; an EMPTY call to one has nothing to infer from, so it is an error
+unless the type is named explicitly — `f$(int)()` supplies the empty `[]int` and
+is the cure the diagnostic points at (§7.5). A variadic parameter cannot be
+`inout` or `sink`. Variadics are pure sugar: the call folds the trailing
+arguments into one array argument, after which it is an ordinary call.
+
+The packing is a property of the CALL, not of how the callee was named: a
+package-qualified call packs identically (`vp.sum(1, 2, 3)`), and so does one
+carrying explicit type arguments. Until 2026-08-14 neither did — the fold was
+skipped for a qualified callee and the call was measured against the single
+declared parameter (`'vp__sum' takes 1 argument(s), got 3`), and the qualified
+`$(…)` spelling did not parse at all. Both are fixed and pinned by
+`tests/pkg/variadic_qual/`.
 
 ## 15.4 First-class function values
 

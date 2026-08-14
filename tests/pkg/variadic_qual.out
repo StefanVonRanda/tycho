@@ -1,0 +1,12 @@
+local=6
+plain=6
+empty=0
+one=42
+spread=15
+fixed=n=15
+gen_str=3
+gen_int=2
+gen_none=0
+join=x-y-z
+join1=solo
+nested=10

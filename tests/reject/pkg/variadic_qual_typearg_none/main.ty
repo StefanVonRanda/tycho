@@ -1,0 +1,9 @@
+# `vp.pair$()` names no type at all. The unqualified arm has always refused this;
+# the qualified arm must refuse it the same way rather than accepting an empty
+# list and inferring, which would make the two spellings disagree.
+# expect: needs at least one explicit type argument
+package main
+import "vp"
+
+fn main():
+    println(vp.pair$()(1, "a"))

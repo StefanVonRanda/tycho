@@ -1,0 +1,41 @@
+# Regression: a variadic called through a PACKAGE QUALIFIER did not pack.
+#
+#   vp.sum(1, 2, 3)   -> error: 'vp__sum' takes 1 argument(s), got 3
+#
+# Cause: the packing block that folds trailing arguments into one array ran
+# under `if (!e->qual && !e->lhs)`, so a qualified call reached the arity check
+# unpacked and was measured against the one declared parameter. Found by a
+# dogfood audit (FRICTION #38): variadics were declared in three files, all
+# under tests/, so no consumer had ever called one across a package boundary.
+# The same-package calls below are the control -- they always worked.
+package main
+import "vp"
+
+fn local_sum(xs: ...int) -> int:
+    t := 0
+    for x in xs:
+        t = t + x
+    return t
+
+fn main():
+    println("local=" + str(local_sum(1, 2, 3)))
+    println("plain=" + str(vp.sum(1, 2, 3)))
+    println("empty=" + str(vp.sum()))
+    println("one=" + str(vp.sum(42)))
+
+    # A spread at the call site, and a spread INSIDE the callee (vp.tagged).
+    arr := [4, 5, 6]
+    println("spread=" + str(vp.sum(arr...)))
+    println("fixed=" + vp.tagged("n", 7, 8))
+
+    # The variadic is generic: `$T` is fixed by the packed array's element type.
+    println("gen_str=" + str(vp.count("a", "b", "c")))
+    println("gen_int=" + str(vp.count(1, 2)))
+    println("gen_none=" + str(vp.count$(int)()))
+
+    println("join=" + vp.join("-", "x", "y", "z"))
+    println("join1=" + vp.join("-", "solo"))
+
+    # A qualified variadic nested in another call's argument list -- the shape
+    # that made the sibling fixture generic_qual_arg necessary.
+    println("nested=" + str(local_sum(vp.sum(1, 2), vp.sum(3, 4))))

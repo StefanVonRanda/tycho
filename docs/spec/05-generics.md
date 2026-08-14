@@ -8,9 +8,9 @@ user-extensible — user-defined constraints (traits/typeclasses) are a decided
 non-goal ([§1.1](00-conventions.md)); generics grow only by widening the
 built-in predicate set.
 
-> Provenance: `instantiate_generic` `src/tychoc.c:8052-8142`; constraints
-> `constraint_ok` `:8023-8031`, enforcement `:8075-8092`; parse `parse_fn`
-> `:3989-4027`; type grammar for `$T`/`[$N]T` `:2000-2009`,`:2101-2124`.
+> Provenance: `instantiate_generic` `src/tychoc.c:8092-8182`; constraints
+> `constraint_ok` `:8063-8071`, enforcement `:8115-8132`; parse `parse_fn`
+> `:4009-4047`; type grammar for `$T`/`[$N]T` `:2000-2009`,`:2101-2124`.
 
 ## 7.1 Type parameters
 
@@ -150,6 +150,15 @@ input.
 one built-in that consumes it specially. There is **no** `empty$(T)` builtin: an
 `empty()` returning `[$T]` is an ordinary user-written generic, and `empty$(int)`
 is just `name$(…)` applied to it.
+
+The name may be **package-qualified**: `vp.ident$(int)(5)`, and with several type
+parameters `vp.pair$(int, string)(1, "a")`. Type arguments bind the declaration's
+type parameters in order and the count must match, whichever spelling is used.
+The value-argument list is optional after `$(…)`, which is what lets an empty
+call to a generic variadic name its element type (`vp.count$(int)()`, §15.3).
+The qualified spelling was a parse error until 2026-08-14 — the `$` was read as a
+field access — so no program in the tree used it; `tests/pkg/variadic_qual/` and
+its two reject siblings pin it now.
 
 ## 7.6 UFCS and generic method-style calls
 
