@@ -39,6 +39,15 @@ Here's what can cross:
   and `is_null(p)` work on it.
 - **typed `handle`s** — `handle Name: free: c_fn` declares a `void*` whose C destructor runs
   automatically at scope exit (RAII), so a foreign resource won't leak or get used after close.
+  What makes that hold is that a handle is **affine — exactly one owner**, and the rules are
+  worth knowing before you reach for one: it cannot be copied (`g := f`), reassigned, stored in
+  an array, map, struct, tuple, `Option` or `Result`, captured by a closure or `parallel for`,
+  or returned from a Tycho function. An `extern` opener is the only thing that may return one.
+  Passing a handle **borrows** it — the callee does not free it — so passing is how you use it
+  somewhere else. `close(h)` runs the destructor early on a handle **variable** and nulls it;
+  the scope-exit free is null-guarded, so the destructor runs exactly once either way. Using a
+  handle after `close` passes null to C: a logic bug, not memory corruption, and not rejected.
+  (The copy and struct-field cases were accepted until 2026-08-14, and the copy double-freed.)
 - **`inout` scalar out-parameters** (a numeric scalar or `ptr`) — cross too; a `string`,
   `bytes`, handle, or composite `inout` out-parameter is **rejected** (no trivial out-param ABI).
 

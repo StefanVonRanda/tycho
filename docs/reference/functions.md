@@ -10,6 +10,30 @@ indirectly. A closure captures by value, like every other value in the language,
 lets closures escape with no lifetime annotations. And any function can be called in method
 position with `x.f(a)`, without classes.
 
+## Parameter passing modes
+
+A parameter is passed in one of three modes ([spec §15.2](../spec/11-functions.md#152-parameter-passing-modes)):
+
+- **Default (by value).** A scalar is copied; a heap-bearing value (a `string`, array, map or
+  heap-bearing struct) is a **read-only borrow** — the callee may read it but not mutate it,
+  and mutating it is a compile error. The caller's value is unchanged either way, so this is
+  value semantics with the copy elided where nobody can tell.
+- **`inout`** — an exclusive, call-scoped mutable borrow, written `&x` at the call site and
+  equivalent to `x = f(x)`. The same variable may not be passed to two `inout` parameters of
+  one call.
+- **`sink`** — the callee **owns and consumes** the argument. After passing a variable to a
+  `sink` parameter the caller MUST NOT use it again; that is a compile error, not a silent
+  copy. A fresh literal or a call's result is adopted with no copy.
+
+`sink` is stricter than it first reads, and the shape most people try does not work: a sink
+argument must be the variable's **only** mention in the function, and no named variable can be
+adopted inside a loop. So a consuming builder is written point-free —
+`render(join(of(collect()), add(empty(), tag)))` — rather than as `d = add(d, x)` in a loop.
+`tools/tycho-tmpl/` is a worked example, and the reasoning is in
+[spec §15.2](../spec/11-functions.md#152-parameter-passing-modes).
+
+`sink` and `inout` are mutually exclusive, and neither may combine with a variadic parameter.
+
 ## Variadic parameters
 
 A final parameter written `xs: ...T` is **variadic**: inside the body `xs` is a `[T]`, and a
@@ -36,8 +60,13 @@ sum(nums...)          # spread: pass an existing array -> 15
   can forward its own args: `sum(xs...)`). A spread argument must be the sole variadic
   argument; a spread is only valid into a variadic parameter.
 - The **generic form** `xs: ...$T` infers `T` from the arguments — `count(1, 2, 3)` binds
-  `T = int`, `count("a", "b")` binds `T = string`. An empty generic variadic call (`count()`)
-  can't infer `T` and is a compile error.
+  `T = int`, `count("a", "b")` binds `T = string`. An empty call has nothing to infer from, so
+  `count()` is a compile error — but you can name the type instead: `count$(int)()` supplies
+  the empty `[]int`. (Until 2026-08-14 the explicit form was rejected too, and the diagnostic
+  did not mention it.)
+- Packing is a property of the **call**, not of how the callee was named: `vp.sum(1, 2, 3)`
+  through a package qualifier packs identically, and so does a call carrying explicit type
+  arguments. Neither did before 2026-08-14.
 
 ## First-class function values
 

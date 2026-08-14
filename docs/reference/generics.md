@@ -26,9 +26,23 @@ fn first(xs: [$T]) -> Option(T):
     return None
 ```
 
-A `where` clause constrains the parameter to a fixed, transpiler-known predicate set —
-`numeric(T)`, `comparable(T)`, `has_str(T)` — so an operation the body relies on is checked at
-the call:
+A `where` clause constrains the parameter to a fixed, transpiler-known predicate set, so an
+operation the body relies on is checked at the call. The set is **closed at five** — there is
+no way to add one, which is the deliberate anti-traits stance:
+
+| predicate | satisfied by |
+|---|---|
+| `numeric(T)` | `int`, `float` |
+| `comparable(T)` | `int`, `char`, `float`, `string` |
+| `has_str(T)` | `int`, `bool`, `float`, `string` |
+| `hashable(T)` | any legal map key type — and it admits `K` as a map key *inside* the body |
+| `defaultable(T)` | exactly `int`, `float`, `bool`, `string` |
+
+Several constraints are separated by **commas**, not `and`:
+`where defaultable(T), numeric(T)`.
+
+The first four see through a newtype (they test the underlying capability); `defaultable` does
+not, so `zero$(X)` fails for a newtype even over a defaultable base.
 
 ```tycho
 fn maxv(a: $T, b: $T) -> T where comparable(T):
@@ -36,6 +50,26 @@ fn maxv(a: $T, b: $T) -> T where comparable(T):
         return a
     return b
 ```
+
+## Explicit type arguments and `zero$(T)`
+
+Type arguments are normally inferred from the arguments. Where they cannot be — a payload-less
+generic enum variant, or an empty generic variadic — supply them with `name$(T, …)`, which
+binds the declaration's parameters in order:
+
+```tycho
+fn count(xs: ...$T) -> int:
+    return len(xs)
+
+fn main():
+    println(str(count(1, 2, 3)))    # inferred: T = int
+    println(str(count$(int)()))     # named: nothing to infer from
+```
+
+The name may be package-qualified (`vp.pair$(int, string)(1, "a")`) — that spelling was a parse
+error until 2026-08-14. `zero$(T)` is the one builtin that consumes this form: it yields the
+zero value of a `defaultable` type, which is what lets a fold seed an accumulator without the
+caller supplying one (`acc := zero$(T)`).
 
 ## Generic structs and enums
 

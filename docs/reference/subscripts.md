@@ -52,6 +52,17 @@ subscript <name>(<recv>: T, <params>...) -> inout U:
   fresh local is rejected.
 - **Each parameter used at most once** in the yielded place, so an argument is never
   double-evaluated when substituted. (Multi-use with argument hoisting is a future extension.)
+  **The receiver counts**, which bites sooner than it sounds: `yield &g.cells[r * g.w + c]`
+  reads two fields of `g` and is refused, so 2-D indexing into a *flat* array — the most
+  obvious thing to want here — is not expressible. Store the rows nested and yield
+  `&g.rows[r][c]`, which mentions the receiver once. `tools/tycho-grid/` does exactly that.
+- **Concrete receiver.** The first parameter's type may not mention a type parameter:
+  `subscript at(p: Pool($T), …)` is rejected at the declaration, whether or not it is ever
+  called. The receiver selects the subscript by exact type, so a `Pool($T)` receiver could
+  never match the monomorphised `Pool(int)` a call site presents. Declare it on the concrete
+  instance (`subscript at(p: Pool(int), i: int) -> inout int`), or expose a generic
+  **function** instead — which is what Go and Odin do, neither having user-defined indexing
+  at all.
 - **Value semantics is unchanged.** A projection is a place into a value you already own or
   borrow; the usual mutability rules apply (writing through a projection into a by-value
   parameter mutates that parameter's private copy, exactly like `g.nodes[i].w = …` spelled
