@@ -154,5 +154,67 @@ timeout 10 "$T/prog.bin" --file "$T/t.txt" --fyle x > "$T/unk.txt" 2>&1
 [ $? -ne 0 ] || note "[7] an unknown option exited 0"
 grep -q -- "--fyle" "$T/unk.txt" || note "[7] the unknown-option message does not name the option"
 
+# ---------------------------------------------------------------------------
+# [7] EVERY EARLY EXIT still frees. [4] proves the destructor runs when a scope
+#     ends NORMALLY, 20000 times. The paths where a scope-exit free is actually
+#     forgotten are the other ones -- `break`, `continue`, a nested block, and an
+#     `or_return` that leaves the function from the middle. The docs claim all of
+#     them; a leak on any would be invisible in a transcript and would show up as
+#     an fd exhaustion much later, in something else.
+#
+#     The counts are LITERALS derived from the control flow, not from a run: the
+#     loop opens on i=0,1,2,3 (continue at 1 still opened; break at 3 opened
+#     first) = 4, the nested block opens on j=1,2 = 2, and the or_return path
+#     opens 1. Seven opens, seven closes, live 0.
+# ---------------------------------------------------------------------------
+mkdir -p "$T/early"
+cat > "$T/early/main.ty" <<'TY'
+handle File:
+    free: fh_close
+
+extern "fhdemo" fn fh_open(path: string, mode: string) -> File
+extern "fhdemo" fn fh_close(f: File) -> int
+extern "fhdemo" fn fh_live() -> int
+extern "fhdemo" fn fh_opens() -> int
+extern "fhdemo" fn fh_closes() -> int
+
+fn boom() -> Result(int, string):
+    return Err("nope")
+
+fn use() -> Result(int, string):
+    f := fh_open("tools/tycho-fh/fh.c", "r")
+    v := boom() or_return
+    return Ok(v)
+
+fn loops():
+    for i := 0; i < 5; i += 1:
+        f := fh_open("tools/tycho-fh/fh.c", "r")
+        if i == 1:
+            continue
+        if i == 3:
+            break
+    for j := 0; j < 3; j += 1:
+        if j > 0:
+            g := fh_open("tools/tycho-fh/fh.c", "r")
+            pass
+
+fn main():
+    loops()
+    match use():
+        Ok(v): pass
+        Err(e): pass
+    println("live " + str(fh_live()))
+    println("opens " + str(fh_opens()))
+    println("closes " + str(fh_closes()))
+TY
+if $TYCHOC "$T/early/main.ty" --emit-c -o "$T/early/g" > "$T/early.log" 2>&1 && cc -O2 -o "$T/early/bin" "$T/early/g.c" $($TYCHOC "$T/early/main.ty" --print-shims 2>/dev/null)       -L"$T" -lfhdemo -lm -lpthread >> "$T/early.log" 2>&1; then
+    "$T/early/bin" > "$T/early.txt" 2>&1 || note "[7] the early-exit probe did not run"
+    grep -qx 'live 0'    "$T/early.txt" || { note "[7] live is not 0 -- an early exit skipped the destructor"; cat "$T/early.txt"; }
+    grep -qx 'opens 7'   "$T/early.txt" || { note "[7] want 7 opens (4 loop + 2 nested + 1 or_return)"; cat "$T/early.txt"; }
+    grep -qx 'closes 7'  "$T/early.txt" || { note "[7] want 7 closes -- one early exit did not free"; cat "$T/early.txt"; }
+else
+    note "[7] the early-exit probe does not build"; tail -3 "$T/early.log"
+fi
+
 [ "$fail" = 0 ] || { echo "fh-check: FAILED"; exit 1; }
 echo "tycho-fh: green (run identical over 2 runs and equal to the golden; counts and balance against literals; live=0 and opens==closes after 64 scope exits and again after 20000, with a re-read checksum that catches an open that began failing; all SIX affine shapes -- a decl copy, a bare handle struct field, a handle returned, in an array, in an Option, and close() on a call result -- refused; a double borrow still leaves exactly one live owner; an unknown option refused by name)"
