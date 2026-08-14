@@ -56,7 +56,12 @@ W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\\\usr\\\\x86_64-w64-mingw32\\\\
 #
 # THIS BOX IS NOT SUCH A HOST, and the probe finds nothing to skip here: mingw
 # zlib IS installed, `-lz` links, and tycho-ar builds and runs under Wine
-# (measured 2026-08-13). Its two failures earlier that day were the stale
+# (measured 2026-08-13). The net is EXERCISED anyway, two ways, so it cannot rot
+# into an always-yes: a self-check leg below asks it for a library that cannot
+# exist and requires a NO (breaking the probe to `return 0` reddens that leg,
+# measured 2026-08-14), and forcing an impossible `-l` onto a real tool produces
+# `skipped 3, failed 0` -- build skipped, run skipped, nothing counted wrong.
+# Its two failures earlier that day were the stale
 # cross-compiler fixed in 94aa75dd, NOT a missing library -- the `pkg-config
 # could not resolve dependency 'zlib'` line the emit prints is about the MINGW
 # pkg-config path and does not stop the link. So this is a safety net for a host
@@ -99,6 +104,18 @@ build_tool() {
     fi
 }
 
+# SELF-CHECK: the probe above must be able to say NO. It skipped nothing on the
+# host that introduced it -- mingw zlib was installed -- so the net sat
+# unexercised and a `have_mingw_lib` that always answered yes would have looked
+# identical (its own `gap:` said so). A library that cannot exist is
+# host-independent, so this leg runs everywhere and costs one failed cc.
+if have_mingw_lib -lnosuchlib_tycho_probe; then
+    echo "FAIL self-check: have_mingw_lib said YES for a library that cannot exist"
+    fail=$((fail+1))
+else
+    echo "ok    self-check (have_mingw_lib refuses an absent library)"
+fi
+
 echo ">>> tools cross-compiled under mingw (the Windows build proof)"
 build_tool tycho-ar    tools/tycho-ar/main.ty       -        -lz
 build_tool tycho-q     tools/tycho-q/main.ty        -        -
@@ -117,23 +134,32 @@ build_tool lsp         tools/lsp.ty                 tools/lsp_shim.c -
 echo "skip tycho-fetch (mingw libcurl is MSYS2-only; the shim code is portable)"; skipped=$((skipped+1))
 
 echo ">>> deterministic tools run under Wine"
+# A run leg needs the exe its build stage produced. When that stage SKIPPED --
+# a cross library this host does not have -- the exe is absent and the run was
+# counted as a FAILURE: that is why a missing library read as TWO failures for
+# one tool (tycho-ar, 2026-08-13). A skipped build is a skipped run.
+have_exe() {
+    [ -x "$T/$1.exe" ] && return 0
+    echo "skip  $1 (its build was skipped -- no exe to run)"
+    skipped=$((skipped+1)); return 1
+}
 # tycho-q: a query over a CSV
-case "q" in *"$FILTER"*) printf 'a,b\n1,2\n3,4\n' > "$T/q.csv"
+case "q" in *"$FILTER"*) have_exe tycho-q && { printf 'a,b\n1,2\n3,4\n' > "$T/q.csv"
     out=$($W "$T/tycho-q.exe" "select * from \"$T/q.csv\"" 2>/dev/null)
     if [ "$out" = "a,b
 1,2
 3,4" ]; then echo "ok    tycho-q (query under Wine)"; built=$((built+1))
-    else echo "FAIL tycho-q (got: $out)"; fail=$((fail+1)); fi ;; esac
+    else echo "FAIL tycho-q (got: $out)"; fail=$((fail+1)); fi ; } ;; esac
 # tycho-scheme: run fib
-case "scheme" in *"$FILTER"*) out=$($W "$T/tycho-scheme.exe" run tools/tycho-scheme/progs/fib.scm 2>/dev/null)
+case "scheme" in *"$FILTER"*) have_exe tycho-scheme && { out=$($W "$T/tycho-scheme.exe" run tools/tycho-scheme/progs/fib.scm 2>/dev/null)
     if echo "$out" | grep -q "6765"; then echo "ok    tycho-scheme (fib under Wine)"; built=$((built+1))
-    else echo "FAIL tycho-scheme (got: $out)"; fail=$((fail+1)); fi ;; esac
+    else echo "FAIL tycho-scheme (got: $out)"; fail=$((fail+1)); fi ; } ;; esac
 # tycho-ar: create + list a deterministic archive
-case "ar" in *"$FILTER"*) mkdir -p "$T/ardir"; printf 'hello\n' > "$T/ardir/a.txt"; printf 'world\n' > "$T/ardir/b.txt"
+case "ar" in *"$FILTER"*) have_exe tycho-ar && { mkdir -p "$T/ardir"; printf 'hello\n' > "$T/ardir/a.txt"; printf 'world\n' > "$T/ardir/b.txt"
     $W "$T/tycho-ar.exe" c "$T/test.ar" "$T/ardir" >/dev/null 2>&1
     out=$($W "$T/tycho-ar.exe" t "$T/test.ar" 2>/dev/null)
     if echo "$out" | grep -q "a.txt" && echo "$out" | grep -q "b.txt"; then echo "ok    tycho-ar (create+list under Wine)"; built=$((built+1))
-    else echo "FAIL tycho-ar (got: $out)"; fail=$((fail+1)); fi ;; esac
+    else echo "FAIL tycho-ar (got: $out)"; fail=$((fail+1)); fi ; } ;; esac
 
 echo
 echo "wine-tools: built+ran $built  failed $fail  skipped $skipped"
