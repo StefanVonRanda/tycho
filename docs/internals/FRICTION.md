@@ -4304,3 +4304,67 @@ Hit in order while writing `pipe/`:
   Tally($K), k: $K) where hashable(K)` takes the tally by reference, mutates the
   map, and the caller's copy sees it — no aliasing surprise and no annotation
   beyond the one on the parameter.
+
+## Found by `tools/tycho-tmpl`, 2026-08-14 (head `08f50a5f`)
+
+The fourth dogfood audit. Subject picked by measurement, **with `grep -F` this
+time**: `sink` appears 18 times in the tree and **all 18 are in `tests/`** — no
+program under `tools/`, `examples/`, `server/` or `bench/` uses it, and neither
+does `corelib/`. A parameter mode exercised only by its own fixtures.
+`tools/tycho-tmpl` is a line-oriented template renderer whose document builder
+(`tools/tycho-tmpl/doc/`) consumes at every step.
+
+### 37. `sink` cannot express a builder, and the spec described a copy that never happened
+
+Four refusals, in the order a builder hits them. Each is the compiler's own
+message, at `08f50a5f`:
+
+1. **Accumulate in a loop** — `d = add(d, s)` inside `for`:
+   *"'d' is consumed by a `sink` parameter inside a loop, where the next
+   iteration would consume it again; no named variable can be adopted in a loop,
+   a copy made in the loop included."*
+2. **Collect then consume** — `push(lines, s)` in a loop, then `of(lines)`:
+   *"'lines' … is mentioned 2 times in this function: a sink argument must be the
+   variable's ONLY mention."*
+3. **Create, grow, consume** — `f := empty()`, `f = add(f, …)`, `join(d, f)`:
+   three mentions, same refusal, and this one is **outside any loop**.
+4. **Count before consuming** — `n := len(lines)` then `of(lines)`: the count is
+   the second mention.
+
+**So the only expressible shape is point-free.** Nothing may be named:
+
+```tycho
+doc.render(doc.join(doc.of(expand_all(text, keys, vals)),
+                    doc.add(doc.empty(), "-- rendered " + str(n) + " line(s)")),
+           sep)
+```
+
+and a value that must be *observed* before it is consumed has to be recomputed —
+`tycho-tmpl` calls `expand_all` twice, once to count and once to adopt, which is
+the honest cost of rule 4.
+
+**The rule is deliberate and the reasoning is in the source**: `src/tychoc.c@sink_arg_into`
+— "Rather than silently copy, require the move-vs-copy to be visible
+(Hylo-style)", and one textual mention "is how the compiler proves the consume is
+the last use on every path, with no dataflow analysis". Nothing here argues with
+that. What is recorded is the CONSEQUENCE, which no fixture showed because a
+fixture consumes once and stops: **a consuming API cannot have a builder, and its
+callers must be written point-free.**
+
+**THE SPEC WAS WRONG, and is corrected.** `docs/spec/11-functions.md` §15.2 said
+a copy "is made only where value semantics require independence (the variable is
+read again after the call, **is used inside a loop**, or is captured by a
+closure)". No implementation ever made that loop copy — the call is refused. The
+paragraph now states the implemented rule and says what it used to claim.
+
+### What did not go wrong, which is also data
+
+- **Every one of the four messages named the variable, the rule AND the fix.**
+  Rule 2's even lists the disqualifying forms (`len(lines)`, `lines[0]`,
+  `lines[0] = …`) and says "even before this line", which is what turned a
+  puzzling refusal into a five-second edit.
+- **`cli.parse_checked` earned its keep on its first outside caller.** This
+  program used it from the start and `--sett x=1` was refused by name — the
+  shape FRICTION #29 asked for, working in a program written after it.
+- **A `sink` on a plain array works exactly as specified.** `doc.of(xs: sink [string])`
+  adopts a call's result with no copy; only NAMED values are the problem.

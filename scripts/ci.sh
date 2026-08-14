@@ -401,6 +401,11 @@ make -s tally-check
 # declaring generics -- tools/tycho-flow and examples/generics_tour do too.)
 step "[3x/30] make agg-check  (tycho-agg: report identical over 2 runs and equal to the golden; north 3 / south 2 / east 1 against literals with an empty-key row dropped by the generic filter; --min filters the display without moving distinct=3; the emitted C carries pipe__keep__, pipe__to__ and pipe__group_into__ instantiated at the program's own Row type; missing file, absent column and unknown option each exit non-zero naming the thing)"
 make -s agg-check
+
+# tycho-tmpl: the only program using `sink`, and the only lane asserting that a
+# consume rule still REFUSES four shapes.
+step "[3y/31] make tmpl-check  (tycho-tmpl: render identical over 2 runs and equal to the golden; substitution against literals with a repeated key; all four sink shapes -- accumulate in a loop, collect then consume, create-grow-consume, count before consuming -- still refused with a sink diagnostic; a missing key exits 1 naming the placeholder; an unknown option refused by name)"
+make -s tmpl-check
 fi
 
 if [ "$LANE" = rest ]; then

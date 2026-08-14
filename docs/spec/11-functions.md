@@ -44,8 +44,13 @@ A parameter is passed in one of three modes:
   variable to a `sink` parameter, the caller MUST NOT use that variable again
   (doing so is a compile error, not a silent copy). A fresh literal or a local on
   its last use is adopted with **no copy**; a copy is made only where value
-  semantics require independence (the variable is read again after the call, is
-  used inside a loop, or is captured by a closure). A value that then escapes
+  semantics require independence (the variable is read again after the call, or
+  is captured by a closure). **Inside a loop a named variable is neither adopted
+  nor silently copied — the call is REFUSED**, because a copy hidden in a loop is
+  the one place the move-vs-copy cost is invisible and unbounded; pass a fresh
+  value (a literal, or a call's result) or lift the call out. Until 2026-08-14
+  this paragraph listed "used inside a loop" among the silent-copy cases, which
+  no implementation ever did (`src/tychoc.c@sink_arg_into`). A value that then escapes
   (is returned or stored past the call) is still copied to the longer-lived
   storage.
 

@@ -1,0 +1,58 @@
+# A builder whose steps CONSUME what they are given -- the `sink` parameter mode.
+#
+# WHY THIS PACKAGE EXISTS. Measured 2026-08-14 with `grep -F`: `sink` appears 18
+# times in the tree and ALL 18 are in `tests/`. No program under `tools/`,
+# `examples/`, `server/` or `bench/` uses it, and neither does `corelib/`. It is
+# a language feature exercised only by its own fixtures, which is the same shape
+# as the test framework nothing tested (FRICTION, tycho-tally). This package puts
+# it under load: a document builder where every step takes ownership.
+#
+# WHY A BUILDER WANTS IT. `add` returns the grown document rather than mutating
+# through a borrow, so the old value must not be reachable afterwards -- two
+# names for one buffer is exactly the aliasing this language does not have. The
+# spec's rule (§15.2) is that a `sink` argument is consumed and the caller MUST
+# NOT use it again, enforced at compile time, and that a local on its LAST USE is
+# adopted with no copy.
+package doc
+
+struct Doc:
+    parts: [string]
+    n: int
+
+fn empty() -> Doc:
+    return Doc([]string, 0)
+
+# Adopt a whole batch at once. This exists because the per-item shape
+# (`d = add(d, x)` in a loop) is refused -- see FRICTION #37 -- so a builder over
+# N items collects first and consumes once. `xs` is a sink: the caller's array is
+# dead after the call, which keeps the batch a move rather than a copy.
+fn of(xs: sink [string]) -> Doc:
+    return Doc(xs, len(xs))
+
+# Consumes `d`, returns it grown. The caller writes `d = doc.add(d, "x")`, and
+# any other use of the old `d` is a compile error rather than a second buffer.
+fn add(d: sink Doc, s: string) -> Doc:
+    push(d.parts, s)
+    d.n = d.n + 1
+    return d
+
+# Consumes two documents into one. Both arguments are dead after the call, which
+# is what makes the concatenation a move rather than two copies.
+fn join(a: sink Doc, b: sink Doc) -> Doc:
+    for p in b.parts:
+        push(a.parts, p)
+    a.n = a.n + b.n
+    return a
+
+# The terminal step: consumes the document and yields the text. There is no Doc
+# afterwards, which is the property `sink` states and `inout` cannot.
+fn render(d: sink Doc, sep: string) -> string:
+    out := ""
+    for i := 0; i < len(d.parts); i += 1:
+        if i > 0:
+            out = out + sep
+        out = out + d.parts[i]
+    return out
+
+fn count(d: Doc) -> int:      # an ordinary borrow: reading does not consume
+    return d.n
