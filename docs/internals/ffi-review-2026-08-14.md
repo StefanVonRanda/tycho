@@ -180,5 +180,19 @@ Named so the next reviewer starts here rather than repeating the above:
 - ~~**`corelib/regex`** ReDoS~~ — **measured clean with a control, finding 6.**
 - ~~**`corelib/image`** decoder arithmetic~~ — **audited, finding 7. One uncapped allocation noted, not fixed.**
 - ~~**`corelib/compress`.** Decompression bombs~~ — **reviewed and fixed, finding 4 above.**
-- Anything about the **generated C** rather than the hand-written shims.
-- Fuzzing of any boundary. The tree's fuzzer targets the compiler, not the shims.
+- Anything about the **generated C** rather than the hand-written shims. Note
+  that it is not unexamined: `make test` builds and runs the whole 717-fixture
+  corpus under ASan/UBSan/LeakSanitizer, and `asan-self` does the same for the
+  compiler's own execution over 736 programs. What is missing is a review of the
+  emitted code as CODE, not sanitizer coverage of it.
+- ~~Fuzzing of any boundary~~ — **closed: `scripts/fuzz_shims.sh`, wired into
+  `make ci`.** 900 mutated inputs through `compress.decompress` and
+  `regex.compile`/`is_match` under ASan+UBSan, 0 failures. Seeds are valid gzip /
+  zlib streams and near-misses, mutated by bit flips, deletions and insertions,
+  so the interesting inputs are those that look valid for a while and then are
+  not. Two things the harness had to get right, each of which cost a round:
+  `detect_leaks=0`, because a Tycho program exits with live arenas by design and
+  LeakSanitizer scored 700/700 "crashes" that were nothing; and a CONTROL heap
+  overflow that must be caught before any real input, because a fuzzer reporting
+  zero findings is indistinguishable from one that is not running. Neutering the
+  control reddens the lane — confirmed.

@@ -390,6 +390,9 @@ make -s diff-check
 step "[3u3/27] make hash-check  (tycho-hash: the report byte-identical at 1/2/3/5/8 workers AND the pool proven to share -- all 8 take a file at width 8 while at width 1 the first takes all 12 and the rest none, which is the negative control for --workers; every hash equals sha256sum's; the per-worker counts sum to exactly the file count at every width; 7 error paths exit 2 with an empty stdout)"
 make -s hash-check
 
+step "[3u4/27] sh scripts/fuzz_shims.sh  (fuzz the corelib paths that take UNTRUSTED BYTES -- compress.decompress and regex.compile/is_match -- under ASan+UBSan. fuzz/run.py targets the COMPILER; nothing fuzzed the shims a running program feeds attacker data to. A deliberate heap overflow must be caught FIRST, because a fuzzer reporting zero findings is indistinguishable from one that is not running)"
+sh scripts/fuzz_shims.sh
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.
