@@ -37,7 +37,7 @@ with `cc` and `make`.
 [Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
 [Spec](docs/spec/) · [Performance](docs/performance.md)
 
-```
+```tycho
 fn greet(name: string) -> string:
     return "hello " + name
 

@@ -67,7 +67,11 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # $TMP/f_<n>.ty, and emit one classification record per fence on stdout:
 #   <n> TAB <verdict> TAB <file> TAB <line> TAB <reason>
 # verdict is CHECK, FRAGMENT or MARKED.
-git ls-files 'docs/*.md' | while read -r f; do
+# README.md and CONTRIBUTING.md are in the list because they were NOT: the gate
+# globbed docs/ only, so the project's front page -- the first Tycho anyone reads
+# -- had its example checked by nothing. It compiles today (verified 2026-08-14);
+# the point is that nothing would have said so if it stopped.
+{ git ls-files 'docs/*.md'; git ls-files 'README.md' 'CONTRIBUTING.md'; } | while read -r f; do
     awk -v OUT="$TMP" -v F="$f" '
       # remember the most recent skip marker; any non-blank non-marker line clears it
       /^[ \t]*<!--[ \t]*fence-skip:/ {

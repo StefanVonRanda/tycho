@@ -122,6 +122,8 @@ allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
 
 > **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted compiler, `tychoc0` the self-hosted one.
+>
+> Some figures below carry their own measurement date; those that do not were taken on or before **2026-08-12**, when this page was last revised, and have not been re-measured since. Each is tied to the optimization it motivated, so read them as that change's effect rather than as today's absolute numbers.
 
 *Measured* (`fn build(n)->[int]` returned 20000×, against the compiler just
 before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.
