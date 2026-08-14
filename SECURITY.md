@@ -7,6 +7,16 @@ by the author, **not a formal third-party audit**. An external review is one of
 the conditions for 1.0 ([ROADMAP](ROADMAP.md#what-1-0-requires)). Please don't
 use it for anything where a compromise would actually matter.
 
+A structured pass over the FFI shims by a **non-author** reviewer was done on
+2026-08-14 and is written up in
+[docs/internals/ffi-review-2026-08-14.md](docs/internals/ffi-review-2026-08-14.md):
+the unbounded-copy and process-execution classes came back clean, and three real
+findings in `corelib/http` were fixed (an uncapped response body, a `size_t` wrap
+reachable on the supported 32-bit target, and redirects followed with no bound
+and no scheme pin). That is still **not** a third-party audit, and the write-up
+names what it did not cover — TLS, regex, the image decoders and compression
+bombs — so the next pass starts there.
+
 A few sharp edges are inherent, by design:
 
 - **FFI (`extern fn`) is unsafe**, like any C interop — a wrong signature or a

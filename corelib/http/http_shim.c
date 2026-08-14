@@ -26,9 +26,21 @@ typedef int64_t tycho_int;
  * http_status()'s Tycho-facing RETURN is tycho_int. */
 typedef struct { long status; char *body; size_t len; } Resp;
 
+/* Hard cap on a response body. curl's own CURLOPT_MAXFILESIZE only acts on a
+ * Content-Length it was GIVEN, so a chunked or lying response walks past it --
+ * this callback is the only place that sees the bytes actually arrive. 64 MiB is
+ * far above anything corelib fetches and far below a 32-bit size_t. */
+#define TY_HTTP_MAX_BODY ((size_t)64 * 1024 * 1024)
+
 static size_t collect(char *ptr, size_t size, size_t nmemb, void *userp) {
     size_t add = size * nmemb;
     Resp *r = (Resp *)userp;
+    /* Refuse before the arithmetic, not after: on ILP32 size_t is 32 bits and
+     * `r->len + add + 1` WRAPS past 4 GiB, which realloc would then honour with a
+     * small buffer and the memcpy below would run off it. The cap makes the sum
+     * unreachable on both widths; returning short tells curl to abort the
+     * transfer. */
+    if (add > TY_HTTP_MAX_BODY || r->len > TY_HTTP_MAX_BODY - add) return 0;
     char *nb = (char *)realloc(r->body, r->len + add + 1);
     if (!nb) return 0;                       /* signal write error to curl */
     r->body = nb;
@@ -52,6 +64,17 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, collect);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, r);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    /* Following redirects without bounding them is the SSRF amplifier: a chain
+     * can be arbitrarily long, and which SCHEMES a redirect may switch to is
+     * curl-version-dependent (CURLOPT_REDIR_PROTOCOLS' default has changed).
+     * Pin both here rather than inherit whatever the linked curl decided, so a
+     * redirect cannot walk an https fetch onto file:// or gopher://. */
+    curl_easy_setopt(c, CURLOPT_MAXREDIRS, 10L);
+#ifdef CURLOPT_REDIR_PROTOCOLS_STR
+    curl_easy_setopt(c, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+#elif defined(CURLPROTO_HTTP)
+    curl_easy_setopt(c, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+#endif
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(c, CURLOPT_USERAGENT, "tycho-corelib-http/1.0");
