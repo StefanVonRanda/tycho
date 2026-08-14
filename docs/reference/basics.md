@@ -5,7 +5,19 @@
 > arena, freed at block exit; this page shows the scope boundaries the compiler sees.
 
 The procedural core of the language: how you define a procedure, declare and assign
-variables, write expressions, and control flow. Tycho is small — one way to do each thing.
+variables, write expressions, and control flow. This part is deliberately narrow — one
+loop keyword, one procedure form, no `while`, no `do`/`until`, no ternary.
+
+**"One way to do each thing" is true here and not language-wide**, so read it as a claim
+about this page rather than about Tycho. A sequence, for instance, has five spellings:
+growable [`[T]`](../spec/03-types.md#531-arrays-t), fixed
+[`[N]T`](../spec/03-types.md#532-fixed-size-arrays-nt), size-generic `[$N]T`,
+inline variable-count [`bounded[N]T`](../spec/03-types.md#5310-boundednt), and
+[`soa`](../spec/03-types.md#537-soa); a parameter has
+[three passing modes](../spec/11-functions.md#152-parameter-passing-modes). Those are
+distinctions of **representation**, not taste — each names a different memory layout or
+ownership rule, and picking the wrong one is a performance or lifetime bug rather than a
+style preference. What the language avoids is two spellings for the *same* thing.
 
 ## Procedures
 
@@ -105,7 +117,7 @@ map entry (`m[k] += 1`).
 
 ## Control flow
 
-There is exactly one loop keyword, `for`, in three shapes — it does everything a `while` would.
+There is exactly one loop keyword, `for`, in four shapes — it does everything a `while` would.
 
 ```tycho
 if cond:
