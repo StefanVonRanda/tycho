@@ -222,10 +222,14 @@ the whole argument for §7 and nothing in this document substitutes for it.
 
 Concretely open:
 
-- **`corelib/zip`, `corelib/json`, `corelib/csv`, `corelib/markdown`** — parsers
-  over untrusted input, none reviewed and none in `scripts/fuzz_shims.sh` yet.
-  Extending that harness is the cheapest next step: it already has the control
-  and the mutation loop, and adding a subject is a few lines.
+- **`corelib/zip` and `corelib/markdown`** — parsers over untrusted input, not
+  reviewed and not fuzzed. `json` and `csv` were on this line and are now IN
+  `scripts/fuzz_shims.sh`: 1650 mutated inputs, 0 failures, reached through
+  `io.read_text` so invalid UTF-8 gets into the parser too. That extension also
+  needed JSON- and CSV-SHAPED SEEDS — with only the gzip-shaped ones, those two
+  parsers rejected at the first byte and deep state (nesting, escapes, quoted
+  commas, embedded newlines) was never reached, so the coverage would have been a
+  number rather than a result.
 - **`corelib/net`'s accept/recv path** under hostile peers. `server-check` proves
   the daemon survives two rude clients; that is not the same as an adversary.
 - **The image decoders' uncapped allocation** (finding 7) — safe today because
