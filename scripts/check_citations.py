@@ -237,7 +237,11 @@ def unclaimed(line, tracked, claimers):
 
 # gap: only the two directions the gate already walks (tracked .md, and source
 # files under DOC_SCAN_PREFIX). A citation in an UNTRACKED file is invisible to
-# every arm of this checker, strict mode included.
+# every arm of this checker, strict mode included. MEASURED 2026-08-14 rather
+# than assumed: the only untracked text file in this tree is CLAUDE.md (12 refs,
+# 0 unparseable) -- everything else untracked is a binary or a build artefact.
+# Left as-is deliberately: scanning untracked files would fail a shared gate on
+# somebody's private scratch notes, for a class that is currently empty.
 
 def selfcheck():
     """`--selfcheck`: the strict-mode detector against a table of shapes.
