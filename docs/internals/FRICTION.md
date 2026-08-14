@@ -1542,7 +1542,7 @@ header but not a negative or over-cap one.
 
 The original text follows.
 
-### 4. `strings.parse_int` fails open, so no format parser can use it
+### ~~4. `strings.parse_int` fails open, so no format parser can use it~~ — **the strict counterpart EXISTS and the ask is paid; one caller was still fail-open and is fixed. Verdict 2026-08-14**
 
 `corelib/strings/strings.ty@parse_int` returns 0 for `""`, 0 for a leading
 non-digit, and **stops at the first non-digit without objecting** — a damaged
@@ -1552,10 +1552,30 @@ length that *parses* is precisely how a reader ends up hashing the wrong span of
 bytes. `tools/tycho-ar/main.ty@parse_uint` is the strict version this program had
 to carry: returns `-1`, no silent prefix.
 
-There is no strict or `Result`-returning counterpart in `core:strings` — this call
-predates the `Result` convention the rest of the corelib converged on.
-**Cost to fix:** ~15 lines for `parse_int_strict(s) -> Result(int, string)`,
-leaving `parse_int` alone so no caller moves.
+**The entry's ask is stale.** `corelib/strings/strings.ty@parse_int_checked`
+returns `Result(int, IntErr)` with `EmptyInput` / `Garbage` / `OutOfRange`, and
+six real programs already call it. Measured 2026-08-14 over 14 inputs, lax
+against strict:
+
+```
+[]      lax=0   strict=Err(EmptyInput)     [3x]   lax=3   strict=Err(Garbage)
+[-]     lax=0   strict=Err(Garbage)        [1x4]  lax=1   strict=Err(Garbage)
+[ 7]    lax=0   strict=Err(Garbage)        [7 ]   lax=7   strict=Err(Garbage)
+[+3]    lax=0   strict=Err(Garbage)        [007]  lax=7   strict=Ok(7)
+[9223372036854775808]  lax=0  strict=Err(OutOfRange)
+[-9223372036854775808] lax=-9223372036854775808  strict=Ok(-9223372036854775808)
+```
+
+`parse_int` is unchanged and still lax, deliberately — 0 is the right answer for
+a CLI option. What the entry got right is that a *format* parser must not use it,
+and one still did: `tools/tycho-make/build/build.ty@stamps_read` validated the
+tab structure, the name and the 64-char hash, then read the mtime with the lax
+call. A stamp of `x<TAB>17x<TAB><hash>` was accepted as mtime 17, and the mtime
+decides staleness — so a corrupted stamp file shipped a stale output as current.
+With the fix reverted the new lane leg reports `EXITED 0 -- a damaged mtime was
+accepted`, i.e. the build succeeded off the corrupt stamp. `tools/tycho-make/run.sh`
+leg [13b] pins it; the pre-existing `StampBroken` leg could not, because it writes
+`garbage`, which has no tab and dies at the first validation.
 
 ### ~~5. `bytes` slices clamp, so a slice is not a bounds check~~ — **REPRODUCES, and the clamp is DELIBERATE; the entry's own residual ask was already paid. Verdict recorded 2026-08-13**
 

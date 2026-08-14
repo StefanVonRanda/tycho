@@ -158,3 +158,9 @@ recipe for 'x' succeeded but did not create it: true
 cannot read 'd' to hash it
 === berr StampBroken
 stamp line 1 is not <name> <mtime> <hash>: [garbage]
+=== berr StampBroken mtime=17x
+stamp line 1 is not <name> <mtime> <hash>: [x	17x	0000000000000000000000000000000000000000000000000000000000000000]
+=== berr StampBroken mtime=abc
+stamp line 1 is not <name> <mtime> <hash>: [x	abc	0000000000000000000000000000000000000000000000000000000000000000]
+=== berr StampBroken mtime=-3
+stamp line 1 is not <name> <mtime> <hash>: [x	-3	0000000000000000000000000000000000000000000000000000000000000000]

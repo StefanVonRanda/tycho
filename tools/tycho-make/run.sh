@@ -623,6 +623,33 @@ berr StampBroken   'x: a
 	cp a x
 '   'stamp line 1 is not <name> <mtime> <hash>: [garbage]'
 
+# [13b] The stamp's MTIME field, whose only defect is the mtime. The leg above
+# writes `garbage`, which has no tab and so dies at the FIRST validation -- it
+# can never reach the mtime and stayed green while a damaged one was accepted.
+# strings.parse_int is LAX (FRICTION #4): it reads "17x" as 17 and "abc" as 0,
+# so every field beside the mtime was validated and the mtime silently was not.
+# A wrong mtime decides staleness, which is how a stale output ships as current.
+# Both shapes are asserted: a trailing-garbage mtime that the lax parse would
+# have accepted as 17, and a negative one that parses cleanly and is nonsense.
+_h64=0000000000000000000000000000000000000000000000000000000000000000
+for _mt in 17x abc -3; do
+    rm -rf "$T/e"; mkdir -p "$T/e"
+    printf 'a\n' > "$T/e/a"
+    printf 'x: a\n\tcp a x\n' > "$T/e/bad.mk"
+    printf 'x\t%s\t%s\n' "$_mt" "$_h64" > "$T/e/.tycho-make.stamp"
+    ( cd "$T/e" && $TO "$MAKE" bad.mk ) > "$T/c.out" 2> "$T/c.err"
+    _rc=$?
+    _want=$(printf 'stamp line 1 is not <name> <mtime> <hash>: [x\t%s\t%s]' "$_mt" "$_h64")
+    if [ "$_rc" -eq 0 ]; then
+        bad "StampBroken mtime=$_mt: EXITED 0 -- a damaged mtime was accepted"
+    elif ! grep -qxF "$_want" "$T/c.err"; then
+        bad "StampBroken mtime=$_mt: failed but not with its own whole message"; sed 's/^/      /' "$T/c.err"
+    fi
+    [ -s "$T/c.out" ] && bad "StampBroken mtime=$_mt: wrote to STDOUT"
+    printf '=== berr StampBroken mtime=%s\n' "$_mt" >> "$out"
+    cat "$T/c.err" >> "$out"
+done
+
 # WorkLost is the reassembly's own invariant and has no rulefile that reaches
 # it: it fires when a node the graph contains never reported under its own
 # index, which is a runtime bug, not an input. It is held the way

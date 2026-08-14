@@ -159,7 +159,13 @@ fn stamps_read(path: string) -> Result([string: Stamp], BuildErr):
         mt, hs := cut(rest, b)
         if len(hs) != 64:
             return Err(StampBroken(i + 1, ls[i]))
-        m[nm] = Stamp(strings.parse_int(mt), hs)
+        mtv := 0                                 # the lax parse_int reads "17x" as 17 and "abc" as 0, so a damaged
+        match strings.parse_int_checked(mt):     # mtime used to pass while every field beside it was validated --
+            Ok(v): mtv = v                       # and a wrong mtime silently decides staleness, which ships a stale output
+            _: return Err(StampBroken(i + 1, ls[i]))
+        if mtv < 0:                              # stamps_write only ever writes a filesystem mtime, which is not negative
+            return Err(StampBroken(i + 1, ls[i]))
+        m[nm] = Stamp(mtv, hs)
     return Ok(m)
 
 # Node-index order, so the file itself is deterministic. Written only after a
