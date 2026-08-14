@@ -58,6 +58,8 @@ import "core:compress"
 import "core:regex"
 import "core:json"
 import "core:csv"
+import "core:zip"
+import "core:markdown"
 
 fn main():
     match io.read_bytes(args()[1]):
@@ -80,6 +82,11 @@ fn main():
             # input in every real program that uses them and neither had ever been
             # fuzzed. read_text rather than the bytes, so invalid UTF-8 reaches the
             # parser too -- that is the interesting half.
+            # zip.list parses an ARCHIVE STRUCTURE out of the blob: le16/le32 read
+            # at offsets the file itself supplies, and find_eocd scans backwards
+            # for a signature. That is offset-confusion territory and the reason
+            # it is fuzzed as bytes rather than text.
+            s = s + " z=" + str(len(zip.list(b)))
             match io.read_text(args()[1]):
                 Ok(t):
                     # json.parse returns a Json, not a Result -- a failure comes
@@ -90,6 +97,7 @@ fn main():
                         json.JNull: s = s + " j=null"
                         _: s = s + " j=val"
                     s = s + " c=" + str(len(csv.parse(t)))
+                    s = s + " md=" + str(len(markdown.render(t)))
                 Err(e): s = s + " t=err"
             println(s)
         Err(e): println("unreadable")
@@ -105,7 +113,14 @@ cc -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 \
     echo "fuzz-shims: SKIPPED (cannot link the sanitized harness)"; head -3 "$T/cc.log"; exit 0; }
 
 python3 - "$T" "$N" <<'PY'
-import gzip, os, pathlib, random, subprocess, sys
+import gzip, io, os, pathlib, random, subprocess, sys, zipfile
+
+def _real_zip():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("a.txt", "hi")
+        z.writestr("d/b.bin", b"\x00\x01\x02" * 40)
+    return buf.getvalue()
 T, N = sys.argv[1], int(sys.argv[2])
 random.seed(20260815)                       # deterministic: a finding is reproducible
 blob = pathlib.Path(T + "/in.bin")
@@ -119,7 +134,14 @@ seeds = [b"", b"\x1f\x8b", gzip.compress(b"hello"), gzip.compress(b"x" * 100000)
          b'{"deep":' + b"[" * 40 + b"1" + b"]" * 40 + b"}",
          b'{"s":"\\u00e9\\ud83c\\udf89 \\" \\\\ \\n"}',
          b"a,b,c\n1,\"quoted, comma\",3\n\"multi\nline\",x,y\n",
-         b",,,\n\"\"\"\",,\n"]
+         b",,,\n\"\"\"\",,\n",
+         # A REAL zip, built by zipfile. A hand-written EOCD record was tried
+         # first and PROVED SHALLOW: zip.list returned 0 entries for it, exactly
+         # as it does for pure junk, so every mutant died before the offset
+         # arithmetic that is the whole reason to fuzz this. Measured, not assumed
+         # -- the same trap the JSON seeds hit one commit earlier.
+         _real_zip(),
+         b"# h1\n\n*em* **strong** `code`\n\n- a\n- b\n\n[l](http://x) ![i](y)\n\n> q\n\n```\nfence\n```\n"]
 bad = runs = 0; kinds = {}
 for base in seeds:
     for _ in range(N):
@@ -155,4 +177,4 @@ rc=$?
 # Read the count back rather than recomputing N * <number of seeds>: that product
 # was already wrong once, when seeds were added and the multiplier was not.
 runs=$(cat "$T/runs" 2>/dev/null || echo "?")
-echo "fuzz-shims: green (control overflow caught first, then $runs mutated inputs through compress.decompress, regex.compile/is_match, json.parse and csv.parse under ASan+UBSan with no memory error, no UB and no hang)"
+echo "fuzz-shims: green (control overflow caught first, then $runs mutated inputs through compress.decompress, regex.compile/is_match, json.parse, csv.parse, zip.list and markdown.render under ASan+UBSan with no memory error, no UB and no hang)"

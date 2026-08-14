@@ -222,14 +222,23 @@ the whole argument for §7 and nothing in this document substitutes for it.
 
 Concretely open:
 
-- **`corelib/zip` and `corelib/markdown`** — parsers over untrusted input, not
-  reviewed and not fuzzed. `json` and `csv` were on this line and are now IN
-  `scripts/fuzz_shims.sh`: 1650 mutated inputs, 0 failures, reached through
-  `io.read_text` so invalid UTF-8 gets into the parser too. That extension also
-  needed JSON- and CSV-SHAPED SEEDS — with only the gzip-shaped ones, those two
-  parsers rejected at the first byte and deep state (nesting, escapes, quoted
-  commas, embedded newlines) was never reached, so the coverage would have been a
-  number rather than a result.
+- ~~`corelib/zip`, `corelib/json`, `corelib/csv`, `corelib/markdown`~~ — **all
+  four are now in `scripts/fuzz_shims.sh`** alongside `compress` and `regex`:
+  1950 mutated inputs, 0 failures. The text parsers are reached through
+  `io.read_text` so invalid UTF-8 gets in too.
+
+  **The seeds were the hard part, twice.** With only gzip-shaped seeds the text
+  parsers rejected at the first byte and deep state — nesting, escapes, quoted
+  commas, embedded newlines — was never reached. Then a hand-written zip EOCD
+  record proved equally shallow: `zip.list` returned **0 entries for it, exactly
+  as for pure junk**, so every mutant died before the `le16`/`le32` offset
+  arithmetic that is the entire reason to fuzz an archive parser. Measured, not
+  assumed. The seed is now a real archive built by `zipfile`, which yields 1
+  entry before mutation.
+
+  Both times the harness reported a large number of clean inputs while testing
+  almost nothing. That is the failure mode of fuzzing, and it does not announce
+  itself.
 - **`corelib/net`'s accept/recv path** under hostile peers. `server-check` proves
   the daemon survives two rude clients; that is not the same as an adversary.
 - **The image decoders' uncapped allocation** (finding 7) — safe today because
