@@ -42,7 +42,10 @@ make ci              # build · test · ilp32 · asan-self · corelib + examples
 make ci N=0          # same, skipping the (slow) fuzz lanes for a quick check
 ```
 
-A change is "green" iff `make ci` passes.
+**A change is "green" iff the lanes that can redden for it pass.** Pick them from
+the table below — it maps each part of the tree to the one lane that covers it.
+Running `make ci` instead is not a stronger answer, it is the same answer after
+nine minutes, and the table exists so you do not have to spend them.
 
 **Run `make hooks` once after you clone.** It points `core.hooksPath` at
 `.githooks/`, so `git push` runs the citation/link gate and a fuzz smoke, and
@@ -55,18 +58,23 @@ too cheap to argue with. `make ci` before a substantial push is yours to run,
 and it is the only thing that covers the wide lanes — a dogfood link break or a
 cross-package mangling divergence is invisible to `make test`.
 
-The sweep is not as long as it looks: **`make ci` measured 495–499s across four
-runs on a 16-core box, 2026-08-10** — all thirteen steps including 200 fuzz
-seeds. `make ci N=0`, which skips the fuzz lanes, is **274s**. It parallelises (`run_lanes`
-forks each lane group), which is why the whole sweep costs barely more than
-`make test` alone.
+**`make ci` measured 548 / 551 / 563 s across three runs on a 16-core box,
+2026-08-14** — all 46 steps including 200 fuzz seeds. `make ci N=0`, which skips
+the fuzz lanes, was **274s** on 2026-08-10 and has not been re-measured since the
+tool lanes were added, so treat it as a floor. It parallelises (`run_lanes` forks
+each lane group), which is why the whole sweep costs barely more than `make test`
+alone.
 
-So do not run the lanes one at a time hoping to save time — the sum is far
-slower than the sweep. Run a single lane when you are ITERATING on one failure
-and want its verdict in seconds; run `make ci` to cover the tree. If something
-is watching its output, redirect to a log (`make ci > ci.log 2>&1`) rather than
-piping it — a pipeline dies with whatever is reading it and you lose the partial
-result.
+**Two different things get confused here.** Running EVERY lane one at a time is
+slower than the sweep — the sum beats the parallel whole, so never do that. Running
+the ONE lane that can redden for your change is seconds against nine minutes, and
+that is what the table below is for. Reach for the sweep when you cannot name a
+lane that covers what you touched, or when you want the three things no lane
+gives cheaply: the fuzz lanes, `ilp32`, and `asan-self`.
+
+If something is watching its output, redirect to a log (`make ci > ci.log 2>&1`)
+rather than piping it — a pipeline dies with whatever is reading it and you lose
+the partial result.
 
 The one gate to never skip is the cheapest:
 

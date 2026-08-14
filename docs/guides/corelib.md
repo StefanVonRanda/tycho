@@ -612,7 +612,7 @@ output), as opposed to the assertion-style tests above. `make corelib-examples`
 ## The corelib surface (pre-1.0 — NOT frozen)
 
 **The 1.0 API freeze recorded here on 2026-08-05 was withdrawn on 2026-08-09**
-with the project's demotion to 0.5. All 46 packages are still tested three ways
+with the project's demotion to 0.5. All 45 packages are still tested three ways
 and golden-locked by `make corelib` and `make corelib-examples` — that has not
 changed and is what makes the surface worth relying on in practice. What changed
 is the promise:

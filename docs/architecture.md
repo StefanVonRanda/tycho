@@ -17,7 +17,7 @@ for an honest accounting of where the model wins and loses see
 | `tychoc` | `src/tychoc.c` (~11k LoC) | **Reference** transpiler (C). Full language. Emits C, invokes `cc`. |
 | `tychoc0` | `compiler/tychoc0.ty` (~15k LoC) | **FROZEN 2026-07-26.** The self-hosted transpiler that proved self-hosting. Not gated, not maintained, diverging — see below. |
 | runtime | `runtime/tycho_rt.c` (~2k LoC) | Arena allocator + string/map/channel primitives, embedded into emitted C. |
-| corelib | `corelib/` (36 packages) | Standard library, imported `core:<name>`. |
+| corelib | `corelib/` (45 packages) | Standard library, imported `core:<name>`. |
 | tooling | `tools/` | `tychofmt` (formatter), `tycho-lsp` (LSP), VS Code / Zed extensions. |
 
 **Self-hosting (the fixpoint) — proved, then frozen.** With `A = tychoc·tychoc0.ty`,
