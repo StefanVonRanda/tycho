@@ -26,17 +26,11 @@
 #
 #   sh bench/transpile/run.sh [-n RUNS] [-i INPUT] [-c COMPILER]
 #
-# THE DEFAULT INPUT IS GENERATED, NOT compiler/tychoc0.ty. That file looks like
-# the obvious yardstick and is not one: the current compiler CANNOT PARSE IT --
-# it dies at tychoc0.ty:10452 on `M := mstruct(ty)`, since bindings must now start
-# lowercase. Timing it therefore measures how fast the compiler reaches a parse
-# error (~33 ms) rather than how fast it transpiles, and a run that dies early
-# looks FASTER than one that works. That is exactly the trap this harness was
-# written to get out of: docs/guides/perf.md carried 36/38/38 ms from such a run.
-#
-# So the default input is generated here instead -- 600 small functions, ~4.8k
-# lines, using only forms that compile across the whole range being compared. Pass
-# -i to time a real file, but check its exit status first.
+# THE DEFAULT INPUT IS GENERATED -- 600 small functions, ~4.2k lines, using only
+# forms that compile across the range being compared. Do not point this at a big
+# file just because it is handy: a compile that DIES is faster than one that
+# works, so an unchecked input silently reports the failure path as a speed-up.
+# That is why the timing loop below refuses to run until the compile succeeds.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 

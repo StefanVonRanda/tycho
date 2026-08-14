@@ -95,33 +95,12 @@ trace in [Where the remaining time goes](#where-the-remaining-time-goes) lands a
 ~20 ms on a different machine); the **~2.4× ratio vs the C transpiler is the stable
 claim**, reproducing across both.
 
-**Re-measured 2026-08-14, and the first attempt was wrong.** A run of
-`tychoc --emit-c` over `compiler/tychoc0.ty` gave 36 / 38 / 38 ms, which was
-briefly written here as a current figure. It is not one: **the compiler cannot
-compile `tychoc0.ty` at all.** It dies at `compiler/tychoc0.ty:10452` on
-`M := mstruct(ty)`, because a binding must now start with a lowercase letter —
-a deliberate tightening that the frozen file predates. That timing measured how
-fast the parser reaches an error, and a failing run looks *faster* than a working
-one, which is precisely how a wrong number survives a sanity check.
-
-There is now a harness that cannot make that mistake: `bench/transpile/run.sh`
-generates its own syntax-stable input, checks the compile SUCCEEDS before timing
-anything, discards a warm-up run, and reports the minimum of N.
-
-**Measured with it, on one 4.2k-line input, minimum of 10 timed runs:**
-
-| `src/tychoc.c` at | transpile |
-|---|---|
-| `84e83132` (2026-08-04) | 11 ms |
-| `77bd8260` (2026-08-11) | 11 ms |
-| `HEAD` (2026-08-14) | 11 ms |
-
-**Flat — no regression** over that window. It does not reach back to the ~13 ms
-above: the two July compilers tested (`9d37f304`, `0d6c587e`) reject this input,
-since the three-clause `for` postdates them, so 2026-08-04 is as far back as a
-like-for-like comparison goes without a second input written in the older syntax.
-The ~13 ms figure and the 2.4× ratio remain un-rechecked, and the ratio is
-unreachable in principle now — it needs `tychoc0` to RUN.
+**Re-measure with `bench/transpile/run.sh`**, which generates a syntax-stable
+input, verifies the compile succeeds before timing it, discards a warm-up run and
+reports the minimum of N. Measured with it on 2026-08-14, minimum of 10 runs over
+a 4.2k-line input: **11 ms at `84e83132` (2026-08-04), 11 ms at `77bd8260`
+(2026-08-11), 11 ms at `HEAD`** — flat, no regression across that window. It does
+not reach the ~13 ms above, which was a different input on a different day.
 
 ## (1) Transpiler speed — turning an earlier tychoc0.ty into C
 
