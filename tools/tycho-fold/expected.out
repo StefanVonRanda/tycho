@@ -1,0 +1,111 @@
+=== ascii w=20
+the quick brown fox
+jumps over the lazy
+dog
+hello world
+=== utf8 w=20 codepoints
+héllo wörld with
+naïve café façade
+jalapeño
+日本語のテキストを折り返す試験です
+mixed ascii and
+émoji 🎉 here
+=== utf8 w=20 BYTES (the bug, kept reachable)
+héllo wörld with
+naïve café façade
+jalapeño
+日本語のテキス
+トを折り返す試
+験です
+mixed ascii and
+émoji 🎉 here
+=== w=1
+h
+é
+l
+l
+o
+w
+ö
+r
+l
+d
+w
+i
+t
+h
+n
+a
+ï
+v
+e
+c
+a
+f
+é
+f
+a
+ç
+a
+d
+e
+j
+a
+l
+a
+p
+e
+ñ
+o
+日
+本
+語
+の
+テ
+キ
+ス
+ト
+を
+折
+り
+返
+す
+試
+験
+で
+す
+m
+i
+x
+e
+d
+a
+s
+c
+i
+i
+a
+n
+d
+é
+m
+o
+j
+i
+🎉
+h
+e
+r
+e
+=== err nosuch.txt
+tycho-fold: no such file: nosuch.txt
+=== err 
+tycho-fold: usage: tycho-fold FILE [--width=N] [--bytes]
+=== err utf8.txt --width=0
+tycho-fold: --width must be at least 1, got 0
+=== err utf8.txt --width=x
+tycho-fold: --width needs a number, got 'x'
+=== err utf8.txt --nope
+tycho-fold: unknown option: --nope
+=== invalid utf8 in
+tycho-fold: 1 input line(s) were not valid UTF-8

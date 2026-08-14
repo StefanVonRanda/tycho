@@ -156,9 +156,27 @@ eight, five times, and passed. The lane now reads the per-worker split back, and
 the width-1 case (first worker takes ALL, rest none) is the negative control for
 the option itself.
 
-**This still does not close the item** — two programs by one non-author, where
-the ask is three by two. It moves the count from zero to two-thirds of the
-programs and none of the people.
+**A third landed 2026-08-15**: `tools/tycho-fold`, wrapping text by CODEPOINTS,
+chosen for a surface neither of the others touched — UTF-8, where the bug is that
+everything looks right until the input stops being ASCII. Its
+[FRICTION-OUTSIDE.md](tools/tycho-fold/FRICTION-OUTSIDE.md) again repeats none of
+the earlier findings: `utf8.decode` returning `nb <= 0` on invalid input is an
+infinite loop for a caller who trusts it, and every ergonomic path (`len`, `s[i]`)
+is byte-based while the codepoint count lives in a separate import — correct
+layering that makes the NATURAL program the wrong one, wrong only on input the
+author probably never tried.
+
+**The count is now three programs, all by ONE non-author. §1 asks for three by
+TWO people, so it is NOT closed** — and the remaining half is the half that
+cannot be worked around, because the whole point of the requirement is a second
+mental model rather than a second program.
+
+What the three did establish, and it is worth more than the count: across
+`tycho-diff`, `tycho-hash` and `tycho-fold`, **every one found the CHECK harder to
+get right than the code**. A determinism sweep that compared eight workers against
+eight, a word-set comparison that flagged 111 legal hard breaks, a `\xff` fixture
+that was valid UTF-8 under dash. Each was caught by asking what the check would
+show if the feature were broken. That is the reusable finding.
 
 ### 2. The daily papercuts are gone
 

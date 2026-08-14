@@ -1,0 +1,125 @@
+# tycho-fold -- wrap text to a width, counting CODEPOINTS, not bytes.
+#
+#   tycho-fold FILE [--width=N] [--bytes]
+#
+# Third ROADMAP section-1 program, on a surface the first two never touched.
+# tycho-diff was a sequential algorithm, tycho-hash was concurrency; this is
+# UTF-8, where the bug is that everything looks right until the input stops being
+# ASCII. Friction in tools/tycho-fold/FRICTION-OUTSIDE.md.
+#
+# THE WHOLE POINT. `len(s)` is BYTES. A wrapper that uses it puts "héllo wörld" in
+# the wrong column and, worse, can split a line mid-sequence and emit a lone
+# continuation byte -- output that is no longer valid UTF-8 at all. --bytes exposes
+# the wrong behaviour deliberately so the lane can assert the two DIFFER on
+# non-ASCII and AGREE on ASCII, which is the only way to show the right one is
+# doing something.
+package main
+
+import "core:io"
+import "core:strings"
+import "core:utf8"
+
+fn fail(msg: string):
+    eprint("tycho-fold: " + msg + "\n")
+    exit(2)
+
+# Wrap one line at `w` display cells, breaking at the last space that fits and
+# hard-breaking a word longer than the width. `bycount` chooses the unit: true =
+# codepoints (correct), false = bytes (the bug, kept reachable on purpose).
+fn wrap(line: string, w: int, bycount: bool) -> [string]:
+    out := []string
+    if line == "":
+        push(out, "")
+        return out
+    cur := ""
+    n := 0                       # width of `cur` in the chosen unit
+    word := ""
+    wn := 0
+    i := 0
+    for i < len(line):
+        # step ONE codepoint, never one byte: utf8.decode returns (cp, nbytes)
+        cp, nb := utf8.decode(line, i)
+        if nb <= 0:
+            nb = 1               # invalid byte: consume it so we cannot loop forever
+        ch := line[i:i + nb]
+        i = i + nb
+        cw := 1
+        if not bycount:
+            cw = nb              # the byte-counting bug, made explicit
+        if cp == 32:
+            if wn > 0:
+                if n > 0 and n + 1 + wn > w:
+                    push(out, cur)
+                    cur = word
+                    n = wn
+                else:
+                    if n > 0:
+                        cur = cur + " "
+                        n = n + 1
+                    cur = cur + word
+                    n = n + wn
+                word = ""
+                wn = 0
+            continue
+        word = word + ch
+        wn = wn + cw
+        # Break when the word REACHES the width, not after it passes: the earlier
+        # `> w` emitted w+1 characters on every hard break, which a
+        # by-eye check misses and a property test over 200 lines does not.
+        if wn >= w:              # a single word at/over the width: hard break
+            if n > 0:
+                push(out, cur)
+                cur = ""
+                n = 0
+            push(out, word)
+            word = ""
+            wn = 0
+    if wn > 0:
+        if n > 0 and n + 1 + wn > w:
+            push(out, cur)
+            cur = word
+        else:
+            if n > 0:
+                cur = cur + " "
+            cur = cur + word
+    if cur != "":
+        push(out, cur)
+    if len(out) == 0:
+        push(out, "")
+    return out
+
+fn main():
+    av := args()
+    path := ""
+    w := 40
+    bycount := true
+    for i := 1; i < len(av); i += 1:
+        a := av[i]
+        if strings.starts_with(a, "--width="):
+            rest := a[8:len(a)]
+            match strings.parse_int_checked(rest):
+                Ok(v): w = v
+                _: fail("--width needs a number, got '" + rest + "'")
+            if w < 1:
+                fail("--width must be at least 1, got " + str(w))
+        elif a == "--bytes":
+            bycount = false
+        elif strings.starts_with(a, "-"):
+            fail("unknown option: " + a)
+        else:
+            path = a
+    if path == "":
+        fail("usage: tycho-fold FILE [--width=N] [--bytes]")
+    if not io.exists(path):
+        fail("no such file: " + path)
+
+    nbad := 0
+    for line in io.read_lines(path):
+        if not utf8.valid(line):
+            nbad = nbad + 1
+        for seg in wrap(line, w, bycount):
+            println(seg)
+    if nbad > 0:
+        eprint("tycho-fold: " + str(nbad) + " input line(s) were not valid UTF-8\n")
+        exit(1)
+    exit(0)

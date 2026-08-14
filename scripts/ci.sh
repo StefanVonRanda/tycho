@@ -393,6 +393,9 @@ make -s hash-check
 step "[3u4/27] sh scripts/fuzz_shims.sh  (fuzz the corelib paths that take UNTRUSTED BYTES -- compress.decompress and regex.compile/is_match -- under ASan+UBSan. fuzz/run.py targets the COMPILER; nothing fuzzed the shims a running program feeds attacker data to. A deliberate heap overflow must be caught FIRST, because a fuzzer reporting zero findings is indistinguishable from one that is not running)"
 sh scripts/fuzz_shims.sh
 
+step "[3u5/27] make fold-check  (tycho-fold: over 200 generated lines mixing ASCII/Latin-1/CJK/emoji at widths 3..30, nothing is lost, no line exceeds the width in CODEPOINTS and every line stays valid UTF-8 -- and the byte-counting mode agrees on pure ASCII while differing on non-ASCII, which is what makes those three mean anything)"
+make -s fold-check
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.

@@ -258,6 +258,8 @@ dist/
 !/tools/tycho-diff/*.out
 # the tycho-hash transcript golden (tools/tycho-hash/expected.out), same reason
 !/tools/tycho-hash/*.out
+# the tycho-fold transcript golden, same reason
+!/tools/tycho-fold/*.out
 
 # bench/peakrss is a built binary (bench/peakrss.c); bench/run.sh and
 # bench/transpile/run.sh compile it on demand.

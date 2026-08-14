@@ -697,6 +697,15 @@ diff-check: tychoc
 hash-check: tychoc
 	@sh tools/tycho-hash/run.sh
 
+# fold-check: the gate for tycho-fold, the UTF-8 text wrapper. Its subject is the
+# byte-vs-codepoint distinction, which a golden is worst at judging: wrapping by
+# BYTES still produces printable, plausible output in the wrong column, and a
+# golden recorded from that build agrees with it. So the properties are computed
+# and the byte mode is kept REACHABLE, so the lane can assert the two agree on
+# ASCII and differ on non-ASCII.
+fold-check: tychoc
+	@sh tools/tycho-fold/run.sh
+
 # snap-check: the gate for tycho-snap, the manifest-driven snapshot tool in
 # tools/tycho-snap/. The subject is a ZIP ARCHIVE, so the numbers the program
 # prints about it are its own CRCs of its own bytes -- python3's zipfile reads
