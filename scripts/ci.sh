@@ -416,6 +416,12 @@ make -s stat-check
 # the lane whose load-bearing leg is five refusals no transcript can show.
 step "[4a/33] make ledger-check  (tycho-ledger: run identical over 2 runs and equal to the golden; totals and the --rate doubling against literals; all five distinctness violations still refused, each naming an UNMANGLED type; keys() hands back wrapped keys that index the map with no unwrap; a non-numeric amount and an unknown option each refused by name)"
 make -s ledger-check
+
+# tycho-fh: the only program declaring a `handle`, and the lane that proves the
+# scope-exit destructor runs exactly once -- plus the two affine holes that let a
+# handle be aliased into a double free until 2026-08-14.
+step "[4b/34] make fh-check  (tycho-fh: run identical over 2 runs and equal to the golden; counts and balance against literals; live=0 and opens==closes after 64 scope exits and again after 20000 with a re-read checksum; all six affine shapes -- decl copy, bare handle struct field, returned, in an array, in an Option, close() on a call result -- refused; a double borrow still leaves one live owner; an unknown option refused by name)"
+make -s fh-check
 fi
 
 if [ "$LANE" = rest ]; then

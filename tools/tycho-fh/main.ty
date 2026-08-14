@@ -1,0 +1,120 @@
+# tycho-fh -- line/word/byte counts over a typed C handle.
+#
+# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
+# Measured 2026-08-14: `handle Name:` is declared in exactly 10 files and ALL 10
+# are under `tests/` -- nine rejects and `tests/ffi/main.ty`. No program under
+# tools/, examples/, server/ or bench/ declares one, and neither does corelib.
+# It is the last language feature whose only caller was its own fixture, the
+# same shape that produced FRICTION #37 (sink) and #38-#40 (variadics).
+#
+#   tycho-fh --file FILE [--file FILE ...]
+#
+# A handle is affine: it cannot be copied, stored in an array/struct/Option, be
+# returned from a Tycho function, or be captured by a closure. Its destructor
+# runs at every scope exit. That last property is the one this program is built
+# to make observable -- see tools/tycho-fh/fh.c.
+#
+# THE GATE IS `make fh-check` (tools/tycho-fh/run.sh).
+package main
+
+import "core:cli"
+
+handle File:
+    free: fh_close
+
+extern "fhdemo" fn fh_open(path: string, mode: string) -> File   # the opener: the only kind of function that may RETURN a handle
+extern "fhdemo" fn fh_close(f: File) -> int                      # the destructor the compiler calls at scope exit
+extern "fhdemo" fn fh_getc(f: File) -> int
+extern "fhdemo" fn fh_ok(f: File) -> int
+extern "fhdemo" fn fh_live() -> int
+extern "fhdemo" fn fh_opens() -> int
+extern "fhdemo" fn fh_closes() -> int
+
+# Counts for one file. The handle is opened here and freed when this function
+# returns -- there is no close call in this body, which is the point.
+#
+# It CANNOT return the handle, so every function that opens one must also finish
+# with it. That is the affine rule doing its job, and it shapes the program: the
+# work happens where the resource lives, rather than being handed back up.
+fn count_file(path: string) -> (int, int, int):
+    f := fh_open(path, "r")
+    if fh_ok(f) == 0:
+        die("tycho-fh: cannot open " + path)      # early return: the destructor still runs
+    lines := 0
+    words := 0
+    nbytes := 0
+    inword := false
+    c := fh_getc(f)
+    for c >= 0:
+        nbytes += 1
+        if c == 10:
+            lines += 1
+        if c == 32 or c == 10 or c == 9 or c == 13:
+            inword = false
+        elif not inword:
+            inword = true
+            words += 1
+        c = fh_getc(f)
+    return (lines, words, nbytes)
+    # f freed here, by the compiler, exactly once
+
+# The early-`close` path. `close(h)` runs the destructor immediately and nulls
+# the handle; the scope-exit finalizer is null-guarded, so the destructor still
+# runs exactly once overall. Counting the nbytes before closing is what makes the
+# ordering observable to the gate.
+fn peek_first_byte(path: string) -> int:
+    f := fh_open(path, "r")
+    if fh_ok(f) == 0:
+        die("tycho-fh: cannot open " + path)
+    c := fh_getc(f)
+    close(f)
+    return c
+
+fn main():
+    c := cli.Cli([], [], [], [], [], [])
+    match cli.parse_checked(cli.argv(), ["file"], ["help", "stress"]):
+        Ok(v): c = v
+        Err(cli.Unknown(tok)): die("tycho-fh: unknown option " + tok)
+        Err(cli.NoValue(tok)): die("tycho-fh: " + tok + " needs a value")
+
+    # cli.get keeps the LAST --file, so the paths come from the raw argv.
+    paths := []string
+    av := cli.argv()
+    for i := 0; i < len(av); i += 1:
+        if av[i] == "--file" and i + 1 < len(av):
+            push(paths, av[i + 1])
+    if len(paths) == 0:
+        println("usage: tycho-fh --file FILE [--file FILE ...] [--stress]")
+        exit(2)
+
+    tl := 0
+    tw := 0
+    tb := 0
+    for p in paths:
+        l, w, b := count_file(p)
+        tl += l
+        tw += w
+        tb += b
+        println(p + " " + str(l) + " " + str(w) + " " + str(b))
+    println("total " + str(tl) + " " + str(tw) + " " + str(tb))
+    println("first " + str(peek_first_byte(paths[0])))
+
+    # THE LEAK DETECTOR. Opening the same file many times in a loop, each in its
+    # own scope: a destructor that did not run would exhaust the process's file
+    # descriptors well before this finishes, and `live` would climb with the
+    # count instead of returning to 0. `--stress` raises it past any plausible
+    # fd limit; the default keeps the transcript quick.
+    reps := 64
+    if cli.flag(c, "stress"):
+        reps = 20000
+    # The re-read checksum is not decoration: once the fds run out, `fh_open`
+    # starts failing and a run that merely leaked would still print `live` --
+    # this sums what every reopen actually READ, so an exhausted process shows up
+    # as a wrong total rather than as a quiet one.
+    checksum := 0
+    for i := 0; i < reps; i += 1:
+        rl, rw, rb := count_file(paths[0])
+        checksum += rl + rw + rb
+    println("live " + str(fh_live()))
+    println("balance " + str(fh_opens() - fh_closes()))
+    println("reread " + str(checksum))

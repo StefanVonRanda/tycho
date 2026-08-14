@@ -1,0 +1,19 @@
+# A BARE handle as a struct field. `items: [R]` was already refused
+# (affine_handle_container_type.ty) because the ARRAY intern helper checks its
+# element -- but a handle that IS the field type passes through no intern helper,
+# so nothing checked it and the struct became a second owner.
+#
+# The refusal must name the FIELD's line, not the struct's: the check runs where
+# the field is registered.
+# expect: a handle cannot be stored in a container/aggregate
+# expect: affine_handle_struct_field.ty:16: error:
+
+handle R:
+    free: hc
+extern fn hc(h: R) -> int
+
+struct Holder:
+    r: R
+
+fn main():
+    println("unreachable")

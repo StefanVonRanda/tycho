@@ -1,7 +1,7 @@
 # 11-functions.md §15.1: at most 16 parameters. Phase 39: a generic template
 # escaped the cap, and tychoc's instantiate_generic then wrote past its
 # `Type cparams[16]` stack array -- UBSan on the pre-fix compiler:
-# "src/tychoc.c:7455: index 16 out of bounds for type 'Type [16]'" -- after which
+# "src/tychoc.c:7461: index 16 out of bounds for type 'Type [16]'" -- after which
 # it printed a nonsense "takes 0 argument(s), got 18". The cap now runs before the
 # template is stashed. Both compilers reject (differential); the concrete forms are
 # tests/reject/params_17.ty and tests/reject/extern_params_17.ty.

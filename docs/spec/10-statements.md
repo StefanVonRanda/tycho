@@ -177,13 +177,13 @@ source instead of inferring them from the sign of a step expression.
 > Provenance: bare `for:` `src/tychoc.c:3899@TK_COLON`; the three-clause header
 > scan and its five required-clause refusals `src/tychoc.c:3543-3592`; `init`
 > parsed by `parse_stmt` itself `src/tychoc.c:3950@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:7868-7873`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:11498-11501` with the
-> label at `src/tychoc.c:12373@_post%d`; the `range()` refusal
+> the post clause resolved outside the body block `src/tychoc.c:7874-7879`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:11513-11516` with the
+> label at `src/tychoc.c:12388@_post%d`; the `range()` refusal
 > `src/tychoc.c:4047@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1650-1656`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:11671-11675`).
+> (`src/tychoc.c:11686-11690`).
 >
 > **Amended 2026-07-30 (the loops-cleanup plan).** This note previously read "The step
 > codegen and its zero-step guards still exist but are unreachable: every
