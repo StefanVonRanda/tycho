@@ -6,9 +6,10 @@
 # shims that a running program feeds attacker-controlled data to. That gap was
 # named by docs/internals/ffi-review-2026-08-14.md and this closes it.
 #
-# Subjects: compress.decompress (zlib) and regex.compile/is_match (POSIX regex),
-# the two corelib paths that take arbitrary bytes from outside and hand them to a
-# C library. Seeds are valid gzip/zlib streams and near-misses; each is mutated by
+# Subjects: compress.decompress (zlib), regex.compile/is_match (POSIX regex), and
+# json.parse / csv.parse -- the corelib paths that take arbitrary bytes from
+# outside. The first two hand them to a C library; the last two are Tycho parsers
+# over text, reached through read_text so INVALID UTF-8 gets in as well. Seeds are valid gzip/zlib streams and near-misses; each is mutated by
 # bit flips, deletions and insertions, so the interesting inputs are the ones that
 # LOOK valid for a while and then are not.
 #
@@ -55,6 +56,8 @@ package main
 import "core:io"
 import "core:compress"
 import "core:regex"
+import "core:json"
+import "core:csv"
 
 fn main():
     match io.read_bytes(args()[1]):
@@ -63,6 +66,7 @@ fn main():
             match compress.decompress(b):
                 Ok(o): n = len(o)
                 Err(e): n = 0 - 1
+            # A regex PATTERN built from the blob, then matched against itself.
             p := ""
             i := 0
             for i < len(b) and i < 200:
@@ -72,6 +76,21 @@ fn main():
             s := str(n)
             if regex.ok(re):
                 s = s + " m=" + str(regex.is_match(re, p))
+            # The blob AS TEXT through the two text parsers. Both take untrusted
+            # input in every real program that uses them and neither had ever been
+            # fuzzed. read_text rather than the bytes, so invalid UTF-8 reaches the
+            # parser too -- that is the interesting half.
+            match io.read_text(args()[1]):
+                Ok(t):
+                    # json.parse returns a Json, not a Result -- a failure comes
+                    # back as a value. Classifying it is not the point here; the
+                    # point is that the parser RUNS over hostile bytes without a
+                    # memory error, so one arm is enough to keep the call live.
+                    match json.parse(t):
+                        json.JNull: s = s + " j=null"
+                        _: s = s + " j=val"
+                    s = s + " c=" + str(len(csv.parse(t)))
+                Err(e): s = s + " t=err"
             println(s)
         Err(e): println("unreadable")
 EOF
@@ -91,8 +110,16 @@ T, N = sys.argv[1], int(sys.argv[2])
 random.seed(20260815)                       # deterministic: a finding is reproducible
 blob = pathlib.Path(T + "/in.bin")
 env = dict(os.environ); env["ASAN_OPTIONS"] = "detect_leaks=0"
+# Binary seeds for the zlib path, TEXT seeds for the json/csv path. Without the
+# text ones those two parsers only ever see gzip garbage, which they reject at the
+# first byte -- deep parser state is never reached and the coverage is a fiction.
 seeds = [b"", b"\x1f\x8b", gzip.compress(b"hello"), gzip.compress(b"x" * 100000),
-         b"\x1f\x8b\x08\x00" + b"\xff" * 40, b"\x78\x9c" + b"\x00" * 20]
+         b"\x1f\x8b\x08\x00" + b"\xff" * 40, b"\x78\x9c" + b"\x00" * 20,
+         b'{"a":[1,2,{"b":"c"}],"d":null,"e":1.5e3,"f":true}',
+         b'{"deep":' + b"[" * 40 + b"1" + b"]" * 40 + b"}",
+         b'{"s":"\\u00e9\\ud83c\\udf89 \\" \\\\ \\n"}',
+         b"a,b,c\n1,\"quoted, comma\",3\n\"multi\nline\",x,y\n",
+         b",,,\n\"\"\"\",,\n"]
 bad = runs = 0; kinds = {}
 for base in seeds:
     for _ in range(N):
@@ -119,9 +146,13 @@ for base in seeds:
                 print("  FINDING:", k)
                 print("   ", "\n    ".join(r.stderr.strip().split("\n")[:4]))
 print(f"  {runs} mutated inputs, {bad} failures")
+pathlib.Path(T + "/runs").write_text(str(runs))   # the verdict quotes THIS, not N*seeds
 for k, v in sorted(kinds.items()): print(f"    {v:4d}  {k}")
 sys.exit(1 if bad else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "fuzz-shims: FAIL"; exit 1; }
-echo "fuzz-shims: green (control overflow caught first, then $((N * 6)) mutated inputs through compress.decompress and regex.compile/is_match under ASan+UBSan with no memory error, no UB and no hang)"
+# Read the count back rather than recomputing N * <number of seeds>: that product
+# was already wrong once, when seeds were added and the multiplier was not.
+runs=$(cat "$T/runs" 2>/dev/null || echo "?")
+echo "fuzz-shims: green (control overflow caught first, then $runs mutated inputs through compress.decompress, regex.compile/is_match, json.parse and csv.parse under ASan+UBSan with no memory error, no UB and no hang)"
