@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2152-2153`,`:2169-2170`;
-> `pop`-empty abort `:13479@pop from an empty array`,`:13678@pop from an empty array`; `reserve` `:6364-6390`,`:9781-9787`; tuple
+> `pop`-empty abort `:13493@pop from an empty array`,`:13692@pop from an empty array`; `reserve` `:6364-6390`,`:9795-9801`; tuple
 > arity `:2418@a tuple has at most 8 elements`,`:2422@a tuple type needs at least two elements`, index `:5269-5277`; destructuring `:3552-3566`,`:7351-7367`;
 > map read (pure `map_get`, no insert) `:5580-5595`; map place insert+zero
-> `:10650-10659`; `keys()` insertion order — the walk `:13637@m.elive[e]` over the append-only entries array `:13592@m->ecount++`; `delete` → `map_del`
+> `:10664-10673`; `keys()` insertion order — the walk `:13651@m.elive[e]` over the append-only entries array `:13606@m->ecount++`; `delete` → `map_del`
 > `:3400-3424`,`:6287-6293`; subscript parse + rules `:4083-4135`, dispatch
 > `:4157-4165`; `or_return` `:5456-5473`.
 
@@ -112,11 +112,11 @@ first argument.
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 
 `push` and `pop` require element type equality: `v` MUST have type `T` for a
-`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13479@pop`); it is not
+`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13493@pop`); it is not
 silently zero-returning. `reserve(a, n)` is a capacity hint only — it copies the
 existing elements into a buffer of capacity `≥ n` and is a no-op when
 `n ≤ cap`; it never changes `len` and never inserts elements
-(`src/tychoc.c:12599-12604`).
+(`src/tychoc.c:12613-12618`).
 
 An array **parameter** is a read-only borrow ([§11](07-memory-model.md#11-inout)):
 passed without a copy, but `push`, `pop`, `reserve`, or an index-write on it is a
@@ -325,10 +325,10 @@ fixtures lived in `tests/postfreeze/` until the `tychoc0` lanes were retired on
 > `src/tychoc.c:7199@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
 > element type `src/tychoc.c:7272@requires the scalar to have the array's element type`,
 > its literal adaptation `src/tychoc.c:6730-6735`; the fresh spine
-> `src/tychoc.c:10869@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:10853@gen_arith_op`, operands never reordered
-> `src/tychoc.c:10850@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:10873@tycho_ew_len`, and the abort
+> `src/tychoc.c:10883@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:10867@gen_arith_op`, operands never reordered
+> `src/tychoc.c:10864@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:10887@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:2999@arithmetic on arrays of different lengths`;
 > literal-zero divisor `src/tychoc.c:7164@division by zero`.
 
@@ -480,7 +480,7 @@ Writing to `m[k]`:
 - **inserts** the entry if `k` is absent, first initializing the slot to `V`'s
   zero (for a compound `V`, the zero-value is materialized before the write, so a
   field- or element-write lands on a valid zero-initialized value)
-  (`src/tychoc.c:12714-12718`).
+  (`src/tychoc.c:12728-12732`).
 
 This makes the accumulator idioms one line each; the compiler proves the map is
 uniquely owned at the mutation and updates it in place, so a `+=` loop is O(n)
@@ -530,7 +530,7 @@ counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
 ### 18.6 `keys(m)`
 
 `keys(m)` returns the map's live keys as an array `[K]` in **insertion order** —
-the order in which each key was first inserted (`src/tychoc.c:12748-12751`; the
+the order in which each key was first inserted (`src/tychoc.c:12762-12765`; the
 emitted `keys` walks the append-ordered entries array and keeps the live ones.
 The **insertion-ordered link chain** the two refs here formerly named — a `nxt`
 field threaded through the slot table — no longer exists anywhere in the

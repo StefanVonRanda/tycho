@@ -322,9 +322,9 @@ fn fmt_ms(us: int) -> string:
 # Written in `bytes`, which is what a hostile request target is. `b[i]` reads the
 # byte value, `b[i:i+1]` copies one byte through unchanged, `+` appends; the
 # to_bytes/to_str at the two ends are zero-cost reinterprets of the same buffer
-# (src/tychoc.c:9465), so nothing is converted and nothing is copied twice. This
+# (src/tychoc.c:9479), so nothing is converted and nothing is copied twice. This
 # used to detour string -> []int -> to_bytes -> to_str, where the to_bytes([int])
-# leg (src/tychoc.c:9463) was the one REAL conversion and allocation in the path.
+# leg (src/tychoc.c:9477) was the one REAL conversion and allocation in the path.
 fn log_safe(s: string) -> string:
     n := len(s)
     cut := false

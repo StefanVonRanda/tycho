@@ -1,0 +1,19 @@
+# A channel bound to a SECOND name. Accepted until 2026-08-14 (FRICTION #45).
+#
+# No double free comes of it -- the free is keyed to the creating declaration --
+# but the alias defeats the compiler's own analysis: `send(e, 41)` is not counted
+# as a send on `c`, so this program, which sends on every path, still drew
+# "nothing ever sends on channel 'c', so a receive on it parks forever". A
+# warning that is wrong about the code in front of it is worse than none.
+#
+# The spec already said `channel(T, cap)` is legal only as a declaration's direct
+# right-hand side (docs/spec/13-concurrency.md:176); nothing enforced it. The two
+# siblings -- a task, a typed handle -- refuse the same shape.
+# expect: a channel cannot be copied
+# expect: hides every send and receive from the compiler's analysis
+
+fn main():
+    c := channel(int, 2)
+    e := c
+    send(e, 41)
+    println("got=" + str(recv(c)))

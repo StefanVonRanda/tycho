@@ -26,6 +26,13 @@ contain them (see 0.6.0's opening note).
   and `Result` already refused one. `items: [R]` was refused before this only
   because the ARRAY intern helper checked its element; a handle that *is* the
   field type passed through no such helper (FRICTION #44).
+- **A channel can no longer be COPIED.** `e := c` on a `Channel(T)` is a compile
+  error: a channel-typed declaration is legal only from `channel(...)` itself,
+  which is what the spec already required and nothing enforced. No double free
+  came of the copy, but the alias hid every send and receive from the compiler's
+  analysis — a program sending on every path still drew "nothing ever sends on
+  channel 'c'". Passing a channel as an argument is unchanged, so a consumer
+  still receives one normally (FRICTION #45).
 - **A comment must now OPEN with `deprecated:` to mark a function.** The scan
   matched the marker anywhere in the line, so ordinary prose that merely
   mentioned it deprecated the next `fn` and every caller got a warning nobody

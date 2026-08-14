@@ -717,7 +717,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:10919@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:10933@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -4000,7 +4000,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10696), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10710), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -8201,6 +8201,20 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * (`g = f`) was already refused; only the DECL path was open. */
             if (IS_HANDLE(t) && s->expr->kind != E_CALL)
                 die_at(s->line, "a handle cannot be copied -- it is freed once, at the end of its scope, and a second name would free it twice; bind the opener directly (f := open(...)), or pass this one as an argument, which borrows it");
+            /* CC-4 channels, the third of the same family. The spec already says
+             * `channel(T, cap)` is legal ONLY as a declaration's direct RHS, so a
+             * channel-typed decl from anything else is out of spec -- but nothing
+             * enforced it, and `e := c` was accepted. No double free was observed
+             * (the free is keyed to the creating decl), yet the alias defeats the
+             * compiler's own analysis: `send(e, v)` does not count as a send on
+             * `c`, so a program that sends on every path still gets "nothing ever
+             * sends on channel 'c', so a receive on it parks forever" (FRICTION
+             * #45). A warning that is wrong about the code in front of it is worse
+             * than no warning. Reassignment was already refused; the DECL path was
+             * open, exactly as it was for tasks and handles. */
+            if (IS_CHAN(t) && !(s->expr->kind == E_CALL && s->expr->sval
+                                && !strcmp(s->expr->sval, "channel") && !s->expr->qual))
+                die_at(s->line, "a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument");
             s->decl_type = t;
             vars_push(s->name, t, 1, s->line);
             break;
@@ -9304,7 +9318,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11607), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11621), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9334,12 +9348,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13579) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13593) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11694) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11708) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;

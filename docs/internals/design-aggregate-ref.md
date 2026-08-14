@@ -23,7 +23,7 @@ it."* The three symptoms:
 
 **The premise is wrong about the codegen, and the measurement is the emitted
 C.** `inout` on a heap value already passes a **pointer plus the value's owning
-arena** as a hidden `_ina_` parameter (`src/tychoc.c:9189-9197`), and every
+arena** as a hidden `_ina_` parameter (`src/tychoc.c:9203-9211`), and every
 allocating mutation of the parameter allocates into that arena — the caller's,
 where the value lives — not the callee's scope (`src/tychoc.c@owner_arena_of`).
 The codegen was already in place at the Hier→Tycho rename; nothing in the
@@ -96,7 +96,7 @@ piece of the space that does not exist — and it must not be added (below).
    (the counter-argument).
 2. **Arena interaction.** In-place `inout` is sound because the callee's
    allocating mutations route to the caller's arena via `_ina_`
-   (`src/tychoc.c:9189-9197`); the callee's own arena holds only its
+   (`src/tychoc.c:9203-9211`); the callee's own arena holds only its
    transients and is freed at return. A `ref` binding would need the same
    owning-arena routing at every use site — the bookkeeping that grows into
    alias analysis the moment the binding can be passed on.
