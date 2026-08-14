@@ -286,5 +286,14 @@ Concretely open:
   error rather than a generic allocation failure.
 - **Windows.** Every measurement here is Linux. The wine lanes cover behaviour,
   not memory safety: there is no ASan equivalent in that path.
-- **Timing and side channels.** Not considered at all. `core:crypto` compares
-  digests; whether any comparison is variable-time was not examined.
+- ~~Timing and side channels in `core:crypto`~~ — **the one comparison that
+  matters is constant-time.** `cx_ct_equal` uses OpenSSL's `CRYPTO_memcmp`, not
+  `memcmp`/`strcmp`, and it is the ONLY comparison in the shim (grep: 1 match).
+  Length is compared first, which leaks the length and nothing else — standard,
+  since a digest's length is not secret. The `hexdec` decode ahead of it is not
+  constant-time, so this bounds the claim: **the comparison** does not leak, a
+  full side-channel analysis of the package was not done, and nothing here says
+  anything about the rest of the tree.
+
+- **The remaining side-channel surface** — key handling, `hexdec`, and anything
+  in `core:tls` — is unexamined.
