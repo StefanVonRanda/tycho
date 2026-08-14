@@ -72,8 +72,8 @@ That per-scope block churn is the arena concern I address with the tuning below.
 `TYCHO_BLOCK_DEFAULT` is 64 KB, and a fresh arena is created per block scope,
 call, and loop iteration. A naive `arena_alloc`/`arena_free` does a
 `malloc`/`free` of a 64 KB block for *every* scope that allocates even a few
-bytes; on the deeply-recursive self-compile that is a flood of
-`malloc(64K)`/`free` pairs (plus page faults), the dominant cost. Two runtime
+bytes; on deeply-recursive code that is a flood of `malloc(64K)`/`free` pairs
+(plus page faults), and it dominates. Two runtime
 mechanisms keep that churn off the hot path:
 
 - **Global block free-list (pool).** `arena_reset`/`arena_free` hand their
@@ -104,10 +104,10 @@ Two codegen properties keep the arena model's overhead low.
 otherwise create a child arena (`_b%d = arena_child(scope)`) freed at block end.
 The enclosing `scope` always outlives the block, so block transients fall back
 to it with no early-free, and escaping values promote to `_parent` independent
-of any `_bN`. Eliding them drops `arena_child` in A's emission of tychoc0.ty from
-**722 → 219** (the 503 `_b` arenas). Wall-clock and RSS are unchanged — the pool
-already makes those ops nearly free — but the emitted C is smaller, with fewer
-runtime ops per program, which isolates the real cost.
+of any `_bN`. Eliding them removes the great majority of `arena_child` calls from
+a typical emission. Wall-clock and RSS are unchanged — the pool already makes
+those ops nearly free — but the emitted C is smaller, with fewer runtime ops per
+program, which isolates the real cost.
 
 **Read-only heap struct params are borrowed, not deep-copied.** This is the real
 lever. A heap-bearing by-value struct param would otherwise be unconditionally
@@ -128,35 +128,32 @@ deeply-recursive workload — while holding peak memory bounded where the
 leak-everything version grows without limit. That, plus the grow-in-place win
 above, is the case for the model.
 
-The borrow-iff-not-mutated rule is the same predicate proven on match-arm
-payloads, checked through the byte-identical self-build.
+The borrow-iff-not-mutated rule is the same predicate used on match-arm
+payloads.
 
 ## Where the remaining time goes
 
-A merged gprof profile (30 runs) of A self-compiling shows the entire arena
-memory model is now **~6%** of run time: `arena_child` ~2%, `arena_alloc` ~2%,
-`tycho_str_copy` ~2%. The remaining cost is *algorithmic, in tychoc0's own
-source, and identical in A and B* — not the memory model.
+Profiling put the arena memory model itself — `arena_child`, `arena_alloc`,
+`tycho_str_copy` — at a small share of run time. What dominates is algorithmic
+work in the compiler's own source, not the memory model.
 
-One caution about that profile, because it is easy to read wrong. gprof self-times
-once suggested `is_variant` (the enum-variant scan) was 33% of self-compile and
-a bounded-array index path another 29%. **Both are wrong — `is_variant` is not a
-real bottleneck.** Two independent checks prove it: (1) replacing all four
-variant lookups with an O(1) `{string:int}` map — which a fresh gprof confirms
-*removes* the 25% `is_variant` line entirely — changed `-O2` wall-clock by
-**0%** (126.3 → 126.9 ms, best of 15); (2) the cause is a gprof `mcount`
-artifact: `is_variant` is a tiny branch-predicted loop called **1.3M times**,
-and gprof's per-call instrumentation overhead — present only in the `-pg`
-build, not under `-O2` — is charged to it, manufacturing a fake 25–33%. The
-same artifact inflates every call-heavy tiny function in that profile. **Do not
-trust gprof self-times for functions with huge call counts; trust `-O2`
-wall-clock deltas.** The variant-map change was reverted: no real win, and it
-would add the first map to the self-host source.
+**One caution, because it is easy to read a profile wrong.** gprof self-times
+once pointed at `is_variant` (the enum-variant scan) as a major bottleneck. It
+is not one. Two independent checks settled it: replacing all four variant
+lookups with an O(1) `{string:int}` map removed the `is_variant` line from a
+fresh gprof and changed `-O2` wall-clock by nothing at all; and the cause is a
+gprof `mcount` artifact — `is_variant` is a tiny branch-predicted loop called
+enormously often, and gprof's per-call instrumentation overhead, present only in
+the `-pg` build, is charged to it. The same artifact inflates every call-heavy
+tiny function in such a profile. **Do not trust gprof self-times for functions
+with huge call counts; trust `-O2` wall-clock deltas.** The variant-map change
+was reverted — no real win, and it would have added a map to source that had
+none.
 
-The genuine `-O2` cost is **memory traffic**. The gprof *call counts* (which are
-not distorted) show ~1.7M `arena_alloc`, ~1.3M `tycho_str_copy`, and ~2.1M
-bounded-array gets per self-compile — the volume of small string allocations the
-string-building codegen does, plus value-semantic copies.
+The genuine `-O2` cost is **memory traffic**. gprof *call counts* are not
+distorted the way self-times are, and they show the shape: many small
+`arena_alloc`s and `tycho_str_copy`s, which is the volume of short-lived string
+allocation the string-building codegen does, plus value-semantic copies.
 
 ### The real hotspots
 
@@ -171,12 +168,11 @@ touches no bounds-checking: thread the already-known length (`lex` computes
 `n := len(src)` once) into `scan_token` instead of recomputing it, which takes
 lexing from O(n²) back to O(n).
 
-This also revealed B was always ~2× faster than the A binary this doc had been
-timing: `tychoc0`'s codegen emits a direct O(1) `s[i]` where `tychoc` emitted a
-`strlen`-bounds-checked `tycho_str_get` that was O(n) *per access* → O(n²) in a
-loop, for any `tychoc`-compiled program indexing a large string.
+It also exposed a second O(n²), this one in `tychoc`'s own output: the emitted
+`strlen`-bounds-checked `tycho_str_get` was O(n) *per access*, so any compiled
+program indexing a large string in a loop paid O(n²).
 
-That `tychoc`-side O(n²) is now also fixed with a length-carrying check.
+That is fixed with a length-carrying check.
 `tychoc`'s codegen gains a per-proc pass: a string variable that is indexed
 (`s[i]`) and never reassigned (`block_mutates`==0, so for a string its length is
 invariant) gets one hoisted `_slen_h_<v> = strlen(v)` sidecar at scope entry,
@@ -190,10 +186,9 @@ error), and `tests/str_index.ty` guards it with hand-verifiable output.
 After the two O(n²) fixes, the cost looked like diffuse `memcpy`/`malloc` from
 value-semantic copies — but that was a profiler blind spot, not the truth.
 Improving the sampler's caller attribution (a saved-RBP-chain walk, so libc
-leaves like `malloc` are blamed on the Tycho function that called them) dropped
-the unattributed "?" from ~75% to ~13% and revealed the real floor:
-**`with_owner` (25.7%) + `enter_block` (11.2%) = ~37%** was `Ctx`
-*reconstruction*. `with_owner` is called only to change the `owner` string, but
+leaves like `malloc` are blamed on the Tycho function that called them) cut the
+unattributed share dramatically and revealed the real floor: `with_owner` plus
+`enter_block` — that is, `Ctx` *reconstruction*. `with_owner` is called only to change the `owner` string, but
 the returned `Ctx` escapes, so value semantics deep-copied **every** field —
 including the large, parse-invariant `sigs`/`structs`/`enums` — on every
 owner/depth change. `tychoc` never had this because it threads `arena` as a plain
