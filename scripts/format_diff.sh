@@ -38,7 +38,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf" "$T/pa"
+mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf" "$T/pa" "$T/u8"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -190,6 +190,28 @@ fn main():
             sj = "@"
         println(sj)
 TY
+cat > "$T/u8/main.ty" <<'TY'
+package main
+import "core:utf8"
+import "core:hex"
+import "core:io"
+
+# One hex-encoded byte string per line ("-" = empty); print validity and count.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        h := line
+        if h == "-":
+            h = ""
+        s := hex.decode(h)
+        v := 0
+        if utf8.valid(s):
+            v = 1
+        println(str(v) + " " + str(utf8.count(s)))
+TY
+./tychoc "$T/u8/main.ty" -o "$T/u8p" > "$T/b8.log" 2>&1 || {
+    echo "format-diff: FAILED (the utf8 harness does not build)"; tail -4 "$T/b8.log"; exit 1; }
 ./tychoc "$T/pa/main.ty" -o "$T/pap" > "$T/b7.log" 2>&1 || {
     echo "format-diff: FAILED (the path harness does not build)"; tail -4 "$T/b7.log"; exit 1; }
 ./tychoc "$T/pf/main.ty" -o "$T/pfp" > "$T/b6.log" 2>&1 || {
@@ -511,8 +533,67 @@ print(f"  {len(prels)} untrusted relative paths through path.safe_join "
       f"({pacc} accepted, {pref} refused): {len(pbad)} invariant violations")
 fail += len(pbad)
 
+# ---- core:utf8 --------------------------------------------------------------
+# A UTF-8 validator that accepts an overlong encoding is a filter bypass: the
+# same codepoint reaches the program by a spelling the filter above it did not
+# recognise. So the corpus leads with the classic ones and Python's strict
+# decoder is the oracle.
+u8 = [b"", b"a", "\u00e9".encode(), "\u65e5".encode(), "\U0001f389".encode(), b"\x7f",
+      b"\xc0\x80",          # overlong NUL -- the canonical bypass
+      b"\xc1\xbf",          # overlong
+      b"\xe0\x80\x80",      # overlong 3-byte
+      b"\xf0\x80\x80\x80",  # overlong 4-byte
+      b"\xed\xa0\x80",      # surrogate D800
+      b"\xed\xbf\xbf",      # surrogate DFFF
+      b"\xf4\x90\x80\x80",  # above U+10FFFF
+      b"\xf5\x80\x80\x80",  # above U+10FFFF
+      b"\xfe", b"\xff",     # never valid in UTF-8
+      b"\x80", b"\xbf",     # lone continuation
+      b"\xc2", b"\xe2\x82", b"\xf0\x9f\x8e",   # truncated 2/3/4-byte
+      b"\xc2\xa9", b"\xef\xbb\xbf",           # valid: (c), BOM
+      b"\xf4\x8f\xbf\xbf"]                     # U+10FFFF, the maximum
+u8 += [bytes(random.randrange(256) for _ in range(random.randint(0, 10)))
+       for _ in range(N)]
+p = pathlib.Path(T + "/u8in.txt")
+p.write_text("\n".join(c.hex() or "-" for c in u8) + "\n")
+uout = subprocess.run([T + "/u8p", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+def u8ok(b):
+    try:
+        b.decode("utf-8"); return True
+    except Exception:
+        return False
+
+# the control: scored against an INVERTED expectation every case must disagree.
+# (Written the other way round the first time -- counting AGREEMENTS with the
+# inversion -- which reports 0 and looks like a dead control either way.)
+upairs = [(c, l) for c, l in zip(u8, uout) if l]
+if sum(1 for c, l in upairs if l.startswith("1") != (not u8ok(c))) != len(upairs):
+    print("  UTF8 CONTROL DEAD: the inverted expectation did not disagree everywhere")
+    sys.exit(1)
+nvalid = sum(1 for c, l in upairs if l.startswith("1"))
+if nvalid == 0 or nvalid == len(upairs):
+    print(f"  UTF8 CONTROL DEAD: {nvalid} of {len(upairs)} valid -- one side is untested")
+    sys.exit(1)
+
+ubad = []
+for c, l in upairs:
+    f = l.split()
+    if len(f) != 2:
+        ubad.append(("harness", c.hex(), l)); continue
+    v, n = f[0] == "1", int(f[1])
+    if v != u8ok(c):
+        ubad.append(("validity", c.hex(), f"tycho={v} python={u8ok(c)}"))
+    elif v and n != len(c.decode("utf-8")):
+        ubad.append(("count", c.hex(), f"tycho={n} python={len(c.decode('utf-8'))}"))
+for b in ubad[:4]:
+    print(f"  utf8 {b[0]}: {b[1]} {b[2]}")
+print(f"  {len(upairs)} byte strings through utf8.valid/count against Python's strict "
+      f"decoder ({nvalid} valid, {len(upairs) - nvalid} invalid): {len(ubad)} mismatches")
+fail += len(ubad)
+
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included; and path.safe_join never returns a path that escapes its base and never refuses one that stays inside, over hundreds of hostile relative paths, with the counts printed above rather than repeated here)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included; and path.safe_join never returns a path that escapes its base and never refuses one that stays inside, over hundreds of hostile relative paths, with the counts printed above rather than repeated here; and core:utf8 agrees with Python's strict decoder on validity and codepoint count, overlong encodings, surrogates and out-of-range sequences all refused)"
