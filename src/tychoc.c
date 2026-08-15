@@ -727,7 +727,7 @@ static TokVec lex(const char *src) {
                          * and it used to cost a function call (`httpd.crlf()`).
                          * `\0` and `\xNN` are deliberately NOT in this set: the literal's
                          * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:11043@TYCHO_LIT`, sized by the `sizeof` in
+                         * `src/tychoc.c:11051@TYCHO_LIT`, sized by the `sizeof` in
                          * `runtime/tycho_rt.c:1258-1264`), and both of C's numeric escapes
                          * are greedy over the digits that follow them, so `"\x41" "1"`
                          * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
@@ -4061,7 +4061,7 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_IN, "'in'");
             /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
              * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10895), and a
+             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10903), and a
              * three-clause loop's post clause is arbitrary code, so its iteration
              * count is not knowable in advance and cannot be chunked. A
              * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
@@ -6533,6 +6533,14 @@ static Type resolve_expr_inner(Expr *e) {
                      * not "imported" either and its old message is still the right one.
                      * FRICTION-OUTSIDE.md item 2. */
                     const char *imp = is_imported_pkg(e->qual) ? "" : " -- and this file does not `import` it; add the import first";
+                    /* `strings.split(...)` -- the name is a BUILTIN, called bare.
+                     * Someone arriving from Go or Python reaches for the package
+                     * qualifier first, and a did-you-mean pointing at the nearest
+                     * package symbol sends them further away. Checked before it. */
+                    if (sig_find(nominal_name(e->sval)))
+                        die_at(e->line, "'%s' is a builtin, not a member of package '%s' -- "
+                               "call it directly: %s(...)",
+                               nominal_name(e->sval), e->qual, nominal_name(e->sval));
                     if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?%s", e->qual, nominal_name(e->sval), sg, imp);
                     die_at(e->line, "package '%s' has no symbol '%s'%s", e->qual, nominal_name(e->sval), imp);
                 }
@@ -7608,7 +7616,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7978). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7986). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7631,10 +7639,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7305),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7313),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7599). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7607). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -9259,7 +9267,7 @@ static void resolve_program(ProcVec *prog) {
          * and channel-return rules on the substituted ones.
          * The arity check MUST come first for a template: instantiate_generic builds
          * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7613: index 16 out of bounds for
+         * (UBSan, before this move: "src/tychoc.c:7621: index 16 out of bounds for
          * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
@@ -9428,7 +9436,7 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * `for i in range(len(A)):` used to be, and it is elidable for a slightly
  * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
  * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11806), so
+ * emits the condition into the C `while (...)` header (src/tychoc.c:11814), so
  * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
  * body by construction. What still has to be PROVED is the rest of the shape.
  * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
@@ -9458,12 +9466,12 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
  * none separated. bench/guard.sh:49-62 carries the second measurement and is why
  * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
  * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13792) and what a debugger step
+ * which is what `tychoc -g` builds (src/tychoc.c:13800) and what a debugger step
  * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
  * NOT on these numbers alone -- they are one machine and one gcc, and the
  * measurement must be repeated on a second toolchain first. Note the historical
  * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11893) and broke the link to
+ * cached `_stop` before the loop (src/tychoc.c:11901) and broke the link to
  * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;

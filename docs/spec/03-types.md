@@ -14,7 +14,7 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:630-651`; C lowering `c_type`
-> `:1454-1494`; equality/ordering `:6675-6708`; newtype decl `parse_typedecl`
+> `:1454-1494`; equality/ordering `:6683-6716`; newtype decl `parse_typedecl`
 > `:4517-4536`.
 
 ## 5.1 The type-identity model
@@ -455,8 +455,8 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > (`arrc_sized_b` `src/tychoc.c:1092-1104@arrc_sized_b`, messages `:1004@task_container_err` and `:1042@chan_container_err`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
 > Rejections: slice `src/tychoc.c:5706-5707`, `pop` `:6440-6441`, `reserve`
-> `:6946@reserve does not apply to a bounded`, over-long literal `:6653-6656`. The full-push trap is emitted at
-> `:12630-12633`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
+> `:6954@reserve does not apply to a bounded`, over-long literal `:6661-6664`. The full-push trap is emitted at
+> `:12638-12641`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
 > `tests/reject/fixarr_into_bounded_arg.ty`,
 > `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
 > `tests/reject/bounded_nonconst_cap.ty`,
@@ -467,8 +467,8 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > a return type) and `tests/fixarr_aggregate.ty` for the `[N]T` twin. The
 > inline element is emitted inside the by-value containment DFS — `[N]T` and
 > `bounded[N]T` are ordered with the struct/tuple/Option bodies rather than with
-> the pointer-shaped arrays (`src/tychoc.c:12032-12130`, with `inline_arrc`/
-> `needs_body_first` at `:12014-12020`; tychoc0's `comp_dep_types`
+> the pointer-shaped arrays (`src/tychoc.c:12040-12138`, with `inline_arrc`/
+> `needs_body_first` at `:12022-12028`; tychoc0's `comp_dep_types`
 > `compiler/tychoc0.ty:10241-10268` and `emit_comp_body` `:10278-10302`) — which is what makes an aggregate element compile; the
 > infinite-type rejection falls out of the same DFS
 > (`tests/reject/inline_arr_self_elem.ty`).
@@ -531,5 +531,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6675-6708` (equality/ordering resolver); function-
-> value identity equality `:10322@identity equality`.
+> Provenance: `src/tychoc.c:6683-6716` (equality/ordering resolver); function-
+> value identity equality `:10330@identity equality`.
