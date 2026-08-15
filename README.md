@@ -234,7 +234,7 @@ test-update`, never by a normal run.
 `make bench` guards the *performance* claims the way `make test` guards
 correctness: each `bench/*.ty` asserts one metric against a generous bound.
 
-**Platform notes.** Builds and self-hosts on any unix-like OS — developed and
+**Platform notes.** Builds on any unix-like OS — developed and
 gated on Debian (x86-64), and benchmarked on macOS (Apple Silicon). On macOS,
 `xcode-select --install`; Apple's AddressSanitizer ships no LeakSanitizer, so
 that half of the sanitizer build is skipped there (the rest still runs).

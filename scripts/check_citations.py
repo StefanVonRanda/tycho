@@ -674,6 +674,11 @@ def main():
                 continue
             for m in PATHREF.finditer(line):
                 ref = m.group(1)
+                # gap: a fenced code block is not skipped, so a path shown
+                # inside ``` as an illustration is resolved like any other. No
+                # document in the tree does that (906 paths scanned 2026-08-16);
+                # if one ever does, the fix is to track fences here, not to
+                # exempt the path.
                 if ref.split("/")[0] not in tops:
                     continue
                 n_path += 1

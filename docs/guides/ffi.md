@@ -255,9 +255,9 @@ The C reference transpiler (`tychoc`) links the program for you:
   `*_shim.c` pattern, as an explicit flag rather than auto-discovery). All
   accumulate onto one `cc` invocation, with libraries trailing the objects that
   need them. `--cc <compiler>` overrides the compiler.
-- The self-hosted transpiler (`tychoc0`) emits C to stdout and doesn't link, so
-  these flags are `tychoc`-only; link `tychoc0`'s output with your own `cc`,
-  passing the same `-l`/`-L`/shim flags.
+- These flags are `tychoc`-only. The self-hosted `tychoc0` emitted C to stdout
+  and never linked, so it never had them; it is frozen (2026-07-26) and no gate
+  builds it.
 
 A **shim** is the standard way to adapt a C API that the FFI can't express
 directly — for example an out-parameter constructor like `sqlite3_open(path,
