@@ -4,8 +4,25 @@
 #   match toml.get(t, "server.host"):
 #       Some(toml.TStr(h)): ...
 #
-# `parse(s) -> Result(Value, string)` returns Err(what-was-wrong) on any
-# malformed input (fail-closed; nothing is guessed). The document is a
+# `parse(s) -> Result(Value, string)` returns Err(what-was-wrong) rather than a
+# value it made up: no input is accepted that would LOSE data or INVENT a value
+# the text does not carry -- an unterminated array, trailing junk after a value,
+# a duplicate key, a repeated [table] header. That is the guarantee, and it is
+# narrower than the "nothing is guessed" this said until 2026-08-15, which was
+# not true of the four below.
+#
+# STILL ACCEPTED, where TOML v1.0 refuses. Each is a number-grammar or bare-key
+# spelling; none of them loses a value or changes one, and this is a documented
+# subset rather than a validator:
+#
+#     a = 01      -> 1        a leading zero
+#     a = 1__0    -> 10       a doubled underscore separator
+#     a = 1.      -> 1.0      a trailing decimal point
+#     a b = 1     -> key "a b"  an unquoted key containing a space
+#
+# Use a conforming validator if you need the document REJECTED for those; this
+# package's contract is that what it returns is what the text said. The document
+# is a
 # recursive value tree: `Value` is an enum with TStr/TInt/TFloat/TBool/TArr/
 # TTable, and a table is a pair of parallel keys/values arrays (the same shape
 # core:json's object uses -- iteration order is the insertion order). `get(t,
@@ -479,6 +496,13 @@ fn parse(s: string) -> Result(Value, string):
     cur_path := []string            # where cur lives under root (empty = root)
     cur_arr := false                # is cur's section a [[array-of-tables]]?
     cur_dirty := false              # has the current section been written to?
+    # Plain [t] headers already seen. A repeat REPLACED the earlier table rather
+    # than merging or refusing, so "[t] x=1 [t] y=2" silently lost x entirely
+    # (2026-08-15) -- the same "override nobody can see" the duplicate-key check
+    # below exists for, and worse, since that one at least keeps a value.
+    # [[arr]] is excluded on purpose: repeating it is how an array of tables is
+    # spelled, and each repeat appends rather than replaces.
+    seen := []string
     for i := 0; i < len(ls); i += 1:
         ln := ls[i]
         ln = strip_comment(ln)
@@ -495,6 +519,13 @@ fn parse(s: string) -> Result(Value, string):
             path := split_path(body)
             if len(path) == 0:
                 return Err("empty table header")
+            if is_arr == false:
+                jp := ""
+                for pi := 0; pi < len(path); pi += 1:
+                    jp = jp + chr(1) + path[pi]      # chr(1) cannot occur in a key
+                if index_of(seen, jp) >= 0:
+                    return Err("duplicate table header: [" + body + "]")
+                push(seen, jp)
             if len(cur_path) > 0 or cur_dirty:
                 if len(cur_path) == 0:
                     root = cur                       # root-level section: cur IS the root

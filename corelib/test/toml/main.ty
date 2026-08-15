@@ -101,3 +101,12 @@ fn main():
     show_one("a = [1, 2")            # was [1] -- an element dropped
     show_one("a = \"x\" y")          # was "x" -- trailing text discarded
     show_one("a = 1\na = 2")         # was 2 -- a duplicate key overrode silently
+    # A repeated [t] REPLACED the earlier table, so x vanished entirely -- filed
+    # as a strictness nit and actually the same data loss as the duplicate key
+    # above, one worse: that one at least kept a value.
+    show_one("[t]\nx = 1\n[t]\ny = 2")
+    # ...while [[arr]] must STILL repeat, because that is how an array of tables
+    # is spelled, and [a] then [a.b] must not collide -- without these two the
+    # refusal above could be a blanket ban on any second header.
+    show_one("[[a]]\nx = 1\n[[a]]\nx = 2")
+    show_one("[a]\nx = 1\n[a.b]\ny = 2")

@@ -24,3 +24,6 @@ ok
 err unterminated array: [1, 2
 err trailing text after a string value: "x" y
 err duplicate key: a
+err duplicate table header: [t]
+ok
+ok

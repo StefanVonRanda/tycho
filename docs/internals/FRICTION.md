@@ -5079,6 +5079,38 @@ means to enforce. **The header's "nothing is guessed" is still too strong for
 those five and should be narrowed or the cases fixed** -- naming them here so the
 choice is made rather than defaulted into.
 
+**The choice was made 2026-08-15, and measuring first moved one of the five out
+of the list.** The sentence above calls a repeated `[t]` header a header rule
+"rather than invented values or lost data". Measured, it is lost data, and worse
+than the duplicate key this same entry fixed:
+
+```
+[t]        ->  ACCEPTED, and t.x is ABSENT
+x = 1          the second [t] REPLACED the first table
+[t]            rather than merging with it
+y = 2
+```
+
+The duplicate key at least kept the last value; this deletes a key nobody
+mentioned twice. It is refused now, by the same argument and with the same shape
+of message. Two non-regressions are gated beside it, because a blanket ban on a
+second header would pass the new case and break real documents: `[[arr]]` must
+still repeat, since that is how an array of tables is spelled, and `[a]` followed
+by `[a.b]` must not collide.
+
+**The other four stay accepted and are now WRITTEN DOWN in the header** rather
+than left to the reader's assumption -- `a = 01`, `a = 1__0`, `a = 1.` and
+`a b = 1`, each with what it yields. The claim was narrowed to what the package
+actually guarantees: no input is accepted that would LOSE data or INVENT a value
+the text does not carry. "Nothing is guessed" was false for those four and is
+gone.
+
+That line is drawn where it is because a config parser's job is to not lie about
+what the file said; refusing a document over a leading zero is a validator's job,
+and the header now says which of the two this is.
+
+Control: dropping the duplicate-header check reddens `toml` and only `toml`.
+
 Controls: restoring the naive split reddens the golden, and so does dropping the
 array terminator check, independently.
 

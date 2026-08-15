@@ -248,6 +248,16 @@ Four messages that an outside reader hit in the first ten minutes writing
   value round-trips whole. `sqlite3_prepare_v2` got the same treatment
   (`len(sql)`), though that side is program-authored and is **not covered by a
   test** (FRICTION #70).
+- **`toml.parse` refuses a repeated `[table]` header.** The second `[t]`
+  **replaced** the first rather than merging, so `[t] x=1 [t] y=2` silently lost
+  `x` — the same "override nobody can see" as the duplicate key, and worse, since
+  that one at least kept a value. `[[arr]]` still repeats (that is how an array
+  of tables is spelled) and `[a]` followed by `[a.b]` still nests; both are
+  gated. **The header's contract is narrowed to match reality:** no input is
+  accepted that would lose data or invent a value the text does not carry.
+  "Nothing is guessed" was untrue of `a = 01`, `a = 1__0`, `a = 1.` and
+  `a b = 1`, which stay accepted and are now listed in the header with what each
+  yields — a documented subset rather than a validator (FRICTION #62).
 
 ### Core library — breaking
 
