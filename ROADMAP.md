@@ -580,9 +580,25 @@ and no ARM64 build on any platform.** A language that cannot be installed on an
 Apple laptop or a Graviton instance is not production-ready whatever its
 internals are, and this is the largest single gap.
 
-It is also infrastructural rather than intellectual — nothing about the design
-resists it. Whether the absence means "never attempted" or "attempted and hard"
-is not recorded anywhere, and that is the first thing to establish.
+**Measured 2026-08-15, and the gap is smaller than "no build" suggests.** It was
+never attempted rather than attempted and failed:
+
+- `runtime/tycho_rt.c` already carries **explicit macOS support** — the Darwin
+  `sys/ucontext.h` include, `pthread_get_stackaddr_np` for the stack bounds, and
+  per-architecture stack-pointer extraction for **x86_64, i386 and arm64** — plus
+  a generic `__aarch64__` branch for Linux. Someone wrote for these platforms.
+- `src/tychoc.c` has **zero** platform conditionals, so the compiler itself has
+  nothing to port.
+- With `zig cc` as the cross driver, `src/tychoc.c` builds clean for
+  `aarch64-macos`, `x86_64-macos` and `aarch64-linux`, and so does the **emitted
+  C including the embedded runtime** — three targets, no source change.
+
+**What that does NOT establish, and it is the whole remaining risk:** none of
+those binaries has been RUN. There is no Darwin or ARM machine here and no qemu,
+so this says the code compiles for those targets, not that a program behaves
+correctly on them — and the stack-overflow guard, the one piece with
+per-architecture code, is exactly the kind that compiles everywhere and works in
+one place. What is needed is a real machine, not a port.
 
 ### 2. A story for using other people's code
 
