@@ -5541,3 +5541,32 @@ with both-defeated as the control that must leak. Every `sed` asserts it changed
 the file, because a patch that silently does not apply reports the unmodified
 server as the broken one — a mistake already made twice in this session's own
 controls.
+
+### 73. `core:io` holds its contract, including the one nobody wrote down — 2026-08-15
+
+**No defect.** Recorded because the header states an unusually precise contract
+and because one property it does NOT state is the interesting one.
+
+Every claim probed and every one holds. A missing path is `Err(NotFound)`, a
+directory is `Err(IsDir)`, an empty file is `Ok(len 0)` — the three-way split the
+header says was one empty `bytes` until 2026-07-26. A symlink loop, a
+permission-denied file, a 300-character name and an empty path all return `Err`
+rather than aborting, which is what *"Nothing here aborts"* claims. `read(dir)`
+is `""`, `list(file)` is `[]`, `write(dir)` is `false` — the documented sentinels,
+each with one meaning.
+
+**The undocumented property is the valuable one.** `read_bytes("/proc/self/stat")`
+returns **Ok with 315 bytes**, while `stat(2)` reports that file as **0 bytes**.
+So the read does not trust `st_size`; it reads to EOF. That is the correct
+implementation and it defeats the classic procfs trap, where a size-based reader
+silently returns empty for every file under `/proc` and `/sys` — a wrong answer
+that looks exactly like an empty file, on precisely the paths a monitoring or
+diagnostic program reads.
+
+**It is not gated, and deliberately not gated here.** A fixture asserting it would
+need `/proc`, which does not exist on macOS or under the Windows lanes, so it
+would either break those or carry a skip that makes it vacuous where it matters
+least. Naming it instead: **if `read_bytes` is ever "optimised" into a single
+`st_size`-sized read, every `/proc` and `/sys` read in every Tycho program starts
+returning empty and no gate in this tree will notice.** That is the note a future
+optimiser needs, and it is cheaper than a non-portable fixture.
