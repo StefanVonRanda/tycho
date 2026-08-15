@@ -723,6 +723,35 @@ language surface. WSL2 stays a first-class supported path.
 > os/datetime/signal test variants, tycho-build's lane recipes, the
 > dispatcher's cmd-incompatible shell lines, tycho-fetch's mingw curl.
 >
+> **Status 2026-08-15.** Still not done and still hardware-bound — it needs a
+> Windows box, which is the same class of blocker as ROADMAP §1 and §7 needing
+> people, not a task anyone can pick up here. What HAS been built since that line
+> was written is a wine substitute deep enough to be worth naming, because "no
+> native CI" now understates the coverage badly:
+>
+> | lane | what it runs under wine |
+> |---|---|
+> | `scripts/wine_test.sh` | the plain fixture corpus, cross-compiled (phase 3) |
+> | `scripts/wine_corelib.sh` | every corelib test that links on this box (phase 4) |
+> | `scripts/wine_tools.sh` | every `tools/` tool cross-compiled (phase 5) |
+> | `scripts/wine_ffi.sh` | the FFI lane's runnable legs (phase 6) |
+> | `scripts/wine_smoke.sh` | the cross-compiled smoke |
+> | `make wine-ubsan` | the same corpus with UB TRAPPING — 361 fixtures, 0 failures |
+>
+> **What was re-run on 2026-08-15, and what was not.** `wine_smoke.sh` is green
+> here today (cross-compiled programs run under wine, `prog_ok_big` printed
+> 500501). `wine_test.sh` was started and had not finished within the session's
+> window, so its verdict is NOT claimed — the table above says what each lane is
+> for, not that each was green today. `make wine-ubsan`'s 361-fixtures-0-failures
+> figure is the recorded one from when it landed, not a fresh run.
+>
+> And 0.7.0 ships a mingw tarball that was verified under wine before publishing:
+> `tychoc.exe` reports its version and refuses all 51 `affine_*`/`generic_*`
+> reject fixtures. What wine still cannot give is a native `make ci` and anything
+> only ASan would catch — mingw-w64 here ships neither libasan nor libubsan, so
+> use-after-free on Windows stays invisible. That limit is recorded in
+> `docs/internals/audit-brief.md` §3 as well.
+>
 > GATES (this box): doc gates (check_citations.py, check_links.sh) green; both
 > release legs ran. `make test` was NOT run and cannot redden — no compiler,
 > runtime, corelib or fixture changed; the diff is Markdown plus the mingw
