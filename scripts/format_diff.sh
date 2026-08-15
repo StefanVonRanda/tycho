@@ -1,5 +1,10 @@
 #!/bin/sh
-# Differential-test the FORMATS AND CODECS against independent implementations:
+# Check corelib against things this project did not write: Python's own modules
+# where the semantics match exactly, and a stated PROPERTY where they do not.
+# (The name says "format" because that is where it started; it now also covers
+# calendar arithmetic, sort stability, a float grammar and a path invariant.)
+#
+# Differential-tested against independent implementations:
 # core:csv against Python's `csv`, core:json against Python's `json`, and
 # sha256 / md5 / base64 / hex / url against hashlib, base64 and urllib.
 #
@@ -33,7 +38,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf"
+mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf" "$T/pa"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -166,6 +171,27 @@ fn main():
             Ok(f): println("OK " + str(f))
             Err(e): println("ERR")
 TY
+cat > "$T/pa/main.ty" <<'TY'
+package main
+import "core:path"
+import "core:io"
+
+# One untrusted relative path per line ("~" = empty); print safe_join under a
+# fixed base, with "@" standing for the empty (refused) answer.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        rel := line
+        if rel == "~":
+            rel = ""
+        sj := path.safe_join("/srv/data", rel)
+        if sj == "":
+            sj = "@"
+        println(sj)
+TY
+./tychoc "$T/pa/main.ty" -o "$T/pap" > "$T/b7.log" 2>&1 || {
+    echo "format-diff: FAILED (the path harness does not build)"; tail -4 "$T/b7.log"; exit 1; }
 ./tychoc "$T/pf/main.ty" -o "$T/pfp" > "$T/b6.log" 2>&1 || {
     echo "format-diff: FAILED (the parse_float harness does not build)"; tail -4 "$T/b6.log"; exit 1; }
 ./tychoc "$T/so/main.ty" -o "$T/sop" > "$T/b5.log" 2>&1 || {
@@ -435,8 +461,58 @@ print(f"  {len(fcands)} float candidates against the documented grammar and Pyth
       f"({nacc} accepted, compared bit for bit): {len(fbad)} mismatches")
 fail += len(fbad)
 
+# ---- path.safe_join ---------------------------------------------------------
+# Not a differential -- posixpath has different semantics -- but a PROPERTY, and
+# the property is the security contract this repo already leans on twice: the web
+# server's traversal defence and tycho-ar's zip-slip check both end here.
+#
+#   an accepted answer must normalise to something under the base
+#   a refused answer must be genuinely absolute or genuinely escaping
+#
+# Both halves matter: only checking the first passes a function that refuses
+# everything, and only checking the second passes one that accepts everything.
+import posixpath as pp
+BASE = "/srv/data"; nb = pp.normpath(BASE)
+pseg = ["..", ".", "", "a", "b c", "x.txt", ".hidden", "..a", "a..", "...", "/"]
+prels = ["user/report.txt", "../../etc/passwd", "/etc/passwd", "..", "a/../..",
+         "a/./b", "a//b", "./", "./.", "a/..", "a/../b", "....//", "..%2f",
+         "a/b/../../..", "", "x/../../y", "a/b/c/../../../..", "./../x",
+         ".../..", "a/.././../b"]
+prels += ["/".join(random.choice(pseg) for _ in range(random.randint(1, 6)))
+          for _ in range(N)]
+p = pathlib.Path(T + "/pain.txt")
+p.write_text("\n".join(r or "~" for r in prels) + "\n")
+pout = subprocess.run([T + "/pap", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+# the control: the invariant test must catch an answer that DOES escape, and the
+# corpus must actually contain escapes for the refusal half to mean anything.
+if pp.normpath("/srv/data/../../etc/passwd").startswith(nb + "/"):
+    print("  PATH CONTROL DEAD: an escaping answer was judged inside the base"); sys.exit(1)
+
+pbad = []
+pacc = pref = 0
+for r, sj in zip(prels, pout):
+    if sj == "@":
+        pref += 1
+        n2 = pp.normpath(pp.join(nb, r)) if r else nb
+        if not (r.startswith("/") or not (n2 == nb or n2.startswith(nb + "/"))):
+            pbad.append(("refused a path that stays inside", r, n2))
+    elif sj:
+        pacc += 1
+        real = pp.normpath(sj)
+        if real != nb and not real.startswith(nb + "/"):
+            pbad.append(("ACCEPTED AN ESCAPE", r, sj))
+if pref < 10:
+    print(f"  PATH CONTROL DEAD: only {pref} of {len(prels)} refused -- the corpus")
+    print("                     is not exercising the escape path"); sys.exit(1)
+for b in pbad[:4]:
+    print(f"  safe_join {b[0]}: {b[1]!r} -> {b[2]}")
+print(f"  {len(prels)} untrusted relative paths through path.safe_join "
+      f"({pacc} accepted, {pref} refused): {len(pbad)} invariant violations")
+fail += len(pbad)
+
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included; and path.safe_join never returns a path that escapes its base and never refuses one that stays inside, over hundreds of hostile relative paths, with the counts printed above rather than repeated here)"
