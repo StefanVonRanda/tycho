@@ -1,10 +1,9 @@
 # Packages & modules
 
-> **Thesis context:** Packages test that the arena model scales across compilation units.
-> The transpiler merges all reachable packages into one AST and emits a single C file —
-> the same per-scope arena codegen, same return-slot optimization, same locally-decidable
-> escape analysis. If the arena model depended on whole-program alias analysis, it would
-> degrade with package count. It doesn't.
+> **Memory:** The transpiler merges all reachable packages into one AST and emits a
+> single C file — the same per-scope arena codegen, the same return-slot optimization
+> and the same locally-decidable escape analysis, regardless of package count. Nothing
+> here depends on whole-program alias analysis.
 
 Tycho organizes code into **packages**. A package is a *directory* of
 `.ty` files that share one flat namespace. You `import` a package and reach

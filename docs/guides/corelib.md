@@ -1,11 +1,9 @@
 # corelib — Tycho's standard library
 
-> **Thesis context:** The standard library tests the arena model against real-world
-> patterns — I/O, crypto, serialization, hashing, HTTP. Every corelib function allocates
-> into the caller's arena and returns independent values. Pure-Tycho modules (json, csv,
-> sha256) prove the model handles production-like logic; C-shim modules (regex, http,
-> crypto) prove the FFI boundary stays narrow without dragging C's memory model into
-> Tycho's world.
+> **Memory:** Every corelib function allocates into the caller's arena and returns
+> independent values. Pure-Tycho modules (json, csv, sha256) and C-shim modules
+> (regex, http, crypto) follow the same rule; the shim boundary is narrow on purpose,
+> so C's memory model stays on C's side of it.
 
 corelib is Tycho's standard library: a set of packages under `corelib/`, imported with the
 `core:` collection root. It's experimental, like the rest of Tycho, but the modules below
