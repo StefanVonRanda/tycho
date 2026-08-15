@@ -740,11 +740,22 @@ language surface. WSL2 stays a first-class supported path.
 >
 > **What was re-run on 2026-08-15, and what was not.** `wine_smoke.sh` is green
 > here today (cross-compiled programs run under wine, `prog_ok_big` printed
-> 500501), and `wine_test.sh` came back **passed 361, failed 0** — the whole
-> plain fixture corpus, cross-compiled and run under wine. `make wine-ubsan`'s
-> 361-fixtures-0-failures figure is the recorded one from when it landed, not a
-> fresh run, and the other three lanes were not re-run either: the table above
-> says what each is FOR, not that each was green today.
+> **all six were re-run and all six are green**, so the table above is a
+> statement about today rather than about the day each landed:
+>
+> | lane | 2026-08-15 |
+> |---|---|
+> | `wine_smoke.sh` | green (`prog_ok_big` printed 500501) |
+> | `wine_test.sh` | passed 361, failed 0 |
+> | `wine_corelib.sh` | passed 37, failed 0, skipped 9 |
+> | `wine_tools.sh` | built+ran 17, failed 0, skipped 1 |
+> | `wine_ffi.sh` | passed 12, failed 0 |
+> | `make wine-ubsan` | green over the fixture corpus AND every corelib package that ports, with its control firing: the same source exits 0 plain and **29** with the trap flags |
+>
+> The skips are the parked list, not failures: 9 corelib packages and 1 tool whose
+> dependencies do not cross to mingw. `wine-ubsan`'s control is the leg that
+> matters most — without it, "0 failures" is also what a sweep reports when the
+> trap never arms.
 >
 > And 0.7.0 ships a mingw tarball that was verified under wine before publishing:
 > `tychoc.exe` reports its version and refuses all 51 `affine_*`/`generic_*`
