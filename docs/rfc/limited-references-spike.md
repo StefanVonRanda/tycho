@@ -37,7 +37,7 @@ Three distinct mechanisms, not one. They are easy to conflate.
    > inaccessible for the duration of `p`'s lifetime."
    A projection is **scoped and transient** — it lives for an expression/binding, never
    escapes. **Tycho already has the built-in case**: `&m[k]` / array-element places yield a
-   slot lvalue, not a copy (`docs/map-mutation.md`). What Tycho lacks is letting *users*
+   slot lvalue, not a copy (`docs/guides/map-mutation.md`). What Tycho lacks is letting *users*
    define their own projecting subscripts.
 
 3. **Remote parts = *stored projection types*.** This is the only new idea for the graph
