@@ -90,6 +90,12 @@ cited file. `scripts/reanchor_citations.py` remaps them mechanically after you
 move lines yourself — read its header first, it is the wrong tool when only some
 refs are stale.
 
+It diffs your working tree against `HEAD`, so **run it before you commit**. If
+you have already committed and the push is blocked, give it the commit you
+started from: `python3 scripts/reanchor_citations.py --ref <base> --apply`.
+Without that it compares your change against itself, reports `no line moved;
+nothing to re-anchor`, and leaves you stuck.
+
 **A commit hash is a citation too, and the gate resolves it.** Write it
 backticked at git's default seven characters (`` `e96d6fc` ``) or introduced by
 the word `commit` (`commit e96d6fc`); either form must name a commit in this
