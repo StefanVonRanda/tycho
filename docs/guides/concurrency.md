@@ -208,8 +208,7 @@ A channel handle can only reach code by being passed as an **argument** — it
 cannot be returned, stored in a struct/enum/container, captured by a closure, or
 rebound. So the set of code that can touch one channel is a closed graph rooted
 at its `ch := channel(T, cap)`, and the compiler can prove that an operation
-appears **nowhere** in it. Three such cases warn (both `tychoc` and `tychoc0`,
-same message and line):
+appears **nowhere** in it. Three such cases warn:
 
 ```tycho
 jobs := channel(int, 16)
