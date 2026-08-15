@@ -17,6 +17,19 @@ struct Decimal:
     scale: int             # digits after the decimal point (>= 0); value = coeff * 10^(-scale)
 
 # Multiply a coefficient by 10^k (k >= 0): the scale-alignment primitive.
+#
+# COST IS QUADRATIC IN k, and there is no ceiling. Measured 2026-08-15 through
+# `rescale(from_int(1), k)`: 0.86 s at k=200000, 2.47 s at 400000, 9.81 s at
+# 800000, 38.94 s at 1600000 -- each doubling of k roughly QUADRUPLES the time,
+# which is schoolbook bignum multiplication doing what it does.
+#
+# So a scale is not a size, it is a size squared. **Never take `scale` from
+# untrusted input**: a request field of 2000000 is about a minute of CPU from one
+# call, which is an amplifier rather than a slow path. Every caller in this tree
+# passes a literal or a column width. No cap is imposed here because any number
+# chosen would be arbitrary and would silently change an answer; the honest thing
+# is that the cost is stated and the ceiling belongs to whoever knows where the
+# scale came from.
 fn scale_up(c: bignum.Big, k: int) -> bignum.Big:
     if k <= 0:
         return c

@@ -5850,3 +5850,31 @@ defect the oracle shares.** Round-tripping, encoding and arithmetic are what it
 covers. What a downstream consumer DOES with a well-formed value is not, and that
 is where the injection classes live — this, and #60's `javascript:` href, and
 `core:zip`'s traversal names (#71).
+
+### 82. `decimal`'s scale is a size SQUARED, and nothing said so — **DOCUMENTED 2026-08-15**
+
+No wrong answer. A cost, measured because `core:decimal` is the money type and
+`rescale(d, scale)` takes its scale from the caller.
+
+```
+k=200000   0.86 s        each doubling of k roughly QUADRUPLES the time:
+k=400000   2.47 s        this is O(k^2), not O(k)
+k=800000   9.81 s
+k=1600000  38.94 s
+```
+
+The first probe stopped at "k=10000000 hit the 15 s timeout" and nearly went in
+as *"linear in the output size — you asked for ten million digits and got them"*,
+which would have been a comfortable and wrong conclusion. Four points instead of
+one is what showed the exponent. **A single timing is not a complexity claim.**
+
+The consequence is what matters: **a scale is not a size, it is a size squared.**
+A `scale` field taken from a request at 2000000 is about a minute of CPU from one
+call — an amplifier, not a slow path. Every caller in this tree passes a literal
+or a column width, so nothing is exposed today.
+
+**No cap imposed.** Any number would be arbitrary, and a cap that silently
+returns a differently-scaled answer is a wrong result where there was only a slow
+one. The cost is written at `scale_up` instead, with the rule that the ceiling
+belongs to whoever knows where the scale came from — the same division of labour
+as `csv`'s formula escaping (#81) and `zip`'s traversal names (#71).
