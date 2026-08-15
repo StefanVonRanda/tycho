@@ -1,9 +1,12 @@
 # corelib — Tycho's standard library
 
-> **Memory:** Every corelib function allocates into the caller's arena and returns
-> independent values. Pure-Tycho modules (json, csv, sha256) and C-shim modules
-> (regex, http, crypto) follow the same rule; the shim boundary is narrow on purpose,
-> so C's memory model stays on C's side of it.
+> **Memory:** Every corelib function allocates its results into the caller's arena
+> and returns independent values, never aliasing the caller's inputs. **The one
+> exception is a C-owned opaque handle returned as `ptr`** — `core:regex`,
+> `core:http`, `core:crypto`, `core:tls`, `core:io` and `core:sqlite` return one —
+> which is not arena-managed and must be released by that package's own free
+> function; the normative statement is [§31.1](../spec/18-library.md). The shim
+> boundary is narrow on purpose, so C's memory model stays on C's side of it.
 
 corelib is Tycho's standard library: a set of packages under `corelib/`, imported with the
 `core:` collection root. It's experimental, like the rest of Tycho, but the modules below
