@@ -5942,3 +5942,40 @@ perfectly reproducible), then "the probe output is truncated, `zip` is hiding it
 (the probe was fine; the *corpus* was short). Both wrong readings produced real
 code — a checked-probe helper that stays because it closes a genuine hole in the
 same file, ten `subprocess.run` calls whose exit status nobody checked.
+
+### 85. Two things a third party would have hit first — **FIXED 2026-08-15**
+
+Both found by *being* the third party rather than reasoning about one: install
+from the published tarball, clone the repo, run the first command each document
+tells you to.
+
+**1. `SECURITY.md` advertised a channel that is switched off.** It said to use
+GitHub's private vulnerability reporting — "Report a vulnerability" under the
+Security tab. `gh api repos/.../private-vulnerability-reporting` returns
+`{"enabled":false}`. The button is not there, and the fallback was "contact the
+maintainer directly" with no address. Anyone holding a real finding had nowhere
+to send it, which is a bad moment to discover while holding one. Rewritten to
+describe the repository as configured, with a route that needs no
+infrastructure. Enabling the feature would make the original text true and is one
+API call; that is the owner's decision, not a documentation fix.
+
+**2. `make check-links` passed here and FAILED in a fresh clone.** It is the
+command `CONTRIBUTING.md` calls *"the one gate to never skip"* and the one the
+pre-push hook runs, so a contributor's first action was red before they had
+touched anything.
+
+`check_citations.py` resolved a cited hash with `git cat-file`, which finds any
+object in the LOCAL store — including one orphaned by a rebase, an amend or a
+deleted branch, present here and absent from every clone. **28 of 55 backticked
+hashes were exactly that**, plus 5 in the `commit <hash>` prose form and one
+8-char hash the width-7 rule never examined. The gate checks
+`git merge-base --is-ancestor` now.
+
+All 34 were remapped rather than deleted: matching on the commit SUBJECT found a
+mainline twin for every one, so this was a rebase, not lost history, and the
+citations now point where the prose always meant.
+
+**The shape is the one this file keeps recording.** A gate that verifies
+something *about the machine it runs on* rather than something about the tree
+will be green for the author forever. The only way to see it was to run it
+somewhere else — and "somewhere else" is exactly what §1 and §7 are asking for.
