@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check tls-verify ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check tls-verify format-diff ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -331,6 +331,13 @@ goldens-check:
 # Runs a real TLS server on a kernel-chosen loopback port with an untrusted cert.
 tls-verify:
 	@sh scripts/tls_verify.sh
+
+# format-diff: core:csv and core:json against Python's own modules. `make corelib`
+# compares them to goldens this repo recorded; a differential compares them to an
+# independent reader. Found FRICTION #61 (a row of one empty field lost its
+# field), which 413 of 414 row-sets and every golden agreed was fine.
+format-diff:
+	@sh scripts/format_diff.sh
 
 # ar-check: the gate for tycho-ar, the deterministic archiver in
 # tools/tycho-ar/. A batch program, so it gates with a golden the way the

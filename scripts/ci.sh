@@ -405,6 +405,9 @@ sh scripts/crypto_hygiene.sh
 step "[3u8/27] sh scripts/tls_verify.sh  (does core:tls actually VERIFY the certificate? corelib/test/tls connects to a CLOSED PORT, so it cannot tell a refused CERTIFICATE from a refused CONNECTION -- both give a null handle, and SSL_VERIFY_NONE passed every gate here. A real TLS server on a kernel-chosen loopback port with an untrusted cert: the untrusted chain must be refused, the SAME server accepted once its CA is trusted and reached by the name in the cert, and refused again by a name the cert does not carry. The middle leg is what stops the other two passing on a dead connection)"
 sh scripts/tls_verify.sh
 
+step "[3u9/27] sh scripts/format_diff.sh  (core:csv against Python's csv module and core:json against Python's json. make corelib checks both against goldens THIS REPO RECORDED, which proves they have not changed and not that they were ever right -- and for a format whose whole point is that somebody else reads it back, agreeing with its own earlier self is the wrong property. It found one: csv.stringify's stated parse(stringify(rows)) == rows was false for a row of ONE EMPTY FIELD, 413 of 414 row-sets being fine is why no golden noticed)"
+sh scripts/format_diff.sh
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.
