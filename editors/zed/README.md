@@ -9,7 +9,7 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `tycho-lsp`) for
   types, builtins, literals, identifiers, operators). It registers the language
   and drives highlighting; it does **not** model block nesting (tycho is
   indentation-significant; full structure would need a C external scanner). The
-  generated parser (`src/parser.c`, ABI 15) is committed, so no tree-sitter CLI
+  generated parser (`grammars/tycho/src/parser.c`, ABI 15) is committed, so no tree-sitter CLI
   is needed to build it. **`tree-sitter parse -q` over
   every tracked `.ty` file (excluding `node_modules/` and `fuzz/findings/`)
   reports an `ERROR` node on nothing but the enumerated known-bad set — including

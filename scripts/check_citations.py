@@ -103,6 +103,15 @@ SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)
 # CRC32 digest is 8 and does fit, so write one unbackticked (crc=... in prose)
 # or it is read as a citation and reddens here. That is deliberate: a reader
 # cannot tell a backticked 8-char digest from a short hash either.
+# A backticked REPO PATH with no line number -- `docs/guides/ffi.md`. Until
+# 2026-08-16 nothing resolved these: check_links.sh only follows `[text](target)`
+# markdown links, and a path in backticks is not one, so three docs that MOVED
+# into docs/guides/ left four references behind that every gate called green.
+# Deliberately not anchored to a line: the subject is only whether the file is
+# still there under that name.
+PATHREF = re.compile(r'`([A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+'
+                     r'\.[a-z]{1,4})`')
+
 HASH_TICK = re.compile(r'`([0-9a-f]{7,12})`')
 HASH_WORD = re.compile(r'\bcommits?\s+((?<![0-9a-zA-Z])[0-9a-f]{7,12}'
                        r'(?:\s*,\s*[0-9a-f]{7,12})*(?![0-9a-zA-Z]))')
@@ -296,6 +305,22 @@ def selfcheck():
         ("see `%s:100-200x` here" % A,       True,  "junk after the range"),
         ("see %s:100@foo.bar here" % A,      True,  "dotted anchor, unbackticked"),
     ]
+    # PATHREF's own shapes. ASSEMBLED, not spelled -- a real path written here
+    # is a path this gate then has to resolve, the same trap as the table above.
+    D = "docs/gui" + "des/ffi.md"
+    for text, want, why in [
+        ("see `%s` here" % D,        True,  "a plain backticked repo path"),
+        ("see `%s:12` here" % D,     False, "path:N belongs to CITE, not here"),
+        ("see `%s@fn` here" % D,     False, "path@SYMBOL belongs to SYMCITE"),
+        ("see `docs/*.md` here",     False, "a glob never matches: `*` is not in the class"),
+        ("see `notapath` here",      False, "no slash, so not a path"),
+        ("see %s here" % D,          False, "unbackticked prose is not claimed"),
+    ]:
+        got = bool(PATHREF.search(text))
+        if got != want:
+            print("selfcheck: PATHREF %s -- expected %s, got %s" % (why, want, got))
+            return 1
+
     claimers = (CITE, SYMCITE, SYMCITE_ANY, DOCCITE, SRCCITE, SYMCITE_SRC)
     bad = 0
     for line, want, why in cases:
@@ -630,6 +655,36 @@ def main():
                      "Rewrite it in a form the gate parses (`path:N`, "
                      "`path:N-M`, `path:N@token`, `path@SYMBOL`) or stop making "
                      "it look like a citation.%s" % (lo, hint))
+
+    # --- backticked repo paths ------------------------------------------
+    # Resolved against git's list, NOT the filesystem: a file present on the
+    # author's disk but never committed is the failure this is here to catch,
+    # the same class as goldens-check. Two spellings are accepted -- from the
+    # repo root, and relative to the citing document, which is how
+    # editors/zed/README.md names its own `src/lib.rs`.
+    n_path = 0
+    tops = {t.split("/")[0] for t in tracked if "/" in t}
+    for f in mds:
+        base = os.path.dirname(f)
+        for ln, line in enumerate(open(os.path.join(ROOT, f), errors="replace"), 1):
+            # `docs-archive` on the line means the path is named BECAUSE it was
+            # deleted, with the git command to retrieve it -- bench/lru/RESULTS.md
+            # does exactly this. That is a correct citation of an absent file.
+            if "docs-archive" in line:
+                continue
+            for m in PATHREF.finditer(line):
+                ref = m.group(1)
+                if ref.split("/")[0] not in tops:
+                    continue
+                n_path += 1
+                if ref in tracked:
+                    continue
+                if base and os.path.normpath(os.path.join(base, ref)) in tracked:
+                    continue
+                fails.append("%s:%d -> `%s` is not a tracked file (from the repo "
+                             "root or from %s/). If it moved, name the new path; "
+                             "if it was deleted, say so and cite the archive."
+                             % (f, ln, ref, base or "."))
 
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the "
