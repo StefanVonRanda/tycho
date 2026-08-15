@@ -33,7 +33,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt"
+mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -121,6 +121,36 @@ fn main():
         out = out + " " + str(datetime.to_unix(dt))
         println(out)
 TY
+cat > "$T/so/main.ty" <<'TY'
+package main
+import "core:sort"
+import "core:io"
+import "core:strings"
+
+fn joini(xs: [int]) -> string:
+    out := ""
+    for i := 0; i < len(xs); i += 1:
+        if i > 0:
+            out = out + " "
+        out = out + str(xs[i])
+    return out
+
+# Comma-separated ints per line -> asc | desc | argsort | argsort_desc.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        xs := []int
+        for p in split(line, ","):
+            push(xs, strings.parse_int(strings.trim(p)))
+        out := joini(sort.asc(xs))
+        out = out + "|" + joini(sort.desc(xs))
+        out = out + "|" + joini(sort.argsort(xs))
+        out = out + "|" + joini(sort.argsort_desc(xs))
+        println(out)
+TY
+./tychoc "$T/so/main.ty" -o "$T/sop" > "$T/b5.log" 2>&1 || {
+    echo "format-diff: FAILED (the sort harness does not build)"; tail -4 "$T/b5.log"; exit 1; }
 ./tychoc "$T/dt/main.ty" -o "$T/dtp" > "$T/b4.log" 2>&1 || {
     echo "format-diff: FAILED (the datetime harness does not build)"; tail -4 "$T/b4.log"; exit 1; }
 ./tychoc "$T/enc/main.ty" -o "$T/encp" > "$T/b3.log" 2>&1 || {
@@ -287,8 +317,55 @@ for k, v in dbad.items():
 print(f"  {len(ts)} timestamps x 6 datetime properties against Python: "
       f"{sum(len(v) for v in dbad.values())} mismatches")
 
+# ---- core:sort --------------------------------------------------------------
+# Ordering AND stability. core:sort documents every entry point as stable, and
+# Python's sorted is stable too, so the tie order is directly comparable -- which
+# matters because an unstable sort is correct on every property except the one
+# nobody prints.
+scases = [[1], [1, 1], [2, 1], [1, 2, 3], [3, 2, 1], [5, 5, 5, 5], [0, -1, 1],
+          [-2147483648, 2147483647, 0]]
+scases += [[random.randint(-20, 20) for _ in range(random.randint(1, 12))]
+           for _ in range(N)]
+p = pathlib.Path(T + "/soin.txt")
+p.write_text("\n".join(",".join(map(str, c)) for c in scases) + "\n")
+sout = subprocess.run([T + "/sop", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+def stable(c, rev):
+    return [str(i) for i in sorted(range(len(c)), key=lambda i: (-c[i] if rev else c[i], i))]
+
+# The control that matters is not "does it sort" -- it is "does the tie order
+# discriminate". Score argsort against the ANTI-stable expectation (ties
+# reversed): every array that HAS a tie must disagree with it, and no array
+# without one can. If those two counts differ, the stability leg is decoration.
+ties = sum(1 for c in scases if len(set(c)) < len(c))
+anti = sum(1 for c, line in zip(scases, sout)
+           if len(line.split("|")) == 4
+           and line.split("|")[2].split() != [str(i) for i in
+               sorted(range(len(c)), key=lambda i: (c[i], -i))])
+if ties == 0 or anti != ties:
+    print(f"  SORT CONTROL DEAD: {ties} arrays have ties but {anti} discriminate")
+    sys.exit(1)
+
+sbad = {}
+for c, line in zip(scases, sout):
+    f = line.split("|")
+    if len(f) != 4:
+        sbad.setdefault("harness", []).append((c, line)); continue
+    a, d, ai, ad = [x.split() for x in f]
+    for n, g, w in (("asc", a, [str(v) for v in sorted(c)]),
+                    ("desc", d, [str(v) for v in sorted(c, reverse=True)]),
+                    ("argsort (stable)", ai, stable(c, False)),
+                    ("argsort_desc (stable)", ad, stable(c, True))):
+        if g != w:
+            sbad.setdefault(n, []).append((c, g, w))
+for k, v in sbad.items():
+    print(f"  sort {k}: {len(v)} mismatches; first {v[0]}")
+    fail += len(v)
+print(f"  {len(scases)} arrays x 4 orderings against Python's sorted "
+      f"({ties} of them with a tie): {sum(len(v) for v in sbad.values())} mismatches")
+
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to)"
