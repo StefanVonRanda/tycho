@@ -34,9 +34,8 @@ The Markdown subset is block-level: `# `/`## ` headings, `- ` list items
 $ site <site_dir> <out_dir>
 ```
 
-`make site` (or `sh examples/site/run.sh`) builds the program three ways
-(the C `tychoc`, `tychoc0` via `--bundle`, and standalone `tychoc0`), runs
-each against this fixture site, and asserts the build report (page list + per-page
+`make site` (or `sh examples/site/run.sh`) builds the program, runs it
+against this fixture site, and asserts the build report (page list + per-page
 content hashes) byte-identical against `expected.out`. The emitted C is also run
 under ASan/UBSan — a heavy string-building / per-scope-arena workload that
 exercises exactly what the thesis claims. Since it has no external dependency,

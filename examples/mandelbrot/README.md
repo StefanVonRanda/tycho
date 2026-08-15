@@ -17,7 +17,7 @@ and the deep-copy thread boundary:
 - golden-locked stdout (the worker count is machine-dependent, so it goes to stderr).
 
 ```sh
-make mandelbrot                  # build (both compilers + TSan + ASan), run, diff
+make mandelbrot                  # build (TSan + ASan), run, diff
 sh examples/mandelbrot/run.sh    # same, standalone
 ./tychoc examples/mandelbrot/main.ty -o /tmp/mb && /tmp/mb   # just run it
 ```

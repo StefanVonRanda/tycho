@@ -22,7 +22,7 @@ request, it produces a response (reads the `.md` from disk, renders it, wraps it
 the layout). `--serve` wraps that in a `core:net` accept loop; the default self-test
 wraps it in a fixed-path loop and prints each response — so routing is testable
 without a live socket, and the self-test output is golden-locked
-(`sh examples/webserver/run.sh`, both compilers).
+(`sh examples/webserver/run.sh`).
 
 Routes: `/` (landing), `/blog` (index, newest first), `/blog/<slug>`,
 `/wiki/<page>`, else `404`. A URL segment that becomes a filename is sanitized to

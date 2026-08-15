@@ -17,7 +17,7 @@ QOI, which the harness checks (a real-program float differential), along with th
 QOI file header and a golden summary line.
 
 ```sh
-make raytrace                 # build (both compilers + ASan), render, diff, check
+make raytrace                 # build (ASan), render, diff, check
 sh examples/raytrace/run.sh   # same, standalone
 ```
 

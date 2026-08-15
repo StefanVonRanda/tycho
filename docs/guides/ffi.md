@@ -275,8 +275,8 @@ What the FFI handles today, in rough order of how much of C it unlocks:
 3. **Linking ergonomics (`tychoc`)** — `-L`/`-I`/`--link`/`--pkg`/`--shim` on the
    `tychoc` command line.
 
-Both transpilers handle every FFI feature (the static handle-misuse bans noted above
-are enforced by `tychoc`, the reference). The `tests/ffi/` fixtures (a scalar
+`tychoc` handles every FFI feature, including the static handle-misuse bans noted
+above. The `tests/ffi/` fixtures (a scalar
 round-trip, a string-returning extern, a NULL-return extern, a `ptr` handle
 round-trip, and a `--shim` build) run under `make ffi`,
 ASan-clean and output-identical.

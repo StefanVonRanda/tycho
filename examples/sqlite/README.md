@@ -43,7 +43,7 @@ Expected output:
 count=3 sum=6
 ```
 
-## Test (both compilers + ASan)
+## Test (ASan)
 
 ```
 sh run.sh

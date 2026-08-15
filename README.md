@@ -217,7 +217,7 @@ verifies the whole tree.
 | `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). |
 | `make bench` | Run the performance guard (below). |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer. |
-| `make corelib` | Build + validate the standard library three ways. |
+| `make corelib` | Build + validate the standard library against its goldens. |
 | `make ci` | The full local gate; independent lanes run in parallel — no cloud CI. |
 | `make release-check` | Build and smoke-test the current-version tarball twice; require byte-identical archives. |
 | `make clean` | Remove build artifacts. |

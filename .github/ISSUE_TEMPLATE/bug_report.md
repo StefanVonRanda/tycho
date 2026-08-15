@@ -28,7 +28,7 @@ $ ...
 - Expected: …
 - Actual: … (paste the exact output / error / sanitizer report)
 
-**Does it reproduce in both transpilers?** (helps me a lot, if you can check)
+**Confirmed with the reference transpiler?** (helps me a lot, if you can check)
 - [ ] `./tychoc bug.ty` (the C reference transpiler)
 - [ ] not sure
 

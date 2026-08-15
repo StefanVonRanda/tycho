@@ -542,8 +542,8 @@ the `.ty`; the transpiler auto-compiles and links it on `import "core:<module>"`
 `--shim` needed). The `.ty` declares the shim's functions with `extern fn` (and
 `extern "Lib" fn` auto-adds `-lLib` for an external library; `core:regex` needs none —
 POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
-dereferenced or arena-managed — `null` / `is_null`). Both transpilers link a module's shim,
-so `tychoc`, `tychoc0 --bundle`, and standalone `tychoc0` all build C-shim modules.
+dereferenced or arena-managed — `null` / `is_null`). `tychoc` links a module's shim
+automatically — no `--shim` needed for a corelib package.
 
 ### External dependencies (C-shim `deps`)
 
@@ -598,10 +598,11 @@ among them; a library with no `.pc` file can still use `extern "Lib" fn` for a b
 
 ## Testing
 
-`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.ty` is built three
-ways — by the C transpiler, via `tychoc --bundle | tychoc0`, and via **standalone** `tychoc0`
-(which resolves `core:` itself) — and all three must produce the golden
-`corelib/test/<name>.out`. Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
+`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.ty` is built and
+run, and must produce the golden `corelib/test/<name>.out`. Until 2026-07-26 each was
+also built two further ways through the self-hosted `tychoc0`, with all three outputs
+required to match; `tychoc0` is frozen and no gate builds it, so that differential is
+gone (`corelib/run.sh:6-8`). Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
 `make ci`.
 
 ## Examples
@@ -609,14 +610,13 @@ ways — by the C transpiler, via `tychoc --bundle | tychoc0`, and via **standal
 Every module also has a small, readable **usage example** at
 `examples/corelib/<name>/main.ty` — usage as documentation (idiomatic calls, human-friendly
 output), as opposed to the assertion-style tests above. `make corelib-examples`
-(→ `examples/corelib/run.sh`) validates them the same three ways against
+(→ `examples/corelib/run.sh`) validates them the same way against
 `examples/corelib/<name>.out`, with the same dependency skip, and is part of `make ci`.
 
 ## The corelib surface (pre-1.0 — NOT frozen)
 
 **The 1.0 API freeze recorded here on 2026-08-05 was withdrawn on 2026-08-09**
-with the project's demotion to 0.5. All 45 packages are still tested three ways
-and golden-locked by `make corelib` and `make corelib-examples` — that has not
+with the project's demotion to 0.5. All 45 packages are still golden-locked by `make corelib` and `make corelib-examples` — that has not
 changed and is what makes the surface worth relying on in practice. What changed
 is the promise:
 

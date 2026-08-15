@@ -141,18 +141,15 @@ deliberately not added: importer-relative paths already implement the model,
 and a second resolution rule waits until a real multi-entry project feels the
 `../` chains.
 
-## Both transpilers
+## Bundled source (`--bundle`)
 
-Packages work the same in the C transpiler (`tychoc`) and the
-self-hosted one (`tychoc0`).
+`tychoc --bundle <entry>` emits the whole import graph as one post-order source
+stream, imports first, with the entry package's header rewritten to `package main`.
+The flag is live — I ran it while writing this.
 
-`tychoc0` can compile a package directly — `tychoc0 path/main.ty` walks the
-directory and follows its imports through the same filesystem builtins — or read a
-pre-bundled, post-order source stream on stdin. The C transpiler produces that
-stream with `tychoc --bundle <entry>`: it emits imports first, with the entry
-package's header rewritten to `package main`. `tychoc0` then applies the same
-package mangling in a post-parse pass — dormant unless a `package` declaration
-showed up, so a single-file compile stays identical.
+Its consumer was the self-hosted `tychoc0`, which could either read that stream on
+stdin or walk a package directory itself. `tychoc0` is frozen (2026-07-26) and no
+gate builds it, so nothing consumes the stream today.
 
 Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
 `tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`. A second lane used to build each

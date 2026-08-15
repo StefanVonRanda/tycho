@@ -99,7 +99,7 @@ The number was declared on 2026-08-05 and withdrawn on 2026-08-09. What was
 wrong with it is worth stating precisely, because it decides the list: **the
 engineering was never the problem.** Two platforms green under `make ci`, a
 200-seed adversarial fuzzer with zero findings, sanitizer lanes over the
-compiler and the programs it emits, 46 corelib packages each tested three ways
+compiler and the programs it emits, 45 corelib packages each tested
 and golden-locked, and a normative spec the implementation is gated against —
 that is a stronger evidence base than most languages have at 1.x.
 
