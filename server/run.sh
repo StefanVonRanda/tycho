@@ -579,6 +579,19 @@ eq("400 absolute-form target",
    status(exchange(b"GET http://evil/ HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 400 Bad Request")
 eq("400 %00 control byte in path",
    status(exchange(b"GET /a%00b HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 400 Bad Request")
+# %0d%0a is the control byte that MATTERS -- decoded before the check (step 3 of
+# server/main.ty@resolve), it would otherwise reach the Location header of a
+# directory redirect, which is the one place a response echoes the path back.
+eq("400 %0d%0a header injection in path",
+   status(exchange(b"GET /a%0d%0aInjected:%20yes HTTP/1.1\r\nHost: t\r\n\r\n")),
+   "HTTP/1.1 400 Bad Request")
+eq("400 %0a alone in path",
+   status(exchange(b"GET /a%0ab HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 400 Bad Request")
+# The control: a percent-escape of a PRINTABLE byte is ordinary and must still be
+# decoded and looked up, not swept into the 400. Without this, "refuse anything
+# with a %" passes every leg above.
+eq("404 %20 is a printable byte, not a control byte",
+   status(exchange(b"GET /no%20such.txt HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 404 Not Found")
 # A Content-Length that is not a plain decimal is a smuggling primitive, refused
 # rather than parsed leniently (server/main.ty:463-473).
 eq("400 Content-Length: -5 (smuggling)",
