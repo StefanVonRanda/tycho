@@ -345,11 +345,11 @@
   <div class="spec rise d4" aria-label="Key facts">
     <div class="shead">Spec — at a glance</div>
     <div class="row">
-      <div class="cell"><b><code>v0.1.0</code></b><span>tagged release</span></div>
+      <div class="cell"><b><code>v0.7.0</code></b><span>tagged release</span></div>
       <div class="cell"><b>cc + make</b><span>whole toolchain</span></div>
       <div class="cell"><b>no GC</b><span>arenas from scope</span></div>
-      <div class="cell"><b>38</b><span>stdlib packages</span></div>
-      <div class="cell"><b>self-hosting</b><span>compiles itself</span></div>
+      <div class="cell"><b>45</b><span>stdlib packages</span></div>
+      <div class="cell"><b>719</b><span>gated fixtures</span></div>
     </div>
   </div>
 
@@ -475,6 +475,21 @@
   <section id="start">
     <p class="marker rv"><span class="n">§05</span> Try it</p>
     <h2 class="rv">A C compiler and make — that's the whole toolchain.</h2>
+<div class="panel rv">
+<div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
+<pre><code><span class="c"># Linux x86-64; a Windows build is on the same release page</span>
+<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.7.0/tycho-v0.7.0-linux-x86_64.tar.gz
+<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.7.0/tycho-v0.7.0-linux-x86_64.tar.gz.sha256
+<span class="g">$</span> sha256sum -c tycho-v0.7.0-linux-x86_64.tar.gz.sha256
+<span class="out">tycho-v0.7.0-linux-x86_64.tar.gz: OK</span>
+<span class="g">$</span> tar xzf tycho-v0.7.0-linux-x86_64.tar.gz &amp;&amp; cd tycho-v0.7.0-linux-x86_64
+<span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
+<span class="out">what is your name: Ada</span>
+<span class="out">hello Ada</span></code></pre>
+</div>
+<p class="codecap rv"><b>Listing 02b.</b> The prebuilt route: the tarball carries <code>tychoc</code>, the
+core library and the examples. You still need <code>cc</code> — it is what <code>tychoc</code> hands
+the generated C to. Building from source below ends at the same prompt.</p>
     <div class="panel rv">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 03 — terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
       <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
