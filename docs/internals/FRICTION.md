@@ -5502,3 +5502,42 @@ NUL* by SQLite's own definition and so returns 2 on perfectly intact data — th
 oracle was wrong and the code was right. `length(cast(x as blob))` asks the
 question actually meant. The golden written from the intended answer was correct
 both times; only the query was not.
+
+### 72. The server's traversal defence is two layers and nothing could tell — **GATED 2026-08-15**
+
+**No defect.** A structural gap, found while probing the server for
+`docs/internals/audit-brief.md`, and the more interesting kind: everything is
+correct and nothing could notice if it stopped being.
+
+Sixteen hostile requests against a real `tycho-httpd` — raw `../`, `%2e%2e%2f`,
+double-encoded `%252e`, `....//`, a leading `//`, overlong UTF-8 `%c0%af`,
+absolute-form, a NUL in the target, `.git/config`, duplicate `Content-Length`,
+`Content-Length` beside `Transfer-Encoding`, an 8000-byte target — **all refused,
+nothing leaked, and the server still served afterwards.** `resolve` decodes
+percent-escapes BEFORE the traversal test, which is the right order and the one
+usually got wrong.
+
+Then the control refused to work, which is where the finding is. Replacing
+`path.safe_join(root, rel)` with naive concatenation **still gave 403** — so the
+probe would not have caught a `safe_join` regression, and for a while it looked
+as though `safe_join` were decoration. Defeating the other guard as well produced
+the leak and settled it:
+
+| `safe_join` | `hidden_segment` | `GET /../secret` |
+|---|---|---|
+| intact | intact | 403 |
+| **defeated** | intact | 403 |
+| intact | **defeated** | 403 |
+| **defeated** | **defeated** | **200, canary leaked** |
+
+They are genuinely redundant, which is good design and a gating problem: **either
+guard can be deleted with no observable change.** `server/run.sh`'s traversal
+legs stay green, the whole sweep stays green, and the defence is now one layer.
+The next change removes the other, and neither commit looked wrong.
+
+`make traversal-check` (~16.4s, 16.36 / 16.35 / 16.81 s) closes it by defeating
+them one at a time in a COPY of the server and requiring the refusal to hold,
+with both-defeated as the control that must leak. Every `sed` asserts it changed
+the file, because a patch that silently does not apply reports the unmodified
+server as the broken one — a mistake already made twice in this session's own
+controls.

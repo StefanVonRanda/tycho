@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check tls-verify http-verify format-diff math-diff ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check tls-verify http-verify format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 all: tychoc
 
@@ -354,6 +354,14 @@ format-diff:
 # redden: reverting gcd reddens the int arm alone, sign the float arm alone.
 math-diff:
 	@sh scripts/math_diff.sh
+
+# traversal-check: server/run.sh proves a traversal is REFUSED; it cannot say by
+# WHICH guard. resolve() has two independent ones and either alone suffices, so
+# deleting one changes no observable behaviour and every gate stays green while
+# the defence halves. This defeats them one at a time in a copy and requires the
+# refusal to hold, with both-defeated as the control that must LEAK.
+traversal-check:
+	@sh scripts/traversal_depth.sh
 
 # ar-check: the gate for tycho-ar, the deterministic archiver in
 # tools/tycho-ar/. A batch program, so it gates with a golden the way the
