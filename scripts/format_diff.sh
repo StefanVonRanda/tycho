@@ -38,7 +38,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf" "$T/pa" "$T/u8" "$T/rx"
+mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf" "$T/pa" "$T/u8" "$T/rx" "$T/cl"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -232,6 +232,29 @@ fn main():
             println("0")
         regex.release(re)
 TY
+cat > "$T/cl/main.ty" <<'TY'
+package main
+import "core:cli"
+import "core:io"
+import "core:strings"
+
+# "<n><TAB><e1><TAB>..." -- the COUNT leads, so no argv serialises to an empty
+# line. An argv of [""] otherwise does, the reader skips it, and every answer
+# shifts by one: the same alignment trap as the codec harness in this file.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        parts := split(line, "\t")
+        n := strings.parse_int(parts[0])
+        av := []string
+        for i := 1; i <= n; i += 1:
+            push(av, parts[i])
+        c := cli.parse(av)
+        println(str(len(c.keys)) + " " + str(len(c.flags)) + " " + str(len(c.positional)))
+TY
+./tychoc "$T/cl/main.ty" -o "$T/clp" > "$T/b10.log" 2>&1 || {
+    echo "format-diff: FAILED (the cli harness does not build)"; tail -4 "$T/b10.log"; exit 1; }
 ./tychoc "$T/rx/main.ty" -o "$T/rxp" > "$T/b9.log" 2>&1 || {
     echo "format-diff: FAILED (the regex harness does not build)"; tail -4 "$T/b9.log"; exit 1; }
 ./tychoc "$T/u8/main.ty" -o "$T/u8p" > "$T/b8.log" 2>&1 || {
@@ -655,8 +678,63 @@ print(f"  {len(rpairs)} pattern x subject pairs through regex.is_match against P
       f"({nm} match, {len(rpairs) - nm} no-match): {len(rbad)} mismatches")
 fail += len(rbad)
 
+# ---- core:cli ---------------------------------------------------------------
+# No external oracle -- argparse's semantics are different -- so this is the
+# PARTITION property against cli's own documented rules: every argv element lands
+# in exactly one bucket, `--` sends the rest to positional, and `-abc` is three
+# flags. A parser that silently drops an argument is the fail-open of this family.
+ctoks = ["--out=file", "--verbose", "-v", "-abc", "plain", "--", "--after", "-x",
+         "--k=", "--=v", "-", "--k=a=b", "file.txt", "--K=V", "-1", "--9=x", "",
+         "--out=file2"]
+ccases = [["--out=f", "a", "--v"], ["--", "--x", "-y"], ["-abc"],
+          ["a", "--", "b", "--c"], [], ["--k=a=b"], ["-"], ["--"], ["--k="],
+          ["--=v"], ["a", "", "b"], [""]]
+ccases += [[random.choice(ctoks) for _ in range(random.randint(0, 6))]
+           for _ in range(N)]
+p = pathlib.Path(T + "/clin.txt")
+p.write_text("\n".join("\t".join([str(len(c))] + c) for c in ccases) + "\n")
+cout = subprocess.run([T + "/clp", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+def cexpect(av, bundle=True, dashdash=True):
+    o = f = pz = 0
+    after = False
+    for a in av:
+        if after:
+            pz += 1; continue
+        if a == "--" and dashdash:
+            after = True; continue
+        if a.startswith("--") and "=" in a:   o += 1
+        elif a.startswith("--") and len(a) > 2: f += 1
+        elif a.startswith("-") and len(a) > 1:  f += (len(a) - 1) if bundle else 1
+        else: pz += 1
+    return o, f, pz
+
+def cscore(**kw):
+    n = 0
+    for av, line in zip(ccases, cout):
+        if not line.strip():
+            continue
+        if tuple(int(x) for x in line.split()) != cexpect(av, **kw):
+            n += 1
+    return n
+
+# Two controls, each naming a rule: if reading `-abc` as ONE flag scores the same
+# as three, bundling is not happening; if ignoring `--` scores the same, the
+# separator is not honoured. Either way the corpus is not exercising the rule.
+if cscore(bundle=False) == 0 or cscore(dashdash=False) == 0:
+    print("  CLI CONTROL DEAD: a deliberately wrong rule scored identically")
+    sys.exit(1)
+ncl = cscore()
+if ncl:
+    for av, line in list(zip(ccases, cout))[:3]:
+        if line.strip() and tuple(int(x) for x in line.split()) != cexpect(av):
+            print(f"  cli {av} -> {line} want {cexpect(av)}")
+print(f"  {len(ccases)} argv vectors through cli.parse against its documented "
+      f"partition rules: {ncl} mismatches")
+fail += ncl
+
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included; and path.safe_join never returns a path that escapes its base and never refuses one that stays inside, over hundreds of hostile relative paths, with the counts printed above rather than repeated here; and core:utf8 agrees with Python's strict decoder on validity and codepoint count, overlong encodings, surrogates and out-of-range sequences all refused; and core:regex agrees with Python's re on MEMBERSHIP over a construct set portable to both, spans deliberately not compared because POSIX is leftmost-longest and Python is leftmost-first)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included; and path.safe_join never returns a path that escapes its base and never refuses one that stays inside, over hundreds of hostile relative paths, with the counts printed above rather than repeated here; and core:utf8 agrees with Python's strict decoder on validity and codepoint count, overlong encodings, surrogates and out-of-range sequences all refused; and core:regex agrees with Python's re on MEMBERSHIP over a construct set portable to both, spans deliberately not compared because POSIX is leftmost-longest and Python is leftmost-first; and cli.parse partitions every argv element into exactly one bucket by its documented rules, with bundling and the -- separator each proved to be exercised)"
