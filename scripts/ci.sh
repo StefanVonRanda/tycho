@@ -402,6 +402,9 @@ sh scripts/bignum_diff.sh
 step "[3u7/27] sh scripts/crypto_hygiene.sh  (does core:crypto leave secret material in memory it has RELEASED? make corelib checks the ANSWERS -- that a ciphertext decrypts, that a signature verifies -- and every one of those passes whether or not the plaintext is still sitting in a freed heap block, because hygiene has no output. --wrap=free interposes only the shim's own frees, so a hit names that file; two controls run first, a dirty block that must be FOUND and a cleansed one that must NOT be)"
 sh scripts/crypto_hygiene.sh
 
+step "[3u8/27] sh scripts/tls_verify.sh  (does core:tls actually VERIFY the certificate? corelib/test/tls connects to a CLOSED PORT, so it cannot tell a refused CERTIFICATE from a refused CONNECTION -- both give a null handle, and SSL_VERIFY_NONE passed every gate here. A real TLS server on a kernel-chosen loopback port with an untrusted cert: the untrusted chain must be refused, the SAME server accepted once its CA is trusted and reached by the name in the cert, and refused again by a name the cert does not carry. The middle leg is what stops the other two passing on a dead connection)"
+sh scripts/tls_verify.sh
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.

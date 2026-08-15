@@ -351,7 +351,18 @@ non-digit's wrapped subtraction tests as valid.
 the shim released, and whether the key-import decode branches on it. It says
 nothing about memory the shim never owned — OpenSSL's own allocations, or the
 copy Tycho's runtime makes at the FFI boundary — nothing about cache-line or
-table-lookup side channels, and `core:tls` was not touched.
+table-lookup side channels.
+
+**`core:tls` now has one thing proved about it, and only one.** It is the client
+half of every HTTPS request a Tycho program makes, and the only test it had
+connected to a CLOSED LOOPBACK PORT — which cannot tell a refused CERTIFICATE
+from a refused CONNECTION, since both return a null handle. Turning
+`SSL_VERIFY_PEER` into `SSL_VERIFY_NONE` passed every gate in this tree;
+measured, not supposed. `make tls-verify` now runs a real server on the loopback
+with an untrusted certificate and pins three outcomes that must disagree, so both
+chain validation and the hostname check are held by a leg that reddens on its
+own. That is the whole claim: **nothing here says anything about the tls shim's
+memory handling, its error paths, or its session lifetime.**
 
 **One thing the probe taught about probes.** Its first version held two shim
 results at once and reported the round trip BROKEN. That was the probe:
