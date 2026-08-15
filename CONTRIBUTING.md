@@ -59,7 +59,9 @@ and it is the only thing that covers the wide lanes — a dogfood link break or 
 cross-package mangling divergence is invisible to `make test`.
 
 **`make ci` measured 548 / 551 / 563 s across three runs on a 16-core box,
-2026-08-14** — all 46 steps including 200 fuzz seeds. `make ci N=0`, which skips
+2026-08-14 — treat that as an upper bound now.** `make test` was the long pole at
+~8 min and is 113s as of 2026-08-15, so the sweep is likely much shorter; it has
+not been re-measured — all 46 steps including 200 fuzz seeds. `make ci N=0`, which skips
 the fuzz lanes, was **274s** on 2026-08-10 and has not been re-measured since the
 tool lanes were added, so treat it as a floor. It parallelises (`run_lanes` forks
 each lane group), which is why the whole sweep costs barely more than `make test`
@@ -116,7 +118,7 @@ reach for first.
 | Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~1s. Also fails a NEW document under `docs/` that no index links to. Nothing else can tell you more — none of it reaches a compiled artifact |
 | a fixture under `docs/spec/`, or moved a `tests/` directory | `sh scripts/spec_check.sh` | ~6s. Also checks Appendix A against §3/§4, and that every `tests/…` path in Appendix E resolves |
 | added a `run.sh`, or recorded a new golden | `make goldens-check` | ~0.1s. Asserts every golden a runner names is **tracked by git**. `.gitignore` ignores `*.out` broadly, so a new golden is green on your disk and absent from a fresh clone — `make test` reads the copy that exists and cannot redden for it |
-| `src/tychoc.c`, `runtime/tycho_rt.c`, or any `.ty` fixture | `make test` | ~8 min |
+| `src/tychoc.c`, `runtime/tycho_rt.c`, or any `.ty` fixture | `make test` | **~113s** (measured 2026-08-15, 719 fixtures, 16 cores). It parallelises — `TYCHO_THREADS=1` takes 725s, so narrow it only when you need the sequential ordering. This row said ~8 min until 2026-08-15, from a 2026-07-31 measurement taken before the runner was parallelised |
 | anything under `corelib/` | `make corelib` | ~49s. **`make test` cannot redden for it** — `tests/run.sh` globs the top level only and never descends into `corelib/`. Add `make corelib-examples` (~44s) if the package has a worked example. A package whose external dependency is absent (no `libpng-dev`, say) is SKIPPED rather than failed, and the verdict line names it: `N ok, M SKIPPED -- image(missing: libpng)`. Only `all green` means everything ran. `make corelib-examples` skips and reports the same way |
 | a corelib change that ADDS, RENAMES or RETYPES a symbol | also `sh scripts/entrypoints.sh` | ~0.15s. **Neither corelib lane can redden for this.** A new symbol changes the compiler's global state, and that can break an unrelated **consumer** program: `9f601a6` changed only `corelib/`, was gated exactly as the row above says, and still shipped a red `make ci` — two extra `core:io` entries exposed a latent compiler bug that stopped `tools/tycho-vm/main.ty` compiling. `make corelib` builds `corelib/test/<pkg>/main.ty`; `make corelib-examples` builds `examples/corelib/**`; neither compiles anything under `tools/`. This lane compiles every entry point in the tree — `examples/`, `server/` and `tools/` — so it is the cheap consumer check |
 | `corelib/crypto/crypto_shim.c` | also `sh scripts/crypto_hygiene.sh` | ~1s. **`make corelib` cannot redden for it.** That lane checks the ANSWERS — a ciphertext decrypts, a signature verifies — and every one of those passes whether or not the plaintext is still sitting in a freed heap block, because hygiene produces no output. `-Wl,--wrap=free` interposes only the shim's own frees, so a hit names that file and not libcrypto. Two controls run first: a dirty block that must be FOUND, and a cleansed one that must NOT be. Also asserts the key-import hex decode never branches on the secret — under valgrind, not a stopwatch — and that the branch-free rewrite classifies all 256 byte values exactly as the branching original did |
@@ -151,8 +153,11 @@ reach for first.
 | a `bench/` benchmark, or a language change that could break one | `sh scripts/entrypoints.sh` | ~0.22s. **The only lane that compiles anything under `bench/`.** `bench/guard.sh` checks one wall-time ratio and nothing else, so before 2026-08-11 the ~51 benchmarks could stop compiling in silence. Compile-only (`--emit-c`) — it never runs a benchmark, so it stays milliseconds. `make bench` depends on it |
 | `tools/tychofmt.ty`, `tools/lsp.ty` | `sh scripts/tools_check.sh` | ~1 min |
 
-`make test-fast` runs the same fixtures over a worker pool and is much quicker —
-**use it to iterate, not as your gate.** It is compiled by the compiler it tests,
+`make test-fast` runs the same fixtures over a worker pool. It used to be much
+quicker; **as of 2026-08-15 it is not** — 104s against `make test`'s 113s on a
+16-core box, because `tests/run.sh` parallelises too now. **Just run `make
+test`.** The reason `test-fast` was never the gate is unchanged and is why the
+nine seconds are not worth it: it is compiled by the compiler it tests,
 so a single `tychoc` regression can land inside the judge and turn every verdict
 green at once. `tests/run.sh` scores with `cmp`, `grep` and `test`, which nothing
 in this repo can break; when the two disagree, it is right by definition.
