@@ -396,7 +396,7 @@ marks it, so the next deprecation costs one comment
 (`tests/warn/deprecated.ty`).
 
 **Tarballs are built and NOT published** — the owner's call. The version
-constant is now `0.6.0` (`src/tychoc.c@TYCHO_VERSION`), and this section
+constant is now `0.7.0` (`src/tychoc.c@TYCHO_VERSION`), and this section
 described `v0.5.0` until 2026-08-14.
 
 **Both tarballs were REBUILT from HEAD on 2026-08-14 and verified.** They had

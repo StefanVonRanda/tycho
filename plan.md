@@ -4,10 +4,10 @@ Two phases, neither completable inside a coding session. Everything else from
 the 2026-08-15 sweep is done and in `git log` — evidence lives in the commit
 messages, per the rule in `CLAUDE.md`.
 
-## 1. Publish 0.6.0
+## 1. Publish 0.7.0
 
 - **Scope:** tag, push, create the release. Nothing else.
-- **Done when:** `gh release list` shows v0.6.0 as a prerelease.
+- **Done when:** `gh release list` shows v0.7.0 as a prerelease.
 - **Verify FIRST — a checksum proves intact, never current:** `make release-check`,
   then extract the tarball and run `tests/reject/` through the *shipped* `tychoc`
   plus a positive control that must compile. That check has caught a stale

@@ -7,35 +7,62 @@ Draft release notes. Edit this before publishing, then:
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->
 
-Tycho 0.6 — pre-1.0, no stability guarantees (see the [README](README.md) for
+Tycho 0.7 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
-**This release breaks source compatibility with 0.5.** Several changes refuse or
-re-shape code that compiled before, and every migration is mechanical. Read the
-BREAKING CHANGES section of [CHANGELOG.md](CHANGELOG.md) before upgrading — it
-states each one as "what you wrote" → "what you write", and it is the list, not
-this paragraph. One more behaviour change is filed outside that section because
-it refuses nothing: f-string holes now evaluate left to right, so a program whose
-interpolations have side effects can observe a different order.
+**This release breaks source compatibility with 0.6.** Several shapes that
+compiled before are now refused, and two of them were live memory errors rather
+than style: a copied `handle` gave one pointer two owners and glibc reported
+`double free detected in tcache 2` from a four-line program, and a copied channel
+aliased one channel to two owners so a send through one was received through the
+other. Also refused now: `sink`/`inout` on an affine type, a bare handle as a
+struct field, and a `bounded[N]T` generic field that had silently degraded to a
+plain fixed array. `JsonErr` gains a variant, which breaks an exhaustive `match`
+on it. Every migration is mechanical; [CHANGELOG.md](CHANGELOG.md)'s breaking
+sections state each as "what you wrote" → "what you write" and are the list, not
+this paragraph.
 
-## Security fixes in `core:crypto`
+## Security fixes
 
-Both found and fixed after the 0.6 tarballs were first built, so make sure you
-have an artifact from 2026-08-15 or later.
+`core:crypto` — two of these are credential-grade, and both failed by
+**collision** rather than by weakness, which is the mode that does not look like
+a bug:
 
+- **A password was truncated at its first NUL.** The shim called `strlen`, so
+  `"secret\0A"` and `"secret\0B"` derived the *same* key — and the same one as
+  `"secret"`. Two distinct credentials authenticated against each other. The
+  length is passed explicitly now.
+- **`ct_equal` compared two hex strings by their prefixes**, for the same reason.
+  Not reachable in the MAC-verification shape — a computed MAC carries no NUL, so
+  the lengths disagreed and the answer was already false — but a caller comparing
+  two *supplied* values had a collision.
 - **The plaintext was left in freed memory.** `aead_encrypt` released the
-  plaintext it decoded, and `aead_decrypt` the plaintext it recovered, without
-  wiping either. The recycled hex return buffer also kept its last value —
-  including a key from `key_export_hex` — for the life of the thread.
+  plaintext it decoded and `aead_decrypt` the one it recovered, neither wiped.
+  The recycled hex return buffer also kept its last value — including a key from
+  `key_export_hex` — for the life of the thread.
 - **Key import was not constant-time.** The hex decode rejected at the first bad
-  digit, which times the offset of the error. It is branch-free now, verified
-  under valgrind rather than by timing: 7 secret-dependent branches before, 0
-  after.
+  digit, which times the offset of the error. Branch-free now, verified under
+  valgrind rather than by timing: 7 secret-dependent branches before, 0 after.
 
-Neither is remotely triggerable on its own; both matter if an attacker can read
-process memory or measure your key-import path. There is still **no third-party
-audit** of this package — see [SECURITY.md](SECURITY.md).
+Elsewhere:
+
+- **`core:http` can be pointed at a private CA** (`SSL_CERT_FILE` /
+  `SSL_CERT_DIR`), which is what makes its certificate verification testable at
+  all. It was correct before and *unprovable*; `make http-verify` now holds it.
+- **`markdown.render` no longer emits `javascript:` or `data:` hrefs**, and
+  escapes attribute values as well as text.
+- **`json.parse_checked` refuses a document nested past 2000** instead of
+  aborting the process. A deeply nested document used to kill it with
+  `tycho: stack overflow`, so the one entry point with an error channel had a
+  hole exactly where an attacker controls the input.
+- **`sqlite` bound parameters survive an interior NUL**, and `toml.parse` refuses
+  a repeated `[table]` header that used to delete the first one.
+
+There is still **no third-party audit** of any of this — see
+[SECURITY.md](SECURITY.md), and
+[docs/internals/audit-brief.md](docs/internals/audit-brief.md) if you are willing
+to be one.
 
 ## Install
 
