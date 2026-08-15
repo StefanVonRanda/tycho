@@ -312,9 +312,7 @@ division or modulo by an integer **literal** `0` is a compile error, by a zero
 by zero`, exit `1`), and `float`/`f32` division by zero stays IEEE (`inf`) — the
 §13.2 rules exactly, not a second set.
 
-This is **post-freeze** syntax: it is a type error to the frozen `tychoc0`. Its
-fixtures lived in `tests/postfreeze/` until the `tychoc0` lanes were retired on
-2026-07-29; they are now in `tests/` and `tests/abort/` (Appendix E.2.1).
+Its fixtures are in `tests/` and `tests/abort/` (Appendix E.2.1).
 
 > Provenance: two-array arm `src/tychoc.c:6728-6758`, broadcast arm
 > `src/tychoc.c:6787-6813`; per-element-type operator set
@@ -531,11 +529,8 @@ counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
 
 `keys(m)` returns the map's live keys as an array `[K]` in **insertion order** —
 the order in which each key was first inserted (`src/tychoc.c:12847-12850`; the
-emitted `keys` walks the append-ordered entries array and keeps the live ones.
-The **insertion-ordered link chain** the two refs here formerly named — a `nxt`
-field threaded through the slot table — no longer exists anywhere in the
-compiler, so those refs are not repointed but retired: order now falls out of
-append order plus an `elive` flag, not out of a chain). It is the way to
+emitted `keys` walks the append-ordered entries array and keeps the live ones —
+order falls out of append order plus an `elive` flag). It is the way to
 iterate a map; `k in m` only tests membership. For a newtype or fieldless-enum
 key type, `keys` returns the wrapped key values.
 

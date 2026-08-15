@@ -184,17 +184,6 @@ source instead of inferring them from the sign of a step expression.
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1666-1672`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
 > (`src/tychoc.c:11793-11797`).
->
-> **Amended 2026-07-30 (the loops-cleanup plan).** This note previously read "The step
-> codegen and its zero-step guards still exist but are unreachable: every
-> remaining `S_FORRANGE` producer writes a NULL step", citing the `Stmt` field
-> `r_step`. That was true from 2026-07-29, when `range(a, b, step)` — the field's
-> only producer — was removed, until 2026-07-30, when the field, the step
-> codegen, the `tycho: range step is zero` abort, the `_stepN > 0 ? … : …`
-> direction ternary, the literal-zero-step refusal and the `parallel for` step
-> refusal were all deleted. The paragraph above is unaffected: the zero-step
-> guarantee was already gone as a language guarantee, and this only removes the
-> dead machinery that used to implement it.
 
 ## 14.5 `return`
 

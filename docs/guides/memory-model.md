@@ -8,9 +8,8 @@ it looks like in code is [arrays-structs.md](arrays-structs.md).
 
 This page is the working detail — the shape of the emitted C, the reclamation
 techniques that keep the model cheap, what checks them, and what each one
-measured. Figures that name `tychoc0`, the self-hosted transpiler frozen on
-2026-07-26, are kept as recorded: they were measured against both compilers when
-both ran. The sections below describe the model as it stands; a closing appendix
+measured. Some figures name `tychoc0`, the self-hosted transpiler; they are kept
+as they were recorded. The sections below describe the model as it stands; a closing appendix
 sketches, for contributors, how I brought the self-hosted code generator onto
 the model one type family at a time.
 

@@ -112,7 +112,7 @@ Not cleanly benchmarkable, and why (honest negative space):
   25 vs 33 MB). So the arena's locality benefit is real but already captured, not a
   separable number.
 - ~~**Concurrency/parallelism**~~ — no longer a gap: `spawn`/`wait`,
-  `parallel for`, and channels shipped (both compilers), and `conc/`
+  `parallel for`, and channels shipped, and `conc/`
   measures them head-to-head — `parallel for` lands at exact C-pthreads
   parity on the compute-bound reduction, and the lock-free channels beat a
   hand-written C mutex ring ~9× (73 vs 654 ms) while still paying the per-message
