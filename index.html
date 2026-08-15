@@ -462,8 +462,8 @@
     <h2 class="rv">An experiment, but a heavily-checked one.</h2>
     <div class="spec2 rv">
       <div class="row"><span class="k">Compilers</span><span class="v">Two: a reference written in C, and a frozen compiler <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits.</span></div>
-      <div class="row"><span class="k">Fixpoint</span><span class="v"><span class="cmd">make selfhost-check</span> re-proves it at every commit — the Tycho-built compiler reproduces its own emitted C <b>byte-for-byte</b>.</span></div>
-      <div class="row"><span class="k">Sanitizers</span><span class="v">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — against a committed golden.</span></div>
+      <div class="row"><span class="k">Corpus</span><span class="v"><span class="cmd">make test</span> builds and runs <b>719 fixtures</b> against committed goldens, each under ASan/UBSan/LeakSanitizer.</span></div>
+      <div class="row"><span class="k">Sanitizers</span><span class="v">A fuzzer runs random programs through <b>two builds of the compiler</b> — native <span class="cmd">-O2</span> against ASan/UBSan — and the disagreement is the oracle; every example is built twice and compared to a golden.</span></div>
       <div class="row"><span class="k">Gate</span><span class="v"><span class="cmd">make ci</span> runs the whole check suite on your own machine — there's no cloud CI to take on faith.</span></div>
     </div>
     <p class="muted rv">
