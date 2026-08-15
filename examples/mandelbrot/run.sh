@@ -37,7 +37,7 @@ fi
 
 # (2) ThreadSanitizer: the parallel-for reduction must be data-race-free
 if [ "$IS_WINDOWS" = 1 ]; then
-    echo "SKIP mandelbrot TSan leg (gcc has no Windows-target ThreadSanitizer at all; plan_windows.md phase 2)"
+    echo "SKIP mandelbrot TSan leg (gcc has no Windows-target ThreadSanitizer at all; docs/internals/windows-port.md phase 2)"
 elif ! { "$TYCHOC" "$SRC" --emit-c -o "$T/t" >/dev/null 2>&1 && \
        $CC -fsanitize=thread -g -O1 -pthread "$T/t.c" -o "$T/tsan" -lm 2>"$T/t.log"; }; then
     echo "FAIL: TSan cc"; sed 's/^/      /' "$T/t.log"; fail=1
@@ -48,7 +48,7 @@ fi
 
 # (3) ASan/UBSan over the emitted C
 if [ "$IS_WINDOWS" = 1 ]; then
-    echo "SKIP mandelbrot ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; plan_windows.md phase 2)"
+    echo "SKIP mandelbrot ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; docs/internals/windows-port.md phase 2)"
 elif ! { "$TYCHOC" "$SRC" --emit-c -o "$T/a" >/dev/null 2>&1 && \
        $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -pthread "$T/a.c" -o "$T/asan" -lm 2>"$T/a.log"; }; then
     echo "FAIL: ASan cc"; sed 's/^/      /' "$T/a.log"; fail=1

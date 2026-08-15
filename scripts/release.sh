@@ -16,7 +16,7 @@
 # There is no hosted CI by policy, so releases are built and published by hand, one
 # platform per machine. The --mingw leg cross-builds the compiler AND the three
 # shipped tools with x86_64-w64-mingw32-gcc (the windows port, phases 1/5/7 --
-# see plan_windows.md), and smoke-tests the staged layout under Wine when Wine is
+# see docs/internals/windows-port.md), and smoke-tests the staged layout under Wine when Wine is
 # installed. The dispatcher (`tycho`) is not shipped on either platform.
 set -eu
 

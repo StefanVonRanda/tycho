@@ -40,7 +40,7 @@ RECORD="${RECORD:-0}"
 # 32-bit-`long` data model. The 32-bit ASan runtime is not shipped under multilib,
 # so that lane is skipped here; ASan coverage stays in the 64-bit `make test`.
 NO_ASAN="${TYCHO_NO_ASAN:-0}"
-# Windows/MSYS2: mingw gcc ships no ASan/UBSan runtime (plan_windows.md phase 2
+# Windows/MSYS2: mingw gcc ships no ASan/UBSan runtime (docs/internals/windows-port.md phase 2
 # -- "mingw ASan is experimental"), so the sanitizer legs cannot link
 # (-lasan/-lubsan absent) and every fixture would redden on a leg that is a SKIP
 # by design. Force TYCHO_NO_ASAN=1 unless the caller explicitly set it to 0, and
@@ -158,7 +158,7 @@ run_fixture() {
     gold="tests/$name.out"
     # Windows-aware golden: the float_str_locale rt= column is untestable on
     # Windows (the roundtrip hook needs newlocale, absent from mingw at every
-    # version -- plan_windows.md phase 3); a `<golden>.win` sibling records the
+    # version -- docs/internals/windows-port.md phase 3); a `<golden>.win` sibling records the
     # rt=-1 rendering. Only ever selected on Windows.
     if [ "$IS_WINDOWS" = 1 ] && [ -f "tests/$name.out.win" ]; then gold="tests/$name.out.win"; fi
     run_one "$hi" "$name" "$gold" "$in"

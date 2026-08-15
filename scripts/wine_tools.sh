@@ -3,7 +3,7 @@
 # Windows build proof), plus representative runs under Wine for the
 # deterministic ones, compared against their own lane goldens where cheap.
 # The Linux-box approximation of "make tools + the tool lanes on the Windows
-# box" (plan_windows.md phase 5).
+# box" (docs/internals/windows-port.md phase 5).
 #
 #   sh scripts/wine_tools.sh
 #   WINE_TOOLS_FILTER=ar sh scripts/wine_tools.sh

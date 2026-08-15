@@ -10,7 +10,7 @@
 > **This file is kept as the record of the port's design, not as live work.**
 > It is load-bearing: `tests/run.sh`, `tests/conc/run.sh`, `tests/ffi/run.sh`,
 > `scripts/ci.sh`, `scripts/release.sh`, the four `scripts/wine_*.sh` and six
-> `examples/*/run.sh` all cite "plan_windows.md phase N" as the stated reason
+> `examples/*/run.sh` all cite "windows-port.md phase N" as the stated reason
 > they skip a sanitizer leg on Windows. Those phase numbers must keep resolving
 > to the sections below, so do not renumber or delete them.
 >
@@ -303,7 +303,7 @@ language surface. WSL2 stays a first-class supported path.
 > SHIPPED: scripts/release.sh gains `--mingw` — cross-builds
 > dist/tycho-<v>-mingw64-<arch>.tar.gz (compiler + corelib + docs + hello; the
 > tools join in phase 5), version-checked like the native leg, smoke-verified
-> to contain tychoc.exe. plan_windows.md itself is committed with this phase.
+> to contain tychoc.exe. windows-port.md itself is committed with this phase.
 >
 > GATES (Linux tree): make test 591/591 (env -u LD_PRELOAD), tools-check ok,
 > goldens-check ok, doc gates ok. The compiler/runtime line shifts re-anchored

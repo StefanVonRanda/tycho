@@ -30,7 +30,7 @@ esac
 # Windows/MSYS2: the Linux-only lanes cannot run -- no gcc -m32 multilib
 # (ilp32), no mingw ASan/UBSan runtime (asan-self, the fuzz differential), no
 # LD_PRELOAD (locale-check self-skips). They skip loudly by name, per
-# plan_windows.md phase 6/7 ("skip loudly with their reasons").
+# docs/internals/windows-port.md phase 6/7 ("skip loudly with their reasons").
 case "$(uname -s)" in
     *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;;
     *) IS_WINDOWS=0 ;;
@@ -94,7 +94,7 @@ make -s test
 run_lanes platform corelib apps rest
 if [ "$N" -gt 0 ]; then
     if [ "$IS_WINDOWS" = 1 ]; then
-        step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- plan_windows.md phase 2)"
+        step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- docs/internals/windows-port.md phase 2)"
     else
         run_lanes fuzz-main fuzz-reject fuzz-leak
     fi

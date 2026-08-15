@@ -1,5 +1,5 @@
 #!/bin/sh
-# Wine smoke for the native-Windows port (plan_windows.md). Cross-compiles
+# Wine smoke for the native-Windows port (docs/internals/windows-port.md). Cross-compiles
 # selected fixtures with the mingw-w64 compiler and runs them under Wine,
 # comparing output byte-for-byte against the Linux goldens.
 #
@@ -13,7 +13,7 @@
 # WHAT IT IS NOT: a gate, and not a Windows verdict. Wine is an approximation
 # of Win32 -- scheduling, exception and file semantics all differ in ways the
 # fixtures can paper over. "Green under Wine" is recorded as exactly that; the
-# DEFINITIVE pass is the windows-latest CI leg of plan_windows.md phases 6/7.
+# DEFINITIVE pass is the windows-latest CI leg of docs/internals/windows-port.md phases 6/7.
 # It SKIPS loudly when the mingw cross compiler or wine is absent.
 #
 # COVERAGE, and why these fixtures: the conc positives pin the concurrency

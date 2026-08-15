@@ -116,7 +116,7 @@ demo: tychoc
 	@./examples/hello
 
 # wine-smoke: the manual Linux-box verification lane for the native-Windows port
-# (plan_windows.md). Cross-compiles selected fixtures with the mingw-w64 compiler
+# (docs/internals/windows-port.md). Cross-compiles selected fixtures with the mingw-w64 compiler
 # and runs them under Wine against the Linux goldens -- concurrency, timers,
 # floats, list_dir, and the stack-overflow guard. NOT a gate, and NOT a Windows
 # verdict: Wine is an approximation; the definitive pass is the windows CI leg.

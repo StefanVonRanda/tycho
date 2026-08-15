@@ -2,7 +2,7 @@
 # Phase-4 wine-corelib: every corelib test that CAN link on this box,
 # cross-compiled under mingw and run under Wine against the Linux goldens.
 # The Linux-box approximation of "make corelib on the Windows box"
-# (plan_windows.md phase 4); scripts/wine_test.sh covers the compiler corpus,
+# (docs/internals/windows-port.md phase 4); scripts/wine_test.sh covers the compiler corpus,
 # this covers corelib/test/*.
 #
 #   sh scripts/wine_corelib.sh

@@ -2,7 +2,7 @@
 # pkg-config resolves the per-platform cflags + libs; the corelib harness skips
 # this module test when the dependency is absent (so `make ci` stays green).
 # `_WIN32:` carries raw link flags for the Windows build (no pkg-config); the
-# shim's socket calls resolve against ws2_32 there (plan_windows.md phase 4).
+# shim's socket calls resolve against ws2_32 there (docs/internals/windows-port.md phase 4).
 openssl
 _WIN32:
 -lws2_32

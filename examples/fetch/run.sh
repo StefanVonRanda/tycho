@@ -105,7 +105,7 @@ fi
 if ! "$TYCHOC" examples/fetch/main.ty --emit-c -o "$T/san_src" >"$T/emit.log" 2>&1; then
     echo "FAIL: tychoc --emit-c"; sed 's/^/      /' "$T/emit.log"; fail=1
 elif [ "$IS_WINDOWS" = 1 ]; then
-    echo "SKIP fetch ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; plan_windows.md phase 2)"
+    echo "SKIP fetch ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; docs/internals/windows-port.md phase 2)"
 elif ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 "$T/san_src.c" $SHIM -o "$T/san" -lm $DEPF 2>"$T/san.log"; then
     echo "FAIL: sanitizer cc"; sed 's/^/      /' "$T/san.log"; fail=1
 else

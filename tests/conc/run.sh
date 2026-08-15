@@ -22,7 +22,7 @@ trap 'rm -rf "$TMP"' EXIT
 # sanitizer binary at exit there. Gate by OS (see tests/run.sh).
 case "$(uname -s)" in Darwin) TYCHO_LSAN=0 ;; *) TYCHO_LSAN=1 ;; esac
 export ASAN_OPTIONS=detect_leaks=$TYCHO_LSAN
-# Windows/MSYS2: mingw gcc ships no ASan/TSan runtime (plan_windows.md phase 2
+# Windows/MSYS2: mingw gcc ships no ASan/TSan runtime (docs/internals/windows-port.md phase 2
 # -- TSan has no Windows-target support in gcc at all), so the asan/tsan
 # variants are SKIPPED loudly and only the native leg runs. Native binaries get
 # a .exe suffix (MSYS2 exec quirk with winpthread-linked PE files).
@@ -60,7 +60,7 @@ for f in tests/conc/*.ty; do
     for variant in "-O3 -fwrapv:nat" "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv:asan" "-fsanitize=thread -g -O1 -fwrapv:tsan"; do
         flags=${variant%:*}; tag=${variant#*:}
         if [ "$IS_WINDOWS" = 1 ] && [ "$tag" != "nat" ]; then
-            echo "SKIP $name ($tag cc -- mingw gcc ships no sanitizer runtime; plan_windows.md phase 2)"
+            echo "SKIP $name ($tag cc -- mingw gcc ships no sanitizer runtime; docs/internals/windows-port.md phase 2)"
             continue
         fi
         if ! $CC $flags -pthread -o "$TMP/$name.$tag$EXE" "$c" -lm 2>"$TMP/$name.cc"; then

@@ -35,7 +35,7 @@ else
 fi
 
 # (2) ASan/UBSan over the emitted C: the str-return arena-copy must be clean.
-#     SKIPPED on Windows: mingw gcc ships no -lasan/-lubsan (plan_windows.md
+#     SKIPPED on Windows: mingw gcc ships no -lasan/-lubsan (docs/internals/windows-port.md
 #     phase 2); the native legs above and below still run.
 if [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" = 0 ]; then
 if ! "$TYCHOC" tests/ffi/main.ty --emit-c -o "$T/hc" >"$T/emit.log" 2>&1; then
@@ -50,7 +50,7 @@ else
     grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' "$T/san.err" && { echo "FAIL: sanitizer report"; sed 's/^/      /' "$T/san.err"; fail=1; }
 fi
 else
-    echo "SKIP: ASan/UBSan leg (no mingw -lasan/-lubsan -- plan_windows.md phase 2)"
+    echo "SKIP: ASan/UBSan leg (no mingw -lasan/-lubsan -- docs/internals/windows-port.md phase 2)"
 fi
 
 # (4) Stage 3 --shim: an extern implemented by a companion C file, compiled and

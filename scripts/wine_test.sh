@@ -1,7 +1,7 @@
 #!/bin/sh
 # Phase-3 wine-test: the plain fixture corpus, cross-compiled and run under
 # Wine against the Linux goldens. The Linux-box approximation of "make test
-# on the Windows box" (plan_windows.md phase 3); scripts/wine_smoke.sh covers
+# on the Windows box" (docs/internals/windows-port.md phase 3); scripts/wine_smoke.sh covers
 # the concurrency + stack-guard lanes, this covers everything tests/run.sh's
 # main loop does: the plain corpus (examples/*.ty tests/*.ty + stdin + golden),
 # the package programs (tests/pkg/*/main.ty), the runtime aborts (must die

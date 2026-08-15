@@ -37,7 +37,7 @@ fi
 
 # (2) ASan/UBSan over the emitted C (the render must be leak-free too)
 if [ "$IS_WINDOWS" = 1 ]; then
-    echo "SKIP raytrace ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; plan_windows.md phase 2)"
+    echo "SKIP raytrace ASan/UBSan leg (mingw gcc ships no sanitizer runtime -- no -lasan/-lubsan; docs/internals/windows-port.md phase 2)"
 elif ! { "$TYCHOC" "$SRC" --emit-c -o "$T/a" >/dev/null 2>&1 && \
        $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 "$T/a.c" -o "$T/asan" -lm 2>"$T/a.log"; }; then
     echo "FAIL: sanitizer cc"; sed 's/^/      /' "$T/a.log"; fail=1
