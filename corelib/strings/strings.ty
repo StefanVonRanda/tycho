@@ -334,14 +334,23 @@ fn strip_suffix(s: string, suffix: string) -> string:
         return substr(s, 0, len(s) - len(suffix))
     return s
 
-fn pad_left(s: string, width: int, pad: string) -> string:    # left-pad to width with `pad` (one byte)
+# Pad to `width` BYTES. `pad` is normally one byte; it may be longer, and the
+# deficit is then counted in bytes rather than in pads -- the loop used to
+# decrement by 1 while appending len(pad), so pad_left("x", 5, "ab") returned NINE
+# bytes for a width of 5, and a UTF-8 pad ("é") overshot the same way (2026-08-15).
+# A pad that does not divide the deficit leaves the result SHORT of width rather
+# than over it: a formatter can live with a narrow column, and stopping early is
+# what keeps a multi-byte pad from being split mid-codepoint. Python's rjust
+# refuses a multi-character fill outright; this is the same refusal to guess,
+# spelled as "never emit more than asked". A one-byte pad is unaffected.
+fn pad_left(s: string, width: int, pad: string) -> string:
     if len(pad) == 0:
         return s
     r := ""
     n := width - len(s)
-    for n > 0:
+    for n >= len(pad):
         r = r + pad
-        n = n - 1
+        n = n - len(pad)
     return r + s
 
 fn pad_right(s: string, width: int, pad: string) -> string:
@@ -349,9 +358,9 @@ fn pad_right(s: string, width: int, pad: string) -> string:
         return s
     r := s
     n := width - len(s)
-    for n > 0:
+    for n >= len(pad):
         r = r + pad
-        n = n - 1
+        n = n - len(pad)
     return r
 
 fn reverse(s: string) -> string:             # reverse the bytes

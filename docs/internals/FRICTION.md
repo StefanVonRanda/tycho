@@ -5267,3 +5267,42 @@ C++20's `std::lerp` carries, and that limit is stated rather than implied.
 by taking a written claim literally. This one was found by an oracle asserting a
 property the code never claimed — which is the argument for a differential over
 a re-reading, since a re-reading can only ever check what somebody wrote down.
+
+### 68. `pad_left`/`pad_right` overshot on any pad wider than a byte — **FIXED 2026-08-15**
+
+`pad_left`'s comment reads *"left-pad to width with `pad` (one byte)"*. The
+parenthesis is the whole specification of the precondition, and nothing enforced
+it: the loop counted the deficit in **bytes** (`n := width - len(s)`) and
+decremented by **one** per iteration while appending `len(pad)` of them.
+
+```
+pad_left("x", 5, ".")   ->  "....x"      len 5     the documented case, correct
+pad_left("x", 5, "ab")  ->  "ababababx"  len 9     asked for 5
+pad_left("x", 5, "é")   ->  "ééééx"      len 9     a UTF-8 pad, same overshoot
+```
+
+The UTF-8 row is the one a formatter reaches for in real code — a box-drawing
+character, a middle dot, a non-breaking space — and it is the row where the
+result *looks* right in a terminal while being 80% too wide. Python's `rjust`
+refuses a multi-character fill outright with a `ValueError`, which is the same
+judgement reached differently: do not guess what the caller meant.
+
+The deficit is counted in bytes on both sides now. A pad that does not divide it
+leaves the result **short** of width rather than over — a formatter survives a
+narrow column, and stopping early is what keeps a multi-byte pad from being split
+mid-codepoint:
+
+```
+pad_left("x", 5, "abc") ->  "abcx"       len 4     one pad fits, 1 byte short
+```
+
+**Every caller in the tree passes a one-byte pad** (`" "` or `"0"` — `weblog`,
+`tycho-sheet`, `tycho-ed`, `examples/corelib/strings`), so all of them are
+bit-identical and their lanes confirmed it. This is a fix for the case nobody had
+reached yet rather than a behaviour change under anyone.
+
+The fixture prints the **length beside every result**, and that is deliberate:
+the padding characters look perfectly reasonable in a transcript, the *width* was
+the thing that was wrong, and a golden carrying only the text could not have
+seen it — the same reason `ed-check` asserts byte counts and `sheet-check`
+asserts float text. Reverting the two loops reddens `strings` and only `strings`.

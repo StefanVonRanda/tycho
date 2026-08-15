@@ -136,6 +136,21 @@ fn main():
     println("ss in  =" + ss("ABCDE", 1, 3))                    # ss in  =ok:2:BC
     println("ss past=" + ss("ABCDE", 2, 10))                   # ss past=OutOfBounds
     println("ss inv =" + ss("ABCDE", 3, 1))                    # ss inv =Inverted
+    # pad_left/pad_right count the deficit in BYTES. The loop used to decrement by
+    # one while appending len(pad), so a multi-byte pad overshot: pad_left("x", 5,
+    # "ab") returned nine bytes for a width of five, and a UTF-8 pad did the same.
+    # The LENGTH is printed beside every result, because the padding characters
+    # themselves look perfectly reasonable in a transcript -- it is the width that
+    # was wrong, and a golden carrying only the text cannot see it.
+    println("pad1B  =[" + strings.pad_left("x", 5, ".") + "] " + str(len(strings.pad_left("x", 5, "."))))
+    println("pad2B  =[" + strings.pad_left("x", 5, "ab") + "] " + str(len(strings.pad_left("x", 5, "ab"))))
+    println("padR2B =[" + strings.pad_right("x", 5, "ab") + "] " + str(len(strings.pad_right("x", 5, "ab"))))
+    # 3 does not divide the deficit of 4: one pad fits, the remainder is left SHORT
+    # of width rather than over it, which is what keeps a multi-byte pad whole.
+    println("pad3B  =[" + strings.pad_left("x", 5, "abc") + "] " + str(len(strings.pad_left("x", 5, "abc"))))
+    # already at or past width, and an empty pad: both return s untouched
+    println("padWide=[" + strings.pad_left("hello", 3, ".") + "] " + str(len(strings.pad_left("hello", 3, "."))))
+    println("padNone=[" + strings.pad_left("x", 5, "") + "] " + str(len(strings.pad_left("x", 5, ""))))
 
 # ---- slice helpers: render the Result as one word, never a clamped value ----
 fn sb(b: bytes, a: int, z: int) -> string:

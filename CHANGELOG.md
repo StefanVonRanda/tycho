@@ -215,6 +215,15 @@ Four messages that an outside reader hit in the first ten minutes writing
   an infinity for a far-apart opposite-sign pair, making `t = 0` return NaN
   instead of `a`. Both endpoints are special-cased. No monotonicity guarantee is
   claimed for the interior (FRICTION #67).
+- **`strings.pad_left`/`pad_right` no longer overshoot a multi-byte pad.** The
+  deficit was counted in bytes and decremented by one per iteration while
+  `len(pad)` bytes were appended, so `pad_left("x", 5, "ab")` returned **nine**
+  bytes for a width of five, and a UTF-8 pad (`"é"`) did the same — the case a
+  formatter actually reaches for, and the one that looks right in a terminal
+  while being far too wide. A pad that does not divide the deficit now leaves the
+  result **short** of width rather than over, which also keeps it from being split
+  mid-codepoint. Every caller in the tree passes a one-byte pad and is
+  bit-identical (FRICTION #68).
 
 ### Core library — breaking
 
