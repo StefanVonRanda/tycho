@@ -178,7 +178,15 @@ eight, a word-set comparison that flagged 111 legal hard breaks, a `\xff` fixtur
 that was valid UTF-8 under dash. Each was caught by asking what the check would
 show if the feature were broken. That is the reusable finding.
 
-### 2. The daily papercuts are gone
+### 2. ~~The daily papercuts are gone~~ — **CLOSED 2026-08-15**
+
+**Re-probed at HEAD**, 254 commits after the 2026-08-09/08-14 passes below, in
+one program: `pass` and the operator line continuation together give 6, both
+typed-empty spellings accept a `push`, a newtype-of-array supports `push`/`len`/
+indexing (2, 7), `or_return` returns 41 through `fn main() -> Result(void,
+string)`, and a package-level `len` still draws the collision warning that names
+`package main`'s remedy. A table probed 254 commits ago is a claim, not a state;
+this is the state.
 
 These are ergonomic, not soundness — which is exactly why they must be fixed
 *before* a freeze rather than after, since fixing them later is a breaking
@@ -231,7 +239,13 @@ Priority inside the list was `len` shadowing, because it was the only one that
 produced a wrong answer instead of an error message. It is closed; the rest are
 worked top to bottom by cost.
 
-### 3. The expressiveness gaps close, or become documented refusals
+### 3. ~~The expressiveness gaps close, or become documented refusals~~ — **CLOSED 2026-08-15**
+
+**Re-probed at HEAD** in the same program as §2: `sort.sort_by` with a named
+comparator sorts (1), `is` answers on both `Option` and `Result` (true, true), a
+`where numeric(T), defaultable(T)` generic folds with `zero$(T)` (6), and
+`Result(void, string)` is the entry point's own return type. The rows below are
+the history of how each closed.
 
 **Re-probed against the tree on 2026-08-11** with one compiled program per row,
 not inherited from the 2026-08-09 pass. Six of the seven rows had gone stale:
@@ -385,7 +399,14 @@ lost or corrupted; the wind-down is slower and only that. It is stated in the
 README's platform notes, and the measurement stays in
 [SECURITY.md](SECURITY.md).
 
-### 6. A release actually ships, and the support policy is exercised once
+### 6. ~~A release actually ships, and the support policy is exercised once~~ — **CLOSED 2026-08-15**
+
+Both halves are now real. **A release shipped**: v0.7.0, prerelease, Linux and
+mingw tarballs with checksums, verified before and after publishing (see below).
+**The support policy was exercised**: `sort.by_key` carries a `# deprecated:`
+marker, every call site draws a warning naming `sort_by` *and* the removal
+version, and `CHANGELOG.md` records it — re-probed at HEAD, the warning still
+fires with its replacement text.
 
 **The deprecation half is DONE, 2026-08-10.** `sort.by_key` is deprecated
 through the full path — a `deprecated:` notice in its doc comment, a
@@ -514,12 +535,22 @@ every one costs a citation re-anchor (~50-110 anchors move) and a full `make ci`
    ends "nothing needs it; it was filed because the probe surprised me, which is
    not a reason." Leaving the row open is what made it get re-scoped; it is a
    documented refusal now.
-6. Then the remaining 1.0 conditions: `core:net` readiness (§4), the Windows
-   parked-`recv` decision (§5), and shipping 0.5.0 plus one exercised
-   deprecation (§6).
+6. ~~Then the remaining 1.0 conditions: `core:net` readiness (§4), the Windows
+   parked-`recv` decision (§5), and shipping a release plus one exercised
+   deprecation (§6).~~ — **all three closed.** §4 and §5 on 2026-08-10 as stated
+   limits; §6 on 2026-08-15, shipping **0.7.0** rather than the 0.5.0 this line
+   named when it was written.
 
-Item 1 — real programs by other people — is not sequenced here because it is not
-a task this list can complete. It gates the freeze, not the work.
+**This list is finished.** Every item on it is closed, and §2 and §3 were
+re-probed at HEAD on 2026-08-15 rather than inherited from their tables — 254
+commits had landed since the last pass, and a table probed that long ago is a
+claim about the past.
+
+What remains for 1.0 is §1 and §7, and neither is sequenced here because neither
+is a task this list can complete. §1 gates the freeze, not the work: it wants a
+program by a second author, so a fourth program by the same one does not advance
+it. §7 wants a reviewer who is not the project. Both need a person;
+`docs/internals/audit-brief.md` is what §7's needs handing to them.
 
 ### What is explicitly NOT required
 
