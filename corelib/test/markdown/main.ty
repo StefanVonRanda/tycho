@@ -23,3 +23,14 @@ fn main():
     println(markdown.render("```\nlet x = a<b && c > d; `nope`\n```"))
     # fail-soft: unmatched delimiters pass through as escaped text
     println(markdown.render("un**matched and [broken(link and *lone"))
+    # SCHEME ALLOWLIST on href/src. esc() handles `"` so an attribute cannot be
+    # broken out of, but escaping says nothing about the scheme: javascript:,
+    # data:text/html and vbscript: were emitted verbatim until 2026-08-15. The
+    # dangerous ones fail soft to the link text; the safe ones must be UNCHANGED,
+    # which is what stops the fix from becoming "drop every link".
+    println(markdown.render("[a](javascript:alert`1`) [b](data:text/html;base64,x) [c](vbscript:m)"))
+    println(markdown.render("[d](https://e.com/p) [e](/rel/path) [f](mailto:a@b.c) [g](//host/p)"))
+    println(markdown.render("[h](a/b:c) [i](#frag) [j](?q=1)"))
+    println(markdown.render("![k](javascript:alert(1)) ![l](/img/ok.png)"))
+    # case and padding must not slip a scheme past the check
+    println(markdown.render("[m](JaVaScRiPt:alert`1`) [n](HTTPS://e.com/p)"))

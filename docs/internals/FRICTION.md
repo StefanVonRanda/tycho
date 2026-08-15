@@ -4943,3 +4943,34 @@ validates every byte before parsing and cites #34 while doing it, `tycho-stat`
 refuses a non-numeric field by name, `tycho-tally` records the measured
 `parse_int("35x") == 35` in a comment beside its own check. The remaining call
 sites take CLI arguments, not untrusted input.
+
+### 60. `markdown.render` escaped the text and not the SCHEME — **FIXED 2026-08-15**
+
+`core:markdown`'s header said "all text is HTML-escaped; only the constructs above
+emit tags", which reads as a promise that the output is safe to serve. It escapes
+`&`, `<`, `>` and `"` -- so an attribute cannot be broken out of -- and then put
+the link target straight into `href` with no check on what kind of URL it was.
+
+Measured 2026-08-15, all three emitted verbatim and clickable:
+
+    [x](javascript:alert`1`)          -> <a href="javascript:alert`1`">
+    [x](data:text/html;base64,...)    -> <a href="data:text/html;base64,...">
+    [x](vbscript:msgbox)              -> <a href="vbscript:msgbox">
+
+Escaping and scheme-checking are different jobs and the header conflated them.
+Anyone rendering untrusted markdown with this package had stored XSS.
+
+Now allowlisted: no scheme at all (relative, absolute-path, protocol-relative),
+or http / https / mailto. A colon counts as a scheme separator only before any
+`/`, `?` or `#`, so `a/b:c` stays a relative path. The comparison is
+case-folded -- `JaVaScRiPt:` was the obvious way past a naive check. Anything
+else fails soft to the link text, matching what this module already does with an
+unmatched delimiter.
+
+Nothing in the tree rendered a rejected scheme: `make corelib`,
+`make corelib-examples` and `make weblog webserver` were all green BEFORE the
+golden was re-recorded, which is what says the change is behaviour-preserving for
+real content rather than merely re-blessed. The new cases assert both directions
+-- the three dangerous schemes unlinked AND seven safe forms unchanged -- because
+"drop every link" would pass a one-sided test. Reverting `safe_url` to `return
+true` reddens the golden.
