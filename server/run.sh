@@ -214,6 +214,11 @@ def get(target, method=b"GET", extra=b""):
     return exchange(method + b" " + target + b" HTTP/1.1\r\nHost: t\r\n"
                     + extra + b"Connection: close\r\n\r\n")
 
+def raw(msg):
+    """The bytes exactly as given -- get() would add a Connection header and
+    reorder nothing, but framing tests need the header set to be verbatim."""
+    return exchange(msg)
+
 # ---- 200, and the body is the file, byte for byte ---------------------------
 r = get(b"/img/logo.png")
 disk = open(os.path.join(repo_www, "img/logo.png"), "rb").read()
@@ -533,6 +538,32 @@ eq("404 double-encoded is a filename, not traversal",
 eq("403 hidden segment /.hidden/secret.txt",
    status(get(b"/.hidden/secret.txt")), "HTTP/1.1 403 Forbidden")
 eq("403 body is not the file", b"root:" in get(b"/../../etc/passwd").split(b"\r\n\r\n", 1)[1], False)
+
+# ---- 400: request framing that cannot be agreed on --------------------------
+# RFC 7230 3.3.3. Each of these was answered by BLOCKING before 2026-08-15, not by
+# refusing: corelib/httpd/httpd.ty framed the body with a LENIENT parse ("4x" read
+# as 4), while server/main.ty@bad_len -- which already named smuggling and already
+# answered 400 -- sat downstream of that read and could not run until the deadline
+# expired. A strict framing parse is what lets the refusal that was already
+# written actually fire.
+eq("400 non-numeric Content-Length",
+   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4x\r\n\r\n")),
+   "HTTP/1.1 400 Bad Request")
+eq("400 two conflicting Content-Length",
+   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\nContent-Length: 44\r\n\r\n")),
+   "HTTP/1.1 400 Bad Request")
+eq("400 Content-Length with Transfer-Encoding",
+   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")),
+   "HTTP/1.1 400 Bad Request")
+# The control for all three: a DUPLICATE Content-Length that AGREES is not a
+# conflict, and a lone Transfer-Encoding is not ambiguous -- neither may be
+# swept into the 400. Without these, "reject anything with two headers" passes.
+eq("405 duplicate Content-Length that agrees is not a conflict",
+   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\nContent-Length: 0\r\n\r\n")),
+   "HTTP/1.1 405 Method Not Allowed")
+eq("405 Transfer-Encoding alone is not ambiguous",
+   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")),
+   "HTTP/1.1 405 Method Not Allowed")
 
 # ---- 404 / 405 --------------------------------------------------------------
 eq("404 /nope.txt", status(get(b"/nope.txt")), "HTTP/1.1 404 Not Found")

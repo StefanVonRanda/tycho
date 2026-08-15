@@ -4901,3 +4901,34 @@ an API decision (a `v4_secure` taking bytes, or a `uuid` that depends on
 `core:crypto` and inherits its OpenSSL dependency), not a patch, and it would put
 a hard OpenSSL requirement on a package that currently has none. Documenting the
 limit is the honest interim; the decision is still open.
+
+### 59. A strict check downstream of a lenient parse never runs — **FIXED 2026-08-15**
+
+`server/main.ty@bad_len` already refused a Content-Length that is not a plain
+decimal, and its comment already named request smuggling as the reason. It
+answered 400 for `-1`. It did nothing at all for `4x`.
+
+The refusal was correct and unreachable. `corelib/httpd/httpd.ty@to_uint` reads
+leading digits and stops silently -- `parse_int`'s fail-open shape (FRICTION #34)
+reimplemented locally -- and that lenient value is what the READ LOOP uses to
+decide how many body bytes to wait for. `4x` framed a 4-byte body, the bytes
+never came, and the strict check sat downstream of a read that could not finish.
+The connection held a worker until the 15 s deadline instead of being refused in
+microseconds.
+
+**The general shape is worth more than the instance: a validator placed after a
+blocking parse of the same field is not a validator.** The lenient parse decides
+whether control ever reaches it.
+
+Framing is now strict at the point that blocks, and three ambiguous shapes answer
+400 promptly: a non-decimal length, two Content-Lengths that disagree
+(`httpd.content_length_conflict`), and Content-Length alongside Transfer-Encoding
+(RFC 7230 3.3.3). Two controls sit beside them so the fix cannot become "refuse
+anything with two headers": a duplicate Content-Length that AGREES is not a
+conflict, and a lone Transfer-Encoding is not ambiguous. Both still reach 405.
+
+Impact was bounded before the fix and it is worth being accurate about: this
+server answers no method that takes a body, so nothing was smuggled INTO an
+application. What it cost was a worker per malformed request for the full idle
+deadline -- the same resource-holding shape as the slowloris already recorded in
+`corelib/httpd/httpd.ty`'s header.

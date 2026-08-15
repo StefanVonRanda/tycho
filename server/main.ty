@@ -685,7 +685,13 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 # A Content-Length that is not a plain decimal count ("-5", "1x",
                 # "0x10") is a request smuggling primitive, not a typo. Refuse it
                 # rather than letting to_uint's lenient parse pick a number.
-                bad_len := clh != "" and not is_digits(clh)
+                # Two different Content-Lengths are the same primitive by another
+                # route: the sender and a proxy may pick different ones. Refusing
+                # is the only answer that cannot be disagreed with.
+                teh := httpd.header(req, "transfer-encoding")
+                bad_len := (clh != "" and not is_digits(clh)) or
+                        httpd.content_length_conflict(req) or
+                        (clh != "" and teh != "")
                 head_only := req.method == "HEAD"
                 target := log_safe(req.path)
                 if bad_len:

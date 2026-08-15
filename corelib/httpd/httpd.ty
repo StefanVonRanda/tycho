@@ -118,6 +118,33 @@ fn chomp(s: string) -> string:
     return s
 
 # Parse leading decimal digits; stops at the first non-digit. "" or non-numeric -> 0.
+# Every byte a digit, and at least one. to_uint below stops at the first
+# non-digit and returns what it had, which is the right shape for a lenient
+# reader and the wrong one for deciding HOW MANY BYTES TO WAIT FOR.
+fn all_digits(s: string) -> bool:
+    if s == "":
+        return false
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c < 48 or c > 57:
+            return false
+    return true
+
+# True when Content-Length appears more than once with DIFFERENT values. RFC 7230
+# 3.3.3 makes that unanswerable rather than merely odd: the sender and any proxy
+# may pick different ones, which is the request-smuggling precondition.
+fn content_length_conflict(r: Request) -> bool:
+    seen := ""
+    found := false
+    for i := 0; i < len(r.header_keys); i += 1:
+        if ascii_lower(r.header_keys[i]) == "content-length":
+            v := trim(r.header_vals[i])
+            if found and v != seen:
+                return true
+            seen = v
+            found = true
+    return false
+
 fn to_uint(s: string) -> int:
     v := 0
     for i := 0; i < len(s); i += 1:
@@ -303,7 +330,18 @@ fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request
             probe := result.unwrap_or(parse_request(buf), bad_request())
             clh := header(probe, "content-length")
             blen := 0
-            if clh != "":
+            # STRICT here, deliberately. This value decides how long to block, and
+            # a lenient read of "4x" framed a 4-byte body that never arrived: the
+            # caller's own strict check (server/main.ty@bad_len, which names
+            # smuggling and answers 400) sits DOWNSTREAM of this read and could
+            # not run until the deadline expired. A malformed or conflicting
+            # length frames NO body, so the head completes and that check fires.
+            # Transfer-Encoding present alongside Content-Length is ambiguous the
+            # same way (RFC 7230 3.3.3), and this package does not decode chunked
+            # -- so framing by the Content-Length would wait for bytes the sender
+            # never framed that way. No body here either; the caller answers 400.
+            if all_digits(clh) and not content_length_conflict(probe) and
+                    header(probe, "transfer-encoding") == "":
                 blen = to_uint(clh)
             need = he + 4 + blen
         if (need >= 0 and len(buf) >= need) or len(buf) >= cap:
