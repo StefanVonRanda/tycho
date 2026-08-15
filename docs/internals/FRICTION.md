@@ -5903,3 +5903,42 @@ changing what `-17 % 5` means, and `decimal` would inherit it.
 Control: flipping `mod` to return the negated remainder reddens `bignum` and only
 `bignum`. `scripts/bignum_diff.sh` (against Python's integers) and `q-check` both
 stay green, which is the point — neither of them was asking this question.
+
+### 84. `make ci N=0` silently cut a differential to 4.8% of its corpus — **FIXED 2026-08-15**
+
+Found by re-measuring `make ci N=0` for the gate table, which is not a place
+anyone expects to find a defect.
+
+`scripts/format_diff.sh:34` read its corpus size from a bare environment
+variable: `N=${N:-400}`. `make ci N=0` sets `N` as a Make variable to skip the
+fuzz lanes, **Make exports it**, and the differential picked it up. The flag
+documented as "skip the (slow) fuzz lanes for a quick check" also emptied the
+generated half of every arm in the lane.
+
+Measured, both directions:
+
+```
+N=0 sh scripts/format_diff.sh   ->  20 paths,   9 refused  -> lane exits 1
+sh scripts/format_diff.sh       -> 420 paths, 129 refused  -> 0 violations
+```
+
+**It was caught by luck, and the luck is the point.** The lane exits 1 if fewer
+than 10 of the path corpus are refused — a guard against an escape-free corpus
+making the refusal half vacuous. With `N=0` the corpus fell to the 20 hand-written
+cases, of which 9 are refusals. **One more refusal in that hand-written list and
+`make ci N=0` would have reported a clean run over 4.8% of the corpus**, for as
+long as anyone cared to use the flag. The other nine arms shrank the same way and
+had no such guard: they simply scored fewer cases and said so in numbers nobody
+compares between runs.
+
+Renamed to `FMTDIFF_N`, namespaced so no sweep-level knob reaches it. Verified
+both ways: `N=0` now gives 420, `FMTDIFF_N=40` still gives 60.
+
+**Two things worth taking from this.** A gate that reads an unnamespaced
+environment variable is a gate whose corpus any caller can change by accident,
+and the more knobs a sweep grows the likelier the collision. And the diagnosis
+went wrong twice before it went right: first "flaky, probably contention" (it was
+perfectly reproducible), then "the probe output is truncated, `zip` is hiding it"
+(the probe was fine; the *corpus* was short). Both wrong readings produced real
+code — a checked-probe helper that stays because it closes a genuine hole in the
+same file, ten `subprocess.run` calls whose exit status nobody checked.

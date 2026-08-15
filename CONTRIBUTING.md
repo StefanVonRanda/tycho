@@ -63,8 +63,8 @@ cross-package mangling divergence is invisible to `make test`.
 548 / 551 / 563 s on 2026-08-14 and 495 s on 2026-08-10, even though `make test`
 fell from ~8 min to 113 s in that window — new lanes more than absorbed the
 saving, and there are 77 steps now, including 200 fuzz seeds. `make ci N=0`, which skips
-the fuzz lanes, was **274s** on 2026-08-10 and has not been re-measured since the
-tool lanes were added, so treat it as a floor. It parallelises (`run_lanes` forks
+the fuzz lanes, is **~380s** (383 / 379 / 381 s, measured 2026-08-15; it was 274s
+on 2026-08-10). It parallelises (`run_lanes` forks
 each lane group), though the sweep no longer costs "barely more than `make test`"
 — 620 s against 113 s is 5.5x, because `make test` stopped being the long pole.
 

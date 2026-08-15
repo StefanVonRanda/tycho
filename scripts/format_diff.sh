@@ -31,7 +31,13 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-N=${N:-400}
+# Corpus size. NOT plain `N`: `make ci N=0` sets N in the environment to skip the
+# fuzz lanes, Make exports it, and this script read it -- so the documented
+# "skip the fuzz" flag silently cut this differential from 420 cases to its 20
+# hand-written ones, a 4.8% corpus reported as a normal run. It surfaced only
+# because the safe_join arm's own >=10-refusal guard landed on 9 (2026-08-15).
+# FMTDIFF_N is namespaced so no sweep-level knob can reach it.
+N=${FMTDIFF_N:-400}
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 
@@ -277,7 +283,28 @@ TY
 python3 - "$T" "$N" <<'PY'
 import csv, io, json, pathlib, random, re, struct, subprocess, sys
 T, N = sys.argv[1], int(sys.argv[2])
-random.seed(20260815)                      # deterministic: a mismatch reproduces
+random.seed(20260815)
+
+# Run a probe and REFUSE to score a short answer. Every arm below pairs the
+# probe's lines against its own corpus with zip(), and zip() truncates to the
+# SHORTER list -- so a probe that dies partway makes the arm quietly score a
+# handful of cases and report them as a clean run. Observed 2026-08-15 under
+# `make ci N=0`: the safe_join arm scored 20 of hundreds and was caught only by
+# its >=10-refusal guard landing on 9. A non-zero exit or a short read is now a
+# hard failure that names the probe.
+def probe(binary, argpath, want, label):
+    r = subprocess.run([binary, str(argpath)], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  PROBE FAILED: {label} exited {r.returncode}")
+        print("   ", (r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip() else "(no output)")
+        sys.exit(1)
+    lines = r.stdout.split("\n")
+    if len([x for x in lines if x != ""]) < want:
+        print(f"  PROBE SHORT: {label} printed {len([x for x in lines if x != ''])} lines, expected {want}")
+        print("                a zip() against this would silently score only the lines it got")
+        sys.exit(1)
+    return lines
+                      # deterministic: a mismatch reproduces
 fail = 0
 
 # ---- core:csv ---------------------------------------------------------------
@@ -287,7 +314,7 @@ def csv_roundtrip(rows):
     p = pathlib.Path(T + "/cin.txt")
     p.write_text("\n".join("\n".join(enc(f) for f in r) + "\n%" for r in rows) + "\n",
                  encoding="utf-8")
-    out = subprocess.run([T + "/csvp", str(p)], capture_output=True, text=True).stdout
+    out = "\n".join(probe(T + "/csvp", p, 1, "csvp"))
     return out, list(csv.reader(io.StringIO(out)))
 
 # the control: a row-set compared against a DELIBERATELY WRONG expectation
@@ -328,7 +355,7 @@ jedge = ['{"a":1}', '[]', '{}', '"x"', '0', '-0', '1e3', '1.5e-3', 'true', 'null
          '{"esc":"/slash"}', '{"esc":"\\u2028sep"}', '[null,true,false]']
 docs = jedge + [json.dumps(mk()) for _ in range(N)]
 p = pathlib.Path(T + "/jin.txt"); p.write_text("\n".join(docs) + "\n", encoding="utf-8")
-out = subprocess.run([T + "/jsonp", str(p)], capture_output=True, text=True).stdout.split("\n")
+out = probe(T + "/jsonp", p, len(docs), "jsonp")
 
 # the control, same shape: the first document against a wrong expectation
 if json.loads(out[0]) == {"a": 99}:
@@ -361,7 +388,7 @@ blobs += [bytes([0]), bytes([255]), b"abc", b"The quick brown fox jumps over the
 blobs += [bytes(random.randrange(256) for _ in range(random.randint(0, 300))) for _ in range(N)]
 p = pathlib.Path(T + "/ein.txt")
 p.write_text("\n".join(c.hex() or "-" for c in blobs) + "\n")
-eout = subprocess.run([T + "/encp", str(p)], capture_output=True, text=True).stdout.split("\n")
+eout = probe(T + "/encp", p, len(blobs), "encp")
 
 # the control: sha256("") is the most-published digest there is, so if the FIRST
 # line does not carry it the harness is misaligned and nothing below means
@@ -401,7 +428,7 @@ ts = [0, 1, -1, -86400, 86399, 86400, 951782400, 1709164800, 4107542400,
       -2208988800, 253402300799, 1234567890, 2147483647, 2147483648]
 ts += [random.randint(-3155760000, 4102444800) for _ in range(N)]
 p = pathlib.Path(T + "/dtin.txt"); p.write_text("\n".join(str(t) for t in ts) + "\n")
-dout = subprocess.run([T + "/dtp", str(p)], capture_output=True, text=True).stdout.split("\n")
+dout = probe(T + "/dtp", p, len(ts), "dtp")
 
 def props(t):
     d = dtm.datetime(1970, 1, 1, tzinfo=dtm.timezone.utc) + dtm.timedelta(seconds=t)
@@ -442,7 +469,7 @@ scases += [[random.randint(-20, 20) for _ in range(random.randint(1, 12))]
            for _ in range(N)]
 p = pathlib.Path(T + "/soin.txt")
 p.write_text("\n".join(",".join(map(str, c)) for c in scases) + "\n")
-sout = subprocess.run([T + "/sop", str(p)], capture_output=True, text=True).stdout.split("\n")
+sout = probe(T + "/sop", p, len(scases), "sop")
 
 def stable(c, rev):
     return [str(i) for i in sorted(range(len(c)), key=lambda i: (-c[i] if rev else c[i], i))]
@@ -494,7 +521,7 @@ fcands += [repr(random.uniform(-1e6, 1e6)) for _ in range(N // 2)]
 fcands += [f"{random.uniform(-1, 1):.17g}e{random.randint(-320, 308)}" for _ in range(N // 2)]
 p = pathlib.Path(T + "/pfin.txt")
 p.write_text("\n".join(c or "~" for c in fcands) + "\n", encoding="utf-8")
-fout = subprocess.run([T + "/pfp", str(p)], capture_output=True, text=True).stdout.split("\n")
+fout = probe(T + "/pfp", p, len(fcands), "pfp")
 
 # [c1] the acceptance test must disagree with a deliberately LOOSE grammar
 LOOSE = re.compile(r'^\s*[+-]?(?:[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?|inf|nan).*$')
@@ -551,7 +578,7 @@ prels += ["/".join(random.choice(pseg) for _ in range(random.randint(1, 6)))
           for _ in range(N)]
 p = pathlib.Path(T + "/pain.txt")
 p.write_text("\n".join(r or "~" for r in prels) + "\n")
-pout = subprocess.run([T + "/pap", str(p)], capture_output=True, text=True).stdout.split("\n")
+pout = probe(T + "/pap", p, len(prels), "pap")
 
 # the control: the invariant test must catch an answer that DOES escape, and the
 # corpus must actually contain escapes for the refusal half to mean anything.
@@ -603,7 +630,7 @@ u8 += [bytes(random.randrange(256) for _ in range(random.randint(0, 10)))
        for _ in range(N)]
 p = pathlib.Path(T + "/u8in.txt")
 p.write_text("\n".join(c.hex() or "-" for c in u8) + "\n")
-uout = subprocess.run([T + "/u8p", str(p)], capture_output=True, text=True).stdout.split("\n")
+uout = probe(T + "/u8p", p, len(u8), "u8p")
 
 def u8ok(b):
     try:
@@ -659,7 +686,7 @@ rsubs = ["", "a", "abc", "aabbcc", "xyz", "AB12", "a.c", "axc", "ab", "abab",
 rcases = [(pp, ss) for pp in rpats for ss in rsubs]
 p = pathlib.Path(T + "/rxin.txt")
 p.write_text("\n".join(f"{pp}\t{ss}" for pp, ss in rcases) + "\n")
-rout = subprocess.run([T + "/rxp", str(p)], capture_output=True, text=True).stdout.split("\n")
+rout = probe(T + "/rxp", p, len(rcases), "rxp")
 
 rpairs = [(c, g) for c, g in zip(rcases, rout) if g in ("0", "1")]
 nm = sum(1 for _, g in rpairs if g == "1")
@@ -693,7 +720,7 @@ ccases += [[random.choice(ctoks) for _ in range(random.randint(0, 6))]
            for _ in range(N)]
 p = pathlib.Path(T + "/clin.txt")
 p.write_text("\n".join("\t".join([str(len(c))] + c) for c in ccases) + "\n")
-cout = subprocess.run([T + "/clp", str(p)], capture_output=True, text=True).stdout.split("\n")
+cout = probe(T + "/clp", p, len(ccases), "clp")
 
 def cexpect(av, bundle=True, dashdash=True):
     o = f = pz = 0
