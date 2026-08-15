@@ -411,6 +411,9 @@ sh scripts/http_verify.sh
 step "[3u9/27] sh scripts/format_diff.sh  (core:csv against Python's csv module and core:json against Python's json. make corelib checks both against goldens THIS REPO RECORDED, which proves they have not changed and not that they were ever right -- and for a format whose whole point is that somebody else reads it back, agreeing with its own earlier self is the wrong property. It found one: csv.stringify's stated parse(stringify(rows)) == rows was false for a row of ONE EMPTY FIELD, 413 of 414 row-sets being fine is why no golden noticed)"
 sh scripts/format_diff.sh
 
+step "[3u9b/27] sh scripts/math_diff.sh  (core:math against Python's arithmetic. Both defects this 75-line package has had were found by READING a claim -- gcd's documented non-negative (FRICTION #64) and sign's documented -1/0/1 (FRICTION #65) -- and both were invisible here, because make corelib compares core:math to a golden THIS REPO RECORDED, which agrees with whatever the code did the day it was written. Where the semantics genuinely differ the oracle encodes the DOCUMENTED tycho answer and says so: gcd(min,0) is 2^63 and does not fit, so it follows abs() in returning min, and an ipow whose true answer leaves int64 is SKIPPED by design with the skip count printed. The float arm is the load-bearing one: the int-only first version scored 1197 clean answers while the sign-of-infinity defect sat in front of it, because min/max/clamp/sign are generic and their int instantiation says nothing about their float one. NaN is scored for sign alone -- min/max on a NaN is a branch order artefact, not a documented answer)"
+sh scripts/math_diff.sh
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.

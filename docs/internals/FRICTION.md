@@ -5189,3 +5189,29 @@ Gated in `corelib/test/math/main.ty` with the finite int and float cases asserte
 on their own lines, so an edge-case fix cannot pass by moving an ordinary answer.
 Reverting the fix reddens `math` and only `math` — `ok fmath` printed beside
 `FAIL math (output != golden)` in the same run.
+
+**Then the package got the oracle it should have had.** Two defects found by
+careful reading is not a repeatable process, so `scripts/math_diff.sh`
+(`make math-diff`, ~2.2s) scores `min`/`max`/`clamp`/`sign`/`abs`/`gcd`/`ipow`
+against Python. It is validated the only way a new lane can be — against the
+defects that already happened: reverting `gcd`'s final `abs()` reddens it with 38
+mismatches, reverting this entry's fix reddens it with 2.
+
+**And the first version of that lane would have caught only one of the two.** It
+was integers throughout, and it reported:
+
+```
+math-diff: green (1197 scored answers match Python ...)
+```
+
+with the sign-of-infinity defect sitting untouched in front of it. `min`, `max`,
+`clamp` and `sign` are generic; instantiating them at `int` says nothing about
+their `float` instantiation, and *no float ever entered the corpus*. The lane
+was thorough, self-consistent, and blind to the entire half of the surface where
+the bug lived — which is the same failure as the zip fuzzing seeds that produced
+1950 clean mutants against a parser returning 0 entries.
+
+That makes it the tenth instance recorded here of the INSTRUMENT being the
+defect rather than the code, and the first one caught by asking a new lane the
+right question: not "is it green" but **"would it have caught the bug I already
+know about?"**
