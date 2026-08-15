@@ -4877,3 +4877,27 @@ Two consequences, and the second is why this is filed rather than shrugged at:
 The fix is an API decision, not a patch: expose a CA path (an option on `get`, or
 an honoured environment variable) so a caller can trust a private CA, at which
 point the gate follows immediately from `tls_verify.sh`'s existing shape.
+
+### 58. `uuid.v4` looks like 122 random bits and carries at most 32 — **documented 2026-08-15**
+
+`core:uuid` produces RFC 4122 version-4 UUIDs, and the whole point of v4 is that
+it is the random one. The source is `core:rand`'s xorshift32, whose state is
+**32 bits**. So the reachable set of UUID streams is 2^32, not 2^122, and the
+whole seed space is enumerable. Measured: the same seed reproduces the same
+sequence exactly, across processes.
+
+That is correct behaviour for the generator -- `rand`'s own header says "NOT
+cryptographic" in its first line, and it is right to be deterministic. The gap
+was that **`uuid` never repeated it**, and neither did the corelib catalogue,
+which described them as "random version-4 UUIDs". A reader who knows what v4
+means will assume unguessable, and the API gives them no reason not to.
+
+Both now say so and point at `crypto.random_hex`, which is `RAND_bytes`-backed.
+`tools/tycho-rsa` was checked and is fine -- it seeds from a fixed constant on
+purpose and says so in its header, being a teaching implementation.
+
+**Not fixed, deliberately: there is still no CSPRNG-backed UUID.** Adding one is
+an API decision (a `v4_secure` taking bytes, or a `uuid` that depends on
+`core:crypto` and inherits its OpenSSL dependency), not a patch, and it would put
+a hard OpenSSL requirement on a package that currently has none. Documenting the
+limit is the honest interim; the decision is still open.

@@ -1,6 +1,13 @@
 # corelib: UUIDs. Import with `import "core:uuid"`, generate with
 # `st := rand.seed(...)` then `uuid.v4(&st)`.
 #
+# NOT UNGUESSABLE. These are shaped like RFC 4122 v4 -- which implies 122 random
+# bits -- but the source is core:rand's xorshift32, whose state is 32 BITS. The
+# whole seed space is enumerable, and the same seed reproduces the same sequence
+# exactly (measured). Fine for an identifier; NOT for a session id, a password
+# reset link, or anything an attacker benefits from predicting. For those use
+# `crypto.random_hex(n)`, which is RAND_bytes-backed.
+#
 # Scope: random version-4 UUIDs (RFC 4122) plus the nil UUID and parse/format/
 # validate helpers. v1 (time + MAC) and the name-based v3/v5 are out of scope --
 # v3/v5 need MD5/SHA-1, which corelib has no hash module for yet, and v1 needs a
