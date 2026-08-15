@@ -184,6 +184,7 @@ enum JsonErr:
     BadUnicode(int)
     LoneSurrogate(int)
     TrailingComma(int)
+    TooDeep(int)                # nesting past the cap -- see depth_of below
     LeadingZero(int)
     TrailingText(int)
     ControlByte(int)
@@ -242,6 +243,7 @@ fn err_offset(e: JsonErr) -> int:              # byte offset of the failure
         BadUnicode(o): return o
         LoneSurrogate(o): return o
         TrailingComma(o): return o
+        TooDeep(o): return o
         LeadingZero(o): return o
         TrailingText(o): return o
         ControlByte(o): return o
@@ -267,6 +269,7 @@ fn err_reason(e: JsonErr) -> string:           # what was wrong, without the whe
         TrailingText(o): return "text after the end of the document"
         ControlByte(o): return "raw control byte inside a string"
         BadUtf8(o): return "invalid UTF-8"
+        TooDeep(o): return "nesting deeper than the parser will recurse"
 
 # The one-line message a caller wants on stderr: cause and byte offset together.
 fn err_str(e: JsonErr) -> string:
@@ -755,7 +758,46 @@ fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
 # object and said nothing about the second, so a caller handed two documents got
 # one and could not tell. All six callers in this tree hand it exactly one
 # document each -- checked, one at a time, before the change.
+# The nesting cap, and the reason the check is a PRE-SCAN rather than a counter
+# threaded through parse_value. The parser is recursive descent, so a deeply
+# nested document consumes C stack: at 10000 it parsed fine, at 50000 the runtime
+# aborted with `tycho: stack overflow -- recursion too deep` and exit 1 (measured
+# 2026-08-15). That abort is safe -- it is a guard, not a corruption -- but it is
+# an ABORT, and `parse_checked` documents itself as the entry point that can tell
+# you whether the document came back intact. A process that dies cannot tell you
+# anything, and 100 KB of `[` is not a hard document to send a server.
+#
+# 2000 is far above any real document and far below the observed abort. The scan
+# is one linear pass with no recursion of its own, so it cannot inherit the
+# problem it exists to prevent, and it tracks string state because a `[` inside a
+# string is a character rather than a nesting level.
+fn depth_of(s: string) -> int:
+    d := 0
+    m := 0
+    in_str := false
+    esc := false
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if in_str:
+            if esc:
+                esc = false
+            elif c == 92:                      # a backslash escapes the next byte
+                esc = true
+            elif c == 34:
+                in_str = false
+        elif c == 34:
+            in_str = true
+        elif c == 91 or c == 123:              # [ {
+            d = d + 1
+            if d > m:
+                m = d
+        elif c == 93 or c == 125:              # ] }
+            d = d - 1
+    return m
+
 fn parse_checked(s: string) -> Result(Json, JsonErr):
+    if depth_of(s) > 2000:
+        return Err(TooDeep(0))
     n := len(s)
     pos := 0
     ecode := JE_OK

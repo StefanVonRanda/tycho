@@ -280,6 +280,15 @@ Four messages that an outside reader hit in the first ten minutes writing
   URL is not a shorter one, it is a different one. This closes the sweep — all 46
   corelib externs taking a `string` are now length-carrying or NUL-guarded
   (FRICTION #77, #78).
+- **`json.parse_checked` refuses a document nested past 2000 instead of aborting
+  the process.** The parser is recursive descent, so depth is C stack: at 50000
+  the runtime killed the process with `tycho: stack overflow` and exit 1. That
+  guard is safe, but a process that dies cannot return `Err` — and
+  `parse_checked` is documented as the entry point that tells you whether the
+  document survived. A server that chose it for exactly that reason still died on
+  100 KB of `[`. **New `JsonErr.TooDeep` variant** — a breaking change for an
+  exhaustive `match` on `JsonErr`; nothing in this tree matched on it outside the
+  package (FRICTION #79).
 
 ### Core library — breaking
 

@@ -444,3 +444,35 @@ fn main():
     println("absent kind = " + json.kind(json.get(na, "missing")))
     println("get tells   = " + yn(json.kind(json.get(na, "n")) != json.kind(json.get(na, "missing"))))
     println("keys tell   = " + yn(has_key(na, "n") != has_key(na, "missing")))
+    # Nesting depth. parse_checked is documented as the entry point that can tell
+    # you the document came back intact -- and a deeply nested one used to ABORT
+    # the process (`tycho: stack overflow`, exit 1, measured at 50000) rather than
+    # return Err, so the one entry point with an error channel had a hole exactly
+    # where an attacker controls the input. 100 KB of '[' is not a hard document
+    # to send. The boundary is asserted on BOTH sides, and the in-string case is
+    # the non-regression that matters: a '[' inside a string is a character, not
+    # a level, and a scan that missed that would refuse ordinary documents.
+    dp := ""
+    dq := ""
+    ins := "[\""
+    for i := 0; i < 2000; i += 1:
+        dp = dp + "["
+    for i := 0; i < 2001; i += 1:
+        dq = dq + "["
+    for i := 0; i < 5000; i += 1:
+        ins = ins + "["
+    for i := 0; i < 2000; i += 1:
+        dp = dp + "]"
+    for i := 0; i < 2001; i += 1:
+        dq = dq + "]"
+    ins = ins + "\"]"
+    println("depth_2000_ok=" + str(parsed_ok(dp)))
+    println("depth_2001_refused=" + str(parsed_ok(dq) == false))
+    println("brackets_in_string_ok=" + str(parsed_ok(ins)))
+
+fn parsed_ok(s: string) -> bool:
+    match json.parse_checked(s):
+        Ok(_):
+            return true
+        Err(_):
+            return false

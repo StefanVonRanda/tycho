@@ -189,3 +189,6 @@ empty kind  = str
 absent kind = null
 get tells   = no
 keys tell   = yes
+depth_2000_ok=true
+depth_2001_refused=true
+brackets_in_string_ok=true

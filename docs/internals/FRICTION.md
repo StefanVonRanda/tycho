@@ -5751,3 +5751,40 @@ extern is one commit away from making it false, and nothing mechanical enforces
 it. The check is `grep -rE '^extern (\"[a-z0-9]+\" )?fn .*: string' corelib/`,
 and it belongs in a reviewer's hands rather than a lane's, because the answer for
 each hit is a judgement about whether the input can carry a NUL.
+
+### 79. `json.parse_checked`'s error channel had a hole where the attacker is — **FIXED 2026-08-15**
+
+`core:json`'s header is unusually clear about which entry point to reach for:
+`parse_checked` is *"the only one that can tell you the document you got back is
+the document you handed in."* It cannot, for one input class, and it is the class
+an attacker controls.
+
+The parser is recursive descent, so nesting depth is C stack. Measured:
+
+| nesting | before |
+|---|---|
+| 10000 | parses fine |
+| 50000 | `tycho: stack overflow -- recursion too deep`, **exit 1** |
+
+The abort is *safe* — a runtime guard, not corruption, and `tests/recursion/`
+exists to keep it that way. But it is an **abort**, and a process that dies
+cannot return `Err`. A server calling `parse_checked` precisely because it wants
+the failure to be recoverable dies anyway, on 100 KB of `[`.
+
+Capped at 2000 with a new `TooDeep` variant. The check is a **pre-scan, not a
+counter threaded through `parse_value`**: one linear pass with no recursion of
+its own, so it cannot inherit the problem it exists to prevent. It tracks string
+state, because a `[` inside a string is a character rather than a level — 5000
+brackets inside a string still parse, and that non-regression is gated beside the
+boundary, which is asserted on **both** sides (2000 Ok, 2001 refused).
+
+**Adding the variant broke two exhaustive matches inside `json.ty` itself**
+(`err_offset`, then `err_reason`) — the consequence `tycho-verify` names as the
+textbook consumer-breaking change, hit by the person who had just read that
+warning. Zero consumers outside the package match on `JsonErr`, so nothing else
+moved, and the compile-until-clean loop is what found both.
+
+**The measurement was nearly wrong twice.** The first probe run reported
+`2001 -> Ok` and a stack overflow at 50000 — because the build had failed on the
+first broken match and the probe was the STALE binary. Reading the exit code
+rather than the printed line is what caught it.
