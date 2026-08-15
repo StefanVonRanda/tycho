@@ -58,14 +58,15 @@ too cheap to argue with. `make ci` before a substantial push is yours to run,
 and it is the only thing that covers the wide lanes — a dogfood link break or a
 cross-package mangling divergence is invisible to `make test`.
 
-**`make ci` measured 548 / 551 / 563 s across three runs on a 16-core box,
-2026-08-14 — treat that as an upper bound now.** `make test` was the long pole at
-~8 min and is 113s as of 2026-08-15, so the sweep is likely much shorter; it has
-not been re-measured — all 46 steps including 200 fuzz seeds. `make ci N=0`, which skips
+**`make ci` measured 626 / 620 s over two runs on a 16-core box, 2026-08-15**
+(the sweep prints its own duration on its last line). It has grown, not shrunk:
+548 / 551 / 563 s on 2026-08-14 and 495 s on 2026-08-10, even though `make test`
+fell from ~8 min to 113 s in that window — new lanes more than absorbed the
+saving, and there are 77 steps now, including 200 fuzz seeds. `make ci N=0`, which skips
 the fuzz lanes, was **274s** on 2026-08-10 and has not been re-measured since the
 tool lanes were added, so treat it as a floor. It parallelises (`run_lanes` forks
-each lane group), which is why the whole sweep costs barely more than `make test`
-alone.
+each lane group), though the sweep no longer costs "barely more than `make test`"
+— 620 s against 113 s is 5.5x, because `make test` stopped being the long pole.
 
 **Two different things get confused here.** Running EVERY lane one at a time is
 slower than the sweep — the sum beats the parallel whole, so never do that. Running
