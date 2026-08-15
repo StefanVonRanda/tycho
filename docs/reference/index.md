@@ -6,7 +6,7 @@ feature exists to stress-test the arena model in a different dimension — the
 evidence.
 
 Start with the thesis for *why*, then come here for *what*. Every example on
-every page compiles on both transpilers and produces the shown output.
+every page compiles and produces the shown output.
 
 ## Pages
 

@@ -57,18 +57,18 @@ type to `types_simple()` plus its `gen_expr` (construct) and `checksum_into`
 
 Two oracle-safety rules the generator must keep: (1) every value must reduce
 into the `int` checksum — floats and int-newtypes via `to_int` (deterministic
-truncation, identical in both transpilers since they emit the same C); (2) never
+truncation); (2) never
 emit a construct that can fault at runtime in a *valid* program, or tychoc's own
 run faults and run.py reports a false FAIL. The live example: **array** slices
 `exit(1)` on out-of-bounds (string slices clamp), so array slices are restricted
 to whole-array forms (`[:]`, `[0:]`) whose bounds hold at any runtime length.
 SOA scatter/gather use index 0 with a length >= 1 build, and `or_return` only
 appears inside the `Result`-returning helper (never `main`), keeping every
-generated program valid under both transpilers.
+generated program valid.
 
 ## Robustness fuzzer (fail-closed) — `gen_malformed.py` + `run_reject.py`
 
-A second lane that feeds **malformed** input to both transpilers and asserts each
+A second lane that feeds **malformed** input to the compiler and asserts it
 **fails closed** — the opposite of the soundness lane above (which feeds only
 valid programs). `gen_malformed.py <seed>` corrupts a real corpus program
 (`tests/` + `examples/`) — truncation, byte/line edits, unbalanced brackets,

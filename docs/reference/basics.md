@@ -78,7 +78,7 @@ caller no longer needs — a fresh literal, or a local on its last use — strai
 with **no copy at all** (verified in the generated C: no `tycho_arr_int_copy` is emitted). It
 falls back to a copy exactly when value semantics demand independence — if the variable is read
 again afterwards, used inside a loop, or captured by a closure. Reusing an owned value *after*
-handing it to a `sink` is a compile error in both compilers, not a silent copy, so the move is a
+handing it to a `sink` is a compile error, not a silent copy, so the move is a
 checked guarantee. The one copy `sink` can't elide is escape: a value returned or stored past the
 call must still be copied to a longer-lived arena — a property of the arena model.
 

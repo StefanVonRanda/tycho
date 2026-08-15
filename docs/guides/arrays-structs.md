@@ -198,7 +198,7 @@ engine such generics need is the same one that stamps out `Option(int)` versus
 new subsystem, and stay memory-model-neutral (§9).
 The full design is in [generics.md](generics.md).
 
-The full set is available in both compilers: generic functions, generic structs
+The full set is available: generic functions, generic structs
 (construction + `Box(int)` type-position annotations), structured patterns
 (`[$T]` → `Option(T)`), `[$K: $V]` map patterns, `where` constraints
 (`numeric` / `comparable` / `has_str`), and explicit call-site type args

@@ -211,7 +211,7 @@ inherent string-building codegen: concatenated owned strings mean output bytes
 are copied once per nesting level — the value-semantic string-copy floor. No
 logic-level change moves it.
 
-### Push-loop fusion — register-resident array building (both compilers)
+### Push-loop fusion — register-resident array building
 
 The generated-code counterpart to the wins above. A loop that only pushes to a
 local scalar array paid, **per element**, for the array descriptor

@@ -278,7 +278,7 @@ What the FFI handles today, in rough order of how much of C it unlocks:
 Both transpilers handle every FFI feature (the static handle-misuse bans noted above
 are enforced by `tychoc`, the reference). The `tests/ffi/` fixtures (a scalar
 round-trip, a string-returning extern, a NULL-return extern, a `ptr` handle
-round-trip, and a `--shim` build) run through both transpilers under `make ffi`,
+round-trip, and a `--shim` build) run under `make ffi`,
 ASan-clean and output-identical.
 
 A worked binding lives in [`examples/sqlite/`](../../examples/sqlite/): opaque

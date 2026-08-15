@@ -22,7 +22,10 @@
 > against it. What is explicitly not: performance tuning and the benches,
 > internal implementation details (the emitted C shape, arena sizes), and the
 > areas the spec or [SECURITY.md](SECURITY.md) mark as sharp edges.
-> [ROADMAP.md](ROADMAP.md#what-1-0-requires) lists what 1.0 now requires.
+> [SUPPORT.md](SUPPORT.md) states this as policy — versions, deprecations and
+> which platforms carry a promise.
+> [ROADMAP.md](ROADMAP.md#what-production-ready-requires) lists what production-ready
+> requires; the 1.0 conditions are in the section above it.
 > Versioning is `tychoc --version` + [CHANGELOG.md](CHANGELOG.md).
 
 **An experimental systems language with automatic memory management from lexical
@@ -65,7 +68,7 @@ fn main():
   checked against a committed golden; a fuzzer applies the same differential to
   random programs under ASan/UBSan and feeds malformed input to prove the
   compiler fails closed. The language compiled itself byte-for-byte once, and
-  eight full programs (below) ran on it with zero compiler or runtime defects.
+  seven full programs (below) ran on it with zero compiler or runtime defects.
 
 ## Quick start
 
@@ -284,7 +287,7 @@ language tick. [`docs/`](docs/README.md) is the full index; the map:
 - **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
   model in five steps, starting from C you already know. The gentlest way in.
 - **[Language reference](docs/reference/index.md)** — every construct, by topic.
-  The source of truth; every example compiles on both transpilers.
+  The source of truth; every example compiles.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
   work, and where it doesn't, with measured numbers.
 - **[Performance](docs/performance.md)** — the measurements behind the claims.

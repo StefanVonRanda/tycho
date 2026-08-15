@@ -21,6 +21,11 @@ its doc comment, a compiler warning at every call site naming the replacement, a
 **A deprecation survives until the next major release.** Nothing is removed
 without having warned in a released version first.
 
+**That is the promise from 1.0 onward.** While Tycho is 0.x a breaking change may
+ship with a changelog entry and no deprecation period at all — 0.7.0 did — so the
+paragraph above describes the mechanism you will see used, not a window you can
+yet rely on.
+
 ## Platforms
 
 **Linux x86_64 is the supported platform. Everything else is best-effort.**
@@ -36,8 +41,10 @@ others are well exercised:
 | Linux arm64 — best-effort | cross-compiled; **never executed on the platform** |
 | Windows arm64 — best-effort | cross-compiled; **never executed on the platform** |
 
-Artifacts that have never run on their platform say so in an
-`UNTESTED-PLATFORM.txt` inside the tarball. Bug reports from any platform are
+This is one person's project, which is the real reason the supported list has one
+row on it: Linux x86_64 is the machine the work happens on. Artifacts that have
+never run on their platform say so in an `UNTESTED-PLATFORM.txt` inside the
+tarball. Bug reports from any platform are
 welcome; only Linux x86_64 carries a promise.
 
 ## Old versions

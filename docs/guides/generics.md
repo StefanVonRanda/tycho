@@ -263,7 +263,7 @@ worth a monomorphization pass that the transpiler *already runs* for its built-i
 
 ## 8. Capabilities
 
-- **Generic functions** (both transpilers). `fn f(x: $T) -> T`,
+- **Generic functions.** `fn f(x: $T) -> T`,
   parameters inferred from argument types
   ([§3](#3-inference-argument-directed-structural-matching)), every
   `$`-parameter required to appear in an argument
@@ -274,7 +274,7 @@ worth a monomorphization pass that the transpiler *already runs* for its built-i
   call's result may be fed into another generic — nested (`f(g(x))`) or through a
   bound variable — and a generic may take a function-typed parameter
   (`fn($T) -> $T`), so higher-order helpers like `map`/`filter` are expressible.
-- **Generic structs (construction)** (both transpilers).
+- **Generic structs (construction).**
   `struct Box($T)` / `struct Pair($A, $B)` are templates; each construction
   *infers* the type arguments from the field values (`Box(5)` → `Box__int`,
   `Pair(7, "x")` → `Pair__int__string`) and monomorphizes one concrete struct
@@ -282,7 +282,7 @@ worth a monomorphization pass that the transpiler *already runs* for its built-i
   instance. Construction reuses all downstream machinery (field access, copy/eq,
   codegen) unchanged. Generic functions compose with generic structs (a `$T`
   binds to `Box__int`).
-- **Generic structs (type-position)** (both transpilers).
+- **Generic structs (type-position).**
   `Box(int)` as an explicit-type-args annotation in a parameter, return, field, or
   typed-declaration position — the same surface as the built-in `Option(int)` /
   `Result(int, string)`. A generic struct can be named in a parameter, return,
@@ -290,7 +290,7 @@ worth a monomorphization pass that the transpiler *already runs* for its built-i
   boundaries.
 - **Struct dependency-ordering.** A generic struct parameterized by
   another *concrete struct* (`Box(Point)`, where the instance embeds `Point` by
-  value) works in both transpilers. A struct is emitted after the structs it
+  value) works. A struct is emitted after the structs it
   embeds by value (names inside `[...]` are pointers, not dependencies), ties
   breaking by input order.
 - **Structured type-param patterns.**
@@ -325,13 +325,13 @@ worth a monomorphization pass that the transpiler *already runs* for its built-i
   mixable with the fixed predicates. Membership uses the newtype-resolved base;
   it's a compile-time check, still fully monomorphized (no dictionaries, no
   boxing).
-- **Generic enums** (both transpilers). A user sum type takes
+- **Generic enums.** A user sum type takes
   `$T`: `enum Box($T): Has($T); Empty`. Monomorphized like a generic struct —
   one concrete `enum` per type argument, payloads substituted. Inference is from
   the constructor's payload values (`Has(42)` ⇒ `T = int`); a nullary variant
   fixes no `$T`, so it takes an explicit arg (`Empty$(int)`), the same surface as
   `empty$(int)`.
-- **Recursive generic enums** (both transpilers). A variant may name the
+- **Recursive generic enums.** A variant may name the
   enum itself — `enum Tree($T): Leaf($T); Node(Tree($T), Tree($T))`. A
   self-reference resolves to the *template* type and is concretized on demand;
   the instantiator dedups before substituting, so the cycle terminates, and the
@@ -340,27 +340,28 @@ worth a monomorphization pass that the transpiler *already runs* for its built-i
   the instance type of its arguments, because each enum instance records the
   concrete type args it was built with. Recursive generic structs
   (`struct LL($T): tail: [LL($T)]`) and nested generic structs
-  (`Pair(Box(int))`) resolve in both transpilers the same way.
+  (`Pair(Box(int))`) resolve the same way.
 
 Runnable examples of each capability live in the `tests/generic_*` suite (and
 the rejection cases under `tests/reject/`).
 
-## 9. Two-compiler determinism
+## 9. Deterministic monomorphization
 
-The fixpoint differential requires `tychoc` and `tychoc0` to emit byte-identical C
-for `tychoc0.ty`, and to agree on every fixture. So generics have to
-instantiate **deterministically and identically** in both:
+Generics instantiate **deterministically**: the same program yields the same set
+and order of monomorphic definitions on every run, so the emitted C is
+reproducible.
 
 - the instantiation key is the `(definition, ordered concrete type args)` tuple,
-  using the same canonical type spelling both transpilers already share for
-  interning (`Option(int)`, `[string: [int]]`, …);
-- emission order is the order instantiations are *first interned* during the
-  same in-order walk both transpilers already perform — so the same program yields
-  the same set and order of monomorphic definitions;
+  using a canonical type spelling for interning (`Option(int)`, `[string: [int]]`, …);
+- emission order is the order instantiations are *first interned* during an
+  in-order walk;
 - mangled names are a pure function of the key.
 
-If those hold, a generic program is, post-monomorphization, an ordinary
-concrete program that both transpilers already handle in lockstep.
+These three properties were originally forced by the fixpoint differential, which
+required `tychoc` and the frozen `tychoc0` to emit byte-identical C. **That gate
+was retired on 2026-07-29 and nothing enforces them mechanically now** — they
+hold by construction in `src/tychoc.c`, and a change that broke one would show up
+as a golden diff rather than as a determinism failure.
 
 ## 10. Non-goals
 

@@ -16,8 +16,7 @@ Three things define the model:
   belongs to the same package and adds to one shared namespace.
 - **Privacy is by leading underscore.** A top-level symbol whose name starts
   with `_` is private to its own package: you can use it from any file *within*
-  the package, but a qualified `pkg._name` from another package is rejected by
-  both transpilers. Every other top-level symbol is exported.
+  the package, but a qualified `pkg._name` from another package is rejected. Every other top-level symbol is exported.
 - **There's no separate compilation.** The transpiler follows the import graph,
   merges everything reachable into one program, and emits a single `.c`.
 

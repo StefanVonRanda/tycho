@@ -259,8 +259,8 @@ benchmarks live in `bench/conc/`.
 
 ## Appendix: implementation & lineage
 
-For contributors. The feature lives in both transpilers — `src/tychoc.c` and
-`compiler/tychoc0.ty` emit different C dialects with identical semantics — plus
+For contributors. The feature lives in `src/tychoc.c` — `compiler/tychoc0.ty` carried it too,
+but that compiler was frozen on 2026-07-26 and no gate builds it — plus
 once in the shared runtime (`runtime/tycho_rt.c`).
 
 **Runtime.** The block pool is thread-local, so allocation never contends; a

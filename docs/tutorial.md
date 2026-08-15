@@ -43,7 +43,7 @@ fn main():
 ```
 
 There is no reference type: you can never hold a pointer into another value's memory.
-Hold that thought — it's the whole trick, and section 9 explains what it buys you.
+Hold that thought — it's the whole trick, and section 8 explains what it buys you.
 
 ## 3. Control flow
 
@@ -111,6 +111,9 @@ fn grade_name(g: Grade) -> string:
         B: "B"
         C: "C"
         F: "F"
+
+fn main():
+    println(grade_name(A) + grade_name(F))   # AF
 ```
 
 `Option(T)` is the built-in enum for "a value or nothing" — variants `Some(x)` and `None`

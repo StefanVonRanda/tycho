@@ -13,8 +13,7 @@ parity. The sections below describe the model as it stands; a closing appendix
 sketches, for contributors, how I brought the self-hosted code generator onto
 the model one type family at a time.
 
-This is a 1.0 transpiler; the memory model is the central idea it exists to
-demonstrate, and the cross-language benchmarks below are encouraging. The
+The memory model is the central idea this language exists to demonstrate, and the cross-language benchmarks below are encouraging. The
 stability contract is in the README's status banner; implementation details
 like arena sizes are deliberately not part of it.
 
@@ -140,17 +139,23 @@ residue in [the thesis](../thesis.md) and the
 The memory model is checked by four mechanisms that, between them, catch the
 ways an over-aggressive move or recycle could go wrong:
 
-- **Byte-identical self-build.** `make fixpoint` confirms the self-hosted transpiler
-  is a fixed point — it transpiles its own source and reproduces its own emitted C
-  byte for byte, and the resulting program matches the C transpiler's output. This
-  is the soundness oracle: a move or recycle that aliased would diverge the output.
-- **Sanitizers.** `make test` runs the self-emitted C under AddressSanitizer,
-  UndefinedBehaviorSanitizer, and LeakSanitizer.
+- **Sanitizers.** `make test` runs the emitted C for every fixture under
+  AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer. This is the
+  primary oracle: a move or recycle that aliased is a use-after-free, and ASan
+  reports it.
+- **Leak fuzzing.** `fuzz/run_leak.py` feeds generated valid, terminating programs
+  through the compiler, builds them under ASan+LeakSanitizer and asserts nothing
+  is leaked at exit — a recycle that never fires shows up here.
+- **Compile-time refusal.** The aliasing cases under `tests/reject/` must fail to
+  compile, so the rule is checked from both sides.
 - **Per-type RSS benchmarks**, wired as perf guards, confirm each type's bytes are
   actually freed.
-- **Differential fuzzing** compares the two transpilers' output across generated
-  programs, with distinct-value regression tests so value-masking can't hide a
-  corruption the differential alone would miss.
+> **What was lost.** Until 2026-07-29 a fifth mechanism sat above all of these:
+> `make fixpoint` and a differential fuzz lane checked the C compiler against the
+> frozen self-hosted one, byte for byte. That was the strongest oracle here — two
+> independent implementations disagreeing is a much sharper signal than one
+> implementation passing its own tests — and **nothing replaces it.** See
+> [bootstrap.md](../bootstrap.md).
 
 ## Across threads
 
