@@ -396,7 +396,7 @@ sh scripts/fuzz_shims.sh
 step "[3u5/27] make fold-check  (tycho-fold: over 200 generated lines mixing ASCII/Latin-1/CJK/emoji at widths 3..30, nothing is lost, no line exceeds the width in CODEPOINTS and every line stays valid UTF-8 -- and the byte-counting mode agrees on pure ASCII while differing on non-ASCII, which is what makes those three mean anything)"
 make -s fold-check
 
-step "[3u6/27] sh scripts/bignum_diff.sh  (differential core:bignum against Python's integers -- an INDEPENDENT arbitrary-precision implementation. make corelib checks it against a golden, which proves it has not CHANGED, not that it was ever right. A control scores division by the WRONG (floor) model first and must find mismatches, because a clean differential with a dead comparison is indistinguishable from a correct one)"
+step "[3u6/27] sh scripts/bignum_diff.sh  (differential core:bignum AND core:decimal against Python's integers and Decimal -- an INDEPENDENT arbitrary-precision implementation. make corelib checks it against a golden, which proves it has not CHANGED, not that it was ever right. A control scores division by the WRONG (floor) model first and must find mismatches, because a clean differential with a dead comparison is indistinguishable from a correct one)"
 sh scripts/bignum_diff.sh
 
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive

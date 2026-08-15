@@ -34,6 +34,7 @@ cat > "$T/h.ty" <<'TY'
 package main
 
 import "core:bignum"
+import "core:decimal"
 import "core:io"
 import "core:strings"
 
@@ -47,7 +48,13 @@ fn main():
         op, bstr := strings.split_once(rest, " ")
         a := bignum.from_str(astr)
         b := bignum.from_str(bstr)
-        if op == "+":
+        if op == "d+":                       # the decimal ops share the driver
+            println(decimal.to_str(decimal.add(decimal.from_str(astr), decimal.from_str(bstr))))
+        elif op == "d-":
+            println(decimal.to_str(decimal.sub(decimal.from_str(astr), decimal.from_str(bstr))))
+        elif op == "d*":
+            println(decimal.to_str(decimal.mul(decimal.from_str(astr), decimal.from_str(bstr))))
+        elif op == "+":
             println(bignum.to_str(bignum.add(a, b)))
         elif op == "-":
             println(bignum.to_str(bignum.sub(a, b)))
@@ -107,6 +114,59 @@ for _ in range(N):
     if b: cases.append((a, "/", b))
 
 bad = run(cases, truncating)
+
+# --- core:decimal, same idea, against Python's Decimal ------------------------
+# Compared as VALUE and SCALE, never as Python's chosen NOTATION: str(Decimal)
+# switches to 1E-12 for small exponents and keeps a signed zero, and scoring
+# against that text reported 105 "mismatches" that were all the oracle. Scale is
+# compared too because for money it is part of the answer -- 1.50 is not 1.5.
+from decimal import Decimal, getcontext
+getcontext().prec = 200
+
+def dscale(t): return len(t.split(".")[1]) if "." in t else 0
+
+def drun(dcases):
+    p = pathlib.Path(T + "/din.txt")
+    p.write_text("".join(f"{a} d{op} {b}\n" for a, op, b in dcases))
+    out = subprocess.run([T + "/bin", str(p)], capture_output=True, text=True).stdout.split("\n")
+    out_bad = []
+    for (a, op, b), got in zip(dcases, out):
+        A, B = Decimal(a), Decimal(b)
+        w = {"+": A + B, "-": A - B, "*": A * B}[op]
+        if Decimal(got) != w:                      out_bad.append(("value", a, op, b, got, str(w)))
+        elif dscale(got) != -w.as_tuple().exponent: out_bad.append(("scale", a, op, b, got, str(w)))
+    return out_bad
+
+dedge = ["0", "-0", "0.0", "1", "-1", "0.1", "0.2", "1.50", "2.25", "-1.10",
+         "99999999999999999999.5", "0.000000000001", "-0.000000000001", "1000000000000000000000"]
+dcases = [(a, op, b) for a in dedge for b in dedge for op in "+-*"]
+for _ in range(N):
+    def dmk():
+        ip = random.randint(-10**random.randint(0, 20), 10**random.randint(0, 20))
+        sc = random.randint(0, 12)
+        return str(ip) if sc == 0 else f"{ip}." + "".join(random.choice("0123456789") for _ in range(sc))
+    dcases.append((dmk(), random.choice("+-*"), dmk()))
+
+# the control: both halves must catch a deliberately wrong expectation
+ctl2 = [("1.50", "+", "2.25"), ("1.5", "*", "2")]
+pv = pathlib.Path(T + "/dctl.txt")
+pv.write_text("".join(f"{a} d{op} {b}\n" for a, op, b in ctl2))
+o2 = subprocess.run([T + "/bin", str(pv)], capture_output=True, text=True).stdout.split("\n")
+live_v = live_s = 0
+for (a, op, b), got in zip(ctl2, o2):
+    A, B = Decimal(a), Decimal(b)
+    w = {"+": A + B, "*": A * B}[op]
+    if Decimal(got) != w + Decimal("0.01"): live_v += 1
+    if dscale(got) != -w.as_tuple().exponent + 1: live_s += 1
+if live_v < len(ctl2) or live_s < len(ctl2):
+    print(f"  DECIMAL CONTROL DEAD: value {live_v}/{len(ctl2)}, scale {live_s}/{len(ctl2)}")
+    sys.exit(1)
+
+dbad = drun(dcases)
+for kind, a, op, b, got, want in dbad[:4]:
+    print(f"  DECIMAL {kind.upper()} {a} {op} {b}: tycho={got!r} python={want!r}")
+print(f"  {len(dcases)} decimal operations against Python's Decimal: {len(dbad)} mismatches")
+bad = bad + dbad
 for a, op, b, got, want in bad[:4]:
     print(f"  MISMATCH {a} {op} {b}\n    bignum={got!r}\n    python={want!r}")
 print(f"  {len(cases)} operations against Python integers: {len(bad)} mismatches")
@@ -114,4 +174,4 @@ sys.exit(1 if bad else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "bignum-diff: FAIL"; exit 1; }
-echo "bignum-diff: green (control caught the wrong division model first, then every + - * and divmod agreed with Python's integers across the limb boundary, both int64 extremes, all four sign combinations and ~$((N * 2)) random pairs up to 10^60)"
+echo "bignum-diff: green (control caught the wrong division model first, then every + - * and divmod agreed with Python's integers across the limb boundary, both int64 extremes, all four sign combinations and ~$((N * 2)) random pairs up to 10^60; and core:decimal agreed with Python's Decimal on both VALUE and SCALE over the same shape of corpus)"
