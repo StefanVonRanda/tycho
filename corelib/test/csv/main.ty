@@ -105,3 +105,13 @@ fn main():
     push(two, ["", ""])
     println("two-empty wire=" + csv.stringify(two)[0:len(csv.stringify(two)) - 1] +
         " back=" + str(len(csv.parse(csv.stringify(two))[0])))
+    # A field starting = + - @ is a FORMULA to Excel and Sheets. stringify writes
+    # it verbatim, like Python's csv and Go's, and that passthrough is pinned:
+    # the safe fix mangles the value and would break parse(stringify(rows))==rows,
+    # so it belongs to the caller (see the header). If this is ever changed, the
+    # change must be deliberate rather than a drive-by "hardening".
+    inj := [["=cmd|' /c calc'!A1"], ["+1"], ["-2"], ["@SUM(1)"]]
+    txt := csv.stringify(inj)
+    print("inj_verbatim=" + str(txt == "=cmd|' /c calc'!A1\n+1\n-2\n@SUM(1)\n") + "\n")
+    irt := csv.parse(txt)
+    print("inj_roundtrip=" + str(len(irt) == 4 and irt[0][0] == inj[0][0] and irt[3][0] == inj[3][0]) + "\n")

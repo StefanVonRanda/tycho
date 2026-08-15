@@ -11,6 +11,26 @@
 # middle is one empty field ([""]). The serializer emits LF line endings and
 # quotes only the fields that need it (those containing the delimiter, a quote,
 # CR, or LF), doubling internal quotes. parse and stringify round-trip.
+#
+# FORMULA INJECTION IS NOT HANDLED HERE, AND THAT IS DELIBERATE. A field starting
+# `=`, `+`, `-` or `@` is EXECUTED as a formula by Excel and Google Sheets when the
+# file is opened -- `=cmd|' /c calc'!A1` is the classic. `stringify` writes such a
+# field verbatim (measured 2026-08-15), exactly as Python's `csv`, Go's and Rust's
+# do, and quoting does not help: a quoted formula cell is still evaluated.
+#
+# It is not fixed here because the fix would have to MANGLE the value -- prefixing
+# an apostrophe or a space -- and that breaks `parse(stringify(rows)) == rows`,
+# which this package states two lines above and which FRICTION #61 exists to
+# protect. A serializer that quietly alters values is a worse bug than the one it
+# prevents, and it prevents it only for the readers that happen to be spreadsheets.
+#
+# So it belongs to the CALLER, at the point where the audience is known:
+#
+#     if len(f) > 0 and (f[0] == 61 or f[0] == 43 or f[0] == 45 or f[0] == 64):
+#         f = "'" + f            # only when the file is for a spreadsheet
+#
+# Do it when writing user-supplied data to a file a person will open in Excel.
+# Do NOT do it for a CSV another program parses -- there the apostrophe is data.
 package csv
 
 # ---- parsing ---------------------------------------------------------------

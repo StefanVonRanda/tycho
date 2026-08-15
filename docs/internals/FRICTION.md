@@ -5816,3 +5816,37 @@ the rescale rows disagree with each other.
 
 `div` already has a differential (`40bac3d6`, with a mode-swap control). Between
 that and this, the package's stated surface is measured rather than assumed.
+
+### 81. `csv.stringify` writes a spreadsheet formula verbatim — **DOCUMENTED, not "fixed", 2026-08-15**
+
+A field beginning `=`, `+`, `-` or `@` is EXECUTED as a formula when Excel or
+Google Sheets opens the file. `=cmd|' /c calc'!A1` is the classic. Measured:
+`stringify` writes all four verbatim, and the quoting that does happen is
+incidental — `"@SUM(1,2)"` was quoted for its COMMA, and a quoted formula cell is
+evaluated anyway.
+
+**A differential against Python could not have found this**, which is why it is
+worth recording next to `format-diff`: Python's `csv` writes it verbatim too, as
+do Go's and Rust's. Agreement with the oracle is the correct result here and the
+bug class survives it untouched.
+
+**It is not fixed, and "fixed" would be the wrong word for what a fix would do.**
+The only defence is to MANGLE the value — prefix an apostrophe or a space — and
+that breaks `parse(stringify(rows)) == rows`, which the package states in its own
+header and which FRICTION #61 exists to protect. A serializer that quietly alters
+values is a worse defect than the one it prevents, and it prevents it only for the
+readers that happen to be spreadsheets: for a CSV another program parses, that
+apostrophe is data.
+
+So it moves to the caller, at the point where the audience is known, and the
+header now says so with the four bytes and the guard spelled out. The passthrough
+is **pinned** in `corelib/test/csv/main.ty` so a future drive-by "hardening" has
+to be a deliberate change: wiring an auto-escape into `stringify_delim` reddens
+`csv` and only `csv` (verified — the first attempt at that control only DEFINED
+the helper without calling it, and reported green while changing nothing).
+
+The general shape, for whoever reviews next: **a differential is blind to any
+defect the oracle shares.** Round-tripping, encoding and arithmetic are what it
+covers. What a downstream consumer DOES with a well-formed value is not, and that
+is where the injection classes live — this, and #60's `javascript:` href, and
+`core:zip`'s traversal names (#71).

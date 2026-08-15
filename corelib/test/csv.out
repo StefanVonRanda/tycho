@@ -17,3 +17,5 @@ rt_ok=1 rows=2 r0=3 r1=2
 one-empty wire=3 back=1
 empty-row back=1
 two-empty wire=, back=2
+inj_verbatim=true
+inj_roundtrip=true
