@@ -5147,3 +5147,45 @@ apparent ones.
 The fixture asserts the fixed case and the three width limits separately, so a
 future change that "fixes" the limits by wrapping cannot pass by moving the wrong
 line. Reverting `abs(x)` to `x` reddens the golden.
+
+### 65. `sign()` returned 0 for both infinities — **FIXED 2026-08-15**
+
+Same package as #64 and the same shape as the nine before it: *a comment claims a
+property, the code delivers it in one respect and not the one that matters.*
+
+`math.sign` documents `-1 / 0 / 1`, and its comment explains the trick that makes
+one body serve every numeric type — "the zero is derived as `x-x`, so this works
+for int and float without a typed literal". It does work for int, and for every
+finite float. For an **infinity** `x - x` is NaN, every comparison against a NaN
+is false, so both tests fall through to the final `return 0`:
+
+```
+sign(inf)  = 0        sign(-inf) = 0        (measured 2026-08-15, before the fix)
+```
+
+The two float values whose sign is *least* ambiguous were the two it got wrong.
+Nothing in the tree could have noticed: `sign` has no differential lane, and the
+golden recorded what the code did.
+
+**The obvious fix is a breaking change, which is why it is not the fix.**
+`z := zero$(T)` reads better and gives a real typed zero — and it needs
+`defaultable(T)`, which does **not** see through a newtype, while the `numeric(T)`
+in the signature does. Measured: `math.sign(Cents(-7))` compiles today and stops
+compiling under `zero$(T)`, with *"only int, float, bool, and string are
+defaultable"* pointing at a line inside corelib. A papercut is not worth a
+silent break in every newtype caller.
+
+So the derived zero stays and the NaN case is answered where it lands. `z != z`
+identifies "x is an infinity or a NaN" — a state **int arithmetic can never
+reach**, so the int path is untouched by construction — and `x == x * x` then
+separates them, since `+inf` is its own square while `-inf` squares to `+inf` and
+NaN compares equal to nothing.
+
+`NaN` still returns 0, now deliberately rather than by fall-through: it has no
+sign to report. That is the one behaviour worth arguing about, and it is written
+down instead of emergent.
+
+Gated in `corelib/test/math/main.ty` with the finite int and float cases asserted
+on their own lines, so an edge-case fix cannot pass by moving an ordinary answer.
+Reverting the fix reddens `math` and only `math` — `ok fmath` printed beside
+`FAIL math (output != golden)` in the same run.

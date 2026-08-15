@@ -191,6 +191,16 @@ Four messages that an outside reader hit in the first ten minutes writing
   refused" reads exactly like "nothing connected", so a `CURLOPT_SSL_VERIFYPEER,
   0L` left in after debugging would have passed every lane in this tree.
   `make http-verify` closes that (FRICTION #57).
+- **`math.sign` returns ±1 for the infinities.** It documented `-1 / 0 / 1` and
+  derived its zero as `x - x` so one body could serve int and float. For an
+  infinity that derived zero is NaN, every comparison against a NaN is false, and
+  both tests fell through: `sign(inf)` and `sign(-inf)` both returned **0**. The
+  derived zero stays — `zero$(T)` needs `defaultable(T)`, which does not see
+  through a newtype, so it would have stopped `math.sign(Cents(-7))` compiling —
+  and the NaN case is answered where it lands instead. `NaN` still returns 0, now
+  deliberately rather than by fall-through. Int is untouched by construction:
+  integer arithmetic cannot produce the NaN that reaches the new branch
+  (FRICTION #65).
 
 ### Core library — breaking
 

@@ -11,3 +11,7 @@ gcd(min,12)=4
 gcd(min,0)=-9223372036854775808
 gcd(min,min)=-9223372036854775808
 gcd(12,18)=6 gcd(-12,18)=6
+sign(inf)=1 sign(-inf)=-1
+sign(nan)=0 sign(0.0)=0
+sign(2.5)=1 sign(-2.5)=-1
+sign(7)=1 sign(-7)=-1 sign(0)=0

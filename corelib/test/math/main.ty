@@ -29,3 +29,14 @@ fn main():
     println("gcd(min,min)=" + str(math.gcd(0 - 9223372036854775807 - 1, 0 - 9223372036854775807 - 1)))
     # the ordinary cases must be untouched
     println("gcd(12,18)=" + str(math.gcd(12, 18)) + " gcd(-12,18)=" + str(math.gcd(0 - 12, 18)))
+    # sign() documents -1/0/1 and derives its zero as x-x so one body serves int
+    # and float. For an INFINITY that derived zero is NaN, every comparison against
+    # a NaN is false, and both tests fell through: sign(inf) and sign(-inf) each
+    # returned 0 (measured 2026-08-15) -- the two float values whose sign is least
+    # ambiguous. NaN stays 0 deliberately; it has no sign to report.
+    inf := 1.0e308 * 10.0
+    println("sign(inf)=" + str(math.sign(inf)) + " sign(-inf)=" + str(math.sign(0.0 - inf)))
+    println("sign(nan)=" + str(math.sign(inf - inf)) + " sign(0.0)=" + str(math.sign(0.0)))
+    # the finite cases, int and float, must be untouched by that edge
+    println("sign(2.5)=" + str(math.sign(2.5)) + " sign(-2.5)=" + str(math.sign(0.0 - 2.5)))
+    println("sign(7)=" + str(math.sign(7)) + " sign(-7)=" + str(math.sign(0 - 7)) + " sign(0)=" + str(math.sign(0)))
