@@ -116,6 +116,22 @@ until a deliberately wrong expectation has been shown to fail.
 
 ---
 
+## 4b. There is a released artifact now
+
+0.7.0 shipped 2026-08-15 with prebuilt Linux and Windows tarballs, so a reviewer
+does not have to build anything to start:
+
+```
+gh release download v0.7.0 -R StefanVonRanda/tycho
+sha256sum -c tycho-v0.7.0-linux-x86_64.tar.gz.sha256
+```
+
+The source at tag `v0.7.0` is what those binaries were built from, verified by
+running the whole `tests/reject/` corpus through the extracted compiler before
+publishing. Building from source is still the better basis for a review — the
+tarball tells you nothing about how it was made — but the artifact is there if
+you want to reproduce a finding against exactly what users get.
+
 ## 5. Reproducing anything here
 
 No cloud CI, deliberately. Everything runs locally with a C compiler and `make`.

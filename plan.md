@@ -1,23 +1,11 @@
 # Open
 
-Two phases, neither completable inside a coding session. Everything else from
-the 2026-08-15 sweep is done and in `git log` — evidence lives in the commit
-messages, per the rule in `CLAUDE.md`.
+One phase, not completable inside a coding session. Everything else from the
+2026-08-15 sweep is done and in `git log` — evidence lives in the commit
+messages, per the rule in `CLAUDE.md`. Publishing 0.7.0 was phase 1 and is
+deleted rather than ticked, per the same rule.
 
-## 1. Publish 0.7.0
-
-- **Scope:** tag, push, create the release. Nothing else.
-- **Done when:** `gh release list` shows v0.7.0 as a prerelease.
-- **Verify FIRST — a checksum proves intact, never current:** `make release-check`,
-  then extract the tarball and run `tests/reject/` through the *shipped* `tychoc`
-  plus a positive control that must compile. That check has caught a stale
-  artifact twice, including one shipping two known crypto defects under a version
-  whose CHANGELOG said they were fixed.
-- **Gates:** `make release-check` only. Do not run the sweep for this.
-- **Not a build step.** ROADMAP §6 calls it a decision. It was offered in-session
-  on 2026-08-15 and deferred, so it needs an explicit go-ahead, not an assumption.
-
-## 2. Get the external review (ROADMAP §7)
+## Get the external review (ROADMAP §7)
 
 - **Scope:** send `docs/internals/audit-brief.md` to a reviewer outside the project.
 - **Done when:** someone who did not write this code has reported findings, or

@@ -445,9 +445,25 @@ State now, each figure measured rather than assumed:
 - The `mingw64` cross-build exists again at 0.6.0 (0.5.0 had one, 0.6.0 did not).
   Under wine its `tychoc.exe` reports `0.6.0` and refuses the same fixtures.
 
-What remains is the outward step alone: `git tag`, push, and `gh release create
-... --notes-file RELEASE_NOTES.md --prerelease`. That is a decision, not a build
-step. **Re-verify before publishing** — extract the tarball and run those reject
+**Shipped 2026-08-15 as 0.7.0, not 0.6.0.** v0.6.0 had been tagged and released
+on 2026-08-11 and HEAD was 254 commits past it, with breaking changes in
+`[Unreleased]` — a copied `handle` and a copied channel, both live memory errors,
+stop compiling. Publishing the newer artifacts under the older tag would have put
+binaries on a release whose tag names different source, which is the failure this
+section already records twice. So the version moved instead.
+
+Verified before publishing, in this order: `make release-check` (byte-identical
+over two builds, both platforms), the whole `tests/reject/` corpus through the
+**extracted** compiler (333, 0 wrongly accepted) with a positive control that had
+to compile and run, the mingw archive under wine (0.7.0, 51 fixtures, 0
+accepted), and — after publishing — the tarball downloaded back from the release
+page and re-checked. `make test` (719), `asan-self` (737), `fuzz/run.py 120`,
+`fuzz-shims` and `ilp32` all green at the released tree.
+
+This section's own rule held again on the way: the version grep used to bump
+0.6→0.7 matched `Tycho 0.6` and missed `Tycho is 0.6`, so five files still
+announced the old version after the release was cut. A checksum proves an
+artifact intact and a grep proves only what its pattern can match. **Re-verify before publishing** — extract the tarball and run those reject
 fixtures through the shipped compiler. That check is what caught this, and a
 checksum would not have.
 
