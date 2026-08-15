@@ -93,4 +93,130 @@ cc -O0 -g -Wl,--wrap=free -o "$T/p" "$T/p.c" corelib/crypto/crypto_shim.c -lcryp
     echo "crypto-hygiene: SKIPPED (cannot link against libcrypto)"; head -3 "$T/cc.log"; exit 0; }
 
 "$T/p" || { echo "crypto-hygiene: FAIL"; exit 1; }
-echo "crypto-hygiene: green (a control block holding the secret is found and a cleansed one is not, then neither aead_encrypt nor aead_decrypt releases a heap block still holding the plaintext)"
+
+# --- [3] the branch-free decode must still be the SAME decode ----------------
+# A hex parser rewritten in bit tricks is exactly the code that stays plausible
+# while being wrong: &0xFF is what stops a non-digit's wrapped subtraction from
+# testing as valid, and dropping it accepts junk silently. So the new classifier
+# is compared against the branching original over ALL 256 byte values, plus
+# accept/reject cases either side of every boundary ('/' ':' '@' 'G' '`' 'g')
+# and one byte-exact decode. The control removes a mask and must be caught.
+cat > "$T/e.c" <<'EOF'
+#include <stdio.h>
+#include <string.h>
+#include "crypto_shim.c"
+static int hexval_old(int c) {                 /* the pre-2026-08-15 version */
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+int main(void) {
+    int diff = 0;
+    for (unsigned c = 0; c < 256; c++) {
+        unsigned v = 0, ok = hexval_ct(c, &v);
+        int o = hexval_old((int)c);
+        if ((o >= 0) != (ok != 0) || (o >= 0 && (unsigned)o != v)) {
+            if (!diff) printf("  DIFF at 0x%02x: old=%d new ok=%u v=%u\n", c, o, ok, v);
+            diff++;
+        }
+    }
+    struct { const char *in; int want; } t[] = {
+        {"", 0}, {"00", 0}, {"ff", 0}, {"FF", 0}, {"deadBEEF", 0},
+        {"f", 1}, {"abc", 1}, {"0g", 1}, {"g0", 1}, {"00gg", 1},
+        {"zz", 1}, {"0/", 1}, {"0:", 1}, {"`0", 1}, {"0@", 1}, {"0G", 1},
+    };
+    int bad = 0; size_t n; unsigned char *b;
+    for (size_t i = 0; i < sizeof t / sizeof *t; i++) {
+        n = 0; b = hexdec(t[i].in, &n);
+        if ((b == NULL) != t[i].want) { printf("  WRONG: %-8s rejected=%d want=%d\n", t[i].in, b == NULL, t[i].want); bad++; }
+        free(b);
+    }
+    n = 0; b = hexdec("0f1e2d3c", &n);
+    if (!b || n != 4 || b[0] != 0x0f || b[1] != 0x1e || b[2] != 0x2d || b[3] != 0x3c) { printf("  WRONG bytes\n"); bad++; }
+    free(b);
+    if (diff || bad) { printf("  %d byte values differ, %d cases wrong\n", diff, bad); return 1; }
+    printf("  hexdec: all 256 byte values and %zu accept/reject cases match the branching original\n", sizeof t / sizeof *t);
+    return 0;
+}
+EOF
+mkdir -p "$T/mask"
+sed 's|unsigned x = ((c \| 0x20u) - .a.) & 0xFFu;|unsigned x = ((c \| 0x20u) - 0x61u);|' \
+    corelib/crypto/crypto_shim.c > "$T/mask/crypto_shim.c"
+grep -q "0x61u);" "$T/mask/crypto_shim.c" || {
+    echo "crypto-hygiene: FAIL -- the [3] control patch did not apply"; exit 1; }
+if cc -O1 -I "$T/mask" -o "$T/em" "$T/e.c" -lcrypto 2>/dev/null && "$T/em" >/dev/null 2>&1; then
+    echo "CONTROL DEAD: a decode with the &0xFF mask removed compared EQUAL to the"
+    echo "              original, so [3] would pass on a broken classifier."
+    exit 1
+fi
+cc -O1 -I corelib/crypto -o "$T/e" "$T/e.c" -lcrypto 2>/dev/null || {
+    echo "crypto-hygiene: FAILED (the equivalence probe does not build)"; exit 1; }
+"$T/e" || { echo "crypto-hygiene: FAIL"; exit 1; }
+
+# --- [2] is the key-import decode CONSTANT-TIME? -----------------------------
+# Not a stopwatch. The secret is marked UNDEFINED and memcheck reports every
+# branch derived from it -- a deterministic property, so no coin toss and no
+# flaky lane. (The tree refuses timing gates for exactly that reason; see the
+# --stress note in tools/tycho-ed/main.ty.)
+#
+# Two things are declassified ON PURPOSE, and naming them is the whole honesty of
+# this leg: the input LENGTH (strlen, suppressed by frame) and the single bit
+# "was the hex well-formed", which the caller must be able to branch on. Anything
+# else memcheck still reports is a real leak.
+#
+# The CONTROL rebuilds the same probe against a COPY of the shim whose digit
+# decode branches, which is what this code did before 2026-08-15 (it scored 7).
+# If the control does not redden, the suppressions are hiding the subject.
+if command -v valgrind >/dev/null 2>&1 && [ -f /usr/include/valgrind/memcheck.h ]; then
+    cat > "$T/ct.c" <<'EOF'
+#include <valgrind/memcheck.h>
+#include <stdio.h>
+#include <string.h>
+#include "crypto_shim.c"
+int main(void) {
+    char hex[65];
+    memcpy(hex, "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0", 65);
+    VALGRIND_MAKE_MEM_UNDEFINED(hex, 64);          /* the secret key material */
+    size_t n = 0; unsigned bad = 0;
+    unsigned char *b = hexdec_ct(hex, &n, &bad);
+    VALGRIND_MAKE_MEM_DEFINED(&bad, sizeof bad);   /* the one public bit */
+    VALGRIND_MAKE_MEM_DEFINED(&n, sizeof n);
+    printf("%s n=%zu\n", bad ? "rejected" : "decoded", n);
+    if (b) free(b);
+    return 0;
+}
+EOF
+    printf '{\n  length-is-public-cond\n  Memcheck:Cond\n  fun:strlen\n  fun:hexdec_ct\n}\n{\n  length-is-public-value8\n  Memcheck:Value8\n  fun:strlen\n  fun:hexdec_ct\n}\n' > "$T/sup"
+
+    mkdir -p "$T/ctl"
+    cp corelib/crypto/crypto_shim.c "$T/ctl/crypto_shim.c"
+    sed -i 's|\*v = is_d \* d + is_x \* (x + 10);|if (is_d) *v = d; else if (is_x) *v = x + 10; else *v = 0;|' "$T/ctl/crypto_shim.c"
+    grep -q 'if (is_d) \*v' "$T/ctl/crypto_shim.c" || {
+        echo "crypto-hygiene: FAIL -- the control patch did not apply, so [2] would prove nothing"; exit 1; }
+
+    ct_run() {   # $1 = include dir; echoes the number of reported leaks
+        cc -O1 -g -I "$1" -o "$T/ct" "$T/ct.c" -lcrypto 2>/dev/null || { echo skip; return; }
+        valgrind -q --suppressions="$T/sup" "$T/ct" >/dev/null 2>"$T/ct.err"
+        grep -c uninitialised "$T/ct.err" || true
+    }
+    ctl=$(ct_run "$T/ctl")
+    if [ "$ctl" = skip ]; then
+        echo "crypto-hygiene: SKIPPED [2] (cannot build the ctgrind probe)"
+    elif [ "$ctl" -lt 1 ]; then
+        echo "CONTROL DEAD: a branching digit decode was reported clean -- the"
+        echo "              suppressions are hiding the subject, so [2] proves nothing."
+        exit 1
+    else
+        real=$(ct_run corelib/crypto)
+        if [ "$real" != 0 ]; then
+            echo "LEAK: the key-import hex decode branches on the secret ($real reports)"
+            grep -A2 uninitialised "$T/ct.err" | head -6
+            echo "crypto-hygiene: FAIL"; exit 1
+        fi
+        echo "  hexdec: 0 secret-dependent branches (the branching control scored $ctl)"
+    fi
+else
+    echo "crypto-hygiene: SKIPPED [2] (no valgrind or no memcheck.h)"
+fi
+echo "crypto-hygiene: green (a control block holding the secret is found and a cleansed one is not, then neither aead_encrypt nor aead_decrypt releases a heap block still holding the plaintext; the branch-free hex decode classifies all 256 byte values exactly as the branching original did, against a control with a mask removed that does not; and under memcheck the key-import hex decode has no branch derived from the secret, with only the input length and the one well-formedness bit declassified, against a branching control that does redden)"

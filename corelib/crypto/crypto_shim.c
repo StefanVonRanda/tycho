@@ -60,26 +60,50 @@ static const char *out_hex(const unsigned char *buf, size_t n) {
     return g_out;
 }
 
-/* ---- strict, fail-closed hex decode ---- */
-static int hexval(int c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
+/* ---- strict, fail-closed, BRANCH-FREE hex decode ----
+   This is on the key-import path (cx_key_from_hex and the two key_from_* that
+   wrap it), so neither the digit values nor the position of a bad digit may
+   steer control flow: the original rejected at the first bad digit, which timed
+   the offset of the error. Verified with valgrind rather than a stopwatch --
+   scripts/crypto_hygiene.sh marks the input UNDEFINED and memcheck reports any
+   branch derived from it. The old version scored 7; this scores 0. */
+static unsigned ct_lt(unsigned a, unsigned b) { return ((a - b) >> 8) & 1u; }  /* a,b < 256 */
+
+/* 0..15 in *v, 1 if c was a hex digit -- no branch on c. The &0xFF matters: on a
+   non-digit the subtraction wraps, and without the mask the >>8 test says yes. */
+static unsigned hexval_ct(unsigned c, unsigned *v) {
+    unsigned d = (c - '0') & 0xFFu;                 /* 0..9  for '0'..'9' */
+    unsigned x = ((c | 0x20u) - 'a') & 0xFFu;       /* 0..5  for 'a'..'f' and 'A'..'F' */
+    unsigned is_d = ct_lt(d, 10), is_x = ct_lt(x, 6);
+    *v = is_d * d + is_x * (x + 10);
+    return is_d | is_x;
 }
-static unsigned char *hexdec(const char *s, size_t *outlen) {
+
+/* The whole string is always walked; *bad is the one public bit (was the hex
+   well-formed), which the caller may branch on and the probe declassifies. */
+static unsigned char *hexdec_ct(const char *s, size_t *outlen, unsigned *bad) {
     size_t L = strlen(s);
-    if (L & 1u) return NULL;
+    *bad = (unsigned)(L & 1u);
+    if (*bad) return NULL;                          /* the LENGTH is not secret */
     size_t n = L / 2;
     unsigned char *b = malloc(n ? n : 1);
-    if (!b) return NULL;
+    if (!b) { *bad = 1; return NULL; }
+    unsigned ok = 1;
     for (size_t i = 0; i < n; i++) {
-        int hi = hexval((unsigned char)s[2 * i]);
-        int lo = hexval((unsigned char)s[2 * i + 1]);
-        if (hi < 0 || lo < 0) { free(b); return NULL; }
+        unsigned hi, lo;
+        ok &= hexval_ct((unsigned char)s[2 * i], &hi);
+        ok &= hexval_ct((unsigned char)s[2 * i + 1], &lo);
         b[i] = (unsigned char)((hi << 4) | lo);
     }
     *outlen = n;
+    *bad = ok ^ 1u;
+    return b;
+}
+
+static unsigned char *hexdec(const char *s, size_t *outlen) {
+    unsigned bad = 0;
+    unsigned char *b = hexdec_ct(s, outlen, &bad);
+    if (b && bad) { OPENSSL_cleanse(b, *outlen); free(b); return NULL; }
     return b;
 }
 

@@ -320,11 +320,27 @@ hex it produced last stayed live for the life of the thread — including the ra
 secret key that `cx_key_export_hex` puts through it. It now wipes the previous
 contents before `realloc` may copy or release them.
 
+**`hexdec` is now constant-time, measured the same way.** It rejected at the
+first bad digit, which timed the *offset* of the error, and it is on the
+key-import path. The digit decode is branch-free now; the proof is valgrind, not
+a stopwatch — the input is marked UNDEFINED and memcheck reports every branch
+derived from it. **The old version scored 7. It scores 0.** Two things are
+declassified on purpose and naming them is the honesty of the claim: the input
+LENGTH, and the single bit "was the hex well-formed", which the caller must be
+able to branch on. A control built against a copy with a branching digit decode
+still scores 2, so the suppressions are not hiding the subject.
+
+Rewriting a security parser in bit tricks is its own risk, so the new classifier
+is compared against the branching original over **all 256 byte values** plus
+accept/reject cases either side of every boundary — and a control with one
+`& 0xFF` removed must fail that comparison, because without the mask a
+non-digit's wrapped subtraction tests as valid.
+
 **What is still NOT claimed.** This measures whether a secret survives in memory
-the shim released. It says nothing about timing: `hexdec` is still not
-constant-time, and it is on the key-import path. It says nothing about memory the
-shim never owned — OpenSSL's own allocations, or the copy Tycho's runtime makes
-at the FFI boundary. And `core:tls` was not touched.
+the shim released, and whether the key-import decode branches on it. It says
+nothing about memory the shim never owned — OpenSSL's own allocations, or the
+copy Tycho's runtime makes at the FFI boundary — nothing about cache-line or
+table-lookup side channels, and `core:tls` was not touched.
 
 **One thing the probe taught about probes.** Its first version held two shim
 results at once and reported the round trip BROKEN. That was the probe:
