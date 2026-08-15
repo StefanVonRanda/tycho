@@ -559,6 +559,68 @@ The language is feature-complete for the thesis it exists to prove. Adding
 surface before anyone has used the existing surface is how the freeze gets
 guessed wrong a second time.
 
+## What production-ready requires
+
+Set 2026-08-15, and it replaces the premise the section above was written under.
+**The thesis is proven** — hierarchical implicit arenas under value semantics are
+a viable memory-management strategy, and that phase is closed. The goal now is to
+ship a complete, production-ready language.
+
+That reframe invalidates a justification, not a decision. "What is explicitly NOT
+required" below still reads *"the language is feature-complete for the thesis it
+exists to prove"* — feature-complete for a thesis is not feature-complete for
+production, so that sentence no longer settles anything and the Non-goals list
+resting on it is open for re-decision. Left standing deliberately: those are the
+owner's calls, not a documentation edit.
+
+### 1. It runs where developers are
+
+Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. **There is no macOS build
+and no ARM64 build on any platform.** A language that cannot be installed on an
+Apple laptop or a Graviton instance is not production-ready whatever its
+internals are, and this is the largest single gap.
+
+It is also infrastructural rather than intellectual — nothing about the design
+resists it. Whether the absence means "never attempted" or "attempted and hard"
+is not recorded anywhere, and that is the first thing to establish.
+
+### 2. A story for using other people's code
+
+There is no module resolution beyond `corelib`: `import` reaches the standard
+library and files beside the entry point, and there is no mechanism for depending
+on code you did not write. A package manager is currently listed as a non-goal,
+justified by the premise above.
+
+Three honest positions, and one of them has to be chosen:
+
+- ship a package manager;
+- specify a vendoring or path convention that makes third-party code *possible*
+  without a registry;
+- stay batteries-included-only and say so as a deliberate product decision, in
+  the README, where someone evaluating the language will read it.
+
+Doing nothing is the only option that is not a decision.
+
+### 3. The promise, written down
+
+The deprecation machinery is real and exercised end to end — `sort.by_key` carries
+a `# deprecated:` marker, every call site draws a warning naming its replacement
+and its removal version, and `CHANGELOG.md` records it.
+
+What does not exist is the policy that machinery serves: what stability means,
+what may change in a minor release, how long a deprecation survives before
+removal, and which platforms are supported tiers rather than best-effort. A
+version number is a promise, and the promise is currently unwritten.
+
+### 4. Trust that did not come from here
+
+§1 and §7 of the section above survive the reframe unchanged, and matter more
+under it rather than less. Shipping to strangers is precisely the situation in
+which an unaudited FFI boundary is a liability, and a language whose only
+programs were written by its author has not been used, only demonstrated.
+[docs/internals/audit-brief.md](docs/internals/audit-brief.md) is the packet for
+the second of those.
+
 ## Non-goals
 
 Several things are deliberately, permanently out of scope — traits, a package manager, a
