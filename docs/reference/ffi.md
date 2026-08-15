@@ -46,7 +46,6 @@ Here's what can cross:
   somewhere else. `close(h)` runs the destructor early on a handle **variable** and nulls it;
   the scope-exit free is null-guarded, so the destructor runs exactly once either way. Using a
   handle after `close` passes null to C: a logic bug, not memory corruption, and not rejected.
-  (The copy and struct-field cases were accepted until 2026-08-14, and the copy double-freed.)
 - **`inout` scalar out-parameters** (a numeric scalar or `ptr`) — cross too; a `string`,
   `bytes`, handle, or composite `inout` out-parameter is **rejected** (no trivial out-param ABI).
 

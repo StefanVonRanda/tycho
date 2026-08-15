@@ -357,11 +357,9 @@ reproducible.
   in-order walk;
 - mangled names are a pure function of the key.
 
-These three properties were originally forced by the fixpoint differential, which
-required `tychoc` and the frozen `tychoc0` to emit byte-identical C. **That gate
-was retired on 2026-07-29 and nothing enforces them mechanically now** — they
-hold by construction in `src/tychoc.c`, and a change that broke one would show up
-as a golden diff rather than as a determinism failure.
+Nothing enforces these three mechanically. They hold by construction, and a
+change that broke one would surface as a golden diff rather than as a
+determinism failure.
 
 ## 10. Non-goals
 

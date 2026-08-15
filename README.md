@@ -8,13 +8,11 @@
 # Tycho
 
 > **Status: 0.7 — pre-1.0. No stability guarantees yet.** Tycho is an
-> experiment testing one idea — implicit arenas under value semantics. It was
-> labelled 1.0 on 2026-08-05 and **demoted to 0.5 on 2026-08-09**, before any
-> release was ever tagged: 1.0 is a promise not to break people, and that
-> promise had never been tested because nothing had shipped and nobody outside
-> this repo had written a line of Tycho. The engineering is not what was in
-> doubt — see [Architecture](docs/architecture.md) for what each gate proves —
-> the *contract* was.
+> experiment testing one idea: implicit arenas under value semantics. It is
+> pre-1.0 because 1.0 is a promise not to break people, and nobody outside this
+> repo has written enough Tycho to know what that promise costs. The
+> engineering is not the open question — see
+> [Architecture](docs/architecture.md) for what each gate proves.
 >
 > Until 1.0, expect the language surface and the corelib API to change with a
 > changelog entry and no deprecation window. What is already dependable in
@@ -129,12 +127,8 @@ by the chess engine's castling masks and shipped — and no other finding needed
 one. **The strongest evidence is that Tycho compiles itself**: besides the C
 reference transpiler there is a second transpiler written in Tycho,
 `compiler/tychoc0.ty`, and its codegen runs on the same implicit arenas it
-emits — built three ways, the last two emitted byte-identical C. That proof is
-frozen, and as of 2026-08-09 no gate re-runs it: the `selfhost-check` lane was
-retired, so nothing in the tree builds `tychoc0` any more. The result stands as
-a fact about the commit that proved it, and `compiler/selfhost.sh` is kept —
-unrun — so it can be re-checked by hand. See
-`docs/internals/plan-repo-polish-DONE.md` for the campaign's record.
+emits. That proof is frozen: no gate re-runs it, so it stands as a fact about
+the commit that proved it rather than a property checked today.
 
 ## Performance
 
@@ -243,8 +237,7 @@ that half of the sanitizer build is skipped there (the rest still runs).
 exactly like Linux. **Native Windows is MSYS2 + mingw-w64** — MSVC is not a
 supported C target. The compiler, the runtime, the corelib and the tools build
 and run there, and `make ci` is **green on native x86-64 Windows 11 under
-MSYS2 + mingw-w64 gcc** (2026-08-08; the run is recorded in
-[CHANGELOG.md](CHANGELOG.md)).
+MSYS2 + mingw-w64 gcc**.
 
 Read that green with its scope. It is **one box, one toolchain**, and it
 carries 49 Windows-specific skips, each printing its reason: the sanitizer
@@ -260,14 +253,14 @@ MSYS2's `kill` terminates a native Windows program instead of signalling it.
 not a bug to be fixed.** A thread parked in `recv` on an accepted connection is
 not released by the shutdown handler as it is on Linux, so a Windows server
 winds down within its idle timeout rather than within a millisecond. Nothing is
-lost or corrupted — the wind-down is slower, and only that. Decided 2026-08-10;
+lost or corrupted — the wind-down is slower, and only that.
 [SECURITY.md](SECURITY.md) carries the measurement.
 
 The one hole worth naming: for a long time the Windows-only code paths were the
 newest code in the tree and the only code with no memory-safety checking at
 all. Installing MSYS2's **clang64** toolchain closes most of that — 60 corpus
 fixtures under ASan+UBSan and the 13-program concurrency suite under UBSan all
-come back clean (2026-08-08) — but ASan itself does not work on threaded
+come back clean — but ASan itself does not work on threaded
 programs with that toolchain, so the channel and allocator paths have UBSan
 coverage only. That is not parity with Linux, where everything runs under
 ASan/UBSan/TSan and a fuzz campaign.

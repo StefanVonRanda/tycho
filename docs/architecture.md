@@ -20,62 +20,14 @@ for an honest accounting of where the model wins and loses see
 | corelib | `corelib/` (45 packages) | Standard library, imported `core:<name>`. |
 | tooling | `tools/` | `tychofmt` (formatter), `tycho-lsp` (LSP), VS Code / Zed extensions. |
 
-**Self-hosting (the fixpoint) — proved, then frozen.** With `A = tychoc·tychoc0.ty`,
-`B = A·tychoc0.ty`, `C = B·tychoc0.ty`, the `fixpoint` gate asserted `B == C`
-byte-identical (tychoc0 reproduces its own emitted C) and that `B`'s program output
-matched the reference. It held. That is what tychoc0 was built to demonstrate, and the
-result stands as recorded.
+**Self-hosting, proved and then frozen.** `compiler/tychoc0.ty` is a Tycho
+compiler written in Tycho. It reproduced its own emitted C byte for byte and its
+programs matched the reference — the result that file was built to demonstrate.
 
-**On 2026-07-26 tychoc0 was frozen and every gate that ran it was removed** — thirteen of
-the nineteen CI steps, including `fixpoint`, `frontparity`, `rtparity`, the four
-accept/reject parity lanes, the differential `fuzz`/`fuzz-pkg` halves, and the tychoc0
-side of `test`, `corelib`, `conc`, `ffi`, `recursion` and `spec-check`. Nothing mirrors a
-language change into it any more.
-
-The consequence to hold on to: **tychoc0 is a snapshot of the language as of the freeze
-date, not a second implementation of Tycho today.** The two compilers will accept and
-reject different programs from here on, and the first divergence is already in the tree —
-`tychoc` rejects a reserved word used as a procedure name (`fn handle(...)`) with a
-diagnostic naming the keyword, while `tychoc0` still accepts it. tychoc0 is not
-deprecated for being wrong; it correctly compiles the language it was frozen against.
-`tychoc` is the reference implementation and [the spec](spec/) is normative.
-
-### 2026-07-29: the freeze lanes were retired — nothing builds `tychoc0` now
-
-The 2026-07-26 freeze removed tychoc0 from **`make ci`**. It did not remove it from the
-tree: two hand-run lanes (`compiler/fixpoint.sh`, `scripts/frontparity.sh`) and fourteen
-other non-gated runners still built a `tychoc0` and still ran it, right up to
-2026-07-29. On that date the language took a breaking change — the three-clause
-`for i := 0; i < n; i += 1:` and bare `for:` replace `for i in range(...)`, and the
-`range` builtin is deleted — and a frozen compiler that must still compile the whole
-corpus stopped being co-satisfiable with a corpus adopting new syntax. `tychoc0` cannot
-parse the new loop forms and never will. **Every lane that built it is retired.**
-
-**What ended, in plain words.** Continuous proof that `tychoc0` accepts what `tychoc`
-accepts, and that the two produce identical program output. That proof was load-bearing
-at least once: an over-tightening of the newtype path made `tychoc0` refuse
-`if dup == ids:` (`tests/newtype_agg.ty`), which reddened `compiler/fixpoint.sh`. The C
-compiler accepted that program without complaint — the defect was visible *only* because
-a second, independent implementation disagreed. **The class of defect now uncaught is
-exactly that:** a silent narrowing of what the frontend accepts, where the only compiler
-left to consult is the one that was narrowed. Recorded goldens do not catch it, because
-a program that is newly rejected never reaches the golden comparison. Nothing in
-`make ci` replaces this and nothing is planned to.
-
-Two smaller losses worth naming, because no other lane covered them:
-`fuzz/run_pkg.py`'s tychoc0 legs were the only consumers anywhere of the
-`tychoc --bundle` post-order package stream, and `tests/rtparity/run.py` was the only
-check that the runtime `tychoc` embeds actually wires up the env knobs, abort
-diagnostics and arena-stats rows it defines.
-
-**Retired, not deleted.** Every lane keeps its file, with a header recording what it
-proved, what its loss costs, and that it stopped running on 2026-07-29 — so a future
-reader asking "was this ever checked?" finds an answer rather than an absence.
-`compiler/tychoc0.ty` itself is untouched on disk: it is the evidence that Tycho
-self-hosts (a fact about the commit that proved it, which retiring a lane cannot undo),
-it is still the largest single Tycho program in the tree, and `make asan-self` still
-feeds it to `tychoc` as **input** under ASan/UBSan. What ended is the claim that it is
-*continuously checked*.
+It was frozen once that held, and no gate builds it now. Treat it as a snapshot
+of the language at the freeze, not as a second implementation: the two accept and
+reject different programs today, and `tychoc` with [the spec](spec/) is
+normative. [bootstrap.md](bootstrap.md) has the stages and what their loss costs.
 
 ## The verification surface
 

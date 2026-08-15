@@ -1,18 +1,11 @@
 # The bootstrap: how Tycho self-hosted, and what is left of it
 
-This document exists because three files in the tree cite it by name —
-`compiler/tychoc0.ty:617`, `compiler/run.sh:2@bootstrap` ("Stage 1 of docs/bootstrap.md") and
-`compiler/fixpoint.sh:2@bootstrap` ("Stage 4 self-host fixpoint (docs/bootstrap.md)") — and
-until 2026-07-26 it did not exist. The stage numbers in those headers had no
-referent, which is the whole reason for this page: it names the stages, says which
-script runs each one, and states plainly that **none of them runs in a gate any
-more.**
+Tycho once compiled itself. This page records how — the stages, the script that
+ran each one, and what was lost when they stopped running.
 
-> **Read [`compiler/tychoc0.ty`'s banner](../compiler/tychoc0.ty) first if you are
-> here to learn the language.** `tychoc0` is FROZEN (2026-07-26) and is already
-> diverging from Tycho. The normative language is [`docs/spec/`](spec/) and the
-> reference implementation is `src/tychoc.c`. This page is history plus a map of
-> the harnesses that produced it.
+> **This is history, not a build instruction.** `tychoc0` is frozen and diverging
+> from the language. If you are here to learn Tycho, read [the spec](spec/); the
+> reference implementation is `src/tychoc.c`.
 
 ## The two compilers
 
@@ -77,17 +70,13 @@ the FFI suite. `compiler/tychoc0.ty`'s banner is the primary record; the measure
 detail is in [`docs/thesis.md`](thesis.md) and
 [`docs/architecture.md`](architecture.md).
 
-## What is live, and what is not — 2026-07-26
+## What still runs
 
-**None of this page is a gate any more — updated 2026-08-09.**
-`tychoc0` was frozen on 2026-07-26 and cut out of CI: thirteen of the nineteen
-steps that compared the two compilers were removed. One exception survived until
-2026-08-09 — the SELF-EMISSION fixed point (stages 2-4 below), run by
-`compiler/selfhost.sh` as `make ci`'s `selfhost-check`. That lane is retired too,
-by owner decision, and nothing in the tree builds a `tychoc0` binary now. The
-script is kept, unrun, with a header recording what it proved; `tychoc0.ty` is
-still COMPILED by every sweep, as ASan/UBSan input to `scripts/asan_self.sh`, but
-the byte-identity of its own emission is no longer re-asserted. Everything else
+**Nothing on this page is a gate.** Every lane that compared the two compilers is
+gone, and nothing builds a `tychoc0` binary. `compiler/selfhost.sh` is kept unrun,
+with a header recording what it proved. `tychoc0.ty` is still compiled as
+ASan/UBSan input, but the byte-identity of its own emission is not re-asserted.
+Everything else
 here is history: the corpus
 differential died with the loop-syntax change, and conformance is now stated
 against the specification and locked by recorded fixtures — see

@@ -64,8 +64,7 @@ fn main():
     println(str(count$(int)()))     # named: nothing to infer from
 ```
 
-The name may be package-qualified (`vp.pair$(int, string)(1, "a")`) — that spelling was a parse
-error until 2026-08-14. `zero$(T)` is the one builtin that consumes this form: it yields the
+The name may be package-qualified (`vp.pair$(int, string)(1, "a")`). `zero$(T)` is the one builtin that consumes this form: it yields the
 zero value of a `defaultable` type, which is what lets a fold seed an accumulator without the
 caller supplying one (`acc := zero$(T)`).
 

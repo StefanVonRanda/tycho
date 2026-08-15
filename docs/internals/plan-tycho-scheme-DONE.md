@@ -159,7 +159,7 @@ once, below.
 Both were recorded as findings while writing the interpreter; both are now
 proven false on this tree, and each is a one-line correction, own commit:
 
-1. `docs/architecture.md:124` -- "closures (downward value-capture)" is wrong:
+1. `docs/architecture.md:75` -- "closures (downward value-capture)" is wrong:
    `tools/tycho-scheme/progs/closures.scm` returns closures that capture and
    two counters from one factory stay independent (`1 2 1`). The spec's
    capture-by-deep-copy (§09-expressions.md) is the truth. **Gate: the two doc

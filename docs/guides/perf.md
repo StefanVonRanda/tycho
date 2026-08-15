@@ -1,26 +1,14 @@
 # Performance: the compiler and the C it emits
 
-> **[!CAUTION]** A contributors' log about `src/tychoc.c`, `runtime/tycho_rt.c`
-> and their output — how the arena model is kept cheap and what each mechanism
-> measured when it landed. It is **not** the language's headline performance
-> story: that is [the thesis](../thesis.md) and the cross-language suite
-> (`bench/prongB/`, `bench/conc/`).
-
-> **This page was reframed on 2026-08-14.** It used to be a head-to-head between
-> `tychoc` and the self-hosted `tychoc0` — a comparison retired when `tychoc0`
-> was frozen (2026-07-29) and cut from every gate. The mechanisms it documented
-> are kept; the versus framing and the timings taken against the self-compile are
-> gone, since that workload can no longer be run. What is left says what each
-> mechanism DOES and why, with the profiling notes that still hold. The one
-> reproducible number on this page is the transpile time below.
-
-> **This page carries one number**, the transpile time below, measured on
-> 2026-08-14 on an AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64.
-> Everything else describes what a mechanism does and why. That is deliberate:
-> the figures that used to be here were taken against a workload that can no
-> longer be run, and a number nobody can reproduce is worse than no number.
-> For figures you can reproduce, `make bench` runs the guard suite (17
-> benchmarks) and each `bench/*/RESULTS.md` carries its own date and hardware.
+> This page is about `src/tychoc.c`, `runtime/tycho_rt.c` and the C they emit —
+> how the arena model is kept cheap, and what each mechanism does. For the
+> language's performance story, read [performance.md](../performance.md) and
+> [the thesis](../thesis.md).
+>
+> **It carries one reproducible number**, the transpile time below. Everything
+> else describes a mechanism rather than timing one. For figures you can
+> reproduce, `make bench` runs 17 benchmarks and each `bench/*/RESULTS.md`
+> records its own hardware.
 
 ## Transpile time
 

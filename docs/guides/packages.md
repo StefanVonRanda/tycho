@@ -145,17 +145,12 @@ and a second resolution rule waits until a real multi-entry project feels the
 
 `tychoc --bundle <entry>` emits the whole import graph as one post-order source
 stream, imports first, with the entry package's header rewritten to `package main`.
-The flag is live — I ran it while writing this.
-
-Its consumer was the self-hosted `tychoc0`, which could either read that stream on
-stdin or walk a package directory itself. `tychoc0` is frozen (2026-07-26) and no
-gate builds it, so nothing consumes the stream today.
+Its consumer was the self-hosted `tychoc0`, which is frozen, so nothing reads the
+stream today. The flag remains useful for seeing exactly what a multi-package
+build hands the parser.
 
 Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
-`tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`. A second lane used to build each
-fixture with `tychoc0` as well, but that gate (`make fixpoint`) was retired on
-2026-07-29 when `tychoc0` was frozen, so `tychoc` is the only compiler these
-fixtures run through now.
+`tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`.
 
 The transpiler dogfoods its own package system: `compiler/pkg-split.sh` splits the
 self-hosted transpiler into a two-package program — `rt` (the leaf

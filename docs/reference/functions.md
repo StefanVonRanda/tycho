@@ -61,11 +61,10 @@ sum(nums...)          # spread: pass an existing array -> 15
 - The **generic form** `xs: ...$T` infers `T` from the arguments — `count(1, 2, 3)` binds
   `T = int`, `count("a", "b")` binds `T = string`. An empty call has nothing to infer from, so
   `count()` is a compile error — but you can name the type instead: `count$(int)()` supplies
-  the empty `[]int`. (Until 2026-08-14 the explicit form was rejected too, and the diagnostic
-  did not mention it.)
+  the empty `[]int`.
 - Packing is a property of the **call**, not of how the callee was named: `vp.sum(1, 2, 3)`
   through a package qualifier packs identically, and so does a call carrying explicit type
-  arguments. Neither did before 2026-08-14.
+  arguments.
 
 ## First-class function values
 

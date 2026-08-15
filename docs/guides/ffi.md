@@ -56,10 +56,9 @@ The symbol name is never mangled, even inside a package — a C symbol is global
 so an `extern` can be declared and called from any package. A bare `extern fn`
 (no `"Lib"`) assumes the symbol is already linked; libc and libm always are.
 
-You cannot re-declare a symbol the language already provides: this catalogue
-showed `extern fn sqrt(x: float) -> float` until 2026-07-30, and that exact line
-does not compile — `sqrt` is a builtin, so it fails with `'sqrt' is already
-defined`. It became visible when `make docs-fences` learned to count an
+You cannot re-declare a symbol the language already provides. `extern fn
+sqrt(x: float) -> float` does not compile: `sqrt` is a builtin, so it fails with
+`'sqrt' is already defined`. It became visible when `make docs-fences` learned to count an
 `extern fn` as a declaration (the loops-cleanup plan); before that the fence was filed
 as a fragment and compiled by nothing.
 
@@ -78,9 +77,8 @@ Scalars, `string`, `bytes`, and the opaque handle `ptr` cross the boundary:
 | `ptr`     | `void *`    | in/out    | opaque handle, never dereferenced |
 | (none)    | `void`      | out only  | return-less extern |
 
-**The integer column is `int64_t`, not `long`.** Until 2026-08-13 this table said
-`long` for `int`, `char` and the `bytes` length, which is right only on LP64 and
-silently truncates on LLP64 (Windows) and ILP32. Nothing catches it: the emitted
+**The integer column is `int64_t`, not `long`.** Writing `long` in a C prototype
+is right only on LP64 and silently truncates on LLP64 (Windows) and ILP32. Nothing catches it: the emitted
 prototype (`extern tycho_int f(tycho_int);`, `tycho_int` being `int64_t`, see
 `docs/spec/appendix-f-impl-defined.md:81`) lives in a different translation unit
 from the shim, so C never compares the two. A shim written to the old row and

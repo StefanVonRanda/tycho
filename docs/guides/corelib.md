@@ -311,7 +311,7 @@ element type instead of a family of per-type siblings.
   constant. Use it where the cause carries something the caller still needs (a byte
   offset, a column name) and `map_err` where it does not, which is the common case.
   A caller who *is* writing one should use a nested pattern instead
-  (`Err(io.IsDir):`, legal since 2026-07-26,
+  (`Err(io.IsDir):`,
   [§14.3.1](../spec/10-statements.md#1431-nested-patterns)); the corelib's error enums
   stay payload-free so both spellings keep working. Pure computation: no shim, no
   allocation, nothing aborts.
@@ -360,27 +360,26 @@ element type instead of a family of per-type siblings.
   the error channel) or `read_bytes(p)` when the difference matters —
   `write(p, s)` (truncate, returns false if unopenable),
   `append(p, s)` (read-rewrite, not atomic), `read_lines(p)` / `write_lines(p, lines)`
-  (newline-terminated round-trip), `list(p)` (entry basenames), `exists(p)` (**one `stat(2)`**
-  since 2026-07-26 — it used to list the parent directory, O(entries) and blind to a leaf under an
-  unlistable parent; `false` still means "`stat` could not say yes", so it fails closed). For
+  (newline-terminated round-trip), `list(p)` (entry basenames), `exists(p)` (**one `stat(2)`**, not a
+  listing of the parent — that would be O(entries) and blind to a leaf under an unlistable
+  parent; `false` means "`stat` could not say yes", so it fails closed). For
   inputs too large to slurp, a **bounded-memory streaming line reader** over a libc `getline`
   shim: `open_lines(p)` → `read_line(r)` (`Some(line)` / `None` at EOF) → `close_lines(r)`, plus
   `fold_lines(p, init, f)` — peak memory is O(longest line), not O(file). `read_bytes(p) ->
   Result(bytes, io.IoErr)` reads a whole file as raw `bytes` (binary-safe — interior NUL bytes are
   preserved, unlike `read`'s string), and it reports *why*: an **empty file is `Ok`** with zero
-  bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three outcomes that
-  were the same empty `bytes` until 2026-07-26, which is how a static file server ends up serving
-  a 0-byte `200` for a path it cannot read. The variants are payload-free, so `==` and a nested
-  `Err(io.IsDir)` arm both work. **Six** calls go past the builtins to real syscalls. Three since
-  2026-07-26, because `list`'s empty-directory-vs-non-directory ambiguity was a missing `stat(2)`
+  bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three outcomes a
+  single empty `bytes` would collapse, which is how a static file server ends up serving a
+  0-byte `200` for a path it cannot read. The variants are payload-free, so `==` and a nested
+  `Err(io.IsDir)` arm both work. **Six** calls go past the builtins to real syscalls. Three of them
+  resolve `list`'s empty-directory-vs-non-directory ambiguity, which is a missing `stat(2)`
   and never a return type: `is_dir(p) -> Result(bool, io.IoErr)` asks it (an **empty directory is
   a directory**, which `len(list(p)) > 0` gets wrong), and `make_dir(p)` / `remove(p)` —
   `mkdir(2)` and `remove(3)`, **one entry, never recursive**, no `mkdir -p` and no `rm -rf` behind
   a corelib name — answer `Ok(true)` for "changed it" and `Ok(false)` for "it was already how you
   asked", splitting `EEXIST` into `Ok(false)` (already a directory: goal met) and `Err(Exists)`
   (something else is in the way), and `remove` refusing a **non-empty directory with
-  `Err(Failed)`**. Three since 2026-07-31, each an HTTP answer `tycho-httpd` could not otherwise
-  give: `mtime(p) -> Result(int, io.IoErr)`, whole seconds on `now()`'s clock, where a **directory
+  `Err(Failed)`**. Three more are HTTP answers `tycho-httpd` could not otherwise give: `mtime(p) -> Result(int, io.IoErr)`, whole seconds on `now()`'s clock, where a **directory
   is `Ok`** because it has a modification time; `size(p) -> Result(int, io.IoErr)`, a length
   without reading the file, where a **directory is `Err(IsDir)`** because `st_size` there is the
   entry structure and not readable bytes, and `size` succeeds on exactly the paths `read_at` can
@@ -389,10 +388,10 @@ element type instead of a family of per-type siblings.
   `Ok` with zero bytes past EOF. The **writers that can only succeed or fail** —
   `write_bytes(p, b)`, `write_at(p, off, b)`, `set_mtime(p, secs)` and `sync(p)` — return
   `Result(void, io.IoErr)`, so `io.write_bytes(p, b) or_return` is a statement and a `match`
-  arm is `Ok():`. They returned `Result(bool, IoErr)` until 2026-08-12, where `Ok(false)` was
-  unreachable in all four and every caller bound a bool to guard a case that could not occur
-  (FRICTION #15). Read that against `make_dir` / `remove` above, which keep their bool
-  because there `Ok(false)` is a real second answer. The rest keeps the builtins' sentinels.
+  arm is `Ok():`. There is no bool: `Ok(false)` would be
+  unreachable, and a caller binding one would be guarding a case that cannot occur. Contrast
+  `make_dir` / `remove` above, which do return a bool, because there `Ok(false)` is a real
+  second answer. The rest keeps the builtins' sentinels.
   Nothing aborts.
 - **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
@@ -423,21 +422,20 @@ element type instead of a family of per-type siblings.
   A server's worker count is therefore a hard ceiling on concurrent connections — N
   workers serve N connections, and one slow client occupies one worker for the whole of
   its request. Size the pool for the concurrency you need, and put a timeout on the
-  socket. Stated as a limit rather than fixed, 2026-08-10: readiness polling was costed
-  at ~283 lines across 4 files plus a redesign of `core:httpd`'s blocking read surface,
-  and adding it later is additive rather than breaking. Every fallible TCP call returns
+  socket. This is a stated limit rather than an oversight: readiness polling would
+  cost a redesign of `core:httpd`'s blocking read surface, and adding it later is additive
+  rather than breaking. Every fallible TCP call returns
   **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
   `peer_addr(fd)` gives `Result(string, …)` — the connected peer's address as text
-  (`getpeername` + `inet_ntop`), the other half of `port_of`'s `getsockname` and the
-  field a real access log leads with; it was missing until 2026-07-26, which put the
-  client address out of reach of any Tycho server,
+  (`getpeername` + `inet_ntop`), the other half of `port_of`'s `getsockname`, and the
+  field a real access log leads with.
   `write` gives `Result(int, …)` (bytes sent), `read` gives `Result(bytes, …)`. Payloads
   are binary-safe `bytes`. `NetErr` is `Eof` / `Timeout` / `Failed`, all payload-free so
   a single cause can be tested with `==` (`if e == net.Timeout`) without opening a
   `match` at all — or, inside one, with a nested `Err(net.Timeout)` arm (§14.3.1).
   `read` **distinguishes** a clean hangup (`Err(Eof)`) from an expired receive deadline
-  (`Err(Timeout)`) from a hard error (`Err(Failed)`); before 2026-07-26 all three were
-  the same empty `bytes`. `set_read_timeout_ms(fd, ms)` arms `SO_RCVTIMEO` and stays a
+  (`Err(Timeout)`) from a hard error (`Err(Failed)`) — three answers a bare empty `bytes`
+  would collapse into one. `set_read_timeout_ms(fd, ms)` arms `SO_RCVTIMEO` and stays a
   plain `bool` — one failure, one cause, no collision to remove; `ms <= 0` restores the
   blocking default and `false` means the option could not be set (fail closed — the
   socket keeps blocking). The **UDP** calls (`udp_bind`/`udp_send`/`udp_read`) are still
@@ -458,8 +456,8 @@ element type instead of a family of per-type siblings.
   automatically); and the socket glue `read_request(fd) -> Result(Request, httpd.ReqErr)`
   (reads until the header terminator, then exactly Content-Length body bytes, bounded so a
   hostile peer can't spin) — its `Err` says **which** failure, `Malformed` / `Closed` /
-  `Timeout` / `Failed` / `TooLarge`, where the first four used to be `method == ""`, so a
-  server can finally answer `400` to garbage while hanging up silently on a disconnect
+  `Timeout` / `Failed` / `TooLarge`, so a server can answer `400` to garbage while hanging
+  up silently on a disconnect
   (`corelib/test/httpd.out` records four of them as distinct) /
   `read_request_capped(fd, cap) -> (Result(Request, httpd.ReqErr), string)` (the same read
   with your own byte budget — reaching it with no header terminator is `Err(TooLarge)`, the
@@ -557,10 +555,9 @@ plus three more:
 - **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`).
   `compress(bytes) -> bytes`; `decompress(bytes) -> Result(bytes, ZErr)` and
   `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed`.
-  **`Ok` with length 0 is a real empty payload**, distinct from every failure — before
-  2026-08-10 these returned bare `bytes` and a corrupt stream was indistinguishable
-  from an empty one, which for a container format meant a damaged member read as a
-  zero-byte file. On a RAW deflate stream `Truncated` also covers "not a deflate
+  **`Ok` with length 0 is a real empty payload**, distinct from every failure. With bare `bytes` a corrupt
+  stream is indistinguishable from an empty one, which for a container format means a
+  damaged member reads as a zero-byte file. On a RAW deflate stream `Truncated` also covers "not a deflate
   stream": there is no wrapper or checksum to tell those apart.
   **`compress` is byte-deterministic** and callers may rely on it: for one zlib build
   it is a pure function of its input — same bytes in, byte-identical bytes out, in any
@@ -571,9 +568,8 @@ plus three more:
   detail — it is not stable across zlib versions and no golden here locks it.
 - **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
   Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
-  Result(bytes, ImgErr)`. Both said "it went wrong" with a sentinel until 2026-08-11 — a
-  0×0 `Image`, an empty buffer — so a truncated PNG, a JPEG renamed `.png` and an empty
-  file were one answer; now `ImgErr` names which: `Empty`, `NotPng`, `Corrupt` on the
+  Result(bytes, ImgErr)`. A sentinel — a 0×0 `Image`, an empty buffer — would make a
+  truncated PNG, a JPEG renamed `.png` and an empty file one answer, so `ImgErr` names which: `Empty`, `NotPng`, `Corrupt` on the
   decode side, `BadDims`, `ShortPixels` on the encode side, `Failed` for an allocation or
   a libpng failure. PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`.
   JPEG is a demand-gated follow-up.
@@ -598,10 +594,7 @@ among them; a library with no `.pc` file can still use `extern "Lib" fn` for a b
 ## Testing
 
 `make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.ty` is built and
-run, and must produce the golden `corelib/test/<name>.out`. Until 2026-07-26 each was
-also built two further ways through the self-hosted `tychoc0`, with all three outputs
-required to match; `tychoc0` is frozen and no gate builds it, so that differential is
-gone (`corelib/run.sh:6-8`). Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
+run, and must produce the golden `corelib/test/<name>.out`. Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
 `make ci`.
 
 ## Examples
@@ -614,8 +607,7 @@ output), as opposed to the assertion-style tests above. `make corelib-examples`
 
 ## The corelib surface (pre-1.0 — NOT frozen)
 
-**The 1.0 API freeze recorded here on 2026-08-05 was withdrawn on 2026-08-09**
-with the project's demotion to 0.5. All 45 packages are still golden-locked by `make corelib` and `make corelib-examples` — that has not
+**The corelib API is not frozen.** All 45 packages are golden-locked by `make corelib` and `make corelib-examples` — that has not
 changed and is what makes the surface worth relying on in practice. What changed
 is the promise:
 
@@ -643,9 +635,7 @@ is the promise:
   [SECURITY.md](../../SECURITY.md). WSL2 is the Linux build and has none of
   them.
 
-**Deprecation path — RUN ONCE, on `sort.by_key`, 2026-08-10.** Stated ahead of
-1.0 so it is not invented under pressure, and then exercised so it is a process
-rather than prose. A package or function is deprecated by (1) a `deprecated:`
+**Deprecation path.** A package or function is deprecated by (1) a `deprecated:`
 notice in its doc comment, (2) an entry in `CHANGELOG.md` naming the
 replacement, and (3) a `warning:` on use emitted by the compiler.
 

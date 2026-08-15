@@ -151,12 +151,9 @@ ways an over-aggressive move or recycle could go wrong:
   compile, so the rule is checked from both sides.
 - **Per-type RSS benchmarks**, wired as perf guards, confirm each type's bytes are
   actually freed.
-> **What was lost.** Until 2026-07-29 a fifth mechanism sat above all of these:
-> `make fixpoint` and a differential fuzz lane checked the C compiler against the
-> frozen self-hosted one, byte for byte. That was the strongest oracle here — two
-> independent implementations disagreeing is a much sharper signal than one
-> implementation passing its own tests — and **nothing replaces it.** See
-> [bootstrap.md](../bootstrap.md).
+> A second implementation used to check the first, and two implementations
+> disagreeing is a sharper signal than one passing its own tests. That check is
+> gone and nothing replaces it — see [bootstrap.md](../bootstrap.md).
 
 ## Across threads
 

@@ -41,19 +41,9 @@ ROOTS = ["README.md", "docs/README.md"]
 # path -> why it is deliberately not reachable. Keep this short; the honest fix
 # for an orphan is a link, not an entry here.
 EXEMPT = {
-    # The nine plan archives. `docs/README.md` and CLAUDE.md both say these were
-    # pruned on 2026-08-03 and live on only under the `docs-archive` tag -- they
-    # are still tracked, so one of the two is wrong. Exempt pending that
-    # decision (delete them, or correct the sentence and index them).
-    "docs/internals/plan-repo-polish-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-chess-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-kv-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-kvsrv-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-rsa-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-sat-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-scheme-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-scheme-compiler-DONE.md": "plan archive, pending the prune decision",
-    "docs/internals/plan-tycho-vm-DONE.md": "plan archive, pending the prune decision",
+    # Empty on purpose. The nine plan archives sat here "pending the prune
+    # decision"; they are indexed from docs/internals/README.md now, so the
+    # decision is made and the exemption is gone rather than dormant.
 }
 
 LINK = re.compile(r"\]\(([^)]+)\)")
