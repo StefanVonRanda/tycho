@@ -149,10 +149,33 @@ def commit_hashes(files, fails):
     out = subprocess.run(["git", "cat-file", "--batch-check"], cwd=ROOT,
                          input="\n".join(seen) + "\n",
                          capture_output=True, text=True).stdout.split("\n")
+    # REACHABILITY, not existence. `git cat-file` finds any object in the local
+    # store -- including one orphaned by a rebase, an amend or a deleted branch,
+    # which is present on the machine that wrote the citation and ABSENT from
+    # every clone. Checked 2026-08-15: 28 of 55 cited hashes were exactly that,
+    # so this gate was green here and red for everyone else, on the one command
+    # CONTRIBUTING calls "the one gate to never skip". Ancestry is the property
+    # a reader needs; existence is the property that fooled us.
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                          capture_output=True, text=True).stdout.strip()
+
+    def reachable(h):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", h, head],
+                              cwd=ROOT, capture_output=True).returncode == 0
+
     for tok, verdict in zip(seen, out):
         parts = verdict.split()
         kind = parts[1] if len(parts) > 1 else "missing"
         if kind == "commit":
+            if reachable(tok):
+                continue
+            for f, ln, raw in seen[tok]:
+                fails.append(
+                    "%s:%d  %s -> '%s' is a commit here but is NOT REACHABLE "
+                    "from HEAD, so it does not exist in a fresh clone -- an "
+                    "orphan from a rebase, an amend or a deleted branch. Cite a "
+                    "commit on the mainline, or drop the hash."
+                    % (f, ln, raw, tok))
             continue
         for f, ln, raw in seen[tok]:
             fails.append(

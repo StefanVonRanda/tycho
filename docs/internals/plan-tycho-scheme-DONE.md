@@ -146,7 +146,7 @@ once, below.
   diagnostic is new user-visible runtime surface, and that lane refuses it
   silently: added to the oracle (`tests/rtparity/run.py`) with its reason,
   alongside the other runtime traps. New surface is a deliberate act here.
-- **spec-check was RED AT HEAD** — the scalar-match plan (commit 22732f1)
+- **spec-check was RED AT HEAD** — the scalar-match plan (commit 1a2041f)
   added ScalarPattern/ScalarElem to Appendix A by hand without teaching §4
   (`docs/spec/02-grammar.md`), so the generator could never reproduce the
   committed appendix. The gate had been failing since that commit, unnoticed

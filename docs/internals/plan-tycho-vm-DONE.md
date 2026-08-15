@@ -3,8 +3,8 @@
 Previous plan: the four-of-seven plan (archived, then pruned 2026-08-03;
 still at `git show docs-archive:docs/internals/plan-four-of-seven-DONE.md`).
 
-From writing a bytecode VM (`tools/tycho-vm/`, commits e0906e7, 4ec02c7,
-7250fb1) — the first program here to need a hot dispatch loop and fixed-capacity
+From writing a bytecode VM (`tools/tycho-vm/`, commits 1bb0668, 89909d2,
+4782ff8) — the first program here to need a hot dispatch loop and fixed-capacity
 memory.
 
 **Five findings came out of it; two are phases.** The test each had to pass:

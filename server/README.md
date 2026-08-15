@@ -160,7 +160,7 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   reports an empty directory as a *file* — a directory's **contents** were
   deciding its **status**. That was never fixable by a return type; `stat(2)` was
   the missing question, not the missing answer.
-  **Fixed 2026-07-26** (`4fa192d`) by adding `fn is_dir(p: string) -> Result(bool, IoErr)` over a real
+  **Fixed 2026-07-26** (`c56be8e`) by adding `fn is_dir(p: string) -> Result(bool, IoErr)` over a real
   `stat(2)` (`corelib/io/io.ty@is_dir`), which `resolve()` matches on at
   `server/main.ty@is_dir`. One `stat(2)` now answers all three tails: `Ok(true)`
   with no trailing slash is the `301`, `Ok(false)` is a file to serve, and
@@ -174,7 +174,7 @@ is worth as much as what is true now, and each of these is why a syscall exists.
   `getsockname` and nothing else, so the field every real access log leads with
   was unreachable from Tycho — and unreachable in a way no Tycho program could
   work around, since `net.accept` hands back a bare fd.
-  **Fixed 2026-07-26** (`7b76fcd`): `netx_peer_addr` is `getpeername` + `inet_ntop`
+  **Fixed 2026-07-26** (`9878c8c`): `netx_peer_addr` is `getpeername` + `inet_ntop`
   (`corelib/net/net_shim.c@netx_peer_addr`), surfaced as
   `fn peer_addr(fd: int) -> Result(string, NetErr)`
   (`corelib/net/net.ty@peer_addr`) and used at
@@ -219,7 +219,7 @@ an HTTP request without it.
   `stat(2)` that answers it was **already being made**: the shim behind `is_dir`
   filled a `struct stat`, returned `S_ISDIR` and dropped `st_mtim` on the floor,
   one field short of the answer.
-  **Fixed 2026-07-31** (`74fd4c7`) by `fn mtime(p: string) -> Result(int, IoErr)`
+  **Fixed 2026-07-31** (`b5dae09`) by `fn mtime(p: string) -> Result(int, IoErr)`
   over its own `stat(2)` (`corelib/io/io.ty@mtime`), in whole seconds on the
   clock `now()` reads. A directory is `Ok` there, not an error — it has a
   modification time and `stat(2)` reports it. The server formats it with
@@ -239,18 +239,18 @@ an HTTP request without it.
   available — a gigabyte read to learn that it is a gigabyte. A `Range` server
   built on that allocates the whole file to send a kilobyte of it.
   **Fixed 2026-07-31** by two calls. `fn read_at(p, off, n) -> Result(bytes,
-  IoErr)` over `pread(2)` (`cf0c0f3`, `corelib/io/io.ty@read_at`), whose
+  IoErr)` over `pread(2)` (`dfb435a`, `corelib/io/io.ty@read_at`), whose
   **allocation is bounded by the file and not by `n`** — it is `min(n, size -
   off)` — so a `Range` header naming a terabyte allocates only what the file
   holds past `off`, and no arbitrary cap had to be invented on top. And
-  `fn size(p) -> Result(int, IoErr)` over one `stat(2)` (`de3fccb`,
+  `fn size(p) -> Result(int, IoErr)` over one `stat(2)` (`8923ec1`,
   `corelib/io/io.ty@size`), because every range form needs the length *before* it
   knows what to read: a `416` emits `bytes */LEN` and opens nothing, and
   `bytes=-N` has no start until the length is known. A directory is `Err(IsDir)`
   there — the opposite of `mtime`, and deliberately: `st_size` on a directory is
   its own entry structure, not a count of bytes anyone can read.
   The serve path is now `io.size` then `io.read_at` — one `stat(2)` and one
-  `pread(2)`, never `read_bytes` (`server/main.ty@parse_range`, `7552384`).
+  `pread(2)`, never `read_bytes` (`server/main.ty@parse_range`, `77960a1`).
   `make server-check` asserts the **bytes**, not the lengths: every `206` body is
   compared against the same slice cut from the file on disk, over a **binary**
   asset, because `Content-Length: 100` is satisfied just as well by the wrong
