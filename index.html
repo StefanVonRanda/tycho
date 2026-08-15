@@ -289,7 +289,7 @@
       <a href="#fast">Why&nbsp;fast</a>
       <a href="#lang">Language</a>
       <a href="#rigor">Rigor</a>
-      <a href="#start">Start</a>
+      <a href="#start">Start</a> <a href="#help">Help</a>
       <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
       <button class="themebtn" id="tbtn" aria-label="Toggle light/dark theme">Theme</button>
     </nav>
@@ -461,9 +461,9 @@
     <p class="marker rv"><span class="n">§04</span> How it's checked</p>
     <h2 class="rv">An experiment, but a heavily-checked one.</h2>
     <div class="spec2 rv">
-      <div class="row"><span class="k">Compilers</span><span class="v">Two: a reference written in C, and a frozen compiler <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits.</span></div>
-      <div class="row"><span class="k">Fixpoint</span><span class="v"><span class="cmd">make selfhost-check</span> re-proves it at every commit — the Tycho-built compiler reproduces its own emitted C <b>byte-for-byte</b>.</span></div>
-      <div class="row"><span class="k">Sanitizers</span><span class="v">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — against a committed golden.</span></div>
+      <div class="row"><span class="k">Compilers</span><span class="v">One maintained: the reference written in C. A second, <b>written in Tycho, compiled itself</b> and is kept <b>frozen</b> as that artifact — it proved self-hosting and is no longer built by any gate.</span></div>
+      <div class="row"><span class="k">Corpus</span><span class="v"><span class="cmd">make test</span> builds and runs <b>719 fixtures</b> against committed goldens, each under ASan/UBSan/LeakSanitizer.</span></div>
+      <div class="row"><span class="k">Sanitizers</span><span class="v">A fuzzer runs random programs through <b>two builds of the compiler</b> — native <span class="cmd">-O2</span> against ASan/UBSan — and the disagreement is the oracle; every example is built twice and compared to a golden.</span></div>
       <div class="row"><span class="k">Gate</span><span class="v"><span class="cmd">make ci</span> runs the whole check suite on your own machine — there's no cloud CI to take on faith.</span></div>
     </div>
     <p class="muted rv">
@@ -508,7 +508,41 @@ the generated C to. Building from source below ends at the same prompt.</p>
     </div>
   </section>
 
-  <footer>
+  <section id="help">
+<p class="marker rv"><span class="n">§06</span> What it needs</p>
+<h2 class="rv">Two things are missing, and neither can come from inside.</h2>
+<p class="lede rv">Tycho is pre-1.0 with no stability guarantees, and the two conditions still
+open on its roadmap both need somebody who did not write it. They are listed here because a
+visitor is the only person who can close them.</p>
+<div class="spec2 rv">
+<div class="row"><span class="k">Write something</span><span class="v">The blocking 1.0
+condition is <b>three non-trivial programs by two people who did not write the compiler</b>.
+Three exist, all by one. What is wanted is not polish — it is the
+<a href="https://github.com/StefanVonRanda/tycho/blob/main/CONTRIBUTING.md">friction you hit</a>,
+written down: the thing that was hard to express, the diagnostic that sent you the wrong way.
+Start at the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial</a>
+and file what annoyed you as an
+<a href="https://github.com/StefanVonRanda/tycho/issues">issue</a>.</span></div>
+<div class="row"><span class="k">Look at the C</span><span class="v"><b>There has been no
+third-party security audit.</b> The FFI boundary is unsafe by design — <span class="cmd">extern
+fn</span> declarations are not checked against the C they name — and thirteen hand-written shims
+sit between untrusted bytes and your process. The
+<a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/internals/audit-brief.md">audit
+brief</a> is a reviewer's packet: threat model, what each existing check does <i>and does not</i>
+cover, and five places to start. Negative results are wanted too — which classes you looked for
+and found nothing in is worth as much as a finding. Reporting:
+<a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">SECURITY.md</a>.</span></div>
+<div class="row"><span class="k">Why it is asked</span><span class="v">Three internal review
+passes over the same code found defects each time, with no overlap between them — including a
+password truncated at a NUL, so two different credentials derived one key. A sweep covers the
+places its author had in mind. That is the argument for an outsider, stated as evidence rather
+than modesty; the record is in
+<a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/internals/FRICTION.md">FRICTION.md</a>
+and the open items in <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md">the
+roadmap</a>.</span></div>
+</div>
+</section>
+<footer>
     <div class="fgrid">
       <div>
         <div class="fbrand">
