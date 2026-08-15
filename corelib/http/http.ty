@@ -13,6 +13,19 @@
 # (`ok`/`is_null` to check). The handle is C-owned (not arena-managed), so
 # `release` it. `body` is arena-copied on return; a binary body with interior
 # 0x00 bytes truncates at the copy (a tycho string limit), so this is for text.
+#
+# HTTPS certificates are verified, and `make http-verify` is the gate that proves
+# it rather than asserting it. To trust a PRIVATE CA -- an internal service, a
+# test server -- set one of these in the environment, the same two `core:tls`
+# obeys:
+#
+#     SSL_CERT_FILE=/path/ca.pem      a single PEM bundle
+#     SSL_CERT_DIR=/path/cadir        a hashed directory (openssl rehash)
+#
+# They REDIRECT trust and cannot disable it: verification stays on whatever they
+# say, and an unreadable path fails closed. A bad certificate is a transport
+# failure, so it arrives as a null handle -- the same shape as a refused
+# connection, which is why the gate exists.
 package http
 
 extern fn http_get(url: string) -> ptr

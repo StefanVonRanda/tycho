@@ -4847,7 +4847,7 @@ including the two wrong numbers above **against the lax answer**, so a regressio
 in either direction moves that line. Arbitrary precision survives the check: a
 20-digit coefficient round-trips exactly.
 
-### 57. `core:http` cannot be pointed at a private CA — **OPEN, limitation**
+### 57. `core:http` cannot be pointed at a private CA — **FIXED 2026-08-15**
 
 Found 2026-08-15 while building `scripts/tls_verify.sh`, which proves `core:tls`
 verifies certificates. The same three-way check was written for `core:http` and
@@ -4877,6 +4877,50 @@ Two consequences, and the second is why this is filed rather than shrugged at:
 The fix is an API decision, not a patch: expose a CA path (an option on `get`, or
 an honoured environment variable) so a caller can trust a private CA, at which
 point the gate follows immediately from `tls_verify.sh`'s existing shape.
+
+**Fixed the same day, by the environment variable rather than a new argument.**
+`http_shim.c` reads `SSL_CERT_FILE` into `CURLOPT_CAINFO` and `SSL_CERT_DIR` into
+`CURLOPT_CAPATH` — the two `core:tls` already obeys through OpenSSL's own
+defaults, so the two HTTPS clients in this tree stop trusting different stores
+from the same environment. No signature moved and no caller changed.
+
+They **redirect** trust and cannot disable it: no `CURLOPT_SSL_VERIFY*` is set
+anywhere in that file, so libcurl's verifying defaults stand whatever the
+environment says, and an unreadable path fails closed. Empty is treated as unset,
+so `SSL_CERT_FILE=` cannot degrade into a request with no CA at all.
+
+`make http-verify` (`scripts/http_verify.sh`) is the lane this unlocks, and the
+measurement is worth keeping in both directions. **Before**, run against the
+unfixed shim: `[2]` and `[2b]` both `status 0` — the positive control was
+unreachable exactly as this entry said. **After**: `[1] 0, [2] 200, [2b] 200,
+[3] 0`.
+
+The run before the fix also settled something this entry could only assume. Its
+control leg `[C]` — a probe built against a COPY of corelib with
+`SSL_VERIFYPEER`/`VERIFYHOST` off — returned **200 against the same untrusted
+server**. So `core:http` was verifying correctly all along; what was missing was
+any way to prove it. That is the distinction worth carrying: an ungated property
+is not a broken one, it is one that can break silently later.
+
+Four negative controls, each reddening exactly one leg and nothing else:
+
+| break | leg that reddens |
+|---|---|
+| `CURLOPT_SSL_VERIFYPEER, 0L` | `[1]` alone — the untrusted chain is ACCEPTED |
+| `CURLOPT_SSL_VERIFYHOST, 0L` | `[3]` alone — a valid cert for another name is accepted |
+| the `CAINFO` line deleted | `[2]` alone — `[2b]` still 200 |
+| the `CAPATH` line deleted | `[2b]` alone — `[2]` still 200 |
+
+The last two are the ones that matter for honesty: they prove `SSL_CERT_FILE` and
+`SSL_CERT_DIR` are two code paths rather than one option documented twice.
+
+**A note on the controls themselves, since it nearly produced a false result.**
+The first control script restored the shim with `git checkout --` between runs.
+That restores **HEAD**, which did not carry the still-uncommitted fix, so three of
+the four controls silently ran against the unfixed shim and every one of them
+"reddened" for the wrong reason. It looked like a clean result. Restoring from a
+copy of the working-tree file, and asserting the backup contains the fix before
+scoring anything, is what the script does now.
 
 ### 58. `uuid.v4` looks like 122 random bits and carries at most 32 — **documented 2026-08-15**
 

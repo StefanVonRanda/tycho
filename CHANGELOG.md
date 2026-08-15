@@ -180,6 +180,17 @@ Four messages that an outside reader hit in the first ten minutes writing
   memcheck reports every branch derived from it — 7 before, 0 after. The input
   length and the single "was the hex well-formed" bit are declassified on
   purpose; nothing else about the key steers control flow.
+- **`core:http` can be pointed at a private CA, and its certificate verification
+  is now gated.** `SSL_CERT_FILE` and `SSL_CERT_DIR` are honoured — the same two
+  `core:tls` already obeyed, so the tree's two HTTPS clients stop trusting
+  different stores from one environment. They redirect trust and cannot disable
+  it: no `CURLOPT_SSL_VERIFY*` is set anywhere in the shim, an unreadable path
+  fails closed, and an empty value is treated as unset. Before this there was no
+  way to trust a private CA at all, which blocked more than internal services: a
+  gate needs a leg that must SUCCEED, and without one "the untrusted server was
+  refused" reads exactly like "nothing connected", so a `CURLOPT_SSL_VERIFYPEER,
+  0L` left in after debugging would have passed every lane in this tree.
+  `make http-verify` closes that (FRICTION #57).
 
 ### Core library — breaking
 

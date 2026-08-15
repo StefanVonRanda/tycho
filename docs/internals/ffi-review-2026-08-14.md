@@ -413,8 +413,47 @@ since (`scripts/format_diff.sh`, `scripts/crypto_hygiene.sh`,
 `scripts/tls_verify.sh`, `make wine-ubsan`) refuses to score anything until a
 deliberately wrong expectation has been shown to fail.
 
-**Still open here**, unchanged by that pass: no third-party audit; `core:http`
-cannot be pointed at a private CA, so its certificate verification is ungated
-(FRICTION #57); Windows memory safety is covered for undefined behaviour by
-`make wine-ubsan` but not for use-after-free, which needs an ASan that mingw-w64
-does not ship.
+**Still open here**, unchanged by that pass: no third-party audit; Windows memory
+safety is covered for undefined behaviour by `make wine-ubsan` but not for
+use-after-free, which needs an ASan that mingw-w64 does not ship.
+
+---
+
+## Follow-up, 2026-08-15: the last ungated HTTPS client
+
+The line above used to name a third open item — `core:http` cannot be pointed at
+a private CA, so its certificate verification is ungated (FRICTION #57). It is
+closed, and the shape of the fix is the reusable part.
+
+**The blocker was not the check, it was the absence of a success.** The
+three-way discrimination `scripts/tls_verify.sh` runs was written for `core:http`
+and then deleted, because no leg could be made to pass: `CURL_CA_BUNDLE` is read
+by the curl **tool**, `SSL_CERT_FILE` was pre-empted by libcurl's compiled-in
+`CAINFO`, and the shim exposed neither. With every leg failing for a reason
+nobody could distinguish, "the untrusted chain was refused" and "nothing
+connected at all" are the same observation — so a `CURLOPT_SSL_VERIFYPEER, 0L`
+added while debugging would have passed every lane in this tree, on the HTTPS
+client every Tycho program reaches for. That is the identical blindness this
+document records `tls-verify` closing, surviving one package over.
+
+The shim honours `SSL_CERT_FILE`/`SSL_CERT_DIR` now — the two `core:tls` already
+obeyed, so the tree's two HTTPS clients stop trusting different stores from the
+same environment. They redirect trust and cannot disable it. `make http-verify`
+is the lane that follows, with four controls each reddening exactly one leg.
+
+**Two things worth carrying to the next reviewer.**
+
+*An ungated property is not a broken one.* The lane's control leg — a probe built
+against a copy of corelib with verification off — returned **200 against the same
+untrusted server the real probe refused**, on the run made *before* the fix. So
+`core:http` was verifying correctly the whole time. What was missing was any way
+to notice when it stopped.
+
+*The control script nearly produced a false clean result*, in the way this
+document's own §"distrust your instrument first" predicts. It restored the shim
+between runs with `git checkout --`, which restores **HEAD** — and the fix was
+still uncommitted, so three of four controls ran against the unfixed shim and
+each "reddened" for a reason that had nothing to do with the break under test.
+The output looked exactly like a working control set. Restoring from a copy of
+the working-tree file, and refusing to score unless that copy contains the fix,
+is what it does now.

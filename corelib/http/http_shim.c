@@ -79,6 +79,23 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(c, CURLOPT_USERAGENT, "tycho-corelib-http/1.0");
 
+    /* Honour SSL_CERT_FILE / SSL_CERT_DIR, which core:tls already obeys through
+     * OpenSSL's own defaults. libcurl does NOT: it compiles in a CAINFO that
+     * pre-empts that lookup, and CURL_CA_BUNDLE is read by the curl TOOL, not the
+     * library -- so before this there was no way to trust a private CA, and no way
+     * to write a leg that must SUCCEED. That is why core:http's verification was
+     * ungated (FRICTION #57): "the untrusted server was refused" and "nothing
+     * connected at all" look identical without one.
+     *
+     * These REDIRECT trust; they never disable it. No CURLOPT_SSL_VERIFY* is set
+     * anywhere in this file, so libcurl's verifying defaults stand whatever the
+     * environment says, and an unreadable path fails CLOSED. Empty is treated as
+     * unset -- `SSL_CERT_FILE=` must not become a request with no CA at all. */
+    const char *ca_file = getenv("SSL_CERT_FILE");
+    const char *ca_dir  = getenv("SSL_CERT_DIR");
+    if (ca_file && *ca_file) curl_easy_setopt(c, CURLOPT_CAINFO, ca_file);
+    if (ca_dir  && *ca_dir)  curl_easy_setopt(c, CURLOPT_CAPATH, ca_dir);
+
     struct curl_slist *hdrs = NULL;
     if (post_body) {
         curl_easy_setopt(c, CURLOPT_POSTFIELDS, post_body);
