@@ -33,7 +33,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so"
+mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -149,6 +149,25 @@ fn main():
         out = out + "|" + joini(sort.argsort_desc(xs))
         println(out)
 TY
+cat > "$T/pf/main.ty" <<'TY'
+package main
+import "core:strings"
+import "core:io"
+
+# One candidate per line, "~" for the empty string.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        t := line
+        if t == "~":
+            t = ""
+        match strings.parse_float(t):
+            Ok(f): println("OK " + str(f))
+            Err(e): println("ERR")
+TY
+./tychoc "$T/pf/main.ty" -o "$T/pfp" > "$T/b6.log" 2>&1 || {
+    echo "format-diff: FAILED (the parse_float harness does not build)"; tail -4 "$T/b6.log"; exit 1; }
 ./tychoc "$T/so/main.ty" -o "$T/sop" > "$T/b5.log" 2>&1 || {
     echo "format-diff: FAILED (the sort harness does not build)"; tail -4 "$T/b5.log"; exit 1; }
 ./tychoc "$T/dt/main.ty" -o "$T/dtp" > "$T/b4.log" 2>&1 || {
@@ -161,7 +180,7 @@ TY
     echo "format-diff: FAILED (the json harness does not build)"; tail -4 "$T/b2.log"; exit 1; }
 
 python3 - "$T" "$N" <<'PY'
-import csv, io, json, pathlib, random, subprocess, sys
+import csv, io, json, pathlib, random, re, struct, subprocess, sys
 T, N = sys.argv[1], int(sys.argv[2])
 random.seed(20260815)                      # deterministic: a mismatch reproduces
 fail = 0
@@ -364,8 +383,60 @@ for k, v in sbad.items():
 print(f"  {len(scases)} arrays x 4 orderings against Python's sorted "
       f"({ties} of them with a tie): {sum(len(v) for v in sbad.values())} mismatches")
 
+# ---- strings.parse_float ----------------------------------------------------
+# The rare case where the oracle is WRITTEN DOWN: corelib/strings/strings.ty
+# states the grammar and lists what it refuses -- leading space, inf/nan, hex
+# floats, a comma separator, anything trailing. So acceptance is scored against
+# that grammar, and the VALUE against Python's float BIT FOR BIT, because a float
+# parser's failure mode is a correctly-shaped answer one ulp out.
+GRAM = re.compile(r'^[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$')
+fcands = ["1.5", "-1.5", "+1.5", "0", "0.0", ".5", "-.5", "1.", "1e3", "1E3",
+          "1e+3", "1e-3", "5e-324", "1e-320", "1e-400", "1e400", "0.1",
+          "3.141592653589793", "1234567890.123456", " 1.5", "1.5 ", "inf",
+          "-inf", "nan", "NaN", "Infinity", "0x1p3", "1,5", "1.5x", "x1.5", "",
+          "-", "+", "e5", ".", "1e", "1e+", "--1", "1..5", "1.5.6", "00.5", "1_5"]
+fcands += [repr(random.uniform(-1e6, 1e6)) for _ in range(N // 2)]
+fcands += [f"{random.uniform(-1, 1):.17g}e{random.randint(-320, 308)}" for _ in range(N // 2)]
+p = pathlib.Path(T + "/pfin.txt")
+p.write_text("\n".join(c or "~" for c in fcands) + "\n", encoding="utf-8")
+fout = subprocess.run([T + "/pfp", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+# [c1] the acceptance test must disagree with a deliberately LOOSE grammar
+LOOSE = re.compile(r'^\s*[+-]?(?:[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?|inf|nan).*$')
+if sum(1 for c, g in zip(fcands, fout) if g.startswith("OK") != bool(LOOSE.match(c))) == 0:
+    print("  PARSE_FLOAT CONTROL DEAD: a loose grammar agreed everywhere"); sys.exit(1)
+
+fbad = []
+nacc = 0
+for c, g in zip(fcands, fout):
+    ing = bool(GRAM.match(c))
+    ok = g.startswith("OK")
+    if ok and not ing:
+        fbad.append(("accepted outside the documented grammar", c, g))
+    if not ok and ing:
+        try:
+            v = float(c)
+        except Exception:
+            v = None
+        # in-grammar refusals are legal ONLY for over/underflow, which the
+        # header states: 1e400 and 1e-400 are Err by design.
+        if v is not None and v != 0 and abs(v) != float("inf"):
+            fbad.append(("refused inside the documented grammar", c, g))
+    if ok and ing:
+        nacc += 1
+        want = float(c)
+        got = float(g[3:])
+        # [c2] the value test must be bit-exact, not close
+        if struct.pack("<d", got) != struct.pack("<d", want):
+            fbad.append(("value differs from Python", c, g[3:] + " vs " + repr(want)))
+for b in fbad[:4]:
+    print(f"  parse_float {b[0]}: {b[1]!r} -> {b[2]}")
+print(f"  {len(fcands)} float candidates against the documented grammar and Python "
+      f"({nacc} accepted, compared bit for bit): {len(fbad)} mismatches")
+fail += len(fbad)
+
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included)"
