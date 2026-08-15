@@ -159,6 +159,14 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
   third-party audit, and the fuzzer + sanitizer lanes in `make ci` keep running
   over both the compiler and the programs it emits.
 
+## For a reviewer
+
+[docs/internals/audit-brief.md](docs/internals/audit-brief.md) is the packet to
+start from: threat model, the entry points where untrusted bytes reach
+hand-written C, what each lane already holds and the honest scope of each claim,
+how to run any of it, and where we would start. It is written for someone who has
+not read this repository.
+
 ## Reporting a vulnerability
 
 If you find a memory-safety or other security issue in the **transpiler or

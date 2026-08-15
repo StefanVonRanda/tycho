@@ -460,6 +460,14 @@ closed on 2026-08-09 by `core:os`'s argv path — but the FFI boundary is unsafe
 by design and nobody outside the project has looked at it. 1.0 invites people
 to build on that boundary.
 
+**A packet for a reviewer now exists**:
+[docs/internals/audit-brief.md](docs/internals/audit-brief.md) — threat model,
+where untrusted bytes reach hand-written C, what each existing lane does and does
+not cover, how to reproduce any of it, and five suggested starting points. It
+does not close this section; it removes the excuse that "get an audit" had no
+scope attached. Three internal passes found 5, 9 and 10 issues respectively with
+zero overlap between them, which is the argument for §7 stated as evidence.
+
 ### Order of work
 
 Set 2026-08-09, cheapest-and-safest first, so each step is verifiable before the
