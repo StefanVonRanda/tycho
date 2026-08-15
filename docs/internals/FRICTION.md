@@ -4716,7 +4716,7 @@ warning now also fires where the value is TAKEN, which is the last point the
 name is visible. Locked by `tests/warn/deprecated_edges.err`, which carries
 exactly one warning — on the binding line — and none for the prose case above it.
 
-### 48. A subscript cannot read two fields of its receiver, so 2-D indexing on a flat array is inexpressible
+### 48. A subscript cannot read two fields of its receiver, so 2-D indexing on a flat array is inexpressible — **RECORDED, not open**
 
 **Not fixed — recorded**, because the fix is a judgement call about double
 evaluation rather than a defect.
@@ -5046,7 +5046,7 @@ read back with no fields, and a two-field row of empties must still write a bare
 agg-check are green either way, which is what makes this a silent data loss
 rather than a visible one.
 
-### 62. `core:toml` guessed, in both directions — **PARTLY FIXED 2026-08-15**
+### 62. `core:toml` guessed, in both directions — **FIXED 2026-08-15**
 
 The package header says `parse` "returns Err(what-was-wrong) on any malformed
 input (fail-closed; nothing is guessed)". Differentialled against Python's
