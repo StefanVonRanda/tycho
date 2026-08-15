@@ -1,6 +1,6 @@
 # Subscripts (user-defined projections)
 
-> **Thesis context:** A subscript is the *one* limited-reference construct that fits the
+> **Memory:** A subscript is the *one* limited-reference construct that fits the
 > arena + deep-copy model (see the [limited-references spike](../rfc/limited-references-spike.md)).
 > It generalizes the built-in `&m[k]` place: a **scoped, transient projection** into part of
 > a value — never a stored reference, never crossing the deep-copy thread boundary, needing

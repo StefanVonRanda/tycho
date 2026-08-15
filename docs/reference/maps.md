@@ -1,9 +1,8 @@
 # Maps
 
-> **Thesis context:** Maps test that the arena model works for associative containers with
-> in-place value mutation. `m[k]` as a mutable place exercises the same cross-arena copy
-> discipline as arrays — entries deep-copied in, deep-copied out — while the in-place
-> accumulator (`m[k] += 1`) tests that unique-ownership analysis applies to map slots.
+> **Memory:** Entries are deep-copied in and deep-copied out, the same cross-arena
+> discipline as arrays. `m[k]` is a mutable place, and the in-place accumulator
+> (`m[k] += 1`) is covered by the unique-ownership analysis.
 
 A map associates keys with values: `[K: V]`. The key type `K` is `string`, `int`, or a
 hashable composite (see [Keys](#keys)); the value type `V` is *any* type. Like everything

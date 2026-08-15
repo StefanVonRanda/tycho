@@ -1,9 +1,8 @@
 # Structs and tuples
 
-> **Thesis context:** Product types test deep copy on cross-arena move for composite values.
-> A struct with heap-bearing fields (strings, arrays) exercises the recursive `copy_into`
-> that keeps the arena model sound at every nesting level. Tuples test that multi-return
-> values participate in the same return-slot optimization as single values.
+> **Memory:** A struct with heap-bearing fields (strings, arrays) is deep-copied on a
+> cross-arena move by the recursive `copy_into`, at every nesting level. Tuples
+> participate in the same return-slot optimization as single values.
 
 Both are product types — a value made of several fields. A `struct` names its fields and is
 declared as a type; a tuple is anonymous and is how a function returns more than one value.

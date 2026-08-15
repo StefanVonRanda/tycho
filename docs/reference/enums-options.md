@@ -1,10 +1,9 @@
 # Enums, options, and `match`
 
-> **Thesis context:** Sum types test arena-allocated variant payloads and recursive type
-> support. A recursive enum (e.g. `Expr = Num | Add(Expr, Expr)`) is the hostile case:
-> each variant's payload is arena-allocated, and deep-copying the tree exercises the
-> recursive `copy_into` on the model's hardest shape. `Option`/`Result` test that
-> nullable/failable values stay within the arena model (no null pointer, no exceptions).
+> **Memory:** Each variant's payload is arena-allocated. A recursive enum
+> (`Expr = Num | Add(Expr, Expr)`) is the hardest shape: deep-copying the tree runs
+> the recursive `copy_into` at every level. `Option`/`Result` stay inside the model —
+> no null pointer, no exceptions.
 
 A *sum type* is a value that is exactly one of several alternatives. Tycho has one
 general form, the user-defined `enum`, plus two built-in special cases for two common

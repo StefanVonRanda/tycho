@@ -1,9 +1,9 @@
 # Packages
 
-> **Thesis context:** Packages test that the arena model works across compilation units.
-> A multi-package build merges all reachable files into one AST and emits one C file — the
-> same per-scope arena codegen applies regardless of which package a definition came from.
-> No separate compilation, no cross-package pointer escape.
+> **Memory:** A multi-package build merges all reachable files into one AST and emits
+> one C file, so the same per-scope arena codegen applies regardless of which package
+> a definition came from. There is no separate compilation and no cross-package
+> pointer escape.
 
 A package is a directory of `.ty` files sharing one namespace. You name it with a `package`
 declaration, pull it in with `import`, and use its qualified `pkg.symbol` names — for

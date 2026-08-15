@@ -1,9 +1,8 @@
 # Arrays and slices
 
-> **Thesis context:** Arrays are the primary test of cross-arena deep copy for contiguous
-> sequences. Every `push` copies the element into the array's arena; every `return` copies
-> the whole array into the caller's arena. Slices (`xs[a:b]`) test that a non-storable view
-> can exist without a borrow checker — passed as a zero-copy arg, deep-copied on store.
+> **Memory:** Every `push` copies the element into the array's arena; every `return`
+> copies the whole array into the caller's arena. A slice (`xs[a:b]`) is a non-storable
+> view — passed as a zero-copy argument, deep-copied on store.
 
 An array `[T]` is a growable, ordered sequence of values of one element type. Like every
 Tycho value it has value semantics: assigning an array deep-copies it, so the copy and the

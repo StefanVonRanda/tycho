@@ -1,9 +1,8 @@
 # Types
 
-> **Thesis context:** The type system exists to show the arena model handles diverse value
-> types (scalars, newtypes, bytes) without weakening. Newtypes test that the
-> arena-based deep copy respects type identity; bidirectional inference tests that
-> type-driven allocation decisions are never deferred.
+> **Memory:** Newtypes are erased in lowering, and the arena-based deep copy respects
+> type identity. Bidirectional inference means type-driven allocation decisions are
+> never deferred.
 
 Tycho is statically typed, and every value has a type known at compile time. This page
 covers the scalar types, the `bytes` buffer, distinct `type` newtypes, and how

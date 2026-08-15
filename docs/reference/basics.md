@@ -1,8 +1,7 @@
 # Basics
 
-> **Thesis context:** Procedures, control flow, and scope rules are the foundation that
-> per-scope arenas rest on. Every `if`/`else` block and every loop iteration gets its own
-> arena, freed at block exit; this page shows the scope boundaries the compiler sees.
+> **Memory:** Every `if`/`else` block and every loop iteration gets its own arena,
+> freed at block exit. This page shows the scope boundaries the compiler sees.
 
 The procedural core of the language: how you define a procedure, declare and assign
 variables, write expressions, and control flow. This part is deliberately narrow — one
