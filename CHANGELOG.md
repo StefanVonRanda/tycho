@@ -201,6 +201,20 @@ Four messages that an outside reader hit in the first ten minutes writing
   deliberately rather than by fall-through. Int is untouched by construction:
   integer arithmetic cannot produce the NaN that reaches the new branch
   (FRICTION #65).
+- **`fmath.round` rounds.** It documented "round half away from zero" and was
+  `floor(x + 0.5)`, an addition that rounds before `floor` ever runs.
+  `round(0.49999999999999994)` returned **1.0** for a value strictly *below* a
+  half, and `round(4503599627370497.0)` **moved an input that was already an
+  exact integer** — every double at or above 2^52 is one, so the whole range was
+  at risk. Decided by the fraction now (`x - trunc(x)`, which is exact for every
+  finite x). `0.5`/`1.5`/`2.5` were always correct, which is why the golden never
+  noticed (FRICTION #66).
+- **`fmath.lerp` returns its endpoints exactly.** `lerp(1e308, 1.0, 1.0)` gave
+  **0.0** instead of `b`: `1.0 - 1e308` *is* `-1e308`, so `b` is lost before `t`
+  is applied, and `a + (b - a) * t` collapses. The same subtraction overflows to
+  an infinity for a far-apart opposite-sign pair, making `t = 0` return NaN
+  instead of `a`. Both endpoints are special-cased. No monotonicity guarantee is
+  claimed for the interior (FRICTION #67).
 
 ### Core library — breaking
 

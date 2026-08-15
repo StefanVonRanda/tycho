@@ -161,6 +161,64 @@ if n_inf < 20 or "nan" not in fsign:
           "which is the only reason it exists)")
     sys.exit(1)
 
+# --- core:fmath. round/trunc are scored; lerp is a PROPERTY, not a differential.
+# `round` is documented "half away from zero" and was `floor(x + 0.5)`, which
+# rounds before floor ever runs: it returned 1.0 for 0.49999999999999994, a value
+# strictly BELOW a half, and moved 2^52+1, an input already an exact integer
+# (FRICTION #66). Every ordinary case was right, which is why its golden was
+# happy. The corpus therefore leads with the two killers and asserts their
+# presence by count.
+ty[1] = ty[1] + '\nimport "core:fmath"'
+rvals = ["0.49999999999999994", "-0.49999999999999994",   # below a half, both signs
+         "4503599627370497.0", "-4503599627370497.0",     # already integers, >= 2^52
+         "4503599627370496.0", "9007199254740993.0",
+         "0.5", "-0.5", "1.5", "-1.5", "2.5", "-2.5", "0.0", "1.0", "-1.0",
+         "0.1", "-0.1", "0.9", "-0.9", "1e16", "-1e16", "1e308", "-1e308",
+         "2.675", "-2.675", "0.49999999999999994e0", "1e-300", "5e-324",
+         "inf", "-inf", "nan"]
+ty.append('    println("--R--")')
+ty.append("    rv := [" + ", ".join(flit(v) for v in rvals) + "]")
+ty.append("    r2 := 0")
+ty.append("    for r2 < len(rv):")
+ty.append('        println(str(fmath.round(rv[r2])) + " " + str(fmath.trunc(rv[r2])))')
+ty.append("        r2 = r2 + 1")
+# The endpoints are the only thing lerp actually promises; a differential against
+# the same expression in Python would be scoring the code against itself.
+ty.append("    la := [0.1, 0.0 - 5.0, 1e308, 0.0, 2.0]")
+ty.append("    lb := [0.3, 5.0, 1.0, 0.0, 2.0]")
+ty.append("    l2 := 0")
+ty.append("    for l2 < len(la):")
+ty.append('        println(str(fmath.lerp(la[l2], lb[l2], 0.0)) + " " + str(fmath.lerp(la[l2], lb[l2], 1.0)))')
+ty.append("        l2 = l2 + 1")
+ty.append('    println(str(fmath.pi()) + " " + str(fmath.e()))')
+
+from decimal import Decimal, ROUND_HALF_UP
+import math as _m
+rexp = []
+for v in rvals:
+    x = float(v)
+    if x != x:                       rr, tr = "nan", "nan"
+    elif x in (float("inf"), float("-inf")): rr, tr = repr(x), repr(x)
+    elif abs(x) >= 2.0 ** 52:
+        # Every double at or above 2^52 is already an integer, so both are the
+        # identity. Stated as a fact rather than routed through Decimal, whose
+        # default 28-digit context raises InvalidOperation on 1e308.
+        rr = tr = repr(x)
+    else:
+        rr = repr(float(Decimal(x).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
+        tr = repr(float(_m.trunc(x)))
+    rexp.append(f"{rr} {tr}")
+for a, b in ((0.1, 0.3), (-5.0, 5.0), (1e308, 1.0), (0.0, 0.0), (2.0, 2.0)):
+    rexp.append(f"{repr(a)} {repr(b)}")     # lerp(a,b,0) is a and lerp(a,b,1) is b
+rexp.append(f"{repr(_m.pi)} {repr(_m.e)}")
+(T / "expected_r").write_text("\n".join(rexp) + "\n")
+
+n_kill = sum(1 for v in rvals if v.lstrip("-").startswith("0.49999999999999994")
+             or v.lstrip("-") in ("4503599627370497.0", "9007199254740993.0"))
+if n_kill < 4:
+    print("math-diff: FAILED (the round corpus lost the inputs that motivate it)")
+    sys.exit(1)
+
 (T / "p").mkdir(exist_ok=True)          # its own dir: siblings share a package
 (T / "p" / "main.ty").write_text("\n".join(ty) + "\n")
 
@@ -222,10 +280,15 @@ whole = T.joinpath("actual").read_text().splitlines()
 if "--F--" not in whole:
     print("math-diff: FAILED (the float arm never ran -- no --F-- marker)")
     sys.exit(1)
+if "--R--" not in whole:
+    print("math-diff: FAILED (the fmath arm never ran -- no --R-- marker)")
+    sys.exit(1)
 cut  = whole.index("--F--")
-act, act_f = whole[:cut], whole[cut + 1:]
+rcut = whole.index("--R--")
+act, act_f, act_r = whole[:cut], whole[cut + 1:rcut], whole[rcut + 1:]
 exp  = T.joinpath("expected").read_text().splitlines()
 exp_f = T.joinpath("expected_f").read_text().splitlines()
+exp_r = T.joinpath("expected_r").read_text().splitlines()
 mask = T.joinpath("skipmask").read_text().strip()
 
 # Floats are compared as VALUES, not as text: tycho and Python both round-trip
@@ -236,23 +299,28 @@ def as_float(s):
     try: return float(s.strip())
     except ValueError: return None
 
-bad_f = []
-if len(act_f) != len(exp_f):
-    print(f"math-diff: FAILED (float arm printed {len(act_f)} lines, oracle expects {len(exp_f)})")
-    sys.exit(1)
-for i, (x, y) in enumerate(zip(act_f, exp_f)):
-    xs, ys = x.split(), y.split()
-    if len(xs) != len(ys):
-        bad_f.append((i, x, y)); continue
-    for xv, yv in zip(xs, ys):
-        a2, b2 = as_float(xv), as_float(yv)
-        if a2 is None or b2 is None:
-            if xv.strip() != yv.strip(): bad_f.append((i, x, y))
-        elif not (a2 == b2 or (a2 != a2 and b2 != b2)):
-            bad_f.append((i, x, y))
-        else:
-            continue
-        break
+def cmp_arm(a, e, label):
+    # Signed zero compares EQUAL here (0.0 == -0.0 in IEEE, and tycho's str()
+    # does not distinguish them) -- so this lane says nothing about whether
+    # round(-0.4) keeps its sign. Stated, not silently assumed.
+    out = []
+    if len(a) != len(e):
+        print(f"math-diff: FAILED ({label} arm printed {len(a)} lines, oracle expects {len(e)})")
+        sys.exit(1)
+    for i, (x, y) in enumerate(zip(a, e)):
+        xs, ys = x.split(), y.split()
+        if len(xs) != len(ys):
+            out.append((i, x, y)); continue
+        for xv, yv in zip(xs, ys):
+            a2, b2 = as_float(xv), as_float(yv)
+            if a2 is None or b2 is None:
+                if xv.strip() != yv.strip(): out.append((i, x, y)); break
+            elif not (a2 == b2 or (a2 != a2 and b2 != b2)):
+                out.append((i, x, y)); break
+    return out
+
+bad_f = cmp_arm(act_f, exp_f, "float")
+bad_r = cmp_arm(act_r, exp_r, "fmath")
 
 if len(act) != len(exp):
     print(f"math-diff: FAILED (tycho printed {len(act)} lines, the oracle expects {len(exp)})")
@@ -289,17 +357,17 @@ if mask.count("1") >= mask.count("0"):
 # of this lane scored 1197 clean answers while the sign-of-infinity defect sat
 # untouched in front of it, so "the whole thing is green" is not the claim -- each
 # arm has to be shown able to redden.
-if not [1 for i, (x, y) in enumerate(zip(act_f, [e + "9" for e in exp_f]))
-        if x.strip() != y.strip()]:
-    print("math-diff: FAILED (control dead -- the float arm accepts a wrong expectation)")
-    sys.exit(1)
+for arm, a, e in (("float", act_f, exp_f), ("fmath", act_r, exp_r)):
+    if not cmp_arm(a, [x + "9" for x in e], arm):
+        print(f"math-diff: FAILED (control dead -- the {arm} arm accepts a wrong expectation)")
+        sys.exit(1)
 
-if bad or bad_f:
-    print(f"math-diff: FAIL ({len(bad)} int mismatches, {len(bad_f)} float)")
-    for i, x, y in (bad + bad_f)[:12]:
+if bad or bad_f or bad_r:
+    print(f"math-diff: FAIL ({len(bad)} int mismatches, {len(bad_f)} float, {len(bad_r)} fmath)")
+    for i, x, y in (bad + bad_f + bad_r)[:12]:
         print(f"    line {i}: tycho {x!r}  python {y!r}")
     sys.exit(1)
-print(f"math-diff: green ({mask.count('0')} scored int answers and {len(exp_f)} float "
-      f"answers match Python, {mask.count('1')} out-of-range ipow cases skipped by "
-      "design; a wrong expectation was caught in each arm)")
+print(f"math-diff: green ({mask.count('0')} scored int answers, {len(exp_f)} float and "
+      f"{len(exp_r)} fmath answers match Python, {mask.count('1')} out-of-range ipow "
+      "cases skipped by design; a wrong expectation was caught in every arm)")
 PY

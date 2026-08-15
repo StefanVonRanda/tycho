@@ -5215,3 +5215,55 @@ That makes it the tenth instance recorded here of the INSTRUMENT being the
 defect rather than the code, and the first one caught by asking a new lane the
 right question: not "is it green" but **"would it have caught the bug I already
 know about?"**
+
+### 66. `fmath.round` was `floor(x + 0.5)`, which is not rounding — **FIXED 2026-08-15**
+
+Found by pointing #65's new lane at the next package. `round` documents itself
+*"round half away from zero"* and implemented it as `floor(x + 0.5)`. That
+addition **rounds before `floor` ever runs**, and it was wrong two different ways:
+
+| input | returned | half away from zero |
+|---|---|---|
+| `0.49999999999999994` — the largest double **below** a half | `1.0` | `0.0` |
+| `4503599627370497.0` — 2^52+1, **already an exact integer** | `4503599627370498.0` | itself |
+
+The first is not a tie being broken the wrong way; the value is strictly under a
+half and it came back a whole unit out. `0.49999999999999994 + 0.5` is exactly
+halfway between the two doubles below and at 1.0, and IEEE ties-to-even picks
+1.0. The second is worse in kind: `round` of an integer must be the identity, and
+at or above 2^52 every double *is* an integer, so the whole range was at risk.
+
+`0.5`, `1.5`, `2.5`, `-2.5` were all correct, which is exactly why the golden was
+happy — the package's own fixture asserts the cases anyone would think to write.
+
+Decided by the FRACTION now: `t := trunc(x)`, `d := x - t`, and the answer moves
+one unit when `d` reaches a half in either direction. `x - trunc(x)` is exact for
+every finite x, and `t + 1.0` is only reached when x is *not* an integer, so
+`|x| < 2^52` there and it cannot overflow. An infinity and a NaN both make `d`
+NaN, fail both tests, and return trunc's answer, which is themselves.
+
+### 67. `fmath.lerp` did not return its endpoints — **FIXED 2026-08-15**
+
+Found in the same run, and it is the one defect in this batch that **no comment
+claimed**. `lerp`'s only documentation is "linear interpolation, t in [0,1]" —
+nothing about `lerp(a, b, 1)` being `b`. The oracle asserted it anyway, because
+that is what interpolation *means*, and:
+
+```
+lerp(1e308, 1.0, 1.0)  ->  0.0        (expected 1.0)
+```
+
+Not a rounding wobble. `1.0 - 1e308` **is** `-1e308` in double precision — the
+`b` is gone before `t` is ever applied — so `a + (b - a) * t` returns
+`1e308 + -1e308`, which is zero. The same subtraction overflows to an infinity
+for a far-apart pair of opposite sign, and then `t = 0` returns NaN instead of
+`a`.
+
+Both endpoints are special-cased now, which is what makes them exact. The middle
+of the range is unchanged: no attempt is made at the full monotonicity guarantee
+C++20's `std::lerp` carries, and that limit is stated rather than implied.
+
+**Worth separating from the rest of this file:** #57 through #66 were all found
+by taking a written claim literally. This one was found by an oracle asserting a
+property the code never claimed — which is the argument for a differential over
+a re-reading, since a re-reading can only ever check what somebody wrote down.
