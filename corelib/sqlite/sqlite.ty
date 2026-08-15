@@ -90,10 +90,20 @@ fn exec(d: inout Db, sql: string) -> Result(int, string):
 # back as a string; deciding that is FRICTION #69, not a silent behaviour change.
 fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
     st := null
-    if sqlite3_prepare_v2(d.h, sql, -1, &st, null) != 0:
+    # len(sql), not -1, for the same reason as the bind below: -1 stops at the
+    # first NUL, so a statement carrying one would silently become a DIFFERENT
+    # query. Program-authored rather than attacker-supplied, so this is the
+    # cheaper sibling of that fix, not a second vulnerability.
+    if sqlite3_prepare_v2(d.h, sql, len(sql), &st, null) != 0:
         return Err(errmsg(d))
     for i := 0; i < len(params); i += 1:
-        if sqlite3_bind_text(st, i + 1, params[i], -1, to_ptr(-1)) != 0:   # SQLITE_TRANSIENT
+        # The LENGTH is passed, never -1. `-1` tells sqlite to read to the first
+        # NUL, and a Tycho string is length-carrying and may hold one: a 5-byte
+        # "hi\0zz" bound with -1 stored TWO bytes and returned Ok (2026-08-15).
+        # That is silent truncation at a trust boundary -- two values the program
+        # treats as different become one row -- so the length sqlite is given has
+        # to be the length the caller has.
+        if sqlite3_bind_text(st, i + 1, params[i], len(params[i]), to_ptr(-1)) != 0:   # SQLITE_TRANSIENT
             sqlite3_finalize(st)
             return Err(errmsg(d))
     return Ok(st)

@@ -93,4 +93,22 @@ fn main():
             print("params multi rows=?\n")
         Ok(r):
             print("params multi rows=" + r[0][0] + " (3, not 4: the tail is dropped)\n")
+    # A bound parameter must survive an interior NUL. sqlite3_bind_text was given
+    # -1, which reads to the first NUL, so this 5-byte value stored TWO bytes and
+    # returned Ok (2026-08-15) -- silent truncation at a trust boundary, where two
+    # values the program treats as different collapse into one row. The HEX is
+    # asserted, not the text: a truncated string prints as perfectly ordinary
+    # text and only the bytes show what was lost.
+    nul := to_str(to_bytes([104, 105, 0, 122, 122]))         # "hi\0zz", 5 bytes
+    _ = sqlite.exec(&db, "CREATE TABLE n(x TEXT)")
+    match sqlite.exec_params(&db, "INSERT INTO n VALUES(?)", [nul]):
+        Err(m):
+            print("nul insert err: " + m + "\n")
+        Ok(_):
+            print("nul insert ok\n")
+    match sqlite.query(&db, "SELECT length(cast(x as blob)), hex(x) FROM n"):
+        Err(_):
+            print("nul stored=?\n")
+        Ok(r):
+            print("nul tycho len=" + str(len(nul)) + " stored len=" + r[0][0] + " hex=" + r[0][1] + "\n")
     sqlite.close(&db)

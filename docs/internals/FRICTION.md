@@ -5359,3 +5359,40 @@ That last one is the cheapest class of defect in this file and the one most like
 to greet a newcomer, since a package header is what someone reads before they
 write anything. It is also invisible to every gate here — no lane compiles a doc
 comment.
+
+### 70. A bound parameter was truncated at its first NUL — **FIXED 2026-08-15**
+
+Chased because #69 left it as an unprobed note, and it is the sharpest defect in
+this batch. `sqlite3_bind_text` was given `-1` for the length, which tells SQLite
+to read to the first NUL. **A Tycho string is length-carrying and may contain
+one.** Measured:
+
+```
+tycho len(s) = 5          "hi\0zz"
+stored       = 2 bytes    hex 6869          -- and the call returned Ok
+```
+
+Silent truncation at a trust boundary, with a success return. The failure mode is
+not lost characters, it is **collision**: two values the program treats as
+different become the same row. Anything storing a token, a key, a filename or a
+credential inherits that, and nothing anywhere reports it.
+
+The fix is the argument that was already in the signature — `len(params[i])`. The
+value round-trips whole afterwards (`6869007A7A`), which also establishes that
+Tycho's FFI was passing the entire buffer all along; only the `-1` discarded it.
+
+The sibling `sqlite3_prepare_v2(d.h, sql, -1, ...)` has the same shape and is now
+`len(sql)`. It is the cheaper case — SQL text is program-authored rather than
+attacker-supplied — and **it is not covered by a test**, because no fixture
+carries a NUL inside its SQL. Recorded as a limitation rather than claimed.
+
+**Two instrument errors on the way, both of the kind this file keeps recording.**
+The first control run reported `FAIL sqlite (tychoc compile)` and that read like
+the control working; it was the fixture failing to build, because `_` in this
+language is an ordinary variable rather than a discard and I declared it twice.
+A control that cannot compile accuses working code. The second: the assertion
+first asked SQLite for `length(x)`, which for TEXT is *characters before the first
+NUL* by SQLite's own definition and so returns 2 on perfectly intact data — the
+oracle was wrong and the code was right. `length(cast(x as blob))` asks the
+question actually meant. The golden written from the intended answer was correct
+both times; only the query was not.

@@ -239,6 +239,15 @@ Four messages that an outside reader hit in the first ten minutes writing
   refused in 2026-08-10. A reader copying the package header got *"a statement
   must be a declaration, assignment, or call"* — a message that never mentions
   `defer`. One instance tree-wide (FRICTION #69).
+- **`sqlite` bound parameters survive an interior NUL.** `sqlite3_bind_text` was
+  given `-1`, which reads to the first NUL, while a Tycho string is
+  length-carrying and may contain one: a 5-byte `"hi\0zz"` stored **two** bytes
+  and the call returned `Ok`. The failure mode is collision rather than lost
+  characters — two values the program treats as different become one row, which
+  matters for a token, a key or a filename. Now bound with `len(params[i])`; the
+  value round-trips whole. `sqlite3_prepare_v2` got the same treatment
+  (`len(sql)`), though that side is program-authored and is **not covered by a
+  test** (FRICTION #70).
 
 ### Core library — breaking
 
