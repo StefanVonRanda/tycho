@@ -86,10 +86,30 @@ done
 # bench/trie/run.sh:31-34 already applies.
 ISOLATE="bench/trie/trie.ty bench/trie/trie_pool.ty"
 
+# The WARNINGS these programs emit, not just whether they compile. Until
+# 2026-08-15 stderr was captured and only the exit status read, so a spurious
+# warning reaching every real program in the tree was invisible here -- and this
+# is the only lane that compiles all 75. The set is small and deliberate, so it
+# is locked as a whole rather than counted.
+#
+# HONEST SCOPE: this would NOT have caught the cross-file deprecation defect
+# (3a1b57e5), measured -- 6 warning lines before the fix and 6 after, because no
+# entry point happens to call a corelib function at a colliding line. What it
+# catches is a NEW spurious warning, which is the general form of that defect.
+#
+# check_goldens.py walks tracked `run.sh` files, so it does NOT cover this
+# baseline. The lane guards itself instead: a missing file is a hard FAILED that
+# names the record command, not a silent green.
+#
+#   RECORD=1 sh scripts/entrypoints.sh   re-record scripts/entrypoints.warn
+WARNBASE=scripts/entrypoints.warn
+: > "$T/warn"
+
 n=0; fail=0
 for e in $list; do
     n=$((n + 1))
     if "$TYCHOC" "$e" --emit-c -o "$T/e" >"$T/log" 2>&1; then
+        grep -E ': warning: ' "$T/log" | sed "s|^|$e -> |" >> "$T/warn" || true
         echo "ok      $e"
     else
         echo "FAIL    $e"
@@ -103,6 +123,7 @@ for e in $ISOLATE; do
     n=$((n + 1))
     rm -rf "$T/iso"; mkdir -p "$T/iso"; cp "$e" "$T/iso/"
     if "$TYCHOC" "$T/iso/$(basename "$e")" --emit-c -o "$T/e" >"$T/log" 2>&1; then
+        grep -E ': warning: ' "$T/log" | sed "s|^|$e -> |" >> "$T/warn" || true
         echo "ok      $e (isolated)"
     else
         echo "FAIL    $e (isolated)"
@@ -118,4 +139,16 @@ done
 [ "$n" -ge 70 ] || { echo "entrypoints: only $n entry point(s) found -- the glob is broken, this lane asserts NOTHING"; exit 1; }
 echo "-----------------------------------------"
 [ "$fail" -eq 0 ] || { echo "entrypoints: FAILED ($fail of $n entry points do not compile)"; exit 1; }
-echo "entrypoints: ok ($n entry points compile with tychoc)"
+
+sort "$T/warn" > "$T/warn.s"
+if [ "${RECORD:-0}" = 1 ]; then
+    cp "$T/warn.s" "$WARNBASE"; echo "rec     $WARNBASE ($(wc -l < "$WARNBASE") warning line(s))"
+elif [ ! -f "$WARNBASE" ]; then
+    echo "entrypoints: FAILED (no $WARNBASE -- record it with RECORD=1)"; exit 1
+elif ! cmp -s "$T/warn.s" "$WARNBASE"; then
+    echo "entrypoints: FAILED (the warnings these programs emit moved)"
+    diff -u "$WARNBASE" "$T/warn.s" | sed -n '3,20p'
+    echo "  If the change is intended: RECORD=1 sh scripts/entrypoints.sh"
+    exit 1
+fi
+echo "entrypoints: ok ($n entry points compile with tychoc; $(wc -l < "$WARNBASE" | tr -d ' ') warning line(s), matching $WARNBASE)"
