@@ -28,7 +28,7 @@ TYCHOC=./tychoc
 export TYCHO_CORELIB="$PWD/corelib"
 RECORD="${RECORD:-0}"
 golden="$PWD/tools/tycho-kvsrv/expected.out"
-T="$(mktemp -d)"; trap "cp -r $T /tmp/kvsrv-debug 2>/dev/null; rm -rf $T" EXIT
+T="$(mktemp -d)"
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 
@@ -39,9 +39,27 @@ if ! "$TYCHOC" tools/tycho-kvsrv/main.ty -o "$SRV" >"$T/build.log" 2>&1; then
 fi
 
 SERVPID=""
+# TERM, then KILL if it is still there. TERM alone is a REQUEST: this server
+# installs a signal handler for graceful shutdown, so a shutdown that blocks
+# leaves the process alive and `wait` blocks with it -- which is how nine
+# orphaned kvsrv processes came to be running for over ten days at ~15% CPU
+# each, found 2026-08-15. They outlived their own binary (deleted from /tmp) and
+# put a permanent ~1.4-core load on this box, which is enough to redden any lane
+# that asserts a scheduling outcome.
+#
+# This also restores the temp-dir removal: the trap set beside `mktemp -d` was
+# silently REPLACED by this one, so $T leaked on every run too.
 cleanup() {
-    [ -n "$SERVPID" ] && kill -TERM "$SERVPID" 2>/dev/null
-    [ -n "$SERVPID" ] && wait "$SERVPID" 2>/dev/null
+    if [ -n "$SERVPID" ]; then
+        kill -TERM "$SERVPID" 2>/dev/null || true
+        n=0
+        while [ "$n" -lt 40 ] && kill -0 "$SERVPID" 2>/dev/null; do
+            n=$((n + 1)); sleep 0.05
+        done
+        kill -KILL "$SERVPID" 2>/dev/null || true
+        wait "$SERVPID" 2>/dev/null || true
+    fi
+    rm -rf "$T"
 }
 trap cleanup EXIT INT TERM
 

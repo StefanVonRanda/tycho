@@ -7,9 +7,11 @@
 #   [3] DETERMINISM -- the report must be byte-identical at 1, 2, 3, 5 and 8
 #       workers. A golden re-recorded from a broken build agrees with itself.
 #   [3b] ...and that claim is VACUOUS unless the pool really shares the work, so
-#       the per-worker split is read back: at 8 workers every worker must take at
-#       least one file, and at 1 worker the first must take ALL of them and the
-#       rest none. The second is the negative control for `--workers` itself --
+#       the per-worker split is read back. At 1 worker the first must take ALL of
+#       them and the rest none -- deterministic. At 8 workers at least 2 must take
+#       work on EVERY attempt, and at least 6 on the best of up to 5, because the
+#       exact split is a scheduling outcome and asserting all 8 made this lane
+#       redden under the parallel load of `make ci` while passing alone. The second is the negative control for `--workers` itself --
 #       the first version of this program ignored the option and compared eight
 #       workers against eight, which passed and proved nothing.
 #   [4] CORRECTNESS against an INDEPENDENT implementation: every hash must equal
@@ -90,10 +92,32 @@ restsum=$(echo "$d1" | cut -d' ' -f2-8 | tr ' ' '+' | bc 2>/dev/null || echo -1)
 [ "$first" = "$NFILES" ] || bad "[3b] at 1 worker the first should take all $NFILES, took $first"
 [ "$restsum" = "0" ] || bad "[3b] at 1 worker the others should take 0, took $restsum -- --workers does nothing"
 
-d8=$(sed -n 's/^dist //p' "$T/w8.err")
-idle=0
-for v in $d8; do [ "$v" -eq 0 ] && idle=$((idle+1)); done
-[ "$idle" -eq 0 ] || bad "[3b] at 8 workers $idle of 8 took no file -- the pool is not sharing, so [3] proves nothing"
+# The width-8 split is a SCHEDULING OUTCOME, not a guarantee. Asserting "all 8 of
+# 8 took one of 12 files" made this lane FAIL inside `make ci` on 2026-08-15
+# while passing on its own: ci forks its lane groups concurrently, and on a
+# loaded box a worker can legitimately finish before the last one is scheduled.
+# A gate that reddens under load is worse than no gate -- it teaches people to
+# re-run. flow-check already had this right ("at least 190 of 200 runs").
+#
+# EVERY attempt -- at least 2 workers took work. That is what refutes "one worker
+#                  does everything", which is the bug this leg exists for.
+# BEST attempt  -- at least 6 of 8 participated, retried up to 5 times, so the
+#                  strong claim survives without staking the lane on one draw.
+best=0
+tries=0
+while [ "$tries" -lt 5 ]; do
+    tries=$((tries + 1))
+    ( cd "$T" && "$H" tree --workers=8 --dist ) > /dev/null 2> "$T/w8try.err" || true
+    dt=$(sed -n 's/^dist //p' "$T/w8try.err")
+    [ -n "$dt" ] || continue
+    sum=0; act=0
+    for v in $dt; do sum=$((sum + v)); [ "$v" -gt 0 ] && act=$((act + 1)); done
+    [ "$sum" -eq "$NFILES" ] || bad "[3b] attempt $tries: counts sum to $sum, not $NFILES"
+    [ "$act" -ge 2 ] || bad "[3b] attempt $tries: only $act worker(s) took anything -- the pool is not sharing, so [3] proves nothing"
+    [ "$act" -gt "$best" ] && best=$act
+    [ "$best" -ge 6 ] && break
+done
+[ "$best" -ge 6 ] || bad "[3b] best of $tries attempts was $best of 8 workers participating; want >= 6"
 
 # ---------------------------------------------------------------------------
 # [4] every hash against sha256sum(1)
@@ -146,4 +170,4 @@ elif ! cmp -s "$out" "$exp"; then
 fi
 
 [ "$fail" -eq 0 ] || { echo "tycho-hash: FAIL"; exit 1; }
-echo "tycho-hash: green (report byte-identical at 1, 2, 3, 5 and 8 workers, and the pool really shares -- all 8 take a file at width 8 while at width 1 the first takes all 12 and the rest none; every hash equals sha256sum's and the empty file's is the known e3b0c442...; the per-worker counts sum to exactly 12 at every width; 7 error paths exit 2 with a message on stderr and an empty stdout)"
+echo "tycho-hash: green (report byte-identical at 1, 2, 3, 5 and 8 workers, and the pool really shares -- at width 8 at least 2 workers take work on every attempt and at least 6 on the best of up to 5, while at width 1 the first takes all 12 and the rest none; every hash equals sha256sum's and the empty file's is the known e3b0c442...; the per-worker counts sum to exactly 12 at every width; 7 error paths exit 2 with a message on stderr and an empty stdout)"
