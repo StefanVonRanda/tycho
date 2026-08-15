@@ -1,0 +1,8 @@
+# The map sibling of reject/arr_type_as_value: `[string: int]` is the TYPE
+# spelling, and the empty-map literal is `[]string: int`. Guessing the type
+# spelling is the natural mistake and used to report "expected an expression".
+# expect: is the TYPE, not a value
+# expect: []string: int
+fn main():
+    m := [string: int]
+    println(str(len(m)))

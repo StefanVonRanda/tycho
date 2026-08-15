@@ -2848,6 +2848,23 @@ static Expr *parse_primary(Parser *ps) {
                 die_at(t->line, "`[%s]` is the TYPE, not a value -- for an empty array write "
                        "`[]%s`, or annotate the declaration: `xs : [%s] = []`",
                        cur(ps)->text, cur(ps)->text, cur(ps)->text);
+
+            /* The map sibling: `m := [string: int]`. Same mistake, same reason it
+             * is safe to name -- both sides are primitive type KEYWORDS, so this
+             * can never be a one-entry literal. `[k: v]` with identifiers still
+             * parses as a map literal with a variable key and value. */
+            #define TY_KW(k) ((k) == TK_KW_INT || (k) == TK_KW_FLOAT || (k) == TK_KW_BOOL \
+                || (k) == TK_KW_STRING || (k) == TK_KW_PTR || (k) == TK_KW_BYTES \
+                || (k) == TK_KW_U32 || (k) == TK_KW_U64 || (k) == TK_KW_F32 \
+                || (k) == TK_KW_U8 || (k) == TK_KW_U16 || (k) == TK_KW_I8 \
+                || (k) == TK_KW_I16 || (k) == TK_KW_I32 || (k) == TK_KW_I64)
+            if (TY_KW(k0) && peek(ps, 1)->kind == TK_COLON
+                && TY_KW(peek(ps, 2)->kind) && peek(ps, 3)->kind == TK_RBRACKET)
+                die_at(t->line, "`[%s: %s]` is the TYPE, not a value -- for an empty map write "
+                       "`[]%s: %s`, or annotate the declaration: `m : [%s: %s] = []`",
+                       cur(ps)->text, peek(ps, 2)->text, cur(ps)->text, peek(ps, 2)->text,
+                       cur(ps)->text, peek(ps, 2)->text);
+            #undef TY_KW
         }
         Expr *e = new_expr(E_ARRLIT, t->line);
         if (at(ps, TK_RBRACKET)) {           /* empty: []int / []string / []string: int / bare [] (typed by context) */
