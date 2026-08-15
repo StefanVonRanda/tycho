@@ -5037,3 +5037,37 @@ choice is made rather than defaulted into.
 
 Controls: restoring the naive split reddens the golden, and so does dropping the
 array terminator check, independently.
+
+### 63. A test lane that leaks a server degrades every other lane — **FIXED 2026-08-15**
+
+`make ci` reddened at `hash-check` while `hash-check` passed on its own. The
+cause was not in either lane's subject.
+
+`tools/tycho-kvsrv/run.sh` sent SIGTERM and then `wait`ed, with no KILL
+escalation. TERM is a REQUEST, and that server installs a handler for graceful
+shutdown, so a shutdown that blocks leaves the process alive and `wait` blocks
+with it. Found on this box: **ten orphaned kvsrv processes, all ~935,000 seconds
+old — 10.8 days — at ~15% CPU each**, roughly 1.4 cores permanently. Nine still
+named `/tmp/kvsrv`, a binary already deleted from disk; the tenth used the path
+the current script uses, which is what proved the leak was live rather than
+historical.
+
+Same file, second defect: the trap set beside `mktemp -d` was silently REPLACED
+by `trap cleanup EXIT INT TERM` a few lines later, so `$T` was never removed
+either. `/tmp` held 624 `tmp.*` directories going back to July, 1.4 GB.
+
+**The consequence is the general lesson: a leaked server is not confined to its
+own lane.** It puts a permanent load on the machine, and every lane that asserts
+a scheduling outcome then fails intermittently somewhere else entirely. That is
+how a kvsrv bug presented as a tycho-hash failure.
+
+**The class was swept.** Six scripts background a process. Two lacked escalation:
+kvsrv, and `scripts/tls_verify.sh` — written earlier the same day, with the same
+bare `kill`. Both now escalate TERM → KILL after 2s and are verified to leave no
+process behind. The other four already had it, and `scripts/ci.sh` backgrounds
+only its own lane groups, which it waits on.
+
+The first sweep produced two false positives by matching the words `kill -TERM`
+inside COMMENTS describing `core:signal`'s test. A grep for a pattern is not a
+test for the behaviour — the same "a label is not a payload" mistake as the
+encoded-traversal legs in #57's neighbourhood.

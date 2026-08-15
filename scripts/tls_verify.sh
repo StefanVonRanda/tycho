@@ -29,7 +29,19 @@ set -eu
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
 srv=""
-cleanup() { [ -n "$srv" ] && kill "$srv" 2>/dev/null; rm -rf "$T"; }
+# TERM then KILL. A bare `kill` is a REQUEST, and this lane leaves an
+# openssl s_server holding a loopback port -- the same shape that left ten
+# orphaned kvsrv processes running for ten days on this box (fixed in
+# tools/tycho-kvsrv/run.sh, same session). Escalating costs 2s at worst.
+cleanup() {
+    if [ -n "$srv" ]; then
+        kill -TERM "$srv" 2>/dev/null || true
+        n=0
+        while [ "$n" -lt 40 ] && kill -0 "$srv" 2>/dev/null; do n=$((n + 1)); sleep 0.05; done
+        kill -KILL "$srv" 2>/dev/null || true
+    fi
+    rm -rf "$T"
+}
 trap cleanup EXIT INT TERM
 
 command -v openssl >/dev/null 2>&1 || { echo "tls-verify: SKIPPED (no openssl cli)"; exit 0; }
