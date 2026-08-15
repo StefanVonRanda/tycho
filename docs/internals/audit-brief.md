@@ -92,12 +92,16 @@ Not an argument from principle — from the record.
   plaintext left in freed heap in both AEAD directions, a hex decode that timed
   where the bad digit was, `javascript:` hrefs emitted live, a strict check
   placed downstream of a lenient parse so it never ran, and others.
-- A **third** pass (2026-08-15, recorded in FRICTION #65–#70) found **10 more**,
-  including a bound SQL parameter silently truncated at its first NUL — where
-  the failure mode is *collision*, two distinct values becoming one row.
+- A **third** pass (2026-08-15) is recorded in FRICTION **#65 onward** — the
+  count is deliberately not written here, because it went stale inside the same
+  session that produced it: this line said "10 more" and nine further entries
+  landed after it. `grep -c '^### ' docs/internals/FRICTION.md` is the number,
+  today. It includes a bound SQL parameter truncated at its first NUL and a
+  password truncated the same way, both failing by *collision* — two distinct
+  values becoming one, which is the mode that does not look like a bug.
 
-Three passes, three different sets of targets, twenty-four findings, zero
-overlap. That is the shape of a surface that has not been reviewed enough, and
+Three passes, three different sets of targets, zero overlap between them. That
+is the shape of a surface that has not been reviewed enough, and
 the reason §7 is written as a hard condition rather than a nice-to-have.
 
 **The other half of the record is about instruments, and it is the more useful
