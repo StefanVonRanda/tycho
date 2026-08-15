@@ -5647,3 +5647,38 @@ URL, `core:os`'s command string, `core:datetime`'s TZ string, and
 `crypto.ct_equal`'s two hex arguments. Each takes a `char*` with no length. Their
 inputs are program-authored rather than attacker-supplied in every in-tree
 caller, which is why they are lower priority and not why they are safe.
+
+### 76. `ct_equal` compared two hex strings by their prefixes — **FIXED 2026-08-15**
+
+The second of the four #75 left named as unswept, and the answer is the one worth
+writing down carefully: **a real collision, and not the vulnerability it looks
+like.**
+
+`hexdec` finds its own end with `strlen`, so an interior NUL shortened both
+inputs. Measured, controls first:
+
+| case | before |
+|---|---|
+| control `"aabb"` vs `"aabb"` / `"ccdd"` | true / false — the comparison works |
+| both sides NUL-truncating to the same prefix | **true — a collision** |
+| attacker supplies the NUL, the trusted MAC has none | false — fails closed |
+| the same, reversed | false |
+
+**The MAC shape was never reachable.** A computed MAC is library-generated and
+carries no NUL, so its length disagrees with the truncated attacker value and the
+answer was already false. Reporting this as an authentication bypass would have
+been wrong, and the third and fourth rows are what establish that — without them
+the first two rows read far worse than the truth.
+
+It is still a collision for a caller comparing two **supplied** values, and this
+is the one comparison in the package whose entire job is not to surprise anyone.
+Lengths are passed now and a mismatch against `strlen` refuses outright, since
+hex never legitimately contains a NUL. Gated with both controls beside it;
+removing the length check reddens `crypto` and only `crypto`.
+
+**Two of the four remain unswept**, unchanged: `core:http`'s URL and `core:os`'s
+command string. Both are program-authored in every in-tree caller.
+`core:datetime`'s TZ string is the third and is the same shape. Naming them again
+rather than quietly dropping them, because a sweep that stops early and does not
+say so is how #62's "deliberately deferred" list ended up containing an entry
+that was really data loss (#69).

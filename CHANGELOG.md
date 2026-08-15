@@ -266,6 +266,13 @@ Four messages that an outside reader hit in the first ten minutes writing
   now and fails closed rather than guessing. **A signature change**: the extern
   `cx_pbkdf2_sha256` takes a `pwlen`; the Tycho-facing `pbkdf2_sha256` is
   unchanged, so no caller moves (FRICTION #75).
+- **`crypto.ct_equal` no longer compares two hex strings by their prefixes.** An
+  interior NUL shortened both inputs, so two different hex strings truncating to
+  the same prefix compared **equal**. **Not an authentication bypass** — a
+  computed MAC carries no NUL, so its length disagreed with a truncated attacker
+  value and the answer was already false — but a caller comparing two *supplied*
+  values had a collision. Lengths are passed and a mismatch refuses. A signature
+  change to the extern only; `ct_equal` itself is unchanged (FRICTION #76).
 
 ### Core library — breaking
 

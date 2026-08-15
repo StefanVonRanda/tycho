@@ -112,3 +112,14 @@ fn main():
     crypto.key_free(pk2)
     crypto.key_free(pk3)
     crypto.key_free(pk4)
+    # ct_equal is the one comparison in this package that must not surprise
+    # anyone. hexdec finds its own end with strlen, so two DIFFERENT hex strings
+    # truncating to the same prefix compared EQUAL (2026-08-15). Not reachable in
+    # the MAC shape -- a library-generated MAC carries no NUL, so the lengths
+    # disagree and the answer was already false -- but a caller comparing two
+    # SUPPLIED values had a collision. Controls asserted beside it.
+    nz := to_str(to_bytes([0]))
+    println("cte_same=" + str(yn(crypto.ct_equal("aabb", "aabb"))))
+    println("cte_diff=" + str(yn(crypto.ct_equal("aabb", "ccdd") == false)))
+    println("cte_nul_no_collide=" + str(yn(crypto.ct_equal("aabb" + nz + "1122", "aabb" + nz + "3344") == false)))
+    println("cte_nul_vs_clean=" + str(yn(crypto.ct_equal("aabb" + nz + "1122", "aabbccdd") == false)))

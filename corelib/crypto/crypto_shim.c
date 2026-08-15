@@ -234,8 +234,17 @@ void *cx_pbkdf2_sha256(const char *password, tycho_int pwlen, const char *salt_h
 /* =====================================================================
  * Constant-time equality of two hex byte strings (e.g. MAC verify) -> 1 / 0
  * ===================================================================== */
-tycho_int cx_ct_equal(const char *a_hex, const char *b_hex) {
+/* Lengths passed in, so an interior NUL cannot silently shorten either side.
+ * Hex never legitimately contains one, and hexdec finds its own end with strlen:
+ * two DIFFERENT hex strings truncating to the same prefix compared EQUAL
+ * (measured 2026-08-15). Not reachable in the MAC shape -- the trusted side is
+ * library-generated and carries no NUL, so the lengths disagree and the answer is
+ * already false -- but a caller comparing two SUPPLIED values had a collision, and
+ * this is the one comparison in the package that must not surprise anyone. */
+tycho_int cx_ct_equal(const char *a_hex, tycho_int alen, const char *b_hex, tycho_int blen) {
     size_t an, bn;
+    if (alen < 0 || blen < 0) return 0;
+    if ((size_t)alen != strlen(a_hex) || (size_t)blen != strlen(b_hex)) return 0;
     unsigned char *a = hexdec(a_hex, &an);
     if (!a) return 0;
     unsigned char *b = hexdec(b_hex, &bn);

@@ -24,3 +24,7 @@ rand_hex_len=1
 pw_nul_distinct=1
 pw_nul_not_prefix=1
 pw_control_differs=1
+cte_same=1
+cte_diff=1
+cte_nul_no_collide=1
+cte_nul_vs_clean=1
