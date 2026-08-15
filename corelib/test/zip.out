@@ -9,3 +9,5 @@ c=aaaa
 d roundtrip=true
 missing=true
 crc=cbf43926
+hostile name=[../../etc/passwd] body=x
+hostile name=[/abs/path] body=y

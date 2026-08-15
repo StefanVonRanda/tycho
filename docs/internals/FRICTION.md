@@ -5145,6 +5145,46 @@ output at all — there is no `class` attribute to inject into — so that leg
 confirms the language is discarded, not that anything is escaped. Counting either
 as an XSS test passing would inflate the result.
 
+### 71. `core:zip` told the caller there was no traversal hazard — **FIXED 2026-08-15**
+
+Probed because `docs/internals/audit-brief.md` names archive parsing as the first
+place an external reviewer should look, and reading the code is what missed
+`gcd` and `sign` for months.
+
+**The offset arithmetic is sound**, measured rather than read: sixteen archives
+built by Python's `zipfile` and then mutated — central-directory offset at
+`0xFFFFFFFF`, past the end, and into the middle of the file; entry count at
+`0xFFFF`; name length at `0xFFFF`; local-header offset at `0xFFFFFFFF` and near
+the end; compressed and uncompressed sizes at `0xFFFFFF00`; a wrong CRC; an
+unknown method; an EOCD with nothing behind it; a two-byte runt. **Every one
+fails closed** — zero entries or empty bytes — and the unmutated archive still
+round-trips. No crash, no short read, no wrong data.
+
+**The defect is one sentence of prose.** The header ended:
+
+> Entry names are treated as NAMES, not paths -- extracting never touches the
+> filesystem, so **there is no traversal hazard here**.
+
+The first clause is true. The conclusion is what a reader carries away, and it is
+wrong the moment they use the name — which is precisely what a caller of an
+archive reader does. `list` returns `../../etc/passwd` and `/abs/path` verbatim
+(measured), which is CORRECT for a reader and is the entire hazard. The package
+that says "no traversal hazard" is one call away from the traversal.
+
+Same shape as #60, where `markdown` escaped the text and not the scheme: the
+sentence is true about the thing it names and false about the thing that bites.
+
+`tools/tycho-ar` was already right — it runs every name through `path.safe_join`
+before writing any file, so a refusal in entry 9 cannot leave entries 1-8 on
+disk. That is now the worked example the header points at, instead of a
+reassurance that no check is needed.
+
+**Pinned rather than fixed in code, deliberately.** The names must keep coming
+back verbatim: silently rewriting one would hide the archive's real contents from
+a caller that *is* checking, which is worse than passing it through. The fixture
+asserts both hostile names survive the round trip exactly, and a plausible wrong
+fix — stripping a leading `/` in the writer — reddens it.
+
 Controls: restoring the naive split reddens the golden, and so does dropping the
 array terminator check, independently.
 

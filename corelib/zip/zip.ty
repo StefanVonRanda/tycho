@@ -11,8 +11,22 @@
 # are supported; anything else extracts as empty. The writer emits a
 # standards-shaped archive (local headers + central directory + EOCD, CRC-32
 # computed here, deflate via core:compress's raw stream, DOS time/date fields
-# zeroed). Entry names are treated as NAMES, not paths -- extracting never
-# touches the filesystem, so there is no traversal hazard here.
+# zeroed).
+#
+# ENTRY NAMES ARE ATTACKER-CONTROLLED AND ARE RETURNED VERBATIM. `list` hands
+# back exactly what the archive says, including `../../etc/passwd` and
+# `/abs/path` -- measured 2026-08-15, both survive intact, which is correct for a
+# reader and is the whole hazard. Nothing here touches the filesystem, so there
+# is no traversal bug in THIS package; the bug is one call away, in whatever
+# turns a name into a path. This line used to end "so there is no traversal
+# hazard here", which is true of the package and is not what a reader carries
+# away from it.
+#
+#     t := path.safe_join(dest, e.name) or_return    # refuses .. and absolute
+#
+# Check EVERY name BEFORE writing ANY file, so a refusal in entry 9 cannot leave
+# entries 1-8 on disk (`tools/tycho-ar/main.ty` does exactly that and is the
+# worked example).
 #
 # The whole archive is `bytes` in and out; a caller that wants files uses
 # core:io. Multi-disk archives and zip64 are out of scope.

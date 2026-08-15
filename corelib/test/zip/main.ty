@@ -27,3 +27,15 @@ fn main():
     # CRC integrity: a corrupted payload must extract as empty
     print("missing=" + str(len(zip.extract(ar, "nope")) == 0) + "\n")
     print("crc=" + str(hash.to_hex(zip.crc32(to_bytes("123456789")))) + "\n")   # cbf43926
+    # A traversal name survives the round trip EXACTLY. That is the correct
+    # behaviour for a reader -- it must report what the archive says -- and it is
+    # the reason the header now tells the caller to run path.safe_join before
+    # turning any name into a path. Pinned so a future "sanitise it here" change
+    # has to be deliberate: silently rewriting a name would hide the archive's
+    # real contents from a caller that IS checking, which is worse than passing
+    # it through. `tools/tycho-ar` is the worked example of the check.
+    ev := zip.create([zip.Entry("../../etc/passwd", to_bytes("x")),
+                      zip.Entry("/abs/path", to_bytes("y"))])
+    hm := zip.list(ev)
+    for i := 0; i < len(hm); i += 1:
+        print("hostile name=[" + hm[i].name + "] body=" + to_str(zip.extract(ev, hm[i].name)) + "\n")
