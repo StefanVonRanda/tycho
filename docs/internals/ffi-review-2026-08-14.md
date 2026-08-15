@@ -369,3 +369,52 @@ results at once and reported the round trip BROKEN. That was the probe:
 `out_hex` returns the same pointer every call, so a C caller must copy. Tycho
 callers are unaffected — the compiler copies at the boundary, measured with two
 live `crypto.random_hex` results coming back distinct.
+
+---
+
+## Addendum, 2026-08-15: what a second pass found, and what it says about the first
+
+The review above was one person choosing which classes to look for. A second pass
+the following day, choosing differently, found **nine defects** — which is the
+argument for §7 restated as evidence rather than as principle.
+
+None of them were visible to a golden. Ranked by what they cost:
+
+| where | what | how it was found |
+|---|---|---|
+| `core:crypto` | plaintext left in freed heap, both AEAD directions | interposing `free` and scanning released blocks |
+| `core:crypto` | key-import hex decode timed where the bad digit was | valgrind with the input marked undefined |
+| `core:markdown` | `javascript:` and `data:` hrefs emitted live | rendering hostile input and reading the HTML |
+| `core:httpd` | a strict Content-Length check downstream of a lenient parse, so it never ran | sending malformed requests to a real server |
+| `core:toml` | invented values for malformed input, refused valid nested arrays | differential against `tomllib` |
+| `core:csv` | a row of one empty field lost its field | differential against Python's `csv` |
+| `core:math` | `gcd` returned a negative gcd where the answer fits | differential against Python |
+| `src/tychoc.c` | a deprecation marker attached across files by line number | a throwaway positive control |
+| test lanes | one leaked servers for 11 days; one asserted a schedule | reading machine state after a red sweep |
+
+**The shape repeats and is worth naming for whoever reviews next.** Seven of the
+nine are the same defect: *a comment claims a property, and the code delivers it
+in one respect but not the one that matters.* `markdown` escaped the text and not
+the scheme. `httpd` validated the length after blocking on it. `gcd` said
+non-negative and composed with an `abs` that is documented to return a negative.
+Grepping for the claim finds nothing; only running the thing does.
+
+**Start where a claim is written down.** Every one of the nine was found by taking
+a sentence in a header comment literally and building the smallest thing that
+could falsify it. `docs/internals/FRICTION.md` #57–#64 record the current crop
+including the three that are still open decisions.
+
+**And distrust your instrument first.** Thirteen times in that pass the
+measurement was wrong and the code was right — a decimal oracle using Python's
+notation, a wine sweep where every invocation was `command not found`, a codec
+harness shifted by one line, an inverted control that reports zero either way. The
+ones that cost real time all *looked like results*. That is why every lane added
+since (`scripts/format_diff.sh`, `scripts/crypto_hygiene.sh`,
+`scripts/tls_verify.sh`, `make wine-ubsan`) refuses to score anything until a
+deliberately wrong expectation has been shown to fail.
+
+**Still open here**, unchanged by that pass: no third-party audit; `core:http`
+cannot be pointed at a private CA, so its certificate verification is ungated
+(FRICTION #57); Windows memory safety is covered for undefined behaviour by
+`make wine-ubsan` but not for use-after-free, which needs an ASan that mingw-w64
+does not ship.
