@@ -224,6 +224,21 @@ Four messages that an outside reader hit in the first ten minutes writing
   result **short** of width rather than over, which also keeps it from being split
   mid-codepoint. Every caller in the tree passes a one-byte pad and is
   bit-identical (FRICTION #68).
+- **`sqlite.exec` reports the rows it actually changed.** It read
+  `sqlite3_changes`, which describes the most recent statement alone, while
+  `sqlite3_exec` runs every statement in the string — so
+  `exec("INSERT 'a'; INSERT 'b'")` inserted two rows and answered `Ok(1)`. It
+  reports a delta of `sqlite3_total_changes` now. Single-statement callers see
+  the identical number. **Documented alongside it, not changed:**
+  `exec_params`/`query_params` go through `sqlite3_prepare_v2` with a NULL
+  `pzTail`, so everything after the first statement is discarded and the call
+  still returns `Ok` — the opposite of `exec`. Pass one statement per call to the
+  `_params` forms; the limitation is pinned by a fixture rather than left to
+  drift (FRICTION #69).
+- **`core:sqlite`'s usage example no longer shows `defer`**, which this language
+  refused in 2026-08-10. A reader copying the package header got *"a statement
+  must be a declaration, assignment, or call"* — a message that never mentions
+  `defer`. One instance tree-wide (FRICTION #69).
 
 ### Core library — breaking
 

@@ -4,7 +4,7 @@
 # is not). Import with `import "core:sqlite"`.
 #
 #   db := sqlite.open("app.db") or_return
-#   defer sqlite.close(&db)
+#   sqlite.close(&db)                 # at the end -- this language has no `defer`
 #   sqlite.exec(&db, "CREATE TABLE IF NOT EXISTS t(x INTEGER)") or_return
 #   rows := sqlite.query(&db, "SELECT x FROM t") or_return   # [[string]]
 #
@@ -32,6 +32,10 @@ extern "sqlite3" fn sqlite3_step(st: ptr) -> int
 extern "sqlite3" fn sqlite3_column_count(st: ptr) -> int
 extern "sqlite3" fn sqlite3_column_text(st: ptr, i: int) -> string
 extern "sqlite3" fn sqlite3_changes(db: ptr) -> int
+# Counts every row changed on this connection since it was opened. `exec` reports
+# a DELTA of it rather than sqlite3_changes, because sqlite3_changes describes the
+# most recent statement alone and sqlite3_exec may have run several.
+extern "sqlite3" fn sqlite3_total_changes(db: ptr) -> int
 extern "sqlite3" fn sqlite3_finalize(st: ptr) -> int
 extern "sqlite3" fn sqlite3_errmsg(db: ptr) -> string
 extern "sqlite3" fn sqlite3_free(p: ptr)
@@ -57,17 +61,33 @@ fn errmsg(d: Db) -> string:
         return ""
     return sqlite3_errmsg(d.h)
 
-# Run a statement that returns no rows; Ok(the change count).
+# Run one or more statements that return no rows; Ok(the change count).
+# `sqlite3_exec` runs EVERY statement in `sql`, so the count is a delta of
+# sqlite3_total_changes: sqlite3_changes describes only the most recent statement,
+# and "INSERT a; INSERT b" reported 1 for two inserted rows (2026-08-15).
 fn exec(d: inout Db, sql: string) -> Result(int, string):
     em := null
+    before := sqlite3_total_changes(d.h)
     if sqlite3_exec(d.h, sql, null, null, &em) != 0:
         msg := errmsg(d)
         if em != null:
             sqlite3_free(em)
         return Err(msg)
-    return Ok(sqlite3_changes(d.h))
+    return Ok(sqlite3_total_changes(d.h) - before)
 
 # Prepare, bind, run. `params` binds ?1..?N as text; empty for none.
+#
+# ONE STATEMENT ONLY, and it is not an error. `sqlite3_prepare_v2` compiles the
+# first statement in `sql` and reports the rest through `pzTail`, which is passed
+# NULL here -- so everything after the first `;` is DISCARDED and the call still
+# returns Ok. Measured 2026-08-15: `exec_params("INSERT ...'c'; INSERT ...'d'")`
+# inserted only 'c' and answered Ok with changes=1.
+#
+# `exec` does NOT behave this way -- it goes through `sqlite3_exec`, which runs
+# every statement -- so the two halves of this package disagree about what a
+# multi-statement string means. Pass one statement per call to the _params forms.
+# gap: the fail-closed version refuses a non-empty tail, which needs pzTail read
+# back as a string; deciding that is FRICTION #69, not a silent behaviour change.
 fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
     st := null
     if sqlite3_prepare_v2(d.h, sql, -1, &st, null) != 0:

@@ -5306,3 +5306,56 @@ the padding characters look perfectly reasonable in a transcript, the *width* wa
 the thing that was wrong, and a golden carrying only the text could not have
 seen it — the same reason `ed-check` asserts byte counts and `sheet-check`
 asserts float text. Reverting the two loops reddens `strings` and only `strings`.
+
+### 69. `core:sqlite`'s two halves disagree about a multi-statement string — **exec FIXED, `_params` PINNED, 2026-08-15**
+
+The package is **sound where it matters**, and that is worth stating first because
+it is the thing a reviewer should check: `run_stmt` uses real
+`sqlite3_prepare_v2` + `sqlite3_bind_text`, so `exec_params`/`query_params` are
+genuine prepared statements and there is no string interpolation anywhere in the
+file. The injection surface is closed by construction.
+
+What is wrong is quieter. `exec` goes through `sqlite3_exec`, which runs **every**
+statement in the string. `run_stmt` goes through `sqlite3_prepare_v2` with
+`pzTail` passed **NULL**, which compiles the **first** statement and discards the
+rest. Neither behaviour was documented, and they are opposites:
+
+| call | rows that landed | what it returned |
+|---|---|---|
+| `exec("INSERT 'a'; INSERT 'b'")` | **both** | `Ok(1)` — under-reported |
+| `exec_params("INSERT 'c'; INSERT 'd'")` | **only 'c'** | `Ok(1)` — no error at all |
+
+**`exec`'s count is fixed.** `sqlite3_changes` describes the most recent statement
+alone, so two inserted rows reported 1 against a function documenting
+*"Ok(the change count)"*. It reports a delta of `sqlite3_total_changes` now, which
+is exactly the rows this call changed. Single-statement callers — every caller in
+the tree — see the identical number.
+
+**`exec_params`'s discard is PINNED, not fixed**, and the distinction is the
+honest part. Making it fail closed means reading `pzTail` back as a string to
+test whether anything follows, and the alternative — scanning the SQL for a `;`
+in Tycho — has to know about quoted literals *and* `--` and `/* */` comments, or
+it refuses valid SQL. That is a parser, on the security-adjacent path, and
+guessing at it is worse than naming it. The fixture asserts the current answer
+(3 rows, not 4) so a future fix changes that line **on purpose** rather than
+drifting, and `run_stmt` carries a `gap:` comment at the site.
+
+**A third, separate finding in the same header.** The package's usage example
+opened with:
+
+```
+db := sqlite.open("app.db") or_return
+defer sqlite.close(&db)
+```
+
+`defer` does not exist — it was refused on 2026-08-10 and the refusal is recorded
+in `ROADMAP.md` and twice in this file. A reader copying the package's own example
+gets *"a statement must be a declaration, assignment, or call — a bare expression
+has no effect"*, which does not contain the word `defer` and so does not tell them
+what is wrong. Swept the tree with a grep proved able to match on a synthetic
+first: **exactly one instance**, this one, now corrected in place.
+
+That last one is the cheapest class of defect in this file and the one most likely
+to greet a newcomer, since a package header is what someone reads before they
+write anything. It is also invisible to every gate here — no lane compiles a doc
+comment.

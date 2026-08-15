@@ -4,3 +4,7 @@ rows=2
 2 alan 41
 seniors=1 alan
 bad=true
+exec multi changes=2
+exec multi rows=2
+exec_params multi changes=1
+params multi rows=3 (3, not 4: the tail is dropped)
