@@ -1,15 +1,16 @@
-# Memory model in the self-hosted compiler
+# The memory model
 
-Tycho's memory model — value semantics over implicit per-scope arenas — is
-described in [thesis.md](../thesis.md), [arrays-structs.md](arrays-structs.md), and
-the README's [The thesis](../README.md#the-thesis) section. This document is
-about the *self-hosted* transpiler, `tychoc0`: how it generates code on that same
-model, and the reclamation tricks that let its output match the C reference
-transpiler, `tychoc`.
+Tycho's memory model is value semantics over implicit per-scope arenas: every
+binding is a value, every value belongs to the scope that created it, and that
+scope's arena is released whole when it exits. There is no reference type and no
+garbage collector. Why it is designed this way is [thesis.md](../thesis.md); what
+it looks like in code is [arrays-structs.md](arrays-structs.md).
 
-`tychoc0` emits the same value-semantic, implicit-arena C that `tychoc` does. I
-don't know of any memory gap between the two transpilers, and they have full feature
-parity. The sections below describe the model as it stands; a closing appendix
+This page is the working detail — the shape of the emitted C, the reclamation
+techniques that keep the model cheap, what checks them, and what each one
+measured. Figures that name `tychoc0`, the self-hosted transpiler frozen on
+2026-07-26, are kept as recorded: they were measured against both compilers when
+both ran. The sections below describe the model as it stands; a closing appendix
 sketches, for contributors, how I brought the self-hosted code generator onto
 the model one type family at a time.
 
@@ -17,7 +18,7 @@ The memory model is the central idea this language exists to demonstrate, and th
 stability contract is in the README's status banner; implementation details
 like arena sizes are deliberately not part of it.
 
-## What `tychoc0` emits
+## What the compiler emits
 
 Every function threads an arena hierarchy and frees per scope. The shape, from
 the emitted C:
