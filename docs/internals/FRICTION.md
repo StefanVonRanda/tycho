@@ -5682,3 +5682,43 @@ command string. Both are program-authored in every in-tree caller.
 rather than quietly dropping them, because a sweep that stops early and does not
 say so is how #62's "deliberately deferred" list ended up containing an entry
 that was really data loss (#69).
+
+### 77. The interior-NUL rule was normative, swept once, and still missed the two worst sites — 2026-08-15
+
+**Not a defect. The most useful thing this session found**, and it is about
+process rather than code.
+
+Finishing #76's list turned up the history. `core:os`'s header records that all
+four of its calls were probed for interior NULs on **2026-08-13**, found to run
+"a DIFFERENT, SHORTER command than the one they were handed", and fixed —
+`os.system("printf ok\0; printf BAD")` ran `printf ok` and **reported exit 0**, so
+the caller was told its whole command succeeded. Re-probed today: `-1` from both
+entry points, with a clean call returning `0`/`ok` as the live control. It holds.
+
+That note ends: *"The rule is docs/spec/14-ffi.md's, and the sibling guards are
+core:io's and core:net's."*
+
+So the position on 2026-08-14 was:
+
+- the rule was **normative in the spec** — a `string` holding an interior NUL
+  does not survive the FFI round trip in either direction;
+- a **deliberate sweep** had been run for it;
+- **three packages** carried explicit guards, each naming the others.
+
+And the sweep stopped there. `core:sqlite` truncated a bound parameter (#70),
+`crypto.pbkdf2_sha256` collapsed two credentials into one derived key (#75), and
+`crypto.ct_equal` compared two hex strings by their prefixes (#76). All three
+were found today, in one pass, by mechanically listing **every** extern that takes
+a `string` — 46 of them — rather than by thinking about which ones might be
+affected.
+
+**The lesson is not that anyone was careless.** It is that a sweep run by the
+person who wrote the rule covers the sites they had in mind, and the sites they
+had in mind are the ones they had already fixed. The guards in `os`, `io` and
+`net` are *evidence the author understood the class completely* — and the two
+packages that got it wrong are the two that were not on the list. Understanding
+the bug is not the same as having enumerated its instances.
+
+For anyone reviewing this tree: **`grep` the declarations, do not reason about
+them.** The command is in `docs/internals/audit-brief.md` §6 now, and this entry
+is why it is there.

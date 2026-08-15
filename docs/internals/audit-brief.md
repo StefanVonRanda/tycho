@@ -153,7 +153,14 @@ the entire point of the exercise.
    survived every malformed shape thrown at it by one person.
 3. **The FFI signature surface itself.** Not any single shim — the fact that
    nothing checks an `extern fn` against the C it names. A systematic diff of
-   declarations against headers is work nobody has done.
+   declarations against headers is work nobody has done. **Start with the
+   interior-NUL class, and take the history as the warning**: the rule is
+   normative in `docs/spec/14-ffi.md`, a deliberate sweep for it ran on
+   2026-08-13, three packages carry explicit guards naming each other — and two
+   packages that were never on that list both had the bug, one of them collapsing
+   two passwords into one derived key (FRICTION #70, #75, #76, #77). Mechanically
+   listing all 46 externs that take a `string` found them in a single pass. Grep
+   the declarations; do not reason about which ones matter.
 4. **`core:crypto` beyond the comparison.** `cx_ct_equal` uses `CRYPTO_memcmp`
    and the key-import decode is constant-time; the rest of the package's
    side-channel surface is unexamined.
