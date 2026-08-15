@@ -284,8 +284,19 @@ Concretely open:
   time like `compress`'s so a gate can prove it fires cheaply. It failed safely
   before (a NULL `malloc` is handled), so this is defence in depth and a NAMED
   error rather than a generic allocation failure.
-- **Windows.** Every measurement here is Linux. The wine lanes cover behaviour,
-  not memory safety: there is no ASan equivalent in that path.
+- ~~**Windows.** Every measurement here is Linux. The wine lanes cover behaviour,
+  not memory safety: there is no ASan equivalent in that path.~~ — **partly
+  closed 2026-08-15 by `make wine-ubsan`.** True of ASan: the mingw-w64 here
+  ships neither libasan nor libubsan, so `-fsanitize=address` and plain
+  `-fsanitize=undefined` both fail at LINK. But UBSan needs no runtime if the
+  checks TRAP — `-fsanitize-undefined-trap-on-error` lowers each to an illegal
+  instruction. The whole fixture corpus and every corelib package that ports were
+  rebuilt that way and run under wine: **361 fixtures, 0 failures**, with a
+  control proving a deliberate out-of-bounds access exits 29 in that exact
+  configuration while the same source exits 0 without the flags. What it still
+  does NOT cover: `-fwrapv` is kept to match the shipped cc line, so signed
+  overflow is defined and unchecked; and this is not ASan — a use-after-free or a
+  heap overflow past an unknown bound stays invisible on Windows.
 - ~~Timing and side channels in `core:crypto`~~ — **the one comparison that
   matters is constant-time.** `cx_ct_equal` uses OpenSSL's `CRYPTO_memcmp`, not
   `memcmp`/`strcmp`, and it is the ONLY comparison in the shim (grep: 1 match).

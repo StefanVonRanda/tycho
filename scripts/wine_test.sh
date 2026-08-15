@@ -53,7 +53,10 @@ fi
 CORELIB="Z:\\$(pwd | sed 's|^/||; s|/|\\|g')\\corelib"
 E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB $WINE ./build/tychoc-mingw.exe"
 W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\usr\\x86_64-w64-mingw32\\lib $WINE"
-CCF="-O3 -fwrapv -pthread"          # the transpiler's own Windows cc line
+# The transpiler's own Windows cc line. Overridable so scripts/wine_ubsan.sh can
+# reuse this whole harness -- goldens, aborts, diags -- with the emitted C and the
+# runtime built to TRAP on undefined behaviour, rather than duplicating it.
+CCF="${WINE_CCF:--O3 -fwrapv -pthread}"
 
 # one positive fixture: emit + cc + wine-run + golden cmp
 pos() {

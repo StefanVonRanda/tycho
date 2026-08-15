@@ -138,6 +138,16 @@ wine-test:
 wine-corelib:
 	@sh scripts/wine_corelib.sh
 
+# wine-ubsan: the same two lanes with the emitted C, the corelib shims and the
+# runtime built to TRAP on undefined behaviour. mingw-w64 here ships no libasan
+# and no libubsan, so -fsanitize=address and plain -fsanitize=undefined both fail
+# at LINK -- but -fsanitize-undefined-trap-on-error needs no runtime at all. A
+# control proves a deliberate out-of-bounds access really does die under wine in
+# this configuration before the sweep is believed. ~13 min. Manual, like its two
+# parents; NOT in scripts/ci.sh.
+wine-ubsan:
+	@sh scripts/wine_ubsan.sh
+
 # wine-tools: phase 5's manual lane — every tools/ tool cross-compiled under
 # mingw (the Windows build proof) plus representative runs under Wine. NOT a
 # gate, NOT a Windows verdict; the full lane fixture suites are CI's.

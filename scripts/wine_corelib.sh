@@ -85,7 +85,10 @@ for d in corelib/test/*/; do
     esac
     $E "$d/main.ty" --emit-c -o "$T/$p" >"$T/$p.emit" 2>&1 || { echo "FAIL $p (emit)"; fail=$((fail+1)); continue; }
     SHIMS=$($E "$d/main.ty" --print-shims 2>/dev/null | sed 's|^Z:||; s|\\|/|g' | tr '\n' ' ')
-    "$MINGWCC" -O3 -fwrapv -pthread -o "$T/$p.exe" "$T/$p.c" $SHIMS $LIB -lm 2>"$T/$p.cc" \
+    # WINE_CCF lets scripts/wine_ubsan.sh rebuild this with UB checks trapping.
+    # The shims are hand-written C and are the reason that matters here.
+    # shellcheck disable=SC2086
+    "$MINGWCC" ${WINE_CCF:--O3 -fwrapv -pthread} -o "$T/$p.exe" "$T/$p.c" $SHIMS $LIB -lm 2>"$T/$p.cc" \
         || { echo "FAIL $p (cc)"; head -2 "$T/$p.cc" | sed 's/^/      /'; fail=$((fail+1)); continue; }
     # -k: wine spawns a process tree (wineserver + the test); a plain timeout
     # would kill the client and leave the server hanging the lane
