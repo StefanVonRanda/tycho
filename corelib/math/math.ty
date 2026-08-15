@@ -39,14 +39,23 @@ fn abs(x: int) -> int:
         return 0 - x
     return x
 
-fn gcd(a: int, b: int) -> int:           # greatest common divisor (Euclid), non-negative
+# Greatest common divisor (Euclid). Non-negative EXCEPT where the true answer is
+# not representable: gcd(min, 0) and gcd(min, min) are 2^63, which int64 cannot
+# hold, and follow abs() in returning min itself.
+#
+# The final abs() is load-bearing and was missing. abs(min) is min -- negative,
+# by abs's own documented edge -- so the loop could carry a negative through and
+# return one even when the ANSWER FITS: gcd(min, min+1) is 1 and it returned -1
+# (measured 2026-08-15). That is a wrong sign on a representable result, not a
+# representability limit.
+fn gcd(a: int, b: int) -> int:
     x := abs(a)
     y := abs(b)
     for y != 0:
         t := y
         y = x % y
         x = t
-    return x
+    return abs(x)
 
 fn ipow(base: int, exp: int) -> int:     # integer power for exp >= 0 (exp < 0 returns 0)
     # No overflow guard: results outside int64 wrap/are undefined — caller's job to

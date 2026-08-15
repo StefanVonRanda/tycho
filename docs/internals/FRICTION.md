@@ -5071,3 +5071,35 @@ The first sweep produced two false positives by matching the words `kill -TERM`
 inside COMMENTS describing `core:signal`'s test. A grep for a pattern is not a
 test for the behaviour — the same "a label is not a payload" mistake as the
 encoded-traversal legs in #57's neighbourhood.
+
+### 64. `gcd` returned a NEGATIVE gcd where the answer fits — **FIXED 2026-08-15**
+
+`corelib/math/math.ty@gcd` documented itself "non-negative". It was not, for four
+input pairs, and only three of those are excusable.
+
+`abs(min int64)` returns min itself -- negative -- and abs says so in its own
+comment, deliberately, because negating it would overflow. gcd called abs on both
+arguments and returned the loop's accumulator without re-normalising, so that
+negative could ride straight through:
+
+```text
+gcd(min, 0)      = min    true answer 2^63, NOT REPRESENTABLE  -- a width limit
+gcd(0, min)      = min    same
+gcd(min, min)    = min    same
+gcd(min, min+1)  = -1     true answer 1, REPRESENTABLE         -- a WRONG SIGN
+```
+
+The last one is the defect. 1 fits in an int64 with room to spare; there was no
+arithmetic reason to return -1. The fix is `return abs(x)`, which leaves the three
+unrepresentable cases following abs (documented) and corrects the fourth.
+
+Found by differentialling core:math against Python, where the interesting part
+was separating the four. Python has bignums, so it disagrees on every int64 edge
+and reports six differences for `abs`, `ipow` and `gcd` alike -- and `abs`'s and
+`ipow`'s are both DOCUMENTED behaviour that the oracle simply cannot express.
+Reading each function's stated contract is what left one real finding out of six
+apparent ones.
+
+The fixture asserts the fixed case and the three width limits separately, so a
+future change that "fixes" the limits by wrapping cannot pass by moving the wrong
+line. Reverting `abs(x)` to `x` reddens the golden.

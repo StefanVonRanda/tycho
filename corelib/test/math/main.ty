@@ -17,3 +17,15 @@ fn main():
     println(f"absmin={math.abs(mn)}")                                                            # absmin=-9223372036854775808
     # edge: largest in-range power of two -- must not overflow internally
     println(f"pow62={math.ipow(2, 62)}")                                                         # pow62=4611686018427387904
+    # gcd's documented "non-negative" composes with abs's documented edge, and
+    # the composition broke it. abs(min) is min -- negative by design -- so a
+    # negative could ride through the loop and out. gcd(min, min+1) is 1 and
+    # returned -1: a WRONG SIGN on a representable answer, not a width limit.
+    println("gcd(min,min+1)=" + str(math.gcd(0 - 9223372036854775807 - 1, 0 - 9223372036854775807)))
+    println("gcd(min,12)=" + str(math.gcd(0 - 9223372036854775807 - 1, 12)))
+    # These three ARE width limits: the true answer is 2^63. They follow abs and
+    # return min, which is the documented exception, not a regression.
+    println("gcd(min,0)=" + str(math.gcd(0 - 9223372036854775807 - 1, 0)))
+    println("gcd(min,min)=" + str(math.gcd(0 - 9223372036854775807 - 1, 0 - 9223372036854775807 - 1)))
+    # the ordinary cases must be untouched
+    println("gcd(12,18)=" + str(math.gcd(12, 18)) + " gcd(-12,18)=" + str(math.gcd(0 - 12, 18)))
