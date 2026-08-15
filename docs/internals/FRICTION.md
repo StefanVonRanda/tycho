@@ -4932,3 +4932,14 @@ server answers no method that takes a body, so nothing was smuggled INTO an
 application. What it cost was a worker per malformed request for the full idle
 deadline -- the same resource-holding shape as the slowloris already recorded in
 `corelib/httpd/httpd.ty`'s header.
+
+**The class was then swept, and it is bounded.** Grepping `parse_int(` would never
+have found this -- `to_uint` does not call it -- so the search has to be for the
+SHAPE: a digit loop that returns its accumulator on the first non-digit. Exactly
+one such function exists in `corelib/` and `server/` (`httpd.to_uint`), and its
+one dangerous use site is the one fixed here. Every lenient `parse_int` call site
+on untrusted input was checked by hand and each already guards: `tycho-ledger`
+validates every byte before parsing and cites #34 while doing it, `tycho-stat`
+refuses a non-numeric field by name, `tycho-tally` records the measured
+`parse_int("35x") == 35` in a comment beside its own check. The remaining call
+sites take CLI arguments, not untrusted input.
