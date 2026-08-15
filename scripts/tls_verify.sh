@@ -101,5 +101,17 @@ r3=$(SSL_CERT_FILE="$T/ca.pem" "$T/probe" 127.0.0.1 2>/dev/null || true)
 say "[3] same server, CA trusted, name differs" "$r3"
 [ "$r3" = FAIL ] || { echo "  LEAK: the hostname was NOT checked -- a valid cert for another name was accepted."; fail=1; }
 
+# --- core:http is NOT gated here, and the reason is worth writing down --------
+# http_shim.c sets no CURLOPT_SSL_VERIFY*, so libcurl's verifying defaults apply
+# and it is correct today. The same three-way discrimination was built for it and
+# then REMOVED, because the positive control cannot be made to pass: there is no
+# way to point core:http at a private CA. CURL_CA_BUNDLE is read by the curl TOOL,
+# not by libcurl; SSL_CERT_FILE is not honoured by this build (libcurl 8.21 here,
+# measured -- a trusted CA and an untrusted one both give status 0); and the shim
+# exposes no CURLOPT_CAINFO. Without a leg that must SUCCEED, "untrusted is
+# refused" is indistinguishable from "nothing connected", which is exactly the
+# blindness this whole lane exists to remove. Shipping those legs green would
+# have been decoration. See docs/internals/FRICTION.md.
+
 [ "$fail" -eq 0 ] || { echo "tls-verify: FAIL"; exit 1; }
 echo "tls-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted and reached by the name in the cert, and refused again when reached by a name the cert does not carry -- so the refusals are verification, not a dead connection)"

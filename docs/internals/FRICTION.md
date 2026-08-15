@@ -4846,3 +4846,34 @@ so no caller moves. 17 inputs are asserted in `corelib/test/decimal/main.ty`,
 including the two wrong numbers above **against the lax answer**, so a regression
 in either direction moves that line. Arbitrary precision survives the check: a
 20-digit coefficient round-trips exactly.
+
+### 57. `core:http` cannot be pointed at a private CA — **OPEN, limitation**
+
+Found 2026-08-15 while building `scripts/tls_verify.sh`, which proves `core:tls`
+verifies certificates. The same three-way check was written for `core:http` and
+then **removed**, because its positive control cannot be made to pass.
+
+`http_shim.c` sets no `CURLOPT_SSL_VERIFY*`, so libcurl's verifying defaults
+apply and HTTPS is checked. But there is no way to add a CA:
+
+- `CURL_CA_BUNDLE` is read by the curl **tool**, not by libcurl.
+- `SSL_CERT_FILE` is not honoured by this build (libcurl 8.21). Measured against
+  a local `openssl s_server`: an untrusted CA and the correct CA **both** give
+  `status 0`.
+- The shim exposes no `CURLOPT_CAINFO`.
+
+Two consequences, and the second is why this is filed rather than shrugged at:
+
+1. A program cannot talk to an internal service with a private CA. The only
+   workaround is installing the CA into the system store, which is a machine-wide
+   change to make one program work.
+2. **`core:http`'s verification is therefore ungated.** A
+   `CURLOPT_SSL_VERIFYPEER, 0L` added while debugging would pass every lane in
+   this tree — the same hole `tls-verify` just closed for `core:tls`, still open
+   here. Not because the check is hard, but because without a leg that must
+   SUCCEED, "the untrusted server was refused" is indistinguishable from "nothing
+   connected at all".
+
+The fix is an API decision, not a patch: expose a CA path (an option on `get`, or
+an honoured environment variable) so a caller can trust a private CA, at which
+point the gate follows immediately from `tls_verify.sh`'s existing shape.
