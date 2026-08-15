@@ -5788,3 +5788,31 @@ moved, and the compile-until-clean loop is what found both.
 `2001 -> Ok` and a stack overflow at 50000 — because the build had failed on the
 first broken match and the probe was the STALE binary. Reading the exit code
 rather than the printed line is what caught it.
+
+### 80. `core:decimal` holds every claim in its header — 2026-08-15
+
+**No defect**, recorded because this is the money type and because the two claims
+most likely to be wrong are wrong in most implementations.
+
+Ten rows, every one matching Python's `Decimal` exactly:
+
+| claim | probed |
+|---|---|
+| the stored scale is preserved | `1.50` stays `1.50` |
+| `cmp` is exact across DIFFERENT scales | `cmp(1.50, 1.5)` is `0`, both orders |
+| `0.1 + 0.2` is `0.3` | it is |
+| add across scales | `1.50 + 1.5` is `3.00`, as Python gives |
+| `rescale` truncates TOWARD ZERO | `-1.55 -> -1.5`, `-1.99 -> -1` |
+
+**The two that matter are the middle and the last.** A `cmp` that compares
+coefficients without aligning scales makes `1.50` greater than `1.5` — the same
+number ordered wrongly, which in a ledger sorts and compares money incorrectly
+while every individual value prints right. And "truncates toward zero" is a claim
+about NEGATIVES: an implementation that floors instead would give `-1.6` and
+`-2`, off by a cent in the direction that accumulates.
+
+Not vacuous: `cmp(1.5, 1.6)` returns `-1`, so the comparison discriminates, and
+the rescale rows disagree with each other.
+
+`div` already has a differential (`40bac3d6`, with a mode-swap control). Between
+that and this, the package's stated surface is measured rather than assumed.
