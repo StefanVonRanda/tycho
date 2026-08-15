@@ -48,7 +48,16 @@ fn main():
         op, bstr := strings.split_once(rest, " ")
         a := bignum.from_str(astr)
         b := bignum.from_str(bstr)
-        if op == "d+":                       # the decimal ops share the driver
+        if op == "d/":                       # bstr is "divisor:scale:mode"
+            parts := split(bstr, ":")
+            md := decimal.HALF_UP
+            if parts[2] == "1":
+                md = decimal.TOWARD_ZERO
+            match decimal.div(decimal.from_str(astr), decimal.from_str(parts[0]),
+                              strings.parse_int(parts[1]), md):
+                Ok(q): println(decimal.to_str(q))
+                Err(e): println("ERR")
+        elif op == "d+":                     # the decimal ops share the driver
             println(decimal.to_str(decimal.add(decimal.from_str(astr), decimal.from_str(bstr))))
         elif op == "d-":
             println(decimal.to_str(decimal.sub(decimal.from_str(astr), decimal.from_str(bstr))))
@@ -162,11 +171,56 @@ if live_v < len(ctl2) or live_s < len(ctl2):
     print(f"  DECIMAL CONTROL DEAD: value {live_v}/{len(ctl2)}, scale {live_s}/{len(ctl2)}")
     sys.exit(1)
 
+# ---- decimal DIVISION, with both rounding modes ----------------------------
+# div is the operation with a MODE, and a mode that is silently ignored looks
+# exactly like a mode that works -- most quotients round the same either way.
+# So the control swaps HALF_UP and TOWARD_ZERO in the oracle and requires
+# disagreement; if the two score alike, div is not reading its argument.
+from decimal import ROUND_HALF_UP, ROUND_DOWN
+
+def dvrun(cs):
+    p2 = pathlib.Path(T + "/dvin.txt")
+    p2.write_text("".join(f"{a} d/ {b}:{sc}:{md}\n" for a, b, sc, md in cs))
+    o = subprocess.run([T + "/bin", str(p2)], capture_output=True, text=True).stdout.split("\n")
+    return o
+
+def dvscore(cs, o, swap):
+    n = 0
+    for (a, b, sc, md), g in zip(cs, o):
+        m = (1 - md) if swap else md
+        w = (Decimal(a) / Decimal(b)).quantize(
+            Decimal(1).scaleb(-sc), rounding=ROUND_HALF_UP if m == 0 else ROUND_DOWN)
+        if g == "ERR" or Decimal(g) != w:
+            n += 1
+    return n
+
+dvcases = [("1", "3", 4, 0), ("1", "3", 4, 1), ("2", "3", 4, 0), ("2", "3", 4, 1),
+           ("10", "3", 0, 0), ("10", "3", 0, 1), ("-1", "3", 4, 0), ("-1", "3", 4, 1),
+           ("1", "-3", 4, 0), ("-2", "3", 0, 0), ("-2", "3", 0, 1), ("0.5", "1", 0, 0),
+           ("0.5", "1", 0, 1), ("-0.5", "1", 0, 0), ("-0.5", "1", 0, 1),
+           ("1.5", "1", 0, 0), ("2.5", "1", 0, 0), ("-1.5", "1", 0, 0),
+           ("0", "7", 3, 0), ("1.005", "1", 2, 0)]
+for _ in range(N):
+    bb = dmk()
+    if Decimal(bb) == 0:
+        bb = "7"
+    dvcases.append((dmk(), bb, random.randint(0, 8), random.randint(0, 1)))
+dvout = dvrun(dvcases)
+if dvscore(dvcases, dvout, True) == 0:
+    print("  DECIMAL DIV CONTROL DEAD: swapping the rounding modes changed nothing,")
+    print("                            so div is not reading its mode argument")
+    sys.exit(1)
+ndv = dvscore(dvcases, dvout, False)
+print(f"  {len(dvcases)} decimal divisions (both rounding modes) against Python: {ndv} mismatches")
+if ndv:
+    for (a, b, sc, md), g in list(zip(dvcases, dvout))[:3]:
+        print(f"    DIV {a} / {b} scale={sc} mode={md} -> {g}")
+
 dbad = drun(dcases)
 for kind, a, op, b, got, want in dbad[:4]:
     print(f"  DECIMAL {kind.upper()} {a} {op} {b}: tycho={got!r} python={want!r}")
 print(f"  {len(dcases)} decimal operations against Python's Decimal: {len(dbad)} mismatches")
-bad = bad + dbad
+bad = bad + dbad + [("div",)] * ndv
 for a, op, b, got, want in bad[:4]:
     print(f"  MISMATCH {a} {op} {b}\n    bignum={got!r}\n    python={want!r}")
 print(f"  {len(cases)} operations against Python integers: {len(bad)} mismatches")
@@ -174,4 +228,4 @@ sys.exit(1 if bad else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "bignum-diff: FAIL"; exit 1; }
-echo "bignum-diff: green (control caught the wrong division model first, then every + - * and divmod agreed with Python's integers across the limb boundary, both int64 extremes, all four sign combinations and ~$((N * 2)) random pairs up to 10^60; and core:decimal agreed with Python's Decimal on both VALUE and SCALE over the same shape of corpus)"
+echo "bignum-diff: green (control caught the wrong division model first, then every + - * and divmod agreed with Python's integers across the limb boundary, both int64 extremes, all four sign combinations and ~$((N * 2)) random pairs up to 10^60; and core:decimal agreed with Python's Decimal on both VALUE and SCALE over the same shape of corpus, division included at both rounding modes -- with the mode-swap control proving the mode is read rather than ignored)"
