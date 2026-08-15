@@ -90,10 +90,17 @@ fn exec(d: inout Db, sql: string) -> Result(int, string):
 # back as a string; deciding that is FRICTION #69, not a silent behaviour change.
 fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
     st := null
-    # len(sql), not -1, for the same reason as the bind below: -1 stops at the
-    # first NUL, so a statement carrying one would silently become a DIFFERENT
-    # query. Program-authored rather than attacker-supplied, so this is the
-    # cheaper sibling of that fix, not a second vulnerability.
+    # len(sql), not -1. Unlike the bind below, this one is NOT observable and
+    # cannot be gated -- measured 2026-08-15 by running both spellings over a NUL
+    # inside a literal, after the statement, and mid-keyword: identical results
+    # on every row. prepare_v2 only ever compiles the FIRST statement, so a NUL
+    # is either inside it (a syntax error either way) or after it (discarded
+    # either way, since pzTail is NULL).
+    #
+    # Kept because passing a length you have is right and costs nothing, and
+    # because the -1 spelling stops being safe the moment pzTail is read to
+    # support multi-statement input -- which is the open half of FRICTION #69.
+    # gap: no fixture can redden for this line today; the check is this comment.
     if sqlite3_prepare_v2(d.h, sql, len(sql), &st, null) != 0:
         return Err(errmsg(d))
     for i := 0; i < len(params); i += 1:
