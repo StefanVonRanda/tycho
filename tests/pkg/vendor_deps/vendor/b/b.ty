@@ -1,0 +1,6 @@
+package b
+import "core:strings"
+
+# A vendored package may reach the core library exactly as a top-level one does.
+fn shout(s: string) -> string:
+    return strings.to_upper(s)

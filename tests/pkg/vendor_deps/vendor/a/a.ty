@@ -1,0 +1,7 @@
+package a
+import "../b"
+
+# ...and a SIBLING vendored package, by relative path. This is the shape a real
+# vendored dependency tree has: dependencies with dependencies of their own.
+fn greet(n: string) -> string:
+    return b.shout("hi " + n)

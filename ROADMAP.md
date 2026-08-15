@@ -600,22 +600,37 @@ correctly on them — and the stack-overflow guard, the one piece with
 per-architecture code, is exactly the kind that compiles everywhere and works in
 one place. What is needed is a real machine, not a port.
 
-### 2. A story for using other people's code
+### 2. ~~A story for using other people's code~~ — **DECIDED 2026-08-15: vendoring, Odin-style**
 
-There is no module resolution beyond `corelib`: `import` reaches the standard
-library and files beside the entry point, and there is no mechanism for depending
-on code you did not write. A package manager is currently listed as a non-goal,
-justified by the premise above.
+**The decision, from the owner:** follow Odin and Go — *vendor your dependencies
+like Odin, and ship an extensive core library like Go.* No package manager, no
+registry, no lockfile. A dependency is a directory you commit.
 
-Three honest positions, and one of them has to be chosen:
+**It already works, and needed no compiler change.** `resolve_pkg_dir`
+(`src/tychoc.c@resolve_pkg_dir`) resolves a non-`core:` import relative to the
+importing FILE's directory, so `vendor/` is a directory like any other:
 
-- ship a package manager;
-- specify a vendoring or path convention that makes third-party code *possible*
-  without a registry;
-- stay batteries-included-only and say so as a deliberate product decision, in
-  the README, where someone evaluating the language will read it.
+```
+app/
+  main.ty          package main; import "vendor/a"
+  vendor/
+    a/a.ty         package a;    import "../b"      <- a sibling dependency
+    b/b.ty         package b;    import "core:strings"
+```
 
-Doing nothing is the only option that is not a decision.
+Verified end to end, not assumed: a vendored package reaches `core:` exactly as a
+top-level one does, and reaches a sibling by relative path. `tests/pkg/vendor_deps/`
+gates both shapes — it is a convention nothing enforced, so it worked by
+construction and would have broken in silence.
+
+**What this buys, and what it costs.** No resolver, no version solver, no central
+index to run or trust, and a build that is exactly what is committed. The cost is
+transitive-dependency management by hand and no mechanical way to learn that a
+vendored copy has a security fix upstream — the same trade Odin makes, taken
+deliberately rather than by omission.
+
+**Still to write:** the convention belongs in `docs/` where a user will find it.
+The mechanism is gated; the documentation is not written.
 
 ### 3. The promise, written down
 

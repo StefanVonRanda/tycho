@@ -1,0 +1,12 @@
+package main
+import "vendor/a"
+import "core:strings"
+
+# VENDORED DEPENDENCIES, the Odin-style convention: a non-core import resolves
+# relative to the importing FILE's directory (src/tychoc.c@resolve_pkg_dir), so
+# `vendor/` is a directory like any other and needs no compiler support, no
+# manifest and no registry. This fixture exists because that is a CONVENTION
+# nothing enforced -- it worked by construction and would have broken silently.
+fn main():
+    println(a.greet("nested"))
+    println(strings.to_lower(a.greet("both")))
