@@ -29,6 +29,11 @@ fn unwrap_len(v: Option(toml.Value)) -> int:        # array length or -999
         _:
             return -999
 
+fn show_one(doc: string):
+    match toml.parse(doc):
+        Ok(v): println("ok")
+        Err(e): println("err " + e)
+
 fn main():
     lines := ["# a comment", "title = \"tycho\\u0041\"", "count = 42",
         "ratio = 1.5", "on = true", "hex = 0xFF", "oct = 0o17", "bin = 0b1010",
@@ -84,3 +89,15 @@ fn main():
         Ok(_):
             bad_err = false
     print("bad=" + str(bad_err) + "\n")
+    # NESTED ARRAYS and COMMAS INSIDE STRINGS. `split(body, ",")` was not aware
+    # of either, so these four were REFUSED -- "bad number: 3]" and
+    # "unterminated basic string" -- while being valid TOML.
+    show_one("a = [1, [2, 3]]")
+    show_one("a = [\"x,y\"]")
+    show_one("a = [\"a,b\", [1, 2], \"c\"]")
+    show_one("a = [1, [2, [3, 4]], 5]")
+    # FAIL-CLOSED, which this package's header promises and did not deliver:
+    # each of these was accepted, with a value invented or a key silently lost.
+    show_one("a = [1, 2")            # was [1] -- an element dropped
+    show_one("a = \"x\" y")          # was "x" -- trailing text discarded
+    show_one("a = 1\na = 2")         # was 2 -- a duplicate key overrode silently

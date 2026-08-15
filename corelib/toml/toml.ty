@@ -204,6 +204,11 @@ fn parse_basic(t: string) -> Result(Value, string):
     for i < len(t):
         c := t[i]
         if c == 34:
+            # Nothing may follow the closing quote. `a = "x" y` used to return
+            # Ok("x") and drop the ` y`, which is the fail-open shape this
+            # package's own header rules out ("nothing is guessed").
+            if i != len(t) - 1:
+                return Err("trailing text after a string value: " + t)
             return Ok(TStr(out))
         if c == 92:                # backslash escape
             i = i + 1
@@ -368,13 +373,50 @@ fn parse_number(t: string) -> Result(Value, string):
         iv = -iv
     return Ok(TInt(iv))
 
+# Split an array body on the commas that SEPARATE ELEMENTS -- not the ones inside
+# a nested array or a quoted string. `split(body, ",")` did neither, so
+# `[1, [2, 3]]` came apart into `[1`, `[2` and `3]` ("bad number: 3]") and
+# `["x,y"]` into `["x` and `y"]` ("unterminated basic string"). Both are valid
+# TOML and both were refused; `[[1],[2]]` worked only because no comma fell
+# inside an element.
+fn split_items(body: string) -> [string]:
+    out := []string
+    depth := 0
+    instr := false
+    quote := 0
+    start := 0
+    for i := 0; i < len(body); i += 1:
+        c := body[i]
+        if instr:
+            if c == 92 and quote == 34:        # a backslash escape, basic strings only
+                i = i + 1
+            elif c == quote:
+                instr = false
+        elif c == 34 or c == 39:
+            instr = true
+            quote = c
+        elif c == 91:
+            depth = depth + 1
+        elif c == 93:
+            depth = depth - 1
+        elif c == 44 and depth == 0:
+            push(out, body[start:i])
+            start = i + 1
+    push(out, body[start:len(body)])
+    return out
+
 fn parse_array(t: string) -> Result(Value, string):
+    # The terminator is CHECKED, like the literal-string branch in parse_value.
+    # Without this, `[1, 2` had its last byte stripped as if it were the `]`,
+    # leaving `1,`, and the array came back as [1] -- an element silently lost.
+    if len(t) < 2 or t[len(t) - 1] != 93:
+        return Err("unterminated array: " + t)
     body := strings.trim(t[1:len(t) - 1])
     if body == "":
         return Ok(TArr([]Value))
     if body[len(body) - 1] == 44:      # trailing comma
         body = strings.trim(body[0:len(body) - 1])
-    items := split(body, ",")
+    items := split_items(body)
     arr := []Value
     for it in items:
         it2 := strings.trim(it)
@@ -471,6 +513,15 @@ fn parse(s: string) -> Result(Value, string):
         kp := parse_key(key)
         if len(kp) == 0:
             return Err("empty key in: " + ln)
+        if len(kp) == 1:
+            # TOML forbids redefining a key. Accepting it silently meant a later
+            # line overrode an earlier one with no diagnostic -- in a config file
+            # that is an override nobody can see.
+            match cur:
+                TTable(eks, evs):
+                    if index_of(eks, kp[0]) >= 0:
+                        return Err("duplicate key: " + kp[0])
+                _: pass
         match parse_value(val):
             Ok(v):
                 cur = assign(cur, kp, v)

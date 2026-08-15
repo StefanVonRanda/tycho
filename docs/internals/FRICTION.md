@@ -5001,3 +5001,39 @@ read back with no fields, and a two-field row of empties must still write a bare
 `tycho-q` and `tycho-agg` both write CSV through this function; q-check and
 agg-check are green either way, which is what makes this a silent data loss
 rather than a visible one.
+
+### 62. `core:toml` guessed, in both directions — **PARTLY FIXED 2026-08-15**
+
+The package header says `parse` "returns Err(what-was-wrong) on any malformed
+input (fail-closed; nothing is guessed)". Differentialled against Python's
+`tomllib`, it guessed eight ways, and refused four documents that are valid.
+
+**Accepted and invented a value** (now refused):
+
+| input | was | why it matters |
+|---|---|---|
+| `a = [1, 2` | `[1]` | the closing `]` was never checked, so the last byte was stripped as if it were one and an element vanished |
+| `a = "x" y` | `"x"` | everything after the closing quote was discarded -- the fail-open shape of #34 and #59 |
+| `a = 1` then `a = 2` | `2` | a duplicate key overrode silently; in a config file that is an override nobody can see |
+
+**Refused although valid** (now accepted). One cause: `split(body, ",")` knew
+nothing about nesting or quoting.
+
+    a = [1, [2, 3]]        -> "bad number: 3]"
+    a = ["x,y"]            -> "unterminated basic string"
+    a = ["a,b", [1, 2]]    -> the same
+    a = [1, [2, [3, 4]]]   -> the same
+
+`[[1],[2]]` worked, which is what kept this hidden: it is the nested case with no
+comma inside an element.
+
+**Still lenient, deliberately deferred:** `a = 01`, `a = 1__0`, `a = 1.`,
+`a b = 1` and a repeated `[t]` header are all accepted where tomllib refuses.
+They are number-grammar and header rules rather than invented values or lost
+data, and each needs its own decision about how much of TOML v1.0 this subset
+means to enforce. **The header's "nothing is guessed" is still too strong for
+those five and should be narrowed or the cases fixed** -- naming them here so the
+choice is made rather than defaulted into.
+
+Controls: restoring the naive split reddens the golden, and so does dropping the
+array terminator check, independently.

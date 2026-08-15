@@ -17,3 +17,10 @@ users=2
 missing=true
 cross=true
 bad=true
+ok
+ok
+ok
+ok
+err unterminated array: [1, 2
+err trailing text after a string value: "x" y
+err duplicate key: a
