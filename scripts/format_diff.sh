@@ -33,7 +33,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json" "$T/enc"
+mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -100,6 +100,29 @@ fn main():
         out = out + "\t" + hex.encode(base64.decode(base64.encode(s)))
         println(out)
 TY
+cat > "$T/dt/main.ty" <<'TY'
+package main
+import "core:datetime"
+import "core:io"
+import "core:strings"
+
+# One unix timestamp per line; six properties, space separated.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        dt := datetime.from_unix(strings.parse_int(line))
+        wd := datetime.weekday(dt.year, dt.month, dt.day)
+        out := datetime.format_iso(dt)
+        out = out + " " + datetime.weekday_name(wd)
+        out = out + " " + datetime.month_name(dt.month)
+        out = out + " " + str(datetime.is_leap(dt.year))
+        out = out + " " + str(datetime.days_in_month(dt.year, dt.month))
+        out = out + " " + str(datetime.to_unix(dt))
+        println(out)
+TY
+./tychoc "$T/dt/main.ty" -o "$T/dtp" > "$T/b4.log" 2>&1 || {
+    echo "format-diff: FAILED (the datetime harness does not build)"; tail -4 "$T/b4.log"; exit 1; }
 ./tychoc "$T/enc/main.ty" -o "$T/encp" > "$T/b3.log" 2>&1 || {
     echo "format-diff: FAILED (the codec harness does not build)"; tail -4 "$T/b3.log"; exit 1; }
 ./tychoc "$T/csv/main.ty"  -o "$T/csvp"  > "$T/b1.log" 2>&1 || {
@@ -226,8 +249,46 @@ for k, v in ebad.items():
     fail += len(v)
 print(f"  {len(blobs)} inputs x 6 codecs against hashlib / base64 / urllib: "
       f"{sum(len(v) for v in ebad.values())} mismatches")
+# ---- core:datetime ----------------------------------------------------------
+# Civil-calendar arithmetic, where the interesting inputs are the ones a naive
+# leap rule gets wrong: 1900 and 2100 are NOT leap years, 2000 is.
+import calendar, datetime as dtm
+ts = [0, 1, -1, -86400, 86399, 86400, 951782400, 1709164800, 4107542400,
+      -2208988800, 253402300799, 1234567890, 2147483647, 2147483648]
+ts += [random.randint(-3155760000, 4102444800) for _ in range(N)]
+p = pathlib.Path(T + "/dtin.txt"); p.write_text("\n".join(str(t) for t in ts) + "\n")
+dout = subprocess.run([T + "/dtp", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+def props(t):
+    d = dtm.datetime(1970, 1, 1, tzinfo=dtm.timezone.utc) + dtm.timedelta(seconds=t)
+    # format_iso is documented as "YYYY-MM-DDTHH:MM:SS" (UTC, NO suffix) at
+    # corelib/datetime/datetime.ty -- expecting a trailing Z was the oracle's
+    # error, not the code's, and it flagged all 414.
+    return [d.strftime("%Y-%m-%dT%H:%M:%S"), d.strftime("%a"), d.strftime("%b"),
+            str(calendar.isleap(d.year)).lower(),
+            str(calendar.monthrange(d.year, d.month)[1]), str(t)]
+
+# the control: an expectation shifted by one second must be caught
+if dout and dout[0].split(" ")[0] == props(ts[0] + 1)[0]:
+    print("  DATETIME CONTROL DEAD: a one-second shift compared equal"); sys.exit(1)
+
+names = ["iso", "weekday", "month", "leap", "days_in_month", "to_unix roundtrip"]
+dbad = {}
+for t, line in zip(ts, dout):
+    f = line.split(" ")
+    if len(f) != 6:
+        dbad.setdefault("harness", []).append((t, line)); continue
+    for n, g, w in zip(names, f, props(t)):
+        if g != w:
+            dbad.setdefault(n, []).append((t, g, w))
+for k, v in dbad.items():
+    print(f"  datetime {k}: {len(v)} mismatches; first {v[0]}")
+    fail += len(v)
+print(f"  {len(ts)} timestamps x 6 datetime properties against Python: "
+      f"{sum(len(v) for v in dbad.values())} mismatches")
+
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31)"
