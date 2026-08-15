@@ -1,6 +1,7 @@
 #!/bin/sh
-# Differential-test the two TEXT FORMATS against independent implementations:
-# core:csv against Python's `csv` module, core:json against Python's `json`.
+# Differential-test the FORMATS AND CODECS against independent implementations:
+# core:csv against Python's `csv`, core:json against Python's `json`, and
+# sha256 / md5 / base64 / hex / url against hashlib, base64 and urllib.
 #
 # `make corelib` checks both against goldens THIS REPO RECORDED. That proves they
 # have not changed; it cannot prove they were ever right. For a format the whole
@@ -16,6 +17,11 @@
 # indistinguishable from one that is not comparing: a deliberately wrong
 # expectation must be caught, and the correct one must not be.
 #
+# A digest is the case where "agrees with its own golden" is least reassuring:
+# sha256 has one right answer per input, published everywhere, and this repo's
+# archiver stakes file integrity on it. The lengths cover every block boundary a
+# padding bug hides behind.
+#
 #   N=<count> sh scripts/format_diff.sh    generated cases per format (default 400)
 set -eu
 
@@ -27,7 +33,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json"
+mkdir -p "$T/csv" "$T/json" "$T/enc"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -66,6 +72,36 @@ fn main():
             continue
         println(json.stringify(json.parse(line)))
 TY
+cat > "$T/enc/main.ty" <<'TY'
+package main
+import "core:io"
+import "core:sha256"
+import "core:md5"
+import "core:base64"
+import "core:hex"
+import "core:url"
+
+# One hex-encoded input per line, "-" for the EMPTY input. Encoding empty as an
+# empty line and skipping blanks shifted every answer by one and made all six
+# codecs look broken, sha256("") included -- the instrument, not the code.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        h := line
+        if h == "-":
+            h = ""
+        s := hex.decode(h)
+        out := sha256.hex(s)
+        out = out + "\t" + md5.hex(s)
+        out = out + "\t" + base64.encode(s)
+        out = out + "\t" + hex.encode(s)
+        out = out + "\t" + url.encode(s)
+        out = out + "\t" + hex.encode(base64.decode(base64.encode(s)))
+        println(out)
+TY
+./tychoc "$T/enc/main.ty" -o "$T/encp" > "$T/b3.log" 2>&1 || {
+    echo "format-diff: FAILED (the codec harness does not build)"; tail -4 "$T/b3.log"; exit 1; }
 ./tychoc "$T/csv/main.ty"  -o "$T/csvp"  > "$T/b1.log" 2>&1 || {
     echo "format-diff: FAILED (the csv harness does not build)";  tail -4 "$T/b1.log"; exit 1; }
 ./tychoc "$T/json/main.ty" -o "$T/jsonp" > "$T/b2.log" 2>&1 || {
@@ -146,8 +182,52 @@ for s, g, b in jbad[:3]:
     print(f"  JSON {s[:50]} -> wrote {g[:50]} -> read back {str(b)[:50]}")
 print(f"  {len(docs)} documents through json.parse -> json.stringify -> Python json: {len(jbad)} mismatches")
 fail += len(jbad)
+
+# ---- the codecs: sha256, md5, base64, hex, url ------------------------------
+# Lengths cover every block boundary that can hide a padding bug: 55/56/57 is
+# where sha256 and md5 must spill into a second block, and 63/64/65, 127/128/129
+# the same for the block size itself.
+import base64 as b64, hashlib, urllib.parse as up
+lens = [0, 1, 2, 3, 4, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129, 255, 256, 1000]
+blobs = [bytes(random.randrange(256) for _ in range(n)) for n in lens]
+blobs += [bytes([0]), bytes([255]), b"abc", b"The quick brown fox jumps over the lazy dog"]
+blobs += [bytes(random.randrange(256) for _ in range(random.randint(0, 300))) for _ in range(N)]
+p = pathlib.Path(T + "/ein.txt")
+p.write_text("\n".join(c.hex() or "-" for c in blobs) + "\n")
+eout = subprocess.run([T + "/encp", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+# the control: sha256("") is the most-published digest there is, so if the FIRST
+# line does not carry it the harness is misaligned and nothing below means
+# anything. That is exactly how this was written the first time -- the empty
+# input became an empty line, the reader skipped it, and all six codecs appeared
+# broken on 321 of 323 inputs.
+E3B = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+if not eout or eout[0].split("\t")[0] != E3B:
+    print(f"  CODEC CONTROL DEAD: line 1 should be sha256(\"\") = {E3B[:16]}...,")
+    print(f"                      got {eout[0][:70] if eout else '<nothing>'}")
+    sys.exit(1)
+
+ebad = {}
+for c, line in zip(blobs, eout):
+    f = line.split("\t")
+    if len(f) != 6:
+        ebad.setdefault("harness", []).append((c.hex()[:20], line[:40])); continue
+    sha, md, b64s, hx, ue, rt = f
+    for name, got, want in (("sha256", sha, hashlib.sha256(c).hexdigest()),
+                            ("md5", md, hashlib.md5(c).hexdigest()),
+                            ("base64", b64s, b64.b64encode(c).decode()),
+                            ("hex", hx, c.hex()),
+                            ("base64 round trip", rt, c.hex()),
+                            ("url", ue, up.quote(c, safe=""))):
+        if got != want:
+            ebad.setdefault(name, []).append((c.hex()[:24], got[:34], want[:34]))
+for k, v in ebad.items():
+    print(f"  {k}: {len(v)} mismatches; first {v[0]}")
+    fail += len(v)
+print(f"  {len(blobs)} inputs x 6 codecs against hashlib / base64 / urllib: "
+      f"{sum(len(v) for v in ebad.values())} mismatches")
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary)"
