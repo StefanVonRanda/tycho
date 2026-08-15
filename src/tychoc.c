@@ -3055,6 +3055,14 @@ static Expr *parse_primary(Parser *ps) {
         return e;
     }
     g_err_col = t->col;
+    /* An INDENT here means the line is indented deeper than the block it is in,
+     * with no construct opening a body. In an indentation-significant language
+     * that is the commonest newcomer mistake, and "expected an expression" says
+     * nothing about it -- name the indentation instead. */
+    if (t->kind == TK_INDENT)
+        die_at(t->line, "unexpected indentation: this line is indented further "
+                        "than the block it belongs to, and nothing above it opens "
+                        "a new block");
     die_at(t->line, "expected an expression");
     return NULL;
 }

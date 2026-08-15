@@ -1,0 +1,8 @@
+# A line indented deeper than its block, with nothing above it opening a body.
+# In an indentation-significant language this is the commonest newcomer mistake,
+# and it used to report "expected an expression", which says nothing about the
+# actual problem.
+# expect: unexpected indentation
+fn main():
+  x := 1
+      y := 2
