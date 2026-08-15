@@ -402,7 +402,7 @@
           <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it, it doesn't copy.</li>
           <li><span class="inl">acc = acc + x</span> in a loop grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n).</li>
         </ul>
-        <p class="muted rv">Where the model helps and where it costs are both measured — as machine-specific ratios, with the workloads that produce them — in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes ↗</a>. Pointer-shaped data like graphs and trees is where value semantics is least free, and the docs are honest about that.</p>
+        <p class="muted rv">Where the model helps and where it costs are both measured — as machine-specific ratios, with the workloads that produce them — in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">performance notes ↗</a>. Pointer-shaped data like graphs and trees is where value semantics is least free, and the docs are honest about that.</p>
       </div>
       <div>
         <div class="panel rv">
@@ -463,12 +463,12 @@
     <div class="spec2 rv">
       <div class="row"><span class="k">Compilers</span><span class="v">Two: a reference written in C, and a frozen compiler <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits.</span></div>
       <div class="row"><span class="k">Corpus</span><span class="v"><span class="cmd">make test</span> builds and runs <b>719 fixtures</b> against committed goldens, each under ASan/UBSan/LeakSanitizer.</span></div>
-      <div class="row"><span class="k">Sanitizers</span><span class="v">A fuzzer runs random programs through <b>two builds of the compiler</b> — native <span class="cmd">-O2</span> against ASan/UBSan — and the disagreement is the oracle; every example is built twice and compared to a golden.</span></div>
+      <div class="row"><span class="k">Sanitizers</span><span class="v">A fuzzer runs random programs through <b>two builds of each program</b> — native <span class="cmd">-O2</span> against ASan/UBSan — and the disagreement is the oracle; every example is built twice and compared to a golden.</span></div>
       <div class="row"><span class="k">Gate</span><span class="v"><span class="cmd">make ci</span> runs the whole check suite on your own machine — there's no cloud CI to take on faith.</span></div>
     </div>
     <p class="muted rv">
       It's experimental in <em>scope</em>, not in rigor — the honest caveats live in the
-      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes ↗</a>.
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">performance notes ↗</a>.
     </p>
   </section>
 
@@ -532,7 +532,7 @@ the generated C to. Building from source below ends at the same prompt.</p>
       </div>
       <div class="col">
         <b>Guides</b>
-        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">Performance notes</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">Performance &amp; memory</a>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/from-c-to-arenas.md">malloc → arenas</a>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/memory-model.md">Memory model</a>
       </div>
