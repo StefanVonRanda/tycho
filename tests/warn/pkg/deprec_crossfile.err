@@ -1,0 +1,2 @@
+tests/warn/pkg/deprec_crossfile/main.ty:13: warning: `old.stale` is deprecated: use fresh(x) instead. Removed in 1.0.
+    13 |     println(str(old.stale(3)))

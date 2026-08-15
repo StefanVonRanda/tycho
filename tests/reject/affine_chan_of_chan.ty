@@ -1,4 +1,4 @@
-# Phase 20: ... nor a channel element (tychoc: chan_of, src/tychoc.c:693-695).
+# Phase 20: ... nor a channel element (tychoc: chan_of, src/tychoc.c:703-705).
 # BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
 fn f(v: Channel(Channel(int))) -> int:
     return 1

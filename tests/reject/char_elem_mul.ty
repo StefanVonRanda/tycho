@@ -1,9 +1,9 @@
 # `*` is not defined element-wise on [char], because `*` is not defined on char:
-# the element-wise table (src/tychoc.c:1108) gives the char arm `+` and `-` only.
+# the element-wise table (src/tychoc.c:1118) gives the char arm `+` and `-` only.
 # The positive half of the same rule is tests/char_elem_ops.ty.
 #
 # `[char]` is never written here -- it cannot be (docs/spec/03-types.md:75) -- it
-# is inferred from the element type of `char_at` (src/tychoc.c:5003).
+# is inferred from the element type of `char_at` (src/tychoc.c:5013).
 fn main():
     s := "ABC"
     a := [char_at(s, 0), char_at(s, 1)]

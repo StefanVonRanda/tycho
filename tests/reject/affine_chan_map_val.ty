@@ -1,4 +1,4 @@
-# Phase 20: ... nor a map value (tychoc: mapc_of, src/tychoc.c:1088-1090).
+# Phase 20: ... nor a map value (tychoc: mapc_of, src/tychoc.c:1098-1100).
 fn f(v: [string: Channel(int)]) -> int:
     return len(v)
 

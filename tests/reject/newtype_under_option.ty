@@ -1,4 +1,4 @@
-# 03-types.md:334-338 / src/tychoc.c:4071-4073: a newtype MUST NOT wrap an Option.
+# 03-types.md:334-338 / src/tychoc.c:4081-4083: a newtype MUST NOT wrap an Option.
 # Accepted by tychoc0 before the front-door plan, and the emitted C compiled and RAN.
 type A = Option(int)
 

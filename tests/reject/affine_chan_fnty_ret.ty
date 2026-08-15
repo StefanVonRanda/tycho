@@ -1,4 +1,4 @@
-# Phase 20: ... nor a function-VALUE return (tychoc: func_of, src/tychoc.c:1109).
+# Phase 20: ... nor a function-VALUE return (tychoc: func_of, src/tychoc.c:1119).
 fn f(g: fn(int) -> Channel(int)) -> int:
     return 1
 

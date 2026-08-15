@@ -1,0 +1,7 @@
+package inn
+# This fn sits on line 6, exactly where old/old.ty's deprecated fn does. Before
+# 2026-08-15 dnote_above matched on the LINE NUMBER ALONE with no file identity,
+# so calling it warned -- with old.ty's message. corelib hit this for real:
+# corelib/sort/sort.ty:109 marked `crypto.aead_decrypt`, telling every caller of
+fn innocent(x: int) -> int:      # a security function to "use sort_by".
+    return x * 2

@@ -1,0 +1,13 @@
+package main
+
+# Both halves in one golden, the shape tests/warn/pkg/corelib_mute uses:
+#   half 1 -- inn.innocent must NOT warn, though it sits on the same line
+#             number as old.stale does in its own file;
+#   half 2 -- old.stale MUST warn, or a fix that simply stopped attaching
+#             notes at all would pass half 1 on its own.
+import "old"
+import "inn"
+
+fn main():
+    println(str(inn.innocent(3)))
+    println(str(old.stale(3)))

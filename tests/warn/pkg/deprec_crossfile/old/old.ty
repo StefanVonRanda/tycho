@@ -1,0 +1,10 @@
+package old
+# Line 5 below is the marker and line 6 is the fn it marks. inn/inn.ty puts an
+# INNOCENT fn on its own line 6, which is the whole fixture: notes accumulate
+# across every file in the closure and line numbers restart in each.
+# deprecated: use fresh(x) instead. Removed in 1.0.
+fn stale(x: int) -> int:
+    return x + 1
+
+fn fresh(x: int) -> int:
+    return x + 1
