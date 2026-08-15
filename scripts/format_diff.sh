@@ -38,7 +38,7 @@ trap 'rm -rf "$T"' EXIT
 command -v python3 >/dev/null 2>&1 || { echo "format-diff: SKIPPED (no python3)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
-mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf" "$T/pa" "$T/u8"
+mkdir -p "$T/csv" "$T/json" "$T/enc" "$T/dt" "$T/so" "$T/pf" "$T/pa" "$T/u8" "$T/rx"
 cat > "$T/csv/main.ty" <<'TY'
 package main
 import "core:csv"
@@ -210,6 +210,30 @@ fn main():
             v = 1
         println(str(v) + " " + str(utf8.count(s)))
 TY
+cat > "$T/rx/main.ty" <<'TY'
+package main
+import "core:regex"
+import "core:io"
+import "core:strings"
+
+# "pattern<TAB>subject" per line -> 1 / 0, or E if the pattern was rejected.
+fn main():
+    for line in io.read_lines(args()[1]):
+        if line == "":
+            continue
+        pat, subj := strings.split_once(line, "\t")
+        re := regex.compile(pat)
+        if not regex.ok(re):
+            println("E")
+            continue
+        if regex.is_match(re, subj):
+            println("1")
+        else:
+            println("0")
+        regex.release(re)
+TY
+./tychoc "$T/rx/main.ty" -o "$T/rxp" > "$T/b9.log" 2>&1 || {
+    echo "format-diff: FAILED (the regex harness does not build)"; tail -4 "$T/b9.log"; exit 1; }
 ./tychoc "$T/u8/main.ty" -o "$T/u8p" > "$T/b8.log" 2>&1 || {
     echo "format-diff: FAILED (the utf8 harness does not build)"; tail -4 "$T/b8.log"; exit 1; }
 ./tychoc "$T/pa/main.ty" -o "$T/pap" > "$T/b7.log" 2>&1 || {
@@ -592,8 +616,47 @@ print(f"  {len(upairs)} byte strings through utf8.valid/count against Python's s
       f"decoder ({nvalid} valid, {len(upairs) - nvalid} invalid): {len(ubad)} mismatches")
 fail += len(ubad)
 
+# ---- core:regex -------------------------------------------------------------
+# ONLY is_match is compared, and the reason is the whole care of this leg: POSIX
+# ERE is leftmost-LONGEST while Python's re is leftmost-first, so the two pick
+# different SPANS -- `(a|ab)` on "ab" is "ab" in ERE and "a" in Python. The
+# LANGUAGE each pattern accepts is the same for standard constructs, so
+# membership is comparable and offsets are not. Comparing spans here would have
+# produced a pile of "defects" that are a documented dialect difference.
+#
+# The construct set is chosen to be portable BOTH ways: no \d, \w or \b (not
+# ERE), no [[:digit:]] (not Python), no lazy quantifiers (not ERE).
+rpats = ["abc", "a.c", "a*", "a+", "a?", "^abc$", "[abc]+", "[^abc]+", "a|b",
+         "(ab)+", "x{2,3}", "^$", ".", "[0-9]+", "[a-z]+[0-9]*", "(a|b)c",
+         "a(b|c)d", "^[A-Za-z_][A-Za-z0-9_]*$", "col{1,2}or", "(ab|cd)ef",
+         "[.]", "a\\.c", "[]]", "[-a]", "(|a)b"]
+rsubs = ["", "a", "abc", "aabbcc", "xyz", "AB12", "a.c", "axc", "ab", "abab",
+         "x", "xx", "xxx", "color", "colour", "abef", "cdef", "_id9", "9id",
+         "-a", "]", "b"]
+rcases = [(pp, ss) for pp in rpats for ss in rsubs]
+p = pathlib.Path(T + "/rxin.txt")
+p.write_text("\n".join(f"{pp}\t{ss}" for pp, ss in rcases) + "\n")
+rout = subprocess.run([T + "/rxp", str(p)], capture_output=True, text=True).stdout.split("\n")
+
+rpairs = [(c, g) for c, g in zip(rcases, rout) if g in ("0", "1")]
+nm = sum(1 for _, g in rpairs if g == "1")
+if nm == 0 or nm == len(rpairs):
+    print(f"  REGEX CONTROL DEAD: {nm} of {len(rpairs)} matched -- one side is untested")
+    sys.exit(1)
+if sum(1 for (pp, ss), g in rpairs if (g == "1") != (re.search(pp, ss) is None)) != len(rpairs):
+    print("  REGEX CONTROL DEAD: the inverted expectation did not disagree everywhere")
+    sys.exit(1)
+
+rbad = [(pp, ss, g) for (pp, ss), g in rpairs
+        if (g == "1") != (re.search(pp, ss) is not None)]
+for b in rbad[:4]:
+    print(f"  regex /{b[0]}/ vs {b[1]!r}: tycho={b[2]} python={not (b[2] == '1')}")
+print(f"  {len(rpairs)} pattern x subject pairs through regex.is_match against Python re "
+      f"({nm} match, {len(rpairs) - nm} no-match): {len(rbad)} mismatches")
+fail += len(rbad)
+
 sys.exit(1 if fail else 0)
 PY
 rc=$?
 [ "$rc" -eq 0 ] || { echo "format-diff: FAIL"; exit 1; }
-echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included; and path.safe_join never returns a path that escapes its base and never refuses one that stays inside, over hundreds of hostile relative paths, with the counts printed above rather than repeated here; and core:utf8 agrees with Python's strict decoder on validity and codepoint count, overlong encodings, surrogates and out-of-range sequences all refused)"
+echo "format-diff: green (both controls live first, then every csv row-set survives stringify and Python's csv.reader -- including a row of one empty field, a quote, an embedded comma and an embedded newline -- and every json document survives parse+stringify and Python's json, including surrogate pairs, a control character, 1e308 and -0; and sha256, md5, base64, hex and url agree with hashlib, base64 and urllib on every input, at every hash block boundary; and core:datetime agrees with Python's datetime and calendar on 414 timestamps including the 1900 and 2100 non-leap centuries, 2000-02-29 and both sides of 2^31; and core:sort agrees with Python's sorted on value order AND on tie order, with the stability leg proved to discriminate rather than assumed to; and strings.parse_float accepts exactly its documented grammar and returns bit-identical doubles to Python, min subnormal included; and path.safe_join never returns a path that escapes its base and never refuses one that stays inside, over hundreds of hostile relative paths, with the counts printed above rather than repeated here; and core:utf8 agrees with Python's strict decoder on validity and codepoint count, overlong encodings, surrogates and out-of-range sequences all refused; and core:regex agrees with Python's re on MEMBERSHIP over a construct set portable to both, spans deliberately not compared because POSIX is leftmost-longest and Python is leftmost-first)"
