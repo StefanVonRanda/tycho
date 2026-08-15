@@ -171,15 +171,29 @@ not read this repository.
 
 If you find a memory-safety or other security issue in the **transpiler or
 runtime** (a miscompile that breaks the language's value-semantics/arena
-guarantees, an arena/UAF bug, and so on), please report it privately rather than
-opening a public issue:
+guarantees, an arena/UAF bug, and so on), here is how to get it to the
+maintainer without publishing it first.
 
-- Use GitHub's **private vulnerability reporting** ("Report a vulnerability"
-  under the repository's **Security** tab), or
-- contact the maintainer directly.
+**There is no private reporting channel configured on this repository.** GitHub's
+private vulnerability reporting is **off**, so the "Report a vulnerability" button
+does not exist under the Security tab — an earlier version of this file told you
+to use it, which was wrong (checked against the repository's own settings,
+2026-08-15).
 
-Include a minimal `.ty` (or input) that reproduces it, plus your platform.
-Expect a best-effort reply, not an SLA.
+So, for something genuinely sensitive:
+
+1. Open an ordinary issue containing **only** that you have a security report and
+   asking for a private channel — no details, no reproducer, no affected version.
+   That much is safe in public.
+2. Wait for a reply with somewhere to send it. The maintainer's address is also in
+   the git history on every commit, if you would rather go straight there.
+
+Then include a minimal `.ty` (or input) that reproduces it, plus your platform.
+Expect a best-effort reply, not an SLA — this is one person's project.
+
+**If the finding is not sensitive** — a crash, a miscompile, a wrong answer with
+no security consequence — skip all of that and file it publicly. Most findings
+are this, and treating them as embargoed helps nobody.
 
 Routine miscompiles and crashes that aren't security-sensitive are fine to file
 as ordinary [bug reports](.github/ISSUE_TEMPLATE/bug_report.md).
