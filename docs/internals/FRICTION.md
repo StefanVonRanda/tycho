@@ -5570,3 +5570,35 @@ least. Naming it instead: **if `read_bytes` is ever "optimised" into a single
 `st_size`-sized read, every `/proc` and `/sys` read in every Tycho program starts
 returning empty and no gate in this tree will notice.** That is the note a future
 optimiser needs, and it is cheaper than a non-portable fixture.
+
+### 74. `core:net` really does distinguish its four cases — 2026-08-15
+
+**No defect.** Probed because the header rests its whole error model on one
+claim — *"recv(2) distinguishes those cases; only the return type was throwing
+the distinction away"* — and a claim that load-bearing is exactly where this file
+keeps finding code that delivers it in one respect and not the one that matters.
+
+It delivers. Four genuinely different real conditions, four different answers:
+
+| condition | result |
+|---|---|
+| the peer closes cleanly | `Err(Eof)` |
+| the peer stays silent past `SO_RCVTIMEO` | `Err(Timeout)` |
+| a bad fd, and a refused connection | `Err(Failed)` |
+| a host string with an interior NUL | `Err(BadAddr)` |
+
+The probe needs no external control: **four distinct answers from four distinct
+causes IS the control.** If the type were collapsing cases — the pre-2026-07-26
+behaviour the header describes, where empty `bytes` meant EOF, timeout and hard
+error at once — two of those rows would be identical. None are.
+
+**`BadAddr` deserves its own note, because it is the same defect this session
+found in `core:sqlite`.** A host crosses to `getaddrinfo` as a `char*`, which
+ends at the first NUL, so an unguarded call resolves the PREFIX — `"evil.com\0
+.trusted.com"` becomes `evil.com`. `has_nul` refuses it before any syscall, and
+the variant is deliberately not `Failed` because no syscall was made and retrying
+cannot help. That is #70's bug — a bound parameter truncated at its first NUL —
+anticipated at the design stage in one package and shipped in another. **The
+lesson is the sweep, not the fix**: any Tycho `string` reaching C as a `char*`
+without an explicit length has this shape, and `core:net` proves somebody already
+knew.
