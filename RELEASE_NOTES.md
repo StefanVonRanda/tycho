@@ -151,7 +151,7 @@ unsafe by design — see [SECURITY.md](SECURITY.md).
 
 ## Status
 
-0.6 is pre-1.0 and there are **no stability guarantees**: anything here may
+0.7 is pre-1.0 and there are **no stability guarantees**: anything here may
 change — this release broke source compatibility in six places and the next one
 may too. [ROADMAP.md](ROADMAP.md#what-1-0-requires) lists what 1.0 requires, and
 the blocking item is not engineering — it is that nobody outside this repo has

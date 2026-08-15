@@ -7,7 +7,7 @@
 
 # Tycho
 
-> **Status: 0.6 — pre-1.0. No stability guarantees yet.** Tycho is an
+> **Status: 0.7 — pre-1.0. No stability guarantees yet.** Tycho is an
 > experiment testing one idea — implicit arenas under value semantics. It was
 > labelled 1.0 on 2026-08-05 and **demoted to 0.5 on 2026-08-09**, before any
 > release was ever tagged: 1.0 is a promise not to break people, and that
