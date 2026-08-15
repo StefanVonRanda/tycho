@@ -5111,6 +5111,40 @@ and the header now says which of the two this is.
 
 Control: dropping the duplicate-header check reddens `toml` and only `toml`.
 
+### `core:markdown` attribute break-out: probed, clean, and now pinned — 2026-08-15
+
+**Not a defect entry.** A negative result, recorded because the surface is one
+this file has already caught once (#60, `javascript:` and `data:` hrefs emitted
+live) and because a clean security probe is worth nothing without the control
+that proves it could have failed.
+
+#60 fixed the SCHEME. It says nothing about a quote closing an attribute early,
+which is the other half of the same surface: `![" onerror="alert(1)](a.png)` puts
+attacker text where the `alt` value lives, and one unescaped `"` turns the rest
+into markup. Ten payloads across link href, image src, image alt, link text,
+code-fence language, `data:text/html` and `vbscript:` — **every one already
+neutralised.**
+
+The control is what makes that a result. Defeating `esc()` (identity) and
+`safe_url()` (always true) in a corelib copy emits, from the same ten inputs:
+
+```
+<img src="a.png" alt="" onerror="alert(1)">      the attribute genuinely broken out of
+<a href="javascript:alert(1">x</a>
+<img src="javascript:alert(1" alt="x">
+```
+
+So the probe sees holes when they exist. Four of the ten are now in
+`corelib/test/markdown/main.ty`, and each of the two breaks reddens that golden
+**independently**.
+
+**Two of the ten are honestly vacuous and are labelled so in the fixture rather
+than counted.** A quote in link TEXT lands in element content, where it is
+harmless whether escaped or not. And a code-fence language never reaches the
+output at all — there is no `class` attribute to inject into — so that leg
+confirms the language is discarded, not that anything is escaped. Counting either
+as an XSS test passing would inflate the result.
+
 Controls: restoring the naive split reddens the golden, and so does dropping the
 array terminator check, independently.
 

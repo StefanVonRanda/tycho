@@ -34,3 +34,20 @@ fn main():
     println(markdown.render("![k](javascript:alert(1)) ![l](/img/ok.png)"))
     # case and padding must not slip a scheme past the check
     println(markdown.render("[m](JaVaScRiPt:alert`1`) [n](HTTPS://e.com/p)"))
+    # ATTRIBUTE BREAK-OUT, which the scheme check above says nothing about: a
+    # quote inside an alt or a URL closes the attribute early and everything
+    # after it becomes markup. Probed 2026-08-15 and all of these are already
+    # escaped; the lines exist so they stay that way, because #60 is the proof
+    # this surface regresses. Verified NOT vacuous by defeating esc() and
+    # safe_url() in a corelib copy -- the control emitted a live
+    # `alt="" onerror="alert(1)"` and two live javascript: hrefs.
+    println(markdown.render("![\" onerror=\"alert(1)](a.png)"))
+    println(markdown.render("[x](http://a/\" onmouseover=\"alert(1))"))
+    println(markdown.render("![x](http://a/\" onerror=\"alert(1))"))
+    # a quote in link TEXT is element content, not an attribute -- it is escaped
+    # too, but it would be harmless either way, so it is not evidence on its own
+    println(markdown.render("[\" onmouseover=\"alert(1)](http://a)"))
+    # a code-fence language must not reach a class attribute. It is discarded
+    # entirely, so there is nothing to escape -- recorded as the reason rather
+    # than left looking like an escaping test that passed.
+    println(markdown.render("```x\" onload=\"alert(1)\ncode\n```"))

@@ -43,3 +43,14 @@ still</p>
 
 <p>m <a href="HTTPS://e.com/p">n</a></p>
 
+<p><img src="a.png" alt="&quot; onerror=&quot;alert(1)"></p>
+
+<p><a href="http://a/&quot; onmouseover=&quot;alert(1">x</a>)</p>
+
+<p><img src="http://a/&quot; onerror=&quot;alert(1" alt="x">)</p>
+
+<p><a href="http://a">" onmouseover="alert(1)</a></p>
+
+<pre><code>code
+</code></pre>
+
