@@ -516,7 +516,7 @@ eq("404 /emptydir/ (no index.html in it)", status(get(b"/emptydir/")), "HTTP/1.1
 # turn off.
 eq("403 traversal /../../etc/passwd", status(get(b"/../../etc/passwd")), "HTTP/1.1 403 Forbidden")
 eq("403 traversal /a/../../../etc", status(get(b"/a/../../../etc/passwd")), "HTTP/1.1 403 Forbidden")
-# PERCENT-ENCODED traversal. server/main.ty@sanitize decodes ONCE before the
+# PERCENT-ENCODED traversal. server/main.ty@resolve decodes ONCE before the
 # traversal test precisely so %2e%2e cannot hide a "..", and until 2026-08-15
 # nothing sent an encoded byte: both legs above are plain `../`, and the second
 # one's LABEL claimed a %2f it never sent. A label is not a payload.
