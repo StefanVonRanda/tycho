@@ -41,8 +41,13 @@ static const char *const ERRTAG = "!err";     /* non-hex failure sentinel for st
 
 /* ---- recycled hex return buffer (one per thread) ---- */
 static __thread char *g_out = NULL;
+static __thread size_t g_out_n = 0;               /* what is still in it */
 static const char *out_hex(const unsigned char *buf, size_t n) {
     static const char H[] = "0123456789abcdef";
+    /* Wipe the PREVIOUS contents before realloc may copy or release them: this
+       buffer held the last hex produced, and cx_key_export_hex puts a raw secret
+       key through it. */
+    if (g_out && g_out_n) OPENSSL_cleanse(g_out, g_out_n);
     char *p = realloc(g_out, 2 * n + 1);
     if (!p) return ERRTAG;
     g_out = p;
@@ -51,6 +56,7 @@ static const char *out_hex(const unsigned char *buf, size_t n) {
         g_out[2 * i + 1] = H[buf[i] & 0xf];
     }
     g_out[2 * n] = '\0';
+    g_out_n = 2 * n;
     return g_out;
 }
 
@@ -239,6 +245,7 @@ const char *cx_aead_encrypt(void *kp, const char *nonce_hex,
     res = out_hex(ct, (size_t)ctlen);
 done:
     if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (pt) OPENSSL_cleanse(pt, plen);        /* the plaintext, decoded from hex */
     free(nonce); free(pt); free(aad); free(ct);
     return res;
 }
@@ -272,6 +279,7 @@ const char *cx_aead_decrypt(void *kp, const char *nonce_hex,
     res = out_hex(pt, (size_t)ptlen);
 done:
     if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (pt) OPENSSL_cleanse(pt, ctlen);       /* the recovered plaintext */
     free(nonce); free(ctt); free(aad); free(pt);
     return res;
 }

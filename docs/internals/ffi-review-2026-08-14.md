@@ -297,3 +297,37 @@ Concretely open:
 
 - **The remaining side-channel surface** — key handling, `hexdec`, and anything
   in `core:tls` — is unexamined.
+
+---
+
+## Follow-up, 2026-08-15: key handling, measured
+
+The item above named **key handling** as unexamined. It is now examined, by
+running the code rather than reading it — `scripts/crypto_hygiene.sh`, which
+interposes the shim's own `free` with `-Wl,--wrap=free` and scans each released
+block for a known plaintext.
+
+**Two real leaks, both fixed.** `cx_aead_encrypt` plain-`free`d the plaintext it
+decoded from hex, and `cx_aead_decrypt` plain-`free`d the plaintext it had just
+recovered — each one block, found on the probe's first run. The discipline was
+already in the file and applied unevenly: `cx_key_from_hex` cleanses its decode
+buffer with a comment saying why, and `cx_x25519_shared` cleanses the shared
+secret. Both AEAD paths now do the same, and each site reddens the lane on its
+own when reverted.
+
+**A third, quieter one.** `out_hex` recycles one buffer per thread, so whatever
+hex it produced last stayed live for the life of the thread — including the raw
+secret key that `cx_key_export_hex` puts through it. It now wipes the previous
+contents before `realloc` may copy or release them.
+
+**What is still NOT claimed.** This measures whether a secret survives in memory
+the shim released. It says nothing about timing: `hexdec` is still not
+constant-time, and it is on the key-import path. It says nothing about memory the
+shim never owned — OpenSSL's own allocations, or the copy Tycho's runtime makes
+at the FFI boundary. And `core:tls` was not touched.
+
+**One thing the probe taught about probes.** Its first version held two shim
+results at once and reported the round trip BROKEN. That was the probe:
+`out_hex` returns the same pointer every call, so a C caller must copy. Tycho
+callers are unaffected — the compiler copies at the boundary, measured with two
+live `crypto.random_hex` results coming back distinct.

@@ -399,6 +399,9 @@ make -s fold-check
 step "[3u6/27] sh scripts/bignum_diff.sh  (differential core:bignum AND core:decimal against Python's integers and Decimal -- an INDEPENDENT arbitrary-precision implementation. make corelib checks it against a golden, which proves it has not CHANGED, not that it was ever right. A control scores division by the WRONG (floor) model first and must find mismatches, because a clean differential with a dead comparison is indistinguishable from a correct one)"
 sh scripts/bignum_diff.sh
 
+step "[3u7/27] sh scripts/crypto_hygiene.sh  (does core:crypto leave secret material in memory it has RELEASED? make corelib checks the ANSWERS -- that a ciphertext decrypts, that a signature verifies -- and every one of those passes whether or not the plaintext is still sitting in a freed heap block, because hygiene has no output. --wrap=free interposes only the shim's own frees, so a hit names that file; two controls run first, a dirty block that must be FOUND and a cleansed one that must NOT be)"
+sh scripts/crypto_hygiene.sh
+
 # tycho-snap: the newest tool lane, and the only one whose subject is an archive
 # read back by SOMEBODY ELSE'S implementation -- our own CRC over our own bytes
 # proves nothing about interoperability.
