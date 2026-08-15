@@ -7,6 +7,17 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.7.0] — 2026-08-15
+
+**Breaking.** Several shapes that used to compile no longer do — a copied
+`handle`, a copied channel, `sink`/`inout` on an affine type, a `bounded[N]T`
+generic field that had silently degraded — and two of those were live memory
+errors, not style. `JsonErr` gains a variant, which breaks an exhaustive `match`
+on it. Read "Language — breaking" and "Core library — breaking" below before
+upgrading.
+
 **Write new entries here, not under the release heading below** —
 0.5.0 shipped without this block, so the only heading to write under was a
 frozen one, and eight entries landed inside a tagged release that does not
