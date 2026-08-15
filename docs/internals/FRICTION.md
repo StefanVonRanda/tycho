@@ -5878,3 +5878,28 @@ returns a differently-scaled answer is a wrong result where there was only a slo
 one. The cost is written at `scale_up` instead, with the rule that the ceiling
 belongs to whoever knows where the scale came from — the same division of labour
 as `csv`'s formula escaping (#81) and `zip`'s traversal names (#71).
+
+### 83. `bignum`'s division identity holds on every sign combination — 2026-08-15
+
+**No defect**, and the last package on the sweep. Recorded because `core:decimal`
+— money — is built directly on this, and because the identity is the one property
+here that is not a matter of taste.
+
+`(a/b)*b + (a%b) == a` held on **64/64** sign combinations, and all four cases
+match C truncated division exactly, which is what the header claims (*"quotient
+toward zero; remainder takes the DIVIDEND's sign"*):
+
+```
+  17/5   q=3  r=2          17/-5   q=-3  r=2
+ -17/5   q=-3 r=-2        -17/-5   q=3   r=-2
+```
+
+**Both halves are gated, and one alone would not be enough.** The identity holds
+for a FLOORED division too — Python's convention — so it cannot distinguish the
+two, and the four printed cases are what pin the documented one. A package that
+quietly switched to floored semantics would keep every identity check green while
+changing what `-17 % 5` means, and `decimal` would inherit it.
+
+Control: flipping `mod` to return the negated remainder reddens `bignum` and only
+`bignum`. `scripts/bignum_diff.sh` (against Python's integers) and `q-check` both
+stay green, which is the point — neither of them was asking this question.

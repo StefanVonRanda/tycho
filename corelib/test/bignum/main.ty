@@ -82,3 +82,26 @@ fn main():
     println("pow_edge=" + bignum.to_str(bignum.pow(bignum.from_int(3), 0)) + " " + bignum.to_str(bignum.pow(bignum.from_int(0), 5)) + " " + bignum.to_str(bignum.pow(bignum.from_int(10), 3)))   # 1 0 1000
     println("to_int=" + str(bignum.to_int(bignum.from_int(42))) + " " + str(bignum.to_int(bignum.from_str("5000000000"))) + " " + str(bignum.to_int(bignum.from_int(0 - 7))))     # 42 5000000000 -7
     println("to_int_overflow=" + str(bignum.to_int(bignum.pow(bignum.from_int(10), 30))))          # 0 (10^30 doesn't fit)
+    # (a/b)*b + (a%b) == a must hold for EVERY sign combination, whatever
+    # convention div picks -- it is the one identity that is not a matter of
+    # taste, and decimal (money) is built on it. The four sign cases are printed
+    # separately because the identity alone would also hold for a floored div,
+    # and this package documents TRUNCATED (quotient toward zero, remainder takes
+    # the dividend's sign). Both halves or the check is half a check.
+    idok := 0
+    idn := 0
+    vs := [17, 0 - 17, 5, 0 - 5, 1, 0 - 1, 999999999, 0 - 999999999]
+    ds := [5, 0 - 5, 3, 0 - 3, 1, 0 - 1, 999999998, 0 - 999999998]
+    for i := 0; i < len(vs); i += 1:
+        for j := 0; j < len(ds); j += 1:
+            idn = idn + 1
+            aa := bignum.from_int(vs[i])
+            bb := bignum.from_int(ds[j])
+            bk := bignum.add(bignum.mul(bignum.div(aa, bb), bb), bignum.mod(aa, bb))
+            if bignum.cmp(bk, aa) == 0:
+                idok = idok + 1
+    println("divmod_identity=" + str(idok) + "/" + str(idn))
+    println("trunc_17_5=" + bignum.to_str(bignum.div(bignum.from_int(17), bignum.from_int(5))) + "," + bignum.to_str(bignum.mod(bignum.from_int(17), bignum.from_int(5))))
+    println("trunc_n17_5=" + bignum.to_str(bignum.div(bignum.from_int(0 - 17), bignum.from_int(5))) + "," + bignum.to_str(bignum.mod(bignum.from_int(0 - 17), bignum.from_int(5))))
+    println("trunc_17_n5=" + bignum.to_str(bignum.div(bignum.from_int(17), bignum.from_int(0 - 5))) + "," + bignum.to_str(bignum.mod(bignum.from_int(17), bignum.from_int(0 - 5))))
+    println("trunc_n17_n5=" + bignum.to_str(bignum.div(bignum.from_int(0 - 17), bignum.from_int(0 - 5))) + "," + bignum.to_str(bignum.mod(bignum.from_int(0 - 17), bignum.from_int(0 - 5))))
