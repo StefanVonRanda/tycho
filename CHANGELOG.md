@@ -258,6 +258,14 @@ Four messages that an outside reader hit in the first ten minutes writing
   "Nothing is guessed" was untrue of `a = 01`, `a = 1__0`, `a = 1.` and
   `a b = 1`, which stay accepted and are now listed in the header with what each
   yields — a documented subset rather than a validator (FRICTION #62).
+- **`crypto.pbkdf2_sha256` no longer truncates a password at its first NUL.** The
+  shim called `strlen`, so `"secret\0A"` and `"secret\0B"` derived the **same
+  key** — and the same one as `"secret"`. The failure is collision, not weakness:
+  the output is a good PBKDF2 hash of the wrong input, so two distinct
+  credentials authenticate against each other. The length is passed explicitly
+  now and fails closed rather than guessing. **A signature change**: the extern
+  `cx_pbkdf2_sha256` takes a `pwlen`; the Tycho-facing `pbkdf2_sha256` is
+  unchanged, so no caller moves (FRICTION #75).
 
 ### Core library — breaking
 

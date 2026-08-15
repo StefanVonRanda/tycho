@@ -209,13 +209,20 @@ const char *cx_hmac_sha256_hex(void *kp, const char *msg_hex) {
 /* =====================================================================
  * PBKDF2-HMAC-SHA256(password text, salt_hex, iters, dklen) -> derived KEY handle
  * ===================================================================== */
-void *cx_pbkdf2_sha256(const char *password, const char *salt_hex, tycho_int iters, tycho_int dklen) {
+/* The password LENGTH is passed in, never strlen'd. A Tycho string is
+ * length-carrying and may hold an interior NUL; strlen stopped there, so
+ * "secret\0A" and "secret\0B" derived the SAME key as "secret" -- two distinct
+ * credentials collapsing into one, silently (measured 2026-08-15). This is the
+ * same class core:net's has_nul refuses at getaddrinfo and core:sqlite got wrong
+ * at bind_text; a key derivation is where it costs most. */
+void *cx_pbkdf2_sha256(const char *password, tycho_int pwlen, const char *salt_hex, tycho_int iters, tycho_int dklen) {
     if (iters < 1 || dklen < 1 || dklen > 1024) return NULL;
+    if (pwlen < 0 || pwlen > 1048576) return NULL;   /* fail closed, never strlen */
     size_t slen;
     unsigned char *salt = hexdec(salt_hex, &slen);
     if (!salt) return NULL;
     CxKey *k = key_new((size_t)dklen);
-    if (k && PKCS5_PBKDF2_HMAC(password, (int)strlen(password), salt, (int)slen,
+    if (k && PKCS5_PBKDF2_HMAC(password, (int)pwlen, salt, (int)slen,
                                (int)iters, EVP_sha256(), (int)dklen, k->buf) != 1) {
         cx_key_free(k);
         k = NULL;

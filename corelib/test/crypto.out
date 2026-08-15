@@ -21,3 +21,6 @@ x_agree=1
 key_random_len=1
 key_random_uniq=1
 rand_hex_len=1
+pw_nul_distinct=1
+pw_nul_not_prefix=1
+pw_control_differs=1

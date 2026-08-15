@@ -90,3 +90,25 @@ fn main():
     crypto.key_free(rk)
     crypto.key_free(rk2)
     println("rand_hex_len=" + str(yn(len(crypto.random_hex(12)) == 24)))
+    # A password is length-carrying and may hold an interior NUL. The C side used
+    # strlen, so "secret\0A" and "secret\0B" both derived "secret"'s key -- two
+    # distinct credentials collapsing into one, silently, in a key derivation
+    # (2026-08-15). The CONTROL is asserted beside it: two plainly different
+    # passwords must differ, or an all-equal run would report this as fixed.
+    pa := to_str(to_bytes([115, 101, 99, 114, 101, 116, 0, 65]))   # "secret\0A"
+    pb := to_str(to_bytes([115, 101, 99, 114, 101, 116, 0, 66]))   # "secret\0B"
+    pk1 := crypto.pbkdf2_sha256(pa, "00112233", 1000, 16)
+    pk2 := crypto.pbkdf2_sha256(pb, "00112233", 1000, 16)
+    pk3 := crypto.pbkdf2_sha256("secret", "00112233", 1000, 16)
+    pk4 := crypto.pbkdf2_sha256("alpha", "00112233", 1000, 16)
+    ph1 := crypto.key_export_hex(pk1)
+    ph2 := crypto.key_export_hex(pk2)
+    ph3 := crypto.key_export_hex(pk3)
+    ph4 := crypto.key_export_hex(pk4)
+    println("pw_nul_distinct=" + str(yn(ph1 != ph2)))
+    println("pw_nul_not_prefix=" + str(yn(ph1 != ph3)))
+    println("pw_control_differs=" + str(yn(ph3 != ph4)))
+    crypto.key_free(pk1)
+    crypto.key_free(pk2)
+    crypto.key_free(pk3)
+    crypto.key_free(pk4)

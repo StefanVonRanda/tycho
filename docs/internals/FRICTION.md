@@ -5602,3 +5602,48 @@ anticipated at the design stage in one package and shipped in another. **The
 lesson is the sweep, not the fix**: any Tycho `string` reaching C as a `char*`
 without an explicit length has this shape, and `core:net` proves somebody already
 knew.
+
+### 75. A password was truncated at its first NUL, so two credentials derived one key — **FIXED 2026-08-15**
+
+Found by the sweep #74 argued for: *any Tycho `string` reaching C as a `char*`
+without an explicit length has this shape.* 46 corelib externs take a string.
+Most are safe by construction — all six `core:regex` entries pass an explicit
+`n`, `core:net` refuses an interior NUL up front with `has_nul`, and
+`core:sqlite` was fixed earlier the same day (#70). One was not:
+
+```c
+PKCS5_PBKDF2_HMAC(password, (int)strlen(password), ...)
+```
+
+`strlen` stops at the NUL. Measured, with a live control:
+
+```
+control: derive("alpha") != derive("bravo")   true    the probe CAN see a difference
+derive("secret\0A") == derive("secret\0B")    true    two credentials, one key
+derive("secret\0A") == derive("secret")       true    truncated to the prefix
+```
+
+**The failure mode is collision, not weakness.** The derived key is a perfectly
+good PBKDF2 output — of the wrong input. Two distinct passwords authenticate
+against each other, and any secret carrying a NUL is silently reduced to whatever
+precedes it. In a key derivation that is the most expensive place in the package
+for this bug to live.
+
+`cx_pbkdf2_sha256` takes the length now and never calls `strlen`, with the length
+fail-closed (`< 0` or absurdly large refuses rather than guessing). Gated in
+`corelib/test/crypto/main.ty` with the control asserted **beside** it — two
+plainly different passwords must differ, or an all-equal run would report the bug
+as fixed. Reverting to `strlen` reddens `crypto` and only `crypto`.
+
+**Three packages, one defect class, three different outcomes.** `core:net`
+anticipated it and refuses. `core:sqlite` shipped it and truncated data.
+`core:crypto` shipped it and collapsed credentials. The sweep is what made the
+third one findable, and it is the sort of pass that only happens when somebody
+goes looking across packages rather than down one — which is, again, the argument
+in `docs/internals/audit-brief.md` §4.
+
+**Still unswept in that class**, named rather than assumed clean: `core:http`'s
+URL, `core:os`'s command string, `core:datetime`'s TZ string, and
+`crypto.ct_equal`'s two hex arguments. Each takes a `char*` with no length. Their
+inputs are program-authored rather than attacker-supplied in every in-tree
+caller, which is why they are lower priority and not why they are safe.

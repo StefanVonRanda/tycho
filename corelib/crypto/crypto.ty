@@ -35,7 +35,7 @@ extern fn cx_random_hex(n: int) -> string
 extern fn cx_sha256_hex(msg_hex: string) -> string
 extern fn cx_sha512_hex(msg_hex: string) -> string
 extern fn cx_hmac_sha256_hex(k: ptr, msg_hex: string) -> string
-extern fn cx_pbkdf2_sha256(password: string, salt_hex: string, iters: int, dklen: int) -> ptr
+extern fn cx_pbkdf2_sha256(password: string, pwlen: int, salt_hex: string, iters: int, dklen: int) -> ptr
 extern fn cx_ct_equal(a_hex: string, b_hex: string) -> int
 extern fn cx_aead_encrypt(k: ptr, nonce_hex: string, pt_hex: string, aad_hex: string) -> string
 extern fn cx_aead_decrypt(k: ptr, nonce_hex: string, ct_hex: string, aad_hex: string) -> string
@@ -92,7 +92,10 @@ fn hmac_sha256(key: ptr, msg_hex: string) -> string:
 # salt is hex. Use a high iteration count (>= 600000) and a random salt. Free
 # the returned handle when done.
 fn pbkdf2_sha256(password: string, salt_hex: string, iters: int, dklen: int) -> ptr:
-    return cx_pbkdf2_sha256(password, salt_hex, iters, dklen)
+    # len(password), never strlen on the C side: a Tycho string may hold an
+    # interior NUL, and "secret\0A"/"secret\0B" both derived "secret"'s key
+    # until 2026-08-15 -- two credentials collapsing into one, silently.
+    return cx_pbkdf2_sha256(password, len(password), salt_hex, iters, dklen)
 
 # Constant-time equality of two hex byte strings (compare MACs this way so the
 # timing does not leak how much matched).
