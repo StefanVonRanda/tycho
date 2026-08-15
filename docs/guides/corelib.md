@@ -32,9 +32,8 @@ fn main():
 
 `import "core:<pkg>"` resolves to `<corelib>/<pkg>` and binds the name `<pkg>`, where
 `<corelib>` is `TYCHO_CORELIB` if set, otherwise `corelib/` next to the transpiler binary.
-Non-`core:` imports stay relative to the importing package, unchanged. Both Tycho transpilers
-(`tychoc` and the self-hosted `tychoc0`) resolve `core:` natively, so `tychoc0` is a
-standalone corelib-aware transpiler with no bundling step required.
+Non-`core:` imports stay relative to the importing package, unchanged. `tychoc` resolves `core:` natively, with no
+bundling step required.
 
 ## How corelib is shaped
 

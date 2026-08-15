@@ -15,14 +15,17 @@ accumulates an `int` checksum over everything it builds and prints it once.
 
 `run.py <N> [start]` runs `N` seeds. For each, it compiles the program with:
 
-- **tychoc** (the C reference transpiler) → native `-O2`  — the trusted oracle output.
-- **tychoc0** (the self-hosted transpiler) → native `-O2` — must match tychoc byte-for-byte.
-- **tychoc0** → `-fsanitize=address,undefined` — must not fault, and must match its
-  own native output (catches UAF / heap corruption / UB).
+- **tychoc** → native `-O2` — the reference output.
+- **tychoc** → `-fsanitize=address,undefined` at `-O1` — must not fault, and must
+  match its own native output (catches UAF / heap corruption / UB).
+
+The native-vs-sanitizer disagreement is the oracle. Until 2026-07-26 two further
+legs ran the self-hosted `tychoc0` and required byte-for-byte agreement with
+`tychoc`; `tychoc0` is frozen and no gate builds it (`fuzz/run.py:18-22`).
 
 Any output divergence, sanitizer fault, crash, or compile-acceptance mismatch is
-a **finding**; the program is saved to `fuzz/findings/seed_<n>.ty`. Programs both
-transpilers reject are skipped, so the generator can be aggressive. Leak detection
+a **finding**; the program is saved to `fuzz/findings/seed_<n>.ty`. Programs tychoc
+rejects are skipped, so the generator can be aggressive. Leak detection
 is off — leaks aren't soundness bugs; this targets *correctness*.
 
 ## Run it
@@ -73,7 +76,7 @@ A second lane that feeds **malformed** input to the compiler and asserts it
 valid programs). `gen_malformed.py <seed>` corrupts a real corpus program
 (`tests/` + `examples/`) — truncation, byte/line edits, unbalanced brackets,
 token soup, deep nesting — or emits pure random soup. `run_reject.py [N]` builds
-**both** transpilers under ASan+UBSan and, per seed, a **false-positive-free**
+`tychoc` under ASan+UBSan and, per seed, a **false-positive-free**
 oracle:
 
 1. **No crash** — no segfault / abort / ASan / UBSan / hang. A clean error exit

@@ -49,7 +49,7 @@ count=3 sum=6
 sh run.sh
 ```
 
-Builds `demo.ty` with the C reference transpiler **and** the self-hosted tychoc0,
-runs the tychoc0 output under ASan/UBSan, and checks both against `expected.out`.
+Builds `demo.ty` with `tychoc`, runs the output under ASan/UBSan, and checks it
+against `expected.out`.
 Skips cleanly if `libsqlite3` isn't installed, so it's not wired into `make ci`,
 which has to stay dependency-free.

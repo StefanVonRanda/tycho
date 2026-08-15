@@ -24,9 +24,8 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
 
 ## Dogfood findings
 
-Ordered roughly by value. The tool compiles and runs identically on **both**
-compilers (`tychoc` and the self-hosted `tychoc0`), output correct and
-deterministic. All five findings have since been addressed by the dogfood:
+Ordered roughly by value. The tool compiles and runs under `tychoc`, output
+correct and deterministic. All five findings have since been addressed by the dogfood:
 finding 1 (a `core:io` streaming reader), finding 2 (a `core:datetime` CLF
 parser), finding 3 (`core:regex` capture groups), finding 4 (a real tychoc0
 compiler bug), and finding 5 (`tychoc` package-mode diagnostics — now correct

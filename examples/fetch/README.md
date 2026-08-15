@@ -28,8 +28,7 @@ program rather than a micro-benchmark.
 
 ## Running
 
-`make fetch` (or `sh examples/fetch/run.sh`) builds the program with **both**
-transpilers (the C `tychoc` and the self-hosted `tychoc0`), runs each against a local
+`make fetch` (or `sh examples/fetch/run.sh`) builds the program, runs it against a local
 `file://` fixture so the whole pipeline is exercised **deterministically and
 offline**, asserts byte-identical output against `expected.out`, and re-runs the
 emitted C under ASan/UBSan (proving the transient libcurl response body is

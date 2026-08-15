@@ -37,7 +37,7 @@ documented exception to the same-type rule, `string + char` appends the char's
 single byte to the string and yields a `string` (`"ab" + 'c'` → `"abc"`). It is
 deliberately **one-directional**: `char + string` is a type error — you append to
 a string, you do not prepend to a char. For symmetric composition, convert
-explicitly with `str(c)`. Both compilers implement exactly this.
+explicitly with `str(c)`. `tychoc` implements exactly this.
 
 **`bytes` concatenation.** `+` on two `bytes` concatenates them, and `bytes +
 char` appends the char's single byte — the same two forms `string` has, with the

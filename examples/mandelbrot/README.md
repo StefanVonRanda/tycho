@@ -11,7 +11,6 @@ reduce **order-independently** — the result is identical no matter how the wor
 interleave. That determinism is what makes the run a real check on the reduction
 and the deep-copy thread boundary:
 
-- **tychoc == tychoc0** — the C and self-hosted compilers emit the same stdout.
 - **ThreadSanitizer** — no data race on the reduction accumulators.
 - **AddressSanitizer/UBSan** — clean, leak-free.
 - golden-locked stdout (the worker count is machine-dependent, so it goes to stderr).

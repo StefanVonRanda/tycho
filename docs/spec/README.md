@@ -1,7 +1,9 @@
 # The Tycho language specification
 
 > **Status: ratified — Tycho 0.5 (ratified 2026-07-13 as "1.0"; renamed
-> 2026-08-09 with the project's demotion to 0.5, no technical content changed).**
+> 2026-08-09 with the project's demotion to 0.5, no technical content changed),
+> maintained against the current release (0.7.0) — where the two differ,
+> `CHANGELOG.md` records the change.**
 > The formal specification of the
 > Tycho language: the normative contract a conforming implementation must satisfy
 > ([the roadmap](../../ROADMAP.md)).
@@ -20,8 +22,8 @@
 > defining chapters §3/§4 and diffs it, asserts every fixture the conformance
 > matrix ([Appendix E](appendix-e-conformance.md)) cites exists, and builds and
 > runs every runnable `tycho`/`output` example
-> ([§2.3](00-conventions.md#23-examples-and-code-fences)) on **both** compilers
-> (`tychoc` and the self-hosted `tychoc0`) against its shown output. New material
+> ([§2.3](00-conventions.md#23-examples-and-code-fences)) on `tychoc`
+> against its shown output. New material
 > is gated automatically.
 
 ## What this document is

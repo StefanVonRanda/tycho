@@ -11,8 +11,7 @@ copied through deep call chains and recursion (the reflection bounce). The whole
 render — hundreds of thousands of transient `Vec3`s — is carried by the implicit
 per-scope arena with zero manual memory management, and it's ASan/leak-clean.
 
-Because the scene and camera are fixed, the render is deterministic: the C
-compiler (`tychoc`) and the self-hosted `tychoc0` must produce a **byte-identical**
+Because the scene and camera are fixed, the render is deterministic: `tychoc` must produce a **byte-identical**
 QOI, which the harness checks (a real-program float differential), along with the
 QOI file header and a golden summary line.
 

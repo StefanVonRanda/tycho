@@ -215,8 +215,7 @@ A **runnable example** is a `tycho` block immediately followed (blank lines
 permitted) by an `output` block: the `tycho` block is then a complete program
 and its standard output MUST equal the `output` block byte-for-byte. The `make
 spec-check` gate ([Appendix E.3](appendix-e-conformance.md)) builds and runs
-every runnable example on **both** the reference `tychoc` and the self-hosted
-`tychoc0` and asserts this — the two-compiler oracle of
+every runnable example on the reference `tychoc` and asserts this — the two-compiler oracle of
 [§1.3](#13-conformance) applied to the spec's own examples.
 
 Examples are illustrative; a conflict between an example and a normative rule is

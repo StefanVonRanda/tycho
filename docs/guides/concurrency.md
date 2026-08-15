@@ -33,8 +33,7 @@ The model has four constructs:
 I'm upfront about the cost: every value crossing a thread boundary is a deep
 copy, the same rule as an ordinary call.
 
-Concurrency works in both the C reference transpiler (`tychoc`) and the
-self-hosted transpiler (`tychoc0`).
+Concurrency works in `tychoc`, the reference transpiler.
 
 ## spawn / wait — structured tasks
 
