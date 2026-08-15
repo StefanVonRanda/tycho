@@ -19,6 +19,24 @@ this paragraph. One more behaviour change is filed outside that section because
 it refuses nothing: f-string holes now evaluate left to right, so a program whose
 interpolations have side effects can observe a different order.
 
+## Security fixes in `core:crypto`
+
+Both found and fixed after the 0.6 tarballs were first built, so make sure you
+have an artifact from 2026-08-15 or later.
+
+- **The plaintext was left in freed memory.** `aead_encrypt` released the
+  plaintext it decoded, and `aead_decrypt` the plaintext it recovered, without
+  wiping either. The recycled hex return buffer also kept its last value —
+  including a key from `key_export_hex` — for the life of the thread.
+- **Key import was not constant-time.** The hex decode rejected at the first bad
+  digit, which times the offset of the error. It is branch-free now, verified
+  under valgrind rather than by timing: 7 secret-dependent branches before, 0
+  after.
+
+Neither is remotely triggerable on its own; both matter if an attacker can read
+process memory or measure your key-import path. There is still **no third-party
+audit** of this package — see [SECURITY.md](SECURITY.md).
+
 ## Install
 
 Download the tarball for your platform below, verify it, and unpack it:

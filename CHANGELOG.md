@@ -102,6 +102,17 @@ Four messages that an outside reader hit in the first ten minutes writing
 
 ### Language — fixed
 
+- **A `deprecated:` marker no longer leaks across files.** A note was matched to
+  the `fn` below it by LINE NUMBER ALONE, and notes accumulate across every file
+  in the import closure while line numbers restart in each — so a marker at line
+  N in one package marked whatever `fn` sat at line N+1 in another. In corelib
+  this made `crypto.aead_decrypt` report itself deprecated, quoting
+  `sort.by_key`'s message: callers of a security function were told to "use
+  sort_by(xs, cmp)". The note now carries its file and both must match.
+  `tests/warn/pkg/deprec_crossfile/` constructs the collision in its own two
+  packages rather than relying on the corelib coincidence, which would go quiet
+  the moment either file gained a line.
+
 - **A generic struct with a map-of-function field compiles.** `steps:
   [string: fn($T) -> $T]` emitted C naming an `FnC<id>` that was deliberately
   never defined, and cc rejected the program with `unknown type name 'FnC0'`.
@@ -152,6 +163,23 @@ Four messages that an outside reader hit in the first ten minutes writing
   make exact, that is the worst failure it could have. The checked form accepts
   exactly `[-|+]digits[.digits]`; `from_str` is unchanged and still lax, so no
   caller moves (FRICTION #56).
+
+### Core library — security
+
+- **`core:crypto` no longer leaves the plaintext in freed memory.**
+  `aead_encrypt` released the plaintext it decoded from hex, and `aead_decrypt`
+  released the plaintext it had just recovered, both with a plain `free`. The
+  discipline was already in the file and applied unevenly — `key_from_hex`
+  cleanses its decode buffer. A third case: the recycled per-thread hex return
+  buffer kept the last value it produced for the life of the thread, including
+  the raw key from `key_export_hex`; it is now wiped before reuse.
+- **`core:crypto` key import is constant-time.** The hex decode rejected at the
+  first bad digit, timing the OFFSET of the error on the path `key_from_hex` and
+  both `*_key_from_*` wrappers use. The digit decode is branch-free now. Measured
+  under valgrind rather than with a stopwatch: the input is marked undefined and
+  memcheck reports every branch derived from it — 7 before, 0 after. The input
+  length and the single "was the hex well-formed" bit are declassified on
+  purpose; nothing else about the key steers control flow.
 
 ### Core library — breaking
 
