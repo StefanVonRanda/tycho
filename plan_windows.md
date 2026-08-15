@@ -740,10 +740,11 @@ language surface. WSL2 stays a first-class supported path.
 >
 > **What was re-run on 2026-08-15, and what was not.** `wine_smoke.sh` is green
 > here today (cross-compiled programs run under wine, `prog_ok_big` printed
-> 500501). `wine_test.sh` was started and had not finished within the session's
-> window, so its verdict is NOT claimed — the table above says what each lane is
-> for, not that each was green today. `make wine-ubsan`'s 361-fixtures-0-failures
-> figure is the recorded one from when it landed, not a fresh run.
+> 500501), and `wine_test.sh` came back **passed 361, failed 0** — the whole
+> plain fixture corpus, cross-compiled and run under wine. `make wine-ubsan`'s
+> 361-fixtures-0-failures figure is the recorded one from when it landed, not a
+> fresh run, and the other three lanes were not re-run either: the table above
+> says what each is FOR, not that each was green today.
 >
 > And 0.7.0 ships a mingw tarball that was verified under wine before publishing:
 > `tychoc.exe` reports its version and refuses all 51 `affine_*`/`generic_*`
