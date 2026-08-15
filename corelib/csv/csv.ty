@@ -104,7 +104,12 @@ fn stringify_delim(rows: [[string]], d: int) -> string:
             if c > 0:
                 out = out + chr(d)
             f := row[c]
-            if needs_quote(f, d):
+            # A row that is ONE EMPTY FIELD must be quoted, or the line is bare
+            # and parses back as a row with NO fields -- `stringify`'s stated
+            # `parse(stringify(rows)) == rows` failed for exactly that input and
+            # nothing else (414 row-sets differentialed against Python's csv
+            # module, which quotes it for the same reason).
+            if needs_quote(f, d) or (len(row) == 1 and f == ""):
                 out = out + quote_field(f)
             else:
                 out = out + f

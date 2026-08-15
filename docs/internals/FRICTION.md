@@ -4976,3 +4976,28 @@ real content rather than merely re-blessed. The new cases assert both directions
 -- the three dangerous schemes unlinked AND seven safe forms unchanged -- because
 "drop every link" would pass a one-sided test. Reverting `safe_url` to `return
 true` reddens the golden.
+
+### 61. `parse(stringify(rows)) == rows` was false for one shape — **FIXED 2026-08-15**
+
+`corelib/csv/csv.ty@stringify` states that identity in its own doc comment. It
+held for 413 of 414 differentialed row-sets and failed for exactly one: a row
+that is a SINGLE EMPTY FIELD.
+
+Unquoted, `[[""]]` writes a bare newline, and a bare line parses back as a row
+with NO fields. One cell in, zero cells out. Python's `csv` module writes `""`
+for the same input, and for the same reason -- it is the only way to tell "one
+empty field" from "an empty row" in the format.
+
+Found by differentialing `csv.stringify` against Python's `csv.reader` over 14
+hostile edge cases and 400 generated row-sets drawn from an alphabet of comma,
+quote, newline, tab, space, `=` and a non-ASCII byte. 14 mismatches, ONE distinct
+input shape. After the fix: 0 of 414.
+
+The fixture asserts the fix and both controls, because "quote every empty field"
+would also make the mismatch go away and would be wrong: an EMPTY ROW must still
+read back with no fields, and a two-field row of empties must still write a bare
+`,`. Reverting the condition reddens the golden.
+
+`tycho-q` and `tycho-agg` both write CSV through this function; q-check and
+agg-check are green either way, which is what makes this a silent data loss
+rather than a visible one.

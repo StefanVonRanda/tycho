@@ -87,3 +87,21 @@ fn main():
     nr0 := len(rt[0])
     nr1 := len(rt[1])
     println(f"rt_ok={same} rows={nrows} r0={nr0} r1={nr1}")
+    # ROUND TRIP for the one shape that lost data: a row of ONE EMPTY FIELD.
+    # Unquoted it writes a bare line, which parses back as a row with NO fields,
+    # so `parse(stringify(rows)) == rows` -- stringify's own stated contract --
+    # was false for it and nothing else. Found by differentialing 414 row-sets
+    # against Python's csv module, which quotes it for the same reason.
+    one_empty := [][string]
+    push(one_empty, [""])
+    println("one-empty wire=" + str(len(csv.stringify(one_empty))) + " back=" +
+        str(len(csv.parse(csv.stringify(one_empty))[0])))
+    # The controls: an EMPTY ROW still has no fields, and a two-field row of
+    # empties is unaffected -- so this cannot become "quote every empty field".
+    empty_row := [][string]
+    push(empty_row, []string)
+    println("empty-row back=" + str(len(csv.parse(csv.stringify(empty_row)))))
+    two := [][string]
+    push(two, ["", ""])
+    println("two-empty wire=" + csv.stringify(two)[0:len(csv.stringify(two)) - 1] +
+        " back=" + str(len(csv.parse(csv.stringify(two))[0])))
