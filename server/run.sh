@@ -515,7 +515,21 @@ eq("404 /emptydir/ (no index.html in it)", status(get(b"/emptydir/")), "HTTP/1.1
 # transcript needs `curl --path-as-is` for; a raw socket has no normalizer to
 # turn off.
 eq("403 traversal /../../etc/passwd", status(get(b"/../../etc/passwd")), "HTTP/1.1 403 Forbidden")
-eq("403 traversal /a/../../..%2fetc", status(get(b"/a/../../../etc/passwd")), "HTTP/1.1 403 Forbidden")
+eq("403 traversal /a/../../../etc", status(get(b"/a/../../../etc/passwd")), "HTTP/1.1 403 Forbidden")
+# PERCENT-ENCODED traversal. server/main.ty@sanitize decodes ONCE before the
+# traversal test precisely so %2e%2e cannot hide a "..", and until 2026-08-15
+# nothing sent an encoded byte: both legs above are plain `../`, and the second
+# one's LABEL claimed a %2f it never sent. A label is not a payload.
+eq("403 encoded dots %2e%2e", status(get(b"/%2e%2e/%2e%2e/etc/passwd")), "HTTP/1.1 403 Forbidden")
+eq("403 encoded slash ..%2f", status(get(b"/..%2f..%2fetc/passwd")), "HTTP/1.1 403 Forbidden")
+eq("403 both encoded %2e%2e%2f", status(get(b"/%2e%2e%2f%2e%2e%2fetc/passwd")), "HTTP/1.1 403 Forbidden")
+eq("403 encoded body is not the file",
+   b"root:" in get(b"/%2e%2e%2f%2e%2e%2fetc/passwd").split(b"\r\n\r\n", 1)[1], False)
+# Decoding ONCE is the rule, so a DOUBLE-encoded traversal must NOT become one:
+# %252e decodes to the literal text "%2e", which is a filename, not a dot-dot.
+# This is the leg that reddens if someone "fixes" traversal by decoding in a loop.
+eq("404 double-encoded is a filename, not traversal",
+   status(get(b"/%252e%252e/etc/passwd")), "HTTP/1.1 404 Not Found")
 eq("403 hidden segment /.hidden/secret.txt",
    status(get(b"/.hidden/secret.txt")), "HTTP/1.1 403 Forbidden")
 eq("403 body is not the file", b"root:" in get(b"/../../etc/passwd").split(b"\r\n\r\n", 1)[1], False)
