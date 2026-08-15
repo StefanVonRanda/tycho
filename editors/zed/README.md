@@ -5,27 +5,14 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `tycho-lsp`) for
 
 ## What's here
 
-- `grammars/tycho/` — a **flat** tree-sitter grammar (token-level: keywords,
-  types, builtins, literals, identifiers, operators). It registers the language
-  and drives highlighting; it does **not** model block nesting (tycho is
-  indentation-significant; full structure would need a C external scanner). The
-  generated parser (`grammars/tycho/src/parser.c`, ABI 15) is committed, so no tree-sitter CLI
-  is needed to build it. **`tree-sitter parse -q` over
-  every tracked `.ty` file (excluding `node_modules/` and `fuzz/findings/`)
-  reports an `ERROR` node on nothing but the enumerated known-bad set — including
-  `$T` generics and backtick raw literals. That set is
-  `tests/reject/hex_escape_one_digit.ty` and
-  `tests/reject/rawstring_unterminated.ty`, both reject fixtures that are
-  *supposed* not to parse.**
-  The claim names **no file count on purpose**: it read "462" while the corpus was
-  813, and every repair since decayed within days. `scripts/editors_check.sh` gates it.
-  To regenerate after editing
-  `grammar.js`: `npx tree-sitter-cli@0.25 generate --abi 15` in this directory
-  (ABI 15 matches the committed parser; the keyword set tracks the language, e.g.
-  `inout`, and `$T` type parameters lex as a `typaram` token).
+- `grammars/tycho/` — a flat tree-sitter grammar (keywords, types, builtins,
+  literals, identifiers, operators). It drives highlighting; it does not model
+  block nesting, because Tycho is indentation-significant and structure would
+  need a C external scanner. The generated parser is committed, so no
+  tree-sitter CLI is needed to build it.
 - `languages/tycho/` — Zed language config + `highlights.scm` queries.
 - `extension.toml`, `Cargo.toml`, `src/lib.rs` — the Zed extension; the Rust code
-  just launches `tycho-lsp` (passing `TYCHOC`) for diagnostics.
+  launches `tycho-lsp` (passing `TYCHOC`) for diagnostics.
 
 ## Install (dev)
 
@@ -64,3 +51,19 @@ Open a `.ty` file: tokens are colored and compile errors show inline.
   resolve them (see [corelib](../../docs/guides/corelib.md)) — this also powers
   completion and hover on imported members (`strings.trim`), which the server
   reads by running the transpiler on the file in its real package directory.
+
+## Working on the grammar
+
+`grammars/tycho/src/parser.c` is generated at ABI 15 and committed. To
+regenerate after editing `grammar.js`:
+
+```sh
+npx tree-sitter-cli@0.25 generate --abi 15
+```
+
+`scripts/editors_check.sh` runs `tree-sitter parse -q` over
+every tracked `.ty` file and requires an `ERROR` node on nothing outside a
+known-bad set —
+`tests/reject/hex_escape_one_digit.ty` and
+`tests/reject/rawstring_unterminated.ty`, both fixtures that are supposed not to
+parse. `$T` generics and backtick raw literals must parse cleanly.
