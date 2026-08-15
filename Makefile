@@ -1010,7 +1010,15 @@ release-check: tychoc
 	  sh scripts/release.sh "v$$version"; cp "$$archive" "$$first"; \
 	  sh scripts/release.sh "v$$version"; \
 	  cmp -s "$$first" "$$archive" || { echo "release-check: archives differ" >&2; exit 1; }; \
-	  echo "release-check: byte-identical archives"
+	  echo "release-check: byte-identical archives ($$archive)"; \
+	  win="dist/tycho-v$$version-mingw64-x86_64.tar.gz"; \
+	  if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then \
+	    echo "release-check: WINDOWS ARCHIVE NOT REBUILT (no mingw here). $$win, if it"; \
+	    echo "               exists, is from an earlier build and may be STALE."; \
+	  else \
+	    sh scripts/release.sh "v$$version" --mingw >/dev/null; \
+	    echo "release-check: rebuilt $$win"; \
+	  fi
 
 # Activate the local git pre-push gate (.githooks/pre-push: make ci N=0 + fuzz-quick).
 hooks:

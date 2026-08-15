@@ -409,9 +409,36 @@ are run-time memory errors — a double free and an aliased channel — so it wo
 have shipped known memory-safety bugs under a version whose CHANGELOG says they
 are fixed. A checksum proves an artifact is intact, never that it is current.
 
+**Rebuilt and re-verified again on 2026-08-15**, and the reason is the same one
+this section already records: four commits landed after the 08-14 build, two of
+them in `corelib/crypto/`. The tarball on disk verified against its `.sha256`,
+reported `0.6.0`, and **shipped a `crypto_shim.c` that left the plaintext in freed
+heap and decoded key hex in non-constant time** — both fixed in the tree, neither
+in the artifact. Publishing it would have shipped two known crypto defects under a
+version whose CHANGELOG says they are fixed. **A stale artifact is the default
+state of this directory, not an accident**: every commit re-creates it.
+
+`make release-check` now **rebuilds the Windows archive too**, or says loudly that
+it did not. It previously rebuilt only the host archive and still printed
+"byte-identical archives", which is how the mingw tarball sat a day behind the
+linux one without anything noticing.
+
 State now, each figure measured rather than assumed:
 
-- `make release-check` reports **byte-identical archives** over two builds.
+- `make release-check` reports **byte-identical archives** over two builds, and
+  rebuilds the mingw archive in the same run.
+- The whole **`tests/reject/` corpus — 333 fixtures — is refused by the extracted
+  `tychoc`**, not just the six named above. That number means nothing on its own,
+  so a POSITIVE CONTROL runs beside it: a program importing `core:sort` and
+  `core:crypto` compiles and runs through the same shipped binary, printing
+  `[apple, fig, pear]` and a true AEAD round trip. Without it, "0 accepted" is
+  what a compiler that cannot start also reports. **That control is what found the
+  cross-file deprecation defect** (`3a1b57e5`) — it was not looking for it.
+- Under wine the extracted `tychoc.exe` reports `0.6.0`, refuses all **51**
+  `affine_*`/`generic_*` fixtures, and emits C for the positive control. The first
+  attempt at this reported "0 wrongly accepted" while every invocation was in fact
+  `command not found` — zsh does not word-split an unquoted command string, so the
+  sweep was vacuous and the positive control is the only reason that was caught.
 - The extracted native `tychoc` reports `0.6.0`, **refuses all six** of the
   affine/generics reject fixtures, and still finds `corelib` beside itself with
   no `TYCHO_CORELIB`, compiling and running a `core:sort` program.
