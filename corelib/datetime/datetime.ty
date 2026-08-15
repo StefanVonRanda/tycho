@@ -375,6 +375,14 @@ fn local_offset(secs: int) -> int:
 # "EST5EDT,M3.2.0,M11.1.0" -> 0 - 18000 in winter, 0 - 14400 in summer; "UTC0" ->
 # 0. NOT thread-safe -- it sets the process TZ; serialize offset_at across threads.
 fn offset_at(tz: string, secs: int) -> int:
+    # A TZ carrying an interior NUL crosses as a `char*` and is TRUNCATED, so
+    # "EST5\0UTC0" silently answered -18000 rather than the caller's string
+    # (measured 2026-08-15). Refused as 0, which is already what an unparseable
+    # or empty TZ answers -- a truncated zone is not a valid one. Sibling guards:
+    # core:os, core:io, core:net, core:http (FRICTION #77).
+    for i := 0; i < len(tz); i += 1:
+        if tz[i] == 0:
+            return 0
     return dtx_offset_at(tz, secs)
 
 # A UTC timestamp rendered as SYSTEM-local civil fields (DST-aware). For the

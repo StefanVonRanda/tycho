@@ -139,3 +139,11 @@ fn main():
     nu := datetime.now_utc()
     nvalid := b2i(nu.month >= 1 and nu.month <= 12 and nu.day >= 1 and nu.day <= 31 and nu.year >= 1970 and nu.hour >= 0 and nu.hour <= 23 and nu.second >= 0 and nu.second <= 59)
     println("now_valid = " + str(nvalid))
+    # A TZ carrying an interior NUL crossed as a char* and was TRUNCATED, so
+    # "EST5\0UTC0" answered -18000 -- the caller's string was not what applied
+    # (2026-08-15). Refused as 0, which is already the answer for an unparseable
+    # TZ. The control sits beside it: EST5 alone must still be -18000, or an
+    # all-zero run would report the truncation as fixed.
+    nulz := to_str(to_bytes([0]))
+    println("tz_ctl=" + str(datetime.offset_at("EST5", 0)))
+    println("tz_nul=" + str(datetime.offset_at("EST5" + nulz + "UTC0", 0)))

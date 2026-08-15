@@ -35,12 +35,31 @@ extern fn http_body(resp: ptr) -> string
 extern fn http_body_bytes(resp: ptr) -> bytes
 extern fn http_free(resp: ptr)
 
-# Perform a GET. Returns a response handle, or null on a transport failure.
+# True if `url` holds an interior NUL. It crosses to curl as a `char*`, which
+# ENDS AT THE FIRST NUL, so an unguarded call fetches the PREFIX: a program
+# building a URL from user input asked for one resource and got another, with no
+# error (measured 2026-08-15 -- ".../real.txt\0/ignored" returned real.txt's 18
+# bytes). The rule is docs/spec/14-ffi.md's; the sibling guards are core:os's,
+# core:io's and core:net's, and this package was simply not on the list when that
+# sweep ran (FRICTION #77).
+fn has_nul(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 0:
+            return true
+    return false
+
+# Perform a GET. Returns a response handle, or null on a transport failure --
+# which is also the answer for a URL carrying an interior NUL: a truncated URL is
+# not a shorter one, it is a different one.
 fn get(url: string) -> ptr:
+    if has_nul(url):
+        return null
     return http_get(url)
 
 # Perform a POST with a request body and Content-Type (e.g. "application/json").
 fn post(url: string, body: string, content_type: string) -> ptr:
+    if has_nul(url) or has_nul(content_type):
+        return null
     return http_post(url, body, content_type)
 
 # Did the request reach the server (a handle, even for a 4xx/5xx status)?
@@ -73,6 +92,8 @@ fn release(resp: ptr):
 
 # Convenience: GET a URL and return just the body ("" on failure); frees the handle.
 fn get_body(url: string) -> string:
+    if has_nul(url):
+        return ""
     r := http_get(url)
     if is_null(r):
         return ""
@@ -82,6 +103,8 @@ fn get_body(url: string) -> string:
 
 # Convenience: GET a URL and return just the status code (0 on failure); frees the handle.
 fn get_status(url: string) -> int:
+    if has_nul(url):
+        return 0
     r := http_get(url)
     if is_null(r):
         return 0

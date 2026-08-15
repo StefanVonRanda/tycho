@@ -5722,3 +5722,32 @@ the bug is not the same as having enumerated its instances.
 For anyone reviewing this tree: **`grep` the declarations, do not reason about
 them.** The command is in `docs/internals/audit-brief.md` §6 now, and this entry
 is why it is there.
+
+### 78. The last two of the NUL sweep: a URL and a TZ string — **FIXED 2026-08-15**
+
+#75 and #76 named four externs as unswept and #77 explained why leaving them
+named mattered. These are the last two, and both truncated.
+
+**`core:http`'s URL.** A URL crosses to curl as a `char*`. Measured: fetching
+`file://…/real.txt\0/ignored` returned **real.txt's 18 bytes** — the caller asked
+for one resource and got another, with no error. A program building a URL from
+user input inherits that. Guarded now, returning the null handle that already
+means "this did not run".
+
+**`core:datetime`'s TZ.** `offset_at("EST5\0UTC0", 0)` answered **-18000** — the
+truncated prefix applied, not the string given. Refused as `0`, which is already
+what an unparseable or empty TZ answers; a truncated zone is not a valid one.
+
+**The http fix was wrong the first time, and the probe is what said so.**
+Guarding `get`/`post` left the body at 18 bytes, because `get_body` and
+`get_status` call `http_get` **directly** rather than through `get`. Three entry
+points, one guard, two still open — the caller-graph rule this repo's own CLAUDE.md
+states, missed by the person applying it. Re-probing after the fix is the only
+reason it did not ship half-done.
+
+That closes the sweep: **all 46 corelib externs taking a `string` are now either
+length-carrying or NUL-guarded.** Written as a fact that will decay — a new
+extern is one commit away from making it false, and nothing mechanical enforces
+it. The check is `grep -rE '^extern (\"[a-z0-9]+\" )?fn .*: string' corelib/`,
+and it belongs in a reviewer's hands rather than a lane's, because the answer for
+each hit is a judgement about whether the input can carry a NUL.

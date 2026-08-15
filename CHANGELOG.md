@@ -273,6 +273,13 @@ Four messages that an outside reader hit in the first ten minutes writing
   value and the answer was already false — but a caller comparing two *supplied*
   values had a collision. Lengths are passed and a mismatch refuses. A signature
   change to the extern only; `ct_equal` itself is unchanged (FRICTION #76).
+- **`http.get`/`get_body`/`get_status`/`post` refuse a URL with an interior
+  NUL**, and **`datetime.offset_at` refuses a TZ with one.** Both truncated at
+  the NUL: a `file://…/real.txt\0/ignored` fetch returned real.txt's bytes, and
+  `offset_at("EST5\0UTC0")` applied EST rather than the string given. A truncated
+  URL is not a shorter one, it is a different one. This closes the sweep — all 46
+  corelib externs taking a `string` are now length-carrying or NUL-guarded
+  (FRICTION #77, #78).
 
 ### Core library — breaking
 

@@ -29,3 +29,5 @@ clf_fail sep=0 month=0 day=0 off=0
 local_off_ok = 1
 now_local_valid = 1
 now_valid = 1
+tz_ctl=-18000
+tz_nul=0
