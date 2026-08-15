@@ -4953,9 +4953,11 @@ the link target straight into `href` with no check on what kind of URL it was.
 
 Measured 2026-08-15, all three emitted verbatim and clickable:
 
-    [x](javascript:alert`1`)          -> <a href="javascript:alert`1`">
-    [x](data:text/html;base64,...)    -> <a href="data:text/html;base64,...">
-    [x](vbscript:msgbox)              -> <a href="vbscript:msgbox">
+```text
+[x](javascript:alert`1`)          -> <a href="javascript:alert`1`">
+[x](data:text/html;base64,...)    -> <a href="data:text/html;base64,...">
+[x](vbscript:msgbox)              -> <a href="vbscript:msgbox">
+```
 
 Escaping and scheme-checking are different jobs and the header conflated them.
 Anyone rendering untrusted markdown with this package had stored XSS.
