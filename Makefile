@@ -385,6 +385,14 @@ traversal-check:
 ar-check: tychoc
 	@sh tools/tycho-ar/run.sh
 
+# core:image's decode ceiling, proved to fire from a 69-byte PNG that declares a
+# 3.6 GB image -- and proved not to be a blanket refusal, which is the leg that
+# makes the other three mean anything. `make corelib` decodes a valid image and
+# says nothing about the limit.
+image-ceiling: tychoc
+	@sh scripts/image_ceiling.sh
+
+
 # build-check: the gate for tycho-build, the make-like build tool in
 # tools/tycho-build/. Same shape as ar-check -- a batch program gates against a
 # recorded golden plus behavior legs: first-build dispatch order, the

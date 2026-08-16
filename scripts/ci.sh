@@ -258,6 +258,14 @@ make -s shim-check
 # entrypoints globs examples/*/ plus server/main.ty and never looks under tools/.
 # So before this step the archiver could stop being deterministic, stop round
 # tripping, or start extracting through `../`, and `make ci` stayed green.
+# The image sibling of the decompression-bomb leg inside ar-check: a PNG header
+# declares width*height, the RGBA buffer is width*height*4, and the file carrying
+# that header can be 69 bytes. IMG_MAX_OUT stops it, and until this step nothing
+# had ever watched it fire -- `make corelib` decodes a valid image and would stay
+# green with the ceiling raised to SIZE_MAX.
+step "[3e0/13] make image-ceiling  (core:image: a 3.6 GB header from 69 bytes is refused, a real image still decodes)"
+make -s image-ceiling
+
 step "[3e/13] make ar-check  (tycho-ar: create twice byte-identical, t vs golden, diff -r round trip, damage and path traversal refused)"
 make -s ar-check
 
