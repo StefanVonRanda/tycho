@@ -51,3 +51,27 @@ fn main():
     # entirely, so there is nothing to escape -- recorded as the reason rather
     # than left looking like an escaping test that passed.
     println(markdown.render("```x\" onload=\"alert(1)\ncode\n```"))
+
+    # SCHEME-CHECK EVASION. The three schemes above are refused; these are the
+    # shapes that get past a check written as `starts_with(lower(u), "javascript:")`
+    # without more care -- mixed case, a leading space, whitespace or a NUL inside
+    # the keyword. Every one must come back as TEXT, with no href at all.
+    # A protocol-relative "//host/path" is deliberately NOT in this list: it is an
+    # ordinary external link, the same as the http:// one, and linking it is right.
+    evade := ["JaVaScRiPt:alert(1)",
+              "  javascript:alert(1)",
+              "java" + chr(9) + "script:alert(1)",
+              "java" + chr(10) + "script:alert(1)",
+              "java" + chr(0) + "script:alert(1)",
+              "vbscript:msgbox(1)",
+              "data:text/html;base64,PHNjcmlwdD4="]
+    linked := 0
+    for u in evade:
+        if find(markdown.render("[x](" + u + ")"), "href=") >= 0:
+            linked += 1
+    println("evasion vectors=" + str(len(evade)) + " linked=" + str(linked))
+    # The control: a legitimate URL in the SAME position must still link, or the
+    # count above is satisfied by a renderer that refuses every link there is.
+    println("control http linked=" +
+            str(find(markdown.render("[x](http://example.com/a)"), "href=") >= 0))
+

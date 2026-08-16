@@ -64,3 +64,21 @@ fn main():
     # a NUL-bearing PATTERN is rejected, not compiled down to its prefix
     pnul := regex.compile("a" + chr(0) + "zzz")
     println(f"pat_nul_ok={regex.ok(pnul)}")
+
+    # PATTERN MEMORY BOMB. POSIX ERE is a DFA and does not backtrack, so the
+    # usual (a+)+$ shapes are harmless here -- measured instant. The bomb is
+    # bounded repetition MULTIPLYING OUT: `(a{1000}){1000}` is fifteen bytes and
+    # a million states, ~207 MB, and `(a{20000}){20000}` OOM-killed the machine
+    # during the 2026-08-16 audit. rx_compile refuses on the product of the {n}
+    # maxima now.
+    #
+    # The last two are the control. A guard that refused every bounded
+    # repetition would score the first three perfectly, so a pattern just under
+    # the ceiling and an ordinary one must still compile.
+    for pat in ["(a{1000}){1000}", "(a{20000}){20000}", "a{99999999}",
+                "(a{100}){100}", "a{1,10}b{2,5}"]:
+        re := regex.compile(pat)
+        println("bomb " + pat + " -> ok=" + str(regex.ok(re)))
+        if regex.ok(re):
+            regex.release(re)
+

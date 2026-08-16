@@ -8,3 +8,8 @@ bad_ok=false
 nul len=10 find=4 end=10 hit=true mlen=6 g2=RET ng=3 gs=4
 ctl find=4 hit=true
 pat_nul_ok=false
+bomb (a{1000}){1000} -> ok=false
+bomb (a{20000}){20000} -> ok=false
+bomb a{99999999} -> ok=false
+bomb (a{100}){100} -> ok=true
+bomb a{1,10}b{2,5} -> ok=true

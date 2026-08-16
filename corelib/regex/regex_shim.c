@@ -55,8 +55,50 @@ static int rx_exec(void *re, const char *s, tycho_int n, size_t nm, regmatch_t *
 
 /* regcomp has no length-bearing form anywhere, so a NUL-bearing pattern is
  * rejected instead: NULL is the existing "bad pattern" channel (ok() is false). */
+/* Refuse a pattern whose bounded repetitions multiply out to an absurd NFA
+ * before regcomp ever sees it. `(a{1000}){1000}` is fifteen bytes and asks for
+ * a million states -- measured at ~207 MB of RSS, and larger spellings take the
+ * host down: `(a{20000}){20000}` OOM-killed this machine during the 2026-08-16
+ * audit. POSIX ERE is a DFA and does not backtrack, so this is a MEMORY bomb
+ * rather than the usual catastrophic-backtracking one, and neither
+ * REG_EXTENDED nor regcomp offers a ceiling.
+ *
+ * The product of the {n} maxima is the amplifier, so that is what is capped.
+ * 100000 is far above any real pattern -- `(a{100}){100}` is 10000 and still
+ * compiles -- and far below the point where regcomp's allocation matters.
+ * A pattern with no bounded repetition is unaffected. */
+#define RX_MAX_REPEAT_PRODUCT 100000
+static int rx_repeat_too_big(const char *p, size_t n) {
+    unsigned long long product = 1;
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] == '\\') { i++; continue; }          /* an escaped brace is literal */
+        if (p[i] != '{') continue;
+        size_t j = i + 1;
+        unsigned long long hi = 0;
+        int digits = 0;
+        while (j < n && p[j] >= '0' && p[j] <= '9') {  /* the lower bound */
+            hi = hi * 10 + (unsigned)(p[j] - '0'); j++; digits++;
+            if (hi > RX_MAX_REPEAT_PRODUCT) return 1;
+        }
+        if (j < n && p[j] == ',') {                    /* {n,m}: m is the max */
+            j++; hi = 0; digits = 0;
+            while (j < n && p[j] >= '0' && p[j] <= '9') {
+                hi = hi * 10 + (unsigned)(p[j] - '0'); j++; digits++;
+                if (hi > RX_MAX_REPEAT_PRODUCT) return 1;
+            }
+            if (digits == 0) return 1;                 /* {n,} is unbounded */
+        }
+        if (digits == 0) continue;                     /* not a repetition */
+        product *= (hi ? hi : 1);
+        if (product > RX_MAX_REPEAT_PRODUCT) return 1;
+        i = j;
+    }
+    return 0;
+}
+
 void *rx_compile(const char *pattern, tycho_int n) {
     if (n < 0 || memchr(pattern, '\0', (size_t)n)) return NULL;
+    if (rx_repeat_too_big(pattern, (size_t)n)) return NULL;
     regex_t *re = (regex_t *)malloc(sizeof(regex_t));
     if (!re) return NULL;
     if (regcomp(re, pattern, REG_EXTENDED) != 0) { free(re); return NULL; }

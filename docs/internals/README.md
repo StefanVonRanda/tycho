@@ -17,8 +17,8 @@ measurements, and they assume you already know the codebase.
   actually hard here.
 - [`audit-brief.md`](audit-brief.md) — what a third-party reviewer would need.
 - [`ffi-review-2026-08-14.md`](ffi-review-2026-08-14.md) — an FFI boundary review.
-- [`audit-zip-net.md`](audit-zip-net.md) — security audit of `core:zip` and
-  `core:net`, with what it did not cover.
+- [`audit-2026-08-16.md`](audit-2026-08-16.md) — security audit across the whole
+  threat model: two vulnerabilities found and fixed, and what it did not cover.
 - [`windows-port.md`](windows-port.md) — the design record of the native
   Windows port. Cited by `tests/run.sh`, `scripts/ci.sh` and the wine lanes.
 
