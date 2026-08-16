@@ -545,9 +545,27 @@ fn bodyless(status: int) -> bool:
 # defaults to text/plain when you set none. NEITHER is synthesised for a
 # bodyless() status -- see the note there. An explicit header of your own is
 # still emitted verbatim in every case; this only governs what gets invented.
+# Strip CR and LF from a header key, value or reason phrase before it is
+# rendered. RFC 9110 forbids them in a field value, so nothing legitimate is
+# lost -- and a value carrying them SPLITS THE RESPONSE: an attacker-supplied
+# "en\r\nX-Injected: yes\r\n\r\n<html>" ends the header block early and the
+# client reads the attacker's body as a complete response (CWE-113).
+#
+# Stripping rather than refusing, because with_header() returns a Response and
+# has no error channel to report through; render_head() returning "" would put
+# an EMPTY head on the wire, which is worse than a sanitised one. A caller that
+# wants to reject instead should validate before it builds the response --
+# server/main.ty does exactly that, with an is_ctl() loop over the decoded path.
+fn no_crlf(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        if s[i] != 13 and s[i] != 10:
+            out += s[i:i+1]
+    return out
+
 fn render_head(r: Response) -> string:
     nl := crlf()
-    out := "HTTP/1.1 " + str(r.status) + " " + r.reason + nl
+    out := "HTTP/1.1 " + str(r.status) + " " + no_crlf(r.reason) + nl
     has_len := bodyless(r.status)
     has_type := has_len
     for i := 0; i < len(r.header_keys); i += 1:
@@ -556,7 +574,7 @@ fn render_head(r: Response) -> string:
             has_len = true
         if lk == "content-type":
             has_type = true
-        out = out + r.header_keys[i] + ": " + r.header_vals[i] + nl
+        out = out + no_crlf(r.header_keys[i]) + ": " + no_crlf(r.header_vals[i]) + nl
     if not has_len:
         out = out + "Content-Length: " + str(len(r.body)) + nl
     if not has_type:

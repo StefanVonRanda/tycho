@@ -52,3 +52,4 @@ timeout_closes = 1
 garbage_why    = Malformed
 hangup_why     = Closed
 partial_why    = Closed
+hdr_injection  = clean

@@ -201,3 +201,20 @@ fn main():
     net.close_fd(conn6)
 
     net.close_fd(srv)
+
+    # RESPONSE SPLITTING (CWE-113). A header value carrying CRLF used to end the
+    # header block early, so an attacker-supplied value delivered its own body
+    # and the client read it as a complete response. render_head strips CR and
+    # LF now. The verdict is COMPUTED here rather than eyeballed in the golden:
+    # a head is split if a blank line appears anywhere before its end, so this
+    # prints "clean" for a sanitised head and "SPLIT" for a vulnerable one --
+    # re-recording the golden would have to write the word SPLIT to pass.
+    evil := "en" + nl + "X-Injected: yes" + nl + nl + "<html>owned</html>"
+    head := httpd.render_head(httpd.with_header(httpd.text_response(200, "hi"),
+                                                "Content-Language", evil))
+    body_sep := find(head, nl + nl)
+    if body_sep >= 0 and body_sep + 4 == len(head):
+        println("hdr_injection  = clean")
+    else:
+        println("hdr_injection  = SPLIT")
+
