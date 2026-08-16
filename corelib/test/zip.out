@@ -11,3 +11,8 @@ missing=true
 crc=cbf43926
 hostile name=[../../etc/passwd] body=x
 hostile name=[/abs/path] body=y
+truncations=442 any_listed=0
+cd_off past end -> 0 entries
+fixture 68 bytes, nlen field=60000
+nlen=60000 -> 0 entries, extract 0 bytes
+survived all structural malformation

@@ -39,3 +39,42 @@ fn main():
     hm := zip.list(ev)
     for i := 0; i < len(hm); i += 1:
         print("hostile name=[" + hm[i].name + "] body=" + to_str(zip.extract(ev, hm[i].name)) + "\n")
+
+    # STRUCTURAL MALFORMATION. The CRC case above corrupts a PAYLOAD; this
+    # corrupts the STRUCTURE, which is the half an attacker controls: truncation
+    # at every length, a central-directory offset pointing past the end, and a
+    # name length claiming far more bytes than the archive holds.
+    #
+    # The property is that every one returns empty and NOTHING ABORTS. Tycho
+    # bounds-checks an index and clamps a slice, so an over-long read is a trap
+    # or a short answer rather than an out-of-bounds read -- but a trap still
+    # kills the process, which is a denial of service for anything parsing an
+    # uploaded archive. Reaching the final line is the proof: an abort would
+    # truncate this output and the golden would not match.
+    trunc_bad := 0
+    for cut := 0; cut < len(ar); cut += 1:
+        if len(zip.list(ar[0:cut])) > 0:
+            trunc_bad += 1
+    print("truncations=" + str(len(ar)) + " any_listed=" + str(trunc_bad) + "\n")
+
+    # An EOCD whose central-directory offset points past the end of the archive.
+    far := to_bytes([80, 75, 5, 6, 0, 0, 0, 0, 1, 0, 1, 0, 46, 0, 0, 0,
+                     255, 255, 255, 127, 0, 0])
+    print("cd_off past end -> " + str(len(zip.list(far))) + " entries\n")
+
+    # A central-directory record claiming nlen=60000 in a 68-byte archive.
+    # The fixture asserts its OWN shape first: the first cut of this leg had the
+    # 60000 landing in `usize` because the literal was four bytes short, so it
+    # passed while testing nothing. le16 at 28 must read 60000 or the leg is
+    # decoration.
+    bb := to_bytes([80, 75, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 234, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 80, 75,
+                    5, 6, 0, 0, 0, 0, 1, 0, 1, 0, 46, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0])
+    print("fixture " + str(len(bb)) + " bytes, nlen field="
+          + str(bb[28] | (bb[29] << 8)) + "\n")
+    print("nlen=60000 -> " + str(len(zip.list(bb))) + " entries, extract "
+          + str(len(zip.extract(bb, "x"))) + " bytes\n")
+    print("survived all structural malformation\n")
+

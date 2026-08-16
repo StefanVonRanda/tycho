@@ -7,7 +7,19 @@
 # The reader walks the central directory (names, methods, sizes, CRCs) and
 # extracts an entry by seeking its local header -- an entry that is missing,
 # corrupt, or whose stored CRC does not match the inflated bytes yields EMPTY
-# bytes (fail-closed; nothing is guessed). Method 0 (stored) and 8 (deflate)
+# bytes (fail-closed; nothing is guessed).
+#
+# THE EMPTY RESULT IS FOUR ANSWERS IN ONE, and that is the sharp edge of this
+# package's API. `extract` cannot tell you which of these happened: the name is
+# not in the archive; the archive is malformed; the CRC did not match what was
+# inflated; or the member is genuinely a zero-byte file. A caller that writes
+# the result to disk turns a CRC FAILURE into an empty file with no complaint --
+# the same defect core:compress named `Truncated` for and core:image named
+# `Corrupt` for, both because "a damaged member read as a zero-byte file" is how
+# it bites. Verify with `crc32` and `list`'s Meta if the difference matters.
+# gap: no error channel anywhere in this package. Naming these would mean a
+# ZipErr enum and a Result-returning extract beside the current one, the shape
+# core:io, core:compress and core:image all settled on. Method 0 (stored) and 8 (deflate)
 # are supported; anything else extracts as empty. The writer emits a
 # standards-shaped archive (local headers + central directory + EOCD, CRC-32
 # computed here, deflate via core:compress's raw stream, DOS time/date fields

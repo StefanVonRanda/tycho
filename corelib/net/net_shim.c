@@ -357,8 +357,16 @@ void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *
     unsigned char *buf = (unsigned char *)malloc((size_t)max);
     if (!buf) return;
     tycho_int n = (tycho_int)recvfrom((int)fd, (char *)buf, (size_t)max, 0, NULL, NULL);
-    if (n < 0) { free(buf); return; }       /* a 0-length datagram is legal -> keep buf, outlen 0 */
-    if (n == 0) { free(buf); return; }
+    /* Both arms produce the SAME observable result -- *out NULL, *outlen 0 --
+     * and that is a real limitation, not an oversight: a zero-length datagram is
+     * legal in UDP and carries meaning, but netx_udp_read has no status
+     * out-parameter to tell it apart from a receive error. netx_read above does
+     * (TY_RD_EOF / TY_RD_TMO / TY_RD_ERR); the UDP pair is sentinel-based, which
+     * corelib/net/net.ty's UDP block explains and accepts.
+     * gap: distinguishing them needs a status out-param here and a Result on
+     * net.udp_read, the same shape the TCP side already has. */
+    if (n < 0) { free(buf); return; }       /* receive error */
+    if (n == 0) { free(buf); return; }      /* legal 0-length datagram, reported the same way */
     *out = buf;
     *outlen = n;
 }
