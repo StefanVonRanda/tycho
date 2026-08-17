@@ -266,6 +266,7 @@
   .fig .fcap{padding:10px var(--pad); border-top:1px solid var(--line);
     font-size:10px; line-height:1.6; color:var(--faint)}
   .fig .fcap b{color:var(--dim); font-weight:600}
+  .fig .fcap code{color:var(--ink-soft)}
   .trace{height:clamp(140px,14vw,240px)}
   .trace figcaption{display:none}
 
@@ -418,7 +419,7 @@
     <div class="fig rv">
       <div class="fhead"><span class="dot"></span><b>FIG. 01</b><span>— arena lifetimes</span></div>
       <canvas class="trace" id="tr1" aria-hidden="true"></canvas>
-      <div class="fcap"><b>Arena lifetimes.</b> A block is one allocation. A value built in the innermost scope is returned to main's arena, outliving the scope that built it; when a scope exits, its whole arena is freed at once.</div>
+      <div class="fcap"><b>Arena lifetimes.</b> Each bar is one allocation, drawn from where it is made to where it is freed. A scope's allocations all end on the same line — leaving the scope frees its whole arena in one step. The highlighted value is returned, so it crosses that line and lives on in <code>main</code>'s arena.</div>
     </div>
   
   
@@ -648,9 +649,14 @@ the generated C to. Building from source below ends at the same prompt.</p>
   }
 
   /* ── canvas plumbing ── */
+  /* gap: these duplicate the CSS palette by hand and nothing keeps them in sync.
+     scripts/check_contrast.py reads the :root tokens and CANNOT see a canvas fill,
+     so a --acc edit in the stylesheet leaves these behind silently. The ink/faint
+     pairs already diverge from their tokens (ink here is 236,237,230; --ink is
+     #f4f3ef). Reading them with getComputedStyle at draw time would fix it. */
   var PAL={
-    light:{ink:[13,13,12], faint:[154,155,146]},
-    dark:{ink:[236,237,230], faint:[84,85,77]}
+    light:{ink:[13,13,12], faint:[154,155,146], acc:[74,124,0]},
+    dark:{ink:[236,237,230], faint:[84,85,77], acc:[198,255,63]}
   };
   function col(k,a){ var c=PAL[curTheme()][k]; return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
   function mkState(cv){ return {cv:cv, ctx:cv.getContext('2d'), w:0, h:0, on:true, ready:false}; }
@@ -669,78 +675,127 @@ the generated C to. Building from source below ends at the same prompt.</p>
     }, {rootMargin:'160px'});
   }
 
-  /* ── FIG. 01 arena lifetimes: a stack of scope bars ──
-     top bar = innermost scope, bottom = main (root). Blocks appear (allocations).
-     Every 9s loop: a highlighted value is RETURNED down the stack to main (ink
-     block + dashed track + arrowheads), then the innermost scope EXITS (ink
-     flash on its bar): its whole arena is freed at once. */
-  var TR_LOOP=9, TR_X0=150, TR_BARH=26, TR_GAP=16, TR_TOP=16;
-  var TR_BARS=[{label:'FN · INNER'},{label:'FN'},{label:'MAIN'}];
-  var TR_BLOCKS=[
-    {b:0, at:0.6, dur:3.0, xf:0.12, w:22},
-    {b:0, at:2.6, dur:5.0, xf:0.55, w:26},
-    {b:1, at:1.0, dur:5.5, xf:0.24, w:30},
-    {b:1, at:4.2, dur:3.6, xf:0.70, w:24},
-    {b:2, at:1.4, dur:6.5, xf:0.18, w:36},
-    {b:2, at:3.6, dur:4.8, xf:0.55, w:28}
+  /* ── FIG. 01 arena lifetimes: a lifetime chart ──
+     X IS TIME AND LENGTH IS LIFETIME. That is the whole point, and it is what the
+     previous version got wrong: blocks were placed at a fixed x fraction while a
+     "time →" axis sat underneath, so horizontal position meant nothing, and each
+     block carried its own duration -- so allocations in one scope vanished on
+     unrelated schedules while the caption claimed the arena was "freed at once".
+     The drawing contradicted its own caption.
+
+     Here every allocation ENDS AT ITS SCOPE'S EXIT, by construction: a bar's right
+     edge is SCOPES[r].to, never a per-block duration. The vertical rule at each
+     exit is the one idea in the figure -- one cut, the whole arena gone.
+
+     The escaping value is the exception and is drawn in the accent: born in the
+     loop body, it crosses that rule and steps down a row at each exit, ending only
+     with main. That step IS "outliving the scope that built it".
+
+     The chart is drawn WHOLE at every frame; the playhead only splits each bar
+     into solid (already happened) and ghosted (not yet). So a still frame carries
+     the entire story -- which is what makes the reduced-motion path honest, where
+     the old code drew frame 0 and every block was still 0.6s from appearing. */
+  var TR_T=10, TR_LOOP=11.4;              /* 10 units of story + a pause before the loop */
+  var TR_SCOPES=[
+    {label:'LOOP BODY', from:2.2, to:6.2},
+    {label:'COUNT_TO',  from:1.2, to:8.0},
+    {label:'MAIN',      from:0.0, to:10.0}
   ];
-  var TR_RETURN=[[0,4.8,5.8],[1,5.8,6.8],[2,6.8,8.0]];  /* bar, from, to */
+  /* Each allocation names only its BIRTH. Its death is its scope's exit -- there is
+     deliberately no per-allocation duration to get wrong. */
+  var TR_ALLOC=[
+    {r:0, at:2.6, lane:0}, {r:0, at:3.6, lane:1},
+    {r:1, at:1.6, lane:0}, {r:1, at:4.4, lane:1},
+    {r:2, at:0.5, lane:0}, {r:2, at:3.0, lane:1}
+  ];
+  var TR_ESC={at:4.6, lane:2};            /* born in row 0, returned down to main */
+
   function drawTrace(s, t){
-    if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h;
+    if(!s.w) return;
+    var ctx=s.ctx, w=s.w, h=s.h, i, r;
     ctx.clearRect(0,0,w,h);
-    var tt=t%TR_LOOP, regX=TR_X0, regW=w-TR_X0-12;
     ctx.font='9.5px "IBM Plex Mono",monospace';
-    ctx.fillStyle=col('faint',0.85); ctx.fillText('time →', 8, h-6);
-    var barY=function(i){ return TR_TOP+i*(TR_BARH+TR_GAP); };
-    /* scope bars */
-    for(var i=0;i<3;i++){
-      var y=barY(i);
-      ctx.fillStyle=col('ink',0.05); ctx.fillRect(8,y,regX+regW-8,TR_BARH);
-      ctx.strokeStyle=col('ink',0.30); ctx.lineWidth=1;
-      ctx.strokeRect(8,y,regX+regW-8,TR_BARH);
-      ctx.fillStyle=col('ink',0.55); ctx.fillText(TR_BARS[i].label, 14, y+17);
+    ctx.textBaseline='alphabetic';
+
+    var padT=22, padB=24, gap=9;   /* padT leaves room for the "scope exit" label */
+    var gut=Math.min(120, Math.max(64, w*0.20));       /* label gutter */
+    var x0=gut, x1=w-14, pw=x1-x0;
+    var rowH=(h-padT-padB-gap*2)/3;
+    var laneH=Math.max(5, (rowH-10)/3), laneGap=Math.max(2,(rowH-10-laneH*3)/2);
+    var X=function(u){ return x0+(u/TR_T)*pw; };
+    var rowY=function(i){ return padT+i*(rowH+gap); };
+    var laneY=function(i,l){ return rowY(i)+5+l*(laneH+laneGap); };
+
+    /* playhead: sweeps 0..TR_T then holds while the loop pauses. reduce => finished. */
+    var ph=reduce ? TR_T : Math.min(TR_T, (t%TR_LOOP));
+
+    /* bar(): solid up to the playhead, dimmed after it. One helper so no bar can be
+       drawn by a path that forgets the split.
+       THE DIM FACTOR IS 0.55, NOT 0.18. At 0.18 the whole chart was illegible for
+       the first second of every loop, when the playhead sits at 0 and nothing has
+       "happened" yet -- the same blank-figure failure the old version had, just
+       briefer. The playhead must ADD emphasis to a chart that is already readable,
+       never be the thing that makes it readable. */
+    function bar(a,b,y,hh,key,alpha){
+      if(b<=a) return;
+      var mid=Math.max(a, Math.min(b, ph));
+      if(mid>a){ ctx.fillStyle=col(key,alpha);      ctx.fillRect(X(a), y, X(mid)-X(a), hh); }
+      if(b>mid){ ctx.fillStyle=col(key,alpha*0.55); ctx.fillRect(X(mid), y, X(b)-X(mid), hh); }
     }
-    /* allocations */
-    for(var b=0;b<TR_BLOCKS.length;b++){
-      var B=TR_BLOCKS[b], y=barY(B.b);
-      var local=(tt-B.at+TR_LOOP)%TR_LOOP;
-      if(local<B.dur){
-        var a=Math.min(1, local/0.35, (B.dur-local)/0.35);
-        ctx.fillStyle=col('ink',0.55*a);
-        ctx.fillRect(regX+B.xf*regW, y+7, B.w, 12);
-      }
+
+    /* scope extents + row labels */
+    for(i=0;i<3;i++){
+      var S=TR_SCOPES[i], y=rowY(i);
+      ctx.fillStyle=col('ink',0.05);
+      ctx.fillRect(X(S.from), y, X(S.to)-X(S.from), rowH);
+      ctx.strokeStyle=col('ink',0.24); ctx.lineWidth=1;
+      ctx.strokeRect(X(S.from)+0.5, y+0.5, X(S.to)-X(S.from)-1, rowH-1);
+      ctx.fillStyle=col('ink',0.62);
+      ctx.fillText(S.label, 8, y+rowH/2+3.5);
     }
-    /* return: dashed track down to main + highlighted block hopping bar to bar */
-    var inReturn=tt>=4.8&&tt<8.0;
-    if(inReturn){
-      var ax=regX+0.62*regW, y0=barY(0)+TR_BARH/2, y1=barY(2)+TR_BARH/2;
-      ctx.strokeStyle=col('ink',0.55); ctx.lineWidth=1;
-      ctx.setLineDash([3,3]);
-      ctx.beginPath(); ctx.moveTo(ax,y0); ctx.lineTo(ax,y1); ctx.stroke();
+
+    /* allocations -- right edge is the scope's exit, always */
+    for(i=0;i<TR_ALLOC.length;i++){
+      var A=TR_ALLOC[i];
+      bar(A.at, TR_SCOPES[A.r].to, laneY(A.r,A.lane), laneH, 'ink', 0.66);
+    }
+
+    /* the escaping value: one accent bar per row it survives into */
+    var segs=[[0,TR_ESC.at,TR_SCOPES[0].to],[1,TR_SCOPES[0].to,TR_SCOPES[1].to],[2,TR_SCOPES[1].to,TR_SCOPES[2].to]];
+    for(i=0;i<segs.length;i++){
+      bar(segs[i][1], segs[i][2], laneY(segs[i][0],TR_ESC.lane), laneH, 'acc', 0.95);
+    }
+    /* the steps down between rows, at each exit it crosses */
+    ctx.lineWidth=1;
+    for(i=0;i<2;i++){
+      var xs=X(TR_SCOPES[i].to), ya=laneY(i,TR_ESC.lane)+laneH, yb=laneY(i+1,TR_ESC.lane);
+      ctx.strokeStyle=col('acc', ph>=TR_SCOPES[i].to ? 0.9 : 0.5);
+      ctx.beginPath(); ctx.moveTo(xs-laneH*0.5, ya); ctx.lineTo(xs-laneH*0.5, yb); ctx.stroke();
+    }
+
+    /* scope exits: the one cut that frees a whole arena */
+    for(i=0;i<3;i++){
+      var ex=X(TR_SCOPES[i].to), yt=rowY(i), yb2=rowY(i)+rowH;
+      var hot=Math.abs(ph-TR_SCOPES[i].to)<0.30 && !reduce;
+      ctx.strokeStyle=col('ink', hot?0.85:0.42); ctx.lineWidth=hot?2:1;
+      ctx.setLineDash(hot?[]:[3,3]);
+      ctx.beginPath(); ctx.moveTo(ex, yt-3); ctx.lineTo(ex, yb2+3); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle=col('ink',0.75);
-      ctx.beginPath(); ctx.moveTo(ax-3,y1+2); ctx.lineTo(ax+3,y1+2); ctx.lineTo(ax,y1+6); ctx.closePath(); ctx.fill();
-      for(var hh=0;hh<TR_RETURN.length;hh++){
-        var H=TR_RETURN[hh];
-        if(tt>=H[1]&&tt<H[2]){
-          var y=barY(H[0]);
-          var a=Math.min(1,(tt-H[1])/0.35,(H[2]-tt)/0.45);
-          ctx.fillStyle=col('ink',0.9*a);
-          ctx.fillRect(ax-14, y+3, 28, 20);
-          ctx.fillStyle=col('ink',0.95*a);
-          ctx.fillText('RETURN', ax+18, y+17);
-          ctx.fillStyle=col('ink',0.8*a);
-          ctx.beginPath(); ctx.moveTo(ax-3,y+21); ctx.lineTo(ax+3,y+21); ctx.lineTo(ax,y+25); ctx.closePath(); ctx.fill();
-        }
-      }
     }
-    /* innermost scope exits: ink flash on its bar */
-    if(tt>=7.6&&tt<8.4){
-      var y=barY(0), a=1-(tt-7.6)/0.8;
-      ctx.strokeStyle=col('ink',0.7*a); ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(8,y+TR_BARH); ctx.lineTo(regX+regW,y+TR_BARH); ctx.stroke();
-      ctx.fillStyle=col('ink',0.6*a); ctx.fillText('EXIT', regX+0.55*regW+34, y+17);
+    /* name the rule once, above the innermost exit */
+    ctx.fillStyle=col('faint',1);
+    ctx.fillText('scope exit', X(TR_SCOPES[0].to)+5, rowY(0)-7);
+
+    /* playhead */
+    if(!reduce && ph<TR_T){
+      ctx.strokeStyle=col('ink',0.45); ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(X(ph), padT-6); ctx.lineTo(X(ph), rowY(2)+rowH+6); ctx.stroke();
     }
+
+    /* axis */
+    ctx.strokeStyle=col('ink',0.22); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x0, h-padB+8); ctx.lineTo(x1, h-padB+8); ctx.stroke();
+    ctx.fillStyle=col('faint',1); ctx.fillText('time →', x0, h-7);
   }
 
   /* ── wiring ── */
