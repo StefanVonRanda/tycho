@@ -176,12 +176,14 @@ cleanly when absent.
 setup (`TYCHO_CORELIB` overrides). A file with an `import` is a *package* —
 give it its own directory:
 
-```
-mysite/main.ty:
-    package main
-    import "core:strings"
-    fn main():
-        println(strings.to_upper("hello"))     # HELLO
+`mysite/main.ty`:
+
+```tycho
+package main
+import "core:strings"
+
+fn main():
+    println(strings.to_upper("hello"))     # HELLO
 ```
 
 Every corelib module has a runnable example under

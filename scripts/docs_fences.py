@@ -703,6 +703,43 @@ def main():
                 carry = (drop_binds(drop_decls(carry, declared(ok_body)), bound(ok_body))
                          + "\n" + ok_body + "\n")
 
+    # An UNTAGGED fence is invisible to everything above: the lane dispatches on
+    # the info string, so ```<nothing> holding a whole program is never compiled
+    # and never even reported as skipped. README.md's only worked example sat in
+    # one, as did the blog post the webserver renders. A fence that looks like
+    # Tycho and carries no tag is a failure unless its file is named here with a
+    # reason -- the two allowed ones hold code that is SUPPOSED not to compile.
+    UNTAGGED_OK = {
+        'docs/internals/FRICTION.md': 'a defect record: the code is what FAILED',
+        '.github/ISSUE_TEMPLATE/bug_report.md': 'a form the reporter fills in',
+        'docs/rfc/parallel-for-width.md': 'grammar, not a program',
+    }
+    stray = []
+    for f in sorted(subprocess.run(['git', 'ls-files', '*.md'], capture_output=True,
+                                   text=True, cwd=ROOT).stdout.split()):
+        if f in UNTAGGED_OK:
+            continue
+        inb, tag, buf, at = False, '', [], 0
+        for i, l in enumerate(open(os.path.join(ROOT, f), encoding='utf-8',
+                                   errors='replace').read().split('\n'), 1):
+            if l.startswith('```'):
+                if not inb:
+                    inb, tag, buf, at = True, l[3:].strip(), [], i
+                else:
+                    inb = False
+                    b = '\n'.join(buf)
+                    if not tag and (':=' in b or re.search(
+                            r'^\s*(fn|package|import|struct|enum|handle)\s', b, re.M)):
+                        stray.append("%s:%d" % (f, at))
+            elif inb:
+                buf.append(l)
+    if stray:
+        nfail += len(stray)
+        for x in stray:
+            fails.append(x + " -- an UNTAGGED fence holding what looks like Tycho "
+                             "code: nothing checks it. Tag it ```tycho, or name the "
+                             "file in UNTAGGED_OK with a reason")
+
     for x in fails:
         print("docs-fences: FAIL " + x, file=sys.stderr)
     print("docs-fences: %d snippet(s) verified -- every Tycho fence BUILT AND RUN "
