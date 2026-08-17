@@ -401,7 +401,7 @@ static atomic_size_t st_live, st_peak_live, st_alloc_calls, st_alloc_bytes,
  *
  * So `os` + `teardown` against `wall` reads as: everything not accounted for
  * here is the program doing its own work. That is the number worth having. */
-static atomic_size_t st_ns_os, st_ns_teardown;
+static atomic_size_t st_ns_os, st_ns_teardown, st_arena_free_noop;
 static uint64_t st_t0_ns;                    /* set by the constructor, before main */
 
 static uint64_t st_now_ns(void) {
@@ -505,12 +505,13 @@ static void stats_dump(void) {
         "  recycle:     %zu of %zu allocs from free lists (%.1f%%), %s of %s bytes\n"
         "  OS reserved: %s over %zu blocks\n"
         "  block reuse: %zu of %zu requests from pool (%.1f%%)\n"
-        "  arenas:      %zu created, %zu freed\n",
+        "  arenas:      %zu created, %zu torn down, %zu already empty\n",
         live, bump, (size_t)atomic_load(&st_alloc_calls),
         hits, reqs, reqs ? 100.0 * (double)hits / (double)reqs : 0.0, rc_b, rc_byte,
         os, osbl,
         reuse, gets, gets ? 100.0 * (double)reuse / (double)gets : 0.0,
-        (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_arena_frees));
+        (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_arena_frees),
+        (size_t)atomic_load(&st_arena_free_noop));
 
     /* Time. `rest` is wall minus what the arena spent, so it is the program's
      * own work PLUS the untimed bump path -- named that way rather than called
@@ -761,7 +762,24 @@ void arena_free(Arena *a) {
     uint64_t t_td = 0;
     if (g_arena_stats) {
         t_td = st_now_ns();
-        atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
+        /* Count a TEARDOWN, not a call. A waited task's root is freed twice by
+         * design -- eagerly at the wait, then again by the scope-exit
+         * tycho_task_finish, which the runtime documents as a no-op because
+         * head/bkt/freelist are already NULL. Counting the call made "arenas
+         * created" and "arenas freed" disagree by one per waited task: a two-task
+         * program reported 11 created and 13 freed, which reads as a leak in the
+         * one report whose job is to show there is not one.
+         *
+         * "Released something" is the honest predicate: it is false for the
+         * redundant free, and also for an arena created and never allocated into
+         * -- which is a real arena whose teardown genuinely does nothing, so the
+         * two figures can differ for that reason and it is information, not an
+         * artefact. The redundant calls are reported separately rather than
+         * hidden. */
+        if (a->head || a->bkt || a->freelist)
+            atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
+        else
+            atomic_fetch_add_explicit(&st_arena_free_noop, 1, memory_order_relaxed);
         st_drop_live(a);
     }
     if (a->bkt) { free(a->bkt); a->bkt = NULL; }   /* release the lazily-allocated table */

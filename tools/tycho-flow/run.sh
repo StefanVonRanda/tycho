@@ -429,7 +429,7 @@ else
             # interned function static, which two workers reaching the same
             # literal published with no ordering between them. That is fixed in
             # the codegen (a literal is now a statically initialised object,
-            # `runtime/tycho_rt.c:1306-1318`), so the classifier is gone and any
+            # `runtime/tycho_rt.c:1324-1336`), so the classifier is gone and any
             # WARNING at all fails the lane -- which is the whole point of
             # running TSan here.
             tsan_run() {

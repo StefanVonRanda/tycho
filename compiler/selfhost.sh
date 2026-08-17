@@ -55,7 +55,7 @@ bad() { echo "FAIL: $*"; fail=1; }
 # runtime as string literals, and that copy carries the POSIX-only
 # `sysconf(_SC_NPROCESSORS_ONLN)` spelling of tycho_ncpu with no _WIN32 branch
 # and no <windows.h> (compiler/tychoc0.ty:10688 -- the live runtime grew its
-# branch in phase 1, runtime/tycho_rt.c:1153). Stage B's C therefore does not
+# branch in phase 1, runtime/tycho_rt.c:1171). Stage B's C therefore does not
 # COMPILE under mingw: "'_SC_NPROCESSORS_ONLN' undeclared", measured
 # 2026-08-08. Nothing about the Windows port turns on this -- the fixed point
 # is a property of the frozen compiler and its own frozen source, and the Linux

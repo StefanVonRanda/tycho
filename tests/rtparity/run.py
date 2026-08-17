@@ -93,6 +93,9 @@ EXPECT_ROWS = {
     "peak live",
     "recycle",      # free-list hit count + bytes (2026-08-04, arena-observability phase)
     "OS reserved",
+    "time",         # wall, OS-malloc and teardown nanoseconds (2026-08-17). The bump
+                    # path is deliberately NOT timed -- see the note at st_ns_os in
+                    # runtime/tycho_rt.c -- so this row reports three figures, not four.
 }
 
 # Traps that live in the runtime itself. Truncated entries (`tycho: chr(%`) are
