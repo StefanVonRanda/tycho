@@ -337,7 +337,7 @@ section is kept as the record of the two prices that were weighed.
 **Lifting it is small — smaller than the row's "open by design" implies.** The
 blocker is not representation. `runtime/tycho_rt.c@TychoArrStr` is
 `typedef struct { char **data; tycho_int len; tycho_int cap; } TychoArrStr;`, and
-`runtime/tycho_rt.c:1108@NUL` records that a Tycho string is NUL-terminated and its
+`runtime/tycho_rt.c:1162@NUL` records that a Tycho string is NUL-terminated and its
 pointer is a valid C `char *` with the header hidden behind it. So a `[string]`'s
 `.data` **is already a `char **` of ordinary C strings** — no marshalling, no
 copy, no ownership transfer. The change is one branch in

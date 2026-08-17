@@ -61,7 +61,7 @@ heavy: every `spawn` is one OS thread via `pthread_create`
 full deep-copy of captures per chunk (`src/tychoc.c:4531-4544`), there is no
 thread pool or work-stealing (`docs/guides/concurrency.md:137-139`), spawning is
 unbounded, and a panic/abort in any task `exit(1)`s the whole process
-(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:931-946`).
+(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:985-1000`).
 
 **Top recommendations (ranked, both areas):**
 
@@ -269,7 +269,7 @@ opt-out.**
   Fine for the benchmark shape (a fixed fan-out of long tasks), painful for
   many short tasks (each pays full thread create/destroy).
 - **Blocking is a parked OS thread.** A `recv`/`wait`/select waits on a
-  spin → `sched_yield` → 1ms timed-park ladder (`runtime/tycho_rt.c:398-418`,
+  spin → `sched_yield` → 1ms timed-park ladder (`runtime/tycho_rt.c:422-442`,
   `docs/guides/concurrency.md:114-117`). Mostly cheap on the fast path, but a blocked
   task holds a whole OS thread.
 
@@ -315,7 +315,7 @@ these cases, and the docs only partially flag them:
    not mentioned as a limit.
 4. **Panic/abort in a task kills the whole process.** Any runtime error in a
    task — bounds check, `pop` from empty, OOM, divide, `exit(1)` paths
-   throughout `runtime/tycho_rt.c` (e.g. `:921-936`, `:87`, `:927-928`) — takes
+   throughout `runtime/tycho_rt.c` (e.g. `:975-990`, `:87`, `:981-982`) — takes
    down every other task with it. Documented (`docs/guides/concurrency.md:141`) but
    worth elevating: there is no task-level isolation of failure, unlike Erlang
    processes, which the intro compares Tycho to (`docs/guides/concurrency.md:8-9`).
@@ -344,7 +344,7 @@ these cases, and the docs only partially flag them:
 
 **R2. Bounded worker pool / thread cap for `spawn` and `parallel for`.**
 - *Design.* A runtime worker pool sized to `tycho_ncpu()` (reuse the existing
-  `tycho_ncpu` / `TYCHO_THREADS` knob, `runtime/tycho_rt.c:551-558`). `spawn`
+  `tycho_ncpu` / `TYCHO_THREADS` knob, `runtime/tycho_rt.c:599-606`). `spawn`
   submits a closure to the pool instead of `pthread_create` per call; `wait`
   blocks on that task's completion. `parallel for` already fans out exactly K
   chunks so it maps onto the pool directly. Keep the per-task root arena

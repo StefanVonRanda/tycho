@@ -42,7 +42,7 @@
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:790@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:844@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
   (`runtime/tycho_rt.c:68@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on

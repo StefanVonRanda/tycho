@@ -58,7 +58,7 @@ void tmx_sleep_ns(tycho_int ns) {
      *
      * So sleep against a DEADLINE read from the same clock the caller measures
      * with -- clock_gettime(CLOCK_MONOTONIC), which is what the runtime's
-     * clock() builtin uses (runtime/tycho_rt.c:1380) and therefore what
+     * clock() builtin uses (runtime/tycho_rt.c:1434) and therefore what
      * time.elapsed_ms sees. Re-sleeping the remainder until that clock agrees
      * makes the contract true by construction in the domain it is asserted in,
      * whatever the timer granularity underneath. */

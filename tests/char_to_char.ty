@@ -8,7 +8,7 @@
 # annotation either; the type is inferred here exactly as it is from `char_at`.
 #
 # OUT OF RANGE ABORTS, it does not wrap. to_char routes through the same
-# `tycho_chr` (runtime/tycho_rt.c:1193-1198) as `chr`, whose comment states the
+# `tycho_chr` (runtime/tycho_rt.c:1247-1252) as `chr`, whose comment states the
 # rule: "A value outside 0..255 is a program error and aborts cleanly (like a
 # bad index), rather than silently masking to a byte." tests/abort/chr_oob.ty
 # pins the abort itself. The sized `to_u8` family wraps instead, but those are

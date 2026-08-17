@@ -96,6 +96,12 @@ started from: `python3 scripts/reanchor_citations.py --ref <base> --apply`.
 Without that it compares your change against itself, reports `no line moved;
 nothing to re-anchor`, and leaves you stuck.
 
+**It also defaults to `src/tychoc.c`.** If you moved lines in a different file
+— `runtime/tycho_rt.c`, a corelib shim — name it:
+`python3 scripts/reanchor_citations.py runtime/tycho_rt.c --ref <base> --apply`.
+Given no target it prints the same reassuring `nothing to re-anchor` while the
+citations into your file stay stale.
+
 **A commit hash is a citation too, and the gate resolves it.** Write it
 backticked at git's default seven characters (`` `e96d6fc` ``) or introduced by
 the word `commit` (`commit e96d6fc`); either form must name a commit in this
