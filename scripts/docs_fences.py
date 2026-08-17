@@ -196,6 +196,7 @@ def main():
     files = subprocess.run(['git', 'ls-files', '*.md'],
                            capture_output=True, text=True, cwd=ROOT).stdout.split()
     nok = nskip = nfail = nrun = nsh = 0
+    skipped = []
     fails = []
     for f in files:
         text = open(os.path.join(ROOT, f), encoding='utf-8', errors='replace').read()
@@ -212,7 +213,7 @@ def main():
                 # shim or of emitted code, so they will not link, but a snippet
                 # that does not parse is wrong on its face.
                 if skip:
-                    nskip += 1; print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                    nskip += 1; skipped.append((f, line)); print("    skip  %s:%d  %s" % (f, line, skip)); continue
                 # A C fence is an excerpt of emitted code or of a shim, so it
                 # names the runtime's types. Give it that context and it is a
                 # real compile, not a guess -- as written, then wrapped in a
@@ -299,7 +300,7 @@ def main():
                 # releases and publish them. What is checkable without side
                 # effects is that every command it names exists on this machine.
                 if skip:
-                    nskip += 1; print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                    nskip += 1; skipped.append((f, line)); print("    skip  %s:%d  %s" % (f, line, skip)); continue
                 # A shell fence is RUN when every line is safe to run: no
                 # network, no publishing, no writes outside a temp dir. The
                 # unsafe ones are named, not silently passed.
@@ -318,7 +319,7 @@ def main():
                     tool = dbg.group(1)
                     if subprocess.run(['sh', '-c', 'command -v ' + tool],
                                       capture_output=True).returncode != 0:
-                        nskip += 1
+                        nskip += 1; skipped.append((f, line))
                         # say WHY it is absent when that is a platform fact rather
                         # than a missing package: the lldb block documents the
                         # macOS toolchain and its `dsymutil` step has no Linux
@@ -417,7 +418,7 @@ def main():
                         print("    ok    %s:%d  [synopsis RAN with real arguments, exit %d]"
                               % (f, line, r.returncode))
                     else:
-                        nskip += 1
+                        nskip += 1; skipped.append((f, line))
                         print("    skip  %s:%d  a usage SYNOPSIS; run with real arguments "
                               "it exits %d: %s" % (f, line, r.returncode,
                               (r.stderr.strip().splitlines() or [""])[-1][:44]))
@@ -431,7 +432,7 @@ def main():
                 # banner exactly as `server/run.sh` does, and substitute it.
                 if './tycho-httpd' in joined and '--port' in joined:
                     if not os.access(os.path.join(ROOT, 'tychoc'), os.X_OK):
-                        nskip += 1
+                        nskip += 1; skipped.append((f, line))
                         print("    skip  %s:%d  needs ./tychoc to build the server -- "
                               "run 'make' first" % (f, line)); continue
                     with tempfile.TemporaryDirectory() as tmp:
@@ -533,7 +534,7 @@ def main():
                             ).returncode != 0:
                         missing.append(cmd)
                 if missing:
-                    nskip += 1
+                    nskip += 1; skipped.append((f, line))
                     print("    skip  %s:%d  shell: not on this machine: %s"
                           % (f, line, " ".join(sorted(set(missing)))))
                 elif unsafe:
@@ -622,7 +623,7 @@ def main():
                 continue
             norun = bool(skip and skip.startswith('norun:'))
             if skip and not norun:
-                nskip += 1
+                nskip += 1; skipped.append((f, line))
                 print("    skip  %s:%d  %s" % (f, line, skip))
                 continue
             # `...` is not Tycho. A fence using it as an elided body is showing
@@ -630,7 +631,7 @@ def main():
             # would obscure the very thing it illustrates.
             if re.search(u'^[ \t]*(\\.\\.\\.|\u2026)[ \t]*$|:[ \t]+(\\.\\.\\.|\u2026)[ \t]*$',
                          body, re.M):
-                nskip += 1
+                nskip += 1; skipped.append((f, line))
                 print("    skip  %s:%d  a shape illustration: `...` marks an elided body"
                       % (f, line))
                 continue
@@ -768,6 +769,29 @@ def main():
             fails.append(x + " -- an UNTAGGED fence holding what looks like Tycho "
                              "code: nothing checks it. Tag it ```tycho, or name the "
                              "file in UNTAGGED_OK with a reason")
+
+    # A SKIP is an enumerated exception, not a category. Every fence this lane
+    # declines to run must be named here with the reason it cannot be run, so a
+    # new one cannot appear quietly by inheriting an existing excuse -- the
+    # failure mode that let four snippets sit unchecked until 2026-08-18. The
+    # one entry left is a PLATFORM fact rather than a judgement, and on the
+    # platform it documents it must run: on Darwin an empty list is required.
+    ALLOWED_SKIPS = {
+        ('docs/guides/debugging.md', 'lldb'):
+            'macOS toolchain: `dsymutil` is Xcode\'s and writes a Mach-O .dSYM, '
+            'so no Linux host can run it. Runs on Darwin.',
+    }
+    for sf, sl in skipped:
+        key = next((k for k in ALLOWED_SKIPS if k[0] == sf), None)
+        if key is None:
+            nfail += 1
+            fails.append("%s:%d is SKIPPED and not in ALLOWED_SKIPS -- every skip is "
+                         "an enumerated exception. Run it, or name it there with the "
+                         "reason it cannot be run on any host" % (sf, sl))
+        elif sys.platform == 'darwin':
+            nfail += 1
+            fails.append("%s:%d is skipped on macOS, which is the platform it "
+                         "documents -- it must RUN here" % (sf, sl))
 
     for x in fails:
         print("docs-fences: FAIL " + x, file=sys.stderr)
