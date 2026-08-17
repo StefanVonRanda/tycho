@@ -56,10 +56,49 @@ array (affine: one owner, scope-bound), so **the worker set is a fixed list of
 named `spawn`s** — the width cannot be computed:
 
 ```tycho
-w1 := spawn worker(0, nw, jobs, out)
-...
-w8 := spawn worker(7, nw, jobs, out)
+package main
+
+struct Job:
+    n: int
+
+fn worker(id: int, live: int, jobs: Channel(Job), out: Channel(int)) -> int:
+    if id >= live:                    # past the live count: never pulls a job
+        return 0
+    did := 0
+    for true:
+        match recv(jobs):
+            Some(j):
+                send(out, j.n * 2)
+                did += 1
+            None: break
+    return did
+
+fn main():
+    nw := 2
+    jobs := channel(Job, 8)
+    out := channel(int, 8)
+    for i := 0; i < 4; i += 1:
+        send(jobs, Job(i))
+    close(jobs)
+    w1 := spawn worker(0, nw, jobs, out)
+    w2 := spawn worker(1, nw, jobs, out)
+    w3 := spawn worker(2, nw, jobs, out)
+    w4 := spawn worker(3, nw, jobs, out)
+    done := wait(w1) + wait(w2) + wait(w3) + wait(w4)
+    close(out)
+    total := 0
+    for true:
+        match recv(out):
+            Some(v): total += v
+            None: break
+    println(str(done) + " " + str(total))
 ```
+```output
+4 12
+```
+
+Four are spawned and `nw` decides how many consume: the two live workers pull
+all four jobs between them, and `0+1+2+3` doubled is 12 whatever the split.
 
 `--workers=N` therefore cannot change how many are *spawned*, only how many
 *consume* (a worker whose id is past the live count returns immediately). That is

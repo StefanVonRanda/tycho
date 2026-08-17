@@ -237,10 +237,31 @@ name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:13753@detect_packag
 
 An import is a top-level declaration in a package's file:
 
-<!-- fence-skip: grammar forms shown side by side, not a program: each line is a header or a declaration with no body -->
+The plain form binds the package under the final component of its path:
+
 ```tycho
-import "geom"          # binds the package's own name  ->  geom.symbol
-import g "geom"         # aliases the prefix            ->  g.symbol
+package main
+import "core:math"
+
+fn main():
+    println(str(math.abs(-7)))
+```
+```output
+7
+```
+
+The aliased form binds it under the alias instead, and the original name is then
+not in scope:
+
+```tycho
+package main
+import m "core:math"
+
+fn main():
+    println(str(m.abs(-7)))
+```
+```output
+7
 ```
 
 The grammar is `"import" IDENT? STRING NEWLINE` (`src/tychoc.c@parse_import_decl`). The plain form `import "PATH"` binds the package

@@ -43,9 +43,15 @@ index=$(
       mode=="wait"           { mode="" }
       mode=="out" && /^```[ \t]*$/ {
         n++; id = P "_" n
-        printf "%s", tybuf > (OUT "/ex_" id ".ty")
-        printf "%s", obuf  > (OUT "/ex_" id ".out")
-        close(OUT "/ex_" id ".ty"); close(OUT "/ex_" id ".out")
+        # each example gets its OWN directory: tychoc compiles a directory as a
+        # package, so one example declaring `package main` (which any example
+        # with an `import` must) invalidated every bare-`fn main()` sibling
+        # carved from the same chapter. That made an import unshowable in the
+        # chapter about imports.
+        d = OUT "/ex_" id; system("mkdir -p \"" d "\"")
+        printf "%s", tybuf > (d "/ex.ty")
+        printf "%s", obuf  > (d "/ex.out")
+        close(d "/ex.ty"); close(d "/ex.out")
         print id "\t" F "\t" tystart
         mode=""; next
       }
@@ -56,7 +62,7 @@ index=$(
 
 echo "$index" | while IFS='	' read -r id f line; do
   [ -n "${id:-}" ] || continue
-  src="$TMP/ex_$id.ty"; exp="$TMP/ex_$id.out"; efail=0
+  src="$TMP/ex_$id/ex.ty"; exp="$TMP/ex_$id/ex.out"; efail=0
 
   # tychoc (C reference): --emit-c -o writes ex_$id.c
   if "$TYCHOC" "$src" --emit-c -o "$TMP/ex_$id" >"$TMP/ex_$id.log" 2>&1; then
@@ -72,7 +78,7 @@ echo "$index" | while IFS='	' read -r id f line; do
   fi
 done
 
-runs=$(ls "$TMP"/ex_*.ty 2>/dev/null | wc -l | tr -d ' ')
+runs=$(ls "$TMP"/ex_*/ex.ty 2>/dev/null | wc -l | tr -d ' ')
 if [ -f "$TMP/failed" ]; then
   echo "spec-examples: $runs runnable example(s), FAILURES above" >&2
   exit 1
