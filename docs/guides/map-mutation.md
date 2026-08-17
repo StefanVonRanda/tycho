@@ -15,6 +15,10 @@ per append, quadratic over a build. Instead, `m[k]` names the value's storage
 slot directly, so the mutation happens *in place*:
 
 ```tycho
+idx := []string: [int]
+term := "arena"
+doc := 7
+
 push(idx[term], doc)                  # grow the value array in its own slot
 ```
 
@@ -29,11 +33,15 @@ distinction is deliberate.
 the value's slot in the map and mutates it in place:
 
 ```tycho
-m[k] = v             # plain store of a (heap-copied) value
-m[k] += 1            # compound op on the slot
+m := []string: [int]
+k := "row"
+v := 1
+i := 0
+x := 9
+
+m[k] = [v]           # plain store of a (heap-copied) value
 push(m[k], v)        # grow an array-valued slot
 m[k][i] = x          # write into a nested array value
-m[k].field = x       # write a field of a struct value
 ```
 
 If the key is absent, the slot is **auto-inserted with the value type's zero**
@@ -48,6 +56,7 @@ hidden write lurking in a read. That's what makes the counter idiom read
 naturally:
 
 ```tycho
+words := ["ada", "alan", "ada"]
 cnt := []string: int
 for w in words:
     cnt[w] = cnt[w] + 1     # read cnt[w] (0 if absent), store back
@@ -79,7 +88,11 @@ A key expression that has side effects is evaluated exactly once per statement,
 even for a compound op that reads and writes the same slot:
 
 ```tycho
-m[next_key()] += 1     # next_key() runs once, not twice
+fn next_key() -> string:
+    return "k"
+
+tally := []string: int
+tally[next_key()] += 1     # next_key() runs once, not twice
 ```
 
 `reserve(m[k], n)` reaches a map's array-value slot too, so a posting list can

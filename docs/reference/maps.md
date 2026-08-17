@@ -14,8 +14,8 @@ counts := ["ada": 1, "alan": 2]   # a [string: int], typed from the literal
 empty := []string: int            # an empty map (key and value types required)
 
 counts["grace"] = 5               # add or overwrite
-"ada" in counts                   # membership test -> bool
-len(counts)                       # entry count -> int
+has := "ada" in counts            # membership test -> bool
+n := len(counts)                  # entry count -> int
 delete counts["alan"]             # remove a key (a no-op if absent)
 ```
 
@@ -29,9 +29,9 @@ missing key inserts the value type's zero first. So the common accumulator patte
 one line:
 
 ```tycho
-counts[w] += 1                    # count occurrences (zero-initialized on first sight)
-push(index[term], doc)            # grow a [string: [int]] value in place
-totals[user].balance = 0          # mutate a struct-valued entry's field
+counts["ada"] += 1                # count occurrences (zero-initialized on first sight)
+index := ["tycho": [1]]
+push(index["tycho"], 2)           # grow a [string: [int]] value in place
 ```
 
 Read as an rvalue, `m[k]` returns the value **by copy** and never inserts: a scalar value
@@ -42,7 +42,7 @@ map operation is now operator, keyword, or method syntax (`m[k]`, `m.get`, `in`,
 `len`, `keys`) — no snake_case map functions:
 
 ```tycho
-counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
+counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
 ```
 
 That accumulator looks like it rebuilds the map every step — `counts.get` then a store — but
