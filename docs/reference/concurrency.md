@@ -31,9 +31,9 @@ nothing about the C side's thread-safety and isolate it explicitly. The full ana
 
 ## `spawn` and `wait`
 
-<!-- fence-skip: an ellipsis body plus top-level statements; neither is a whole program -->
 ```tycho
-fn count(path: string) -> int: ...
+fn count(path: string) -> int:
+    return len(path)
 
 t1 := spawn count("a.txt")     # args deep-copied into the task's own arena
 t2 := spawn count("b.txt")     # runs in parallel

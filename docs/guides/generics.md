@@ -160,7 +160,6 @@ This keeps the rule simple. It does have a real downside — an error inside a d
 helper points at the instantiation, not always the line you expected — which the
 `where` clause below addresses with optional explicit constraints:
 
-<!-- fence-skip: the body is an ellipsis placeholder, not code -->
 ```tycho
 # a `where` clause turns an instantiation-time body error
 # into a checked-up-front signature error with a clear message.
@@ -168,6 +167,7 @@ fn sum(xs: [$T]) -> T where numeric(T):
     total := zero$(T)
     for x in xs:
         total = total + x
+    return total
     return total
 ```
 
