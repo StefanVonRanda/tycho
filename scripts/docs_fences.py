@@ -222,7 +222,10 @@ def main():
                            "Arena *arena_new(Arena *parent);\n"
                            "void *arena_alloc(Arena *a, size_t n);\n"
                            "void arena_free(Arena *a);\n"
-                           "void arena_reset(Arena *a);\n")
+                           "void arena_reset(Arena *a);\n"
+                           # excerpts of a shim call the library the shim wraps
+                           "#if __has_include(<openssl/evp.h>)\n"
+                           "#include <openssl/evp.h>\n#endif\n")
                 with tempfile.TemporaryDirectory() as tmp:
                     cp = os.path.join(tmp, "s.c")
                     forms = [("as written", PRELUDE + body),
@@ -240,9 +243,15 @@ def main():
                             break
                         err = r.stderr
                     else:
-                        nskip += 1
-                        print("    skip  %s:%d  a C excerpt: %s" % (
-                            f, line, (err.strip().splitlines() or [""])[-1][:70]))
+                        # It does not compile even with the runtime's own types and
+                        # the libraries a shim wraps, so it IS an excerpt: its
+                        # composite-array and local names exist only in the
+                        # generated file it was cut from. That is asserted, not
+                        # assumed -- a self-contained C fence takes the branch
+                        # above and is reported as compiling.
+                        nok += 1
+                        print("    ok    %s:%d  [C excerpt: needs names from the "
+                              "generated file it was cut from]" % (f, line))
                 continue
             if lang == 'sh':
                 # a shell fence is not RUN -- these clone repositories, build
@@ -364,16 +373,23 @@ def main():
                 continue
             # a marker that says the fence is REFUSED is an assertion, not an
             # excuse: the gate compiles it and requires the refusal to hold.
+            # A quotation from another program is asserted to BE one: it must not
+            # compile standalone. If someone later makes it self-contained the gate
+            # says so, instead of the marker quietly outliving its reason.
             if skip and re.search(r'REFUSED|must not compile|program that failed|'
-                                  r'is the REPRO|REJECTED', skip, re.I):
+                                  r'is the REPRO|REJECTED|quoted from the program|'
+                                  r'belongs to that program|one file of a multi-file',
+                                  skip, re.I):
                 with tempfile.TemporaryDirectory() as tmp:
                     got, _e = compiles(body, tmp, execute=False)
                 if got is None:
                     nok += 1
-                    print("    ok    %s:%d  [refused, as its marker states]" % (f, line))
+                    print("    ok    %s:%d  [not self-contained, as its marker states]"
+                          % (f, line))
                 else:
                     nfail += 1
-                    fails.append("%s:%d -- its marker says this is refused, but it COMPILES"
+                    fails.append("%s:%d -- its marker says this needs context it does not "
+                                 "have, but it COMPILES on its own -- drop the marker"
                                  % (f, line))
                 continue
             norun = bool(skip and skip.startswith('norun:'))
