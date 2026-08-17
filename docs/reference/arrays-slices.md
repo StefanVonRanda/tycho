@@ -104,7 +104,6 @@ or an int `const` (`const W = 16` then `[W]int`). Unlike the dynamic `[T]` (a he
 that grows with `push`), a `[N]T` is stored **inline** — no heap, no length header — and
 copied **by value** (a plain memcpy for scalar elements, deep for heap elements):
 
-<!-- fence-skip: statements shown at top level, outside any fn, to keep the example short -->
 ```tycho
 v: [3]int = [10, 20, 30]     # inline, exactly 3 elements
 w := v                        # a full value copy
@@ -130,7 +129,6 @@ A function can be **generic over the length** of a fixed array. A parameter writ
 introduces a size parameter `$N` that the call infers from the argument, and inside the body
 `N` is an ordinary `int` constant equal to that length:
 
-<!-- fence-skip: statements shown at top level, outside any fn, to keep the example short -->
 ```tycho
 fn sum(xs: [$N]int) -> int:      # N is inferred from the argument
     total := 0

@@ -127,7 +127,6 @@ write their real result through a pointer out-parameter — `int sqlite3_open(co
 char *path, sqlite3 **db)`. Declare the out-parameter `inout` and the transpiler passes
 the address of your local automatically; no hand-written shim:
 
-<!-- fence-skip: the extern declaration is whole, but the two lines under it are loose statements shown at top level; a real program needs them inside an fn -->
 ```tycho
 extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
 

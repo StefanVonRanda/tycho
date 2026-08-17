@@ -39,7 +39,6 @@ A final parameter written `xs: ...T` is **variadic**: inside the body `xs` is a 
 call packs its trailing arguments into that array. It is sugar over an array — the packed
 `[T]` is a value, deep-copied at the boundary like any array, so it needs no new machinery.
 
-<!-- fence-skip: statements shown at top level, outside any fn, to keep the example short -->
 ```tycho
 fn sum(xs: ...int) -> int:
     acc := 0

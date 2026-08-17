@@ -10,12 +10,14 @@
 A `subscript` names a reusable, zero-copy **place** into one of its arguments. It does not
 *return* a value — it `yield`s a projection:
 
-<!-- fence-skip: calls bump, an inout helper the prose names but does not define -->
 ```tycho
 struct Node:
     weight: int
 struct Graph:
     nodes: [Node]
+
+fn bump(n: inout int):
+    n = n + 1
 
 subscript edge(g: Graph, i: int) -> inout Node:
     yield &g.nodes[i]

@@ -462,7 +462,6 @@ tuple's arity; a mismatch is a compile error, as is a duplicate name in a `:=`
 destructuring list (`src/tychoc.c:7300-7322`). At most 8 targets are permitted.
 Each name receives its element deep-copied, preserving value semantics.
 
-<!-- fence-skip: shows a fn beside the call site's binding form; Tycho has no top-level statements, so the pair is illustrative, not a program -->
 ```tycho
 fn divmod(a: int, b: int) -> (int, int):
     q := a / b
@@ -847,8 +846,12 @@ caller's storage, so it outlives the return
 appear inside a `parallel for` body — a chunk has no early exit
 (`src/tychoc.c:7166@or_return`).
 
-<!-- fence-skip: calls parse_digit, defined in the prose above, and has no main; the complete program follows immediately below and IS checked -->
 ```tycho
+fn parse_digit(s: string) -> Result(int, string):
+    if len(s) == 1 and s >= "0" and s <= "9":
+        return Ok(to_int(to_float(s[0]) - to_float("0"[0])))
+    return Err("not a digit: " + s)
+
 fn add_two(a: string, b: string) -> Result(int, string):
     x := parse_digit(a) or_return    # Ok → bind x; Err → return it from add_two
     y := parse_digit(b) or_return

@@ -300,6 +300,20 @@ def main():
                 continue
             if lang != 'tycho':
                 continue
+            # a marker that says the fence is REFUSED is an assertion, not an
+            # excuse: the gate compiles it and requires the refusal to hold.
+            if skip and re.search(r'REFUSED|must not compile|program that failed|'
+                                  r'is the REPRO|REJECTED', skip, re.I):
+                with tempfile.TemporaryDirectory() as tmp:
+                    got, _e = compiles(body, tmp, execute=False)
+                if got is None:
+                    nok += 1
+                    print("    ok    %s:%d  [refused, as its marker states]" % (f, line))
+                else:
+                    nfail += 1
+                    fails.append("%s:%d -- its marker says this is refused, but it COMPILES"
+                                 % (f, line))
+                continue
             norun = bool(skip and skip.startswith('norun:'))
             if skip and not norun:
                 nskip += 1
@@ -343,11 +357,21 @@ def main():
                 # cheapest first; binding bare expressions is a FALLBACK, not the
                 # default -- applied eagerly it turns `println(x)` into
                 # `_ := println(x)`, which is an error on a void call.
-                attempts = [("as written", body),
-                            ("+ an empty main", body + "\nfn main():\n    return\n"),
-                            ("wrapped in a main", wrap(body)),
-                            ("wrapped, bare expressions bound", wrap(bind_bare(body)))]
-                if carry:
+                # a fence that declares `main` is a whole program: wrapping it
+                # or appending another main is nonsense, so it gets one attempt
+                # and its own error is the one reported.
+                whole = 'main' in declared(body)
+                attempts = [("as written", body)]
+                if not whole:
+                    attempts.append(("+ an empty main",
+                                     body + "\nfn main():\n    return\n"))
+                if not whole:
+                    attempts += [
+                             ("wrapped in a main", wrap(body)),
+                             ("wrapped, bare expressions bound", wrap(bind_bare(body)))]
+                # a fence with its own `main` is a whole program: prepending the
+                # page's earlier fences would give it a second one.
+                if carry and not whole:
                     # the carry must not redeclare what this fence declares --
                     # a page that shows `struct Point` twice is not an error
                     pre = drop_binds(drop_decls(carry, declared(body) | {"main"}), bound(body))

@@ -216,8 +216,12 @@ Chaining fallible calls with `match` at every step gets noisy. `or_return` cuts 
 `Err`, returns that `Err` from the enclosing function — which must itself return a
 `Result(_, E)` with the *same* error type `E`:
 
-<!-- fence-skip: calls parse_digit, defined in the fence above this one -->
 ```tycho
+fn parse_digit(s: string) -> Result(int, string):
+    if len(s) == 1 and s >= "0" and s <= "9":
+        return Ok(to_int(to_float(s[0]) - to_float("0"[0])))
+    return Err("not a digit: " + s)
+
 fn add_two(a: string, b: string) -> Result(int, string):
     x := parse_digit(a) or_return    # Ok -> bind x; Err -> return it from add_two
     y := parse_digit(b) or_return
