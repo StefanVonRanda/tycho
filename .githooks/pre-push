@@ -14,10 +14,26 @@
 # invisible to `make test` and were caught by the sweep. Nothing here replaces
 # it; the trade is explicit.
 #
-# Activate once:  make hooks   (sets core.hooksPath to .githooks)
+# THE gh-pages BRANCH HAS NEVER REACHED THIS HOOK, until 2026-08-17. `git rev-parse
+# --git-path hooks/pre-push` in the site worktree resolved to `.githooks/pre-push`
+# RELATIVE TO THAT WORKTREE, and the gh-pages tree holds five files -- CNAME, fonts,
+# index.html, og-card.html, og.png. No .githooks, so no hook, so every site push
+# went out ungated and silently. `make hooks` sets an ABSOLUTE core.hooksPath now,
+# which is what makes the two site checks below reachable at all.
+#
+# Activate once:  make hooks   (sets core.hooksPath to <repo>/.githooks, absolute)
 # Emergency bypass (avoid): git push --no-verify
 set -eu
-cd "$(git rev-parse --show-toplevel)"
+
+# Resolve the repo from THIS FILE, not from the cwd: when the site worktree
+# pushes, `git rev-parse --show-toplevel` is that worktree and has no Makefile.
+REPO="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+# pre-push is fed "<local ref> <local sha> <remote ref> <remote sha>" per ref on
+# stdin. Read it once -- it cannot be read twice -- and decide from it which
+# gates can actually redden for what is being pushed.
+REFS="$(cat)"
+cd "$REPO"
 
 # Private per-run log (mktemp, not a fixed world-shared /tmp path): no multi-user
 # collision/symlink risk. Each step APPENDS under a header; kept on failure (path
@@ -37,13 +53,46 @@ gate() {   # gate "<label>" <make args...>
     fi
 }
 
-# Both sub-second-to-seconds. `make ci N=0` was here until 2026-08-10 and was
-# removed on the owner's instruction: at ~274s it made every push a coffee break,
-# and it re-ran what a `make ci` before the push had usually just run. The gate a
-# push should not be able to skip is the one that is too cheap to think about;
-# the sweep is a thing you run when you want it.
-gate "make check-links (links + path:line citations)" check-links
-gate "make fuzz-quick (soundness smoke)"     fuzz-quick
+run() {   # run "<label>" <command...>   -- like gate(), for non-make lanes
+    label="$1"; shift
+    printf 'pre-push: %s ... ' "$label"
+    printf '\n===== %s =====\n' "$label" >>"$LOG"
+    if "$@" >>"$LOG" 2>&1; then
+        printf 'ok\n'
+    else
+        printf 'FAILED\n\n'; tail -25 "$LOG"
+        printf '\npre-push BLOCKED: %s failed (full log: %s). Push aborted.\n' "$label" "$LOG"
+        exit 1
+    fi
+}
+
+# The site. Scored at the SHA BEING PUSHED, never at a branch name: the local
+# gh-pages ref in this checkout sat 30 commits behind origin while the page was
+# rewritten in a worktree, so a gate keyed on the branch would have scored a
+# design that had not been live for a week. A deletion (all-zero sha) is skipped.
+SITE_SHA="$(printf '%s\n' "$REFS" | awk '$3 == "refs/heads/gh-pages" && $2 !~ /^0+$/ { print $2; exit }')"
+if [ -n "$SITE_SHA" ]; then
+    # Verdict first, then the proof the verdict could have gone the other way.
+    # The reverse order is worse to read: the selfcheck's [c0] baseline fails on
+    # an already-broken page, which reports "the checker is broken" when what is
+    # broken is the page.
+    run "check_contrast (WCAG 1.4.3 / 1.4.11 on the pushed page)" \
+        python3 scripts/check_contrast.py --rev "$SITE_SHA"
+    run "contrast selfcheck (the checker's own negative controls)" \
+        python3 scripts/check_contrast.py --selfcheck --rev "$SITE_SHA"
+fi
+
+# Everything else. Skipped on a gh-pages-only push: no .ty, .md or .c is moving,
+# so neither lane below can redden, and the site worktree has no Makefile anyway.
+if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { exit !found }'; then
+    # Both sub-second-to-seconds. `make ci N=0` was here until 2026-08-10 and was
+    # removed on the owner's instruction: at ~274s it made every push a coffee break,
+    # and it re-ran what a `make ci` before the push had usually just run. The gate a
+    # push should not be able to skip is the one that is too cheap to think about;
+    # the sweep is a thing you run when you want it.
+    gate "make check-links (links + path:line citations)" check-links
+    gate "make fuzz-quick (soundness smoke)"     fuzz-quick
+fi
 
 rm -f "$LOG"
 printf 'pre-push: gates green -- allowing push. `make ci` is NOT run here; run it yourself before a substantial push.\n'

@@ -1067,9 +1067,22 @@ release-check: tychoc
 	  fi
 
 # Activate the local git pre-push gate (.githooks/pre-push: make ci N=0 + fuzz-quick).
+# ABSOLUTE, not `.githooks`. A relative hooksPath resolves inside whichever
+# worktree pushes, and the gh-pages worktree has no .githooks -- so every site
+# push bypassed the hook entirely until 2026-08-17. Run this from the main
+# checkout: it records the path it resolves, and a worktree deleted later would
+# take the hooks with it.
 hooks:
-	@git config core.hooksPath .githooks
-	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs make ci N=0 + fuzz-quick)"
+	@git config core.hooksPath "$$(git rev-parse --show-toplevel)/.githooks"
+	@echo "git hooks activated: core.hooksPath -> $$(git config core.hooksPath)"
+	@echo "  pre-push: check-links + fuzz-quick, and on a gh-pages push, contrast-check"
+
+# WCAG contrast on the published palette. ~0.05s, no build, no deps beyond
+# python3. `make contrast-check` scores origin/gh-pages; the hook scores the sha
+# being pushed. SELFCHECK FIRST: the ratios mean nothing if the legs cannot fail.
+contrast-check:
+	@python3 scripts/check_contrast.py --selfcheck
+	@python3 scripts/check_contrast.py
 
 # The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
 # `make tycho-lsp` -- the loops-cleanup plan made the plain build remove its own
