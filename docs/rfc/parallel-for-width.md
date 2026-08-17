@@ -116,11 +116,11 @@ struct Config:
 fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
     return wid
 
-N := 4
+nworkers := 4
 cfg := Config(".")
 srv := 0
 
-parallel(4) for wid in 0..<N:      # N workers, each with its own wid
+parallel(4) for wid in 0..<nworkers:   # nworkers workers, each with its own wid
     accept_loop(cfg, srv, wid)
 ```
 

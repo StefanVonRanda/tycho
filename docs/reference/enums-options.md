@@ -109,7 +109,7 @@ enum Status:
     Idle
     Done
 
-status := Status.Active
+status := Active
 
 label := match status:          # inferred type (all arms must agree)
     Active:
