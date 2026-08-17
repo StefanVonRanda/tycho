@@ -36,10 +36,6 @@
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
 
-/* The compiler's version, one source of truth: `tychoc --version` prints it,
- * CHANGELOG.md records each release's changes against it, and the release
- * tarballs are built with scripts/release.sh v<same>. Bump it here and in
- * CHANGELOG.md together. */
 #define TYCHO_VERSION "0.7.0"
 
 /* ------------------------------------------------------------------ util */
@@ -81,12 +77,6 @@ static void die_at(int line, const char *fmt, ...) {
     exit(1);
 }
 
-/* The affine refusals (task / handle / channel in a container) fire deep inside
- * the type-intern helpers, which are reached from ~28 call sites and carry no
- * line. `g_affine_line` is the ambient one, saved and restored by the two
- * choke points every route passes through: parse_type for a type annotation,
- * resolve_expr for a value. Zero only if some future route reaches an intern
- * outside both, so the message degrades to file-only rather than lying. */
 __attribute__((noreturn))
 static void affine_err(const char *msg) {
     if (g_affine_line > 0) die_at(g_affine_line, "%s", msg);
@@ -94,10 +84,6 @@ static void affine_err(const char *msg) {
     exit(1);
 }
 
-/* DEPRECATION, the mechanism docs/guides/corelib.md's policy names: a
- * `# deprecated: <text>` comment line DIRECTLY above a `fn` marks it, and every
- * call site gets a warning. Two tables: notes found while lexing one file, and
- * the (mangled name -> text) map the resolver reads. */
 typedef struct { int line; char *msg; char *file; } DNote;
 static DNote *g_dnotes; static int g_ndnotes, g_dnotes_cap;
 typedef struct { char *name; char *msg; } Deprec;
@@ -107,11 +93,6 @@ static void *xrealloc(void *p, size_t n);
 
 static void dnote_scan(const char *p, int line) {
     const char *m = p;
-    /* The marker must OPEN the comment. This used to scan the whole line for
-     * "deprecated:" anywhere, so an ordinary sentence that merely MENTIONED it
-     * ("# this replaces the old deprecated: thing") marked the fn below and
-     * every caller got a warning nobody wrote (FRICTION #46). `tests/warn/
-     * deprecated.ty:1` is exactly such a sentence, one line away from doing it. */
     while (*m == '#') m++;
     while (*m == ' ' || *m == '\t') m++;
     if (strncmp(m, "deprecated:", 11)) return;
@@ -131,12 +112,6 @@ static void dnote_scan(const char *p, int line) {
     g_dnotes[g_ndnotes].file = strdup(g_srcname);   /* copied: g_srcname moves per file */
     g_ndnotes++;
 }
-/* The FILE must match, not just the line. Notes accumulate across every file in
-   the import closure and line numbers restart in each, so a marker at line N in
-   one package marked whatever `fn` happened to sit at line N+1 in another:
-   `corelib/sort/sort.ty:109` marked `crypto.aead_decrypt`, and every caller was
-   told to "use sort_by". Found 2026-08-15 by compiling a program that imports
-   both. */
 static const char *dnote_above(int line) {
     for (int i = 0; i < g_ndnotes; i++)
         if (g_dnotes[i].line == line - 1 && g_dnotes[i].file && g_srcname
@@ -201,64 +176,6 @@ static void *xmalloc(size_t n) {
     return p;
 }
 
-/* --- float literals: read and written in the "C" locale, always -----------
- *
- * WHY THE COMPILER CARES ABOUT LC_NUMERIC. strtod and printf's "%g" both take
- * their decimal separator from LC_NUMERIC. Nothing in this tree calls setlocale,
- * so tychoc runs under "C" and a bare strtod/snprintf happens to be right -- but
- * that is an unstated dependency on a process-wide global. Note what does NOT
- * change it: setting LC_ALL in the environment. A C program starts in "C" until
- * something calls setlocale(LC_ALL, ""), so `LC_ALL=da_DK.UTF-8 tychoc prog.ty`
- * is inert and cannot be used to test this. What changes it is any linked C
- * library calling setlocale from a load-time constructor -- measured with an
- * LD_PRELOAD doing exactly that. Under a comma-decimal LC_NUMERIC the two sites
- * then broke in opposite directions:
- *
- *   READ  (lex_num below). strtod("1.5") stops at the '.', which is no longer
- *         the separator, and returns 1.0. The literal 1.5 becomes 1.
- *   WRITE (c_expr's E_FLOAT). snprintf("%.17g", 1.5) emits the bytes `1,5`, the
- *         ".0" guard scans for '.' and finds none, so it appends: `1,5.0`. In
- *         EXPRESSION position that is a legal COMMA EXPRESSION, so cc accepts it
- *         with no diagnostic and the value is wrong. Measured over the shapes
- *         codegen actually emits a literal into: `_l0.data[0] = 1,5.0;` silently
- *         stores 1, `(1,5.0 + 0.0)` is silently 5.0, and only a declarator
- *         initializer (`double _ret = 1,5.0;`) is a syntax error. The loud case
- *         exists but does not cover the others -- a wrong number in a compiled
- *         binary, from a correct source file, with nothing on stderr.
- *
- * Fixing one alone makes the round trip worse than leaving both: read-only-fixed
- * turns 1.5 into 5.0 where cc accepts it, write-only-fixed turns it into 1.0
- * everywhere. They are one defect.
- * runtime/tycho_rt.c@tycho_float_to_str is the same fix one layer down, for the
- * string a program PRINTS; this one is for the C source a compiler READS.
- *
- * WHY uselocale AND NOT snprintf_l/strtod_l. The _l forms are BSD/macOS
- * extensions in <xlocale.h>; glibc does not declare snprintf_l with or without
- * _GNU_SOURCE (measured for the runtime twin: `implicit declaration of function
- * 'snprintf_l'` under cc -std=c11). newlocale/uselocale/LC_NUMERIC_MASK are POSIX
- * 2008 and present on both, and the _GNU_SOURCE this file declares at the top
- * already exposes them -- no new feature-test macro. The handle is this
- * translation unit's own; it deliberately does NOT share the runtime's, which is
- * a separate translation unit compiled into a different program.
- *
- * FALLBACK, AND WHY IT IS STILL CORRECT. If newlocale fails at run time (no "C"
- * locale, out of memory) each direction converts under the ambient locale and
- * then translates the one separator by hand, taken from localeconv() -- C89,
- * always present. Same digits, same rounding; only the separator moves. A float
- * literal token is ASCII by construction (the lexer accepted only [0-9.eE+-]),
- * so rewriting its '.' is unambiguous.
- *
- * THE ".0" GUARD'S CONTRACT, AND WHY THE SCAN IS SOUND. At the write site the
- * guard answers "would this text be read back by `cc` as an INTEGER constant?"
- * and appends ".0" when it would, so the Tycho literal 3.0 emits `3.0` and
- * `3.0 / 2.0` is not integer division. It decides by scanning for the only things
- * %.17g can emit that make a C token non-integral: '.' (the separator), 'e'/'E'
- * (an exponent), and the 'n'/'i' of "nan"/"inf". That scan is sound ONLY because
- * the separator is now known to be '.': under any other separator the character
- * is absent from the set, every finite non-integral value looks integral to it,
- * and the guard appends ".0" to text that already had a fraction -- which is
- * exactly how `1,5` became `1,5.0`. The guard is correct because of the
- * conversion above it; changing one without the other reintroduces the bug. */
 #ifndef _WIN32
 static locale_t c_numeric_handle(void) {
     static locale_t h;      /* tychoc is single-threaded: no pthread_once needed, */
@@ -499,26 +416,6 @@ static TokVec lex(const char *src) {
             if (*p == ' ') ws_sp = 1; else ws_tab = 1;
             col++; p++;
         }
-        /* THE JOIN IS DECIDED HERE, not on the line that ended with the operator,
-         * because it depends on THIS line's indentation and that is not readable
-         * yet when the previous line ends. A continuation must be indented DEEPER
-         * than the line it continues.
-         *
-         * That condition is not decoration -- it is what keeps a truncated line a
-         * truncated line. `tests/diag/caret_expr.ty` is exactly that program:
-         *
-         *     x := 1 +
-         *     print(str(x))
-         *
-         * with both lines at the same indent. Joining them parses as
-         * `x := 1 + print(str(x))` and reports "unknown variable 'x'" on the
-         * WRONG line, about a variable that is merely being defined. The locked
-         * golden asserts the good message -- "expected an expression" with a
-         * caret under the `+` -- and a deeper-indent requirement keeps it, while
-         * still joining every continuation anyone actually writes.
-         *
-         * The NEWLINE was already emitted for the previous line; retract it now
-         * that the join is known. */
         cont = 0;
         if (pend) {
             if (col > pend_col && *p != '\n' && *p != '\0' && *p != '#') {
@@ -571,12 +468,6 @@ static TokVec lex(const char *src) {
             if (isdigit((unsigned char)c) || lead_dot) {
                 const char *s = p;
                 while (isdigit((unsigned char)*p)) p++;   /* integer part (empty for .5) */
-                /* `0x`/`0X` (hex) and `0b`/`0B` (binary) prefixes, accepted
-                 * only when the integer part is exactly the single digit `0`
-                 * -- so `10x` still lexes as an int followed by an identifier,
-                 * the same tie-break as C/Go. A prefixed literal is ALWAYS an
-                 * integer: there is no hexadecimal-float form, so the float
-                 * checks below are skipped for it (docs/spec/01-lexical.md 3.9). */
                 int litbase = 10;
                 const char *digits = s;
                 int prefixed = 0;
@@ -620,29 +511,6 @@ static TokVec lex(const char *src) {
                      * c_numeric_handle above -- this and the E_FLOAT emit are
                      * one defect with two sites. */
                     double dv = c_strtod(s, p);
-                    /* OVERFLOW IS A TYCHO ERROR, UNDERFLOW IS NOT. `1e400` has no
-                     * binary64 value: strtod returns +-HUGE_VAL, and codegen used to
-                     * emit the bare token `inf`, which is not a C keyword and not a
-                     * standard macro -- so the user wrote Tycho and cc answered
-                     * "'inf' undeclared". Refusing it here matches the integer twin
-                     * a few lines below (`integer literal out of range`) and loses no
-                     * expressible value: docs/spec/03-types.md 5.2.2 makes infinity a
-                     * legal float VALUE, reachable as 1.0/0.0, which this does not
-                     * touch. What it rejects is a SPELLING nobody writes on purpose --
-                     * a finite decimal silently becoming an infinity is the same class
-                     * of defect as the locale bug above: correct source, wrong number,
-                     * nothing on stderr.
-                     * UNDERFLOW STAYS LEGAL. `1e-400` is below the smallest denormal,
-                     * so its correctly-rounded binary64 value IS 0.0 -- ordinary
-                     * IEEE-754 gradual underflow, still finite, and it compiles and
-                     * behaves today. errno cannot tell the two apart (strtod sets
-                     * ERANGE for both), which is why the test is on the VALUE.
-                     * DBL_MAX, not isinf: the token grammar above accepted only
-                     * [0-9.eE+-], so it can never spell "nan" -- a magnitude past
-                     * DBL_MAX is therefore exactly an infinity -- and <float.h> is
-                     * freestanding, while math.h's isinf can leave an undefined
-                     * reference on a host that does not inline it -- Makefile@tychoc
-                     * is the link recipe and it carries no -lm. */
                     if (dv > DBL_MAX || dv < -DBL_MAX)
                         die_at(line, "float literal out of range: `%.*s` exceeds the largest float "
                                      "(IEEE-754 binary64); write 1.0/0.0 for an infinity",
@@ -723,15 +591,6 @@ static TokVec lex(const char *src) {
                         buf[bn++] = *p++;
                         if (!*p) die_at(line, "unterminated string literal");
                         char e = *p;
-                        /* `\r` is here because CRLF is the most common byte pair in HTTP
-                         * and it used to cost a function call (`httpd.crlf()`).
-                         * `\0` and `\xNN` are deliberately NOT in this set: the literal's
-                         * text is pasted verbatim into a C string literal (codegen
-                         * `src/tychoc.c:11051@TYCHO_LIT`, sized by the `sizeof` in
-                         * `runtime/tycho_rt.c:1330-1336`), and both of C's numeric escapes
-                         * are greedy over the digits that follow them, so `"\x41" "1"`
-                         * would mean `\x411` and `"\0" "1"` would mean `\01`. Both need a
-                         * byte-exact re-escaper on the emit path. */
                         if (e != 'n' && e != 't' && e != 'r' && e != '\\' && e != '"')
                             die_at(line, "unsupported escape \\%c (use \\n \\t \\r \\\\ \\\")", e);
                         buf[bn++] = *p++;
@@ -953,15 +812,6 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
         (cap) = _c; (tbl) = xrealloc((tbl), (size_t)(cap) * sizeof *(tbl)); } \
 } while (0)
 
-/* generics: the per-generic type-parameter cap (docs/spec/05-generics.md:20 --
- * "At most 16 type parameters and 16 size parameters may be introduced per
- * generic"). ONE number for functions (g_cur_typarams, :726), structs and enums.
- * Every fixed-size array indexed by a type-parameter NUMBER is sized by this
- * macro so the bound cannot be half-widened: StructDef/EnumDef `typarams` and
- * `from_args` below, the `_tp[]` staging arrays in parse_struct/parse_enum, and
- * the `args[]` type-argument list in parse_type_inner's generic application.
- * (Names are built with sfmt, which grows on the heap; `binds[]` is indexed by
- * the GLOBAL typaram id, not by this count, so neither is coupled to it.) */
 #define TYCHO_MAX_TYPARAMS 16
 
 typedef struct { char *name; Type type; } Field;
@@ -1070,31 +920,6 @@ static Type chan_inner(Type t) { return g_chantypes[CHAN_ID(t)].inner; }
 #define T_NT_BASE   24576  /* distinct newtypes (type X = int/float), above tuples */
 #define T_MAPC_BASE 32768  /* composite maps [K: V] with an arbitrary value type, above newtypes */
 #define T_TYPARAM_BASE 65536  /* generics: `$T` type parameters — transient (only in generic templates), bound to a concrete type at instantiation, never reach codegen */
-/* size == 0 -> a dynamic composite array `[elem]`; size > 0 -> a fixed-size array
- * `[N]elem` (const generics, 1.6): stored inline (no heap), value-copied, static bounds.
- * A `[3]int` and a `[int]` are distinct interned entries (same elem, different size). */
-/* bnd: this is a `bounded[N]T` — inline storage `{ T v[N]; long len; }` with a
- * runtime count and a push that traps on overflow. It reuses the fixed-array
- * `size` slot (size == capacity N > 0) but is a DISTINCT interned entry, so a
- * `bounded[4]int` and a `[4]int` never alias. */
-/* HOST-WIDTH-SAFE: `size` is fixed 64-bit, never `long`. This is NOT cosmetic and
- * NOT a "sizes are small so anything fits" slot. A `[N]T` size is written by the
- * PARSER straight out of a token/const value (`fixn = cur(ps)->ival` and
- * `cap = cf->ival`, parse_type below), and `ival` is int64_t since the constant
- * folder was widened — so an arbitrary 64-bit literal reaches this field, and the
- * only validation on the way in is `> 0`. There is no upper bound. While this was
- * host `long`, an ILP32-hosted tychoc truncated it SILENTLY and fail-OPEN:
- * `[4294967297]int` emitted `v[1]` (2^32+1 mod 2^32) where LP64 emitted
- * `v[4294967297]`, and `[3000000000]int` wrapped negative and was rejected as
- * "a fixed-size array length must be positive". Reproduced on `gcc -m32`, fixed by
- * this retype, locked by tests/diag/fixarr_size_width.err.
- * The whole slot moves together, because these all alias this one field: the
- * `sizeparam_enc`/`sizeparam_id`/`g_sizebinds` NEGATIVE `[$N]T` encoding, the
- * `bounded_cap`/`fixarr_size` readers, and `GInst.spvals` — which feeds a size
- * back onto the VALUE path (`lit->ival = spvals[k]` in the const-generic
- * instantiator), so narrowing any one of them re-opens the truncation.
- * Consequence for printing: int64_t is `long` on LP64 but `long long` on ILP32, so
- * every format consuming `size` uses `%lld` with an explicit `(long long)` cast. */
 typedef struct { Type elem; int64_t size; char bnd; } ArrType;
 static ArrType *g_arrtypes;
 static int g_narrtypes = 0, g_arrtypes_cap = 0;
@@ -1151,18 +976,6 @@ static Type typaram_of(char *name) {
     return T_TYPARAM_BASE + g_ntyparams++;
 }
 static char *typaram_name(Type t) { return g_typarams[(int)(t - T_TYPARAM_BASE)].name; }
-/* A BIND VECTOR is indexed by the GLOBAL type-parameter id (`t - T_TYPARAM_BASE`),
- * NOT by a per-generic count -- so it must be as long as `g_typarams`, which grows
- * with the number of DISTINCT `$Name`s in the whole program and has no cap (see
- * typaram_of above). Every such vector used to be a fixed `Type binds[256]` local,
- * which a valid program with more than 256 distinct names overran (each individual
- * generic staying well under TYCHO_MAX_TYPARAMS): ASan reported a stack-buffer-
- * overflow WRITE at the `for (i < g_ntyparams) binds[i] = T_UNBOUND` init loop. Raising
- * 256 would only move the cliff, so allocate at the table's current length instead.
- * `g_typarams` only ever grows and a vector is only ever indexed by an id interned
- * BEFORE it was allocated, so `g_ntyparams` at allocation time covers every index
- * that can legally be written. Never freed -- tychoc is one-shot and allocates this
- * way throughout (cf. `gi.binds`, which already used exactly this pattern). */
 static Type *new_binds(void) {
     int n = g_ntyparams > 0 ? g_ntyparams : 1;
     Type *b = (Type *)xmalloc((size_t)n * sizeof(Type));
@@ -1303,11 +1116,6 @@ static const char *enum_shown(const char *nm) {
     const char *us = strstr(nm, "__");
     return us ? sfmt("%.*s.%s", (int)(us - nm), nm, us + 2) : nm;
 }
-/* Refuse `nm` as a variant of `ed`. Parse mangles a bare variant name with the
- * CURRENT package's prefix, so the tail after "__" is what was typed; when that
- * tail IS one of this enum's variants, the name was merely written unqualified
- * across a package boundary. Say so and give the spelling that works -- claiming
- * the variant does not exist sends the reader to the enum (FRICTION #26). */
 static void die_not_variant(int line, EnumDef *ed, const char *nm) {
     const char *pkg = strstr(ed->name, "__"), *us = strstr(nm, "__");
     const char *bare = us ? us + 2 : nm;
@@ -1848,17 +1656,6 @@ static const char *type_name(Type t) {
         case T_MAP_II:       return "[int: int]";
         case T_MAP_IF:       return "[int: float]";
         case T_UNBOUND:      return "(unbound)";   /* a bind-vector sentinel, named honestly rather than called void */
-        /* Every tag of the base enum (T_VOID..T_UNBOUND) is now cased above except T_PENDING, so it is the only thing that can land here.
-         * It is UNREACHABLE: a T_PENDING never escapes as an expression's
-         * resolved type -- resolve_expr dies with a dedicated message at the
-         * first use that needs the type (:4624), pend_ground rejects a pending
-         * grounding type BEFORE its two type_name calls (:4428), and
-         * resolve_block audits any still-pending decl at block end. Verified
-         * empirically: an instrumented build over all 370 tests/, tests/reject/,
-         * examples/, corelib/ and compiler/ sources plus 7 targeted pending
-         * probes recorded zero arrivals. Returning "void" is therefore a
-         * fail-safe for a state that cannot occur, not a description of a type:
-         * if it ever does fire, the message is wrong but not unsound. */
         default:             return "void";
     }
 }
@@ -1927,22 +1724,6 @@ typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
                S_SELECT /* select over channel recv arms + default/closed (CC-5) */ } StmtKind;
 
 typedef struct Stmt Stmt;
-/* one arm of a `match`: a variant name (Some/None or an enum variant), the
- * names it binds from the payload, and its block.
- *
- * `sub` is ONE level of NESTED pattern on the single payload of an `Ok`/`Err`/
- * `Some` arm -- `Err(net.Timeout)`, `Err(Timeout)`, `Err(C(n))` -- holding the
- * inner variant's name as written (mangled when the pattern was qualified);
- * `subbinds` are the names that inner variant's payload binds. NULL means the arm
- * binds its payload plainly (`Err(e)`).
- *
- * A bare `Err(A)` is ambiguous at parse time -- binding, or nullary variant? It
- * parses as a binding and the RESOLVER promotes it to a `sub` once the payload
- * type is known (match_arm_payload). Before 2026-07-26 there was no promotion and
- * no error: the arm bound a variable named `A` and therefore matched EVERY `Err`,
- * surfacing only as "duplicate Err arm" if a second arm existed (FRICTION.md:139).
- * `sub_vi` is the resolved variant index, or -1 for an unrefined arm; codegen
- * reads it rather than recomputing, so the arm is visited once. */
 typedef struct { char *variant; char *binds[8]; int nbinds;
                  char *sub; char *subbinds[8]; int nsubbinds; int sub_line; int sub_vi;
                  Stmt **body; int nbody; int line;
@@ -2065,12 +1846,6 @@ static Tok *cur(Parser *ps)  { return &ps->t[ps->p]; }
 static Tok *peek(Parser *ps, int k) { return &ps->t[ps->p + k]; }
 static int  at(Parser *ps, TokKind k) { return cur(ps)->kind == k; }
 
-/* A reserved word where a name belongs used to read as a parser bug: `spawn: bool`
- * said "expected a field name", which is also what a stray `,` gives, and nothing
- * suggested the identifier was merely taken. A reserved word is exactly a token
- * whose lexeme `keyword()` maps back to its own kind; the contextual identifiers
- * of §3.7 (`package`, `extern`, `soa`, `sink`, `where`, `range`, every builtin)
- * lex as TK_IDENT and are unaffected -- they stay legal names everywhere. */
 static const char *reserved_kw(Tok *t) {
     return (t->kind != TK_IDENT && t->text && keyword(t->text) == t->kind) ? t->text : NULL;
 }
@@ -2246,15 +2021,6 @@ static int match_type(Type pat, Type concrete, Type *binds) {
     return pat == concrete;
 }
 
-/* Find or stamp out the concrete struct instance of a generic template for the
- * given bindings: Box($T) + {T:int} -> a real `struct Box__int` with substituted
- * field types. The instance is an ordinary (non-generic) struct from here on. */
-/* CC-4, the INSTANCE half. resolve_program's field/payload scan runs over the
- * aggregates that exist at that moment; a generic instance is stamped out later,
- * so `struct Box($T)` bound at Channel(int) never reaches it -- and a Task has no
- * type syntax at all, so a `$T` binding is the ONLY way one can land in a field.
- * Left open, `b2 := b` copied the struct and aliased the channel (both halves
- * observed 2026-08-14), which is the entire thing affinity exists to prevent. */
 static void affine_slot_check(Type t, int line, const char *slot, const char *owner) {
     const char *k = IS_CHAN(t) ? "channel" : IS_TASK(t) ? "task" : IS_HANDLE(t) ? "handle" : 0;
     if (k) die_at(line, "%s cannot be a %s -- '%s' was instantiated at one", slot, k, owner);
@@ -2355,7 +2121,6 @@ typedef struct { const char *name; int tok, end, state; } PendDecl;   /* state: 
 static PendDecl *g_tdecl; static int g_ntdecl = 0, g_tdecl_cap = 0;
 static Tok *g_tdecl_toks = NULL;
 static void force_type_decl(const char *raw);   /* fwd: defined with the declaration parsers */
-/* could this token begin a type? (used to disambiguate `[W]int` size-form from a dynamic `[Foo]`) */
 static int tok_starts_type(TokKind k) {
     return k == TK_IDENT || k == TK_LBRACKET || k == TK_DOLLAR || k == TK_LPAREN ||
            k == TK_KW_INT || k == TK_KW_FLOAT || k == TK_KW_BOOL || k == TK_KW_STRING ||
@@ -2501,13 +2266,6 @@ static Type parse_type_inner(Parser *ps) {
             int64_t fixn;
             if (size_is_int) { fixn = cur(ps)->ival; ps->p++; }
             else {
-                /* gap: an imported package's const (`[lvl.CAP]int`) is NOT accepted here,
-                 * only an unqualified one. Not an oversight to patch in place: this runs at
-                 * PARSE time, and the imported package may not be parsed yet, so
-                 * consts_find would return NULL or not depending on file order -- an
-                 * intermittent failure, worse than the clean refusal below. Supporting it
-                 * means resolving a fixed-array size at RESOLVE time. Exported consts work
-                 * in expression position (2026-08-10); this position is the remainder. */
                 Expr *cf = consts_find(pkg_mangle(cur(ps)->text));
                 if (!cf || cf->kind != E_INT)
                     die_at(cur(ps)->line, "a fixed-size array length must be an integer literal or an int `const` -- '%s' is not", cur(ps)->text);
@@ -2683,10 +2441,6 @@ static int   is_literal_expr(Expr *e);    /* const RHS validation (plain int/flo
 static Expr *consts_find(const char *name);
 static Expr *const_fold(Expr *e, int refs); /* fold a const-expr (int arith/bitwise/unary + backward const refs when refs) to one literal */
 
-/* String interpolation (parse-time desugar; no new AST node): "a{e}b" becomes
- * ("a" + str(e) + "b"). `{{`/`}}` are literal braces. Each `{e}` is lexed+parsed as a
- * sub-expression and wrapped in str() (identity on a string, i2s/f2s on int/float —
- * a bool/char/aggregate hole then fails str() with a clear error). */
 static Expr *interp_join(Expr *acc, Expr *piece, int line) {
     if (!acc) return piece;
     Expr *b = new_expr(E_BINOP, line); b->op = TK_PLUS; b->lhs = acc; b->rhs = piece; b->fstr = 1; return b;
@@ -2796,17 +2550,6 @@ static Expr *parse_primary(Parser *ps) {
     if (t->kind == TK_STR)  {
         ps->p++;
         if (t->ival) return desugar_interp(t->text, t->line);   /* f"..." interpolated string */
-        /* ADJACENT STRING LITERALS JOIN (C / Python rule): `"a" "b"` is the one
-         * literal `"ab"`. With the implicit line-join already inside (...) / [...]
-         * (tests/multiline_literals.ty) this IS Tycho's multi-line string form:
-         *     s := ("line one\n"
-         *           "line two\n")
-         * Sound on raw text: escapes are kept as source text here, and every Tycho
-         * escape is exactly two characters (\n \t \r \\ \"), so no escape can absorb
-         * a byte across the join -- which is also why \0 and \xNN are not in the
-         * escape set (see the lexer). An f-string never joins (it is already sugar
-         * for a `+` chain): both `f"a" "b"` and `"a" f"b"` stay the two expressions
-         * they were and fail exactly as before. */
         char *sv = t->text;
         while (at(ps, TK_STR) && !cur(ps)->ival) { sv = sfmt("%s%s", sv, cur(ps)->text); ps->p++; }
         Expr *e = new_expr(E_STR, t->line);  e->sval = sv; return e;
@@ -2889,16 +2632,6 @@ static Expr *parse_primary(Parser *ps) {
             if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
                 ps->p++;
                 Type val = parse_type(ps);
-                /* A TYPE PARAMETER is a legal key here, exactly as it is in the
-                 * declared `[K: V]` type one screen up (the has_typaram test
-                 * beside mapc_of). Without this, a generic carrying
-                 * `where hashable(K)` could not build the very map the
-                 * constraint promises: `m := []K: int` died "map keys must be
-                 * string, int ..." for the parameter the constraint had just
-                 * admitted (FRICTION #35). The instantiation still checks the
-                 * concrete key -- substitution runs map_of at every call site --
-                 * so an unhashable K is refused there, where the type is known
-                 * and the message can name it. */
                 if (has_typaram(elem) || has_typaram(val)) {
                     e->ival = mapc_of(elem, val); e->op = TK_COLON;
                     return e;
@@ -2977,7 +2710,6 @@ static Expr *parse_primary(Parser *ps) {
             return e;
         }
         if (!strcmp(t->text, "None")) return new_expr(E_NONE, t->line);   /* the bare None literal */
-        /* Paren-less Some/Ok/Err: `expected '(' after Ok` used to out-shout §3.7's binding rule whenever the illegal binding was also USED. */
         if (!at(ps, TK_LPAREN) && (!strcmp(t->text, "Some") || !strcmp(t->text, "Ok") || !strcmp(t->text, "Err"))) die_at(t->line, "'%s' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: %s(x)", t->text, t->text);
         if (!strcmp(t->text, "Some")) {    /* Some(value) */
             eat(ps, TK_LPAREN, "'(' after Some");
@@ -3639,10 +3371,6 @@ static void ctrl_rewrite_tails(Stmt *c, StmtKind kind, char *name, Expr *target)
     }
 }
 
-/* collect the (already-resolved) tail expression of every branch/arm — used to
- * unify their types for a `:=` value if/match. Mirrors ctrl_rewrite_tails,
- * INCLUDING its divergence skip: a `die()`/`exit()` tail contributes no type, so
- * the two stay in lockstep about which tails carry a value. */
 static void ctrl_tail_push(Expr **out, int *n, Expr *e) {
     if (!expr_diverges(e)) out[(*n)++] = e;
 }
@@ -3695,21 +3423,6 @@ static int expr_has_orreturn(Expr *e) {
     return 0;
 }
 
-/* True if `e` reads the local variable `name` (an E_IDENT whose name matches).
- * Detects a self-referential shadowing decl `y := y + 2`: the typechecker
- * resolves the RHS `y` against the ENCLOSING binding (it computes the decl's
- * type before the new name is in scope), so codegen must read the enclosing
- * binding too -- but a naive `T h_y = (h_y + 2)` reads the new C local in its
- * own initializer (use-before-init UB). Matches only E_IDENT, never E_FIELD
- * names (`obj.y` stores "y" on the E_FIELD, not as a child ident). Every other
- * node stores its operands in lhs/rhs/args (E_SLICE: base/lo/hi; call-on-expr:
- * callee in lhs; tuple/array/map elems in args), so the generic walk covers
- * them. The one exception is E_LAMBDA: its body is lifted to g_laminfo[ival].
- * proc and its captures live there (params[0..ncap]), NOT as child exprs -- so
- * a self-referential shadow whose RHS captures `name` (`f := fn(x:int)->int:
- * x + f(x)`) reads the enclosing binding through the env build and must route
- * through the temp too. Mirrors compiler/tychoc0.ty's expr_refs (it checks the
- * lambda's capture-name list); keeps both compilers' codegen byte-identical. */
 static int expr_refs_local(Expr *e, const char *name) {
     if (!e) return 0;
     if (e->kind == E_IDENT && e->sval && !strcmp(e->sval, name)) return 1;
@@ -3810,9 +3523,6 @@ static Stmt *parse_stmt(Parser *ps) {
         return s;
     }
 
-    /* `pass`: the no-op statement, for a block with nothing to do. Contextual like
-     * `const`/`delete` -- a keyword only when it is the WHOLE statement, so the
-     * `pass := 0` counters in corelib/test/testing and tools/prunner still parse. */
     if (t->kind == TK_IDENT && !strcmp(t->text, "pass")
         && (peek(ps, 1)->kind == TK_NEWLINE || peek(ps, 1)->kind == TK_DEDENT || peek(ps, 1)->kind == TK_EOF)) {
         ps->p++;
@@ -3930,13 +3640,6 @@ static Stmt *parse_stmt(Parser *ps) {
     }
     if (t->kind == TK_PARALLEL) {        /* parallel for ...: chunked fan-out + reduction merge (CC-3) */
         ps->p++;
-        /* `parallel(W) for ...` -- the optional fan-out width (docs/rfc/parallel-for-width.md,
-         * open-list item 8a). W is an ordinary expression evaluated ONCE at the spawn
-         * site; omitted, the width stays ncpu(). A literal outside 1..64 is refused
-         * here, where the caret is on the number the author wrote; a computed one is
-         * checked at run time in gen_parfor, because 64 is the static `_pts[64]` task
-         * array and silently clamping a wider request would answer a different
-         * question than the one asked. */
         Expr *width = NULL;
         if (at(ps, TK_LPAREN)) {
             ps->p++;
@@ -3972,23 +3675,6 @@ static Stmt *parse_stmt(Parser *ps) {
             s->body = parse_block(ps, &s->nbody);
             return s;
         }
-        /* three-clause `for init; cond; post:`.
-         *
-         * A top-level `;` on the header line is the ONLY thing that tells this
-         * form from `for C:`, and it is unambiguous because `;` has no other
-         * grammar anywhere in the language (tests/reject/semi_no_grammar.ty
-         * keeps the C-style statement terminator illegal). So: scan the header
-         * to end of line, tracking () and [] depth, and record the two `;` and
-         * the LAST top-level `:` -- last, because a typed init (`i: int = 0`)
-         * puts a colon of its own ahead of the block's.
-         *
-         * ALL THREE CLAUSES ARE REQUIRED; `for:` is the only degenerate form.
-         * That is not a rule imposed on the grammar, it is what the grammar
-         * already says: there is no empty-statement production in this parser
-         * (parse_stmt on a NEWLINE is an error), so `for ; c; p:` has nothing to
-         * parse in the init slot, and an empty condition would have no `bool` to
-         * check. Each is refused by name below rather than by whatever parse_stmt
-         * happened to say. */
         {
             int i_semi1 = -1, i_semi2 = -1, i_colon = -1, depth = 0;
             for (int k = 0; ; k++) {
@@ -4041,13 +3727,6 @@ static Stmt *parse_stmt(Parser *ps) {
                 return s;
             }
         }
-        /* `for k, q in xs:` binds nothing: a foreach head takes ONE name. Caught
-         * here so the message names the working form; falling through to the
-         * condition form below parses `k` as the condition and dies "expected ':'
-         * before the block" with the caret on the comma (FRICTION #12). The
-         * second binder is not reserved for an index either, which is what both
-         * neighbours spend it on -- measured 2026-08-13, Go's FIRST binder and
-         * Odin's SECOND are the index, and neither destructures the element. */
         if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_COMMA) {
             int k = 0;
             while (peek(ps, k)->kind == TK_IDENT && peek(ps, k + 1)->kind == TK_COMMA) k += 2;
@@ -4059,22 +3738,6 @@ static Stmt *parse_stmt(Parser *ps) {
         if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_IN) {
             Tok *var = eat(ps, TK_IDENT, "a loop variable");
             eat(ps, TK_IN, "'in'");
-            /* `0..<N` -- the counting spelling for `parallel for`, and ONLY for
-             * `parallel for`. The runtime chunks a known iteration space across
-             * K = tycho_ncpu() tasks (gen_parfor, src/tychoc.c:10903), and a
-             * three-clause loop's post clause is arbitrary code, so its iteration
-             * count is not knowable in advance and cannot be chunked. A
-             * SEQUENTIAL `for i in 0..<N:` is refused deliberately: accepting it
-             * would make `0..<N` into `range()` under a new name and leave the
-             * three-clause form with nothing to do (plan.md's Pre-flight).
-             * Implicit step 1, ascending, exclusive upper bound -- so unlike
-             * `range()` there is no zero-step case to diagnose at all, and N is
-             * an ordinary expression, evaluated once at the spawn site.
-             *
-             * The header is SCANNED for a top-level `..<` (same shape as the `;`
-             * scan above) rather than tested at peek(1), so `for i in (a+b)..<n:`
-             * and a sequential `for i in 0..<3:` both reach the diagnostic that
-             * fits them instead of "expected ':' before the block". */
             {
                 int i_dotlt = -1, depth = 0;
                 for (int k = 0; ; k++) {
@@ -4101,15 +3764,6 @@ static Stmt *parse_stmt(Parser *ps) {
                     return s;   /* caller (TK_PARALLEL) sets s->parallel = 1 */
                 }
             }
-            /* HISTORY: `for i in range(a, b, step):` was the counting form until
-             * 2026-07-29, when it was replaced by the three-clause `for` and, for
-             * `parallel for`, by `0..<N`. `range` was never a procedure -- it was
-             * recognised only here, by lexeme, in a `for` header (see parse_fn's
-             * note on contextual identifiers), so deleting this branch deletes the
-             * whole feature. Without the branch below the header would fall
-             * through to foreach and die with "unknown procedure 'range'" at
-             * resolve, which names neither replacement; the refusal is kept
-             * explicit so the diagnostic can be copy-pasted. */
             if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "range") && peek(ps, 1)->kind == TK_LPAREN)
                 die_at(t->line, "`range()` was removed: write `for %s := 0; %s < N; %s += 1:` to count, or `parallel for %s in 0..<N:` to count in parallel",
                        var->text, var->text, var->text, var->text);
@@ -4255,11 +3909,6 @@ static Stmt *parse_stmt(Parser *ps) {
         Stmt *s = new_stmt(sk, t->line);
         s->target = e;
         s->expr = parse_expr(ps);
-        /* A5 (evaluation order): pin left-to-right — a side-effecting index in the
-         * place runs BEFORE the RHS. Without this the index and RHS are emitted
-         * inline and the C compiler picks the order (tychoc got RHS-first), which
-         * diverged from tychoc0 on `arr[f()] = g()`. Hoisting the index into a
-         * pending temp sequences it first, matching tychoc0. Pure indices untouched. */
         hoist_index_calls(e, t->line);
         eat(ps, TK_NEWLINE, "newline");
         return s;
@@ -4290,10 +3939,6 @@ static Stmt *parse_stmt(Parser *ps) {
         }
         die_at(t->line, "cannot compound-assign to this expression");
     }
-    /* The only bare expression statement is a call -- it can have side effects.
-     * A bare identifier / index / field / `or_return` has no effect and is almost
-     * always an incomplete statement (e.g. a truncated `p.x = ...`). Reject it,
-     * matching tychoc0, whose statement grammar only accepts `name(args)` here. */
     if (e->kind == E_IDENT && !strcmp(e->sval, "while"))   /* F9: `while cond:` — Tycho has no while keyword */
         die_at(t->line, "Tycho has no `while` -- use `for cond:` for a conditional loop (e.g. `for i < 3:`)");
     /* `spawn f(x)` alone reaches here as an E_SPAWN, and the generic message below
@@ -4363,23 +4008,6 @@ static Stmt **parse_arm_inline(Parser *ps, int value, int *count) {
     return body;
 }
 
-/* Does `n` name a builtin that a same-named procedure COLLIDES with?
- *
- * Builtins lex as TK_IDENT, so they stay legal procedure names. §3.7 (rewritten
- * 2026-08-12) makes the outcome normative: the BUILTIN is always selected at an
- * unqualified call, so such a declaration is unreachable by that name. Measured
- * 2026-08-12 over every name below -- in the MAIN PROGRAM 26 of the 54 are
- * rejected outright (`'X' is already defined`); the other 28 declare, and the
- * builtin answers, either refusing the arguments with its own diagnostic or,
- * when the arguments happen to fit it, answering silently with the local body
- * never entered. That silent case is what this warning exists to name.
- *
- * DELIBERATELY CONSERVATIVE. This is the union of the two lists the compiler
- * already keeps -- is_ufcs_builtin and is_pure_builtin -- plus the I/O names,
- * which are the ones a package author actually collides with. A builtin
- * missing from here means no warning, which is exactly today's behaviour; a
- * name wrongly present would warn about a legal declaration, which is worse.
- * Extend it when a new builtin lands, not speculatively. */
 static int shadows_builtin(const char *n) {
     if (!n) return 0;
     static const char *bs[] = {
@@ -4409,16 +4037,8 @@ static Proc *parse_fn(Parser *ps) {
         const char *dn = dnote_above(nameT->line);
         if (dn) deprec_add(pkg_mangle(nameT->text), dn);
     }
-    /* Ok/Err/Some/None are matched on raw token text in parse_primary, so a fn of that name is
-     * unreachable in any package -- a hard error. A builtin's name is unreachable only UNQUALIFIED
-     * (§3.7): `pkg.name(...)` still reaches it -- `corelib/json/json.ty@keys` relies on that -- so warn. */
     if (is_builtin_ctor(nameT->text)) die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (shadows_builtin(nameT->text)) {
-        /* The qualified escape needs a package prefix to spell, and `package main`
-         * has none (pkg_mangle is the identity there) -- so in main the name simply
-         * collides and the very next check makes it a hard error. Offering
-         * `pkg.name(...)` there sent an outside reader looking for a spelling that
-         * does not exist; found writing tools/tycho-diff, FRICTION-OUTSIDE.md item 1. */
         if (g_cur_pkg_prefix[0])
             warn_at(nameT->line, "`%s` collides with the builtin of the same name -- every unqualified "
                                  "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
@@ -4452,17 +4072,6 @@ static Proc *parse_fn(Parser *ps) {
         if (is_variadic && (is_inout || is_sink))
             die_at(pn->line, "a variadic parameter cannot also be inout or sink");
         Type pt = parse_type(ps);
-        /* An affine type has ONE owner and a scope-bound destructor, so neither
-         * borrow-mode means anything on it. `sink` was accepted and then SILENTLY
-         * IGNORED: measured 2026-08-14 with a counting shim, `take(h: sink File)`
-         * left the handle live and unclosed at return -- the callee borrowed it
-         * exactly like a default parameter, so the declared mode did nothing at
-         * all. Passing a handle BORROWS, which is what §25 says and what the
-         * default already gives; a mode that reads as ownership and delivers a
-         * borrow is worse than no mode. Refused rather than implemented: a
-         * consuming callee would have to free at ITS scope exit while the
-         * destructor is emitted at the owner's, which is the double free that
-         * FRICTION #43 was. */
         if ((is_sink || is_inout) && (IS_HANDLE(pt) || IS_CHAN(pt) || IS_TASK(pt)))
             die_at(pn->line, "'%s' is %s, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow", pn->text, is_sink ? "sink" : "inout");
         if (is_variadic) pt = arr_of(pt);      /* `...T` -> the param's type is [T] */
@@ -4819,14 +4428,6 @@ static void parse_struct(Parser *ps) {
         }
         eat(ps, TK_RPAREN, "')' after the struct type parameters");
     }
-    /* check the MANGLED name (like the enum site): a cross-package collision
-     * ("a__b" + "c" vs "a" + "b__c") otherwise slips through to a duplicate C
-     * typedef and fails at cc with no tycho-level diagnostic.
-     * `handle_find` belongs here too (14-ffi.md §25): a handle shares the ONE
-     * type namespace with struct/enum/newtype, and parse_handle already tests
-     * all four (:3643). Omitting it here made the rule one-directional --
-     * `struct H` after `handle H` was accepted and RAN on tychoc while
-     * `handle H` after `struct H` was rejected. */
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0
         || newtype_find(pkg_mangle(nameT->text)) >= 0 || handle_find(pkg_mangle(nameT->text)) >= 0 || is_builtin_ctor(nameT->text))
         die_at(nameT->line, "'%s' is already defined", nameT->text);
@@ -4856,11 +4457,6 @@ static void parse_struct(Parser *ps) {
                 die_at(fn->line, "duplicate field '%s'", fn->text);
         eat(ps, TK_COLON, "':' after field name");
         Type ft = parse_type(ps);   /* int, string, a struct, [Struct]/[[T]], Option(T), ... */
-        /* FFI R2: a BARE handle field. `items: [R]` was already refused, but by
-         * the array intern helper -- a handle that is the field type itself
-         * passes through no intern helper, so nothing checked it and the struct
-         * became a second owner of a pointer freed at one scope's exit
-         * (FRICTION #44). Every other aggregate refuses it; this is the hole. */
         if (IS_HANDLE(ft)) { g_affine_line = fn->line; handle_container_err(); }
         sd = &g_structs[my_sid];    /* parse_type may register a generic instance or a forced declaration and realloc g_structs */
         TBL_ENSURE(sd->fields, sd->nfields, sd->fields_cap);
@@ -5154,8 +4750,6 @@ static char *pkg_prefix_for(const char *qualifier) {
     return sfmt("%s__", pkgname);
 }
 
-/* is `name` a package this file imported (by alias or by its path's last
- * component)? Used to read `pkg.Variant` as a qualified value, not a field. */
 static int is_imported_pkg(const char *name) {
     for (int i = 0; i < g_nimports; i++) {
         if (g_imports[i].alias && !strcmp(g_imports[i].alias, name)) return 1;
@@ -5164,12 +4758,6 @@ static int is_imported_pkg(const char *name) {
     return 0;
 }
 
-/* A nominal type from another package is STORED mangled (`pool__Handle`), and
- * `type_name` used to print that verbatim -- so every diagnostic about a corelib
- * or cross-package type named something the reader cannot type. Rewrite the
- * first `__` to `.` only when the prefix names a package this file imported,
- * which leaves a local type that happens to contain `__` alone. Diagnostics
- * only; nothing here reaches codegen. */
 static const char *nominal_name(const char *nm) {
     if (!nm) return nm;
     const char *sep = strstr(nm, "__");
@@ -5250,9 +4838,6 @@ static Expr *const_fold(Expr *e, int refs) {
         Expr *n = new_expr(E_STR, e->line); n->sval = sfmt("%s%s", a->sval, b->sval); return n;
     }
     if (a->kind != E_INT || b->kind != E_INT) return e;   /* int-only const arithmetic */
-    /* HOST WIDTH: every fold arm runs in fixed 64-bit, never in `long`. tycho `int` is
-     * 64-bit two's-complement by spec, so a compiler hosted on an ILP32 machine (where
-     * `long` is 32 bits) must still fold `1 << 40` to 1099511627776, not truncate it. */
     int64_t x = a->ival, y = b->ival, r;
     switch (e->op) {
         case TK_PLUS:    r = x + y; break;
@@ -5704,13 +5289,6 @@ static int is_cmp(TokKind op) {
 
 static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's type */
 
-/* Are we resolving a mutable PLACE spine (where `m[k]` is a legal map-value
- * projection target)? A map index is a place only — never an rvalue read — so
- * resolve_expr rejects it unless this is set. It is captured-and-cleared at the
- * top of every resolve_expr so children are rvalues by default; only the spine
- * cases (E_INDEX base, E_FIELD/E_TUPIDX lhs) re-enable it for their spine child.
- * Statement handlers that resolve a place target (S_INDEXSET/S_FIELDSET, push's
- * first arg) set it to 1 around that one resolve. #2 (docs/guides/map-mutation.md). */
 static int g_place = 0;
 static int g_in_arg = 0;   /* set while resolving a call argument: the one place `&` is legal */
 static Type g_fn_ret = T_VOID;   /* return type of the proc currently being resolved (for or_return) */
@@ -5842,12 +5420,6 @@ static void pend_ground(const char *name, Type t, int line) {
  * tree fails closed here instead of overflowing the C stack (SIGSEGV). */
 #define TYCHO_MAX_TREE_DEPTH 2000
 static int g_resolve_depth = 0;
-/* Builtins callable with UFCS method syntax `recv.name(args)` -> `name(recv, args)`.
- * Only receiver-first builtins are eligible; constructors (Some/Ok/Err/None), env/IO
- * niladics (args/clock/now/ncpu/getenv/input/read_*) and effectful non-methods are
- * excluded. The desugar re-resolves through the SAME builtin arg-shape checking the
- * direct-call form uses, so a wrong receiver type still fails closed there.
- * Kept byte-identical with tychoc0.ty's is_ufcs_builtin. */
 static int is_ufcs_builtin(const char *n) {
     if (!n) return 0;
     static const char *bs[] = { "str", "substr", "chr", "split", "keys", "find", "char_at", "len",
@@ -6526,12 +6098,6 @@ static Type resolve_expr_inner(Expr *e) {
                     { e->sval = q; e->qual = NULL; e->pkg_done = 1; }   /* adopt the mangled name + drop qual so the generic dispatch below instantiates it */
                 else {
                     const char *sg = suggest_pkg_symbol(e->qual, e->sval);   /* F8: did-you-mean within the package */
-                    /* A qualifier this file never imported reads as a package that is
-                     * MISSING A SYMBOL, which sends the reader to the package source --
-                     * the one place that cannot help, because the symbol is right there.
-                     * Say which it is. Appended, not substituted: a self-qualified name is
-                     * not "imported" either and its old message is still the right one.
-                     * FRICTION-OUTSIDE.md item 2. */
                     const char *imp = is_imported_pkg(e->qual) ? "" : " -- and this file does not `import` it; add the import first";
                     /* `strings.split(...)` -- the name is a BUILTIN, called bare.
                      * Someone arriving from Go or Python reaches for the package
@@ -6968,16 +6534,6 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "reserve's capacity must be int");
                 return e->type = T_VOID;
             }
-            /* variadic call packing (2.2a): if the callee's last parameter is `...T`,
-             * fold the trailing arguments into ONE array argument (or, for `x...`, use
-             * that array directly) BEFORE generic inference / arity / type checks run.
-             * After this, the call is an ordinary call to `f(fixed..., xs: [T])`. */
-            /* A QUALIFIED call packs too. Until 2026-08-14 this read
-             * `!e->qual && !e->lhs`, so `pkg.f(1, 2, 3)` skipped packing entirely
-             * and died "'pkg__f' takes 1 argument(s), got 3" -- a variadic was
-             * usable only from inside its own package, which every use in the
-             * tree happened to be (all three declarations live in tests/, called
-             * from the same file). Found by tools/tycho-stat; FRICTION #38. */
             if (!e->lhs) {
                 /* e->sval is ALREADY the mangled `pkg__name` here -- `e->qual` merely
                  * records that it was written qualified -- so the lookup needs no
@@ -7044,9 +6600,6 @@ static Type resolve_expr_inner(Expr *e) {
                 const char *cl = corelib_hint(e->sval, &cl_strong);   /* F8: a corelib package/function by this name? */
                 if (cl && cl_strong) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* high-confidence stdlib match beats a weak local typo */
                 const char *sg = suggest_fn(e->sval);                 /* a user fn / builtin typo */
-                /* `eprintln` has no builtin, and edit distance answers `println` -- which is
-                 * the WRONG STREAM for the message the caller is plainly trying to write to
-                 * stderr. Name the stderr primitive instead. FRICTION-OUTSIDE.md item 3. */
                 if (!strcmp(e->sval, "eprintln"))
                     die_at(e->line, "unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + \"\\n\")`");
                 if (sg) die_at(e->line, "unknown procedure '%s'; did you mean '%s'?", nominal_name(e->sval), sg);
@@ -7319,10 +6872,6 @@ static Type resolve_expr_inner(Expr *e) {
                 if (lt != rt)
                     die_at(e->line, "element-wise `%s` on a fixed array requires the same static length (got %s and %s)",
                            arith_op_spell(e->op), type_name(lt), type_name(rt));
-                /* NOT "because `+` is not defined on string": it is (`"a" + "b"`),
-                 * and saying so sent an audit off to check (FRICTION #30). What is
-                 * missing is the ELEMENT-WISE form, and for `+` the real intent is
-                 * almost always append, so name it. */
                 if (!elem_arith_ok(e->op, arr_elem(lt)))
                     die_at(e->line, "`%s` is not defined element-wise on %s -- there is no element-wise `%s` for %s%s",
                            arith_op_spell(e->op), type_name(lt), arith_op_spell(e->op), type_name(arr_elem(lt)),
@@ -7421,9 +6970,6 @@ static Type resolve_expr_inner(Expr *e) {
                 e->lhs->kind = E_FLOAT; e->lhs->fval = (double)e->lhs->ival; e->lhs->type = T_FLOAT;
                 return e->type = T_FLOAT;
             }
-            /* `to_float(x)` / `to_int(x)` is useless advice for a buffer, and it was
-             * what `bytes + bytes` used to be told (FRICTION.md:225). Name the three
-             * operators bytes actually has instead. */
             if (lt == T_BYTES || rt == T_BYTES)
                 die_at(e->line, "bytes has no arithmetic (got %s, %s) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)",
                        type_name(lt), type_name(rt));
@@ -7453,9 +6999,6 @@ static Type resolve_exp(Expr *e, Type want) {
         else if (is_map(want)) { e->ival = want; e->op = TK_COLON; }
         /* else fall through: resolve_expr reports the no-context error */
     }
-    /* [e0, ..., eN-1] checked against an ARRAY destination: fixed `[N]T` (1.6, count must match) or dynamic `[T]` (any count). Each
-     * element is checked AGAINST T, so literal adaptation reaches the elements -- `a: [u32] = [1, 2]`, which used to die "declared type
-     * [u32] but value is [int]" while the fixed form compiled (the loops-cleanup plan). Bounded is the branch below; a `[$N]T`/`[$T]` template destination stays out (those resolve after substitution); with no destination a bracket literal still synthesizes a dynamic `[T]`. */
     if (e->kind == E_ARRLIT && e->nargs > 0 && e->op != TK_COLON && is_array(want) && !IS_BOUNDED(want) && !IS_SIZEPARAM_ARR(want) && !has_typaram(want)) {
         int64_t n = IS_FIXARR(want) ? fixarr_size(want) : e->nargs;   /* a dynamic [T] accepts any count */
         if (e->nargs != n)
@@ -7526,16 +7069,6 @@ static Type resolve_exp(Expr *e, Type want) {
                    e->kind == E_OK ? "Ok" : "Err", type_name(in));
         return e->type = want;
     }
-    /* (e1, ..., en) checked against a tuple destination of the same arity: push
-     * each element's expected type INTO the element, so a `Result`/`Option`/bare
-     * `[]` element grounds from context exactly as it does as a bare return or a
-     * struct field (FRICTION.md:159 -- `return (Err(A), "partial")` from a
-     * `-> (Result(int, E), string)` fn used to die "tuple element 1 needs a
-     * concrete value", because E_TUPLE was synthesis-only and Ok/Err synthesize
-     * to T_OK_PARTIAL/T_ERR_PARTIAL). Each element is resolved EXACTLY ONCE and
-     * the SYNTHESIZED element types are returned, not `want`: a mismatch then
-     * reports through the caller's own equality check with its own message
-     * instead of a second visit to the same node (the friction plan). */
     if (e->kind == E_TUPLE && IS_TUP(want) && e->nargs == tup_n(want) &&
         e->nargs >= 2 && e->nargs <= 8) {
         Type elems[8];
@@ -7892,9 +7425,6 @@ static void resolve_parfor(Stmt *s) {
             die_at(s->line, "parallel for expects an array, string, or channel");
         }
     }
-    /* HISTORY: a fail-closed `if (s->r_step) die_at(s->line, "parallel for does not
-     * support a range step")` stood here until 2026-07-30, unreachable since `range()`
-     * went on 2026-07-29. It was deleted with the field -- the loops-cleanup plan. */
     if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
         die_at(s->line, "parallel for needs an int range");
     if (g_nparfor >= 64) die_at(s->line, "too many parallel for loops (max 64)");
@@ -8126,14 +7656,6 @@ static const char *discarded_map_get(Expr *e) {
     return NULL;
 }
 
-/* ---- nested match patterns (the friction plan / FRICTION.md:139) --------------
- *
- * One `match` side (the Ok, Err or Some arms) is a small ordered decision list:
- * zero or more REFINED arms, each testing one variant of the payload's enum, and
- * at most one UNREFINED arm binding the payload whole. `plain` records the
- * unrefined arm's line (0 = none) so a refined arm written AFTER it is rejected as
- * dead rather than silently unreachable; `cov` marks the variants the refined arms
- * matched, which is what makes the side exhaustive without an unrefined arm. */
 typedef struct { int plain; int *cov; int ncov; } SideCov;
 
 /* Which variant of this side's payload enum is left uncovered? -1 when the side is
@@ -8151,22 +7673,9 @@ static int side_missing(SideCov *sc) {
  * the plain-enum exhaustiveness check below words it. */
 static void die_missing_variant(int line, Type pt, int mi) {
     EnumDef *ed = &g_enums[ENUM_ID(pt)];
-    /* nominal_name: an imported enum's variant and type print as `pkg.Name`, not
-     * the mangled `pkg__Name`. The imported-type fix of 2026-08-14 covered the
-     * type-mismatch diagnostics and MISSED both non-exhaustive-match sites, which
-     * surfaced when adding a variant to core:image. */
     die_at(line, "non-exhaustive match: missing variant %s of %s", nominal_name(ed->variants[mi].name), nominal_name(ed->name));
 }
 
-/* Check one Ok/Err/Some arm against its payload type `pt`, push what it binds, and
- * record it in `sc`. Sets arm->sub_vi to the refined variant index, or -1.
- *
- * This is where a bare `Err(A)` is PROMOTED from a binding to a pattern. Doing it
- * here rather than in the parser is the whole point: only the resolver knows that
- * the payload is an enum with a variant `A`. It is idempotent -- a promoted arm has
- * arm->sub set and skips the promotion branch -- because a generic function's body
- * is cloned per instance and re-resolved (the friction plan: resolution is not
- * single-pass, and a non-idempotent in-place rewrite is exactly what bit there). */
 static void match_arm_payload(MatchArm *arm, Type pt, const char *tag, SideCov *sc) {
     if (sc->plain)
         die_at(arm->line, "duplicate %s arm", tag);   /* an unrefined arm already took this side */
@@ -8302,26 +7811,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * task to a second name would alias it -> two waits possible. */
             if (IS_TASK(t) && s->expr->kind != E_SPAWN)
                 die_at(s->line, "a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))");
-            /* FFI R2 affine handles, the exact sibling of the task rule above.
-             * A handle is born from an extern opener and freed once, at its
-             * owning scope's exit. Binding an existing handle to a second name
-             * gives that pointer two owners and two destructor calls -- a real
-             * double free, observed with glibc's "double free detected in
-             * tcache 2" before this line existed (FRICTION #43). Reassignment
-             * (`g = f`) was already refused; only the DECL path was open. */
             if (IS_HANDLE(t) && s->expr->kind != E_CALL)
                 die_at(s->line, "a handle cannot be copied -- it is freed once, at the end of its scope, and a second name would free it twice; bind the opener directly (f := open(...)), or pass this one as an argument, which borrows it");
-            /* CC-4 channels, the third of the same family. The spec already says
-             * `channel(T, cap)` is legal ONLY as a declaration's direct RHS, so a
-             * channel-typed decl from anything else is out of spec -- but nothing
-             * enforced it, and `e := c` was accepted. No double free was observed
-             * (the free is keyed to the creating decl), yet the alias defeats the
-             * compiler's own analysis: `send(e, v)` does not count as a send on
-             * `c`, so a program that sends on every path still gets "nothing ever
-             * sends on channel 'c', so a receive on it parks forever" (FRICTION
-             * #45). A warning that is wrong about the code in front of it is worse
-             * than no warning. Reassignment was already refused; the DECL path was
-             * open, exactly as it was for tasks and handles. */
             if (IS_CHAN(t) && !(s->expr->kind == E_CALL && s->expr->sval
                                 && !strcmp(s->expr->sval, "channel") && !s->expr->qual))
                 die_at(s->line, "a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument");
@@ -8355,9 +7846,6 @@ static void resolve_stmt(Stmt *s, Type ret) {
             for (int i = 0; i < s->nnames; i++) {
                 Type vt;
                 if (!vars_find(s->names[i], &vt)) {
-                    /* the tuple half of FRICTION #33; the fix differs from the
-                     * scalar one, since a tuple element cannot be "called as a
-                     * statement" -- every name has to exist. */
                     if (!strcmp(s->names[i], "_"))
                         die_at(s->line, "`_` is not a discard -- it is an ordinary variable, and this one was never declared. "
                                         "Name every element, or declare `_` once with `:=` and reuse it");
@@ -8378,10 +7866,6 @@ static void resolve_stmt(Stmt *s, Type ret) {
                   die_at(s->line, "cannot assign to constant '%s'", s->name); }
             Type vt;
             if (!vars_find(s->name, &vt)) {
-                /* `_` is an ordinary identifier here, not a blank -- so `_ = f(x)`,
-                 * the Go/Python/Rust reflex, reads as an assignment to a variable
-                 * nobody declared and the suggestion offers an unrelated local
-                 * (FRICTION #33). Say what it is and name the spelling that works. */
                 if (!strcmp(s->name, "_"))
                     die_at(s->line, "`_` is not a discard -- it is an ordinary variable, and this one was never declared. "
                                     "To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)");
@@ -8540,12 +8024,6 @@ static void resolve_stmt(Stmt *s, Type ret) {
                                    nominal_name(ed->variants[v].name), nominal_name(ed->name));
                 free(covered);
             } else if (st == T_INT || st == T_CHAR || st == T_BOOL) {
-                /* Scalar subject: arms are literals, ranges, sets, or const
-                 * names. `_` is REQUIRED for int/char (the domain is unbounded,
-                 * so exhaustiveness is unprovable); a bool match is exhaustive
-                 * when both values are covered. Duplicate or overlapping arms
-                 * are an error (an earlier arm is dead). See
-                 * docs/internals/design-scalar-match.md. */
                 typedef struct { int64_t lo, hi; int line; } Iv;
                 Iv *ivs = xmalloc((size_t)(s->narms * 8) * sizeof(Iv));
                 int niv = 0;
@@ -8701,15 +8179,6 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (resolve_expr(s->r_start) != T_INT ||
                 resolve_expr(s->r_stop)  != T_INT)
                 die_at(s->line, "a counting `for` needs int bounds");
-            /* HISTORY: a literal-zero-step refusal --
-             *   if (s->r_step && s->r_step->kind == E_INT && s->r_step->ival == 0)
-             *       die_at(s->line, "loop step is zero (the loop would never terminate)");
-             * -- stood here until 2026-07-30, UNREACHABLE since 2026-07-29 because
-             * `range(a,b,step)` was the only way to write a step and it is gone. The
-             * guarantee does not survive into the three-clause form either: a post
-             * clause is arbitrary code, so `for i := 0; i < n; i += 0:` cannot be
-             * diagnosed. docs/spec/10-statements.md records that deliberate loss;
-             * the field and this check went together in the loops-cleanup plan. */
             int m = vars_mark();
             vars_push(s->name, T_INT, 1, s->line);   /* loop variable is int, scoped to the loop */
             resolve_block(s->body, s->nbody, ret);
@@ -8946,13 +8415,6 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             die_at(e->line, "argument %d of '%s' is %s, which does not fit the parameter pattern",
                    j + 1, gt->name, type_name(at_));
     }
-    /* A TYPE PARAMETER NOTHING BOUND. It appears only in the return type (or only
-     * in the body), so no argument can fix it. Until 2026-08-13 this produced a
-     * signature carrying the unbound cell and the failure surfaced one call LATER
-     * as `Tally__t28` -- the compiler's own bind-vector name, at a line the author
-     * had no reason to suspect (FRICTION #36, found by tools/tycho-agg). The
-     * escape already exists and is specified (§7.1): the explicit type-argument
-     * form. Say so, here, where the call that cannot be inferred actually is. */
     for (int i = 0; i < gt->ntyparams; i++) {
         if (binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] != T_UNBOUND) continue;
         char *tn = typaram_name(gt->typarams[i]);
@@ -9007,11 +8469,6 @@ static void instantiate_generic(Proc *gt, Expr *e) {
                gt->name);
     if (has_typaram(cret))
         die_at(e->line, "the return type of '%s' has a type parameter not fixed by any argument; pass it explicitly, e.g. %s$(int)", gt->name, gt->name);
-    /* Phase 39: the declaration rules again, now on the SUBSTITUTED signature.
-     * The template site (resolve_program) caught every WRITTEN concrete form;
-     * this catches the bindings -- `fn f(c: inout $T)` called with a channel or
-     * a function value -- which only exist here. Reported at the call, because
-     * the call is what chose the binding that violates §11.5 / CC-4. */
     if (IS_CHAN(cret))
         die_at(e->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
     for (int j = 0; j < gt->nparams; j++)
@@ -9038,24 +8495,6 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         die_at(e->line, "too many generic instantiations (> 1024) -- a recursive generic at a growing type?");
 }
 
-/* ---- CC-6: channel liveness lint ----------------------------------------
- * Value semantics removes data races; it does not remove deadlock
- * (docs/guides/concurrency.md). The provable half of deadlock IS decidable
- * here, because a channel handle can only reach code by being passed as an
- * argument -- it cannot be returned (CC-4, resolve_program below), stored in a
- * struct/enum/newtype/container, captured by a closure, or rebound. So the set
- * of procs that can touch one channel is a CLOSED graph rooted at its decl.
- *
- * That is what makes an ABSENCE argument sound: if no `send` appears anywhere
- * in that graph, no execution can ever send, whatever the control flow does.
- * Every warning here is of that shape -- an operation that appears NOWHERE --
- * never "this path might not send". Anything the walk cannot follow (an unknown
- * or generic callee, a variadic call) sets `opaque` and silences every warning
- * for that channel: a missed deadlock is a bug the programmer already had, a
- * false warning is one I handed them.
- *
- * Warning, not error, deliberately: rejecting these would change the set of
- * accepted programs, which is a language change and belongs in the spec. */
 typedef struct {
     int send, recv, close;   /* an op of this kind exists SOMEWHERE in the graph */
     int recv_block;          /* a receive that can PARK: recv(ch), or a select arm with no `default:`
@@ -9188,20 +8627,6 @@ static void check_channel_liveness(ProcVec *prog) {
             chan_find_decls(prog, prog->v[i], prog->v[i]->body, prog->v[i]->nbody);
 }
 
-/* Package mode: two definitions of one name are each innocent in their own file,
- * and the "already defined" diagnostic below fires at the SECOND one, so it names
- * whichever file sorts later (scan_pkg_files qsorts, `:11759`). For two unrelated
- * scratch programs sitting in one directory that is routinely the entry file the
- * user actually named -- the message then blames the file it was asked to build
- * and never mentions that a sibling was compiled at all. FRICTION.md records four
- * compile cycles spent working out that the fix was `mkdir`.
- *
- * The directory scan is NOT the bug and is not changed: a package may legally
- * span files (`tests/pkg/multifile/`), and it is entered only when the entry file
- * declares a `package` header (`:12069-12071`) -- which a scratch program must do
- * to `import` anything. So the fix is the diagnostic: name the other definition.
- * Returns "<file>:<line>" for a same-named proc in a DIFFERENT file, else NULL
- * (a same-file duplicate is self-evident and keeps the plain message). */
 static const char *dup_other_file(ProcVec *prog, int self, const char *name) {
     const char *mine = prog->v[self]->srcfile;
     for (int j = 0; j < prog->n; j++) {
@@ -9258,17 +8683,6 @@ static void resolve_program(ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
         diag_use_proc(pr);   /* package mode: name THIS proc's file in any error below */
-        /* Phase 39 -- these three are rules about the DECLARATION (11-functions.md
-         * §15.1 arity; 07-memory-model.md §11.5 inout; CC-4 channel return), so they
-         * run BEFORE the generic stash below. That `continue` exists only to skip Sig
-         * REGISTRATION ("not a callable Sig"), never to defer validation, and letting
-         * them sit after it meant `fn f(c: inout Channel(int), p: $T)` compiled and ran
-         * on a technicality. Written types only; instantiate_generic re-runs the inout
-         * and channel-return rules on the substituted ones.
-         * The arity check MUST come first for a template: instantiate_generic builds
-         * `Type cparams[16]`, so a 17-parameter generic overran that stack array
-         * (UBSan, before this move: "src/tychoc.c:7621: index 16 out of bounds for
-         * type 'Type [16]'") and then emitted a nonsense arity diagnostic. */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         if (IS_CHAN(pr->ret))
             die_at(pr->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
@@ -9287,9 +8701,6 @@ static void resolve_program(ProcVec *prog) {
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         s.is_extern = pr->is_extern;
         if (pr->is_extern) add_link(pr->lib);   /* FFI: collect -lLib for the cc line */
-        /* the arity cap and the two `inout` type rules moved above the generic
-         * stash (Phase 39) -- s.params[16] is safe to fill because pr->nparams
-         * was already capped there. */
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
             s.inout[j]  = pr->params[j].is_inout;
@@ -9431,48 +8842,6 @@ static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
     return 0;
 }
 
-/* --- the three-clause form's elidable shape -------------------------------
- * `for i := 0; i < len(A); i += 1:` is the S_FOR3 spelling of what
- * `for i in range(len(A)):` used to be, and it is elidable for a slightly
- * STRONGER reason than S_FORRANGE's: S_FORRANGE caches `_stop = len(A)` once
- * before the loop and leans on the body never shrinking A, whereas S_FOR3
- * emits the condition into the C `while (...)` header (src/tychoc.c:11814), so
- * `i < len(A)` is re-evaluated on every iteration and holds at the top of each
- * body by construction. What still has to be PROVED is the rest of the shape.
- * Unlike S_FORRANGE, where start/stop/step are three separate AST fields, here
- * the three parts are an init statement, a condition expression and a post
- * statement, so each is matched explicitly and anything else falls through to
- * the checked accessor. Fail closed -- a wrong elision is a memory-safety bug.
- *
- *   init  s->els[0]           S_DECL, name = i, value the literal 0
- *   cond  s->expr             E_BINOP '<' (strictly), lhs = IDENT i,
- *                             rhs = len(A) with A a bare IDENT
- *   post  s->body[nbody-1]    S_ASSIGN to i, value E_BINOP '+' (IDENT i, 1)
- *
- * So `i <= len(A)`, `i += 2`, `i -= 1`, `i := 1`, `i < n`, `i < len(f(a))` and
- * a post that assigns anything but i all keep `tycho_arr_*_get`. The body guard
- * is the SAME `stmts_unsafe` S_FORRANGE uses, run over the body WITHOUT its
- * last element: the post clause lives there (see the `els`/`body` note at
- * src/tychoc.c:1676) and assigns i, so including it would report unsafe every
- * time. Returns the array's name, or NULL when the shape is not certain.
- *
- * WHAT THIS BUYS, MEASURED -- read before "improving" it. At -O3, the level
- * tychoc itself hands to cc, this function buys ~NOTHING: gcc already folds the
- * accessor's `i >= xs.len` test, because the three-clause form emits `h_i <
- * ((h_xs).len)` into the C `while` header and that is the exact fact VRP needs.
- * Best-of-3 on a scan loop, elided vs checked: -O3 207 vs 208 ms (1.00x), -O2
- * 1.14x, -O1 1.88x. Four shapes were tried looking for one gcc could not fold
- * (flat scan, in-place write, nested cross product, `inout [int]` parameter);
- * none separated. bench/guard.sh:49-62 carries the second measurement and is why
- * that lane asserts the emitted C STRUCTURALLY instead of a wall-time ratio.
- * It is KEPT anyway, deliberately: it is the only thing that elides at -O0/-O1,
- * which is what `tychoc -g` builds (src/tychoc.c:13800) and what a debugger step
- * actually runs. Deleting it is a live option (the loops-cleanup plan option (b)) but
- * NOT on these numbers alone -- they are one machine and one gcc, and the
- * measurement must be repeated on a second toolchain first. Note the historical
- * asymmetry that makes deletion thinkable at all: the old `S_FORRANGE` spelling
- * cached `_stop` before the loop (src/tychoc.c:11901) and broke the link to
- * `len`, which is exactly why this elision had to be written by hand. */
 static const char *for3_elidable_arr(Stmt *s) {
     if (!elision_on() || s->nels != 1 || s->nbody < 1 || g_nelide >= 64) return NULL;
     Stmt *init = s->els[0], *post = s->body[s->nbody - 1];
@@ -9558,15 +8927,6 @@ static int is_inout_param(const char *name) {
     return 0;
 }
 
-/* names of ALL the current proc's params. A by-value param is a logical value
- * copy whose underlying heap buffer belongs to the caller (a borrowed
- * array/map/string/struct) or is a _scope deep-copy; either way the codegen
- * must NEVER hand off (move) that buffer to another name, because for a borrowed
- * param the buffer is the CALLER's — a move + later mutation of the destination
- * would corrupt the caller (a value-semantics violation). can_move_from rejects
- * any param. This makes explicit the "NULL = a param" intent the cv_arena scheme
- * documents but no longer enforces (params are tracked as same-arena _scope
- * locals, which otherwise look movable). Reset per proc. */
 static const char *g_param[16];
 static int g_param_sink[16];   /* parallel: is g_param[i] a `sink` (owned) parameter? */
 static int g_nparam = 0;
@@ -9631,13 +8991,6 @@ static const char *g_cur_scope = "&_scope";
  * wrote, so it stays silent (that site is the separate `b := a` decision).
  * Nested calls nest the counter, so `f(g((s, 1)))` still sees a call arg. */
 static int g_call_arg_depth = 0;
-/* Depth of a return statement's expression. At a return the value is built in
- * the caller's arena (`_parent`), never the local's, and the advice "make this
- * its last use" means deleting the local's OTHER reads elsewhere in the proc
- * -- not locally actionable, so copies at returns stay silent. Without this
- * gate the warning fired ~15x on the self-hosted compiler alone, all at
- * `return type_of(ECall(v, args, ...))` AST-building sites where the copy is
- * structurally unavoidable and every fire is noise. */
 static int g_in_return = 0;
 
 static int count_reads_e(Expr *e, const char *nm) {
@@ -9669,19 +9022,6 @@ static int count_reads_b(Stmt **body, int n, const char *nm) {
     return c;
 }
 static void indent(FILE *o, int n);
-/* ---- push-loop fusion ----------------------------------------------------
- * A loop whose body only pushes to a local scalar array pays, per element, for
- * the descriptor (data/len/cap) going through memory: the C compiler must assume
- * `&arr` aliases the arena pointer also passed to push, so it cannot keep the
- * cursor in registers. Fusion caches data/len/cap in C locals across the loop
- * (register-resident hot path: `_fd[_fl++] = v`), calling a grow hook only on
- * overflow, and writes the descriptor back at loop exit. ~3.7x on push-heavy
- * loops. Sound by construction: fuse ONLY when the array is used solely as
- * push(arr,...) in the body (count_reads == pushcount), is a plain local
- * declared OUTSIDE the loop (not a param, not reassigned/shadowed inside), and
- * holds scalar elements. break/continue need nothing (the flush sits after the
- * loop, which break falls through to and continue's register cursor survives);
- * return flushes via the registry before it leaves. */
 static int expr_pushcount(Expr *e, const char *nm) {
     if (!e) return 0;
     int c = (e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
@@ -10008,13 +9348,6 @@ static int collect_append_ops(Expr *e, const char *name, Expr **out, int max) {
     for (int i = 0; i < nr; i++) out[i] = rev[nr - 1 - i];
     return nr;
 }
-/* `m = map_set(m, k, v)` — a self-rebind of a map accumulator. The rebind
- * reuses m's unique backing table via an in-place put instead of the pure
- * deep-copy-then-insert (amortized O(1) vs O(n) per step). Soundness is the
- * same uniqueness argument as the string accumulator: value semantics already
- * deep-copied any snapshot (`b := m`/`b = m`) eagerly at its own program
- * point, so mutating m's table in place afterward can never be observed
- * through another binding. */
 static int is_self_mapset(Stmt *s) {
     return s->kind == S_ASSIGN
         && s->expr->kind == E_CALL
@@ -10094,18 +9427,6 @@ static char *copy_into(Type t, const char *arena, char *val) {
     }
 }
 
-/* A "place" expression denotes existing storage (a variable, a field of one,
- * an array element) rather than a freshly-built value. Reading a place only
- * aliases its bytes, so storing a *heap* place into a same-or-longer-lived
- * location must deep-copy. A literal/call/concat/split result is already a
- * fresh value owned by the arena it was built in — no copy needed. */
-/* The ZERO-COST reinterprets (`:8745`) return their argument's pointer
- * unchanged -- they are casts, not constructions. So `to_str(b)` over a place is
- * itself a place: it reads existing storage and binding/returning it MUST copy.
- * Reported as a call, it used to slip past both is_place and ret_must_copy, and
- * `out := to_str(b); return out` over a _scope-owned bytes local returned a
- * dangling pointer (measured: "got=[8]" for a buffer holding "ABCDEFGH").
- * `to_bytes([int])` is excluded -- that one really does allocate (`:8743`). */
 static int is_reinterpret_of_place(Expr *e);
 static int is_place(Expr *e) {
     return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX
@@ -10119,16 +9440,6 @@ static int is_reinterpret_of_place(Expr *e) {
     return is_place(e->args[0]);
 }
 
-/* A heap return value must be deep-copied into the caller's arena when it READS
- * existing storage (a variable, field, element, tuple slot, or slice) that
- * lives in this scope OR in a by-value parameter's deep-copied arena -- i.e.
- * memory freed when this scope ends. A bare local proven to live in _parent
- * (the return-slot optimization) is exempt; fresh-producing exprs (call, concat,
- * literal, construction) already build in the target arena, so they need no
- * copy. NOTE: field/element reads of a by-value heap-STRUCT param (e.g.
- * `return ctx.field`) alias the callee's copy and MUST be promoted -- the
- * earlier `E_IDENT`-only test missed these (use-after-free; surfaced by the
- * self-hosting tychoc0, whose field_type/sig_ret/resolve_nt return Ctx fields). */
 static int ret_must_copy(Expr *e) {
     if (e->kind == E_IDENT) return !cv_in_parent(e->sval);
     /* see is_reinterpret_of_place: `return to_str(x)` is `return x` with a
@@ -10184,10 +9495,6 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
             if (arg->kind == E_IDENT && !is_param(arg->sval)
                 && g_loop_depth == 0 && g_call_arg_depth > 0 && g_in_return == 0
                 && cv_arena(arg->sval) && !strcmp(cv_arena(arg->sval), arena))
-                /* the second half of this message used to be "or pass a copy you keep
-                 * (`y := s`)". MEASURED 2026-08-10 on the emitted C: that spelling silences
-                 * the warning and emits the SAME two copies -- a no-op ritual. Making it the
-                 * last use emits one. Only the remedy that works is offered. */
                 warn_at(arg->line, "'%s' is copied into this aggregate because it is still live "
                                    "afterwards; if you do not need it after this, make this its "
                                    "last use and the copy goes away", arg->sval);
@@ -10379,37 +9686,6 @@ static char *gen_str(Type t, const char *ar, const char *v) {
     return sfmt("tycho_str_from_c(%s, \"<%s>\")", ar, type_name(t));
 }
 
-/* Drop ONE redundant outer paren layer when a gen_expr result is emitted as an
- * if/while condition: `if ((a == b))` -> `if (a == b)`. gen_expr wraps every
- * binop in parens, and the `if (%s)` / `while (%s)` site adds its own required
- * pair, so an equality condition comes out double-parenthesised -- which clang
- * flags as -Wparentheses-equality (gcc is silent; both accept either form).
- * Strips ONLY when `s` is a single fully-parenthesised group: first char '(' and
- * its matching ')' is the very last char. C string/char literals are skipped, so
- * a paren inside a literal (e.g. `s == ")"`) can't fool the matcher. Fail-closed:
- * on any uncertainty `s` is returned unchanged, so a missed strip is a harmless
- * extra paren, never malformed C.
- *
- * Every input shape gen_expr can hand this, and the verdict for each:
- *   `(h_a < 3LL)`                     STRIP -> `h_a < 3LL`            ok
- *   `({ HTask *_tk = h_t; ...; _w; })` KEEP -- GCC statement-expression: the
- *        '(' is part of the `({ ... })` syntax, NOT a redundant layer.
- *        Stripping it emitted `if ({ ... }) {`, which cc rejects with
- *        "expected expression before '{' token". Reached by `if wait(t):`
- *        over a bool-returning task. This is the s[1] == '{' guard below.
- *   `((h_a && h_b))`                  STRIP -> `(h_a && h_b)`         ok
- *   `h_f(h_x)`                        KEEP  -- does not lead with '('
- *   `(h_a) && (h_b)`                  KEEP  -- two groups; the ')' at index 2
- *        closes before the end, so the p[1] != '\0' test below refuses. (The
- *        classic off-by-one for this kind of scanner; verified absent.)
- *   `((tycho_int)h_x)`                STRIP -> `(tycho_int)h_x`       ok
- *   NULL / `(h_a`                     KEEP  -- empty / unbalanced
- *   `(tycho_streq(h_s, ")") == 1LL)`  STRIP -- literal skip keeps depth honest
- *   `(({ ... }) == 1LL)`              STRIP -> `({ ... }) == 1LL`     ok
- *        (a statement-expression that is not the WHOLE group is safe to expose)
- *   `(tycho_streq(h_s, "abc)`         KEEP  -- unterminated literal
- *   `()`                              KEEP  -- degenerate; stripping emitted
- *        `if () {`. Not reachable from gen_expr today, refused anyway. */
 static char *cond_unwrap(char *s) {
     /* s[1] && s[2] rejects "", "(" and "()" -- nothing strippable inside. */
     if (!s || s[0] != '(' || !s[1] || !s[2]) return s;
@@ -10857,33 +10133,6 @@ static char *trunc_result(Type t, char *expr) {
     return is_sized_int(b) ? sfmt("(%s)(%s)", c_type(b), expr) : expr;
 }
 
-/* Emit one signed integer literal as C source of rank >= `long long`.
- *
- * `LL` (C long long, >= 64-bit on EVERY data model), not `L`: a plain `L` is
- * 32-bit under ILP32/LLP64, so `100000L * 100000L` truncates in the multiply --
- * before the store into the 64-bit destination.
- *
- * THE MINIMUM IS SPECIAL. C has no negative integer constants: `-9223372036854775808LL`
- * is unary `-` applied to the constant `9223372036854775808LL`, and that constant's
- * type is chosen BEFORE the negation. 2^63 does not fit `long long`, so C99/C11
- * 6.4.4.1p5 has no type for it -- GCC/clang accept it as an extension with
- * "warning: integer constant is so large that it is unsigned" (default-on, fires
- * on every user build; tychoc's own cc line at the bottom of this file passes no
- * -Wall, so this was the only thing announcing it). The value came out right on
- * two's-complement hosts, but the emitter was relying on a construct the standard
- * does not grant it. `(-9223372036854775807LL - 1)` is the conventional spelling
- * (it is how <stdint.h> itself defines INT64_MIN): every constituent constant fits
- * `long long`, the arithmetic is exact and non-overflowing, and the result type is
- * still `long long`. Parenthesized so it is safe in any operand position.
- *
- * ONLY the 64-bit minimum needs this. The narrower sized minima (i8 -128, i16
- * -32768, i32 -2147483648) are emitted through this same path, and their magnitudes
- * (128 / 32768 / 2147483648) all fit `long long`, so the negation is well-typed --
- * verified by emitting the whole fixture suite and finding zero such warnings once
- * the 64-bit case is handled. u32/u64 never reach here: they take the `%lldU` /
- * `%lldULL` arms above, where an unsigned suffix makes even a top-bit-set value a
- * legal constant. Newtypes over `int` and `char` reach here through `base_of`, and
- * are covered by the same test because they carry their value in the same int64_t. */
 static char *c_int_lit(int64_t v) {
     if (v == INT64_MIN) return sfmt("(-9223372036854775807LL - 1)");
     return sfmt("%lldLL", (long long)v);
@@ -11629,10 +10878,6 @@ static void gen_parfor(FILE *o, Stmt *s, int ind, const char *scope) {
     indent(o, ind); fprintf(o, "{\n");
     indent(o, ind + 1); fprintf(o, "tycho_int _plo = %s, _phi = %s;\n", lo, hi);
     indent(o, ind + 1); fprintf(o, "if (_phi < _plo) _phi = _plo;\n");
-    /* The fan-out width. `parallel(W) for` names it; otherwise ncpu(). A COMPUTED
-     * W outside 1..64 aborts rather than clamping -- the literal case died in the
-     * parser, and clamping a wider request would run a different program than the
-     * one asked for while every gate stayed green (docs/rfc/parallel-for-width.md). */
     if (s->par_width && !(s->par_width->kind == E_INT)) {
         char *w = gen_expr(s->par_width, scope);
         indent(o, ind + 1); fprintf(o, "tycho_int _pk = %s;\n", w);
@@ -11712,14 +10957,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (!strcmp(scope, "&_scope") && type_is_heap(s->decl_type)
                 && name_escapes(s->name))
                 owner = "_parent";
-            /* MM-10b: a top-level SCALAR decl whose RHS allocates (has a call) — the
-             * RHS's heap is all transient (the result is a scalar copied out by value),
-             * and at function top level there is no per-iteration reset to reclaim it,
-             * so it would sit in _scope until function return. Build the RHS in a
-             * per-statement _t arena freed immediately. Gated to "&_scope": inside a
-             * loop/block the scratch reset already reclaims, so no hot-loop overhead.
-             * (tychoc0's scalar_transient wraps at every depth; this tychoc-only gating
-             * is output-invisible — reclaim only — so the fixpoint stays green.) */
             if (!type_is_heap(s->decl_type) && !strcmp(scope, "&_scope")
                 && expr_has_call(s->expr) && !expr_has_orreturn(s->expr)) {
                 g_cur_scope = "&_t";
@@ -12085,20 +11322,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_EXPR: {
-            /* MM-10: an expression statement's value is DISCARDED, so every transient
-             * it allocates is dead at statement end. At function top level (scope is
-             * "&_scope") there is no per-iteration reset to reclaim them, so build them
-             * in a fresh per-statement `_t` arena (block-scoped, like scalar_transient)
-             * and free it immediately, instead of letting them accumulate in the
-             * enclosing scope until function return. Sound because stores into
-             * longer-lived containers / inout route through owner_arena_of, not
-             * g_cur_scope — only pure transients land in _t.
-             * Gated to "&_scope" like the scalar decl/assign reclaim above: inside a
-             * loop/block the scratch reset already reclaims, so the _t wrap would be a
-             * redundant empty-arena per iteration. EXCLUDE or_return: it early-returns
-             * past arena_free(&_t) (leak). (tychoc0's SExpr wraps at every depth; the
-             * extra reclaim is output-invisible, so this tychoc-only gating — matching
-             * its own decl/assign gating — keeps the fixpoint differential green.) */
             if (!strcmp(scope, "&_scope") && !expr_has_orreturn(s->expr)) {
                 g_cur_scope = "&_t";
                 char *v = gen_expr(s->expr, "&_t");
@@ -12116,11 +11339,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * write back every live cursor first -- the returned value (or the
              * array itself) must see the real length, not the stale descriptor. */
             for (int fi = 0; fi < g_nfuse; fi++) fuse_flush_one(o, ind, fi);
-            /* `rf` frees every arena live at this return — enclosing loop/if
-             * block arenas (innermost-first) then _scope — and ends with
-             * "arena_free(&_scope);". At proc top level it IS just that, so a
-             * top-level return is byte-identical to before; inside a loop/if it
-             * additionally frees the scratch arena that used to leak. */
             char *rf = return_frees();
             g_in_return++;
             if (!s->expr) {
@@ -12139,15 +11357,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     indent(o, ind); fprintf(o, "{ char *_ret = %s; %s return _ret; }\n", v, rf);
                 }
             } else if (ret == T_BYTES) {
-                /* bytes shares string's length-headered char* repr, so it
-                 * promotes up exactly like T_STRING: a fresh value (an out-param
-                 * extern call) is built directly in _parent; a bare bytes place
-                 * is deep-copied there before this scope frees. tycho_str_copy is
-                 * length-based (header, not strlen), so interior NULs survive.
-                 * Without this branch a returned bytes fell to the scalar `else`
-                 * and was built in the freed &_scope -- a use-after-free (the only
-                 * `-> bytes`-returning code is core:net; tychoc0.ty has none, so
-                 * this is output-invisible to fixpoint + the golden suite). */
                 if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ char *_ret = tycho_str_copy(_parent, %s); %s return _ret; }\n", v, rf);
@@ -12597,8 +11806,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, NULL);   /* bounds eval once, pre-loop */
             indent(o, ind + 1); fprintf(o, "tycho_int _stop%d = %s;\n", id, stop);
-            /* `_stepN`, its `tycho: range step is zero` abort and the `_stepN > 0 ? ... : ...`
-             * direction ternary went with the field on 2026-07-30 (the loops-cleanup plan). */
             indent(o, ind + 1);
             fprintf(o, "for (tycho_int h_%s = %s; h_%s < _stop%d; h_%s += 1) {\n", s->name, start, s->name, id, s->name);
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
@@ -12758,25 +11965,6 @@ static void gen_proc(FILE *o, Proc *pr) {
     for (int i = 0; i < pr->nparams && i < 16; i++) g_param_sink[i] = pr->params[i].is_sink;
     for (int i = 0; i < pr->nparams; i++)
         g_param[g_nparam++] = pr->params[i].name;
-    /* a reassigned param must land in this proc's scope to outlive any
-     * inner block; the incoming pointer itself is borrowed from the caller.
-     * EXCEPT a returned `string` parameter: its bytes already live in the
-     * caller's arena (_parent or an ancestor — a string param is a char* into
-     * the caller), and a string is immutable, so handing those same bytes back
-     * is both lifetime-safe and value-safe (no mutation can ever observe the
-     * aliasing). Track it as living in _parent so the return-slot path skips
-     * the O(n) deep copy; a reassignment of such a param then also stores into
-     * _parent — always memory-safe, at most mild retention. Strings only:
-     * arrays are mutable (aliasing would break value semantics) and heap
-     * structs are deep-copied into _scope on entry (bytes not in _parent). */
-    /* Every parameter borrows the caller's bytes; its value does NOT live in
-     * this proc's _parent. (An earlier optimization marked a returned string
-     * param as _parent to skip the deep copy at return -- UNSOUND: the return
-     * value outlives the call, but the caller frequently passes the arg in a
-     * transient arena it frees right after the call, leaving the returned
-     * pointer dangling. Surfaced by self-hosting tychoc0's resolve_nt, which
-     * returns its `ty` param. So: never mark a param _parent; `return param`
-     * deep-copies into _parent like any other borrowed place.) */
     for (int i = 0; i < pr->nparams; i++)
         cv_push(pr->params[i].name, "&_scope");
     /* Structs are passed by value, but C copies them shallowly — a heap field
@@ -13084,20 +12272,6 @@ static char *mapc_kparam(Type k) {        /* the key function parameter (READ-on
     if (!mapkey_composite(k)) return sfmt("const char *k");
     return sfmt("%sk", c_type(k));
 }
-/* The key parameter of a function that STORES the key into an ekeys[] slot (_append
- * only). mapc_kparam is `const char *` for string keys -- correct for the read-only
- * fns (find/get/has/del/put all only hash, compare, or copy it), but a lie for
- * _append, whose contract is ownership transfer: its two callers (_put and
- * _slotptr) hand it the freshly arena-owned copy from mapc_kcopy, and it stores
- * that pointer into m->ekeys[e], a `char *` slot (mapc_kslot). Passing an owned
- * pointer through a `const char *` parameter is what made the store discard the
- * qualifier (-Wdiscarded-qualifiers). The slot is NOT made const: c_type(T_STRING)
- * is "char *" (:1230) and every string container in the system -- TychoArrStr.data,
- * the runtime's own TychoMapSI.ekeys -- is `char **`; tycho_map_si_append, the
- * hand-written twin this family mirrors, likewise takes `char *k`. So the owning
- * param is exactly the slot type, which is also the invariant tychoc0 states
- * directly (`kpar := kslot + " k"`, tychoc0.ty:10475). Nothing writes THROUGH the
- * slot -- trace under the front-door plan. */
 static char *mapc_kparam_own(Type k) {
     return sfmt("%sk", mapc_kslot(k));
 }
@@ -14177,12 +13351,6 @@ static int under_corelib(const char *dir) {
     return r;
 }
 
-/* Scan a lexed file's header for its import paths. The grammar puts every
- * import after the optional `package` decl and before any definition, so a
- * cheap token walk (no full parse, no type interning) suffices. Used to drive
- * post-order package loading: an imported package must be fully parsed — its
- * types registered — before the importer parses signatures that name them
- * (`p: geom.Point`), because type references intern to numeric ids eagerly. */
 static void scan_imports(Tok *t, char **paths, int *n, int max) {
     int i = 0;
     while (t[i].kind == TK_NEWLINE) i++;
@@ -14334,15 +13502,6 @@ static ProcVec compile_package(const char *entry, const char *pkgname) {
     return prog;
 }
 
-/* --bundle: print the post-order concatenation of a package program's source
- * (each file keeps its `package`/`import` headers) as one stream — the input
- * format for the stdin-only self-hosted compiler (tychoc0), whose parser switches
- * its mangling prefix on each `package` header. Same traversal/ordering as
- * merge_pkg (imports first), so tychoc0 sees definitions in dependency order. */
-/* Emit a file, rewriting its leading `package <name>` header line to
- * `package main`. The entry package keeps the empty mangling prefix in tychoc0
- * (which maps `package main` -> no prefix) regardless of its source name, just
- * as tychoc gives the entry package prefix "". */
 static void emit_entry_file(const char *c) {
     const char *line = c;
     while (*line) {
@@ -14404,9 +13563,6 @@ static char *pkg_config_flags(const char *name) {
     cc_safe_name(name, "--pkg");   /* name reaches the shell below; reject metacharacters */
     char *cmd;
 #ifdef _WIN32
-    /* _popen on Windows runs cmd.exe, which has no /dev/null; the POSIX
-     * redirect made every resolution fail (rc!=0, no flags) and the cc line
-     * linked without -lz/-lssl/... -- verified on real Windows 2026-08-06. */
     cmd = sfmt("pkg-config --cflags --libs %s 2>nul", name);
 #else
     cmd = sfmt("pkg-config --cflags --libs %s 2>/dev/null", name);
@@ -14494,11 +13650,6 @@ static char *c_escape_path(const char *p) {
     return b;
 }
 
-/* One usage text, two destinations: stdout+0 for `--help` (someone asking) and
- * stderr+1 for a bare `tychoc` (someone who got it wrong). Until 2026-08-17 only
- * the second existed and `--help` died with "unknown flag" -- the first thing a
- * stranger types. Every flag here is parsed in main below; `--symbols` was
- * parsed and undocumented. */
 static void tychoc_usage(FILE *f)
 {
     fprintf(f,
@@ -14595,20 +13746,6 @@ int main(int argc, char **argv) {
 
     char *base   = out ? xstrndup(out, strlen(out)) : strip_ext(input);
     char *c_path = sfmt("%s.c", base);
-    /* `--emit-c` with no `-o` writes the C to STDOUT. HISTORY: it used to write
-     * the sibling `<src>.c` and print `wrote <path>` on stdout, so the obvious
-     * `tychoc x.ty --emit-c > out.c` captured the status line and left an
-     * untracked x.c in the tree. The .gitignore route was considered and
-     * rejected: its emitted-C rules are a hand-listed set of specific paths
-     * (the compiler dir, tychoc0.c, tychofmt.c, ...), and 31 directories hold
-     * BOTH .ty sources and hand-written .c shims (the corelib, bench and tools
-     * dirs, tests/ffi), so a by-pattern ignore would hide a newly added shim --
-     * a worse failure than the one it fixes. See the loops-cleanup plan. All but one
-     * in-tree caller already passed -o (the fuzz runners,
-     * scripts/entrypoints.sh:63, bench/guard.sh:28, the three examples
-     * sanitizer legs); the exception was the bytes-rehome lane in
-     * scripts/tools_check.sh:283, which greps the sibling file, and it was
-     * given an explicit -o here. */
     int c_to_stdout = emit_c_only && !out;
 
     char *src = read_file(input);
@@ -14625,23 +13762,6 @@ int main(int argc, char **argv) {
                 input, g_imports[0].line);
         return 1;
     }
-    /* --print-shims: the companion-shim closure this program needs, one path per
-     * line and nothing else on stdout, so a shell can splice it straight onto a cc
-     * line. It does not compute anything new -- `compile_package` above has already
-     * walked the whole import graph, and `merge_pkg` calls `add_shim` as the DFS
-     * *enters* each package, so a shim reached only through an indirect import is
-     * in `g_shims` on exactly the same terms as a directly imported one. That
-     * closure is what the normal build path splices onto its cc line; `--emit-c`
-     * returns before ever reaching it, which is why every hand-linked lane had to
-     * guess. Two lanes guessed from direct imports and went stale twice on
-     * transitive deps (`examples/fetch/run.sh`'s note records both). They ask here
-     * now.
-     *
-     * Printed BEFORE `check_finite_types`/`resolve_program`, deliberately: the
-     * shim list is a property of the import graph, not of the program type-checking,
-     * and a build script wants the link line even while the program is mid-edit.
-     * A single-file program with no package prints nothing and exits 0 -- an empty
-     * closure is a correct answer, not a failure. */
     if (print_shims) {
         for (int i = 0; i < g_nshims; i++) printf("%s\n", g_shims[i]);
         return 0;
@@ -14689,12 +13809,6 @@ int main(int argc, char **argv) {
 
     char *links = sfmt("%s", "");                  /* FFI: -lLib for each `extern "Lib"` */
     for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, cc_safe_name(g_links[i], "extern library"));
-    /* sources (generated .c + any --shim companions), then -lm + extern libs +
-     * the -L/-I/--link/--pkg passthrough (libs trail the objects that need them). */
-    /* -O3 is the portable default; --native opts into -march=native (host-CPU only).
-     * -fwrapv: signed integer overflow is DEFINED as two's-complement wrapping
-     * (not C UB), so the optimizer can never miscompile overflowing arithmetic.
-     * This is the language's integer-overflow contract; see docs/internals. */
     const char *march = native ? " -march=native" : "";
     const char *optdbg = debug ? "-O0 -g" : "-O3";   /* -g: unoptimized + DWARF so gdb/lldb step the .ty source */
     for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
@@ -14702,17 +13816,6 @@ int main(int argc, char **argv) {
     char *cmd = sfmt("%s %s -fwrapv%s -pthread -o %s %s%s -lm%s%s %s", cc, optdbg, march, base, c_path, shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }   /* the .c SURVIVES a cc failure on purpose: it is the evidence the printed command refers to */
-    /* The generated C is an INTERMEDIATE, not an artifact. It used to be left beside the
-     * source on every plain build (`tychoc tests/for3.ty` -> an untracked `tests/for3.c`),
-     * which no .gitignore rule can safely cover: 31 directories hold both .ty sources and
-     * hand-written, tracked .c files, and 27 of those .c files share a basename with the
-     * sibling .ty (all of bench/, the hand-written C ports README:29 builds against), so a
-     * by-pattern ignore would hide a real file. Removing it here is the same fix `--emit-c`
-     * with no -o got in the loops-cleanup plan; this is phase 52. To KEEP the C, ask for it:
-     * `--emit-c -o name` (docs/guides/debugging.md:37 is the workflow that does).
-     * Note the pre-existing hazard this does NOT introduce: a plain build of `bench/json/json.ty`
-     * already OVERWROTE the hand-written `bench/json/json.c` before it got here. Nothing in
-     * the tree does that -- every in-tree build passes -o or --emit-c -o. */
     remove(c_path);
     printf("built %s\n", base);
     return 0;

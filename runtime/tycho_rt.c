@@ -27,14 +27,6 @@
  * and uses values, as if the language were dynamically managed.
  */
 
-/* strict -std=c11 (__STRICT_ANSI__) hides the POSIX declarations the
- * concurrency runtime needs (clock_gettime, sched_yield, nanosleep, ...);
- * _DEFAULT_SOURCE restores glibc's default visibility. Must precede every
- * include -- this runtime is the first thing in each generated file.
- * _GNU_SOURCE additionally exposes pthread_getattr_np (the overflow guard's
- * way to learn a thread's stack region) and the REG_RSP/REG_ESP/REG_SP
- * ucontext indices; the 13 corelib shims define no GNU-conflicting names
- * (checked 2026-08-03). */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -79,20 +71,6 @@ _Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");
 
 #define TYCHO_BLOCK_DEFAULT (1u << 16)
 
-/* ---- stack-overflow guard: generated-code recursion fails closed ---------- */
-/* Generated Tycho recursion used to die with a silent SIGSEGV. This guard
- * turns an exhausted C stack into one diagnostic and exit 1.
- *
- * POSIX records each thread's stack bounds and handles SIGSEGV (plus SIGBUS on
- * macOS) on an alternate stack. A faulting SP near the lower bound is an
- * overflow; other faults are re-raised with the default disposition.
- *
- * Windows has a distinct EXCEPTION_STACK_OVERFLOW code, so its vectored
- * handler needs neither bounds nor an SP heuristic.
- *
- * pthread_getattr_np supplies Linux bounds; macOS supplies
- * pthread_get_stackaddr_np. Unknown POSIX platforms leave the bounds zero and
- * retain the operating system's normal fault handling. */
 #ifndef _WIN32
 
 typedef struct { uintptr_t hi; uintptr_t lo; } TychoStackBounds;
@@ -198,12 +176,6 @@ static LONG WINAPI tycho_veh_handler(PEXCEPTION_POINTERS ep) {
         HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
         DWORD w;
         WriteFile(err, msg, sizeof(msg) - 1, &w, NULL);
-        /* TerminateProcess, not ExitProcess: the handler runs on the just-committed
-         * guard page, and ExitProcess's CRT teardown needs more stack than the
-         * exhausted thread has -- it faults with a second AV and the process dies
-         * 0xC0000005 (139) instead of the fail-closed exit 1. TerminateProcess skips
-         * all teardown and needs no stack. Verified on real Windows (2026-08-06);
-         * Wine's stack/exception semantics did not expose this. */
         TerminateProcess(GetCurrentProcess(), 1);
     }
     return EXCEPTION_CONTINUE_SEARCH;
@@ -236,29 +208,7 @@ struct HBlock { HBlock *next; size_t cap; size_t off; };
  * so a stale node could otherwise alias a fresh bump — clearing prevents that). */
 typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
 #define TYCHO_FREECAP 32
-/* Tiny-object recycling uses a SEGREGATED free-list: one LIFO per 8-byte size
- * class, so push/pop is O(1) with no cap and no scan -- a sliding-window eviction
- * of heap records (peak ~ window) needs the per-class list to grow to the window
- * size, which a single capped best-fit list cannot do. TYCHO_NBKT classes cover
- * sizes 8..TYCHO_NBKT*8-8 bytes (strings/small structs -- the churn that
- * accumulates); larger chunks (array spines etc.) fall back to the capped
- * best-fit `freelist`, unchanged, so MM-8 large-buffer reuse is unaffected.
- *
- * The bucket table is a LAZILY-ALLOCATED pointer, NULL until an arena first
- * recycles a tiny object. This matters because generated code creates a by-value
- * scope `Arena` per function call / loop iteration (e.g. recursive node builders);
- * an inline `FreeNode *bkt[TYCHO_NBKT]` array bloated that struct by 128 B and made
- * arena_new/reset/free each run a TYCHO_NBKT-iteration init/clear loop on every
- * call -- a ~5x regression on allocation-heavy workloads that never recycle
- * (binary-trees, maptree). With a lazy pointer a non-recycling arena pays only a
- * single NULL store + one not-taken branch; only recycling arenas allocate the
- * table (once, freed at arena_free). */
 #define TYCHO_NBKT 16
-/* `name` labels the arena for residency reporting (TYCHO_ARENA_STATS): a proc's
- * prologue stamps its own function name, and arena_child copies it, so every
- * block arena and loop scratch arena inside that proc attributes to it. One
- * pointer field and one store per arena creation, paid whether or not stats are
- * on -- measured at noise on the self-compile (see the stats block below). */
 typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelist; int nfree; const char *name; } Arena;
 
 static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1); }
@@ -571,21 +521,6 @@ __attribute__((constructor)) static void stats_init(void) {
     if (bs && *bs) { char *end; long v = strtol(bs, &end, 10); if (end != bs && v > 0) g_block_override = (size_t)v; }
 }
 
-/* Global block free-list. Arenas are created/reset/freed per block scope, call,
- * and loop iteration, so naive malloc/free of a TYCHO_BLOCK_DEFAULT-sized block
- * per scope dominated runtime on allocation-heavy workloads (e.g. the
- * self-hosting compiler: ~13x slower than no-free). Instead of returning blocks
- * to the OS, reset/free hand them to this pool, and arena_alloc takes from it
- * first -- O(1) pointer ops, no malloc/free churn, no page re-faulting. Peak
- * live memory is unchanged (the pool holds at most what a scope just released);
- * pool blocks are reclaimed by the OS at process exit.
- *
- * THREAD-LOCAL (CC-0): each thread owns a private pool, so allocation never
- * contends and never races. A spawned task's arenas may be built on one thread
- * and freed on another (wait() frees the task tree on the waiting thread) --
- * that's fine: a block is just malloc'd memory; releasing it pushes it onto
- * the *releasing* thread's pool. A spawned thread flushes its own pool to
- * free() before exiting (tycho_pool_flush) so nothing leaks with the TLS. */
 static __thread HBlock *g_block_pool = NULL;
 
 static HBlock *block_get(size_t cap) {
@@ -890,47 +825,6 @@ static void tycho_task_finish(HTask *t) {
     free(t);
 }
 
-/* ---- channels (CC-4: `ch := channel(T, cap)` / send / recv / close) -----
- * Bounded MPMC queue, the ONE intentionally shared object in tycho's
- * concurrency story -- internally synchronized, so value semantics outside
- * it are undisturbed: send deep-copies the payload IN (generated per-type
- * wrapper), recv deep-copies it OUT into the receiver's arena. Payload bytes
- * live in PER-SLOT arenas, each reset when its ring slot is reclaimed by a
- * later send -- so channel memory is bounded by cap * max payload (no
- * monotonic growth). The generic begin/commit pairs below hold the mutex
- * across the generated copy, which keeps slot reuse race-free.
- *
- * Lifetime: the channel is freed at its CREATING scope's exit (emitted by
- * the compiler like a task finish). Sound because CC-2's implicit join means
- * every task that could hold the handle has already joined by then.
- * recv on a closed, drained channel reports 0 (surfaced as None in tycho);
- * send on a closed channel and double close die loudly. */
-/* CC-5: the ring is a Vyukov bounded MPMC queue. Each cell carries a sequence
- * counter and its OWN arena: a sender claims a cell with one CAS, deep-copies
- * the payload into the cell arena with NO lock held (the claim makes the cell
- * exclusive until the seq store publishes it), then releases the cell to
- * receivers; a receiver symmetrically claims, copies out, and recycles the
- * cell back to senders. Waiting is a spin -> sched_yield -> timed-park ladder;
- * the parked-waiter COUNT gates the publisher's wake path, so the uncontended
- * fast path does zero syscalls and takes zero locks (the mutex/cond exist only
- * for parking). The 1ms timed wait makes the check-then-park race harmless
- * (worst case one extra retry), never a lost wakeup. Capacity rounds up to a
- * power of two (still bounded; blocking threshold may exceed the request). */
-/* C11 aligned_alloc is not in mingw's stdlib.h. Allocate n+63+8, align the
- * payload up to 64, stash the malloc'd pointer 8 bytes before the payload
- * (the +8 guarantees room for the stash even when malloc already aligned);
- * ty_aligned_free64 recovers it. The channel free path uses plain free() on
- * both platforms.
- *
- * The alignment MUST start from p+8, not p: aligning up from p leaves a == p
- * whenever malloc already returned a 64-aligned block, and the stash write at
- * a[-1] then lands 8 bytes BEFORE the allocation, corrupting the allocator's
- * metadata. msvcrt returns a 64-aligned pointer ~25% of the time (measured:
- * 501/2000), so this smashed the heap on roughly one channel in four and
- * surfaced as STATUS_HEAP_CORRUPTION (0xC0000374) at the free in
- * tycho_chan_free. The +8 in the size request is what makes p+8 safe to
- * align from -- worst case a == p+8+63 and a+n == p+n+63+8, exactly the
- * block. Linux takes the aligned_alloc branch and never saw this. */
 static void *ty_aligned_alloc64(size_t n) {
 #ifdef _WIN32
     unsigned char *p = malloc(n + 63 + 8);
@@ -1006,8 +900,6 @@ static HChan *tycho_chan_new(tycho_int cap) {
     return ch;
 }
 
-/* Park after the spin budget. The 1ms cap turns the publisher's
- * check-waiters-then-skip race into at most one extra retry. */
 static void tycho_chan_park(HChan *ch) {
     pthread_mutex_lock(&ch->mu);
     atomic_fetch_add_explicit(&ch->waiters, 1, memory_order_relaxed);
@@ -1554,44 +1446,6 @@ char *tycho_bool_to_str(Arena *a, tycho_int b) {
     return r;
 }
 
-/* --- float -> string, in the "C" locale, always ---------------------------
- *
- * WHY A LOCALE HANDLE IS INVOLVED AT ALL. printf's "%g" takes its decimal
- * separator from LC_NUMERIC. Nothing in this tree calls setlocale, so a Tycho
- * program runs under "C" and a bare snprintf happens to be right -- but that is
- * an unstated dependency on a process-wide global, and one linked C library
- * calling setlocale(LC_ALL, "") under a comma-decimal locale breaks it. It broke
- * WORSE than "1,5": the ".0" guard below scans for '.', "1,5" has none, so the
- * guard fired and the output was `1,5.0` -- not a float in any grammar, not
- * readable by core:strings' parse_float, not valid Tycho source.
- * corelib/strings/strings_shim.c fixed the same defect on the parse side; this
- * is that fix in the other direction.
- *
- * WHY uselocale AND NOT snprintf_l. snprintf_l is a BSD/macOS extension living
- * in <xlocale.h>; glibc does NOT declare it, with or without _GNU_SOURCE
- * (measured on this host: `implicit declaration of function 'snprintf_l'` under
- * cc -std=c11 with _GNU_SOURCE defined). uselocale/newlocale/LC_NUMERIC_MASK are
- * POSIX 2008 and present on both, and _DEFAULT_SOURCE (declared at the top of
- * this file) already exposes them -- no new feature-test macro is needed.
- * uselocale sets the calling THREAD's locale, which matters because a Tycho task
- * is a pthread: swapping the global with setlocale would be a data race between
- * tasks, and this is not.
- *
- * FALLBACK, AND WHY IT IS STILL CORRECT. If newlocale fails at run time (out of
- * memory, no "C" locale) we format under the ambient locale and then rewrite its
- * separator -- taken from localeconv(), C89, always present -- back to '.' in the
- * buffer. Same digits, same rounding; only the one separator byte-run moves.
- *
- * THE ".0" GUARD'S CONTRACT, AND WHY THE SCAN IS SOUND. The guard answers "would
- * this text be read back as an int?" and appends ".0" when it would, so str(3.0)
- * is "3.0" and never "3". It decides by scanning for the only four things %g
- * can emit that make text non-integral: '.' (the separator), 'e'/'E' (an
- * exponent), and the i/I/n/N of "inf"/"nan". That scan is sound ONLY because the
- * separator is now known to be '.': under any other separator the character is
- * absent from the set, every finite non-integral value looks integral, and the
- * guard appends ".0" to a string that already had a fraction -- which is exactly
- * the `1,5.0` above. The guard is correct because of the conversion above it;
- * changing one without the other reintroduces the bug. */
 #ifndef _WIN32
 /* Windows has no POSIX newlocale/uselocale (only the MSVC-style _locale_t);
  * ty_c_numeric stays 0 there and tycho_float_to_str takes the
@@ -1620,34 +1474,6 @@ static int ty_fix_decimal_point(char *s, int n) {
     return n - (int)dplen + 1;
 }
 
-/* Shortest of %.15g, %.16g, %.17g that strtod reads back as the SAME double.
- *
- * WHY NOT A FIXED PRECISION, EITHER WAY. %.15g alone (what this was until
- * 2026-08-12) is DBL_DIG: it guarantees text -> double -> text, the other
- * direction. binary64 needs DBL_DECIMAL_DIG = 17 for double -> text -> double,
- * so str(0.1+0.2) was "0.3" (a different double), str(2^53) was
- * "9.00719925474099e+15" (not an integer), and str(DBL_MAX) was
- * "1.79769313486232e+308" -- a decimal ABOVE DBL_MAX, which this project's own
- * strings.parse_float refuses as Overflow. A plain bump to %.17g fixes all of
- * that for one snprintf, but then EVERY float prints at full width: 0.1 becomes
- * "0.10000000000000001". str() is user-facing output here, so that is a worse
- * trade than the retry.
- *
- * COST, measured on this box over 300000 values (gcc -O2, three runs):
- * %.15g 134-154 ns/call, %.17g 145-149, this 423-448 -- about 290 ns of extra
- * work, and only on values that need it. A first-try hit costs one strtod more
- * than the old code. The candidate is always CHECKED, so nothing here has to be
- * right about digits; a wrong guess costs a retry, never a wrong number.
- *
- * `==` and not a bit compare: the text came from x, so %g already carries the
- * sign and -0.0 prints "-0" whatever this returns. NaN is the one value that can
- * never compare equal to itself, so it is formatted once and returned -- without
- * that guard it would burn all three tries and still print "nan".
- *
- * CALLED UNDER THE CALLER'S LOCALE, DELIBERATELY. Both the snprintf and the
- * strtod run in whatever locale the caller established, so they agree on the
- * decimal separator even on the fallback leg where that separator is a comma.
- * Fixing the separator afterwards is the caller's job. */
 static int ty_fmt_shortest(char *b, size_t bs, double x) {
     if (x != x) return snprintf(b, bs, "%.17g", x);
     int m = 0;
@@ -1684,33 +1510,7 @@ char *tycho_float_to_str(Arena *a, double x) {
     return r;
 }
 
-/* ---- TEST HOOKS ------------------------------------------------------------
- * Two functions with no Tycho-visible declaration anywhere: they are not
- * builtins and no ordinary program can reach them. tests/float_str_locale.ty
- * declares them itself with `extern fn`, the same shape
- * corelib/test/strings/main.ty uses for corelib/strings/strings_shim.c's hook.
- * They live HERE, in the runtime, because tests/run.sh compiles a fixture with
- * plain `cc ... -lm` and no --shim, so a fixture has no other C to link against.
- *
- * make_locale_hostile makes LC_NUMERIC a comma-decimal locale, so the assertions
- * run against the exact condition that used to produce `1,5.0` rather than
- * against the "C" locale a Tycho program would otherwise never leave. It returns
- * 1 if the separator is now something other than '.', 0 if the host has none of
- * these locales; the fixture PRINTS that into its golden, so a host with no such
- * locale fails loudly instead of silently testing nothing.
- *
- * float_roundtrip formats x with tycho_float_to_str above and re-reads it with
- * strtod under the same "C" handle, returning 1 if the value came back
- * identically -- signbit compared too, so -0.0 does not pass as 0.0. It returns
- * -1 if the "C" handle could not be built, because then neither leg is trustworthy
- * and a golden should say so rather than score it. */
 tycho_int tycho_test_make_locale_hostile(void) {
-    /* The POSIX names are all rejected by the Windows CRT (setlocale returns
-     * NULL for every one of them, measured on Windows 11 26200 / mingw-w64),
-     * so without the Windows-style names below this hook returned 0 there and
-     * the hostile-locale half of tests/float_{lit,str}_locale.ty silently
-     * tested nothing -- the fixture ran its second block in the "C" locale
-     * while its golden said hostile=1. */
     static const char *cands[] = { "", "da_DK.UTF-8", "da_DK.utf8", "da_DK",
                                    "de_DE.UTF-8", "fr_FR.UTF-8",
                                    "Danish_Denmark.1252",
@@ -1725,12 +1525,6 @@ tycho_int tycho_test_make_locale_hostile(void) {
     return 0;
 }
 
-/* The NEGATIVE CONTROL for the hook above. Formats x at a CALLER-CHOSEN
- * precision instead of the shipped renderer's, so a fixture can show that
- * %.15g -- what tycho_float_to_str used until 2026-08-12 -- really does fail to
- * round-trip the values it claims to, and that the check above is capable of
- * returning 0. Without it a golden of all-1s proves only that the hook is
- * cheerful. Same "C" handle, same -1-if-unbuildable contract. */
 tycho_int tycho_test_float_roundtrip_prec(double x, tycho_int prec) {
 #ifndef _WIN32
     pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
@@ -1742,12 +1536,6 @@ tycho_int tycho_test_float_roundtrip_prec(double x, tycho_int prec) {
     uselocale(prev);
     return (back == x && signbit(back) == signbit(x)) ? 1 : 0;
 #else
-    /* Windows: no uselocale, but the pieces exist -- print with the running
-     * locale and normalise the separator exactly as tycho_float_to_str's own
-     * fallback does, then read back through a "C" _locale_t. Until 2026-08-13
-     * this returned -1 and BOTH float fixtures were parked as Windows failures;
-     * the text they compare was byte-identical all along, only this check was
-     * unimplemented. */
     _locale_t cl = _create_locale(LC_NUMERIC, "C");
     if (!cl) return -1;
     char tmp[64];
@@ -1825,10 +1613,6 @@ TychoArrInt tycho_arr_int_from_c(Arena *a, tycho_int *p, tycho_int n) {
     return r;
 }
 
-/* Preallocate to exact capacity `n` (no-op if already that big). Lets a caller
- * that knows the final size build a list with ZERO geometric growth -- no
- * abandoned buffers, no 2x slack -- the arena-friendly way to build a tycho_int-lived,
- * many-list structure (see bench/invindex). */
 void tycho_arr_int_reserve(Arena *a, TychoArrInt *xs, tycho_int n) {
     if (n <= xs->cap) return;
     tycho_cap_check(n, sizeof(tycho_int));
@@ -2143,17 +1927,6 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
     return r;
 }
 
-/* list_dir(path): the directory's entries (excluding "." and ".."), or an empty
- * array if it can't be opened. Order is the filesystem's (sort if you need it).
- *
- * gap: on Windows this is the NARROW (ANSI) opendir/readdir, so a filename
- * outside the active code page (1252 by default) comes back lossily -- measured
- * on Windows 11 26200: a file created as 日本語.txt lands on disk under a
- * mojibake name and readdir yields "???.txt", which then fails to stat. ASCII is
- * unaffected. Fixing it means either an application manifest setting
- * activeCodePage=UTF-8 (Windows 10 1903+, needs a resource on the emitted cc
- * line) or moving the toolchain to UCRT64 and the wide APIs -- both change what
- * the port targets, so neither is done here. Recorded in SECURITY.md. */
 TychoArrStr tycho_list_dir(Arena *a, const char *path) {
     TychoArrStr r = tycho_arr_str_with_cap(a, 8);
     DIR *d = opendir(path);
@@ -2658,20 +2431,6 @@ uint64_t tycho_arr_str_hash_det(TychoArrStr x) {
     return h;
 }
 
-/* ---- TychoMapII: COMPACT (indexed-dict) layout ----------------------------
- * Two arrays instead of one value-inline table: a small int32 INDEX table
- * (open-addressing, stores entry_index+1; 0 = empty) points into a DENSE
- * ENTRY array (ekeys/evals) kept in INSERTION ORDER. keys()/`for k in m`
- * walk the entries directly, so no separate nxt/prv order list is needed --
- * an empty index slot costs 4 B instead of a whole value+order-list slot.
- * Delete tombstones the entry (elive[e]=0, preserves order) and backward-
- * shifts the int32 index (kept tombstone-free); when appends find the entry
- * array full and >half-dead, an in-place, ALLOCATION-FREE compaction reclaims
- * the tombstones -- the churn bound that keeps a delete-heavy map (bench/lru)
- * from growing without bound under an arena that never frees. Insertion order
- * is the entries array (independent of hash seed), so a random per-process
- * seed stays observable-output-invisible (fixpoint/parity byte-identical).
- * Compact-dict design (design note archived with the 2026-08 docs prune). */
 typedef struct { tycho_int *ekeys; tycho_int *evals; unsigned char *elive; int *idx; tycho_int len, ecount, ecap, icap; } TychoMapII;
 typedef struct { tycho_int *ekeys; double *evals; unsigned char *elive; int *idx; tycho_int len, ecount, ecap, icap; } TychoMapIF;
 
@@ -2741,9 +2500,6 @@ static tycho_int tycho_map_ii_append(Arena *a, TychoMapII *m, tycho_int k, tycho
     m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1;
     return e;
 }
-/* reserve(m, n): pre-size the entry + index arrays for >= n entries, copying any
- * existing live entries and re-hashing the index. A no-op when already large
- * enough. Kills the retained growth intermediates for a known-size map (bench/lru). */
 void tycho_map_ii_reserve(Arena *a, TychoMapII *m, tycho_int cap) {
     if (cap <= 0) return;
     tycho_int ec = 8; while (ec < cap) ec *= 2;
