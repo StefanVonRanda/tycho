@@ -259,6 +259,22 @@ def main():
                           # binds a fixed port: the result depends on what else
                           # is listening, which is not a property of the doc
                           '--port', 'tycho-httpd')
+                if re.search(r'^\s*\((gdb|lldb)\)', body, re.M):
+                    nskip += 1
+                    print("    skip  %s:%d  a debugger TRANSCRIPT: `(gdb)`/`(lldb)` are "
+                          "prompts, and the lines after them are its output" % (f, line))
+                    continue
+                # a SYNOPSIS is not a command: `tycho-diff [--stat] OLD NEW`
+                # names its arguments in the usual placeholder style, and running
+                # it means running with the placeholders as literal filenames.
+                if re.search(r'\[--?[a-z]|\[-[A-Z]|\b(OLD|NEW|FILE|PATH|DIR|SRC|DST|'
+                             r'INPUT|OUTPUT|ARGS)\b'
+                             # lowercase placeholders name a file the reader supplies
+                             r'|\b(program|prog|file|yourfile|myprog)\.ty\b|<[a-z-]+>', body):
+                    nskip += 1
+                    print("    skip  %s:%d  a usage SYNOPSIS: its arguments are "
+                          "placeholders, not values" % (f, line))
+                    continue
                 unsafe = [u for u in UNSAFE if u in body]
                 missing = []
                 for l in body.split('\n'):
@@ -272,17 +288,54 @@ def main():
                         continue
                     if cmd.startswith('./') or '=' in cmd:
                         continue
-                    if subprocess.run(['sh', '-c', 'command -v %s' % cmd],
-                                      capture_output=True).returncode != 0:
+                    # the repo root holds tychoc, tycho and the built tools; a
+                    # reader who installed them has them on PATH, so look there
+                    if subprocess.run(
+                            ['sh', '-c', 'command -v %s' % cmd], capture_output=True,
+                            env=dict(os.environ,
+                                     PATH=ROOT + os.pathsep + os.environ["PATH"])
+                            ).returncode != 0:
                         missing.append(cmd)
                 if missing:
                     nskip += 1
                     print("    skip  %s:%d  shell: not on this machine: %s"
                           % (f, line, " ".join(sorted(set(missing)))))
                 elif unsafe:
-                    nok += 1
-                    print("    ok    %s:%d  [shell, commands exist; NOT run: %s]"
-                          % (f, line, ", ".join(unsafe)))
+                    # RUN it, with the side-effecting commands stubbed on PATH.
+                    # That verifies the pipeline, the flags and everything around
+                    # them; what it does not do is clone, publish or bind. A stub
+                    # echoes its argv and exits 0, so the fence still fails if any
+                    # OTHER command in it is wrong.
+                    with tempfile.TemporaryDirectory() as tmp:
+                        bindir = os.path.join(tmp, "bin"); os.makedirs(bindir)
+                        for name in ("git", "gh", "npx", "npm", "pip", "curl", "wget",
+                                     "sudo", "apt", "brew", "scp", "ssh", "docker",
+                                     "tycho-httpd"):
+                            sp = os.path.join(bindir, name)
+                            open(sp, "w").write('#!/bin/sh\necho "[stub] %s $*"\nexit 0\n' % name)
+                            os.chmod(sp, 0o755)
+                        cmds = "\n".join(
+                            re.sub(r'^\s*\$\s?', '', l) for l in body.split('\n')
+                            if l.strip() and not l.strip().startswith('#'))
+                        env = dict(os.environ,
+                                   PATH=os.pathsep.join([bindir, ROOT, os.environ["PATH"]]))
+                        # `./tycho-httpd` names a path, so PATH's stub would be
+                        # missed; drop the `./` on a stubbed name only
+                        for name in ("tycho-httpd",):
+                            cmds = cmds.replace("./" + name, name)
+                        r = subprocess.run(['sh', '-c', "set -e\ncd %s\n" % ROOT + cmds],
+                                           capture_output=True, text=True, timeout=120,
+                                           errors='replace', stdin=subprocess.DEVNULL,
+                                           cwd=tmp, env=env)
+                    if r.returncode == 0:
+                        nok += 1; nsh += 1
+                        print("    ok    %s:%d  [shell, RAN with %s stubbed, exit 0]"
+                              % (f, line, "/".join(unsafe)))
+                    else:
+                        nfail += 1
+                        fails.append("%s:%d -- shell fence RAN (%s stubbed) and exited %d: %s"
+                                     % (f, line, "/".join(unsafe), r.returncode,
+                                        (r.stderr.strip().splitlines() or [""])[-1][:60]))
                 else:
                     with tempfile.TemporaryDirectory() as tmp:
                         # a fence shows its prompt; strip `$ ` before running,
@@ -290,10 +343,12 @@ def main():
                         cmds = "\n".join(
                             re.sub(r'^\s*\$\s?', '', l) for l in body.split('\n')
                             if l.strip() and not l.strip().startswith('#'))
+                        env = dict(os.environ,
+                                   PATH=os.pathsep.join([ROOT, os.environ["PATH"]]))
                         script = "set -e\ncd %s\n" % ROOT + cmds
                         r = subprocess.run(['sh', '-c', script], capture_output=True,
                                            text=True, timeout=120, errors='replace',
-                                           stdin=subprocess.DEVNULL, cwd=tmp)
+                                           stdin=subprocess.DEVNULL, cwd=tmp, env=env)
                     if r.returncode == 0:
                         nok += 1; nsh += 1
                         print("    ok    %s:%d  [shell, RAN, exit 0]" % (f, line))
