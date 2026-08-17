@@ -124,11 +124,21 @@ emits a C `switch` (a jump table at `-O3` when the values are dense); fewer arms
 emit a chain.
 
 ```tycho
+import "core:httpd"
+
+fn serve(req: httpd.Request):
+    println("served")
+
+fn refuse(code: int):
+    println("refused " + str(code))
+
+fd := 0
+
 match httpd.read_request(fd):
     Ok(req): serve(req)
     Err(httpd.TooLarge): refuse(431)
     Err(httpd.Timeout): refuse(408)
-    Err(e): close()
+    Err(e): refuse(500)
 ```
 
 ## 14.4 Loops

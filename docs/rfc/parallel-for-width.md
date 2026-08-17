@@ -50,6 +50,7 @@ layer down: `gen_parfor` chunks the iteration space into `tycho_ncpu()` tasks
 
 ## Proposed spelling
 
+<!-- fence-skip: grammar forms shown side by side, not a program: each line is a header or a declaration with no body -->
 ```tycho
 parallel(4) for x in work:          # drain `work` with exactly 4 workers
 parallel(w) for i in 0..<n:         # chunk 0..<n into `w` tasks

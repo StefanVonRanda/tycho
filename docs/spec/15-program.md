@@ -237,6 +237,7 @@ name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:13753@detect_packag
 
 An import is a top-level declaration in a package's file:
 
+<!-- fence-skip: grammar forms shown side by side, not a program: each line is a header or a declaration with no body -->
 ```tycho
 import "geom"          # binds the package's own name  ->  geom.symbol
 import g "geom"         # aliases the prefix            ->  g.symbol

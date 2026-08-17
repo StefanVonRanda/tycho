@@ -326,6 +326,11 @@ call. A conforming implementation MUST therefore accept either one as the tail o
 a value `if`/`match` branch, even though the branch produces no value:
 
 ```tycho
+import "core:net"
+
+host := "127.0.0.1"
+port := 8080
+
 srv := match net.listen(host, port):
     Ok(fd): fd
     Err(e): die("cannot bind")
