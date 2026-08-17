@@ -90,8 +90,13 @@
   }
   section:nth-of-type(even){background:var(--band)}
   /* text lives in the left half and never exceeds a measure */
-  section > .marker, section > h2, section > p, section > .cta,
-  section > ul.points, section > .lede{
+  /* the heading runs the FULL width as display type -- at 52px it is the
+     section's masthead. Leaving it in a left column stranded a void beside it,
+     which is what "stretched" looks like. */
+  section > .marker, section > h2{
+    grid-column:1 / -1; margin-inline:var(--gut); max-width:none; min-width:0}
+  section > h2{max-width:none}   /* one line at desktop widths -- that is the point */
+  section > p, section > .cta, section > ul.points, section > .lede{
     grid-column:1 / 7; margin-inline:var(--gut) 0; max-width:var(--measure); min-width:0}
   section > .marker, section > h2{margin-top:0}
   section > .marker:first-child{padding-top:clamp(34px,3vw,56px)}
@@ -146,18 +151,30 @@
   .themebtn:hover{color:var(--ink); border-color:var(--line-strong)}
 
   /* ── hero / title block ── */
-  header.hero{padding:clamp(38px,3.4vw,60px) 0 clamp(26px,2.4vw,42px);
-    display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);
-    gap:clamp(24px,3vw,56px); align-items:center; overflow:hidden}
-  header.hero > .htext{padding-inline:var(--gut) 0; min-width:0}
+  header.hero{padding:clamp(34px,3vw,58px) 0 0; display:block; overflow:hidden; position:relative}
+  header.hero > .htext{padding-inline:var(--gut); min-width:0; position:relative; z-index:2}
+  /* the headline is the page's biggest object and runs most of the width */
+  header.hero h1{max-width:min(22ch, 76%)}
+  /* lede + CTAs + note become a three-column band under it, divided by rules */
+  .herofoot{display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,.85fr) minmax(0,.9fr);
+    border-top:1px solid var(--line-strong); margin-top:clamp(24px,2.6vw,44px)}
+  .herofoot > *{padding:clamp(18px,1.8vw,30px) clamp(18px,1.8vw,32px); border-left:1px solid var(--line);
+    margin:0; min-width:0}
+  .herofoot > :first-child{border-left:0; padding-left:var(--gut)}
+  .herofoot > :last-child{padding-right:var(--gut)}
+  .herofoot .lede{max-width:none; margin:0}
+  .herofoot .cta{margin:0}
+  .herofoot .meta{margin:0}
+  @media (max-width:1100px){ .herofoot{grid-template-columns:1fr}
+    .herofoot > *{border-left:0; border-top:1px solid var(--line); padding-inline:var(--gut)} }
   @media (max-width:880px){ header.hero{grid-template-columns:1fr; gap:24px; padding:40px 0 4px} }
   .hlabel{display:flex; flex-direction:column; gap:4px; margin-bottom:20px}
   .hlabel .idx{font-size:11px; letter-spacing:2.4px; color:var(--faint); font-weight:600}
   .hlabel .ttl{font-size:12px; letter-spacing:3.4px; color:var(--ink); font-weight:700}
   .hlabel .sub{font-size:11px; letter-spacing:1.8px; color:var(--dim); text-transform:uppercase}
   h1{
-    font-size:clamp(26px,3.8vw,38px); line-height:1.14; margin:0 0 20px;
-    font-weight:700; letter-spacing:-.4px; color:var(--ink); text-wrap:balance;
+    font-size:clamp(34px,6.2vw,92px); line-height:1.02; margin:0 0 clamp(18px,2vw,34px);
+    font-weight:700; letter-spacing:-.03em; color:var(--ink); text-wrap:balance;
   }
   .tok{color:var(--ink); border-bottom:2px solid var(--ink); padding-bottom:2px; white-space:nowrap}
   .lede{color:var(--ink-soft); font-size:14px; line-height:1.72; max-width:58ch; margin:0 0 24px}
@@ -181,8 +198,11 @@
      orbits the rings — the Tychonic system, no JS, killed under reduced motion */
   /* the mark bleeds off the right edge -- the crop is the point, and the
      section's overflow:hidden is what does the cutting */
-  .logohero{justify-self:end; color:var(--ink); width:min(34vw, 430px); max-width:none;
-    margin-right:clamp(-110px,-5vw,-28px)}
+  .logohero{position:absolute; top:50%; right:0; translate:22% -58%;
+    width:min(52vw, 760px); max-width:none; color:var(--ink); opacity:.13; z-index:1;
+    pointer-events:none}
+  @media (max-width:1100px){ .logohero{position:static; translate:none; width:min(60vw,300px);
+    opacity:1; margin:22px auto 0} }
   .logohero svg{display:block; width:100%; height:auto}
   .logohero .orbit{transform-box:view-box; transform-origin:100px 100px; animation:orbit 40s linear infinite; will-change:transform}
   @keyframes orbit{to{transform:rotate(360deg)}}
@@ -209,13 +229,14 @@
   .spec .shead::before{content:""; width:7px; height:7px; background:var(--ink)}
   .spec .row{display:grid; grid-template-columns:repeat(5,1fr)}
   @media (max-width:760px){ .spec .row{grid-template-columns:repeat(2,1fr)} }
-  .spec .cell{padding:14px 16px; border-left:1px solid var(--line)}
+  .spec .cell{padding:clamp(16px,1.6vw,28px) clamp(14px,1.4vw,24px); border-left:1px solid var(--line)}
   .spec .cell:first-child{padding-left:var(--gut)}
   .spec .cell:last-child{padding-right:var(--gut)}
   .spec .cell:first-child{border-left:0}
   @media (max-width:760px){ .spec .cell:nth-child(3){border-left:0} }
-  .spec .cell b{display:block; color:var(--ink); font-size:13.5px}
-  .spec .cell span{display:block; margin-top:2px; font-size:9.5px; letter-spacing:1.4px; text-transform:uppercase; color:var(--dim)}
+  .spec .cell b{display:block; color:var(--ink); font-size:clamp(18px,2.2vw,38px);
+    line-height:1; letter-spacing:-.02em}
+  .spec .cell span{display:block; margin-top:10px; font-size:9.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--dim)}
 
   /* ── sections / chapters ── */
   section{padding:50px 0 4px; scroll-margin-top:76px}
@@ -226,7 +247,8 @@
     background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
     -webkit-mask-image:linear-gradient(90deg, #000, transparent 82%); mask-image:linear-gradient(90deg, #000, transparent 82%);
     opacity:.24}
-  h2{font-size:clamp(20px,2.8vw,28px); color:var(--ink); font-weight:700; margin:0 0 16px; letter-spacing:-.3px; line-height:1.16; text-wrap:balance}
+  h2{font-size:clamp(22px,3.4vw,52px); color:var(--ink); font-weight:700; margin:0 0 clamp(14px,1.4vw,26px);
+    letter-spacing:-.028em; line-height:1.04; text-wrap:balance}
   p{margin:0 0 14px; max-width:64ch}
   p.muted{color:var(--dim); font-size:13px}
   strong{color:var(--ink); font-weight:700}
@@ -374,6 +396,9 @@
         <span class="sub">An experimental systems language · transpiles to C</span>
       </div>
       <h1 class="rise d2">Automatic memory management. No garbage collector, no manual <span class="tok">free</span>.</h1>
+    </div><!-- /.htext -->
+
+    <div class="herofoot">
       <p class="lede rise d3">
         A research project testing one idea: <b>implicit hierarchical arenas under value
         semantics</b>. Every scope owns a memory arena, freed on exit. There is no reference
@@ -386,7 +411,7 @@
         <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
       </div>
       <p class="meta rise d5">New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a> — builds with <code>cc</code> and <code>make</code>, nothing else.</p>
-    </div>
+    </div><!-- /.herofoot -->
 
     <div class="logohero rise d3" aria-hidden="true">
       <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="2.4">
