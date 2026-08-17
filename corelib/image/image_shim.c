@@ -1,27 +1,7 @@
-/* core:image shim -- PNG decode/encode via libpng's simplified png_image API
- * (libpng >= 1.6). The deps manifest names `libpng`; pkg-config supplies the
- * headers + -lpng, so it is turnkey where libpng is installed and its test is
- * skipped where it is not.
- *
- * decode: PNG bytes -> an opaque handle holding RGBA pixels + dimensions (the
- * os.run handle pattern), read out via imgx_width / imgx_height / imgx_pixels and
- * released with imgx_free. encode: RGBA pixels + w + h -> PNG bytes (the bytes
- * out-param convention: the shim mallocs *out, tycho_bytes_from_c copies it into
- * the arena and frees it).
- *
- * Both fallible entry points take a `status` out-param, the shape
- * compress_shim.c@zx_decompress uses: a handle or a `bytes` return cannot also
- * carry a code. Until 2026-08-11 they carried none, so every failure arrived as
- * one null handle / one empty buffer and the caller could not tell a truncated
- * PNG from a JPEG from an empty file. The branches below always knew.
- */
 #include <png.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;

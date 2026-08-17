@@ -1,9 +1,3 @@
-# corelib test: exercises core:httpd over core:net entirely on the loopback interface,
-# in one process/thread (connect() into the listen backlog completes the handshake
-# before accept(), so listen -> connect -> accept -> exchange runs single-threaded and
-# hermetic). No fixed port (bind 0 -> ephemeral). The output is locked to
-# corelib/test/httpd.out (corelib/run.sh). The tychoc0 cross-check this line used to
-# claim was retired 2026-07-29.
 package main
 import "core:net"
 import "core:httpd"
@@ -29,18 +23,6 @@ fn data_of(r: Result(bytes, net.NetErr)) -> bytes:
 fn rq(r: Result(httpd.Request, httpd.ReqErr)) -> httpd.Request:
     return result.unwrap_or(r, httpd.bad_request())
 
-# WHICH outcome read_request/parse_request reported, as a stable string. This is
-# the assertion the whole conversion exists for: "Malformed", "Closed" and
-# "Timeout" were ALL `method == ""` before 2026-07-26.
-#
-# One arm per cause, since the friction plan. This function was `is_ok` + `err_or`
-# plus four `e == httpd.X` comparisons, because `Err(httpd.Timeout)` did not parse.
-# The old note here said this could be written HERE and not in corelib/httpd
-# itself because no runner fed corelib/test/ to the frozen compiler/tychoc0.ty.
-# That constraint died with the tychoc0 lanes on 2026-07-29 and nothing builds
-# tychoc0 now, so nested patterns are writable anywhere -- tests/nested_pattern.ty
-# is the construct's own fixture under the main golden loop. This arm stays here
-# because it is the core:httpd lane, not because anything forbids it elsewhere.
 fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
     match r:
         Ok(req): return "Ok"
@@ -171,10 +153,6 @@ fn main():
     net.close_fd(conn3)
     net.close_fd(cli3)
 
-    # ---- THE POINT OF ReqErr: three failures that used to be one value ----
-    # Each peer below produced `method == ""` before 2026-07-26, and a server
-    # could not tell which -- so it could not answer 400 to garbage while hanging
-    # up silently on a disconnect (FRICTION.md, phase 7). Now each says so.
 
     # (a) garbage with a complete head -> Malformed (this one deserves a 400)
     cli4 := n_of(net.connect("127.0.0.1", port))
@@ -202,13 +180,6 @@ fn main():
 
     net.close_fd(srv)
 
-    # RESPONSE SPLITTING (CWE-113). A header value carrying CRLF used to end the
-    # header block early, so an attacker-supplied value delivered its own body
-    # and the client read it as a complete response. render_head strips CR and
-    # LF now. The verdict is COMPUTED here rather than eyeballed in the golden:
-    # a head is split if a blank line appears anywhere before its end, so this
-    # prints "clean" for a sanitised head and "SPLIT" for a vulnerable one --
-    # re-recording the golden would have to write the word SPLIT to pass.
     evil := "en" + nl + "X-Injected: yes" + nl + nl + "<html>owned</html>"
     head := httpd.render_head(httpd.with_header(httpd.text_response(200, "hi"),
                                                 "Content-Language", evil))

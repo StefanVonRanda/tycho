@@ -13,9 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
@@ -47,11 +44,6 @@ void zx_compress(const unsigned char *data, tycho_int len, unsigned char **out, 
     deflateEnd(&s);
 }
 
-/* ZD_* status codes, mirrored in compress.ty's decode of them. Every failure
- * branch below used to `return` with *outlen = 0 and nothing else, which made a
- * corrupt stream, a truncated one and a legitimately empty payload the SAME
- * answer -- data loss that looks like data (FRICTION.md #3). The branch already
- * knew which it was; it discarded that on the way out. */
 #define ZD_OK        0
 #define ZD_CORRUPT   1   /* inflate refused the data: bad wrapper, bad checksum, needs a dict */
 #define ZD_TOOBIG    3   /* the output passed ZD_MAX_OUT -- a decompression bomb */
@@ -92,13 +84,6 @@ void zx_decompress(const unsigned char *data, tycho_int len, tycho_int *status,
         if (s.avail_out == 0) {                          /* output full -> grow and keep going */
             size_t used = cap;
             size_t ncap = cap * 2u;
-            /* DECOMPRESSION BOMB. This loop doubled without a ceiling, so a small
-             * archive that expands enormously was attempted until realloc failed or
-             * the machine did -- measured 2026-08-14: a 199 KB gzip decompressed to
-             * 200 MB with no complaint, and a real bomb reaches petabytes at the
-             * same 1000:1. inflate cannot know the output size in advance, so the
-             * ceiling has to live here. 1 GiB is far above anything corelib reads
-             * (tycho-ar's archives are kilobytes) and far below hurting the host. */
             if (ncap > ZD_MAX_OUT) {
                 *status = ZD_TOOBIG;
                 free(buf); inflateEnd(&s); return;

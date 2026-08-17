@@ -1,12 +1,3 @@
-# corelib test: exercises core:tls. Skipped where OpenSSL is absent (via
-# corelib/tls/deps). The output is locked to corelib/test/tls.out (corelib/run.sh).
-# The tychoc0 cross-check this line used to claim was retired 2026-07-29.
-#
-# This is the DETERMINISTIC OFFLINE path (the core:http pattern): nothing listens
-# on the loopback port, so the TCP connect -- and thus the TLS handshake -- fails
-# and connect returns a null handle. It proves the FFI round-trip and fail-closed
-# error handling without a server or external network. A live TLS session cannot
-# be a stable golden, so the successful path is verified manually.
 package main
 import "core:tls"
 

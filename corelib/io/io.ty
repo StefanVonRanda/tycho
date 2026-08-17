@@ -1,58 +1,6 @@
-# corelib: filesystem I/O helpers. Import with `import "core:io"`, e.g.
-# `io.read(path)` / `io.write(path, s)`. Thin, composable wrappers over the
-# read_file / write_file / list_dir builtins, plus the line- and
-# directory-oriented helpers those builtins don't provide directly.
-#
-# This is the first corelib module to COMPOSE other core modules: it imports
-# core:strings (line splitting). It also imported core:path, for the dir/base pair
-# the old list-the-parent `exists` needed; the stat(2)-backed `exists` needs
-# neither, so that dependency is gone (2026-07-26, the friction plan).
-#
-# For large inputs it also provides a BOUNDED-MEMORY streaming line reader
-# (open_lines / read_line / close_lines, and a fold_lines convenience) over a
-# tiny libc getline shim (io_shim.c) -- unlike read_lines, which slurps the whole
-# file into an array.
-#
-# ERROR MODEL. `read_bytes` returns `Result(bytes, io.IoErr)`: an empty file is
-# Ok(empty), a missing path is Err(NotFound) and a directory is Err(IsDir). Until
-# 2026-07-26 all three were the same empty `bytes`, which is how a static file
-# server ends up answering a 0-byte 200 for a path it cannot serve (FRICTION.md,
-# phase 7; the option-result plan).
-#
-# The rest of the module still matches the builtins' sentinels, deliberately:
-# `read` is "" for a missing/unreadable file (indistinguishable from an empty
-# one), `write`/`append`/`write_lines` return false if the path can't be opened,
-# and `list` is [] for anything that is not a directory. Those sentinels have ONE
-# meaning each on the write side. `list`'s ambiguity (an empty directory vs a
-# non-directory) was never a return-type problem: it is a missing stat(2), and
-# since 2026-07-26 the stat is here -- ask `is_dir(p)`, not `len(list(p)) > 0`
-# (the option-result plan). `make_dir` / `remove` (2026-07-26, the option-result plan) also
-# return a `Result`, for the same reason `read_bytes` does: their failures are
-# ambiguous. Nothing here aborts.
-#
-# INTERIOR NUL. Every entry point below that takes a path refuses one holding a
-# NUL byte -- 21 of them, checked with has_nul before anything is attempted. The
-# twelve returning a `Result` say Err(BadPath) BY NAME; the nine sentinel-returning
-# ones cannot, so each answers its own documented "this did not happen" ("" ,
-# false, [], null, `init`), which is the same value an unopenable path already
-# gets. That is weaker for the three bool WRITERS (write/append/write_lines) than
-# for exists, and it is deliberate: giving them a Result would re-open the
-# sentinel design this header settles above, while the property that matters --
-# NOTHING IS ACTED ON -- holds at all 21. A writer needing the reason has a
-# Result twin in write_bytes.
-#
-# DURABILITY. Every writer here returns once close(2) succeeded -- page cache,
-# not platter. That survives the process dying, not the machine. `sync` (2026-08-12)
-# is the one call that reaches the device, and a durable CREATE needs it twice:
-# once on the file, once on the parent directory. See sync.
 package io
 import "core:strings"
 
-# Why a file could not be read. Every variant is payload-free, so both spellings
-# work on it: `==` for a caller who wants a one-line test, and a nested pattern
-# (`Err(io.IsDir):`, since the friction plan) for one already writing a `match`.
-# Payload-free is KEPT: giving a variant a payload would break every `==` call site
-# in the tree, and nothing here needs to say "how much".
 enum IoErr:
     NotFound           # no such path
     IsDir              # the path names a directory, not a file
@@ -67,16 +15,6 @@ enum IoErr:
                        # has_nul. NOT Failed: nothing was attempted, so a retry
                        # or a permission fix is the wrong next move.
 
-# True if `p` holds an interior NUL byte. A path leaves this package as a `char*`,
-# which ENDS AT THE FIRST NUL, so every call below would otherwise act on the
-# PREFIX: probed 2026-08-13, io.read("h" + chr(0) + "i") returned the contents of
-# `h` and io.write of "nw" + chr(0) + "i" CREATED `nw`. A caller that validated the
-# whole string thus reaches a different file. docs/spec/14-ffi.md makes refusing
-# this the consuming package's job, not the FFI's; core:regex already does it for
-# a pattern (corelib/regex/regex.ty@compile).
-#
-# A byte loop, not strings.find: `find` is a builtin whose NUL-safety is not this
-# module's to assume, and this is the check that has to be right.
 fn has_nul(p: string) -> bool:
     for i := 0; i < len(p); i += 1:
         if p[i] == 0:
@@ -106,11 +44,6 @@ fn read_text(p: string) -> Result(string, IoErr):
     b := read_bytes(p) or_return
     return Ok(to_str(b))
 
-# Ok CARRIES NOTHING, DELIBERATELY. This returned Result(bool, IoErr) until
-# 2026-08-12 and the bool was always `true` -- a write either happened or was an
-# Err, so `Ok(false)` named a case that could not occur and every caller bound a
-# value it then had to guard for nothing (FRICTION #15). Contrast make_dir and
-# remove below, whose Ok(false) is a real second answer.
 fn write_bytes(p: string, b: bytes) -> Result(void, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -124,16 +57,6 @@ fn write_bytes(p: string, b: bytes) -> Result(void, IoErr):
         return Err(IsDir)
     return Err(Failed)
 
-# Write `b` at byte offset `off` of `p`, leaving the rest of the file alone.
-# NOT truncating: bytes after the write are untouched, so in-place page
-# updates work. Created if absent (like write_bytes), so a store's first
-# flush can lay down the file. The sibling of
-# read_at -- the read side has had positional access since the beginning; the
-# write side stopped at whole-file write_bytes until the tycho-kv store
-# (docs/internals/plan-tycho-kv-DONE.md phase 1) needed to update pages in
-# place. Same fail-closed discipline
-# as write_bytes: a partial write is an error, never a silent short write. Ok
-# carries nothing, for write_bytes' reason.
 fn write_at(p: string, off: int, b: bytes) -> Result(void, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -189,11 +112,6 @@ extern fn iox_close_lines(r: ptr)
 # two out-params the `bytes` return uses -- see the block comment on iox_read_file
 # in io_shim.c.
 extern fn iox_read_file(path: string, status: inout int) -> bytes
-# pread(2) at an absolute offset -- the SAME FFI shape as iox_read_file, because it
-# has the same halves to place. The rule that decides which half takes which slot
-# is docs/spec/14-ffi.md §24.1.1, which states both arrangements: this is its
-# `bytes`-payload case (a `bytes` payload cannot be an `inout`, so it takes the
-# return), and iox_stat_mtime below is its mirror.
 extern fn iox_read_at(path: string, off: int, n: int, status: inout int) -> bytes
 # Write ALL of `b` to `path`, truncating it first -- the write side's mirror of
 # iox_read_file: the same status code space, so write_bytes' Err answers match
@@ -204,10 +122,6 @@ extern fn iox_write_at(path: string, off: int, data: bytes, status: inout int)
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int
-# stat(2) again, for the field iox_stat_kind fetches and throws away. This is the
-# MIRROR arrangement of docs/spec/14-ffi.md §24.1.1: the payload is a scalar, so it
-# can cross as an `inout`, and the status keeps the return rather than sharing one
-# integer's code space with an epoch second.
 extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
 # utimensat(2): the write side of iox_stat_mtime, same status codes. No `inout` --
 # the epoch second travels IN, so the return carries only the status.
@@ -234,18 +148,6 @@ const FS_EXISTS = 4
 # sync only: it is there, and this platform cannot flush it. See iox_sync.
 const FS_UNSUP = 5
 
-# Read the whole file as raw bytes -- interior NUL bytes are preserved (unlike
-# read(), which cannot report a failure). The right tool for binary assets
-# (images, fonts, ...).
-#
-# This line used to say read()'s string "truncates at the first NUL". MEASURED
-# 2026-08-10 and it does not: a 5-byte file `AB\0CD` read through read() has
-# len 5 and digests identically to sha256sum. Tycho strings are length-headered
-# and byte-safe. The real difference is the ERROR CHANNEL, below.
-#
-# Ok(b) on success, and an EMPTY FILE is Ok with len(b) == 0 -- a real success
-# value, now distinct from Err(NotFound) and Err(IsDir). Those three were one
-# value (empty `bytes`) before 2026-07-26.
 fn read_bytes(p: string) -> Result(bytes, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -259,40 +161,6 @@ fn read_bytes(p: string) -> Result(bytes, IoErr):
         return Err(IsDir)
     return Err(Failed)
 
-# Read AT MOST `n` bytes of `p` starting at absolute byte offset `off` -- pread(2),
-# so no file position is disturbed and no handle is threaded through the caller.
-# The point is that serving 1 KB of a 1 GB file no longer allocates 1 GB: before
-# this, an offset read was expressible only as `read_bytes(p)[a:b]`, which reads
-# the whole file first.
-#
-#   Ok(b)           the read happened; len(b) may be LESS than n, or 0
-#   Err(NotFound)   nothing is there
-#   Err(IsDir)      the path names a directory
-#   Err(Failed)     it is there and could not be read, OR an argument was refused
-#
-# THE THREE BOUNDARIES, which are three different answers and not variations:
-#
-#   off PAST EOF is Ok with len(b) == 0, not an Err. That is pread(2)'s answer and
-#   it is a complete one: the caller chose the offset, so an empty result here says
-#   "there are no bytes there", unlike read_bytes' empty, which used to mean an
-#   empty file OR a missing one OR a directory with no way to tell.
-#
-#   n RUNNING PAST EOF is a SHORT READ: Ok, with len(b) short of n and no padding.
-#   `len(b)` is how the caller learns how much it got -- which is why this returns
-#   a plain `bytes` and needs no separate count.
-#
-#   A NEGATIVE off OR n is Err(Failed), refused in the shim before open(2) so it
-#   can never be sign-extended into a wild pread offset. Both are unreachable from
-#   correct code -- a caller parsing a `Range:` header only ever produces digits --
-#   so neither gets an IoErr variant of its own. Err(Failed) is the fail-closed
-#   answer to "you asked for something that is not a read".
-#
-# n == 0 is Ok(empty): asking for nothing succeeds at giving nothing.
-#
-# THE ALLOCATION IS BOUNDED BY THE FILE, NOT BY n, and that is the property that
-# makes this safe to hand a number off the wire. The shim fstats and allocates
-# min(n, size - off), so `read_at(p, 0, 1000000000000)` on a 26-byte file allocates
-# 26 bytes. See iox_read_at in io_shim.c for why no additional cap is imposed.
 fn read_at(p: string, off: int, n: int) -> Result(bytes, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -306,21 +174,6 @@ fn read_at(p: string, off: int, n: int) -> Result(bytes, IoErr):
         return Err(IsDir)
     return Err(Failed)
 
-# Is `p` a directory? Ok(true) for a directory, Ok(false) for something that
-# exists and is not one (a file, a fifo, a symlink to any of those -- stat(2)
-# follows links, so a symlink to a directory answers Ok(true)). Err(NotFound) if
-# nothing is there, Err(Failed) if it is there but unstattable (no search
-# permission on a parent, a symlink loop, ...).
-#
-# Note which variant is ABSENT: IsDir is not an error here, it is Ok(true). Being
-# a directory is the answer this function exists to give, not a failure to give
-# one -- the same enum, used for its other two variants.
-#
-# This replaces the only directory test the corelib used to offer,
-# `len(io.list(p)) > 0`, which reports an EMPTY DIRECTORY AS A FILE. That was a
-# documented wrong answer in a real server (a redirect withheld for
-# /emptydir; FRICTION.md phase 7, the option-result plan) and it was never fixable by a
-# return type -- stat(2) is the missing question, not the missing answer.
 fn is_dir(p: string) -> Result(bool, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -368,22 +221,6 @@ fn mtime(p: string) -> Result(int, IoErr):
         return Err(NotFound)
     return Err(Failed)
 
-# Set when `p` was last modified, in the same whole epoch seconds `mtime` reads
-# back. This is what makes an mtime RESTORABLE: until it existed a program could
-# record one into an archive and had no way to put it back, so every extracted
-# file got the time it was written (FRICTION #8).
-#
-#   Ok()            the time is set; `mtime(p)` now returns `secs`
-#   Err(NotFound)   nothing is there -- this does NOT create the file
-#   Err(Failed)     it is there and the time could not be set (not the owner, a
-#                   read-only mount, ...)
-#
-# A DIRECTORY IS Ok, exactly as it is for `mtime` above and for the same reason:
-# a directory's modification time is a real field this module hands out, so
-# refusing to hand it back would be asymmetric for no gain.
-#
-# THE ACCESS TIME IS NOT TOUCHED. See iox_set_mtime in io_shim.c -- the obvious
-# utime(2) spelling would stamp both.
 fn set_mtime(p: string, secs: int) -> Result(void, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -440,27 +277,6 @@ fn size(p: string) -> Result(int, IoErr):
         return Err(IsDir)
     return Err(Failed)
 
-# Create the single directory `p` (mode 0777 & ~umask). NOT `mkdir -p`: a missing
-# parent is Err(NotFound), not a tree to build.
-#
-#   Ok(true)        created it
-#   Ok(false)       it was already a directory -- nothing to do, goal already holds
-#   Err(Exists)     something else is there (a file, a fifo, ...)
-#   Err(NotFound)   a path component above it does not exist
-#   Err(Failed)     it could not be created (permissions, read-only fs, ...)
-#
-# WHY A Result AND NOT A bool. Phase 1's rule is that a sentinel earns a Result
-# only when it is AMBIGUOUS -- when one failure value means several things the
-# caller must act on differently. `false` here would mean four things, and two of
-# them are opposites: EEXIST-on-a-directory is the caller's goal ALREADY MET,
-# while EEXIST-on-a-file, ENOENT and EACCES are all "you will not get it". A
-# bool caller has to re-derive that with is_dir(p) after every failed make_dir,
-# which is the sentinel-collision shape this plan exists to remove. So the split
-# is not decoration: it is the difference between "done" and "give up", and it is
-# free -- mkdir already returns EEXIST and stat already answers who is in the way.
-#
-# Note the Ok(bool) shape, same as is_dir's: BOTH booleans are successes. `true`
-# is "I changed the filesystem", `false` is "it was already how you asked for it".
 fn make_dir(p: string) -> Result(bool, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -475,22 +291,6 @@ fn make_dir(p: string) -> Result(bool, IoErr):
         return Err(NotFound)
     return Err(Failed)
 
-# Remove ONE entry: a file (unlink) or an EMPTY directory (rmdir). Not recursive.
-#
-#   Ok(true)        it was there and is gone
-#   Ok(false)       nothing was there -- "make it not exist" already holds
-#   Err(Failed)     it is there and would not go: a NON-EMPTY directory, no write
-#                   permission on the parent, a sticky parent you do not own, ...
-#
-# Same reasoning as make_dir: a bool `false` would conflate "already absent" (the
-# goal) with "non-empty directory" (a bug in the caller's cleanup order) and with
-# "permission denied", which are three different next moves. Ok(false) for a
-# missing path is the deliberate half of that -- deleting nothing is not a
-# failure, so a cleanup path does not need a match at all.
-#
-# There is no recursive variant on purpose. Err(Failed) on a non-empty directory
-# is what stops this from being `rm -rf` behind a corelib name; a caller that
-# wants a tree gone removes what it made, in order (corelib/test/io does).
 fn remove(p: string) -> Result(bool, IoErr):
     if has_nul(p):
         return Err(BadPath)
@@ -605,20 +405,6 @@ fn list(p: string) -> [string]:
         return []string
     return list_dir(p)
 
-# True if `p` names an existing entry -- ONE stat(2), via the same shim call
-# is_dir uses. Until 2026-07-26 this listed the whole parent directory and checked
-# membership: O(entries in the parent), blind to a `.`/`..`-only leaf (a path
-# under a directory whose entries it could not enumerate), and it answered a
-# question the kernel answers directly. The rewrite is a straight swap of means,
-# not of meaning -- `corelib/test/io.out` records the same four answers before and
-# after (FRICTION.md, the friction plan's follow-on).
-#
-# FAILS CLOSED, deliberately: `false` means "stat could not say yes", which folds
-# an unstattable path (no search permission on a parent, a symlink loop) in with a
-# missing one. That is the old behaviour too -- an unlistable parent yielded no
-# entries -- and it is the safe direction for the one shape that consumes this, a
-# server deciding between 200 and 404. A caller that must tell the two apart wants
-# `is_dir`, whose Err(Failed) says exactly that.
 fn exists(p: string) -> bool:
     if has_nul(p):
         return false

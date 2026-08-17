@@ -1,6 +1,3 @@
-# corelib test: exercises core:testing; the output is locked to
-# corelib/test/testing.out (corelib/run.sh). A passing test, a failing one,
-# generic eq over int/string, and the exit-code contract.
 package main
 import "core:testing"
 

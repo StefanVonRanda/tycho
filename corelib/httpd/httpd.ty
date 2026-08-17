@@ -43,16 +43,6 @@ import "core:net"
 import "core:time"
 import "core:result"
 
-# Why a request could not be produced. Every variant is payload-free, so both
-# spellings work on it: `==` for a one-line test, and a nested pattern
-# (`Err(httpd.Timeout):`, since the friction plan) for a caller already writing a
-# `match` -- which is how server/main.ty acts on all five causes. Payload-free is
-# KEPT: a payload would break every `==` call site in the tree.
-#
-# These four were ONE value -- a Request whose `method` is "" -- until 2026-07-26.
-# A server that must answer 400 to garbage while hanging up silently on a
-# disconnect needs Malformed apart from Closed, and one that wants to answer 408
-# needs Timeout apart from both (FRICTION.md, phase 7; the option-result plan).
 enum ReqErr:
     Malformed          # bytes arrived, but they are not a valid request head
     Closed             # the peer hung up before a complete request arrived
@@ -97,17 +87,6 @@ fn trim(s: string) -> string:
         b = b - 1
     return s[a:b]
 
-# CR-LF, the HTTP line terminator.
-#
-# `"\r\n"` IS a string literal since the friction plan, so this function is no longer
-# forced. It is KEPT DELIBERATELY, but NOT for the reason this comment used to give:
-# it said `core:httpd` is compiled by the FROZEN self-hosted `tychoc0`, which rejects
-# `\r`, so writing the literal here would redden `examples/webserver/run.sh`'s
-# `tychoc == tychoc0 == golden` comparison. That leg was RETIRED on 2026-07-29 (see
-# run.sh's own header) and nothing builds tychoc0 now, so no lexer forbids the
-# literal anywhere. What survives is the ordinary reason: `crlf()` is a public entry
-# point callers already use (`examples/webserver/main.ty:237`), so it stays for
-# compatibility, not for a lexer. Inside this package either spelling is fine.
 fn crlf() -> string:
     return chr(13) + chr(10)
 
@@ -216,99 +195,12 @@ fn cause_of(e: net.NetErr) -> ReqErr:
         return Timeout
     return Failed
 
-# The default cap for read_request: the most a single request may occupy in
-# memory before the head must have terminated. A server with a tighter budget
-# passes its own to read_request_capped -- server/main.ty uses 16 KiB.
 const MAX_REQUEST = 1048576
 
-# Read one request off a connected socket and parse it. Reads until the header
-# terminator and then exactly Content-Length body bytes (or EOF), bounded so a
-# truncated/hostile peer can't spin forever.
-#
-# Err says which failure it was, and that is the point of this signature:
-#
-#   Err(Closed)     the peer hung up before a complete head arrived
-#   Err(Timeout)    the read deadline expired (net.set_read_timeout_ms) first
-#   Err(Failed)     the socket read failed
-#   Err(Malformed)  a complete head arrived and is not a valid request
-#   Err(TooLarge)   `cap` bytes arrived with no header terminator among them
-#
-# All of them were `method == ""` before 2026-07-26, which is why server/main.ty
-# reimplemented this loop just to answer 400 to garbage and stay silent on a
-# hangup (FRICTION.md, phase 7). A keep-alive loop that does not care can still
-# close on one test: `result.is_err(read_request(fd))`.
-#
-# A head that arrived intact is parsed even if the BODY was cut short by the peer
-# -- unchanged behaviour, and deliberate: the request line and headers are what
-# routing needs, and a short body is visible as len(r.body) < Content-Length.
-#
-# Once Content-Length is known the read is clamped to the remaining bytes, so a
-# well-behaved client's NEXT request is not swallowed. A client that pipelines
-# (sends request 2 before reading response 1) can still have bytes consumed
-# inside the pre-header 4 KiB read; pipelining is not supported. This wrapper
-# DROPS those bytes -- it returns only the Result. Exactly what they are and where
-# they go is the SURPLUS BYTES block on read_request_capped below; a caller that
-# cares must call that function instead of this one.
 fn read_request(fd: int) -> Result(Request, ReqErr):
     got, raw := read_request_capped(fd, MAX_REQUEST)
     return got
 
-# read_request, plus the two things a real server needs and a Result alone cannot
-# carry (the option-result plan):
-#
-#   `cap`         the byte budget for one request. Reaching it with no header
-#                 terminator is Err(TooLarge) -- the 431 decision, which used to
-#                 be `len(raw) >= MAX_HEAD` in the caller's own reimplemented
-#                 read loop.
-#   the 2nd value every byte read, on Err as much as on Ok. An access log has to
-#                 name a request that would not parse, and the only thing left to
-#                 name it with is its first line.
-#
-# A TUPLE rather than an `inout` out-param or a returned struct: measured against
-# both (the option-result plan), it is the only one of the three where the caller writes
-# ONE line -- `got, raw := read_request_capped(fd, cap)` -- with no dummy `raw :=
-# ""` to initialize and no new type on this package's surface. The cost is inside
-# this function: a tuple literal will not infer a Result element ("error: tuple
-# element 1 needs a concrete value"), so the outcome is built in a typed local.
-#
-# SURPLUS BYTES -- the contract, written down here because it is not what a reader
-# would assume and nothing else in this package said it. This function reads at most
-# ONE request, but NOT at most one request's worth of BYTES: until the head
-# terminator is found it reads in 4096-byte gulps (`want := 4096` below), so a
-# single net.read can pull in the start of -- or the whole of -- a FOLLOWING
-# request. The `need`-based clamp below only narrows a read once `need` is known,
-# and `need` is only known after the head has already arrived. Those surplus bytes are off
-# the socket for good; this function will never hand them back a second time and a
-# later call reads only what arrives AFTER them. They end up in two places:
-#
-#   * the returned string, the 2nd tuple element. It is "every byte this call took
-#     off the socket", NOT "this request's bytes" -- the difference matters to
-#     anything that measures with it rather than merely logging its first line.
-#   * the returned Request's `body`, because parse_request splits at the FIRST
-#     terminator and gives it everything after that. Measured: two GETs in one
-#     buffer parse to path=/style.css with a 37-byte body that is verbatim the
-#     second request, and no Content-Length header. That absence is the only tell:
-#     a non-empty body with no Content-Length and no Transfer-Encoding is surplus,
-#     never a body this function was asked to read.
-#
-# Observed end to end (the webserver-gate plan), two pipelined GETs in one send() to
-# server/main.ty: the first is answered, the second is consumed and discarded, and
-# the connection then sits idle until the keep-alive deadline closes it quietly --
-# 1.005s under --idle-ms 1000. Nothing is corrupted and the access log carries one
-# correct line for the request that was served; the second request simply never
-# happened. Pipelining is listed as deliberately not implemented in
-# server/README.md, and this is what that costs the client that tries it anyway.
-# The idle timeout `net.set_read_timeout_ms` gives is PER READ, and a slowloris
-# defeats it by dribbling one byte before each expiry: every read succeeds, the
-# timer resets, and the connection holds a worker for as long as the attacker
-# likes. Measured 2026-08-15 against tycho-httpd with workers=4: twelve dribbling
-# connections at one byte / 2s blocked every legitimate request indefinitely, and
-# service returned only when they closed.
-#
-# The fix is a TOTAL deadline on the head, which is what nginx's
-# client_header_timeout is. `deadline_ms <= 0` means no deadline, so
-# read_request_capped keeps its exact old behaviour and no caller moves -- the
-# same split core:strings has between parse_int and parse_int_checked.
 fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request, ReqErr), string):
     sw := time.start()
     buf := ""
@@ -317,29 +209,14 @@ fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request
     why := Failed                               # the transport cause, if one ends the read
     cut := false                                # a read failed before the head was complete
     term := crlf() + crlf()                     # hoisted: two allocations + a concat per
-                                                # loop iteration otherwise (FRICTION.md:123)
     for reading:
         if deadline_ms > 0 and time.elapsed_ms(sw) > deadline_ms:
             return (Err(Timeout), buf)          # the WHOLE head, not one read, ran out
         he := find(buf, term)
         if he >= 0 and need < 0:
-            # Only the Content-Length matters here, and a malformed head has no
-            # headers to read one from -- so collapsing the Result to an empty
-            # Request keeps the pre-2026-07-26 behaviour exactly (bad_request()
-            # carried no headers either) in one line instead of a match.
             probe := result.unwrap_or(parse_request(buf), bad_request())
             clh := header(probe, "content-length")
             blen := 0
-            # STRICT here, deliberately. This value decides how long to block, and
-            # a lenient read of "4x" framed a 4-byte body that never arrived: the
-            # caller's own strict check (server/main.ty@bad_len, which names
-            # smuggling and answers 400) sits DOWNSTREAM of this read and could
-            # not run until the deadline expired. A malformed or conflicting
-            # length frames NO body, so the head completes and that check fires.
-            # Transfer-Encoding present alongside Content-Length is ambiguous the
-            # same way (RFC 7230 3.3.3), and this package does not decode chunked
-            # -- so framing by the Content-Length would wait for bytes the sender
-            # never framed that way. No body here either; the caller answers 400.
             if all_digits(clh) and not content_length_conflict(probe) and
                     header(probe, "transfer-encoding") == "":
                 blen = to_uint(clh)
@@ -358,22 +235,6 @@ fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request
                     why = cause_of(e)
                     cut = true
                     reading = false
-    # TooLarge is the initializer because it is the ONLY other way out of the loop
-    # above: with no terminator in `buf`, either a read failed (cut) or the cap was
-    # reached. `buf` goes back either way -- Ok or Err.
-    #
-    # `out` IS KEPT DELIBERATELY, and no longer because the compiler needs it: as of
-    # the friction plan a tuple literal DOES infer a Result element, so
-    # `return (Err(why), buf)` compiles under src/tychoc.c. The reason this comment
-    # used to give for keeping the local was that the same line did NOT compile under
-    # the FROZEN compiler/tychoc0.ty, which examples/webserver/run.sh fed this package
-    # while asserting tychoc == tychoc0 == golden. That leg was RETIRED on 2026-07-29
-    # and nothing builds tychoc0 now, so the constraint is gone -- the typed local is
-    # now a style choice (it names the Ok payload type at the one place the tuple
-    # would have to infer it), not a requirement. MEASURED, not assumed: rewriting
-    # this tail to `return (Err(why), buf)` / `return (parse_request(buf), buf)` and
-    # compiling corelib/test/httpd/main.ty succeeds at this tree. The direct form is
-    # also demonstrated in corelib/test/result.
     out: Result(Request, ReqErr) = Err(TooLarge)
     if find(buf, term) < 0:
         if cut:
@@ -437,14 +298,6 @@ fn reason_phrase(status: int) -> string:
         return "Internal Server Error"
     return "Status"
 
-# Build a response with an EXPLICIT reason phrase. This is the escape hatch for a
-# status this table does not carry, and it exists so that no caller has to build
-# the struct positionally to set one string: `httpd.Response(431, "...", []string,
-# []string, body)` worked, but it coupled the caller to the field order, and
-# server/main.ty carried a private phrased_response() doing exactly that for two
-# statuses (408, 431) until 2026-07-26 -- FRICTION.md phase 7. Both are now in the
-# table above, so the bypass is gone AND unnecessary; this function is what makes
-# the next one unnecessary too.
 fn response_reason(status: int, reason: string, body: bytes) -> Response:
     return Response(status, reason, []string, []string, body)
 
@@ -540,22 +393,6 @@ fn content_type(path: string) -> string:
 fn bodyless(status: int) -> bool:
     return (status >= 100 and status < 200) or status == 204 or status == 304
 
-# The ASCII head: status line, headers, and the blank line that ends them.
-# Content-Length is added automatically (unless you set one); Content-Type
-# defaults to text/plain when you set none. NEITHER is synthesised for a
-# bodyless() status -- see the note there. An explicit header of your own is
-# still emitted verbatim in every case; this only governs what gets invented.
-# Strip CR and LF from a header key, value or reason phrase before it is
-# rendered. RFC 9110 forbids them in a field value, so nothing legitimate is
-# lost -- and a value carrying them SPLITS THE RESPONSE: an attacker-supplied
-# "en\r\nX-Injected: yes\r\n\r\n<html>" ends the header block early and the
-# client reads the attacker's body as a complete response (CWE-113).
-#
-# Stripping rather than refusing, because with_header() returns a Response and
-# has no error channel to report through; render_head() returning "" would put
-# an EMPTY head on the wire, which is worse than a sanitised one. A caller that
-# wants to reject instead should validate before it builds the response --
-# server/main.ty does exactly that, with an is_ctl() loop over the decoded path.
 fn no_crlf(s: string) -> string:
     out := ""
     for i := 0; i < len(s); i += 1:

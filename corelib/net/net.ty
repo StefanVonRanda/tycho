@@ -1,85 +1,3 @@
-# core:net -- TCP and UDP sockets. A thin, turnkey FFI over the POSIX sockets
-# API; the companion net_shim.c is pure libc, so there is nothing external to
-# install and nothing to link (the same self-contained model as core:os). Import
-# with `import "core:net"`.
-#
-# A socket is a file descriptor, an `int`. Payloads are `bytes` (binary-safe:
-# interior NUL bytes survive, unlike a `string`).
-#
-# ERROR MODEL. Every fallible TCP call returns `Result(T, net.NetErr)`. Until
-# 2026-07-26 each returned a sentinel instead -- a negative int, or the empty
-# `bytes` -- and `net.read`'s empty result meant EOF, an idle timeout AND a hard
-# error at once. A caller could not tell "the peer hung up" from "the peer is
-# slow", which is the collision that stopped tycho-httpd from answering 400 to
-# garbage while closing silently on a hangup (FRICTION.md, phase 4 and phase 7).
-# recv(2) distinguishes those cases; only the return type was throwing the
-# distinction away.
-#
-#   NetErr has NO payload-carrying variant on purpose: a payload-less enum can be
-#   compared with `==`, so a caller that cares about one cause writes
-#   `if e == net.Timeout` instead of a second nested `match`. Tycho HAS had nested
-#   patterns since 2026-07-26, so `Err(net.Timeout):` is a legal match arm and is
-#   the clearer spelling for a caller already writing a `match`; `==` is what keeps
-#   a single-cause test to one line for a caller who is not.
-#
-#   -- TCP --
-#   net.listen(host, port) -> Result(int, NetErr)
-#                                   Bound + listening socket; port 0 asks the
-#                                   kernel for an ephemeral port (recover it with
-#                                   net.port_of). Err(Failed) if it cannot bind.
-#   net.accept(fd) -> Result(int, NetErr)
-#                                   Accept one pending connection.
-#   net.connect(host, port) -> Result(int, NetErr)
-#                                   Connect to host:port.
-#   net.port_of(fd) -> Result(int, NetErr)
-#                                   The local port the fd is bound to (useful
-#                                   after binding port 0).
-#   net.peer_addr(fd) -> Result(string, NetErr)
-#                                   The REMOTE address of a connected fd as text
-#                                   ("127.0.0.1", or the compressed IPv6 form) --
-#                                   getpeername, the other half of port_of's
-#                                   getsockname. Err(Failed) if the fd is not
-#                                   connected or the family is unknown. Until
-#                                   2026-07-26 this was missing, which put the
-#                                   most useful field of an access log out of
-#                                   reach of any Tycho server (FRICTION.md
-#                                   phase 7).
-#   net.write(fd, data) -> Result(int, NetErr)
-#                                   Send the whole buffer; Ok(len(data)), or
-#                                   Err(Failed) if the peer vanished mid-write.
-#   net.read(fd, max) -> Result(bytes, NetErr)
-#                                   Read up to `max` bytes (one recv).
-#                                   Ok(b)          -- b is non-empty
-#                                   Err(Eof)       -- the peer closed cleanly
-#                                   Err(Timeout)   -- the SO_RCVTIMEO deadline
-#                                                     expired with no data
-#                                   Err(Failed)    -- anything else
-#   net.set_read_timeout_ms(fd, ms) -> bool
-#                                   Arm a receive timeout (SO_RCVTIMEO): after
-#                                   `ms` idle milliseconds a read yields
-#                                   Err(Timeout). ms <= 0 restores the blocking
-#                                   default. false if the option could not be
-#                                   set. NOT converted to a Result: it has one
-#                                   failure with one cause and `false` already
-#                                   collides with nothing, so a Result would add
-#                                   a match and no information.
-#   net.close_fd(fd)                Close the descriptor.
-#
-#   -- UDP --
-#   Still sentinel-based, deliberately. `udp_read`'s empty result cannot be
-#   classified the way `read`'s can: a ZERO-LENGTH DATAGRAM IS LEGAL, so the
-#   empty payload is a real success value, and separating it from an error needs
-#   a shim change of its own rather than a return-type change. Converting these
-#   would move the ambiguity, not remove it.
-#
-#   net.udp_bind(host, port) -> int         Bound datagram socket (port 0 ->
-#                                           ephemeral), or -1.
-#   net.udp_send(fd, host, port, data) -> int   Send one datagram; bytes sent or -1.
-#   net.udp_read(fd, max) -> bytes          Receive one datagram (up to `max`
-#                                           bytes; sender address discarded), or empty.
-#
-# host is resolved with getaddrinfo, so a numeric IPv4 ("127.0.0.1") works offline
-# and a hostname uses the system resolver. IPv6 is a demand-gated follow-up.
 package net
 
 # Why a socket call failed. Every variant is payload-free so `==` works on it.
@@ -90,12 +8,6 @@ enum NetErr:
     BadAddr            # `host` holds an interior NUL -- see has_nul. NOT Failed:
                        # no syscall was made, so retrying cannot help.
 
-# True if `host` holds an interior NUL byte. It crosses to getaddrinfo as a
-# `char*`, which ENDS AT THE FIRST NUL, so an unguarded call resolves the PREFIX:
-# probed 2026-08-13, net.listen("127.0.0.1" + chr(0) + "bogus.invalid", 0) BOUND
-# 127.0.0.1 and connect reached it. A caller that validated the whole string thus
-# reaches a different host. Same rule and same byte loop as core:io's has_nul --
-# docs/spec/14-ffi.md leaves this to the consuming package.
 fn has_nul(host: string) -> bool:
     for i := 0; i < len(host); i += 1:
         if host[i] == 0:
@@ -173,8 +85,6 @@ fn write(fd: int, data: bytes) -> Result(int, NetErr):
         return Err(Failed)
     return Ok(n)
 
-# One recv. Ok(b) with b non-empty, or the reason it produced nothing -- Eof,
-# Timeout, or Failed. These were one value (empty `bytes`) before 2026-07-26.
 fn read(fd: int, max: int) -> Result(bytes, NetErr):
     st := 0
     b := netx_read(fd, max, &st)
@@ -196,11 +106,6 @@ fn set_read_timeout_ms(fd: int, ms: int) -> bool:
 fn close_fd(fd: int):
     netx_close(fd)
 
-# ---- UDP ----
-# Sentinel-based; see the note in the header block for why. A NUL-bearing host is
-# -1 here rather than Err(BadAddr) -- these two have no error channel to name it
-# in, and -1 is already their whole "this did not happen". Refusing still beats
-# resolving the prefix, which is what the pair did before 2026-08-13.
 fn udp_bind(host: string, port: int) -> int:
     if has_nul(host):
         return -1

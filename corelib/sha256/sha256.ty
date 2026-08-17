@@ -80,16 +80,6 @@ fn hex(msg: string) -> string:
     update(&st, to_bytes(msg))
     return final_hex(&st)
 
-# ---- streaming: init / update / final over in-place `inout` state -----------
-#
-# The one-shot digest above expands the whole message into one `int` per byte
-# before it processes a block. A streaming state threads the 8-word H, a < 64
-# byte pending tail, and the total byte count through update calls, so a file
-# can be hashed in chunks without ever materialising it whole -- the shape
-# tycho-ar had to write for itself before this existed. `update` and `final`
-# take `inout`: the state is mutated in place (the codegen passes a pointer
-# plus the owning arena, so no state is copied -- see
-# docs/internals/design-aggregate-ref.md).
 struct State:
     h: [u32]
     pending: bytes

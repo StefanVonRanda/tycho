@@ -1,20 +1,5 @@
-# core:iter -- generic higher-order helpers over arrays, for any element type `$T`.
-# `map` is the one that changes element type (`[$T] -> [$U]`); the rest preserve it.
-# Import with `import "core:iter"`. Each takes a function value (a plain fn or a
-# closure) -- `iter.map(xs, f)` etc. The function argument is first-class, so a
-# CAPTURING closure works (passed downward, never stored). Predicates return
-# `bool`; they returned a 0/1 `int` until 2026-08-11.
-# `try_map` / `try_filter` are the fallible siblings of `map` / `filter`, for a
-# stage whose callback can fail: the callback returns `Result`, the first `Err`
-# short-circuits and is returned to the caller. Only these two have siblings --
-# `reduce`, `count` and `any` had no caller needing one (2026-08-11).
 package iter
 
-# `map` carries TWO type variables on purpose: `$U` is the result element type,
-# so `map(xs, to_str)` on an `[int]` yields a `[string]`. It was `fn($T) -> $T`
-# until 2026-07-31, which made every map type-PRESERVING and left `[Res] -> [int]`
-# inexpressible through the library at all. Same-type calls are unaffected --
-# inference simply binds `$U` to `$T`.
 fn map(xs: [$T], f: fn($T) -> $U) -> [$U]:
     out := []
     for v in xs:

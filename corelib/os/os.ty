@@ -1,60 +1,9 @@
-# core:os -- run external commands. A thin, turnkey FFI over libc `system(3)` and
-# `popen(3)`; the companion os_shim.c is pure libc, so there is no external
-# dependency to install and nothing to link. Import with `import "core:os"`.
-#
-#   os.system(cmd) -> int     Run cmd via the shell; stdout/stderr are inherited
-#                             from the parent. Returns the child's exit code
-#                             (0..255), 128+signal if it was killed by a signal,
-#                             or -1 if the shell could not be started.
-#
-#   os.run(cmd) -> Output     Run cmd via the shell, CAPTURING its stdout into
-#                             Output.out (stderr still goes to the parent).
-#                             Output.code is the same exit code as system(). On a
-#                             spawn failure: code -1, out "".
-#
-#   os.exec(argv) -> int      Run argv[0] with NO shell, inheriting stdout/stderr.
-#                             Same exit-code contract as system(). -1 if the
-#                             program could not be spawned OR the argv was
-#                             refused (see below).
-#
-#   os.exec_out(argv) -> Output   The same, CAPTURING stdout. -1 / "" on refusal.
-#
-# SECURITY -- WHICH PAIR TO REACH FOR. `system`/`run` hand cmd to `/bin/sh -c`
-# verbatim (cmd.exe on Windows): it IS a shell line, so metacharacters are
-# active and a command built from untrusted input is an injection. `exec`/
-# `exec_out` take the argument VECTOR and hand it to posix_spawnp, so there is
-# no shell to interpret anything -- `argv[1]` of `"; rm -rf /"` is one ordinary
-# argument to the program, not a second command. Prefer exec/exec_out for
-# anything whose arguments are not a compile-time constant.
-#
-# exec/exec_out FAIL CLOSED and never silently degrade to the shell: an empty
-# argv, an argv over 4096 entries, or any allocation failure while building it
-# returns -1 / Output(-1, "") . A dropped argument would not be a smaller
-# command, it would be a different one.
-#
-# PLATFORM: both are implemented on POSIX (posix_spawnp) and on Windows
-# (CreateProcess, never cmd.exe). Windows has no execve, so the vector is joined
-# into one command line by the CommandLineToArgvW quoting rules and the callee
-# splits it back -- asserted by round-tripping it through the real splitter in
-# corelib/os/os_argv_quotecheck.c, a `make shim-check` leg. The residue is
-# callee-side: a program that parses its command line by its own rules (cmd.exe
-# itself, a .bat/.cmd file) can still read it differently, so do not hand a
-# batch file untrusted argv.
 package os
 
 struct Output:
     code: int
     out: string
 
-# INTERIOR NUL. A command line and every argv entry cross as a `char*`, which ENDS
-# AT THE FIRST NUL, so all four calls below used to run a DIFFERENT, SHORTER
-# command than the one they were handed: probed 2026-08-13,
-# os.system("printf ok" + chr(0) + "; printf BAD") ran `printf ok` and reported
-# exit 0, so the caller was told its whole command succeeded. All four now refuse,
-# reusing the -1 / Output(-1, "") that already means "this did not run" -- the same
-# fail-closed answer an empty or oversized argv gets, for the same reason: a
-# TRUNCATED command is not a smaller one, it is a different one. The rule is
-# docs/spec/14-ffi.md's, and the sibling guards are core:io's and core:net's.
 fn has_nul(s: string) -> bool:
     for i := 0; i < len(s); i += 1:
         if s[i] == 0:

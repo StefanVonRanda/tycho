@@ -1,44 +1,3 @@
-/* core:signal shim -- a deliberately narrow SIGTERM/SIGINT surface whose only
- * action is to release the accept loops of a server. Pure libc (no external
- * dependency, no `deps` file), so `import "core:signal"` is turnkey and its test
- * never skips -- the same self-contained model as core:os and core:net.
- *
- * WHY THIS IS NOT A GENERAL `signal.on(sig, fn)`. A Tycho function invoked from
- * a handler would have to be re-entrant against the arena allocator and the
- * scheduler, and neither is. Nothing in this tree needs it; see the header of
- * signal.ty for what a wide version would have to add. Here NO Tycho code runs
- * in handler context at all -- the handler is sigx_handler below and nothing
- * else.
- *
- * ASYNC-SIGNAL-SAFETY is argued statement by statement in the block above
- * sigx_handler, which is the only code that runs in handler context. In summary:
- * the handler stores to and loads from `volatile sig_atomic_t` objects, calls
- * shutdown() -- on the POSIX async-signal-safe list, a bare syscall that takes no
- * lock and allocates nothing -- and does nothing else. No malloc, no printf, no
- * arena touch, no pthread call, so there is no lock it can deadlock the
- * interrupted thread against. errno IS saved and restored around the whole body:
- * shutdown() may set it, and the thread this handler interrupted is entitled to
- * find its own value there afterwards -- a handler that clobbers errno corrupts
- * the error reporting of code that never called it.
- *
- * The handler shuts down TWO things: the listening socket, which asks the kernel
- * to release threads parked in accept(2), and every accepted connection in the
- * registry below, which releases every thread parked in recv(2). Portable servers
- * still use bounded accept_wait; see the registry's header for the measurement.
- *
- * WHY `shutdown` AND NOT `close`. Measured, not argued: with four accept loops on
- * one listener and a process-directed SIGTERM, `shutdown(fd, SHUT_RDWR)` released
- * 4/4 loops in the same millisecond (`accept` returning -1/EINVAL), while
- * `close(fd)` released 1/4 and left three blocked forever -- and the closed fd
- * number was immediately handed back out by a later open(), with three threads
- * still blocked on it. The table is in plan.md's phase 1 evidence.
- *
- * PORTABILITY, recorded honestly: `shutdown` on a LISTENING socket waking a
- * blocked `accept` is a Linux behaviour, not a POSIX guarantee. The server uses
- * net.accept_wait with a 100ms ceiling, so clean shutdown no longer depends on
- * that wakeup; shutdown remains the fast path and still drops queued connections.
- * Windows has its own handler below, guarded like core:net's platform path.
- */
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* glibc: expose sigaction + sigemptyset */
 #endif
@@ -57,9 +16,6 @@
 #endif
 #include <stdint.h>
 
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
@@ -76,50 +32,6 @@ typedef int64_t tycho_int;
 static volatile sig_atomic_t sigx_fd = -1;
 static volatile sig_atomic_t sigx_flag = 0;
 
-/* ---- the accepted-connection registry -------------------------------------
- *
- * WHY IT EXISTS. Shutting the listener down releases every thread parked in
- * accept(2), but it does nothing for a thread parked in recv(2) on an ALREADY
- * ACCEPTED connection: nothing wakes that read but its own SO_RCVTIMEO. Measured
- * on tycho-httpd with --idle-ms 5000, four idle keep-alive clients: 4878 ms from
- * kill(2) to wait(2) returning, entirely one idle timeout, against 1 ms once the
- * accepted fds are registered here (5 runs of 5). That is what this table buys.
- *
- * WHY A FIXED ARRAY AND NO LOCK. A mutex is NOT on the `man 7 signal-safety`
- * list, and a handler that blocks on one the interrupted thread already holds
- * deadlocks the process -- it is a bug that waits for the right interleaving
- * rather than failing in test. The way out is to need no mutual exclusion at
- * all: one slot per worker, written by exactly one thread.
- *
- *   * Slot i is written ONLY by worker i, from ordinary (non-handler) context.
- *     Workers never touch each other's slots, so there is no write/write pair
- *     anywhere in the program and nothing to serialise.
- *   * The handler only ever READS the slots. So the only concurrent pair is one
- *     writer and one reader on a single `volatile sig_atomic_t`, which is
- *     precisely the object POSIX defines as safe for exactly this -- the reader
- *     observes the old value or the new one, never a torn one.
- *   * 256 slots because server/main.ty@workers rejects `--workers` outside
- *     1..256, and a worker's accept loop holds at most one connection at a time
- *     (server/main.ty:557-591: accept, serve, retire, close, in one sequential
- *     body). One slot per worker is therefore sufficient, not merely convenient.
- *
- * WHY fd+1 AND NOT fd. 0 means "empty", so the whole table is correct at static
- * zero-initialisation and there is no init pass to race with a signal that
- * arrives during arming. Storing the fd directly would make 0 -- a perfectly
- * legal descriptor -- indistinguishable from an empty slot.
- *
- * THE STALE-fd WINDOW, stated rather than waved away. Retiring is the half that
- * matters: server/main.ty clears the slot BEFORE close(2), so a stale read
- * requires the handler to observe a value the owning thread overwrote strictly
- * earlier. If that window is ever hit, the handler calls shutdown() on a number
- * that is either closed (EBADF), reused by another connection (which is being
- * shut down anyway -- that is the point of the signal), or reused by a regular
- * file (ENOTSOCK). shutdown() closes nothing, frees nothing and discards no
- * written data; it is the same property that made it the right call over close()
- * for the listener, and it is what makes a benign race benign here. Reversing
- * the order -- close first, clear second -- would NOT be safe, because then a
- * handler reading the live slot targets a number the kernel has already handed
- * back out. */
 #define SIGX_MAX_SLOTS 256
 static volatile sig_atomic_t sigx_conns[SIGX_MAX_SLOTS]; /* 0 = empty, else fd+1 */
 
@@ -193,20 +105,6 @@ void sigx_conn_retire(tycho_int slot) {
 
 #ifndef _WIN32
 
-/* Install the handler for SIGTERM and SIGINT, remembering `fd` as the listener to
- * release. Returns 1 on success, 0 on failure -- fail closed: a caller that
- * ignores the result keeps the default disposition (the process dies on SIGTERM),
- * which is today's behaviour, never a half-armed one.
- *
- * The fd is stored BEFORE the first sigaction, so there is no window in which a
- * signal finds a handler installed and no fd to act on.
- *
- * sa_flags is 0, i.e. NO SA_RESTART, on purpose. Measured: with SA_RESTART the
- * kernel restarts the interrupted accept() under the receiving thread and that
- * thread does not wake at all (0/4); without it the receiver additionally gets
- * -1/EINTR, which reaches the same wind-down arm a hair earlier. shutdown()
- * releases the other loops either way -- the mechanism does not depend on which
- * thread the kernel picked, which is exactly why it was chosen. */
 tycho_int sigx_on_shutdown(tycho_int fd) {
     if (fd < 0 || fd > INT_MAX) return 0;
     sigx_fd = (sig_atomic_t)fd;
@@ -220,11 +118,6 @@ tycho_int sigx_on_shutdown(tycho_int fd) {
     return 1;
 }
 
-/* POSIX stubs for the two Windows test hooks below. They exist ONLY so that
- * one shared corelib/test/signal/main.ty links on both platforms: the test
- * picks its branch at run time, so both call sites are emitted and the linker
- * needs both symbols even on the platform that never reaches one. Returning 0
- * is the honest answer -- "this did not happen" -- and the test never asks. */
 tycho_int sigx_win_isolate_console(void) { return 0; }
 tycho_int sigx_win_raise_break(void)     { return 0; }
 
@@ -268,34 +161,9 @@ tycho_int sigx_on_shutdown(tycho_int fd) {
     return 1;
 }
 
-/* ---- Windows test support -- NOT part of core:signal's surface -------------
- *
- * These two exist so this package's own test can deliver a REAL console
- * control event to itself. They are deliberately absent from signal.ty: the
- * portable API is on_shutdown/shutdown_requested and nothing else. The test
- * declares the externs itself (corelib/test/signal/main.ty) -- the symbols are
- * linked because the test imports core:signal, so no test-only shim mechanism
- * is needed in the corelib harness.
- *
- * WHY A PRIVATE CONSOLE. GenerateConsoleCtrlEvent's group 0 means "everything
- * attached to MY console". Under `make ci` that console is shared with the
- * harness shell, so a bare break would Ctrl-Break the sweep itself. A process
- * cannot join a new process group after creation -- CREATE_NEW_PROCESS_GROUP
- * is a creation flag -- but it CAN leave its console and allocate a fresh one,
- * and then group 0 is a group of exactly one: this process. Redirected stdout
- * survives, because the harness gives the test a FILE handle rather than a
- * console handle, and Free/AllocConsole does not touch it. That is what makes
- * the golden readable after the switch. */
 tycho_int sigx_win_isolate_console(void) {
     FreeConsole();                       /* may legitimately fail if there is none */
     if (!AllocConsole()) return 0;
-    /* RE-ARM. Measured 2026-08-09 on Windows 11 26200: with the handler
-     * registered before this call and not after, CTRL_BREAK killed the process
-     * (exit 130) instead of reaching sigx_ctrl_handler -- the registration does
-     * not follow the process to a newly allocated console. Registering again
-     * here is idempotent for an already-registered handler, so a caller that
-     * armed first and isolated second ends up armed on the console that will
-     * actually deliver the event. */
     return SetConsoleCtrlHandler(sigx_ctrl_handler, TRUE) ? 1 : 0;
 }
 

@@ -1,7 +1,3 @@
-# corelib test: core:decimal (built on core:bignum). Pure base-10 arithmetic -> fully
-# deterministic. The headline is 0.1 + 0.2 == 0.3 EXACTLY (a float cannot). The output
-# is locked to corelib/test/decimal.out (corelib/run.sh). The tychoc0 cross-check this
-# line used to claim was retired 2026-07-29.
 package main
 import "core:decimal"
 
@@ -39,7 +35,6 @@ fn main():
     println("rt=" + decimal.to_str(decimal.from_str("123.45")) + " " + decimal.to_str(decimal.from_str("-0.001")) + " " + decimal.to_str(decimal.from_str("42")) + " " + decimal.to_str(decimal.from_str("1000.00")))
     println("lead=" + decimal.to_str(decimal.from_str(".5")) + " " + decimal.to_str(decimal.from_str("-.25")))
 
-    # the classic: 0.1 + 0.2 == 0.3 exactly (float gives 0.30000000000000004)
     s := decimal.add(decimal.from_str("0.1"), decimal.from_str("0.2"))
     println("point3=" + decimal.to_str(s) + " ok=" + str(b2i(decimal.to_str(s) == "0.3")))
 
@@ -100,12 +95,6 @@ fn main():
     # and a mode that is neither of the two.
     println("div_err=" + dv("1", "0", 2, decimal.half_up()) + " " + dv("1", "0.00", 2, decimal.toward_zero()) + " " + dv("1", "2", 0 - 1, decimal.half_up()) + " " + dv("1", "2", 2, 9))
 
-    # from_str_checked: the STRICT sibling. from_str is lax and, unlike parse_int,
-    # does not fail to 0 -- the scale counts the garbage as a digit position, so
-    # "1.5x" is 0.15 and "1.2.3" is 0.012, plausible WRONG NUMBERS in the type this
-    # package exists to make exact. Both are asserted here against the lax answer,
-    # so the split is visible and a regression that made from_str strict, or
-    # from_str_checked lax, moves this line.
     println("lax_wrong=" + decimal.to_str(decimal.from_str("1.5x")) + " " + decimal.to_str(decimal.from_str("1.2.3")) + " " + decimal.to_str(decimal.from_str("1,5")))
     println("strict_ok=" + ck("1.5") + " " + ck("1.50") + " " + ck("-2.25") + " " + ck("+3") + " " + ck(".5") + " " + ck("5.") + " " + ck("99999999999999999999.5"))
     println("strict_err=" + ck("1.5x") + " " + ck("1.2.3") + " " + ck("") + " " + ck("-") + " " + ck(".") + " " + ck("abc") + " " + ck(" 1.5") + " " + ck("1e5") + " " + ck("1,5"))

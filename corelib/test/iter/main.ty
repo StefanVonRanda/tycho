@@ -1,8 +1,4 @@
 package main
-# corelib test: the GENERIC core:iter across int / string / float, with plain fns
-# and capturing closures. The output is locked to corelib/test/iter.out
-# (corelib/run.sh). The "all three compile paths" this line used to claim were tychoc
-# plus two tychoc0 legs; both tychoc0 legs were retired 2026-07-29.
 import "core:iter"
 import "core:arrays"
 
@@ -62,9 +58,6 @@ fn main():
     # float instance (reduce)
     fs := [1.0, 2.0, 3.0]
     println("freduce=" + str(iter.reduce(fs, 0.0, fn(a: float, b: float) -> float: a * 2.0 + b)))   # 11.0; a+b read 6.0 in any fold order
-    # TYPE-CHANGING map: [$T] -> [$U]. `map` was `fn($T) -> $T` until 2026-07-31,
-    # which rejected every one of these three. Named fn, closure, and the reverse
-    # direction, so a regression to one type variable cannot pass this file.
     println("i2s=" + arrays.join(iter.map(xs, itos), ","))                                     # 1,2,3,4,5 as strings
     println("i2f=" + arrays.join(iter.map(xs, fn(x: int) -> float: to_float(x) / 2.0), ","))   # 0.5,...
     println("s2i=" + arrays.join(iter.map(ws, fn(s: string) -> int: len(s)), ","))             # 2,0,2,0

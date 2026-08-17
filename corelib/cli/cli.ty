@@ -32,13 +32,6 @@ struct Cli:
     noval: [string]       # parse_spec: valued options that ran out of argv  (cli.missing)
     unk: [string]         # parse_spec: tokens the schema does not name       (cli.unknown)
 
-# Your program's own arguments: the builtin `args()` with `args()[0]` -- the
-# program path -- dropped, which is exactly what `parse` wants. This is a
-# separate function rather than a skip inside `parse` on purpose: `parse` is a
-# pure function over a vector, and the two consumers in this tree that build a
-# synthetic argv (`corelib/test/cli/main.ty:14`, `examples/corelib/cli/main.ty:14`)
-# have no program name in it, so a `parse` that dropped element 0 would silently
-# eat their first real option. `args()[1:]` inline is the same thing.
 fn argv() -> [string]:
     a := args()
     return a[1:len(a)]
@@ -59,13 +52,6 @@ fn in_list(xs: [string], s: string) -> bool:
             return true
     return false
 
-# A schema entry with its dashes still on. The names here are matched against a
-# token that has ALREADY had its "--" stripped, so `["--out"]` matched nothing and
-# every value silently fell back to the caller's default -- found by tycho-snap
-# (FRICTION #29), where a dashed schema gave `get=[DEFAULT]` with the tokens
-# parked in `unknown()` that nothing forces you to read. Accepting both spellings
-# cannot change an existing caller's behaviour: an entry beginning with "--" could
-# not match any token before this line existed.
 fn undash(s: string) -> string:
     if len(s) > 2 and s[0] == 45 and s[1] == 45:      # "--name"
         return s[2:len(s)]
@@ -148,13 +134,6 @@ fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict
 fn parse(av: [string]) -> Cli:
     return parse_into(av, []string, []string, false)
 
-# Why a `Result` and not a `die`: a typo'd option is INPUT, not a programmer
-# error, so it is the caller's to report -- corelib dies only for a use-after-free
-# (`corelib/pool/pool.ty@get`). What this shape buys is that the caller cannot
-# forget: `parse_spec` records an unknown token in `unknown(c)` and returns a
-# perfectly usable `Cli`, so a program that never asks runs on defaults with no
-# sign anything was wrong (FRICTION #29's residue -- `tools/tycho-kvsrv` was
-# exactly that program until 2026-08-14). A `Result` has to be matched.
 enum CliErr:
     Unknown(string)        # a token the schema does not name, as written
     NoValue(string)        # a valued option with nothing after it
@@ -204,23 +183,6 @@ fn get(c: Cli, key_in: string, dflt: string) -> string:
             out = c.vals[i]
     return out
 
-# Was OPTION `key` -- a `--key=value` -- supplied at all?
-#
-# READ THE WORD "OPTION". This scans `c.keys` only, so a BARE `--key` is NOT here:
-# it landed in `c.flags` (see the bucket table in this file's header) and `flag(c,
-# key)` is the predicate for it. `has(c, "stats")` on a command line of `--stats`
-# returns FALSE, and nothing can diagnose that -- both spellings compile, both
-# return `bool`, and the only symptom is a branch that silently does not run.
-#
-# The name was kept rather than narrowed to `has_value` (FRICTION.md item 12,
-# closed 2026-07-31 as working-as-intended). A rename moves the guess rather than
-# removing it: the caller asking "did the user supply --stats?" would still have to
-# pick between `has_value` and `flag`, and `has` is already the name in
-# docs/guides/corelib.md. The fix for the trap is this paragraph, not a new symbol.
-# If you want ONE call that answers "supplied in any spelling", write
-# `cli.has(c, k) || cli.flag(c, k)` at the call site -- deliberately not a corelib
-# function, because a caller that cannot say which of the two it means usually has
-# a schema question (`parse_spec`) rather than a lookup question.
 fn has(c: Cli, key_in: string) -> bool:
     key := undash(key_in)          # same both-spellings rule as `get`
     for i := 0; i < len(c.keys); i += 1:

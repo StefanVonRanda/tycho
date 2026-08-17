@@ -1,6 +1,3 @@
-# corelib test: exercises core:toml; the output is locked to
-# corelib/test/toml.out (corelib/run.sh). Scalars, dotted keys, [table],
-# [[array-of-tables]], comments, escapes, numbers, and fail-closed errors.
 package main
 import "core:toml"
 

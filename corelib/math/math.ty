@@ -27,11 +27,6 @@ fn sign(x: $T) -> int where numeric(T):  # -1 / 0 / 1; the zero is derived as x-
         return 0 - 1
     if x > z:
         return 1
-    # EDGE: for an infinity that derived zero is NaN, and every comparison against
-    # a NaN is false -- so both tests above fall through and the two float values
-    # with the LEAST ambiguous sign used to return 0 (measured 2026-08-15).
-    # `zero$(T)` would fix it and is not free: it needs defaultable(T), which does
-    # not see through a newtype, so math.sign(Cents(-7)) would stop compiling.
     if z == z:
         return 0                     # a real zero -- and every int lands here
     if x == x * x:
@@ -50,15 +45,6 @@ fn abs(x: int) -> int:
         return 0 - x
     return x
 
-# Greatest common divisor (Euclid). Non-negative EXCEPT where the true answer is
-# not representable: gcd(min, 0) and gcd(min, min) are 2^63, which int64 cannot
-# hold, and follow abs() in returning min itself.
-#
-# The final abs() is load-bearing and was missing. abs(min) is min -- negative,
-# by abs's own documented edge -- so the loop could carry a negative through and
-# return one even when the ANSWER FITS: gcd(min, min+1) is 1 and it returned -1
-# (measured 2026-08-15). That is a wrong sign on a representable result, not a
-# representability limit.
 fn gcd(a: int, b: int) -> int:
     x := abs(a)
     y := abs(b)

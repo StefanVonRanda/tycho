@@ -1,7 +1,3 @@
-# corelib test: exercises core:time; the output is locked to corelib/test/time.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29. Time values are non-deterministic, so the golden locks RELATIONSHIPS
-# (>=0, >0, monotonic) and the pure unit conversions -- never raw clock/now readings.
 package main
 import "core:time"
 

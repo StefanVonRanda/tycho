@@ -1,108 +1,3 @@
-# corelib: a JSON parser + serializer. Import with `import "core:json"`,
-# serialize with `json.stringify(j)`.
-#
-# WHICH ENTRY POINT TO CALL. New code should call
-# `parse_checked(s) -> Result(Json, JsonErr)`. It is the only one that can tell
-# you the document you got back is the document you handed in. `parse(s) -> Json`
-# is the lenient wrapper kept for the callers that predate the error channel: it
-# runs the exact same parser and then throws the error away, returning JNull for
-# the whole document. Use it only where a failure is genuinely not actionable;
-# anything that reports a value to a person should use `parse_checked`.
-#
-# The parsed document is a recursive value-semantic tree (the `Json` enum),
-# built by recursive descent and walked to serialize, with ZERO manual memory
-# management -- every node and string lives in a lexical arena freed when its
-# scope exits. This is the thesis (docs/thesis.md) as a real, reusable module.
-# (Objects are parallel key/value arrays for iteration-order stability and
-# simple equality, not because maps refuse the value: a recursive enum IS a
-# legal map value -- `[]string: Tree` with `TNode(Tree, Tree)` compiles and
-# runs.)
-#
-# ---- every input shape this parser accepts, one real example each -----------
-#
-#   null                  null
-#   bool                  true                  false
-#   integer               7        -3        0
-#   float / exponent      1.5      -0.0      1e3      1E+3      2.5e-3
-#   huge integer          123456789012345678901234567890        (see NUMBERS)
-#   string                "tycho"
-#   string escapes        "a\"b\nc\td"          (\" \\ \/ \b \f \n \r \t)
-#   \u escape             "\u0041" -> A          "\u00e9" -> the 2 UTF-8 bytes of é
-#   surrogate pair        "\ud83d\ude00" -> the 4 UTF-8 bytes of an emoji
-#   array                 [1,"x",true,null]     []
-#   object                {"a":1,"b":[2]}       {}
-#   whitespace            space / tab / CR / LF between any two tokens,
-#                         and before/after the whole document
-#
-# EVERY other input is an error carrying the byte offset of the byte that caused
-# it -- see `JsonErr`, `err_reason`, `err_offset`, `err_str`. Nothing is guessed.
-#
-# ---- WHAT IS REFUSED, and it is now exactly what RFC 8259 refuses -----------
-#
-# The four leniencies this parser used to have are gone; each is now an error at
-# a named byte, and the byte named is the one the writer has to fix:
-#
-#   [1,]  {"a":1,}      a trailing comma           -- names the COMMA
-#   01  -01             a leading zero             -- names the ZERO
-#   {"a":1} junk        text after the document    -- names the first junk byte
-#   "a<TAB>b"           a raw control byte 00-1F   -- names the CONTROL BYTE
-#
-# Still accepted, and still correct: whitespace anywhere between tokens and on
-# either side of the whole document, so `  {"a":1}\n ` is Ok. `0`, `-0`, `0.5`
-# and `0e1` are fine -- the leading-zero rule forbids a zero FOLLOWED BY another
-# digit, which is RFC 8259's `int = zero / (digit1-9 *DIGIT)`.
-#
-# ---- NUMBERS: which variant a number lands in, and why ----------------------
-#
-# The accepted number grammar is RFC 8259's, exactly:
-# `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`
-#
-#   JNum(int)            an integer that ROUND-TRIPS EXACTLY through 64 bits.
-#                        Proved, not assumed: the accumulated int is rendered
-#                        back to text and compared to the lexeme's own digits.
-#   JFloat(v, lexeme)    everything else -- a fraction, an exponent, or an
-#                        integer too big for `int`. It carries BOTH the
-#                        binary64 value AND the original text.
-#
-# The lexeme is why this is not a new silent-wrong-value path. `1e309` would be
-# an infinity and `123456789012345678901234567890` rounds in binary64, so a
-# consumer that needs the digits back asks `as_lexeme` and gets the bytes the
-# document actually contained; `stringify` emits that lexeme verbatim, never a
-# re-rendered float, so parse -> stringify is byte-identical for every number
-# above. (Re-rendering would also be LOCALE-SENSITIVE: `runtime/tycho_rt.c`'s
-# `tycho_float_to_str` formats with `%g`, so `str(1.5)` is `1,5.0` under a
-# comma-decimal LC_NUMERIC. Emitting the lexeme sidesteps that entirely.)
-#
-# A number whose VALUE binary64 cannot hold at all (`1e400`, `1e-400`) is an
-# error at the first byte of the number, not an infinity and not a 0.
-#
-# What it still cannot do. NEITHER OF THESE IS A GRAMMAR LENIENCY -- the grammar
-# this parser accepts is now exactly RFC 8259's. Both are ceilings elsewhere:
-#
-# gap: REPRESENTATION, not grammar. A number outside binary64's range (`1e400`,
-#      `1e-400`) is well-formed RFC 8259 and is REFUSED rather than represented,
-#      because representing it would mean an infinity or a 0 -- a silent wrong
-#      value. The way out is an arbitrary-precision variant (`core:bignum` /
-#      `core:decimal`), which is a numeric-tower decision, not a parser one.
-#      Until then `as_lexeme` still returns the digits for the value that WAS
-#      accepted; a refused one never enters the tree at all.
-# CLOSED 2026-08-03: raw bytes >= 0x80 in a string are now validated (utf8_len
-#      below, the s8.1 requirement). A raw 0xFF byte is BadUtf8, not a one-byte
-#      string; `\uXXXX` escapes were already well-formed by construction.
-#
-# ---- OBJECTS: two decisions a signature cannot tell you ---------------------
-#
-# Both are asserted by corelib/test/json/main.ty, so neither can drift silently.
-#
-# DUPLICATE KEYS are all KEPT -- RFC 8259 leaves this to the parser and most take
-# the last. `{"a":1,"a":2}` is two members and `stringify` re-emits both, so the
-# round trip drops nothing; `get` answers with the FIRST. A caller wanting
-# last-wins, or wanting to refuse a duplicate, has the member list in `keys`.
-#
-# NULL AND ABSENT ARE ONE ANSWER FROM `get` -- both JNull -- and this is the only
-# place the accessors lose what the tree still holds. Ask `keys` instead: "n" is
-# in it and "missing" is not. (An empty string is a third case; `kind` says
-# "str".) The round trip is unaffected either way.
 package json
 import "core:strings"
 
@@ -471,9 +366,6 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
                     return r
                 r = r + utf8(cp)
             else:
-                # Every unknown escape (`\q`, `\x`). This used to emit the escape
-                # letter itself, so `"\q"` became the text `q` -- a value nobody
-                # wrote. Fail closed AT the letter instead.
                 ecode = JE_ESCAPE
                 return r
         else:
@@ -496,10 +388,6 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     pos = pos + 1                              # skip closing "
     return r
 
-# The largest `int` is 9223372036854775807. Split so the accumulator can be
-# tested BEFORE the multiply that would overflow it -- signed overflow is what
-# the old parser did, and it is how a 20-digit integer used to leave here as a
-# wrong number at exit 0. Nothing below ever performs the overflowing multiply.
 const INT_MAX_DIV10 = 922337203685477580
 const INT_MAX_LAST  = 7
 
@@ -566,26 +454,11 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         iv := v
         if neg:
             iv = 0 - v
-        # THE ROUND-TRIP PROOF. Render the accumulated int back to text and
-        # compare it to the lexeme's own digits. Only an exact match becomes a
-        # JNum; anything else falls through to the float path WITH its lexeme,
-        # so a value this `int` cannot hold is never handed back as if it could.
-        # The digits compared are the lexeme's own, verbatim: this used to skip
-        # leading zeros first, because `01` was accepted and `str(1)` could never
-        # match it. The leading-zero test above means there are none left to
-        # skip, so the comparison is now against exactly what was written.
         canon := substr(s, dstart, dend)
         if neg:
             canon = "-" + canon
         if str(iv) == canon:
             return JNum(iv)
-    # The float path. `lex` already matched a grammar that is a strict subset of
-    # `strings.parse_float`'s, so Syntax is unreachable here; the reachable
-    # failures are Overflow (`1e400`) and Underflow (`1e-400`), and both are
-    # refusals rather than an infinity or a 0. A subnormal (`1e-320`) is a VALUE
-    # here since 2026-08-12 -- parse_float refuses only a total underflow to 0.
-    # `pos` rewinds to the first byte of the number so the reported offset names
-    # the token, not its end.
     match strings.parse_float(lex):
         Ok(fv):
             return JFloat(fv, lex)
@@ -594,27 +467,6 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_RANGE
             return JNull
 
-# The structural anti-spin guard lives in this function and in parse_object.
-#
-# Every iteration must consume at least one byte. `before := pos` records the
-# cursor; if `parse_value` returns having moved nothing, the document is
-# malformed in a way this parser cannot name and it stops (JE_STUCK) instead of
-# pushing another node forever. The guard does not care WHICH byte class caused
-# it, which is the point -- it holds for all of them:
-#
-#   opener  { [                 recurses, always eats the opener
-#   quote   "                   parse_string always eats the opening quote
-#   t f n   true/false/null     eats 4/5 bytes or errors, never 0
-#   - 0-9   -3, 7, 1.5, 1e3     parse_number eats >= 1 digit or errors
-#   . + e   .5, +1, e9          JE_BYTE -- error, not a 0-byte read
-#   closer  ] }                 JE_BYTE (the loop head handles the RIGHT closer)
-#   , :     stray separators    JE_BYTE
-#   ws      handled by skip_ws before the dispatch
-#   any other byte              JE_BYTE
-#
-# So today no path can reach the guard. It stays anyway: it is the invariant, and
-# the previous version of this loop was one missing `else` away from the OOM that
-# five bytes of input (`[1.5]`) used to cause.
 fn parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip [
     xs := []Json
@@ -664,9 +516,6 @@ fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         if ecode != JE_OK:
             return JObj(ks, vs)
         skip_ws(s, n, &pos)
-        # This used to be an unconditional `pos = pos + 1  # skip :`, which is
-        # how a value the parser could not read left the cursor mid-token and the
-        # next iteration read the remainder as a key. It is now checked.
         if pos >= n:
             ecode = JE_TRUNC
             return JObj(ks, vs)
@@ -747,30 +596,6 @@ fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_BYTE
             return JNull
 
-# THE ENTRY POINT FOR NEW CODE. Parse a WHOLE document: the value, then optional
-# whitespace, then the end of the input. Anything else after the value is an
-# error naming its first byte. On failure the Err names the cause and the byte
-# offset of the byte that caused it.
-#
-# This function used to ignore trailing text, and that was documented behaviour
-# for as long as the package existed. It stopped because ignoring it is a silent
-# wrong ANSWER, not merely a lenient one: `{"a":1} {"b":2}` returned the first
-# object and said nothing about the second, so a caller handed two documents got
-# one and could not tell. All six callers in this tree hand it exactly one
-# document each -- checked, one at a time, before the change.
-# The nesting cap, and the reason the check is a PRE-SCAN rather than a counter
-# threaded through parse_value. The parser is recursive descent, so a deeply
-# nested document consumes C stack: at 10000 it parsed fine, at 50000 the runtime
-# aborted with `tycho: stack overflow -- recursion too deep` and exit 1 (measured
-# 2026-08-15). That abort is safe -- it is a guard, not a corruption -- but it is
-# an ABORT, and `parse_checked` documents itself as the entry point that can tell
-# you whether the document came back intact. A process that dies cannot tell you
-# anything, and 100 KB of `[` is not a hard document to send a server.
-#
-# 2000 is far above any real document and far below the observed abort. The scan
-# is one linear pass with no recursion of its own, so it cannot inherit the
-# problem it exists to prevent, and it tracks string state because a `[` inside a
-# string is a character rather than a nesting level.
 fn depth_of(s: string) -> int:
     d := 0
     m := 0
@@ -883,10 +708,6 @@ fn stringify(j: Json) -> string:
         JNum(x):
             return str(x)
         JFloat(v, lx):
-            # The STORED LEXEME, never `str(v)`. Re-rendering a binary64 loses
-            # digits (`123456789012345678901234567890` would come back as
-            # `1.2345678901234568e+29`) and is locale-sensitive besides, so
-            # emitting the original bytes is the only byte-identical round trip.
             return lx
         JStr(s):
             return "\"" + esc(s) + "\""
@@ -907,16 +728,6 @@ fn stringify(j: Json) -> string:
 
 # ---- accessors (typed queries into the document) ---------------------------
 
-# "null"/"bool"/"num"/"float"/"str"/"arr"/"obj"
-#
-# A JFloat reports "float", NOT "num", and that is a fail-closed choice made by
-# reading the consumers rather than by taste. `tools/tycho-q/main.ty@json_cell`
-# dispatches on this string and answers `k == "num"` with `json.as_num(j)` --
-# which returns 0 for a JFloat. Folding floats into "num" would therefore turn
-# every JSON float into the cell value 0 at exit 0: a silent wrong value, the
-# exact class of bug this package spent two plans removing. With "float" that
-# same code takes its final `return Err(...)` branch and REFUSES the cell, which
-# is honest until a consumer learns the variant.
 fn kind(j: Json) -> string:
     match j:
         JNull:

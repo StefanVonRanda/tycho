@@ -76,9 +76,6 @@ static ssize_t ty_pwrite(int fd, const void *buf, size_t n, long long off) {
 #define pwrite(fd, b, n, o) ty_pwrite((fd), (b), (n), (o))
 #define mkdir(p, m) _mkdir(p)   /* mingw's mkdir takes one argument */
 #endif
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
@@ -117,31 +114,6 @@ void iox_close_lines(void *p) {
     free(r);
 }
 
-/* Read the whole file at `path` as raw bytes -- binary-safe, so interior NUL
- * bytes survive (unlike the read_file builtin's string) -- CLASSIFYING the
- * outcome in *status:
- *
- *      TY_RF_OK   (1)  the file was read; *out holds *outlen bytes (0 is legal:
- *                      an EMPTY FILE is a success, not a failure)
- *      TY_RF_MISS (0)  no such path
- *      TY_RF_DIR  (2)  the path names a directory, not a file
- *      TY_RF_ERR  (3)  the path exists but could not be read (permissions, ...)
- *
- * The classification is the point of this signature. Until 2026-07-26 this
- * function returned only `bytes`, so an empty file, a missing file and a
- * directory were the SAME empty result -- the collision that makes a static file
- * server answer a 0-byte 200 for a path it cannot actually serve (FRICTION.md,
- * phase 7). The kernel distinguishes all three; only the FFI shape was throwing
- * the distinction away, so core:io now hands it up as Result(bytes, io.IoErr).
- *
- * A directory is detected the portable way, without stat(2): glibc lets
- * fopen(dir, "rb") succeed and fails the first read with EISDIR, while other
- * platforms fail the open with EISDIR -- both are checked.
- *
- * `status` is an `inout int` on the Tycho side, which lowers to a leading
- * tycho_int* out-param ahead of the two `bytes` return out-params (same shape as
- * net_shim's netx_read). On any failure *out stays NULL -- tycho_bytes_from_c
- * allocates an empty buffer and does not free NULL. */
 #define TY_RF_MISS 0
 #define TY_RF_OK   1
 #define TY_RF_DIR  2
@@ -195,55 +167,6 @@ void iox_read_file(const char *path, tycho_int *status,
     *status = TY_RF_OK;
 }
 
-/* Read AT MOST `n` bytes of `path` starting at absolute byte offset `off`, in the
- * same *status code space and the same out-param shape iox_read_file uses above:
- *
- *      TY_RF_OK   (1)  the read was performed; *out holds *outlen bytes, and
- *                      *outlen may be LESS than n (see BOUNDS below) or 0
- *      TY_RF_MISS (0)  no such path
- *      TY_RF_DIR  (2)  the path names a directory
- *      TY_RF_ERR  (3)  it is there and could not be read -- permissions, a
- *                      non-regular file, or a REJECTED ARGUMENT (see NEGATIVE)
- *
- * pread(2), NOT lseek+read. pread reads at an absolute offset without touching
- * the file description's own offset, so this needs no open-file handle threaded
- * through Tycho and no seek/read pair that a second caller could interleave with.
- * The fd is opened and closed inside one call; nothing is shared, so nothing races.
- *
- * BOUNDS -- the three cases are three different answers, on purpose:
- *
- *   OFFSET PAST EOF -> TY_RF_OK with *outlen == 0. This is pread(2)'s own answer
- *     and it is not an error: there genuinely are no bytes there. It is also not
- *     the ambiguous empty that iox_read_file was fixed for -- there, empty could
- *     mean an empty file OR a missing one OR a directory, and the caller had no
- *     way to tell. Here the caller CHOSE the offset, so "0 bytes at offset 900 of
- *     a 26-byte file" is a complete answer to the question it asked.
- *
- *   LENGTH RUNNING PAST EOF -> a SHORT read: TY_RF_OK with *outlen < n. The buffer
- *     is not padded and the shortfall is not an error. *outlen is how the caller
- *     learns how much it got, which is why no third out-param is needed.
- *
- *   NEGATIVE off OR n -> TY_RF_ERR, rejected HERE, before open(2) and before any
- *     cast. This is the one that has to be a guard rather than a consequence: a
- *     negative tycho_int cast to a 32-bit off_t is implementation-defined, and on
- *     any width the value must never reach pread(2) where a sign-extended offset
- *     would be a wild read. Fail closed, ahead of the syscall.
- *
- * THE ALLOCATION IS BOUNDED BY THE FILE, NOT BY n. fstat gives the size, so the
- * buffer is min(n, size - off) -- never n. This is the boundary where untrusted
- * input meets malloc: a `Range:` header naming a terabyte allocates only what the
- * file actually holds beyond `off`. No arbitrary cap is imposed on top, and that
- * is deliberate -- a cap is a policy number with no principled value, and clamping
- * to the file already removes the attack, since an attacker cannot make the
- * allocation exceed the file they could have fetched whole anyway.
- *
- * The clamp also makes the off_t cast safe: after it, off < size, and size came
- * from an off_t, so `off` provably fits back into one.
- *
- * REGULAR FILES ONLY. A directory is TY_RF_DIR (matching iox_read_file); a fifo,
- * socket or device is TY_RF_ERR, because st_size is meaningless for them and
- * pread(2) fails ESPIPE on anything unseekable -- "the byte at offset N" is not a
- * question those objects have an answer to. */
 void iox_read_at(const char *path, tycho_int off, tycho_int n, tycho_int *status,
                  unsigned char **out, tycho_int *outlen) {
     *out = NULL;
@@ -283,26 +206,6 @@ void iox_read_at(const char *path, tycho_int off, tycho_int n, tycho_int *status
     *status = TY_RF_OK;
 }
 
-/* What KIND of thing `path` is, in the same status codes iox_read_file uses:
- *
- *      TY_RF_DIR  (2)  it is a directory
- *      TY_RF_OK   (1)  it exists and is NOT a directory (file, symlink target,
- *                      fifo, device -- anything a server would try to send)
- *      TY_RF_MISS (0)  no such path (ENOENT), or a non-directory used as one
- *                      (ENOTDIR, e.g. "/etc/hostname/x")
- *      TY_RF_ERR  (3)  it is there but cannot be stat'ed (EACCES on a parent
- *                      directory, ELOOP, ENAMETOOLONG, ...)
- *
- * This is the syscall that was missing, and its absence was a documented wrong
- * answer for a whole plan: with only list_dir, "is this a directory" had to be
- * asked as `len(io.list(p)) > 0`, which calls an EMPTY directory a file
- * (FRICTION.md, phase 7; the option-result plan). No Result and no error enum can
- * express a question the OS was never asked -- so we ask it.
- *
- * stat(2), not lstat(2), on purpose: a symlink to a directory IS a directory for
- * the purpose of "does this URL need a trailing slash". Returns a plain scalar --
- * no `inout` status is needed because the kind and the failure share one code
- * space, unlike iox_read_file where a `bytes` payload occupies the return. */
 tycho_int iox_stat_kind(const char *path) {
     struct stat st;
     errno = 0;
@@ -349,16 +252,6 @@ tycho_int iox_stat_mtime(const char *path, tycho_int *mtime) {
     if (stat(path, &st) != 0) return ty_rf_errno(path);   /* ENOENT/ENOTDIR -> MISS */
     *mtime = (tycho_int)st.st_mtime;
 #ifdef _WIN32
-    /* MSVCRT's stat() runs the file time through the CURRENT local timezone and
-     * DST state rather than the one in force when the file was written, so
-     * st_mtime is not a UTC epoch: a file stamped 1416470400 reads back as
-     * 1416474000 (an hour out) on a box whose zone is presently on the other
-     * side of a DST boundary. Measured on Windows 11 26200, zone "Pacific
-     * Standard Time". That hour reached the wire as a wrong Last-Modified
-     * header, which then broke If-Modified-Since -- the 304 never fired.
-     * The Win32 file time is a plain 100ns count from 1601-01-01 UTC with no
-     * timezone in it, so take that when it is available and keep the stat()
-     * result as the fallback. */
     {
         WIN32_FILE_ATTRIBUTE_DATA fad;
         if (GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) {
@@ -390,19 +283,10 @@ tycho_int iox_set_mtime(const char *path, tycho_int mtime) {
     struct _utimbuf ub;
     if (stat(path, &st) != 0) return ty_rf_errno(path);
     if (S_ISDIR(st.st_mode)) {
-        /* _utime CANNOT touch a directory on Windows -- it fails EACCES, where
-         * the POSIX branch's utimensat works on one. Only a handle opened with
-         * FILE_FLAG_BACKUP_SEMANTICS may, so that is what the directory case
-         * uses. Measured under Wine 2026-08-13: corelib/test/io line 29 read
-         * `set_dir=Failed dir_back=0` before this branch and matches the Linux
-         * golden after it. The ACCESS time is left alone here, the same promise
-         * the POSIX branch keeps with UTIME_OMIT. */
         HANDLE h = CreateFileA(path, FILE_WRITE_ATTRIBUTES,
                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) return TY_RF_ERR;
-        /* Unix seconds -> FILETIME: 100ns ticks since 1601-01-01, offset by the
-         * 11644473600 seconds between the two epochs. */
         unsigned long long t = (unsigned long long)mtime * 10000000ULL + 116444736000000000ULL;
         FILETIME ft;
         ft.dwLowDateTime  = (DWORD)(t & 0xFFFFFFFFULL);
@@ -423,59 +307,6 @@ tycho_int iox_set_mtime(const char *path, tycho_int mtime) {
     return TY_RF_OK;
 }
 
-/* The SIZE IN BYTES of the regular file `path`, written through *size. Same
- * status code space as iox_stat_mtime above:
- *
- *      TY_RF_OK   (1)  stat succeeded and `path` is a regular file; *size holds
- *                      its length, and 0 is a SUCCESS (an empty file has a length)
- *      TY_RF_MISS (0)  no such path (ENOENT/ENOTDIR)
- *      TY_RF_DIR  (2)  the path names a directory -- see below, this is NOT the
- *                      same call as iox_stat_mtime's
- *      TY_RF_ERR  (3)  it is there and has no byte length: unstattable (EACCES,
- *                      ELOOP), or a fifo/socket/device
- *
- * The out-param/return split is iox_stat_mtime's exactly, for its reason: the
- * payload is a scalar, so it cannot share a code space with 0..3 (a 2-byte file
- * would be indistinguishable from TY_RF_DIR), and a scalar CAN be an `inout`,
- * so the payload takes the `inout` and the status keeps the return.
- *
- * A THIRD stat(2) SIBLING, not a second out-param on iox_stat_mtime. Phase 1
- * refused to fold mtime into iox_stat_kind by counting the callers who would
- * pass a value they discard, and the same count decides this -- it just lands
- * differently. iox_stat_mtime has ONE caller (io.mtime), so folding a size into
- * it costs one discard, not three. But it costs a second one immediately: io.size
- * would then call iox_stat_mtime and discard the mtime, so BOTH public calls
- * would be discarding half of a merged fetch, and the merged function's name
- * would have to stop being iox_stat_mtime. Two discards and a rename, to save a
- * syscall for a caller that wants both -- and no such caller exists: a Range
- * request wants a size and a slice, not a size and a date.
- *
- * NOR IS IT SHARED WITH iox_read_at, which already fstats. That fstat happens on
- * an fd that is opened, read and closed inside one call, and the three callers
- * that need a size need it BEFORE they know what to read: a 416 emits
- * `Content-Range: bytes *\/LEN` and reads nothing at all, a suffix range
- * `bytes=-N` needs LEN to compute its start, and `bytes=A-` needs LEN to name its
- * end. Returning a size out of read_at would hand it back after the decision that
- * needed it. The cost of the split is one extra stat(2) on the path that then
- * also reads; the 416 path pays one stat and opens nothing.
- *
- * A DIRECTORY IS TY_RF_DIR HERE, AND THAT DIFFERS FROM iox_stat_mtime ON PURPOSE.
- * Phase 1 made a directory's mtime TY_RF_OK because refusing it would discard a
- * field the kernel had already filled in. That argument does not carry here,
- * because st_size on a directory is not an answer to this question: it is the
- * size of the directory's own on-disk entry structure (4096 on ext4, something
- * else on btrfs, 0 on some filesystems), not a count of bytes anyone can read.
- * A directory's mtime IS the modification time being asked for; a directory's
- * st_size is not the byte length being asked for. So this is not discarding an
- * answer, it is declining to report a number that would be one -- and the caller
- * that would be misled is exactly the one this exists for, which would answer a
- * 416 with `bytes *\/4096` for a path holding no bytes at all.
- *
- * The rule that keeps the two calls honest with each other: iox_stat_size
- * succeeds on exactly the paths iox_read_at can read. Regular file -> both work;
- * directory -> both TY_RF_DIR; fifo/socket/device -> both TY_RF_ERR, since
- * st_size is meaningless for them and pread(2) fails ESPIPE on anything
- * unseekable. A size no read could ever produce is worse than no size. */
 tycho_int iox_stat_size(const char *path, tycho_int *size) {
     struct stat st;
     *size = 0;
@@ -492,23 +323,6 @@ tycho_int iox_stat_size(const char *path, tycho_int *size) {
  * cannot carry it -- OK already means "I did it" below. */
 #define TY_FS_EXISTS 4
 
-/* mkdir(2) the SINGLE directory `path` (0777 & ~umask). Parents are not created:
- * this is mkdir, not `mkdir -p`, and a missing parent is TY_RF_MISS.
- *
- *      TY_RF_OK     (1)  created it
- *      TY_RF_DIR    (2)  it was ALREADY a directory -- EEXIST, and the caller's
- *                        goal already holds, so core:io reports it as Ok(false)
- *      TY_FS_EXISTS (4)  EEXIST on something that is not a directory
- *      TY_RF_MISS   (0)  a path component does not exist (ENOENT/ENOTDIR)
- *      TY_RF_ERR    (3)  anything else (EACCES, EROFS, ENOSPC, ELOOP, ...)
- *
- * EEXIST is the reason this returns a code and not a bool: "already a directory"
- * and "a file is in the way" are the same failed mkdir but opposite answers to
- * the only question a caller has. stat(2) separates them, so ask it -- the same
- * move iox_stat_kind is, one layer up. Until this function existed there was no
- * way to make a directory from Tycho at all, so corelib/test/io built one with
- * os.system("mkdir -p"), i.e. a corelib test shelling out to /bin/sh to set up a
- * syscall test (the option-result plan). */
 tycho_int iox_make_dir(const char *path) {
     errno = 0;
     if (mkdir(path, 0777) == 0) return TY_RF_OK;
@@ -517,19 +331,6 @@ tycho_int iox_make_dir(const char *path) {
     return ty_rf_errno(path);
 }
 
-/* remove(3) ONE entry: unlink(2) for a non-directory, rmdir(2) for a directory.
- *
- *      TY_RF_OK   (1)  it was there and is gone now
- *      TY_RF_MISS (0)  nothing was there (ENOENT/ENOTDIR) -- core:io reports this
- *                      as Ok(false), because "make it not exist" already holds
- *      TY_RF_ERR  (3)  it is there and could not be removed: a NON-EMPTY
- *                      directory (ENOTEMPTY, or EEXIST on some systems), EACCES,
- *                      EBUSY, EPERM on a sticky parent, ...
- *
- * Deliberately NOT recursive. A tree walk is a different function with a much
- * worse failure mode, and the one caller that needs cleanup (corelib/test/io)
- * removes what it made, in order. So ENOTEMPTY is a real error here, and that is
- * the property that keeps this from being `rm -rf` in a shim. */
 tycho_int iox_remove(const char *path) {
     errno = 0;
 #ifdef _WIN32
@@ -648,18 +449,6 @@ tycho_int iox_sync(const char *path) {
     if (close(fd) != 0) return ty_rf_errno(path);
     return TY_RF_OK;
 #else
-    /* O_RDONLY: POSIX permits fsync on a read-only descriptor, and it is the
-     * only mode that can open a directory at all. fsync, not fdatasync -- an
-     * appending log needs the new SIZE durable, not just the bytes.
-     *
-     * O_NONBLOCK IS LOAD-BEARING AND NOT AN OPTIMISATION. open(2) of a FIFO for
-     * reading BLOCKS until some process opens the write end, so without this a
-     * sync of a path that happens to be a fifo never returns -- an unkillable
-     * hang in the middle of a durability call, which is a worse failure than the
-     * one this function prevents. MEASURED: the probe deadlocked here before the
-     * flag was added. It also covers a device node that blocks on open. On a
-     * regular file or a directory it has no effect, and it does not alter fsync's
-     * semantics on any of them. */
     int fd = open(path, O_RDONLY | O_NONBLOCK | O_BINARY);
     if (fd < 0) return ty_rf_errno(path);
     int r;

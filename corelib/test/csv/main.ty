@@ -1,6 +1,3 @@
-# corelib test: exercises core:csv; the output is locked to corelib/test/csv.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29. Control bytes are escaped (\n \r \t) so each case prints on one line.
 package main
 import "core:csv"
 

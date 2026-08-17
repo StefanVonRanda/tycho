@@ -1,7 +1,3 @@
-# corelib test: exercises core:utf8; the output is locked to
-# corelib/test/utf8.out (corelib/run.sh). Validation, decode/encode round
-# trips, codepoint counting, and the strict rejections (overlong, surrogate,
-# truncated, stray continuation).
 package main
 import "core:utf8"
 

@@ -1,18 +1,3 @@
-# corelib test: exercises core:net entirely over the loopback interface, inside
-# this one process -- no external network and no fixed port (the listener binds
-# port 0, so the kernel picks an unused ephemeral port), so the run is hermetic
-# and fully deterministic. The output prints payloads, lengths, and success
-# flags -- never the fd numbers or the ephemeral port, which are not stable.
-# The output is locked to corelib/test/net.out (corelib/run.sh).
-#
-# Single-threaded loopback is sound: connect() to a listening 127.0.0.1 socket
-# completes the TCP handshake into the listen backlog immediately, before
-# accept() is called, so listen -> connect -> accept runs in one thread.
-#
-# The last two cases are the point of the Result conversion: a read that produces
-# nothing now says WHY. `eof=Eof` comes from a peer that closed cleanly and
-# `tmo=Timeout` from an armed SO_RCVTIMEO deadline expiring -- two outcomes that
-# were the SAME empty `bytes` before 2026-07-26.
 
 package main
 import "core:net"
@@ -78,7 +63,6 @@ fn main():
         Err(e): println("eof=" + why(e))
     net.close_fd(conn)
 
-    # -- and a timeout is a DIFFERENT answer: arm 50ms on an idle connection --
     cli2 := fd_of(net.connect("127.0.0.1", port))
     conn2 := fd_of(net.accept(srv))
     armed := net.set_read_timeout_ms(conn2, 50)
@@ -90,9 +74,6 @@ fn main():
     net.close_fd(conn2)
     net.close_fd(srv)
 
-    # -- UDP: one datagram sent to our own bound address over loopback --
-    # Still sentinel-based; see the note in corelib/net/net.ty on why a
-    # zero-length datagram makes udp_read's empty result a real success value.
     u := net.udp_bind("127.0.0.1", 0)
     println("udp_ok=" + str(u >= 0))
     uport := fd_of(net.port_of(u))
@@ -101,10 +82,6 @@ fn main():
     dg := net.udp_read(u, 64)
     println("udp=[" + to_str(dg) + "] len=" + str(len(dg)))
 
-    # A NUL-bearing host resolves as its PREFIX -- probed 2026-08-13,
-    # net.listen("127.0.0.1" + chr(0) + "bogus.invalid", 0) BOUND 127.0.0.1 and
-    # connect reached it. "127.0.0.1" here is a live positive control: strip
-    # corelib/net/net.ty@has_nul and all four lines succeed again.
     nh := "127.0.0.1" + chr(0) + "bogus.invalid"
     println("nul_listen=" + nerr(net.listen(nh, 0)))
     println("nul_connect=" + nerr(net.connect(nh, uport)))

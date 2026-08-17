@@ -1,31 +1,12 @@
-# corelib test: exercises core:io; the output is locked to corelib/test/io.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29.
-#
-# Filesystem side effects are confined to two fixed throwaway paths under /tmp
-# (never the repo). Each run truncates first, so output is deterministic; the
-# exists/list checks use repo-relative paths (the harness runs with cwd = repo
-# root) and test membership only, never directory order.
 package main
 import "core:io"
 import "core:result"
-# No core:os here any more. Until 2026-07-26 this test imported it to run
-# os.system("rm -rf ... && mkdir -p ..."), because the corelib could not make a
-# directory -- a corelib test shelling out to /bin/sh to set up a syscall test.
-# io.make_dir / io.remove replaced it (the option-result plan).
 
 fn b2i(b: bool) -> int:
     if b:
         return 1
     return 0
 
-# REGRESSION (the friction plan): a returned string that ALIASES a scope-owned
-# `bytes` must be re-homed into the caller's arena. `to_str` is a zero-cost
-# reinterpret, so `out` here IS `b`'s buffer -- but the compiler reported the
-# initializer as a call (a "fresh value"), skipped the copy, and freed the scope
-# before returning. Measured before the fix: this printed `[8]` for a buffer
-# holding "ABCDEFGH". Nothing about this shape needs core:io; it lives here
-# because `io.read_bytes` is how a real program gets a scope-owned `bytes`.
 fn reinterp_ret(cs: [int]) -> string:
     b := to_bytes(cs)
     out := to_str(b)
@@ -43,15 +24,6 @@ fn nb(r: Result(bytes, io.IoErr)) -> int:
 fn sl(r: Result(bytes, io.IoErr)) -> string:
     return to_str(result.unwrap_or(r, to_bytes("")))
 
-# WHICH outcome, as a stable string. One arm per cause, since the friction plan;
-# this was `is_ok` + `err_or` plus three `e == io.X` comparisons, because
-# `Err(io.IsDir)` did not parse as a match arm. The old note here said this could
-# be written HERE and not in corelib/io itself because no runner fed corelib/test/
-# to the frozen compiler/tychoc0.ty. That constraint died with the tychoc0 lanes on
-# 2026-07-29 and nothing builds tychoc0 now, so nested patterns are writable
-# anywhere -- tests/nested_pattern.ty is the construct's own fixture under the main
-# golden loop. This arm stays here because it is the core:io lane, not because
-# anything forbids it elsewhere.
 fn why(r: Result(bytes, io.IoErr)) -> string:
     match r:
         Ok(bs): return "Ok"
@@ -98,9 +70,6 @@ fn mwhy(r: Result(int, io.IoErr)) -> string:
         Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
-# The same collapse for read_text's Result(string, ...). A second copy because a
-# Result's OK type is part of its identity -- FRICTION.md's "two error types
-# cannot share an or_return chain" is the same shape seen from the error side.
 fn twhy(r: Result(string, io.IoErr)) -> string:
     match r:
         Ok(s): return "Ok"
@@ -109,14 +78,6 @@ fn twhy(r: Result(string, io.IoErr)) -> string:
         Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
-# The four Result(void, IoErr) writers -- write_bytes, write_at, set_mtime, sync.
-# There is no boolean to print: each of them either did the thing or is an Err,
-# so `Ok(false)` named nothing and was removed on 2026-08-12 (FRICTION #15).
-# Contrast fswhy above, whose two successes are a real distinction. The
-# Unsupported arm is sync's and is NOT REACHED by this fixture (see the sync
-# section below for why it cannot be, portably); it is written for mwhy's reason,
-# so a platform that starts answering it moves the golden instead of collapsing
-# into "Failed" where nobody would look.
 fn vwhy(r: Result(void, io.IoErr)) -> string:
     match r:
         Ok(): return "Ok"
@@ -126,11 +87,6 @@ fn vwhy(r: Result(void, io.IoErr)) -> string:
         Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
-# THE POINT OF Result(void, IoErr), as a compiled assertion rather than a claim:
-# all four writers chain with a bare `or_return` and nothing bound. While they
-# returned Result(bool, IoErr) this body did not compile -- each statement
-# discarded a bool and the compiler said so (FRICTION #15). It is a durable
-# create besides: bytes, then the name.
 fn durable_write(p: string, b: bytes) -> Result(void, io.IoErr):
     io.write_bytes(p, b) or_return
     io.write_at(p, len(b), to_bytes("!")) or_return
@@ -255,10 +211,6 @@ fn main():
     missfold := io.fold_lines("/tmp/tycho_corelib_io_absent.xyz", 7, addlen)
     println(f"fold_sumlen={tot} fold_missing={missfold}")
 
-    # read_bytes: binary-safe whole-file read (interior NUL bytes preserved), and
-    # the point of the Result -- the four lines below were ALL "empty bytes"
-    # before 2026-07-26. An empty file is a success; missing and a directory are
-    # not, and they no longer look like each other.
     binf := "/tmp/tycho_corelib_io_bin.dat"
     io.write(binf, "AB" + chr(0) + "CD")
     emptyf := "/tmp/tycho_corelib_io_empty.dat"
@@ -272,20 +224,6 @@ fn main():
     println(f"read_missing len={nb(rbmiss)} why={why(rbmiss)}")
     println(f"read_dir len={nb(rbdir)} why={why(rbdir)}")
 
-    # The `bytes` operators (the friction plan), on the buffer io.read_bytes just
-    # handed back -- 5 bytes, with an interior 0x00 at index 2. This is the one
-    # property that would break if any of the three went through NUL-terminated
-    # code: b[2] would abort or read past, len(b[1:4]) would be 1, and a concat
-    # would stop at the NUL. This used to say the case CANNOT live in tests/,
-    # because the frozen tychoc0 rejected `b[i]` with "str(x) can't stringify a
-    # yte" and every tests/*.ty was fed to it. That block expired 2026-07-29 with
-    # the tychoc0 lanes, so tests/ is now merely a place this COULD go. It stays
-    # here on §E.1's convention -- a package's own lane covers the package, and
-    # nothing moves merely because it now could. The §3.9.4 interior-NUL clause
-    # already has its own tests/ witnesses for the string side (tests/string_nul,
-    # tests/strbytes); §5.2.6's `bytes` operators are witnessed by this lane, the
-    # §5.2.6 spec example and server/main.ty's log_safe, per the Appendix E row --
-    # whose surrounding note is still written as if tychoc0 ran (the loops-cleanup plan).
     bb := result.unwrap_or(rb, to_bytes(""))
     b0 := bb[0]
     bnul := bb[2]                        # the interior NUL, read as 0
@@ -312,16 +250,6 @@ fn main():
         churn += "ZZZZZZZZZZZZZZZZ"
     println(f"reinterp_ret=[{held}] len={len(held)} churn={len(churn)}")
 
-    # is_dir: the stat(2) the corelib went without until 2026-07-26. The EMPTY
-    # directory is the whole point -- `len(io.list(p)) > 0`, the only directory
-    # test that existed before, calls it a FILE, which is the wrong answer a real
-    # server shipped (the option-result plan). Ok(true) and Ok(false) are both successes;
-    # only "nothing there" is an Err.
-    #
-    # The empty directory is now made with io.make_dir -- no os.system, no /bin/sh.
-    # The two unprinted removes ahead of it make the run deterministic whatever a
-    # previous (or crashed) run left behind, INNER FIRST because io.remove is not
-    # recursive: a non-empty directory is Err(Failed), by design.
     edir := "/tmp/tycho_corelib_io_emptydir"
     inner := edir + "/inner.txt"
     pre1 := io.remove(inner)             # unprinted: prior state is unknown
@@ -341,9 +269,6 @@ fn main():
     # wrong answer, and the line above it is the right one.
     println(f"list_empty={len(io.list(edir))} old_test_says_dir={b2i(len(io.list(edir)) > 0)}")
 
-    # remove: single-entry, and the test cleans up after itself. `rm -rf` used to be
-    # the only way to do this. The middle line is the reason there is no recursive
-    # variant -- a non-empty directory is Err(Failed), not a silently deleted tree.
     wi := io.write(inner, "x")
     rmfull := io.remove(edir)            # Failed: ENOTEMPTY, inner.txt is in it
     rminner := io.remove(inner)          # did: a file
@@ -356,10 +281,6 @@ fn main():
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")
     println(f"missing=[{miss}] len={len(miss)}")
 
-    # exists, one stat(2) since the friction plan (it was list_dir membership; these
-    # four answers are unchanged by the swap, which is what the golden proves).
-    # Repo-relative paths; string-literal args bound to locals first -- f-string
-    # holes can't hold a string literal.
     es := b2i(io.exists("corelib/test/io/main.ty"))
     en := b2i(io.exists("corelib/test/io/nope.xyz"))
     println(f"exists_self={es} exists_no={en}")
@@ -367,21 +288,6 @@ fn main():
     lge := b2i(len(io.list("corelib/test/io")) >= 1)
     println(f"exists_mk={emk} list_ge1={lge}")
 
-    # mtime: the stat(2) field iox_stat_kind was fetching and discarding until
-    # 2026-07-31. NOTHING HERE CAN ASSERT AN EXACT EPOCH -- the file is written by
-    # this run, so the value is different every time and a golden cannot hold it.
-    # What the golden holds instead is the four properties that ARE stable:
-    #
-    #   ok         the call succeeds on a file this run just wrote
-    #   sane       the value is a real timestamp, not 0 and not a status code
-    #              leaking through the return -- 1600000000 is 2020-09-13, so any
-    #              machine whose clock is roughly right passes and a 0/2/3 fails
-    #   notfuture  it is <= now(), the same clock, so an mtime from the future
-    #              (a bad cast, a nanosecond field read as seconds) fails
-    #   grew       a REWRITE is >= the first reading, which is what proves the
-    #              value tracks the file rather than being a constant. `>=` not
-    #              `>`: both writes land inside one second on any fast machine,
-    #              and st_mtime is truncated to seconds.
     mt1 := io.mtime(tmp)
     s1 := result.unwrap_or(mt1, 0)
     ww := io.write(tmp, "touched")
@@ -393,13 +299,6 @@ fn main():
     mtdir := io.mtime("/tmp")
     println(f"mtime_missing={mwhy(mtmiss)} mtime_dir={mwhy(mtdir)}")
 
-    # set_mtime: the write side, added for FRICTION #8 -- an mtime could be READ
-    # and recorded into an archive, and nothing could put it back on extract.
-    # Unlike mtime above this CAN assert an exact epoch, and that is the whole
-    # point: 1416470400 is a value this run did not produce, so `exact` fails if
-    # the call is a no-op that leaves the write-time stamp in place.
-    # set_missing is the case that MUST fail -- setting a time on a path that is
-    # not there is Err(NotFound), not a silent success and not a created file.
     sdir := "/tmp/tycho_corelib_io_mtdir"
     _ := io.make_dir(sdir)
     sm := io.set_mtime(tmp, 1416470400)
@@ -548,15 +447,6 @@ fn main():
     println(f"sync_cleanup={fswhy(rmsf)}|{fswhy(rmsd)}")
     nul_checks()
 
-# ---- interior NUL, all 21 path-taking entry points --------------------------
-# A path leaves core:io as a `char*`, which ends at the first NUL, so an unguarded
-# call acts on the PREFIX. THE POSITIVE CONTROL IS THE WHOLE POINT of the block
-# below: `nt` really exists and really holds five bytes, and `nb` truncates to
-# exactly `nt` -- so with corelib/io/io.ty@has_nul removed every line here
-# SUCCEEDS instead of refusing (measured 2026-08-13: exists true, read "HELLO",
-# and the writers created/rewrote the target). The twelve entry points with an
-# error channel must name BadPath; the nine sentinels must give their documented
-# "this did not happen" value and touch nothing.
 fn nul_checks():
     nt := "/tmp/tycho_corelib_io_nul_target"
     seeded := io.write(nt, "HELLO")

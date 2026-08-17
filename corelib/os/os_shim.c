@@ -13,10 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. The libc-facing
- * `int st` wait-status stays int; the decoded exit code is a Tycho int. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
@@ -80,20 +76,6 @@ tycho_int   osx_run_code(void *p) { return p ? ((OsRun *)p)->code : -1; }
 const char *osx_run_out (void *p) { return p ? ((OsRun *)p)->out  : ""; }
 void        osx_run_free(void *p) { if (p) { OsRun *r = p; free(r->out); free(r); } }
 
-/* ---- the argv path: run a program with NO shell between caller and kernel ---
- *
- * THE VECTOR IS BORROWED. A Tycho `[string]` crosses as a
- * `(const char *const *, tycho_int)` pair (docs/spec/14-ffi.md §24.1): the
- * pointer is the array's own element storage and every element is already a
- * NUL-terminated C string, so nothing is marshalled, copied or freed. It is
- * valid only for the duration of the call, which is exactly as long as the
- * spawn needs it -- neither the strings nor the vector is retained here.
- *
- * FAIL CLOSED, and the checks are the ones the old builder handle enforced one
- * push at a time. A DROPPED argument is not a smaller command, it is a
- * different one (consider `rm -- somefile` losing its `--`), so an empty argv,
- * an oversized one, a null element or a failed allocation refuses with -1 /
- * NULL rather than running anything, and never falls back to the shell. */
 #define OSX_ARGV_MAX 4096       /* a bound, so a runaway loop fails instead of swapping */
 
 static int osx_argv_ok(const char *const *v, tycho_int n) {

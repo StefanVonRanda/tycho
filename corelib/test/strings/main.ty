@@ -1,7 +1,3 @@
-# corelib test: exercises core:strings; the output is locked to
-# corelib/test/strings.out (corelib/run.sh). The tychoc0 cross-check this line used to
-# claim was retired 2026-07-29. (f-string holes avoid nested string literals — the
-# lexer would stop at the inner quote.)
 package main
 import "core:strings"
 
@@ -65,25 +61,12 @@ fn main():
     println("pf 1E+3     " + pfs("1E+3") + " eq1000=" + pfeq("1E+3", 1000.0))
     d25 := "1234567890123456789012345"                        # 25 digits: rounded, not refused
     println("pf 25digit  " + pfs(d25) + " eq=" + pfeq(d25, 1.2345678901234568e24))
-    # ---- subnormals are VALUES (changed 2026-08-12) -------------------------
-    # Every one of these was Err(Underflow) before: strx_parse_double refused
-    # anything ERANGE that was not an infinity, which is every subnormal. glibc
-    # sets ERANGE for a subnormal result whether or not it is exact, so DBL_MIN
-    # -- the smallest NORMAL, one ULP up from this region -- was the last string
-    # that parsed. The three `ok`s below are the fix; the two Err lines are the
-    # NEGATIVE CONTROL, and they are what says the refusal did not simply widen
-    # to accept everything.
     println("pf DBL_MIN  " + pfs("2.2250738585072014e-308") + " eq=" + pfeq("2.2250738585072014e-308", 2.2250738585072014e-308))
     println("pf 5e-324   " + pfs("5e-324") + " eq=" + pfeq("5e-324", 5e-324))
     println("pf 1e-320   " + pfs("1e-320") + " eq=" + pfeq("1e-320", 1e-320))
     println("pf -5e-324  " + pfs("-5e-324") + " neg=" + pfneg("-5e-324"))
     println("pf 1e-400   " + pfs("1e-400") + " (total underflow: still refused)")
     println("pf -1e-400  " + pfs("-1e-400") + " (sign does not change it)")
-    # str -> parse_float -> the SAME double, across the whole range. This is the
-    # pair of fixes meeting: str emits the shortest round-tripping decimal, and
-    # parse_float now accepts every binary64 that decimal can name. Neither half
-    # alone makes these `yes` -- before 2026-08-12 the first two were `NO` (str
-    # threw digits away) and the third was `err` (parse_float refused it).
     println("rt 0.1+0.2  " + pfrt(0.1 + 0.2))
     println("rt DBL_MAX  " + pfrt(1.7976931348623157e308))
     println("rt 5e-324   " + pfrt(5e-324))
@@ -136,12 +119,6 @@ fn main():
     println("ss in  =" + ss("ABCDE", 1, 3))                    # ss in  =ok:2:BC
     println("ss past=" + ss("ABCDE", 2, 10))                   # ss past=OutOfBounds
     println("ss inv =" + ss("ABCDE", 3, 1))                    # ss inv =Inverted
-    # pad_left/pad_right count the deficit in BYTES. The loop used to decrement by
-    # one while appending len(pad), so a multi-byte pad overshot: pad_left("x", 5,
-    # "ab") returned nine bytes for a width of five, and a UTF-8 pad did the same.
-    # The LENGTH is printed beside every result, because the padding characters
-    # themselves look perfectly reasonable in a transcript -- it is the width that
-    # was wrong, and a golden carrying only the text cannot see it.
     println("pad1B  =[" + strings.pad_left("x", 5, ".") + "] " + str(len(strings.pad_left("x", 5, "."))))
     println("pad2B  =[" + strings.pad_left("x", 5, "ab") + "] " + str(len(strings.pad_left("x", 5, "ab"))))
     println("padR2B =[" + strings.pad_right("x", 5, "ab") + "] " + str(len(strings.pad_right("x", 5, "ab"))))
@@ -165,11 +142,6 @@ fn ss(s: string, a: int, z: int) -> string:
         Err(strings.Inverted): return "Inverted"
         Err(strings.OutOfBounds): return "OutOfBounds"
 
-# ---- parse_float helpers ----------------------------------------------------
-# The test hook lives in corelib/strings/strings_shim.c and is deliberately NOT
-# exported by core:strings -- no library function should move a process-wide
-# global -- so the extern is declared here, in the only program that wants it.
-# tychoc auto-discovers the imported package's shim, which is what resolves it.
 extern fn strx_test_make_locale_hostile() -> int
 
 fn pfs(s: string) -> string:      # the outcome as one word, never a value

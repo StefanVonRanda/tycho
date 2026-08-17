@@ -1,8 +1,4 @@
 package main
-# corelib test: the GENERIC core:arrays across int / string / float. The output is
-# locked to corelib/test/arrays.out (corelib/run.sh). The two extra legs this line used
-# to claim -- tychoc0 --bundle and standalone tychoc0 -- were retired 2026-07-29.
-# min/max/sum/product require a non-empty array (they seed from xs[0]).
 import "core:arrays"
 
 fn b2i(b: bool) -> int:                       # str(bool) is not available; fold to int

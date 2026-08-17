@@ -1,8 +1,3 @@
-# corelib test: exercises core:os. Every command is hermetic and side-effect-free
-# (true / false / exit N / printf) -- no filesystem, network, or process state is
-# touched, so the output is deterministic. The output is locked to corelib/test/os.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29.
 
 package main
 import "core:os"
@@ -84,11 +79,6 @@ fn main():
     en := os.exec_out(["/nonexistent/prog"])
     println("e_nosuch_out=[" + en.out + "] code=" + str(en.code))
 
-    # A NUL-bearing command line runs its PREFIX -- probed 2026-08-13,
-    # os.system("printf ok" + chr(0) + "; printf BAD") printed `ok` and returned 0,
-    # so the caller was told a command it never ran had succeeded. All four refuse
-    # with the -1 an empty argv already gets. `printf` is a live positive control:
-    # strip corelib/os/os.ty@has_nul and these print `ok` and return 0 again.
     nc := "printf NULBAD" + chr(0) + "; printf TAIL"
     println("nul_system=" + str(os.system(nc)))
     nr := os.run(nc)

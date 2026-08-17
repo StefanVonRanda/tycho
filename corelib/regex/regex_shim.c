@@ -20,9 +20,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
@@ -53,20 +50,6 @@ static int rx_exec(void *re, const char *s, tycho_int n, size_t nm, regmatch_t *
 #endif
 }
 
-/* regcomp has no length-bearing form anywhere, so a NUL-bearing pattern is
- * rejected instead: NULL is the existing "bad pattern" channel (ok() is false). */
-/* Refuse a pattern whose bounded repetitions multiply out to an absurd NFA
- * before regcomp ever sees it. `(a{1000}){1000}` is fifteen bytes and asks for
- * a million states -- measured at ~207 MB of RSS, and larger spellings take the
- * host down: `(a{20000}){20000}` OOM-killed this machine during the 2026-08-16
- * audit. POSIX ERE is a DFA and does not backtrack, so this is a MEMORY bomb
- * rather than the usual catastrophic-backtracking one, and neither
- * REG_EXTENDED nor regcomp offers a ceiling.
- *
- * The product of the {n} maxima is the amplifier, so that is what is capped.
- * 100000 is far above any real pattern -- `(a{100}){100}` is 10000 and still
- * compiles -- and far below the point where regcomp's allocation matters.
- * A pattern with no bounded repetition is unaffected. */
 #define RX_MAX_REPEAT_PRODUCT 100000
 static int rx_repeat_too_big(const char *p, size_t n) {
     unsigned long long product = 1;

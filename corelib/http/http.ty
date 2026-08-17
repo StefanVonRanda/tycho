@@ -1,31 +1,3 @@
-# corelib: HTTP(S) client over libcurl (C-shim, FFI). Import with
-# `import "core:http"`. The shim (http_shim.c) and its dependency (deps ->
-# libcurl) are auto-discovered; pkg-config supplies the per-platform flags, and
-# the corelib harness skips this module where libcurl is absent.
-#
-#     r := http.get("https://example.com")
-#     if http.ok(r):
-#         code := http.status(r)            # e.g. 200
-#         text := http.body(r)              # the response body
-#         http.release(r)                   # the handle is C-owned -- free it
-#
-# A request returns an opaque handle (ptr), or null on a transport failure
-# (`ok`/`is_null` to check). The handle is C-owned (not arena-managed), so
-# `release` it. `body` is arena-copied on return; a binary body with interior
-# 0x00 bytes truncates at the copy (a tycho string limit), so this is for text.
-#
-# HTTPS certificates are verified, and `make http-verify` is the gate that proves
-# it rather than asserting it. To trust a PRIVATE CA -- an internal service, a
-# test server -- set one of these in the environment, the same two `core:tls`
-# obeys:
-#
-#     SSL_CERT_FILE=/path/ca.pem      a single PEM bundle
-#     SSL_CERT_DIR=/path/cadir        a hashed directory (openssl rehash)
-#
-# They REDIRECT trust and cannot disable it: verification stays on whatever they
-# say, and an unreadable path fails closed. A bad certificate is a transport
-# failure, so it arrives as a null handle -- the same shape as a refused
-# connection, which is why the gate exists.
 package http
 
 extern fn http_get(url: string) -> ptr
@@ -35,13 +7,6 @@ extern fn http_body(resp: ptr) -> string
 extern fn http_body_bytes(resp: ptr) -> bytes
 extern fn http_free(resp: ptr)
 
-# True if `url` holds an interior NUL. It crosses to curl as a `char*`, which
-# ENDS AT THE FIRST NUL, so an unguarded call fetches the PREFIX: a program
-# building a URL from user input asked for one resource and got another, with no
-# error (measured 2026-08-15 -- ".../real.txt\0/ignored" returned real.txt's 18
-# bytes). The rule is docs/spec/14-ffi.md's; the sibling guards are core:os's,
-# core:io's and core:net's, and this package was simply not on the list when that
-# sweep ran (FRICTION #77).
 fn has_nul(s: string) -> bool:
     for i := 0; i < len(s); i += 1:
         if s[i] == 0:

@@ -1,7 +1,3 @@
-# corelib test: exercises core:base64; the output is locked to corelib/test/base64.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29. Binary cases are checked via lengths + re-encode equality (never printed
-# raw).
 package main
 import "core:base64"
 
@@ -11,7 +7,6 @@ fn b2i(b: bool) -> int:
     return 0
 
 fn main():
-    # ---- the RFC 4648 test vectors (encode) ----
     println("enc ''     = [" + base64.encode("") + "]")        # []
     println("enc f      = " + base64.encode("f"))         # Zg==
     println("enc fo     = " + base64.encode("fo"))        # Zm8=

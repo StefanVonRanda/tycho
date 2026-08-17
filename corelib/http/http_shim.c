@@ -1,21 +1,8 @@
-/* core:http C shim -- HTTP(S) over libcurl. The deps manifest (corelib/http/deps)
- * names `libcurl`; pkg-config supplies the cflags (curl headers) and -lcurl, so
- * this module is turnkey on any platform that has libcurl, and its test is
- * skipped where it doesn't.
- *
- * A request returns an opaque handle (a malloc'd Resp) that tycho holds as a
- * `ptr` and never dereferences; the body is a NUL-terminated C string that tycho
- * arena-copies on return, so the handle must be freed with http_free once done
- * (FFI memory is not arena-managed). Binary bodies with interior NUL bytes
- * truncate at the arena-copy (a tycho string limitation), so this is for text. */
 #include <curl/curl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
@@ -79,18 +66,6 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(c, CURLOPT_USERAGENT, "tycho-corelib-http/1.0");
 
-    /* Honour SSL_CERT_FILE / SSL_CERT_DIR, which core:tls already obeys through
-     * OpenSSL's own defaults. libcurl does NOT: it compiles in a CAINFO that
-     * pre-empts that lookup, and CURL_CA_BUNDLE is read by the curl TOOL, not the
-     * library -- so before this there was no way to trust a private CA, and no way
-     * to write a leg that must SUCCEED. That is why core:http's verification was
-     * ungated (FRICTION #57): "the untrusted server was refused" and "nothing
-     * connected at all" look identical without one.
-     *
-     * These REDIRECT trust; they never disable it. No CURLOPT_SSL_VERIFY* is set
-     * anywhere in this file, so libcurl's verifying defaults stand whatever the
-     * environment says, and an unreadable path fails CLOSED. Empty is treated as
-     * unset -- `SSL_CERT_FILE=` must not become a request with no CA at all. */
     const char *ca_file = getenv("SSL_CERT_FILE");
     const char *ca_dir  = getenv("SSL_CERT_DIR");
     if (ca_file && *ca_file) curl_easy_setopt(c, CURLOPT_CAINFO, ca_file);

@@ -233,29 +233,11 @@ static int ty_posix_tz_offset(const char *tz, long long secs, long *out) {
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. `secs` (epoch)
- * and the returned offset are Tycho ints; the libc `time_t` cast and reading
- * glibc's `long tm_gmtoff` stay on the C side. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
 #endif
 
-/* The SYSTEM local timezone's UTC offset at `secs`, DST-aware. Reads the process
- * timezone (the TZ env var, else the OS default) via localtime_r. The exact value
- * is host-dependent, so a test must not hard-code it -- use offset_at for a
- * reproducible zone.
- *
- * gap: the two sentences above hold on POSIX only. On Windows the CRT reads TZ
- * once at startup, so this ignores a TZ set later by the program, and it did not
- * track DST across the instants measured -- on a box set to Pacific it answered
- * -28800 for both a January and a July timestamp under three different TZ
- * values, where the POSIX build tracked each. dtx_offset_at below does NOT share
- * the defect: it parses the POSIX rule itself on Windows. Making this one agree
- * means resolving the zone through GetTimeZoneInformationForYear rather than the
- * CRT. Recorded in SECURITY.md. */
 tycho_int dtx_local_offset(tycho_int secs) {
     time_t t = (time_t)secs;
     struct tm lt;
@@ -267,14 +249,6 @@ tycho_int dtx_local_offset(tycho_int secs) {
 #endif
 }
 
-/* UTC offset at `secs` for an EXPLICIT POSIX TZ string, DST-aware. A POSIX rule
- * like "EST5EDT,M3.2.0,M11.1.0" or "UTC0" is self-contained -- libc parses the
- * DST rule from the string with no /usr/share/zoneinfo file -- so the result is
- * reproducible on any host (which is what makes DST testable in a golden).
- *
- * NOT thread-safe: it sets the process TZ (setenv + tzset), reads, then restores.
- * The FFI boundary is outside Tycho's race-free guarantee anyway (see
- * docs/reference/ffi.md#threads) -- serialize datetime.offset_at across threads. */
 tycho_int dtx_offset_at(const char *tz, tycho_int secs) {
 #ifdef _WIN32
     /* Answer from the rule itself. The CRT only reads the "TZN[+-]hh" prefix

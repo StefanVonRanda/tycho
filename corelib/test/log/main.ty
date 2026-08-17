@@ -1,6 +1,3 @@
-# corelib test: exercises core:log; the output is locked to
-# corelib/test/log.out (corelib/run.sh). Level filtering, both destinations,
-# and the exit-code contract.
 package main
 import "core:log"
 

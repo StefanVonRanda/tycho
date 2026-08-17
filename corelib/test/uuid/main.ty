@@ -1,7 +1,3 @@
-# corelib test: exercises core:uuid; the output is locked to corelib/test/uuid.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29. core:rand is deterministic (seeded xorshift32), so v4 output is
-# reproducible.
 package main
 import "core:uuid"
 import "core:rand"

@@ -1,53 +1,3 @@
-/* core:strings shim -- a LOCALE-INDEPENDENT string-to-double for
- * strings.parse_float (corelib/strings/strings.ty). Pure libc, no `deps` file, so
- * core:strings stays turnkey and core tier like core:time / core:os.
- *
- * WHY THIS FILE EXISTS AT ALL. There is no string-to-float conversion anywhere in
- * the language: `to_float` is a builtin that takes an int, a sized int, an f32 or
- * a float newtype (src/tychoc.c:6276-6280), never a string. So the conversion has
- * to cross the FFI boundary, and the only libc routine for it is strtod.
- *
- * WHY strtod ALONE IS A BUG. strtod reads the decimal separator from LC_NUMERIC.
- * Under a comma-decimal locale strtod("1.5") returns 1.0 and stops at the '.' --
- * no error, no signal, a silently wrong value. Measured on this host with
- * `cc -std=c11` and setlocale(LC_ALL, "") under LC_ALL=da_DK.UTF-8:
- *
- *     plain strtod 1.5 -> 1 rest=[.5]                  <- the trap
- *     strtod_l(C)  1.5 -> 1.5 rest=[]                  <- what this shim does
- *
- * Nothing in this tree calls setlocale (`grep -rn setlocale runtime/ src/
- * corelib/` is empty), so a Tycho program runs in the "C" locale and plain strtod
- * happens to be right today. That is an UNSTATED dependency on a global no gate
- * checks, and one linked C library calling setlocale would break every float this
- * corelib ever parses. This shim removes the dependency instead of documenting it.
- *
- * THE FEATURE-TEST MACRO, AND WHY IT IS _GNU_SOURCE AND NOT _POSIX_C_SOURCE.
- * newlocale/locale_t/LC_NUMERIC_MASK are POSIX 2008, but strtod_l is NOT in POSIX
- * -- glibc guards it behind __USE_GNU. Measured: with _POSIX_C_SOURCE 200809L and
- * -std=c11 this file fails with `implicit declaration of function 'strtod_l'`.
- * `make shim-check` is the only gate that can catch that (scripts/shim_check.sh's
- * header: the real build passes no -std, so the implicit _DEFAULT_SOURCE hides it).
- *
- * FALLBACK, AND WHY IT IS STILL CORRECT. Two things can go wrong: a libc without
- * strtod_l (TY_HAVE_STRTOD_L undefined), or newlocale failing at run time (out of
- * memory / no "C" locale). Either way we fall back to plain strtod on a copy of
- * the input in which every '.' has been rewritten to the RUNNING locale's own
- * decimal separator, taken from localeconv() (C89, always present). That converts
- * with the same digits and the same rounding, so the fallback is correct under any
- * locale -- it is slower and it allocates, it is not less right.
- *
- * FAIL CLOSED. Every failure -- a syntax refusal, a range error, a failed malloc
- * -- returns 0.0 with a NON-OK status. The Tycho caller never sees a value it can
- * mistake for a successful parse, which is the whole point of parse_float being
- * the strict opposite of parse_int.
- *
- * THE CALLER VALIDATES FIRST. strings.parse_float checks the WHOLE string against
- * a written-down grammar in Tycho before calling here, so this shim never has to
- * defend against strtod's own leniency ("inf", "nan", "0x1p3", leading
- * whitespace) and never sees a Tycho string whose bytes past an embedded NUL
- * would be invisible to C. The `whole` check below is belt and braces, not the
- * primary defence.
- */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE          /* strtod_l: a GNU/musl extension, NOT POSIX 2008 */
 #endif
@@ -79,23 +29,12 @@
 typedef int64_t tycho_int;
 #endif
 
-/* Status codes. Mirrored by the PF_* consts in corelib/strings/strings.ty --
- * change one, change the other. */
 #define TY_PF_OK        0
 #define TY_PF_OVERFLOW  1    /* ERANGE and the result is infinite */
 #define TY_PF_UNDERFLOW 2    /* ERANGE and the result is 0 -- TOTAL underflow.
                               * A subnormal is ERANGE too and is NOT this. */
 #define TY_PF_SYNTAX    3    /* no conversion, or trailing bytes left over */
 
-/* The "C" LC_NUMERIC handle, built ONCE. pthread_once and not a plain lazy
- * assignment because a Tycho task is a pthread (runtime/tycho_rt.c spawn/wait),
- * so two tasks can reach parse_float at the same time; a bare `if (!h) h = ...`
- * is a data race that also leaks a locale handle.
- *
- * Windows (mingw-w64) has no POSIX locale API at any version, and the
- * TY_HAVE_STRTOD_L list above already excludes it -- so on Windows the whole
- * handle stays 0 and strx_parse_double takes the localeconv fallback, which
- * is correct under any locale (its header argues why). */
 #ifdef TY_HAVE_STRTOD_L
 static locale_t       ty_c_numeric;
 static pthread_once_t ty_c_numeric_once = PTHREAD_ONCE_INIT;
@@ -167,11 +106,6 @@ double strx_parse_double(const char *s, tycho_int *status) {
 
     if (!whole) { *status = TY_PF_SYNTAX; return 0.0; }
     if (range) {
-        /* ERANGE has THREE outcomes and the VALUE separates them: an infinity is
-         * overflow, 0 is total underflow, and anything else is a subnormal --
-         * a correctly-rounded answer, so it falls through and is returned.
-         * Testing isinf alone (what this did until 2026-08-12) refused every
-         * subnormal; the reasoning is in corelib/strings/strings.ty. */
         if (isinf(v)) { *status = TY_PF_OVERFLOW;  return 0.0; }
         if (v == 0.0) { *status = TY_PF_UNDERFLOW; return 0.0; }   /* -0.0 too: compares equal */
     }
@@ -179,29 +113,7 @@ double strx_parse_double(const char *s, tycho_int *status) {
     return v;
 }
 
-/* ---- TEST HOOK -------------------------------------------------------------
- * Deliberately NOT declared in corelib/strings/strings.ty: it is not part of
- * core:strings' API and no library caller should ever change a process-wide
- * global. corelib/test/strings/main.ty declares this extern itself, which the
- * linker resolves against this file because tychoc auto-discovers the imported
- * package's shim.
- *
- * It makes LC_NUMERIC hostile -- a locale whose decimal separator is not '.' --
- * so the parse_float assertions in that test run against the exact condition
- * that breaks plain strtod, rather than against the "C" locale a Tycho program
- * would otherwise never leave. Tries the environment first (so
- * `LC_ALL=da_DK.UTF-8 ./test` is honoured), then named comma-decimal locales.
- *
- * Returns 1 if LC_NUMERIC's separator is now something other than '.', 0 if the
- * host has none of these locales installed. The test PRINTS that answer into its
- * golden, so a host where it is 0 fails loudly with a line naming the reason
- * instead of silently testing nothing under "C".
- */
 tycho_int strx_test_make_locale_hostile(void) {
-    /* The Windows CRT rejects every POSIX name here (setlocale returns NULL),
-     * so without the Windows-style names this returned 0 on Windows and the
-     * test above failed loudly -- by its own design, rather than quietly
-     * testing "C". Mirrors the same list in runtime/tycho_rt.c. */
     static const char *cands[] = { "", "da_DK.UTF-8", "da_DK.utf8", "da_DK",
                                    "de_DE.UTF-8", "fr_FR.UTF-8",
                                    "Danish_Denmark.1252",

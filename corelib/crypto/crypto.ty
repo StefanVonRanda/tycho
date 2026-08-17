@@ -1,27 +1,3 @@
-# core:crypto -- security-grade cryptography via OpenSSL libcrypto (FFI).
-#
-# Why FFI and not pure Tycho: real crypto must be constant-time and audited.
-# Tycho gives no constant-time guarantee, so the primitives are bound to OpenSSL
-# rather than reimplemented. The pure-Tycho core:sha256 and core:md5 remain for
-# non-adversarial integrity; this package is for when an attacker is in the
-# threat model.
-#
-# Two kinds of value:
-#   * SECRET keys are opaque HANDLES (`ptr`). The bytes live inside OpenSSL, are
-#     never copied into Tycho's arena, and are wiped when you free the handle.
-#     Make one with key_random / key_from_hex / pbkdf2_sha256 / *_key_*; you MUST
-#     `key_free` it exactly once when done (the FFI is Tycho's manual-memory
-#     escape hatch). A failed constructor returns a null handle -- check is_null.
-#     key_export_hex is the one call that turns a secret back into a string, for
-#     storage or transmission.
-#   * PUBLIC / ephemeral data (nonces, salts, ciphertext, signatures, public
-#     keys, MAC tags, messages, digests) is lowercase hex, because a Tycho string
-#     cannot hold a 0x00. Use core:hex to convert your own text. A returned
-#     "!err" is the failure sentinel (never valid hex); aead_decrypt returns it
-#     when authentication fails, distinct from a valid empty plaintext "".
-#
-# Build: requires libcrypto (OpenSSL). corelib/crypto/deps links it; the corelib
-# test harness skips this package where OpenSSL is absent.
 
 package crypto
 
@@ -92,9 +68,6 @@ fn hmac_sha256(key: ptr, msg_hex: string) -> string:
 # salt is hex. Use a high iteration count (>= 600000) and a random salt. Free
 # the returned handle when done.
 fn pbkdf2_sha256(password: string, salt_hex: string, iters: int, dklen: int) -> ptr:
-    # len(password), never strlen on the C side: a Tycho string may hold an
-    # interior NUL, and "secret\0A"/"secret\0B" both derived "secret"'s key
-    # until 2026-08-15 -- two credentials collapsing into one, silently.
     return cx_pbkdf2_sha256(password, len(password), salt_hex, iters, dklen)
 
 # Constant-time equality of two hex byte strings (compare MACs this way so the
@@ -115,8 +88,6 @@ fn aead_encrypt(key: ptr, nonce_hex: string, plaintext_hex: string, aad_hex: str
 fn aead_decrypt(key: ptr, nonce_hex: string, ciphertext_hex: string, aad_hex: string) -> string:
     return cx_aead_decrypt(key, nonce_hex, ciphertext_hex, aad_hex)
 
-# ---- Ed25519 signatures (private seed = key handle; public key + sig = hex) ----
-# A fresh signing key (32-byte seed). Free it when done.
 fn ed25519_key_random() -> ptr:
     return cx_ed25519_key_random()
 

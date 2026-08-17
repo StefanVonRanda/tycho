@@ -1,20 +1,3 @@
-/* Round-trip check for the Windows argv quoter in os_shim.c -- WINDOWS ONLY.
- *
- * THE CLAIM UNDER TEST. osx_win_cmdline(argv) produces a command line that
- * CommandLineToArgvW -- the splitter Windows programs actually use -- splits
- * back into the SAME vector. If that holds, no argument can become two and no
- * metacharacter can become syntax, which is the whole security property of
- * os.exec on Windows.
- *
- * WHY THIS EXISTS SEPARATELY from corelib/test/os. That test asserts the
- * round trip on POSIX by handing a hostile argument to `printf` and reading it
- * back verbatim. Windows guarantees no program that echoes argv WITHOUT
- * re-parsing it (cmd.exe`s own `echo` re-parses it), so the assertion has to be made
- * against the splitter directly, in C. Run by scripts/shim_check.sh on Windows.
- *
- * It #includes the .c so the statics are reachable. Not a shim: nothing links
- * it into a program, and tychoc only auto-discovers <mod>_shim.c.
- */
 #include "os_shim.c"
 #include <shellapi.h>
 #include <stdio.h>

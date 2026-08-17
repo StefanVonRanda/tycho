@@ -69,9 +69,6 @@ fn trim(s: string) -> string:                # strip leading/trailing ASCII whit
     return substr(s, lo, hi)
 
 fn parse_int(s: string) -> int:              # decimal int, optional leading '-'; stops at first non-digit
-    # Failure value is 0 (same as non-numeric input): values outside int64 range
-    # ([-9223372036854775808, 9223372036854775807]) return 0 instead of overflowing.
-    # Accumulates NEGATIVE so min int64 itself parses without signed overflow.
     if len(s) == 0:
         return 0
     neg := false
@@ -93,19 +90,6 @@ fn parse_int(s: string) -> int:              # decimal int, optional leading '-'
         return 0
     return 0 - v
 
-# ---- parse_int_checked: the STRICT int ---------------------------------------
-#
-# WHICH ONE TO REACH FOR. parse_int above is the LENIENT one: 0 for an empty
-# string and for garbage, and it stops at the first non-digit. Those are sane
-# choices for parsing user input, where 0 is a fine default -- and they are the
-# wrong choices for a length field in a format, where a damaged "1x4" must be
-# an error and not a silent 1 (a wrong length that parses is how a reader ends
-# up hashing the wrong span). This one fails closed: an empty string, a non-
-# digit anywhere, or an out-of-int64 value is an Err naming why. tycho-ar and
-# server/main.ty each hand-rolled a strict parser for want of this.
-#
-# The errors are payload-free, so both spellings work: `==` for a one-line test
-# and a nested pattern (`Err(Overflow):`) for a `match`.
 enum IntErr:
     EmptyInput         # "" (or a bare "-")
     Garbage            # a non-digit anywhere
@@ -138,72 +122,6 @@ fn parse_int_checked(s: string) -> Result(int, IntErr):
         return Err(OutOfRange)
     return Ok(0 - v)
 
-# ---- parse_float: the STRICT one -------------------------------------------
-#
-# WHICH ONE TO REACH FOR. These two live next to each other on purpose and they
-# have opposite failure policies. Read this before picking one.
-#
-#   parse_int(s)   -> int                      FAILS OPEN.  Above.
-#       "" is 0. "-" is 0. "garbage" is 0. "123stop" is 123 -- it stops at the
-#       first non-digit and tells nobody. Overflow is 0. 0 is also a legitimate
-#       value, so a caller CANNOT tell success from failure. Use it only where
-#       the input is already known-good and 0 is a fine answer for junk.
-#
-#   parse_float(s) -> Result(float, FloatErr)  FAILS CLOSED. Here.
-#       The WHOLE string must match the grammar below. A partial parse is an
-#       error, not a prefix. There is no in-band failure value: every refusal is
-#       an Err naming what was wrong. Use it for anything the program did not
-#       write itself -- a config file, a CSV cell, a JSON number, a CLI argument.
-#
-# THE GRAMMAR. The whole string must match; anything else is Err(Syntax).
-#
-#     number := sign? ( digits frac? | frac ) exp?
-#     sign   := '+' | '-'
-#     digits := ('0'..'9')+
-#     frac   := '.' digits                       -- a point NEEDS digits after it
-#     exp    := ('e' | 'E') sign? digits
-#
-# So ".5", "+1", "01" and "1E+3" are accepted; "1." , ".", "1e", "1e+", "" and
-# "-" are not. This is deliberately a SUPERSET of the RFC 8259 JSON number
-# grammar (which forbids "+1", ".5" and leading zeros) -- a JSON parser is
-# expected to check its own stricter shape first and then hand the lexeme here.
-#
-# DELIBERATELY NOT ACCEPTED, all of which bare strtod would take:
-#   * leading or trailing whitespace  -- " 1.5" is Err, not 1.5
-#   * "inf", "infinity", "nan"        -- no non-finite value is reachable
-#   * hex floats ("0x1p3")
-#   * a comma decimal separator       -- "1,5" is Err under EVERY locale
-#   * anything after the number       -- "1.5x" is Err, never 1.5
-#   * a NUL byte and whatever follows it. A Tycho string is length-counted, so
-#     "1.5\0junk" carries eight bytes; C would see three. The grammar scan below
-#     walks all len(s) of them, so the NUL is just a byte not in the grammar.
-#
-# LOCALE. Correct under any LC_NUMERIC. The conversion goes through strtod_l
-# against a private "C" locale handle, never bare strtod -- see the long note in
-# corelib/strings/strings_shim.c for the measurement of what bare strtod does to
-# "1.5" under a comma-decimal locale.
-#
-# PRECISION. The value is IEEE-754 binary64, correctly rounded by the C library.
-# A decimal with more significant digits than binary64 holds is ROUNDED, not
-# rejected: parse_float("1234567890123456789012345") is Ok(1.2345678901234568e24).
-# A caller that needs the digits back must keep the original string; this
-# function does not preserve it.
-#
-# SUBNORMALS ARE VALUES, NOT ERRORS -- changed 2026-08-12. This used to refuse
-# every subnormal as Err(Underflow) because "it has already lost digits". So has
-# a 25-digit decimal, and the paragraph above accepts that one. One policy at
-# both ends now: if the correctly-rounded binary64 EXISTS, it is the answer.
-#   parse_float("5e-324")  is Ok(4.9406564584124654e-324)   the min subnormal
-#   parse_float("1e-320")  is Ok(9.9998886718268301e-321)
-#   parse_float("1e-400")  is STILL Err(Underflow)          rounds to 0
-# The line is where the VALUE is: nonzero is returned, a result that flushed all
-# the way to 0 is refused because 0 is not what the caller wrote -- the same
-# shape as Overflow. Note glibc raises ERANGE for a result merely NEAR the
-# subnormal range: "2.2250738585072012e-308" is flagged and rounds to DBL_MIN,
-# a normal. Testing the value and not the flag is what gets that one right too.
-# This also closed a round-trip hole: `str` emits the shortest decimal that
-# reads back unchanged (runtime/tycho_rt.c@tycho_float_to_str), and str(5e-324)
-# was a string this function refused.
 
 # Why parse_float refused. Every variant is payload-free so `==` works on it.
 enum FloatErr:
@@ -215,8 +133,6 @@ enum FloatErr:
                    # A subnormal is NOT this -- "1e-320" and "5e-324" are Ok; see
                    # the SUBNORMALS paragraph above
 
-# The shim's status codes, named once. Mirrored by the TY_PF_* defines in
-# corelib/strings/strings_shim.c -- change one, change the other.
 const PF_OK        = 0
 const PF_OVERFLOW  = 1
 const PF_UNDERFLOW = 2
@@ -334,15 +250,6 @@ fn strip_suffix(s: string, suffix: string) -> string:
         return substr(s, 0, len(s) - len(suffix))
     return s
 
-# Pad to `width` BYTES. `pad` is normally one byte; it may be longer, and the
-# deficit is then counted in bytes rather than in pads -- the loop used to
-# decrement by 1 while appending len(pad), so pad_left("x", 5, "ab") returned NINE
-# bytes for a width of 5, and a UTF-8 pad ("é") overshot the same way (2026-08-15).
-# A pad that does not divide the deficit leaves the result SHORT of width rather
-# than over it: a formatter can live with a narrow column, and stopping early is
-# what keeps a multi-byte pad from being split mid-codepoint. Python's rjust
-# refuses a multi-character fill outright; this is the same refusal to guess,
-# spelled as "never emit more than asked". A one-byte pad is unaffected.
 fn pad_left(s: string, width: int, pad: string) -> string:
     if len(pad) == 0:
         return s
@@ -379,23 +286,6 @@ fn capitalize(s: string) -> string:          # first byte to uppercase, rest unc
         return chr(c - 32) + substr(s, 1, len(s))
     return s
 
-# ---- slice_bytes / slice_str: the slice that FAILS CLOSED --------------------
-#
-# WHY THESE EXIST. `x[a:z]` CLAMPS for `string` and for `bytes`
-# (docs/spec/03-types.md:139) -- on a 5-byte buffer `b[2:10]` is three bytes and
-# `b[7:9]` is zero, neither of which says anything went wrong. An ARRAY slice
-# with the same spelling aborts instead. So the hazard is the spelling: a format
-# parser that treats `data[p:p + 8]` as its own bounds check reads a short field,
-# compares it against the real one, gets the right answer by accident, and then
-# hashes a prefix. `tools/tycho-ar/main.ty@parse` tests `len(...)` of every slice
-# it takes against what it asked for, by hand, for exactly this reason.
-#
-# These take the same (start, stop) the language does, so `slice_bytes(d, p, p+8)`
-# reads like `d[p:p+8]` -- and refuses anything the clamp would have silently
-# repaired. Clamping stays the default; this is the opt-in for a parser.
-#
-# The errors are payload-free, so both spellings work: `==` for a one-line test
-# and a nested pattern (`Err(Inverted):`) for a `match`.
 enum SliceErr:
     OutOfBounds        # start or stop outside [0, len(x)]
     Inverted           # start > stop (an empty slice the caller did not mean)

@@ -61,10 +61,6 @@ fn errmsg(d: Db) -> string:
         return ""
     return sqlite3_errmsg(d.h)
 
-# Run one or more statements that return no rows; Ok(the change count).
-# `sqlite3_exec` runs EVERY statement in `sql`, so the count is a delta of
-# sqlite3_total_changes: sqlite3_changes describes only the most recent statement,
-# and "INSERT a; INSERT b" reported 1 for two inserted rows (2026-08-15).
 fn exec(d: inout Db, sql: string) -> Result(int, string):
     em := null
     before := sqlite3_total_changes(d.h)
@@ -75,41 +71,11 @@ fn exec(d: inout Db, sql: string) -> Result(int, string):
         return Err(msg)
     return Ok(sqlite3_total_changes(d.h) - before)
 
-# Prepare, bind, run. `params` binds ?1..?N as text; empty for none.
-#
-# ONE STATEMENT ONLY, and it is not an error. `sqlite3_prepare_v2` compiles the
-# first statement in `sql` and reports the rest through `pzTail`, which is passed
-# NULL here -- so everything after the first `;` is DISCARDED and the call still
-# returns Ok. Measured 2026-08-15: `exec_params("INSERT ...'c'; INSERT ...'d'")`
-# inserted only 'c' and answered Ok with changes=1.
-#
-# `exec` does NOT behave this way -- it goes through `sqlite3_exec`, which runs
-# every statement -- so the two halves of this package disagree about what a
-# multi-statement string means. Pass one statement per call to the _params forms.
-# gap: the fail-closed version refuses a non-empty tail, which needs pzTail read
-# back as a string; deciding that is FRICTION #69, not a silent behaviour change.
 fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
     st := null
-    # len(sql), not -1. Unlike the bind below, this one is NOT observable and
-    # cannot be gated -- measured 2026-08-15 by running both spellings over a NUL
-    # inside a literal, after the statement, and mid-keyword: identical results
-    # on every row. prepare_v2 only ever compiles the FIRST statement, so a NUL
-    # is either inside it (a syntax error either way) or after it (discarded
-    # either way, since pzTail is NULL).
-    #
-    # Kept because passing a length you have is right and costs nothing, and
-    # because the -1 spelling stops being safe the moment pzTail is read to
-    # support multi-statement input -- which is the open half of FRICTION #69.
-    # gap: no fixture can redden for this line today; the check is this comment.
     if sqlite3_prepare_v2(d.h, sql, len(sql), &st, null) != 0:
         return Err(errmsg(d))
     for i := 0; i < len(params); i += 1:
-        # The LENGTH is passed, never -1. `-1` tells sqlite to read to the first
-        # NUL, and a Tycho string is length-carrying and may hold one: a 5-byte
-        # "hi\0zz" bound with -1 stored TWO bytes and returned Ok (2026-08-15).
-        # That is silent truncation at a trust boundary -- two values the program
-        # treats as different become one row -- so the length sqlite is given has
-        # to be the length the caller has.
         if sqlite3_bind_text(st, i + 1, params[i], len(params[i]), to_ptr(-1)) != 0:   # SQLITE_TRANSIENT
             sqlite3_finalize(st)
             return Err(errmsg(d))

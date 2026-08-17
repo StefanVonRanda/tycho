@@ -1,6 +1,3 @@
-# corelib test: exercises core:sqlite over an in-memory database (the lane
-# skips when libsqlite3 is absent -- see the deps skip in corelib/run.sh).
-# Output locked to corelib/test/sqlite.out.
 package main
 import "core:sqlite"
 
@@ -63,11 +60,6 @@ fn main():
         Ok(_):
             bad = false
     print("bad=" + str(bad) + "\n")
-    # exec() runs EVERY statement, so its count must cover all of them. It read
-    # sqlite3_changes, which describes the most recent statement alone, and two
-    # inserted rows reported 1 (2026-08-15). The ROW COUNT is asserted beside it:
-    # a count that is merely plausible and a count that matches what landed are
-    # different claims, and only the second one catches a half-run statement.
     _ := sqlite.exec(&db, "CREATE TABLE m(x TEXT)")
     match sqlite.exec(&db, "INSERT INTO m VALUES('a'); INSERT INTO m VALUES('b')"):
         Err(m):
@@ -79,10 +71,6 @@ fn main():
             print("exec multi rows=?\n")
         Ok(r):
             print("exec multi rows=" + r[0][0] + "\n")
-    # exec_params goes through prepare_v2 with a NULL tail, so everything after
-    # the first statement is DISCARDED and it still answers Ok. This pins that
-    # limitation deliberately (FRICTION #69) -- if it is ever made to fail closed,
-    # this line must change on purpose rather than drift.
     match sqlite.exec_params(&db, "INSERT INTO m VALUES('c'); INSERT INTO m VALUES('d')", []string):
         Err(m):
             print("params multi err: " + m + "\n")
@@ -93,12 +81,6 @@ fn main():
             print("params multi rows=?\n")
         Ok(r):
             print("params multi rows=" + r[0][0] + " (3, not 4: the tail is dropped)\n")
-    # A bound parameter must survive an interior NUL. sqlite3_bind_text was given
-    # -1, which reads to the first NUL, so this 5-byte value stored TWO bytes and
-    # returned Ok (2026-08-15) -- silent truncation at a trust boundary, where two
-    # values the program treats as different collapse into one row. The HEX is
-    # asserted, not the text: a truncated string prints as perfectly ordinary
-    # text and only the bytes show what was lost.
     nul := to_str(to_bytes([104, 105, 0, 122, 122]))         # "hi\0zz", 5 bytes
     _ = sqlite.exec(&db, "CREATE TABLE n(x TEXT)")
     match sqlite.exec_params(&db, "INSERT INTO n VALUES(?)", [nul]):

@@ -62,9 +62,6 @@ fn main():
     for i := 0; i < len(ord); i += 1:
         line = line + words[ord[i]] + ":" + str(counts[ord[i]]) + " "
     println(line)                                     # fox:7 the:3 jumps:1
-    # by_key with a closure: sort by distance from 50. DEPRECATED since 0.5.0 and
-    # still tested on purpose -- it must keep working for all of 0.x. The compile
-    # warns; corelib/run.sh discards compiler stderr, so this lane stays quiet.
     xs := [10, 60, 45, 90]
     bk := sort.by_key(xs, fn(x: int) -> int: (x - 50) * (x - 50))
     println("bykey=" + jn(bk))                        # bykey=45,60,10,90 (10/90 tie on key 1600: stable keeps 10 first)

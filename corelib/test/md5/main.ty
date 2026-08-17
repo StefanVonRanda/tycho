@@ -1,6 +1,3 @@
-# corelib test: exercises core:md5; the output is locked to corelib/test/md5.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29. Checked against the RFC 1321 test-suite vectors.
 package main
 import "core:md5"
 
@@ -10,7 +7,6 @@ fn b2i(b: bool) -> int:
     return 0
 
 fn main():
-    # ---- RFC 1321 test suite ----
     println("'' = " + md5.hex(""))                          # d41d8cd98f00b204e9800998ecf8427e
     println("a  = " + md5.hex("a"))                         # 0cc175b9c0f1b6a831c399e269772661
     println("abc= " + md5.hex("abc"))                       # 900150983cd24fb0d6963f7d28e17f72

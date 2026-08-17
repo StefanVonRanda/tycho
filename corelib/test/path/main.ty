@@ -1,7 +1,3 @@
-# corelib test: exercises core:path; the output is locked to corelib/test/path.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29. (f-string holes can't hold string literals -- the lexer stops at the
-# inner quote -- so every call result is bound to a local first, then interpolated.)
 package main
 import "core:path"
 

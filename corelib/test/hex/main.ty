@@ -1,6 +1,3 @@
-# corelib test: exercises core:hex; the output is locked to corelib/test/hex.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29.
 package main
 import "core:hex"
 

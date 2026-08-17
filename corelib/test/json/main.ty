@@ -1,6 +1,3 @@
-# corelib test: exercises core:json; the output is locked to corelib/test/json.out
-# (corelib/run.sh). The tychoc0 cross-check this line used to claim was retired
-# 2026-07-29.
 package main
 import "core:json"
 
@@ -126,14 +123,6 @@ fn main():
     # truncated input fails closed to null (no out-of-bounds abort)
     println("truncated   = " + json.kind(json.parse("   ")))
 
-    # ---- floats: they parse now, and they round-trip byte-identically -------
-    # Each of the three below is a REAL failure this test was written to catch;
-    # each line's "before" is what the parser did BEFORE the error channel
-    # landed on 2026-08-01, at exit 0 except where noted. All three were then
-    # errors, and are now values -- the assertion has tightened twice.
-    #
-    # `1.5`  before: json.stringify(json.parse("1.5")) printed `1`.
-    #        The fraction was dropped and a wrong number returned confidently.
     println("f scalar    = " + rt("1.5"))
     println("f scalar r  = " + show(json.parse_checked("1.5")))
     # `[{"a":1.5}]`  before: printed `[{"a":1,"5}]":null}]` -- the parser
@@ -180,11 +169,6 @@ fn main():
     println("v 2.5e-3    = " + yn(json.as_float(json.parse("2.5e-3")) == 0.0025))
     println("v JNum wide = " + yn(json.as_float(json.parse("7")) == 7.0))
 
-    # GAP 3, the last silent-wrong-value path, closed. `9223372036854775808` is
-    # one past int max: the old parser accumulated it into a signed int and
-    # handed back a wrapped number at exit 0. It is now a JFloat -- so `as_num`
-    # answers 0 (a refusal, not a wrapped value) and `as_lexeme` returns every
-    # digit the document contained, which is what an exact consumer parses.
     println("g3 kind     = " + json.kind(json.parse("9223372036854775808")))
     println("g3 as_num   = " + str(json.as_num(json.parse("9223372036854775808"))))
     println("g3 lexeme   = " + json.as_lexeme(json.parse("9223372036854775808")))
@@ -218,9 +202,6 @@ fn main():
     println("bad byte    = " + show(json.parse_checked("[+1]")))
     println("bad number  = " + show(json.parse_checked("[-x]")))
     println("bad keyword = " + show(json.parse_checked("[tru]")))
-    # `\q` -- \u0041 used to be here, because \u was the unsupported escape.
-    # It is a decoded VALUE now (see the \u block below), so the class needs an
-    # escape that is genuinely not in RFC 8259's list.
     println("bad escape  = " + show(json.parse_checked("[\"a\\q\"]")))
     println("bad key     = " + show(json.parse_checked("{1:2}")))
     println("no colon    = " + show(json.parse_checked("{\"a\" 1}")))
@@ -232,14 +213,6 @@ fn main():
     # escapes the parser DOES represent, round-tripped through the byte values
     println("esc bfr     = " + str(len(json.as_str(json.parse("\"\\b\\f\\r\\/\"")))))
 
-    # ---- the four leniencies that are now errors (gaps 4, 5, 6 + control) ----
-    # Each of the four was, until this phase, an accepted input. Each line below
-    # shows the refusal AND its offset, because the offset is the whole promise:
-    # the byte named is the byte the writer has to delete or change.
-    #
-    # 1. TRAILING COMMA. `[1,]` used to parse as `[1]` -- a document that says
-    #    one thing read as a document that says another. The offset names the
-    #    COMMA (byte 2), not the `]`, which is a perfectly good bracket.
     println("tc arr      = " + show(json.parse_checked("[1,]")))
     println("tc arr off  = " + str(offset_of(json.parse_checked("[1,]"))))
     println("tc obj      = " + show(json.parse_checked("{\"a\":1,}")))
@@ -258,9 +231,6 @@ fn main():
     println("tc ok obj   = " + show(json.parse_checked("{\"a\":1}")))
     println("tc ok []    = " + show(json.parse_checked("[]")))
     println("tc ok {}    = " + show(json.parse_checked("{}")))
-    #
-    # 2. LEADING ZERO. `01` used to parse as JNum(1) -- the document said one
-    #    thing and the tree held another. The offset names the ZERO.
     println("lz 01       = " + show(json.parse_checked("01")))
     println("lz 01 off   = " + str(offset_of(json.parse_checked("01"))))
     # `-01` names byte 1: the zero, NOT the sign, which is legal.
@@ -278,19 +248,12 @@ fn main():
     println("lz ok 10    = " + show(json.parse_checked("10")))
     println("lz ok 100   = " + show(json.parse_checked("100")))
     println("lz ok 0.0e0 = " + show(json.parse_checked("0.0e0")))
-    #
-    # 3. TRAILING TEXT. `{"a":1} junk` used to be Ok, and a caller handed TWO
-    #    documents got the first one and no way to learn about the second. The
-    #    offset names the first non-whitespace byte after the document.
     println("tt junk     = " + show(json.parse_checked("{\"a\":1} junk")))
     println("tt junk off = " + str(offset_of(json.parse_checked("{\"a\":1} junk"))))
     println("tt two docs = " + show(json.parse_checked("{\"a\":1}{\"b\":2}")))
     println("tt scalar   = " + show(json.parse_checked("1 2")))
     println("tt closer   = " + show(json.parse_checked("[1]]")))
     println("tt off0     = " + str(offset_of(json.parse_checked("nullx"))))
-    # THE VALID NEIGHBOURS: whitespace after the document, before it, and both,
-    # in every flavour skip_ws knows -- a trailing newline is what a JSON file
-    # on disk actually ends with (`examples/site/site.json` does).
     println("tt ok pad   = " + show(json.parse_checked("{\"a\":1}   ")))
     println("tt ok nl    = " + show(json.parse_checked("{\"a\":1}\n")))
     println("tt ok lead  = " + show(json.parse_checked("  {\"a\":1}")))
@@ -319,16 +282,6 @@ fn main():
     println("cb ok esc   = " + show(json.parse_checked("\"a\\tb\"")))
     println("cb ok uesc  = " + show(json.parse_checked("\"a\\u0009b\"")))
     println("cb ok space = " + show(json.parse_checked("\" \"")))
-    # THE ASSUMPTION `s[pos] >= 32` RESTS ON: that a string byte is UNSIGNED.
-    # If `s[pos]` were signed, 0x80-0xFF would read as negative, the control-byte
-    # test would swallow every high byte, and this parser would reject all UTF-8
-    # above ASCII. `chr(255)` here is a raw 0xFF -- it must survive as one byte,
-    # and it does (which is also the ENCODING gap in the corelib header: nothing
-    # VALIDATES it as UTF-8, it is merely copied through unharmed).
-    # raw bytes >= 0x80 must be WELL-FORMED UTF-8 (s8.1, closed 2026-08-03):
-    # a valid 2/3/4-byte sequence passes through unchanged; a lone continuation,
-    # an overlong lead, a surrogate, a value above U+10FFFF, or a truncated
-    # sequence is BadUtf8. 0x7F (DEL) stays legal (it is < 0x80).
     println("cb ok e9    = " + bytes_of(json.as_str(json.parse("\"" + chr(195) + chr(169) + "\""))))       # raw "é" (C3 A9)
     println("cb ok 20ac  = " + bytes_of(json.as_str(json.parse("\"" + chr(226) + chr(130) + chr(172) + "\""))))   # raw "€" (E2 82 AC)
     println("cb ok f09f  = " + bytes_of(json.as_str(json.parse("\"" + chr(240) + chr(159) + chr(152) + chr(128) + "\"")))) # raw emoji (F0 9F 98 80)
@@ -419,10 +372,6 @@ fn main():
     println("fp ctl 1f   = " + fixed("\"\\u001f\""))
     println("fp ctl 0b   = " + fixed("\"\\u000b\""))
     println("fp doc      = " + fixed("{\"\\u0041\":[\"\\ud83d\\ude00\",1.5,null]}"))
-    # A raw control byte used to get IN and come back out as an escape, which
-    # made this line the proof of a one-directional leniency. It is REFUSED now,
-    # so the line proves the refusal instead -- and the escaped spelling of the
-    # same byte is the fixed point it always should have been.
     println("fp raw tab  = " + fixed("\"a\tb\""))
     println("fp esc tab  = " + fixed("\"a\\tb\""))
 
@@ -444,14 +393,6 @@ fn main():
     println("absent kind = " + json.kind(json.get(na, "missing")))
     println("get tells   = " + yn(json.kind(json.get(na, "n")) != json.kind(json.get(na, "missing"))))
     println("keys tell   = " + yn(has_key(na, "n") != has_key(na, "missing")))
-    # Nesting depth. parse_checked is documented as the entry point that can tell
-    # you the document came back intact -- and a deeply nested one used to ABORT
-    # the process (`tycho: stack overflow`, exit 1, measured at 50000) rather than
-    # return Err, so the one entry point with an error channel had a hole exactly
-    # where an attacker controls the input. 100 KB of '[' is not a hard document
-    # to send. The boundary is asserted on BOTH sides, and the in-string case is
-    # the non-regression that matters: a '[' inside a string is a character, not
-    # a level, and a scan that missed that would refuse ordinary documents.
     dp := ""
     dq := ""
     ins := "[\""

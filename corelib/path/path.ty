@@ -1,16 +1,3 @@
-# corelib: POSIX path utilities. Import with `import "core:path"`, use
-# `path.base("/a/b.txt")`. The separator is '/' (byte 47). These are pure
-# string ops over the builtins (len / s[i] / slices / split); no FFI, no new
-# builtins. Value semantics: every function returns a FRESH string (or tuple)
-# and never mutates its argument. Contracts are lexical only -- nothing
-# touches the filesystem.
-#
-# NO INTERIOR-NUL GUARD HERE, deliberately: nothing in this file reaches a
-# `char*`, and Tycho strings are length-headered, so a NUL is an ordinary byte
-# that base/dir/clean carry through unchanged. The refusal belongs where the path
-# is USED -- core:io's has_nul (corelib/io/io.ty@has_nul) -- so safe_join can keep
-# answering about the bytes it was given rather than growing a second definition
-# of a valid path.
 package path
 
 # Index of the last '/' in s, or -1 if there is none.

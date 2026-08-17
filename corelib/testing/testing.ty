@@ -1,28 +1,3 @@
-# core:testing -- a unit-test framework. Import with `import "core:testing"`.
-#
-# Tycho has no globals, so a test's state is an explicit value the caller owns
-# and threads through `inout` (the same shape as core:rand's state):
-#
-#   t := testing.new("parser")
-#   testing.check(&t, len(s) > 0, "non-empty input")
-#   testing.eq(&t, parse(s), 42, "parse result")
-#   exit(testing.report(t))
-#
-# Every `check`/`eq` records one assertion; a failing one prints its message
-# (so failures are visible while a suite runs, not only in the summary).
-# `report` prints the verdict line and returns 0 on a fully passing test, 1
-# otherwise -- the convention is `exit(testing.report(t))`, which fails the
-# whole run on the first failing test. The golden-friendly output shape:
-#
-#   ok   parser (3 checks)
-#         FAIL: empty input
-#   FAIL parser (1 of 3 checks failed)
-#
-# The framework is a library, not syntax: a suite is a `main` that runs its
-# test cases and exits with the combined verdict. Generic `eq` covers the
-# comparable scalars (int/float/string/char); for a composite value (array,
-# struct, map) compare with `==` and pass the message yourself --
-# `check(&t, a == b, "trees equal")`.
 package testing
 
 struct T:

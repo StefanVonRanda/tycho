@@ -1,9 +1,3 @@
-# corelib test: core:compress. The exact compressed bytes/length are zlib-version
-# and platform dependent (gzip header, compression tuning), so the checks are all
-# boolean invariants -- round-trip identity, "compresses", binary-safety, empty and
-# corrupt handling -- which are deterministic everywhere. The output is locked to
-# corelib/test/compress.out (corelib/run.sh). The tychoc0 cross-check this line used
-# to claim was retired 2026-07-29.
 package main
 import "core:compress"
 
@@ -12,9 +6,6 @@ fn b2i(b: bool) -> int:
         return 1
     return 0
 
-# decompress returns Result(bytes, ZErr) since 2026-08-10. These two collapse it:
-# the cause NAME, and the length on success. Before, all three of legit-empty,
-# corrupt and truncated answered `len == 0` and nothing else.
 fn zwhy(r: Result(bytes, compress.ZErr)) -> string:
     match r:
         Ok(b): return "Ok"
@@ -50,10 +41,6 @@ fn main():
     nd := compress.decompress(compress.compress(nb))
     println("nul_roundtrip=" + str(b2i(zn(nd) == 5)))             # 1
 
-    # THE DISTINCTION THIS API EXISTS FOR (FRICTION.md #3). All three of these
-    # answered `len == 0` before, so a corrupt archive member read as an empty
-    # file. An archive can legitimately hold a zero-byte member, so there was no
-    # way for a caller to tell data loss from data.
     ed := compress.decompress(compress.compress(to_bytes("")))
     println("empty=" + zwhy(ed) + " len=" + str(zn(ed)))          # Ok len=0 -- a REAL empty payload
 

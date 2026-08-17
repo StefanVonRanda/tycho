@@ -1,42 +1,3 @@
-# core:toml -- a TOML (v1.0 subset) parser. Import with `import "core:toml"`.
-#
-#   t := toml.parse(text) or_return      # Result(Value, string); the root is a table
-#   match toml.get(t, "server.host"):
-#       Some(toml.TStr(h)): ...
-#
-# `parse(s) -> Result(Value, string)` returns Err(what-was-wrong) rather than a
-# value it made up: no input is accepted that would LOSE data or INVENT a value
-# the text does not carry -- an unterminated array, trailing junk after a value,
-# a duplicate key, a repeated [table] header. That is the guarantee, and it is
-# narrower than the "nothing is guessed" this said until 2026-08-15, which was
-# not true of the four below.
-#
-# STILL ACCEPTED, where TOML v1.0 refuses. Each is a number-grammar or bare-key
-# spelling; none of them loses a value or changes one, and this is a documented
-# subset rather than a validator:
-#
-#     a = 01      -> 1        a leading zero
-#     a = 1__0    -> 10       a doubled underscore separator
-#     a = 1.      -> 1.0      a trailing decimal point
-#     a b = 1     -> key "a b"  an unquoted key containing a space
-#
-# Use a conforming validator if you need the document REJECTED for those; this
-# package's contract is that what it returns is what the text said. The document
-# is a
-# recursive value tree: `Value` is an enum with TStr/TInt/TFloat/TBool/TArr/
-# TTable, and a table is a pair of parallel keys/values arrays (the same shape
-# core:json's object uses -- iteration order is the insertion order). `get(t,
-# "a.b.c")` walks dotted paths and returns `Option(Value)` (None on a missing
-# key or a path that crosses a non-table).
-#
-# SUPPORTED: bare and quoted keys, dotted keys, `[table]` and
-# `[[array-of-tables]]` headers, basic strings (the common escapes and \uXXXX
-# via core:utf8), literal strings, integers (decimal, 0x/0o/0b, underscore
-# separators), floats (with exponents), booleans, and arrays of scalars /
-# nested arrays (trailing comma allowed). An ISO-8601 datetime is detected and
-# returned as TStr (its exact representation is out of scope). NOT supported:
-# inline tables (`{a = 1}`) and multi-line strings -- pre-process, or this
-# package grows them on demand.
 package toml
 
 import "core:strings"
@@ -221,9 +182,6 @@ fn parse_basic(t: string) -> Result(Value, string):
     for i < len(t):
         c := t[i]
         if c == 34:
-            # Nothing may follow the closing quote. `a = "x" y` used to return
-            # Ok("x") and drop the ` y`, which is the fail-open shape this
-            # package's own header rules out ("nothing is guessed").
             if i != len(t) - 1:
                 return Err("trailing text after a string value: " + t)
             return Ok(TStr(out))
@@ -496,12 +454,6 @@ fn parse(s: string) -> Result(Value, string):
     cur_path := []string            # where cur lives under root (empty = root)
     cur_arr := false                # is cur's section a [[array-of-tables]]?
     cur_dirty := false              # has the current section been written to?
-    # Plain [t] headers already seen. A repeat REPLACED the earlier table rather
-    # than merging or refusing, so "[t] x=1 [t] y=2" silently lost x entirely
-    # (2026-08-15) -- the same "override nobody can see" the duplicate-key check
-    # below exists for, and worse, since that one at least keeps a value.
-    # [[arr]] is excluded on purpose: repeating it is how an array of tables is
-    # spelled, and each repeat appends rather than replaces.
     seen := []string
     for i := 0; i < len(ls); i += 1:
         ln := ls[i]

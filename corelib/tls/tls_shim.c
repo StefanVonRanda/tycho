@@ -1,16 +1,3 @@
-/* core:tls shim -- a TLS 1.2/1.3 CLIENT over OpenSSL libssl. The deps manifest
- * names `openssl`; pkg-config supplies -lssl -lcrypto, so it is turnkey where
- * OpenSSL is installed and its test is skipped where it is not.
- *
- * Secure by default: the server certificate is verified against the system CA
- * store AND the hostname is checked, and SNI is sent. Any resolve / connect /
- * handshake / verification failure yields a NULL handle -- fail closed, so a
- * caller that forgets to check simply has no connection rather than an insecure
- * one. connect returns an opaque handle (SSL* + SSL_CTX* + fd); read/write move
- * the encrypted stream; close_conn shuts it down and frees everything.
- *
- * OpenSSL 1.1.0+ self-initializes, so there is no explicit library init here.
- */
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* glibc: expose getaddrinfo + struct addrinfo */
 #endif
@@ -35,9 +22,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;

@@ -1,27 +1,3 @@
-/* core:crypto FFI shim -> OpenSSL libcrypto (EVP).
- *
- * Two kinds of value cross the boundary:
- *   - SECRET key material is an opaque handle (`ptr` in Tycho, CxKey* here).
- *     The bytes live in C, are never materialized into a Tycho string unless
- *     you explicitly call key_export_hex, and are wiped with OPENSSL_cleanse
- *     when you key_free them. This keeps secrets out of Tycho's arena, where
- *     value semantics would copy them around and never zero them.
- *   - PUBLIC / ephemeral data (nonces, salts, ciphertext, signatures, public
- *     keys, MAC tags, message bytes, digests) crosses as a lowercase hex
- *     string, because a Tycho string cannot hold an interior 0x00.
- *
- * Ownership: every cx_*_key* / derive that returns a handle gives the caller a
- * NEW handle it must cx_key_free exactly once. Tycho copies the ptr by value,
- * so do not free the same handle twice.
- *
- * Returned hex strings use a per-thread scratch buffer recycled on the next
- * cx_* call; Tycho arena-copies an extern's returned string at the call site
- * (docs/guides/ffi.md), so recycling is safe. Failure sentinel for string returns is
- * "!err" (never valid hex); handle returns use NULL (Tycho: is_null).
- *
- * Build: tychoc auto-discovers this file as the core:crypto shim and auto-links
- * corelib/crypto/deps (libcrypto). No CLI flags.
- */
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
@@ -29,9 +5,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
- * emitted program; this shim is a separate translation unit, so it defines the
- * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
 #ifndef TYCHO_INT_T
 #define TYCHO_INT_T
 typedef int64_t tycho_int;
@@ -60,17 +33,8 @@ static const char *out_hex(const unsigned char *buf, size_t n) {
     return g_out;
 }
 
-/* ---- strict, fail-closed, BRANCH-FREE hex decode ----
-   This is on the key-import path (cx_key_from_hex and the two key_from_* that
-   wrap it), so neither the digit values nor the position of a bad digit may
-   steer control flow: the original rejected at the first bad digit, which timed
-   the offset of the error. Verified with valgrind rather than a stopwatch --
-   scripts/crypto_hygiene.sh marks the input UNDEFINED and memcheck reports any
-   branch derived from it. The old version scored 7; this scores 0. */
 static unsigned ct_lt(unsigned a, unsigned b) { return ((a - b) >> 8) & 1u; }  /* a,b < 256 */
 
-/* 0..15 in *v, 1 if c was a hex digit -- no branch on c. The &0xFF matters: on a
-   non-digit the subtraction wraps, and without the mask the >>8 test says yes. */
 static unsigned hexval_ct(unsigned c, unsigned *v) {
     unsigned d = (c - '0') & 0xFFu;                 /* 0..9  for '0'..'9' */
     unsigned x = ((c | 0x20u) - 'a') & 0xFFu;       /* 0..5  for 'a'..'f' and 'A'..'F' */
@@ -206,15 +170,6 @@ const char *cx_hmac_sha256_hex(void *kp, const char *msg_hex) {
     return res;
 }
 
-/* =====================================================================
- * PBKDF2-HMAC-SHA256(password text, salt_hex, iters, dklen) -> derived KEY handle
- * ===================================================================== */
-/* The password LENGTH is passed in, never strlen'd. A Tycho string is
- * length-carrying and may hold an interior NUL; strlen stopped there, so
- * "secret\0A" and "secret\0B" derived the SAME key as "secret" -- two distinct
- * credentials collapsing into one, silently (measured 2026-08-15). This is the
- * same class core:net's has_nul refuses at getaddrinfo and core:sqlite got wrong
- * at bind_text; a key derivation is where it costs most. */
 void *cx_pbkdf2_sha256(const char *password, tycho_int pwlen, const char *salt_hex, tycho_int iters, tycho_int dklen) {
     if (iters < 1 || dklen < 1 || dklen > 1024) return NULL;
     if (pwlen < 0 || pwlen > 1048576) return NULL;   /* fail closed, never strlen */
@@ -231,16 +186,6 @@ void *cx_pbkdf2_sha256(const char *password, tycho_int pwlen, const char *salt_h
     return k;
 }
 
-/* =====================================================================
- * Constant-time equality of two hex byte strings (e.g. MAC verify) -> 1 / 0
- * ===================================================================== */
-/* Lengths passed in, so an interior NUL cannot silently shorten either side.
- * Hex never legitimately contains one, and hexdec finds its own end with strlen:
- * two DIFFERENT hex strings truncating to the same prefix compared EQUAL
- * (measured 2026-08-15). Not reachable in the MAC shape -- the trusted side is
- * library-generated and carries no NUL, so the lengths disagree and the answer is
- * already false -- but a caller comparing two SUPPLIED values had a collision, and
- * this is the one comparison in the package that must not surprise anyone. */
 tycho_int cx_ct_equal(const char *a_hex, tycho_int alen, const char *b_hex, tycho_int blen) {
     size_t an, bn;
     if (alen < 0 || blen < 0) return 0;
@@ -324,9 +269,6 @@ done:
     return res;
 }
 
-/* =====================================================================
- * Ed25519 signatures (private seed = key handle; public key/sig = hex)
- * ===================================================================== */
 void *cx_ed25519_key_random(void)               { return cx_key_random(32); }
 void *cx_ed25519_key_from_seed(const char *seed_hex) {
     void *k = cx_key_from_hex(seed_hex);

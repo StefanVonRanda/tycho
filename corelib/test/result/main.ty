@@ -1,39 +1,3 @@
-# corelib test: exercises core:result -- the Result/Option collapses that every
-# caller was hand-writing as a four-line `match` before this package existed
-# (the option-result plan). Pure computation, no filesystem and no socket, so the run is
-# hermetic. Output locked to corelib/test/result.out (corelib/run.sh).
-#
-# The point of each assertion:
-#   * the combinators are generic -- int, string, bytes and a struct payload all
-#     instantiate from the same four lines
-#   * they work over an error type declared in ANOTHER package (io.IoErr) as well
-#     as one declared locally
-#   * err_or + `==` is one way a caller asks WHICH failure; since the friction plan
-#     a NESTED PATTERN (`Err(io.NotFound):`) is the other, and the last third of
-#     this file is its regression -- see `why`, `sized` and `outcome` below
-#
-# THIS is the regression home for nested patterns and for a Result inside a tuple
-# literal, and the reason WAS the frozen compiler, not taste: `tests/*.ty` and
-# `tests/pkg/*/main.ty` used to be fed to compiler/tychoc0.ty by
-# compiler/fixpoint.sh and scripts/frontparity.sh, and tychoc0 is frozen at a
-# grammar that has neither construct. corelib/test/ is golden-validated by
-# corelib/run.sh, reached no frozen compiler, so a new-syntax fixture could live
-# here and nowhere in tests/.
-#
-# THAT CONSTRAINT NO LONGER BINDS. Both lanes were retired on 2026-07-29 and
-# nothing builds tychoc0 any more (see the header of compiler/fixpoint.sh,
-# ROADMAP.md and docs/architecture.md).
-#
-# SETTLED 2026-07-30, and nothing here moved. Both constructs now have their own
-# tests/ fixture -- tests/nested_pattern.ty and tests/result_tuple.ty -- scored by
-# the main golden loop (native + ASan + byte-identical + golden), which is the
-# discipline the freeze had been costing them. This file is NOT that fixture's
-# duplicate and is not going anywhere: it is the core:result lane, and it is the
-# only place the two constructs are exercised THROUGH the combinators and across
-# a package boundary (io.IoErr). Its placement was over-determined all along --
-# the freeze was one reason among several, and it was never the load-bearing one.
-# See docs/spec/appendix-e-conformance.md §E.1's 2026-07-30 note for the
-# convention this settles on.
 package main
 import "core:result"
 import "core:io"
@@ -72,14 +36,6 @@ fn mkopt(ok: bool) -> Option(string):
         return Some("here")
     return None
 
-# ---- map_err: or_return across TWO error types (the friction plan) ------------
-# The regression for the one thing `or_return` could not do. `two_types` owns
-# Result(int, io.IoErr); `mk` fails with a Local, declared in this file. Before
-# map_err there was no conversion between error enums, so a function touching two
-# packages' fallible calls got or_return for whichever error type it adopted and a
-# hand-written collapse for the other -- which continues with a value nobody
-# produced (FRICTION.md:152). map_err re-labels the error, so the failure ENDS the
-# function, and the ONE type param that moves is the error's: $T passes through.
 fn two_types(ok: bool) -> Result(int, io.IoErr):
     n := result.map_err(mk(ok), io.Failed) or_return
     return Ok(n * 3)
@@ -109,14 +65,6 @@ fn chain(k: int) -> Result(int, Wrapped):
     n := result.map_err_with(pick(k), to_wrapped) or_return
     return Ok(n * 3)
 
-# ---- nested patterns (the friction plan / FRICTION.md:139) -------------------
-#
-# Before 2026-07-26 none of the three arms below could be written:
-#   Err(Worse)     PARSED -- as a binding named `Worse`, so it matched EVERY Err.
-#                  A second Err arm was the only symptom: "duplicate Err arm".
-#   Err(io.IsDir)  error: expected ')'
-#   Err(Sized(n))  error: expected ')'
-# The first is the one that mattered: a wrong parse, not a rejected one.
 fn why(k: int) -> string:
     match pick(k):
         Ok(v): return "ok " + str(v)
@@ -143,28 +91,6 @@ fn io_why(p: string) -> string:
         Err(io.IsDir): return "a directory"
         _: return "other"
 
-# ---- a Result as a tuple literal element (FRICTION.md:159) -----------------
-#
-# `return (Err(Worse), "partial")` was rejected with "tuple element 1 needs a
-# concrete value" -- E_TUPLE only ever synthesized, and Ok/Err synthesize to a
-# partial type that context has to ground.
-#
-# The old note here said httpd.read_request_capped still builds its outcome in a
-# typed local "because it is compiled by frozen tychoc0". That reason expired on
-# 2026-07-29 when the tychoc0 lanes were retired; the function's real constraint
-# is the one measured in appendix-e-conformance.md §E.2.1. This note used to go on
-# to claim that rewriting the tail to `return (Err(why), buf)` "still fails,
-# because the Ok payload type cannot be grounded from a partially-inferred
-# Request". That claim is FALSE and was corrected on 2026-08-01: the neighbouring
-# file already disproves it in its own comment, which records the measurement --
-# `corelib/httpd/httpd.ty@read_request_capped` says the rewrite "compiles under
-# src/tychoc.c" and that its typed local is "now a style choice ... not a
-# requirement". Two files, one construct, opposite claims, and the wrong one sat
-# in the test that exists to document the construct. tests/result_tuple.ty is this
-# construct's tests/ fixture as of 2026-07-30.
-# `Result(void, E)`: is_ok/is_err/err_or must instantiate here, which they could
-# not while their bodies bound an unread `v`. unwrap_or/map_err/map_err_with stay
-# out of reach by construction -- they hand the ok payload back.
 fn touch(ok: bool) -> Result(void, Local):
     if ok:
         return Ok()
@@ -194,9 +120,6 @@ fn main():
     println("err_of_err= " + str(b(result.err_or(mk(false), dl) == Worse)))
     println("err_of_ok = " + str(b(result.err_or(mk(true), dl) == Nope)))   # the fallback
 
-    # ---- an error type from ANOTHER package: io.IoErr over bytes ----
-    # Both defaults are written inline as qualified names -- the resolution bug
-    # that forced them into locals is fixed (the friction plan).
     miss := io.read_bytes("/tmp/tycho_corelib_result_absent.xyz")
     println("io_is_err = " + str(b(result.is_err(miss))))
     println("io_why    = " + str(b(result.err_or(miss, io.Failed) == io.NotFound)))

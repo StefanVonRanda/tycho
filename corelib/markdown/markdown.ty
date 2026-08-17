@@ -1,33 +1,6 @@
-# corelib: a pragmatic Markdown -> HTML renderer in pure Tycho. Import with
-# `import "core:markdown"`, then `markdown.render(src)`.
-#
-# Block level: ATX headings (`#`..`######`), fenced code (``` ```), blockquotes
-# (`>`), unordered (`-`/`*`/`+`) and ordered (`1.`) lists, thematic breaks
-# (`---`/`***`/`___`), and paragraphs. Inline: `**bold**`, `*italic*`/`_italic_`,
-# `` `code` ``, `[text](url)`, `![alt](src)`. Everything else is passed through as
-# escaped text -- unknown syntax degrades to plain text, never a parse abort.
-#
-# This is NOT full CommonMark (no nested lists, reference links, tables, or setext
-# headings). It targets a blog/wiki: enough to render prose faithfully and safely
-# (all text is HTML-escaped; only the constructs above emit tags). Link and image
-# URLs are additionally SCHEME-CHECKED -- relative, http, https and mailto are
-# emitted, anything else fails soft to the link text -- because escaping alone
-# left `javascript:` and `data:text/html` live in an href, and this line used to
-# read as a promise that the output is safe to serve.
 package markdown
 import "core:strings"
 
-# --- HTML escaping -----------------------------------------------------------
-# Escape the five characters that are unsafe in HTML text / attributes.
-# A URL safe to put in href/src. The escaper below handles `"`, so an attribute
-# cannot be broken out of -- but escaping does nothing about the SCHEME, and
-# `javascript:`, `data:text/html` and `vbscript:` were all emitted verbatim
-# (measured 2026-08-15). A reader of this file's header, which promises that all
-# text is escaped, would reasonably serve the output.
-#
-# Allowed: no scheme at all (relative, absolute-path, protocol-relative), or one
-# of http / https / mailto. A colon only counts as a scheme separator when it
-# comes before any `/`, `?` or `#`, so `a/b:c` stays a relative path.
 fn safe_url(u: string) -> bool:
     for i := 0; i < len(u); i += 1:
         c := u[i]

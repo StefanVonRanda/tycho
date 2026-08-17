@@ -15,14 +15,6 @@ fn trunc(x: float) -> float:                 # toward zero
         return 0.0 - floor(0.0 - x)
     return floor(x)
 
-# Round half away from zero. Decided by the FRACTION, never by `floor(x + 0.5)`:
-# that addition rounds before floor ever runs, and it was wrong twice --
-# round(0.49999999999999994) gave 1.0 for a value strictly BELOW a half, and
-# round(2^52+1) moved an input that was already an exact integer (2026-08-15).
-# `x - trunc(x)` is exact for every finite x, and `t + 1.0` is reached only when
-# x is not an integer, so |x| < 2^52 there and it cannot overflow. An infinity
-# and a NaN both make the fraction NaN, fail both tests and return trunc's answer,
-# which is themselves.
 fn round(x: float) -> float:
     t := trunc(x)
     d := x - t
@@ -32,11 +24,6 @@ fn round(x: float) -> float:
         return t - 1.0
     return t
 
-# Linear interpolation, t in [0,1]. The ENDPOINTS are exact and are special-cased
-# to make them so: `a + (b - a) * t` loses them when a and b are far apart, and it
-# is not a rounding wobble -- lerp(1e308, 1.0, 1.0) returned 0.0, because
-# 1.0 - 1e308 IS -1e308 and the b is gone before t is applied (2026-08-15). The
-# same subtraction makes t=0 return NaN when b - a overflows to an infinity.
 fn lerp(a: float, b: float, t: float) -> float:
     if t == 0.0:
         return a
