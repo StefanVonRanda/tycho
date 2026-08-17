@@ -259,6 +259,37 @@ def main():
                               "generated file it was cut from]" % (f, line))
                 continue
             if lang == 'sh':
+                # A TEMPLATE names a file the prose tells the reader to create.
+                # The gate creates it -- from the page's next Tycho fence, which
+                # is the snippet the prose means -- and runs the command for real.
+                if skip and 'a template' in skip:
+                    nxt = next((b for (lg, b, _l, _s) in fs[i + 1:] if lg == 'tycho'), None)
+                    if nxt:
+                        with tempfile.TemporaryDirectory() as tmp:
+                            open(os.path.join(tmp, "f.ty"), "w").write(nxt)
+                            cmds = "\n".join(re.sub(r'^\s*\$\s?', '', l)
+                                             for l in body.split('\n')
+                                             if l.strip() and not l.strip().startswith('#'))
+                            # the fence writes `./tychoc` because the reader is in
+                            # the repo; the run is in a temp dir, so resolve it on
+                            # PATH instead of inventing a working directory
+                            cmds = cmds.replace('./tychoc', 'tychoc')
+                            env = dict(os.environ,
+                                       PATH=os.pathsep.join([ROOT, os.environ["PATH"]]))
+                            r = subprocess.run(['sh', '-c', cmds], capture_output=True,
+                                               text=True, timeout=60, errors='replace',
+                                               stdin=subprocess.DEVNULL, cwd=tmp, env=env)
+                        if r.returncode == 0:
+                            nok += 1; nsh += 1
+                            print("    ok    %s:%d  [template RAN with the page's next "
+                                  "fence saved as f.ty, exit 0]" % (f, line))
+                        else:
+                            nfail += 1
+                            fails.append("%s:%d -- the template exits %d when the page's "
+                                         "next fence is saved as f.ty: %s"
+                                         % (f, line, r.returncode,
+                                            (r.stderr.strip().splitlines() or [""])[-1][:50]))
+                        continue
                 # a shell fence is not RUN -- these clone repositories, build
                 # releases and publish them. What is checkable without side
                 # effects is that every command it names exists on this machine.
@@ -418,7 +449,8 @@ def main():
             # says so, instead of the marker quietly outliving its reason.
             if skip and re.search(r'REFUSED|must not compile|program that failed|'
                                   r'is the REPRO|REJECTED|quoted from the program|'
-                                  r'belongs to that program|one file of a multi-file',
+                                  r'belongs to that program|one file of a multi-file|'
+                                  r'excerpt|the fn header alone|no main',
                                   skip, re.I):
                 with tempfile.TemporaryDirectory() as tmp:
                     got, _e = compiles(body, tmp, execute=False)
