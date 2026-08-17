@@ -408,7 +408,7 @@
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
       <pre><code><span class="k">fn</span> <span class="fn">main</span>():
     total := <span class="s">""</span>
-    <span class="k">for</span> i <span class="k">in</span> <span class="fn">range</span>(1, 6):
+    <span class="k">for</span> i := 1; i &lt; 6; i += 1:
         total = total + <span class="fn">str</span>(i)
         <span class="k">if</span> i &lt; 5:
             total = total + <span class="s">", "</span>
