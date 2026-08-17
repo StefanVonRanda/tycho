@@ -39,18 +39,26 @@
     --ink:#0d0d0c; --ink-soft:#2c2c2a; --dim:#65665f; --faint:#9a9b92; --line:#d0d2ca; --line-strong:#bcc0b6;
     --code-bg:#14150f; --code-fg:#d8d9cf; --code-dim:#7c7d72; --code-line:#2b2c22;
     --grain:rgba(13,13,12,.05); --band:#e3e6df;
+    --acc:#1c7a3e; --acc-bg:#dcefe1;
+    --flip-bg:#0d0e0a; --flip-panel:#16170f; --flip-ink:#f0f1e8; --flip-soft:#c9cabf;
+    --flip-dim:#8b8c81; --flip-faint:#5c5d54; --flip-line:#22231c; --flip-line-strong:#333429;
   }
   :root[data-theme="dark"]{
     --paper:#0c0d0b; --panel:#131410;
     --ink:#ecede6; --ink-soft:#c8c9c0; --dim:#8b8c82; --faint:#54554d; --line:#25261f; --line-strong:#34382e;
     --code-bg:#08080a; --code-fg:#d8d9cf; --code-dim:#71726a; --code-line:#20211c;
     --grain:rgba(232,233,225,.04); --band:#121309;
+    --acc:#4ade80; --acc-bg:#043315;          /* one accent, borrowed from simeon.sh */
+    --flip-bg:#eceee9; --flip-panel:#e4e6e1; --flip-ink:#0d0d0c; --flip-soft:#2c2c2a;
+    --flip-dim:#65665f; --flip-faint:#9a9b92; --flip-line:#d0d2ca; --flip-line-strong:#bcc0b6;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme]){ --paper:#0c0d0b; --panel:#131410;
       --ink:#ecede6; --ink-soft:#c8c9c0; --dim:#8b8c82; --faint:#54554d; --line:#25261f; --line-strong:#34382e;
       --code-bg:#08080a; --code-fg:#d8d9cf; --code-dim:#71726a; --code-line:#20211c;
-      --grain:rgba(232,233,225,.04); --band:#121309; }
+      --grain:rgba(232,233,225,.04); --band:#121309; --acc:#4ade80; --acc-bg:#043315; 
+    --flip-bg:#eceee9; --flip-panel:#e4e6e1; --flip-ink:#0d0d0c; --flip-soft:#2c2c2a;
+    --flip-dim:#65665f; --flip-faint:#9a9b92; --flip-line:#d0d2ca; --flip-line-strong:#bcc0b6; }
   }
 
     /* ══ TYCHO — instrument-panel layout ═══════════════════════════════════
@@ -118,12 +126,14 @@
   /* ── plates ─────────────────────────────────────────────────────────── */
   section{position:relative; padding:clamp(52px,6vw,110px) 0 clamp(46px,5vw,96px);
     border-top:1px solid var(--line-strong); overflow:hidden}
-  /* every other plate inverts: this is a different ground, not a tint */
+  /* Every other plate INVERTS -- against whichever theme is active, not against
+     a hardcoded dark. Pinning it to dark made the alternation vanish in dark
+     mode, where the base ground is already dark. */
   section:nth-of-type(even){
-    --paper:var(--ink-was); --panel:#16170f;
-    background:#0d0e0a; color:#c9cabf;
-    --ink:#f0f1e8; --ink-soft:#c9cabf; --dim:#8b8c81; --faint:#5c5d54;
-    --line:#22231c; --line-strong:#333429;
+    background:var(--flip-bg); color:var(--flip-soft);
+    --panel:var(--flip-panel); --ink:var(--flip-ink); --ink-soft:var(--flip-soft);
+    --dim:var(--flip-dim); --faint:var(--flip-faint);
+    --line:var(--flip-line); --line-strong:var(--flip-line-strong);
   }
   /* the section number as a ghost numeral in the plate */
   section::before{content:attr(data-n); position:absolute; top:.02em; right:.06em;
@@ -148,13 +158,18 @@
     position:relative; overflow:hidden; border-bottom:1px solid var(--line-strong)}
   .htext{padding:clamp(40px,6vw,96px) var(--pad) 0; position:relative; z-index:2;
     align-self:center; max-width:min(100%, 1500px)}
-  .hlabel{display:flex; flex-direction:column; gap:4px; margin-bottom:clamp(18px,2vw,34px)}
+  .hlabel{display:flex; flex-direction:column; gap:4px; margin-bottom:clamp(18px,2vw,34px);
+    align-items:flex-start}
+  .hlabel .idx{display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line-strong);
+    border-radius:9999px; padding:6px 14px; margin-bottom:8px}
+  .hlabel .idx::before{content:""; width:6px; height:6px; border-radius:9999px; background:var(--acc)}
   .hlabel .idx{font-size:10.5px; letter-spacing:2.4px; color:var(--faint); font-weight:600}
   .hlabel .ttl{font-size:11px; letter-spacing:3.4px; color:var(--ink); font-weight:700}
   .hlabel .sub{font-size:10.5px; letter-spacing:1.8px; color:var(--dim); text-transform:uppercase}
   h1{font-size:clamp(38px,8.4vw,140px); line-height:.92; letter-spacing:-.045em;
-    margin:0 0 clamp(20px,2.4vw,40px); font-weight:700; color:var(--ink);
+    margin:0 0 clamp(20px,2.4vw,40px); font-weight:700; color:var(--dim);
     max-width:14ch; text-wrap:balance}
+  h1 .lead{color:var(--ink)}     /* first sentence full strength, the rest steps back */
   .tok{border-bottom:.08em solid currentColor; padding-bottom:.02em; white-space:nowrap}
   /* the mark: an outline composition bleeding off the top-right corner */
   .logohero{position:absolute; top:-14vw; right:-12vw; width:min(74vw,1050px);
@@ -197,6 +212,7 @@
   .spec .cell:first-child{border-left:0}
   .spec .cell b{display:block; color:var(--ink); font-weight:700;
     font-size:clamp(20px,2.8vw,46px); line-height:1; letter-spacing:-.03em}
+  .spec .cell:last-child b{color:var(--acc)}     /* 723 gated fixtures -- the claim */
   .spec .cell span{display:block; margin-top:12px; font-size:9px; letter-spacing:1.8px;
     text-transform:uppercase; color:var(--dim)}
   @media (max-width:900px){ .spec .row{grid-template-columns:repeat(2,1fr)}
@@ -244,7 +260,8 @@
   .phead .traf{width:7px; height:7px; background:var(--code-fg); opacity:.5}
   .phead .fn{font-size:10.5px; letter-spacing:1px; color:var(--code-fg)}
   .phead .badge{margin-left:auto; font-size:9px; letter-spacing:1.4px; text-transform:uppercase;
-    color:var(--code-dim); border:1px solid var(--code-line); padding:2px 9px}
+    color:var(--acc); border:1px solid var(--acc-bg); background:var(--acc-bg);
+    border-radius:9999px; padding:3px 11px}
   pre{margin:0; padding:clamp(18px,2vw,34px) var(--pad); overflow-x:auto;
     font-size:clamp(11.5px,.85vw,14px); line-height:1.75; color:var(--code-fg)}
   .k{color:#fff; font-weight:600} .fn{color:#dfe1f5} .s{color:#b8c4a8}
@@ -373,7 +390,7 @@
         <span class="ttl">TYCHO</span>
         <span class="sub">An experimental systems language · transpiles to C</span>
       </div>
-      <h1 class="rise d2">Automatic memory management. No garbage collector, no manual <span class="tok">free</span>.</h1>
+      <h1 class="rise d2"><span class="lead">Automatic memory management.</span> No garbage collector, no manual <span class="tok">free</span>.</h1>
     </div>
     <div class="herofoot">
       <p class="lede rise d3">
