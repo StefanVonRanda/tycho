@@ -1,2 +1,2 @@
-tests/diag/qualified_no_import.ty:5: error: package 'arrays' has no symbol 'fill' -- and this file does not `import` it; add the import first
-     5 |     println(str(arrays.fill(3, 0)[0]))
+tests/diag/qualified_no_import.ty:2: error: package 'arrays' has no symbol 'fill' -- and this file does not `import` it; add the import first
+     2 |     println(str(arrays.fill(3, 0)[0]))

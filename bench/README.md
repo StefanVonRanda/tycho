@@ -7,13 +7,6 @@ The only way I trust that claim is numbers next to C, Rust, Go (GC), and Koka
 not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail.
 
-All peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Build regime:
-each language at its standard release optimization — tycho and C at `cc -O3`,
-`rustc -C opt-level=3`, `go build`, `koka -O2` (its max). The authoritative
-numbers under this regime are in each workload's `RESULTS.md`. Both tycho
-transpilers (the C reference `tychoc` and the self-hosted `tychoc0`) are measured
-where shown.
-
 ## Axis 1 — memory (peak RSS)
 
 | workload | what it stresses | tycho vs others | verdict | run |

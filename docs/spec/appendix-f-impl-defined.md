@@ -21,25 +21,6 @@ count** (count ≥ width → `0`, negative → abort — [§13.2](09-expressions
 and an out-of-range **`to_int(float)`** (NaN / out-of-range → abort — [§8.5](06-conversions.md#85-out-of-range-conversions);
 the sized conversions are total).
 
-Item 1 (argument/operand evaluation order) is **deliberately** unspecified,
-matching Swift and Odin (see §13.4): Tycho emits C and defers argument/operand
-order to the C compiler rather than lifting every argument into a sequenced
-temporary. Sequencing them soundly is not free — an argument may sit inside a
-short-circuit (`f(x, cond and g())`), so a naive lift to a statement-level temp
-would evaluate it *unconditionally*; a correct lift is a per-call-site sequenced
-temporary, and that cost was judged not worth closing a hole that was not a live
-divergence at the time. The **assignment-place index** was the exception: it *was*
-a real divergence between the reference compiler and the (now frozen) `tychoc0`
-snapshot, and it is cheap and sound to sequence (a place index is never
-short-circuited), so it is now pinned left-to-right (§13.4) and excluded above.
-**F-string holes are the second exception**, for the same reason: one hole is
-never short-circuited against another, so binding each to a sequenced temporary
-at the concat site costs nothing a program could observe — and leaving it
-unpinned was actively misleading, because the holes' *printed* order is their
-source order while their side effects fired in reverse under the host compiler.
-A conforming implementation still need not match the unspecified
-argument/operand order.
-
 ## F.2 Implementation-defined behavior
 
 An implementation MUST document its choice for each of these; none affects the
@@ -57,23 +38,6 @@ value semantics of a program.
 For the avoidance of doubt, the following are **fixed by this specification** and
 an implementation MUST NOT vary them, even where its backend's native types
 differ:
-
-- the width and overflow behavior of every scalar (`int` = 64-bit two's
-  complement, the fixed-width integers `u8`…`u64` / `i8`…`i64` = exactly
-  8/16/32/64-bit, `f32`/`float` = IEEE-754 binary32/binary64) —
-  [§5.2](03-types.md#52-scalar-types);
-- the defined signed-overflow wrap and the div/mod-by-zero abort;
-- the deep-copy value semantics and the no-dangling / no-leak storage guarantees
-  — [§9](07-memory-model.md), [§10.3](07-memory-model.md#103-observable-storage-guarantees);
-- the accept/reject decision for every program — which programs must be accepted
-  and which MUST be rejected is fixed by this specification and checked against
-  the fixture corpus of [Appendix E](appendix-e-conformance.md)
-  ([§1.3](00-conventions.md#13-conformance)). (Through 2026-07-25 this invariant
-  was stated as a *two-implementation conformance oracle*, agreement between
-  `tychoc` and the self-hosted `tychoc0`. `tychoc0` is now frozen and diverging —
-  see [§1.2](00-conventions.md#12-the-reference-implementation) — so the
-  requirement is stated against the specification and its fixtures, where it
-  always belonged.)
 
 > **Reference-implementation note (not a spec allowance).** The required 64-bit
 > `int` width above is normative for *every* conforming implementation; it is

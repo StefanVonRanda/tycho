@@ -578,15 +578,6 @@ plus three more:
   hostname, and sends SNI; failure returns a null handle (never a silent insecure
   connection). `write`/`read`/`close_conn` over the encrypted stream.
 
-- **Build:** when `tychoc` auto-discovers a module's shim it reads the sibling `deps` and
-  runs `pkg-config --cflags --libs <name>` for each, splicing the result onto the cc line
-  (`add_pkg_deps` in `src/tychoc.c`). pkg-config resolves the right include path and libs
-  per platform, so `#include <curl/curl.h>` + `-lcurl` just work without hardcoding paths.
-- **Skip, don't fail:** `corelib/run.sh` probes the same `deps` with `pkg-config --exists`;
-  if any dependency is missing it **skips** that module's test (printing `skip <name>
-  (missing dependency: …)`) instead of failing, so machines without the library still
-  build. When present, it passes the same `--cflags --libs` on the tychoc0 link paths.
-
 This keeps the test suite libc-only and portable while still allowing library-backed modules.
 A libc-only shim needs no `deps` — `core:regex`, `core:os`, `core:net` and `core:signal`
 among them; a library with no `.pc` file can still use `extern "Lib" fn` for a bare `-lLib`.

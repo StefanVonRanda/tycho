@@ -1,2 +1,2 @@
-tests/warn/deprecated_edges.ty:24: warning: `stale` is deprecated: use plain(n) -- stale(n) is plain(n)
-    24 |     f := stale
+tests/warn/deprecated_edges.ty:11: warning: `stale` is deprecated: use plain(n) -- stale(n) is plain(n)
+    11 |     f := stale

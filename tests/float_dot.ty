@@ -1,7 +1,3 @@
-# Leading-dot float literals (.5, .25e3) and the disambiguation from field/tuple
-# access: after a value-producing token (ident, ')', ']') a '.' is field access
-# (t.0), so `.5` is a float ONLY where field access is impossible. Both compilers
-# must agree (fixpoint). No leading-dot after a value: `t.0` stays a tuple index.
 struct P:
     a: int
     b: int

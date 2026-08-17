@@ -44,11 +44,3 @@ memory edge is now modest; its decisive value is expressing cyclic/shared graphs
 value-semantic way at all, where the model is competitive on graph algorithms.
 
 ## Notes / honest limits
-
-- A non-trivial program — adjacency build, a hand-written binary heap over `(dist, node)`
-  tuples, lazy-deletion Dijkstra — compiled and ran **correctly on both compilers first try**,
-  byte-identical. The dogfood's one find was a compiler gap, since fixed: `reserve` rejected
-  composite-element arrays in tychoc (`reserve([Edge], n)`) while tychoc0 accepted them — a
-  parity gap, now closed (`tests/reservecomposite.ty`).
-- Single-machine snapshot; absolute numbers vary by CPU/allocator/GC. Run
-  `sh bench/dijkstra/run.sh` to reproduce. Not wired into `make ci` (Go is optional).

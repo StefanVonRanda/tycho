@@ -1,5 +1,3 @@
-# Newtypes over string and bool (distinct, zero-cost): wrap with Name(x), unwrap
-# with to_str / to_bool, compare/order. Self-hosting in both compilers.
 type UserId = string
 type Active = bool
 

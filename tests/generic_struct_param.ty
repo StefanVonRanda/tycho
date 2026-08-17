@@ -1,6 +1,3 @@
-# A generic struct passed as a function PARAMETER (by-value and inout), across
-# multiple instantiations, plus a generic fn returning $T whose binding comes from
-# a generic-struct-instance argument (the get->mutate->set chain). Both compilers.
 struct Box($T):
     v: $T
 

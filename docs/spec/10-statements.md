@@ -7,7 +7,7 @@ meaning. Declarations and assignments are covered in
 
 > Provenance: `parse_stmt` `src/tychoc.c:3171-3653` (`parse_if` `:3087@parse_if`,
 > `parse_match` `:3193@parse_match`, `for` `:3308-3490`, `select` `:3252-3288`). Loop and `match` behaviors marked
-> "probed" were confirmed on both compilers (spec-plan.md §6a).
+> "probed" were confirmed against the implementation (spec-plan.md §6a).
 
 ## 14.1 Blocks
 

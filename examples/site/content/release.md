@@ -6,6 +6,6 @@ author: zinc
 
 Highlights of this release:
 
-- self-hosting compiler
+- a dependency-free C transpiler
 - a growing corelib
 - C FFI

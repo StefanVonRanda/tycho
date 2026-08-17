@@ -1,2 +1,2 @@
-tests/diag/g6_inout_arg_type.ty:10: error: argument 1 of 'f' is float, expected int
-    10 |     f(&y)
+tests/diag/g6_inout_arg_type.ty:6: error: argument 1 of 'f' is float, expected int
+     6 |     f(&y)

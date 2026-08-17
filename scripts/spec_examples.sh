@@ -54,9 +54,6 @@ index=$(
   done
 )
 
-# Pass 2: build + run + compare each carved example on BOTH compilers. The while
-# loop runs in a subshell (it reads from a pipe), so failures are recorded by
-# touching a marker file rather than a shell variable.
 echo "$index" | while IFS='	' read -r id f line; do
   [ -n "${id:-}" ] || continue
   src="$TMP/ex_$id.ty"; exp="$TMP/ex_$id.out"; efail=0

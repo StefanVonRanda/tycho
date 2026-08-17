@@ -14,7 +14,7 @@
 > cross-references are verified mechanically; every behavioral corner (float/`char`
 > semantics, evaluation order, `>>` sign behavior, `range` step 0, the concurrency
 > ordering guarantees, the FFI sized-int round-trip) is pinned by differential
-> probing on both compilers. The content is verified against the implementation,
+> probing against the implementation. The content is verified against the implementation,
 > not merely asserted.
 >
 > The specification is kept honest by the `make spec-check` gate (CI step 17): it
@@ -27,13 +27,6 @@
 > is gated automatically.
 
 ## What this document is
-
-Tycho already has a mechanically-checkable behavioral contract: **two
-implementations that agree byte-for-byte** (`tychoc`, the C reference
-transpiler, and `tychoc0`, the self-hosted one), a **differential fuzzer**, a
-**274-fixture golden suite**, and **accept/reject parity lanes**. This
-specification *distills that contract into prose and grammar* — it is what lets
-a third implementation reproduce Tycho exactly.
 
 Where the [reference pages](../reference/index.md) teach the language by
 example, this document defines it by rule. On any conflict, **the specification

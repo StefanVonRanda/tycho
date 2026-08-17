@@ -27,6 +27,7 @@ fn make_grid(nrows: int, ncols: int) -> Grid:
         push(rows, row)
     return Grid(rows)
 
+# deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
 fn sum_all(g: Grid) -> int:
     t := 0
     for row in g.rows:

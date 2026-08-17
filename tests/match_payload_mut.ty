@@ -1,6 +1,3 @@
-# Match-arm payload value semantics: binding a heap payload and MUTATING it in
-# the arm must not corrupt the scrutinee (the binding is an independent copy).
-# Covers enum payloads and Option/Result boxes. Self-hosting in both compilers.
 enum Wrap:
     W([int])
     Empty

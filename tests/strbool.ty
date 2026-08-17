@@ -1,8 +1,3 @@
-# str(bool) prints the words true/false (not 1/0). A bool is a distinct type:
-# comparisons, `and`/`or`/`not`, the `true`/`false` literals, bool vars, bool
-# params and bool-returning fns all carry it. Both compilers must agree (the
-# differential + fixpoint check this), so bool is structurally an int (one C
-# long) that only str() treats specially.
 
 fn even(n: int) -> bool:
     return n % 2 == 0

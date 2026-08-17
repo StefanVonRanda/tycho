@@ -56,7 +56,7 @@ check_one() {
 
 for hi in examples/*.ty tests/*.ty tests/conc/*.ty \
           tests/reject/*.ty tests/abort/*.ty tests/diag/*.ty tests/warn/*.ty \
-          compiler/tychoc0.ty tools/tycho.ty tools/tychofmt.ty tools/lsp.ty; do
+          tools/tycho.ty tools/tychofmt.ty tools/lsp.ty; do
     [ -e "$hi" ] || continue
     check_one "$hi" "$hi"
 done

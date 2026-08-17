@@ -180,20 +180,6 @@ in this repo can break; when the two disagree, it is right by definition.
 
 ## Two rules that will surprise you
 
-1. **There is one maintained compiler, and `compiler/tychoc0.ty` is not it.**
-   `src/tychoc.c` (`tychoc`) is the reference transpiler; the
-   [spec](docs/spec/) is normative. The tree also holds `compiler/tychoc0.ty`, a
-   transpiler for Tycho written in Tycho — the artifact that proved self-hosting
-   (compiled by itself, it reproduced its own emitted C byte-for-byte).
-
-   **It was frozen on 2026-07-26.** Do not update it, do not mirror a language
-   change into it, and do not read it to learn how Tycho behaves — no gate builds
-   or runs it, so it compiles the language as it stood on the freeze date and
-   already diverges from `tychoc` (which now rejects `fn handle(...)`, a reserved
-   word as a procedure name, where `tychoc0` still accepts it). Until that date the
-   opposite rule applied: every feature had to land in both, enforced by
-   `make fixpoint` and the accept/reject parity lanes. Those gates are gone.
-
 2. **The arena memory model is the whole point.** Value semantics + implicit
    per-scope arenas (no GC, no manual `free`) is the thesis
    ([docs/thesis.md](docs/thesis.md)). Changes that quietly break the in-place

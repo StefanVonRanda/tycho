@@ -1,8 +1,3 @@
-# Integer overflow is DEFINED: signed `int` (C long, 64-bit) wraps two's-
-# complement, never C undefined behaviour. Built with -fwrapv in both compilers
-# and on the generated-program cc line, so the optimizer can never miscompile
-# overflowing arithmetic (e.g. assume `x + 1 > x`). Locks the language's
-# integer-overflow contract.
 
 fn main():
     mx := 9223372036854775807          # LONG_MAX (2^63 - 1)

@@ -1,6 +1,3 @@
-# A tuple literal keeps each element's newtype identity: `(a, 9)` where a: Id has
-# type `(Id, int)`, so `t.0` is an Id (accepted by a fn taking Id), including a
-# tuple-in-struct and an array of tuples iterated in a foreach. Both compilers.
 type Id = int
 
 struct S:

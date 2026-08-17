@@ -31,7 +31,6 @@ debugging.
 
 - **[`architecture.md`](architecture.md)** — how the project is built and what
   each verification gate proves.
-- **[`bootstrap.md`](bootstrap.md)** — how Tycho came to compile itself. History.
 - **[`internals/`](internals/README.md)** and **[`rfc/`](rfc/README.md)** — design
   notes, proposals, and the running record of what fought back. Written for
   maintainers.

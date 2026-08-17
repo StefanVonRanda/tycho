@@ -18,19 +18,16 @@ a new trap must be added here with a reason, it cannot drift in unremarked.
 
 WHY AN ORACLE, AND WHY NOT THE OTHER TWO OPTIONS
 ------------------------------------------------
-Until 2026-07-29 this lane compared TWO runtimes: tychoc embeds
-runtime/tycho_rt.c verbatim into every file it emits, while the self-hosted
-compiler/tychoc0.ty wrote its OWN runtime out as C string literals, and nothing
-else in the tree compared them. tychoc0 is FROZEN and the breaking loop-syntax
-change of 2026-07-29 means it can no longer parse the corpus, so no lane builds
-it. The second implementation is gone.
+This lane checks the emitted runtime SURFACE against an oracle: every env knob,
+every "tycho: ..." trap text and every arena-stats row the runtime defines must
+reach the emitted C, and nothing may reach it unrecorded.
 
   * RETIREMENT was rejected. Unlike the two-runtime *spelling* comparison, the
     drift class this lane exists to catch is single-implementation: "the runtime
     DEFINES a knob / trap / stats row, and the emitted program does not actually
     WIRE IT UP". That is exactly the TYCHO_ARENA_STATS bug (present in
-    runtime/tycho_rt.c, a silent no-op in every binary tychoc0 built, found by
-    hand, fixed in 2b24ca6) and it needs no second compiler to detect.
+    runtime/tycho_rt.c, a silent no-op in every emitted binary) and this lane
+    detects it from one implementation.
   * A PURE PROPERTY CHECK was rejected as the whole answer, because at this
     arity the strongest available property is nearly vacuous: tychoc embeds
     runtime/tycho_rt.c verbatim (asserted below as `rt_subset`), so every
@@ -50,8 +47,7 @@ The EXPECT sets were recorded off the compiler they gate, so a trap that has
 ALWAYS been wrong, or a knob that has ALWAYS been read into nothing, is
 invisible here -- this lane sees a surface item vanish, not a surface item that
 never worked. Testing that a knob has EFFECT is tests/ and tests/conc/'s job.
-That residue is what losing tychoc0 cost and no single-implementation lane
-removes it. See ROADMAP.md and docs/architecture.md.
+See ROADMAP.md and docs/architecture.md.
 
 Usage:  python3 tests/rtparity/run.py        (or `make rtparity`)
 Exit 0 = the emitted runtime surface matches the oracle; nonzero = drift, naming
@@ -75,6 +71,9 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # capability disappearing, an entry appearing unlisted is a capability nobody
 # wrote down.
 
+# runtime/tycho_rt.c:342, :567, :848 -- the only literal getenv() names in the
+# runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
+# a user program's own env reads cannot land here.
 EXPECT_ENV = {
     "TYCHO_ARENA_STATS",
     "TYCHO_BLOCK",      # block-size override for arena sweeps (2026-08-04, arena-observability phase)
@@ -82,6 +81,7 @@ EXPECT_ENV = {
     "TYCHO_THREADS",
 }
 
+# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:302-310).
 EXPECT_ROWS = {
     "arenas",
     "block reuse",
@@ -90,6 +90,8 @@ EXPECT_ROWS = {
     "recycle",      # free-list hit count + bytes (2026-08-04, arena-observability phase)
     "OS reserved",
     "time",         # wall, OS-malloc and teardown nanoseconds (2026-08-17). The bump
+                    # path is deliberately NOT timed -- see the note at st_ns_os in
+                    # runtime/tycho_rt.c -- so this row reports three figures, not four.
 }
 
 # Traps that live in the runtime itself. Truncated entries (`tycho: chr(%`) are
@@ -128,10 +130,17 @@ EXPECT_MSG_RUNTIME = {
 # that triggers it. These are the entries the lane earns its keep on -- a codegen
 # arm that stops emitting its guard reddens here and nowhere else.
 EXPECT_MSG_CODEGEN = {
-    r"tycho: non-exhaustive match\n",     # src/tychoc.c:10166, :10782
-    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:11900 (the [4] is surface.ty's Inline.slots)
-    r"tycho: slice [%",                   # src/tychoc.c:9819, :9711
+    r"tycho: non-exhaustive match\n",     # src/tychoc.c:10917, :10782
+    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:12693 (the [4] is surface.ty's Inline.slots)
+    r"tycho: slice [%",                   # src/tychoc.c:10543, :9711
 }
+# REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".
+# The oracle was out of date, not the codegen. `range(a, b, step)` went on
+# 2026-07-29 and left the step machinery unreachable; phase 53 deleted the `Stmt`
+# field, the step codegen, this abort and the direction ternary. No construct can
+# reach the trap, so nothing emits it. This lane FOUND that -- it was the only
+# gate in the tree that noticed the trap text disappear, which is the argument for
+# wiring it into `make ci` (step [2d/13], same phase).
 EXPECT_MSG = EXPECT_MSG_RUNTIME | EXPECT_MSG_CODEGEN
 
 # --- Extraction --------------------------------------------------------------

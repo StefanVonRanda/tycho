@@ -137,15 +137,6 @@ Two limits remain stated rather than fixed, because you will hit them:
 
 ## What this release does not have
 
-Stated plainly, because the previous draft of these notes advertised the
-opposite. Until 2026-07-29 every program was compiled by two independent
-implementations — `tychoc` and the self-hosted `tychoc0` — which had to agree.
-**That differential is retired and nothing replaces it.** It caught real
-defects, specifically changes that silently narrowed what the language accepts,
-and that class of defect now has no second opinion. `compiler/tychoc0.ty`
-remains in the tree as the artifact proving Tycho self-hosts, and as the
-compiler's hardest sanitizer input, but it is no longer a check.
-
 There has also been **no third-party security review**, and the FFI boundary is
 unsafe by design — see [SECURITY.md](SECURITY.md).
 

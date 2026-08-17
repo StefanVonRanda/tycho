@@ -1,5 +1,3 @@
-# pop(soa): shrink the soa and return the (gathered) last struct value. Remaining
-# elements stay intact; the freed slot is reused by a later push. Both compilers.
 struct P:
     x: int
     y: int

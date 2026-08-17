@@ -112,9 +112,6 @@ class Gen:
                 choices.append(("shl",  lambda: "((" + ie() + " & 7) << " + str(self.r.randint(0, 3)) + ")"))
                 choices.append(("shr",  lambda: "(" + ie() + " >> " + str(self.r.randint(0, 3)) + ")"))
                 choices.append(("bnot", lambda: "(~(" + ie() + " & 31))"))
-                # str(bool): a comparison / and / not -> "true"/"false"; len() is 4 or 5,
-                # so the int depends on the bool value AND both compilers must agree on the
-                # words (this is the str(bool) / distinct-bool-type differential oracle).
                 choices.append(("strcmp", lambda: "len(str(" + ie() + " > " + ie() + "))"))
                 choices.append(("strand", lambda: "len(str(" + ie() + " < " + ie() + " and " + ie() + " >= " + ie() + "))"))
                 choices.append(("strnot", lambda: "len(str(not (" + ie() + " == " + ie() + ")))"))
@@ -218,7 +215,7 @@ class Gen:
         if t == "int":
             add(ind, name)
         elif t == "float":
-            add(ind, "to_int(" + name + ")")   # truncates; identical in both compilers
+            add(ind, "to_int(" + name + ")")   # truncates; identical in the implementation
         elif t in self.newtypes:                                  # unwrap (zero-cost) and checksum as the base
             u = self.fresh("u")
             self.emit(ind, u + " := to_under(" + name + ")")
@@ -847,9 +844,6 @@ class Gen:
             self.emit(ind, "acc = acc + " + f + "(" + str(self.r.randint(0, 9)) + ")")
             return
         if k == "fncarr":              # fn values stored in an array, then CALLED by index (call-on-expression).
-            # mixes a ref, a lambda, and an escaped closure (mkadder); when the array
-            # is built its closure env re-homes. Both compilers must agree (differential)
-            # and ASan/LSan must stay clean (the array + envs live in our arena).
             a = self.fresh("fa")
             cap = self.r.choice(int_vars)
             self.emit(ind, a + " := [mkadder(" + cap + "), fn(x: int) -> int: x + 1]")
@@ -938,7 +932,6 @@ class Gen:
             env[b] = t0
             return
 
-        if k == "soa_use":                          # SOA core ops (the tychoc0-supported subset:
             n = self.r.randint(1, 4)                # empty literal, push, len, a[i].f read/write, gather)
             s = self.fresh("sp"); kk = self.fresh("k"); g = self.fresh("g"); ii = self.fresh("i")
             self.emit(ind, s + " := soa []SoaP")
@@ -1175,7 +1168,6 @@ class Gen:
             benv = dict(env); benv[i] = "int"
             if self.r.random() < 0.45:           # heap built, THEN a conditional break/continue:
                 bc = self.r.choice(["continue", "break"])   # the loop-iteration arena (and the
-                ls = self.fresh("ls")                       # if-block arena in tychoc0) must free
                 self.emit(ind+1, ls + " := mkarr(" + str(self.r.randint(1,4)) + ")")  # on the jump
                 self.emit(ind+1, "acc = acc + len(" + ls + ")")
                 self.emit(ind+1, "if " + i + " % 2 == 1:")
@@ -1227,10 +1219,6 @@ class Gen:
                      "            return (sum" + name + "(l) + sum" + name + "(r))", ""]
 
     def emit_helpers(self):
-        # generic free functions (Stage-2 fuzz): an id and a first-of-two, both
-        # unconstrained; gen_expr instantiates them at int/string/float so the
-        # differential + ASan oracle covers monomorphization + per-instance body
-        # cloning in both compilers.
         self.out += ["fn fz_gid(x: $T) -> T:", "    return x", ""]
         self.out += ["fn fz_gfst(a: $T, b: $T) -> T:", "    return a", ""]
         # richer generics (the `generic_rich` kind): a numeric-constrained sum, a

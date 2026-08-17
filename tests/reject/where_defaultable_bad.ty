@@ -1,5 +1,3 @@
-# `where defaultable(T)` instantiated with a non-defaultable type (a struct has no
-# scalar zero). Both compilers must refuse at instantiation.
 
 struct P:
     x: int

@@ -1,5 +1,3 @@
-# spawn a GENERIC function: the spawn callee is monomorphized and its trampoline
-# emits concrete C, across multiple instantiations. Both compilers.
 struct Box($T):
     v: $T
 

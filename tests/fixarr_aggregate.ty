@@ -1,10 +1,3 @@
-# [N]T (fixed-size, inline storage) with an AGGREGATE element type.
-#
-# Same emitter staging as bounded[N]T: `struct { T v[N]; }` needs T COMPLETE, so
-# the array body must follow the struct / tuple / map body, not precede it. This
-# fixture exists because tests/ only ever used `[N]<scalar>`, so `[2]Pt` — a plain
-# fixed array of a struct — transpiled on both compilers and then failed to build
-# with "array type has incomplete element type 'S_Pt'".
 
 struct Pt:
     x: int

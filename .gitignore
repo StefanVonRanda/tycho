@@ -16,19 +16,11 @@ callgrind.out.*
 perf.data*
 gmon.out
 # transpiled C emitted by `tychoc <pkg>.ty --emit-c` next to the source
-# (e.g. compiler/tychoc0.c) — a build artifact, never source
 /compiler/*.c
 
 # The compiled Tycho compiler (built by `make`)
 /tychoc
 
-# The self-hosted compiler binary + its emitted C, when built at the repo root
-# (e.g. `tychoc compiler/tychoc0.ty -o ./tychoc0`) — build artifacts, never source
-/tychoc0
-/tychoc0.c
-# ...and the same binary built next to its source (`tychoc compiler/tychoc0.ty
-# -o compiler/tychoc0`). The emitted C there is already covered by /compiler/*.c.
-/compiler/tychoc0
 
 # The five `.c` entries below are NOT produced by their `make` target any more.
 # docs/internals/plan-loops-cleanup-DONE.md phase 52 made the plain build `remove()` its own intermediate
@@ -125,7 +117,6 @@ gmon.out
 # package-program goldens live in a subdir, so they need a separate un-ignore
 !/tests/pkg/*.out
 # HISTORY: a `!/tests/postfreeze/*.out` exception sat here from 2026-07-29 until
-# later the same day, when the tychoc0 freeze lanes were retired and that
 # directory was folded back into tests/. Its goldens are now covered by the
 # `!/tests/*.out` rule above, which is where they came from.
 # corelib test goldens (corelib/test/<name>.out) are tracked too

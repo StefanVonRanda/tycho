@@ -46,13 +46,6 @@ The message is written **bare**, with no implementation-supplied prefix — the
 same treatment `die(msg)` gives a user message ([§29](16-builtins.md)), because
 it is the program's error and not a runtime fault.
 
-An implementation MUST reject a program that defines no `main` (the reference
-diagnoses `no 'main' procedure`, `src/tychoc.c:8722@no 'main' procedure`), a `main`
-that declares any parameter, and a `main` whose return type is neither of the two
-shapes above. The reference enforces the last two separately, so each diagnostic
-names the fault it found; `compiler/tychoc0.ty` is frozen and predates the
-`Result` shape.
-
 A minimal complete program is therefore:
 
 ```tycho

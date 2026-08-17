@@ -10,19 +10,13 @@ fix (H4) in the tightening campaign, and the stale compiler message (H2) was
 removed from source. This appendix is retained as the audit trail; the "Fixed
 in" column and the verified reference locations below show each is closed.
 
-These are documentation drifts. A separate class — a divergence *between the two
-compilers* — is a compiler bug, not a documentation correction. One was found
-while drafting this specification (the `tychoc0` `inout`-exclusivity fail-open)
-and has been **fixed** (`compiler/tychoc0.ty` `check_call_args`; locked by
-`tests/reject/inout_alias.ty`).
-
 | # | Reference said | Correction (spec governs) | Reference location (now correct) | Fixed in |
 |---|---|---|---|---|
 | H1 | `reference/packages.md`: packages have **"no privacy"** — everything visible. | Cross-package access to a `_`-prefixed name is **rejected** (leading-underscore package privacy). | `reference/packages.md:22-24` | `cf51e09` |
 | H2 | A stale **compiler diagnostic** ("int-keyed maps support only int/float values"). *(Not a reference-doc drift — `reference/maps.md` already states V is any type.)* | A map's **value type is unrestricted**; only the *key* type is constrained. The false message was removed. | `reference/maps.md` (already correct); message absent from `src/tychoc.c` | source cleanup |
 | H3 | `reference/types.md`: f-string holes must be int/float/bool/string. | A hole may also be `u32`/`u64`/`f32` (it desugars to `str`, which accepts them). | `reference/types.md:78-79` | `cf51e09` |
 | H4 | `reference/types.md`: `char ± int` "stays within a byte." | **Correct**: `char` arithmetic wraps to a byte (`0..255`, like `u8`), so the reference matches the language. | `reference/types.md` (§ char) | tightening campaign; `tests/char_byte` |
-| H5 | `docs/guides/generics.md`: appeared to discuss `empty$` as though it were a builtin. | `empty$` is **not** a builtin; `empty$(int)` is the *explicit call-site type-argument* form (`name$(…)`) applied to the generic `empty()`. Only `zero$(T)` is special-cased. | `docs/guides/generics.md:13`, `:207-210` (framed as explicit type args) | already correct |
+| H5 | `docs/guides/generics.md`: appeared to discuss `empty$` as though it were a builtin. | `empty$` is **not** a builtin; `empty$(int)` is the *explicit call-site type-argument* form (`name$(…)`) applied to the generic `empty()`. Only `zero$(T)` is special-cased. | `docs/guides/generics.md:13`, `:204-207` (framed as explicit type args) | already correct |
 | H6 | `reference/builtins.md` — the builtin catalog was incomplete. | Now lists `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`, `to_u64`, `to_f32` (`to_under` and `keys` are cross-referenced on the newtypes/maps pages). | `reference/builtins.md` | `cf51e09` |
 | H7 | `docs/guides/corelib.md` — six packages were absent from the list. | `bignum`, `decimal`, `net`, `compress`, `image`, `tls` are now documented. | `docs/guides/corelib.md:225-231` (bignum, decimal), `docs/guides/corelib.md:305-324` (net), `docs/guides/corelib.md:435-472` (compress, image, tls) | `cf51e09` |
 | H8 | `docs/guides/corelib.md` datetime entry. | The `datetime` timezone offset functions (`local_offset`, `offset_at`, `now_local`; fixed-offset `from_unix_at`/`to_unix_at`/`format_iso_tz`) are now documented. | `docs/guides/corelib.md:124-139` | `cf51e09` |
@@ -33,7 +27,7 @@ and has been **fixed** (`compiler/tychoc0.ty` `check_call_args`; locked by
   that allowed cross-package `_`-name access would be non-conforming. The
   reference page understated the language; it now states the rule.
 - **H4 is resolved**: `char` arithmetic was changed to wrap to a byte (tightening
-  campaign), so the reference's "stays within a byte" is accurate; both compilers
+  campaign), so the reference's "stays within a byte" is accurate; the compiler
   agree.
 - Corrections H2–H8 do not change any accept/reject or output behavior of a
   *conforming* program; they aligned the reference prose with what the compilers

@@ -1,6 +1,6 @@
 tools/tycho-db/main.ty -> tools/tycho-db/exec/exec.ty:107: warning: 'cols' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away
 tools/tycho-db/main.ty -> tools/tycho-db/exec/exec.ty:119: warning: 'vals' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away
-tools/tycho-grid/main.ty -> tools/tycho-grid/main.ty:107: warning: `sum_all` is deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
+tools/tycho-grid/main.ty -> tools/tycho-grid/main.ty:108: warning: `sum_all` is deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
 tools/tycho-kv/main.ty -> tools/tycho-kv/main.ty:196: warning: not all paths of 'kv_lookup' return a value (a fall-off-the-end yields a zero value)
 tools/tycho-scheme/main.ty -> tools/tycho-scheme/main.ty:32: warning: not all paths of 'lookup' return a value (a fall-off-the-end yields a zero value)
 tools/tycho-tally/main.ty -> tools/tycho-tally/main.ty:72: warning: 'hostile' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away

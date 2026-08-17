@@ -113,7 +113,7 @@ it is the *requested* width, not always the width used: the chunk count is
 `ncpu()` report 100 while 64 chunks run.
 
 Worked example of the sugar: `tests/conc/parfor_chan.ty` — its `parallel for x
-in jobs:` at `tests/conc/parfor_chan.ty:16@parallel` is this construct and nothing else.
+in jobs:` at `tests/conc/parfor_chan.ty:11@parallel` is this construct and nothing else.
 `tests/conc/workers.ty` is the *manual* form the sugar replaces (its own header
 says so at `tests/conc/workers.ty:2@parallel`); read it to see what the sugar saves, not
 as the way to write this.
@@ -249,11 +249,6 @@ These are on purpose, not gaps I forgot about:
 
 ## Verification
 
-`make conc` runs every fixture natively, under AddressSanitizer + LeakSanitizer,
-and under ThreadSanitizer against recorded goldens, and checks that `tychoc` and
-`tychoc0` produce the same outputs. It's part of `make ci`. The cross-language
-benchmarks live in `bench/conc/`.
-
 ---
 
 ## Appendix: implementation & lineage
@@ -272,15 +267,6 @@ a parked-waiter count gating the wake path, so the uncontended path does zero
 syscalls and the check-then-park race costs at most one extra retry rather than a
 lost wakeup. Generated programs `#define _DEFAULT_SOURCE` so `clock_gettime` /
 `sched_yield` / `nanosleep` are visible.
-
-**Transpilers.** `tychoc` interns `Task`/`Channel` as type ranges, registers spawn
-sites at resolve (the lambda-lift pattern), and emits one args-struct +
-trampoline per site; per-element-type send/recv wrappers bracket `copy_into`
-around the runtime claim/commit; the implicit-join finalizers ride a codegen
-stack mirroring the scope-arena stack; `parallel for` lifts its body into a chunk
-procedure reusing the spawn machinery. `tychoc0` represents the types as strings,
-adds `ESpawn`/`SParFor`/`SSelect` AST variants, inlines the channel copies inside
-the claim/commit bracket, and emits the finalizers LIFO at each scope exit.
 
 **Lineage.** Structured spawn/await with no function colouring follows Hylo/Val's
 structured-concurrency work (Val's first design required sink-only spawn

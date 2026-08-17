@@ -1,5 +1,3 @@
-# A bare int passed where a generic fn wants a concrete newtype (Handle) param must
-# be rejected in BOTH compilers (newtype identity through a generic call).
 type Handle = int
 struct Box($T):
     v: $T

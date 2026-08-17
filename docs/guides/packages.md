@@ -143,18 +143,5 @@ and a second resolution rule waits until a real multi-entry project feels the
 
 ## Bundled source (`--bundle`)
 
-`tychoc --bundle <entry>` emits the whole import graph as one post-order source
-stream, imports first, with the entry package's header rewritten to `package main`.
-Its consumer was the self-hosted `tychoc0`, which is frozen, so nothing reads the
-stream today. The flag remains useful for seeing exactly what a multi-package
-build hands the parser.
-
 Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
 `tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`.
-
-The transpiler dogfoods its own package system: `compiler/pkg-split.sh` splits the
-self-hosted transpiler into a two-package program — `rt` (the leaf
-C-runtime/string emitters) and `main` (`import "rt"`) — derived from `tychoc0.ty`
-by function name, with no duplicate source to maintain. It's a
-real-world test that a multi-package build emits the same C as the single-file
-build.

@@ -1,7 +1,3 @@
-# 14-ffi.md §25: a `handle` name MUST NOT already name a struct, enum, newtype or
-# another handle -- a handle shares the one type namespace with them, so a
-# duplicate would otherwise reach `cc` as two declarations of one C typedef.
-# tychoc: src/tychoc.c:3989-3990 (parse_handle); the reverse order at :3678/:3734/:3783. Both compilers reject (differential).
 struct H:
     x: int
 

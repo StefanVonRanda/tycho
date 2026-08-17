@@ -1,12 +1,3 @@
-# pop(arr): remove and return the last element of a mutable array (variable or
-# field). Mirrors push. The result is deep-copied out for heap element types
-# (string / struct / array / nested), so a popped value stays valid even after a
-# later push recycles the array's buffer (value semantics, RULE 5). Popping an
-# empty array dies. Both compilers must agree (differential + fixpoint).
-#
-# Note: pop MUTATES, so bind its result before reading len() of the same array in
-# the same statement -- operand evaluation order within one expression is
-# unspecified (as in C), so `str(pop(a)) + str(len(a))` would be order-sensitive.
 
 struct P:
     x: int

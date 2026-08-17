@@ -23,7 +23,6 @@ The rules, in brief:
   * `path@SYMBOL` names a definition and carries no line: checked only that
     the symbol still appears somewhere in the file. It never becomes the
     inherited subject of a following bare `:N`.
-  * `compiler/tychoc0.ty` is exempt from being checked: frozen and unfixable.
   * A dotted-decimal `127.0.0.1:8080` is not a citation and never overwrites
     the paragraph's inherited path.
   * A COMMIT HASH written as a citation -- backticked, or after the word
@@ -57,7 +56,7 @@ DOC_SCAN_PREFIX = ("src/", "compiler/", "runtime/", "corelib/", "tests/",
                    "server/", "editors/", ".githooks/", "Makefile")
 
 # Files whose own citations are not policed: frozen and unfixable.
-SKIP_CITER = ("compiler/tychoc0.ty",)
+SKIP_CITER = ()
 SKIP_SUFFIX = (".err", ".out")
 
 # A host and a port is not a path and a line: every dot-separated component of

@@ -78,7 +78,7 @@ SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)
                      r':(\d+)(?:-(\d+))?(?:@([A-Za-z0-9_]+))?')
 HOSTPORT = re.compile(r'^\d+(?:\.\d+)+$')   # 127.0.0.1 is not a path and a line
 
-SKIP = {"compiler/tychoc0.ty"}   # frozen and unfixable; exempt from the gate too
+SKIP = set()
 
 
 def line_map(old, new):

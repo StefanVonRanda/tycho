@@ -8,7 +8,7 @@ forms.
 > Provenance: binary-op resolver `src/tychoc.c:6202-6458`; short-circuit
 > lowering `:9482-9504`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
 > closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
-> "probed" were resolved by running both compilers (spec-plan.md §6a).
+> "probed" were resolved by running the compiler (spec-plan.md §6a).
 
 ## 13.1 Place expressions
 
@@ -138,7 +138,7 @@ and arithmetic/bitwise operator (§13.2, §4.5).
 ## 13.4 Evaluation order
 
 The following are normative (those marked *probed* were confirmed identical on
-both compilers):
+the compiler):
 
 - **Short-circuit** `and`/`or` as in §13.2.
 - **`match` subject — evaluated exactly once** (*probed*), before any arm is
@@ -148,7 +148,7 @@ both compilers):
   once** (*probed*); a pure index sub-expression may be evaluated twice.
 - **A side-effecting index in an assignment place is sequenced left-to-right**
   (*probed*): in `a[f()] = g()` the index `f()` is evaluated **before** the RHS
-  `g()`, on both compilers.
+  `g()`, against the implementation.
 - **The whole place is evaluated before the RHS, left-to-right** (*probed*) — the
   general rule of which the single-index case above is an instance. A place is
   rooted at a **variable** (§13.1); a call is never a place **receiver**, so
@@ -211,23 +211,9 @@ sequencing them costs one temporary each and cannot skip an evaluation the
 program expected to skip — whereas an argument may sit inside `f(x, cond and
 g())`, where lifting it would evaluate what the short-circuit exists to avoid.
 And each had an order that was already **visibly** contradicted: the place index
-diverged between the two compilers, and an f-string prints its holes left to
+was implementation-defined, and an f-string prints its holes left to
 right while firing them right to left, so its own output disagreed with its
 execution. A bare `+` chain shows the reader no order to contradict.
-
-> **Design decision.** Leaving *argument and operand* order unspecified is
-> deliberate and matches **Swift** and **Odin**. (Go pins left-to-right for
-> function arguments; Tycho emits C and defers order to the C compiler.) Pinning
-> would mean lifting every side-effecting argument into a sequenced temporary — and
-> it must be lifted *at the call site*, not to statement level, because an argument
-> may sit inside a short-circuit (`f(x, cond and g())`) that must not evaluate it.
-> That per-call-site cost was judged not worth closing a hole that was not a live
-> divergence when the decision was taken. The **assignment-place index** was the
-> one case that *did* diverge between the reference compiler and the (now frozen)
-> `tychoc0` snapshot — and it is cheap and sound to sequence (a place index is
-> never short-circuited), so it is pinned left-to-right (above). A conforming
-> implementation still need not match the unspecified argument/operand order.
-> Appendix F lists this in the unspecified-behavior register.
 
 ## 13.5 Expression-valued `if` and `match`
 

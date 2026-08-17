@@ -3,7 +3,7 @@
 > 2026-08-04: the eight-program testing campaign is declared complete. Eight
 > programs across six axes (data structures, bits, arithmetic, networking +
 > shared-state concurrency, algorithmic depth, file I/O), zero compiler/runtime
-> defects, six tool-gate lanes, a differential fuzzer, and the self-hosting
+> defects, six tool-gate lanes, and a differential fuzzer, and the
 > byte-for-byte proof. The completed plans live at
 > `docs/internals/plan-tycho-sat-DONE.md` and the six before it; the fresh
 > clone that proposed a build tool (the last untested axis, systems I/O) is
@@ -39,13 +39,6 @@ Nothing to fix; the scan is the phase's deliverable and its own finding
 (a naive `grep XXX` over this tree is noise, not debt).
 
 ### Phase 2 -- LICENSE / SECURITY / CONTRIBUTING  [DONE 2026-08-04 -- already present]
-
-The phase's premise was wrong: the survey that motivated it missed that
-`LICENSE` (MIT, "The Tycho Authors", 2026), `SECURITY.md` and
-`CONTRIBUTING.md` all already exist and are complete -- the README's License
-section links all three. CONTRIBUTING covers the local gate, the frozen
-tychoc0 rule, the arena-model rule, feature-work scope and code style.
-Nothing to add.
 
 ### Phase 3 -- README: the seven tools as evidence of exercise  [DONE 2026-08-04]
 

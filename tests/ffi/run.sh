@@ -20,6 +20,9 @@ else
     "$T/c_bin" > "$T/c.out" 2>&1
 fi
 
+# (2) ASan/UBSan over the emitted C: the str-return arena-copy must be clean.
+#     SKIPPED on Windows: mingw gcc ships no -lasan/-lubsan (docs/internals/windows-port.md
+#     phase 2); the native legs above and below still run.
 if [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" = 0 ]; then
 if ! "$TYCHOC" tests/ffi/main.ty --emit-c -o "$T/hc" >"$T/emit.log" 2>&1; then
     echo "FAIL: tychoc --emit-c"; sed 's/^/      /' "$T/emit.log"; fail=1

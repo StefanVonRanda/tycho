@@ -1,2 +1,2 @@
-tests/warn/copy_live.ty:14: warning: 's' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away
-    14 |     t := label((s, "grace"))     # copies s into the tuple; s is live after
+tests/warn/copy_live.ty:6: warning: 's' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away
+     6 |     t := label((s, "grace"))     # copies s into the tuple; s is live after

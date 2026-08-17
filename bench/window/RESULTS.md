@@ -13,12 +13,6 @@ arena's one honest loss (~14× C). **MM-9 closes it**: see below.
 Records are heap-bearing strings (`"rec" + i%100000`); all ports print the same
 checksum `15777800`. Peak RSS via `bench/peakrss`.
 
-| record kind            | tycho (tychoc) | tycho (tychoc0) | C | Go |
-|------------------------|-----:|-----:|--:|---:|
-| **string (heap)** before MM-9 | 47.3 MB | ~stream | 3.3 MB | 7.6 MB |
-| **string (heap)** after MM-9  | **4.2 MB** | **3.6 MB** | 3.3 MB | 7.6 MB |
-| **int (fixed-size)**          | 2.3 MB | 2.3 MB | ~bounded | ~bounded |
-
 From **14× C to ~1.3× C** — now under Go, ~par C, with no manual frees and no GC.
 
 Re-measured at `-O3` (2026-06-07): peak RSS unchanged (string tycho 4.3 MB, C 3.2 MB,
@@ -41,22 +35,6 @@ Overwriting a string-array slot (`ring[k] = rec`) now **recycles the evicted
 element's buffer** back to the array's arena, so the next store reuses the bytes
 instead of the arena growing with the whole stream. Two pieces:
 
-1. **Element-overwrite recycle.** At the store, the old element is dead and
-   uniquely owned (value semantics: reads deep-copy out, so nothing else
-   references it). The buffer is handed to `arena_recycle`. Sound guards: the new
-   value is built first (the RHS may read the slot, e.g. `s[k] = s[k] + x`);
-   `arena_owns` recycles only buffers this arena actually allocated (never an
-   interned literal or a cross-arena string); the freshly-stored buffer is never
-   recycled (`old != new`). tychoc: `runtime/tycho_rt.c` `tycho_arr_str_set`. tychoc0:
-   the `SFieldAssign` emission, which also moves the element from malloc (owner 0)
-   into the array's arena so it is recyclable.
-2. **Segregated free-list.** A single capped (32) best-fit free-list dropped ~half
-   the dead chunks here (instrumented: ~1.04M of 2M) because an eviction window
-   needs the free-list to hold ~W chunks, and a linear best-fit scan can't be
-   uncapped. Replaced with a per-8-byte-size-class free-list (16 inline classes
-   for tiny objects): O(1) push/pop, no cap, no scan. Larger chunks keep the
-   best-fit path, so MM-8 (iter-transform) large-buffer reuse is unchanged.
-
 This is FBIP-grade reuse from **static** value semantics — Perceus-style
 in-place reuse without reference counts — extended from whole-variable reassign
 (MM-8) to per-element overwrite.
@@ -71,7 +49,7 @@ no per-element heap, nothing accumulates. The heap-bearing case now matches it.
 
 The thesis — "competitive C-class memory with no manual management" — now holds
 **including** eviction of heap-bearing records, the one case it previously did
-not. Verified: checksum matches C/Go on both compilers; clean under ASan/UBSan;
+not. Verified: checksum matches C/Go against the implementation; clean under ASan/UBSan;
 `make test` 97/0; `make fixpoint` B==C; differential fuzz clean;
 `tests/elem_recycle.ty` is the distinct-value alias regression.
 

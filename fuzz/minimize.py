@@ -5,7 +5,6 @@ TYCHOC = os.path.join(REPO, "tychoc")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0")
 TMP = tempfile.mkdtemp()
-H0 = os.path.join(TMP, "h0")   # was: a tychoc0 built here. No lane builds one now.
 
 def faults(src):
     p = os.path.join(TMP, "p.ty"); c = os.path.join(TMP, "p.c"); e = os.path.join(TMP, "p")
@@ -47,8 +46,6 @@ def minimize(lines):
 
 if __name__ == "__main__":
     sys.stderr.write(
-        "minimize.py: RETIRED 2026-07-29 -- it drove a tychoc0-derived binary and\n"
-        "             no lane builds tychoc0 any more. The reduction algorithm in\n"
         "             this file still works; retarget faults() at the binary and\n"
         "             fault string you are actually chasing. See the file header.\n")
     sys.exit(2)

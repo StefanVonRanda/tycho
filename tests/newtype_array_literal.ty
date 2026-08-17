@@ -1,6 +1,3 @@
-# An array literal of newtype-typed values keeps the element's newtype identity:
-# `[a]` where a: Id is `[Id]`, not `[int]`. So indexing / iterating yields an Id,
-# which a function taking an Id accepts (and a raw int would be rejected). Both compilers.
 type Id = int
 
 fn take(x: Id) -> int:

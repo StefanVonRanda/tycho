@@ -1,2 +1,2 @@
-tests/diag/g6_fixarr_nonconst_size.ty:6: error: a fixed-size array length must be an integer literal or an int `const` -- 'n' is not
-     6 |     v: [n]int = [1, 2, 3]
+tests/diag/g6_fixarr_nonconst_size.ty:3: error: a fixed-size array length must be an integer literal or an int `const` -- 'n' is not
+     3 |     v: [n]int = [1, 2, 3]

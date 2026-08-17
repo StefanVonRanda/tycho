@@ -1,4 +1,3 @@
-# A match arm may not be duplicated. Both compilers must reject.
 enum Color:
     Red
     Green

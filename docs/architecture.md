@@ -12,22 +12,10 @@ for an honest accounting of where the model wins and loses see
 
 ## The pieces
 
-| Piece | Path | Role |
-|---|---|---|
-| `tychoc` | `src/tychoc.c` (~11k LoC) | **Reference** transpiler (C). Full language. Emits C, invokes `cc`. |
-| `tychoc0` | `compiler/tychoc0.ty` (~15k LoC) | **FROZEN 2026-07-26.** The self-hosted transpiler that proved self-hosting. Not gated, not maintained, diverging — see below. |
-| runtime | `runtime/tycho_rt.c` (~2k LoC) | Arena allocator + string/map/channel primitives, embedded into emitted C. |
-| corelib | `corelib/` (45 packages) | Standard library, imported `core:<name>`. |
-| tooling | `tools/` | `tychofmt` (formatter), `tycho-lsp` (LSP), VS Code / Zed extensions. |
-
-**Self-hosting, proved and then frozen.** `compiler/tychoc0.ty` is a Tycho
-compiler written in Tycho. It reproduced its own emitted C byte for byte and its
-programs matched the reference — the result that file was built to demonstrate.
-
 It was frozen once that held, and no gate builds it now. Treat it as a snapshot
 of the language at the freeze, not as a second implementation: the two accept and
 reject different programs today, and `tychoc` with [the spec](spec/) is
-normative. [bootstrap.md](bootstrap.md) has the stages and what their loss costs.
+normative.
 
 ## The verification surface
 
@@ -50,17 +38,6 @@ step proves:
 | `bench-guard` | tree-alloc wall: Tycho must beat C (perf-regression gate). |
 | `make recursion` | deep input fails closed (no stack-overflow DoS). |
 | `make spec-check` | the spec's grammar matches the prose, its fixtures exist, and its examples produce the documented output. |
-
-> Until 2026-07-26 this table also listed `fixpoint`, `frontparity`, `rtparity`,
-> `fuzz-pkg`, `typeparity`, `parforparity`, `eqparity` and `unaryparity`, and several
-> rows above asserted that `tychoc` and `tychoc0` **agree**. Every one of those was a
-> two-implementation gate. They were removed from `make ci` with the freeze, and the
-> scripts themselves were retired on 2026-07-29 (see above). What survives gates
-> `tychoc` against a **recorded golden** or a stated fail-closed invariant, never
-> against a second compiler. Some of those scripts still exist and still run something
-> useful — `fuzz/run_eqparity.py`, `run_unaryparity.py` and `run_parforparity.py` keep
-> their written-down `expect` oracle and gate `tychoc` against it — but the second
-> opinion is gone from all of them, and their headers say so.
 
 The `make hooks` pre-push gate runs the full deterministic lane set plus a fast fuzz
 smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a green tree.

@@ -40,31 +40,6 @@ disagree, it is a defect in one of them, to be reconciled. The specification
 does not defer to the implementation, and no implementation's behavior
 establishes a requirement this document does not state.
 
-#### A note on `tychoc0` — a frozen snapshot, not a second implementation
-
-The tree also contains **`compiler/tychoc0.ty`**, a transpiler for Tycho written
-in Tycho. It is what proved the self-hosting thesis: it compiles its own ~16k
-lines of source to C, and the C it emits when compiled by itself is
-byte-identical to the C the reference compiler emits from it (the *fixpoint*).
-Through 2026-07-25 this specification was written from a **two-implementation
-contract** — every normative clause was required to hold in both compilers, and
-a battery of parity gates enforced it.
-
-**That contract ended on 2026-07-26.** `tychoc0` is **frozen**: it is preserved
-unchanged as the artifact that proved self-hosting, no gate builds or runs it,
-and no language change is mirrored into it. It therefore compiles **the language
-as it stood on the freeze date**, and `tychoc` and `tychoc0` will accept and
-reject different programs from that date forward. The first such divergence is
-already in the tree: `tychoc` rejects a reserved word used as a procedure name
-(`fn handle(...)`) with a diagnostic naming the keyword; `tychoc0` still accepts
-it.
-
-`tychoc0` is therefore **not authoritative about Tycho's semantics** — reading it
-to learn how the language behaves today is reading history. This specification is
-normative; `tychoc` is the reference implementation. Nothing about the freeze
-implies `tychoc0` is defective: it correctly compiles the language it was frozen
-against, which is exactly what it was built to demonstrate.
-
 ### 1.3 Conformance
 
 A **conforming program** is a Tycho source program (or package) that this
@@ -183,12 +158,6 @@ alone does not define validity; a program is valid only if it also satisfies
 the static-semantic rules.
 
 ### 2.2 Source of record
-
-The reference transpiler `src/tychoc.c` is the authoritative source for the
-grammar and for behavior; `compiler/tychoc0.ty` is the co-equal cross-check.
-Sections of this document carry a `Provenance:` note citing the authoritative
-location, so any clause can be re-verified. These notes are non-normative
-aids; the prose and grammar are the specification.
 
 The tree-sitter grammar under `editors/zed/` is a **non-normative** editor
 highlighter. It does not model indentation and is known to diverge from the

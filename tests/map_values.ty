@@ -1,7 +1,3 @@
-# Maps with arbitrary value types ([string: V], V = string / struct), exercising
-# the composite-map runtime in both compilers: CRUD, literals, keys, the heap-value
-# lifetime (a bound value must survive later rehashes as an independent copy), and
-# value semantics (copying a map and mutating the copy must not touch the original).
 struct P:
     x: int
     y: int

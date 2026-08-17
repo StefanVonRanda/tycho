@@ -1,5 +1,3 @@
-# UFCS on built-ins: `recv.name(args)` desugars to `name(recv, args)`, routing
-# through the same built-in dispatch the direct-call form uses. Both compilers.
 fn main():
     s := "a,b,c,d"
     parts := s.split(",")

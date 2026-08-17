@@ -50,20 +50,6 @@ Writing the dogfood took the first naive version from **7.2 GB / 47 s** to
 *an accumulator that silently fell off the in-place path and reverted to
 pure-copy-every-step.*
 
-1. **Compiler bug (fixed in `src/tychoc.c`).** The in-place accumulator
-   rewrites (`map_set`/string-append/`map_del`) are enabled by
-   `collect_accums`, which walked `if`/`for`/`while` bodies but **not `match`
-   / `select` arm bodies** (those live in `s->arms[a].body`, not `s->body`).
-   So `m = map_set(m, …)` inside the worker's `match recv(ch)` arm — the
-   canonical channel-drain idiom — emitted the pure `tycho_map_si_set`
-   (deep-copy the whole map, then insert), turning the per-token tally into
-   O(tokens × distinct) allocation that was never reclaimed until the worker
-   returned. `pf_scan_body` and `resolve_block` already traversed arms; only
-   `collect_accums` missed them. The self-hosted compiler (`tychoc0.ty`)
-   already handled match arms (its string-accum pass recurses `SMatch`, and
-   its `map_set` rewrite is structural), so this was the C reference catching
-   up to it. Fix: `collect_accums` now recurses arm bodies.
-
 2. **Program bug (fixed in `index.ty`).** `merge` originally took the
    accumulator **by value** (`fn merge(into: [string: int], …)`), so
    `into = map_set(into, …)` could not grow in place (a by-value map param

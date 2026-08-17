@@ -65,8 +65,7 @@ fn main():
 - **Heavily tested.** Every example is built twice — native and sanitized — and
   checked against a committed golden; a fuzzer applies the same differential to
   random programs under ASan/UBSan and feeds malformed input to prove the
-  compiler fails closed. The language compiled itself byte-for-byte once, and
-  seven full programs (below) ran on it with zero compiler or runtime defects.
+  compiler fails closed.   seven full programs (below) ran on it with zero compiler or runtime defects.
 
 ## Quick start
 
@@ -119,16 +118,6 @@ language held: no compiler or runtime defect was filed by any of them.
 | `tycho-rsa` | RSA keygen/sign/verify on `core:bignum` | the textbook vector plus python `pow()` as the oracle; `make rsa-check` |
 | `tycho-kvsrv` | a concurrent HTTP key-value server | a daemon gate: 4 parallel clients, every write intact; `make kvsrv-check` |
 | `tycho-sat` | a DPLL/CDCL SAT solver | the pigeonhole theorem (PHP(2..9) unsat) and planted instances whose models the runner verifies clause by clause; `make sat-check` |
-
-The differentials are the point: an engine with a move-generator bug, a solver
-with an unsound analysis, or a store that drops a concurrent write cannot pass
-them. The campaign produced one language change — hex integer literals, filed
-by the chess engine's castling masks and shipped — and no other finding needed
-one. **The strongest evidence is that Tycho compiles itself**: besides the C
-reference transpiler there is a second transpiler written in Tycho,
-`compiler/tychoc0.ty`, and its codegen runs on the same implicit arenas it
-emits. That proof is frozen: no gate re-runs it, so it stands as a fact about
-the commit that proved it rather than a property checked today.
 
 ## Performance
 
@@ -243,7 +232,7 @@ Read that green with its scope. It is **one box, one toolchain**, and it
 carries 49 Windows-specific skips, each printing its reason: the sanitizer
 lanes (mingw ships no ASan/UBSan runtime, and gcc has no TSan for a Windows
 target at all), the fuzzer, the 32-bit lane, the `LD_PRELOAD` locale lane, the
-self-hosting fixed point (the frozen bootstrap compiler emits POSIX-only C),
+POSIX-only emitted C,
 the perf gate, and every lane that needs a POSIX signal delivered to a process
 — `core:signal`'s test and the HTTP server's six shutdown cases — because
 MSYS2's `kill` terminates a native Windows program instead of signalling it.

@@ -1,7 +1,3 @@
-# A concrete newtype parameter (h: Handle) alongside a generic one (Box($T)) in a
-# generic function: the newtype identity must survive the generic call. A generic
-# fn returning a newtype, whose result feeds another generic fn's Handle param --
-# by variable and directly. Both compilers.
 type Handle = int
 
 struct Box($T):

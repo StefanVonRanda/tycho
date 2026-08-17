@@ -32,10 +32,6 @@ $ ...
 - [ ] `./tychoc bug.ty` (the C reference transpiler)
 - [ ] not sure
 
-(There used to be a second, self-hosted transpiler to cross-check against.
-`compiler/tychoc0.ty` was frozen on 2026-07-29 and `make fixpoint` no longer
-exists, so `./tychoc` is the only answer needed.)
-
 **Environment**
 - OS / arch: (e.g. Linux x86_64, macOS arm64)
 - C compiler: (`cc --version` first line)

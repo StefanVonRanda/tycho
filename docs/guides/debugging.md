@@ -111,9 +111,6 @@ in a debugger:
 Set the env var on any Tycho binary (built by either compiler — no rebuild, no
 flag) and a residency summary prints to stderr at exit:
 
-```text
-$ TYCHO_ARENA_STATS=1 ./tychoc0 < compiler/tychoc0.ty > /dev/null
-
 [tycho arena stats]
   peak live:   75.9 MiB   (working-set high-water)
   bump-alloc:  315.6 MiB over 11177285 allocations

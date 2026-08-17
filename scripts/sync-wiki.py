@@ -147,7 +147,7 @@ open(os.path.join(WIKI, "_Sidebar.md"), "w").write("\n".join(sb) + "\n")
 # ── Documentation-Map ──
 blurb = {"docs/tutorial.md":"Hello-world to a real program, about an hour.",
          "docs/thesis.md":"The one idea, with measurements and the places it costs.",
-         "docs/architecture.md":"How the two compilers fit together.",
+         "docs/architecture.md":"How the compiler fit together.",
          "docs/from-c-to-arenas.md":"The memory model, explained from C."}
 dm = ["# Documentation Map\n",
       "The reader documentation is mirrored into this wiki (pages below); the canonical "

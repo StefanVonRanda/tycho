@@ -74,21 +74,3 @@ deeply over its fields); only a map itself is not yet usable as a key (see the
 ## Implementation notes
 
 These are for contributors; users only need the surface above.
-
-- **tychoc** (`src/tychoc.c`): composite value types are interned in a side table
-  (`g_maptypes`, base id `T_MAPC_BASE`) and emitted as one monomorphic runtime
-  per pair by `emit_aggregate`, mirroring the existing scheme for `[Struct]`
-  arrays. The scalar maps are hand-written; composite value types share the
-  interned-and-emitted path independently of them.
-- **tychoc0** (`compiler/tychoc0.ty`): maps are generated per `(k, v)` by
-  `gen_map_type` / `gen_map_fns`, so the composite work is the heap-value
-  deep-copy on put/get and value-type mangling, not a new code path. A map's
-  `_copy`/`_eq` are **forward-declared** before the fn bodies, so a map-valued map
-  like `[string: [string: int]]` — whose outer `put`/`copy` deep-copy the inner-map
-  values via the inner map's `_copy`/`_eq` — compiles regardless of the (not
-  dependency-ordered) emission order.
-- **Key schemes**: string keys use `NULL` for an empty slot; int keys carry a
-  separate occupancy array, so `0` is a usable key rather than a sentinel. Delete is
-  **tombstone-free** (linear-probe backward-shift), and the live keys are kept in an
-  intrusive insertion-order list so `keys()` is deterministic.
-- **Bool values** fold onto the int runtime rather than getting their own.

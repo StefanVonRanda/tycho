@@ -1,2 +1,2 @@
-tests/diag/array_arith_fixlen.ty:7: error: element-wise `*` on a fixed array requires the same static length (got [3]int and [2]int)
-     7 |     c := a * b
+tests/diag/array_arith_fixlen.ty:4: error: element-wise `*` on a fixed array requires the same static length (got [3]int and [2]int)
+     4 |     c := a * b

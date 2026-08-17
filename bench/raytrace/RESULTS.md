@@ -57,23 +57,3 @@ is *pointer-shaped and shared* (the trie's by-value children), and it vanishes o
 from C.
 
 ## Notes / honest limits
-
-- **Correctness oracle.** The image is deterministic, so the checksum is a
-  reproducible oracle; a byte-identical value across three independent float
-  implementations is a strong agreement check. The C reference is built
-  `-ffp-contract=off` and tycho's emitted C uses gcc's default `-ffp-contract=fast`
-  — they still matched at these inputs (the per-ray arithmetic gcc chose not to
-  fuse across the `vdot`/`hit_sphere` call boundaries). This is an *empirical* match
-  at this scene, not a guarantee that every float program is bit-portable; a
-  program that relied on FMA fusion could diverge. The bench deliberately uses only
-  `sqrt` (IEEE correctly-rounded) and no trig (`sin`/`cos` are not
-  correctly-rounded and differ across libm/Go).
-- **Compute-bound by construction.** Folding to a checksum (not a PPM string) is
-  what isolates the float/struct cost from the O(n) string-accumulator the
-  `examples/raytrace.ty` version exercises. Different question, different program.
-- Single-machine snapshot; absolute numbers vary by CPU/allocator. Run
-  `sh bench/raytrace/run.sh` to reproduce. Not wired into `make ci` (Go is
-  optional); this is an evidence bench, like dijkstra.
-- **Dogfood find:** none — the program compiled and ran correctly on `tychoc` first
-  try, and the checksum matched C/Go on the first run. (The two-compiler fixpoint
-  already covers tychoc0 agreement for this source shape.)

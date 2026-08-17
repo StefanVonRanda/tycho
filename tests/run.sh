@@ -1,3 +1,32 @@
+#!/bin/sh
+# Differential + golden test harness — the verification standard from
+# docs/thesis.md §3, plus an expected-output check.
+#
+# For every .ty program in examples/ and tests/, transpile it, build BOTH a
+# native -O2 binary and an AddressSanitizer+UBSan binary, run both on the same
+# stdin, and assert:
+#   (a) both exit 0,
+#   (b) the sanitizer binary reports no memory / undefined-behaviour error,
+#   (c) the two outputs are byte-identical,
+#   (d) the output matches the committed golden tests/<name>.out.
+#
+# (c) catches undefined behaviour the optimizer and the sanitizer disagree on.
+# But (c) does NOT catch a miscompile that produces the SAME wrong output in
+# both builds (e.g. reading a double array slot as a long) — both agree, just
+# wrongly. (d) is what catches that: the golden is the recorded correct output,
+# so any value regression fails the build instead of needing a human to notice.
+#
+# Goldens are recorded only by `make test-update` (RECORD=1), never by a normal
+# run — so a regression can't silently rebake itself into the expected file.
+# Review the diff before committing a re-record.
+#
+# Leak detection is ON: under the implicit-arena model every scope frees its
+# arena at exit (including main's), so at normal process exit nothing should
+# remain allocated. A LeakSanitizer report means a real bug — a missing arena
+# free — most likely an early `return` that skipped a loop/if scratch arena.
+#
+# A program may supply fixture stdin as tests/<name>.in (else /dev/null is fed).
+# Exit status: 0 iff every program passes (or, under RECORD=1, builds + runs).
 set -u
 cd "$(dirname "$0")/.." || exit 2          # repo root
 
@@ -11,6 +40,12 @@ RECORD="${RECORD:-0}"
 # 32-bit-`long` data model. The 32-bit ASan runtime is not shipped under multilib,
 # so that lane is skipped here; ASan coverage stays in the 64-bit `make test`.
 NO_ASAN="${TYCHO_NO_ASAN:-0}"
+# Windows/MSYS2: mingw gcc ships no ASan/UBSan runtime (docs/internals/windows-port.md phase 2
+# -- "mingw ASan is experimental"), so the sanitizer legs cannot link
+# (-lasan/-lubsan absent) and every fixture would redden on a leg that is a SKIP
+# by design. Force TYCHO_NO_ASAN=1 unless the caller explicitly set it to 0, and
+# name native binaries with .exe (MSYS2's exec machinery resolves extensionless
+# names unreliably for winpthread-linked PE files).
 case "$(uname -s)" in
     *MSYS*|*MINGW*|*CYGWIN*)
         IS_WINDOWS=1
@@ -43,6 +78,10 @@ note() { echo "FAIL  $1  ($2)"; }
 # run_one <entry.ty> <name> <golden.out> <stdin>
 run_one() {
     hi="$1"; name="$2"; g="$3"; in="$4"
+    # Per-fixture temp dir: Windows/MSYS2 exec fails (127) once a directory
+    # holds ~500+ entries (observed under Prism/Defender; the whole-corpus run
+    # crosses the threshold mid-way). Each fixture's ~8 files stay in their own
+    # subdir; the trap still clears the base $TMP at exit.
     d="$TMP/$name"
     mkdir -p "$d"
     c="$d/$name.c"
@@ -50,6 +89,10 @@ run_one() {
     san="$d/$name.asan$EXE"
     ok=1
 
+    # tychoc's own link path appends the companion shim of every corelib package
+    # an import pulled in; this lane rolls its own cc line, so it has to ask.
+    # `--print-shims` answers with the transitive closure, and is empty for a
+    # program that imports no corelib (scripts/release.sh:90 splices it too).
     shims="$("$TYCHOC" "$hi" --print-shims 2>/dev/null | tr '\n' ' ')"
 
     if ! "$TYCHOC" "$hi" --emit-c -o "$d/$name" >"$d/$name.log" 2>&1; then
@@ -61,7 +104,13 @@ run_one() {
         note "$name" "sanitizer cc"; sed 's/^/      /' "$d/$name.log"; ok=0
     else
         "$nat" <"$in" >"$d/$name.nout" 2>/dev/null; nrc=$?
+        # Windows/MSYS2 flake (observed under Prism emulation): under sustained
+        # process churn exec of a PE intermittently fails with 127 -- transient,
+        # never a real exit code. Retry once; on Linux this never triggers.
         if [ "$nrc" -eq 127 ] && [ "$IS_WINDOWS" = 1 ]; then
+            # the emulator's startup heap-corruption crash (0xC0000374, observed
+            # under Prism on ARM64 Windows) is a per-attempt race; retry with
+            # backoff.
             for _try in 1 2; do
                 sleep 2
                 "$nat" <"$in" >"$d/$name.nout" 2>/dev/null; nrc=$?
@@ -107,6 +156,10 @@ run_fixture() {
     hi="$1"; name="$(basename "$hi" .ty)"
     in="tests/$name.in"; [ -f "$in" ] || in=/dev/null
     gold="tests/$name.out"
+    # Windows-aware golden: the float_str_locale rt= column is untestable on
+    # Windows (the roundtrip hook needs newlocale, absent from mingw at every
+    # version -- docs/internals/windows-port.md phase 3); a `<golden>.win` sibling records the
+    # rt=-1 rendering. Only ever selected on Windows.
     if [ "$IS_WINDOWS" = 1 ] && [ -f "tests/$name.out.win" ]; then gold="tests/$name.out.win"; fi
     run_one "$hi" "$name" "$gold" "$in"
 }
@@ -220,6 +273,14 @@ for hi in tests/reject/*.ty; do
     elif [ ! -s "$TMP/rj.log" ]; then
         note "$name" "tychoc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
     else
+        # OPT-IN: a fixture may pin WHY it is refused with a `# expect: <text>`
+        # line, asserted as a literal substring of the diagnostic. A fixture
+        # without one scores exactly as before. Substring, not an exact golden:
+        # exact is what the tests/diag/ lane below already does, and a caret
+        # column or line number shifts whenever a fixture gains a line -- churn
+        # carrying no signal about the REASON for the refusal.
+        # EVERY `# expect:` line is asserted, not just the first: a diagnostic
+        # that names two locations needs two substrings to pin both.
         miss=''; sed -n 's/^# expect: //p' "$hi" > "$TMP/rj.exp"
         while IFS= read -r exp; do
             if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rj.log"; then miss="$exp"; break; fi
@@ -232,6 +293,11 @@ for hi in tests/reject/*.ty; do
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
+# Package-level reject tests: tests/reject/pkg/<name>/ is a multi-file package
+# program the compiler must REFUSE (e.g. a cross-package access to a
+# package-private `_name`). Its own directory keeps the entry's package-merge
+# isolated from the single-file rejects above. Same discipline as above: tychoc
+# must exit nonzero AND print a diagnostic.
 for d in tests/reject/pkg/*/; do
     [ -d "$d" ] || continue
     name="rejectpkg_$(basename "$d")"
@@ -334,6 +400,14 @@ for hi in tests/warn/*.ty; do
     fi
 done
 
+# Package-mode warning goldens: tests/warn/pkg/<name>/ is a VALID package program
+# whose WHOLE compiler stderr is locked as tests/warn/pkg/<name>.err. Its own
+# directory for the reason tests/reject/pkg/ has one -- a `package` header
+# compiles the whole directory, so a flat sibling would drag the others in.
+# Deliberately no "a warning must be present" rule, unlike the flat lane above:
+# what these fixtures assert is WHICH warnings a build prints, and "none from the
+# corelib package I merely imported" is the assertion (commit 8f4367d). An empty
+# golden is a legal answer here; in the flat lane it is a failure.
 for d in tests/warn/pkg/*/; do
     [ -d "$d" ] || continue
     base="$(basename "$d")"

@@ -156,13 +156,6 @@ literally the same bounds-checked call — so neither is faster or safer than th
 other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 [§5.2.5](03-types.md#525-string) for why the wart exists.
 
-> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4630-4631`, `split` `:5074@.name="split"`;
-> `len` magic
-> `:5897-5903`; `char_at` `Sig` `src/tychoc.c:5073@.name="char_at"`, codegen `:9201-9208`
-> (`tycho_str_get`, the same call `s[i]` emits at `:10420@tycho_str_get`), tychoc0
-> `compiler/tychoc0.ty:5255-5256`,`:7252-7257` (`hi_sidx`, the same helper `s[i]`
-> emits at `:6770@hi_sidx`).
-
 ## 29.6 Arrays
 
 All four array builtins are **magic**. `len` is overloaded across `[T]`,
@@ -220,14 +213,6 @@ user-written call to any of them is a **hard parse error** directing the author
 to `m[k] = v`, `m.get(k, default)`, `k in m`, and `delete m[k]` respectively.
 (The identically-named nodes that the desugars build internally are not
 user-callable.)
-
-> Provenance: `keys` `src/tychoc.c:5953-5958`; `m.get` sugar `:5386-5399`,
-> `:5251-5266`; `map_*` removal (parse error) `:2444-2445`, tychoc0
-> `compiler/tychoc0.ty:932-935` (expression form) and `:1678-1681` (statement
-> form). `hash` resolve `src/tychoc.c:6151-6164`, codegen `:9823-9825`,
-> `gen_hash` `src/tychoc.c:9592@gen_hash`; its type-emission gate is `hash_keyused`
-> `src/tychoc.c:1369-1373`, OR'd into the hash-function gates so a `hash()` on
-> a never-a-map-key type still emits `tycho_hash_S_*`/`T*`/`arr_C*`.
 
 ## 29.8 Type builtins
 

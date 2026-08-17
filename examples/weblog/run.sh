@@ -17,4 +17,4 @@ fi
 
 fail=0
 diff -u "$D/expected.out" "$T/out_c" || { echo "weblog: tychoc output differs from golden"; fail=1; }
-[ $fail -eq 0 ] && echo "weblog: ok (tychoc == golden; the tychoc0 leg was retired 2026-07-29)" || exit 1
+[ $fail -eq 0 ] && echo "weblog: ok (tychoc == golden)" || exit 1

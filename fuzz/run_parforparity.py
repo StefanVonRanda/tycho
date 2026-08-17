@@ -280,7 +280,6 @@ def main():
             sys.exit(1)
         print("parfor-parity: %d/%d parallel-for gate cases match the oracle "
                "(accept/reject + emitted C).\n"
-               "               NOTE: the tychoc0 differential was retired 2026-07-29 -- "
                "see this file's header." % (total, total))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

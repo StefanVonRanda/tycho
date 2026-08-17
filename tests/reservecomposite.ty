@@ -1,5 +1,3 @@
-# reserve() (capacity hint) now works for composite-element arrays -- structs, tuples,
-# and nested arrays -- not just [int]/[float]/[string]. Both compilers.
 struct P:
     x: int
     y: int

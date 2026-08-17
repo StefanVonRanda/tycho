@@ -1,5 +1,3 @@
-# Tuple reassignment `a, b = f()` (assign existing vars) and mutable tuple
-# elements `t.0 = v`. Self-hosting in both compilers.
 fn minmax(a: int, b: int) -> (int, int):
     if a < b:
         return a, b

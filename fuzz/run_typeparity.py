@@ -140,7 +140,6 @@ def main():
             sys.exit(1)
         print("type-parity: %d/%d scalar binop cases match the `expect` oracle "
               "(%d accept / %d reject;\n             every accept emits compilable C, no crash on any case)."
-              "\n             NOTE: the tychoc0 differential was retired 2026-07-29 and the oracle "
               "\n             above replaced it 2026-07-30 -- see this file's header."
               % (total, total, accepts, total - accepts))
     finally:

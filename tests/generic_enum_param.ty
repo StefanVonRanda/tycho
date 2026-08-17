@@ -1,6 +1,3 @@
-# A generic ENUM passed as a function parameter (by value and inout), across
-# instantiations, plus a generic fn returning a generic enum and one held in a
-# generic struct field, and a generic enum instantiated over a newtype. Both compilers.
 type Id = int
 
 enum Opt($T):

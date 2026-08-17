@@ -194,7 +194,7 @@ Ranked by value / effort.
   and would hit any binary-data library (compression, image, network, hashing).
   Halves memory and removes the encode/decode CPU and code.
 - *Incremental or fundamental.* Fundamental — a new core type with its own
-  arena/copy paths in both compilers — but it is *parallel* to `string`, so
+  arena/copy paths in the implementation — but it is *parallel* to `string`, so
   much of the string machinery is a template.
 - *Risk to value semantics.* Low. `bytes` is just another value type; deep-copy
   on the seam preserves the no-aliasing invariant. The only new surface is the

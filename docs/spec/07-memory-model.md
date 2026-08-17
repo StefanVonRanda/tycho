@@ -182,11 +182,6 @@ the same `a`, even when the elements or fields provably do not overlap. Such
 overlap is rejected at compile time (*"overlapping mutable
 access"*); it would make the copy-out order observable and reintroduce aliasing.
 
-Both implementations enforce this (`src/tychoc.c:6654@alias`;
-`compiler/tychoc0.ty` `check_call_args`). A `tychoc0` fail-open on this rule was
-found during the drafting of this specification and fixed; it is locked by
-`tests/reject/inout_alias.ty` (both compilers reject, differential).
-
 ### 11.3 Heap `inout`
 
 `inout` extends to heap-bearing values — `[int]`, `[string]`, heap-bearing
@@ -235,10 +230,3 @@ untouched; `inout Channel($T)` is rejected, because the rule is about the
 channel and not about `T`. The `inout` is the whole of the restriction: a plain
 `Channel($T)` parameter is a legal type pattern and composes like any other
 ([§7.1](05-generics.md#71-type-parameters)).
-
-Both implementations reject every form (`src/tychoc.c` `check_inout_param_type`
-:6844-6852, applied at the declaration :7146 and at the instantiation :6923;
-`compiler/tychoc0.ty` `parse_func` and `mono_instantiate`), locked by
-`tests/reject/chan_inout_param.ty`, `inout_fnvalue.ty`,
-`generic_chan_inout_param.ty`, `generic_inout_fnvalue.ty`,
-`generic_inst_chan_inout.ty` and `generic_inst_inout_fnvalue.ty`.

@@ -137,9 +137,6 @@ its built-in parametric types. The transpiler already:
 - **dispatches** every operation (`push`, `Some(x)`, `m[k]`, `==`) to the right
   monomorphic helper from the operand's concrete type.
 
-The self-hosted `compiler/tychoc0.ty` mirrors all of this on string-typed type
-names (`mangle`, `mangle_type`, the `Arr_*`/`Map_*` families).
-
 Generics add **one pass** on top: at a call site (function) or a type use
 (struct), bind the `$`-parameters ([§3](#3-inference-argument-directed-structural-matching)),
 **intern the instantiation** `(generic_def, [concrete type args])` in a new

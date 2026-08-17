@@ -1,4 +1,3 @@
-# no silent float->int coercion of a call argument (must reject, both compilers)
 fn g(n: int) -> int:
     return n
 fn main():

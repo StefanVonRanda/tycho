@@ -15,7 +15,7 @@ diagnostic text is not ([§1.1](00-conventions.md)).
 > `:1288-1294`,`:1001-1008`, `pop` `:1282-1286`, `substr` `:1022-1032`, string
 > header `:926-944`, map hashing `:1828-1831`, channels/tasks `:577-913`.
 > Behaviors marked *(probed)* were
-> confirmed on both compilers.
+> confirmed against the implementation.
 
 ## 30.1 Defined wraparound
 

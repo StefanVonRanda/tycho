@@ -33,35 +33,4 @@ Composes `core:httpd`, `core:net`, `core:io`, `core:strings`, `core:sort`, and
 
 ## Dogfood findings
 
-- **A real `tychoc` soundness bug — found here and fixed (the headline).** Serving a
-  binary asset returns a struct holding the file `bytes`; the body came back as
-  *reused arena memory* (fragments of the response headers). Root cause: `copy_into`
-  (which re-homes a heap value into the caller's arena) had no `T_BYTES` case, so a
-  `bytes` field of a returned struct wasn't deep-copied — it dangled into the callee's
-  freed scope, and a later allocation reused the block. A use-after-free that **ASan
-  can't catch** (valid memory, wrong data), and a `tychoc`/`tychoc0` *divergence* the
-  output-only fixpoint missed (tychoc0 re-homed bytes; tychoc didn't). Fixed in
-  `copy_into`; regression-locked by `tools_check.sh`'s `bytes-rehome` assertion.
-- **Binary/static serving now works.** With `io.read_bytes` (added for this) and the
-  compiler fix, the server serves CSS and a favicon PNG (20 NUL bytes) **byte-identical
-  over the socket** — the string-model `0x00` limit is sidestepped by keeping the body
-  as `bytes` and writing it via `net.write`. ~~The write stays in this package (`net`
-  directly) rather than a cross-package `httpd` helper; a `httpd.write_bytes` is a
-  reasonable follow-up now that the bytes-lifetime bug is gone.~~ **Done (the webserver plan):** `httpd.Response.body` is now `bytes`, so the hand-rolled `write_asset`
-  header writer this example carried is gone — assets go through the ordinary
-  `httpd.response` / `httpd.write_response` path. The MIME table this example
-  hand-rolled is now `httpd.content_type` (Phase 3), and the accept loop keeps the
-  socket open across requests with an idle timeout (Phase 4).
-- **`core:markdown`'s second consumer.** The renderer (built for this) works
-  end-to-end — the blog index is even *built as Markdown and rendered*.
-- **No router in `core:httpd`.** You hand-write the path matching. A small pattern
-  router (`/blog/:slug`) would be a natural corelib addition — demand-gated.
-
 ### Gotchas (not bugs)
-
-- A cross-package type must be qualified: `httpd.Response`, `httpd.Request`.
-- `handle` is a reserved keyword (typed handles), so the router is named `route`.
-- An HTML entity written in Markdown source (`&mdash;`) is escaped to
-  `&amp;mdash;` — correct behavior; use the literal character (`—`).
-- Every shim-backed import must be named on the `tychoc0` link line — here
-  `net_shim.c` **and** `io_shim.c` (see `run.sh`); `tychoc` auto-links them.

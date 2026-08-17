@@ -1,5 +1,3 @@
-# Structural map equality (== / !=): same length + every key equal by value,
-# including maps nested in structs. Self-hosting in both compilers.
 struct Counts:
     m: [string: int]
     tag: int

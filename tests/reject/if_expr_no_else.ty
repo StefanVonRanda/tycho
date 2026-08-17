@@ -1,4 +1,3 @@
-# A value `if` must have an `else` — every path must produce a value (both compilers).
 fn main():
     x := if true:
         1

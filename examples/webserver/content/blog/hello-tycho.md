@@ -1,7 +1,7 @@
 date: 2026-07-01
 # Hello, Tycho
 
-This is the first post. Tycho compiles to C and self-hosts: a second compiler
+This is the first post. Tycho compiles to C: a dependency-free transpiler
 written *in Tycho* reproduces its own output byte-for-byte.
 
 ```

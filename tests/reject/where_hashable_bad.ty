@@ -1,6 +1,3 @@
-# `where hashable(T)` instantiated with a non-hashable key type (float is not a
-# valid map key). Both compilers must refuse it at instantiation with a clear
-# signature error rather than a deep body error.
 
 fn distinct(xs: [$T]) -> int where hashable(T):
     m : [T: int] = []

@@ -19,6 +19,9 @@ run() { ( ulimit -t "$TMO" 2>/dev/null; $AS_CAP; $TO "$@" ); }
 
 py() { python3 - "$@"; }
 
+# Generate the fixtures (depth 6000 / chains 200k are well past both the 2000
+# expression cap and the 256 indentation cap, and past the observed SIGSEGV
+# depth, so a surviving stack guard is the only way to exit cleanly).
 py >"$T/paren.ty"   <<'P'
 import sys; print("fn main():\n    x := " + "("*6000 + "1" + ")"*6000 + "\n    print(str(x))")
 P
@@ -90,6 +93,15 @@ accept "valid-chain"     ok_chain
 accept "valid-stmt"      ok_stmt
 accept "valid-type"      ok_type
 
+# ---- generated-code side (`docs/internals/plan-tycho-scheme-DONE.md` phase 1): deep recursion in a PROGRAM -------
+# The reject/accept above guard the COMPILER's own recursion. Until the
+# stack-overflow guard landed in the runtime (tycho_rt.c), deep recursion in
+# emitted code died with SIGSEGV -- no diagnostic, no cleanup. Two measured
+# victims: the Scheme interpreter at ~5k levels (eval-apply chain, big frames)
+# and the json walker at ~100k nests (parse_value, small frames). Each deep
+# program must COMPILE (it is valid Tycho), then DIE CLEANLY at runtime:
+# exit 1-127 (NOT a signal), empty stdout, "stack overflow" on stderr. The
+# modestly-nested counterpart must run and print the right answer.
 py >"$T/prog_big.ty"   <<'P'
 import sys; print("fn f(n: int) -> int:\n    if n <= 0:\n        return 1\n    return n + f(n - 1)\nfn main():\n    print(str(f(2000000)))")
 P

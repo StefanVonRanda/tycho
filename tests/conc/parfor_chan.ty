@@ -1,8 +1,3 @@
-# `parallel for x in ch:` — bounded fan-out draining a channel with K=ncpu
-# workers until it is closed+drained. The producer closes the channel when done
-# so the workers can exit; every item is consumed exactly once (Vyukov MPMC), so
-# the reduction (sum of i*i for 0..99 = 328350) is deterministic. Mirrors the
-# manual idiom in workers.ty; both compilers must produce the same output.
 fn produce(ch: Channel(int), n: int) -> int:
     for i := 0; i < n; i += 1:
         send(ch, i)

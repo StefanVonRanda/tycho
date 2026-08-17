@@ -121,10 +121,6 @@ call-sites** (destination-passing, emergent). Soundness comes from §3:
 allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
 
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted compiler, `tychoc0` the self-hosted one.
->
-> Some figures below carry their own measurement date; those that do not were taken on or before **2026-08-12**, when this page was last revised, and have not been re-measured since. Each is tied to the optimization it motivated, so read them as that change's effect rather than as today's absolute numbers.
-
 *Measured* (`fn build(n)->[int]` returned 20000×, against the compiler just
 before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.
 
@@ -247,7 +243,7 @@ Written down here rather than filed as a defect, because it is not one: it is a
 measured instance of a limit this project already concedes. The memory-model
 guide says the same thing in general terms — allocation-churn workloads are
 where the arena is at its weakest, and the honest loss
-([`docs/guides/memory-model.md:116-118`](guides/memory-model.md)). What the
+([`docs/guides/memory-model.md:109-111`](guides/memory-model.md)). What the
 controls add is the reason to believe the diagnosis: without them, "1 M edits
 got 7× slower" is equally well explained by the arena, by string
 concatenation, or by `inout`, and the fix would be aimed at the wrong one.
@@ -350,20 +346,6 @@ feature program is checked under `cc -fsanitize=address,undefined` with output
 required to match native `-O2`.
 
 Three further things back the thesis up, written up separately.
-
-**Self-hosting.** A second transpiler written in Tycho itself
-(`compiler/tychoc0.ty`) reached a byte-identical fixpoint — it reproduced its own
-emitted C byte-for-byte — and its codegen ran on this same implicit-arena model.
-**That gate was retired on 2026-07-29**: a breaking loop-syntax change left the
-frozen `tychoc0` unable to parse the corpus, so `make fixpoint` no longer exists
-and nothing replaces it. The claim stands as of the freeze; it is not re-checked
-by anything today
-([docs/memory-model.md](guides/memory-model.md)). Soundness is checked by that
-byte-identical self-build and sanitizers. That makes the model eat its own dog
-food on a real, allocation-heavy, deeply-recursive program. A differential fuzzer
-and accept/reject parity lanes cross-check the two transpilers under AddressSanitizer,
-holding them to identical compile decisions with **no divergence skips** — the
-language `tychoc0` accepts is no longer a strict subset of the reference's.
 
 **Head-to-head performance.** The cross-language benchmark suite under `bench/`
 (Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and the

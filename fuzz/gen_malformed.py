@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-# Malformed-input generator for the robustness ("fail-closed") fuzzer.
-#
-# Unlike gen.py -- which emits well-TYPED programs for the differential output
-# oracle -- this emits BROKEN or near-broken Tycho source: a real corpus program
-# (tests/ + examples/) with random corruption applied, or pure token/byte soup.
-# The harness (run_reject.py) asserts both compilers FAIL CLOSED on it: a clean
-# error, never a crash (SIGSEGV / abort / ASan / UBSan / hang), and -- when a
-# compiler accepts the input -- the C it emits must still be valid C.
-#
-# Mutations stay NEAR the grammar boundary (that's where parsers are weakest):
-# truncation, byte/line edits, unbalanced brackets, token insertion/deletion,
-# broken indentation, bounded deep nesting (recursive-descent stack stress),
-# and occasional pure-random soup. Deterministic by seed so findings reproduce.
-#
-# Usage: gen_malformed.py <seed>   -> a (probably-)malformed program on stdout
 import sys, os, random, glob
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

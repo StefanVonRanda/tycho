@@ -1,4 +1,3 @@
-# A value `match` must still be exhaustive (both compilers).
 fn main():
     o := Some(3)
     x := match o:

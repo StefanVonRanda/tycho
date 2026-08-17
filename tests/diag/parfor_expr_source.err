@@ -1,2 +1,2 @@
-tests/diag/parfor_expr_source.ty:22: error: parallel for over a collection or channel must name a variable (bind it first)
-    22 |     parallel for v in build():
+tests/diag/parfor_expr_source.ty:9: error: parallel for over a collection or channel must name a variable (bind it first)
+     9 |     parallel for v in build():

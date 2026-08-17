@@ -6,13 +6,6 @@ scope's arena is released whole when it exits. There is no reference type and no
 garbage collector. Why it is designed this way is [thesis.md](../thesis.md); what
 it looks like in code is [arrays-structs.md](arrays-structs.md).
 
-This page is the working detail — the shape of the emitted C, the reclamation
-techniques that keep the model cheap, what checks them, and what each one
-measured. Some figures name `tychoc0`, the self-hosted transpiler; they are kept
-as they were recorded. The sections below describe the model as it stands; a closing appendix
-sketches, for contributors, how I brought the self-hosted code generator onto
-the model one type family at a time.
-
 The memory model is the central idea this language exists to demonstrate, and the cross-language benchmarks below are encouraging. The
 stability contract is in the README's status banner; implementation details
 like arena sizes are deliberately not part of it.
@@ -152,7 +145,7 @@ ways an over-aggressive move or recycle could go wrong:
   actually freed.
 > A second implementation used to check the first, and two implementations
 > disagreeing is a sharper signal than one passing its own tests. That check is
-> gone and nothing replaces it — see [bootstrap.md](../bootstrap.md).
+> gone and nothing replaces it.
 
 ## Across threads
 
@@ -171,23 +164,10 @@ zero annotations.
 
 For contributors. Because placing one type on arenas while others stay on
 `malloc` is sound (see *Why arena migration is sound incrementally*), you can
-reason about the self-hosted code generator one type family at a time. This
+reason about the code generator one type family at a time. This
 appendix records what each mechanism buys for each family. RSS figures are for
 the workload that exercises the named type. Soundness throughout is checked by
 the byte-identical self-build and the sanitizers above.
-
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted compiler, `tychoc0` the self-hosted one.
-
-**Strings.** `tychoc0`'s own code generation is one giant string build, so strings
-matter most. The self-append `out = out + x` naively compiles to a fresh leaked
-buffer per step (O(n²)); growing one buffer in place instead brings a
-30 000-iteration build from ~4638 MB / 1937 ms to ~10 MB / 3 ms (~464×), using
-only `malloc`/`realloc`. The threading spine — the irreducible step where every
-function gains `Arena *_parent` and `_scope`, every call threads it, and returns
-build into `_parent` — brings transient, local, and returned strings onto the
-arena; stored strings move onto the arena with the compound types below. The
-growth buffer behind `acc = acc + x` stays on `malloc`/`realloc` by necessity —
-an arena cannot `realloc` in place — but it is freed, not leaked.
 
 **Compound types.** Arrays (~31×), maps (~3.7×), and structs, tuples, and boxes
 (~1.67×) all use the same coupled pattern: allocators take `Arena*`, copies
@@ -213,15 +193,6 @@ tree-workload win (binary-trees 2374 MB → 38 MB, tree-rewrite 825 MB → 9 MB)
 per-variable block depth (a stack of block-entry indices rather than a single
 marker) closes the array-pipeline gap (358 MB → 5 MB); and move-on-last-use
 mirrors the C compiler's deep-copy elision.
-
-**Liveness-driven reuse.** The arena free-list and `arena_recycle` turn the
-loop-carried reassignment worst case into a win — `iter-transform` 3.5 GB → 4 MB
-(`tychoc`) / 6 MB (`tychoc0`). The read-≥-twice condition described above is what
-keeps a moved-out buffer from being recycled.
-
-**Element-overwrite recycle.** Recycling the evicted element on `arr[k] = v`,
-backed by a per-size-class free-list, closes the sliding-window case — `window`
-47.3 MB → 4.2 MB (`tychoc`) / 3.6 MB (`tychoc0`), and faster.
 
 **Per-statement transient reclaim.** Each expression statement's discarded value
 is wrapped in a per-statement arena, so a depth-19 stretch tree from a discarded

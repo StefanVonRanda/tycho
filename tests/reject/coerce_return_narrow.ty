@@ -1,4 +1,3 @@
-# no silent float->int coercion of a return value (must reject, both compilers)
 fn h() -> int:
     return 7.9
 fn main():

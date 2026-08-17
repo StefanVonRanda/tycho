@@ -24,13 +24,6 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
 
 ## Dogfood findings
 
-Ordered roughly by value. The tool compiles and runs under `tychoc`, output
-correct and deterministic. All five findings have since been addressed by the dogfood:
-finding 1 (a `core:io` streaming reader), finding 2 (a `core:datetime` CLF
-parser), finding 3 (`core:regex` capture groups), finding 4 (a real tychoc0
-compiler bug), and finding 5 (`tychoc` package-mode diagnostics — now correct
-across parse, resolve, and codegen errors).
-
 1. **`core:io` had no streaming line reader — fixed.** Originally the only option
    was `read_lines(path) -> [string]`, which slurps the whole file into an array, so
    peak RSS tracked input size instead of the bounded aggregation state — defeating
@@ -59,20 +52,6 @@ across parse, resolve, and codegen errors).
    still parses the rigid CLF layout with `strings.split_once` (clearer for a fixed
    format), but a general log tool can now use groups. (One minor point remains: a
    compiled pattern is a raw `ptr` with manual `release()`, not a RAII `handle`.)
-
-4. **A real tychoc0 bug — found here and fixed.** `parse_line` splits the CLF
-   timestamp (`dpart, trest := split_once(ts, ":")`) and later builds
-   `datehour := dpart + ":" + hour`. tychoc resolved that fine; `tychoc0` reported
-   `dpart` as an unknown variable. Root cause: tychoc0's `lift`/`mono`/`gfix`
-   statement walks recursed past an `SDestructure` node without recording its bound
-   names, so `type_of` on a *later* declaration that read one couldn't see it. It
-   only bit when a destructure var fed an intermediate `:=` decl — a shape
-   `tychoc0.ty` itself never contains, so the self-hosted compiler compiled cleanly
-   and the output-only fixpoint differential never saw the gap. Fixed in all three
-   passes (mirroring how `gen_stmt` already tracked them), locked by
-   `tests/destructure_scope`. This is the dogfood's headline result: a real
-   parity/soundness bug that the whole test + fuzz + fixpoint gate had missed,
-   caught by writing one real program.
 
 5. **`tychoc` package-mode diagnostics misattributed — fixed.** In a package build,
    an error printed the correct `file:line` but a source snippet from the wrong file

@@ -6,8 +6,6 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 [ -x ./tychoc ] || { echo "build ./tychoc first (make tychoc)"; exit 2; }
 
 if [ "$EMIT" = self ]; then
-    echo "profile.sh: the 'self' emitter was RETIRED 2026-07-29 -- it built a tychoc0," >&2
-    echo "            and no lane builds tychoc0 any more. Drop the 4th argument to" >&2
     echo "            profile with tychoc. See this file's header." >&2
     exit 2
 fi

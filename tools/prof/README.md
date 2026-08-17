@@ -29,21 +29,11 @@ sample — hundreds of runs are aggregated.
 
 ## Use
 
-```sh
-make tychoc
-tools/prof/profile.sh compiler/tychoc0.ty compiler/tychoc0.ty 600 self
-```
-
-`emitter=self` profiles the **self-hosted** codegen (tychoc0 emitting itself);
-`tychoc` (default) profiles tychoc's emission. They can differ a lot — tychoc emits
-a `strlen`-bounds-checked `tycho_str_get` for `s[i]` where tychoc0 emits a direct
-index, so the same `.ty` profiles differently depending on who built it.
-
 ## What it found
 
 It pointed straight at the real self-compile hotspot gprof had hidden:
 `scan_token` recomputing `len(src)` (a full `strlen` of the source) once per
 token — O(tokens × length) = O(n²). Threading the already-known length in cut
-the self-hosted self-compile **62 → 33 ms** with no change to bounds-checking.
+a large compile **62 → 33 ms** with no change to bounds-checking.
 After that, the remaining cost is diffuse `memcpy`/`malloc` from value-semantic
 copies — no single dominant function.

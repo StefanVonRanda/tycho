@@ -1,6 +1,3 @@
-# Recursive + nested generic structs (both compilers): a generic struct whose
-# field names the struct itself (via array indirection), and a generic struct
-# nested inside another generic struct.
 
 struct LL($T):
     head: $T

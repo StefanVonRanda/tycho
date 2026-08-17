@@ -57,7 +57,7 @@ rounding, and special values (signed zero, infinities, NaN) follow IEEE-754.
 `/` is true division and does not trap.
 
 Division never traps: `0.0/0.0` is `NaN`, `1.0/0.0` is `+inf`, and `-1.0/0.0` is
-`-inf` (probed on both compilers). `NaN` is unordered — `NaN == NaN` is `false`,
+`-inf` (probed against the implementation). `NaN` is unordered — `NaN == NaN` is `false`,
 and every ordering comparison with a `NaN` operand is `false`. The float *values*
 are fully defined by IEEE-754; only the *textual* form `str` produces for
 `NaN`/`inf` (e.g. `-nan`) derives from the C library and is implementation-defined
@@ -445,34 +445,6 @@ compile time. Indexing, index assignment, `==`, value copy, `str`, and `for … 
 iteration behave as they do for a fixed-size array. `pop`, slicing, and
 `reserve` MUST be rejected on a `bounded` value.
 
-> Provenance: the `bounded` branch of `parse_type_inner`,
-> `src/tychoc.c:2151-2168@"bounded"` (capacity `:1766-1776`, element
-> restriction `:1832-1833`); its twin
-> `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
-> deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
-> with the unresolved-name guard at `:11912-11913@[b#`. The affine-element
-> rejection is a type-intern choke point in `src/tychoc.c`
-> (`arrc_sized_b` `src/tychoc.c`, messages `compiler/tychoc0.ty` and `compiler/tychoc0.ty`) and an
-> explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.
-> Rejections: slice `src/tychoc.c:5706-5707`, `pop` `:6012-6013`, `reserve`
-> `:6520@reserve does not apply to a bounded`, over-long literal `:6227-6230`. The full-push trap is emitted at
-> `:11845-11848`. Fixtures: `tests/bounded.ty`, `tests/bounded_const_cap.ty`,
-> `tests/reject/fixarr_into_bounded_arg.ty`,
-> `tests/reject/bounded_chan_elem.ty`, `tests/reject/bounded_task_elem.ty`,
-> `tests/reject/bounded_nonconst_cap.ty`,
-> `tests/reject/bounded_const_cap_zero.ty`,
-> `tests/reject/bounded_elem_bool.ty`. The aggregate-element surface is covered
-> by `tests/bounded_elems.ty` (struct, tuple, map, nested `bounded`, `bytes`,
-> `[N]E`, `Option`, `Result` — each as a local, a parameter, a struct field and
-> a return type) and `tests/fixarr_aggregate.ty` for the `[N]T` twin. The
-> inline element is emitted inside the by-value containment DFS — `[N]T` and
-> `bounded[N]T` are ordered with the struct/tuple/Option bodies rather than with
-> the pointer-shaped arrays (`src/tychoc.c:11277-11356`, with `inline_arrc`/
-> `needs_body_first` at `:11259-11265`; tychoc0's `comp_dep_types`
-> `compiler/tychoc0.ty:10241-10268` and `emit_comp_body` `:10278-10302`) — which is what makes an aggregate element compile; the
-> infinite-type rejection falls out of the same DFS
-> (`tests/reject/inline_arr_self_elem.ty`).
-
 ## 5.4 Newtypes
 
 ```ebnf
@@ -496,13 +468,6 @@ between two values of the *same* newtype, and the result keeps the newtype.
 Unwrapping to the underlying value uses the base-specific `to_int`/`to_float`/
 `to_str`/`to_bool` or the generic `to_under` (§8). A newtype over `int` or
 `string` is a valid map key carrying its wrapped identity (§5.3.5).
-
-> Provenance: underlying restriction `src/tychoc.c:4138-4140`; its twin
-> `newtype_under_ok` `compiler/tychoc0.ty:3126-3139`, called from
-> `parse_newtype` `:3141-3154`. Fixtures: `tests/reject/newtype_under_option.ty`
-> and its eleven siblings (`_result`, `_enum`, `_soa`, `_newtype`, `_ptr`,
-> `_bytes`, `_u8`, `_f32`, `_tuple`, `_fnty`, `_handle`) — one per rejection,
-> because the compiler halts at the first error.
 
 ## 5.5 Equality and ordering
 

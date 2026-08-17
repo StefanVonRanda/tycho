@@ -4,8 +4,14 @@ CC="${CC:-cc}"
 TYCHOC=./tychoc
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+# LeakSanitizer is absent from Apple's ASan; detect_leaks=1 aborts every
+# sanitizer binary at exit there. Gate by OS (see tests/run.sh).
 case "$(uname -s)" in Darwin) TYCHO_LSAN=0 ;; *) TYCHO_LSAN=1 ;; esac
 export ASAN_OPTIONS=detect_leaks=$TYCHO_LSAN
+# Windows/MSYS2: mingw gcc ships no ASan/TSan runtime (docs/internals/windows-port.md phase 2
+# -- TSan has no Windows-target support in gcc at all), so the asan/tsan
+# variants are SKIPPED loudly and only the native leg runs. Native binaries get
+# a .exe suffix (MSYS2 exec quirk with winpthread-linked PE files).
 case "$(uname -s)" in
     *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; EXE=".exe" ;;
     *) IS_WINDOWS=0; EXE="" ;;
@@ -27,6 +33,12 @@ for f in tests/conc/*.ty; do
     name=$(basename "$f" .ty)
     gold="tests/conc/$name.out"
     c="$TMP/$name.c"
+    # -o writes the C straight into $TMP. HISTORY: this emitted with no -o and
+    # then `mv "${f%.ty}.c" "$c"`, i.e. it created tests/conc/<name>.c inside the
+    # tree on every run and moved it out again -- the stray-artifact behaviour
+    # the loops-cleanup plan removed. `--emit-c` with no -o now writes to stdout
+    # (src/tychoc.c:13667), which this line's `>/dev/null` swallowed, and all 13
+    # fixtures failed with `FAIL <name> (tychoc)`.
     if ! $TYCHOC "$f" --emit-c -o "${c%.c}" >/dev/null 2>"$TMP/$name.log"; then
         note "$name" "tychoc"; sed 's/^/      /' "$TMP/$name.log"; fail=$((fail+1)); continue
     fi
@@ -94,6 +106,13 @@ for f in tests/conc/reject/*.ty; do
     fi
 done
 
+# `parallel(W)` must reach CODEGEN, which no output can show. With no way to
+# observe a worker's identity from inside the loop (FRICTION open-list item 8b),
+# a `parallel(3)` that quietly ran at ncpu() prints exactly what a real one
+# prints -- tests/conc/parfor_width.ty says so in its own header. So the emitted
+# `_pk` initialiser is read here: the literal widths must appear as themselves
+# and the un-widthed form must still be ncpu(). Verified to redden 2026-08-13 by
+# ignoring s->par_width in gen_parfor.
 $TYCHOC tests/conc/parfor_width.ty --emit-c -o "$TMP/pw" >/dev/null 2>&1
 if [ -f "$TMP/pw.c" ]; then
     if grep -q "_pk = 1;" "$TMP/pw.c" && grep -q "_pk = 3;" "$TMP/pw.c" && grep -q "_pk = tycho_ncpu();" "$TMP/pw.c"; then

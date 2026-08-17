@@ -80,7 +80,7 @@ Scalars, `string`, `bytes`, and the opaque handle `ptr` cross the boundary:
 **The integer column is `int64_t`, not `long`.** Writing `long` in a C prototype
 is right only on LP64 and silently truncates on LLP64 (Windows) and ILP32. Nothing catches it: the emitted
 prototype (`extern tycho_int f(tycho_int);`, `tycho_int` being `int64_t`, see
-`docs/spec/appendix-f-impl-defined.md:81`) lives in a different translation unit
+`docs/spec/appendix-f-impl-defined.md:45`) lives in a different translation unit
 from the shim, so C never compares the two. A shim written to the old row and
 built where `long` is 32 bits returns the wrong number, not an error.
 
@@ -243,19 +243,6 @@ by accident. Scalar arguments pass into spawned tasks by value as usual.
 ## Linking
 
 The C reference transpiler (`tychoc`) links the program for you:
-
-- Each distinct `"Lib"` from an `extern "Lib"` declaration becomes a `-l<Lib>`.
-  `-lm` and libc are always passed, so libm/libc externs need no library name.
-- CLI passthrough on the `tychoc` line: `-L<dir>` / `-I<dir>` (library and
-  include paths), `--link <lib>` (a bare `-l` for a library not named in
-  source), `--pkg <name>` (`pkg-config --cflags --libs`), and `--shim <file.c>`
-  (a companion C file compiled and linked alongside the generated `.c` — the
-  `*_shim.c` pattern, as an explicit flag rather than auto-discovery). All
-  accumulate onto one `cc` invocation, with libraries trailing the objects that
-  need them. `--cc <compiler>` overrides the compiler.
-- These flags are `tychoc`-only. The self-hosted `tychoc0` emitted C to stdout
-  and never linked, so it never had them; it is frozen (2026-07-26) and no gate
-  builds it.
 
 A **shim** is the standard way to adapt a C API that the FFI can't express
 directly — for example an out-parameter constructor like `sqlite3_open(path,

@@ -13739,7 +13739,7 @@ int main(int argc, char **argv) {
     if (!input) { tychoc_usage(stderr); return 1; }
     g_srcname = input;
 
-    if (bundle) {   /* emit the package's source as one post-order stream (for tychoc0) */
+    if (bundle) {   /* emit the package's source as one post-order stream */
         bundle_pkg(path_dir(input), 1);
         return 0;
     }

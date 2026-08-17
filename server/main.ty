@@ -221,10 +221,6 @@ fn first_line(raw: string) -> string:
 
 # ---- content types ---------------------------------------------------------
 
-# core:httpd's table covers the web's common types but not the two font formats
-# people actually self-host (.ttf/.otf), nor source maps. Extend it here rather
-# than in the corelib package: an application knowing its own assets is the right
-# layer for this, and the fallback is still application/octet-stream.
 fn ctype_for(p: string) -> string:
     if httpd.has_ext(p, ".ttf"):
         return "font/ttf"

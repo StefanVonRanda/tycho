@@ -19,10 +19,6 @@ accumulates an `int` checksum over everything it builds and prints it once.
 - **tychoc** → `-fsanitize=address,undefined` at `-O1` — must not fault, and must
   match its own native output (catches UAF / heap corruption / UB).
 
-The native-vs-sanitizer disagreement is the oracle. Until 2026-07-26 two further
-legs ran the self-hosted `tychoc0` and required byte-for-byte agreement with
-`tychoc`; `tychoc0` is frozen and no gate builds it (`fuzz/run.py:18-22`).
-
 Any output divergence, sanitizer fault, crash, or compile-acceptance mismatch is
 a **finding**; the program is saved to `fuzz/findings/seed_<n>.ty`. Programs tychoc
 rejects are skipped, so the generator can be aggressive. Leak detection
@@ -88,10 +84,6 @@ oracle:
 Accept/reject **divergence** between the two front-ends is recorded (saved for
 review) but is **not** a hard failure — they legitimately differ near the
 grammar boundary. `make fuzz-reject` (N defaults to 200).
-
-It found and fixed a series of tychoc0 fail-opens (duplicate decls/params/locals,
-param-shadow, unknown function in statement position, no-main, unknown type
-name) and a parser leniency (two statements on one line).
 
 **Known limitation (documented, not guarded):** a sufficiently deep nested
 expression (thousands of `[`/`(`) overflows the recursive-descent parser's C

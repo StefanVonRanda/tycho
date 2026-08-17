@@ -1,6 +1,3 @@
-# A generic type instantiated over a NEWTYPE type-arg (`Box(Id)`, `Opt(Id)`):
-# inside the monomorphized body, a field/payload read keeps the newtype identity,
-# so returning it satisfies the `$T`-return (= Id here). Both compilers.
 type Id = int
 
 struct Box($T):

@@ -1,2 +1,2 @@
-tests/diag/f32_lit_overflow.ty:11: error: f32 literal out of range: `3.5e+38` exceeds the largest f32 (IEEE-754 binary32); write to_f32(1.0/0.0) for an infinity
-    11 |     a: f32 = 3.5e38
+tests/diag/f32_lit_overflow.ty:2: error: f32 literal out of range: `3.5e+38` exceeds the largest f32 (IEEE-754 binary32); write to_f32(1.0/0.0) for an infinity
+     2 |     a: f32 = 3.5e38

@@ -1,2 +1,2 @@
-tests/diag/float_lit_overflow.ty:19: error: float literal out of range: `1e400` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity
-    19 |     x := 1e400
+tests/diag/float_lit_overflow.ty:2: error: float literal out of range: `1e400` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity
+     2 |     x := 1e400

@@ -1,5 +1,3 @@
-# close(h) frees a handle VARIABLE; a call result (a temp) has no owning scope to
-# suppress, so both compilers reject it. (Owned handle vars are the only handles.)
 handle H:
     free: hclose
 

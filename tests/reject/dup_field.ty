@@ -1,5 +1,3 @@
-# both compilers must reject a duplicate struct field name (it would
-# emit a duplicate C member).
 struct P:
     x: int
     x: int
