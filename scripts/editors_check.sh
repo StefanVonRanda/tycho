@@ -1,37 +1,3 @@
-#!/bin/sh
-# Regression guard for the two editor grammars under editors/.
-# Run by `make editors-check` and as a step in `make ci`.
-#
-# Until 2026-07-29 NOTHING in any gate parsed either grammar, so both could rot
-# silently: scripts/tools_check.sh:30@editors excludes ./editors/* from the formatter
-# sweep by name, and no other step in scripts/ci.sh mentions the directory. The
-# concrete damage that found this: editors/zed/README.md carried a "parses all
-# 462 committed .ty files" claim for hundreds of files past the truth (813), and
-# editors/zed/grammars/tycho/src/parser.c is a GENERATED artifact that nothing
-# checked against its grammar.js -- an edit to the .js alone would ship a parser
-# that silently does not implement it.
-#
-#   JSON       editors/vscode/syntaxes/tycho.tmLanguage.json and
-#              editors/vscode/language-configuration.json must be parseable JSON.
-#              A typo in either silently disables highlighting in VS Code.
-#   README     editors/zed/README.md's corpus claim must be present and name NO
-#              file count. It used to state N, checked against the tree; that
-#              number reddened `make ci` four times in three days, every firing
-#              correct and every one caused by ordinary work adding a `.ty` file.
-#              A number a human must remember to update is a decaying claim.
-#   GENERATED  `tree-sitter generate --abi 15` into a temp dir must reproduce the
-#              committed editors/zed/grammars/tycho/src/ byte for byte.
-#   CORPUS     the generated parser must parse every tracked .ty file, with
-#              exactly the enumerated known-bad set below still failing.
-#
-# The two grammar lanes need the tree-sitter CLI, which is fetched with npx. When
-# it is unavailable (offline, no npx, nothing cached) they SKIP rather than fail
-# -- same call as Makefile@SKIPPED's "ASan lane SKIPPED for ilp32": a gate that
-# hard-fails without network access would be worse than no gate. The JSON lane
-# needs only python3, which scripts/ci.sh already depends on, so it always runs.
-# Override the CLI with e.g. TYCHO_TREE_SITTER='tree-sitter' if you have 0.25
-# installed locally; the version matters, a different one regenerates a
-# different parser.c.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
@@ -58,18 +24,6 @@ find "$PWD" -name '*.ty' -not -path '*/.git/*' -not -path '*/node_modules/*' \
      -not -path "$PWD/fuzz/findings/*" | sort > "$TMP/files"
 nfiles=$(wc -l < "$TMP/files" | tr -d ' ')
 
-# --------------------------------------------------------- README corpus claim
-# The claim a reader consults to decide whether to trust the grammar. It used to
-# carry a FILE COUNT that this lane compared against the tree: correct all four
-# times it fired, and all four times the fix was retyping a number that ordinary
-# work had moved. The value never depended on N -- "verified over the whole
-# tracked corpus" is as true at 848 as at 813 -- so the number is gone and this
-# lane gates what can actually be false: the claim is still there. REJECTED,
-# having the script REWRITE the README instead: a gate that repairs its own
-# subject asserts nothing, and it would make `make ci` mutate tracked files
-# (dirty locally, silently discarded on a clean checkout). Whether the grammar
-# really parses the corpus is untouched -- the CORPUS lane at the bottom still
-# enforces it both ways. Runs BEFORE the tree-sitter check: grep only, never skipped.
 echo ">>> editors: zed README corpus claim"
 claim='every tracked `.ty` file'
 if grep -qF "$claim" editors/zed/README.md; then
@@ -107,18 +61,6 @@ else
     fail=1
 fi
 
-# The corpus must parse clean EXCEPT for an enumerated known-bad set.
-#
-# This is deliberately NOT "one ERROR per tests/reject/ fixture". There are 239
-# fixtures in tests/reject/, but they are overwhelmingly SEMANTIC rejects (type
-# mismatches, affine violations, arity errors) whose syntax is perfectly
-# well-formed and which a highlighting grammar must parse. Exactly two reject
-# fixtures are LEXICAL ones, and they are the only files in the tree the grammar
-# is allowed to fail on. Both directions are asserted: a NEW error is a
-# regression, and a known-bad file that starts parsing means the grammar grew a
-# hole (it would be accepting an unterminated raw string, or a `\xNN` escape with
-# fewer than two hex digits).
-# Kept in sorted order: the comparison below is a sorted diff.
 cat > "$TMP/want" <<'EOF'
 tests/reject/hex_escape_one_digit.ty
 tests/reject/rawstring_unterminated.ty

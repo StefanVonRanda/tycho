@@ -1,16 +1,3 @@
-#!/bin/sh
-# gen_grammar.sh — emit the collected EBNF grammar for spec Appendix A.
-#
-# Single source of truth: the in-chapter fenced grammar blocks in
-#   docs/spec/01-lexical.md  (§3, lexical)
-#   docs/spec/02-grammar.md  (§4, phrase)
-# A fenced block is a grammar block iff it contains at least one "::=" line, so
-# example/keyword-list fences are skipped automatically. Every production is
-# emitted verbatim — this listing is a convenience, never a second source of
-# truth (spec Appendix A invariant).
-#
-# `make spec-check` re-runs this and diffs the output against the GENERATED
-# region of docs/spec/appendix-a-grammar.md; any drift fails the build.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

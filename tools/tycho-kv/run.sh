@@ -1,24 +1,3 @@
-#!/bin/sh
-# Gate for tycho-kv, the persistent B+ tree key-value store in
-# tools/tycho-kv/. Same shape as the other tool lanes: step [9] tools-check
-# --emit-c's every .ty in the tree, so a syntax error already reddens there,
-# and [3b] entrypoints never looks under tools/ -- so nothing RAN the store.
-#
-# WHAT IT ASSERTS:
-#   [1] the differential: each command script run against the B+ tree and
-#       against the naive in-memory map backend must print byte-identical
-#       output -- the map is the reference, so a tree bug (a lost key, a
-#       stale separator, a wrong scan) reddens here and nowhere else.
-#   [2] persistence: after a batch, the store reloads and the same scans
-#       agree -- the file round-trip must not lose or corrupt anything.
-#   [3] the map's output is locked to the golden (expected.out), so a
-#       regression in the OUTPUT SHAPE (both backends agreeing on a wrong
-#       format) still reddens.
-#   [4] the batch scripts are the fixtures: puts in shuffled order (splits),
-#       deletes of every third key (borrow/merge), delete-everything (root
-#       shrink), replaces, range scans. Generated once, committed as-is.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-kv/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -52,10 +31,6 @@ for s in big delete-heavy stress; do
         bad "$s: the B+ tree and the map disagree"
         diff "$T/$s.map" "$T/$s.btree" | head -8 | sed 's/^/      /'
     }
-    # [1b] the CONCURRENT scan (phase 2): replay the script with every `scan`
-    # rewritten to `pscan` -- the parallel leaf-chunk scan -- and require the
-    # output to be byte-identical to the serial batch. A race, a lost chunk,
-    # or an out-of-order merge reddens here.
     sed 's/^scan /pscan /; s/^scan$/pscan/' "$scripts/$s.txt" > "$T/$s.pscan.txt"
     "$K" batch "$store" "$T/$s.pscan.txt" > "$T/$s.pscan" 2>>"$T/$s.err" || {
         bad "$s: pscan variant failed"; sed 's/^/      /' "$T/$s.err"

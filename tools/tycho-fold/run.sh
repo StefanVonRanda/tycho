@@ -1,31 +1,3 @@
-#!/bin/sh
-# tycho-fold: wrap text to a width, counting CODEPOINTS.
-#
-# The subject is UTF-8, which is the thing a recorded transcript is worst at
-# judging: wrap "héllo wörld" by BYTES and the output is still printable, still
-# plausible, and simply in the wrong column -- a golden re-recorded from that
-# build agrees with it perfectly. So the golden pins the rendering and three
-# properties are computed instead, over 200 generated lines mixing ASCII,
-# Latin-1, CJK and emoji at widths 3..30:
-#
-#   [3] NOTHING IS LOST -- the concatenation of all non-space characters must
-#       equal the input's, in order. This survives hard-breaking (a word longer
-#       than the width is split), which a word-set comparison does not: the first
-#       version of this check flagged 111 of 120 lines and every one was a legal
-#       hard break. The check was wrong, not the program.
-#   [4] NOTHING EXCEEDS THE WIDTH, counted in codepoints. This caught a real
-#       defect: the hard break fired AFTER passing the width and emitted w+1
-#       characters on every long word -- 596 over-width lines, invisible by eye.
-#   [5] THE OUTPUT IS STILL VALID UTF-8. A wrapper that slices by byte offset can
-#       emit a lone continuation byte, which renders as a replacement character
-#       and is not a diff a golden shows you.
-#
-# [6] is what makes the other three mean anything: `--bytes` runs the SAME code
-# with byte widths, and the two modes must be IDENTICAL on pure ASCII and DIFFER
-# on non-ASCII. Without it, "counts codepoints" is an untested claim -- a build
-# that counted bytes would pass [3], [4] and [5] unchanged.
-#
-# RECORD=1 sh tools/tycho-fold/run.sh   re-records expected.out
 set -eu
 
 cd "$(dirname "$0")/../.."

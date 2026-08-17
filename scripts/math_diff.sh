@@ -1,29 +1,3 @@
-#!/bin/sh
-# core:math against Python's own arithmetic.
-#
-# Both defects this package has had were found by READING a claim -- gcd's
-# "non-negative" (FRICTION #64) and sign's "-1/0/1" (FRICTION #65) -- and both
-# were invisible to every gate in this tree, because `make corelib` compares
-# core:math to a golden THIS REPO RECORDED. A golden proves the answers have not
-# changed; it cannot say they were ever right, and it agrees with whatever the
-# code did on the day it was written. Two defects in one 75-line package is the
-# argument for an independent oracle rather than a third careful reading.
-#
-# Python is that oracle for min/max/clamp/sign/abs/gcd/ipow. Where the semantics
-# genuinely differ the oracle encodes the DOCUMENTED tycho answer rather than
-# Python's, and says so at the site:
-#
-#   * Python ints are arbitrary precision, tycho's are int64. gcd(min, 0) and
-#     gcd(min, min) are 2^63, which does not fit, and follow abs() in returning
-#     min itself -- documented in corelib/math/math.ty, so that is the expectation.
-#   * ipow has no overflow guard by design ("caller's job"), so a case whose true
-#     answer leaves int64 is SKIPPED rather than scored -- and the skip count is
-#     printed, because a silent skip is how a sweep reports covering work it did
-#     not do.
-#
-# Two controls, both required. A deliberately wrong expectation must be CAUGHT,
-# or a zero-mismatch run means nothing. And the corpus must actually contain the
-# edges it claims to -- asserted by count, not by assumption.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -39,8 +13,6 @@ T = pathlib.Path(sys.argv[1])
 MIN, MAX = -(2**63), 2**63 - 1
 
 def lit(n):
-    # int64 min has no literal spelling: the token 9223372036854775808 is out of
-    # range on its own. corelib's own fixtures write it as this expression.
     if n == MIN: return "(0 - 9223372036854775807) - 1"
     if n < 0:    return f"(0 - {-n})"
     return str(n)
@@ -73,9 +45,6 @@ ty.append('        println(str(math.gcd(pa[i], pb[i])) + " " + str(math.abs(pa[i
           '+ str(math.max(pa[i], pb[i])))')
 ty.append("        i = i + 1")
 
-# clamp: lo <= hi only. lo > hi is a caller error with no documented answer --
-# scoring it here would pin whatever the code happens to do, which is the exact
-# failure this lane exists to avoid. Flagged in FRICTION instead.
 tri = []
 for x in ints[:40]:
     for lo, hi in ((0, 10), (-10, 10), (MIN, MAX), (-1, 1), (5, 5)):
@@ -161,13 +130,6 @@ if n_inf < 20 or "nan" not in fsign:
           "which is the only reason it exists)")
     sys.exit(1)
 
-# --- core:fmath. round/trunc are scored; lerp is a PROPERTY, not a differential.
-# `round` is documented "half away from zero" and was `floor(x + 0.5)`, which
-# rounds before floor ever runs: it returned 1.0 for 0.49999999999999994, a value
-# strictly BELOW a half, and moved 2^52+1, an input already an exact integer
-# (FRICTION #66). Every ordinary case was right, which is why its golden was
-# happy. The corpus therefore leads with the two killers and asserts their
-# presence by count.
 ty[1] = ty[1] + '\nimport "core:fmath"'
 rvals = ["0.49999999999999994", "-0.49999999999999994",   # below a half, both signs
          "4503599627370497.0", "-4503599627370497.0",     # already integers, >= 2^52
@@ -226,8 +188,6 @@ if n_kill < 4:
 def ty_abs(x):  return x if x == MIN else abs(x)
 def ty_sign(x): return (x > 0) - (x < 0)
 def ty_gcd(a, b):
-    # The documented exception, quoted from corelib/math/math.ty: where the true
-    # answer is 2^63 it does not fit, and follows abs() in returning min itself.
     import math as m
     g = m.gcd(abs(a), abs(b))
     return MIN if g > MAX else g

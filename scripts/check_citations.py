@@ -45,9 +45,6 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# WHAT A MARKDOWN CITATION IS ALLOWED TO NAME. Every tracked source tree plus
-# the top-level documents. `plan.md` is excluded on purpose: its phases cite
-# live work and rotate.
 SRC_PREFIX = ("docs/", "src/", "compiler/", "runtime/", "corelib/", "tests/",
               "scripts/", "tools/", "examples/", "server/", "bench/", "fuzz/",
               "editors/", ".githooks/",
@@ -75,12 +72,6 @@ CITE = re.compile(r'`(?:([A-Za-z0-9_./-]+\.[A-Za-z0-9]+))?:(\d+)(?:-(\d+))?'
 # a line number.
 SYMCITE = re.compile(r'`((?:[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)|Makefile)@([A-Za-z0-9_]+)`')
 
-# THE SAME SHAPE WITH ANY ANCHOR AT ALL, so that an anchor SYMCITE cannot spell
-# is rejected instead of silently skipped -- a malformed anchor used to match
-# no pattern here at all, which is worse than a bare ref: it reads as policed
-# and was checked by nothing. A `:N` cannot appear before the `@` (the path
-# class has no `:`), so this never steals a `path:N@token` ref from CITE, which
-# checks that form's anchor literally and may keep taking many words.
 SYMCITE_ANY = re.compile(r'`((?:[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)|Makefile)@([^`]*)`')
 SYM_OK = re.compile(r'[A-Za-z0-9_]+')
 
@@ -91,24 +82,9 @@ SYMCITE_SRC = re.compile(r'\b((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)'
 # A source file naming a document: `docs/<path>.md`, optionally `:N` or `:N-M`.
 DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
 
-# A source file naming another source file (the third direction). The `:N` is
-# MANDATORY here -- a bare `tests/run.sh` is a mention, not a citation -- and
-# the match is filtered against the tracked-file set below.
 SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)'
                      r':(\d+)(?:-(\d+))?(?:@([A-Za-z0-9_]+))?')
 
-# A COMMIT HASH AS THIS TREE WRITES ONE: backticked at 7..12 hex characters,
-# or any width after the word `commit`. `hashy` below wants both a digit and an
-# `a-f` letter, and md5 (32) / sha256 (64) / FNV-64 (16) are far wider -- but a
-# CRC32 digest is 8 and does fit, so write one unbackticked (crc=... in prose)
-# or it is read as a citation and reddens here. That is deliberate: a reader
-# cannot tell a backticked 8-char digest from a short hash either.
-# A backticked REPO PATH with no line number -- `docs/guides/ffi.md`. Until
-# 2026-08-16 nothing resolved these: check_links.sh only follows `[text](target)`
-# markdown links, and a path in backticks is not one, so three docs that MOVED
-# into docs/guides/ left four references behind that every gate called green.
-# Deliberately not anchored to a line: the subject is only whether the file is
-# still there under that name.
 PATHREF = re.compile(r'`([A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+'
                      r'\.[a-z]{1,4})`')
 
@@ -158,13 +134,6 @@ def commit_hashes(files, fails):
     out = subprocess.run(["git", "cat-file", "--batch-check"], cwd=ROOT,
                          input="\n".join(seen) + "\n",
                          capture_output=True, text=True).stdout.split("\n")
-    # REACHABILITY, not existence. `git cat-file` finds any object in the local
-    # store -- including one orphaned by a rebase, an amend or a deleted branch,
-    # which is present on the machine that wrote the citation and ABSENT from
-    # every clone. Checked 2026-08-15: 28 of 55 cited hashes were exactly that,
-    # so this gate was green here and red for everyone else, on the one command
-    # CONTRIBUTING calls "the one gate to never skip". Ancestry is the property
-    # a reader needs; existence is the property that fooled us.
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
                           capture_output=True, text=True).stdout.strip()
 
@@ -267,13 +236,6 @@ def unclaimed(line, tracked, claimers):
         out.append(line[m.start():end])
     return out
 
-# gap: only the two directions the gate already walks (tracked .md, and source
-# files under DOC_SCAN_PREFIX). A citation in an UNTRACKED file is invisible to
-# every arm of this checker, strict mode included. MEASURED 2026-08-14 rather
-# than assumed: the only untracked text file in this tree is CLAUDE.md (12 refs,
-# 0 unparseable) -- everything else untracked is a binary or a build artefact.
-# Left as-is deliberately: scanning untracked files would fail a shared gate on
-# somebody's private scratch notes, for a class that is currently empty.
 
 def selfcheck():
     """`--selfcheck`: the strict-mode detector against a table of shapes.
@@ -337,14 +299,6 @@ def selfcheck():
 
 
 def main():
-    # Filter in Python rather than passing `*.md` as a pathspec. Handing a
-    # wildcard to git THROUGH subprocess loses it on Windows: measured on
-    # Windows 11 26200, `git ls-files '*.md'` from the MSYS2 shell answers 126
-    # files, and the identical argv through subprocess answers 8 -- the
-    # top-level ones. The checker then reported `ok` over 8 anchored and 6 bare
-    # citations instead of 134 and 812, which is the dangerous failure: a gate
-    # that passes because it checked almost nothing. Same class as the
-    # posixpath bug in check_goldens.py (1ca7e80).
     mds = [f for f in subprocess.run(["git", "ls-files"], cwd=ROOT,
                                      capture_output=True, text=True,
                                      check=True).stdout.split()
@@ -643,10 +597,6 @@ def main():
             for ln, line in enumerate(fh, 1):
                 for tok in unclaimed(line, tracked, CLAIMERS):
                     leftovers.append("%s:%d  %s" % (f, ln, tok))
-    # A LEFTOVER IS A FAILURE. It was an advisory for exactly as long as it took
-    # to get the tree to zero (2026-08-14), which is the only honest moment to
-    # turn one of these on: no flag day, and the next one that appears is the
-    # author's own line rather than an inherited backlog.
     for lo in leftovers:
         hint = (" A multi-range (`path:N-M,X-Y`) is the common case: write one "
                 "citation per range." if "," in lo.split()[-1] else "")
@@ -667,18 +617,10 @@ def main():
     for f in mds:
         base = os.path.dirname(f)
         for ln, line in enumerate(open(os.path.join(ROOT, f), errors="replace"), 1):
-            # `docs-archive` on the line means the path is named BECAUSE it was
-            # deleted, with the git command to retrieve it -- bench/lru/RESULTS.md
-            # does exactly this. That is a correct citation of an absent file.
             if "docs-archive" in line:
                 continue
             for m in PATHREF.finditer(line):
                 ref = m.group(1)
-                # gap: a fenced code block is not skipped, so a path shown
-                # inside ``` as an illustration is resolved like any other. No
-                # document in the tree does that (906 paths scanned 2026-08-16);
-                # if one ever does, the fix is to track fences here, not to
-                # exempt the path.
                 if ref.split("/")[0] not in tops:
                     continue
                 n_path += 1

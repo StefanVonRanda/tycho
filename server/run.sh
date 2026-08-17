@@ -1,42 +1,3 @@
-#!/bin/sh
-# server/run.sh -- the gate `make server` never was.
-#
-# Every other runner in this tree (all eleven examples/*/run.sh) is
-# batch-and-compare: run a program to completion, diff a golden. This one cannot
-# be, because the program under test is a daemon: it never completes, it answers.
-# So the pattern is different and this header says what it is, because nothing
-# else in the tree does it.
-#
-#   readiness   server/main.ty@port_of binds and asks the kernel for the real
-#               port (net.port_of); server/main.ty@banner prints it ON STDERR:
-#                 tycho-httpd: serving <root> on http://<host>:<port>/ workers=N idle=Nms
-#               We start with `--port 0` -- documented at server/main.ty@pick as
-#               "0 = pick free" -- redirect stderr to a file, and poll that file
-#               for the banner. One signal gives BOTH "it is listening" and
-#               "which port", so the runner never picks a number that might be
-#               taken and never sleeps a fixed interval hoping. A `sleep 1` is the
-#               classic flake here and there is deliberately none in this file.
-#               The banner is printed after net.listen() and before worker()
-#               starts accepting (server/main.ty@worker), so a connect in that window
-#               is queued by the kernel rather than refused -- the socket is
-#               already listening. That is the assumption this runner rests on and
-#               it was proved by running the whole file ten times in a row.
-#
-#   teardown    trap on EXIT, unconditional. The server outlives this script
-#               unless killed, and a stray tycho-httpd holding a port would
-#               poison every later run on the box. It fires on success, on
-#               failure, and on interrupt.
-#
-#   client      python3, raw sockets -- NOT curl. Three of the assertions cannot
-#               be written with curl: the 20 KiB-header 431 needs the response
-#               read WHILE the oversize head is still being written (see the
-#               note on that case below), the 408 needs a head deliberately left
-#               unfinished, and the 400 needs bytes that are not HTTP at all.
-#               Having paid for a raw client for those, the rest use it too, so
-#               there is one client and one failure vocabulary. python3 is
-#               already a hard dependency of this tree (scripts/check_citations.py
-#               is a gate), but the skip is here anyway, as examples/fetch/run.sh
-#               skips on libcurl at its :32.
 set -u
 cd "$(dirname "$0")/.." || exit 2             # repo root
 TYCHOC=./tychoc
@@ -54,28 +15,6 @@ trap cleanup EXIT INT TERM
 fail=0
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; SORT=/usr/bin/sort ;; *) IS_WINDOWS=0; SORT=sort ;; esac
 
-# ---- signalling the server, on either platform ------------------------------
-#
-# The shutdown cases need a real signal delivered to the server process. On
-# POSIX that is `kill`. On Windows it is NOT: MSYS2's kill cannot signal a
-# native PE, it TERMINATES it, so until 2026-08-09 the graceful path never ran
-# and the lane BLOCKED waiting for a wind-down that could not happen (measured
-# 2026-08-08: 43 minutes, which is worse than a red -- a hang stops the sweep).
-#
-# The Windows mechanism is a console control event, and it needs two things
-# neither bash nor the corelib signal test's trick can provide here. First, the
-# server must be a process-GROUP LEADER, or the event can only be sent to group
-# 0 -- every process on this console, the harness shell included, which would
-# Ctrl-Break the sweep itself. CREATE_NEW_PROCESS_GROUP is a CreationFlag, so
-# it has to happen at spawn: server/winsignal.c does it. Second, the console
-# API wants a WINDOWS pid, and `$!` is an MSYS pid -- different numbers for the
-# same process -- so the launcher writes the real one to a file.
-#
-# The four helpers below are exactly today's `kill` calls on POSIX, so the
-# Linux lane is unchanged line for line; only Windows takes another path.
-# SIGTERM and SIGINT both map to CTRL_BREAK there, which is faithful:
-# signal_shim.c's handler treats the console events alike, and its POSIX half
-# installs the same handler for both signals.
 WINSIG=""
 SRVWIN=""
 
@@ -121,9 +60,6 @@ if [ "$IS_WINDOWS" = 1 ]; then
     fi
 fi
 
-# The document root is a COPY of server/www, so the runner can add a case the
-# repo cannot carry -- git stores no empty directory, and an empty directory is
-# exactly what separates "301 to the slash form" from "404, no index.html there".
 cp -R server/www "$T/www" || exit 2
 mkdir -p "$T/www/emptydir" "$T/www/.hidden"
 : > "$T/www/.hidden/secret.txt"
@@ -413,10 +349,6 @@ eq("416 any range over a 0-byte file", status(rng(b"bytes=0-", target=b"/empty.t
    "HTTP/1.1 416 Range Not Satisfiable")
 eq("416 over a 0-byte file says bytes */0",
    header(rng(b"bytes=0-", target=b"/empty.txt"), "Content-Range"), "bytes */0")
-# A CONTROL: no mutation of the range code can redden this, and a server with no
-# Range support passes it. It is here so that the two 416s above are read against
-# a file that IS served correctly without one -- otherwise "416 on empty.txt"
-# would also pass for a server that cannot serve empty.txt at all.
 eq("200 the 0-byte file itself", header(get(b"/empty.txt"), "Content-Length"), "0")
 
 # --- an unusable Range is IGNORED: 200, whole file, never an error. RFC 7233
@@ -508,9 +440,6 @@ eq("301 /about status",   status(r), "HTTP/1.1 301 Moved Permanently")
 eq("301 /about Location", header(r, "Location"), "/about/")
 eq("200 /about/ after the redirect", status(get(b"/about/")), "HTTP/1.1 200 OK")
 
-# An empty directory is a directory -- 301 to the slash form -- and only THEN a
-# 404, for the index.html that is not in it. This is the pair the README still
-# describes as a flat 404 (server/README.md, "Deliberately not implemented").
 eq("301 /emptydir status",   status(get(b"/emptydir")), "HTTP/1.1 301 Moved Permanently")
 eq("301 /emptydir Location", header(get(b"/emptydir"), "Location"), "/emptydir/")
 eq("404 /emptydir/ (no index.html in it)", status(get(b"/emptydir/")), "HTTP/1.1 404 Not Found")
@@ -521,10 +450,6 @@ eq("404 /emptydir/ (no index.html in it)", status(get(b"/emptydir/")), "HTTP/1.1
 # turn off.
 eq("403 traversal /../../etc/passwd", status(get(b"/../../etc/passwd")), "HTTP/1.1 403 Forbidden")
 eq("403 traversal /a/../../../etc", status(get(b"/a/../../../etc/passwd")), "HTTP/1.1 403 Forbidden")
-# PERCENT-ENCODED traversal. server/main.ty@resolve decodes ONCE before the
-# traversal test precisely so %2e%2e cannot hide a "..", and until 2026-08-15
-# nothing sent an encoded byte: both legs above are plain `../`, and the second
-# one's LABEL claimed a %2f it never sent. A label is not a payload.
 eq("403 encoded dots %2e%2e", status(get(b"/%2e%2e/%2e%2e/etc/passwd")), "HTTP/1.1 403 Forbidden")
 eq("403 encoded slash ..%2f", status(get(b"/..%2f..%2fetc/passwd")), "HTTP/1.1 403 Forbidden")
 eq("403 both encoded %2e%2e%2f", status(get(b"/%2e%2e%2f%2e%2e%2fetc/passwd")), "HTTP/1.1 403 Forbidden")
@@ -539,13 +464,6 @@ eq("403 hidden segment /.hidden/secret.txt",
    status(get(b"/.hidden/secret.txt")), "HTTP/1.1 403 Forbidden")
 eq("403 body is not the file", b"root:" in get(b"/../../etc/passwd").split(b"\r\n\r\n", 1)[1], False)
 
-# ---- 400: request framing that cannot be agreed on --------------------------
-# RFC 7230 3.3.3. Each of these was answered by BLOCKING before 2026-08-15, not by
-# refusing: corelib/httpd/httpd.ty framed the body with a LENIENT parse ("4x" read
-# as 4), while server/main.ty@bad_len -- which already named smuggling and already
-# answered 400 -- sat downstream of that read and could not run until the deadline
-# expired. A strict framing parse is what lets the refusal that was already
-# written actually fire.
 eq("400 non-numeric Content-Length",
    status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4x\r\n\r\n")),
    "HTTP/1.1 400 Bad Request")
@@ -579,9 +497,6 @@ eq("400 absolute-form target",
    status(exchange(b"GET http://evil/ HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 400 Bad Request")
 eq("400 %00 control byte in path",
    status(exchange(b"GET /a%00b HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 400 Bad Request")
-# %0d%0a is the control byte that MATTERS -- decoded before the check (step 3 of
-# server/main.ty@resolve), it would otherwise reach the Location header of a
-# directory redirect, which is the one place a response echoes the path back.
 eq("400 %0d%0a header injection in path",
    status(exchange(b"GET /a%0d%0aInjected:%20yes HTTP/1.1\r\nHost: t\r\n\r\n")),
    "HTTP/1.1 400 Bad Request")
@@ -592,19 +507,10 @@ eq("400 %0a alone in path",
 # with a %" passes every leg above.
 eq("404 %20 is a printable byte, not a control byte",
    status(exchange(b"GET /no%20such.txt HTTP/1.1\r\nHost: t\r\n\r\n")), "HTTP/1.1 404 Not Found")
-# A Content-Length that is not a plain decimal is a smuggling primitive, refused
-# rather than parsed leniently (server/main.ty:463-473).
 eq("400 Content-Length: -5 (smuggling)",
    status(exchange(b"GET / HTTP/1.1\r\nHost: t\r\nContent-Length: -5\r\n\r\n")),
    "HTTP/1.1 400 Bad Request")
 
-# ---- 431: a 20 KiB header against MAX_HEAD = 16384 --------------------------
-# WHY THIS IS NOT A ONE-LINER: sendall() the whole 20 KiB and then recv() and you
-# get ECONNRESET, not the 431. The server stops reading at MAX_HEAD, answers, and
-# closes -- closing a socket with unread bytes still in its receive queue sends
-# RST, and the RST discards the response that was already on the wire. So the
-# read has to happen WHILE the write is still going. Measured: the naive form
-# loses the 431 every time.
 s = conn(3.0)
 s.setblocking(False)
 payload = b"GET / HTTP/1.1\r\nHost: t\r\nX-Big: " + b"A" * 20480 + b"\r\n\r\n"
@@ -627,9 +533,6 @@ while time.time() - t0 < 5.0:
 s.close()
 eq("431 20 KiB header (MAX_HEAD=16384)", status(buf), "HTTP/1.1 431 Request Header Fields Too Large")
 
-# ---- 408: a head that never finishes ----------------------------------------
-# --idle-ms 500 above, so this costs about half a second and is the reason the
-# runner sets a short idle rather than taking the 5000ms default.
 s = conn(6.0)
 s.sendall(b"GET / HTTP/1.1\r\nHost: t\r\n")          # no terminating blank line
 buf, t0 = b"", time.time()
@@ -709,47 +612,6 @@ sys.exit(1 if fails else 0)
 PY
 [ $? -eq 0 ] || fail=1
 
-# ---- shutdown cases 1-6 + the access-log tail -------------------------------
-# These ran on POSIX only until 2026-08-09: every one drives the server with a
-# real signal, and MSYS2's kill cannot deliver one to a native PE -- it
-# TERMINATES it, so the graceful path never ran and the lane BLOCKED waiting
-# for a wind-down that could not happen (measured 2026-08-08: 43 minutes, worse
-# than a red because a hang stops the whole sweep). They now run on both
-# platforms through srv_sig/srv_kill/srv_alive; see the header of those helpers
-# for why Windows needs a launcher and a second pid.
-#
-# NOTE the body below is deliberately NOT indented: it carries unindented
-# heredoc terminators (`PY`), which only work at column 0.
-# ---- shutdown case 1 of 2: SIGTERM is a CLEAN shutdown ----------------------
-# This block asserted wait status 143 until the signals plan -- that is, it
-# asserted the server was KILLED, that server/main.ty's last line was
-# unreachable, and that the accept loops never wound down. server/main.ty now
-# arms core:signal with the listening fd before it prints the banner, so SIGTERM
-# calls shutdown(fd, SHUT_RDWR) under all four accept loops at once and the
-# process leaves through its own bottom.
-#
-# WHY EXIT 0 IS THE ALL-WORKERS-EXITED ASSERTION and not merely a tidier status:
-# worker() (server/main.ty:574-579) spawns peer k+1, runs accept loop k itself,
-# and returns `n + wait(peer)`; main() CALLS worker() rather than spawning it. So
-# everything below the fan-out -- the stopped line included -- is reachable only
-# after every spawned peer has been joined. One loop still blocked in accept(2)
-# means wait() never returns, which means no line and no exit. Paired with the
-# "every worker served (w1..w4)" assertion below, which proves all four loops
-# were live and serving, exit 0 IS "all four were released".
-#
-# The watchdog is what stops a regression HANGING this gate instead of failing
-# it: on a hang the server is SIGKILLed after 10s and the status comes back 137.
-#
-# THE REDIRECT IS LOAD-BEARING, not tidiness. `kill "$WD"` below reaps the
-# subshell but NOT the `sleep` it is blocked in, and the orphaned sleep inherits
-# this script's stdout. A caller that CAPTURES output -- `out=$(sh server/run.sh)`,
-# which is how a CI step collecting a log does it -- holds the pipe open until
-# every writer closes it, so `$(...)` blocks on the orphan rather than on the
-# script. Measured on this file, before the redirect: 7089 ms direct, 14280 ms
-# captured -- the 7.2 s gap is the remainder of a 10 s sleep armed part-way in.
-# The other three watchdogs (server/run.sh:512, server/run.sh:586,
-# server/run.sh:632) were written this way from the start; this one was the
-# outlier.
 ( sleep 10; srv_kill ) >/dev/null 2>&1 &
 WD=$!
 srv_sig TERM
@@ -766,9 +628,6 @@ else
     echo "  FAIL SIGTERM: wait status $rc, want 0 (143 = the pre-phase-3 behaviour)"; fail=1
 fi
 
-# The line at the bottom of server/main.ty's main(). Until phase 3 it was
-# unreachable, and this file carried a paragraph of comment where this assertion
-# belongs.
 stopped=$(grep '^tycho-httpd: stopped after [0-9][0-9]* requests$' "$T/srv.err")
 if [ -n "$stopped" ]; then
     echo "  ok   SIGTERM: $stopped"
@@ -776,9 +635,6 @@ else
     echo "  FAIL SIGTERM: no 'stopped after N requests' line on stderr"; fail=1
 fi
 
-# ---- the access log, now that the server has stopped writing to it ----------
-# One line per request on stderr: worker, client, method, target, status, bytes,
-# duration (server/main.ty:354-364).
 chk() {  # chk <name> <expected-count-test> <actual>
     if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$3', want '$2'"; fail=1; fi
 }
@@ -793,17 +649,10 @@ for code in 200 206 301 400 403 404 405 408 416 431; do
     if [ "$n" -gt 0 ]; then echo "  ok   access log: $n line(s) with status $code"
     else echo "  FAIL access log: no line with status $code"; fail=1; fi
 done
-# The served count is the sum every accept loop returned, so it is the second
-# reading on the same fact as exit 0: a loop that never returned contributes
-# nothing, and its requests would go missing from the total. One access log line
-# per request (server/main.ty:354-364), so the two numbers must agree.
 n_served=$(printf '%s\n' "$stopped" | sed -n 's/^tycho-httpd: stopped after \([0-9]*\) requests$/\1/p')
 n_logged=$(grep -c '^w[0-9]' "$T/srv.err")
 chk "SIGTERM: served count == access log lines" "$n_logged" "${n_served:-none}"
 
-# The log used to end in a request line, because the process died serving. It now
-# ends in the shutdown line, and that ordering matters: it says the count was
-# printed AFTER the last request was logged, not from some half-wound-down state.
 if [ -s "$T/srv.err" ] && tail -n 1 "$T/srv.err" | grep -q '^tycho-httpd: stopped after'; then
     echo "  ok   access log: last line is the shutdown line (stopped after serving)"
 else
@@ -824,13 +673,6 @@ respawn() {  # respawn <errfile> [idle-ms]; sets SRV
     echo "  FAIL readiness: respawned server printed no banner within 10s"; fail=1
 }
 
-# ---- shutdown case 2 of 3: SIGINT, the other signal core:signal installs -----
-# corelib/signal/signal_shim.c arms SIGTERM and SIGINT with the same handler, and
-# core:signal's own fixture can only exercise SIGTERM -- glibc's system(3) sets
-# SIGINT to SIG_IGN in the caller for the duration of the call, so the fixture's
-# `kill -INT $PPID` would be swallowed by system() rather than by anything under
-# test. This is where the second half of that pair gets its only real exercise:
-# an operator's Ctrl-C must wind the server down exactly as SIGTERM does.
 respawn "$T/int.err"
 srv_sig INT
 wait "$SRV" 2>/dev/null
@@ -843,12 +685,6 @@ else
     sed 's/^/      /' "$T/int.err"
 fi
 
-# ---- shutdown case 3 of 3: SIGKILL is still abrupt, and still tested ---------
-# Not deleted, just no longer the same case. SIGKILL cannot be caught, so no
-# handler runs, nothing winds down, and the stopped line is never printed. That
-# is correct behaviour, and it is the CONTROL for case 1: it shows the clean exit
-# above comes from the handler core:signal installed and not from something the
-# process would have done on the way out of any signal at all.
 respawn "$T/kill.err"
 srv_kill
 wait "$SRV" 2>/dev/null
@@ -870,40 +706,7 @@ port_of() {
     sed -n 's|^tycho-httpd: serving .* on http://[^:]*:\([0-9]*\)/.*|\1|p' "$1" | head -n 1
 }
 
-# ---- case 4: a TRANSIENT accept failure must not retire a worker ------------
-# the signals plan. Until batch A, accept_loop's Err arm was an unconditional
-# `running = false`, so ONE EMFILE retired that accept loop for the life of the
-# process -- and with every loop retired the server left through its own bottom
-# with no signal at all, printing the stopped line and exiting 0 while the
-# operator was told nothing except that it had gone. That is the exact shape this
-# asserts against: after a transient fd exhaustion that has since been LIFTED, the
-# server must still be running and must still answer.
-#
-# The exhaustion is induced with prlimit(2) on the live process rather than with a
-# storm of connections, because a storm cannot do it: with four accept loops the
-# server never holds more than four connections at once, so its own fd budget is
-# never what runs out. Lowering the SOFT limit only (the hard limit is left alone,
-# or it could not be raised back without CAP_SYS_RESOURCE) makes the next accept
-# fail with EMFILE and nothing else change.
-#
-# WHY --idle-ms 200 AND A WINDOW LONGER THAN IT, which is the whole reason this
-# case is not three lines. A thread already blocked in accept(2) has ALREADY
-# passed the rlimit check: __sys_accept4 reserves the descriptor with
-# get_unused_fd_flags() and only then blocks in do_accept(). So lowering the limit
-# under four parked accept loops changes nothing for those four calls -- they
-# complete and install fds 4..7 over a soft limit of 4. EMFILE is reached only
-# when a loop enters accept(2) AFRESH, which happens after its connection closes,
-# which for a client that never speaks is one idle timeout. Measured directly:
-# with idle 500 and a 400ms window the loops never re-enter accept and NOTHING
-# fails, on patched and unpatched alike; with the timeout inside the window the
-# unpatched server retires all four loops and exits 0 on its own every time.
 respawn "$T/emfile.err" 200
-# `>/dev/null` on the watchdog is not tidiness. `kill "$WD"` reaps the subshell
-# but NOT the `sleep` it is blocked in, and an orphaned sleep still holds the
-# stdout this script inherited -- so a caller that captures output, as
-# `out=$(sh server/run.sh)` does, blocks until the longest sleep expires rather
-# than until the script exits. Measured: 4.4s per run direct, 34.5s per run
-# captured, entirely the orphan. Closing its stdout costs nothing and removes it.
 ( sleep 15; srv_kill ) >/dev/null 2>&1 &
 WD=$!
 python3 - "$SRV" "$(port_of "$T/emfile.err")" <<'PY'
@@ -998,20 +801,7 @@ else
     sed 's/^/      /' "$T/emfile.err"
 fi
 
-# ---- case 5: shutdown must not wait out a BUSY keep-alive connection --------
-# the signals plan. serve_conn's keep-alive loop now tests
-# signal.shutdown_requested() in its loop condition, so a worker stops between
-# requests instead of serving its peer until MAX_REQS. Measured on the four-client
-# drip below: 102215 ms before, 8 ms after. The 10s watchdog is therefore not a
-# margin, it is a cliff -- the pre-batch-A behaviour misses it by two orders of
-# magnitude, so a regression FAILS here rather than merely getting slower.
-#
-# NOTE this is the busy case, not the parked-idle one. A worker already blocked in
-# a read when the signal lands still waits out SO_RCVTIMEO; that is phase 19 and
-# no assertion here claims otherwise.
 respawn "$T/busy.err"
-# Four connections, each sending a fresh request every 100ms forever. The server
-# has four workers, so every one of them ends up in serve_conn's keep-alive loop.
 python3 - "$(port_of "$T/busy.err")" >"$T/drip.out" 2>&1 <<'PY' &
 import socket, sys, threading, time
 port = int(sys.argv[1])
@@ -1046,22 +836,6 @@ else
     tail -n 3 "$T/busy.err" | sed 's/^/      /'
 fi
 
-# ---- case 6: shutdown must not wait out a PARKED keep-alive connection ------
-# the signals plan, and the other half of case 5. Case 5 covers a worker that
-# REACHES serve_conn's loop condition between requests; this one covers a worker
-# already blocked INSIDE read_request_capped when the signal lands, which cannot
-# reach that condition at all. Shutting down the listener wakes accept(2) and
-# nothing else, so before phase 19 such a worker sat out its full SO_RCVTIMEO:
-# measured 4878 ms at --idle-ms 5000, four parked clients. server/main.ty now
-# registers each accepted fd with core:signal (server/run.sh's sibling assertion
-# is corelib/signal/signal.ty's register_conn) so the handler shuts those down
-# too: 4878 ms -> 1 ms, 5 runs of 5.
-#
-# THE WATCHDOG IS THE ASSERTION, and the numbers are chosen so it cannot be a
-# coin flip: --idle-ms 8000 against a 3s watchdog. The pre-phase-19 behaviour
-# cannot finish in under 8 s by any path, so it comes back 137; the fixed one
-# finishes in about a millisecond. Nothing lands near the boundary. Proved by
-# running this block against the unpatched tree: FAIL, twice out of two.
 respawn "$T/parked.err" 8000
 # Four connections that each complete ONE request, read the answer, and then go
 # quiet -- which is precisely what leaves all four workers parked in the next
@@ -1088,19 +862,6 @@ while [ "$i" -lt 250 ]; do
     [ -f "$T/parked.ready" ] && break
     i=$((i + 1)); sleep 0.02
 done
-# THE BOUND IS PLATFORM-DEPENDENT, and the difference is the assertion.
-# POSIX: shutdown(fd, SHUT_RDWR) on a registered connection wakes the thread
-# parked in recv(2) at once, so 3s is a CLIFF -- the pre-batch-A behaviour
-# waited out SO_RCVTIMEO and misses it by orders of magnitude.
-# WINDOWS: it does not. A thread blocked in recv on a connected socket is not
-# released by shutdown() there, so the wind-down costs one idle timeout (8s
-# here) and a 3s watchdog would fire on CORRECT behaviour. closesocket() would
-# release it -- it is what the listener already gets -- but a connection fd is
-# churned by its worker, and closing one hands the number back out while
-# another thread may still be blocked on it: the hazard signal_shim.c's
-# registry header rejects with measurements. So the Windows bound is above the
-# idle timeout, and what it asserts is "it exits 0 without the watchdog", not
-# "it exits 0 promptly". Recorded as a behavioural difference in SECURITY.md.
 if [ "$IS_WINDOWS" = 1 ]; then PARKWD=15; else PARKWD=3; fi
 ( sleep "$PARKWD"; srv_kill ) >/dev/null 2>&1 &
 WD=$!

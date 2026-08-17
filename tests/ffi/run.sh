@@ -1,17 +1,3 @@
-#!/bin/sh
-# FFI Stage 1 regression harness. Builds the fixture C lib (tests/ffi/demo.c),
-# compiles tests/ffi/main.ty with tychoc (which links -lffidemo itself from
-# `extern "ffidemo"`), and asserts it produces the golden tests/ffi/expected.out.
-# Also recompiles the emitted C under ASan/UBSan to prove the string-return
-# arena-copy is memory-clean (no UAF/leak).
-# Re-record the golden with RECORD=1 sh tests/ffi/run.sh.
-#
-# Until 2026-07-26 every check here ran through the self-hosted tychoc0 as well
-# and the two outputs had to agree. tychoc0 is frozen (see compiler/tychoc0.ty)
-# and no gate builds it, so those legs are gone. Each individual assertion --
-# golden match, ASan-clean, --shim, package-scoped extern, the four affine
-# handle-misuse REJECTIONS, the shell-injection refusals, sized-int ABI values,
-# first-class sized types -- is still asserted for tychoc, unchanged.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc
@@ -34,9 +20,6 @@ else
     "$T/c_bin" > "$T/c.out" 2>&1
 fi
 
-# (2) ASan/UBSan over the emitted C: the str-return arena-copy must be clean.
-#     SKIPPED on Windows: mingw gcc ships no -lasan/-lubsan (docs/internals/windows-port.md
-#     phase 2); the native legs above and below still run.
 if [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" = 0 ]; then
 if ! "$TYCHOC" tests/ffi/main.ty --emit-c -o "$T/hc" >"$T/emit.log" 2>&1; then
     echo "FAIL: tychoc --emit-c"; sed 's/^/      /' "$T/emit.log"; fail=1
@@ -63,8 +46,6 @@ else
     [ "$shimout" = "triple=42" ] || { echo "FAIL: --shim output '$shimout' != 'triple=42'"; fail=1; }
 fi
 
-# (5) Package-scoped extern: an extern declared+called inside a package. Both
-# compilers must keep the C symbol unmangled (tychoc0 regression). Expect tri6=42.
 if ! "$TYCHOC" tests/ffi/pkgext/main.ty -o "$T/pkg_c" --shim tests/ffi/shim.c >"$T/pkg.log" 2>&1; then
     echo "FAIL: pkg-extern tychoc compile"; sed 's/^/      /' "$T/pkg.log"; fail=1
 else
@@ -112,11 +93,6 @@ if ! "$TYCHOC" "$T/sz.ty" -o "$T/sz_c" --shim tests/ffi/shim.c >"$T/sz.log" 2>&1
 else
     [ "$("$T/sz_c" 2>&1)" = "$szexp" ] || { echo "FAIL: sized-ffi tychoc output '$("$T/sz_c" 2>&1)' != '$szexp'"; fail=1; }
 fi
-# first-class: the WHOLE fixed-width integer family (u8/u16/u32/u64/i8/i16/i32/i64,
-# and f32) is a first-class Tycho type per the spec (docs/spec/14-ffi.md §5.2.7),
-# usable anywhere a type is written -- not only in extern signatures. Both compilers
-# must ACCEPT a non-extern sized annotation. (A sized name is a reserved type keyword,
-# so it cannot be used as an identifier.)
 printf 'fn main():\n    x: i16 = 3\n    if x > 0:\n        println("pos")\n' > "$T/szok.ty"
 if ! "$TYCHOC" "$T/szok.ty" --emit-c -o "$T/szok" >/dev/null 2>&1; then echo "FAIL: first-class i16 rejected by tychoc"; fail=1; fi
 

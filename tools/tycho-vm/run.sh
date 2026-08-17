@@ -1,36 +1,3 @@
-#!/bin/sh
-# Gate for tycho-vm, the assembler/disassembler/interpreter in tools/tycho-vm/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-vm/run.sh
-#
-# WHAT IT ASSERTS
-#   [1] asm is deterministic -- each program assembled twice is cmp-identical.
-#   [2] dis round-trips -- `asm (dis p.tyc)` reproduces p.tyc byte for byte.
-#   [3] run matches the golden -- fib 0..89, gcd 6 21 1 6, sort 1 3 5 7 9,
-#       plus the three disassembly listings, which is where an operand kind or
-#       a jump target would move.
-#   [4] trace is deterministic -- two traces of each program are cmp-identical.
-#       The golden carries fib's FIRST 20 lines and all three line counts, not
-#       the 7518 lines themselves.
-#   [5] the seven runtime traps exit non-zero, name the pc, and leave stdout
-#       EMPTY. The bad-const-index leg needs a hex-patched .tyc: the assembler
-#       range-checks a LOADK operand against the pool, so the only way to reach
-#       that trap is to edit the encoded byte.
-#   [6] four malformed .tasm inputs exit non-zero naming a LINE, stdout empty.
-#       Each fixture puts its error on line 3, so a hardcoded "line 1" cannot
-#       pass by accident.
-#
-# WHAT IT DELIBERATELY DOES NOT ASSERT
-#   Timing. Part 2 measured 1.39 M ins/s; that number is in the commit and in
-#   main.ty's header, and it is not gated -- a throughput assertion on a shared
-#   CI box is a flake, not a check.
-#   The trace body. Only its first 20 lines and its length are recorded: the
-#   full 7518 lines are a derived restatement of `run` plus the dispatch, both
-#   of which are already gated, and a golden that large reddens unreadably.
-#
-# NO HOST DETAIL REACHES THE GOLDEN. Every fixture is written here from a
-# literal, every .tyc is built into a mktemp dir, and every recorded command
-# runs with that dir as cwd, so no temp path, absolute path or timing appears.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -98,15 +65,6 @@ for p in fib gcd sort; do
     [ -s "$T/e" ] && { bad "run $p: wrote to stderr"; sed 's/^/      /' "$T/e"; }
 done
 
-# ---------------------------------------------------------------------------
-# [4] trace is deterministic, and a short excerpt is recorded
-#
-# The excerpt is fib's first 20 lines -- the entry LOADK/PRINT and the first
-# turns of the driving loop, which is where the pc column, the operand column
-# and the stack rendering all show. The line COUNT is the rest of the claim:
-# it is one integer per program, it is host-independent, and it moves if any
-# instruction stops executing or starts executing twice.
-# ---------------------------------------------------------------------------
 for p in fib gcd sort; do
     "$VM" trace "$W/$p.1.tyc" > "$W/$p.tr1" 2>"$T/e" || {
         bad "trace $p exited non-zero"; sed 's/^/      /' "$T/e"; continue
@@ -223,9 +181,6 @@ EOF
 asmok deep
 traps 'call depth exceeded' 'call depth exceeded' "$W/deep.tyc"
 
-# The pair ops (added for the tycho-scheme compiler, `docs/internals/plan-tycho-scheme-compiler-DONE.md`): the three
-# new traps -- car/cdr
-# of a non-pair, set-car! on a non-pair, and the bounded pair-heap ceiling.
 cat > "$W/carnonpair.tasm" <<'EOF'
     PUSH 1
     CAR
@@ -329,8 +284,6 @@ cat > "$W/badarity.tasm" <<'EOF'
 EOF
 refuses 'wrong operand count' 'line 3: ADD takes 0 operand(s), got 1' badarity
 
-# `1x`: strings.parse_int would stop at the `x` and silently assemble PUSH 1.
-# parse_int_strict is why this is a diagnostic instead.
 cat > "$W/badimm.tasm" <<'EOF'
 # line 1
     PUSH 1

@@ -1,40 +1,8 @@
-#!/bin/sh
-# Does core:http actually VERIFY the certificate, or does it just say it does?
-#
-# This is the lane FRICTION #57 said could not be written. `scripts/tls_verify.sh`
-# closed the same hole for core:tls; the identical three-way check was built for
-# core:http on 2026-08-15 and then REMOVED, because its positive control could not
-# be made to pass: nothing could point core:http at a private CA. CURL_CA_BUNDLE is
-# read by the curl TOOL, not by libcurl; SSL_CERT_FILE was not honoured, because
-# libcurl compiles in a default CAINFO that pre-empts OpenSSL's env-var lookup; and
-# the shim exposed no CURLOPT_CAINFO. Without a leg that must SUCCEED, "the
-# untrusted server was refused" is indistinguishable from "nothing connected at
-# all" -- so `CURLOPT_SSL_VERIFYPEER, 0L` added while debugging would have passed
-# every lane in this tree. http_shim.c now honours SSL_CERT_FILE/SSL_CERT_DIR,
-# which is what makes the positive control reachable and this lane possible.
-#
-#   [1] untrusted (self-signed) chain           -> the request FAILS  (status 0)
-#   [2] the SAME server, its CA trusted by      -> the request SUCCEEDS (200)
-#       SSL_CERT_FILE, reached by the cert's name
-#   [2b] the same, via SSL_CERT_DIR (CAPATH)    -> SUCCEEDS -- an implemented but
-#       untested second path is decoration
-#   [3] the SAME server, CA trusted, reached by -> FAILS: chain validation alone
-#       an address the cert does not carry         accepts a valid cert for
-#                                                  somebody else
-#   [C] a CONTROL built against a COPY of corelib with SSL_VERIFYPEER/VERIFYHOST
-#       turned off must ACCEPT what [1] refused. If it does not, [1] is passing
-#       for some other reason and this lane is scoring nothing.
-#
-# No fixed port (the kernel picks), no sleep (readiness is a real connect), no
-# network beyond the loopback.
 set -eu
 
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
 srv=""
-# TERM then KILL. A bare `kill` is a REQUEST, and a lane that leaves an
-# openssl s_server holding a loopback port is FRICTION #63 -- eleven days of
-# orphaned processes. Escalating costs 2s at worst.
 cleanup() {
     if [ -n "$srv" ]; then
         kill -TERM "$srv" 2>/dev/null || true

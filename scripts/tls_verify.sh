@@ -1,38 +1,8 @@
-#!/bin/sh
-# Does core:tls actually VERIFY the certificate, or does it just say it does?
-#
-# corelib/test/tls/main.ty -- the only tls test there was -- connects to a CLOSED
-# LOOPBACK PORT. It proves the FFI round trip and fail-closed handling, and its
-# own header says the successful path is verified by hand. What it cannot do is
-# tell a REFUSED CERTIFICATE apart from a REFUSED CONNECTION: both give a null
-# handle. So `SSL_VERIFY_PEER` becoming `SSL_VERIFY_NONE`, or `SSL_set1_host`
-# going away, passed every gate in this tree.
-#
-# This runs a real TLS server on the loopback with a certificate this box does not
-# trust, and asserts three outcomes that MUST DISAGREE with each other:
-#
-#   [1] untrusted (self-signed) cert          -> connect FAILS
-#   [2] the SAME server, its CA trusted,      -> connect SUCCEEDS
-#       reached by the name in the cert
-#   [3] the SAME server, its CA trusted,      -> connect FAILS
-#       reached by an address NOT in the cert
-#
-# [2] is what makes [1] mean anything: without it, [1] also passes when the server
-# never started, which is precisely the failure the old test could not see. [3] is
-# what makes [2] mean anything: chain validation alone would accept the wrong
-# host, so [3] is the only leg that holds SSL_set1_host.
-#
-# No fixed port (the kernel picks), no sleep (readiness is a real connect), no
-# network beyond the loopback.
 set -eu
 
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
 srv=""
-# TERM then KILL. A bare `kill` is a REQUEST, and this lane leaves an
-# openssl s_server holding a loopback port -- the same shape that left ten
-# orphaned kvsrv processes running for ten days on this box (fixed in
-# tools/tycho-kvsrv/run.sh, same session). Escalating costs 2s at worst.
 cleanup() {
     if [ -n "$srv" ]; then
         kill -TERM "$srv" 2>/dev/null || true
@@ -113,12 +83,6 @@ r3=$(SSL_CERT_FILE="$T/ca.pem" "$T/probe" 127.0.0.1 2>/dev/null || true)
 say "[3] same server, CA trusted, name differs" "$r3"
 [ "$r3" = FAIL ] || { echo "  LEAK: the hostname was NOT checked -- a valid cert for another name was accepted."; fail=1; }
 
-# --- core:http has its own lane now: scripts/http_verify.sh -------------------
-# This block used to record why it could NOT have one. The positive control was
-# unreachable -- nothing could point core:http at a private CA, so "untrusted is
-# refused" and "nothing connected" were the same observation. http_shim.c honours
-# SSL_CERT_FILE/SSL_CERT_DIR as of 2026-08-15, which made the leg that must
-# SUCCEED reachable; FRICTION #57 has the measurement both before and after.
 
 [ "$fail" -eq 0 ] || { echo "tls-verify: FAIL"; exit 1; }
 echo "tls-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted and reached by the name in the cert, and refused again when reached by a name the cert does not carry -- so the refusals are verification, not a dead connection)"

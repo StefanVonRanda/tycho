@@ -1,13 +1,3 @@
-#!/bin/sh
-# Static-site-generation head-to-head: render N Markdown pages to HTML with the
-# SAME inlined renderer in tycho / C / Go, measuring peak RSS + wall (bench/peakrss)
-# over an identical generated corpus, gated by an FNV-1a-32 checksum of every
-# rendered byte (so the three do byte-identical work). The point: tycho renders
-# each page inside the loop body, whose per-scope arena is reclaimed every
-# iteration -> FLAT peak RSS (matches C, with no manual free) where Go holds
-# garbage under its GC. Best-of-3 wall. Skips any absent toolchain. NOT in make ci.
-#
-#   sh bench/site/run.sh [N]      (N default 5000)
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

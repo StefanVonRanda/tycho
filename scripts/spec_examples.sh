@@ -1,19 +1,3 @@
-#!/bin/sh
-# spec_examples.sh — tier 2 of the spec conformance gate.
-#
-# Extracts every runnable example from docs/spec/ and asserts it compiles and
-# runs with the documented output. An example is "runnable" iff a ```tycho
-# block is immediately followed (blank lines allowed) by a ```output block; the
-# tycho source is the program, the output block is its exact expected stdout.
-# A ```tycho block with no following ```output is an illustrative fragment and
-# is skipped — the spec is written mostly in fragments and grammar, by design.
-#
-# Build path mirrors tests/run.sh's native lane: tychoc --emit-c, then cc -O2.
-# tychoc is the reference implementation (docs/spec/00-conventions.md §1.3), so a
-# spec example is conformant iff tychoc produces the documented output. Until
-# 2026-07-26 each example was also run through the self-hosted tychoc0; that
-# compiler is frozen (see compiler/tychoc0.ty) and no gate builds it, so that leg
-# is gone. Exit 0 = all runnable examples pass; non-zero on failure.
 set -u
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

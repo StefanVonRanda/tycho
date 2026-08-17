@@ -1,29 +1,6 @@
-#!/bin/sh
-# Phase-3 wine-test: the plain fixture corpus, cross-compiled and run under
-# Wine against the Linux goldens. The Linux-box approximation of "make test
-# on the Windows box" (docs/internals/windows-port.md phase 3); scripts/wine_smoke.sh covers
-# the concurrency + stack-guard lanes, this covers everything tests/run.sh's
-# main loop does: the plain corpus (examples/*.ty tests/*.ty + stdin + golden),
-# the package programs (tests/pkg/*/main.ty), the runtime aborts (must die
-# cleanly with a 'tycho:' message), and the compiler-diagnostics goldens
-# (tests/diag/*.ty -- the MINGW compiler's stderr must match byte-for-byte).
-#
-#   sh scripts/wine_test.sh              # the whole corpus (~20 min)
-#   WINE_TEST_FILTER=name sh scripts/wine_test.sh   # a substring filter
-#
-# NOT a gate and NOT a Windows verdict -- Wine is an approximation, and the
-# output's real value is the PARK LIST: fixtures that redden only for
-# Windows-environment reasons (paths, shell-out via cmd.exe, file semantics)
-# get parked for phase 6's golden audit instead of patched. Skips loudly when
-# the mingw cross compiler or wine is absent.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 MINGWCC="$(command -v x86_64-w64-mingw32-gcc || true)"
-# Wine 9.0 merged wine64 into a single 64-bit `wine`, and Arch/CachyOS ships
-# wine 11.x with no wine64 binary at all -- so a bare `command -v wine64` made
-# this lane SKIP on every modern Wine while printing a reason that read like a
-# missing install. Prefer wine64 when it exists (older split installs), else
-# wine. Measured 2026-08-09 on this box: wine-11.14, no wine64.
 WINE="$(command -v wine64 || command -v wine || true)"
 [ -n "$WINE" ] || { echo "SKIP: neither wine64 nor wine on PATH"; exit 0; }
 [ -n "$MINGWCC" ] || { echo "SKIP: x86_64-w64-mingw32-gcc not on PATH"; exit 0; }
@@ -37,11 +14,6 @@ note() { echo "      $*"; }
 
 mkdir -p build
 make -s build/tycho_rt_embed.h
-# REBUILD WHEN THE SOURCE MOVED, not merely when the exe is absent. Until
-# 2026-08-13 this said `if [ ! -x ... ]`, so an exe cross-built once was reused
-# for ever: on this box it was 8 days old and 25 fixtures "failed" at emit/cc
-# under mingw purely because the compiler predated the features they use. A lane
-# whose subject is stale reports on a program nobody is running.
 if [ ! -x build/tychoc-mingw.exe ] \
    || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
    || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
@@ -53,47 +25,21 @@ fi
 CORELIB="Z:\\$(pwd | sed 's|^/||; s|/|\\|g')\\corelib"
 E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB $WINE ./build/tychoc-mingw.exe"
 W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\usr\\x86_64-w64-mingw32\\lib $WINE"
-# The transpiler's own Windows cc line. Overridable so scripts/wine_ubsan.sh can
-# reuse this whole harness -- goldens, aborts, diags -- with the emitted C and the
-# runtime built to TRAP on undefined behaviour, rather than duplicating it.
 CCF="${WINE_CCF:--O3 -fwrapv -pthread}"
 
 # one positive fixture: emit + cc + wine-run + golden cmp
 pos() {
     name="$1"; hi="$2"; g="$3"; in="$4"
     case "$name" in *"$FILTER"*) ;; *) return ;; esac
-    # SHOW the captured stderr. It was written to $name.emit and never printed, and
-    # $T is a mktemp -d deleted on exit -- so an `(emit)` line was all anyone ever saw.
-    # On 2026-08-14 one fixture failed here, did not reproduce on a second run or by
-    # hand, and separating "wine hiccup" from "Windows compiler bug" took two 13-minute
-    # lane runs. The reason was in that file the whole time.
     $E "$hi" --emit-c -o "$T/$name" >"$T/$name.emit" 2>&1 || {
         note "$name (emit)"; sed 's/^/        /' "$T/$name.emit" | head -4
         fail=$((fail + 1)); return; }
-    # THE SHIMS. tychoc links a package's `<pkg>_shim.c` itself (merge_pkg calls
-    # add_shim); this lane compiled the emitted C alone, so any fixture importing
-    # a shim-backed package died at LINK and was read as a port failure --
-    # p_corelib_variant_shadow, "undefined reference to strx_parse_double",
-    # 2026-08-13. The Linux compiler is asked for the list: the import closure is
-    # the same source and the same corelib, and its answer is a Linux path the
-    # cross compiler can read, which the wine exe's own Z:\ answer is not.
     _shims=$(./tychoc "$hi" --print-shims 2>/dev/null | tr '\n' ' ')
     "$MINGWCC" $CCF -o "$T/$name.exe" "$T/$name.c" $_shims -lm 2>"$T/$name.cc" || { note "$name (cc)"; fail=$((fail + 1)); return; }
     $W "$T/$name.exe" <"$in" >"$T/$name.out" 2>/dev/null; rc=$?
     if [ "$rc" -ne 0 ]; then note "$name (exit $rc)"; fail=$((fail+1)); return; fi
     if cmp -s "$T/$name.out" "$g"; then pass=$((pass+1))
     else
-        # A line where WINDOWS IS CORRECT to disagree, rewritten back to the Linux
-        # value so it fires ONLY for the documented answer -- anything else stays red.
-        #
-        # float_str_locale: the `=` column is byte-identical on both (verified
-        # 2026-08-14). Only `rt` differs, and only for inf/-inf/nan, because the
-        # C-library probe behind tycho_test_float_roundtrip reads them back and
-        # MSVCRT's does not. NO TYCHO PROGRAM CAN OBSERVE IT: strings.parse_float
-        # returns Err for inf, -inf, nan, infinity, Inf and NaN on Linux too
-        # (measured the same day), so the API refuses these on every platform and
-        # the difference lives entirely in a test hook. The fixture's own header
-        # records the same finding from 2026-08-13.
         case $name in
             c_float_str_locale)
                 sed -e 's/^\(inf  *= inf  rt=\)0$/\11/' \
@@ -107,12 +53,6 @@ pos() {
             pass=$((pass+1))
             return
         fi
-        # Show BOTH sides. `head -2` took the diff header and the first `<` line
-        # only, so the WINDOWS value -- the one thing a reader needs to decide
-        # whether a difference is a platform fact or a bug -- was never printed.
-        # On 2026-08-14 that cost several probe rounds on c_float_str_locale and
-        # still did not answer it. Squashing newlines made it worse; the lines are
-        # printed as lines now.
         note "$name (mismatch, golden < vs Windows >)"
         diff "$g" "$T/$name.out" 2>/dev/null | head -8 | sed 's/^/        /'
         park="$park $name"
@@ -145,11 +85,6 @@ for hi in tests/abort/*.ty; do
     _shims=$(./tychoc "$hi" --print-shims 2>/dev/null | tr '\n' ' ')
     "$MINGWCC" $CCF -o "$T/ab.exe" "$T/ab.c" $_shims -lm 2>/dev/null || { note "$n (cc)"; fail=$((fail+1)); continue; }
     $W "$T/ab.exe" </dev/null >/dev/null 2>"$T/ab.err"; rc=$?
-    # A fixture MAY lock its exact stderr in a sibling .err instead of carrying a
-    # `tycho:` prefix -- tests/run.sh:381 has had that rule; this lane did not, so
-    # tests/abort/main_result_err.ty (whose message is the PROGRAM's, and whose
-    # own header says there is no `tycho:` and should not be) was read as a
-    # Windows failure on 2026-08-13. Same rule here now.
     _errg="tests/abort/$(basename "$hi" .ty).err"
     if [ "$rc" -eq 0 ]; then note "$n (did not die)"; fail=$((fail+1))
     elif [ -f "$_errg" ]; then

@@ -1,10 +1,3 @@
-#!/bin/sh
-# json head-to-head: parse a large JSON document into a generic tagged value tree and
-# fold a checksum over it, the same in tycho / C / Go. Measures peak RSS + wall (via
-# bench/peakrss) with a byte-identical checksum as the cross-language correctness check.
-# The tree is the memory under test: tycho's implicit arena vs C's per-node malloc vs
-# Go's GC. tycho uses core:json (no hand-written C). Skips a language whose toolchain
-# is absent. NOT wired into `make ci`. See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

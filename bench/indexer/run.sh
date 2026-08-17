@@ -1,19 +1,3 @@
-#!/bin/sh
-# Parallel text indexer head-to-head: the SAME concurrent program in
-# tycho / C / Go, measuring peak RSS + wall (bench/peakrss) over an identical
-# synthetic corpus, gated by a cross-language checksum.
-#
-#   gencorpus  writes a deterministic corpus (400 files x 4000 words, 5000-word
-#              vocab) so every language indexes byte-identical input.
-#   index      K=4 workers pull file paths off a channel (tycho) / buffered
-#              channel (Go) / mutex work-queue (C), each tallies a LOCAL
-#              term->count map, then main merges. tycho deep-copies every worker
-#              map back across the thread boundary (value semantics, zero GC);
-#              Go shares string bodies under its GC; C owns every byte by hand.
-#
-# Checksum "files tokens distinct csum" (csum = sum of len(term)*count) is
-# order-independent, so the nondeterministic file->worker assignment still
-# yields one oracle. Best-of-3 wall. Skips any absent toolchain. NOT in make ci.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

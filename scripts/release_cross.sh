@@ -1,27 +1,3 @@
-#!/bin/sh
-# Cross-build the shipped artifacts for every supported target, using `zig cc` as
-# the one cross driver. Adds macOS and ARM64 to the two targets scripts/release.sh
-# already produced natively (host linux, and windows via mingw).
-#
-#   sh scripts/release_cross.sh v0.7.0            all six targets
-#   sh scripts/release_cross.sh v0.7.0 <triple>   just one
-#
-# WHY zig cc AND NOT SIX TOOLCHAINS. zig ships the libcs and the linkers for all
-# of these in one binary, so a Mac artifact needs no Mac and an ARM artifact needs
-# no ARM board. That is also the limit of what it buys: it makes binaries, it does
-# not run them.
-#
-# **EVERY ARTIFACT THIS PRODUCES IS UNTESTED EXCEPT THE HOST ONE.** There is no
-# Darwin machine here, no ARM machine, no qemu and no working container runtime --
-# all three checked 2026-08-15. `file(1)` says the right architecture and the
-# compile is clean; nothing has executed. The stack-overflow guard in
-# runtime/tycho_rt.c is per-architecture code (x86_64/i386/arm64 branches for
-# Darwin, a separate __aarch64__ branch for Linux) and is exactly the shape that
-# compiles everywhere and works in one place. Ship these labelled, or not at all.
-#
-# The tools are built the way scripts/release.sh's mingw leg builds them: the
-# NATIVE tychoc emits their C here, and the cross driver compiles that C for the
-# target. tychoc is a transpiler, so the emitted C is host-independent.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -77,10 +53,6 @@ for row in $TARGETS; do
         # shellcheck disable=SC2086
         ./tychoc "$tentry" $shimarg --emit-c -o "$stage/$tname" >/dev/null || {
             echo "!! could not emit C for $tname"; exit 1; }
-        # shellcheck disable=SC2086
-        # --print-shims lists the CORELIB shims an import pulls in; it does not
-        # echo back an explicit --shim, so that one is appended by hand -- the
-        # same two-part link line scripts/release.sh's mingw leg uses.
         tshims="$(./tychoc "$tentry" $shimarg --print-shims | tr '\n' ' ')"
         [ "$tshim" != "-" ] && tshims="$tshims $tshim"
         zig cc -target "$triple" -O2 -fwrapv -o "$stage/$tname$exe" \
@@ -93,9 +65,6 @@ for row in $TARGETS; do
     # A note IN the artifact, not only in the release page: whoever unpacks this
     # on a Mac should know nobody has run it there.
     case "$plat" in
-        # linux-x86_64 is the host. windows-x86_64 is exercised under wine by
-        # scripts/wine_*.sh and was re-checked for this build (reports its
-        # version and emits C), so neither carries the notice.
         linux-x86_64|windows-x86_64) ;;
         *) printf 'This build was cross-compiled with `zig cc` on linux-x86_64 and has\nNOT been executed on %s. It compiles cleanly and reports the right\narchitecture; that is all that is known. Please report anything that\nbreaks -- see SECURITY.md and CONTRIBUTING.md in the repository.\n' \
              "$plat" > "$stage/UNTESTED-PLATFORM.txt" ;;

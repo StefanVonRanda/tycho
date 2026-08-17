@@ -41,9 +41,6 @@ ROOTS = ["README.md", "docs/README.md"]
 # path -> why it is deliberately not reachable. Keep this short; the honest fix
 # for an orphan is a link, not an entry here.
 EXEMPT = {
-    # Empty on purpose. The nine plan archives sat here "pending the prune
-    # decision"; they are indexed from docs/internals/README.md now, so the
-    # decision is made and the exemption is gone rather than dormant.
 }
 
 LINK = re.compile(r"\]\(([^)]+)\)")

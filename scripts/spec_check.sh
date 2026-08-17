@@ -1,13 +1,3 @@
-#!/bin/sh
-# spec_check.sh — the spec conformance/consistency gate (ROADMAP §1.8).
-#
-# Today it enforces one invariant: the collected grammar in
-# docs/spec/appendix-a-grammar.md (the GENERATED region) is byte-identical to
-# what scripts/gen_grammar.sh extracts from the defining chapters §3/§4. This
-# makes Appendix A a checked projection of the chapters rather than a copy that
-# can silently rot. Further clause->fixture checks (Appendix E) attach here.
-#
-# Exit 0 = spec consistent; non-zero = drift (prints a diff).
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -67,9 +57,6 @@ else
     fail=1
 fi
 
-# --- Check 3 (tier 2): runnable examples compile, run, match their output ----
-# Every ```tycho block paired with a following ```output block is built and run;
-# its stdout must equal the output block. See scripts/spec_examples.sh.
 if sh "$root/scripts/spec_examples.sh"; then
     :
 else

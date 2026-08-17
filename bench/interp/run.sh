@@ -1,13 +1,3 @@
-#!/bin/sh
-# Tree-walking interpreter head-to-head: build a large deterministic expression AST (a
-# recursive enum / tagged union), eval it, constant-fold it (a rewrite pass that
-# allocates a new AST), count nodes, deep-compare original vs folded, and fold into a
-# `n eval foldedN foldedEval same` checksum. The AST is the memory under test: tycho's
-# value-semantic recursive enum vs C's malloc'd tagged-union nodes vs Go's struct
-# pointers (GC) -- the recursive-by-value value-shape (the trie's cousin). A byte-
-# identical checksum across the three ports is the correctness check; C is compiled
-# -fwrapv so its eval wraps like tycho's. tycho uses no hand-written C. NOT wired into
-# `make ci`. See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

@@ -1,42 +1,6 @@
-#!/bin/sh
-# Check corelib against things this project did not write: Python's own modules
-# where the semantics match exactly, and a stated PROPERTY where they do not.
-# (The name says "format" because that is where it started; it now also covers
-# calendar arithmetic, sort stability, a float grammar and a path invariant.)
-#
-# Differential-tested against independent implementations:
-# core:csv against Python's `csv`, core:json against Python's `json`, and
-# sha256 / md5 / base64 / hex / url against hashlib, base64 and urllib.
-#
-# `make corelib` checks both against goldens THIS REPO RECORDED. That proves they
-# have not changed; it cannot prove they were ever right. For a format the whole
-# point of which is that somebody else can read it back, "agrees with its own
-# earlier self" is the wrong property.
-#
-# It found one: `csv.stringify` states `parse(stringify(rows)) == rows` in its own
-# doc comment, and that was false for a row of ONE EMPTY FIELD -- written bare, it
-# parses back as a row with NO fields (FRICTION #61). 413 of 414 row-sets were
-# fine, which is why a golden never noticed.
-#
-# BOTH HALVES ARE CONTROLLED, because a differential that reports zero is
-# indistinguishable from one that is not comparing: a deliberately wrong
-# expectation must be caught, and the correct one must not be.
-#
-# A digest is the case where "agrees with its own golden" is least reassuring:
-# sha256 has one right answer per input, published everywhere, and this repo's
-# archiver stakes file integrity on it. The lengths cover every block boundary a
-# padding bug hides behind.
-#
-#   N=<count> sh scripts/format_diff.sh    generated cases per format (default 400)
 set -eu
 
 cd "$(dirname "$0")/.."
-# Corpus size. NOT plain `N`: `make ci N=0` sets N in the environment to skip the
-# fuzz lanes, Make exports it, and this script read it -- so the documented
-# "skip the fuzz" flag silently cut this differential from 420 cases to its 20
-# hand-written ones, a 4.8% corpus reported as a normal run. It surfaced only
-# because the safe_join arm's own >=10-refusal guard landed on 9 (2026-08-15).
-# FMTDIFF_N is namespaced so no sweep-level knob can reach it.
 N=${FMTDIFF_N:-400}
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -222,7 +186,6 @@ import "core:regex"
 import "core:io"
 import "core:strings"
 
-# "pattern<TAB>subject" per line -> 1 / 0, or E if the pattern was rejected.
 fn main():
     for line in io.read_lines(args()[1]):
         if line == "":
@@ -285,13 +248,6 @@ import csv, io, json, pathlib, random, re, struct, subprocess, sys
 T, N = sys.argv[1], int(sys.argv[2])
 random.seed(20260815)
 
-# Run a probe and REFUSE to score a short answer. Every arm below pairs the
-# probe's lines against its own corpus with zip(), and zip() truncates to the
-# SHORTER list -- so a probe that dies partway makes the arm quietly score a
-# handful of cases and report them as a clean run. Observed 2026-08-15 under
-# `make ci N=0`: the safe_join arm scored 20 of hundreds and was caught only by
-# its >=10-refusal guard landing on 9. A non-zero exit or a short read is now a
-# hard failure that names the probe.
 def probe(binary, argpath, want, label):
     r = subprocess.run([binary, str(argpath)], capture_output=True, text=True)
     if r.returncode != 0:
@@ -390,11 +346,6 @@ p = pathlib.Path(T + "/ein.txt")
 p.write_text("\n".join(c.hex() or "-" for c in blobs) + "\n")
 eout = probe(T + "/encp", p, len(blobs), "encp")
 
-# the control: sha256("") is the most-published digest there is, so if the FIRST
-# line does not carry it the harness is misaligned and nothing below means
-# anything. That is exactly how this was written the first time -- the empty
-# input became an empty line, the reader skipped it, and all six codecs appeared
-# broken on 321 of 323 inputs.
 E3B = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 if not eout or eout[0].split("\t")[0] != E3B:
     print(f"  CODEC CONTROL DEAD: line 1 should be sha256(\"\") = {E3B[:16]}...,")
@@ -432,9 +383,6 @@ dout = probe(T + "/dtp", p, len(ts), "dtp")
 
 def props(t):
     d = dtm.datetime(1970, 1, 1, tzinfo=dtm.timezone.utc) + dtm.timedelta(seconds=t)
-    # format_iso is documented as "YYYY-MM-DDTHH:MM:SS" (UTC, NO suffix) at
-    # corelib/datetime/datetime.ty -- expecting a trailing Z was the oracle's
-    # error, not the code's, and it flagged all 414.
     return [d.strftime("%Y-%m-%dT%H:%M:%S"), d.strftime("%a"), d.strftime("%b"),
             str(calendar.isleap(d.year)).lower(),
             str(calendar.monthrange(d.year, d.month)[1]), str(t)]
@@ -505,12 +453,6 @@ for k, v in sbad.items():
 print(f"  {len(scases)} arrays x 4 orderings against Python's sorted "
       f"({ties} of them with a tie): {sum(len(v) for v in sbad.values())} mismatches")
 
-# ---- strings.parse_float ----------------------------------------------------
-# The rare case where the oracle is WRITTEN DOWN: corelib/strings/strings.ty
-# states the grammar and lists what it refuses -- leading space, inf/nan, hex
-# floats, a comma separator, anything trailing. So acceptance is scored against
-# that grammar, and the VALUE against Python's float BIT FOR BIT, because a float
-# parser's failure mode is a correctly-shaped answer one ulp out.
 GRAM = re.compile(r'^[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$')
 fcands = ["1.5", "-1.5", "+1.5", "0", "0.0", ".5", "-.5", "1.", "1e3", "1E3",
           "1e+3", "1e-3", "5e-324", "1e-320", "1e-400", "1e400", "0.1",

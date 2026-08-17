@@ -1,30 +1,3 @@
-#!/bin/sh
-# Undefined behaviour in the EMITTED code and the runtime, on Windows.
-#
-# docs/internals/ffi-review-2026-08-14.md named this gap in one line: "the wine
-# lanes cover behaviour, not memory safety: there is no ASan equivalent in that
-# path." That is true of ASan -- mingw-w64 ships no libasan and no libubsan here,
-# so -fsanitize=address and plain -fsanitize=undefined both fail at LINK.
-#
-# But UBSan does not need its runtime if the checks TRAP instead of reporting:
-# -fsanitize=undefined -fsanitize-undefined-trap-on-error compiles every check
-# down to an illegal instruction, links against nothing, and dies under wine.
-# Measured here, not assumed.
-#
-# It reuses scripts/wine_test.sh whole -- goldens, package programs, runtime
-# aborts, compiler diagnostics -- through WINE_CCF, rather than growing a second
-# copy of that harness. So a trap shows up as the failure that lane already
-# reports, against the golden it already checks.
-#
-# WHAT THIS COVERS AND WHAT IT DOES NOT. The subject is the emitted C plus the
-# corelib shims plus the runtime, which is the part that ships to a user's
-# machine. tychoc.exe itself is not rebuilt sanitized (it is covered on Linux by
-# scripts/asan_self.sh). -fwrapv is kept, matching the shipped Windows cc line,
-# so signed overflow is DEFINED in this build and is deliberately not among the
-# checks -- what remains is out-of-bounds on known-size objects, misaligned and
-# null pointer use, bad shifts, bad enum and bool values, and VLA bounds. This is
-# not ASan: it cannot see a use-after-free or a heap overflow past an unknown
-# bound.
 set -eu
 
 cd "$(dirname "$0")/.."

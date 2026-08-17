@@ -1,12 +1,3 @@
-#!/bin/sh
-# Large held set (2M small strings) + steady churn. Two findings:
-#  (#2 per-object overhead) tycho holds the set most compactly — arena bump-alloc
-#     has no per-object malloc header (C) or GC metadata (Go).
-#  (#1 GC scan)  a tracing GC must re-scan the live set each collection. At default
-#     GOGC, Go's pacer keeps that cheap (GC cost ~ allocation traffic, NOT live size
-#     — the naive "big heap kills GC" is false for modern Go). Under memory pressure
-#     (GOGC=10) Go can match tycho's footprint, but only by GC'ing ~10x more often,
-#     re-scanning the whole live set each time. tycho/C never scan. Same checksum.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc; [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }

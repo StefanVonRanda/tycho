@@ -1,38 +1,6 @@
-#!/bin/sh
-# Wine smoke for the native-Windows port (docs/internals/windows-port.md). Cross-compiles
-# selected fixtures with the mingw-w64 compiler and runs them under Wine,
-# comparing output byte-for-byte against the Linux goldens.
-#
-#   sh scripts/wine_smoke.sh
-#
-# WHAT IT IS: the Linux-box inner loop of the windows port. The compiler
-# (build/tychoc-mingw.exe) is built with the mingw-w64 CROSS compiler; each
-# fixture's emitted C is compiled with the SAME mingw gcc the transpiler would
-# invoke on a Windows host; the result runs under Wine.
-#
-# WHAT IT IS NOT: a gate, and not a Windows verdict. Wine is an approximation
-# of Win32 -- scheduling, exception and file semantics all differ in ways the
-# fixtures can paper over. "Green under Wine" is recorded as exactly that; the
-# DEFINITIVE pass is the windows-latest CI leg of docs/internals/windows-port.md phases 6/7.
-# It SKIPS loudly when the mingw cross compiler or wine is absent.
-#
-# COVERAGE, and why these fixtures: the conc positives pin the concurrency
-# model (spawn/wait, channels, backpressure, parallel-for reductions, select)
-# byte-identically; clock pins the timer surface (winpthreads clock_gettime);
-# floats pins the locale-fallback float formatting; iobuiltins pins list_dir
-# (mingw dirent). The recursion set is the runtime stack-overflow guard: deep
-# recursion must fail closed on the main thread AND in a spawned task (exit
-# 1-127, empty stdout, "stack overflow" on stderr), and the modestly-nested
-# controls must RUN -- the guard must not be trigger-happy. The fixtures are
-# generated here, mirroring tests/recursion/run.sh's shapes.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 MINGWCC="$(command -v x86_64-w64-mingw32-gcc || true)"
-# Wine 9.0 merged wine64 into a single 64-bit `wine`, and Arch/CachyOS ships
-# wine 11.x with no wine64 binary at all -- so a bare `command -v wine64` made
-# this lane SKIP on every modern Wine while printing a reason that read like a
-# missing install. Prefer wine64 when it exists (older split installs), else
-# wine. Measured 2026-08-09 on this box: wine-11.14, no wine64.
 WINE="$(command -v wine64 || command -v wine || true)"
 [ -n "$WINE" ] || { echo "SKIP: neither wine64 nor wine on PATH -- windows Wine smoke skipped"; exit 0; }
 [ -n "$MINGWCC" ] || { echo "SKIP: x86_64-w64-mingw32-gcc not on PATH -- windows Wine smoke skipped"; exit 0; }
@@ -44,11 +12,6 @@ fail=0
 # the mingw cross-compiled compiler (build dir; the repo .gitignore covers it)
 mkdir -p build
 make -s build/tycho_rt_embed.h
-# REBUILD WHEN THE SOURCE MOVED, not merely when the exe is absent. Until
-# 2026-08-13 this said `if [ ! -x ... ]`, so an exe cross-built once was reused
-# for ever: on this box it was 8 days old and 25 fixtures "failed" at emit/cc
-# under mingw purely because the compiler predated the features they use. A lane
-# whose subject is stale reports on a program nobody is running.
 if [ ! -x build/tychoc-mingw.exe ] \
    || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
    || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
@@ -81,7 +44,6 @@ smoke floats    tests/floats.ty    tests/floats.out
 smoke iobuiltins tests/iobuiltins.ty tests/iobuiltins.out
 
 echo ">>> runtime stack-overflow guard (deep recursion fails closed, under Wine)"
-# fixtures mirror tests/recursion/run.sh's generated-code shapes
 printf 'fn f(n: int) -> int:\n    if n <= 0:\n        return 1\n    return n + f(n - 1)\nfn main():\n    print(str(f(2000000)))\n' > "$T/prog_big.ty"
 printf 'fn f(n: int) -> int:\n    if n <= 0:\n        return 0\n    return f(n - 1)\nfn main():\n    print(str(f(2000000)))\n' > "$T/prog_small.ty"
 printf 'fn deep(n: int) -> int:\n    if n <= 0:\n        return 0\n    return deep(n - 1)\nfn tm() -> int:\n    return deep(2000000)\nfn main():\n    t := spawn tm()\n    print(str(t.wait()))\n' > "$T/prog_spawn.ty"

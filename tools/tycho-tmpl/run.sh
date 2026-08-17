@@ -1,31 +1,3 @@
-#!/bin/sh
-# Gate for tycho-tmpl, the template renderer in tools/tycho-tmpl/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-tmpl/run.sh
-#
-# WHY THIS LANE'S SUBJECT IS `sink`. `sink` had 18 uses in the tree before this
-# program and all 18 were in `tests/` -- no tool, example, server or bench used
-# it. tycho-tmpl's document builder consumes at every step, and what the audit
-# found (FRICTION #37) is that a consuming API cannot have a BUILDER: four
-# natural shapes are refused, so the chain must be written point-free. A golden
-# can show the rendered text; it cannot show that those four shapes are still
-# refused, which is what leg [3] is for.
-#
-# WHAT IT ASSERTS
-#   [1] THE RENDER, TWICE, and equal to the golden.
-#   [2] THE SUBSTITUTION AGAINST LITERALS. A template written here, two keys,
-#       one repeated -- `{{name}}` twice must both expand, and the trailer must
-#       count the lines it actually rendered.
-#   [3] THE FOUR REFUSED SHAPES STAY REFUSED. Each is compiled from a probe
-#       written here and must fail with the sink diagnostic. This is the leg
-#       that would notice if the consume rule were quietly relaxed -- the
-#       program itself would keep working, because point-free stays legal.
-#   [4] A MISSING KEY IS NAMED, not blank. `{{role}}` with no --set exits 1 and
-#       says which placeholder; a renderer that emits "" for a missing name is
-#       how a config ships with a hole in it.
-#   [5] AN UNKNOWN OPTION IS REFUSED BY NAME (cli.parse_checked, FRICTION #29).
-#
-# Every run is bounded by timeout(1).
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

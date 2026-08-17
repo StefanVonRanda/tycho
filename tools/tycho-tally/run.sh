@@ -1,31 +1,3 @@
-#!/bin/sh
-# Gate for tycho-tally, the SQLite-backed ledger in tools/tycho-tally/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-tally/run.sh
-#
-# WHY A GOLDEN IS THE WEAK HALF HERE. The program's own `--selftest` is 15
-# `core:testing` assertions, and a test framework that never fails would print
-# `ok  tycho-tally (15 checks)` whether the ledger worked or not. So this lane
-# does not merely run the suite: it BREAKS one assertion in a COPY of the source
-# and requires the suite to notice, which is the only way to know the 15 green
-# checks mean anything.
-#
-# WHAT IT ASSERTS
-#   [1] THE SUITE PASSES, twice, byte-identical, exit 0.
-#   [2] THE SUITE CAN FAIL. A copy of main.ty with one expected total changed
-#       must exit 1, name the check, and print both sides. This is the positive
-#       control for core:testing itself.
-#   [3] THE LEDGER IS REAL, from the outside. Three `--add` runs against a fresh
-#       db, then `--report` compared to literals here -- categories sorted by
-#       SQL, one folded SUM. RECORD=1 cannot reach these.
-#   [4] STATE SURVIVES A PROCESS EXIT. The rows are added by THREE separate
-#       processes and read back by a FOURTH; a ledger that kept its rows in
-#       memory and wrote nothing passes [3] and fails this.
-#   [5] A TYPO'D AMOUNT IS REFUSED. `--add x=35q` must exit 2 and add nothing --
-#       `strings.parse_int` would have booked 35 (FRICTION #34), so this is the
-#       leg that pins the checked parser.
-#
-# Every run is bounded by timeout(1).
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

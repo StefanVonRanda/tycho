@@ -1,10 +1,3 @@
-#!/bin/sh
-# dbquery head-to-head: a REAL in-memory SQLite workload, the same in tycho / C /
-# Go, measuring peak RSS + wall (via bench/peakrss) with a byte-identical
-# checksum as the cross-language correctness check. SQLite work is held constant;
-# what differs is the host-side data handling -- tycho's arena vs C's stack/manual
-# vs Go's GC. Needs libsqlite3; skips any language whose toolchain is absent.
-# NOT wired into `make ci` (system dependency). See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

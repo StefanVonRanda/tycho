@@ -1,84 +1,3 @@
-#!/bin/sh
-# Gate for tycho-db, the relational database in tools/tycho-db/ -- sql/ (lexer,
-# parser, AST), store/ (catalogue, heap file and equality index), plan/ (access
-# path selection and constant folding), exec/ (the operators), wal/ (the
-# write-ahead log and crash recovery) and srv/ (the line protocol and client).
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-db/run.sh
-#
-# WHAT IT ASSERTS
-#   [1] the demo script's transcript matches the golden, and TWO runs from a
-#       fresh store are cmp-identical -- the stdout, the store FILE and the
-#       LOG file. A database betrays its caller by returning the wrong rows and
-#       looking like it worked, so the golden carries the rows themselves, not
-#       a count. The log is additionally asserted to be rewound to a bare
-#       header after a clean run, which is what stops it growing forever.
-#   [2] persistence across processes. One process writes and exits; a SECOND
-#       process opens the same file and must read the rows back. The expected
-#       rows are literals HERE, not a slice of the golden, so a re-record
-#       cannot bless a store that lost a row. Then a THIRD process appends to
-#       the reopened store and a FOURTH reads four rows -- which is the
-#       fresh-store and reopened-store legs both exercised as writers.
-#   [3] CRASH AND REPLAY, which is why wal/ exists. A REAL kill -9 lands
-#       mid-script, between the log write and the store write; a fresh process
-#       then replays and must show every completed row and no partial one.
-#       Replay is asserted idempotent, and a torn trailing record is asserted
-#       to be discarded rather than replayed. See the section header.
-#   [3b] THE PLANNER EARNS ITS PACKAGE. Not a golden diff: the index path and
-#       the scan path are run over identical rows and asserted to return THE
-#       SAME rows, then asserted to differ in what they EXAMINED (1 against 6)
-#       -- correctness and "the index actually ran" are separate claims and a
-#       silent fallback to a scan would pass the first alone. Constant folding
-#       is asserted by a `WHERE 1 = 2` examining zero rows of a table holding
-#       six. See the section header.
-#   [4] every named variant of store.StoreErr, exec.ExecErr, wal.WalErr,
-#       plan.PlanErr and srv.SrvErr exits non-zero with ITS OWN message. Most
-#       are reachable from the CLI and are driven through it; NotAPredicate and NoIndex are
-#       not (see [5]); srv.Accept needs a broken listening socket, which a
-#       gate that has one has a broken server rather than a test.
-#       ExecErr.Storage and WalErr.Storage are the wrappers the StoreErr cases
-#       arrive through -- err_str delegates -- so each of those asserts it.
-#       The variant list is EXTRACTED from the five enums and checked against
-#       the list this runner covers, so a variant added tomorrow reddens here
-#       instead of quietly going ungated.
-#   [5] the two variants no SQL text can reach, each probed through the API
-#       that owns it. exec.ExecErr.NotAPredicate: sql._predicate only ever
-#       builds Cmp or And and exec._pred handles both, so only a caller holding
-#       the AST can get there. store.StoreErr.NoIndex: plan asks which columns
-#       are indexed before it commits to a probe, so only a caller that skips
-#       that question can get there -- and asserting the REFUSAL is what rules
-#       out a probe() that quietly falls back to a scan. The runner copies the
-#       packages into its temp dir and builds a probe against each API;
-#       nothing is written into the repo to do it.
-#   [5b] THE SERVER, over real sockets and nothing mocked: a session through
-#       tycho-db's own client, a SECOND session that must see the first one's
-#       writes, a RAW SOCKET client asserting the wire format byte for byte,
-#       two rude clients that must end their own session and not the daemon,
-#       and two concurrent clients that must both be answered correctly.
-#       The port is discovered from the banner -- no fixed port, no sleep.
-#
-# WHAT IT DELIBERATELY DOES NOT ASSERT
-#   The on-disk format's bytes, for the store or the log. Both are asserted to
-#   be REPRODUCIBLE (run twice, cmp) and to round-trip through a second
-#   process, which is what a caller depends on; pinning a hex dump would redden
-#   for every encoding change without telling anyone whether data survived one.
-#   The one exception is the log's 17-byte checkpointed header, whose SIZE is
-#   checked because "the log was rewound" has no other cheap witness.
-#   Timing, and the size of the store file. Neither is a promise the tool makes.
-#
-#   Durability against POWER LOSS. wal.ty DOES now request a flush -- core:io
-#   gained io.sync (fsync) on 2026-08-12 and append/checkpoint call it -- but a
-#   gate cannot cut the power, and kill -9 is a strictly weaker event that the
-#   page cache alone already survives. So nothing below distinguishes a synced
-#   log from an unsynced one; the kill -9 leg proves only the boundary it always
-#   proved, that a record written before the process died is read by the next
-#   one. What the flush buys is asserted in corelib/test/io (io.sync's statuses)
-#   and argued in wal.ty's header, not measured here. A drive with a lying write
-#   cache would defeat it and no test in this tree could tell.
-#
-# NO HOST DETAIL REACHES THE GOLDEN. Every store path and script path recorded
-# below is RELATIVE and every recorded command runs with the temp dir as cwd,
-# because tycho-db prints its store path on the first line of every run.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -242,8 +161,6 @@ INSERT INTO acct VALUES (2, 'bob', 250);
 INSERT INTO acct VALUES (3, 'cy', 375);
 EOF
 
-# CREATE is mutation 1, so --crash-after=3 dies with the table and the FIRST
-# TWO rows logged, and rows 2 and 3 of the script never attempted.
 rm -f k.db k.db.wal
 "$DB" crash.sql k.db --crash-after=3 > "$T/k.out" 2> "$T/k.err"
 krc=$?
@@ -720,33 +637,6 @@ else
     cat "$T/c.err" >> "$out"
 fi
 
-# ---------------------------------------------------------------------------
-# [5b] THE SERVER, over real sockets
-#
-# Every leg here opens a TCP connection to a tycho-db that is actually running.
-# Nothing is mocked and no srv function is called in-process except the one
-# variant a socket cannot reach (Accept, at the end).
-#
-# NO FIXED PORT: the server binds port 0 and prints the port the kernel gave it
-# on stderr, which is also the readiness signal -- the banner is printed after
-# the socket is listening and before the first accept, so a client that
-# connects on seeing it is queued rather than refused. No sleep is used to wait
-# for readiness anywhere below.
-#
-#   a  a session through tycho-db's own client: the rows are literals here.
-#   b  a SECOND session, new connection, must see the first one's writes -- the
-#      one claim a single-session test cannot make, and the reason the server
-#      checkpoints at the end of every session rather than at exit.
-#   c  a RAW SOCKET client speaks the protocol. This is what stops the wire
-#      format from being whatever our own client happens to send: it asserts
-#      the response block byte for byte, terminator included.
-#   d  the daemon SURVIVES a rude client. A peer that hangs up mid-statement,
-#      and a peer that overruns the line cap, must each end their own session
-#      and nothing more -- proven by a THIRD client being answered afterwards.
-#   e  sessions are SERIALISED, which is this layer's stated concurrency
-#      decision: two clients launched at once must both complete correctly,
-#      the second having waited in the backlog.
-# ---------------------------------------------------------------------------
 SRVPID=""
 srv_stop() {
     [ -n "$SRVPID" ] && kill -TERM "$SRVPID" 2>/dev/null
@@ -965,11 +855,6 @@ printf -- '--- stderr\n' >> "$out"; cat "$T/c.err" >> "$out"
 if srv_start nodir2/x.db; then
     printf 'CREATE TABLE t (a INT);\n' > s4.sql
     "$DB" "--client=127.0.0.1:$port" s4.sql > "$T/c.out" 2>&1
-    # POLLED, NOT `wait`. A bare wait here is unbounded, so the one regression
-    # this leg exists to catch -- a server that does not treat a failed
-    # checkpoint as fatal -- would HANG the gate instead of reddening it. A
-    # gate that can hang is worse than one that fails: nobody reads a log that
-    # never arrives. Found by breaking exactly that, 2026-08-12.
     i=0
     while kill -0 "$SRVPID" 2>/dev/null && [ "$i" -lt 100 ]; do
         sleep 0.05

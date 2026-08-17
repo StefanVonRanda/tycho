@@ -1,39 +1,3 @@
-#!/bin/sh
-# Gate for tycho-fh, the handle-based file counter in tools/tycho-fh/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-fh/run.sh
-#
-# WHY THIS LANE EXISTS. `handle Name:` was declared in exactly 10 files before
-# this program and ALL 10 were under tests/ -- nine rejects and tests/ffi. No
-# program anywhere used one. Writing the first consumer found a double free
-# (FRICTION #43).
-#
-# WHY ITS SUBJECT IS "EXACTLY ONCE". A handle's contract is that its destructor
-# runs once per successful open, at every scope exit. A transcript cannot show
-# that: a leaked FILE* prints the same lines as a closed one, and a double free
-# is undefined behaviour that often prints nothing. So the C side counts
-# (tools/tycho-fh/fh.c) and this lane reads the counters back -- `live` is 0 when
-# balanced, POSITIVE on a leak and NEGATIVE on a double free, so the two failure
-# directions are told apart rather than merely detected.
-#
-# WHAT IT ASSERTS
-#   [1] THE RUN, TWICE, and equal to the golden.
-#   [2] THE COUNTS AGAINST LITERALS, over a file written here.
-#   [3] BALANCED AT EXIT: live == 0 and opens == closes, after 64 scope exits.
-#   [4] NO FD LEAK UNDER LOAD: --stress opens 20000 times; a destructor that did
-#       not run exhausts the process long before that, and the re-read checksum
-#       (20000 x the single-file total) catches an open that started failing
-#       silently.
-#   [5] THE AFFINE REFUSALS, each a probe compiled here and required to FAIL:
-#       a decl copy `g := f`, a bare handle struct field, a handle returned from
-#       a Tycho fn, a handle in an array, a handle in an Option, and close() on
-#       a call result. The first two COMPILED until 2026-08-14 and the first one
-#       double-freed at run time, which is why they are pinned here.
-#   [6] A BORROW IS STILL A BORROW: passing the handle twice in one expression
-#       leaves live == 1, so the fix for [5] did not turn passing into consuming.
-#   [7] AN UNKNOWN OPTION IS REFUSED BY NAME (cli.parse_checked, #29).
-#
-# Every run is bounded by timeout(1).
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc
@@ -83,7 +47,6 @@ WANT
 sed "s|$T|TMP|g" "$T/one.txt" > "$T/norm.txt"
 cmp -s "$T/norm.txt" "$T/want.txt" || { note "[2] the counts/balance are not the expected ones"; diff "$T/want.txt" "$T/norm.txt" | head -6; }
 
-# [4] 20000 opens: no fd leak, and every reopen really read (20000 x 19)
 timeout 60 "$T/prog.bin" --file "$T/t.txt" --stress > "$T/stress.txt" 2>&1 || note "[4] the --stress run exited non-zero"
 grep -q '^live 0$'    "$T/stress.txt" || { note "[4] live is not 0 after 20000 opens -- positive is a leak, negative a double free"; grep '^live' "$T/stress.txt"; }
 grep -q '^balance 0$' "$T/stress.txt" || { note "[4] opens and closes do not balance over 20000 scopes"; grep '^balance' "$T/stress.txt"; }

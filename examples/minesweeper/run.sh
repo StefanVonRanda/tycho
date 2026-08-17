@@ -1,7 +1,3 @@
-#!/bin/sh
-# Build examples/minesweeper and check the deterministic demo against the golden.
-# The interactive mode (`./mine play`) needs raw-terminal input and isn't checked.
-# FFI-shim example, so it has its own runner (the main tests/run.sh can't link a shim).
 set -u
 cd "$(dirname "$0")"
 TYCHOC="${TYCHOC:-../../tychoc}"

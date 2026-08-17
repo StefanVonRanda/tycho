@@ -1,34 +1,3 @@
-#!/bin/sh
-# Gate for tycho-agg, the group-and-count in tools/tycho-agg/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-agg/run.sh
-#
-# WHY THIS LANE'S SUBJECT IS GENERICS, NOT COUNTING. tycho-agg declares its own
-# generics in `pipe/` and instantiates them across a package boundary at its own
-# `Row`. A golden can see the counts; it cannot see whether the generics were
-# instantiated at all, so leg [4] reads the emitted C for the mangled symbols --
-# and that IS what no other lane does: no other `run.sh` greps a `pkg__fn__type`
-# mangling (checked 2026-08-13). tycho-flow's lane probes a cross-package generic
-# composition, but through behaviour, not through the emitted symbol.
-#
-# WHAT IT ASSERTS
-#   [1] THE REPORT, TWICE, and equal to the golden. No clock, no environment.
-#   [2] THE COUNTS AGAINST LITERALS. north 3, south 2, east 1 over a fixture
-#       written here, so `RECORD=1` cannot bless a miscount. The fixture carries
-#       a row with an EMPTY key, which must be dropped by `pipe.keep` and must
-#       not become a fourth group -- that row is the reason `nonempty` and
-#       `rows` differ, and both numbers are asserted.
-#   [3] --min FILTERS AND DOES NOT RECOUNT. At `--min 2` east disappears while
-#       the header line still reports distinct=3: the threshold is a display
-#       rule, not a change to the aggregation.
-#   [4] THE GENERICS REALLY INSTANTIATED. The emitted C must carry
-#       `pipe__keep__`, `pipe__to__` and `pipe__group_into__` mangled at this
-#       program's own types. Dead-code elimination or a mis-resolved call would
-#       leave the numbers right and this leg red.
-#   [5] THE FAILURE PATHS. A missing file, a column that is not in the header,
-#       and an unknown option each exit non-zero and name the thing.
-#
-# Every run is bounded by timeout(1).
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

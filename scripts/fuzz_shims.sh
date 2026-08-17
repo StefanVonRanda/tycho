@@ -1,30 +1,3 @@
-#!/bin/sh
-# Fuzz the corelib entry points that parse UNTRUSTED BYTES, under ASan+UBSan.
-#
-# The tree's fuzzer (fuzz/run.py) targets the COMPILER: it generates Tycho source
-# and checks tychoc. Nothing fuzzed the other direction -- the hand-written C
-# shims that a running program feeds attacker-controlled data to. That gap was
-# named by docs/internals/ffi-review-2026-08-14.md and this closes it.
-#
-# Subjects: compress.decompress (zlib), regex.compile/is_match (POSIX regex), and
-# json.parse / csv.parse -- the corelib paths that take arbitrary bytes from
-# outside. The first two hand them to a C library; the last two are Tycho parsers
-# over text, reached through read_text so INVALID UTF-8 gets in as well. Seeds are valid gzip/zlib streams and near-misses; each is mutated by
-# bit flips, deletions and insertions, so the interesting inputs are the ones that
-# LOOK valid for a while and then are not.
-#
-# TWO THINGS THIS SCRIPT GETS RIGHT, both of which cost a debugging round:
-#
-#   detect_leaks=0 -- a Tycho program exits with live arenas BY DESIGN, so
-#   LeakSanitizer reports every single run and the harness scored 700/700
-#   "crashes" that were nothing. Leaks are not the class being fuzzed here;
-#   memory ERRORS are.
-#
-#   A CONTROL runs first. A fuzzer that reports zero findings is indistinguishable
-#   from a fuzzer that is not running, so a deliberate heap overflow is compiled
-#   and must be caught before any real input is tried.
-#
-#   N=<count> sh scripts/fuzz_shims.sh   inputs per seed (default 150)
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -135,11 +108,6 @@ seeds = [b"", b"\x1f\x8b", gzip.compress(b"hello"), gzip.compress(b"x" * 100000)
          b'{"s":"\\u00e9\\ud83c\\udf89 \\" \\\\ \\n"}',
          b"a,b,c\n1,\"quoted, comma\",3\n\"multi\nline\",x,y\n",
          b",,,\n\"\"\"\",,\n",
-         # A REAL zip, built by zipfile. A hand-written EOCD record was tried
-         # first and PROVED SHALLOW: zip.list returned 0 entries for it, exactly
-         # as it does for pure junk, so every mutant died before the offset
-         # arithmetic that is the whole reason to fuzz this. Measured, not assumed
-         # -- the same trap the JSON seeds hit one commit earlier.
          _real_zip(),
          b"# h1\n\n*em* **strong** `code`\n\n- a\n- b\n\n[l](http://x) ![i](y)\n\n> q\n\n```\nfence\n```\n"]
 bad = runs = 0; kinds = {}

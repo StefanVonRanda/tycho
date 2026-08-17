@@ -1,68 +1,3 @@
-#!/bin/sh
-# Gate for tycho-q, the SQL-ish query tool in tools/tycho-q/main.ty.
-#
-# WHY THIS IS A GOLDEN RUNNER AND NOT A DAEMON HARNESS. server/run.sh has to
-# start a process, read a bound port out of a banner and talk to it over a
-# socket, because the thing it gates is a server. tycho-q is a batch program:
-# a query and a file go in, rows come out on stdout, so it gates the way
-# tools/tycho-ar/run.sh and examples/*/run.sh do -- build it, run it over a
-# fixture, compare stdout to a recorded golden -- with the query-specific
-# assertions layered on top.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-q/run.sh
-#
-# WHAT IT ASSERTS, and why each leg exists. A query tool has exactly one way to
-# betray the person using it: return the wrong rows, and look like it worked.
-# Every leg below is aimed at one route to that.
-#
-#   [1] THE TRANSCRIPT MATCHES A GOLDEN. 35 queries covering the parse (`--explain`
-#       s-expressions, so precedence is proved by shape and not by prose), cell
-#       typing, `where`, decimal arithmetic, the total order, sort stability,
-#       multi-key mixed directions, `limit`, JSON floats read exactly, and both
-#       readers, and division at the default scale and rounding mode. The golden
-#       is the concatenated stdout, so it reddens on any change to a row, an
-#       order, a header or a rendering.
-#   [2] READING DOES NOT REWRITE. `select *` over each fixture is `cmp`-identical
-#       to the fixture file itself. A query that neither filters nor computes must
-#       return the bytes it was given -- including `007`, `-0`, `0080`, a 26-digit
-#       integer, an empty field, a quoted comma, an embedded newline and UTF-8.
-#   [3] CSV AND JSON AGREE. The same logical query over sales.csv and sales.json
-#       is compared with `cmp`. Two readers that disagree would make the source
-#       format part of the answer. Since 2026-08-01 that query includes `price`,
-#       a DECIMAL in CSV and a FLOAT in JSON: it filters, orders, multiplies and
-#       renders it, and the two sources still produce the same bytes.
-#   [4] THE FAILURE LEGS REFUSE. A malformed query, a missing file, an unknown
-#       column, an incompatible comparison and a `/` whose divisor is zero each
-#       exit non-zero with their reason on STDERR and NOTHING on stdout. The
-#       empty-stdout half is the load-bearing half: tycho-q builds the whole
-#       result before printing, so a consumer never reads a truncated CSV it
-#       cannot tell is truncated.
-#   [5] core:json's ERROR CHANNEL REACHES THE USER. `[{"a":1.}]` and `[}]` are
-#       refused, each naming the byte that failed. Handed to the OLD `json.parse`
-#       `[{"a":1.5}]` exited 0 having FABRICATED a column -- the leftover `.5}]`
-#       was read as the next key -- and `[}]` exhausted memory from three bytes,
-#       because `parse_value` consumed nothing at a byte it did not recognise
-#       while the array loop advanced only on `,` or `]`. Neither was reportable:
-#       `parse` returned `Json`, not a `Result`, so the package had no error
-#       channel and tycho-q carried its own pre-validator in front of it.
-#       `corelib/json/json.ty@parse_checked` fixed that on 2026-08-01 and the
-#       pre-validator is gone; these legs assert on the CORELIB's message
-#       (`tools/tycho-q/main.ty@json_err` relabels it and adds the advice about
-#       which spellings are legal), which is what proves the error actually
-#       crosses the package boundary and reaches stderr. `[{"a":1.5}]` itself is
-#       no longer here at all: it is Q32 in the golden, because it PARSES now.
-#
-# THE GOLDEN IS DETERMINISTIC ONLY BECAUSE THE FIXTURES ARE BUILT HERE. Every
-# fixture is written by this script from a heredoc literal -- never from
-# /dev/urandom, never copied out of the tree -- and every query is run with the
-# fixture directory as the working directory, so no temp path and no host detail
-# can reach stdout. Unlike tycho-ar's fixture no `touch -d` is needed: tycho-q
-# reads no mtime and prints none.
-#
-# WHY THE FAILURE LEGS ARE NOT IN THE GOLDEN. Their stdout is empty by
-# construction, so a golden over it would assert nothing; what has to be checked
-# is the exit code and a substring of stderr, which is a `grep -qF` and not a
-# `cmp`. Same split as tools/tycho-ar/run.sh, for the same reason.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -80,18 +15,6 @@ if ! "$TYCHOC" tools/tycho-q/main.ty -o "$Q" >"$T/build.log" 2>&1; then
     echo "tycho-q: FAIL"; exit 1
 fi
 
-# ---------------------------------------------------------------------------
-# the fixtures -- every awkward case the phases used, from literals only.
-#
-# sales.csv and sales.json carry the SAME five rows, and as of 2026-08-01 they
-# carry them with the SAME SPELLINGS. `price` used to be a JSON STRING here,
-# because core:json had no float path and a JSON `1.50` could not be read at
-# all; a JSON string is not re-classified, so it stayed a `VStr` there and was a
-# `VDec` here, and leg [3] had to pick a query over the columns where the two
-# agreed. `corelib/json/json.ty@JFloat` closed that, `price` is a JSON NUMBER
-# now, and leg [3] covers it -- which is the whole point of the change: the two
-# readers no longer disagree about what a price is.
-# ---------------------------------------------------------------------------
 fix="$T/fix"; mkdir -p "$fix"
 
 # empty field (Di's region) · quoted comma (Ada's note) · embedded newline (Bo's
@@ -115,14 +38,6 @@ cat > "$fix/sales.json" <<'EOF'
  {"name":"Eve","region":"eu","qty":7,"price":1.50,"code":"11","note":"dup"}]
 EOF
 
-# one classification edge case per row. `v * 1` succeeds only where the cell was
-# typed as a number, so leg [1]'s Q13 is a verdict on each in turn, and leg [2]'s
-# round trip proves none of them is rewritten on the way out. The 26-digit
-# integer used to be confined to CSV because a JSON integer that large wrapped
-# silently inside core:json's int-only JNum; it does not any more -- an integer
-# that does not round-trip through 64 bits becomes a JFloat carrying its own
-# lexeme, which tycho-q reads through core:decimal, so float.json below now
-# asserts the same digits survive the JSON reader too.
 cat > "$fix/types.csv" <<'EOF'
 n,v
 1,007
@@ -150,23 +65,6 @@ EOF
 # of keys in first-appearance order, and every earlier row needs a null in it.
 printf '%s\n' '[{"a":1,"b":2},{"b":5},{"a":9,"c":"new"}]' > "$fix/sparse.json"
 
-# THE FLOAT FIXTURE, AND WHAT EACH COLUMN IS FOR. `[{"a":1.5}]` alone used to
-# live here as a REFUSAL: it was the document the old json.parse read as
-# `{"a":1,".5}]":null}` at exit 0, fabricating a column. It is a SUCCESS case
-# now, and each column proves a different half of "exactly":
-#
-#   a      1.5    the plain case, and the one the old parser corrupted
-#   tenth  0.1    NOT representable in binary64. If tycho-q read the JFloat's
-#                 VALUE instead of its LEXEME this would come back as
-#                 0.1000000000000000055511151231257827, and the golden says it
-#                 does not. This column is the whole reason `json_float_cell`
-#                 exists.
-#   big    30 digits, far past 2^63. core:json cannot hold it as an int and does
-#                 not try; core:decimal is arbitrary precision, so every digit
-#                 survives. The binary64 route would have lost them at the 17th.
-#   scale  1.50   a trailing zero. core:decimal keeps the scale it parsed, so
-#                 `1.50` comes back `1.50` and not `1.5` -- the JSON lexeme and
-#                 the CSV cell agree on this too.
 printf '%s' '[{"a":1.5,"tenth":0.1,"big":123456789012345678901234567890,"scale":1.50}]' > "$fix/float.json"
 
 # the two spellings json_float_cell refuses, one file each, so a leg that stops
@@ -251,12 +149,6 @@ q 'Q31 order by alias'  "select name, qty * price as total from sales.csv where 
 q 'Q32 json float exact' 'select * from float.json'
 q 'Q33 json float order' 'select name, price, qty * price as total from sales.json where price > 0.15 order by price desc, name asc'
 
-# --- division. Both of these were REFUSAL legs until decimal.div existed.
-# Q34 is the averaging shape the old DECISION 2 named as its own cost: a total
-# over a count, at scale 6, rounded half-up. Q35 is the inexact int division
-# that used to be the 'inexact /' refusal -- and it is the case that proves the
-# result kind does not depend on the row, because `0 / 5` prints `0.000000`
-# here and not `0`.
 q 'Q34 total / count'   'select name, qty * price as total, qty * price / qty as avg from sales.csv where qty > 0'
 q 'Q35 inexact div'     'select name, qty / 5 as fifth from sales.csv'
 
@@ -280,22 +172,6 @@ for f in sales.csv types.csv; do
     cmp -s "$T/rt.out" "$f" || bad "round trip: select * from $f is not byte-identical to $f"
 done
 
-# ---------------------------------------------------------------------------
-# [3] CSV and JSON agree
-#
-# `where` + both order directions + a tie broken by the second key + `limit`.
-#
-# `price` IS IN THIS QUERY, and that is the load-bearing change of 2026-08-01.
-# It used to be excluded: a price was a `VDec` from CSV and a `VStr` from JSON,
-# so the two readers disagreed about its kind, its order and its arithmetic, and
-# the identity query had to route around it. It is a JSON NUMBER in the fixture
-# now, so this leg compares a JSON float against a CSV decimal of the same value
-# in all four ways that can differ -- it FILTERS on it (`price > 0.15`, a
-# cross-source comparison), ORDERS on it, COMPUTES with it (`qty * price`) and
-# RENDERS it -- and `cmp` says the two sources produce the same bytes. Had the
-# lexeme been routed through binary64 instead, `0.10` and `0.20` would not have
-# survived the multiply and this is the leg that would have caught it.
-# ---------------------------------------------------------------------------
 ident="select name, qty, code, price, qty * price as total from %s where region == 'eu' and price > 0.15 order by price desc, name asc limit 2"
 # shellcheck disable=SC2059
 "$Q" "$(printf "$ident" sales.csv)"  > "$T/id.csv"  2>"$T/id.err" || bad "identity: CSV leg failed"
@@ -344,21 +220,10 @@ refuses 'unknown order key' 'no such column: nope' \
         'select name from sales.csv order by nope'
 refuses 'bad comparison'    'cannot compare string "007" with int 42' \
         'select name from sales.csv where code == 42'
-# `/` USED TO HAVE TWO REFUSAL LEGS HERE -- an inexact int division and any
-# division touching a decimal. `corelib/decimal/decimal.ty@div` exists now, so
-# both COMPUTE: they are Q34 and Q35 in the golden. What is still refused is the
-# narrower thing, a zero divisor, and it is refused for a different reason than
-# before: `decimal.div` returns Err(DivByZero) rather than the process aborting.
-# Di's qty is 0 in the fixture, so this query reaches it.
 refuses 'divide by zero'    '`/` by zero' \
         'select name, price / qty as u from sales.csv'
 refuses 'no truthiness'     '`where` needs a boolean' \
         'select name from sales.csv where qty'
-# `[{"a":1.5}]` USED TO BE A REFUSAL LEG HERE. It is Q32 in the golden now --
-# core:json reads the float and tycho-q reads its lexeme exactly. What is
-# refused instead is the narrower set, and each leg names a DIFFERENT mechanism:
-# the first two are tycho-q's own decision (json_float_cell), the third is
-# core:json's parse error arriving through the rewritten json_err advice.
 refuses 'json exponent'     'the number 1e3 has no exact decimal spelling here' \
         'select * from exp.json'
 refuses 'json negative zero' 'the number -0.0 has no exact decimal spelling here' \

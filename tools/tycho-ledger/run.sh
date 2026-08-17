@@ -1,33 +1,3 @@
-#!/bin/sh
-# Gate for tycho-ledger, the per-account totals program in tools/tycho-ledger/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-ledger/run.sh
-#
-# WHY THIS LANE'S SUBJECT IS THE REFUSALS. A newtype is ERASED IN LOWERING --
-# `money.Cents` is represented exactly as an `int`, at zero cost (spec 5.4). So
-# the entire value of the feature is compile-time, and the transcript is
-# byte-identical whether the three types are distinct or the program was written
-# with bare int/float/string throughout. A golden cannot see the feature at all.
-# That is what leg [3] is for: five mistakes a ledger would otherwise make
-# silently, each compiled here and each required to FAIL.
-#
-# WHAT IT ASSERTS
-#   [1] THE RUN, TWICE, and equal to the golden.
-#   [2] THE MONEY AGAINST LITERALS. Totals and the scaled totals are written
-#       here, not derived from the program -- a scale that dropped a digit still
-#       prints plausible money.
-#   [3] FIVE DISTINCTNESS VIOLATIONS STAY REFUSED, each a probe built against a
-#       COPY of money/. This is the leg no transcript can replace.
-#   [4] THE REFUSALS NAME TYPES THE READER CAN TYPE. `money.Cents`, never the
-#       mangled `money__Cents` the compiler stores internally. Every imported
-#       type printed mangled until 2026-08-14.
-#   [5] `keys(m)` HANDS BACK WRAPPED KEYS (spec 18.6). The program indexes the
-#       map with what keys() returned and never unwraps, so a keys() that
-#       returned bare strings would not compile.
-#   [6] A NON-NUMERIC AMOUNT IS REFUSED BY NAME (parse_int fails open, #34).
-#   [7] AN UNKNOWN OPTION IS REFUSED BY NAME (cli.parse_checked, #29).
-#
-# Every run is bounded by timeout(1).
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

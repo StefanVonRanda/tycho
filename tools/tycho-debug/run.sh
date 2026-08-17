@@ -1,26 +1,3 @@
-#!/bin/sh
-# Gate for tycho-debug, the gdb adapter in tools/tycho-debug/. Runs the tool
-# against fixtures the runner writes itself and asserts on stable transcript
-# lines. In `make ci` as step [3p/22].
-#
-# WHY NO GOLDEN. The tool's own formatting is deterministic, but the session
-# transcribes gdb's output too (breakpoint addresses, `=library-loaded` noise,
-# the thread/pid lines, where an interrupt lands), and that drifts across gdb
-# versions. A byte golden would redden for a gdb upgrade, not a tool change --
-# so the lane asserts behavior: breakpoint set + hit on the right source line,
-# locals under their stripped C names, print, step, clean quit, normal exit,
-# Ctrl-C interrupt of a running program, and fail-closed refusals.
-#
-# It is the only lane that RUNS tycho-debug, exactly as ar-check is for
-# tycho-ar: scripts/tools_check.sh `--emit-c`s every .ty in the tree, so a
-# syntax error already reddens step [9], but [3b] entrypoints never looks
-# under tools/, so nothing else executes the binary. A debugger that stopped
-# breaking, stopped stepping, or hung on Ctrl-C would keep every other gate
-# green.
-#
-# gdb is an external dependency like sqlite3/libpng: when it is absent the
-# lane SKIPS loudly instead of reddening (the tool itself fails closed with
-# "gdb not found on PATH").
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

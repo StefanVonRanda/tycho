@@ -1,30 +1,3 @@
-#!/bin/sh
-# Is the server's traversal defence still TWO layers, or has it quietly become one?
-#
-# `server/run.sh` already asserts that `/../../etc/passwd` and `/%2e%2e/...` are
-# refused, and they are. What no lane in this tree can see is WHICH guard did it.
-# `server/main.ty@resolve` has two independent ones -- `hidden_segment(path.clean(rel))`
-# and `path.safe_join(root, rel)` -- and measured 2026-08-15 either alone refuses
-# every traversal payload. That is real defence in depth and it is also the
-# problem: **deleting one of them changes no observable behaviour**, so a
-# regression that removes a layer passes every existing gate, and the next change
-# removes the other. That is how two layers become zero in two commits neither of
-# which looked wrong.
-#
-# So this lane defeats them ONE AT A TIME, in a COPY of server/main.ty, and
-# requires the traversal to still be refused:
-#
-#   [1] both guards intact                  -> 403   (the shipped behaviour)
-#   [2] hidden_segment defeated             -> 403   safe_join alone suffices
-#   [3] safe_join defeated                  -> 403   hidden_segment alone suffices
-#   [C] BOTH defeated                       -> 200 and the source LEAKS
-#
-# [C] is not decoration -- it is the whole lane. Without it, [1][2][3] all pass on
-# a probe that never reached the server, which is exactly the blindness that made
-# `core:http`'s certificate check ungatable until FRICTION #57 was fixed. The
-# first version of this check WAS that failure: with only safe_join defeated the
-# answer was still 403, and it looked like the guard was holding when in fact the
-# other one had never been touched.
 set -eu
 
 cd "$(dirname "$0")/.."

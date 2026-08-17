@@ -1,17 +1,3 @@
-#!/bin/sh
-# Dogfood: the `site` static-site generator composes EIGHT corelib modules
-# (io + path + json + csv + strings + sort + datetime + sha256). The only FFI is
-# core:datetime's tz-offset shim (dtx_*, pure libc, no external deps); the ASan
-# path below links the emitted C itself, so we gather that shim (mirroring
-# corelib/run.sh) -- tychoc auto-discovers it for its own cc line. Built by tychoc
-# and run against the local fixture site so the whole pipeline is deterministic;
-# the build report (page list + per-page content hashes) is asserted byte-identical
-# against the golden. (Until 2026-07-26 the site was also built by tychoc0 via
-# --bundle and by standalone tychoc0, all three outputs required to match; tychoc0
-# is frozen -- see compiler/tychoc0.ty -- and no gate builds it.) The emitted C is also run
-# under ASan/UBSan -- a heavy string-building / per-scope-arena workload, exactly
-# what the thesis claims to handle without manual memory management.
-# Re-record the golden with:  RECORD=1 sh examples/site/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -28,16 +14,6 @@ fail=0
 # mingw gcc ships no sanitizer runtime -- see the SKIP at the ASan leg below
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
 
-# The C shims the ASan leg must link. ASK THE COMPILER: `--print-shims` prints the
-# transitive <pkg>_shim.c closure, which is exactly what tychoc splices onto its
-# own cc line in leg (1).
-#
-# This used to grep $SRC for `core:` imports and map each to corelib/<m>/<m>_shim.c.
-# That found DIRECT imports only, and the difference is not theoretical: it is the
-# 2026-08-01 break in examples/fetch/run.sh, where the missing shim (core:strings)
-# was reached through core:json and no grep of the program's own source could see
-# it. This lane happened to survive because it imports core:strings directly --
-# survival by coincidence, not by the mechanism working.
 shim="$("$TYCHOC" "$SRC" --print-shims)" \
     || { echo "site: FAIL (tychoc --print-shims)"; exit 1; }
 

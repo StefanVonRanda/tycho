@@ -1,87 +1,3 @@
-#!/bin/sh
-# Gate for tycho-flow, the concurrent pipeline engine in tools/tycho-flow/ --
-# stage/ (generic stage combinators over bounded channels) and main.ty (the
-# demo pipeline wired end to end).
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-flow/run.sh
-#
-# WHY THIS IS NOT A GOLDEN LANE WITH EXTRA STEPS. Everything this program
-# claims is a claim about CONCURRENCY, and a diff against a recorded
-# transcript cannot see any of it: a pipeline that lost its ordering, that
-# stopped being bounded, or that races on the ring can all still print the
-# expected bytes on the run that happens to schedule kindly. So the golden is
-# leg [1] of five, and the other four each assert something a golden cannot.
-#
-# WHAT IT ASSERTS
-#   [1] DETERMINISM UNDER SCHEDULING PRESSURE. The demo is run 8 times with the
-#       default pool width and once each at TYCHO_THREADS=1 and 2; all ten
-#       transcripts must be cmp-identical, and the first one must equal the
-#       golden. Thread count is the variable the answer must not depend on --
-#       reorder-by-index and the commutative fold are the two mechanisms that
-#       make that true, and this is the only leg that can catch either
-#       breaking.
-#   [2] THE RACE IS REAL, which is what stops [1] being vacuous. `--race N`
-#       runs the exact `run_words` pipeline N times and counts how often the
-#       pool DRAINED out of source order. With an equal-cost transform that
-#       count was 7 in 2000 (47b6d5b7's own measurement) -- output that is
-#       ordered because nothing raced, not because the index put it back. So:
-#       at the default width, 200 runs must be out of order at least 190
-#       times; and as the negative control that this is measuring the pool and
-#       not the phase of the moon, 25 runs at TYCHO_THREADS=1 must be out of
-#       order EXACTLY 0 times. The counts are races and never reach the golden.
-#       `--race 2000` is 2000/2000 here and takes 28s; the lane buys the same
-#       claim at 200 for a seventh of the wall clock.
-#   [3] BACKPRESSURE, against literals in this runner rather than a slice of
-#       the golden -- a re-record must not be able to bless a channel that
-#       stopped being bounded. `source_probed` posts a marker only after a data
-#       send RETURNS, so with a 4-slot ring and no receiver exactly 4 markers
-#       can exist and the 5th cannot: the producer is parked inside send #5.
-#       No timing, no sleep -- the ring forces both halves, which is why the
-#       three lines are byte-stable.
-#   [4] every variant of stage.FlowErr exits NON-ZERO with its own whole
-#       message and an empty stdout. The demo prints them as ok lines and
-#       exits 0, so this needs a caller that returns them: the runner copies
-#       stage/ into its temp dir and builds a probe whose main returns
-#       Err(stage.err_str(e)). Nothing is written into the repo. The variant
-#       list is READ out of the enum and checked against what the probe
-#       covers, so a variant added tomorrow reddens here instead of arriving
-#       ungated. graph/ is copied beside it and gets one more arm, which is
-#       not a variant but the CROSS-PACKAGE composition: a Plan built at `int`
-#       whose `collect` instantiates stage's generics at graph's own type
-#       parameter must still refuse a short collection with stage's message.
-#   [5] TSAN over the whole demo, and over a short --race. A capture bug, a
-#       ring index published without a release, or a `parallel for` reduction
-#       folded unsafely is a DATA RACE -- it produces the right answer on this
-#       machine and the wrong one on the next, so legs [1]-[3] can all be green
-#       while the program is broken. `make conc` is the precedent. Skips
-#       loudly, exit 0, where cc has no TSan runtime. It found one race on its
-#       first outing and that race was NOT in this program -- it was tychoc's
-#       codegen for string literals, fixed on 2026-08-12. Nothing is tolerated
-#       now: any WARNING at all fails the lane.
-#   [6] CANCELLATION ACTUALLY CANCELS. The demo's transcript is byte-identical
-#       whether the first error stopped upstream production or merely got
-#       reported at the end, so the golden is structurally blind to the whole
-#       feature. `--cancel 25` prints how far the source got over 25 runs: it
-#       must be under 64 of 256 (the cancellation arrived), at least 9 (it did
-#       not arrive before the element that raises the error), and the same
-#       pipeline with a step that never fails must produce all 256 on every run
-#       -- without that control, "stopped early" would describe a broken source
-#       just as well. The counts are races and never reach the golden; the
-#       demo's deterministic cancellation lines -- for the hand-wired pipeline
-#       and for the plan-driven one alike -- are asserted against literals
-#       here, like backpressure and for the same reason.
-#
-# WHAT IT DELIBERATELY DOES NOT ASSERT
-#   Timings. `--bench` measures the deep-copy cost at the thread boundary and
-#   is nondeterministic by construction; its numbers are recorded in main.ty's
-#   header with the date they were measured, and nothing here runs it.
-#   The pool's WIDTH, or which worker got which element. Neither is a promise;
-#   the promise is that the answer does not depend on either.
-#
-# NO HOST DETAIL REACHES THE GOLDEN -- the program takes no paths and prints
-# none. Every run below is bounded by $TO where a timeout(1) exists: a
-# concurrency gate that HANGS tells a reader nothing, and tools/tycho-db/run.sh
-# hit exactly that with a bare `wait`.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -206,12 +122,6 @@ fi
 bp() {
     grep -qxF "$1" "$T/d.1" || bad "backpressure: expected line missing -- '$1'"
 }
-# The cap first, because every line under it is derived from that one number in
-# run_backpressure. Loosen the ring and all four lines move together; that is
-# what makes them worth asserting, and until 2026-08-12 they did not -- the
-# marker loop counted to a hand-written 4, so a ring of 8 printed "filled with
-# 4" and this leg was green over 200 runs of a program that was no longer
-# proving anything.
 bp 'backpressure: a 512-element source into a 4-slot channel'
 bp '  ring  filled with 4 element(s) and no receiver'
 bp '  park  send 5 is blocked: no marker for it exists'
@@ -348,28 +258,6 @@ for v in $(awk '
 done
 [ "$found" -eq 5 ] || bad "found $found FlowErr variant(s) in stage.ty, expected 5 -- the scan is broken and [4]'s floor asserts nothing"
 
-# ---------------------------------------------------------------------------
-# [6] cancellation: the pipeline must NOT process everything
-#
-# The demo can only print "fewer than 256", because how far the source got
-# before the cancellation landed is a race. This measures it, and both bounds
-# matter:
-#
-#   - the ceiling says the cancellation ARRIVED. A source that ran to 256 and a
-#     consumer that reported an error anyway is the failure this leg exists for,
-#     and no golden can see it: the demo's transcript is identical either way.
-#   - the floor says it did not arrive too early -- element 8 must have been
-#     produced at all, or the error being reported is not the one the step
-#     raised.
-#   - the CONTROL is what makes the ceiling evidence. The same pipeline with a
-#     step that never fails must produce all 256 on every run; without that, "it
-#     stopped early" would equally describe a source that is simply broken.
-#
-# The bound is 64, not the ~20 measured here (14..19 over 25 runs on this box):
-# what is in flight when the close lands is a ring depth plus a scheduling
-# delay, and pinning it tight would make the lane a coin toss on a slower
-# machine. 64 is still a quarter of the source.
-# ---------------------------------------------------------------------------
 if $TO "$FLOW" --cancel 25 > "$T/cx.out" 2> "$T/cx.err"; then
     CLO=$(sed -n 's/^cancel: produced \([0-9][0-9]*\) to [0-9][0-9]* of 256 over 25 runs.*$/\1/p' "$T/cx.out")
     CHI=$(sed -n 's/^cancel: produced [0-9][0-9]* to \([0-9][0-9]*\) of 256 over 25 runs.*$/\1/p' "$T/cx.out")
@@ -397,20 +285,6 @@ bp '  err   plan failed at index 3: word '"'"'pipeline'"'"' is longer than this 
 bp '  stop  the source produced fewer than 768 element(s): the plan'"'"'s first refusal reached the head of the pipeline'
 bp '  join  both stages returned; the plan saw no more than the source sent'
 
-# ---------------------------------------------------------------------------
-# [5] TSan
-#
-# The one leg that can see a bug legs [1]-[4] are structurally blind to. Those
-# ask what the program printed; this asks whether two threads touched the same
-# word without an ordering between them, which is the failure mode of a ring,
-# a capture set and a parallel reduction alike -- and which prints the right
-# answer right up until the machine changes.
-#
-# --emit-c then one cc line, because that is how the real build works: the
-# shims come from `--print-shims`. A TSan report goes to stderr and does NOT
-# by itself change the exit status, so the assertion is a SILENT stderr, same
-# as tests/conc/run.sh.
-# ---------------------------------------------------------------------------
 printf 'int main(void){return 0;}\n' > "$T/probe.c"
 if ! $CC -fsanitize=thread -o "$T/probe.tsan" "$T/probe.c" >/dev/null 2>&1; then
     echo "SKIP tycho-flow TSan leg ($CC has no ThreadSanitizer runtime)"
@@ -423,15 +297,6 @@ else
                 "$T/flowc.c" $SHIMS -lm 2>"$T/tsan.cc"; then
             bad "tsan: cc failed"; sed 's/^/      /' "$T/tsan.cc" | head -8
         else
-            # NO REPORT IS TOLERATED. Until 2026-08-12 this leg classified its
-            # reports and let through the ones naming a `_l` static or
-            # `tycho_str_intern`: tychoc emitted every string literal as a lazily
-            # interned function static, which two workers reaching the same
-            # literal published with no ordering between them. That is fixed in
-            # the codegen (a literal is now a statically initialised object,
-            # `runtime/tycho_rt.c:1324-1336`), so the classifier is gone and any
-            # WARNING at all fails the lane -- which is the whole point of
-            # running TSan here.
             tsan_run() {
                 _lbl=$1; shift
                 $TO "$@" > "$T/ts.out" 2> "$T/ts.err"

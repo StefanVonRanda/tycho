@@ -1,13 +1,3 @@
-#!/bin/sh
-# corelib EXAMPLES harness. Each examples/corelib/<name>.ty is a small, readable
-# program that demonstrates `core:<name>` (usage as documentation, not assertions
-# like corelib/test/). Validated exactly like the corelib tests: compiled by
-# tychoc, whose output must match the golden examples/corelib/<name>.out. (Until
-# 2026-07-26 two more legs ran -- `tychoc --bundle | tychoc0` and standalone
-# tychoc0 -- with all three outputs required to match; tychoc0 is frozen, see
-# compiler/tychoc0.ty, and no gate builds it.) A module with an
-# external dependency (corelib/<name>/deps) is SKIPPED where the lib is absent.
-# Re-record goldens with `RECORD=1 sh examples/corelib/run.sh`.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                   # repo root
 TYCHOC=./tychoc
@@ -24,14 +14,6 @@ for entry in examples/corelib/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
     golden="examples/corelib/$name.out"
-    # If any pkg-config dependency is absent, SKIP (keeps the deps-gated modules
-    # green on platforms without them). ASK THE COMPILER which ones there are:
-    # `--print-deps` prints the pkg-config names of the whole transitive import
-    # closure, which is the set that matters -- an httpd example wraps core:net,
-    # and a module's dependency can be reached through an intermediate. tychoc
-    # links the shims and the resolved flags itself, so nothing else is needed
-    # here. Same derivation as the corelib test harness; see corelib/run.sh's
-    # comment for what this replaced and what was measured about it.
     if ! allpkgs="$("$TYCHOC" "$entry" --print-deps 2>"$T/deps.log")"; then
         echo "FAIL $name (tychoc --print-deps)"; sed 's/^/      /' "$T/deps.log"; fail=1; continue
     fi

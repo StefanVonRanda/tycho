@@ -1,15 +1,3 @@
-#!/bin/sh
-# LRU cache head-to-head: a fixed-capacity least-recently-used cache driven by a
-# shared LCG op-stream (70% get / 30% put over a keyspace larger than capacity, so
-# eviction churns), folding hits + returned values into a checksum. The cache is the
-# memory under test: tycho's value-semantic index pool (`[Node]` + `[int:int]` map,
-# tail-slot recycled on eviction) vs C's hash map + doubly-linked list (backward-shift
-# delete) vs Go's builtin map + node slice. A textbook LRU is a pointer-linked list;
-# tycho cannot store pointers, so it uses indices -- the value-shaped idiom. This bench
-# also exercises delete-heavy maps (every eviction deletes a key), the workload that
-# surfaced the O(n)->O(1) map-delete fix. A byte-identical `hits sum` checksum across the
-# three ports is the correctness check. tycho uses no hand-written C. NOT wired into
-# `make ci`. See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

@@ -58,13 +58,6 @@ def ratio(fg, bg):
     return (hi + 0.05) / (lo + 0.05)
 
 
-# --- the measured pairs -----------------------------------------------------
-# (fg, bg, minimum, what it is). A name starting with "--" is a palette token;
-# anything else is a literal colour written directly in the CSS.
-#
-# 4.5 is 1.4.3 (normal-size text). 3.0 is 1.4.11 (borders, rules, UI edges).
-# No text on this page is large enough for the 3.0 text exemption -- the
-# smallest, .badge, is 8.5px, which is why its row is 4.5 and not 3.0.
 PAIRS = [
     ("--ink",       "--paper",   4.5, "body and heading text"),
     ("--ink-soft",  "--paper",   4.5, "secondary prose"),
@@ -164,9 +157,6 @@ def selfcheck(argv=()):
             bad += 1
 
     expect("[c0] the real palette is clean", src, False)
-    # [c1]/[c2]: a failing colour must be caught in EACH theme independently. The
-    # 2026-08-16 pass fixed the dark theme first and the light one only because
-    # both were checked; one-theme scoring would have shipped half a fix.
     for theme, pat in (("dark", r"(:root\s*\{[^}]*?--line:)#[0-9a-f]{6}"),
                        ("light", r'(:root\[data-theme="light"\]\s*\{[^}]*?--line:)#[0-9a-f]{6}')):
         mutated, n = re.subn(pat, r"\g<1>#232326", src, count=1, flags=re.S)

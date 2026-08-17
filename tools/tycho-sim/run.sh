@@ -1,90 +1,3 @@
-#!/bin/sh
-# Gate for tycho-sim, the entity simulation in tools/tycho-sim/ -- world/ (the
-# slot map, the `soa` component pools and the `subscript` projections into
-# them), sys/ (the five systems and the tick loop) and main.ty (the four-mode
-# driver).
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-sim/run.sh
-#
-# WHY THIS IS NOT A GOLDEN LANE WITH EXTRA STEPS. The subject is SWAP-REMOVE,
-# and a recorded transcript is the one instrument that cannot see the bug it
-# exists to catch. Despawn moves the last entity down over the hole and pops;
-# forget to re-point the moved entity's slot and the POOL LENGTH IS STILL
-# RIGHT -- every count, every field-wise sum over a dense walk, every "N live"
-# line still reads correctly, and exactly one id starts addressing somebody
-# else. A golden recorded from that build agrees with it and cmp is green by
-# construction. So the survivor SET is asserted against values this runner
-# computes itself, where RECORD=1 cannot reach it. The golden is leg [1] of
-# eight and the weakest of them.
-#
-# WHAT IT ASSERTS
-#   [1] THE TRANSCRIPT, twice. --demo, --sweep=N, --stale and --sim=T are each
-#       run twice; the two runs must be cmp-identical to each other and the
-#       first to the golden. It reads no clock, no path and no environment
-#       and its one PRNG is seeded from a literal, so a difference between two
-#       runs is uninitialised state, not scheduling.
-#   [2] THE LIVE COUNT, against arithmetic in this runner. --sweep=N spawns N
-#       and despawns the odd-numbered ones, so N - N/2 must survive. The number
-#       is computed HERE from N, not sliced out of the golden.
-#   [3] EVERY SURVIVOR REACHABLE THROUGH ITS ID, by exact set. The sweep gives
-#       entity i an hp of i*7+1, so the survivors' hps are that expression over
-#       the even i -- generated here and compared as a whole block. This is the
-#       leg [2] cannot be: a swap-remove that dropped one entity and duplicated
-#       another leaves the COUNT untouched and moves this block. Both are run
-#       against the same transcript so a break can redden either, either
-#       separately, or both, and which it does is the diagnosis.
-#   [4] A STALE ID IS REFUSED BY THE GENERATION. --stale despawns an entity and
-#       respawns into the same slot; the original id must not resolve. Three
-#       assertions, because the obvious one is vacuous on its own:
-#         - the freed-but-unreused id is refused as a DESPAWNED entity,
-#         - the slot really was reused (same idx, generation moved), which is
-#           what makes the third refusal the generation and not an empty slot,
-#         - the reused id is refused as STALE, naming both generations.
-#       If the slot were not reused, the program prints a FLOOR line and this
-#       runner fails on it.
-#   [5] CONSERVATION, computed here. --sim=T seeds 8 entities and reinforces 3
-#       per tick, so the run must report 8 + 3T ever spawned; those three
-#       numbers are literals below, not read off the transcript. Then
-#       spawned = reaped + live over the whole run, and the same identity per
-#       tick: live(t) = live(t-1) + spawned(t) - reaped(t), walked from the
-#       seeded 8. A lost entity breaks the tick it was lost on.
-#   [6] EACH SYSTEM SEPARATELY VISIBLE. The five systems are switched off one
-#       at a time and each off-run is checked for TWO things: that system's own
-#       counter goes to zero, and a consequence that a counter alone cannot
-#       fake -- combat off leaves more entities alive, decay off leaves more
-#       hp, reap off leaves every entity ever spawned in the pool. A system
-#       that silently stopped running reddens on the ON side (its counter is
-#       zero when it should not be); a system that counts without acting
-#       reddens on the consequence. Neither run is in the golden, so RECORD=1
-#       cannot reach either.
-#   [7] THE TICK ORDER, because it is NOT independent and this says so. Combat
-#       reads what move writes and reap reads what decay writes, so the order
-#       is part of the answer. Two assertions: the canonical order SPELLED OUT
-#       HERE reproduces the goldened transcript byte for byte, and a swapped
-#       one does not. The first alone would pass if --order were ignored; the
-#       second is what proves it is read. A third arm gives --order a system
-#       that does not exist and requires a non-zero exit naming it.
-#   [8] EVERY SimErr VARIANT exits NON-ZERO with its own whole message and an
-#       empty stdout. The driver REPORTS a refusal and exits 0 by design -- a
-#       refusal is the observation, not a crash -- so this needs a different
-#       caller: the runner copies world/ into its temp dir and builds a probe
-#       whose `main` returns Err(world.err_str(e)). Nothing is written into the
-#       repo. Each arm reaches the variant through the API that owns it where
-#       there is one, and the variant list is READ out of the enum, so a
-#       variant added tomorrow reddens here instead of arriving ungated.
-#
-# WHAT IT DELIBERATELY DOES NOT ASSERT
-#   Any timing. There is no measurement here.
-#   A THREAD COUNT. The program has no `parallel for` and no `spawn` -- the
-#   pool is tens of entities and nothing in it would go faster -- so a
-#   TYCHO_THREADS=1-vs-2 leg could not fail, and a leg that cannot fail is
-#   worse than no leg. `grep` below holds that claim to the source: if a
-#   parallel construct ever lands in this program, this runner reddens and
-#   whoever added it owes the leg.
-#
-# NO HOST DETAIL REACHES THE GOLDEN -- the program prints no paths and reads no
-# environment. Every run below is bounded by $TO where a timeout(1) exists: a
-# gate that HANGS tells a reader nothing.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -265,17 +178,6 @@ awk -v start="$SEED_N" -v ticks="$T_TICKS" '
 ' "$T/sim.1" > "$T/cons.bad"
 [ -s "$T/cons.bad" ] && { bad "sim: entities are not conserved tick to tick"; sed 's/^/      /' "$T/cons.bad"; }
 
-# ---------------------------------------------------------------------------
-# [6] each system separately visible
-#
-# `sysoff <system> <counter>` runs with that system withheld and requires its
-# counter to be zero there and non-zero in the full run. The counter alone
-# cannot tell a system that stopped acting from one that stopped counting, so
-# each call is followed by a consequence check on a DIFFERENT column.
-# ---------------------------------------------------------------------------
-# The floor <want> is what the counter must read with the system withheld: 0 for
-# four of them, and the seeded population for spawn, whose seed call is outside
-# the tick loop on purpose (tools/tycho-sim/sys/sys.ty@seed).
 sysoff() {
     _s=$1; _c=$2; _want=$3
     simrun "sim --off=$_s" "$T/off.$_s" "--sim=$T_TICKS" "--off=$_s"

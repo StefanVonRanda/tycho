@@ -1,26 +1,3 @@
-#!/bin/sh
-# Gate for tycho-chess, the perft (legal-move counting) engine in
-# tools/tycho-chess/. Same shape as the other tool lanes: step [9]
-# tools-check --emit-c's every .ty in the tree, so a syntax error already
-# reddens there, and [3b] entrypoints never looks under tools/ -- so nothing
-# RAN the engine before this lane existed.
-#
-# WHAT IT ASSERTS:
-#   [1] the GROUND-TRUTH DIFFERENTIAL: perft totals for the start position,
-#       Kiwipete and Position 3 are asserted against PUBLISHED values (GoBit's
-#       perft_tests.txt). A move generator that drops, duplicates or wrongly
-#       legalises a move reddens here and nowhere else. Also asserted: five
-#       edge-case positions whose values come from the python-chess oracle
-#       (chess 1.11.2, run clean on 2026-08-04) -- they exercise the ep and
-#       promotion code paths that the three standard positions never reach
-#       (no pawn promotes or captures en passant inside their trees).
-#   [2] the golden transcript (expected.out): perft_split's per-root divide
-#       output at the deepest affordable depths -- start d5, kiwipete d4,
-#       pos3 d6 -- plus the edge-case divides at d3. A subtree that gains or
-#       loses a move without changing the total (e.g. two roots swapping
-#       counts) reddens here.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-chess/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -42,16 +19,6 @@ W="$T/w"; mkdir -p "$W"; cd "$W" || exit 2
 out="$T/all.out"
 : > "$out"
 
-# ---------------------------------------------------------------------------
-# [1] published perft totals
-#
-# start / kiwipete / pos3: GoBit's perft_tests.txt (the classic reference
-# file). pos3 d6 = 11030083 matches python-chess too. The five edge cases are
-# oracle values, cross-checked against python-chess 1.11.2 on 2026-08-04:
-# castling = both sides castle bare; kend/pawnrace = king endgames;
-# ep = a position where white can capture en passant (e4xd5 e.p.);
-# promoboth = both sides have a promotion available.
-# ---------------------------------------------------------------------------
 START="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 KIWI="r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
 POS3="8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"
@@ -118,20 +85,6 @@ printf '=== ep d3\n' >> "$out"
 printf '=== promo d3\n' >> "$out"
 "$CHESS" perft 3 "$PROMO" >> "$out" 2>/dev/null
 
-# ---------------------------------------------------------------------------
-# [3] search: determinism, TT-invariance, and exact tactical probes
-#
-# The search (alpha-beta + the exact-only transposition table) is verified
-# three ways: two runs of `search` must be byte-identical; `search-nott`
-# (the same code with the TT probe disabled) must report the same best line,
-# which is the claim that the TT only cuts transpositions and never changes
-# a result; and three tactical positions are asserted to EXACT values -- the
-# rook taking a free queen (+510 = +500 material + 10 PST), the king or rook
-# grabbing a hanging queen, and the scholar's mate (Qxf7# = 100000). The
-# PST-only eval keeps the quiet-position values approximate (depth-5 from the
-# start ties many moves), which is honest; the probes pin the parts that
-# must be exact.
-# ---------------------------------------------------------------------------
 SCHOLAR="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 0 1"
 RXC2="k7/8/8/8/8/8/1Rq5/K7 w - - 0 1"
 HANGQ="k7/8/8/8/8/8/1q6/KR6 w - - 0 1"
@@ -169,19 +122,6 @@ if [ "$_g" != "best b1b2 510" ]; then bad "hanging-queen probe: got '$_g', want 
 _g=$("$CHESS" search-nott 3 "$SCHOLAR" 2>/dev/null | grep '^best')
 if [ "$_g" != "best f3f7 100000" ]; then bad "scholar probe: got '$_g', want 'best f3f7 100000'"; fi
 
-# ---------------------------------------------------------------------------
-# [4] the parallel root search (the plan's `parallel for` probe)
-#
-# search_root_par fans the root moves out over `parallel for`, one full-window
-# search per task, results sent on a channel and merged by (score, index).
-# The claims: the parallel best line equals the serial search's (the parallel
-# per-task full windows make the per-move SCORES exact where the serial root
-# reports bounds, so only the best line is compared), and two runs are
-# byte-identical. The per-task full window is also the honest cost: with no
-# shared best-so-far to prune against, the parallel root is a correctness
-# probe, not a speedup (measured 13s vs 2.8s on kiwipete d4) -- the gate
-# therefore runs it on the fast positions only.
-# ---------------------------------------------------------------------------
 parsearch_pair() {
     _fen=$1; _depth=$2; _lbl=$3
     "$CHESS" parsearch "$_depth" "$_fen" > "$W/p1" 2>"$T/e" || {

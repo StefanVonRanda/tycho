@@ -1,28 +1,3 @@
-#!/bin/sh
-# Gate for tycho-scheme, the Scheme interpreter AND its bytecode compiler.
-# Same shape as vm-check: step [9] tools-check --emit-c's every .ty in the
-# tree, so a syntax error already reddens there, and [3b] entrypoints never
-# looks under tools/ -- so nothing RAN the interpreter or the compiler.
-#
-# WHAT IT ASSERTS:
-#   [1] each program's interpreter output matches the golden, byte-identical,
-#       on TWO runs (determinism).
-#   [2] THE COMPILER: each program compiles to tycho-vm bytecode and the VM's
-#       run is byte-identical to the interpreter's -- the differential that
-#       proves the compiler lowers the same subset to the same answers
-#       (`docs/internals/plan-tycho-scheme-DONE.md` phase 1, the compiler
-#       front end; the VM's pair/closure ops came from it).
-#   [3] the compiler dies non-zero at COMPILE time on what it cannot lower
-#       (unbound variables, non-compilable primitives, primitive shadowing),
-#       never emitting something silently wrong.
-#   [4] the interpreter's runtime error cases die non-zero with EMPTY stdout.
-#   [5] a deep-recursion program is NOT here -- the runtime's stack guard
-#       (`docs/internals/plan-tycho-scheme-DONE.md` phase 1) turns stack
-#       exhaustion into a clean failure, and the crash tests live in
-#       tests/recursion/run.sh's generated-code side. The programs stay
-#       shallow because their goldens are answers, not crash tests.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-scheme/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc

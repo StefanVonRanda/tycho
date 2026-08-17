@@ -1,12 +1,3 @@
-#!/bin/sh
-# Dijkstra head-to-head: build a sparse random graph as an adjacency LIST OF INDICES,
-# run single-source shortest paths with a hand-built binary min-heap, and fold the
-# reachable distances into a checksum. The graph is the memory under test: tycho's
-# value-semantic `[[Edge]]` vs C's `Edge**` vs Go's `[][]Edge`. A graph by indices is
-# value-shaped (no shared pointers), so this is where value semantics should be
-# competitive -- the opposite of the pointer-linked trie. A byte-identical checksum
-# across the three ports (distances are tie-break independent) is the correctness check.
-# tycho uses no hand-written C. NOT wired into `make ci`. See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

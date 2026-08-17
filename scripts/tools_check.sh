@@ -1,20 +1,3 @@
-#!/bin/sh
-# Regression guard for the daily-driver tooling (tychofmt + tycho-lsp + tycho).
-# Run by `make tools-check` and as a step in `make ci`.
-#
-#   FORMATTER  (1) idempotent: fmt(fmt(x)) == fmt(x) on every tracked .ty;
-#              (2) semantics-preserving: `tychoc --emit-c` byte-identical before vs
-#                  after formatting, compiled from the SAME path so the filename
-#                  can't skew the diff (checked on the files that compile).
-#   LSP        scripted JSON-RPC smoke: initialize replies; a clean buffer
-#              publishes [] diagnostics; a broken buffer publishes a diagnostic.
-#   DISPATCHER `tycho check/run/build/fmt` end to end: exit statuses, argv
-#              forwarding, the binary existing under the name the tool printed,
-#              and `fmt -w` refusing a format that would change the program.
-#
-# A formatter that changed a program, or stopped being idempotent, or an LSP that
-# stopped answering, or a dispatcher command that silently does nothing, fails
-# the build.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) FIND=/usr/bin/find ;; *) FIND=find ;; esac
@@ -42,8 +25,6 @@ for f in $("$FIND" . -name '*.ty' -not -path './editors/*' -not -path '*/node_mo
 done
 echo "    $nfiles files checked  (compilable=$ncomp)  idempotence-fails=$idemfail  semantic-fails=$semfail"
 
-# Spelling, not just stability: `- 1` was idempotent AND semantically identical, so
-# the two checks above passed it for as long as it was wrong.
 echo ">>> formatter: canonical spellings"
 cat > "$TMP/sp.ty" <<'SP'
 fn main():
@@ -141,11 +122,6 @@ sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and wa
 PY
 
 echo ">>> loop-warning: tychoc warns on a non-advancing for-loop"
-# Guards the loop-progress diagnostic. It is stderr-only, so a golden lane that
-# compares emitted C on stdout can't catch a regression that silently disables it
-# -- this can. Bad loop must warn; good loop must not. (The tychoc0 half of this
-# and the two checks below was removed on 2026-07-26 with the freeze; see
-# compiler/tychoc0.ty.)
 printf 'fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n' > "$TMP/badloop.ty"
 printf 'fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n        i = i + 1\n' > "$TMP/goodloop.ty"
 "$TYCHOC"      "$TMP/badloop.ty"  --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/e1"; cbw=$(grep -c 'warning:' "$TMP/e1")

@@ -1,25 +1,3 @@
-#!/bin/sh
-# tycho-diff: Myers O(ND) line diff, unified output.
-#
-# The subject here is an EDIT SCRIPT, and a recorded transcript cannot see
-# whether one is right. Two different scripts can both be minimal -- Myers does
-# not specify a tie-break, and GNU diff picks a different one on ~18% of random
-# inputs (measured 2026-08-14) while being just as correct. So a golden pins the
-# rendering, and the two properties that actually define correctness are asserted
-# against computed values instead:
-#
-#   [3] RECONSTRUCTION -- the Keep+Del steps must rebuild the OLD file exactly and
-#       the Keep+Ins steps the NEW one. A script that fails this is wrong no
-#       matter how it renders; one that passes it cannot silently lose a line.
-#   [4] MINIMALITY -- the number of +/- steps must equal GNU diff's edit distance
-#       on the same input. This is the leg that catches a correct-but-worse
-#       algorithm, which [3] alone would pass (emitting every line as delete +
-#       insert reconstructs perfectly and is useless).
-#
-# Both run over 200 generated pairs plus the edge cases a random generator almost
-# never produces: two empty files, one empty, identical files, and a reversal.
-#
-# RECORD=1 sh tools/tycho-diff/run.sh   re-records expected.out
 set -eu
 
 cd "$(dirname "$0")/../.."

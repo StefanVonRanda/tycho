@@ -1,23 +1,3 @@
-#!/bin/sh
-# Build a self-contained binary release tarball for the current platform.
-#
-#   scripts/release.sh v0.1.1            native (current OS/arch)
-#   scripts/release.sh v0.1.1 --mingw    cross-built Windows (mingw-w64 gcc)
-#
-# Produces  dist/tycho-<version>-<os>-<arch>.tar.gz  plus a .sha256, containing the
-# compiler, the tools, and the core library laid out so the compiler finds corelib
-# beside itself (no TYCHO_CORELIB needed). Publishing is a separate, manual step:
-#
-#   gh release create <version> dist/tycho-*.tar.gz dist/tycho-*.sha256 --notes-file RELEASE_NOTES.md --prerelease
-#
-# The final line this script prints carries --prerelease automatically while the
-# version is 0.x, and drops it at 1.0.
-#
-# There is no hosted CI by policy, so releases are built and published by hand, one
-# platform per machine. The --mingw leg cross-builds the compiler AND the three
-# shipped tools with x86_64-w64-mingw32-gcc (the windows port, phases 1/5/7 --
-# see docs/internals/windows-port.md), and smoke-tests the staged layout under Wine when Wine is
-# installed. The dispatcher (`tycho`) is not shipped on either platform.
 set -eu
 
 usage() {
@@ -71,11 +51,6 @@ if [ "$mingw" -eq 1 ]; then
     "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o "$stage/tychoc.exe" 2>"$root/dist-mingw-build.log" \
         || { echo "!! mingw build failed (see dist-mingw-build.log)" >&2; rm -f "$root/dist-mingw-build.log"; exit 1; }
     rm -f "$root/dist-mingw-build.log"
-    # The tools the native leg ships, cross-built the same way phase 5 proved:
-    # the NATIVE compiler emits the C (the emitted C is target-neutral; its
-    # _WIN32 branches are compile-time), then mingw links it. --print-shims
-    # lists the corelib shims an import pulled in; the explicit --shim file is
-    # not in that list and is appended by hand.
     echo ">> cross-building the tools"
     for spec in "tychofmt tools/tychofmt.ty -" \
                 "tycho-lsp tools/lsp.ty tools/lsp_shim.c" \
@@ -139,7 +114,6 @@ else
     cp "tychoc$EXE" "tychofmt$EXE" "tycho-lsp$EXE" "tycho-debug$EXE" "$stage"/
     cp -r corelib "$stage"/
     cp README.md LICENSE "$stage"/
-    # a couple of runnable examples so `./tychoc examples/hello.ty` works out of the box
     mkdir -p "$stage"/examples
     cp examples/hello.ty "$stage"/examples/ 2>/dev/null || true
 

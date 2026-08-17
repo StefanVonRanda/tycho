@@ -1,111 +1,3 @@
-#!/bin/sh
-# Gate for tycho-make, the build tool in tools/tycho-make/ -- graph/ (the
-# rulefile parser, the DAG, the topological order and the cycle namer), build/
-# (staleness, the work-queue executor and the log) and main.ty (the driver:
-# `--graph` prints the report, no flag builds).
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-make/run.sh
-#
-# WHY THIS IS NOT A GOLDEN LANE WITH EXTRA STEPS. The subject is a TOPOLOGICAL
-# ORDER, and a recorded transcript is the one instrument that cannot see the bug
-# it exists to catch. Drop an edge in the parser and the order is still an
-# order: the same nodes, each once, in a sequence that looks entirely plausible
-# and that a golden re-recorded from that build agrees with byte for byte. The
-# only thing that moved is a constraint nobody printed. So the order is checked
-# HERE, three ways RECORD=1 cannot reach: against exact literals, against the
-# edges the program itself printed, and against a second rulefile that differs
-# from the first by exactly one edge.
-#
-# WHAT IT ASSERTS
-#   [1] THE REPORT, twice. demo.mk is run twice and the two runs must be
-#       cmp-identical to each other and the first to the golden. The program
-#       reads no clock, no environment and prints no path, so a difference
-#       between two runs is uninitialised state.
-#   [2] THE ORDER OF THE DIAMOND, EXACT, AND THE TIE-BREAK BY NAME. demo.mk's
-#       order is a literal below. It is not enough that it reproduces: two
-#       nodes are ready at once in the middle of it, and the tie is broken by
-#       DECLARATION ORDER (tools/tycho-make/graph/graph.ty@Kahn). demo.mk is
-#       built so the two candidate rules disagree -- zeta.o is declared before
-#       alpha.o but sorts after it -- so this leg reddens if the tie-break is
-#       ever quietly changed to alphabetical, which an order that merely
-#       reproduced would not.
-#   [3] THE ORDER IS A TOPOLOGICAL ORDER OF THE EDGES THE PROGRAM PRINTED.
-#       Computed here, from the report's own `node ... deps=[...]` lines: every
-#       dependency must appear strictly before every node that names it. This
-#       is the leg that does not depend on any literal, so it survives a change
-#       to demo.mk, and it is what catches an order that is internally
-#       consistent but wrong. It cannot see a DROPPED edge -- an edge missing
-#       from the graph is missing from these lines too -- which is why [4]
-#       exists and why the two are not the same leg.
-#   [4] AN EDGE IS LOAD-BEARING. Two rulefiles written here differ by exactly
-#       one edge: chain.mk is top->mid->bot->leaf, dropped.mk is the same four
-#       nodes with `mid: bot` removed. Both orders are literals, they must
-#       DIFFER, and in the intact one `bot` must be immediately followed by
-#       `mid`. Without the second file this leg would pass on a parser that
-#       ignored dependencies entirely.
-#   [5] A CYCLE IS NAMED, NOT MERELY DETECTED, and never hangs. Three shapes:
-#       a three-node cycle, a self-edge (`a -> a`), and a cycle with an
-#       innocent node stuck behind it. The third is the one that matters --
-#       `app` depends on the cycle but is not in it, so a namer that printed
-#       "everything still unfinished" would redden here and nowhere else. Every
-#       run in this file is bounded by $TO: a cycle detector that recursed
-#       forever is exactly what this leg exists to catch, and a gate that hung
-#       would report nothing.
-#   [6] A SOURCE AND A SINK EACH APPEAR EXACTLY ONCE. common.h has no
-#       dependencies and is depended on by two nodes; app is depended on by
-#       nothing. Both must appear exactly once in the order, and the order must
-#       be a permutation of the node list -- no name repeated, none missing.
-#       Emitting a shared dependency twice is the classic Kahn bug and it
-#       leaves every other line of the report correct.
-#   [7] EVERY MakeErr VARIANT exits NON-ZERO with its own whole message and an
-#       EMPTY STDOUT. The driver propagates rather than reporting, so no probe
-#       is needed -- it dies by them itself. The variant list is READ out of the
-#       enum, so a variant added tomorrow reddens here instead of arriving
-#       ungated.
-#
-#   [8] A COLD BUILD RUNS EVERY RULE, IN AN ORDER THAT RESPECTS THE DAG. Two
-#       instruments, because the log cannot be one of them: build.ty reassembles
-#       it into topological order, so reading the DAG off it is circular. The
-#       real order is `trace`, which every recipe appends its own name to. Only
-#       PAIRS are asserted there -- three rules sit at one depth and race, and
-#       pinning their order between themselves would pin the race.
-#   [8b] A NODE STARTS WHEN ITS OWN DEPS FINISH, NOT WHEN ITS LEVEL DOES. The
-#       one leg that separates the work queue from the wavefront it replaced,
-#       and invisible to the golden: both designs print the same reassembled
-#       log. race.mk sits a 3-node instant chain beside 3 one-second sleepers
-#       at the same depth, and `start c2` must precede the first `end w`. The
-#       wavefront at 027bc1d8 put it after all three; measured 2026-08-13.
-#   [9] A NO-OP REBUILD RUNS ZERO RULES AND SAYS SO, and `trace` stays empty.
-#   [10] TOUCHING ONE INPUT REBUILDS EXACTLY ITS DEPENDENTS. alpha.c's content
-#       moves; alpha.o and app must run and zeta.o and docs must not. The
-#       expected set is a literal, so RECORD=1 cannot widen it.
-#   [11] CONTENT-HASH STALENESS IS NOT MTIME STALENESS. common.h's mtime is
-#       moved to a fixed future stamp with its bytes untouched. make(1) would
-#       rebuild three rules; this must rebuild NONE and must count the file as
-#       `touched`, which is what says the move was seen and then dismissed on
-#       content rather than never seen. This is the only leg that can tell a
-#       real hash from a stat.
-#   [12] THE LOG IS BYTE-IDENTICAL at TYCHO_THREADS 1, 2 and 8, and over two
-#       runs at each. What is compared is a SEQUENCE -- cold, no-op, one input
-#       changed -- not a cold build: on a cold build every outcome is the same
-#       shape, so filing them under the wrong nodes yields the same bytes and
-#       the leg cannot see the bug it exists for. Measured 2026-08-13: filing by
-#       arrival position instead of node index reddens the sequence and does not
-#       redden a cold-only comparison. [8]'s trace is what makes this worth
-#       running at all: the pool really does finish out of source order.
-#   [13] EVERY BuildErr VARIANT exits non-zero with its own whole message and an
-#       empty stdout, the list read out of the enum. WorkLost is the one
-#       variant no rulefile reaches -- it guards the reassembly itself -- and is
-#       pinned to a single construction site instead.
-#
-# WHAT IT DELIBERATELY DOES NOT ASSERT
-#   Any timing, and any wall-clock duration. Whether the pool is FASTER is a
-#   measurement, and a gate asserting a measurement is a coin toss; that the
-#   pool is real is asserted structurally instead, by `trace` coming out in an
-#   order the source does not have.
-#
-# NO HOST DETAIL REACHES THE GOLDEN -- the program prints no path and reads no
-# environment, and every fixture is written into a private mktemp -d.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -160,14 +52,6 @@ cmp -s "$T/demo.1" "$T/demo.2" || {
 }
 cat "$T/demo.1" >> "$out"
 
-# ---------------------------------------------------------------------------
-# [2] the diamond's order, exact, and the tie-break spelled out
-#
-# zeta.o and alpha.o are both ready once common.h is emitted. Declaration order
-# puts zeta.o first; alphabetical order would put alpha.o first. Asserting the
-# whole line pins the answer, and the two greps below pin WHICH RULE produced it
-# -- an order that merely reproduced would satisfy neither.
-# ---------------------------------------------------------------------------
 DEMO_ORDER='order: zeta.c common.h zeta.o alpha.c alpha.o app README.md docs'
 ln_ "$DEMO_ORDER" "$T/demo.1"
 ln_ 'sources: zeta.c common.h alpha.c README.md' "$T/demo.1"
@@ -433,28 +317,6 @@ grep -q '^app: zeta.o alpha.o$' "$W/build.mk" || \
     bad "build.mk no longer has app depending on zeta.o -- the trace pairs assert nothing"
 printf '=== build cold\n' >> "$out"; cat "$T/cold.log" >> "$out"
 
-# ---------------------------------------------------------------------------
-# [8b] A NODE STARTS WHEN ITS OWN DEPENDENCIES FINISH, NOT WHEN ITS LEVEL DOES.
-#      This is the one leg that separates a work queue from the wavefront that
-#      preceded it, and it is asserted HERE rather than in the golden because a
-#      transcript cannot see scheduling at all: both designs build the same
-#      files and print the same reassembled log.
-#
-#      race.mk puts a 3-node chain (c1 -> c2 -> c3, each instant) beside a wide
-#      level of 3 sleepers, all four at depth 1 behind one source. Under a
-#      wavefront c2 is at depth 2 and CANNOT start until every depth-1 node has
-#      finished, so `start c2` lands after all three `end w`. Under a work queue
-#      c1's completion releases c2 immediately, a second or so before the first
-#      sleeper wakes.
-#
-#      Measured against the wavefront build at 027bc1d8 on 2026-08-13: it put
-#      `start c2` at trace line 9, after `end w1`/`end w3`/`end w2` at 6/7/8 --
-#      this leg reddens on it, which is what makes it worth running.
-#
-#      TYCHO_THREADS=8 because the claim needs a worker free for the chain while
-#      the sleepers hold theirs; at 2 the pool is legitimately saturated and the
-#      chain waits, which is scheduling working, not failing.
-# ---------------------------------------------------------------------------
 R="$T/r"; mkdir -p "$R"
 cp "$src/race.mk" "$R/race.mk"; cp "$MAKE" "$R/tycho-make"
 printf 'b\n' > "$R/base"; : > "$R/rtrace"
@@ -623,14 +485,6 @@ berr StampBroken   'x: a
 	cp a x
 '   'stamp line 1 is not <name> <mtime> <hash>: [garbage]'
 
-# [13b] The stamp's MTIME field, whose only defect is the mtime. The leg above
-# writes `garbage`, which has no tab and so dies at the FIRST validation -- it
-# can never reach the mtime and stayed green while a damaged one was accepted.
-# strings.parse_int is LAX (FRICTION #4): it reads "17x" as 17 and "abc" as 0,
-# so every field beside the mtime was validated and the mtime silently was not.
-# A wrong mtime decides staleness, which is how a stale output ships as current.
-# Both shapes are asserted: a trailing-garbage mtime that the lax parse would
-# have accepted as 17, and a negative one that parses cleanly and is nonsense.
 _h64=0000000000000000000000000000000000000000000000000000000000000000
 for _mt in 17x abc -3; do
     rm -rf "$T/e"; mkdir -p "$T/e"
@@ -650,11 +504,6 @@ for _mt in 17x abc -3; do
     cat "$T/c.err" >> "$out"
 done
 
-# WorkLost is the reassembly's own invariant and has no rulefile that reaches
-# it: it fires when a node the graph contains never reported under its own
-# index, which is a runtime bug, not an input. It is held the way
-# tools/tycho-sheet/run.sh holds CellErr.NoText -- pinned to ONE construction
-# site, and that site asserted to be the accounting guard in `build`.
 n_ll=$(grep -c 'WorkLost(' "$src/build/build.ty")
 [ "$n_ll" = 3 ] || bad "WorkLost appears $n_ll time(s) in build.ty, expected 3 (enum, err_str, the one guard)"
 grep -q 'if filed != n or ran != sent:' "$src/build/build.ty" || \

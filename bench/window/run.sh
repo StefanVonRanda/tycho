@@ -1,9 +1,3 @@
-#!/bin/sh
-# Sliding-window eviction — the arena's theoretical weak point. A stream of N
-# records keeping only the last W live. malloc/GC free evicted records (peak ~ W);
-# the no-individual-free arena holds them (peak ~ N) for HEAP-bearing records.
-# Two record kinds: heap (string) shows the boundary; fixed-size (int) shows it's
-# bounded. peak RSS via bench/peakrss; string-case checksums must match across langs.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

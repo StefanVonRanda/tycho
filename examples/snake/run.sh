@@ -1,7 +1,3 @@
-#!/bin/sh
-# Build examples/snake and check the deterministic scripted demo against the golden.
-# The interactive mode (`./snake play`) needs raw-terminal input and isn't auto-checked.
-# FFI-shim example, so it has its own runner (the main tests/run.sh can't link a shim).
 set -u
 cd "$(dirname "$0")"
 TYCHOC="${TYCHOC:-../../tychoc}"

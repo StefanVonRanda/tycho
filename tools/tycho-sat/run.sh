@@ -1,26 +1,3 @@
-#!/bin/sh
-# Gate for tycho-sat, the DPLL/CDCL SAT solver in tools/tycho-sat/. Eighth
-# tool lane; nothing else RUNS a tool under tools/.
-#
-# WHAT IT ASSERTS:
-#   [1] UNSAT ground truth, self-generated: the pigeonhole instances PHP(2..9)
-#       must all be UNSATISFIABLE. Unsatisfiability is a published theorem for
-#       every n, so the solver must rediscover the proof -- and CDCL must
-#       rediscover it at all (resolution proofs for PHP are exponential, which
-#       is exactly why it is the classic hard family).
-#   [2] SAT ground truth, self-generated with a witness: the runner plants a
-#       random assignment and generates clauses satisfied by it (fixed seeds),
-#       so SAT is guaranteed; the solver's printed model is then verified by
-#       the runner's OWN independent clause checker, which evaluates every
-#       clause against the model -- a wrong model fails it.
-#   [3] determinism: two runs on the same instance are byte-identical.
-#   [4] the learning claim is PRINTED, not asserted: the same instance is
-#       solved with and without clause learning (--no-learn = chronological
-#       DPLL) and both conflict counts are recorded in the golden, so if CDCL
-#       ever stops beating DPLL the transcript reddens and a human looks.
-#   [5] the transcript is golden-locked (expected.out).
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-sat/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc

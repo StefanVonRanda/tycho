@@ -1,16 +1,3 @@
-#!/bin/sh
-# Prong B — head-to-head memory benchmarks. The same program in Tycho, C, Rust,
-# Go, and Koka, each at its standard release opt (tycho/C -O3, rustc opt-level=3,
-# go build, koka -O2) and run under bench/peakrss (peak RSS + wall time). Every binary in a workload must print byte-identical output
-# (the cross-language correctness check). See RESULTS.md.
-#
-#   binary-trees   allocate a sea of short-lived trees + one long-lived, checksum
-#   tree-rewrite   map-rewrite a persistent tree many times, checksum each result
-#   iter-transform reassign a loop-carried value each step — the arena's WORST
-#                  case (every dead intermediate retained until scope exit)
-#
-# Languages: Tycho (implicit arenas), C (manual malloc/free), Rust (Box/RAII),
-# Go (GC), Koka (Perceus reference counting + reuse — the direct rival).
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc

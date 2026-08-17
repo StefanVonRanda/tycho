@@ -1,29 +1,3 @@
-#!/bin/sh
-# Gate for tycho-grid, the integer grid in tools/tycho-grid/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-grid/run.sh
-#
-# WHY THIS LANE EXISTS. Measured 2026-08-14, each of the three features this
-# program uses had exactly ONE real consumer in the tree: `subscript`
-# (tools/tycho-sim), `bounded[N]T` (tools/tycho-vm) and `# deprecated:`
-# (corelib/sort). This is the second consumer of all three.
-#
-# WHAT A TRANSCRIPT CANNOT SHOW, and what each leg is therefore for:
-#   - A SUBSCRIPT is a compile-time place-macro with no runtime object. If it
-#     silently degraded from a place to a COPY, every printed number would stay
-#     identical and only the write would stop landing. [2] writes through it and
-#     reads the write back; [5] pins the five declaration rules that keep it a
-#     place at all.
-#   - A `bounded[N]T` overflow is a runtime abort, and its capacity is part of
-#     the type. [4] asserts the abort by message and exit status, and [6] asserts
-#     the by-value copy is independent -- a bounded that started sharing storage
-#     would print the same grid.
-#   - A DEPRECATION warning goes to stderr at COMPILE time, so it is absent from
-#     the golden by construction. [3] reads the build log for it, and asserts the
-#     inverse too: a comment that merely mentions the marker must NOT warn, which
-#     is the false positive fixed on 2026-08-14 (FRICTION #46).
-#
-# Every run is bounded by timeout(1).
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc
@@ -51,13 +25,6 @@ else
     cmp -s "$T/one.txt" "$golden" || { note "[1] output differs from the golden"; diff "$golden" "$T/one.txt" | head -8; }
 fi
 
-# [2] the subscript as a PLACE and as an RVALUE, against literals. The two writes
-# land at (0,0) and (1,2); the marks are the FLAT indices r*cols+c, so 0 and 5 --
-# a projection that wrote to the wrong cell moves a row line and a row sum
-# together, and `legacy` (which never uses the subscript) disagrees with `total`.
-# Measured 2026-08-14: transposing the yield to `&g.rows[c][r]` on this NON-SQUARE
-# grid is caught one leg earlier, by the runtime bounds check, so [1] reddens
-# before [2] does. [2b] is what covers a wrong cell that stays in range.
 cat > "$T/want.txt" <<'WANT'
 5 0 0 | 5
 0 0 7 | 7
@@ -79,10 +46,6 @@ tot=$(sed -n 's/^total //p' "$T/one.txt"); leg=$(sed -n 's/^legacy //p' "$T/one.
 grep -q '`sum_all` is deprecated:' "$T/build.log" || { note "[3] no deprecation warning for sum_all"; head -3 "$T/build.log"; }
 grep -q 'predates the subscript' "$T/build.log" || note "[3] the deprecation warning does not carry its text"
 
-# [3b] THE INVERSE: a comment that merely MENTIONS the marker must not warn.
-# This is FRICTION #46 -- the scan matched the substring anywhere in the line, so
-# ordinary prose deprecated the fn below it and every caller got a phantom
-# warning. Re-recording the golden cannot see this: it is a stderr diagnostic.
 mkdir -p "$T/prose"
 cat > "$T/prose/main.ty" <<'PROSE'
 # this replaces the old deprecated: thing we removed
@@ -94,8 +57,6 @@ PROSE
 $TYCHOC -o "$T/prose/p" "$T/prose/main.ty" > "$T/prose/log" 2>&1
 grep -q 'is deprecated' "$T/prose/log" && { note "[3b] a comment that only MENTIONS the marker deprecated the fn below it"; grep -m1 'deprecated' "$T/prose/log"; }
 
-# [3c] a deprecated fn taken as a VALUE warns too -- otherwise one binding
-# launders the policy (FRICTION #47).
 mkdir -p "$T/fnval"
 cat > "$T/fnval/main.ty" <<'FNVAL'
 # deprecated: use fresh
@@ -148,10 +109,6 @@ subscript at(p: Pool($T), i: int) -> inout $T:
 fn main():
     println("x")'                                     'may not be generic'
 
-# [5b] the FLAT 2-D spelling stays refused, and for the once-per-parameter
-# reason. FRICTION #48: `yield &g.cells[r * g.w + c]` reads two fields of the
-# receiver, so the natural grid subscript is inexpressible and this program uses
-# a nested array instead. Pinned so the limitation cannot lapse unnoticed.
 mkdir -p "$T/flat"
 cat > "$T/flat/main.ty" <<'FLAT'
 struct G:

@@ -1,55 +1,3 @@
-#!/bin/sh
-# Gate for tycho-ar, the deterministic archiver in tools/tycho-ar/main.ty.
-#
-# WHY THIS IS A GOLDEN RUNNER AND NOT A DAEMON HARNESS. server/run.sh has to
-# start a process, read a bound port out of a banner and talk to it over a
-# socket, because the thing it gates is a server. tycho-ar is a batch program:
-# it takes a tree in and produces a file, so it gates the way examples/*/run.sh
-# do -- build it, run it over a fixture, compare stdout to a recorded golden --
-# with the archive-specific assertions layered on top.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-ar/run.sh
-#
-# WHAT IT ASSERTS, and why each leg exists. The four properties
-# the tycho-ar plan established are the four ways this
-# program can betray the person using it:
-#
-#   [1] CREATE IS DETERMINISTIC. Archiving one tree twice gives two
-#       `cmp`-identical files. This is the property the whole format was
-#       ordered around (sorted entries), and it is the one that silently dies
-#       if anything ever iterates a directory in readdir order again.
-#   [2] THE LISTING MATCHES A GOLDEN. `t` prints `size mtime sha256 path` per
-#       member. The golden is content-derived -- sizes, mtimes and digests of
-#       a fixture this script builds -- so it carries no temp path and no host
-#       detail, and it reddens on any change to the digest, the walk order or
-#       the line format.
-#   [3] THE ROUND TRIP IS CLEAN. `diff -r` between the fixture and an extracted
-#       tree is empty, including the empty file, the dotfile, the name with a
-#       space, the name with a NEWLINE in it, the file with interior NULs and a
-#       file larger than the 64 KiB hashing chunk. [3b] then compares the
-#       MTIMES, which `diff -r` does not look at -- see the leg for why that is
-#       a separate assertion and not a detail of this one.
-#   [4] DAMAGE IS REFUSED, three ways, and a path that escapes is refused
-#       BEFORE the first write.
-#
-# THE GOLDEN IS DETERMINISTIC ONLY BECAUSE THE FIXTURE IS BUILT HERE. Every
-# fixture file is written by this script from a literal or a counted loop --
-# never from /dev/urandom, never copied out of the tree -- and every one is
-# stamped at Unix epoch 1700000000, because mtime is a header field and `t`
-# prints it. A fixture with a real mtime would make the golden a record of the
-# minute it was recorded.
-#
-# WHAT IS NOT ASSERTED, deliberately: the ARCHIVE BYTES have no golden. They
-# embed a gzip payload, and its byte length depends on the zlib the host links.
-# Determinism of the archive is a property of two runs on ONE host, which is
-# what leg 1 measures; a recorded byte length would be a claim about the
-# grader's zlib. The digests in the golden are over the ORIGINAL bytes, so they
-# are zlib-independent. This is also why every offset used by the corruption
-# legs below is PARSED out of the header rather than hardcoded.
-#
-# THE ONE SOFT DEPENDENCY is sha256sum, and only for leg 4b -- the leg that has
-# to forge a payload digest. Everything else is dd, cmp and diff. 4b prints a
-# SKIP line if sha256sum is absent rather than pretending it ran.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -58,15 +6,6 @@ export TYCHO_CORELIB="$PWD/corelib"
 RECORD="${RECORD:-0}"
 golden=tools/tycho-ar/expected.out
 
-# A filename containing a newline is not representable on Windows. MSYS2 stores
-# one by mapping the byte into a Unicode private-use plane, but tycho-ar is a
-# NATIVE program reading the directory through the narrow (ANSI) API, so the
-# name comes back as "new?line.txt" and the stat that follows fails -- the tool
-# is behaving correctly about a name the platform cannot hold. The fixture drops
-# that ONE member there and selects a `.win` golden, the same mechanism
-# tests/run.sh uses for float_str_locale.out.win. Every other awkward name (the
-# dotfile, the embedded space, the NUL payload, the deep path, the empty file,
-# the multichunk file) is still exercised on both platforms.
 case "$(uname -s)" in
     *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; FIND=/usr/bin/find ;;
     *) IS_WINDOWS=0; FIND=find ;;
@@ -101,10 +40,6 @@ line.txt"
 fi
 printf '%b' 'A\000B\000C\000'      > "$tree/sub/nul.bin"
 printf 'deep\n'                    > "$tree/sub/deep/d.txt"
-# 4000 x 38 bytes = 152000, so it spans three 64 KiB hashing chunks and
-# straddles no boundary exactly -- the exact-boundary sizes (0, 55, 56, 63, 64,
-# 65, 65535, 65536, 65537) were checked against sha256sum when the chunked
-# hasher landed and do not need a golden here.
 i=0
 while [ "$i" -lt 4000 ]; do
     printf 'multichunk line %04d ----------------\n' "$i"
@@ -154,20 +89,6 @@ if [ "$fail" -eq 0 ]; then
     }
 fi
 
-# ---------------------------------------------------------------------------
-# [3b] the round trip RESTORES MTIMES -- which leg 3 cannot see. `diff -r`
-# compares names and contents and says nothing about timestamps, so leg 3 was
-# green over an `x` that dropped the mtime entirely and would stay green over a
-# restore that silently did nothing. This leg is the one that can fail for it.
-#
-# HOW IT COMPARES WITHOUT A GNU `stat`: two reference files, one stamped a
-# second BEFORE the fixture's 1700000000 and one stamped AT it, and POSIX
-# `find -newer`, which compares mtimes. An extracted file has exactly the
-# fixture's time iff it is newer than the first and not newer than the second;
-# anything else -- including "written now", which is what a dropped restore
-# leaves behind -- lands in one of the two halves and is printed. No per-file
-# shell loop, so the member whose name contains a newline is covered like any
-# other. `-type f` because directories are not members and keep today's time.
 if [ "$fail" -eq 0 ]; then
     : > "$T/ref_before"; : > "$T/ref_at"
     env TZ=UTC0 touch -t 202311142213.19 "$T/ref_before"
@@ -189,14 +110,6 @@ if [ "$fail" -eq 0 ]; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# [4] damage and escape
-#
-# Every offset here is READ OUT OF THE ARCHIVE, never assumed: the first member
-# header is a single ASCII line `F size mtime clen plen sha csha`, so parsing it
-# gives the path offset and the payload offset without depending on how many
-# bytes this host's zlib produced. See THE FORMAT in tools/tycho-ar/main.ty.
-# ---------------------------------------------------------------------------
 A="$T/tiny.tyar"
 "$AR" c "$A" "$tiny" >"$T/tiny.log" 2>&1 || bad "c exited $? on the one-file tree"
 
@@ -255,16 +168,6 @@ if [ "$fail" -eq 0 ]; then
     "$AR" t "$T/flip.tyar" >/dev/null 2>&1 && bad "flipped payload byte: t EXITED 0 -- listing does not verify"
 fi
 
-# [4d]/[4e] A FORGED LENGTH FIELD. `parse_uint` rejects a negative and an
-# over-cap value (tools/tycho-ar/main.ty@parse_uint), and until 2026-08-13 those
-# two lines were covered by reading and a hand probe -- the file said so in a
-# `# gap:`. The BEHAVIOUR is covered here now, and the two legs are not equally
-# strong: deleting the over-cap test reddens [4e], while deleting `parse_uint`'s
-# `n < 0` leaves this lane green, because the read loop tests `size < 0` itself.
-# [4d] therefore pins the refusal end-to-end, not that one line -- measured
-# 2026-08-13, both ways. The header line is rebuilt rather than
-# patched in place, because these values are wider than the originals: magic,
-# then the edited line, then everything from the old path offset on.
 forge_hdr() {
     _lbl=$1; _field=$2; _value=$3
     _new=$(echo "$hdr" | awk -v f="$_field" -v v="$_value" '{ $f = v; print }')
@@ -294,13 +197,6 @@ if [ "$fail" -eq 0 ]; then
         dd if="$T/fixed.tyar" bs=1 skip="$payload_off" count="$clen" 2>/dev/null > "$T/pay"
         sha256sum < "$T/pay" | cut -d' ' -f1 | tr -d '\n' > "$T/p"
         dd if="$T/p" of="$T/fixed.tyar" bs=1 seek="$csha_off" count=64 conv=notrunc 2>/dev/null
-        # Expected message changed 2026-08-10 and the CHANGE IS THE POINT: it used
-        # to be "(corrupt payload)", inferred from a length mismatch because
-        # compress.decompress could only answer with empty bytes. It now reports
-        # the inflate status directly, so the archive's stored length is no longer
-        # the only thing standing between a damaged member and a silent 0-byte
-        # extract. The leg still proves the same thing -- the digest is not what
-        # catches this -- it just gets a better reason out of it.
         refuses_x "forged csha" "$T/fixed.tyar" "$T/fixeddest" "payload is corrupt"
     fi
 fi
@@ -349,14 +245,6 @@ if [ "$fail" -eq 0 ]; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# DECOMPRESSION BOMB. core:compress grew its inflate buffer by doubling with no
-# ceiling, so a small archive that expands enormously was attempted until realloc
-# failed or the host did -- measured 2026-08-14, a 199 KB gzip reached 200 MB
-# with no complaint and a real bomb reaches petabytes at the same ratio. The
-# ceiling is ZD_MAX_OUT (1 GiB). Proving it fires must NOT cost a gigabyte, so the
-# shim is rebuilt with the ceiling forced small and the SAME input must flip from
-# accepted to refused. A ceiling nothing ever crosses is a ceiling nobody tested.
 if command -v python3 >/dev/null 2>&1 && [ -n "${TYCHOC:-./tychoc}" ]; then
     bd="$T/bomb"; mkdir -p "$bd"
     python3 -c "

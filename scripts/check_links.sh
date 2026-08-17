@@ -1,14 +1,3 @@
-#!/bin/sh
-# Check that every relative Markdown link in the repo points at a file that exists,
-# and that no tracked Markdown file carries a raw C0 control byte.
-# Catches the dead file links that creep in when docs are moved or renamed.
-#
-#   scripts/check_links.sh
-#
-# Only real prose links are checked: fenced code blocks and inline `code` spans are
-# ignored (so `[text](url)` shown as syntax, or Tycho code like `ops[1](5)`, don't
-# count), http(s)/#anchor/mailto targets are skipped, and the webserver example's
-# served content (examples/*/content, whose links are runtime routes) is excluded.
 set -eu
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
@@ -65,9 +54,6 @@ git ls-files '*.md' | while IFS= read -r md; do
     touch "$fail"
 done
 
-# Reachability. A dead link is loud; a document nobody points at is silent, and
-# this script said nothing about the second class until 2026-08-13 (open-list
-# item 13). Run last so its verdict lands under this script's own.
 python3 "$root/scripts/check_reachable.py" || touch "$fail"
 
 if [ -f "$fail" ]; then

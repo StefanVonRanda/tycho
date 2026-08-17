@@ -1,45 +1,3 @@
-#!/bin/sh
-# Gate for tycho-snap, the manifest-driven snapshot tool in tools/tycho-snap/.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-snap/run.sh
-#
-# WHY THIS IS NOT A GOLDEN LANE WITH EXTRA STEPS. The subject is a ZIP ARCHIVE,
-# and every number the program prints about it -- entry count, CRCs, "verified="
-# -- it computed itself, from the same bytes it just wrote. A writer that
-# mangles the central directory in a self-consistent way passes its own check
-# and prints a transcript a re-recorded golden agrees with byte for byte. So the
-# archive is read HERE by an INDEPENDENT implementation (python3's `zipfile`),
-# and the entry set is compared against literals `RECORD=1` cannot reach.
-#
-# WHAT IT ASSERTS
-#   [1] THE TRANSCRIPT, TWICE, AND THE ARCHIVE BYTES WITH IT. The fixture tree
-#       is snapshotted twice; the two transcripts must be cmp-identical to each
-#       other and the first to the golden, AND the two .zip files must be
-#       byte-identical. The second half is the one that matters: `io.list`
-#       returns readdir(3) order, and a snapshot that inherits it is not a
-#       snapshot. The program sorts each level (main.ty@walk); this leg is what
-#       reddens if that sort is ever dropped.
-#   [2] THE ENTRY SET, EXACT, AGAINST LITERALS. The fixture is built here with
-#       a known shape: files at two depths, two extensions, one excluded
-#       extension, and one directory named by `skip`. The expected member list
-#       is written out below, in sorted order, so this leg reddens if the walk
-#       stops descending, stops filtering by `ext`, stops honouring `skip`, or
-#       starts emitting absolute rather than relative names.
-#   [3] AN INDEPENDENT READER ACCEPTS IT. python3 `zipfile.testzip()` must
-#       return None -- every CRC re-verified by code this repo did not write --
-#       and one member's SHA-256 out of the archive must equal the file on disk.
-#       This is the leg the program's own "verified=" cannot be: that number is
-#       our CRC of our bytes checked against our CRC.
-#   [4] THE EMPTY ARCHIVE IS STILL AN ARCHIVE. A manifest matching nothing must
-#       produce a 22-byte end-of-central-directory record that `zipfile` reads
-#       as [], not a zero-byte file and not a crash. Asserted as both numbers.
-#   [5] THE FAILURE PATHS EXIT NON-ZERO AND SAY WHY. A missing manifest exits 1
-#       naming the file; an unknown option exits 2 naming the option. The second
-#       is FRICTION #29's residue: cli.unknown() is advisory, so this program
-#       reading it is a property of THIS program and nothing else enforces it.
-#
-# Every run is bounded by timeout(1): a walk that recursed forever is the
-# failure this lane would otherwise hang on instead of reporting.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc
@@ -57,13 +15,6 @@ $TYCHOC -o "$T/snap" tools/tycho-snap/main.ty > "$T/build.log" 2>&1 || {
 # ---- the fixture tree, built here so its shape is this file's to assert ------
 R="$T/tree"
 mkdir -p "$R/sub" "$R/skipme"
-# The names are chosen, not decorative. readdir(3) order here is NOT creation
-# order and NOT always sorted -- it is the filesystem's hash order -- and the
-# first fixture this lane had (a.ty b.md c.txt) came back already sorted, which
-# made [2b] VACUOUS: the sort could be deleted from main.ty and the lane stayed
-# green (measured 2026-08-13). These names come back unsorted on this host, and
-# the precondition is asserted below rather than assumed, because a host where
-# they sort is a host where [2b] proves nothing and must say so.
 printf 'excluded\n'     > "$R/skipme/f.ty"
 printf 'deeper\n'       > "$R/sub/yank.md"
 printf 'deep\n'         > "$R/sub/bravo.ty"

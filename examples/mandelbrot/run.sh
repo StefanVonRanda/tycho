@@ -1,15 +1,3 @@
-#!/bin/sh
-# Dogfood: a parallel Mandelbrot. Stresses a corner neither the int-only
-# concurrency benchmarks nor the sequential ray tracer reach -- FLOAT compute
-# inside a `parallel for` reduction. Each pixel's escape count is a pure function
-# of its coordinates, so the row-sum reduction is interleaving-independent: stdout
-# (the ASCII render + deterministic counts) is machine-independent and golden-
-# locked, while the worker count goes to stderr. tychoc's native build, a
-# ThreadSanitizer build (no data race on the reduction), and an ASan/UBSan build
-# must all print the SAME stdout (examples/mandelbrot/expected.out). Until
-# 2026-07-26 the self-hosted tychoc0 was a fourth leg; it is frozen (see
-# compiler/tychoc0.ty) and no gate builds it.
-# Re-record the golden with:  RECORD=1 sh examples/mandelbrot/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

@@ -1,8 +1,3 @@
-#!/bin/sh
-# Raytrace head-to-head — wall time (headline) + peak RSS across tycho / C / Go.
-# The C build uses -ffp-contract=off so no FMA fusion perturbs the float checksum
-# relative to the other ports; sqrt is the only libm call and is IEEE-exact.
-# Not wired into `make ci` (Go optional; this is an evidence bench, see RESULTS.md).
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

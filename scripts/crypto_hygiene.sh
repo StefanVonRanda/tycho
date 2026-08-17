@@ -1,27 +1,3 @@
-#!/bin/sh
-# Does core:crypto leave secret material in memory it has released?
-#
-# `make corelib` runs corelib/test/crypto and checks the ANSWERS -- that a
-# ciphertext decrypts, that a signature verifies. Every one of those passes
-# whether or not the plaintext is still sitting in a freed heap block, because
-# hygiene has no output. Nothing in this tree looked at it until now.
-#
-# The instrument is `-Wl,--wrap=free`, which interposes only the frees compiled
-# INTO the shim -- libcrypto's own allocator calls are in another object and are
-# untouched, so a hit names this file. malloc_usable_size gives the released
-# block's real length, so the whole block is scanned rather than a guessed prefix.
-#
-# TWO CONTROLS, because a scanner that reports zero is indistinguishable from one
-# that is not scanning:
-#   [c1] a block deliberately left holding the needle must be FOUND.
-#   [c2] a block cleansed before free must NOT be found -- otherwise [c1] would
-#        pass on a scanner that reported every block.
-#
-# A NOTE ON THE FIRST VERSION OF THIS PROBE, kept because it cost a wrong verdict:
-# it held two shim results at once and printed "roundtrip BROKEN". That was the
-# probe. out_hex() recycles ONE buffer per thread, so a C caller must copy each
-# return; Tycho callers are unaffected because the compiler copies at the FFI
-# boundary (measured: two live core:crypto results are distinct strings).
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -154,20 +130,6 @@ cc -O1 -I corelib/crypto -o "$T/e" "$T/e.c" -lcrypto 2>/dev/null || {
     echo "crypto-hygiene: FAILED (the equivalence probe does not build)"; exit 1; }
 "$T/e" || { echo "crypto-hygiene: FAIL"; exit 1; }
 
-# --- [2] is the key-import decode CONSTANT-TIME? -----------------------------
-# Not a stopwatch. The secret is marked UNDEFINED and memcheck reports every
-# branch derived from it -- a deterministic property, so no coin toss and no
-# flaky lane. (The tree refuses timing gates for exactly that reason; see the
-# --stress note in tools/tycho-ed/main.ty.)
-#
-# Two things are declassified ON PURPOSE, and naming them is the whole honesty of
-# this leg: the input LENGTH (strlen, suppressed by frame) and the single bit
-# "was the hex well-formed", which the caller must be able to branch on. Anything
-# else memcheck still reports is a real leak.
-#
-# The CONTROL rebuilds the same probe against a COPY of the shim whose digit
-# decode branches, which is what this code did before 2026-08-15 (it scored 7).
-# If the control does not redden, the suppressions are hiding the subject.
 if command -v valgrind >/dev/null 2>&1 && [ -f /usr/include/valgrind/memcheck.h ]; then
     cat > "$T/ct.c" <<'EOF'
 #include <valgrind/memcheck.h>

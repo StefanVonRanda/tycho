@@ -1,26 +1,3 @@
-#!/bin/sh
-# Dogfood: tycho's FFI against real SQLite (in-memory). Builds demo.ty with tychoc
-# and runs the emitted C under ASan/UBSan — proving the column-text arena-copy is
-# use-after-free-free against a real library whose text pointer is only valid
-# until the next step()/finalize(). Asserts the output matches the golden. Skips
-# cleanly if libsqlite3 is absent.
-# Re-record the golden with: RECORD=1 sh run.sh
-#
-# RETIRED LEG, 2026-07-29. Until then a second leg built the self-hosted tychoc0
-# from compiler/tychoc0.ty, piped `tychoc --bundle` through it, linked libsqlite3
-# by hand, and required its output to be byte-identical to tychoc's. tychoc0 is
-# FROZEN and the breaking loop-syntax change of 2026-07-29 means it can no longer
-# parse the corpus, so no lane builds it -- see the header of compiler/fixpoint.sh,
-# plus ROADMAP.md and docs/architecture.md. What is lost: this was one of only
-# four runners that fed the frozen compiler a real corelib/FFI program, and the
-# only one that proved it handled direct `extern fn` bindings with no shim file.
-#
-# NOTE, a coupling that could have been broken silently: the ASan leg (3) below
-# sanitized the C that TYCHOC0 emitted, so removing leg (2) would have removed the
-# sanitizer's input with it. It is repointed at tychoc's own `--emit-c` output.
-# The use-after-free this lane exists to catch is in the arena copy of a transient
-# sqlite3_column_text pointer, not in either compiler's codegen, so sanitizing
-# tychoc's C still covers it -- but it is now one implementation, not two.
 set -u
 cd "$(dirname "$0")" || exit 2
 TYCHOC=../../tychoc
@@ -42,10 +19,6 @@ else
     "$T/c" > "$T/c.out" 2>&1
 fi
 
-# (2) ASan/UBSan over tychoc's emitted C: the transient column-text pointer must
-# have been copied into the arena (else use-after-free when we print past the next
-# step). --emit-c so we link libsqlite3 ourselves under the sanitizer flags.
-# (Before 2026-07-29 this sanitized tychoc0's C; see the header.)
 if ! "$TYCHOC" demo.ty --emit-c -o "$T/san_src" >"$T/emit.log" 2>&1; then
     echo "FAIL: tychoc --emit-c"; sed 's/^/      /' "$T/emit.log"; fail=1
 elif [ "$IS_WINDOWS" = 1 ]; then

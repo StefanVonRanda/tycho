@@ -106,24 +106,6 @@ failure this gate exists to catch is not "the tree has fewer goldens than it
 did", it is "a lane's goldens became invisible", and a per-lane floor of one
 names exactly that, on the lane, without a number to maintain.
 
-# gap: two things this scan does not follow.
-#
-# (a) A golden whose path is computed from a value the scan cannot see -- read
-#     out of a file, or built from a command substitution whose output is not a
-#     literal.
-# (b) A golden that does not end `.out` or `.err`. That extension set is not a
-#     guess: every `golden=`/`gold=` assignment in the tree ends `.out`
-#     (11 of them, checked 2026-08-01), the four lanes that name theirs as a
-#     bare literal are `life.out`, `mine.out`, `snake.out` and `$D/expected.out`,
-#     and the only other recorded outputs are the `.err` diagnostic goldens under
-#     tests/diag, tests/warn and tests/conc/abort. A lane recording, say, an
-#     `expected.json` would be outside it.
-#
-# Guard 1 catches either case when it leaves the runner with ZERO goldens -- the
-# lane then fails as unclassified. What neither guard catches is a runner that
-# names one golden the scan follows AND a second one it does not: the first
-# keeps the lane classified and the second is never checked. No runner in the
-# tree does that today (checked 2026-08-01 over all 35).
 
 Usage:  python3 scripts/check_goldens.py [-v]
         make goldens-check
@@ -225,24 +207,12 @@ def scan(path, tracked):
         if line.lstrip().startswith("#"):
             continue
 
-        # A command substitution is opaque; collapse it to a marker so the token
-        # regex does not split on the spaces inside it. `$(basename "$hi" .ty).err`
-        # becomes `@.err`, which reads as "variable basename" below.
-        #
-        # But collapsing ALSO eats a golden named INSIDE one: `$(cat
-        # "${f%.ty}.err")` collapses to a bare `@` and tests/conc/run.sh:79's
-        # three abort goldens vanished silently -- the exact vacuous pass this
-        # file is about, inside the scan meant to prevent it. So scan the raw
-        # line too and take the union. A token split by a `(` cannot end in
-        # `.out`/`.err` with a character before the dot, so the raw pass adds
-        # no false positives.
         toks = dict.fromkeys(TOKEN.findall(CMDSUB.sub("@", line)) + TOKEN.findall(line))
         for tok in toks:
             # (a) scratch: rooted at a variable this runner got from mktemp
             r = VARROOT.match(tok)
             if r and r.group(1) in tempvars:
                 continue
-            # (b) $PWD/ is a no-op prefix used to survive a mid-script cd
             tok = re.sub(r'^\$\{?PWD\}?/', "", tok)
             # (c) a literal-assigned variable at the root
             r = VARROOT.match(tok)
@@ -328,14 +298,6 @@ def main():
                                   "-- a fresh clone fails with `no golden`" % (r, n, pat))
                 rows.append((r, n, pat, 1, 0 if ok else 1))
 
-    # Windows sibling goldens. A `<golden>.win` is selected in place of the
-    # golden on Windows only (tests/run.sh:157, corelib/run.sh:33) -- and it
-    # ends `.win`, not `.out`/`.err`, so the token scan above never saw one.
-    # Three existed and NONE of them was covered: tests/float_str_locale.out.win,
-    # tools/tycho-ar/expected.out.win and corelib/test/os.out.win. They are the
-    # goldens on the platform whose harness is thinnest, which is the worst place
-    # to have a check that silently covers nothing. Derived from the resolved set
-    # rather than parsed, so a new sibling is picked up the day it is written.
     win_rows = 0
     for p in sorted(goldens):
         w = p + ".win"

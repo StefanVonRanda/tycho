@@ -1,26 +1,7 @@
-#!/bin/sh
-# Phase-6 wine-ffi: the FFI lane's runnable legs (tests/ffi/run.sh),
-# cross-compiled under mingw and run under Wine. Covers the golden
-# (main.ty over a mingw-built libffidemo.a), the --shim leg, the
-# package-scoped extern, the sized-int ABI values, and the compiler-side
-# REJECTION legs (affine handle bans, shell-injection refusals, the
-# inout-string out-param ban) driven through the MINGW compiler. The one
-# leg that cannot run here is the ASan/UBSan recompile -- mingw ASan is
-# experimental; that is the CI leg's job.
-#
-#   sh scripts/wine_ffi.sh
-#   WINE_FFI_FILTER=shim sh scripts/wine_ffi.sh
-#
-# NOT a gate and NOT a Windows verdict. Skips loudly when mingw/wine absent.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 MINGWCC="$(command -v x86_64-w64-mingw32-gcc || true)"
 MINGWAR="$(command -v x86_64-w64-mingw32-ar || true)"
-# Wine 9.0 merged wine64 into a single 64-bit `wine`, and Arch/CachyOS ships
-# wine 11.x with no wine64 binary at all -- so a bare `command -v wine64` made
-# this lane SKIP on every modern Wine while printing a reason that read like a
-# missing install. Prefer wine64 when it exists (older split installs), else
-# wine. Measured 2026-08-09 on this box: wine-11.14, no wine64.
 WINE="$(command -v wine64 || command -v wine || true)"
 [ -n "$WINE" ] || { echo "SKIP: neither wine64 nor wine on PATH"; exit 0; }
 [ -n "$MINGWCC" ] || { echo "SKIP: x86_64-w64-mingw32-gcc not on PATH"; exit 0; }
@@ -31,11 +12,6 @@ fail=0; pass=0
 
 mkdir -p build
 make -s build/tycho_rt_embed.h
-# REBUILD WHEN THE SOURCE MOVED, not merely when the exe is absent. Until
-# 2026-08-13 this said `if [ ! -x ... ]`, so an exe cross-built once was reused
-# for ever: on this box it was 8 days old and 25 fixtures "failed" at emit/cc
-# under mingw purely because the compiler predated the features they use. A lane
-# whose subject is stale reports on a program nobody is running.
 if [ ! -x build/tychoc-mingw.exe ] \
    || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
    || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
@@ -59,20 +35,6 @@ run_exe() {
     else echo "FAIL $label (got '$out' want '$expect')"; fail=$((fail+1)); fi
 }
 
-# <label> <program> -- the MINGW compiler must REJECT it
-# reject <label> <program> [link]
-#
-# Default is --emit-c: STOP BEFORE THE LINKER. With -o these legs were vacuous.
-# Every one of these programs declares `extern fn ho/hc/hu`, which exist in no
-# library, so the LINK always failed and the leg reported "ok" whether or not the
-# compiler had rejected anything -- it could not tell a refusal from a missing
-# symbol. Measured 2026-08-14: the legal program `d := ho(1); print(str(hu(d)))`
-# fails under -o and is ACCEPTED under --emit-c, so a leg fed a valid program
-# still passed. Four of these legs shipped in that state.
-#
-# Pass "link" as the third argument for the one leg whose subject IS the link
-# line: the shell-injection guard lives in cc_safe_name, which --emit-c returns
-# before reaching.
 reject() {
     label="$1"; prog="$2"; mode="${3:-emit}"
     case "$label" in *"$FILTER"*) ;; *) return ;; esac
@@ -95,7 +57,6 @@ reject() {
 "$MINGWAR" rcs "$T/libffidemo.a" "$T/demo.o"
 
 echo ">>> ffi golden + shim + package legs (vs the lane's expected values)"
-# the fixture programs the lane generates itself (tests/ffi/run.sh:41-44, :94-96)
 printf 'extern fn ffi_triple(x: int) -> int\nfn main():\n    print(f"triple={ffi_triple(14)}\\n")\n' > "$T/shimtest.ty"
 printf 'extern fn ffi_add32(a: u32, b: u32) -> u32\nextern fn ffi_shl64(x: u32, n: i32) -> u64\nextern fn ffi_negbyte(x: u8) -> i8\nfn main():\n    print(f"{ffi_add32(4000000000, 300000000)} {ffi_shl64(1, 33)} {ffi_negbyte(5)}\\n")\n' > "$T/sz.ty"
 case "golden" in *"$FILTER"*)
@@ -111,21 +72,11 @@ run_exe "pkgext" "tests/ffi/pkgext/main.ty" "tests/ffi/shim.c" "" "tri6=42"
 run_exe "sized"  "$T/sz.ty"        "tests/ffi/shim.c" "" "5032704 8589934592 -5"
 
 echo ">>> compiler-side rejections through the mingw compiler"
-# NOTE THE `${hh}` SPLICE AT EVERY CALL SITE, NOT `$hh `. With the space the
-# program began ` fn main():` -- indented at top level -- so the compiler said
-# `expected 'fn'` and every one of these legs passed on a SYNTAX ERROR, never
-# reaching the rule it names. Measured 2026-08-14 by feeding the decl-copy leg a
-# LEGAL program: it still reported ok. Four of these legs shipped that way.
 hh='handle R:\n    free: hc\nextern fn ho(i: int) -> R\nextern fn hc(h: R) -> int\nextern fn hu(h: R) -> int\n'
 reject "handle-reassign" "${hh}fn main():\n    d := ho(1)\n    d = ho(2)\n"
 reject "handle-container" "${hh}fn main():\n    a := [ho(1)]\n    print(\"x\")\n"
 reject "handle-return" "${hh}fn bad() -> R:\n    return ho(1)\nfn main():\n    return\n"
 reject "handle-capture" "${hh}fn main():\n    d := ho(1)\n    f := fn() -> int: hu(d)\n    print(str(f()))\n"
-# The two shapes added on 2026-08-14 (FRICTION #43, #44). Both COMPILED before
-# that, and the decl copy double-freed at run time -- two owners, two scope-exit
-# destructor calls on one pointer. They are guarded in shared parse/resolve code
-# with no platform branch, so this leg is asking whether that is really true of
-# the mingw build rather than assuming it.
 reject "handle-decl-copy" "${hh}fn main():\n    d := ho(1)\n    e := d\n    print(str(hu(e)))\n"
 reject "handle-struct-field" "${hh}struct S:\n    r: R\nfn main():\n    print(\"x\")\n"
 reject "shell-inject-extern" 'extern "m; touch /tmp/wine_ffi_INJECTED" fn z() -> int\nfn main():\n    print(str(z()))\n' link

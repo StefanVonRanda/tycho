@@ -1,26 +1,3 @@
-#!/bin/sh
-# Gate for tycho-kvsrv, the concurrent HTTP key-value server in
-# tools/tycho-kvsrv/. Seventh tool lane; nothing else RUNS a tool under
-# tools/, and a daemon cannot be run-to-completion like the others -- it
-# answers, it never finishes -- so this follows the server/run.sh pattern:
-# start with --port 0, poll the stderr banner for the bound port, drive it
-# with a raw-socket python client, assert the responses.
-#
-# WHAT IT ASSERTS:
-#   [1] the round-trips: PUT /kv/alpha -> 200, GET -> 200 + the body,
-#       GET missing -> 404, DELETE -> 200, GET after delete -> 404.
-#   [2] the protocol: POST -> 405, a non-kv path -> 404.
-#   [3] keep-alive: two requests on one connection both answered.
-#   [4] THE CONCURRENCY PROBE: 4 parallel clients PUT distinct keys, all 4
-#       GETs come back intact -- the actor store serializes the map ops, and
-#       the assertion proves no command is dropped. (Race freedom is by
-#       construction -- no shared storage -- but the probe proves the actor
-#       round-trips don't lose messages under interleaving.)
-#   [5] the transcript is golden-locked (expected.out).
-#
-# NO FIXED SLEEPS. Readiness = the banner on stderr (the socket is already
-# listening; a connect in the window is queued by the kernel). The teardown
-# trap kills the server on success, failure and interrupt alike.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc
@@ -39,16 +16,6 @@ if ! "$TYCHOC" tools/tycho-kvsrv/main.ty -o "$SRV" >"$T/build.log" 2>&1; then
 fi
 
 SERVPID=""
-# TERM, then KILL if it is still there. TERM alone is a REQUEST: this server
-# installs a signal handler for graceful shutdown, so a shutdown that blocks
-# leaves the process alive and `wait` blocks with it -- which is how nine
-# orphaned kvsrv processes came to be running for over ten days at ~15% CPU
-# each, found 2026-08-15. They outlived their own binary (deleted from /tmp) and
-# put a permanent ~1.4-core load on this box, which is enough to redden any lane
-# that asserts a scheduling outcome.
-#
-# This also restores the temp-dir removal: the trap set beside `mktemp -d` was
-# silently REPLACED by this one, so $T leaked on every run too.
 cleanup() {
     if [ -n "$SERVPID" ]; then
         kill -TERM "$SERVPID" 2>/dev/null || true

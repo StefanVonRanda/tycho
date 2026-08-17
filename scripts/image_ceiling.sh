@@ -1,25 +1,3 @@
-#!/bin/sh
-# core:image's decode ceiling, proved to FIRE and proved not to be a blanket refusal.
-#
-# THE ATTACK. A PNG header declares width and height; the RGBA buffer that must be
-# allocated is width*height*4, and the file carrying that header can be 69 bytes.
-# A 30000x30000 header asks for 3.6 GB from a file that fits in a UDP packet. The
-# defence is IMG_MAX_OUT (512 MiB) in corelib/image/image_shim.c, checked against
-# PNG_IMAGE_SIZE before the malloc.
-#
-# WHY THIS LANE EXISTS. The ceiling was written with a compile-time override so a
-# gate "can prove the ceiling fires without allocating 512 MiB" -- and no gate was
-# ever written. `make corelib` decodes a valid image and says nothing about the
-# limit; a ceiling raised to SIZE_MAX would pass every other lane in this tree.
-# Its sibling for core:compress lives in tools/tycho-ar/run.sh and this mirrors it.
-#
-# FOUR LEGS, and [2] is the one that makes the others mean anything:
-#   [1] a 69-byte PNG declaring 3.6 GB is REFUSED at the default ceiling
-#   [2] a real 200x200 PNG is ACCEPTED at the default ceiling -- without this, a
-#       decoder that refused everything would score [1] and [3] perfectly
-#   [3] that SAME real PNG is REFUSED when the ceiling is forced to 1000 bytes,
-#       so the thing deciding is the ceiling and not the image
-#   [4] the refusal is named TooBig, not a generic decode failure
 set -eu
 cd "$(dirname "$0")/.."
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT

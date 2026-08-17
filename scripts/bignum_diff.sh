@@ -1,25 +1,3 @@
-#!/bin/sh
-# Differential-test core:bignum against an INDEPENDENT arbitrary-precision
-# implementation: Python's integers.
-#
-# `make corelib` checks bignum against a recorded golden, which proves it has not
-# CHANGED. It cannot prove the answers were right in the first place -- a golden
-# is this program agreeing with its own earlier self. Arbitrary-precision
-# arithmetic is exactly where that matters: a carry that only misfires across a
-# limb boundary, or a sign rule that is wrong only when both operands are
-# negative, produces plausible digits forever.
-#
-# Coverage is edges FIRST, then random: zero, +/-1, single digit, the 10^8
-# limb boundary either side, 10^18, and both int64 extremes, crossed with each
-# other over + - * and divmod; then ~1400 random pairs up to 10^60 / 10^40.
-#
-# A CONTROL RUNS FIRST, for the reason every clean differential needs one: the
-# same cases are scored against PYTHON'S FLOOR division, which differs from
-# Tycho's truncating divmod exactly when the operands' signs differ. It must
-# report mismatches. If it does not, the comparison is dead and a clean main run
-# below would mean nothing.
-#
-#   N=<count> sh scripts/bignum_diff.sh    random pairs (default 700)
 set -eu
 
 cd "$(dirname "$0")/.."

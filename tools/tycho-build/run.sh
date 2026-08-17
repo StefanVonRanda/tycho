@@ -1,29 +1,3 @@
-#!/bin/sh
-# Gate for tycho-build, the make-like build tool in tools/tycho-build/main.ty.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-build/run.sh
-#
-# WHAT IT ASSERTS, and why each leg exists. The build tool's contract has two
-# halves -- the DAG runs the right recipes in the right order, and the second
-# build is a NO-OP -- and each leg pins one way it can betray you:
-#
-#   [1] FIRST BUILD RUNS THE RIGHT STEPS IN DAG ORDER. A chain (src -> out1,
-#       out2 -> final) plus an independent branch (other -> other_src). The
-#       golden locks the scheduler's dispatch lines: the two independent
-#       branches and the chain's leaves first, the dependent `final` after its
-#       deps complete. Outputs are checked by content.
-#   [2] SECOND BUILD IS A NO-OP. Same tree, rebuilt: empty stdout, exit 0,
-#       outputs untouched -- the differential. An up-to-date check that
-#       re-ran recipes (or printed anything) reddens here.
-#   [3] TOUCH ONLY ITS DEPENDENTS. `touch src` bumps src's mtime; out1, out2
-#       and final rebuild, the independent branch does not. This also
-#       exercises the rebuilt-in-this-run tie-breaker (final must rebuild even
-#       though out1/out2's mtimes may equal its own within one second).
-#   [4] A FAILED RECIPE FAILS THE BUILD AND SKIPS ITS DEPENDENTS. exit 1, a
-#       `FAILED bad (exit 3)` line, and the dependent's output file absent.
-#   [5] DETERMINISM. Two clean fixtures build to byte-identical stdout.
-#   [6] USAGE / PARSE / IO ERRORS EXIT 2. Missing buildfile, a garbage line,
-#       an unknown target, a dependency cycle.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

@@ -1,10 +1,3 @@
-#!/bin/sh
-# Latency / GC-pause predictability. A steadily-churning loop (2000 rounds x 100k
-# working set, discarded each round). tycho reclaims with one O(1) arena reset per
-# round, C frees — both with NO GC and zero stop-the-world pause. Go's GC must
-# collect the garbage; it self-reports its collection count + total pause time.
-# The point: tycho gets C's pause-free predictability WITHOUT manual frees. Same
-# checksum across langs. peak RSS + wall via bench/peakrss.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

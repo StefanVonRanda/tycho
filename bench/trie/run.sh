@@ -1,12 +1,3 @@
-#!/bin/sh
-# trie head-to-head: insert N deterministic words into a prefix tree where each node
-# owns a small int->child map, and report (node count, word count) as a byte-identical
-# cross-language checksum. The whole trie is the memory under test: tycho's value-
-# semantic arena map vs C's per-node malloc map vs Go's GC map[byte]*Node. tycho uses
-# native [int: Trie] (no hand-written C); trie_pool.ty is the same trie in the flat-
-# pool + integer-index idiom (see its header), a second tycho row that must agree on
-# the checksum. Skips a language whose toolchain is absent.
-# NOT wired into `make ci`. See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc

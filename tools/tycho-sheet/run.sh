@@ -1,114 +1,3 @@
-#!/bin/sh
-# Gate for tycho-sheet, the spreadsheet engine in tools/tycho-sheet/ -- cell/
-# (values, the float renderer, the formula parser and the evaluator) and sheet/
-# (the grid, the dependency graph and the recalculation order).
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-sheet/run.sh
-#
-# WHY THIS IS NOT A GOLDEN LANE WITH EXTRA STEPS. The subject is FLOAT TEXT, and
-# a recorded transcript is the one instrument that cannot see a float bug: if
-# render() drops a digit, the golden recorded from that same build agrees with
-# it and `cmp` is green by construction. So the round trip is asserted HERE, by
-# a probe that parses every rendered string back and compares DOUBLES, over a
-# corpus the runner generates -- a place RECORD=1 cannot reach. The golden is
-# leg [1] of nine and the weakest of them.
-#
-# WHAT IT ASSERTS
-#   [1] THE DEMO TRANSCRIPT, twice. `--script=demo.sheet` is run twice; both runs
-#       must be cmp-identical to each other and the first to the golden. The
-#       program takes no paths, reads no clock and spawns nothing, so a
-#       difference between two runs is uninitialised state or map iteration
-#       order leaking into output, not scheduling.
-#   [2] THE FLOAT ROUND TRIP, over a corpus this runner generates and against
-#       literals. 98411 values -- every i/j for i,j in 1..120, 40000
-#       pseudo-random mantissas swept across the exponent range with both signs,
-#       and 4000 pushed out to 10^+-300 -- are rendered, parsed back with
-#       strtod, and compared as doubles. NONE may fail. Until 2026-08-12 one
-#       was allowed to -- the min subnormal, because strings.parse_float refused
-#       every subnormal as Underflow and no text round-tripped one. corelib was
-#       fixed (FRICTION #23) and the exception went with it. That count is a
-#       literal below, so a renderer that regressed to 15 digits moves it by
-#       thousands.
-#       THE FOUR VALUES THAT MOTIVATED cell/dtoa.ty ARE ALSO ASSERTED ONE BY ONE
-#       -- 0.1+0.2, 2^53, DBL_MAX and the min subnormal. The corpus count proves
-#       98411 values round-trip but not WHICH: a generator that stopped emitting
-#       the extremes would keep the count green. What is asserted per value is
-#       the VERDICT ("reads back equal"), not the digits, because which of
-#       several equally valid decimals render() picks is deliberately not this
-#       lane's business (see below). The digits go into the golden, where a
-#       change in them shows in a diff without being a hard failure. Two
-#       exceptions are literals: 2^53, whose shortest form is unique because
-#       every integer below it is exact, and the min subnormal, whose "5e-324"
-#       likewise names exactly one double.
-#       THE #NUM! ARM IS COUNTED, NOT INFERRED. render() falls back to "#NUM!"
-#       when nothing it can print reads back as the value held. Since bc51c069
-#       taught corelib subnormals, nothing reaches it -- so the probe counts how
-#       many of the 98411 landed there and this runner asserts ZERO. Its sibling
-#       is CellErr.NoText, which nothing constructs at all; [5] asserts that
-#       statically, by counting the token's occurrences in the source.
-#   [2b] THE NEAREST DECIMAL, AS TEXT, for the four values that exposed the
-#       difference. Round-tripping is the weaker half of the contract: six
-#       17-digit decimals read back as 0.1+0.2 and render() picked a wrong one
-#       for as long as [2] was the only float leg.
-#   [3] `str(float)` ROUND-TRIPS, asserted directly. This leg used to assert the
-#       opposite -- that `str(0.1 + 0.2)` was the lossy "0.3" -- because that was
-#       the whole reason cell/ carries a renderer. It went red on 2026-08-12 when
-#       the runtime was fixed (FRICTION #22), which is what the leg was there to
-#       detect. It is INVERTED, not deleted: it now catches a revert.
-#   [4] THE PARSE / VALUE SPLIT, which is the design claim of cell/cell.ty.
-#       `=1/0` is ACCEPTED and shows #DIV/0!; `=A1+`, `=(A1`, `=1 2`, `=@A1` and
-#       `=SUM(A1:A9` are REFUSED with their own messages and store nothing --
-#       E1 still holds the 7 it held before. A collapse of the two in either
-#       direction moves one of these lines.
-#   [5] EVERY CellErr AND ParseErr VARIANT IS REACHED. Both variant lists are
-#       READ OUT OF THE SOURCE and each must appear in the transcript, so a
-#       variant added tomorrow arrives with a test instead of ungated. The one
-#       variant no input can reach -- CellErr.NoText -- is declared unreachable
-#       and the check INVERTS for it, so a script that did reach it fails too.
-#       That declaration is backed by a static count: `NoText` occurs exactly
-#       three times in cell/ and sheet/ -- the enum line and the two match arms
-#       in err_code and err_detail -- and nowhere constructs one. A fourth
-#       occurrence means something now can, and the arm needs a leg in [9].
-#   [6] THE CYCLE IS NAMED, not merely detected. `#CYCLE! F1 -> F2 -> F3 -> F1`
-#       and the self-reference `G1 -> G1` are literals here. A cycle detector
-#       that hung or overflowed would never reach these; one that printed a bare
-#       "#CYCLE!" would fail them.
-#   [7] DEPTH FAILS CLOSED OR EVALUATES -- never a silent crash. A 10000-deep
-#       chain is in the golden and must come out as exactly 10000. A 100000-deep
-#       one is run here (too big for a golden) and must also be exact. Past the
-#       edges, four different limits must each exit 0 with a NAMED error and no
-#       crash: a reference past the last row, a reference with too many digits,
-#       parentheses past MAX_DEPTH, and an operator spine past EVAL_DEPTH.
-#   [8] BAD INVOCATION EXITS NON-ZERO with an empty stdout.
-#   [9] EVERY ERROR VARIANT EXITS NON-ZERO WITH ITS OWN WHOLE MESSAGE and an
-#       empty stdout. [5] proves each variant is REACHED; a substring in a
-#       transcript is not the same claim as a caller dying by it, and the
-#       --script driver deliberately does not die -- it prints `ERR ...` and
-#       keeps going, because a script is a test and an error is an observation.
-#       So this needs a different caller, and it is the same shape tycho-ed uses:
-#       cell/ and sheet/ are COPIED into the temp dir and a probe whose
-#       `main() -> Result(void, string)` returns Err(<the message>) is built
-#       against the copies. Nothing is written into the repo, and a renamed
-#       package reddens here. Each arm calls the API that OWNS the variant --
-#       cell.parse, cell.eval, cell.to_num, sheet.recalc -- rather than
-#       constructing the enum, which would assert the err_str function and
-#       nothing else. Both variant lists are read out of the enums again as the
-#       coverage floor, so a variant added tomorrow is UNGATED here too and says
-#       so. Cycle gets two arms, the three-cell ring and the self-reference, and
-#       every arm is bounded by $TO: a cycle detector that recursed forever is
-#       exactly what this leg exists to catch, and an unbounded gate would sit
-#       there until CI's own timeout killed it with no verdict.
-#
-# WHAT IT DELIBERATELY DOES NOT ASSERT
-#   Timing. Nothing here is a benchmark; the 100000-chain is bounded by $TO
-#   only so a hang reports instead of sitting there.
-#   Which of two EQUALLY NEAR decimals render() picks. A value sitting exactly
-#   between two shortest decimals has two right answers; render rounds half-up
-#   there and nothing here cares. That is the only freedom left: shortest and
-#   nearest is now the contract, and [2b] pins it as text for four values.
-#
-# NO HOST DETAIL REACHES THE GOLDEN -- the program prints no paths. Every run is
-# bounded by $TO where a timeout(1) exists.
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc
@@ -263,12 +152,6 @@ fn main():
         for q := 0; q > e; q -= 1:
             v /= 10.0
         chk(v, &bad, &n, &nnum)
-    # The min subnormal. This used to be the ONE value in the corpus that could
-    # not round-trip, and not because render() failed: strings.parse_float
-    # refused every subnormal as Underflow, so no text for it existed and
-    # render() said #NUM!. corelib was fixed on 2026-08-12 (FRICTION #23), so it
-    # is now an ordinary value and goes through chk() like every other. Its
-    # rendering is still printed, because it is the one the header quotes.
     sub := 5e-324
     chk(sub, &bad, &n, &nnum)
     println("subnormal render " + cell.render(sub))
@@ -293,9 +176,6 @@ else
         bad "5e-324 does not render as itself -- strings.parse_float stopped accepting subnormals, or render() regressed"
         sed 's/^/      /' "$T/probe.out" | head -4
     }
-    # The #NUM! arm, counted. Anything but zero means a float in the corpus has
-    # no decimal that reads back as itself -- which is the honest answer, and
-    # also the one bc51c069 was supposed to have made impossible.
     grep -qxF "rendered #NUM! for 0 of them" "$T/probe.out" || {
         bad "render() fell back to #NUM! for at least one corpus value -- the arm bc51c069 made unreachable is reachable again"
         grep -e '^rendered #NUM' "$T/probe.out" | sed 's/^/      /'
@@ -323,18 +203,6 @@ else
     grep -e '^checked ' -e '^rendered #NUM' -e '^subnormal ' -e '^render ' "$T/probe.out" >> "$out"
 fi
 
-# ---------------------------------------------------------------------------
-# [2b] the four values whose NEAREST decimal is the whole point, as text
-#
-# [2] asserts round-tripping, which is the weaker half and misses this by
-# construction: six different 17-digit decimals read back as 0.1+0.2, and
-# render() returned 0.30000000000000006 -- round-tripping, and not the value's
-# own digits -- under a green [2]. Nearest is a property of the value, not of
-# the rounding interval, so nothing but the exact text can pin it. None of the
-# four is a tie, so each has exactly one right answer. 2^89 is there for the
-# neighbour probe, which _ref alone does not exercise: 45 of 3120 powers of two
-# render a digit longer without it.
-# ---------------------------------------------------------------------------
 N="$T/pkg2"; mkdir -p "$N"
 [ -d "$src/cell" ] || bad "probe: $src/cell is gone -- leg [2b] asserts NOTHING"
 cp -R "$src/cell" "$N/" 2>/dev/null
@@ -363,29 +231,17 @@ else
     near_ '2^53+2  9007199254740994'
     near_ '0.1+0.2 0.30000000000000004'
     near_ 'DBL_MAX 1.7976931348623157e+308'
-    # A power of two: the gap below it is half the gap above, so the nearest
-    # 16-digit decimal falls outside the interval while its neighbour does not.
-    # Without the neighbour probe this comes out a digit longer, and it is the
-    # only one of the four that does -- measured, 45 of 3120 powers of two.
     near_ '2^89    6.189700196426902e+26'
     printf '=== the nearest decimal, as text\n' >> "$out"
     cat "$T/nearest.out" >> "$out"
 fi
 
-# ---------------------------------------------------------------------------
-# [3] str(float) round-trips -- INVERTED 2026-08-12, and that is the point
-# ---------------------------------------------------------------------------
 L="$T/lossypkg"; mkdir -p "$L"
 cat > "$L/lossy.ty" <<'EOF'
 package main
 
 import "core:strings"
 
-# This probe used to assert the OPPOSITE: that str(0.1+0.2) was the lossy "0.3",
-# which was the premise cell/dtoa.ty existed to work around. That premise was
-# the bug report, and the runtime was fixed on 2026-08-12 (FRICTION #22) --
-# str now emits the shortest decimal that reads back unchanged. So the same
-# probe stays, pointing the other way: it now fails if the fix is ever reverted.
 fn main():
     v := 0.1 + 0.2
     s := str(v)
@@ -465,15 +321,6 @@ variant_probe() {
 # list rots.
 variant_unreachable() {
     case "$1" in
-        # render() falls back to #NUM! when no decimal reads back as the value
-        # held. A subnormal used to land there -- not because render() failed
-        # but because strings.parse_float refused every subnormal as Underflow,
-        # so no text for one existed. corelib was fixed on 2026-08-12 (FRICTION
-        # #23) and [2] above now round-trips all 98411 corpus values including
-        # the min subnormal, so nothing reaches this arm. THE ARM STAYS: it is
-        # the fail-closed answer to "these digits do not name this value", and
-        # printing a wrong number instead is the failure cell/dtoa.ty exists to
-        # prevent. If anything ever reaches it again, this leg says so.
         NoText) echo 'no float fails to round-trip since corelib learned subnormals' ;;
         *) echo "" ;;
     esac
@@ -546,9 +393,6 @@ ln_ '  built a chain 10000 deep: A1 = A2 + 1 ... A10000 = 1'
 ln_ '  A1 = 10000'
 ln_ '  A9999 = 2'
 
-# A chain an order of magnitude deeper, run here rather than recorded: the
-# claim is that iterative recalculation has no depth limit but memory, and a
-# golden of 100000 lines would assert it no better.
 printf 'chain 100000\nrecalc\nget A1\nget A50000\n' > "$T/deep.sheet"
 shrun "100000-deep chain" "$T/deep.sheet" "$T/deep.out"
 grep -qxF '  A1 = 100000' "$T/deep.out" || {

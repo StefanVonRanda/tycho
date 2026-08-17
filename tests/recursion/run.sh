@@ -1,29 +1,8 @@
-#!/bin/sh
-# Recursion-cap regression: the compiler must FAIL CLOSED on pathologically
-# nested / long input instead of overflowing the C stack (SIGSEGV, exit 139).
-# Covers every recursion vector we hardened:
-#   - deep parenthesis nesting        (recursive-descent parse stack)
-#   - deep unary `not` chain          (recursive-descent parse stack)
-#   - long left-leaning operator chain (deep AST tree -> resolve/clone walkers;
-#                                       tychoc0 also deep-copies on construction)
-#   - long chain inside a GENERIC body (clone_expr, which precedes resolve)
-#   - deep statement nesting           (parse_block recursion / indent stack)
-# tychoc must reject each with a nonzero exit that is NOT a signal (rc < 128),
-# and must still accept the matching "valid, modestly nested" case. (Until
-# 2026-07-26 the same inputs were also fed to the self-hosted tychoc0; it is
-# frozen -- see compiler/tychoc0.ty -- and no gate builds it, so that half is
-# gone. Every assertion about tychoc is unchanged.)
-# Inputs are generated here (megabytes at the cap) rather than committed.
-# No `set -e`: the reject cases expect nonzero compiler exits, checked explicitly.
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-# Every compile of a pathological fixture runs under a memory + CPU cap. tychoc0
-# has value semantics, so a deep type/expression deep-copies O(n^2) and, without
-# a cap fired first, would exhaust host RAM (the OS OOM-killer then takes down
-# the whole session). The ulimit makes the compiler's own malloc fail closed.
 LIMV=1500000   # virtual-memory ceiling (KiB ~= 1.5 GB), Linux only
 TMO=30         # wall-clock / CPU ceiling (s)
 # GNU `timeout` and `ulimit -v` (RLIMIT_AS) are Linux-only — macOS ships
@@ -40,9 +19,6 @@ run() { ( ulimit -t "$TMO" 2>/dev/null; $AS_CAP; $TO "$@" ); }
 
 py() { python3 - "$@"; }
 
-# Generate the fixtures (depth 6000 / chains 200k are well past both the 2000
-# expression cap and the 256 indentation cap, and past the observed SIGSEGV
-# depth, so a surviving stack guard is the only way to exit cleanly).
 py >"$T/paren.ty"   <<'P'
 import sys; print("fn main():\n    x := " + "("*6000 + "1" + ")"*6000 + "\n    print(str(x))")
 P
@@ -76,9 +52,6 @@ for i in range(100): out.append("    "*(i+1)+"if true:")
 out.append("    "*101+"print(str(7))")
 print("\n".join(out))
 P
-# Deeply nested TYPE annotations -- parse_type recursion. tychoc SIGSEGVs and
-# tychoc0 OOMs the host here without a cap. Array nesting AND Option(...) nesting
-# (the latter recurses through the named-type branch) must both be bounded.
 py >"$T/type_arr.ty" <<'P'
 import sys; print("fn f(a: " + "["*9000 + "int" + "]"*9000 + "):\n    return\nfn main():\n    return")
 P
@@ -117,15 +90,6 @@ accept "valid-chain"     ok_chain
 accept "valid-stmt"      ok_stmt
 accept "valid-type"      ok_type
 
-# ---- generated-code side (`docs/internals/plan-tycho-scheme-DONE.md` phase 1): deep recursion in a PROGRAM -------
-# The reject/accept above guard the COMPILER's own recursion. Until the
-# stack-overflow guard landed in the runtime (tycho_rt.c), deep recursion in
-# emitted code died with SIGSEGV -- no diagnostic, no cleanup. Two measured
-# victims: the Scheme interpreter at ~5k levels (eval-apply chain, big frames)
-# and the json walker at ~100k nests (parse_value, small frames). Each deep
-# program must COMPILE (it is valid Tycho), then DIE CLEANLY at runtime:
-# exit 1-127 (NOT a signal), empty stdout, "stack overflow" on stderr. The
-# modestly-nested counterpart must run and print the right answer.
 py >"$T/prog_big.ty"   <<'P'
 import sys; print("fn f(n: int) -> int:\n    if n <= 0:\n        return 1\n    return n + f(n - 1)\nfn main():\n    print(str(f(2000000)))")
 P

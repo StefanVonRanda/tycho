@@ -1,15 +1,3 @@
-#!/bin/sh
-# Dogfood: a small ray tracer (diffuse + specular + one reflection bounce) rendered
-# to a QOI image via core:raster. It stresses a corner the benchmarks don't --
-# FLOAT-heavy struct VALUE SEMANTICS: every Vec3 op returns a fresh struct by value,
-# copied through deep call chains and recursion (reflect), so the implicit arena
-# carries the whole render with zero manual memory management. It is deterministic,
-# so tychoc's native build and an ASan/UBSan build must print the SAME summary
-# line (a real-program float differential). Until 2026-07-26 the self-hosted
-# tychoc0 was a third leg of that comparison; it is frozen (see
-# compiler/tychoc0.ty) and no gate builds it. The line is locked to
-# examples/raytrace/expected.out, and the emitted out.qoi must be a valid QOI file.
-# Re-record the golden with:  RECORD=1 sh examples/raytrace/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 TYCHOC=./tychoc

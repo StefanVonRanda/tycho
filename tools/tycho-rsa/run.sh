@@ -1,26 +1,3 @@
-#!/bin/sh
-# Gate for tycho-rsa, the pure-Tycho RSA implementation on core:bignum in
-# tools/tycho-rsa/. Same shape as the other tool lanes: step [9] tools-check
-# --emit-c's every .ty in the tree, so a syntax error already reddens there,
-# and [3b] entrypoints never looks under tools/ -- so nothing RAN the tool
-# before this lane existed.
-#
-# WHAT IT ASSERTS:
-#   [1] the GROUND-TRUTH DIFFERENTIAL inside `selfcheck`: the textbook RSA
-#       vector (p=61 q=53 n=3233 e=17 d=2753: encrypt 65 -> 2790, decrypt
-#       back to 65), modexp cross-checked against python 3's pow() at
-#       256/512/2048-bit sizes, Miller-Rabin probes (97 prime, 91 composite,
-#       561 Carmichael -- passes Fermat, must fail MR), and a
-#       deterministic-seeded keygen whose invariants are self-checked:
-#       n == p*q, e*d == 1 mod phi, p/q pass is_prime, and both the
-#       encrypt->decrypt and sign->verify round-trips return the message.
-#   [2] the transcript is golden-locked (expected.out), so the deterministic
-#       key (fixed rand.seed) and every "ok" line are recorded assertions.
-#   [3] a deeper arithmetic workout: a 512-bit keygen whose encrypt->
-#       decrypt round-trip is asserted via the CLI (modexp on the printed
-#       n/e/d) -- the mul/divmod path at 16 limbs instead of 8.
-#
-# Re-record the golden with:  RECORD=1 sh tools/tycho-rsa/run.sh
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC=./tychoc

@@ -1,28 +1,3 @@
-#!/bin/sh
-# tycho-hash: sha256 over a directory tree, hashed by a worker pool.
-#
-# The subject is a PARALLEL program whose output must not depend on the pool
-# width, and a recorded transcript cannot see either half of that:
-#
-#   [3] DETERMINISM -- the report must be byte-identical at 1, 2, 3, 5 and 8
-#       workers. A golden re-recorded from a broken build agrees with itself.
-#   [3b] ...and that claim is VACUOUS unless the pool really shares the work, so
-#       the per-worker split is read back. At 1 worker the first must take ALL of
-#       them and the rest none -- deterministic. At 8 workers at least 2 must take
-#       work on EVERY attempt, and at least 6 on the best of up to 5, because the
-#       exact split is a scheduling outcome and asserting all 8 made this lane
-#       redden under the parallel load of `make ci` while passing alone. The second is the negative control for `--workers` itself --
-#       the first version of this program ignored the option and compared eight
-#       workers against eight, which passed and proved nothing.
-#   [4] CORRECTNESS against an INDEPENDENT implementation: every hash must equal
-#       sha256sum(1)'s on the same file. A tool that agrees only with itself has
-#       shown nothing. The empty file is included on purpose -- its digest is the
-#       well-known e3b0c442..., so one line is checkable by eye.
-#   [5] ACCOUNTING -- the per-worker counts must sum to EXACTLY the file count at
-#       every width. A dropped job and a job done twice both leave the report
-#       looking plausible.
-#
-# RECORD=1 sh tools/tycho-hash/run.sh   re-records expected.out
 set -eu
 
 cd "$(dirname "$0")/../.."
@@ -92,17 +67,6 @@ restsum=$(echo "$d1" | cut -d' ' -f2-8 | tr ' ' '+' | bc 2>/dev/null || echo -1)
 [ "$first" = "$NFILES" ] || bad "[3b] at 1 worker the first should take all $NFILES, took $first"
 [ "$restsum" = "0" ] || bad "[3b] at 1 worker the others should take 0, took $restsum -- --workers does nothing"
 
-# The width-8 split is a SCHEDULING OUTCOME, not a guarantee. Asserting "all 8 of
-# 8 took one of 12 files" made this lane FAIL inside `make ci` on 2026-08-15
-# while passing on its own: ci forks its lane groups concurrently, and on a
-# loaded box a worker can legitimately finish before the last one is scheduled.
-# A gate that reddens under load is worse than no gate -- it teaches people to
-# re-run. flow-check already had this right ("at least 190 of 200 runs").
-#
-# EVERY attempt -- at least 2 workers took work. That is what refutes "one worker
-#                  does everything", which is the bug this leg exists for.
-# BEST attempt  -- at least 6 of 8 participated, retried up to 5 times, so the
-#                  strong claim survives without staking the lane on one draw.
 best=0
 tries=0
 while [ "$tries" -lt 5 ]; do

@@ -1,36 +1,3 @@
-#!/bin/sh
-# bench/transpile/run.sh -- how long tychoc takes to turn one .ty file into C.
-#
-# WHY THIS EXISTS. docs/guides/perf.md carried "~13 ms" for this and said
-# "re-measure locally for a current absolute number", with no harness to do it
-# with. A one-off `date +%s%N` around a single run (which is what produced the
-# 36-38 ms in that page on 2026-08-14) measures process start, page faults, a
-# cold file cache and the output write along with the work, and reports whichever
-# of those happened to dominate. That is enough to say "same order", not enough
-# to say "regression".
-#
-# WHAT THIS MEASURES INSTEAD
-#   - N runs, the first DISCARDED as a cache warmer.
-#   - the MINIMUM reported, not the mean: the fastest run is the one least
-#     perturbed by whatever else the machine was doing, and that is the number
-#     that reproduces. Median and max are printed beside it so a wide spread is
-#     visible rather than hidden.
-#   - wall time from bench/peakrss (getrusage + clock around the child), the same
-#     instrument the rest of bench/ uses.
-#   - output written to a tmpdir, so no repo file is touched and the write cost
-#     is at least consistent between runs.
-#
-# It still includes process start and the C output write -- those are part of
-# "how long does tychoc take" for a user. What it removes is the run-to-run
-# noise that made a single sample meaningless.
-#
-#   sh bench/transpile/run.sh [-n RUNS] [-i INPUT] [-c COMPILER]
-#
-# THE DEFAULT INPUT IS GENERATED -- 600 small functions, ~4.2k lines, using only
-# forms that compile across the range being compared. Do not point this at a big
-# file just because it is handy: a compile that DIES is faster than one that
-# works, so an unchecked input silently reports the failure path as a speed-up.
-# That is why the timing loop below refuses to run until the compile succeeds.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 
