@@ -22,13 +22,13 @@ ladder. Six files carry a ladder of 4+ arms over a scalar:
 Two shapes the arms actually need, both already written as `if`:
 
 - The VM's dispatch groups seven arithmetic ops behind one range test —
-  `elif op >= OP_ADD and op <= OP_GE:` (`tools/tycho-vm/main.ty:634`) — and
+  `elif op >= OP_ADD and op <= OP_GE:` (`tools/tycho-vm/main.ty:536`) — and
   then re-dispatches inside. That is a range arm in disguise.
 - json's number dispatch is a literal-or-range test — `c == 45 or (c >= 48
   and c <= 57)` — the range is **inclusive** (`<=`, not `<`).
 
 Every ladder subject is `int`: string indexing returns the byte **value as an
-int** (`src/tychoc.c:6179@T_BYTES`), so the char-position ladders all compare ints.
+int** (`src/tychoc.c:5751@T_BYTES`), so the char-position ladders all compare ints.
 **No ladder in the tree dispatches on `string` or `bytes`.**
 
 ## How `match` works today
@@ -37,7 +37,7 @@ int** (`src/tychoc.c:6179@T_BYTES`), so the char-position ladders all compare in
   arm: "a match arm `Variant(bindings):` or `Variant:`". A scalar literal dies
   there with that message, which is why `match` on an int is currently a parse
   error.
-- **Resolve** — the `S_MATCH` case of `resolve_stmt` (`src/tychoc.c:8436@S_MATCH`) already enforces
+- **Resolve** — the `S_MATCH` case of `resolve_stmt` (`src/tychoc.c:7920@S_MATCH`) already enforces
   wildcard-last (`tests/reject/match_wildcard_not_last.ty`), duplicate arms
   (`tests/reject/match_dup_arm.ty`), and exhaustiveness
   (`tests/reject/match_non_exhaustive.ty`) — all enum machinery, all reusable.
@@ -53,7 +53,7 @@ int** (`src/tychoc.c:6179@T_BYTES`), so the char-position ladders all compare in
 
 - **`int`** — the only type with customers (the table above). Primary.
 - **`char`** — the same machine type as `int` (both emit as `tycho_int`,
-  `src/tychoc.c:1760@T_CHAR`). Arm literals are `'a'`-spelled; the byte-value ladders
+  `src/tychoc.c:1568@T_CHAR`). Arm literals are `'a'`-spelled; the byte-value ladders
   use `int` and stay `int`. No customer for the distinct `char` type today,
   but the cost is zero once the int machinery exists.
 - **`bool`** — a two-value domain, so exhaustiveness is provable (D2).
@@ -124,7 +124,7 @@ instead of seven labels with a shared body).
 - Ranges emit as **consecutive case labels** (`case 48: case 49: ... case 57:`).
   Unrolling, not GNU `case 48 ... 57:`: the ranges in the tree are all small
   (7–10 values), and unrolling is portable under any dialect. (The repo
-  compiles with plain `cc`, no `-std` — `src/tychoc.c:14702@-fwrapv` — so GNU case
+  compiles with plain `cc`, no `-std` — `src/tychoc.c:13816@-fwrapv` — so GNU case
   ranges would work, but there is no reason to depend on them.)
 - The table-vs-binary-search decision is **cc's**, not ours: at `-O2`, GCC and
   Clang lower a dense switch to a jump table and a sparse one to a binary
@@ -173,14 +173,14 @@ per-compare figure assumed. Neither number is a reason to build for speed.
   (`lit | lit | ...`), and a range (`lit..lit`). The diagnostic widens from
   "a match arm `Variant(bindings):` or `Variant:`" to name the new forms.
   String and float literals stay rejected at parse.
-- **Resolve** (`src/tychoc.c:8436@S_MATCH`) — a scalar subject path: subject is
+- **Resolve** (`src/tychoc.c:7920@S_MATCH`) — a scalar subject path: subject is
   `int`/`char`/`bool`; arm literals typed against the subject exactly as
   assignment would type them (newtype rules unchanged — a newtype over int
   is its own type and takes its own spellings); literal arms on an enum
   subject and variant arms on a scalar subject are distinct errors; the
   dup/overlap check (D3); the `_` rule (D2); string/bytes/float subjects
   refused with the demand-gated reason (D1).
-- **Codegen** (`src/tychoc.c:12280@S_MATCH`) — the switch emission (D6). The
+- **Codegen** (`src/tychoc.c:11489@S_MATCH`) — the switch emission (D6). The
   `S_MATCH` statement and value forms both flow through it, so the value
   form (`x := match c: ...`) works without separate work.
 - **Spec** — §14.3 (`docs/spec/10-statements.md:32-60`), the statements
@@ -193,7 +193,7 @@ per-compare figure assumed. Neither number is a reason to build for speed.
 
 ## Done-when (Phase 2's gate)
 
-1. `tools/tycho-vm/main.ty:622`'s dispatch is written as a scalar `match`,
+1. `tools/tycho-vm/main.ty:524`'s dispatch is written as a scalar `match`,
    with the grouped arithmetic arm spelled `OP_ADD..OP_GE`.
 2. `corelib/json/json.ty@parse_value`'s byte dispatch is written as a scalar
    `match`.

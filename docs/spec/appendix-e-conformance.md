@@ -359,7 +359,7 @@ are flagged here so the gap is explicit rather than hidden:
   closing the import graph from every file a `tychoc0` runner compiled
   (`examples/*.ty`, `tools/*.ty`, `tests/*.ty`, `tests/pkg/*/main.ty`,
   `compiler/tychoc0.ty`, plus the four per-example runners at
-  `examples/webserver/run.sh:30`, `examples/weblog/run.sh:19`,
+  `examples/webserver/run.sh`, `examples/weblog/run.sh:19`,
   `examples/fetch/run.sh:10` and `examples/sqlite/run.sh:9` — each now the
   header recording that the leg was retired on 2026-07-29) reached **13**
   corelib packages — `cli`, `datetime`, `http`, `httpd`, `io`, `json`, `markdown`,
@@ -367,7 +367,7 @@ are flagged here so the gap is explicit rather than hidden:
   `bytes` operator. The other **24**, including `base64`, `compress`, `crypto`,
   `hash`, `hex`, `image`, `md5`, `raster` and `tls` — the packages that would most
   want them — sat outside every `tychoc0` runner and were free to adopt them.
-  `core:cli` was in the blocked set via `examples/weblog/run.sh:24`. From
+  `core:cli` was in the blocked set via `examples/weblog/run.sh`. From
   2026-07-26 that was checkable rather than argued: `scripts/frontparity.sh` had
   fed `examples/*.ty` and never `examples/<dir>/main.ty`, so the 13-blocked set ran
   through packages no runner in `scripts/` could see; it was then made to feed the

@@ -69,7 +69,7 @@ module.exports = grammar({
     // covers the raw form with no query change. The backtick form interprets no
     // escapes (hence no /\\./ alternative — a backslash is an ordinary byte) and
     // /[^`]/ matches a newline, so it spans lines like the compiler's scanner
-    // (src/tychoc.c:493-540).
+    // (src/tychoc.c:410-437).
     string: ($) =>
       token(
         choice(
@@ -100,7 +100,7 @@ module.exports = grammar({
       ),
 
     // `;` separates the three clauses of `for init; cond; post:`
-    // (src/tychoc.c:598). Without it 204 corpus files failed to lex.
+    // (src/tychoc.c:489). Without it 204 corpus files failed to lex.
     punctuation: ($) => choice("(", ")", "[", "]", "{", "}", ",", ":", ";"),
   },
 });

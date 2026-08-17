@@ -78,7 +78,7 @@ Three things the numbers say that the RSS tables cannot:
    the function total.
 
 **Block size is a memory-only knob.** `TYCHO_BLOCK=<bytes>` overrides the
-64 KiB default per run (read once at startup, `runtime/tycho_rt.c:570@TYCHO_BLOCK`). A
+64 KiB default per run (read once at startup, `runtime/tycho_rt.c:520@TYCHO_BLOCK`). A
 sweep on the three big workloads, same machine:
 
 | block | interp peak/OS | json peak/OS | lru peak/OS | wall (interp/json/lru) |

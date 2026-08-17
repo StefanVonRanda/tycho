@@ -24,7 +24,7 @@ task calls into C, you step outside it, and the compiler can no longer vouch for
 Concretely: two tasks calling an unshimmed stateful C library — say OpenSSL writing into a shared
 `static` buffer — race on that buffer even though both sides look like isolated Tycho. The fix is
 to keep the shared state per thread or serialize the calls. The `core:crypto` shim does the
-former: its return buffer is `static __thread char *g_out` (`corelib/crypto/crypto_shim.c:43@g_out`),
+former: its return buffer is `static __thread char *g_out` (`corelib/crypto/crypto_shim.c:16@g_out`),
 so each OS thread gets its own. When you write your own FFI shim, design it the same way — assume
 nothing about the C side's thread-safety and isolate it explicitly. The full analysis is in
 [`docs/rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md).

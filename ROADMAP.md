@@ -17,7 +17,7 @@ the programs it emits, and a golden-locked test suite, all green in a local gate
 requires" asks for, §2 through §5 are closed and §6's artifacts are built and
 verified for both platforms. What is left is not engineering: **§1** (someone
 other than the author writes a real program), **§7** (an external security
-review), and the outward half of **§6** (tag and publish, a decision). Those need
+review). Those need
 another person or the owner, so the tree cannot close them on its own.
 
 The last engineering sweep before that line was the **fail-open audit**: every
@@ -258,7 +258,7 @@ against the wrong mechanism.
 | no comparator-taking sort | **closed 2026-08-11** — `e40f32d` added `corelib/sort/sort.ty@sort_by`, `fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]`. Probe: sorting a `[Emp]` by its `name` field through a comparator gave `amy,zoe`, and `sort.asc` on `["pear","apple","fig"]` gave `[apple, fig, pear]` — the row's own complaint, sorting by a string key, needs no invented int in either form |
 | an enum cannot be tested for its variant without binding a payload | **closed 2026-08-11** — `308b6d6` (`is` for user enums) and `6d275ca` (`is` for Option/Result). Probe: `s is Circle`/`s is Square`/`s is Dot` on a payload-carrying enum gave `true false false`, and `o is Some`/`r is Ok`/`r is Err` all answer, including on a `Result(void, E)`. The 2026-08-09 note called this "mitigated, stylistic"; `is` closed it structurally instead |
 | two error types cannot share an `or_return` chain | **closed — and the row named the wrong mechanism.** `d806a4d` triaged it as WRONG MECHANISM: `corelib/result/result.ty@map_err` already bridged, and `6bc0a29` added `map_err_with` (`corelib/result/result.ty@map_err_with`) for the cause-preserving case. Probe: one `fn chain(k) -> Result(int, string)` whose first leg is a `Result(string, IoErr)` bridged by `result.map_err_with(read_it(k), ioerr_to_str) or_return` and whose second leg is a native `Result(int, string)` — both legs propagate through the same chain, the IoErr path surfacing as `missing key bad`. There was never a language gap here, only a missing combinator |
-| `core:iter` unusable for a fallible pipeline stage | **closed 2026-08-11** — `6d498cf` added `corelib/iter/iter.ty:27@try_map` and `:42@try_filter`; `3bdfabc` flipped predicates to `bool`. Probe: `try_map` over `["1","2","3"]` gave `[1, 2, 3]` and over `["1","-2","3"]` short-circuited to `not positive: -2`; `try_filter` kept `[2, 3, 4]` and propagated `overflow guard` |
+| `core:iter` unusable for a fallible pipeline stage | **closed 2026-08-11** — `6d498cf` added `corelib/iter/iter.ty:12@try_map` and `:27@try_filter`; `3bdfabc` flipped predicates to `bool`. Probe: `try_map` over `["1","2","3"]` gave `[1, 2, 3]` and over `["1","-2","3"]` short-circuited to `not positive: -2`; `try_filter` kept `[2, 3, 4]` and propagated `overflow guard` |
 | `core:decimal` has no `div` | **closed** — `a8c761c`, confirmed by `b4d28e3`. `corelib/decimal/decimal.ty@div` is `fn div(a: Decimal, b: Decimal, scale: int, mode: int) -> Result(Decimal, DivErr)`. Probe: `div(10, 3, 4, 0)` gave `3.3333` |
 | `[string]` cannot cross the FFI | **CLOSED 2026-08-11 — lifted for the PARAMETER direction, refused for the return.** `src/tychoc.c@ffi_arg_arr_ptr_ctype` answers `"const char *const *"` for `T_ARRAY_STRING`; a `[string]` argument now emits `(const char *const *)xs.data, xs.len`, the same `(ptr,len)` convention `[int]`/`[float]` use, **borrowed for the call** (unenforceable — stated in `docs/spec/14-ffi.md` §24.1). The return gate stayed `src/tychoc.c@ffi_arr_ptr_ctype`, which never answers for `T_ARRAY_STRING`, so `-> [string]` still dies (`tests/reject/extern_ret_arr_string.ty`). Fixture: `tests/ffi/main.ty@ffi_sfold`, non-empty and empty. **`core:os` was left alone here** — adopted afterwards by `9d63198`, which passes argv as a `[string]` and drops the builder handle |
 
@@ -337,7 +337,7 @@ section is kept as the record of the two prices that were weighed.
 **Lifting it is small — smaller than the row's "open by design" implies.** The
 blocker is not representation. `runtime/tycho_rt.c@TychoArrStr` is
 `typedef struct { char **data; tycho_int len; tycho_int cap; } TychoArrStr;`, and
-`runtime/tycho_rt.c:1180@NUL` records that a Tycho string is NUL-terminated and its
+`runtime/tycho_rt.c:1072@NUL` records that a Tycho string is NUL-terminated and its
 pointer is a valid C `char *` with the header hidden behind it. So a `[string]`'s
 `.data` **is already a `char **` of ordinary C strings** — no marshalling, no
 copy, no ownership transfer. The change is one branch in
@@ -350,13 +350,13 @@ emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `308b6d6`
 Three things that must be decided with it, not after:
 
 1. **`(ptr, len)`, not a NULL-terminated argv.** It would follow the
-   `[int]`/`[float]` convention already at `src/tychoc.c:10457@arrp`. A callee wanting
+   `[int]`/`[float]` convention already at `src/tychoc.c:9733@arrp`. A callee wanting
    `execv` semantics appends its own `NULL`. Promising argv-shape instead means
    the emitter allocates a terminated copy, and that is a different, larger change.
 2. **Borrow for the call; the callee must not retain.** Same contract
    `[int]`/`[float]` carry today. Nobody frees, because nothing was allocated.
 3. **The return direction stays refused.** `[string]` *out* of C has no length
-   header to reconstruct — the same reason `src/tychoc.c:4747-4748` bans a
+   header to reconstruct — the same reason `src/tychoc.c:4356-4357` bans a
    `char **` out-param. Lifting the parameter direction does not lift this one,
    and saying so is part of the change.
 
@@ -416,7 +416,8 @@ special-cased on the way: a `# deprecated: <text>` line directly above a `fn`
 marks it, so the next deprecation costs one comment
 (`tests/warn/deprecated.ty`).
 
-**Tarballs are built and NOT published** — the owner's call. The version
+v0.7.0 was published on 2026-08-15, alongside v0.5.0 and v0.6.0. Release state
+is `gh release list`, never this file. The version
 constant is now `0.7.0` (`src/tychoc.c@TYCHO_VERSION`), and this section
 described `v0.5.0` until 2026-08-14.
 
@@ -575,8 +576,11 @@ owner's calls, not a documentation edit.
 
 ### 1. It runs where developers are
 
-Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. **There is no macOS build
-and no ARM64 build on any platform.** A language that cannot be installed on an
+Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. **No macOS or ARM64 binary is
+PUBLISHED** — the release assets are `linux-x86_64` and `mingw64-x86_64`. Tycho
+IS built and tested on macOS / Apple Silicon (see the README's platform notes;
+`make ci` has been run there), so "not shipped" and "not run" are different
+claims and this section used to conflate them.** A language that cannot be installed on an
 Apple laptop or a Graviton instance is not production-ready whatever its
 internals are, and this is the largest single gap.
 

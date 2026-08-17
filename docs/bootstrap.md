@@ -24,7 +24,7 @@ falsifiable is a fixed point plus a differential.
 **Stage 1 — differential against the C compiler.** `compiler/run.sh` builds
 `tychoc0` with `tychoc`, then for each of the 51 fixtures in `compiler/tests/`
 compiles it *both* ways and requires the two binaries to print identically
-(`compiler/run.sh:12-22`). This is the stage that says "`tychoc0` is a correct
+(`compiler/run.sh`). This is the stage that says "`tychoc0` is a correct
 compiler for its subset", and it is differential rather than golden-based on
 purpose: the oracle is the other implementation, not a recorded file.
 
@@ -40,10 +40,10 @@ C = cc(B(H))       B compiles H; the emitted C is cc'd            -> exe C
 Tycho-built one.
 
 **Stage 4 — the fixpoint.** `compiler/fixpoint.sh` asserts the emitted C of `B`
-and of `C` is **byte-identical** (`compiler/fixpoint.sh:34-35`), i.e. `B == C`: the
+and of `C` is **byte-identical** (`compiler/fixpoint.sh`), i.e. `B == C`: the
 Tycho compiler reproduces itself exactly, so nothing about `tychoc`'s own
 compilation is leaking into the result. The same script then re-runs the Stage 1
-differential over `tests/*.ty` and `examples/*.ty` (`:37-43`).
+differential over `tests/*.ty` and `examples/*.ty` ().
 
 **Stage D — package programs.** Still in `fixpoint.sh` (`:44-66`): every
 `tests/pkg/*/` package program is built by `B` in two ways — from `tychoc
@@ -95,7 +95,7 @@ Two consequences a reader needs, because both have cost real time:
    built `tychoc0`, which put every corelib package in those programs' import
    closure into the intersection of two languages. **All four retired that leg
    on 2026-07-29** and say so in their own headers
-   (`examples/webserver/run.sh:30`, `examples/weblog/run.sh:19`,
+   (`examples/webserver/run.sh`, `examples/weblog/run.sh:19`,
    `examples/fetch/run.sh:10`, `examples/sqlite/run.sh:9`); `scripts/frontparity.sh`,
    which fed the same four entry points, was retired the same day. The
    enumerated split — **13 packages blocked, 24 free** — is in

@@ -14,7 +14,7 @@ it."* The three symptoms:
 
 1. `tools/tycho-vm/main.ty` — `vpush(&st, &sp, v)` "would copy the entire
    1024-slot stack twice per instruction", so push/pop were inlined
-   (`tools/tycho-vm/main.ty:573-576`).
+   (`tools/tycho-vm/main.ty:475-478`).
 2. `tools/tycho-ar/main.ty` — a streaming digest cannot thread state through
    calls, so `core:sha256` is one-shot and the archiver wrote its own
    (`tools/tycho-ar/main.ty:140-162`).
@@ -23,7 +23,7 @@ it."* The three symptoms:
 
 **The premise is wrong about the codegen, and the measurement is the emitted
 C.** `inout` on a heap value already passes a **pointer plus the value's owning
-arena** as a hidden `_ina_` parameter (`src/tychoc.c:9320-9328`), and every
+arena** as a hidden `_ina_` parameter (`src/tychoc.c:8731-8739`), and every
 allocating mutation of the parameter allocates into that arena — the caller's,
 where the value lives — not the callee's scope (`src/tychoc.c@owner_arena_of`).
 The codegen was already in place at the Hier→Tycho rename; nothing in the
@@ -43,7 +43,7 @@ There is no 1024-slot copy in or out. The plan's `vpush` hypothetical was
 never tested against the codegen; the spec's "copy-in/copy-out" is the
 **semantic contract** (`docs/spec/07-memory-model.md:23-26` — "provably
 equivalent to `x = f(x)`"), not the implementation, and the
-`tools/tycho-vm/main.ty:573` comment read the contract as the implementation.
+`tools/tycho-vm/main.ty:475` comment read the contract as the implementation.
 
 Re-examining the three symptoms against the codegen:
 
@@ -96,7 +96,7 @@ piece of the space that does not exist — and it must not be added (below).
    (the counter-argument).
 2. **Arena interaction.** In-place `inout` is sound because the callee's
    allocating mutations route to the caller's arena via `_ina_`
-   (`src/tychoc.c:9320-9328`); the callee's own arena holds only its
+   (`src/tychoc.c:8731-8739`); the callee's own arena holds only its
    transients and is freed at return. A `ref` binding would need the same
    owning-arena routing at every use site — the bookkeeping that grows into
    alias analysis the moment the binding can be passed on.
@@ -139,12 +139,12 @@ the borrow checker. Three things ARE worth doing, in order:
    is how the plan's copy-tax premise entered. One sentence per site: the
    contract is `x = f(x)`; the codegen is an in-place pointer pass with the
    owner arena carried, so no aggregate is copied. Correct
-   `tools/tycho-vm/main.ty:573-576` — the helper is free, so the "one big
+   `tools/tycho-vm/main.ty:475-478` — the helper is free, so the "one big
    function" comment is misleading; the machine could be factored if anyone
    wants to.
 2. **Reject `&` outside argument position.** `&` parses as a unary `E_ADDR`
-   everywhere (`src/tychoc.c:3057-3060`) and resolves to the place's type
-   without position validation (`src/tychoc.c:6008-6010` — "only valid as an
+   everywhere (`src/tychoc.c:2789-2792`) and resolves to the place's type
+   without position validation (`src/tychoc.c:5580-5582` — "only valid as an
    inout argument", enforced only at call sites). `r := &a` therefore compiles
    to invalid C (`TychoArrInt h_r = &(h_a);` — cc: "invalid initializer"),
    and `&a + 1` emits garbage. The fix is one check: `E_ADDR` is legal only as

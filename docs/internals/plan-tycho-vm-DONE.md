@@ -132,8 +132,8 @@ Measured, on this tree:
 
 - [x] **Phase 4 — REJECT `&` outside an inout argument**
   - Found by phase 3's design. `&` parses as a unary `E_ADDR` everywhere
-    (`src/tychoc.c:3057-3060`) and the resolver only validates it at call
-    sites (`src/tychoc.c:6008-6010`), so `r := &a` compiles to invalid C
+    (`src/tychoc.c:2789-2792`) and the resolver only validates it at call
+    sites (`src/tychoc.c:5580-5582`), so `r := &a` compiles to invalid C
     (`TychoArrInt h_r = &(h_a);` — cc: "invalid initializer") and `&a + 1`
     emits garbage. The one valid use is the direct argument of an inout
     parameter.
@@ -158,15 +158,15 @@ Measured, on this tree:
     copy-in/copy-out; that is the semantic contract, but it has been read as
     the implementation, which is how the copy-tax premise entered the last
     plan. The codegen is an in-place pointer pass with the owner arena carried
-    (`src/tychoc.c:9320-9328`); no aggregate is copied.
+    (`src/tychoc.c:8731-8739`); no aggregate is copied.
   - Scope: `docs/spec/07-memory-model.md` §11, `docs/reference/basics.md`,
-    the stale "one big function" comment at `tools/tycho-vm/main.ty:573`.
+    the stale "one big function" comment at `tools/tycho-vm/main.ty:475`.
   - Verify: the two doc gates, `make vm-check`. No build gate.
   - **DONE 2026-08-03.** `docs/spec/07-memory-model.md` §11 and
     `docs/reference/basics.md` now state the contract/codegen split (the
     promise is `x = f(x)`; the codegen is an in-place pointer pass plus the
     owner arena, so no aggregate is copied), and the stale "one big function"
-    comment at `tools/tycho-vm/main.ty:573` is corrected. The 41 spec
+    comment at `tools/tycho-vm/main.ty:475` is corrected. The 41 spec
     citations shifted by phase 4's compiler edits were repointed. Doc gates,
     `make vm-check`, `make spec-check` green.
 

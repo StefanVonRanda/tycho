@@ -11,8 +11,8 @@ An **abort** terminates the program with a non-zero exit status after writing a
 diagnostic to standard error. The *presence* of the abort is normative; the
 diagnostic text is not ([§1.1](00-conventions.md)).
 
-> Provenance: `tycho_idiv`/`imod` `runtime/tycho_rt.c:107-116`, bounds
-> `:1396-1402`,`:1109-1116`, `pop` `:1390-1394`, `substr` `:1130-1140`, string
+> Provenance: `tycho_idiv`/`imod` `runtime/tycho_rt.c:85-94`, bounds
+> `:1288-1294`,`:1001-1008`, `pop` `:1282-1286`, `substr` `:1022-1032`, string
 > header `:926-944`, map hashing `:1828-1831`, channels/tasks `:577-913`.
 > Behaviors marked *(probed)* were
 > confirmed on both compilers.

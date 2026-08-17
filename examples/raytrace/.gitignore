@@ -1,7 +1,7 @@
-# run.sh builds into a `mktemp -d` and renders inside it (examples/raytrace/run.sh:22,
+# run.sh builds into a `mktemp -d` and renders inside it (examples/raytrace/run.sh:10,
 # :29), so nothing lands here from the gate. These catch the manual form:
 # `./tychoc examples/raytrace/main.ty -o examples/raytrace/main` (binary, and
-# main.c with --emit-c), plus the render itself -- examples/raytrace/main.ty:150
+# main.c with --emit-c), plus the render itself -- examples/raytrace/main.ty:144
 # writes `out.qoi` RELATIVE TO THE CWD, so running the binary from this
 # directory drops the image here.
 # (expected.out is un-ignored in the root .gitignore, like the other goldens.)

@@ -6,7 +6,7 @@ treating any item below as open.
 
 - **FFI — shipped:** R1 `bytes` (`tests/bytes*`), R2 typed `handle`s with
   destructors, R3 nullable `-> Option(string)`, R4 `inout` out-parameter
-  constructors (`src/tychoc.c:3014`, `examples/sqlite/demo.ty`).
+  constructors (`src/tychoc.c:2746`, `examples/sqlite/demo.ty`).
 - **FFI — deliberate non-goals:** R5 variadics / callbacks-into-Tycho; the
   auto-shim for *non-scalar* out-params is rejected by ABI design, not pending.
 - **Threading — shipped:** R1 docs-honesty pass; the unbounded-spawn vector is
@@ -35,7 +35,7 @@ fundamental one, and the risk it poses to the value-semantic invariant.
 
 **FFI.** The boundary is deliberately tiny: only scalars, NUL-terminated
 `string`, and an opaque `ptr` cross it (`docs/guides/ffi.md:62-87`,
-`src/tychoc.c:2732-2771`). That keeps the *language* sound — no foreign
+`src/tychoc.c:2486-2525`). That keeps the *language* sound — no foreign
 pointer enters Tycho's owned world — but it pushes real cost onto users:
 
 1. No composite types cross (rejected at parse, `src/tychoc.c`).
@@ -57,11 +57,11 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
 `docs/guides/concurrency.md:5-9`) is *true for pure Tycho values* and **false the
 moment FFI, process-global C state, or a panic is involved**. It is also
 heavy: every `spawn` is one OS thread via `pthread_create`
-(`runtime/tycho_rt.c:286-288`), `parallel for` fans out `ncpu` threads with a
-full deep-copy of captures per chunk (`src/tychoc.c:4531-4544`), there is no
+(`runtime/tycho_rt.c:236-238`), `parallel for` fans out `ncpu` threads with a
+full deep-copy of captures per chunk (`src/tychoc.c:4140-4153`), there is no
 thread pool or work-stealing (`docs/guides/concurrency.md:137-139`), spawning is
 unbounded, and a panic/abort in any task `exit(1)`s the whole process
-(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:1003-1018`).
+(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:897-910`).
 
 **Top recommendations (ranked, both areas):**
 
@@ -87,17 +87,17 @@ unbounded, and a panic/abort in any task `exit(1)`s the whole process
 `extern fn` is bodyless and calls a C symbol directly; the type checker
 rejects anything outside the scalar/string/`ptr` table, failing closed:
 
-- Parse + type gate: `src/tychoc.c:2732` (`ffi_scalar_type`), `:2738`
-  (`parse_extern_fn`), `:2757` (rejects `inout`/`inout` params), `:2759`
-  (rejects composite params), `:2771` (rejects composite return).
+- Parse + type gate: `src/tychoc.c:2486` (`ffi_scalar_type`), `:2492`
+  (`parse_extern_fn`), `:2511` (rejects `inout`/`inout` params), `:2513`
+  (rejects composite params), `:2525` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:9418-9487`. Each
-  `extern "Lib"` adds `-lLib` (`:5541` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:9424-9428`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:9205-9208`, `:3202-3227`, `:9475-9477`.
+- Link line assembled in one `cc` call: `src/tychoc.c:8829-8856`. Each
+  `extern "Lib"` adds `-lLib` (`:5126` `add_link`). `--link/--shim/--pkg`
+  passthrough at `:8835-8839`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:8630-8633`, `:2934-2959`, `:9475-9477`.
 - String return is arena-copied so Tycho never holds a foreign pointer
-  (`src/tychoc.c:6641-6648`, `tycho_str_from_c`, NULL→`""`).
+  (`src/tychoc.c:6207-6214`, `tycho_str_from_c`, NULL→`""`).
 
 ### Pain point 1 — no composite types cross
 
@@ -127,7 +127,7 @@ package marshals **all** binary data as lowercase hex
 
 `ptr` is `void *` with only three operations: pass back to C, compare
 (`==`/`!=` vs another `ptr` or `null`), and `is_null` (`docs/guides/ffi.md:108-110`;
-`E_NULL` → `T_PTR` at `src/tychoc.c:3622`; literal at `:1701`). Three distinct
+`E_NULL` → `T_PTR` at `src/tychoc.c:3354`; literal at `:1509`). Three distinct
 hazards, none mitigated:
 
 - **No type tag.** A `sqlite3 *` and a `FILE *` are both `ptr`; the compiler
@@ -146,7 +146,7 @@ The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:10512` for `len`, `:10639` and `:10646` for print/println). Footguns:
+`src/tychoc.c:9788` for `len`, `:9915` and `:9922` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -189,7 +189,7 @@ Ranked by value / effort.
   parameter, and an extern returning `bytes` uses an out-param-len shim
   convention (or a small compiler-known `{ptr,len}` return struct emitted by
   Tycho, copied into the arena like the current string return at
-  `src/tychoc.c:6641-6648`).
+  `src/tychoc.c:6207-6214`).
 - *Why.* Eliminates the hex-marshaling tax that dominates the crypto package
   and would hit any binary-data library (compression, image, network, hashing).
   Halves memory and removes the encode/decode CPU and code.
@@ -207,7 +207,7 @@ Ranked by value / effort.
   compiler treats `Db` as distinct from `ptr` and from other handles (fixes the
   wrong-handle hazard, pain point 3a), and emits the named free at scope exit
   for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing
-  task/channel finalizer mechanism (`src/tychoc.c:7012-7023`) that already runs
+  task/channel finalizer mechanism (`src/tychoc.c:6568-6579`) that already runs
   destructor calls at scope end.
 - *Why.* Turns the most dangerous FFI primitive into something the compiler can
   reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9215-9218`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:8640-8643`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 
@@ -256,11 +256,11 @@ opt-out.**
 ### Why it is heavy
 
 - **One OS thread per `spawn`.** `tycho_task_start` calls `pthread_create`
-  directly with no pool (`runtime/tycho_rt.c:286-289`). Each task allocates a
-  fresh root arena (`tycho_task_new`, `:268-274`). Thread creation +
+  directly with no pool (`runtime/tycho_rt.c:236-239`). Each task allocates a
+  fresh root arena (`tycho_task_new`, `:218-224`). Thread creation +
   teardown + a fresh arena per task is the per-spawn cost.
 - **`parallel for` forks `ncpu` threads with full capture copy per chunk.** K =
-  `tycho_ncpu()` chunk tasks (`src/tychoc.c:4531-4544`; runtime `:643-650`,
+  `tycho_ncpu()` chunk tasks (`src/tychoc.c:4140-4153`; runtime `:643-650`,
   `TYCHO_THREADS` overrides). Every captured variable is deep-copied into each
   chunk's root arena — the honest per-chunk cost, documented at
   `docs/guides/concurrency.md:59`. For large captures this is real memory and time.
@@ -269,7 +269,7 @@ opt-out.**
   Fine for the benchmark shape (a fixed fan-out of long tasks), painful for
   many short tasks (each pays full thread create/destroy).
 - **Blocking is a parked OS thread.** A `recv`/`wait`/select waits on a
-  spin → `sched_yield` → 1ms timed-park ladder (`runtime/tycho_rt.c:422-442`,
+  spin → `sched_yield` → 1ms timed-park ladder (`runtime/tycho_rt.c:372-392`,
   `docs/guides/concurrency.md:114-117`). Mostly cheap on the fast path, but a blocked
   task holds a whole OS thread.
 
@@ -290,7 +290,7 @@ these cases, and the docs only partially flag them:
    library hit whatever sharing that library has. The repo's own crypto shim is
    a live example to scrutinize:
    - The recycled return buffer is `static __thread char *g_out`
-     (`corelib/crypto/crypto_shim.c:43@g_out`), so it *is* per-thread-safe — good.
+     (`corelib/crypto/crypto_shim.c:16@g_out`), so it *is* per-thread-safe — good.
      But this is a property of *this* shim, not of the FFI, and it relies on
      Tycho arena-copying the returned string before the next call
      (`crypto_shim.c:10-14`). A shim author who uses a plain `static` buffer
@@ -303,26 +303,26 @@ these cases, and the docs only partially flag them:
      guarantee; a different library, or OpenSSL with an `ENGINE`/global config,
      would not be covered.
 2. **Channels are shared mutable state — by design.** The channel is "the ONE
-   intentionally shared object" (`runtime/tycho_rt.c:316-330`). It is
+   intentionally shared object" (`runtime/tycho_rt.c:266-280`). It is
    internally synchronized, so it is safe, but it *is* a shared-state mechanism,
    so "no shared state" is an overstatement; "the only shared state is the
    internally-synchronized channel" is the accurate phrasing.
 3. **Unbounded spawning / resource exhaustion.** Nothing caps the number of
    live threads. A `spawn` in a loop, or recursive spawning, creates threads
    until `pthread_create` fails, at which point the runtime prints and
-   `exit(1)`s (`runtime/tycho_rt.c:287-289`). That is a fail-stop, not memory
+   `exit(1)`s (`runtime/tycho_rt.c:237-239`). That is a fail-stop, not memory
    corruption, but it is a trivial fork-bomb / resource-exhaustion vector and is
    not mentioned as a limit.
 4. **Panic/abort in a task kills the whole process.** Any runtime error in a
    task — bounds check, `pop` from empty, OOM, divide, `exit(1)` paths
-   throughout `runtime/tycho_rt.c` (e.g. `:993-1008`, `:87`, `:999-1000`) — takes
+   throughout `runtime/tycho_rt.c` (e.g. `:887-902`, `:87`, `:893-894`) — takes
    down every other task with it. Documented (`docs/guides/concurrency.md:141`) but
    worth elevating: there is no task-level isolation of failure, unlike Erlang
    processes, which the intro compares Tycho to (`docs/guides/concurrency.md:8-9`).
 5. **Affine/implicit-join edge cases.** The affine rules are enforced and look
-   sound (double-wait dies loudly, `runtime/tycho_rt.c:297-300`; implicit join
-   at every scope exit, `:310-315`; `parallel for` rejects captured tasks /
-   inout captures / cross-chunk mutation, `src/tychoc.c:4603-4698`). No unsafety
+   sound (double-wait dies loudly, `runtime/tycho_rt.c:247-250`; implicit join
+   at every scope exit, `:260-265`; `parallel for` rejects captured tasks /
+   inout captures / cross-chunk mutation, `src/tychoc.c:4212-4307`). No unsafety
    found here — call out as *verified sound*, not a gap.
 
 ### Threading — ranked recommendations
@@ -336,7 +336,7 @@ these cases, and the docs only partially flag them:
   > (shared but internally synchronized), or failure isolation (a panic in any
   > task aborts the whole process).
 - Add an **"FFI from threads"** subsection: shims that return a buffer must use
-  `__thread` (point to `corelib/crypto/crypto_shim.c:43@g_out` as the reference
+  `__thread` (point to `corelib/crypto/crypto_shim.c:16@g_out` as the reference
   pattern), and the bound C library must be documented thread-safe for the
   calls made.
 - *Effort.* Trivial. *Value.* High — the current wording is the specific thing
@@ -344,7 +344,7 @@ these cases, and the docs only partially flag them:
 
 **R2. Bounded worker pool / thread cap for `spawn` and `parallel for`.**
 - *Design.* A runtime worker pool sized to `tycho_ncpu()` (reuse the existing
-  `tycho_ncpu` / `TYCHO_THREADS` knob, `runtime/tycho_rt.c:600-607`). `spawn`
+  `tycho_ncpu` / `TYCHO_THREADS` knob, `runtime/tycho_rt.c:535-542`). `spawn`
   submits a closure to the pool instead of `pthread_create` per call; `wait`
   blocks on that task's completion. `parallel for` already fans out exactly K
   chunks so it maps onto the pool directly. Keep the per-task root arena
@@ -353,12 +353,12 @@ these cases, and the docs only partially flag them:
   directly answers "very heavy" and the unbounded-spawn exhaustion vector.
 - *Incremental or fundamental.* Runtime-only; no language or codegen change if
   the pool presents the same `tycho_task_start` / `tycho_task_join` interface
-  (`runtime/tycho_rt.c:286-300`). Genuinely incremental.
+  (`runtime/tycho_rt.c:236-250`). Genuinely incremental.
 - *Risk to value semantics.* None — pooling threads does not change which bytes
   are shared; the copy-in/copy-out seam is untouched. One subtlety: a pooled
   worker must flush its thread-local block pool (`tycho_pool_flush`,
-  `:278-284`) between tasks or hand arenas back correctly, since the block pool
-  is `__thread` (`:113`) and a pooled thread outlives a single task.
+  `:228-234`) between tasks or hand arenas back correctly, since the block pool
+  is `__thread` (`:91`) and a pooled thread outlives a single task.
   *Caveat:* a blocking `recv`/`wait` inside a pooled task can starve the pool
   (classic pool-deadlock); needs either a "block creates a temporary extra
   worker" rule or documentation that blocking tasks should not be pooled. This

@@ -30,10 +30,10 @@
 ## Why it is feasible at all — the assessment in one screen
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
-  `dirent` (opendir/readdir/closedir, `src/tychoc.c:5080@opendir`), `popen`
-  (`src/tychoc.c:14414@popen`), `realpath`, `access`, `vasprintf`
-  (`src/tychoc.c:193@vasprintf`), and `newlocale/uselocale`
-  (`src/tychoc.c:288@uselocale`). mingw-w64 provides no POSIX
+  `dirent` (opendir/readdir/closedir, `src/tychoc.c:4676@opendir`), `popen`
+  (`src/tychoc.c:13570@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:168@vasprintf`), and `newlocale/uselocale`
+  (`src/tychoc.c:205@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
   master 2026-08-05: only the MSVC-style `_locale_t` API) -- the compiler and
   runtime already have localeconv-based fallback legs, so this costs a guard,
@@ -42,18 +42,18 @@
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:862@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:797@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
-  (`runtime/tycho_rt.c:68@sysconf` — mingw shims, a few lines), and **the one
+  (`runtime/tycho_rt.c:60@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
-  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:52-53`,
-  `:167@sigaltstack`). The per-platform pattern already exists
-  (`runtime/tycho_rt.c:128@__APPLE__`); Windows gets a third branch via
+  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:44-45`,
+  `:145@sigaltstack`). The per-platform pattern already exists
+  (`runtime/tycho_rt.c:106@__APPLE__`); Windows gets a third branch via
   `GetCurrentThreadStackLimits` + `AddVectoredExceptionHandler` catching
   `EXCEPTION_STACK_OVERFLOW` (~60-100 lines). Estimate: 2-3 days.
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`
-  (`corelib/os/os_shim.c:25-28`), `core:net` has a real Winsock2 path
-  (`corelib/net/net_shim.c:31-40`). The rest split into small ports (`core:io`
+  (`corelib/os/os_shim.c:21-24`), `core:net` has a real Winsock2 path
+  (`corelib/net/net_shim.c:16-25`). The rest split into small ports (`core:io`
   — `getline` at `corelib/io/io_shim.c:59`, `pread` at `:141`), one big port
   (`core:regex` — POSIX `regcomp`/`regexec` at `corelib/regex/regex_shim.c:20, corelib/regex/regex_shim.c:26`
   don't exist on Windows; PCRE2 behind the same API, or a documented gap),
@@ -503,7 +503,7 @@ language surface. WSL2 stays a first-class supported path.
 > only `if [ ! -x ]`, so this box had been testing an **Aug 5 compiler**: 25 of
 > wine-test's 28 failures were features that postdated it. With that fixed, plus
 > the lane learning to link `<pkg>_shim.c` and to honour a sibling `.err` the way
-> `tests/run.sh:381` does, and one real port fix (`iox_set_mtime` could not touch
+> `tests/run.sh:273` does, and one real port fix (`iox_set_mtime` could not touch
 > a DIRECTORY on Windows — `_utime` fails EACCES, so the directory case now uses
 > `FILE_FLAG_BACKUP_SEMANTICS` + `SetFileTime`):
 >

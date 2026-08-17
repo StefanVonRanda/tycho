@@ -25,7 +25,7 @@
       "patterns": [{ "name": "constant.character.escape.tycho", "match": "\\\\x[0-9a-fA-F]{2}|\\\\." }]
     },
     {
-      "comment": "raw string `...`: no escapes at all, and it may span lines (src/tychoc.c:493-540), so no nested patterns and no end-of-line anchor",
+      "comment": "raw string `...`: no escapes at all, and it may span lines (src/tychoc.c:410-437), so no nested patterns and no end-of-line anchor",
       "name": "string.quoted.other.raw.tycho",
       "begin": "`",
       "end": "`"
@@ -52,7 +52,7 @@
     },
     { "name": "keyword.operator.tycho", "match": ":=|->|==|!=|<=|>=|[-+*/%<>=&|^~]" },
     {
-      "comment": "clause separator of `for init; cond; post:` (src/tychoc.c:598); scoped as a separator, like `,`, not as an operator",
+      "comment": "clause separator of `for init; cond; post:` (src/tychoc.c:489); scoped as a separator, like `,`, not as an operator",
       "name": "punctuation.separator.tycho",
       "match": ";"
     }

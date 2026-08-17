@@ -26,14 +26,14 @@ renames its temp variable stays classified.
 Four substitutions make the rest resolvable, each of them read out of the same
 runner:
 
-  $PWD/x            -> x                      (tools/tycho-q/run.sh:71)
-  $D/expected.out   -> D's literal assignment (examples/weblog/run.sh:36)
-  dir/$name.out     -> dir/*.out              (corelib/run.sh:24)
+  $PWD/x            -> x                      (tools/tycho-q/run.sh:6)
+  $D/expected.out   -> D's literal assignment (examples/weblog/run.sh:7)
+  dir/$name.out     -> dir/*.out              (corelib/run.sh:13)
   ${f%.ty}.err      -> the dirname of the enclosing `for f in <glob>`
-                                              (tests/conc/run.sh:79 over :77)
+                                              (tests/conc/run.sh:53 over :77)
 
 and a bare token with no directory resolves against the runner's own directory
-when the runner opens with `cd "$(dirname "$0")"` (examples/life/run.sh:7),
+when the runner opens with `cd "$(dirname "$0")"` (examples/life/run.sh:2),
 against the repo root otherwise.
 
 A resolved token is either a LITERAL -- which must exist and be tracked -- or a

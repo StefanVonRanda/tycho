@@ -1,4 +1,4 @@
-# run.sh builds into a `mktemp -d` (examples/webserver/run.sh:23), so nothing
+# run.sh builds into a `mktemp -d` (examples/webserver/run.sh), so nothing
 # lands here from the gate. These catch the manual form: the README's
 # `./tychoc examples/webserver/main.ty -o server` run from inside this directory,
 # and the mechanical `-o examples/webserver/main` (plus main.c with --emit-c).

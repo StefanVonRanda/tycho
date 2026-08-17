@@ -7,7 +7,7 @@ thread boundary, so the concurrency constructs need no `Sendable` marker, no
 lifetime annotations, and no lock machinery in the language.
 
 > Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:577-913`
-> (channel ring `:831-1007`, ordering via the cell `seq` release/acquire `:1070@c->seq, c->pos + 1, memory_order_release`,`:1082@memory_order_acquire) - (pos + 1)`).
+> (channel ring `:766-901`, ordering via the cell `seq` release/acquire `:962@c->seq, c->pos + 1, memory_order_release`,`:974@memory_order_acquire) - (pos + 1)`).
 > The ordering guarantees below (channel delivery order, `select` arm order,
 > happens-before, cross-thread `wait`) were pinned from that runtime.
 
@@ -157,15 +157,15 @@ The fail-closed rules of §22 are unchanged inside such a body: `break`,
 an early exit can never cross a chunk boundary.
 
 > Provenance: `0..<N` parsed at `src/tychoc.c:3682-3707`; parallel-only refusal
-> `src/tychoc.c:4088@par_here`; literal-zero refusal `src/tychoc.c:4091@ival != 0`;
-> any other loop shape under `parallel` refused at `src/tychoc.c:3952@S_FORRANGE`
+> `src/tychoc.c:3751@par_here`; literal-zero refusal `src/tychoc.c:3754@ival != 0`;
+> any other loop shape under `parallel` refused at `src/tychoc.c:3655@S_FORRANGE`
 > (it is the only node the chunker accepts). Chunk fan-out `K = min(ncpu(), N)`
-> `src/tychoc.c:10934-10935`, capped at 64 by `src/tychoc.c:11646@_pk > 64`
-> (the chunk-handle array `src/tychoc.c:11647@_pts[64]` is the reason for the
+> `src/tychoc.c:10183-10184`, capped at 64 by `src/tychoc.c:10891@_pk > 64`
+> (the chunk-handle array `src/tychoc.c:10892@_pts[64]` is the reason for the
 > number); each chunk is a real OS thread,
-> `runtime/tycho_rt.c:862@pthread_create`. A capture is deep-copied only when
-> `src/tychoc.c:11657@type_is_heap(ct)` holds, and `type_is_heap`
-> (`src/tychoc.c:1429-1451`) has no channel arm, so a `Channel(T)` capture is
+> `runtime/tycho_rt.c:797@pthread_create`. A capture is deep-copied only when
+> `src/tychoc.c:10902@type_is_heap(ct)` holds, and `type_is_heap`
+> (`src/tychoc.c:1237-1259`) has no channel arm, so a `Channel(T)` capture is
 > passed by value — one queue shared by every chunk.
 
 ## 23. Channels and `select`
