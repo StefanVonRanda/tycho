@@ -29,6 +29,7 @@ missing key inserts the value type's zero first. So the common accumulator patte
 one line:
 
 ```tycho
+counts := []string: int
 counts["ada"] += 1                # count occurrences (zero-initialized on first sight)
 index := ["tycho": [1]]
 push(index["tycho"], 2)           # grow a [string: [int]] value in place
@@ -42,6 +43,7 @@ map operation is now operator, keyword, or method syntax (`m[k]`, `m.get`, `in`,
 `len`, `keys`) — no snake_case map functions:
 
 ```tycho
+counts := ["ada": 1]
 counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
 ```
 
@@ -56,6 +58,7 @@ mutates it in place. The loop is **O(n) total**, the same in-place trick as stri
 `k in m` only tests membership, it does not iterate:
 
 ```tycho
+counts := ["ada": 1, "alan": 2]
 for k in keys(counts):
     println(k + " = " + str(counts[k]))
 ```

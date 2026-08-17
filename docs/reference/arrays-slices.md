@@ -55,6 +55,17 @@ than rebuilding the whole element. This is a *projection*: the transpiler hands 
 element's slot in the backing buffer, bounds-checked, with no pointer ever exposed in Tycho.
 
 ```tycho
+struct Point:
+    x: int
+    y: int
+    tags: [string]
+
+fn bump(n: inout int):
+    n = n + 1
+
+ps := [Point(1, 2, []), Point(3, 4, [])]
+grid := [[10, 20, 30], [40, 50, 60]]
+
 ps[0].x = 10                       # a field of an element
 push(ps[0].tags, "extra")          # grow an element's array field in place
 grid[1][2] = 60                    # a nested-array element
