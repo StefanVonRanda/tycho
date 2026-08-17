@@ -51,9 +51,12 @@
   }
   /* ══ TYCHO ═══════════════════════════════════════════════════════════════
      Terminal-plate layout: a near-black field, hairline rules doing all the
-     dividing, small-caps mono rails pinned to the corners, a fixed section
-     index down the right edge, and display type sitting directly on a dot
-     field. No boxes, no radii, no shadows -- rules and contrast only. */
+     dividing, small-caps mono rails pinned to the corners, and display type
+     sitting directly on a dot field. No boxes, no radii, no shadows -- rules
+     and contrast only. Content runs to the right edge: the fixed section
+     index that used to sit there, and the --rail gutter reserved for it,
+     were removed 2026-08-17. The bar's running-section label (#runsec) is
+     driven by its own IntersectionObserver and was never part of it. */
 
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%; scroll-behavior:smooth}
@@ -68,7 +71,7 @@
   a:focus-visible,button:focus-visible{outline:1px solid var(--ink); outline-offset:2px}
   code{font:inherit}
 
-  :root{ --pad:clamp(16px,2.2vw,44px); --rail:58px; --bar:56px; --measure:64ch; }
+  :root{ --pad:clamp(16px,2.2vw,44px); --bar:56px; --measure:64ch; }
 
   /* ── top bar: full width, CTA flush into the corner ─────────────────── */
   .bar{position:sticky; top:0; z-index:50; display:flex; align-items:stretch;
@@ -93,24 +96,7 @@
     text-transform:uppercase; padding:0 clamp(12px,1.4vw,22px)}
   .themebtn:hover{color:var(--ink)}
 
-  /* ── section index pinned to the right edge ─────────────────────────── */
-  .sindex{position:fixed; top:50%; right:0; translate:0 -50%; z-index:45;
-    display:flex; flex-direction:column; align-items:stretch; width:var(--rail);
-    border-left:1px solid var(--line); background:var(--paper)}
-  .sindex a{display:flex; align-items:center; justify-content:center; height:30px;
-    font-size:9px; letter-spacing:1.2px; color:var(--faint);
-    border-bottom:1px solid var(--line)}
-  .sindex a:last-child{border-bottom:0}
-  .sindex a:hover{color:var(--ink)}
-  .sindex a.on{color:var(--paper); background:var(--ink); font-weight:600}
-  .sindex a.on::before{content:attr(data-l); position:absolute; right:100%;
-    padding:0 12px; height:30px; display:flex; align-items:center; white-space:nowrap;
-    background:var(--paper); border:1px solid var(--ink); border-right:0;
-    color:var(--ink); font-size:9px; letter-spacing:1.4px}
-  .sindex a{position:relative}
-  @media (max-width:900px){ .sindex{display:none} :root{--rail:0px} }
-
-  .wrap{position:relative; padding-right:var(--rail)}
+  .wrap{position:relative}
 
   /* ── hero: one screen, type on a dot field ─────────────────────────── */
   header.hero{position:relative; min-height:calc(100svh - var(--bar));
@@ -334,14 +320,6 @@
   </nav>
   <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
  </div>
-</div>
-
-<div class="sindex" aria-hidden="true">
-  <a href="#idea" data-s="idea" data-l="THE IDEA">01</a>
-  <a href="#fast" data-s="fast" data-l="WHY IT STAYS FAST">02</a>
-  <a href="#lang" data-s="lang" data-l="THE LANGUAGE">03</a>
-  <a href="#rigor" data-s="rigor" data-l="HOW IT'S CHECKED">04</a>
-  <a href="#start" data-s="start" data-l="TRY IT">05</a>
 </div>
 
 <div class="wrap">
@@ -786,14 +764,5 @@ the generated C to. Building from source below ends at the same prompt.</p>
 })();
 </script>
 
-<script>
-(function(){ var idx=[].slice.call(document.querySelectorAll('.sindex a'));
-  var secs=idx.map(function(a){return document.getElementById(a.dataset.s)});
-  function on(){ var y=scrollY+innerHeight*0.35, best=0;
-    secs.forEach(function(s,i){ if(s && s.offsetTop<=y) best=i; });
-    idx.forEach(function(a,i){ a.classList.toggle('on', i===best); }); }
-  addEventListener('scroll', on, {passive:true}); on();
-})();
-</script>
 </body>
 </html>
