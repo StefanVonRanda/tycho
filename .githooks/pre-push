@@ -98,6 +98,9 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # and it re-ran what a `make ci` before the push had usually just run. The gate a
     # push should not be able to skip is the one that is too cheap to think about;
     # the sweep is a thing you run when you want it.
+    # cheap, and it guards the shape that reached a push on 2026-08-17: a
+    # sweep deleted a branch header and python ran the orphaned body silently
+    gate "make script-check (.py/.sh parse, no unreachable code)" script-check
     gate "make check-links (links + path:line citations)" check-links
     gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 fi

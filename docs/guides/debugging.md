@@ -41,7 +41,6 @@ cc -O0 -g -fwrapv -pthread program.c -o program -lm
 
 Then package the debug info and break by Tycho source line:
 
-<!-- fence-skip: macOS only -- `dsymutil` ships with Xcode and has no Linux equivalent, so this cannot be checked on the gating host and installing lldb would not change that. The claim it rests on, that a breakpoint set on a `.ty` line binds to one, IS checked: the gdb fence above is driven for real -->
 ```sh
 dsymutil program                               # writes program.dSYM
 lldb ./program

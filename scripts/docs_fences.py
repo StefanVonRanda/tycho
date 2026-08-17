@@ -319,21 +319,50 @@ def main():
                     if subprocess.run(['sh', '-c', 'command -v ' + tool],
                                       capture_output=True).returncode != 0:
                         nskip += 1
-                        print("    skip  %s:%d  a %s transcript; %s is not on this machine"
-                              % (f, line, tool, tool))
+                        # say WHY it is absent when that is a platform fact rather
+                        # than a missing package: the lldb block documents the
+                        # macOS toolchain and its `dsymutil` step has no Linux
+                        # equivalent, so installing lldb here would prove nothing
+                        why = ("; it documents the macOS toolchain (`dsymutil` is "
+                               "Xcode's and writes a Mach-O .dSYM), so this host "
+                               "(%s) cannot check it -- run this lane on macOS"
+                               % sys.platform) if tool == 'lldb' else \
+                              "; %s is not on this machine" % tool
+                        print("    skip  %s:%d  a %s transcript%s" % (f, line, tool, why))
                         continue
                     cmds = [re.sub(r'#.*$', '', l).split(')', 1)[1].strip()
                             for l in body.split('\n') if l.strip().startswith('(' + tool)]
+                    # the fence's OWN setup lines run first -- `dsymutil program` is
+                    # the entire point of the lldb block, and a driver that skipped
+                    # it would be checking a different procedure than the one shown.
+                    # The tool's own invocation line is not one of them: running
+                    # `lldb ./program` here would sit at an interactive prompt.
+                    setup = [re.sub(r'#.*$', '', l).strip() for l in body.split('\n')
+                             if l.strip() and not l.strip().startswith('(')
+                             and l.split()[0] not in (tool,)]
                     with tempfile.TemporaryDirectory() as tmp:
                         src = os.path.join(tmp, "program.ty")
                         open(src, 'w').write(open(os.path.join(ROOT, "examples/hello.ty")).read())
                         b = subprocess.run([TYCHOC, src, "-g", "-o",
                                             os.path.join(tmp, "program")],
                                            capture_output=True, text=True, errors='replace')
-                        args = ['gdb', '-batch']
-                        for c in cmds:
-                            args += ['-ex', c]
-                        args += ['-ex', 'quit', os.path.join(tmp, "program")]
+                        if setup:
+                            subprocess.run(['sh', '-c', "\n".join(setup)],
+                                           capture_output=True, text=True, cwd=tmp,
+                                           errors='replace', timeout=120,
+                                           stdin=subprocess.DEVNULL,
+                                           env=dict(os.environ, PATH=os.pathsep.join(
+                                               [ROOT, os.environ["PATH"]])))
+                        if tool == 'lldb':
+                            args = ['lldb', '-b']
+                            for c in cmds:
+                                args += ['-o', c]
+                            args += ['--', os.path.join(tmp, "program")]
+                        else:
+                            args = ['gdb', '-batch']
+                            for c in cmds:
+                                args += ['-ex', c]
+                            args += ['-ex', 'quit', os.path.join(tmp, "program")]
                         r = subprocess.run(args, capture_output=True, text=True,
                                            errors='replace', timeout=90,
                                            stdin=subprocess.DEVNULL, cwd=tmp)
