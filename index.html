@@ -34,16 +34,20 @@
      at once. -->
 <style>
   :root{
-    --paper:#0b0b0c; --panel:#111113; --ink:#f4f3ef; --ink-soft:#c9c8c3;
-    --dim:#8e8d88; --faint:#7a7975; --line:#5e5e61; --line-strong:#707077;
+    --paper:#0b0b0c; --ink:#f4f3ef; --ink-soft:#c9c8c3;
+    --dim:#8e8d88; --faint:#7a7975; --line:#5e5e61;
     --code-bg:#08080a; --code-fg:#dcdbd6; --code-dim:#787873; --code-line:#5c5c61;
-    --acc:#c6ff3f; --dot:#404043; --band:#0e0e10;
+    --acc:#c6ff3f; --acc-code:#c6ff3f; --acc-on:#0b0b0c; --dot:#404043;
   }
+  /* The code panel stays dark in BOTH themes, so the light theme needs two
+     accents: --acc is legible on near-white paper, --acc-code on the panel.
+     One green cannot do both -- #4a7c00 scores 4.57 on paper and 3.91 on the
+     panel. --acc-on is the text colour that sits ON the accent fill. */
   :root[data-theme="light"]{
-    --paper:#f5f4f1; --panel:#eceae5; --ink:#0b0b0c; --ink-soft:#33322f;
-    --dim:#6b6a66; --faint:#71706c; --line:#8d8d91; --line-strong:#77777e;
+    --paper:#f5f4f1; --ink:#0b0b0c; --ink-soft:#33322f;
+    --dim:#6b6a66; --faint:#71706c; --line:#8d8d91;
     --code-bg:#0b0b0c; --code-fg:#dcdbd6; --code-dim:#7a7a75; --code-line:#5d5d62;
-    --acc:#4a7c00; --dot:#b2b2bb; --band:#efeeea;
+    --acc:#4a7c00; --acc-code:#c6ff3f; --acc-on:#ffffff; --dot:#b2b2bb;
   }
   /* ══ TYCHO ═══════════════════════════════════════════════════════════════
      Terminal-plate layout: a near-black field, hairline rules doing all the
@@ -83,7 +87,7 @@
   /* the last item is a filled block that runs to the very corner */
   .bar nav a:last-of-type{background:var(--ink); color:var(--paper); font-weight:600;
     padding-inline:clamp(20px,2.4vw,40px)}
-  .bar nav a:last-of-type:hover{background:var(--acc); color:#000}
+  .bar nav a:last-of-type:hover{background:var(--acc); color:var(--acc-on)}
   .themebtn{background:none; border:0; border-left:1px solid var(--line); color:var(--dim);
     cursor:pointer; font:inherit; font-size:9.5px; letter-spacing:1.6px;
     text-transform:uppercase; padding:0 clamp(12px,1.4vw,22px)}
@@ -232,10 +236,10 @@
   .phead .traf{width:6px; height:6px; background:var(--acc); opacity:.9}
   .phead .fn{font-size:9.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--code-dim)}
   .phead .badge{margin-left:auto; font-size:8.5px; letter-spacing:1.6px; text-transform:uppercase;
-    color:var(--acc); border:0; padding:0}
+    color:var(--acc-code); border:0; padding:0}
   pre{margin:0; padding:clamp(18px,2vw,34px) var(--pad); overflow-x:auto;
     font-size:clamp(11px,.82vw,13.5px); line-height:1.75; color:var(--code-fg)}
-  .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc)}
+  .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc-code)}
   .c{color:var(--code-dim)} .g{color:#9aa1ab} .out{color:#8b929c}
   .codecap{margin:0 0 clamp(24px,2.8vw,50px); padding:11px var(--pad);
     border-bottom:1px solid var(--line);
