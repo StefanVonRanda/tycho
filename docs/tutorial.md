@@ -8,6 +8,7 @@ This assumes you can already build the compiler; if not, see
 [Trying it](../README.md#trying-it) in the README (it's `git clone` + `make`). Every
 snippet below is real, runnable Tycho. Save one to `f.ty` and run it with:
 
+<!-- fence-skip: a template -- the prose above tells the reader to save a snippet to f.ty first, so the command has no file until they do -->
 ```sh
 $ ./tychoc f.ty && ./f
 ```

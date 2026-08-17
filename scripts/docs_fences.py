@@ -189,7 +189,7 @@ def main():
     # examples/*/README.md or tools/*/README.md is a snippet a reader copies.
     files = subprocess.run(['git', 'ls-files', '*.md'],
                            capture_output=True, text=True, cwd=ROOT).stdout.split()
-    nok = nskip = nfail = nrun = 0
+    nok = nskip = nfail = nrun = nsh = 0
     fails = []
     for f in files:
         text = open(os.path.join(ROOT, f), encoding='utf-8', errors='replace').read()
@@ -207,17 +207,35 @@ def main():
                 # that does not parse is wrong on its face.
                 if skip:
                     nskip += 1; print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                # A C fence is an excerpt of emitted code or of a shim, so it
+                # names the runtime's types. Give it that context and it is a
+                # real compile, not a guess -- as written, then wrapped in a
+                # function for a fence that is a bare statement.
+                PRELUDE = ("#include <stdio.h>\n#include <stdlib.h>\n"
+                           "#include <string.h>\n#include <stdint.h>\n"
+                           "typedef int64_t tycho_int;\n"
+                           "typedef struct Arena Arena;\n"
+                           "typedef struct { char *data; tycho_int len; } TychoStr;\n")
                 with tempfile.TemporaryDirectory() as tmp:
                     cp = os.path.join(tmp, "s.c")
-                    open(cp, 'w').write(body)
-                    r = subprocess.run(['cc', '-fsyntax-only', '-w', cp],
-                                       capture_output=True, text=True, errors='replace')
-                    if r.returncode == 0:
-                        nok += 1; print("    ok    %s:%d  [C, parses]" % (f, line))
+                    forms = [("as written", PRELUDE + body),
+                             ("wrapped in a function",
+                              PRELUDE + "void _fence(void) {\n" + body + "\n}\n")]
+                    err = ""
+                    for how, src in forms:
+                        open(cp, 'w').write(src)
+                        r = subprocess.run(['cc', '-fsyntax-only', '-w', cp],
+                                           capture_output=True, text=True, errors='replace')
+                        if r.returncode == 0:
+                            nok += 1
+                            print("    ok    %s:%d  [C compiles%s]" % (
+                                f, line, "" if how == "as written" else ", " + how))
+                            break
+                        err = r.stderr
                     else:
                         nskip += 1
                         print("    skip  %s:%d  a C excerpt: %s" % (
-                            f, line, (r.stderr.strip().splitlines() or [""])[0][:70]))
+                            f, line, (err.strip().splitlines() or [""])[-1][:70]))
                 continue
             if lang == 'sh':
                 # a shell fence is not RUN -- these clone repositories, build
@@ -225,6 +243,16 @@ def main():
                 # effects is that every command it names exists on this machine.
                 if skip:
                     nskip += 1; print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                # A shell fence is RUN when every line is safe to run: no
+                # network, no publishing, no writes outside a temp dir. The
+                # unsafe ones are named, not silently passed.
+                UNSAFE = ('git clone', 'gh release', 'gh api', 'git push', 'curl',
+                          'wget', 'rm -rf', 'sudo', 'apt', 'brew', 'make install',
+                          'scp', 'ssh', 'docker', 'npx', 'npm', 'pip',
+                          # binds a fixed port: the result depends on what else
+                          # is listening, which is not a property of the doc
+                          '--port', 'tycho-httpd')
+                unsafe = [u for u in UNSAFE if u in body]
                 missing = []
                 for l in body.split('\n'):
                     t = l.strip().lstrip('$').strip()
@@ -244,9 +272,31 @@ def main():
                     nskip += 1
                     print("    skip  %s:%d  shell: not on this machine: %s"
                           % (f, line, " ".join(sorted(set(missing)))))
-                else:
+                elif unsafe:
                     nok += 1
-                    print("    ok    %s:%d  [shell, every command it names exists]" % (f, line))
+                    print("    ok    %s:%d  [shell, commands exist; NOT run: %s]"
+                          % (f, line, ", ".join(unsafe)))
+                else:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        # a fence shows its prompt; strip `$ ` before running,
+                        # or sh sees `$` as a command (tutorial.md exited 127)
+                        cmds = "\n".join(
+                            re.sub(r'^\s*\$\s?', '', l) for l in body.split('\n')
+                            if l.strip() and not l.strip().startswith('#'))
+                        script = "set -e\ncd %s\n" % ROOT + cmds
+                        r = subprocess.run(['sh', '-c', script], capture_output=True,
+                                           text=True, timeout=120, errors='replace',
+                                           stdin=subprocess.DEVNULL, cwd=tmp)
+                    if r.returncode == 0:
+                        nok += 1; nsh += 1
+                        print("    ok    %s:%d  [shell, RAN, exit 0]" % (f, line))
+                    else:
+                        # a fence that is safe to run and then fails is a defect,
+                        # not a note: the doc tells a reader to run it
+                        nfail += 1
+                        fails.append("%s:%d -- shell fence RAN and exited %d: %s"
+                                     % (f, line, r.returncode,
+                                        (r.stderr.strip().splitlines() or [""])[-1][:60]))
                 continue
             if lang != 'tycho':
                 continue
@@ -354,9 +404,10 @@ def main():
 
     for x in fails:
         print("docs-fences: FAIL " + x, file=sys.stderr)
-    print("docs-fences: %d snippet(s) verified -- every Tycho fence is BUILT AND RUN "
-          "(exit 0), %d of them with stdout compared to the ```output block beside it; "
-          "%d skipped with a stated reason, %d failure(s)" % (nok, nrun, nskip, nfail))
+    print("docs-fences: %d snippet(s) verified -- every Tycho fence BUILT AND RUN "
+          "(exit 0), %d with stdout compared to its ```output block; %d shell fences RAN; "
+          "%d skipped with a stated reason, %d failure(s)"
+          % (nok, nrun, nsh, nskip, nfail))
     return 1 if nfail else 0
 
 
