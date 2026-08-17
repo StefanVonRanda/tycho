@@ -80,6 +80,14 @@ if [ -n "$SITE_SHA" ]; then
         python3 scripts/check_contrast.py --rev "$SITE_SHA"
     run "contrast selfcheck (the checker's own negative controls)" \
         python3 scripts/check_contrast.py --selfcheck --rev "$SITE_SHA"
+    # The page's own code. Added 2026-08-17 after the first listing a visitor saw
+    # was found to use removed syntax -- by accident, because nothing on the site
+    # had ever executed it. Contrast, links and citations all read a code block
+    # as text; only this compiles and runs it.
+    run "check_site_code (the page's listings compile and run)" \
+        python3 scripts/check_site_code.py --rev "$SITE_SHA"
+    run "site-code selfcheck (both legs redden)" \
+        python3 scripts/check_site_code.py --selfcheck --rev "$SITE_SHA"
 fi
 
 # Everything else. Skipped on a gh-pages-only push: no .ty, .md or .c is moving,

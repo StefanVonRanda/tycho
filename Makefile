@@ -1084,6 +1084,12 @@ contrast-check:
 	@python3 scripts/check_contrast.py --selfcheck
 	@python3 scripts/check_contrast.py
 
+# The landing page's Tycho listings: they must COMPILE, and print what the page
+# says they print. `make docs-fences` covers docs/ and cannot see gh-pages.
+site-code-check: tychoc
+	@python3 scripts/check_site_code.py --selfcheck
+	@python3 scripts/check_site_code.py
+
 # The `.c` arguments below are no longer left by `make tycho` / `make tychofmt` /
 # `make tycho-lsp` -- the loops-cleanup plan made the plain build remove its own
 # intermediate (src/tychoc.c:13754). They stay because `--emit-c -o <base>` still
