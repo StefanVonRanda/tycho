@@ -13,7 +13,7 @@ correctness harness — an adversarial fuzzer, sanitizer lanes over both the com
 the programs it emits, and a golden-locked test suite, all green in a local gate
 (`make ci`). See [docs/architecture.md](docs/architecture.md) for what each gate proves.
 
-**Production readiness, as of 2026-08-14.** Of the seven things §"What 1.0
+**Production readiness.** Of the seven things §"What 1.0
 requires" asks for, §2 through §5 are closed and §6's artifacts are built and
 verified for both platforms. What is left is not engineering: **§1** (someone
 other than the author writes a real program), **§7** (an external security
@@ -70,7 +70,7 @@ Concretely: **three non-trivial programs by two people who did not write the
 compiler**, each with its friction written down. Until then the API freeze is
 guesswork about which parts of the surface people actually reach for.
 
-**One of the three exists as of 2026-08-14**: `tools/tycho-diff`, a Myers O(ND)
+**One of the three exists**: `tools/tycho-diff`, a Myers O(ND)
 line differ with unified output, written against `docs/` alone by someone who had
 not read `src/tychoc.c`, with its friction in
 [tools/tycho-diff/FRICTION-OUTSIDE.md](tools/tycho-diff/FRICTION-OUTSIDE.md).
@@ -396,7 +396,7 @@ State now, each figure measured rather than assumed:
 
 - `make release-check` reports **byte-identical archives** over two builds, and
   rebuilds the mingw archive in the same run.
-- The whole **`tests/reject/` corpus — 333 fixtures — is refused by the extracted
+- The whole **`tests/reject/` corpus — is refused by the extracted
   `tychoc`**, not just the six named above. That number means nothing on its own,
   so a POSITIVE CONTROL runs beside it: a program importing `core:sort` and
   `core:crypto` compiles and runs through the same shipped binary, printing
@@ -531,7 +531,7 @@ claims and this section used to conflate them.** A language that cannot be insta
 Apple laptop or a Graviton instance is not production-ready whatever its
 internals are, and this is the largest single gap.
 
-**Measured 2026-08-15, and the gap is smaller than "no build" suggests.** It was
+**The gap is smaller than "no build" suggests.** It was
 never attempted rather than attempted and failed:
 
 - `runtime/tycho_rt.c` already carries **explicit macOS support** — the Darwin
@@ -592,7 +592,7 @@ and its removal version, and `CHANGELOG.md` records it.
 What does not exist is the policy that machinery serves: what stability means,
 what may change in a minor release, how long a deprecation survives before
 removal, and which platforms are supported tiers rather than best-effort. A
-version number is a promise, and the promise is currently unwritten.
+version number is a promise; SUPPORT.md states it.
 
 ### 4. Trust that did not come from here
 

@@ -135,7 +135,7 @@ wrong, and the evidence is in the repo:
   learn that by running it there.
 - `6cb89f22` — the leak-fuzz lane skipped because **Apple's ASan ships no
   LeakSanitizer**. Same: found by running.
-- `8306651c` — a `docs/macos.md` existed and was folded into the README.
+- `8306651c` — a macOS notes document existed and was folded into the README.
 - 38 commits mention macOS / Darwin / ARM.
 
 **`ROADMAP.md:578` says "There is no macOS build and no ARM64 build on any

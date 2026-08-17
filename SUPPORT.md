@@ -35,7 +35,7 @@ others are well exercised:
 
 | platform | what backs it |
 |---|---|
-| **Linux x86_64** — supported | the full suite, 720 fixtures under ASan/UBSan/LeakSanitizer, plus every gate lane |
+| **Linux x86_64** — supported | the full suite, 723 fixtures under ASan/UBSan/LeakSanitizer, plus every gate lane |
 | Windows x86_64 — best-effort | six wine lanes including a trap-mode UBSan sweep over the corpus; no native CI |
 | macOS x86_64 / arm64 — best-effort | cross-compiled; **never executed on the platform** |
 | Linux arm64 — best-effort | cross-compiled; **never executed on the platform** |

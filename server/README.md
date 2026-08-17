@@ -316,8 +316,7 @@ the script**, because from the pass line a control and a proof look identical. A
 10 s watchdog `SIGKILL`s the `SIGTERM`
 case, so a regression that leaves one accept loop blocked reddens this gate
 instead of hanging it. `make server-check`
-runs it (`Makefile:247-248`), and it has been in `make ci` as step **`[3c/13]`**
-since 2026-07-30 (`scripts/ci.sh:112@server`), immediately after `[3b] entrypoints` —
+runs it (`Makefile:247-248`), immediately after `entrypoints` —
 so a server that does not *build* reddens there with a compile error rather than
 arriving here as a readiness timeout. It skips with a `SKIP` line and exit 0 if
 `python3` is absent.
