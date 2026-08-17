@@ -35,7 +35,12 @@
 <style>
   :root{
     --paper:#0b0b0c; --ink:#f4f3ef; --ink-soft:#c9c8c3;
-    --dim:#8e8d88; --faint:#7a7975; --line:#5e5e61;
+    /* --faint is BRIGHTER than --dim here on purpose (7.26 vs 5.92). Measured
+       2026-08-17, it carries 65 text runs from 8.5px up: 18 at 8.5, 7 at 9,
+       8 at 9.5, 8 at 10, 6 at 11, 13 at 11.5, 5 at 17. --dim carries 12.5px
+       prose. Small type needs more contrast, not less -- the old 4.51 cleared
+       WCAG's floor and still read as barely there. Light theme unchanged. */
+    --dim:#8e8d88; --faint:#9f9d98; --line:#5e5e61;
     --code-bg:#08080a; --code-fg:#dcdbd6; --code-dim:#787873; --code-line:#5c5c61;
     --acc:#c6ff3f; --acc-code:#c6ff3f; --acc-on:#0b0b0c; --dot:#404043;
   }
@@ -130,10 +135,12 @@
     border-left:1px solid var(--line)}
   @media (max-width:1100px){ .herofoot .cta{grid-template-columns:1fr} 
     .btn{border-right:0; border-bottom:1px solid var(--line)} }
-  .herofoot .meta{grid-column:1 / -1; margin:0; padding:9px var(--pad);
-    border-top:1px solid var(--line); font-size:9px; letter-spacing:1.6px;
-    text-transform:uppercase; color:var(--faint); display:flex; flex-wrap:wrap; gap:6px 18px}
-  .herofoot .meta code{color:var(--dim)}
+  /* .herofoot is two columns and nothing else. The full-width .meta row that
+     used to sit under them was folded into .lede on 2026-08-17: as a third
+     grid row it broke the layout. Its link and <code> spans styled here. */
+  .herofoot .lede a{color:var(--ink); border-bottom:1px solid var(--line)}
+  .herofoot .lede a:hover{border-bottom-color:var(--ink)}
+  .herofoot .lede code{color:var(--ink-soft)}
   .btn{display:flex; align-items:center; justify-content:space-between; gap:16px;
     padding:clamp(18px,2vw,30px) clamp(16px,1.8vw,28px);
     border:0; border-right:1px solid var(--line); background:transparent; color:var(--ink);
@@ -227,7 +234,10 @@
     font-size:clamp(11px,.82vw,13.5px); line-height:1.75; color:var(--code-fg)}
   .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc-code)}
   .c{color:var(--code-dim)} .g{color:#9aa1ab} .out{color:#8b929c}
-  .codecap{margin:0 0 clamp(24px,2.8vw,50px); padding:11px var(--pad);
+  /* margin-bottom 0 -- set on .codecap, not on .codecap.rv.in: .rv/.in are the
+     reveal-animation state classes, and hanging layout off .in would collapse
+     the margin only once the caption scrolls into view, i.e. a visible jump. */
+  .codecap{margin:0; padding:11px var(--pad);
     border-bottom:1px solid var(--line);
     font-size:10px; letter-spacing:.6px; line-height:1.6; color:var(--faint); max-width:none}
   .codecap b{color:var(--dim); font-weight:600}
@@ -341,14 +351,14 @@
         A research project testing one idea: <b>implicit hierarchical arenas under value
         semantics</b>. Every scope owns a memory arena, freed on exit. There is no reference
         type, so the compiler can place every allocation and free from your code's structure
-        alone.
+        alone. New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a>
+        — builds with <code>cc</code> and <code>make</code>, nothing else.
       </p>
       <div class="cta rise d4">
         <a class="btn" href="#start">Get started</a>
         <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
         <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
       </div>
-      <p class="meta rise d5">New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a> — builds with <code>cc</code> and <code>make</code>, nothing else.</p>
     </div>
   </header>
 
